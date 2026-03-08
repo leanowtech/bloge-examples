@@ -1,0 +1,116 @@
+/// Voice telemedicine: patient verification → symptom intake (sub-graph) → urgency-based routing.
+///
+/// Demonstrates sub-graph composition for domain-specific intake pipelines and how to run
+/// a compliance side-chain (recording) in parallel with a routing branch.
+///
+/// Key DSL concepts demonstrated:
+///   retry = exponential — doubles the backoff each attempt (500ms → 1s → 2s…);
+///                         well-suited for identity checks hitting remote auth services
+///   subgraph("name")    — the medical-intake sub-graph encapsulates three steps
+///                         (symptomExtraction → terminologyNormalization → urgencyAssessment)
+///                         as one logical unit; inputs are injected into the sub-graph's ctx;
+///                         the final inner node's output becomes medicalIntake.output
+///   input dot-path      — medicalIntake.output.urgencyLevel navigates into the sub-graph
+///                         result map to extract a specific field for downstream nodes
+///   branch on <expr>    — evaluates urgencyLevel and dispatches to one of three doctor queues;
+///                         skipped queue nodes do not execute and do not block recording
+///   parallel side-chain — startConsultationRecording depends_on medicalIntake (not the branch),
+///                         so it always runs regardless of which doctor queue was selected
+///
+/// Context variables:
+///   patientId — patient medical record identifier
+///   sessionId — telemedicine session identifier for compliance recording
+graph voiceTelemedicine {
+
+  /// Captures patient audio during the telemedicine session at 16 kHz.
+  stream node audioCapture : AudioCapture {
+    buffer = 64
+  }
+
+  /// Transcribes audio stream to text in real-time for identity verification and symptom intake.
+  stream node speechToText : SpeechToText {
+    input {
+      audio = audioCapture.output
+    }
+    buffer = 32
+  }
+
+  /// Verifies patient identity before allowing access to medical data.
+  /// retry=exponential handles transient failures in the remote identity service —
+  /// the backoff doubles each time (500ms, 1s, 2s) to avoid hammering the service.
+  /// Returns { patientId, name, verified } — if verified=false, downstream nodes fail.
+  node verifyPatientIdentity : PatientIdentityVerifier {
+    depends_on = [speechToText]
+    input {
+      patientId  = ctx.patientId
+      transcript = speechToText.output
+    }
+    timeout = 5s
+    retry = { attempts: 2, backoff: 500ms, strategy: exponential }
+  }
+
+  /// Runs the medical intake sub-graph after identity is confirmed.
+  ///
+  /// Sub-graph "medical-intake" executes three inner nodes in sequence:
+  ///   1. symptomExtraction        — extracts raw symptoms from the patient transcript
+  ///   2. terminologyNormalization — maps symptoms to ICD-10 codes and categories
+  ///   3. urgencyAssessment        — scores urgency and selects appropriate specialty
+  ///
+  /// Inputs are available inside the sub-graph via ctx (patientId, transcript, verified).
+  /// The result of urgencyAssessment becomes medicalIntake.output, accessible via dot-path.
+  node medicalIntake : subgraph("medical-intake") {
+    depends_on = [verifyPatientIdentity]
+    input {
+      patientId  = ctx.patientId
+      transcript = speechToText.output
+      verified   = verifyPatientIdentity.output.verified
+    }
+    timeout = 30s
+  }
+
+  /// Routes patient to emergency doctor — active when urgencyLevel = "emergency".
+  node routeEmergencyDoctor : EmergencyDoctorRouter {
+    depends_on = [medicalIntake]
+    input {
+      patientId = ctx.patientId
+      urgency   = medicalIntake.output.urgencyLevel
+    }
+  }
+
+  /// Routes patient to specialist — active when urgencyLevel = "specialist".
+  node routeSpecialist : SpecialistRouter {
+    depends_on = [medicalIntake]
+    input {
+      patientId = ctx.patientId
+      specialty = medicalIntake.output.specialty
+    }
+  }
+
+  /// Routes patient to general practitioner — catch-all for non-urgent cases.
+  node routeGeneralPractitioner : GeneralPractitionerRouter {
+    depends_on = [medicalIntake]
+    input {
+      patientId = ctx.patientId
+    }
+  }
+
+  /// Routes to exactly one doctor queue based on the urgency level from the sub-graph.
+  /// The dot-path medicalIntake.output.urgencyLevel navigates into the sub-graph output map.
+  branch on medicalIntake.output.urgencyLevel {
+    "emergency"  -> routeEmergencyDoctor
+    "specialist" -> routeSpecialist
+    otherwise    -> routeGeneralPractitioner
+  }
+
+  /// Starts the consultation recording session for compliance and audit purposes.
+  /// Runs in parallel with the routing branch — it depends on medicalIntake directly,
+  /// so it is not gated by which doctor queue was selected and always executes.
+  node startConsultationRecording : ConsultationRecorder {
+    depends_on = [medicalIntake]
+    input {
+      patientId    = ctx.patientId
+      sessionId    = ctx.sessionId
+      urgencyLevel = medicalIntake.output.urgencyLevel
+    }
+  }
+}

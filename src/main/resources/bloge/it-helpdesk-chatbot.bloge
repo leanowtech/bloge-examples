@@ -1,0 +1,80 @@
+/// IT Helpdesk chatbot — single-round intent routing (Plan A)
+///
+/// Routes each user request to the appropriate IT support handler.
+///
+/// Graph layout:
+///   parseInput → classifyIntent → branch on intent
+///     "password_reset"     → passwordResetHandler
+///     "permission_request" → permissionRequestHandler
+///     "incident_report"    → incidentReporter
+///     otherwise            → faqResolver
+///
+/// Context variables:
+///   ctx.userMessage — raw user input for this round
+///   ctx.sessionId   — stable session identifier
+graph itHelpdeskChatbot {
+
+  /// Normalise the raw user message
+  node parseInput : ItChatInputParser {
+    input {
+      userMessage = ctx.userMessage
+      sessionId   = ctx.sessionId
+    }
+    output {
+      normalizedText: String
+      language: String
+    }
+  }
+
+  /// Classify the IT support intent
+  node classifyIntent : ItChatIntentClassifier {
+    depends_on = [parseInput]
+    input {
+      parsedText = parseInput.output.normalizedText
+    }
+    output {
+      intent: String
+      confidence: Number
+    }
+  }
+
+  /// Route to the appropriate handler
+  branch on classifyIntent.output.intent {
+    "password_reset"     -> passwordResetHandler
+    "permission_request" -> permissionRequestHandler
+    "incident_report"    -> incidentReporter
+    otherwise            -> faqResolver
+  }
+
+  /// Verify identity and send password reset link
+  node passwordResetHandler : ItChatPasswordResetHandler {
+    input {
+      userMessage = ctx.userMessage
+      sessionId   = ctx.sessionId
+    }
+  }
+
+  /// Submit access permission request for manager approval
+  node permissionRequestHandler : ItChatPermissionRequestHandler {
+    input {
+      userMessage = ctx.userMessage
+      sessionId   = ctx.sessionId
+    }
+  }
+
+  /// Collect incident details and create support ticket
+  node incidentReporter : ItChatIncidentReporter {
+    input {
+      userMessage = ctx.userMessage
+      sessionId   = ctx.sessionId
+    }
+  }
+
+  /// Answer general IT questions from knowledge base
+  node faqResolver : ItChatFaqResolver {
+    input {
+      userMessage = ctx.userMessage
+      sessionId   = ctx.sessionId
+    }
+  }
+}

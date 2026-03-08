@@ -1,0 +1,96 @@
+/// International shipment orchestration with parallel dual-subgraph execution.
+///
+/// Validates a shipment request and resolves port addresses, then runs customs clearance
+/// and route optimization as independent embedded sub-graphs in parallel. Once both complete,
+/// booking is confirmed, tracking is initialised, and stakeholders are notified.
+///
+/// Key DSL concepts demonstrated:
+///   subgraph("name")     — embedded sub-graph; inputs injected into sub-ctx; last-node output is result
+///   parallel subgraphs   — customsClearance and routeOptimization run concurrently after validateAddress
+///   depends_on = [a, b]  — bookingConfirmation waits for both subgraphs to complete (fan-in)
+///   timeout = Ns         — each subgraph and critical nodes are cancelled if they exceed their budget
+///
+/// Context variables:
+///   ctx.shipmentId         — unique identifier for the shipment
+///   ctx.originCountry      — country of shipment origin
+///   ctx.destinationCountry — destination country for the shipment
+///   ctx.weightKg           — shipment weight in kilograms
+///   ctx.commodityType      — commodity category (affects HS codes and duty rates)
+graph internationalShipment {
+
+  /// Receives and validates the incoming shipment request
+  node receiveRequest : ReceiveRequestOperator {
+    input {
+      shipmentId         = ctx.shipmentId
+      originCountry      = ctx.originCountry
+      destinationCountry = ctx.destinationCountry
+      weightKg           = ctx.weightKg
+      commodityType      = ctx.commodityType
+    }
+    timeout = 3s
+  }
+
+  /// Validates origin and destination addresses and resolves ports
+  node validateAddress : ValidateAddressOperator {
+    depends_on = [receiveRequest]
+    input {
+      shipmentId         = receiveRequest.output.shipmentId
+      originCountry      = receiveRequest.output.originCountry
+      destinationCountry = receiveRequest.output.destinationCountry
+    }
+    timeout = 3s
+  }
+
+  /// Runs customs clearance sub-graph: documentPreparation → hsCodeClassification → dutyCalculation
+  /// → customsDeclaration → branch(clearanceApproved | clearanceRejected)
+  node customsClearance : subgraph("customs-clearance") {
+    depends_on = [validateAddress]
+    input {
+      shipmentId         = receiveRequest.output.shipmentId
+      commodityType      = receiveRequest.output.commodityType
+      originCountry      = receiveRequest.output.originCountry
+      destinationCountry = receiveRequest.output.destinationCountry
+      weightKg           = receiveRequest.output.weightKg
+    }
+    timeout = 30s
+  }
+
+  /// Runs route optimization sub-graph: carrierQuery → rateComparison → transitTimeEstimation → optimalRouteSelection
+  node routeOptimization : subgraph("route-optimization") {
+    depends_on = [validateAddress]
+    input {
+      originPort      = validateAddress.output.originPort
+      destinationPort = validateAddress.output.destinationPort
+      weightKg        = receiveRequest.output.weightKg
+    }
+    timeout = 30s
+  }
+
+  /// Confirms shipment booking after customs and route processing
+  node bookingConfirmation : BookingConfirmationOperator {
+    depends_on = [customsClearance, routeOptimization]
+    input {
+      shipmentId = receiveRequest.output.shipmentId
+      route      = routeOptimization.output.optimalRouteSelection
+      customs    = customsClearance.output.clearanceApproved
+    }
+  }
+
+  /// Sets up shipment tracking
+  node trackingSetup : TrackingSetupOperator {
+    depends_on = [bookingConfirmation]
+    input {
+      shipmentId = bookingConfirmation.output.shipmentId
+      bookingRef = bookingConfirmation.output.bookingRef
+    }
+  }
+
+  /// Sends shipment notification to stakeholders
+  node sendNotification : SendNotificationOperator {
+    depends_on = [trackingSetup]
+    input {
+      shipmentId     = trackingSetup.output.shipmentId
+      trackingNumber = trackingSetup.output.trackingNumber
+    }
+  }
+}

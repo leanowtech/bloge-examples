@@ -1,0 +1,52 @@
+{
+  "contextData": {
+    "session.namespace": "default",
+    "sessionId": "SESSION-DSL-TEST-001"
+  },
+  "currentPhaseId": null,
+  "currentPhaseRound": 0,
+  "history": [
+    {
+      "input": {
+        "userMessage": "Thanks, bye"
+      },
+      "output": {
+        "respond": {
+          "action": "close",
+          "done": true,
+          "userMessage": "Thanks, bye"
+        }
+      },
+      "phaseId": "triage",
+      "roundInPhase": 1,
+      "timestamp": "<timestamp>"
+    }
+  ],
+  "kind": "session-checkpoint",
+  "phaseOutputs": {
+    "greeting": {
+      "greet": {
+        "sessionId": "<sessionId>",
+        "text": "Hello, tell me what you need help with."
+      }
+    },
+    "triage": {
+      "respond": {
+        "action": "close",
+        "done": true,
+        "userMessage": "Thanks, bye"
+      }
+    },
+    "wrapUp": {
+      "close": {
+        "finalMessage": "Session closed: null"
+      }
+    }
+  },
+  "sessionGraphName": "customerServiceSession",
+  "sharedState": {
+    
+  },
+  "status": "COMPLETED",
+  "totalRounds": 1
+}

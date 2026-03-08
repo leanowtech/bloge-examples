@@ -1,0 +1,102 @@
+/// Long-running order fulfillment that awaits an external payment-confirmed event.
+///
+/// After an order is created and payment is initiated, the workflow suspends until
+/// the payment gateway POSTs a "payment.confirmed" event whose orderId matches the
+/// current order.  If the event doesn't arrive within 15 minutes the graph times
+/// out and the order is cancelled automatically.
+///
+/// Key DSL concepts demonstrated:
+///   await <id> { ... }   — suspends and registers an event-correlation listener;
+///                          the engine stores an EventCorrelation record in
+///                          EventCorrelationStore so the listener survives restarts
+///   event "name" where   — declares one event to match; the where clause identifies
+///                          the correlation key used to route the event to this execution
+///   timeout = <dur>      — maximum wait time; engine fires the on_timeout payload if
+///                          no matching event arrives in time
+///   on_timeout { }       — fallback payload when the await times out
+///
+/// Lifecycle:
+///   1. execute()        → graph runs to awaitPayment, returns GraphResult(isSuspended=true)
+///   2. Payment gateway  → POSTs callback; your handler calls engine.publishEvent(...)
+///   3. publishEvent()   → matches EventCorrelation, calls signal(), resumes downstream
+///
+/// Context variables:
+///   ctx.orderId    — unique identifier for the order
+///   ctx.customerId — the customer placing the order
+///   ctx.items      — list of ordered items
+graph paymentWait {
+
+  /// Validate the order items and customer credit limit.
+  node validateOrder : ValidateOrderOperator {
+    input {
+      customerId = ctx.customerId
+      items      = ctx.items
+    }
+    timeout = 3s
+  }
+
+  /// Create the order record and reserve inventory.
+  node createOrder : CreateOrderOperator {
+    depends_on = [validateOrder]
+    input {
+      customerId = ctx.customerId
+      items      = validateOrder.output.items
+      total      = validateOrder.output.total
+    }
+  }
+
+  /// Initiate the payment request with the payment gateway; returns a pending transaction.
+  node initiatePayment : InitiatePaymentOperator {
+    depends_on = [createOrder]
+    input {
+      orderId = createOrder.output.orderId
+      total   = validateOrder.output.total
+    }
+    timeout = 5s
+    retry = { attempts: 2, backoff: 500ms, strategy: exponential }
+  }
+
+  /// Suspend until the payment gateway fires "payment.confirmed" for this orderId.
+  ///
+  /// The engine writes an EventCorrelation record keyed by orderId.
+  /// Your gateway callback handler calls:
+  ///   engine.publishEvent("payment.confirmed", orderId, payload)
+  /// which matches this correlation and resumes the downstream nodes.
+  ///
+  /// on_timeout — after 15 minutes the order is auto-cancelled and the
+  ///              customer notified via the downstream cancelOrder node.
+  await awaitPayment {
+    event "payment.confirmed" where orderId = createOrder.output.orderId
+    timeout = 15m
+    on_timeout {
+      status = "timeout"
+      reason = "Payment not confirmed within 15 minutes"
+    }
+  }
+
+  /// Branch on the payment outcome: confirmed → fulfil; timeout → cancel.
+  branch on awaitPayment.output.status {
+    "confirmed" -> fulfillOrder
+    otherwise   -> cancelOrder
+  }
+
+  /// Release the reserved inventory and schedule shipment.
+  node fulfillOrder : FulfillOrderOperator {
+    depends_on = [awaitPayment]
+    input {
+      orderId         = createOrder.output.orderId
+      paymentRef      = awaitPayment.output.transactionId
+      items           = validateOrder.output.items
+    }
+  }
+
+  /// Release inventory reservation and notify the customer of the cancellation.
+  node cancelOrder : CancelOrderOperator {
+    depends_on = [awaitPayment]
+    input {
+      orderId    = createOrder.output.orderId
+      customerId = ctx.customerId
+      reason     = awaitPayment.output.reason
+    }
+  }
+}

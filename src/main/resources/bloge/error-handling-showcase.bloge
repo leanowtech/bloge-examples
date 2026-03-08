@@ -1,0 +1,26 @@
+/// Error-handling showcase with retry and fallback.
+///
+/// The Java variant also demonstrates the strict version without fallback.
+/// This DSL variant keeps the forgiving path so new users can see how a graph
+/// can recover and emit a manual-review summary.
+graph errorHandlingShowcase {
+  node chargePayment : ChargePaymentOperator {
+    input {
+      orderId         = ctx.orderId
+      amount          = ctx.amount
+      simulateFailure = ctx.simulateFailure
+    }
+    retry = { attempts: 1, backoff: 25ms, strategy: exponential }
+    timeout = 1s
+    fallback = { approved: false, note: "Gateway unavailable; queued for manual review" }
+  }
+
+  node summarizeOutcome : SummarizeOutcomeOperator {
+    depends_on = [chargePayment]
+    input {
+      approved = chargePayment.output.approved
+      note     = chargePayment.output.note
+    }
+    timeout = 1s
+  }
+}

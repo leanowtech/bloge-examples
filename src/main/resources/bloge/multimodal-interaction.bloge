@@ -1,0 +1,53 @@
+/// Multimodal recording: parallel video + audio capture merging into a single recording.
+///
+/// Demonstrates the parallel fan-in streaming pattern where two independent source
+/// streams execute concurrently and converge into a single downstream node.
+///
+/// Key DSL concepts demonstrated:
+///   parallel streams  — videoStream and audioStream have no depends_on, so the engine
+///                       schedules them concurrently as soon as the graph starts
+///   .stream fan-in    — mergeStreams listens to both upstream channels simultaneously
+///                       via StreamEdge; it can interleave frames from each as they arrive
+///   stream merge node — re-emits merged frames to its own channel; downstream nodes
+///                       can either stream-consume (.stream) or wait (.output)
+///   saveRecording     — uses mergeStreams.output (DirectEdge) to receive the complete
+///                       list of merged frames once both source streams have finished
+///
+/// Context variables:
+///   sessionId — recording session identifier for artifact naming
+///   userId    — user associated with the recording
+graph multimodalInteraction {
+
+  /// Captures video frames from the camera at 30 fps (H.264, 1080p).
+  /// Runs concurrently with audioStream — no ordering dependency.
+  stream node videoStream : VideoCapture {
+    buffer = 32
+  }
+
+  /// Captures audio chunks from the microphone at 48 kHz.
+  /// Runs concurrently with videoStream — no ordering dependency.
+  stream node audioStream : AudioCapture {
+    buffer = 32
+  }
+
+  /// Merges the live video and audio streams into a single interleaved media stream.
+  /// Both inputs use .stream (StreamEdge) so merging can begin before either source
+  /// has finished — enabling true real-time A/V synchronization.
+  stream node mergeStreams : MediaMerger {
+    input {
+      video = videoStream.stream
+      audio = audioStream.stream
+    }
+    buffer = 64
+  }
+
+  /// Persists the completed recording as a single artifact (e.g., MP4 file).
+  /// Uses mergeStreams.output (DirectEdge) to ensure all frames have been merged
+  /// before writing begins; depends_on makes the ordering explicit.
+  node saveRecording : RecordingSaver {
+    depends_on = [mergeStreams]
+    input {
+      recording = mergeStreams.output
+    }
+  }
+}

@@ -1,0 +1,87 @@
+/// Customer-service chatbot — single-round intent routing (Plan A)
+///
+/// Each conversation round is a single graph execution.  The external loop
+/// (caller) drives the multi-turn dialogue by re-executing this graph with
+/// an updated history in the context.
+///
+/// Graph layout:
+///   parseInput → classifyIntent → branch on intent
+///     "query_order"    → orderQuerySolver
+///     "make_complaint" → complaintHandler
+///     "faq"            → faqResolver
+///     otherwise        → fallbackResponder
+///
+/// Note: branch target nodes do NOT carry depends_on = [classifyIntent].
+/// The ConditionalEdge created by the branch statement already establishes
+/// the scheduling dependency; adding a DirectEdge as well would cause
+/// non-selected (SKIPPED) nodes to be erroneously enqueued.
+///
+/// Context variables:
+///   ctx.userMessage — raw user input for this round
+///   ctx.sessionId   — stable session identifier
+graph customerServiceChatbot {
+
+  /// Normalise the raw user message and extract keyword entities
+  node parseInput : CsChatInputParser {
+    input {
+      userMessage = ctx.userMessage
+      sessionId   = ctx.sessionId
+    }
+    output {
+      normalizedText: String
+      language: String
+    }
+  }
+
+  /// Classify the user intent from the normalised message text
+  node classifyIntent : CsChatIntentClassifier {
+    depends_on = [parseInput]
+    input {
+      parsedText = parseInput.output.normalizedText
+    }
+    output {
+      intent: String
+      confidence: Number
+    }
+  }
+
+  /// Route to exactly one solver based on the classified intent
+  branch on classifyIntent.output.intent {
+    "query_order"    -> orderQuerySolver
+    "make_complaint" -> complaintHandler
+    "faq"            -> faqResolver
+    otherwise        -> fallbackResponder
+  }
+
+  /// Query order status — returns logistics information
+  node orderQuerySolver : CsChatOrderQuerySolver {
+    input {
+      userMessage = ctx.userMessage
+      sessionId   = ctx.sessionId
+    }
+  }
+
+  /// Handle customer complaint — logs issue and returns empathetic response
+  node complaintHandler : CsChatComplaintHandler {
+    input {
+      userMessage = ctx.userMessage
+      sessionId   = ctx.sessionId
+    }
+  }
+
+  /// Answer FAQ — returns policy or knowledge-base answer
+  node faqResolver : CsChatFaqResolver {
+    input {
+      userMessage = ctx.userMessage
+      sessionId   = ctx.sessionId
+    }
+  }
+
+  /// Fallback — prompts the user to rephrase when intent is unclear
+  node fallbackResponder : CsChatFallbackResponder {
+    input {
+      userMessage = ctx.userMessage
+      sessionId   = ctx.sessionId
+    }
+  }
+}

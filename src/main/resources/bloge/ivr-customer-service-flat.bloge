@@ -1,0 +1,555 @@
+/// Comprehensive IVR customer service workflow modeled as one flat graph.
+///
+/// Unlike the sub-graph variant, all levels and branches are declared in a single
+/// graph definition, mirroring traditional flat IVR configuration style.
+graph ivrCustomerServiceFlat {
+
+  node l0Greeting : Greeting {
+    input {
+      callId = ctx.callId
+      text   = "欢迎致电综合客服中心，正在为您连接智能语音系统。"
+    }
+  }
+
+  node l0IdentifyCustomer : IdentifyCustomer {
+    depends_on = [l0Greeting]
+    input {
+      customerId  = ctx.customerId
+      callerPhone = ctx.callerPhone
+    }
+  }
+
+  node l0MainMenuPrompt : Greeting {
+    depends_on = [l0IdentifyCustomer]
+    input {
+      callId = ctx.callId
+      text   = "主菜单：1话费账单 2技术支持 3账户保障 4订单物流 5投诉建议 0人工座席"
+    }
+  }
+
+  node collectMainMenu : CollectDtmf {
+    depends_on = [l0MainMenuPrompt]
+    input {
+      callId     = ctx.callId
+      customerId = ctx.customerId
+      menuId     = "main-menu"
+    }
+  }
+
+  // ── Billing chain ─────────────────────────────────────────────────────────
+
+  node l1BillingPrompt : Greeting {
+    depends_on = [collectMainMenu]
+    input {
+      callId = ctx.callId
+      text   = "话费账单：1查看账单 2账单争议 3充值缴费 4套餐费用 5费用明细 6返回"
+    }
+  }
+
+  node collectBillingInput : CollectDtmf {
+    depends_on = [l1BillingPrompt]
+    input {
+      callId     = ctx.callId
+      customerId = ctx.customerId
+      menuId     = "billing-menu"
+    }
+  }
+
+  node l1ViewBill : ViewBill {
+    depends_on = [collectBillingInput]
+    input { callId = ctx.callId customerId = ctx.customerId menuId = "billing-menu" }
+  }
+  node l1TopUpPayment : TopUpPayment {
+    depends_on = [collectBillingInput]
+    input { callId = ctx.callId customerId = ctx.customerId menuId = "billing-menu" }
+  }
+  node l1PlanPricing : PlanPricing {
+    depends_on = [collectBillingInput]
+    input { callId = ctx.callId customerId = ctx.customerId menuId = "billing-menu" }
+  }
+  node l1FeeBreakdown : FeeBreakdown {
+    depends_on = [collectBillingInput]
+    input { callId = ctx.callId customerId = ctx.customerId menuId = "billing-menu" }
+  }
+  node l1BillingReturn : ReturnPreviousMenu {
+    depends_on = [collectBillingInput]
+    input { callId = ctx.callId customerId = ctx.customerId menuId = "billing-menu" }
+  }
+
+  node l2BillingDisputePrompt : Greeting {
+    depends_on = [collectBillingInput]
+    input {
+      callId = ctx.callId
+      text   = "账单争议：1重复扣费 2未授权扣费 3金额错误 4退款进度 5其他争议"
+    }
+  }
+
+  node collectDisputeInput : CollectDtmf {
+    depends_on = [l2BillingDisputePrompt]
+    input {
+      callId     = ctx.callId
+      customerId = ctx.customerId
+      menuId     = "billing-dispute-menu"
+    }
+  }
+
+  node l2UnauthorizedCharge : ProcessUnauthorizedCharge {
+    depends_on = [collectDisputeInput]
+    input { callId = ctx.callId customerId = ctx.customerId menuId = "billing-dispute-menu" }
+  }
+  node l2WrongAmount : ProcessWrongAmount {
+    depends_on = [collectDisputeInput]
+    input { callId = ctx.callId customerId = ctx.customerId menuId = "billing-dispute-menu" }
+  }
+  node l2RefundStatus : QueryRefundStatus {
+    depends_on = [collectDisputeInput]
+    input { callId = ctx.callId customerId = ctx.customerId menuId = "billing-dispute-menu" }
+  }
+  node l2OtherDispute : ProcessOtherDispute {
+    depends_on = [collectDisputeInput]
+    input { callId = ctx.callId customerId = ctx.customerId menuId = "billing-dispute-menu" }
+  }
+
+  node l3DuplicateChargePrompt : Greeting {
+    depends_on = [collectDisputeInput]
+    input {
+      callId = ctx.callId
+      text   = "重复扣费处理：1自动退款 2人工审核 3扣费记录 4下载账单 5转接主管"
+    }
+  }
+
+  node collectResolutionInput : CollectDtmf {
+    depends_on = [l3DuplicateChargePrompt]
+    input {
+      callId     = ctx.callId
+      customerId = ctx.customerId
+      menuId     = "duplicate-charge-menu"
+    }
+  }
+
+  node l3AutoRefund : AutoRefund {
+    depends_on = [collectResolutionInput]
+    input { callId = ctx.callId customerId = ctx.customerId menuId = "duplicate-charge-menu" }
+  }
+  node l3ManualReview : ManualReview {
+    depends_on = [collectResolutionInput]
+    input { callId = ctx.callId customerId = ctx.customerId menuId = "duplicate-charge-menu" }
+  }
+  node l3ChargeHistory : ViewChargeHistory {
+    depends_on = [collectResolutionInput]
+    input { callId = ctx.callId customerId = ctx.customerId menuId = "duplicate-charge-menu" }
+  }
+  node l3DownloadStatement : DownloadStatement {
+    depends_on = [collectResolutionInput]
+    input { callId = ctx.callId customerId = ctx.customerId menuId = "duplicate-charge-menu" }
+  }
+  node l3TransferSupervisor : TransferSupervisor {
+    depends_on = [collectResolutionInput]
+    input { callId = ctx.callId customerId = ctx.customerId menuId = "duplicate-charge-menu" }
+  }
+
+  // ── Tech support chain ─────────────────────────────────────────────────────
+
+  node l1TechPrompt : Greeting {
+    depends_on = [collectMainMenu]
+    input {
+      callId = ctx.callId
+      text   = "技术支持：1网络故障 2设备问题 3应用故障 4安装服务 5网速测试 6返回"
+    }
+  }
+
+  node collectTechInput : CollectDtmf {
+    depends_on = [l1TechPrompt]
+    input {
+      callId     = ctx.callId
+      customerId = ctx.customerId
+      menuId     = "tech-support-menu"
+    }
+  }
+
+  node l1DeviceIssue : DeviceIssue {
+    depends_on = [collectTechInput]
+    input { callId = ctx.callId customerId = ctx.customerId menuId = "tech-support-menu" }
+  }
+  node l1SoftwareHelp : SoftwareHelp {
+    depends_on = [collectTechInput]
+    input { callId = ctx.callId customerId = ctx.customerId menuId = "tech-support-menu" }
+  }
+  node l1ScheduleInstall : ScheduleInstall {
+    depends_on = [collectTechInput]
+    input { callId = ctx.callId customerId = ctx.customerId menuId = "tech-support-menu" }
+  }
+  node l1RunSpeedTest : RunSpeedTest {
+    depends_on = [collectTechInput]
+    input { callId = ctx.callId customerId = ctx.customerId menuId = "tech-support-menu" }
+  }
+  node l1TechReturn : ReturnPreviousMenu {
+    depends_on = [collectTechInput]
+    input { callId = ctx.callId customerId = ctx.customerId menuId = "tech-support-menu" }
+  }
+
+  node l2NetworkPrompt : Greeting {
+    depends_on = [collectTechInput]
+    input {
+      callId = ctx.callId
+      text   = "网络故障：1无法连接 2连接不稳 3网速慢 4DNS错误 5VPN问题"
+    }
+  }
+
+  node collectNetworkInput : CollectDtmf {
+    depends_on = [l2NetworkPrompt]
+    input {
+      callId     = ctx.callId
+      customerId = ctx.customerId
+      menuId     = "network-issue-menu"
+    }
+  }
+
+  node l2IntermittentFix : IntermittentFix {
+    depends_on = [collectNetworkInput]
+    input { callId = ctx.callId customerId = ctx.customerId menuId = "network-issue-menu" }
+  }
+  node l2SlowSpeedFix : SlowSpeedFix {
+    depends_on = [collectNetworkInput]
+    input { callId = ctx.callId customerId = ctx.customerId menuId = "network-issue-menu" }
+  }
+  node l2DnsFix : DnsFix {
+    depends_on = [collectNetworkInput]
+    input { callId = ctx.callId customerId = ctx.customerId menuId = "network-issue-menu" }
+  }
+  node l2VpnFix : VpnFix {
+    depends_on = [collectNetworkInput]
+    input { callId = ctx.callId customerId = ctx.customerId menuId = "network-issue-menu" }
+  }
+
+  node l3CannotConnectPrompt : Greeting {
+    depends_on = [collectNetworkInput]
+    input {
+      callId = ctx.callId
+      text   = "无法连接诊断：1重启设备 2检查线路 3远程诊断 4预约上门 5更换设备"
+    }
+  }
+
+  node collectCannotConnectInput : CollectDtmf {
+    depends_on = [l3CannotConnectPrompt]
+    input {
+      callId     = ctx.callId
+      customerId = ctx.customerId
+      menuId     = "cannot-connect-menu"
+    }
+  }
+
+  node l3RestartDevice : RestartDevice {
+    depends_on = [collectCannotConnectInput]
+    input { callId = ctx.callId customerId = ctx.customerId menuId = "cannot-connect-menu" }
+  }
+  node l3CheckLine : CheckLine {
+    depends_on = [collectCannotConnectInput]
+    input { callId = ctx.callId customerId = ctx.customerId menuId = "cannot-connect-menu" }
+  }
+  node l3RemoteDiagnostic : RemoteDiagnostic {
+    depends_on = [collectCannotConnectInput]
+    input { callId = ctx.callId customerId = ctx.customerId menuId = "cannot-connect-menu" }
+  }
+  node l3ScheduleOnsite : ScheduleOnsite {
+    depends_on = [collectCannotConnectInput]
+    input { callId = ctx.callId customerId = ctx.customerId menuId = "cannot-connect-menu" }
+  }
+  node l3DeviceReplacement : DeviceReplacement {
+    depends_on = [collectCannotConnectInput]
+    input { callId = ctx.callId customerId = ctx.customerId menuId = "cannot-connect-menu" }
+  }
+
+  // ── Account / insurance chain ──────────────────────────────────────────────
+
+  node l1AccountPrompt : Greeting {
+    depends_on = [collectMainMenu]
+    input {
+      callId = ctx.callId
+      text   = "账户保障：1修改密码 2套餐变更 3保修理赔 4开通服务 5账户注销 6返回"
+    }
+  }
+
+  node collectAccountInput : CollectDtmf {
+    depends_on = [l1AccountPrompt]
+    input {
+      callId     = ctx.callId
+      customerId = ctx.customerId
+      menuId     = "account-insurance-menu"
+    }
+  }
+
+  node l1ChangePassword : ChangePassword {
+    depends_on = [collectAccountInput]
+    input { callId = ctx.callId customerId = ctx.customerId menuId = "account-insurance-menu" }
+  }
+  node l1ChangePlan : ChangePlan {
+    depends_on = [collectAccountInput]
+    input { callId = ctx.callId customerId = ctx.customerId menuId = "account-insurance-menu" }
+  }
+  node l1ActivateService : ActivateService {
+    depends_on = [collectAccountInput]
+    input { callId = ctx.callId customerId = ctx.customerId menuId = "account-insurance-menu" }
+  }
+  node l1CloseAccount : CloseAccount {
+    depends_on = [collectAccountInput]
+    input { callId = ctx.callId customerId = ctx.customerId menuId = "account-insurance-menu" }
+  }
+  node l1AccountReturn : ReturnPreviousMenu {
+    depends_on = [collectAccountInput]
+    input { callId = ctx.callId customerId = ctx.customerId menuId = "account-insurance-menu" }
+  }
+
+  node l2WarrantyPrompt : Greeting {
+    depends_on = [collectAccountInput]
+    input {
+      callId = ctx.callId
+      text   = "保修理赔：1保修查询 2提交理赔 3理赔进度 4延保服务 5保修政策"
+    }
+  }
+
+  node collectWarrantyInput : CollectDtmf {
+    depends_on = [l2WarrantyPrompt]
+    input {
+      callId     = ctx.callId
+      customerId = ctx.customerId
+      menuId     = "warranty-claims-menu"
+    }
+  }
+
+  node l2WarrantyInquiry : WarrantyInquiry {
+    depends_on = [collectWarrantyInput]
+    input { callId = ctx.callId customerId = ctx.customerId menuId = "warranty-claims-menu" }
+  }
+  node l2ClaimStatus : ClaimStatus {
+    depends_on = [collectWarrantyInput]
+    input { callId = ctx.callId customerId = ctx.customerId menuId = "warranty-claims-menu" }
+  }
+  node l2ExtendedWarranty : ExtendedWarranty {
+    depends_on = [collectWarrantyInput]
+    input { callId = ctx.callId customerId = ctx.customerId menuId = "warranty-claims-menu" }
+  }
+  node l2WarrantyPolicy : WarrantyPolicy {
+    depends_on = [collectWarrantyInput]
+    input { callId = ctx.callId customerId = ctx.customerId menuId = "warranty-claims-menu" }
+  }
+
+  node l3SubmitClaimPrompt : Greeting {
+    depends_on = [collectWarrantyInput]
+    input {
+      callId = ctx.callId
+      text   = "提交理赔：1设备损坏 2意外丢失 3电池故障 4屏幕维修 5其他故障"
+    }
+  }
+
+  node collectSubmitClaimInput : CollectDtmf {
+    depends_on = [l3SubmitClaimPrompt]
+    input {
+      callId     = ctx.callId
+      customerId = ctx.customerId
+      menuId     = "submit-claim-menu"
+    }
+  }
+
+  node l3ClaimDeviceDamage : ClaimDeviceDamage {
+    depends_on = [collectSubmitClaimInput]
+    input { callId = ctx.callId customerId = ctx.customerId menuId = "submit-claim-menu" }
+  }
+  node l3ClaimAccidentalLoss : ClaimAccidentalLoss {
+    depends_on = [collectSubmitClaimInput]
+    input { callId = ctx.callId customerId = ctx.customerId menuId = "submit-claim-menu" }
+  }
+  node l3ClaimBattery : ClaimBattery {
+    depends_on = [collectSubmitClaimInput]
+    input { callId = ctx.callId customerId = ctx.customerId menuId = "submit-claim-menu" }
+  }
+  node l3ClaimScreen : ClaimScreen {
+    depends_on = [collectSubmitClaimInput]
+    input { callId = ctx.callId customerId = ctx.customerId menuId = "submit-claim-menu" }
+  }
+  node l3ClaimOther : ClaimOther {
+    depends_on = [collectSubmitClaimInput]
+    input { callId = ctx.callId customerId = ctx.customerId menuId = "submit-claim-menu" }
+  }
+
+  // ── Orders / complaints chains (L1 terminal) ───────────────────────────────
+
+  node l1OrdersPrompt : Greeting {
+    depends_on = [collectMainMenu]
+    input {
+      callId = ctx.callId
+      text   = "订单物流：1查看订单 2退换货 3物流查询 4确认收货 5发票服务 6返回"
+    }
+  }
+  node collectOrdersInput : CollectDtmf {
+    depends_on = [l1OrdersPrompt]
+    input { callId = ctx.callId customerId = ctx.customerId menuId = "orders-menu" }
+  }
+  node l1ViewOrders : ViewOrders { depends_on = [collectOrdersInput] input { callId = ctx.callId customerId = ctx.customerId menuId = "orders-menu" } }
+  node l1ReturnsExchanges : ReturnsExchanges { depends_on = [collectOrdersInput] input { callId = ctx.callId customerId = ctx.customerId menuId = "orders-menu" } }
+  node l1ShippingStatus : ShippingStatus { depends_on = [collectOrdersInput] input { callId = ctx.callId customerId = ctx.customerId menuId = "orders-menu" } }
+  node l1ConfirmReceipt : ConfirmReceipt { depends_on = [collectOrdersInput] input { callId = ctx.callId customerId = ctx.customerId menuId = "orders-menu" } }
+  node l1InvoiceService : InvoiceService { depends_on = [collectOrdersInput] input { callId = ctx.callId customerId = ctx.customerId menuId = "orders-menu" } }
+  node l1OrdersReturn : ReturnPreviousMenu { depends_on = [collectOrdersInput] input { callId = ctx.callId customerId = ctx.customerId menuId = "orders-menu" } }
+
+  node l1ComplaintsPrompt : Greeting {
+    depends_on = [collectMainMenu]
+    input {
+      callId = ctx.callId
+      text   = "投诉建议：1服务质量 2计费问题 3网络质量 4员工态度 5其他投诉 6返回"
+    }
+  }
+  node collectComplaintsInput : CollectDtmf {
+    depends_on = [l1ComplaintsPrompt]
+    input { callId = ctx.callId customerId = ctx.customerId menuId = "complaints-menu" }
+  }
+  node l1ServiceQualityComplaint : ServiceQualityComplaint { depends_on = [collectComplaintsInput] input { callId = ctx.callId customerId = ctx.customerId menuId = "complaints-menu" } }
+  node l1BillingComplaint : BillingComplaint { depends_on = [collectComplaintsInput] input { callId = ctx.callId customerId = ctx.customerId menuId = "complaints-menu" } }
+  node l1NetworkComplaint : NetworkComplaint { depends_on = [collectComplaintsInput] input { callId = ctx.callId customerId = ctx.customerId menuId = "complaints-menu" } }
+  node l1StaffComplaint : StaffComplaint { depends_on = [collectComplaintsInput] input { callId = ctx.callId customerId = ctx.customerId menuId = "complaints-menu" } }
+  node l1OtherComplaint : OtherComplaint { depends_on = [collectComplaintsInput] input { callId = ctx.callId customerId = ctx.customerId menuId = "complaints-menu" } }
+  node l1ComplaintsReturn : ReturnPreviousMenu { depends_on = [collectComplaintsInput] input { callId = ctx.callId customerId = ctx.customerId menuId = "complaints-menu" } }
+
+  node transferLiveAgent : TransferAgent {
+    depends_on = [collectMainMenu]
+    input {
+      callId     = ctx.callId
+      customerId = ctx.customerId
+      menuId     = "main-menu"
+    }
+  }
+
+  // ── Branch cascade ─────────────────────────────────────────────────────────
+
+  branch on collectMainMenu.output.key {
+    "1" -> l1BillingPrompt
+    "2" -> l1TechPrompt
+    "3" -> l1AccountPrompt
+    "4" -> l1OrdersPrompt
+    "5" -> l1ComplaintsPrompt
+    otherwise -> transferLiveAgent
+  }
+
+  branch on collectBillingInput.output.key {
+    "1" -> l1ViewBill
+    "2" -> l2BillingDisputePrompt
+    "3" -> l1TopUpPayment
+    "4" -> l1PlanPricing
+    "5" -> l1FeeBreakdown
+    otherwise -> l1BillingReturn
+  }
+
+  branch on collectDisputeInput.output.key {
+    "1" -> l3DuplicateChargePrompt
+    "2" -> l2UnauthorizedCharge
+    "3" -> l2WrongAmount
+    "4" -> l2RefundStatus
+    otherwise -> l2OtherDispute
+  }
+
+  branch on collectResolutionInput.output.key {
+    "1" -> l3AutoRefund
+    "2" -> l3ManualReview
+    "3" -> l3ChargeHistory
+    "4" -> l3DownloadStatement
+    otherwise -> l3TransferSupervisor
+  }
+
+  branch on collectTechInput.output.key {
+    "1" -> l2NetworkPrompt
+    "2" -> l1DeviceIssue
+    "3" -> l1SoftwareHelp
+    "4" -> l1ScheduleInstall
+    "5" -> l1RunSpeedTest
+    otherwise -> l1TechReturn
+  }
+
+  branch on collectNetworkInput.output.key {
+    "1" -> l3CannotConnectPrompt
+    "2" -> l2IntermittentFix
+    "3" -> l2SlowSpeedFix
+    "4" -> l2DnsFix
+    otherwise -> l2VpnFix
+  }
+
+  branch on collectCannotConnectInput.output.key {
+    "1" -> l3RestartDevice
+    "2" -> l3CheckLine
+    "3" -> l3RemoteDiagnostic
+    "4" -> l3ScheduleOnsite
+    otherwise -> l3DeviceReplacement
+  }
+
+  branch on collectAccountInput.output.key {
+    "1" -> l1ChangePassword
+    "2" -> l1ChangePlan
+    "3" -> l2WarrantyPrompt
+    "4" -> l1ActivateService
+    "5" -> l1CloseAccount
+    otherwise -> l1AccountReturn
+  }
+
+  branch on collectWarrantyInput.output.key {
+    "1" -> l2WarrantyInquiry
+    "2" -> l3SubmitClaimPrompt
+    "3" -> l2ClaimStatus
+    "4" -> l2ExtendedWarranty
+    otherwise -> l2WarrantyPolicy
+  }
+
+  branch on collectSubmitClaimInput.output.key {
+    "1" -> l3ClaimDeviceDamage
+    "2" -> l3ClaimAccidentalLoss
+    "3" -> l3ClaimBattery
+    "4" -> l3ClaimScreen
+    otherwise -> l3ClaimOther
+  }
+
+  branch on collectOrdersInput.output.key {
+    "1" -> l1ViewOrders
+    "2" -> l1ReturnsExchanges
+    "3" -> l1ShippingStatus
+    "4" -> l1ConfirmReceipt
+    "5" -> l1InvoiceService
+    otherwise -> l1OrdersReturn
+  }
+
+  branch on collectComplaintsInput.output.key {
+    "1" -> l1ServiceQualityComplaint
+    "2" -> l1BillingComplaint
+    "3" -> l1NetworkComplaint
+    "4" -> l1StaffComplaint
+    "5" -> l1OtherComplaint
+    otherwise -> l1ComplaintsReturn
+  }
+
+  // ── Summary and persistence ────────────────────────────────────────────────
+
+  node satisfactionSurvey : SatisfactionSurvey {
+    depends_on = [collectMainMenu]
+    input {
+      callId      = ctx.callId
+      selectedKey = collectMainMenu.output.key
+    }
+  }
+
+  node callSummary : CallSummaryBuilder {
+    depends_on = [satisfactionSurvey]
+    input {
+      callId      = ctx.callId
+      customerId  = ctx.customerId
+      selectedKey = collectMainMenu.output.key
+      surveyScore = satisfactionSurvey.output.score
+    }
+  }
+
+  node saveCallRecord : SaveCallRecord {
+    depends_on = [callSummary]
+    input {
+      callId     = callSummary.output.callId
+      customerId = callSummary.output.customerId
+      menuPath   = callSummary.output.menuPath
+      resolution = callSummary.output.resolution
+    }
+  }
+}

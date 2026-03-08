@@ -1,0 +1,127 @@
+/// Insurance claim processing with parallel validation, risk scoring, and branch-based routing.
+///
+/// Loads the claim, then fans out to three independent checks (policy validation, document
+/// review, and claims history) that run concurrently. Risk is assessed from all three results,
+/// a decision is made, and the claim is routed to exactly one of: approval (with payout
+/// scheduling), rejection, or investigation, via a branch.
+///
+/// Key DSL concepts demonstrated:
+///   depends_on = [a,b,c]  — assessRisk fans in from all three parallel validation nodes
+///   transform             — zero-cost field projection; aliases upstream fields with no operator scheduled
+///   branch on <expr>      — exactly one of approveClaim, rejectClaim, or investigateClaim executes
+///
+/// Context variables:
+///   ctx.claimId — unique identifier of the insurance claim being processed
+graph claimProcessing {
+
+  /// Retrieves the full claim record by ID
+  node fetchClaim : FetchClaimOperator {
+    input {
+      claimId = ctx.claimId
+    }
+    timeout = 3s
+  }
+
+  /// Validates that the policy associated with the claim is active and covers the claim type
+  node validatePolicy : ValidatePolicyOperator {
+    depends_on = [fetchClaim]
+    input {
+      policyId = fetchClaim.output.policyId
+    }
+    timeout = 3s
+  }
+
+  /// Checks completeness and authenticity of all supporting documents for the claim
+  node reviewDocuments : ReviewDocumentsOperator {
+    depends_on = [fetchClaim]
+    input {
+      claimId = fetchClaim.output.claimId
+    }
+    retry = { attempts: 2, backoff: 300ms, strategy: exponential }
+  }
+
+  /// Retrieves prior claims for the customer to inform fraud-risk scoring
+  node checkClaimHistory : CheckClaimHistoryOperator {
+    depends_on = [fetchClaim]
+    input {
+      customerId = fetchClaim.output.customerId
+    }
+    timeout = 3s
+  }
+
+  /// Combines policy, document, and history results to produce a risk level score
+  node assessRisk : AssessRiskOperator {
+    depends_on = [validatePolicy, reviewDocuments, checkClaimHistory]
+    input {
+      policy    = validatePolicy.output
+      documents = reviewDocuments.output
+      history   = checkClaimHistory.output
+    }
+  }
+
+  /// Flattened view of claim context for the decision engine — uses let bindings for shared derived values
+  transform claimContext {
+    let highPriorClaims   = checkClaimHistory.output.totalClaims > 3
+    let coverageExceeded  = fetchClaim.output.claimAmount > validatePolicy.output.coverageLimit
+
+    policyType      = validatePolicy.output.policyType
+    coverageLimit   = validatePolicy.output.coverageLimit
+    docsComplete    = reviewDocuments.output.complete
+    priorClaims     = checkClaimHistory.output.totalClaims
+    riskLevel       = assessRisk.output.riskLevel
+    flagHighHistory = highPriorClaims
+    overCoverage    = coverageExceeded
+  }
+
+  /// Produces the final claim decision (approved / rejected / investigate) from risk and claim data
+  node claimDecision : ClaimDecisionOperator {
+    depends_on = [assessRisk]
+    input {
+      risk  = assessRisk.output
+      claim = fetchClaim.output
+    }
+  }
+
+  /// branch on decision: exactly one downstream node executes; the others are skipped
+  branch on claimDecision.output.decision {
+    "approved"  -> approveClaim
+    "rejected"  -> rejectClaim
+    otherwise   -> investigateClaim
+  }
+
+  /// Approves the claim and generates an approval record with the approved payout amount
+  node approveClaim : ApproveClaimOperator {
+    depends_on = [claimDecision]
+    input {
+      claim = fetchClaim.output
+      risk  = assessRisk.output
+    }
+  }
+
+  /// Schedules the approved payout for disbursement
+  node schedulePayout : SchedulePayoutOperator {
+    depends_on = [approveClaim]
+    input {
+      approvalId = approveClaim.output.approvalId
+      amount     = approveClaim.output.approvedAmount
+    }
+  }
+
+  /// Rejects the claim and records the reason for denial
+  node rejectClaim : RejectClaimOperator {
+    depends_on = [claimDecision]
+    input {
+      claim = fetchClaim.output
+      risk  = assessRisk.output
+    }
+  }
+
+  /// Escalates the claim for manual investigation when the decision is inconclusive
+  node investigateClaim : InvestigateClaimOperator {
+    depends_on = [claimDecision]
+    input {
+      claim = fetchClaim.output
+      risk  = assessRisk.output
+    }
+  }
+}

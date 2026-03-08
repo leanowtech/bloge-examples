@@ -1,0 +1,50 @@
+/// ❌ ANTIPATTERN: one root node fans into too many unrelated responsibilities.
+///
+/// ingestTicket immediately feeds six downstream concerns: customer loading,
+/// entitlement lookup, region derivation, sentiment analysis, intent detection,
+/// and SLA planning. That shape is hard to review and even harder to evolve.
+///
+/// ✅ CORRECT: split customer enrichment and ticket analysis into sub-graphs so the
+/// top-level graph only coordinates those capabilities.
+graph ticketGodGraph {
+  node ingestTicket : IngestTicketOperator {
+    input { ticket = ctx.ticket }
+    timeout = 1s
+  }
+
+  node fetchCustomer : FetchCustomerOperator {
+    depends_on = [ingestTicket]
+    input { ticket = ingestTicket.output }
+    timeout = 1s
+  }
+
+  node loadEntitlements : LoadEntitlementsOperator {
+    depends_on = [ingestTicket]
+    input { ticket = ingestTicket.output }
+    timeout = 1s
+  }
+
+  node deriveRegion : DeriveRegionOperator {
+    depends_on = [ingestTicket]
+    input { ticket = ingestTicket.output }
+    timeout = 1s
+  }
+
+  node analyzeSentiment : AnalyzeSentimentOperator {
+    depends_on = [ingestTicket]
+    input { ticket = ingestTicket.output }
+    timeout = 1s
+  }
+
+  node detectIntent : DetectIntentOperator {
+    depends_on = [ingestTicket]
+    input { ticket = ingestTicket.output }
+    timeout = 1s
+  }
+
+  node determineSla : DetermineSlaOperator {
+    depends_on = [ingestTicket]
+    input { ticket = ingestTicket.output }
+    timeout = 1s
+  }
+}

@@ -1,0 +1,124 @@
+/// Food order processing with parallel pre-checks and branch-based acceptance routing.
+///
+/// Validates an incoming order, then fans out to three concurrent checks (inventory,
+/// kitchen load, delivery estimate). A decision node weighs all three results and branches
+/// on acceptance: approved orders proceed to kitchen notification, rider assignment, and
+/// payment processing in parallel; declined orders receive alternative suggestions.
+///
+/// Key DSL concepts demonstrated:
+///   parallel fan-out    — checkInventory, checkKitchenLoad, and estimateDelivery run concurrently
+///   depends_on = [...]  — decideAcceptance waits for all three checks to complete (fan-in)
+///   branch on <expr>    — exactly one of acceptOrder or suggestAlternatives executes; the other is skipped
+///   fallback = { }      — assignRider supplies a self-pickup substitute when no rider is available
+///   timeout = Ns        — individual nodes are cancelled if they exceed their time budget
+///
+/// Context variables:
+///   ctx.orderId         — unique identifier for the incoming order
+///   ctx.restaurantId    — the restaurant fulfilling the order
+///   ctx.items           — list of ordered items
+///   ctx.deliveryAddress — delivery destination address
+graph foodOrderProcess {
+
+  /// Validates the order structure, restaurant existence, and item availability
+  node validateOrder : ValidateOrderOperator {
+    input {
+      orderId       = ctx.orderId
+      restaurantId  = ctx.restaurantId
+      items         = ctx.items
+      deliveryAddress = ctx.deliveryAddress
+    }
+    timeout = 2s
+  }
+
+  /// Checks whether all ordered items are currently in stock at the restaurant
+  node checkInventory : CheckInventoryOperator {
+    depends_on = [validateOrder]
+    input {
+      restaurantId = validateOrder.output.restaurantId
+      items        = validateOrder.output.items
+    }
+    timeout = 3s
+  }
+
+  /// Checks the kitchen's current order queue to assess capacity for a new order
+  node checkKitchenLoad : CheckKitchenLoadOperator {
+    depends_on = [validateOrder]
+    input {
+      restaurantId = validateOrder.output.restaurantId
+    }
+    timeout = 2s
+  }
+
+  /// Estimates delivery time and feasibility based on restaurant location and delivery address
+  node estimateDelivery : EstimateDeliveryOperator {
+    depends_on = [validateOrder]
+    input {
+      restaurantId    = validateOrder.output.restaurantId
+      deliveryAddress = ctx.deliveryAddress
+    }
+    timeout = 3s
+  }
+
+  /// Combines inventory, kitchen, and delivery results to decide whether to accept the order
+  node decideAcceptance : DecideAcceptanceOperator {
+    depends_on = [checkInventory, checkKitchenLoad, estimateDelivery]
+    input {
+      inventory = checkInventory.output
+      kitchen   = checkKitchenLoad.output
+      delivery  = estimateDelivery.output
+    }
+  }
+
+  /// branch on accepted: exactly one downstream path executes; the other is skipped
+  branch on decideAcceptance.output.accepted {
+    true  -> acceptOrder
+    false -> suggestAlternatives
+  }
+
+  /// Confirms the order acceptance and assigns an order ID for downstream processing
+  node acceptOrder : AcceptOrderOperator {
+    depends_on = [decideAcceptance]
+    input {
+      order    = validateOrder.output
+      delivery = estimateDelivery.output
+    }
+  }
+
+  /// Proposes alternative items or restaurants when the order cannot be fulfilled
+  node suggestAlternatives : SuggestAlternativesOperator {
+    depends_on = [decideAcceptance]
+    input {
+      order            = validateOrder.output
+      unavailableItems = checkInventory.output.unavailableItems
+    }
+  }
+
+  /// Sends the accepted order details to the kitchen for preparation
+  node notifyKitchen : NotifyKitchenOperator {
+    depends_on = [acceptOrder]
+    input {
+      orderId = acceptOrder.output.orderId
+      items   = validateOrder.output.items
+    }
+  }
+
+  /// Assigns a delivery rider to the order; falls back to self-pickup if none is available
+  node assignRider : AssignRiderOperator {
+    depends_on = [acceptOrder]
+    input {
+      orderId         = acceptOrder.output.orderId
+      deliveryAddress = ctx.deliveryAddress
+    }
+    fallback = { riderId: "SELF-PICKUP", riderName: "Self Pickup" }
+  }
+
+  /// Charges the customer for the accepted order amount
+  node processPayment : ProcessPaymentOperator {
+    depends_on = [acceptOrder]
+    input {
+      orderId = acceptOrder.output.orderId
+      amount  = acceptOrder.output.total
+    }
+    timeout = 5s
+  }
+}

@@ -1,0 +1,51 @@
+/// Customer-service chatbot using session / phase / round primitives
+session customerServiceSession {
+  idle_timeout = 5m
+  timeout_action = "cs_session_timeout_policy"
+  max_rounds = 20
+  max_history = 50
+
+  phase greeting {
+    node greet : CsSessionGreeter {
+      input {
+        sessionId = ctx.sessionId
+      }
+    }
+    then -> triage
+  }
+
+  phase triage {
+    max_rounds = 5
+    yield_on = [respond]
+    round {
+      node respond : CsSessionResponder {
+        input {
+          userMessage = ctx.round.input.userMessage
+        }
+      }
+    }
+    until respond.output.done == true
+    then {
+      respond.output.action == "handoff" -> solve
+      otherwise -> wrapUp
+    }
+  }
+
+  phase solve {
+    node solveCase : CsSessionSolver {
+      input {
+        action = ctx.triage.output.respond.action
+        userMessage = ctx.triage.output.respond.userMessage
+      }
+    }
+    then -> wrapUp
+  }
+
+  phase wrapUp {
+    node close : CsSessionCloser {
+      input {
+        resolution = ctx.solve.output.solveCase.resolution
+      }
+    }
+  }
+}

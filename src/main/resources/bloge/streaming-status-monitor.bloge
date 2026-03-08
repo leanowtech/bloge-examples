@@ -1,0 +1,49 @@
+/// Continuously monitors a service's status, streaming updates until it becomes ready.
+///
+/// After initialising the monitoring session, a streaming loop polls the service at
+/// 2-second intervals (up to 100 iterations) and emits each status update downstream
+/// as it arrives.  When the service reports "ready" the loop exits early and a final
+/// notification is sent.
+///
+/// Key DSL concepts demonstrated:
+///   stream loop    — loop where each iteration's output is streamed to downstream nodes
+///                    as it completes; does not wait for all iterations to finish
+///   until <expr>   — early-exit predicate; loop terminates when the service is ready
+///   loopIteration  — built-in 0-based counter available inside every loop node
+///   buffer = N     — NodeChannel ring-buffer capacity for the stream edge
+///
+/// Context variables:
+///   ctx.targetService — identifier of the service to monitor
+graph streamingStatusMonitor {
+
+  /// Initializes the monitoring session
+  node initMonitor : MonitorInit {
+    input {
+      targetService = ctx.targetService
+    }
+  }
+
+  /// Streams status updates as the service comes online
+  stream loop checkStatus {
+    max_iterations = 100
+    delay = 2s
+    depends_on = [initMonitor]
+    buffer = 8
+    node pollStatus : StatusPoller {
+      input {
+        serviceId = initMonitor.output.serviceId
+        iteration = loopIteration
+      }
+    }
+    until pollStatus.output.status == "ready"
+  }
+
+  /// Sends a notification once the service is ready
+  node notifyComplete : Notifier {
+    depends_on = [checkStatus]
+    input {
+      serviceId = initMonitor.output.serviceId
+      finalStatus = checkStatus.output.pollStatus.status
+    }
+  }
+}

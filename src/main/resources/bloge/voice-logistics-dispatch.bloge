@@ -1,0 +1,128 @@
+/// Voice logistics dispatch: driver voice command → intelligent routing + concurrent TTS response.
+///
+/// Demonstrates a hybrid graph where a branch handles semantic routing while a parallel
+/// TTS stream prepares the voice response concurrently — reducing round-trip latency.
+///
+/// Key DSL concepts demonstrated:
+///   branch on <expr>   — routes to one of three handler chains based on requestType;
+///                        "routeQuery" triggers route optimization,
+///                        "anomalyReport" chains logAnomaly → notifyDispatcher,
+///                        otherwise falls through to a generic acknowledgement
+///   chained branch leg — anomalyReport → logAnomaly → notifyDispatcher; the branch
+///                        only activates logAnomaly directly, and notifyDispatcher is
+///                        a regular dependency of logAnomaly (not a branch target itself)
+///   parallel TTS       — textToSpeech depends on parseDriverRequest (not on branch targets),
+///                        so speech synthesis starts as soon as the request is parsed;
+///                        it runs in parallel with whatever branch path is executing
+///   materialized TTS   — sendVoiceResponse uses textToSpeech.output (DirectEdge) to
+///                        receive the complete List<SpeechChunk> after synthesis finishes,
+///                        then delivers the audio buffer to the driver's device
+///
+/// Context variables:
+///   driverId        — driver identifier for routing and logging (e.g., "DRV-001")
+///   dispatchId      — dispatch center identifier for anomaly notifications
+///   language        — BCP-47 language code for TTS synthesis (e.g., "en")
+///   currentLocation — driver's current GPS position used in route optimisation
+graph voiceLogisticsDispatch {
+
+  /// Captures the driver's voice request at 16 kHz.
+  stream node audioCapture : AudioCapture {
+    buffer = 64
+  }
+
+  /// Transcribes the driver's speech to text in real-time.
+  stream node speechToText : SpeechToText {
+    input {
+      audio = audioCapture.output
+    }
+    buffer = 32
+  }
+
+  /// Parses the transcript into a structured command.
+  /// Classifies requestType ∈ { "routeQuery", "anomalyReport", "unknown" } and
+  /// extracts destination or anomalyType from the raw text.
+  /// Returns { requestType, rawText, destination, anomalyType, driverId }.
+  node parseDriverRequest : DriverRequestParser {
+    depends_on = [speechToText]
+    input {
+      transcript = speechToText.output
+      driverId   = ctx.driverId
+    }
+    timeout = 5s
+  }
+
+  /// Queries the optimal delivery route — active only when requestType = "routeQuery".
+  /// Uses ctx.currentLocation and parsed destination to find the best waypoint sequence.
+  node queryOptimalRoute : RouteOptimizer {
+    depends_on = [parseDriverRequest]
+    input {
+      driverId    = ctx.driverId
+      currentLoc  = ctx.currentLocation
+      destination = parseDriverRequest.output.destination
+    }
+    timeout = 10s
+  }
+
+  /// Logs a reported anomaly (delay, accident, road closure) to the incident store.
+  /// Active only when requestType = "anomalyReport"; notifyDispatcher chains off it.
+  node logAnomaly : AnomalyLogger {
+    depends_on = [parseDriverRequest]
+    input {
+      driverId    = ctx.driverId
+      anomalyType = parseDriverRequest.output.anomalyType
+      description = parseDriverRequest.output.rawText
+    }
+  }
+
+  /// Notifies the dispatch center of the logged anomaly.
+  /// Regular dependency of logAnomaly — runs only when logAnomaly ran (i.e., anomaly path).
+  node notifyDispatcher : DispatcherNotifier {
+    depends_on = [logAnomaly]
+    input {
+      anomalyId  = logAnomaly.output.anomalyId
+      driverId   = ctx.driverId
+      dispatchId = ctx.dispatchId
+    }
+  }
+
+  /// Generates a generic acknowledgement for unrecognised request types.
+  node acknowledgement : AcknowledgementGenerator {
+    depends_on = [parseDriverRequest]
+    input {
+      driverId    = ctx.driverId
+      requestType = parseDriverRequest.output.requestType
+    }
+  }
+
+  /// Routes to exactly one handler chain based on the parsed request type.
+  /// "anomalyReport" only activates logAnomaly directly; notifyDispatcher runs as
+  /// a normal dependency of logAnomaly, not as a separate branch target.
+  branch on parseDriverRequest.output.requestType {
+    "routeQuery"    -> queryOptimalRoute
+    "anomalyReport" -> logAnomaly
+    otherwise       -> acknowledgement
+  }
+
+  /// Synthesises the dispatch instruction into speech for the driver.
+  /// Starts concurrently with the branch (depends on parseDriverRequest, not branch targets),
+  /// so the audio response is ready by the time the routing decision completes.
+  /// buffer=32 limits memory usage while keeping the synthesis pipeline smooth.
+  stream node textToSpeech : TtsOperator {
+    depends_on = [parseDriverRequest]
+    input {
+      text     = parseDriverRequest.output.rawText
+      language = ctx.language
+    }
+    buffer = 32
+  }
+
+  /// Delivers the synthesised voice response back to the driver.
+  /// Uses textToSpeech.output (materialized List<SpeechChunk>) once synthesis is done.
+  node sendVoiceResponse : VoiceResponseSender {
+    depends_on = [textToSpeech]
+    input {
+      driverId   = ctx.driverId
+      audioChunks = textToSpeech.output
+    }
+  }
+}

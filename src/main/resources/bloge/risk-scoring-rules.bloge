@@ -1,0 +1,105 @@
+/// Real-time risk scoring with hot-updatable Groovy rules
+/// Demonstrates: script node for dynamic risk scoring, collection method usage in transforms
+graph riskScoringRules {
+
+  /// Fetch applicant financial profile
+  node fetchFinancials : FetchFinancialsOperator {
+    input {
+      applicantId  = ctx.applicantId
+    }
+    timeout = 3s
+  }
+
+  /// Fetch credit bureau data
+  node fetchCreditBureau : CreditBureauOperator {
+    input {
+      ssn     = ctx.ssn
+      region  = ctx.region
+    }
+    timeout = 4s
+    retry = { attempts: 3  backoff: 500ms  strategy: exponential }
+    fallback = { creditScore: 0  report: null }
+  }
+
+  /// Retrieve applicant's transaction history
+  node fetchTransactions : TransactionHistoryOperator {
+    input {
+      accountId = fetchFinancials.output.primaryAccountId
+      months    = 12
+    }
+    timeout = 5s
+  }
+
+  /// Dynamic risk scoring — rules updated without deployment
+  script scoreRisk {
+    lang    = "groovy"
+    timeout = 8s
+    input {
+      creditScore    = fetchCreditBureau.output.creditScore
+      income         = fetchFinancials.output.annualIncome
+      debtRatio      = fetchFinancials.output.debtToIncomeRatio
+      latePayments   = fetchCreditBureau.output.latePaymentCount
+      requestedAmount = ctx.loanAmount
+    }
+    output_schema {
+      riskScore:    Number
+      riskCategory: String
+      flags:        String
+      approved:     Boolean
+    }
+    code = """
+      def score = 100
+
+      // Credit score factor (0-50 points)
+      if (creditScore >= 750)      score += 50
+      else if (creditScore >= 700) score += 35
+      else if (creditScore >= 650) score += 20
+      else if (creditScore >= 600) score += 5
+      else                         score -= 20
+
+      // Debt-to-income ratio (0-30 points)
+      if (debtRatio <= 0.20)      score += 30
+      else if (debtRatio <= 0.35) score += 15
+      else if (debtRatio <= 0.43) score += 5
+      else                        score -= 25
+
+      // Late payment penalty
+      score -= (latePayments * 8)
+
+      // Income adequacy
+      def paymentToIncome = (requestedAmount * 0.06) / income
+      if (paymentToIncome > 0.4) score -= 20
+
+      score = Math.max(0, Math.min(200, score))
+
+      def category
+      def approved
+      if (score >= 150)      { category = "LOW_RISK";    approved = true  }
+      else if (score >= 110) { category = "MEDIUM_RISK"; approved = true  }
+      else if (score >= 70)  { category = "HIGH_RISK";   approved = false }
+      else                   { category = "DECLINED";    approved = false }
+
+      def flags = []
+      if (latePayments > 3) flags << "LATE_PAYMENTS"
+      if (debtRatio > 0.43) flags << "HIGH_DEBT_RATIO"
+      if (creditScore < 600) flags << "LOW_CREDIT"
+
+      return [riskScore: score, riskCategory: category, flags: flags.join(","), approved: approved]
+    """
+  }
+
+  /// Build decision summary with collection method usage
+  transform buildDecision {
+    let flagList  = ifNull(scoreRisk.output.flags, "").split(",").filter(f -> f != "")
+
+    applicantId   = ctx.applicantId
+    loanAmount    = ctx.loanAmount
+    riskScore     = scoreRisk.output.riskScore
+    riskCategory  = scoreRisk.output.riskCategory
+    approved      = scoreRisk.output.approved
+    flagCount     = flagList.count()
+    flags         = flagList
+    creditScore   = fetchCreditBureau.output.creditScore
+    reviewRequired = scoreRisk.output.riskCategory == "HIGH_RISK"
+  }
+}

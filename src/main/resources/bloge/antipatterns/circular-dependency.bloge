@@ -1,0 +1,21 @@
+/// ❌ ANTIPATTERN: nodes depend on each other, creating a cycle that cannot be scheduled.
+///
+/// BLOGE's linter should reject this graph before runtime. The corrected form is to insert
+/// a true source node or refactor one side of the cycle into an upstream transform.
+graph circularDependency {
+  node left : LeftOperator {
+    depends_on = [right]
+    input {
+      value = right.output.value
+    }
+    timeout = 1s
+  }
+
+  node right : RightOperator {
+    depends_on = [left]
+    input {
+      value = left.output.value
+    }
+    timeout = 1s
+  }
+}

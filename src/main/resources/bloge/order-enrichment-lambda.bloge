@@ -1,0 +1,90 @@
+/// Order enrichment using lambda collection operations in DSL input bindings.
+///
+/// Demonstrates the new lambda/collection-ops DSL feature: map, filter, reduce,
+/// sortBy, associate, and zip can now be applied inline inside `input { }` blocks
+/// using arrow-function syntax (x -> expr) — no custom operator needed for
+/// simple data transformations.
+///
+/// Key DSL concepts demonstrated:
+///   .map(x -> expr)          — project each element to a new value
+///   .filter(x -> predicate)  — keep only elements satisfying the predicate
+///   .reduce(init, (a,b)->e)  — fold a list to a scalar
+///   .sortBy(x -> key)        — stable sort by a derived key
+///   .associate(k -> kExpr, v -> vExpr)
+///                            — build a {key: value} map from a list
+///   Chained ops              — .filter(...).map(...) composes left-to-right
+///   Object literal body      — x -> { id: x.id, total: x.price * x.qty }
+///                              builds a new object for each element
+///
+/// All lambda expressions run inside the engine's data-access layer — they are
+/// pure expressions evaluated at input-assembly time, not separate operator nodes.
+/// This eliminates scheduling overhead for simple field projections and
+/// transformations.
+///
+/// Context variables:
+///   ctx.customerId  — customer whose orders are being enriched
+///   ctx.minValue    — minimum order value threshold for filtering
+graph orderEnrichmentLambda {
+
+  /// Fetch raw orders and product catalogue from persistence.
+  node fetchOrders : FetchOrdersOperator {
+    input {
+      customerId = ctx.customerId
+    }
+    timeout = 3s
+  }
+
+  node fetchProducts : FetchProductsOperator {
+    input {
+      orderIds = fetchOrders.output.orders.map(o -> o.orderId)
+    }
+    timeout = 3s
+  }
+
+  /// Compute per-line subtotals, filter by minimum value, and sort by value desc.
+  ///
+  /// Lambda expressions used:
+  ///   .map(o -> { ... })          — enrich each order with derived fields
+  ///   .filter(o -> predicate)     — keep high-value orders only
+  ///   .sortBy(o -> o.totalValue)  — sort descending (engine applies stable sort)
+  node enrichOrders : EnrichOrdersOperator {
+    depends_on = [fetchOrders, fetchProducts]
+    input {
+      /// Build enriched order objects: add totalValue, productName, taxAmount
+      enrichedOrders = fetchOrders.output.orders
+                         .map(o -> {
+                           orderId:     o.orderId,
+                           totalValue:  o.price * o.quantity,
+                           taxAmount:   o.price * o.quantity * 0.1,
+                           productName: fetchProducts.output.catalogue.associate(p -> p.id, p -> p.name)
+                         })
+                         .filter(o -> o.totalValue > ctx.minValue)
+                         .sortBy(o -> o.totalValue)
+
+      /// Aggregate: total revenue from qualifying orders
+      totalRevenue = fetchOrders.output.orders
+                       .filter(o -> o.price * o.quantity > ctx.minValue)
+                       .reduce(0, (acc, o) -> acc + o.price * o.quantity)
+
+      /// Count: number of qualifying orders
+      orderCount = fetchOrders.output.orders
+                     .filter(o -> o.price * o.quantity > ctx.minValue)
+                     .map(o -> 1)
+                     .reduce(0, (acc, x) -> acc + x)
+    }
+  }
+
+  /// Generate a summary report from the enriched data.
+  node generateReport : GenerateReportOperator {
+    depends_on = [enrichOrders]
+    input {
+      customerId    = ctx.customerId
+      orders        = enrichOrders.output.enrichedOrders
+      totalRevenue  = enrichOrders.output.totalRevenue
+      orderCount    = enrichOrders.output.orderCount
+
+      /// Extract just the order IDs for the report header
+      orderIds = enrichOrders.output.enrichedOrders.map(o -> o.orderId)
+    }
+  }
+}

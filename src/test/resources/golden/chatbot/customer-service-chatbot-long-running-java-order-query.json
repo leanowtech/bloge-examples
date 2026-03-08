@@ -1,0 +1,57 @@
+{
+  "kind": "graph-result",
+  "outputs": {
+    "awaitUserInput": {
+      "sessionId": "SESSION-LR-TEST-001",
+      "userMessage": "Where is my order?"
+    },
+    "classifyIntent": {
+      "confidence": 0.9,
+      "intent": "query_order",
+      "slots": {
+        
+      }
+    },
+    "greet": {
+      "greeting": "Hello! How can I help you today?",
+      "sessionId": "SESSION-LR-TEST-001"
+    },
+    "orderQuerySolver": {
+      "intent": "query_order",
+      "resolved": true,
+      "text": "Your order is currently in transit and will arrive by tomorrow.",
+      "updatedHistory": {
+        "messages": [
+          {
+            "content": "Where is my order?",
+            "role": "user",
+            "timestamp": "<timestamp>"
+          },
+          {
+            "content": "Your order is currently in transit and will arrive by tomorrow.",
+            "role": "bot",
+            "timestamp": "<timestamp>"
+          }
+        ]
+      }
+    },
+    "parseInput": {
+      "entities": [
+        "order"
+      ],
+      "language": "en",
+      "normalizedText": "where is my order?"
+    }
+  },
+  "statuses": {
+    "awaitUserInput": "COMPLETED",
+    "classifyIntent": "COMPLETED",
+    "complaintHandler": "SKIPPED",
+    "fallbackResponder": "SKIPPED",
+    "faqResolver": "SKIPPED",
+    "greet": "COMPLETED",
+    "orderQuerySolver": "COMPLETED",
+    "parseInput": "COMPLETED"
+  },
+  "success": true
+}

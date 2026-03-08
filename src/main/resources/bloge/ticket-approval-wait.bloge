@@ -1,0 +1,94 @@
+/// Long-running customer-service ticket approval with timer-based auto-close.
+///
+/// A support ticket is created, classified for priority, then suspended until a
+/// manager explicitly approves/rejects it.  If no decision is made within 48 hours
+/// the timer fires and the ticket is auto-approved.  A confirmation email is sent
+/// regardless of which path resolved the wait.
+///
+/// Key DSL concepts demonstrated:
+///   wait <id> = <duration> after <node>
+///                      — suspends the graph at this point and parks execution;
+///                        the engine records a SuspendCheckpoint and optionally
+///                        schedules an InMemoryTimer for the given duration
+///   signal_key = <expr> — the external key that a signal() or publishEvent() call
+///                        must match to resume this node
+///   on_timeout { }      — payload injected as the node output when the timer fires
+///                        without receiving a manual signal first
+///   on_fire { }         — alternative payload emitted on timer fire (no signal needed)
+///
+/// Lifecycle:
+///   1. execute()   → graph runs up to waitApproval, returns GraphResult(isSuspended=true)
+///   2. External:   manager POSTs approval decision to your service
+///   3. Persist:    save signal data as NodeCheckpoint for "waitApproval"
+///   4. resume()    → engine skips checkpointed nodes; sendConfirmation executes
+///
+/// Context variables:
+///   ctx.ticketId   — unique identifier for the ticket
+///   ctx.customerId — customer who raised the ticket
+///   ctx.message    — raw message content
+graph ticketApprovalWait {
+
+  /// Persist the incoming ticket in the CRM and assign a tracking ID.
+  node createTicket : CreateTicketOperator {
+    input {
+      customerId = ctx.customerId
+      message    = ctx.message
+    }
+  }
+
+  /// Classify the ticket's category and urgency using NLP.
+  node classifyTicket : ClassifyTicketOperator {
+    depends_on = [createTicket]
+    input {
+      ticketId = createTicket.output.ticketId
+      message  = ctx.message
+    }
+    timeout = 5s
+  }
+
+  /// Notify the on-call manager that a ticket is awaiting review.
+  node notifyManager : NotifyManagerOperator {
+    depends_on = [classifyTicket]
+    input {
+      ticketId  = createTicket.output.ticketId
+      category  = classifyTicket.output.category
+      urgency   = classifyTicket.output.urgency
+    }
+  }
+
+  /// Suspend until the manager approves/rejects OR the 48-hour auto-close timer fires.
+  ///
+  /// signal_key      — the key the caller must pass to signal() to resume this node;
+  ///                   uses the ticketId so each execution has a unique wake-up key
+  /// on_timeout      — if no signal arrives within 48h the engine injects this payload
+  ///                   as the output of waitApproval and proceeds downstream
+  wait waitApproval = 48h after notifyManager {
+    signal_key = ctx.ticketId
+    on_timeout {
+      decision  = "auto-approved"
+      approver  = "system"
+      reason    = "No manager response within SLA"
+    }
+  }
+
+  /// Send a confirmation email to the customer with the approval decision.
+  node sendConfirmation : SendConfirmationOperator {
+    depends_on = [waitApproval]
+    input {
+      ticketId  = createTicket.output.ticketId
+      customerId = ctx.customerId
+      decision  = waitApproval.output.decision
+      approver  = waitApproval.output.approver
+    }
+  }
+
+  /// Persist the final ticket status to the audit log.
+  node auditLog : AuditLogOperator {
+    depends_on = [sendConfirmation]
+    input {
+      ticketId  = createTicket.output.ticketId
+      decision  = waitApproval.output.decision
+      timestamp = sendConfirmation.output.sentAt
+    }
+  }
+}

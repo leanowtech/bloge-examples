@@ -1,0 +1,22 @@
+/// ❌ ANTIPATTERN: slow external nodes run without a timeout budget.
+///
+/// The loadReport node blocks on an external dependency but never declares a timeout,
+/// so the graph can linger far longer than the caller expects.
+///
+/// ✅ CORRECT: add timeout = ... and decide whether the graph should fail fast or
+/// emit a manual-review fallback.
+graph missingTimeout {
+  node loadReport : LoadReportOperator {
+    input {
+      reportId = ctx.reportId
+    }
+  }
+
+  node publishReport : PublishReportOperator {
+    depends_on = [loadReport]
+    input {
+      payload = loadReport.output.payload
+    }
+    timeout = 1s
+  }
+}

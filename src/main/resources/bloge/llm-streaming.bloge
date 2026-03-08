@@ -1,0 +1,50 @@
+/// LLM token-streaming pipeline with buffered stream node chaining.
+///
+/// Builds a prompt from context variables, streams raw tokens from an LLM API through a
+/// buffered filter node that removes control tokens, then renders the final assembled
+/// response. Stream nodes forward tokens live via NodeChannel without blocking downstream.
+///
+/// Key DSL concepts demonstrated:
+///   stream node      — emits items through NodeChannel; does not block downstream consumers
+///   .stream input    — StreamEdge: tokens forwarded live as they arrive from llmCall
+///   .output input    — DirectEdge: full token list consumed after tokenFilter completes
+///   buffer = N       — NodeChannel ring-buffer size; controls backpressure between stream nodes
+///
+/// Context variables:
+///   ctx.userMessage  — the user's input message sent to the LLM
+///   ctx.systemPrompt — system prompt / persona instructions prepended to the conversation
+graph llmStreaming {
+
+  /// Builds the prompt from context variables
+  node buildPrompt : PromptBuilder {
+    input {
+      userMessage = ctx.userMessage
+      systemPrompt = ctx.systemPrompt
+    }
+  }
+
+  /// Streams tokens from the LLM API
+  stream node llmCall : LlmStreamingClient {
+    depends_on = [buildPrompt]
+    input {
+      prompt = buildPrompt.output
+    }
+    buffer = 64
+  }
+
+  /// Filters streaming tokens (e.g. removes control tokens)
+  stream node tokenFilter : TokenFilter {
+    input {
+      tokens = llmCall.stream
+    }
+    buffer = 32
+  }
+
+  /// Renders the final assembled response (materialized from stream)
+  node renderResponse : ResponseRenderer {
+    depends_on = [tokenFilter]
+    input {
+      filteredTokens = tokenFilter.output
+    }
+  }
+}

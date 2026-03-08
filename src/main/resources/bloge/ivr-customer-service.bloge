@@ -1,0 +1,149 @@
+/// Comprehensive IVR customer service workflow with modular sub-graphs.
+///
+/// Demonstrates a four-domain menu tree (billing / tech support / account+insurance /
+/// orders / complaints) where each Level-1 menu is modeled as a reusable sub-graph.
+///
+/// Key DSL concepts:
+///   subgraph("name")    - compose reusable IVR menu modules
+///   branch on <expr>    - route to exactly one Level-1 flow based on DTMF key
+///   depends_on = [..]   - fan-in synchronization before survey and final summary
+///
+/// Context variables:
+///   ctx.callId
+///   ctx.customerId
+///   ctx.callerPhone
+///   ctx.simulatedKeys (Map<menuId, key>)
+graph ivrCustomerService {
+
+  /// Welcome prompt.
+  node greeting : Greeting {
+    input {
+      callId = ctx.callId
+      text   = "欢迎致电综合客服中心，正在为您连接智能语音系统。"
+    }
+  }
+
+  /// ANI/customer identification.
+  node identifyCustomer : IdentifyCustomer {
+    depends_on = [greeting]
+    input {
+      customerId = ctx.customerId
+      callerPhone = ctx.callerPhone
+    }
+  }
+
+  /// Main IVR menu prompt.
+  node mainMenuPrompt : Greeting {
+    depends_on = [identifyCustomer]
+    input {
+      callId = ctx.callId
+      text   = "主菜单：1话费账单 2技术支持 3账户保障 4订单物流 5投诉建议 0人工座席"
+    }
+  }
+
+  /// Collect main menu key.
+  node collectMainMenu : CollectDtmf {
+    depends_on = [mainMenuPrompt]
+    input {
+      callId     = ctx.callId
+      customerId = ctx.customerId
+      menuId     = "main-menu"
+    }
+  }
+
+  /// Level-1 sub-graph: billing.
+  node billingFlow : subgraph("billing-menu") {
+    depends_on = [collectMainMenu]
+    input {
+      callId     = ctx.callId
+      customerId = ctx.customerId
+    }
+  }
+
+  /// Level-1 sub-graph: tech support.
+  node techFlow : subgraph("tech-support-menu") {
+    depends_on = [collectMainMenu]
+    input {
+      callId     = ctx.callId
+      customerId = ctx.customerId
+    }
+  }
+
+  /// Level-1 sub-graph: account & insurance.
+  node accountFlow : subgraph("account-insurance-menu") {
+    depends_on = [collectMainMenu]
+    input {
+      callId     = ctx.callId
+      customerId = ctx.customerId
+    }
+  }
+
+  /// Level-1 sub-graph: orders.
+  node ordersFlow : subgraph("orders-menu") {
+    depends_on = [collectMainMenu]
+    input {
+      callId     = ctx.callId
+      customerId = ctx.customerId
+    }
+  }
+
+  /// Level-1 sub-graph: complaints.
+  node complaintsFlow : subgraph("complaints-menu") {
+    depends_on = [collectMainMenu]
+    input {
+      callId     = ctx.callId
+      customerId = ctx.customerId
+    }
+  }
+
+  /// Fallback to live agent.
+  node transferLiveAgent : TransferAgent {
+    depends_on = [collectMainMenu]
+    input {
+      callId     = ctx.callId
+      customerId = ctx.customerId
+      menuId     = "main-menu"
+    }
+  }
+
+  /// Route one Level-1 flow by collected key.
+  branch on collectMainMenu.output.key {
+    "1" -> billingFlow
+    "2" -> techFlow
+    "3" -> accountFlow
+    "4" -> ordersFlow
+    "5" -> complaintsFlow
+    otherwise -> transferLiveAgent
+  }
+
+  /// Post-flow survey.
+  node satisfactionSurvey : SatisfactionSurvey {
+    depends_on = [collectMainMenu]
+    input {
+      callId = ctx.callId
+      selectedKey = collectMainMenu.output.key
+    }
+  }
+
+  /// Build final call summary.
+  node callSummary : CallSummaryBuilder {
+    depends_on = [satisfactionSurvey]
+    input {
+      callId      = ctx.callId
+      customerId  = ctx.customerId
+      selectedKey = collectMainMenu.output.key
+      surveyScore = satisfactionSurvey.output.score
+    }
+  }
+
+  /// Persist call summary.
+  node saveCallRecord : SaveCallRecord {
+    depends_on = [callSummary]
+    input {
+      callId     = callSummary.output.callId
+      customerId = callSummary.output.customerId
+      menuPath   = callSummary.output.menuPath
+      resolution = callSummary.output.resolution
+    }
+  }
+}

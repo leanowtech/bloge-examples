@@ -1,0 +1,83 @@
+/// ❌ ANTIPATTERN: Excessive trivial nodes that should be transforms.
+///
+/// This graph uses separate operator nodes for simple data reformatting
+/// steps (extractName, formatAddress, combineLabel). These add scheduling
+/// overhead and obscure the real business logic.
+///
+/// ✅ CORRECT: Replace the three mapping nodes with a single transform
+/// block (see corrected version at the bottom of this file).
+
+graph excessiveNodes {
+
+  node fetchCustomer : FetchCustomerOperator {
+    input {
+      customerId = ctx.customerId
+    }
+  }
+
+  node fetchOrder : FetchOrderOperator {
+    input {
+      orderId = ctx.orderId
+    }
+  }
+
+  /// ❌ Trivial — just extracts a name; should be a transform field
+  node extractName : ExtractNameOperator {
+    depends_on = [fetchCustomer]
+    input {
+      customer = fetchCustomer.output
+    }
+  }
+
+  /// ❌ Trivial — just formats an address string; should be a transform field
+  node formatAddress : FormatAddressOperator {
+    depends_on = [fetchCustomer]
+    input {
+      customer = fetchCustomer.output
+    }
+  }
+
+  /// ❌ Trivial — just concatenates name + address; should be a transform field
+  node combineLabel : CombineLabelOperator {
+    depends_on = [extractName, formatAddress]
+    input {
+      name    = extractName.output
+      address = formatAddress.output
+    }
+  }
+
+  node shipOrder : ShipOrderOperator {
+    depends_on = [combineLabel, fetchOrder]
+    input {
+      label = combineLabel.output
+      order = fetchOrder.output
+    }
+  }
+}
+
+/// ✅ CORRECTED version — three trivial nodes replaced by one transform:
+///
+/// graph shippingLabel {
+///
+///   node fetchCustomer : FetchCustomerOperator {
+///     input { customerId = ctx.customerId }
+///   }
+///
+///   node fetchOrder : FetchOrderOperator {
+///     input { orderId = ctx.orderId }
+///   }
+///
+///   transform shippingLabel {
+///     name    = fetchCustomer.output.firstName + " " + fetchCustomer.output.lastName
+///     address = fetchCustomer.output.street + ", " + fetchCustomer.output.city
+///     label   = name + " — " + address
+///   }
+///
+///   node shipOrder : ShipOrderOperator {
+///     depends_on = [fetchCustomer, fetchOrder]
+///     input {
+///       label = shippingLabel.label
+///       order = fetchOrder.output
+///     }
+///   }
+/// }

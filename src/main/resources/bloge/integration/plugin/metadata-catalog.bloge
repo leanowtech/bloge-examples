@@ -1,0 +1,23 @@
+/// Lint-clean DSL resource for the Maven plugin example profile.
+///
+/// The bloge-plugin-example profile runs the lint goal against only this folder so the
+/// intentionally broken antipattern DSL files do not interfere with the build-time example.
+graph pluginCatalogDemo {
+  node prioritizeTicket : PluginPriorityOperator {
+    input {
+      ticketId = ctx.ticketId
+      message = ctx.message
+    }
+    timeout = 1s
+  }
+
+  node buildEscalationPlan : PluginEscalationOperator {
+    depends_on = [prioritizeTicket]
+    input {
+      ticketId = ctx.ticketId
+      priority = prioritizeTicket.output.priority
+      score = prioritizeTicket.output.score
+    }
+    timeout = 1s
+  }
+}

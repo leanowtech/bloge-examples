@@ -1,0 +1,68 @@
+{
+  "kind": "graph-result",
+  "outputs": {
+    "assignRoutes": [
+      {
+        "dispatchParcel": {
+          "parcelId": "PKG-001",
+          "routeId": "RT-PKG-001",
+          "status": "DISPATCHED"
+        }
+      },
+      {
+        "dispatchParcel": {
+          "parcelId": "PKG-002",
+          "routeId": "RT-PKG-002",
+          "status": "DISPATCHED"
+        }
+      },
+      {
+        "dispatchParcel": {
+          "parcelId": "PKG-003",
+          "routeId": "RT-PKG-003",
+          "status": "DISPATCHED"
+        }
+      }
+    ],
+    "dispatchReport": {
+      "completedAt": "<instant>",
+      "delivered": 3,
+      "totalParcels": 3
+    },
+    "fetchParcels": {
+      "parcels": [
+        {
+          "destination": "London",
+          "parcelId": "PKG-001",
+          "weight": 2.5
+        },
+        {
+          "destination": "Paris",
+          "parcelId": "PKG-002",
+          "weight": 1.8
+        },
+        {
+          "destination": "Berlin",
+          "parcelId": "PKG-003",
+          "weight": 4.2
+        }
+      ],
+      "warehouseId": "WH-EAST-01"
+    },
+    "pollAllDispatched": {
+      "checkAllStatus": {
+        "allDelivered": true,
+        "delivered": 3,
+        "pending": 0,
+        "total": 3
+      }
+    }
+  },
+  "statuses": {
+    "assignRoutes": "COMPLETED",
+    "dispatchReport": "COMPLETED",
+    "fetchParcels": "COMPLETED",
+    "pollAllDispatched": "COMPLETED"
+  },
+  "success": true
+}

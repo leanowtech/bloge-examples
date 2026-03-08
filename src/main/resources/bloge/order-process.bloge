@@ -1,0 +1,88 @@
+/// Processes an order by fetching user and product data, calculating price, and branching on credit.
+///
+/// Fetches the user profile and product catalogue in parallel, calculates the total price,
+/// projects an order summary via a zero-cost transform, runs a credit check, and branches
+/// to either create the order or reject it based on credit approval.
+///
+/// Key DSL concepts demonstrated:
+///   depends_on = [a, b]  — calcPrice fans in from fetchUser and fetchProducts (parallel fetch)
+///   transform            — orderSummary projects upstream outputs at zero cost; no operator is scheduled
+///   branch on <expr>     — exactly one of createOrder or rejectOrder executes; the other is skipped
+///   retry = { }          — retries fetchUser and checkCredit on transient failures
+///   fallback = { }       — static substitute when the credit service is unavailable
+///   timeout = Ns         — cancels fetchUser and fetchProducts if exceeded
+///
+/// Context variables:
+///   ctx.userId     — identifier of the user placing the order
+///   ctx.productIds — list of product identifiers included in the order
+graph orderProcess {
+
+  /// Fetches the user profile; retries twice on transient failures
+  node fetchUser : FetchUserOperator {
+    input {
+      userId = ctx.userId
+    }
+    timeout = 3s
+    retry = { attempts: 2, backoff: 200ms, strategy: exponential }
+  }
+
+  /// Fetches product details for all requested product IDs; runs in parallel with fetchUser
+  node fetchProducts : FetchProductsOperator {
+    input {
+      productIds = ctx.productIds
+    }
+    timeout = 5s
+  }
+
+  /// Calculates the total order price including any discounts; fans in from fetchUser and fetchProducts
+  node calcPrice : CalcPriceOperator {
+    depends_on = [fetchUser, fetchProducts]
+    input {
+      user     = fetchUser.output
+      products = fetchProducts.output
+    }
+  }
+
+  /// Combines user and pricing data into an order summary
+  transform orderSummary {
+    customerName = fetchUser.output.name
+    customerEmail = fetchUser.output.email
+    itemCount = fetchProducts.output.items.size
+    total = calcPrice.output.total
+  }
+
+  /// Verifies the user has sufficient credit for the order total; falls back to rejected if unavailable
+  node checkCredit : CreditCheckOperator {
+    depends_on = [fetchUser, calcPrice]
+    input {
+      userId = fetchUser.output.id
+      amount = calcPrice.output.total
+    }
+    retry = { attempts: 3, backoff: 100ms, strategy: jitter }
+    fallback = { approved: false, reason: "credit service unavailable" }
+  }
+
+  /// Routes to order creation or rejection based on credit approval; exactly one branch executes
+  branch on checkCredit.output.approved {
+    true  -> createOrder
+    false -> rejectOrder
+  }
+
+  /// Creates and persists the order record when credit is approved
+  node createOrder : CreateOrderOperator {
+    depends_on = [calcPrice]
+    input {
+      user  = fetchUser.output
+      price = calcPrice.output
+    }
+  }
+
+  /// Records the rejection and notifies the user when credit is denied
+  node rejectOrder : RejectOrderOperator {
+    depends_on = [checkCredit]
+    input {
+      userId = fetchUser.output.id
+      reason = checkCredit.output.reason
+    }
+  }
+}

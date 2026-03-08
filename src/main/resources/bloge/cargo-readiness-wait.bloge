@@ -1,0 +1,127 @@
+/// Long-running cross-dock coordination that resumes on the FIRST truck arrival.
+///
+/// A consolidation shipment is allocated to one of two trucks (primary or backup).
+/// The cross-dock hub must begin loading as soon as EITHER truck arrives.
+/// The await node fires on the first "truck.arrived" event regardless of which
+/// truck ID matches — demonstrating OR-mode event correlation.
+///
+/// Key DSL concepts demonstrated:
+///   await <id> { mode = or ... }
+///                      — OR-mode correlation: the await resolves as soon as ANY
+///                        one of the listed events arrives; remaining events are
+///                        ignored (no further waits)
+///   event "name" where — two matchers for different truck IDs; the engine fires
+///                        when the first of either arrives
+///   optional event     — an event marked { optional = true } does not block AND-mode
+///                        resolution (not shown here, but mode = or provides similar
+///                        semantics for the OR case)
+///   timeout = 4h       — escalate to dispatch manager if no truck arrives in 4 h
+///
+/// Lifecycle:
+///   1. execute()     → graph suspends at awaitTruckArrival
+///   2. Truck GPS     → POST "truck.arrived" for either truckId
+///   3. publishEvent() → OR-mode matches immediately on first event
+///   4. Downstream    → loadCargo → depart
+///
+/// Context variables:
+///   ctx.shipmentId   — shipment tracking identifier
+///   ctx.truckIdA     — primary truck identifier
+///   ctx.truckIdB     — backup truck identifier
+///   ctx.warehouseId  — cross-dock warehouse identifier
+graph cargoReadinessWait {
+
+  /// Create the consolidation manifest and notify both trucks.
+  node prepareManifest : PrepareManifestOperator {
+    input {
+      shipmentId  = ctx.shipmentId
+      warehouseId = ctx.warehouseId
+    }
+    timeout = 5s
+  }
+
+  /// Send pick-up instructions to the primary truck.
+  node notifyTruckA : NotifyTruckOperator {
+    depends_on = [prepareManifest]
+    input {
+      truckId    = ctx.truckIdA
+      shipmentId = ctx.shipmentId
+      manifest   = prepareManifest.output
+    }
+  }
+
+  /// Send pick-up instructions to the backup truck.
+  node notifyTruckB : NotifyTruckOperator {
+    depends_on = [prepareManifest]
+    input {
+      truckId    = ctx.truckIdB
+      shipmentId = ctx.shipmentId
+      manifest   = prepareManifest.output
+    }
+  }
+
+  /// Suspend until EITHER truck check-in event arrives at the hub.
+  ///
+  /// mode = or means the first matching event wins; the other truck's event
+  /// (if it arrives later) is simply discarded by the engine.
+  ///
+  /// The truck GPS unit POSTs to your webhook handler which calls:
+  ///   engine.publishEvent("truck.arrived", truckId, { truckId, arrivedAt, bay })
+  await awaitTruckArrival {
+    depends_on = [notifyTruckA, notifyTruckB]
+    mode = or
+    event "truck.arrived" where truckId = ctx.truckIdA
+    event "truck.arrived" where truckId = ctx.truckIdB
+    timeout = 4h
+    on_timeout {
+      status     = "escalated"
+      reason     = "No truck arrived within 4-hour window"
+    }
+  }
+
+  /// Branch on arrival outcome: truck arrived → load; timeout → escalate.
+  branch on awaitTruckArrival.output.status {
+    "arrived"   -> assignLoadingBay
+    otherwise   -> escalateToDispatch
+  }
+
+  /// Assign the dock bay and begin the loading sequence.
+  node assignLoadingBay : AssignLoadingBayOperator {
+    depends_on = [awaitTruckArrival]
+    input {
+      shipmentId = ctx.shipmentId
+      truckId    = awaitTruckArrival.output.truckId
+      arrivedAt  = awaitTruckArrival.output.arrivedAt
+    }
+  }
+
+  /// Record cargo loaded onto the truck and confirm departure.
+  node loadCargo : LoadCargoOperator {
+    depends_on = [assignLoadingBay]
+    input {
+      shipmentId = ctx.shipmentId
+      bay        = assignLoadingBay.output.bay
+      manifest   = prepareManifest.output
+    }
+    timeout = 60s
+  }
+
+  /// Update the shipment status and notify the consignee.
+  node confirmDeparture : ConfirmDepartureOperator {
+    depends_on = [loadCargo]
+    input {
+      shipmentId = ctx.shipmentId
+      truckId    = awaitTruckArrival.output.truckId
+      loadedAt   = loadCargo.output.completedAt
+    }
+  }
+
+  /// Alert the dispatch manager and create a recovery task.
+  node escalateToDispatch : EscalateToDispatchOperator {
+    depends_on = [awaitTruckArrival]
+    input {
+      shipmentId  = ctx.shipmentId
+      warehouseId = ctx.warehouseId
+      reason      = awaitTruckArrival.output.reason
+    }
+  }
+}

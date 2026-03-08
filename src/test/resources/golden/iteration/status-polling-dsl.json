@@ -1,0 +1,30 @@
+{
+  "kind": "graph-result",
+  "outputs": {
+    "fetchResult": {
+      "completedAt": "<instant>",
+      "data": {
+        "payload": "processed-data",
+        "status": "UNKNOWN"
+      },
+      "jobId": "JOB-DATA_EXPORT-001"
+    },
+    "pollStatus": {
+      "checkStatus": {
+        "jobId": "JOB-DATA_EXPORT-001",
+        "progress": 100,
+        "status": "READY"
+      }
+    },
+    "submitJob": {
+      "jobId": "JOB-DATA_EXPORT-001",
+      "status": "SUBMITTED"
+    }
+  },
+  "statuses": {
+    "fetchResult": "COMPLETED",
+    "pollStatus": "COMPLETED",
+    "submitJob": "COMPLETED"
+  },
+  "success": true
+}

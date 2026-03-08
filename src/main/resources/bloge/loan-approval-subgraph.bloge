@@ -1,0 +1,92 @@
+/// Processes a loan application through parallel credit and compliance sub-graphs then branches on the underwriting decision.
+///
+/// Validates the application, then runs creditAssessment and complianceCheck sub-graphs
+/// concurrently. Both results are fed into underwriting, and the graph branches to generate
+/// either an approval letter or a rejection notice based on the outcome.
+///
+/// Key DSL concepts demonstrated:
+///   subgraph("name")     — each sub-graph embeds a full pipeline; its final node's output is the result
+///   depends_on = [a, b]  — underwritingDecision fans in from both parallel sub-graphs
+///   branch on <expr>     — exactly one of generateApprovalLetter or generateRejectionNotice executes
+///   timeout = Ns         — each sub-graph is independently time-boxed to 30 s
+///
+/// Context variables:
+///   ctx.applicationId   — unique identifier of the loan application
+///   ctx.applicantName   — full name of the applicant
+///   ctx.requestedAmount — principal amount requested
+///   ctx.termMonths      — loan duration in months
+///   ctx.employerId      — applicant's employer identifier used in the credit assessment sub-graph
+graph loanApprovalPipeline {
+
+  /// Receives and validates the incoming loan application
+  node receiveApplication : ReceiveApplicationOperator {
+    input {
+      applicationId   = ctx.applicationId
+      applicantName   = ctx.applicantName
+      requestedAmount = ctx.requestedAmount
+      termMonths      = ctx.termMonths
+      employerId      = ctx.employerId
+    }
+    timeout = 3s
+  }
+
+  /// Runs credit assessment sub-graph: creditQuery → incomeVerification → debtRatioCalc → riskScoring
+  node creditAssessment : subgraph("credit-assessment") {
+    depends_on = [receiveApplication]
+    input {
+      applicationId   = receiveApplication.output.applicationId
+      applicantName   = receiveApplication.output.applicantName
+      requestedAmount = receiveApplication.output.requestedAmount
+      employerId      = receiveApplication.output.employerId
+    }
+    timeout = 30s
+  }
+
+  /// Runs compliance check sub-graph: amlScreening → kycVerification → sanctionListCheck → complianceDetermination
+  node complianceCheck : subgraph("compliance-check") {
+    depends_on = [receiveApplication]
+    input {
+      applicationId = receiveApplication.output.applicationId
+      applicantName = receiveApplication.output.applicantName
+    }
+    timeout = 30s
+  }
+
+  /// Makes underwriting decision based on credit and compliance sub-graph results
+  node underwritingDecision : UnderwritingDecisionOperator {
+    depends_on = [creditAssessment, complianceCheck]
+    input {
+      applicationId = receiveApplication.output.applicationId
+      credit        = creditAssessment.output.riskScoring
+      compliance    = complianceCheck.output.complianceDetermination
+    }
+  }
+
+  /// Generates approval letter for approved loans
+  node generateApprovalLetter : GenerateApprovalLetterOperator {
+    depends_on = [underwritingDecision]
+    input {
+      applicationId   = underwritingDecision.output.applicationId
+      applicantName   = ctx.applicantName
+      requestedAmount = ctx.requestedAmount
+      approvedRate    = underwritingDecision.output.approvedRate
+      termMonths      = ctx.termMonths
+    }
+  }
+
+  /// Generates rejection notice for declined loans
+  node generateRejectionNotice : GenerateRejectionNoticeOperator {
+    depends_on = [underwritingDecision]
+    input {
+      applicationId = underwritingDecision.output.applicationId
+      applicantName = ctx.applicantName
+      reason        = underwritingDecision.output.reason
+    }
+  }
+
+  /// Routes to approval letter or rejection notice; exactly one branch executes, others are skipped
+  branch on underwritingDecision.output.decision {
+    "approved" -> generateApprovalLetter
+    otherwise  -> generateRejectionNotice
+  }
+}

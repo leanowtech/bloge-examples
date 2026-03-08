@@ -1,0 +1,75 @@
+/// BFF dashboard aggregation: five parallel data fetches with timeout, retry, and fallback.
+///
+/// All five fetch nodes run concurrently with no inter-dependencies, each protected by a
+/// timeout and either a retry policy or a fallback value to guarantee partial results are
+/// always available. The aggregate node fans in all five outputs into one dashboard payload.
+///
+/// Key DSL concepts demonstrated:
+///   parallel fan-out    — all five fetch nodes execute concurrently (no depends_on between them)
+///   timeout = Ns        — cancels a node if it exceeds the specified wall-clock duration
+///   retry = { }         — retries the node on failure with configurable backoff and strategy
+///   fallback = { }      — supplies a static substitute result when a node throws or times out
+///   depends_on = [...]  — aggregate waits for ALL five fetch nodes to complete (fan-in)
+///
+/// Context variables:
+///   ctx.userId — the authenticated user whose dashboard data is assembled
+graph bffDashboard {
+
+  /// Fetches the user's profile information; retried once with 100 ms backoff on failure
+  node fetchProfile : FetchProfileOperator {
+    input {
+      userId = ctx.userId
+    }
+    timeout = 2s
+    retry = { attempts: 1, backoff: 100ms }
+  }
+
+  /// Fetches the user's recent order history; falls back to empty list on timeout or failure
+  node fetchOrders : FetchOrdersOperator {
+    input {
+      userId = ctx.userId
+    }
+    timeout = 3s
+    fallback = { recentOrderIds: [], totalOrders: 0 }
+  }
+
+  /// Fetches personalised product recommendations; falls back to empty list on timeout or failure
+  node fetchRecommendations : FetchRecommendationsOperator {
+    input {
+      userId = ctx.userId
+    }
+    timeout = 2s
+    fallback = { productIds: [] }
+  }
+
+  /// Fetches unread notifications; retried up to 2× with exponential backoff, then falls back to zero
+  node fetchNotifications : FetchNotificationsOperator {
+    input {
+      userId = ctx.userId
+    }
+    timeout = 2s
+    retry = { attempts: 2, backoff: 50ms, strategy: exponential }
+    fallback = { unread: 0, messages: [] }
+  }
+
+  /// Fetches the user's loyalty points and tier; falls back to zero points / "Unknown" tier
+  node fetchLoyalty : FetchLoyaltyOperator {
+    input {
+      userId = ctx.userId
+    }
+    timeout = 1s
+    fallback = { points: 0, tier: "Unknown" }
+  }
+
+  /// Merges all five fetch outputs into a single dashboard response payload
+  node aggregate : AggregateOperator {
+    depends_on = [fetchProfile, fetchOrders, fetchRecommendations, fetchNotifications, fetchLoyalty]
+    input {
+      profile         = fetchProfile.output
+      orders          = fetchOrders.output
+      recommendations = fetchRecommendations.output
+      notifications   = fetchNotifications.output
+      loyalty         = fetchLoyalty.output
+    }
+  }
+}

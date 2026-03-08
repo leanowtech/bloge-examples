@@ -1,0 +1,101 @@
+/// Triages an online patient consultation by fetching records, analysing symptoms, and routing by urgency.
+///
+/// Fetches the patient record and medical history in parallel, combines them with the
+/// chief complaint to analyse symptoms, runs an AI pre-diagnosis, then branches on the
+/// computed triage level to route the patient to emergency care, a specialist, or a
+/// general-practice queue.
+///
+/// Key DSL concepts demonstrated:
+///   depends_on = [a, b]  — analyzeSymptoms fans in from both parallel fetch nodes
+///   branch on <expr>     — exactly one routing node executes based on triageLevel; others are skipped
+///   retry = { }          — retries fetchPatientRecord and aiPreDiagnosis on transient failures
+///   timeout = Ns         — enforces time limits on record fetches and AI inference
+///
+/// Context variables:
+///   ctx.patientId      — unique identifier of the patient being triaged
+///   ctx.chiefComplaint — free-text description of the patient's presenting complaint
+graph onlineTriage {
+
+  /// Retrieves the patient's demographic and clinical record; retries once on failure
+  node fetchPatientRecord : FetchPatientRecordOperator {
+    input {
+      patientId = ctx.patientId
+    }
+    timeout = 3s
+    retry = { attempts: 1, backoff: 200ms, strategy: exponential }
+  }
+
+  /// Retrieves the patient's longitudinal medical history; runs in parallel with fetchPatientRecord
+  node fetchMedicalHistory : FetchMedicalHistoryOperator {
+    input {
+      patientId = ctx.patientId
+    }
+    timeout = 3s
+  }
+
+  /// Combines patient record, history, and chief complaint to classify the presenting symptoms
+  node analyzeSymptoms : AnalyzeSymptomsOperator {
+    depends_on = [fetchPatientRecord, fetchMedicalHistory]
+    input {
+      patient        = fetchPatientRecord.output
+      history        = fetchMedicalHistory.output
+      chiefComplaint = ctx.chiefComplaint
+    }
+    timeout = 5s
+  }
+
+  /// Generates a differential diagnosis using an AI model; retries twice on transient failures
+  node aiPreDiagnosis : AiPreDiagnosisOperator {
+    depends_on = [analyzeSymptoms]
+    input {
+      patient  = fetchPatientRecord.output
+      symptoms = analyzeSymptoms.output
+      history  = fetchMedicalHistory.output
+    }
+    retry = { attempts: 2, backoff: 500ms, strategy: exponential }
+    timeout = 10s
+  }
+
+  /// Converts the AI diagnosis into a triage level and recommends a care department
+  node triageDecision : TriageDecisionOperator {
+    depends_on = [aiPreDiagnosis]
+    input {
+      diagnosis = aiPreDiagnosis.output
+      patient   = fetchPatientRecord.output
+    }
+  }
+
+  /// Routes the patient to the appropriate care pathway; exactly one branch executes, others are skipped
+  branch on triageDecision.output.triageLevel {
+    "emergency"  -> routeEmergency
+    "specialist" -> routeSpecialist
+    otherwise    -> routeGeneral
+  }
+
+  /// Immediately escalates the patient to the emergency department
+  node routeEmergency : RouteEmergencyOperator {
+    depends_on = [triageDecision]
+    input {
+      patient   = fetchPatientRecord.output
+      diagnosis = aiPreDiagnosis.output
+    }
+  }
+
+  /// Books a specialist consultation in the recommended care department
+  node routeSpecialist : RouteSpecialistOperator {
+    depends_on = [triageDecision]
+    input {
+      patient    = fetchPatientRecord.output
+      diagnosis  = aiPreDiagnosis.output
+      department = triageDecision.output.department
+    }
+  }
+
+  /// Adds the patient to the general-practice queue
+  node routeGeneral : RouteGeneralOperator {
+    depends_on = [triageDecision]
+    input {
+      patient = fetchPatientRecord.output
+    }
+  }
+}

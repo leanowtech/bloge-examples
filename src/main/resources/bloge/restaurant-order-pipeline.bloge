@@ -1,0 +1,99 @@
+/// Routes a restaurant order through kitchen dispatch, quality check, and fulfilment by order type.
+///
+/// Validates the order, verifies payment, dispatches to the kitchen via a sub-graph, and
+/// performs a quality check. The graph then branches on order type: dine-in orders proceed
+/// to table preparation, while delivery orders are routed through a rider-dispatch sub-graph.
+///
+/// Key DSL concepts demonstrated:
+///   subgraph("name")     — kitchen-dispatch and delivery-coordination are embedded pipelines
+///   branch on <expr>     — exactly one of prepareDineIn or deliveryCoordination executes; the other is skipped
+///   depends_on = [a, b]  — orderComplete fans in from both branch targets (post-branch join)
+///   timeout = Ns         — sub-graphs and payment verification are individually time-boxed
+///
+/// Context variables:
+///   ctx.orderId         — unique identifier of the order
+///   ctx.restaurantId    — identifier of the restaurant fulfilling the order
+///   ctx.items           — list of ordered items forwarded to the kitchen sub-graph
+///   ctx.orderType       — "dineIn" or delivery variant that drives the branch
+///   ctx.customerAddress — delivery address used only in the delivery-coordination sub-graph
+///   ctx.totalAmount     — total charge verified by the payment step
+graph restaurantOrderPipeline {
+
+  /// Receives and validates the incoming restaurant order
+  node receiveOrder : ReceiveOrderOperator {
+    input {
+      orderId         = ctx.orderId
+      restaurantId    = ctx.restaurantId
+      items           = ctx.items
+      orderType       = ctx.orderType
+      customerAddress = ctx.customerAddress
+    }
+    timeout = 3s
+  }
+
+  /// Verifies payment for the order
+  node paymentVerification : PaymentVerificationOperator {
+    depends_on = [receiveOrder]
+    input {
+      orderId     = receiveOrder.output.orderId
+      totalAmount = ctx.totalAmount
+    }
+    timeout = 10s
+  }
+
+  /// Dispatches order to kitchen: dishValidation → ingredientCheck → stationAssignment → cookingTimeEstimate → queueForPickup
+  node kitchenDispatch : subgraph("kitchen-dispatch") {
+    depends_on = [paymentVerification]
+    input {
+      orderId      = receiveOrder.output.orderId
+      restaurantId = receiveOrder.output.restaurantId
+      items        = receiveOrder.output.items
+    }
+    timeout = 30s
+  }
+
+  /// Performs quality check on prepared dishes
+  node qualityCheck : QualityCheckOperator {
+    depends_on = [kitchenDispatch]
+    input {
+      orderId       = receiveOrder.output.orderId
+      orderType     = receiveOrder.output.orderType
+      queuePosition = kitchenDispatch.output.queueForPickup.queuePosition
+    }
+  }
+
+  /// Routes dine-in orders to table preparation and all other order types to delivery coordination
+  branch on qualityCheck.output.orderType {
+    "dineIn"  -> prepareDineIn
+    otherwise -> deliveryCoordination
+  }
+
+  /// Prepares the dine-in table for the customer
+  node prepareDineIn : PrepareDineInOperator {
+    depends_on = [qualityCheck]
+    input {
+      orderId     = qualityCheck.output.orderId
+      tableNumber = ctx.tableNumber
+    }
+  }
+
+  /// Coordinates delivery: riderMatching → routeCalculation → etaEstimation → realtimeTrackingSetup
+  node deliveryCoordination : subgraph("delivery-coordination") {
+    depends_on = [qualityCheck]
+    input {
+      orderId         = receiveOrder.output.orderId
+      customerAddress = receiveOrder.output.customerAddress
+    }
+    timeout = 30s
+  }
+
+  /// Finalizes the order and records completion
+  node orderComplete : OrderCompleteOperator {
+    depends_on = [prepareDineIn, deliveryCoordination]
+    input {
+      orderId           = ctx.orderId
+      completionChannel = qualityCheck.output.orderType
+      details           = qualityCheck.output.orderId
+    }
+  }
+}

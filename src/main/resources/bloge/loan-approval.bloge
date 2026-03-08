@@ -1,0 +1,128 @@
+/// Evaluates a loan application through parallel risk checks and routes the decision.
+///
+/// Fetches the application, then runs credit, fraud, income, and blacklist checks in
+/// parallel. The four results are aggregated into a composite risk score; a decision node
+/// applies underwriting policy and the graph branches to approve, reject, or escalate to
+/// manual review.
+///
+/// Key DSL concepts demonstrated:
+///   depends_on = [a, b]  — aggregateRisk fans in from all four parallel risk-check nodes
+///   transform            — riskSummary projects upstream outputs at zero cost for audit logging
+///   branch on <expr>     — exactly one of approveLoan, rejectLoan, or manualReview executes; others are skipped
+///   retry = { }          — retries checkCredit on transient failures
+///   fallback = { }       — static substitute result when detectFraud or checkCredit is unavailable
+///   timeout = Ns         — cancels fetchApplication, detectFraud, verifyIncome, or checkBlacklist if exceeded
+///
+/// Context variables:
+///   ctx.appId — unique identifier of the loan application being evaluated
+graph loanApproval {
+
+  /// Loads the full application record from the application store
+  node fetchApplication : FetchApplicationOperator {
+    input {
+      appId = ctx.appId
+    }
+    timeout = 3s
+  }
+
+  /// Runs a credit-bureau check; retries on transient failures, falls back to score 0 if unavailable
+  node checkCredit : CheckCreditOperator {
+    depends_on = [fetchApplication]
+    input {
+      userId = fetchApplication.output.userId
+    }
+    retry = { attempts: 3, backoff: 200ms, strategy: exponential }
+    fallback = { score: 0, level: "unknown" }
+  }
+
+  /// Evaluates fraud signals for the applicant; falls back to maximum-risk score if service is down
+  node detectFraud : DetectFraudOperator {
+    depends_on = [fetchApplication]
+    input {
+      userId = fetchApplication.output.userId
+      amount = fetchApplication.output.amount
+    }
+    timeout = 5s
+    fallback = { riskScore: 1.0, flags: ["service_unavailable"] }
+  }
+
+  /// Verifies declared income via the payroll provider
+  node verifyIncome : VerifyIncomeOperator {
+    depends_on = [fetchApplication]
+    input {
+      userId = fetchApplication.output.userId
+    }
+    timeout = 5s
+  }
+
+  /// Checks whether the applicant appears on any internal or regulatory blacklist
+  node checkBlacklist : CheckBlacklistOperator {
+    depends_on = [fetchApplication]
+    input {
+      userId = fetchApplication.output.userId
+    }
+    timeout = 3s
+  }
+
+  /// Fans in from all four parallel risk checks and computes a composite risk score
+  node aggregateRisk : AggregateRiskOperator {
+    depends_on = [checkCredit, detectFraud, verifyIncome, checkBlacklist]
+    input {
+      credit    = checkCredit.output
+      fraud     = detectFraud.output
+      income    = verifyIncome.output
+      blacklist = checkBlacklist.output
+    }
+  }
+
+  /// Summarizes risk signals from all upstream checks for audit logging
+  transform riskSummary {
+    creditLevel = checkCredit.output.level
+    fraudScore = detectFraud.output.riskScore
+    incomeVerified = verifyIncome.output.verified
+    blacklisted = checkBlacklist.output.isBlacklisted
+    compositeScore = aggregateRisk.output.compositeScore
+  }
+
+  /// Applies underwriting policy to the aggregated risk score and emits the final decision
+  node makeDecision : MakeDecisionOperator {
+    depends_on = [aggregateRisk]
+    input {
+      risk        = aggregateRisk.output
+      application = fetchApplication.output
+    }
+  }
+
+  /// Routes to the appropriate outcome node; exactly one branch executes, others are skipped
+  branch on makeDecision.output.decision {
+    "approved"  -> approveLoan
+    "rejected"  -> rejectLoan
+    otherwise   -> manualReview
+  }
+
+  /// Generates and records the loan approval
+  node approveLoan : ApproveLoanOperator {
+    depends_on = [makeDecision]
+    input {
+      application = fetchApplication.output
+      risk        = aggregateRisk.output
+    }
+  }
+
+  /// Records the loan rejection and notifies the applicant with the stated reason
+  node rejectLoan : RejectLoanOperator {
+    depends_on = [makeDecision]
+    input {
+      reason = makeDecision.output.reason
+    }
+  }
+
+  /// Escalates the application to a human underwriter for manual review
+  node manualReview : ManualReviewOperator {
+    depends_on = [makeDecision]
+    input {
+      application = fetchApplication.output
+      risk        = aggregateRisk.output
+    }
+  }
+}

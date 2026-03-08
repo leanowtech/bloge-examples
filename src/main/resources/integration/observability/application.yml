@@ -1,0 +1,22 @@
+spring:
+  application:
+    name: bloge-observability-example
+  bloge:
+    dsl-locations: classpath:bloge/integration/spring/
+    observability:
+      metrics:
+        enabled: true
+        prefix: bloge
+      tracing:
+        enabled: true
+      logging:
+        enabled: true
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,prometheus,bloge,blogestats
+  otlp:
+    tracing:
+      endpoint: http://localhost:4318/v1/traces
+      transport: http

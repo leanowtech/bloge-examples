@@ -1,0 +1,58 @@
+/// Processes a batch of pending bank transfers sequentially for a given account.
+///
+/// Fetches the pending transfers for the account, then processes each one in strict
+/// sequential order — risk check → execute transfer → record ledger.  Sequential
+/// ordering is critical so that each transfer observes the balance updated by the
+/// previous one before it executes.  A final audit report is produced once all
+/// transfers have completed.
+///
+/// Key DSL concepts demonstrated:
+///   foreach … sequential   — processes items one-at-a-time (not in parallel) to
+///                            preserve balance consistency across transfers
+///   depends_on             — fan-in: waits for all listed nodes to complete before
+///                            the dependent node starts
+///
+/// Context variables:
+///   ctx.accountId — ID of the account whose pending transfers should be processed
+graph sequentialTransfer {
+
+  /// Fetches the list of pending bank transfers
+  node fetchTransfers : TransferFetcherOperator {
+    input { accountId = ctx.accountId }
+  }
+
+  /// foreach sequential mode: process each transfer one-at-a-time to maintain balance consistency
+  /// transfer.amount, transfer.fromAccount, transfer.toAccount — deep field access on current transfer
+  /// idx — used for audit logging
+  foreach processTransfers : (transfer, idx) in fetchTransfers.output.transfers sequential {
+    node riskCheck : RiskCheckOperator {
+      input {
+        amount      = transfer.amount
+        fromAccount = transfer.fromAccount
+        toAccount   = transfer.toAccount
+        index       = idx
+      }
+    }
+    node executeTransfer : TransferExecutionOperator {
+      depends_on = [riskCheck]
+      input {
+        transfer = transfer
+        riskResult = riskCheck.output
+      }
+    }
+    node recordLedger : LedgerRecordOperator {
+      depends_on = [executeTransfer]
+      input {
+        transfer = transfer
+        execution = executeTransfer.output
+        index = idx
+      }
+    }
+  }
+
+  /// Produces a final audit report of all processed transfers
+  node auditReport : AuditReportOperator {
+    depends_on = [processTransfers]
+    input { transferResults = processTransfers.output }
+  }
+}

@@ -1,0 +1,94 @@
+/// Routes a customer support ticket to the appropriate handler based on sentiment and priority.
+///
+/// Customer details and ticket history are fetched in parallel; sentiment is then
+/// analysed across both inputs and a priority is classified.  A branch directs VIP
+/// customers to a dedicated agent, normal-priority tickets to the standard queue, and
+/// low-priority tickets to automatic resolution.
+///
+/// Key DSL concepts demonstrated:
+///   depends_on = [a, b]   — fan-in: analyzeSentiment waits for both fetch nodes to
+///                           complete before starting
+///   branch on <expr>      — exactly one handler executes; the other two are skipped
+///   timeout               — per-node cancellation deadline
+///   retry / fallback      — automatic retry with a neutral-sentiment fallback on failure
+///
+/// Context variables:
+///   ctx.customerId — ID of the customer who submitted the ticket
+///   ctx.message    — raw message content of the ticket
+graph ticketRouting {
+
+  /// Fetches the customer's profile; retries twice on transient failure
+  node fetchCustomer : FetchCustomerOperator {
+    input {
+      customerId = ctx.customerId
+    }
+    timeout = 3s
+    retry = { attempts: 2, backoff: 200ms, strategy: exponential }
+  }
+
+  /// Fetches the customer's previous ticket history
+  node fetchTicketHistory : FetchTicketHistoryOperator {
+    input {
+      customerId = ctx.customerId
+    }
+    timeout = 3s
+  }
+
+  /// Analyses message sentiment using customer context and history;
+  /// depends_on fan-in waits for both fetch nodes to complete;
+  /// falls back to a neutral-sentiment result if the operator throws
+  node analyzeSentiment : AnalyzeSentimentOperator {
+    depends_on = [fetchCustomer, fetchTicketHistory]
+    input {
+      customer = fetchCustomer.output
+      history  = fetchTicketHistory.output
+      message  = ctx.message
+    }
+    timeout = 5s
+    retry = { attempts: 1, backoff: 500ms, strategy: exponential }
+    fallback = { sentiment: "neutral", score: 0.0, keywords: [] }
+  }
+
+  /// Classifies the ticket priority (vip / normal / otherwise) from customer profile and sentiment
+  node classifyPriority : ClassifyPriorityOperator {
+    depends_on = [analyzeSentiment]
+    input {
+      customer  = fetchCustomer.output
+      sentiment = analyzeSentiment.output
+    }
+  }
+
+  /// branch on classifyPriority.output.priority — exactly one handler executes; the other two are skipped
+  branch on classifyPriority.output.priority {
+    "vip"    -> assignVipAgent
+    "normal" -> assignNormalAgent
+    otherwise -> autoResolve
+  }
+
+  /// Assigns a VIP-tier agent to handle the ticket with elevated priority
+  node assignVipAgent : AssignVipAgentOperator {
+    depends_on = [classifyPriority]
+    input {
+      customerId = fetchCustomer.output.id
+      priority   = "vip"
+    }
+  }
+
+  /// Assigns a standard-tier agent to handle the ticket
+  node assignNormalAgent : AssignNormalAgentOperator {
+    depends_on = [classifyPriority]
+    input {
+      customerId = fetchCustomer.output.id
+      priority   = "normal"
+    }
+  }
+
+  /// Automatically resolves low-priority tickets using detected sentiment keywords
+  node autoResolve : AutoResolveOperator {
+    depends_on = [classifyPriority]
+    input {
+      customerId = fetchCustomer.output.id
+      keywords   = analyzeSentiment.output.keywords
+    }
+  }
+}

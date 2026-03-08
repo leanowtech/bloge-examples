@@ -1,0 +1,17 @@
+/// ❌ ANTIPATTERN: fallback hides every failure behind the same substitute response.
+///
+/// This graph is useful as documentation because it shows why a blanket fallback is dangerous:
+/// malformed requests and transient timeouts look identical to downstream consumers.
+///
+/// ✅ CORRECT: classify permanent failures as non-retryable in Java so validation errors surface,
+/// while transient failures remain retryable and can still trigger a safe manual-review fallback.
+graph overBroadFallback {
+  node authorizePayment : AuthorizePaymentOperator {
+    input {
+      orderId     = ctx.orderId
+      failureMode = ctx.failureMode
+    }
+    timeout = 1s
+    fallback = { status: "manual-review", note: "Fallback hid the real failure mode" }
+  }
+}

@@ -1,0 +1,48 @@
+/// Voice pipeline: real-time audio capture → speech-to-text → text analysis.
+///
+/// The simplest end-to-end streaming graph: a source stream flows through a
+/// transform stream and finally materializes into a single analysis node.
+///
+/// Key DSL concepts demonstrated:
+///   stream node   — declares a streaming operator; emits items through a NodeChannel
+///                   one by one as they are produced (real-time, back-pressured)
+///   .stream input — StreamEdge: downstream node receives items as they arrive from
+///                   the channel (live forwarding, no buffering until stream closes)
+///   .output input — DirectEdge: downstream waits until the stream is fully closed,
+///                   then receives the complete materialized List<T>; use this when
+///                   the downstream operator needs the whole dataset at once
+///   buffer = N    — size of the internal NodeChannel ring-buffer; tune to match
+///                   the production rate vs consumption rate (default: 32)
+///
+/// Context variables:
+///   sessionId — identifies the current voice session for tracing
+graph voicePipeline {
+
+  /// Captures a continuous audio stream from the microphone.
+  /// Emits AudioChunk items (sequenceId, sampleRate, raw bytes) at 16 kHz.
+  stream node audioCapture : AudioCapture {
+    buffer = 64
+  }
+
+  /// Converts audio chunks to text tokens in real-time.
+  /// Receives the live stream via audioCapture.stream (StreamEdge) so it can
+  /// begin transcription before all audio has been captured.
+  /// Emits one TextChunk (sequenceId, text, confidence) per audio chunk.
+  stream node speechToText : SpeechToText {
+    input {
+      audio = audioCapture.stream
+    }
+    buffer = 32
+  }
+
+  /// Analyzes the complete transcribed text.
+  /// Uses speechToText.output (DirectEdge) to receive the fully materialized
+  /// List<TextChunk> after all audio has been transcribed — appropriate here
+  /// because language analysis needs the whole transcript, not partial tokens.
+  node textAnalysis : TextAnalyzer {
+    depends_on = [speechToText]
+    input {
+      transcript = speechToText.output
+    }
+  }
+}

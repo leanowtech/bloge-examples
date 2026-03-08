@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<definitions xmlns="http://www.omg.org/spec/BPMN/20100524/MODEL">
+  <process id="orderProcessBpmn" name="orderProcessBpmn">
+    <startEvent id="start"/>
+
+    <serviceTask id="fetchUser" name="Fetch User" taskDefinitionKey="FetchUser"/>
+    <serviceTask id="fetchProducts" name="Fetch Products" taskDefinitionKey="FetchProducts"/>
+    <serviceTask id="calcPrice" name="Calc Price" taskDefinitionKey="CalcPrice"/>
+    <serviceTask id="checkCredit" name="Check Credit" taskDefinitionKey="CreditCheck"/>
+
+    <exclusiveGateway id="creditDecision" name="Credit Decision" default="flow_reject"/>
+
+    <serviceTask id="createOrder" name="Create Order" taskDefinitionKey="CreateOrder"/>
+    <serviceTask id="rejectOrder" name="Reject Order" taskDefinitionKey="RejectOrder"/>
+
+    <endEvent id="endApproved"/>
+    <endEvent id="endRejected"/>
+
+    <sequenceFlow id="flow_start_user" sourceRef="start" targetRef="fetchUser"/>
+    <sequenceFlow id="flow_user_products" sourceRef="fetchUser" targetRef="fetchProducts"/>
+    <sequenceFlow id="flow_products_price" sourceRef="fetchProducts" targetRef="calcPrice"/>
+    <sequenceFlow id="flow_price_credit" sourceRef="calcPrice" targetRef="checkCredit"/>
+    <sequenceFlow id="flow_credit_decision" sourceRef="checkCredit" targetRef="creditDecision"/>
+
+    <sequenceFlow id="flow_approve" sourceRef="creditDecision" targetRef="createOrder">
+      <conditionExpression><![CDATA[${approved == true}]]></conditionExpression>
+    </sequenceFlow>
+    <sequenceFlow id="flow_reject" sourceRef="creditDecision" targetRef="rejectOrder"/>
+
+    <sequenceFlow id="flow_order_end" sourceRef="createOrder" targetRef="endApproved"/>
+    <sequenceFlow id="flow_reject_end" sourceRef="rejectOrder" targetRef="endRejected"/>
+  </process>
+</definitions>

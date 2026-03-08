@@ -1,0 +1,129 @@
+/// Voice banking: biometric auth → intent detection → transaction execution + compliance recording.
+///
+/// Demonstrates a security-gated workflow with multi-path transaction routing and an
+/// always-on compliance side-chain that uses fallback to avoid blocking the main flow.
+///
+/// Key DSL concepts demonstrated:
+///   auth-gated streaming — voiceprintAuth depends_on audioCapture (stream completed) and gates
+///                          the speechToText step; authentication must pass before transcription
+///   retry = { }         — automatically retries the node on failure; strategy can be
+///                          "fixed" (constant backoff) or "exponential" (doubles each attempt)
+///   transform <name>    — zero-cost field projection that assembles scattered upstream outputs
+///                          (authToken from voiceprintAuth, intent from intentDetection, etc.)
+///                          into a single unified context object without an extra operator node
+///   branch on expr      — evaluates txnContext.intent and executes exactly one transaction node;
+///                          "transfer" → executeTransfer, "balance" → queryBalance, else → agent
+///   fallback = { }      — if complianceRecording fails (operator throws), the engine substitutes
+///                          the static JSON object as the node result instead of failing the graph;
+///                          use for non-critical side-effects that must never block the main flow
+///
+/// Context variables:
+///   accountId — customer bank account identifier
+///   sessionId — voice session identifier used in compliance records
+graph voiceBanking {
+
+  /// Captures audio from the customer voice banking session.
+  /// Audio is captured first so that it can be fed to both authentication and STT.
+  stream node audioCapture : AudioCapture {
+    buffer = 64
+  }
+
+  /// Authenticates the caller via voiceprint biometrics.
+  /// Receives the full audio buffer (audioCapture.output = materialized List<AudioChunk>).
+  /// timeout=10s / retry=2 with fixed 1-second backoff handles transient model latency.
+  /// Returns { authToken, confidenceScore, authenticated } used downstream in txnContext.
+  node voiceprintAuth : VoiceprintAuthenticator {
+    depends_on = [audioCapture]
+    input {
+      audio     = audioCapture.output
+      accountId = ctx.accountId
+    }
+    timeout = 10s
+    retry = { attempts: 2, backoff: 1s, strategy: fixed }
+  }
+
+  /// Transcribes the authenticated caller's request to text.
+  /// depends_on voiceprintAuth ensures transcription only proceeds after auth succeeds —
+  /// if auth fails the retry budget, this and all downstream nodes are never executed.
+  stream node speechToText : SpeechToText {
+    depends_on = [voiceprintAuth]
+    input {
+      audio = audioCapture.output
+    }
+    buffer = 32
+  }
+
+  /// Detects the caller's banking intent from the transcript.
+  /// Returns { intent, amount, targetAccount } where intent ∈ { "transfer", "balance", "agent" }.
+  node intentDetection : BankingIntentDetector {
+    depends_on = [speechToText]
+    input {
+      transcript = speechToText.output
+    }
+    timeout = 5s
+  }
+
+  /// Assembles a unified transaction context from auth and intent results.
+  /// transform fields are evaluated inline — no operator, no scheduling cost.
+  /// txnContext.intent drives the branch below; txnContext.authToken authorizes execution.
+  transform txnContext {
+    accountId   = ctx.accountId
+    authToken   = voiceprintAuth.output.authToken
+    authScore   = voiceprintAuth.output.confidenceScore
+    intent      = intentDetection.output.intent
+    amount      = intentDetection.output.amount
+    targetAccount = intentDetection.output.targetAccount
+  }
+
+  /// Executes a fund transfer — active only when txnContext.intent = "transfer".
+  /// timeout=15s accounts for inter-bank settlement latency.
+  node executeTransfer : TransferExecutor {
+    depends_on = [txnContext]
+    input {
+      accountId     = txnContext.accountId
+      authToken     = txnContext.authToken
+      amount        = txnContext.amount
+      targetAccount = txnContext.targetAccount
+    }
+    timeout = 15s
+  }
+
+  /// Queries account balance — active only when txnContext.intent = "balance".
+  node queryBalance : BalanceQuerier {
+    depends_on = [txnContext]
+    input {
+      accountId = txnContext.accountId
+      authToken = txnContext.authToken
+    }
+  }
+
+  /// Routes to a live banking agent — catch-all for unrecognised intents.
+  node routeToAgent : AgentRouter {
+    depends_on = [txnContext]
+    input {
+      accountId = txnContext.accountId
+    }
+  }
+
+  /// Routes to exactly one transaction node based on the detected intent.
+  branch on txnContext.intent {
+    "transfer" -> executeTransfer
+    "balance"  -> queryBalance
+    otherwise  -> routeToAgent
+  }
+
+  /// Records the call for compliance and audit purposes.
+  /// Runs in parallel with the branch — depends on intentDetection, not on branch targets,
+  /// so recording starts as soon as intent is known regardless of which transaction runs.
+  /// fallback ensures a partial record is stored even if the recorder operator fails,
+  /// so the call outcome is never lost due to a non-critical compliance issue.
+  node complianceRecording : ComplianceRecorder {
+    depends_on = [intentDetection]
+    input {
+      accountId = ctx.accountId
+      intent    = intentDetection.output.intent
+      sessionId = ctx.sessionId
+    }
+    fallback = { status: "recorded_partial", recordingId: "FALLBACK" }
+  }
+}

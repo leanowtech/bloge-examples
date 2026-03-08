@@ -1,0 +1,42 @@
+/// Processes a customer's orders in a streaming batch and produces a summary report.
+///
+/// Orders are loaded from the database and processed in parallel via a streaming
+/// foreach; results are emitted downstream as each item completes rather than
+/// waiting for the whole batch to finish.  Once all items have been processed the
+/// report generator materialises the full result list.
+///
+/// Key DSL concepts demonstrated:
+///   stream foreach   — processes each item and streams its result downstream as it
+///                      completes; does not block waiting for the entire batch
+///   buffer = N       — NodeChannel ring-buffer capacity for the stream edge
+///   .output (input)  — DirectEdge: full materialised List<T> passed to generateReport
+///
+/// Context variables:
+///   ctx.customerId — ID of the customer whose orders should be processed
+graph streamingBatch {
+
+  /// Loads orders from the database
+  node loadOrders : OrderLoader {
+    input {
+      customerId = ctx.customerId
+    }
+  }
+
+  /// Processes each order and streams results as they complete
+  stream foreach processOrders : item in loadOrders.output.orders {
+    buffer = 16
+    node processItem : OrderProcessor {
+      input {
+        order = item
+      }
+    }
+  }
+
+  /// Generates a summary report from all processed orders (materialized)
+  node generateReport : ReportGenerator {
+    depends_on = [processOrders]
+    input {
+      results = processOrders.output
+    }
+  }
+}

@@ -1,0 +1,35 @@
+{
+  "title": "BLOGE Example Overview",
+  "timezone": "browser",
+  "schemaVersion": 39,
+  "version": 1,
+  "panels": [
+    {
+      "type": "timeseries",
+      "title": "Graph duration p95",
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.95, sum(rate(bloge_graph_duration_seconds_bucket[5m])) by (le, graph))"
+        }
+      ]
+    },
+    {
+      "type": "stat",
+      "title": "Retry count",
+      "targets": [
+        {
+          "expr": "sum(rate(bloge_node_retries_total[5m])) by (graph)"
+        }
+      ]
+    },
+    {
+      "type": "stat",
+      "title": "Fallback count",
+      "targets": [
+        {
+          "expr": "sum(rate(bloge_node_fallbacks_total[5m])) by (graph)"
+        }
+      ]
+    }
+  ]
+}

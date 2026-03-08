@@ -1,0 +1,63 @@
+/// Implements a loop-based retry pattern with exponential backoff for a flaky external service.
+///
+/// Prepares the request context, then enters a retry loop that computes an exponential
+/// backoff delay, calls the service, and carries the last error into the next iteration.
+/// The loop exits when the call succeeds or the maximum of 5 attempts is reached.
+///
+/// Key DSL concepts demonstrated:
+///   loop           — repeatedly executes inner nodes; checks until after each iteration
+///   carry { }      — forwards lastError between iterations; read inside the loop as carry.lastError
+///   until <expr>   — loop exits early when callService.output.success is true
+///   loopIteration  — built-in 0-based counter used to calculate the exponential backoff delay
+///   depends_on     — loop waits for prepareRequest; callService waits for computeBackoff
+///
+/// Context variables:
+///   ctx.serviceUrl  — URL of the external service to call on every attempt
+///   ctx.requestBody — request payload forwarded to the service unchanged on each retry
+graph retryWithBackoff {
+
+  /// Prepares the service call context
+  node prepareRequest : RequestPreparerOperator {
+    input {
+      serviceUrl = ctx.serviceUrl
+      requestBody = ctx.requestBody
+    }
+  }
+
+  /// loop-based retry: retries a flaky service call with exponential backoff
+  /// Unlike node-level retry, this allows custom backoff logic and state tracking
+  /// loopIteration — used to compute exponential backoff delay
+  /// carry.lastError — carries the error message from the previous attempt
+  loop retryCall {
+    max_iterations = 5
+    depends_on = [prepareRequest]
+    /// Computes the exponential backoff delay from loopIteration; reads carry.lastError for context
+    node computeBackoff : BackoffComputerOperator {
+      input {
+        iteration = loopIteration
+        lastError = carry.lastError
+      }
+    }
+    /// Calls the external service after the computed backoff delay; success triggers loop exit via until
+    node callService : ServiceCallerOperator {
+      depends_on = [computeBackoff]
+      input {
+        serviceUrl = ctx.serviceUrl
+        requestBody = ctx.requestBody
+        backoffMs = computeBackoff.output.backoffMs
+      }
+    }
+    carry {
+      lastError: callService.output.error
+    }
+    until callService.output.success == true
+  }
+
+  /// Processes the successful service response
+  node processResponse : ResponseProcessorOperator {
+    depends_on = [retryCall]
+    input {
+      response = retryCall.output.callService
+    }
+  }
+}

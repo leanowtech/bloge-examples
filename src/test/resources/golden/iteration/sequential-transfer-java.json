@@ -1,0 +1,66 @@
+{
+  "kind": "graph-result",
+  "outputs": {
+    "auditReport": {
+      "approved": 0,
+      "rejected": 3,
+      "totalAmount": 0.0,
+      "totalTransfers": 3
+    },
+    "fetchTransfers": [
+      {
+        "amount": 1500.0,
+        "currency": "USD",
+        "fromAccount": "ACC-001",
+        "toAccount": "ACC-002"
+      },
+      {
+        "amount": 250.75,
+        "currency": "USD",
+        "fromAccount": "ACC-001",
+        "toAccount": "ACC-003"
+      },
+      {
+        "amount": 3200.0,
+        "currency": "USD",
+        "fromAccount": "ACC-004",
+        "toAccount": "ACC-001"
+      }
+    ],
+    "processTransfers": [
+      {
+        "recordLedger": {
+          "amount": 1500.0,
+          "fromAccount": "ACC-001",
+          "index": 0,
+          "toAccount": "ACC-002",
+          "transferId": "<transferId>"
+        }
+      },
+      {
+        "recordLedger": {
+          "amount": 250.75,
+          "fromAccount": "ACC-001",
+          "index": 1,
+          "toAccount": "ACC-003",
+          "transferId": "<transferId>"
+        }
+      },
+      {
+        "recordLedger": {
+          "amount": 3200.0,
+          "fromAccount": "ACC-004",
+          "index": 2,
+          "toAccount": "ACC-001",
+          "transferId": "<transferId>"
+        }
+      }
+    ]
+  },
+  "statuses": {
+    "auditReport": "COMPLETED",
+    "fetchTransfers": "COMPLETED",
+    "processTransfers": "COMPLETED"
+  },
+  "success": true
+}

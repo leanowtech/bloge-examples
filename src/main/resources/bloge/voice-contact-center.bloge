@@ -1,0 +1,125 @@
+/// Voice contact centre: caller intent classification with sub-graph escalation and CRM persistence.
+///
+/// Demonstrates intent-driven routing, embedded sub-graph execution, and zero-cost
+/// field aggregation via transform — a common pattern for customer-service workflows.
+///
+/// Key DSL concepts demonstrated:
+///   branch on <expr>    — evaluates the expression and executes exactly one matching target
+///                         node; all other branch-target nodes are marked SKIPPED and do not
+///                         consume resources; execution resumes at the next non-branch node
+///   subgraph("name")    — embeds a separately registered graph as a single contained operator;
+///                         inner nodes run in their own context with the provided input fields
+///                         injected into ctx; the sub-graph's last node output is the result
+///   transform           — a zero-cost field projection block; no operator is dispatched —
+///                         fields are copied/aliased from upstream nodes at compile time;
+///                         use it instead of a real node for simple data reshaping
+///   timeout on node     — the engine cancels and fails the node if it exceeds this duration;
+///                         downstream nodes are also failed (cascade)
+///
+/// Context variables:
+///   callId     — unique identifier for the inbound call
+///   customerId — customer identifier used in routing and CRM persistence
+graph voiceContactCenter {
+
+  /// Captures real-time audio from the telephony channel.
+  /// Buffer=64 accommodates bursts in audio delivery (e.g., network jitter).
+  stream node audioCapture : AudioCapture {
+    buffer = 64
+  }
+
+  /// Transcribes the audio stream to text tokens in real-time.
+  /// Uses audioCapture.output (DirectEdge) — waits for all audio chunks before
+  /// starting transcription (simpler sequential model for this example).
+  stream node speechToText : SpeechToText {
+    input {
+      audio = audioCapture.output
+    }
+    buffer = 32
+  }
+
+  /// Classifies caller intent from the transcribed text.
+  /// Returns { transcript, intent } where intent ∈ { "billing", "technical", "complaint", "general" }.
+  /// timeout=5s fails the call gracefully rather than hanging indefinitely.
+  node intentClassification : IntentClassifier {
+    depends_on = [speechToText]
+    input {
+      transcript = speechToText.output
+    }
+    timeout = 5s
+  }
+
+  /// Routes to billing department — only executed when intent = "billing".
+  node routeToBilling : BillingRouter {
+    depends_on = [intentClassification]
+    input {
+      callId     = ctx.callId
+      customerId = ctx.customerId
+    }
+  }
+
+  /// Routes to technical support — only executed when intent = "technical".
+  node routeToTechSupport : TechSupportRouter {
+    depends_on = [intentClassification]
+    input {
+      callId     = ctx.callId
+      customerId = ctx.customerId
+    }
+  }
+
+  /// Handles complaint calls via the embedded escalation sub-graph.
+  /// Only executed when intent = "complaint".
+  ///
+  /// Sub-graph "complaint-escalation" runs three inner nodes:
+  ///   sentimentAnalysis → escalationDecision → supervisorNotification
+  /// The sub-graph result (supervisorNotification output) becomes sentimentMonitoring.output.
+  node sentimentMonitoring : subgraph("complaint-escalation") {
+    depends_on = [intentClassification]
+    input {
+      callId     = ctx.callId
+      customerId = ctx.customerId
+      transcript = intentClassification.output.transcript
+      intent     = intentClassification.output.intent
+    }
+    timeout = 30s
+  }
+
+  /// Routes to the general service queue — catch-all for unrecognised intents.
+  node routeToGeneral : GeneralRouter {
+    depends_on = [intentClassification]
+    input {
+      callId     = ctx.callId
+      customerId = ctx.customerId
+    }
+  }
+
+  /// Routes to exactly one queue based on classified intent.
+  /// Nodes not selected by the branch are marked SKIPPED; they count as "done"
+  /// for dependency purposes so callSummary can still fire.
+  branch on intentClassification.output.intent {
+    "billing"   -> routeToBilling
+    "technical" -> routeToTechSupport
+    "complaint" -> sentimentMonitoring
+    otherwise   -> routeToGeneral
+  }
+
+  /// Aggregates call metadata from upstream nodes without scheduling an operator.
+  /// transform fields are evaluated inline by the engine — zero scheduling overhead.
+  transform callSummary {
+    callId     = ctx.callId
+    customerId = ctx.customerId
+    intent     = intentClassification.output.intent
+    resolution = intentClassification.output.intent
+  }
+
+  /// Persists the call record to the CRM system.
+  /// Runs after callSummary (which depends on intentClassification and all branch nodes)
+  /// so it only fires once the final routing outcome is known.
+  node saveCallRecord : CallRecordSaver {
+    depends_on = [callSummary]
+    input {
+      callId     = callSummary.callId
+      customerId = callSummary.customerId
+      intent     = callSummary.intent
+    }
+  }
+}

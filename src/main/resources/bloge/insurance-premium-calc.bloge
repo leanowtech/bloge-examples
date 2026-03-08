@@ -1,0 +1,82 @@
+/// Insurance premium calculation with dynamic pricing rules
+/// Demonstrates: script node for hot-updatable business rules, let bindings in transforms
+graph insurancePremiumCalc {
+
+  /// Fetch customer profile and coverage request
+  node fetchCustomer : FetchCustomerOperator {
+    input {
+      customerId = ctx.customerId
+    }
+    timeout = 3s
+  }
+
+  /// Run actuarial risk assessment model
+  node assessRisk : RiskAssessmentOperator {
+    input {
+      age            = fetchCustomer.output.age
+      healthHistory  = fetchCustomer.output.healthHistory
+      occupation     = fetchCustomer.output.occupation
+      coverageType   = ctx.coverageType
+    }
+    timeout = 5s
+  }
+
+  /// Fetch current base rates from pricing service
+  node fetchRates : FetchBasePriceOperator {
+    input {
+      productType  = ctx.coverageType
+      region       = fetchCustomer.output.region
+    }
+    timeout = 2s
+    retry = { attempts: 2  backoff: 1s  strategy: fixed }
+  }
+
+  /// Dynamic premium calculation — hot-updatable Groovy script
+  script calcPremium {
+    lang    = "groovy"
+    timeout = 5s
+    input {
+      baseRate   = fetchRates.output.baseRate
+      riskScore  = assessRisk.output.score
+      age        = fetchCustomer.output.age
+      coverage   = ctx.coverageAmount
+    }
+    output_schema {
+      premium: Number
+      tier:    String
+      discount: Number
+    }
+    code = """
+      def ageAdjustment = age > 60 ? 1.25 : age < 30 ? 0.95 : 1.0
+      def riskMultiplier = 1.0 + (riskScore / 100.0)
+      def rawPremium = baseRate * ageAdjustment * riskMultiplier * (coverage / 100000.0)
+
+      def tier
+      def discount
+      if (rawPremium > 800) {
+        tier = "PREMIUM"; discount = 0.05
+      } else if (rawPremium > 400) {
+        tier = "STANDARD"; discount = 0.02
+      } else {
+        tier = "BASIC"; discount = 0.0
+      }
+
+      def finalPremium = (rawPremium * (1.0 - discount)).round(2)
+      return [premium: finalPremium, tier: tier, discount: discount]
+    """
+  }
+
+  /// Build final quote using let bindings for readability
+  transform buildQuote {
+    let annualPremium     = calcPremium.output.premium * 12
+    let discountAmount    = calcPremium.output.premium * calcPremium.output.discount
+
+    quoteId           = generateId(fetchCustomer.output.customerId, ctx.coverageType)
+    monthlyPremium    = calcPremium.output.premium
+    annualPremium     = annualPremium
+    tier              = calcPremium.output.tier
+    discountApplied   = discountAmount
+    coverageAmount    = ctx.coverageAmount
+    effectiveDate     = today()
+  }
+}

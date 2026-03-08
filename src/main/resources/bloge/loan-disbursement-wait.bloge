@@ -1,0 +1,119 @@
+/// Long-running loan disbursement that awaits BOTH document signing AND payment cleared.
+///
+/// After a loan is approved, two independent external events must arrive before
+/// the funds can be disbursed: the borrower's signed agreement (via e-signature
+/// platform) AND confirmation that the source account has been cleared.  Only
+/// when BOTH events are present does the workflow continue to disbursement.
+///
+/// Key DSL concepts demonstrated:
+///   await <id> { mode = and ... }
+///                      — AND-mode correlation: ALL listed events must be received
+///                        before the await resolves; the engine tracks each received
+///                        event in EventCorrelation.receivedEvents and fires when
+///                        the set is complete
+///   event "name" where — each clause is a separate event matcher; the where clause
+///                        binds the correlation key for routing to this execution
+///   mode = and         — default; explicit here for clarity; use mode = or to fire
+///                        on the FIRST matching event (see cargo-readiness-wait.bloge)
+///   timeout = 7d       — seven-day window for both events; on_timeout cancels the loan
+///
+/// Lifecycle:
+///   1. execute()         → graph suspends at awaitDocumentsAndPayment
+///   2. E-sig platform    → sends "document.signed" webhook → publishEvent(...)
+///   3. Bank clearing     → sends "payment.cleared" webhook → publishEvent(...)
+///   4. Both received     → EventCorrelation transitions to MATCHED → signal() called
+///   5. Downstream runs   → disburseLoan → generateLoanStatement
+///
+/// Context variables:
+///   ctx.loanId     — unique loan application identifier
+///   ctx.customerId — borrower identifier
+graph loanDisbursementWait {
+
+  /// Load the approved loan terms from the underwriting decision store.
+  node loadApprovedLoan : LoadApprovedLoanOperator {
+    input {
+      loanId = ctx.loanId
+    }
+    timeout = 5s
+  }
+
+  /// Send the loan agreement PDF to the e-signature service for borrower signing.
+  node sendAgreement : SendAgreementOperator {
+    depends_on = [loadApprovedLoan]
+    input {
+      loanId     = ctx.loanId
+      customerId = ctx.customerId
+      terms      = loadApprovedLoan.output.terms
+    }
+    timeout = 10s
+  }
+
+  /// Request that the source account be cleared for disbursement.
+  node requestClearing : RequestClearingOperator {
+    depends_on = [loadApprovedLoan]
+    input {
+      loanId  = ctx.loanId
+      amount  = loadApprovedLoan.output.principal
+      account = loadApprovedLoan.output.sourceAccount
+    }
+    timeout = 10s
+  }
+
+  /// Suspend until BOTH "document.signed" AND "payment.cleared" events arrive.
+  ///
+  /// mode = and ensures both events must be present before the correlation resolves.
+  /// The engine accumulates received events in EventCorrelation.receivedEvents;
+  /// once all non-optional matchers are satisfied the graph continues.
+  ///
+  /// Each publishEvent() call must include the loanId as correlation key so the engine
+  /// can route the event to the correct execution instance.
+  await awaitDocumentsAndPayment {
+    depends_on = [sendAgreement, requestClearing]
+    mode = and
+    event "document.signed" where loanId = ctx.loanId
+    event "payment.cleared" where loanId = ctx.loanId
+    timeout = 7d
+    on_timeout {
+      status = "expired"
+      reason = "Loan documents or payment not confirmed within 7 days"
+    }
+  }
+
+  /// Branch on await outcome: both received → disburse; timeout → cancel.
+  branch on awaitDocumentsAndPayment.output.status {
+    "ready"   -> disburseLoan
+    otherwise -> cancelLoan
+  }
+
+  /// Transfer the loan principal to the borrower's designated account.
+  node disburseLoan : DisburseLoanOperator {
+    depends_on = [awaitDocumentsAndPayment]
+    input {
+      loanId     = ctx.loanId
+      customerId = ctx.customerId
+      amount     = loadApprovedLoan.output.principal
+      documents  = awaitDocumentsAndPayment.output
+    }
+    timeout = 30s
+  }
+
+  /// Generate and archive the official loan statement for compliance.
+  node generateLoanStatement : GenerateLoanStatementOperator {
+    depends_on = [disburseLoan]
+    input {
+      loanId     = ctx.loanId
+      disbursedAt = disburseLoan.output.disbursedAt
+      amount     = loadApprovedLoan.output.principal
+    }
+  }
+
+  /// Release the reservation and notify the borrower.
+  node cancelLoan : CancelLoanOperator {
+    depends_on = [awaitDocumentsAndPayment]
+    input {
+      loanId     = ctx.loanId
+      customerId = ctx.customerId
+      reason     = awaitDocumentsAndPayment.output.reason
+    }
+  }
+}

@@ -1,0 +1,81 @@
+/// E-commerce chatbot — single-round intent routing (Plan A)
+///
+/// Routes each user message to a product-search, compare, recommend, or
+/// fallback handler.  The external loop accumulates the conversation history.
+///
+/// Graph layout:
+///   parseInput → classifyIntent → branch on intent
+///     "search_product" → productSearchSolver
+///     "compare"        → productComparator
+///     "recommend"      → recommendationEngine
+///     otherwise        → fallbackResponder
+///
+/// Context variables:
+///   ctx.userMessage — raw user input for this round
+///   ctx.sessionId   — stable session identifier
+graph ecommerceChatbot {
+
+  /// Normalise the raw user message
+  node parseInput : EcChatInputParser {
+    input {
+      userMessage = ctx.userMessage
+      sessionId   = ctx.sessionId
+    }
+    output {
+      normalizedText: String
+      language: String
+    }
+  }
+
+  /// Classify the user intent from the normalised text
+  node classifyIntent : EcChatIntentClassifier {
+    depends_on = [parseInput]
+    input {
+      parsedText = parseInput.output.normalizedText
+    }
+    output {
+      intent: String
+      confidence: Number
+    }
+  }
+
+  /// Route to exactly one solver based on the classified intent
+  branch on classifyIntent.output.intent {
+    "search_product" -> productSearchSolver
+    "compare"        -> productComparator
+    "recommend"      -> recommendationEngine
+    otherwise        -> fallbackResponder
+  }
+
+  /// Search for products matching the user query
+  node productSearchSolver : EcChatProductSearchSolver {
+    input {
+      userMessage = ctx.userMessage
+      sessionId   = ctx.sessionId
+    }
+  }
+
+  /// Compare two products side-by-side
+  node productComparator : EcChatProductComparator {
+    input {
+      userMessage = ctx.userMessage
+      sessionId   = ctx.sessionId
+    }
+  }
+
+  /// Recommend products based on user preferences and history
+  node recommendationEngine : EcChatRecommendationEngine {
+    input {
+      userMessage = ctx.userMessage
+      sessionId   = ctx.sessionId
+    }
+  }
+
+  /// Fallback when intent is unclear
+  node fallbackResponder : EcChatFallbackResponder {
+    input {
+      userMessage = ctx.userMessage
+      sessionId   = ctx.sessionId
+    }
+  }
+}

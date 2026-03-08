@@ -1,0 +1,38 @@
+/// Batch order processing with concurrent per-order validation and stock deduction.
+///
+/// Fetches all pending orders for a customer, then fans out across every order in parallel.
+/// Within each iteration, stock deduction is gated on successful validation. Final results
+/// are collected by a summary node after all iterations complete.
+///
+/// Key DSL concepts demonstrated:
+///   foreach (parallel)  — default mode; each (order, idx) pair is processed concurrently
+///   depends_on          — deductStock waits for validate to complete within the same iteration
+///
+/// Context variables:
+///   ctx.customerId — identifies the customer whose pending orders are fetched and processed
+graph batchOrderParallel {
+
+  /// Fetches pending orders for the given customer
+  node fetchOrders : OrderFetcherOperator {
+    input { customerId = ctx.customerId }
+  }
+
+  /// foreach parallel mode (default): process each order concurrently
+  /// order — variable referencing the current order
+  /// idx — variable referencing the 0-based index
+  foreach processOrders : (order, idx) in fetchOrders.output.orders {
+    node validate : OrderValidatorOperator {
+      input { order = order, index = idx }
+    }
+    node deductStock : StockDeductionOperator {
+      depends_on = [validate]
+      input { orderId = order.orderId, quantity = order.quantity, validated = validate.output.valid }
+    }
+  }
+
+  /// Summarizes all processed order results from the foreach output
+  node summarize : BatchSummaryOperator {
+    depends_on = [processOrders]
+    input { results = processOrders.output }
+  }
+}

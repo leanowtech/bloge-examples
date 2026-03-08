@@ -1,0 +1,97 @@
+/// Routes and resolves an incoming support ticket using NLP analysis and conditional escalation.
+///
+/// A ticket is received and its intent classified; sentiment analysis runs in an
+/// embedded sub-graph to assign a priority score.  High-priority tickets are handed
+/// off to an escalation sub-graph; all other priorities receive an auto-generated reply.
+/// A branch ensures that exactly one path executes.
+///
+/// Key DSL concepts demonstrated:
+///   subgraph("name")   — embeds a named sub-graph; inputs are injected into the
+///                        sub-graph's context; the last node's output becomes this
+///                        node's result
+///   branch on <expr>   — exactly one target executes; the other is skipped
+///   depends_on         — fan-in: determinePriority waits for both sentimentAnalysis
+///                        and classifyIntent to complete before running
+///   timeout            — per-node cancellation deadline
+///
+/// Context variables:
+///   ctx.ticketId   — unique identifier for the incoming ticket
+///   ctx.customerId — customer who submitted the ticket
+///   ctx.channel    — channel through which the ticket arrived (e.g. email, chat)
+///   ctx.message    — raw message content of the ticket
+graph smartTicketHandling {
+
+  /// Receives and registers the incoming support ticket
+  node receiveTicket : ReceiveTicketOperator {
+    input {
+      ticketId   = ctx.ticketId
+      customerId = ctx.customerId
+      channel    = ctx.channel
+      message    = ctx.message
+    }
+    timeout = 3s
+  }
+
+  /// Classifies the intent of the support ticket using NLP
+  node classifyIntent : ClassifyIntentOperator {
+    depends_on = [receiveTicket]
+    input {
+      ticketId = receiveTicket.output.ticketId
+      message  = receiveTicket.output.message
+    }
+    timeout = 5s
+  }
+
+  /// Runs sentiment analysis sub-graph: textPreprocessing → nlpClassification → sentimentScoring → priorityAssignment
+  node sentimentAnalysis : subgraph("sentiment-analysis") {
+    depends_on = [classifyIntent]
+    input {
+      ticketId = receiveTicket.output.ticketId
+      message  = receiveTicket.output.message
+      intent   = classifyIntent.output.intent
+    }
+    timeout = 30s
+  }
+
+  /// Determines ticket priority from sentiment analysis and intent classification
+  node determinePriority : DeterminePriorityOperator {
+    depends_on = [sentimentAnalysis, classifyIntent]
+    input {
+      ticketId  = classifyIntent.output.ticketId
+      intent    = classifyIntent.output.intent
+      sentiment = sentimentAnalysis.output.priorityAssignment
+    }
+  }
+
+  /// Runs escalation sub-graph for high-priority tickets: supervisorNotification → slaCheck → escalationRouting → customerCallbackSchedule
+  node escalationWorkflow : subgraph("escalation-workflow") {
+    depends_on = [determinePriority]
+    input {
+      ticketId   = determinePriority.output.ticketId
+      customerId = ctx.customerId
+      priority   = determinePriority.output.priority
+      reason     = determinePriority.output.reason
+    }
+    timeout = 30s
+  }
+
+  /// Generates the customer reply for medium/low priority tickets
+  node generateReply : GenerateReplyOperator {
+    depends_on = [determinePriority]
+    input {
+      ticketId   = determinePriority.output.ticketId
+      customerId = ctx.customerId
+      intent     = classifyIntent.output.intent
+      priority   = determinePriority.output.priority
+      resolution = determinePriority.output.reason
+    }
+  }
+
+  /// branch on determinePriority.output.priority — high-priority tickets go to
+  /// escalationWorkflow; all other priorities are handled by generateReply; exactly
+  /// one path executes and the other node is skipped
+  branch on determinePriority.output.priority {
+    "high"    -> escalationWorkflow
+    otherwise -> generateReply
+  }
+}

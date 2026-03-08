@@ -1,0 +1,13 @@
+/// Minimal one-node graph for first-time BLOGE users.
+///
+/// Reads ctx.message and forwards it to a single echo operator.
+/// This is the smallest possible graph that still demonstrates
+/// context binding, node naming, and typed output inspection.
+graph helloWorld {
+  node echo : EchoOperator {
+    input {
+      message = ctx.message
+    }
+    timeout = 1s
+  }
+}

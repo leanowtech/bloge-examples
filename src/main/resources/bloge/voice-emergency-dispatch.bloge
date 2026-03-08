@@ -1,0 +1,126 @@
+/// Emergency dispatch: real-time 911 processing with parallel location detection and live translation.
+///
+/// Demonstrates high-urgency fan-out patterns where critical operations (transcription,
+/// location lookup, translation) run concurrently to minimise total time-to-dispatch.
+///
+/// Key DSL concepts demonstrated:
+///   parallel fan-out   — detectCallerLocation depends_on audioCapture (not speechToText),
+///                        so GPS lookup begins immediately after the first audio arrives
+///                        rather than waiting for full transcription to complete
+///   multi-dependency   — classifyEmergency depends_on [speechToText, detectCallerLocation];
+///                        it waits for both to complete and fuses transcript + location
+///   branch on <expr>   — dispatches exactly one response unit type based on emergency type;
+///                        only the matched dispatcher node executes
+///   parallel stream    — realtimeTranslation starts after speechToText completes and runs
+///                        concurrently with the dispatch branch (low buffer=16 for low latency)
+///   logDispatchRecord  — waits for both classifyEmergency and realtimeTranslation to ensure
+///                        the incident log captures the dispatch decision and full translation
+///
+/// Context variables:
+///   callId         — unique 911 call identifier for incident tracking
+///   targetLanguage — BCP-47 language code for live translation (e.g., "es" for Spanish)
+graph voiceEmergencyDispatch {
+
+  /// Captures audio from the emergency caller.
+  /// Buffer=64 is large to handle loud / high-bitrate emergency calls without drops.
+  stream node audioCapture : AudioCapture {
+    buffer = 64
+  }
+
+  /// Transcribes the emergency call to text in real-time.
+  /// Runs concurrently with detectCallerLocation (both depend only on audioCapture).
+  stream node speechToText : SpeechToText {
+    input {
+      audio = audioCapture.output
+    }
+    buffer = 32
+  }
+
+  /// Detects caller's GPS or cell-tower location in parallel with transcription.
+  /// depends_on audioCapture (not speechToText) so the GPS fix starts as soon as audio
+  /// is captured — critical because location lookup can take several seconds.
+  node detectCallerLocation : CallerLocationDetector {
+    depends_on = [audioCapture]
+    input {
+      callId = ctx.callId
+    }
+    timeout = 5s
+  }
+
+  /// Classifies the type and severity of the emergency.
+  /// Waits for BOTH speechToText and detectCallerLocation (multi-dependency fan-in);
+  /// combines transcript keywords and physical location for accurate classification.
+  /// Returns { emergencyType, severity, description }.
+  node classifyEmergency : EmergencyClassifier {
+    depends_on = [speechToText, detectCallerLocation]
+    input {
+      transcript = speechToText.output
+      location   = detectCallerLocation.output
+    }
+    timeout = 5s
+  }
+
+  /// Dispatches fire department units — active only when emergencyType = "fire".
+  node dispatchFireDept : FireDeptDispatcher {
+    depends_on = [classifyEmergency]
+    input {
+      callId   = ctx.callId
+      location = detectCallerLocation.output.coordinates
+      severity = classifyEmergency.output.severity
+    }
+  }
+
+  /// Dispatches ambulance units — active only when emergencyType = "medical".
+  node dispatchAmbulance : AmbulanceDispatcher {
+    depends_on = [classifyEmergency]
+    input {
+      callId   = ctx.callId
+      location = detectCallerLocation.output.coordinates
+      severity = classifyEmergency.output.severity
+    }
+  }
+
+  /// Dispatches police units — catch-all for all other emergency types.
+  node dispatchPolice : PoliceDispatcher {
+    depends_on = [classifyEmergency]
+    input {
+      callId   = ctx.callId
+      location = detectCallerLocation.output.coordinates
+      severity = classifyEmergency.output.severity
+    }
+  }
+
+  /// Routes to exactly one response unit based on the classified emergency type.
+  /// Skipped dispatcher nodes are marked SKIPPED and do not block logDispatchRecord.
+  branch on classifyEmergency.output.emergencyType {
+    "fire"    -> dispatchFireDept
+    "medical" -> dispatchAmbulance
+    otherwise -> dispatchPolice
+  }
+
+  /// Provides real-time translation for non-English speakers.
+  /// Runs concurrently with the dispatch branch (depends_on speechToText, not branch targets).
+  /// buffer=16 keeps latency low — translator emits small chunks so the dispatcher
+  /// can relay partial translations to the caller in near real-time.
+  stream node realtimeTranslation : RealtimeTranslator {
+    depends_on = [speechToText]
+    input {
+      transcript = speechToText.output
+      targetLang = ctx.targetLanguage
+    }
+    buffer = 16
+  }
+
+  /// Persists the full dispatch record for incident tracking and post-incident review.
+  /// Waits for both classifyEmergency and realtimeTranslation so the log includes
+  /// the dispatch decision, caller coordinates, and the full translated transcript.
+  node logDispatchRecord : DispatchLogger {
+    depends_on = [classifyEmergency, realtimeTranslation]
+    input {
+      callId        = ctx.callId
+      emergencyType = classifyEmergency.output.emergencyType
+      location      = detectCallerLocation.output.coordinates
+      translation   = realtimeTranslation.output
+    }
+  }
+}

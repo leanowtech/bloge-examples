@@ -1,0 +1,30 @@
+{
+  "kind": "graph-result",
+  "outputs": {
+    "classifyIntent": {
+      "confidence": 0.9,
+      "intent": "make_complaint"
+    },
+    "complaintHandler": {
+      "intent": "make_complaint",
+      "resolved": true,
+      "responseText": "I'm sorry to hear about your experience. I've logged your complaint and a manager will contact you within 24 hours."
+    },
+    "parseInput": {
+      "entities": [
+        
+      ],
+      "language": "en",
+      "normalizedText": "i want to make a complaint"
+    }
+  },
+  "statuses": {
+    "classifyIntent": "COMPLETED",
+    "complaintHandler": "COMPLETED",
+    "fallbackResponder": "SKIPPED",
+    "faqResolver": "SKIPPED",
+    "orderQuerySolver": "SKIPPED",
+    "parseInput": "COMPLETED"
+  },
+  "success": true
+}

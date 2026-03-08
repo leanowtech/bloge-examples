@@ -1,0 +1,59 @@
+{
+  "kind": "graph-result",
+  "outputs": {
+    "fetchOrders": {
+      "customerId": "CUST-200",
+      "orders": [
+        {
+          "orderId": "ORD-001",
+          "price": 29.99,
+          "quantity": 2
+        },
+        {
+          "orderId": "ORD-002",
+          "price": 59.99,
+          "quantity": 1
+        },
+        {
+          "orderId": "ORD-003",
+          "price": 9.99,
+          "quantity": 5
+        }
+      ]
+    },
+    "processOrders": [
+      {
+        "deductStock": {
+          "deducted": true,
+          "orderId": "ORD-001",
+          "remainingStock": 42
+        }
+      },
+      {
+        "deductStock": {
+          "deducted": true,
+          "orderId": "ORD-002",
+          "remainingStock": 42
+        }
+      },
+      {
+        "deductStock": {
+          "deducted": true,
+          "orderId": "ORD-003",
+          "remainingStock": 42
+        }
+      }
+    ],
+    "summarize": {
+      "failCount": 0,
+      "successCount": 3,
+      "totalProcessed": 3
+    }
+  },
+  "statuses": {
+    "fetchOrders": "COMPLETED",
+    "processOrders": "COMPLETED",
+    "summarize": "COMPLETED"
+  },
+  "success": true
+}

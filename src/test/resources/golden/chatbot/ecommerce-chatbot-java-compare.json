@@ -1,0 +1,47 @@
+{
+  "kind": "graph-result",
+  "outputs": {
+    "classifyIntent": {
+      "confidence": 0.9,
+      "intent": "compare",
+      "slots": {
+        
+      }
+    },
+    "parseInput": {
+      "entities": [
+        
+      ],
+      "language": "en",
+      "normalizedText": "compare the two models vs each other"
+    },
+    "productComparator": {
+      "intent": "compare",
+      "resolved": true,
+      "text": "Comparing BloeMax Pro vs BloeMax Lite: Pro has 2x RAM and a longer battery life but costs $100 more.",
+      "updatedHistory": {
+        "messages": [
+          {
+            "content": "Compare the two models vs each other",
+            "role": "user",
+            "timestamp": "<timestamp>"
+          },
+          {
+            "content": "Comparing BloeMax Pro vs BloeMax Lite: Pro has 2x RAM and a longer battery life but costs $100 more.",
+            "role": "bot",
+            "timestamp": "<timestamp>"
+          }
+        ]
+      }
+    }
+  },
+  "statuses": {
+    "classifyIntent": "COMPLETED",
+    "fallbackResponder": "SKIPPED",
+    "parseInput": "COMPLETED",
+    "productComparator": "COMPLETED",
+    "productSearchSolver": "SKIPPED",
+    "recommendationEngine": "SKIPPED"
+  },
+  "success": true
+}

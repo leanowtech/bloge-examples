@@ -1,0 +1,7 @@
+{
+  "rules": {
+    "missing-timeout": "error",
+    "no-cycle": "error",
+    "excessive-fan-out": "warning"
+  }
+}

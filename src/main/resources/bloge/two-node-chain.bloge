@@ -1,0 +1,20 @@
+/// Two-node chain that demonstrates explicit dependencies.
+///
+/// normalizeName prepares the input and buildGreeting consumes that
+/// output, making the data flow visible in both Java and DSL forms.
+graph twoNodeChain {
+  node normalizeName : NormalizeNameOperator {
+    input {
+      name = ctx.name
+    }
+    timeout = 1s
+  }
+
+  node buildGreeting : BuildGreetingOperator {
+    depends_on = [normalizeName]
+    input {
+      value = normalizeName.output.value
+    }
+    timeout = 1s
+  }
+}

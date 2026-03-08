@@ -1,0 +1,58 @@
+{
+  "contextData": {
+    "session.namespace": "default",
+    "sessionId": "SESSION-JAVA-TEST-001"
+  },
+  "currentPhaseId": null,
+  "currentPhaseRound": 0,
+  "history": [
+    {
+      "input": {
+        "userMessage": "I need a refund and human support"
+      },
+      "output": {
+        "respond": {
+          "action": "handoff",
+          "done": true,
+          "userMessage": "I need a refund and human support"
+        }
+      },
+      "phaseId": "triage",
+      "roundInPhase": 1,
+      "timestamp": "<timestamp>"
+    }
+  ],
+  "kind": "session-checkpoint",
+  "phaseOutputs": {
+    "greeting": {
+      "greet": {
+        "sessionId": "<sessionId>",
+        "text": "Hello, tell me what you need help with."
+      }
+    },
+    "solve": {
+      "solveCase": {
+        "resolution": "Transferred to specialist for: I need a refund and human support",
+        "resolved": true
+      }
+    },
+    "triage": {
+      "respond": {
+        "action": "handoff",
+        "done": true,
+        "userMessage": "I need a refund and human support"
+      }
+    },
+    "wrapUp": {
+      "close": {
+        "finalMessage": "Session closed: Transferred to specialist for: I need a refund and human support"
+      }
+    }
+  },
+  "sessionGraphName": "customerServiceSession",
+  "sharedState": {
+    
+  },
+  "status": "COMPLETED",
+  "totalRounds": 1
+}

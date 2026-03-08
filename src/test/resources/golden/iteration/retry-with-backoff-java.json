@@ -1,0 +1,30 @@
+{
+  "kind": "graph-result",
+  "outputs": {
+    "prepareRequest": {
+      "requestBody": "{ \"action\": \"run\" }",
+      "serviceUrl": "https://api.example.com/process"
+    },
+    "processResponse": {
+      "data": "{ \"result\": \"ok\" }",
+      "processedAt": "<instant>"
+    },
+    "retryCall": {
+      "callService": {
+        "data": "{ \"result\": \"ok\" }",
+        "error": null,
+        "success": true
+      },
+      "computeBackoff": {
+        "backoffMs": 400,
+        "iteration": 2
+      }
+    }
+  },
+  "statuses": {
+    "prepareRequest": "COMPLETED",
+    "processResponse": "COMPLETED",
+    "retryCall": "COMPLETED"
+  },
+  "success": true
+}

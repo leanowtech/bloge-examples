@@ -1,0 +1,25 @@
+/// Spring Boot starter example loaded from classpath by bloge-spring.
+///
+/// The graph is intentionally tiny so the surrounding application can focus on
+/// @BlogeOperator scanning, actuator inspection, and configuration wiring.
+graph springTicketTriage {
+  node classifyTicket : SpringTicketClassifierOperator {
+    input {
+      ticketId = ctx.ticketId
+      message = ctx.message
+      customerTier = ctx.customerTier
+    }
+    timeout = 2s
+  }
+
+  node draftReply : SpringReplyDraftOperator {
+    depends_on = [classifyTicket]
+    input {
+      ticketId = ctx.ticketId
+      queue = classifyTicket.output.queue
+      priorityScore = classifyTicket.output.priorityScore
+      vip = classifyTicket.output.vip
+    }
+    timeout = 2s
+  }
+}

@@ -1,0 +1,68 @@
+/// Orchestrates a complete order lifecycle through parallel payment and inventory sub-graphs.
+///
+/// Validates the incoming order, then runs paymentProcessing and inventoryFulfillment
+/// sub-graphs concurrently. Both must complete before the order is confirmed and a
+/// customer notification is dispatched.
+///
+/// Key DSL concepts demonstrated:
+///   subgraph("name")     — payment and inventory pipelines each run as an embedded atomic unit
+///   depends_on = [a, b]  — confirmOrder fans in from both sub-graphs (parallel-to-sequential join)
+///   timeout = Ns         — each sub-graph is independently time-boxed to 30 s
+///
+/// Context variables:
+///   ctx.orderId    — unique identifier of the order
+///   ctx.amount     — monetary value of the order
+///   ctx.customerId — identifier of the customer placing the order
+graph orderFullPipeline {
+
+  /// Validates the incoming order request
+  node validateOrder : ValidateOrderOperator {
+    input {
+      orderId    = ctx.orderId
+      amount     = ctx.amount
+      customerId = ctx.customerId
+    }
+    timeout = 3s
+  }
+
+  /// Processes payment through fraud detection, gateway, confirmation, and receipt generation
+  node paymentProcessing : subgraph("payment-processing") {
+    depends_on = [validateOrder]
+    input {
+      orderId    = validateOrder.output.orderId
+      amount     = validateOrder.output.amount
+      customerId = validateOrder.output.customerId
+    }
+    timeout = 30s
+  }
+
+  /// Checks inventory, allocates warehouse stock, and creates shipment
+  node inventoryFulfillment : subgraph("inventory-fulfillment") {
+    depends_on = [validateOrder]
+    input {
+      orderId    = validateOrder.output.orderId
+      customerId = validateOrder.output.customerId
+    }
+    timeout = 30s
+  }
+
+  /// Confirms order after both payment and inventory sub-graphs complete
+  node confirmOrder : ConfirmOrderOperator {
+    depends_on = [paymentProcessing, inventoryFulfillment]
+    input {
+      orderId   = validateOrder.output.orderId
+      payment   = paymentProcessing.output.receiptGeneration
+      inventory = inventoryFulfillment.output.shipmentCreation
+    }
+  }
+
+  /// Sends order confirmation notification to the customer
+  node notifyCustomer : NotifyCustomerOperator {
+    depends_on = [confirmOrder]
+    input {
+      orderId    = confirmOrder.output.orderId
+      customerId = ctx.customerId
+      trackingId = confirmOrder.output.trackingId
+    }
+  }
+}

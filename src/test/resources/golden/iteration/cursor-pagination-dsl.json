@@ -1,0 +1,59 @@
+{
+  "kind": "graph-result",
+  "outputs": {
+    "fetchAllPages": {
+      "fetchAndTransform": {
+        "hasMore": false,
+        "nextCursor": "",
+        "records": [
+          {
+            "id": "rec-7",
+            "value": "eta"
+          },
+          {
+            "id": "rec-8",
+            "value": "theta"
+          },
+          {
+            "id": "rec-9",
+            "value": "iota"
+          }
+        ],
+        "runningTotal": 9,
+        "transformed": [
+          {
+            "id": "rec-7",
+            "processed": true,
+            "value": "eta"
+          },
+          {
+            "id": "rec-8",
+            "processed": true,
+            "value": "theta"
+          },
+          {
+            "id": "rec-9",
+            "processed": true,
+            "value": "iota"
+          }
+        ]
+      }
+    },
+    "finalizeData": {
+      "lastCursor": "",
+      "status": "COMPLETED",
+      "totalRecords": 9
+    },
+    "initPagination": {
+      "endpoint": "https://api.example.com/records",
+      "initialCursor": "",
+      "pageSize": 3
+    }
+  },
+  "statuses": {
+    "fetchAllPages": "COMPLETED",
+    "finalizeData": "COMPLETED",
+    "initPagination": "COMPLETED"
+  },
+  "success": true
+}

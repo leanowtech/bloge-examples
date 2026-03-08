@@ -1,0 +1,112 @@
+/// Plans and dispatches a shipment for a given order using cost-based mode selection.
+///
+/// Fetches order details, then fans out in parallel to look up the warehouse, select
+/// a carrier, and optimise the route.  The three results are combined to calculate
+/// total shipping cost; a decision node then chooses express, standard, or consolidated
+/// dispatch via a branch that ensures exactly one path executes.
+///
+/// Key DSL concepts demonstrated:
+///   depends_on = [a, b, c]   — fan-in: waits for ALL listed nodes to complete before
+///                              the dependent node starts
+///   branch on <expr>         — exactly one dispatch node executes; the other two are
+///                              skipped entirely
+///   timeout                  — per-node cancellation deadline
+///   retry / fallback         — automatic retry with a static fallback value on failure
+///
+/// Context variables:
+///   ctx.orderId — ID of the order to plan and dispatch
+graph shipmentPlanning {
+
+  /// Retrieves full order details (origin, destination, weight) for the given orderId
+  node fetchOrder : FetchOrderOperator {
+    input {
+      orderId = ctx.orderId
+    }
+    timeout = 3s
+  }
+
+  /// Looks up the nearest suitable warehouse for the order's origin
+  node lookupWarehouse : LookupWarehouseOperator {
+    depends_on = [fetchOrder]
+    input {
+      origin = fetchOrder.output.origin
+    }
+    timeout = 2s
+  }
+
+  /// Selects the best carrier for the destination and weight; retries on transient
+  /// failure and falls back to a default standard carrier if all attempts fail
+  node selectCarrier : SelectCarrierOperator {
+    depends_on = [fetchOrder]
+    input {
+      destination = fetchOrder.output.destination
+      weight      = fetchOrder.output.weight
+    }
+    retry = { attempts: 2, backoff: 200ms, strategy: exponential }
+    fallback = { carrierId: "DEFAULT", name: "Standard Post", baseRate: 15.0, estimatedDays: 7 }
+  }
+
+  /// Computes the optimal route from the order's origin to its destination
+  node optimizeRoute : OptimizeRouteOperator {
+    depends_on = [fetchOrder]
+    input {
+      origin      = fetchOrder.output.origin
+      destination = fetchOrder.output.destination
+    }
+    timeout = 5s
+  }
+
+  /// Combines warehouse, carrier, and route data to compute total shipping cost;
+  /// depends_on fan-in waits for all three parallel nodes to complete first
+  node calculateCost : CalculateCostOperator {
+    depends_on = [lookupWarehouse, selectCarrier, optimizeRoute]
+    input {
+      warehouse = lookupWarehouse.output
+      carrier   = selectCarrier.output
+      route     = optimizeRoute.output
+    }
+  }
+
+  /// Decides the shipping mode (express / standard / consolidated) from cost and order details
+  node decideShipMode : DecideShipModeOperator {
+    depends_on = [calculateCost]
+    input {
+      cost  = calculateCost.output
+      order = fetchOrder.output
+    }
+  }
+
+  /// branch on decideShipMode.output.mode — exactly one dispatch node executes; the other two are skipped
+  branch on decideShipMode.output.mode {
+    "express"  -> dispatchExpress
+    "standard" -> dispatchStandard
+    otherwise  -> dispatchConsolidated
+  }
+
+  /// Dispatches the order via express courier
+  node dispatchExpress : DispatchExpressOperator {
+    depends_on = [decideShipMode]
+    input {
+      orderId = fetchOrder.output.orderId
+      mode    = "express"
+    }
+  }
+
+  /// Dispatches the order via the standard carrier
+  node dispatchStandard : DispatchStandardOperator {
+    depends_on = [decideShipMode]
+    input {
+      orderId = fetchOrder.output.orderId
+      mode    = "standard"
+    }
+  }
+
+  /// Dispatches the order via consolidated/freight shipping
+  node dispatchConsolidated : DispatchConsolidatedOperator {
+    depends_on = [decideShipMode]
+    input {
+      orderId = fetchOrder.output.orderId
+      mode    = "consolidated"
+    }
+  }
+}
