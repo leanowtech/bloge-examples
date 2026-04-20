@@ -1,0 +1,617 @@
+# BLOGE Resource Gateway Example
+
+A standalone Spring Boot example demonstrating a production-grade API resource gateway
+built on the bloge orchestration engine. Instead of hand-writing one operator per
+external API, the gateway uses a single generic `httpResource` operator driven by
+declarative `ResourceDescriptor` configurations, bloge expression evaluation for
+parameter mapping, and a sealed `ResponseProtocol` hierarchy for vendor-agnostic
+success/failure semantics.
+
+> **Standalone project** — this module is intentionally **not** part of the root bloge
+> Maven reactor. It depends on bloge artifacts from your local Maven repository and
+> is built independently.
+
+---
+
+## Why standalone?
+
+The resource gateway is a full Spring Boot application with its own dependency tree
+(Spring Web, Jackson YAML, WireMock). Keeping it outside the reactor avoids coupling
+the core build to Spring Boot version management and lets it evolve on its own release
+cadence. It also serves as a realistic example of how downstream projects consume bloge
+as a library — using `bloge-spring` starter auto-configuration directly with zero
+manual runtime wiring.
+
+## Starter integration
+
+This example now uses the `bloge-spring` starter directly. There is no
+`excludeName` list and no local runtime `@Configuration` for operator
+discovery, DSL loading, or `GraphEngine` creation. Because `bloge-durable` is
+absent from the classpath, the starter safely creates the lightweight core
+engine path automatically.
+
+Key gateway settings live in `application.yml`:
+
+```yaml
+spring.bloge:
+  dsl-locations: classpath:bloge/gateway
+  engine-mode: request-response
+```
+
+If you need gateway-specific engine builder tweaks beyond the
+`request-response` preset, declare a `GraphEngineCustomizer` bean in
+`GatewayConfiguration` instead of replacing the auto-configured engine.
+
+---
+
+## Architecture overview
+
+The gateway is organised into four layers:
+
+```
+Serving Layer        REST controllers (UserDashboardController,
+        │            ResourceExecuteController,
+        │            AiSearchStreamingController) / SSE endpoints
+        │
+ Orchestration Layer  6 .bloge DSL graphs — declare API dependencies,
+         │            the engine handles topological scheduling + concurrency
+        │
+Provider Layer       HttpResourceOperator — one generic operator that
+        │            resolves a ResourceDescriptor, renders parameters,
+        │            delegates to HttpRequestOperator, validates the
+        │            response, and extracts the payload
+        │
+Cross-Cutting Layer  OperatorInterceptor chain — caching, rate limiting,
+                     circuit breaking (ordered highest → lowest precedence)
+```
+
+**Adding a new external API** requires only a `ResourceDescriptor` configuration entry —
+no new Java class.
+
+---
+
+## Public gateway API
+
+### Orchestration endpoints (`UserDashboardController`)
+
+| Method | Path | Graph | Description |
+|--------|------|-------|-------------|
+| `GET` | `/api/gateway/dashboard/{userId}` | `userDashboard` | Parallel 5-service aggregation |
+| `GET` | `/api/gateway/products/{productId}` | `productDetail` | Type-branched product enrichment |
+| `GET` | `/api/gateway/orders/{userId}/enriched` | `enrichOrderList` | Foreach order enrichment |
+| `GET` | `/api/gateway/credit-score/{userId}` | `creditScore` | Multi-provider degradation |
+
+All return a `GatewayResponse` wrapper:
+
+```json
+{ "success": true, "data": { … }, "error": null, "elapsedMs": 42 }
+```
+
+On graph failure the controller returns HTTP 502 with `success: false` and the error
+message. Branched graphs may cancel their convergence transform node; the controller
+falls back to branch-specific assemble nodes (e.g. `assemblePhysical`, `assembleDigital`,
+`assembleGeneric` for product-detail; `assemblePrimary`, `assembleSecondary` for
+credit-score).
+
+### Unified execution endpoint (`ResourceExecuteController`)
+
+| Method | Path | Graph | Description |
+|--------|------|-------|-------------|
+| `POST` | `/api/gateway/resources/execute` | `resourceDispatch` | Execute any registered resource by `resourceId` |
+
+Request headers:
+
+- `X-Tenant-Id` — tenant scope (defaults to `default`)
+- `X-Namespace` — namespace scope (defaults to `default`)
+- `Authorization` — forwarded unless the request supplies `headerOverrides.Authorization` or `authOverride`
+
+Request body:
+
+```json
+{
+  "resourceId": "user-service.getProfile",
+  "params": { "userId": "user-123" },
+  "headerOverrides": { "X-Correlation-Id": "req-42" },
+  "authOverride": { "type": "bearer", "token": "override-token" },
+  "timeoutOverride": "PT2S"
+}
+```
+
+Successful responses still use `GatewayResponse`, but `data` contains the full
+`HttpResourceOutput` envelope rather than only the extracted payload:
+
+```json
+{
+  "success": true,
+  "data": {
+    "resourceId": "user-service.getProfile",
+    "statusCode": 200,
+    "payload": { "name": "Alice", "tier": "premium" },
+    "rawBody": "{\"code\":0,\"data\":{\"name\":\"Alice\",\"tier\":\"premium\"}}",
+    "duration": "PT0.015S",
+    "success": true
+  },
+  "error": null,
+  "elapsedMs": 19
+}
+```
+
+Unknown `resourceId` values return HTTP 404; upstream execution / validation failures
+return HTTP 502.
+
+### Streaming endpoint (`AiSearchStreamingController`)
+
+| Method | Path | Graph | Description |
+|--------|------|-------|-------------|
+| `GET` | `/api/gateway/ai/search/stream?q=…` | `aiEnrichedSearch` | SSE-streamed search |
+
+Returns an `SseEmitter` that emits three event types in parallel:
+
+- `meta` — search metadata (query, result count, categories, timestamp)
+- `token` — LLM token stream (simulated via `MockLlmTokenStreamingOperator`)
+- `citation` — citation frames with relevance scores
+
+The streaming operators are mocks for demonstration purposes.
+
+---
+
+## Admin API
+
+Base path: `/admin/resources`
+
+| Method | Path | Description | Status |
+|--------|------|-------------|--------|
+| `GET` | `/admin/resources` | List all descriptors | 200 |
+| `GET` | `/admin/resources/{resourceId}` | Get single descriptor | 200 / 404 |
+| `POST` | `/admin/resources` | Create descriptor | 201 / 409 / 400 |
+| `PUT` | `/admin/resources/{resourceId}` | Update descriptor | 200 / 404 / 400 |
+| `DELETE` | `/admin/resources/{resourceId}` | Delete descriptor | 204 / 404 |
+
+400 is returned when a descriptor contains an uncompilable bloge expression.
+
+---
+
+## Orchestration graphs
+
+Six `.bloge` graphs live in `src/main/resources/bloge/gateway/`:
+
+| Graph file | Pattern | Description |
+|------------|---------|-------------|
+| `user-dashboard.bloge` | Parallel fan-out | Fetches profile, orders, recommendations, wallet, and notifications concurrently; each node has independent timeout/retry/fallback settings |
+| `product-detail.bloge` | Conditional branching | Fetches base product then branches on type (`physical` → shipping, `digital` → license, `otherwise` → generic) |
+| `enrich-order-list.bloge` | Foreach enrichment | Fetches the order list then enriches each order with shipping + invoice data in parallel |
+| `credit-score.bloge` | Provider degradation | Tries the primary credit provider; falls back to a secondary provider on failure |
+| `resource-dispatch.bloge` | Generic single-node dispatch | Executes any registry-backed resource by `resourceId`, optional header/auth overrides, and timeout |
+| `ai-enriched-search.bloge` | Mixed streaming | Three streaming operators (meta, LLM tokens, citations) executing concurrently |
+
+---
+
+## Implementation summary
+
+### Resource model (`gateway.resource`)
+
+| Type | Role |
+|------|------|
+| `ResourceDescriptor` | Immutable record — URL template, HTTP method, auth strategy, timeout, parameter mapping, response protocol, payload path |
+| `ResponseProtocol` | Sealed interface: `HttpStatus`, `BodyCode`, `BodyFlag`, `StatusCodes`, `BlgeExpression` |
+| `ParameterMapping` | Maps bloge expressions to URL path variables, query parameters, and request body |
+| `ResourceRegistry` | Read-only lookup interface |
+| `WritableResourceRegistry` | Mutable extension — register, update, deregister at runtime |
+
+### Expression evaluator (`gateway.expression`)
+
+`BlgeExpressionEvaluator` — compiles bloge DSL expressions via `GraphLoader`, caches
+compiled graphs, and evaluates them against arbitrary data contexts. Used by
+`ResponseValidator` and `HttpResourceOperator`.
+
+### Operator layer (`gateway.operator`)
+
+| Type | Role |
+|------|------|
+| `HttpResourceOperator` | `@BlogeOperator("httpResource")` — resolves descriptor, normalizes DSL-assembled map input into `HttpResourceInput`, evaluates parameter expressions, renders URL, delegates to `HttpRequestOperator`, validates response, extracts payload |
+| `HttpResourceInput` / `HttpResourceOutput` | Typed I/O records |
+| `ResponseValidator` | Validates HTTP responses against a `ResponseProtocol` |
+| `PayloadExtractor` | Extracts nested values via dot-notation paths |
+| `UrlTemplateRenderer` | Replaces `{placeholder}` segments in URL templates |
+
+### Mock streaming operators (`gateway.operator.streaming`)
+
+| Type | Role |
+|------|------|
+| `MockLlmTokenStreamingOperator` | Emits simulated LLM tokens with 5 ms inter-token delay |
+| `MockMetaStreamingOperator` | Emits a single metadata frame (query, totalResults, categories, timestamp) |
+| `MockCitationStreamingOperator` | Emits three fixed citations with relevance scores |
+
+### Exception types (`gateway.exception`)
+
+- `ResourceNotFoundException` — unknown resource ID (not retryable)
+- `ResourceDescriptorException` — invalid descriptor or uncompilable expression (not retryable)
+- `ResourceCallException` — remote business-level failure (generally not retryable)
+- `CircuitOpenException` — circuit breaker open (wait for half-open)
+- `TenantRateLimitException` — tenant quota exceeded (wait for window reset)
+- `ProviderCapacityException` — upstream 503-class failure (retryable with backoff)
+
+### Persistence & admin (`gateway.resource`)
+
+| Type | Role |
+|------|------|
+| `DatabaseResourceRegistry` | `WritableResourceRegistry` backed by H2 via JDBC with an in-memory `ConcurrentHashMap` cache for hot-path reads |
+| `ResourceRegistryAdminController` | REST CRUD at `/admin/resources` |
+
+### Interceptor chain (`gateway.interceptor`)
+
+Wired by `@Order` — highest precedence first:
+
+| Order | Type | Role |
+|-------|------|------|
+| 1 | `ResponseCacheInterceptor` | TTL-based transparent response caching |
+| 2 | `TenantRateLimiterInterceptor` | Multi-tenant rate limiting with two-level token buckets |
+| 3 | `CircuitBreakerInterceptor` | Provider-scoped circuit breaking (CLOSED → OPEN → HALF_OPEN) |
+
+`QuotaConfigProvider` supplies per-tenant quota configuration to the rate limiter.
+
+### Streaming infrastructure (`gateway.streaming`)
+
+| Type | Role |
+|------|------|
+| `SseBridgedStreamingOperator` | Bridges bloge streaming operator output into SSE events |
+| `SseStreamingFacade` | High-level facade for SSE streaming aggregation (5-minute timeout) |
+| `TapNodeChannel` | Channel abstraction that taps into graph node output |
+
+### Serving & bootstrap (`gateway.gateway`)
+
+| Type | Role |
+|------|------|
+| `UserDashboardController` | Orchestration endpoints for dashboard, products, orders, credit-score |
+| `ResourceExecuteController` | Unified `resourceId` execution endpoint backed by `resourceDispatch` |
+| `AiSearchStreamingController` | SSE streaming endpoint for AI search |
+| `GatewayGraphService` | Shared graph-loading and execution service |
+| `GatewayResponse` | Uniform JSON response wrapper record |
+| `ResourceExecuteRequest` | Request DTO for unified resource dispatch (params, header/auth overrides, timeout) |
+| `GatewayProperties` | `@ConfigurationProperties(prefix = "gateway")` — `baseUrl`, `seedDescriptors` |
+| `ResourceDescriptorBootstrap` | Seeds 11 example descriptors on startup (idempotent, gated by `gateway.seed-descriptors`) |
+
+### Other
+
+| Type | Role |
+|------|------|
+| `TenantMdcCarrier` | Propagates `tenantId` through MDC for structured logging |
+| `GatewayConfiguration` | `@Configuration` — Jackson, operators, registry, interceptor wiring |
+
+### Planned (not yet implemented)
+
+- `TracingInterceptor`, `MetricsInterceptor` — remaining cross-cutting interceptors
+
+---
+
+## Runtime configuration
+
+| Property | Default | Description |
+|----------|---------|-------------|
+| `server.port` | `8080` | HTTP server port |
+| `spring.datasource.url` | `jdbc:h2:file:./target/bloge-resource-gateway;DB_CLOSE_DELAY=-1;DB_CLOSE_ON_EXIT=false` | H2 file-backed database |
+| `spring.h2.console.enabled` | `true` | H2 web console at `/h2-console` |
+| `spring.bloge.dsl-locations` | `classpath:bloge/gateway` | Graph source directory |
+| `gateway.base-url` | `http://localhost:${server.port}/demo-upstream` | Base URL for seeded resource descriptor endpoints; defaults to the built-in demo upstream so local curls succeed |
+| `gateway.seed-descriptors` | `true` | Auto-register and refresh the built-in demo descriptors on startup |
+
+The test profile (`application-test.yml`) switches to an in-memory H2
+(`jdbc:h2:mem:testdb`), a random server port, and redirects `gateway.base-url` to the
+WireMock port.
+
+### Seeded resource descriptors
+
+On startup (when `gateway.seed-descriptors=true`) the bootstrap registers and re-syncs
+11 built-in descriptors covering all five `ResponseProtocol` variants. By default they
+point at the application's built-in `/demo-upstream` controllers, so the README curls
+work in a fresh local run even if an older H2 file already exists:
+
+`user-service.getProfile`, `order-service.listOrders`,
+`recommendation-service.forUser`, `wallet-service.getBalance`,
+`notification-service.unread`, `catalog-service.getProduct`,
+`logistics-service.getShipping`, `license-service.getLicense`,
+`invoice-service.getInvoice`, `credit-provider.primary`,
+`credit-provider.secondary`
+
+---
+
+## Build & run
+
+### 1. Install bloge artifacts into your local Maven repository
+
+From the **root** of the bloge repository:
+
+```bash
+mvn -pl bloge-core,bloge-dsl,bloge-common-operators,bloge-spring,bloge-test \
+    -am install -DskipTests -Dspotbugs.skip=true
+```
+
+### 2. Compile and test
+
+```bash
+cd bloge-examples-resource-gateway
+mvn clean verify
+```
+
+### 3. Run the application
+
+```bash
+cd bloge-examples-resource-gateway
+mvn spring-boot:run
+```
+
+The module now pins Spring Boot `3.5.13`. The Spring Boot `3.5.x` line is the first
+whose official system requirements include Java 25. The `spring-boot-maven-plugin` is also configured
+with `--enable-preview`, so a plain `mvn spring-boot:run` is enough on Java 25.
+
+The gateway starts on `http://localhost:8080`.
+
+By default the seeded descriptors target the built-in demo upstream at
+`http://localhost:8080/demo-upstream`, so the graph-backed curl examples below return 200
+without any extra setup.
+
+If you want the seeded descriptors to point somewhere other than the built-in demo upstream,
+override `gateway.base-url` at launch time:
+
+```bash
+mvn spring-boot:run \
+  -Dspring-boot.run.arguments=--gateway.base-url=http://localhost:9091
+```
+
+### 4. Curl cookbook
+
+#### Self-contained local flows (no extra upstream services required)
+
+Inspect the seeded descriptor registry:
+
+```bash
+curl http://localhost:8080/admin/resources
+curl http://localhost:8080/admin/resources/user-service.getProfile
+```
+
+Register a loopback descriptor that calls the gateway's own admin API, then inspect it:
+
+```bash
+curl -X POST http://localhost:8080/admin/resources \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "resourceId": "gateway.self.getResource",
+    "urlTemplate": "http://localhost:8080/admin/resources/{resourceId}",
+    "method": "GET",
+    "defaultHeaders": {
+      "Accept": "application/json"
+    },
+    "defaultTimeout": "PT5S",
+    "parameterMapping": {
+      "pathExpressions": {
+        "resourceId": "ctx.params.resourceId"
+      },
+      "queryExpressions": {}
+    },
+    "responseProtocol": {
+      "type": "httpStatus"
+    }
+  }'
+curl http://localhost:8080/admin/resources/gateway.self.getResource
+```
+
+Execute that loopback descriptor through the generic resource-dispatch API. This returns
+the standard execution envelope (`resourceId`, `statusCode`, `success`, `payload`,
+`rawBody`, `duration`) without needing any external service:
+
+```bash
+curl -X POST http://localhost:8080/api/gateway/resources/execute \
+  -H 'Content-Type: application/json' \
+  -H 'X-Tenant-Id: demo-tenant' \
+  -H 'X-Namespace: local' \
+  -d '{
+    "resourceId": "gateway.self.getResource",
+    "params": {
+      "resourceId": "user-service.getProfile"
+    },
+    "headerOverrides": {
+      "Accept": "application/json"
+    },
+    "timeoutOverride": "PT2S"
+  }'
+```
+
+Update and delete the loopback descriptor:
+
+```bash
+curl -X PUT http://localhost:8080/admin/resources/gateway.self.getResource \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "resourceId": "gateway.self.getResource",
+    "urlTemplate": "http://localhost:8080/admin/resources/{resourceId}",
+    "method": "GET",
+    "defaultHeaders": {
+      "Accept": "application/json",
+      "X-Readme-Demo": "true"
+    },
+    "defaultTimeout": "PT10S",
+    "parameterMapping": {
+      "pathExpressions": {
+        "resourceId": "ctx.params.resourceId"
+      },
+      "queryExpressions": {}
+    },
+    "responseProtocol": {
+      "type": "httpStatus"
+    }
+  }'
+curl -X DELETE http://localhost:8080/admin/resources/gateway.self.getResource
+```
+
+Watch the mock AI graph stream over SSE:
+
+```bash
+curl -N "http://localhost:8080/api/gateway/ai/search/stream?q=hello"
+```
+
+#### Graph-backed gateway flows (work out of the box with the built-in demo upstream)
+
+The seeded orchestration graphs call APIs rooted at `gateway.base-url`. By default that is
+the built-in demo upstream, so these curls succeed in a fresh local run. Override
+`gateway.base-url` if you want the same graphs to call a real external service instead:
+
+```bash
+curl http://localhost:8080/api/gateway/dashboard/u1
+curl http://localhost:8080/api/gateway/products/p1
+curl http://localhost:8080/api/gateway/orders/u1/enriched
+curl http://localhost:8080/api/gateway/credit-score/u1
+```
+
+The unified resource-execute endpoint is useful when you want one-off calls with
+tenant scoping, namespace scoping, forwarded authorization, and per-request overrides:
+
+```bash
+curl -X POST http://localhost:8080/api/gateway/resources/execute \
+  -H 'Content-Type: application/json' \
+  -H 'X-Tenant-Id: acme-corp' \
+  -H 'X-Namespace: prod' \
+  -H 'Authorization: Bearer demo-token' \
+  -d '{
+    "resourceId": "user-service.getProfile",
+    "params": {
+      "userId": "u1"
+    },
+    "headerOverrides": {
+      "Accept": "application/json",
+      "X-Debug-Trace": "readme-demo"
+    },
+    "timeoutOverride": "PT3S"
+  }'
+```
+
+---
+
+## Test strategy
+
+The test suite is organised into four layers (18 top-level test classes, 124 executed
+tests, including nested JUnit suites):
+
+### Layer 1 — Unit tests
+
+Pure-logic tests with no Spring context.
+
+| Class | Tests | Scope |
+|-------|-------|-------|
+| `BlgeExpressionEvaluatorTest` | 21 | Expression compilation, evaluation, caching |
+
+### Layer 2 — Contract / component tests
+
+Isolated component tests, some with lightweight Spring slices or mocks.
+
+| Class | Tests | Scope |
+|-------|-------|-------|
+| `HttpResourceOperatorTest` | 11 | Descriptor resolution, parameter mapping, URL rendering, DSL map-input normalization |
+| `ResponseValidatorTest` | 22 | All five `ResponseProtocol` variants |
+| `ResponseCacheInterceptorTest` | 4 | Cache hit/miss, TTL expiry |
+| `TenantRateLimiterInterceptorTest` | 3 | Token bucket, quota enforcement |
+| `CircuitBreakerInterceptorTest` | 5 | State transitions, cool-down |
+| `DatabaseResourceRegistryTest` | 11 | CRUD, H2 persistence, in-memory cache |
+| `ResourceDescriptorBootstrapTest` | 7 | Seeding, refresh behavior, idempotency |
+| `GatewayDslCompilationTest` | 6 | DSL parsing, graph loading |
+
+### Layer 3 — Orchestration tests
+
+Per-graph tests that compile and execute each `.bloge` graph against mock operators.
+
+| Class | Tests | Graph |
+|-------|-------|-------|
+| `UserDashboardGraphTest` | 2 | Parallel fan-out |
+| `ProductDetailGraphTest` | 3 | Conditional branching |
+| `EnrichOrderListGraphTest` | 1 | Foreach enrichment |
+| `CreditScoreGraphTest` | 2 | Provider degradation |
+| `AiEnrichedSearchGraphTest` | 2 | Streaming aggregation |
+
+### Layer 4 — Integration tests
+
+Spring Boot smoke coverage for the built-in demo upstream, manual
+controller/graph/operator wiring with WireMock-backed upstreams, plus
+standalone MockMvc coverage for the admin CRUD API.
+
+| Class | Tests | Scope |
+|-------|-------|-------|
+| `ResourceRegistryAdminControllerTest` | 8 | Admin CRUD via MockMvc |
+| `ResourceGatewayApplicationTest` | 2 | Spring Boot startup + built-in demo-upstream smoke coverage |
+| `ResourceExecuteIntegrationTest` | 8 | Unified execute endpoint -> `resourceDispatch` -> `HttpResourceOperator` -> WireMock |
+| `GatewayIntegrationTest` | 6 | Controller -> graph -> `HttpResourceOperator` -> WireMock end-to-end execution |
+
+Test resources live under `src/test/resources/`, currently `application-test.yml`
+plus `fixtures/` for shared mock payloads. The WireMock stubs are declared
+programmatically inside `GatewayIntegrationTest`.
+
+---
+
+## Project layout
+
+```
+bloge-examples-resource-gateway/
+├── pom.xml
+└── src/
+    ├── main/
+    │   ├── java/com/leanowtech/bloge/gateway/
+    │   │   ├── ResourceGatewayApplication.java
+    │   │   ├── carrier/           TenantMdcCarrier
+    │   │   ├── config/            GatewayConfiguration
+    │   │   ├── demo/              Built-in local upstream endpoints for README curls
+    │   │   ├── exception/         6 domain exception types
+    │   │   ├── expression/        BlgeExpressionEvaluator
+    │   │   ├── gateway/           Controllers, GatewayGraphService, bootstrap, properties
+    │   │   ├── interceptor/       Cache / rate-limiter / circuit-breaker + QuotaConfigProvider
+    │   │   ├── operator/          HttpResourceOperator + helpers
+    │   │   │   └── streaming/     3 mock streaming operators
+    │   │   ├── resource/          Descriptor model, registries, admin controller
+    │   │   └── streaming/         SSE facade, bridged operator, TapNodeChannel
+    │   └── resources/
+    │       ├── application.yml
+    │       └── bloge/gateway/     5 orchestration graphs (.bloge)
+    └── test/
+        ├── java/com/leanowtech/bloge/gateway/
+        │   ├── ResourceGatewayApplicationTest
+        │   ├── expression/        BlgeExpressionEvaluatorTest
+        │   ├── gateway/           GatewayDslCompilationTest, ResourceDescriptorBootstrapTest
+        │   ├── integration/       GatewayIntegrationTest (WireMock)
+        │   ├── interceptor/       3 interceptor tests
+        │   ├── operator/          HttpResourceOperatorTest, ResponseValidatorTest
+        │   ├── orchestration/     5 per-graph tests
+        │   └── resource/          DatabaseResourceRegistryTest, AdminControllerTest
+        └── resources/
+            ├── application-test.yml
+            └── fixtures/          Mock JSON payloads reused by unit + integration tests
+```
+
+---
+
+## Key design decisions
+
+1. **One operator, many APIs** — `HttpResourceOperator` replaces per-API operator classes.
+   Adding a new external API is a configuration change, not a code change.
+
+2. **Sealed `ResponseProtocol`** — Java 25 exhaustive `switch` guarantees every protocol
+   variant is handled; four structural variants cover ~85% of real-world vendor APIs,
+   `BlgeExpression` covers the rest.
+
+3. **Bloge expressions everywhere** — parameter mapping, response validation, and payload
+   extraction all use the same bloge expression engine, so improvements to built-in
+   functions benefit every layer simultaneously.
+
+4. **Separation by concern, not by API** — the four-layer split means changing orchestration
+   logic (`.bloge` graph) never touches operator code, and changing vendor auth never
+   touches the graph.
+
+5. **Branch-safe controller fallback** — branched graphs (product-detail, credit-score) may
+   cancel their convergence transform node at runtime; controllers fall back to
+   branch-specific assemble nodes to extract results.
+
+---
+
+## Known non-goals
+
+- **No production upstream integrations** — out of the box the example talks to its own
+  built-in demo upstream, and tests redirect that traffic to WireMock.
+- **No authentication/authorisation** — endpoints are unauthenticated for demo simplicity.
+- **No distributed tracing or metrics** — `TracingInterceptor` and `MetricsInterceptor`
+  are not implemented; add them to the interceptor chain if needed.

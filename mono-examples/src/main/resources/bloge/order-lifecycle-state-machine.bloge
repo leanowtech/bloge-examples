@@ -1,0 +1,44 @@
+state_machine orderLifecycle {
+  max_transitions = 25
+  max_state_visits = 5
+  timeout = 72h
+
+  state draft [initial] {
+    graph {
+      node initOrder : InitOrderOperator {
+        input {
+          orderId = ctx.orderId
+          customerId = ctx.customerId
+        }
+      }
+    }
+    on submit -> pendingReview
+  }
+
+  state pendingReview {
+    graph {
+      node reviewOrder : ReviewOrderOperator {
+        input {
+          orderId = ctx.draft.output.initOrder.orderId
+        }
+      }
+    }
+    on approve -> processing
+    on reject -> draft
+    timeout = 24h
+    on_timeout -> draft
+  }
+
+  state processing {
+    graph {
+      node fulfillOrder : FulfillmentOperator {
+        input {
+          orderId = ctx.pendingReview.output.reviewOrder.orderId
+        }
+      }
+    }
+    on * -> completed
+  }
+
+  state completed [terminal] { }
+}

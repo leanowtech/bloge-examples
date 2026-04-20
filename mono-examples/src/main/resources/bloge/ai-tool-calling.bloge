@@ -1,0 +1,37 @@
+/// Two-turn tool-calling workflow built on the expanded LlmProvider SPI.
+///
+/// Demonstrates:
+///   tool call emission  — think returns finishReason = "tool_calls" with ToolCall metadata
+///   tool execution      — executeTool resolves the requested tool outside the model
+///   tool result replay  — respond feeds the serialized tool result back via a tool-role message
+///
+/// Context variables:
+///   question — user weather question such as "What is the weather in Paris right now?"
+graph aiToolCalling {
+
+  /// First assistant turn: decides whether to call lookupWeather.
+  node think : AiToolThinking {
+    input {
+      question = ctx.question
+    }
+  }
+
+  /// Executes the requested weather tool based on think.output.toolCalls.
+  node executeTool : AiToolExecutor {
+    depends_on = [think]
+    input {
+      question = ctx.question
+      toolCalls = think.output.toolCalls
+    }
+  }
+
+  /// Second assistant turn: observes the tool result and produces the final answer.
+  node respond : AiToolResponder {
+    depends_on = [executeTool]
+    input {
+      question = ctx.question
+      toolCalls = think.output.toolCalls
+      toolResult = executeTool.output
+    }
+  }
+}

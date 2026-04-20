@@ -76,7 +76,7 @@ bloge-lsp/node_modules/
 bloge-vscode/dist/
 bloge-vscode/node_modules/
 bloge-vscode/*.vsix
-package-lock.json
+head-first-bloge/dist/
 .idea/
 bloge-intellij/.gradle/
 bloge-intellij/build/
@@ -88,3 +88,5 @@ bloge-intellij/.intellijPlatform/
 __pycache__/
 benchmarks/baseline.json
 benchmarks/results.json
+.gstack/
+.flattened-pom.xml

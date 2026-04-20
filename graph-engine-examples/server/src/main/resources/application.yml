@@ -1,0 +1,4 @@
+spring:
+  bloge:
+    durable:
+      mode: local

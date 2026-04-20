@@ -1,0 +1,56 @@
+{
+  "id": "simpleSequentialJson",
+  "name": "simpleSequentialJson",
+  "elements": [
+    {
+      "resourceId": "start",
+      "stencil": "StartNoneEvent",
+      "properties": {
+        "name": "Start"
+      }
+    },
+    {
+      "resourceId": "fetchCustomer",
+      "stencil": "UserTask",
+      "properties": {
+        "name": "Fetch Customer",
+        "nodeType": "systemUserTask",
+        "inputParams": {
+          "customerId": "ctx.customerId"
+        },
+        "outputParams": {
+          "customer": "customer"
+        }
+      }
+    },
+    {
+      "resourceId": "end",
+      "stencil": "EndNoneEvent",
+      "properties": {
+        "name": "End"
+      }
+    },
+    {
+      "resourceId": "f1",
+      "stencil": "SequenceFlow",
+      "source": {
+        "resourceId": "start"
+      },
+      "target": {
+        "resourceId": "fetchCustomer"
+      },
+      "properties": {}
+    },
+    {
+      "resourceId": "f2",
+      "stencil": "SequenceFlow",
+      "source": {
+        "resourceId": "fetchCustomer"
+      },
+      "target": {
+        "resourceId": "end"
+      },
+      "properties": {}
+    }
+  ]
+}

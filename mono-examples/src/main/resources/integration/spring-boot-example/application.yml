@@ -1,0 +1,22 @@
+spring:
+  application:
+    name: bloge-spring-boot-example
+  bloge:
+    dsl-locations: classpath:bloge/integration/spring/
+    default-timeout: 5s
+    observability:
+      tracing:
+        enabled: false
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,bloge
+  endpoint:
+    health:
+      show-details: always
+bloge:
+  examples:
+    spring:
+      auto-exit: true
+      auto-exit-delay: 1s

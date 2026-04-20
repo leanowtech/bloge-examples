@@ -1,0 +1,26 @@
+/// Resource Dispatch — single-node generic resource execution graph
+///
+/// Provides a universal entry point for executing any registered resource by its
+/// resourceId.  The caller supplies resourceId, params, and optional header/timeout
+/// overrides through the graph context; the httpResource operator resolves the
+/// descriptor from the registry and executes the call.
+///
+/// Context variables:
+///   ctx.resourceId      — the logical resource identifier to resolve
+///   ctx.params          — parameters for expression evaluation
+///   ctx.headerOverrides — optional per-call header overrides (default: {})
+///   ctx.authOverride    — optional per-call authentication override
+///   ctx.timeoutOverride — optional per-call timeout override (default: null)
+graph resourceDispatch {
+
+  /// Executes the resource identified by ctx.resourceId
+  node executeResource : httpResource {
+    input {
+      resourceId = ctx.resourceId
+      params = ctx.params
+      headerOverrides = ctx.headerOverrides ?? {}
+      authOverride = ctx.authOverride
+      timeoutOverride = ctx.timeoutOverride
+    }
+  }
+}

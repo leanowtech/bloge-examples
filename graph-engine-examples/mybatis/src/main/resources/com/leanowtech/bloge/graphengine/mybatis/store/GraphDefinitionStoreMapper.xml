@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper
+        PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+
+<mapper namespace="com.leanowtech.bloge.graphengine.mybatis.store.GraphDefinitionStoreMapper">
+
+    <select id="query" resultType="map">
+        SELECT *
+        FROM ge_definition
+        WHERE 1 = 1
+        <if test="tenantId != null">AND tenant_id = #{tenantId}</if>
+        <if test="namespace != null">AND namespace = #{namespace}</if>
+        <if test="status != null">AND status = #{status}</if>
+        <if test="definitionKey != null">AND definition_key = #{definitionKey}</if>
+        <if test="ownerTeam != null">AND owner_team = #{ownerTeam}</if>
+        <if test="category != null">AND category = #{category}</if>
+        ORDER BY updated_at DESC
+        LIMIT #{size} OFFSET #{offset}
+    </select>
+
+</mapper>

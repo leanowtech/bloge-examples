@@ -1,0 +1,80 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://www.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <parent>
+        <groupId>com.leanowtech.bloge</groupId>
+        <artifactId>bloge-examples-graph-engine</artifactId>
+        <version>1.0.0</version>
+        <relativePath>../pom.xml</relativePath>
+    </parent>
+
+    <artifactId>bloge-graph-engine-model</artifactId>
+    <name>BLOGE Graph Engine Model</name>
+    <description>Product-layer graph engine domain records, store contracts, and in-memory stores</description>
+    <url>https://bloge.leanowtech.com/docs</url>
+
+    <licenses>
+        <license>
+            <name>The Apache License, Version 2.0</name>
+            <url>http://www.apache.org/licenses/LICENSE-2.0.txt</url>
+        </license>
+    </licenses>
+
+    <developers>
+        <developer>
+            <name>LeanowTech Developers</name>
+            <email>developers@leanowtech.com</email>
+            <organization>LeanowTech</organization>
+            <organizationUrl>https://www.leanowtech.com</organizationUrl>
+        </developer>
+    </developers>
+
+    <scm>
+        <connection>scm:git:git://github.com/leanowtech/bloge.git</connection>
+        <developerConnection>scm:git:ssh://github.com:leanowtech/bloge.git</developerConnection>
+        <url>https://github.com/leanowtech/bloge</url>
+    </scm>
+
+    <properties>
+        <jacoco.check.skip>false</jacoco.check.skip>
+        <jacoco.check.line.minimum>0.70</jacoco.check.line.minimum>
+        <jacoco.check.branch.minimum>0.50</jacoco.check.branch.minimum>
+    </properties>
+
+    <dependencies>
+        <dependency>
+            <groupId>com.leanowtech.bloge</groupId>
+            <artifactId>bloge-core</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>com.leanowtech.bloge</groupId>
+            <artifactId>bloge-runtime-spi</artifactId>
+        </dependency>
+
+        <dependency>
+            <groupId>org.junit.jupiter</groupId>
+            <artifactId>junit-jupiter</artifactId>
+            <scope>test</scope>
+        </dependency>
+    </dependencies>
+
+    <build>
+        <plugins>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-jar-plugin</artifactId>
+                <executions>
+                    <execution>
+                        <id>test-jar</id>
+                        <goals>
+                            <goal>test-jar</goal>
+                        </goals>
+                    </execution>
+                </executions>
+            </plugin>
+        </plugins>
+    </build>
+</project>

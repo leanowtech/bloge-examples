@@ -1,0 +1,68 @@
+/// Enrich Order List — foreach enrichment graph
+///
+/// Retrieves a list of orders for a user, then enriches each order in parallel by
+/// calling shipping-status and invoice endpoints inside a foreach block.  The final
+/// transform exposes the fully enriched order list as a single output.
+///
+/// Key DSL concepts demonstrated:
+///   foreach (parallel) — each order is enriched concurrently
+///   depends_on         — invoice enrichment runs in parallel with shipping enrichment
+///                        within the same iteration; assembleEnriched waits for both
+///   fallback           — individual enrichment failures degrade gracefully per-order
+///
+/// Graph layout:
+///   fetchOrderList → foreach enrichOrders(order, idx)
+///       fetchShippingStatus ──┐
+///       fetchInvoice ─────────┼──→ assembleEnriched
+///   → collectEnriched
+///
+/// Context variables:
+///   ctx.userId — the user whose orders are enriched
+graph enrichOrderList {
+
+  /// Fetches the list of orders from the order service
+  node fetchOrderList : httpResource {
+    input {
+      resourceId = "order-service.listOrders"
+      params = { userId: ctx.userId }
+    }
+    timeout = 4s
+    retry = { attempts: 1, backoff: 200ms }
+  }
+
+  /// Enriches each order concurrently with shipping and invoice data
+  foreach enrichOrders : (order, idx) in fetchOrderList.output.payload.orders {
+
+    /// Fetches real-time shipping status for this order
+    node fetchShippingStatus : httpResource {
+      input {
+        resourceId = "logistics-service.getShipping"
+        params = { orderId: order.orderId }
+      }
+      timeout = 2s
+      fallback = { resourceId: "logistics-service.getShipping", statusCode: 0, payload: { status: "unknown" }, rawBody: "", duration: duration("PT0S"), success: false }
+    }
+
+    /// Fetches invoice data for this order
+    node fetchInvoice : httpResource {
+      input {
+        resourceId = "invoice-service.getInvoice"
+        params = { orderId: order.orderId }
+      }
+      timeout = 2s
+      fallback = { resourceId: "invoice-service.getInvoice", statusCode: 0, payload: { invoiceUrl: "" }, rawBody: "", duration: duration("PT0S"), success: false }
+    }
+
+    /// Merges the original order with shipping and invoice enrichment
+    transform assembleEnriched {
+      orderData = order
+      shipping  = fetchShippingStatus.output.payload
+      invoice   = fetchInvoice.output.payload
+    }
+  }
+
+  /// Collects all enriched orders into a unified response
+  transform collectEnriched {
+    orders = enrichOrders.output
+  }
+}

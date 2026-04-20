@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<definitions xmlns="http://www.omg.org/spec/BPMN/20100524/MODEL"
+             xmlns:camunda="http://camunda.org/schema/1.0/bpmn">
+  <process id="simpleSequential" name="simpleSequential">
+    <startEvent id="start"/>
+
+    <serviceTask id="fetchCustomer" name="Fetch Customer" camunda:delegateExpression="fetchCustomer">
+      <extensionElements>
+        <camunda:inputOutput>
+          <camunda:inputParameter name="customerId">ctx.customerId</camunda:inputParameter>
+          <camunda:outputParameter name="customer">customer</camunda:outputParameter>
+        </camunda:inputOutput>
+      </extensionElements>
+    </serviceTask>
+
+    <serviceTask id="scoreRisk" name="Score Risk" taskDefinitionKey="scoreRisk"/>
+    <endEvent id="end"/>
+
+    <sequenceFlow id="flow_start_fetch" sourceRef="start" targetRef="fetchCustomer"/>
+    <sequenceFlow id="flow_fetch_score" sourceRef="fetchCustomer" targetRef="scoreRisk"/>
+    <sequenceFlow id="flow_score_end" sourceRef="scoreRisk" targetRef="end"/>
+  </process>
+</definitions>

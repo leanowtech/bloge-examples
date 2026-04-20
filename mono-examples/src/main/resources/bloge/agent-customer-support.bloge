@@ -1,0 +1,34 @@
+/// Customer-support agent example using the dedicated agent DSL.
+agent customerSupport {
+  model = "gpt-4o"
+  system_prompt = "You are a helpful customer support agent."
+  max_turns = 6
+  max_tool_concurrency = 2
+  temperature = 0.2
+  memory = sliding_window(20)
+
+  tool searchKnowledgeBase : KBSearchOperator {
+    description = "Search the knowledge base for a relevant article"
+    input {
+      query = tool_args.query
+    }
+  }
+
+  tool createTicket : CreateTicketOperator {
+    description = "Create a support ticket for follow-up"
+    input {
+      title = tool_args.title
+      description = tool_args.description
+      priority = tool_args.priority
+    }
+  }
+
+  tool escalateToHuman : EscalateOperator {
+    description = "Escalate the conversation to a human support agent"
+    input {
+      reason = tool_args.reason
+    }
+  }
+
+  exit_condition = finish_reason == "stop" || tool_call("escalateToHuman")
+}

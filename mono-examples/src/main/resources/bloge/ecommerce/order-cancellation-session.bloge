@@ -1,0 +1,75 @@
+/// Order cancellation session — interruptible scope replacement (evolution plan §4.2).
+///
+/// Proves that a session signal routes at phase boundaries rather than interrupting
+/// mid-node execution.  After the processing pipeline completes, the session yields at
+/// the awaitDecision round phase.  A "cancel" signal redirects to the cancelled phase
+/// where refund and notification nodes execute to completion.
+///
+/// Phases:
+///   processing → awaitDecision → cancelled  (on signal action == "cancel")
+///   processing → awaitDecision → completed  (on signal action == "confirm")
+session orderCancellationSession {
+  idle_timeout = 5m
+  max_rounds = 5
+
+  phase processing {
+    node validateOrder : ValidateOrderOperator {
+      input {
+        orderId    = ctx.orderId
+        customerId = ctx.customerId
+      }
+    }
+    node chargePayment : ChargePaymentOperator {
+      depends_on = [validateOrder]
+      input {
+        orderId = ctx.orderId
+      }
+    }
+    node shipOrder : ShipOrderOperator {
+      depends_on = [chargePayment]
+      input {
+        orderId = ctx.orderId
+      }
+    }
+    then -> awaitDecision
+  }
+
+  phase awaitDecision {
+    max_rounds = 1
+    yield_on = [decisionRouter]
+    round {
+      node decisionRouter : DecisionRouterOperator {
+        input {
+          action = ctx.round.input.action
+        }
+      }
+    }
+    until decisionRouter.output.done == true
+    then {
+      decisionRouter.output.action == "cancel" -> cancelled
+      otherwise -> completed
+    }
+  }
+
+  phase cancelled {
+    node refund : RefundOperator {
+      input {
+        orderId = ctx.orderId
+      }
+    }
+    node notifyCancel : NotifyCancelOperator {
+      depends_on = [refund]
+      input {
+        orderId = ctx.orderId
+      }
+    }
+  }
+
+  phase completed {
+    node sendConfirmation : SendConfirmationOperator {
+      input {
+        orderId = ctx.orderId
+      }
+    }
+  }
+}

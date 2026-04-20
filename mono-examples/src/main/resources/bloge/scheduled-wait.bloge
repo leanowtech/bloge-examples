@@ -1,0 +1,53 @@
+/// Scheduled wait example combining a cron business window with a hard archival deadline.
+///
+/// Lifecycle:
+///   1. prepareReport       — gather report inputs and ownership metadata
+///   2. waitBusinessWindow  — cron("0 9 * * MON-FRI") opens the weekday publication slot
+///   3. publishReport       — generate the outward-facing report once the cron window opens
+///   4. waitArchiveDeadline — deadline("2099-12-31T23:59:59Z") represents the final archival cutoff
+///   5. archiveReport       — persist the report after the deadline triggers
+graph scheduledWait {
+
+  node prepareReport : PrepareReportOperator {
+    input {
+      reportId = ctx.reportId
+      owner    = ctx.owner
+    }
+    output {
+      reportId: String
+      owner:    String
+    }
+  }
+
+  wait waitBusinessWindow = cron("0 9 * * MON-FRI") after prepareReport
+
+  node publishReport : PublishReportOperator {
+    depends_on = [prepareReport, waitBusinessWindow]
+    input {
+      reportId      = prepareReport.output.reportId
+      owner         = prepareReport.output.owner
+      triggerSource = waitBusinessWindow.output.triggeredBy
+      firedAt       = waitBusinessWindow.output.firedAt
+    }
+    output {
+      publicationId: String
+      publishedAt:   String
+    }
+  }
+
+  wait waitArchiveDeadline = deadline("2099-12-31T23:59:59Z") after publishReport
+
+  node archiveReport : ArchiveReportOperator {
+    depends_on = [publishReport, waitArchiveDeadline]
+    input {
+      reportId      = prepareReport.output.reportId
+      publicationId = publishReport.output.publicationId
+      triggerSource = waitArchiveDeadline.output.triggeredBy
+      firedAt       = waitArchiveDeadline.output.firedAt
+    }
+    output {
+      archiveId:  String
+      archivedAt: String
+    }
+  }
+}

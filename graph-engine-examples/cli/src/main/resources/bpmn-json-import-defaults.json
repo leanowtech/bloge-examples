@@ -1,0 +1,24 @@
+{
+  "mappings": [
+    {
+      "bpmn": { "taskDefinitionKey": "systemUserTask", "type": "serviceTask" },
+      "bloge": { "operatorRef": "serviceCall" },
+      "inputMapping": {}
+    },
+    {
+      "bpmn": { "taskDefinitionKey": "AnswerNode", "type": "serviceTask" },
+      "bloge": { "operatorRef": "scriptedResponse" },
+      "inputMapping": {}
+    },
+    {
+      "bpmn": { "taskDefinitionKey": "ModelNode", "type": "serviceTask" },
+      "bloge": { "operatorRef": "textClassify" },
+      "inputMapping": {}
+    }
+  ],
+  "defaults": {
+    "serviceTask": { "operatorRef": "${taskDefinitionKey}Operator" },
+    "userTask": { "operatorRef": "HumanTaskOperator" },
+    "callActivity": { "operatorRef": "subgraph:${calledElement}" }
+  }
+}

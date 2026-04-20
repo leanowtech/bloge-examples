@@ -1,0 +1,66 @@
+/// Timeout-escalation state machine — timeout routes to escalation state (evolution plan §4.2).
+///
+/// Proves that per-state timeout + on_timeout transitions replace BPMN Timer Boundary Events
+/// without new runtime primitives.
+///
+/// States:
+///   pendingApproval [initial]  → approve → approved
+///                              → reject  → rejected
+///                              → timeout → escalated
+///   escalated                  → approve → approved
+///                              → reject  → rejected
+///   approved [terminal]
+///   rejected [terminal]
+state_machine timeoutEscalation {
+  max_transitions = 10
+  max_state_visits = 3
+
+  state pendingApproval [initial] {
+    graph {
+      node requestApproval : RequestApprovalOperator {
+        input {
+          requestId = ctx.requestId
+          requester = ctx.requester
+        }
+      }
+    }
+    on approve -> approved
+    on reject -> rejected
+    timeout = 24h
+    on_timeout -> escalated
+  }
+
+  state escalated {
+    graph {
+      node escalate : EscalateOperator {
+        input {
+          requestId = ctx.pendingApproval.output.requestApproval.requestId
+        }
+      }
+    }
+    on approve -> approved
+    on reject -> rejected
+  }
+
+  state approved [terminal] {
+    graph {
+      node finalizeApproval : FinalizeApprovalOperator {
+        input {
+          requestId = ctx.requestId
+          approvedBy = ctx.approvedBy
+        }
+      }
+    }
+  }
+
+  state rejected [terminal] {
+    graph {
+      node finalizeRejection : FinalizeRejectionOperator {
+        input {
+          requestId = ctx.requestId
+          rejectedBy = ctx.rejectedBy
+        }
+      }
+    }
+  }
+}

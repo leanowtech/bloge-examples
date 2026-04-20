@@ -1,0 +1,69 @@
+/// Approval workflow — demonstrates state timeouts, on_timeout retries, and global_transitions.
+///
+/// An approval request passes through up to two review rounds:
+/// - PENDING    : waiting for reviewer assignment (24h timeout → auto-assign)
+/// - UNDER_REVIEW : reviewer has the request (72h timeout → escalate to manager)
+/// - ESCALATED  : sent to manager after reviewer timeout (48h timeout → auto-reject)
+/// - APPROVED   : terminal — request approved
+/// - REJECTED   : terminal — request rejected
+/// - WITHDRAWN  : terminal — submitter withdrew the request (global transition)
+/// - CANCELLED  : terminal — admin cancelled the request (global transition)
+///
+/// Key patterns shown:
+///   global_transitions — WITHDRAW and CANCEL apply from any non-terminal state
+///   state timeout       — each active state has a deadline that triggers escalation
+///   guard expressions   — APPROVE only accepted when ctx.approverLevel >= ctx.requiredLevel
+
+state_machine approval_workflow {
+    timeout = 30d
+    max_transitions = 20
+
+    /// Global fallback transitions applied from any non-terminal state.
+    /// Reviewer-level WITHDRAW and admin-level CANCEL short-circuit the workflow.
+    global_transitions {
+        on WITHDRAW -> withdrawn
+        on CANCEL -> cancelled
+    }
+
+    /// Initial state: request submitted, waiting for a reviewer to be assigned.
+    /// If no reviewer claims the request within 24 hours, auto-assign fires.
+    state pending [initial] {
+        timeout = 24h
+        on_timeout -> auto_assigned
+        on ASSIGN -> under_review
+    }
+
+    /// Auto-assigned state: system picked a reviewer; treated same as manual assignment.
+    state auto_assigned {
+        timeout = 72h
+        on_timeout -> escalated
+        on APPROVE when ctx.approverLevel >= ctx.requiredLevel -> approved
+        on REJECT -> rejected
+        on ESCALATE -> escalated
+    }
+
+    /// Under review: reviewer is actively processing the request.
+    state under_review {
+        timeout = 72h
+        on_timeout -> escalated
+        on APPROVE when ctx.approverLevel >= ctx.requiredLevel -> approved
+        on REJECT -> rejected
+        on ESCALATE -> escalated
+        on RETURN -> pending
+    }
+
+    /// Escalated: reviewer did not respond in time; request escalated to manager.
+    /// Manager has 48 hours before the request is auto-rejected.
+    state escalated {
+        timeout = 48h
+        on_timeout -> rejected
+        on APPROVE when ctx.approverLevel >= ctx.requiredLevel -> approved
+        on REJECT -> rejected
+    }
+
+    /// Terminal states — no outgoing transitions.
+    state approved [terminal] {}
+    state rejected [terminal] {}
+    state withdrawn [terminal] {}
+    state cancelled [terminal] {}
+}

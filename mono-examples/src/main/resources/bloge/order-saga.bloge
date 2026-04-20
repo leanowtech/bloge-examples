@@ -1,0 +1,40 @@
+graph orderSaga {
+  saga {
+    mode = backward
+    on_failure = compensate
+    max_compensation_retries = 2
+  }
+
+  node reserveInventory : ReserveInventoryOperator {
+    output {
+      reservationId: String
+    }
+
+    compensate : ReleaseInventoryOperator {
+      input {
+        reservationId = reserveInventory.output.reservationId
+      }
+    }
+  }
+
+  node chargePayment : ChargePaymentOperator {
+    depends_on = [reserveInventory]
+    output {
+      chargeId: String
+    }
+
+    compensate : RefundPaymentOperator {
+      retry = { attempts: 1, backoff: 250ms, strategy: fixed }
+      input {
+        chargeId = chargePayment.output.chargeId
+      }
+    }
+  }
+
+  node shipOrder : ShipOrderOperator {
+    depends_on = [chargePayment]
+    input {
+      failShipping = ctx.failShipping
+    }
+  }
+}

@@ -1,0 +1,54 @@
+/// AI-Enriched Search — mixed streaming graph
+///
+/// Demonstrates a search pipeline with three distinct streaming nodes that produce
+/// SSE-routable output.  The search query is first sent to a metadata stream that
+/// emits structural metadata, then an LLM token stream produces the generative answer
+/// chunk by chunk, and a citation stream emits source references.  A final completion
+/// node materializes the collected output once all streams have closed.
+///
+/// Each streaming node has a distinct node ID that maps to an SSE event type,
+/// enabling the frontend to route chunks to the appropriate UI region:
+///   metaStream     → SSE event "meta"       (search metadata / filters)
+///   llmStream      → SSE event "token"      (LLM answer tokens)
+///   citationStream → SSE event "citation"   (source citations)
+///
+/// Graph layout:
+///   metaStream ──────────────┐
+///   llmStream ───────────────┼──→ assembleResult
+///   citationStream ──────────┘
+///
+/// Context variables:
+///   ctx.query — the user's search query string
+graph aiEnrichedSearch {
+
+  /// Emits search metadata (result count, filters, categories) as a single frame
+  stream node metaStream : MockMetaStreamingOperator {
+    buffer = 8
+    input {
+      query = ctx.query
+    }
+  }
+
+  /// Emits LLM-generated answer tokens derived from the search query
+  stream node llmStream : MockLlmTokenStreamingOperator {
+    buffer = 32
+    input {
+      query = ctx.query
+    }
+  }
+
+  /// Emits citation/source reference frames for the generated answer
+  stream node citationStream : MockCitationStreamingOperator {
+    buffer = 8
+    input {
+      query = ctx.query
+    }
+  }
+
+  /// Materializes all streamed output into a final aggregated search result
+  transform assembleResult {
+    meta: List<Map<String,Object>>      = metaStream.output
+    tokens: List<Map<String,Object>>    = llmStream.output
+    citations: List<Map<String,Object>> = citationStream.output
+  }
+}

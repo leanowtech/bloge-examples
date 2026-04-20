@@ -1,0 +1,33 @@
+/// State machine that delegates its review state to a nested session.
+state_machine reviewWorkflow {
+  state review [initial] {
+    session reviewSession {
+      idle_timeout = 5m
+      max_rounds = 5
+
+      phase collect {
+        node collectReview : CollectReviewContextOperator {
+          input {
+            applicantId = ctx.applicantId
+            riskLevel = ctx.riskLevel
+          }
+        }
+        then -> finalize
+      }
+
+      phase finalize {
+        node decideReview : DecideReviewOperator {
+          input {
+            applicantId = ctx.collect.output.collectReview.applicantId
+            riskLevel = ctx.collect.output.collectReview.riskLevel
+          }
+        }
+      }
+    }
+    on * when ctx.review.output.reviewSession.finalize.output.decideReview.decision == "approved" -> approved
+    on * -> rejected
+  }
+
+  state approved [terminal] { }
+  state rejected [terminal] { }
+}

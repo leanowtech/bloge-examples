@@ -1,0 +1,56 @@
+/// Order lifecycle state machine — demonstrates global_transitions, per-state timeouts,
+/// and global machine timeout.
+///
+/// States:
+///   pending [initial]    → CONFIRM → confirmed
+///                         → timeout → expired
+///   confirmed            → SHIP → shipped
+///                         → timeout → expired
+///   shipped              → DELIVER → delivered
+///                         → RETURN_REQUESTED → returning
+///                         → timeout → expired
+///   returning            → RETURN_COMPLETED → returned
+///   delivered [terminal]
+///   cancelled [terminal]
+///   expired [terminal]
+///   returned [terminal]
+///
+/// Global transitions:
+///   CANCEL → cancelled   (from any non-terminal state)
+state_machine orderLifecycle {
+  max_transitions = 50
+  max_state_visits = 5
+  timeout = 7d
+
+  global_transitions {
+    on CANCEL -> cancelled
+  }
+
+  state pending [initial] {
+    on CONFIRM -> confirmed
+    timeout = 24h
+    on_timeout -> expired
+  }
+
+  state confirmed {
+    on SHIP -> shipped
+    timeout = 48h
+    on_timeout -> expired
+  }
+
+  state shipped {
+    on DELIVER -> delivered
+    on RETURN_REQUESTED -> returning
+    timeout = 14d
+    on_timeout -> expired
+  }
+
+  state returning {
+    on RETURN_COMPLETED -> returned
+  }
+
+  state delivered [terminal] { }
+  state cancelled [terminal] { }
+  state expired [terminal] { }
+  state returned [terminal] { }
+}

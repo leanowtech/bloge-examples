@@ -1,0 +1,80 @@
+/// Product Detail — conditional routing graph
+///
+/// Fetches the base product record first, then branches on the product type field
+/// to invoke type-specific enrichment endpoints. Physical products require shipping
+/// and inventory data; digital products require licensing and download metadata.
+/// Both branches converge into a final transform that produces a unified detail
+/// response regardless of product type.
+///
+/// Graph layout:
+///   fetchProduct → branch on type
+///     "physical" → fetchShippingInfo  ──→ assemblePhysical ──→ unifyDetail
+///     "digital"  → fetchLicenseInfo   ──→ assembleDigital  ──→ unifyDetail
+///     otherwise  → assembleGeneric    ──→ unifyDetail
+///
+/// Context variables:
+///   ctx.productId — the product identifier to look up
+graph productDetail {
+
+  /// Fetches the base product record from the catalog service
+  node fetchProduct : httpResource {
+    input {
+      resourceId = "catalog-service.getProduct"
+      params = { productId: ctx.productId }
+    }
+    timeout = 3s
+    retry = { attempts: 1, backoff: 200ms }
+  }
+
+  /// Routes to the appropriate enrichment path based on the product type
+  branch on fetchProduct.output.payload.type {
+    "physical" -> fetchShippingInfo
+    "digital"  -> fetchLicenseInfo
+    otherwise  -> assembleGeneric
+  }
+
+  /// Fetches shipping and inventory details for physical products
+  node fetchShippingInfo : httpResource {
+    input {
+      resourceId = "logistics-service.getShipping"
+      params = { productId: ctx.productId }
+    }
+    timeout = 2s
+    fallback = { resourceId: "logistics-service.getShipping", statusCode: 0, payload: { shippable: true, estimatedDays: -1 }, rawBody: "", duration: duration("PT0S"), success: false }
+  }
+
+  /// Assembles the physical product detail from base record + shipping info
+  transform assemblePhysical {
+    product     = fetchProduct.output.payload
+    productType = "physical"
+    shipping    = fetchShippingInfo.output.payload
+  }
+
+  /// Fetches license and download metadata for digital products
+  node fetchLicenseInfo : httpResource {
+    input {
+      resourceId = "license-service.getLicense"
+      params = { productId: ctx.productId }
+    }
+    timeout = 2s
+    fallback = { resourceId: "license-service.getLicense", statusCode: 0, payload: { licenseType: "unknown", downloadUrl: "" }, rawBody: "", duration: duration("PT0S"), success: false }
+  }
+
+  /// Assembles the digital product detail from base record + license info
+  transform assembleDigital {
+    product     = fetchProduct.output.payload
+    productType = "digital"
+    license     = fetchLicenseInfo.output.payload
+  }
+
+  /// Assembles a generic product detail when type is neither physical nor digital
+  transform assembleGeneric {
+    product     = fetchProduct.output.payload
+    productType = "generic"
+  }
+
+  /// Unifies the branch outputs into a single detail response
+  transform unifyDetail {
+    result = assemblePhysical.output ?? assembleDigital.output ?? assembleGeneric.output
+  }
+}

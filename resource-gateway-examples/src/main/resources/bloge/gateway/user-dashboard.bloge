@@ -1,0 +1,84 @@
+/// User Dashboard — parallel aggregation graph
+///
+/// Assembles a unified dashboard payload for an authenticated user by concurrently
+/// fetching five independent data sources via httpResource. Each fetch node resolves
+/// its API endpoint through the ResourceDescriptor registry, so no hard-coded URLs
+/// exist in this graph.
+///
+/// All five resource calls execute in parallel with no inter-dependencies. Each is
+/// protected by a per-node timeout and either a retry policy or a static fallback to
+/// guarantee that partial results are always available even when individual backends
+/// are slow or unavailable.
+///
+/// Graph layout:
+///   fetchProfile ──────────────┐
+///   fetchOrders ───────────────┤
+///   fetchRecommendations ──────┼──→ assembleDashboard
+///   fetchWallet ───────────────┤
+///   fetchNotifications ────────┘
+///
+/// Context variables:
+///   ctx.userId — the authenticated user whose dashboard data is assembled
+graph userDashboard {
+
+  /// Fetches the user profile from the user-service; retried once with 200 ms backoff
+  node fetchProfile : httpResource {
+    input {
+      resourceId = "user-service.getProfile"
+      params = { userId: ctx.userId }
+    }
+    timeout = 3s
+    retry = { attempts: 1, backoff: 200ms }
+  }
+
+  /// Fetches recent orders; falls back to an empty list if the order service is unavailable
+  node fetchOrders : httpResource {
+    input {
+      resourceId = "order-service.listOrders"
+      params = { userId: ctx.userId }
+    }
+    timeout = 3s
+    fallback = { resourceId: "order-service.listOrders", statusCode: 0, payload: { orders: [] }, rawBody: "", duration: duration("PT0S"), success: false }
+  }
+
+  /// Fetches personalised product recommendations; falls back to empty list
+  node fetchRecommendations : httpResource {
+    input {
+      resourceId = "recommendation-service.forUser"
+      params = { userId: ctx.userId }
+    }
+    timeout = 2s
+    fallback = { resourceId: "recommendation-service.forUser", statusCode: 0, payload: { entries: [] }, rawBody: "", duration: duration("PT0S"), success: false }
+  }
+
+  /// Fetches wallet balance and recent transactions; retried once
+  node fetchWallet : httpResource {
+    input {
+      resourceId = "wallet-service.getBalance"
+      params = { userId: ctx.userId }
+    }
+    timeout = 2s
+    retry = { attempts: 1, backoff: 150ms }
+    fallback = { resourceId: "wallet-service.getBalance", statusCode: 0, payload: { balance: 0, currency: "USD" }, rawBody: "", duration: duration("PT0S"), success: false }
+  }
+
+  /// Fetches unread notifications; retried twice with exponential backoff, then falls back
+  node fetchNotifications : httpResource {
+    input {
+      resourceId = "notification-service.unread"
+      params = { userId: ctx.userId }
+    }
+    timeout = 2s
+    retry = { attempts: 2, backoff: 100ms, strategy: exponential }
+    fallback = { resourceId: "notification-service.unread", statusCode: 0, payload: { unread: 0, entries: [] }, rawBody: "", duration: duration("PT0S"), success: false }
+  }
+
+  /// Assembles all five fetch outputs into a single unified dashboard response
+  transform assembleDashboard {
+    profile         = fetchProfile.output.payload
+    orders          = fetchOrders.output.payload
+    recommendations = fetchRecommendations.output.payload
+    wallet          = fetchWallet.output.payload
+    notifications   = fetchNotifications.output.payload
+  }
+}

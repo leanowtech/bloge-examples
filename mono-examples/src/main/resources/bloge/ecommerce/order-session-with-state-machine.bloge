@@ -1,0 +1,61 @@
+/// Session workflow that delegates the ordering phase to a nested state machine.
+session orderWorkflow {
+  idle_timeout = 72h
+  max_rounds = 10
+
+  phase ordering {
+    state_machine orderFlow {
+      max_transitions = 20
+      max_state_visits = 5
+
+      state draft [initial] {
+        graph {
+          node collectInfo : CollectOrderInfoOperator {
+            input {
+              orderId = ctx.orderId
+              amount = ctx.amount
+            }
+          }
+        }
+        on submit -> pendingPayment
+      }
+
+      state pendingPayment {
+        graph {
+          node chargePayment : ChargePaymentOperator {
+            input {
+              orderId = ctx.orderId
+              amount = ctx.amount
+            }
+          }
+        }
+        on payment_confirmed -> processing
+        on payment_failed -> draft
+      }
+
+      state processing {
+        graph {
+          node shipOrder : ShipOrderOperator {
+            input {
+              orderId = ctx.orderId
+            }
+          }
+        }
+        on * -> shipped
+      }
+
+      state shipped [terminal] { }
+    }
+    then -> fulfillment
+  }
+
+  phase fulfillment {
+    node notifyCustomer : NotifyCustomerOperator {
+      input {
+        orderId = ctx.orderId
+        finalState = ctx.ordering.output.orderFlow.stateMachine.currentStateId
+        shipmentId = ctx.ordering.output.orderFlow.processing.output.shipOrder.shipmentId
+      }
+    }
+  }
+}

@@ -1,0 +1,44 @@
+/// Error Boundary replacement via fallback marker + branch routing.
+///
+/// Proves that a fallback value with a `failed` marker flows downstream exactly like
+/// real output, letting `branch on` route to manual review or normal success without
+/// any new runtime primitive (evolution plan §3.2).
+///
+/// The strict (no-fallback) variant is Java-only; this DSL variant always includes
+/// the fallback so the graph remains successful regardless of operator failure.
+graph errorBoundaryReplacement {
+
+  node chargePayment : ChargePaymentOperator {
+    input {
+      orderId         = ctx.orderId
+      amount          = ctx.amount
+      simulateFailure = ctx.simulateFailure
+    }
+    output {
+      approved: Boolean
+      failed: Boolean
+      note: String
+    }
+    retry = { attempts: 1, backoff: 25ms, strategy: exponential }
+    timeout = 1s
+    fallback = { approved: false, failed: true, note: "Gateway unavailable; queued for manual review" }
+  }
+
+  /// Routes based on the `failed` marker: true → manual review, otherwise → normal success.
+  branch on chargePayment.output.failed {
+    true      -> manualReviewPath
+    otherwise -> normalSuccessPath
+  }
+
+  node manualReviewPath : ManualReviewOperator {
+    input {
+      note = chargePayment.output.note
+    }
+  }
+
+  node normalSuccessPath : NormalSuccessOperator {
+    input {
+      note = chargePayment.output.note
+    }
+  }
+}

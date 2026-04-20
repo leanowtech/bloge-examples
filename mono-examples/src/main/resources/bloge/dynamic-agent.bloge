@@ -1,0 +1,30 @@
+/// Dynamic sub-graph orchestration example.
+///
+/// Demonstrates a graph-factory pattern:
+/// 1. `generateDynamicDsl` emits a small BLOGE graph as text
+/// 2. `dynamicSubGraph` validates, compiles, and executes that DSL at runtime
+/// 3. the generated graph runs against a fresh child context derived from the parent graph
+graph dynamicAgent {
+
+  node plan : generateDynamicDsl {
+    input {
+      task = ctx.task
+      history = ctx.history
+    }
+    timeout = 3s
+  }
+
+  node executePlan : dynamicSubGraph {
+    depends_on = [plan]
+    input {
+      dslSource = plan.output.dslSource
+      context = {
+        task: ctx.task,
+        history: ctx.history,
+        planKind: plan.output.planKind
+      }
+    }
+    timeout = 15s
+    retry = { attempts: 2, backoff: 100ms, strategy: exponential }
+  }
+}

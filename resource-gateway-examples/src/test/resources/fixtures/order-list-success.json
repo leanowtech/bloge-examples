@@ -1,0 +1,9 @@
+{
+  "success": true,
+  "data": {
+    "orders": [
+      { "orderId": "ord-1", "total": 29.99, "status": "shipped" },
+      { "orderId": "ord-2", "total": 59.00, "status": "processing" }
+    ]
+  }
+}

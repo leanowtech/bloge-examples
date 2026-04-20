@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper
+        PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+
+<mapper namespace="com.leanowtech.bloge.graphengine.mybatis.store.GraphInstanceStoreMapper">
+
+    <select id="query" resultType="map">
+        SELECT *
+        FROM ge_instance
+        WHERE 1 = 1
+        <if test="tenantId != null">AND tenant_id = #{tenantId}</if>
+        <if test="namespace != null">AND namespace = #{namespace}</if>
+        <if test="definitionKey != null">AND definition_key = #{definitionKey}</if>
+        <if test="businessKey != null">AND business_key = #{businessKey}</if>
+        <if test="statuses != null and !statuses.isEmpty()">
+            AND status IN
+            <foreach item="status" collection="statuses" open="(" separator="," close=")">
+                #{status}
+            </foreach>
+        </if>
+        <if test="executionMode != null">AND execution_mode = #{executionMode}</if>
+        ORDER BY updated_at DESC
+        LIMIT #{size} OFFSET #{offset}
+    </select>
+
+</mapper>

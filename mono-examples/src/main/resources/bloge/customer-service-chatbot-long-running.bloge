@@ -1,0 +1,107 @@
+/// Long-running customer-service chatbot (Plan B — suspend/resume)
+///
+/// The entire conversation runs as a single graph execution.  After the greet
+/// node completes, the graph suspends at awaitUserInput and waits for an
+/// external signal carrying the user's message.
+///
+/// Graph layout:
+///   greet → awaitUserInput [SUSPEND]
+///               ↓  (signal payload = {userMessage, sessionId})
+///           parseInput → classifyIntent → branch on intent
+///             "query_order"    → orderQuerySolver
+///             "make_complaint" → complaintHandler
+///             "faq"            → faqResolver
+///             otherwise        → fallbackResponder
+///
+/// Context variables:
+///   ctx.sessionId — stable session identifier
+graph customerServiceChatbotLongRunning {
+
+  /// Generate a welcome greeting
+  node greet : CsLrGreeter {
+    input {
+      sessionId = ctx.sessionId
+    }
+    output {
+      greeting: String
+      sessionId: String
+    }
+  }
+
+  /// Suspend and wait for user input via engine.signal()
+  node awaitUserInput : CsLrAwaitUserInput {
+    depends_on = [greet]
+    input {
+      sessionId = greet.output.sessionId
+    }
+    output {
+      userMessage: String
+      sessionId: String
+    }
+  }
+
+  /// Parse the user message received via signal
+  node parseInput : CsLrInputParser {
+    depends_on = [awaitUserInput]
+    input {
+      userMessage = awaitUserInput.output.userMessage
+      sessionId   = awaitUserInput.output.sessionId
+    }
+    output {
+      normalizedText: String
+      language: String
+    }
+  }
+
+  /// Classify the user intent from the normalised message
+  node classifyIntent : CsLrIntentClassifier {
+    depends_on = [parseInput]
+    input {
+      parsedText = parseInput.output.normalizedText
+    }
+    output {
+      intent: String
+      confidence: Number
+    }
+  }
+
+  /// Route to exactly one solver based on intent
+  branch on classifyIntent.output.intent {
+    "query_order"    -> orderQuerySolver
+    "make_complaint" -> complaintHandler
+    "faq"            -> faqResolver
+    otherwise        -> fallbackResponder
+  }
+
+  node orderQuerySolver : CsLrOrderQuerySolver {
+    depends_on = [classifyIntent]
+    input {
+      userMessage = awaitUserInput.output.userMessage
+      sessionId   = awaitUserInput.output.sessionId
+    }
+  }
+
+  node complaintHandler : CsLrComplaintHandler {
+    depends_on = [classifyIntent]
+    input {
+      userMessage = awaitUserInput.output.userMessage
+      sessionId   = awaitUserInput.output.sessionId
+    }
+  }
+
+  node faqResolver : CsLrFaqResolver {
+    depends_on = [classifyIntent]
+    input {
+      userMessage = awaitUserInput.output.userMessage
+      sessionId   = awaitUserInput.output.sessionId
+    }
+  }
+
+  node fallbackResponder : CsLrFallbackResponder {
+    depends_on = [classifyIntent]
+    input {
+      userMessage = awaitUserInput.output.userMessage
+      sessionId   = awaitUserInput.output.sessionId
+    }
+  }
+}

@@ -1,0 +1,84 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://www.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <parent>
+        <groupId>com.leanowtech.bloge</groupId>
+        <artifactId>bloge-examples-graph-engine</artifactId>
+        <version>1.0.0</version>
+        <relativePath>../pom.xml</relativePath>
+    </parent>
+
+    <artifactId>bloge-graph-engine-mybatis</artifactId>
+    <name>BLOGE Graph Engine MyBatis</name>
+    <description>
+        MyBatis-based persistence infrastructure for the BLOGE graph-engine product layer.
+        Provides Flyway migrations, mapper-backed metadata stores, and a store factory for the
+        new ge_definition/ge_version/ge_deployment/ge_instance tables.
+    </description>
+    <url>https://bloge.leanowtech.com/docs</url>
+
+    <licenses>
+        <license>
+            <name>The Apache License, Version 2.0</name>
+            <url>http://www.apache.org/licenses/LICENSE-2.0.txt</url>
+        </license>
+    </licenses>
+
+    <developers>
+        <developer>
+            <name>LeanowTech Developers</name>
+            <email>developers@leanowtech.com</email>
+            <organization>LeanowTech</organization>
+            <organizationUrl>https://www.leanowtech.com</organizationUrl>
+        </developer>
+    </developers>
+
+    <scm>
+        <connection>scm:git:git://github.com/leanowtech/bloge.git</connection>
+        <developerConnection>scm:git:ssh://github.com:leanowtech/bloge.git</developerConnection>
+        <url>https://github.com/leanowtech/bloge</url>
+    </scm>
+
+    <properties>
+        <jacoco.check.skip>false</jacoco.check.skip>
+        <jacoco.check.line.minimum>0.60</jacoco.check.line.minimum>
+        <jacoco.check.branch.minimum>0.40</jacoco.check.branch.minimum>
+    </properties>
+
+    <dependencies>
+        <dependency>
+            <groupId>com.leanowtech.bloge</groupId>
+            <artifactId>bloge-graph-engine-model</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>com.leanowtech.bloge</groupId>
+            <artifactId>bloge-durable-mybatis</artifactId>
+        </dependency>
+
+        <dependency>
+            <groupId>org.junit.jupiter</groupId>
+            <artifactId>junit-jupiter</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>com.h2database</groupId>
+            <artifactId>h2</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>com.leanowtech.bloge</groupId>
+            <artifactId>bloge-durable-codec</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>com.leanowtech.bloge</groupId>
+            <artifactId>bloge-graph-engine-model</artifactId>
+            <version>${project.version}</version>
+            <type>test-jar</type>
+            <scope>test</scope>
+        </dependency>
+    </dependencies>
+</project>

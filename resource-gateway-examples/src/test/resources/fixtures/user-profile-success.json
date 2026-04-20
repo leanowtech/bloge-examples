@@ -1,0 +1,10 @@
+{
+  "code": 0,
+  "message": "ok",
+  "data": {
+    "userId": "u1",
+    "name": "Alice",
+    "email": "alice@example.com",
+    "tier": "premium"
+  }
+}

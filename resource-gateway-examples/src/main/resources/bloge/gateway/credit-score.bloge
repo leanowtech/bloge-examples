@@ -1,0 +1,66 @@
+/// Credit Score — multi-provider degradation graph
+///
+/// Attempts to obtain a credit score from a primary provider (Equifax-style), falling
+/// back to a secondary provider (TransUnion-style) if the primary is unavailable or
+/// returns a capacity error.  Each provider is protected by its own timeout and retry
+/// policy.  The final transform clearly tags which provider actually produced the score.
+///
+/// Degradation strategy:
+///   1. Try primaryCreditProvider with 1 retry and 3 s timeout
+///   2. On failure / fallback, the downstream branch detects the failure marker
+///   3. If primary failed, route to secondaryCreditProvider
+///   4. If primary succeeded, skip secondary and go directly to assembleResult
+///
+/// Graph layout:
+///   primaryCreditProvider → branch on .success
+///     true      → assemblePrimary   ──→ assembleResult
+///     otherwise → secondaryCreditProvider → assembleSecondary → assembleResult
+///
+/// Context variables:
+///   ctx.userId — the user whose credit score is requested
+graph creditScore {
+
+  /// Primary credit score provider — retried once on failure
+  node primaryCreditProvider : httpResource {
+    input {
+      resourceId = "credit-provider.primary"
+      params = { userId: ctx.userId }
+    }
+    timeout = 3s
+    retry = { attempts: 1, backoff: 500ms }
+    fallback = { resourceId: "credit-provider.primary", statusCode: 0, payload: {}, rawBody: "", duration: duration("PT0S"), success: false }
+  }
+
+  /// Route based on whether the primary provider succeeded
+  branch on primaryCreditProvider.output.success {
+    true      -> assemblePrimary
+    otherwise -> secondaryCreditProvider
+  }
+
+  /// Format the primary provider's result with provenance tag
+  transform assemblePrimary {
+    provider = "primary"
+    score    = primaryCreditProvider.output.payload
+  }
+
+  /// Secondary (fallback) credit score provider — retried once
+  node secondaryCreditProvider : httpResource {
+    input {
+      resourceId = "credit-provider.secondary"
+      params = { userId: ctx.userId }
+    }
+    timeout = 3s
+    retry = { attempts: 1, backoff: 300ms }
+  }
+
+  /// Format the secondary provider's result with provenance tag
+  transform assembleSecondary {
+    provider = "secondary"
+    score    = secondaryCreditProvider.output.payload
+  }
+
+  /// Unifies both branches into a single credit-score response
+  transform assembleResult {
+    result = assemblePrimary.output ?? assembleSecondary.output
+  }
+}

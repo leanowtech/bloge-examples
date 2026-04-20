@@ -1,0 +1,65 @@
+/// Cursor-based pagination loop that accumulates records across multiple API pages.
+///
+/// Initializes pagination state, then iterates a fetch-transform cycle carrying the cursor
+/// and running total forward between iterations. The loop exits as soon as the API signals
+/// no more pages (hasMore == false), after which the final dataset is materialized.
+///
+/// Key DSL concepts demonstrated:
+///   loop                — iterates the inner graph repeatedly until the until predicate is satisfied
+///   carry { }          — state forwarded as ctx.__carry__.<key> to the next iteration
+///   until <expr>       — early-exit predicate; loop terminates when fetchPage.output.hasMore == false
+///   loopIteration      — built-in 0-based counter available inside loop nodes
+///   max_iterations     — hard upper bound on the number of loop cycles
+///
+/// Context variables:
+///   ctx.endpoint  — the API endpoint to paginate
+///   ctx.pageSize  — number of records to request per page
+graph cursorPagination {
+
+  /// Initializes the pagination context
+  node initPagination : PaginationInitOperator {
+    input {
+      endpoint = ctx.endpoint
+      pageSize = ctx.pageSize
+    }
+  }
+
+  /// loop with carry: passes cursor and running total between iterations
+  /// carry.cursor — the page cursor from previous iteration
+  /// carry.totalRecords — accumulated record count
+  loop fetchAllPages {
+    max_iterations = 100
+    delay = 500ms
+    depends_on = [initPagination]
+    /// Fetches one page of records using the cursor carried from the previous iteration
+    node fetchPage : PageFetcherOperator {
+      input {
+        endpoint = ctx.endpoint
+        pageSize = ctx.pageSize
+        cursor   = carry.cursor
+      }
+    }
+    /// Transforms the raw page records and accumulates the running total count
+    node transformPage : PageTransformerOperator {
+      depends_on = [fetchPage]
+      input {
+        records      = fetchPage.output.records
+        currentTotal = carry.totalRecords
+      }
+    }
+    carry {
+      cursor:       fetchPage.output.nextCursor
+      totalRecords: transformPage.output.runningTotal
+    }
+    until fetchPage.output.hasMore == false
+  }
+
+  /// Produces the final aggregated dataset
+  node finalizeData : DataFinalizerOperator {
+    depends_on = [fetchAllPages]
+    input {
+      totalRecords = fetchAllPages.output.transformPage.runningTotal
+      lastCursor   = fetchAllPages.output.fetchPage.nextCursor
+    }
+  }
+}

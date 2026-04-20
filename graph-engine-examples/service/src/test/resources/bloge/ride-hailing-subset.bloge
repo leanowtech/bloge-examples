@@ -1,0 +1,416 @@
+/// Representative ride-hailing subset used by the standalone graph-engine service tests.
+///
+/// The full production BPMN is too large and operator-heavy for a readable execution fixture, so
+/// this graph keeps the topology representative while replacing business logic with controllable
+/// test operators.
+///
+/// Covered patterns:
+///   - six-way exclusive branch with skipped/cancelled propagation
+///   - five levels of nested conditional routing
+///   - repeated CallActivity invocations of the same sub-graph
+///   - suspend/signal decision collection followed by branching
+///   - text classification followed by intent routing
+///   - answer -> zrg -> multi-terminal completion chain
+///
+/// Context variables:
+///   ctx.tripId                 - stable ride identifier
+///   ctx.riderId                - stable rider identifier
+///   ctx.governanceRoute        - one of airport/downtown/suburban/event/cross-border/neighborhood
+///   ctx.orderState             - first nested gateway selector
+///   ctx.cancelFeeProfile       - second nested gateway selector
+///   ctx.waiverResult           - third nested gateway selector
+///   ctx.billingState           - fourth nested gateway selector
+///   ctx.settlementAction       - fifth nested gateway selector
+///   ctx.dispatchChoice         - immediate dispatch choice when no external signal is required
+///   ctx.waitForDispatchChoice  - when true, collectDispatchChoice suspends until signalled
+///   ctx.intentText             - free-form rider text that the textClassify stub inspects
+///   ctx.finalOutcome           - terminal outcome selector for the zrg completion chain
+graph rideHailingSubset {
+
+  node ingestRideRequest : IngestRideRequestOperator {
+    input {
+      tripId            = ctx.tripId
+      riderId           = ctx.riderId
+      governanceRoute   = ctx.governanceRoute
+      orderState        = ctx.orderState
+      cancelFeeProfile  = ctx.cancelFeeProfile
+      waiverResult      = ctx.waiverResult
+      billingState      = ctx.billingState
+      settlementAction  = ctx.settlementAction
+      dispatchChoice    = ctx.dispatchChoice
+      waitForSignal     = ctx.waitForDispatchChoice
+      intentText        = ctx.intentText
+      finalOutcome      = ctx.finalOutcome
+    }
+  }
+
+  /// Six-way governance branch.
+  node airportLane : RouteLaneOperator {
+    depends_on = [ingestRideRequest]
+    input { lane = "airport" }
+  }
+
+  node downtownLane : RouteLaneOperator {
+    depends_on = [ingestRideRequest]
+    input { lane = "downtown" }
+  }
+
+  node suburbanLane : RouteLaneOperator {
+    depends_on = [ingestRideRequest]
+    input { lane = "suburban" }
+  }
+
+  node eventLane : RouteLaneOperator {
+    depends_on = [ingestRideRequest]
+    input { lane = "event" }
+  }
+
+  node crossBorderLane : RouteLaneOperator {
+    depends_on = [ingestRideRequest]
+    input { lane = "cross-border" }
+  }
+
+  node neighborhoodLane : RouteLaneOperator {
+    depends_on = [ingestRideRequest]
+    input { lane = "neighborhood" }
+  }
+
+  node airportLaneEnd : RouteTerminalOperator {
+    depends_on = [airportLane]
+    input { lane = airportLane.output.lane }
+  }
+
+  node downtownLaneEnd : RouteTerminalOperator {
+    depends_on = [downtownLane]
+    input { lane = downtownLane.output.lane }
+  }
+
+  node suburbanLaneEnd : RouteTerminalOperator {
+    depends_on = [suburbanLane]
+    input { lane = suburbanLane.output.lane }
+  }
+
+  node eventLaneEnd : RouteTerminalOperator {
+    depends_on = [eventLane]
+    input { lane = eventLane.output.lane }
+  }
+
+  node crossBorderLaneEnd : RouteTerminalOperator {
+    depends_on = [crossBorderLane]
+    input { lane = crossBorderLane.output.lane }
+  }
+
+  node neighborhoodLaneEnd : RouteTerminalOperator {
+    depends_on = [neighborhoodLane]
+    input { lane = neighborhoodLane.output.lane }
+  }
+
+  branch on ingestRideRequest.output.governanceRoute {
+    "airport"      -> airportLane
+    "downtown"     -> downtownLane
+    "suburban"     -> suburbanLane
+    "event"        -> eventLane
+    "cross-border" -> crossBorderLane
+    otherwise      -> neighborhoodLane
+  }
+
+  node governanceSettled : RouteMergeOperator {
+    depends_on = [airportLane, downtownLane, suburbanLane, eventLane, crossBorderLane, neighborhoodLane]
+    input {
+      selectedLane = ingestRideRequest.output.governanceRoute
+    }
+  }
+
+  /// Five levels of nested decision routing.
+  node orderStateGate : DecisionSignalOperator {
+    depends_on = [ingestRideRequest]
+    input { key = ctx.orderState }
+  }
+
+  node orderCreated : DecisionPathOperator {
+    depends_on = [orderStateGate]
+    input { stage = "created" }
+  }
+
+  node orderCancelled : DecisionPathOperator {
+    depends_on = [orderStateGate]
+    input { stage = "cancelled" }
+  }
+
+  branch on orderStateGate.output.key {
+    "created" -> orderCreated
+    otherwise -> orderCancelled
+  }
+
+  node cancelFeeGate : DecisionSignalOperator {
+    depends_on = [orderStateGate]
+    input { key = ctx.cancelFeeProfile }
+  }
+
+  node feeWaive : DecisionPathOperator {
+    depends_on = [cancelFeeGate]
+    input { stage = "waive" }
+  }
+
+  node feeReview : DecisionPathOperator {
+    depends_on = [cancelFeeGate]
+    input { stage = "review" }
+  }
+
+  branch on cancelFeeGate.output.key {
+    "waive"   -> feeWaive
+    otherwise -> feeReview
+  }
+
+  node waiverGate : DecisionSignalOperator {
+    depends_on = [cancelFeeGate]
+    input { key = ctx.waiverResult }
+  }
+
+  node waiverApproved : DecisionPathOperator {
+    depends_on = [waiverGate]
+    input { stage = "approved" }
+  }
+
+  node waiverDenied : DecisionPathOperator {
+    depends_on = [waiverGate]
+    input { stage = "denied" }
+  }
+
+  branch on waiverGate.output.key {
+    "approved" -> waiverApproved
+    otherwise  -> waiverDenied
+  }
+
+  node billingGate : DecisionSignalOperator {
+    depends_on = [waiverGate]
+    input { key = ctx.billingState }
+  }
+
+  node billingReady : DecisionPathOperator {
+    depends_on = [billingGate]
+    input { stage = "ready" }
+  }
+
+  node billingMissing : DecisionPathOperator {
+    depends_on = [billingGate]
+    input { stage = "missing" }
+  }
+
+  branch on billingGate.output.key {
+    "ready"   -> billingReady
+    otherwise -> billingMissing
+  }
+
+  node settlementGate : DecisionSignalOperator {
+    depends_on = [billingGate]
+    input { key = ctx.settlementAction }
+  }
+
+  node settlementContinue : DecisionPathOperator {
+    depends_on = [settlementGate]
+    input { stage = "continue" }
+  }
+
+  node settlementEscalate : DecisionPathOperator {
+    depends_on = [settlementGate]
+    input { stage = "escalate" }
+  }
+
+  branch on settlementGate.output.key {
+    "continue" -> settlementContinue
+    otherwise  -> settlementEscalate
+  }
+
+  node nestedDecisionSettled : RouteMergeOperator {
+    depends_on = [settlementContinue, settlementEscalate]
+    input { selectedSettlement = settlementGate.output.key }
+  }
+
+  /// Same sub-graph invoked three times from the same stage.
+  node authorizeAudio : subgraph("ride-auth-leg") {
+    depends_on = [settlementGate]
+    input {
+      legName   = "audio-auth"
+      tokenSeed = "A1"
+      riderId   = ctx.riderId
+      tripId    = ctx.tripId
+    }
+  }
+
+  node authorizeVideo : subgraph("ride-auth-leg") {
+    depends_on = [settlementGate]
+    input {
+      legName   = "video-auth"
+      tokenSeed = "B2"
+      riderId   = ctx.riderId
+      tripId    = ctx.tripId
+    }
+  }
+
+  node authorizeReceipt : subgraph("ride-auth-leg") {
+    depends_on = [settlementGate]
+    input {
+      legName   = "receipt-auth"
+      tokenSeed = "C3"
+      riderId   = ctx.riderId
+      tripId    = ctx.tripId
+    }
+  }
+
+  node authAggregation : AuthAggregationOperator {
+    depends_on = [authorizeAudio, authorizeVideo, authorizeReceipt]
+    input {
+      audioToken     = authorizeAudio.output.authorizeLeg.token
+      videoToken     = authorizeVideo.output.authorizeLeg.token
+      receiptToken   = authorizeReceipt.output.authorizeLeg.token
+      audioCounter   = authorizeAudio.output.authorizeLeg.counter
+      videoCounter   = authorizeVideo.output.authorizeLeg.counter
+      receiptCounter = authorizeReceipt.output.authorizeLeg.counter
+    }
+  }
+
+  /// DCol-like collect-and-route interaction.
+  node collectDispatchChoice : CollectDispatchChoiceOperator {
+    depends_on = [authAggregation]
+    input {
+      preselected  = ctx.dispatchChoice
+      waitForSignal = ctx.waitForDispatchChoice
+    }
+  }
+
+  node dispatchOption1 : DispatchRouteOperator {
+    depends_on = [collectDispatchChoice]
+    input { option = "option1" }
+  }
+
+  node dispatchOption2 : DispatchRouteOperator {
+    depends_on = [collectDispatchChoice]
+    input { option = "option2" }
+  }
+
+  branch on collectDispatchChoice.output.selection {
+    "option1" -> dispatchOption1
+    otherwise -> dispatchOption2
+  }
+
+  node dispatchChoiceSettled : RouteMergeOperator {
+    depends_on = [dispatchOption1, dispatchOption2]
+    input { selectedDispatch = collectDispatchChoice.output.selection }
+  }
+
+  /// textClassify -> intent routing.
+  node classifyIntent : textClassify {
+    depends_on = [collectDispatchChoice]
+    input { text = ctx.intentText }
+  }
+
+  node complaintHandler : IntentRouteOperator {
+    depends_on = [classifyIntent]
+    input { route = "complaint" }
+  }
+
+  node loyaltyHandler : IntentRouteOperator {
+    depends_on = [classifyIntent]
+    input { route = "loyalty" }
+  }
+
+  node genericHandler : IntentRouteOperator {
+    depends_on = [classifyIntent]
+    input { route = "generic" }
+  }
+
+  branch on classifyIntent.output.label {
+    "complaint" -> complaintHandler
+    "loyalty"   -> loyaltyHandler
+    otherwise   -> genericHandler
+  }
+
+  node intentSettled : RouteMergeOperator {
+    depends_on = [complaintHandler, loyaltyHandler, genericHandler]
+    input { label = classifyIntent.output.label }
+  }
+
+  /// answer -> zrg -> multi-terminal chain.
+  node answerSummary : AnswerSummaryOperator {
+    depends_on = [classifyIntent]
+    input {
+      tripId           = ctx.tripId
+      governanceRoute  = ingestRideRequest.output.governanceRoute
+      selectedDispatch = collectDispatchChoice.output.selection
+      routedIntent     = classifyIntent.output.label
+      finalOutcome     = ctx.finalOutcome
+    }
+  }
+
+  node zrgFinalize : ZrgFinalizeOperator {
+    depends_on = [answerSummary]
+    input {
+      summary      = answerSummary.output.summary
+      finalOutcome = answerSummary.output.finalOutcome
+    }
+  }
+
+  node endCompleted : FinalTerminalOperator {
+    depends_on = [zrgFinalize]
+    input { terminal = "completed" }
+  }
+
+  node endManualReview : FinalTerminalOperator {
+    depends_on = [zrgFinalize]
+    input { terminal = "manual-review" }
+  }
+
+  node endRefunded : FinalTerminalOperator {
+    depends_on = [zrgFinalize]
+    input { terminal = "refunded" }
+  }
+
+  node endEscalated : FinalTerminalOperator {
+    depends_on = [zrgFinalize]
+    input { terminal = "escalated" }
+  }
+
+  node endRejected : FinalTerminalOperator {
+    depends_on = [zrgFinalize]
+    input { terminal = "rejected" }
+  }
+
+  node endDriverFallback : FinalTerminalOperator {
+    depends_on = [zrgFinalize]
+    input { terminal = "driver-fallback" }
+  }
+
+  node endSafetyFollowup : FinalTerminalOperator {
+    depends_on = [zrgFinalize]
+    input { terminal = "safety-followup" }
+  }
+
+  node endRebooked : FinalTerminalOperator {
+    depends_on = [zrgFinalize]
+    input { terminal = "rebooked" }
+  }
+
+  node endVoucherIssued : FinalTerminalOperator {
+    depends_on = [zrgFinalize]
+    input { terminal = "voucher-issued" }
+  }
+
+  node endClosed : FinalTerminalOperator {
+    depends_on = [zrgFinalize]
+    input { terminal = "closed" }
+  }
+
+  branch on zrgFinalize.output.finalOutcome {
+    "completed"       -> endCompleted
+    "manual-review"   -> endManualReview
+    "refunded"        -> endRefunded
+    "escalated"       -> endEscalated
+    "rejected"        -> endRejected
+    "driver-fallback" -> endDriverFallback
+    "safety-followup" -> endSafetyFollowup
+    "rebooked"        -> endRebooked
+    "voucher-issued"  -> endVoucherIssued
+    otherwise         -> endClosed
+  }
+}

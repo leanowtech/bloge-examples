@@ -1,0 +1,55 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# BLOGE Resource Gateway — example application configuration
+# ─────────────────────────────────────────────────────────────────────────────
+
+server:
+  port: 8080
+
+spring:
+  application:
+    name: bloge-resource-gateway
+
+  threads:
+    virtual:
+      enabled: true
+
+
+  # ── Embedded H2 persistence for resource descriptors ──────────────────
+  datasource:
+    url: jdbc:h2:file:./target/bloge-resource-gateway;DB_CLOSE_DELAY=-1;DB_CLOSE_ON_EXIT=false
+    driver-class-name: org.h2.Driver
+    username: sa
+    password:
+
+  h2:
+    console:
+      enabled: true
+      path: /h2-console
+
+  # ── Jackson defaults ──────────────────────────────────────────────────
+  jackson:
+    serialization:
+      write-dates-as-timestamps: false
+
+# ── BLOGE engine ──────────────────────────────────────────────────────────
+spring.bloge:
+  dsl-locations: classpath:bloge/gateway
+  engine-mode: request-response
+
+# ── Gateway layer ────────────────────────────────────────────────────────
+gateway:
+  # Base URL for seeded resource descriptors.
+  # By default the example points at its own built-in demo upstream controller so the
+  # documented curl examples work without any extra services.
+  # Override with WireMock or a real upstream base URL when needed.
+  base-url: http://localhost:${server.port}/demo-upstream
+  # Automatically seed or refresh the built-in demo descriptors on startup.
+  seed-descriptors: true
+
+# ── Logging ───────────────────────────────────────────────────────────────
+logging:
+  level:
+    com.leanowtech.bloge.gateway: DEBUG
+    org.springframework.web: INFO
+  pattern:
+    console: "%d{HH:mm:ss.SSS} [%thread] [%X{tenantId:-system}] %-5level %logger{36} - %msg%n"

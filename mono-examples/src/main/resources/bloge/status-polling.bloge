@@ -1,0 +1,50 @@
+/// Submits an async job and polls its status until it is ready, then fetches the result.
+///
+/// The job is submitted once; a loop then checks its status repeatedly (up to 20
+/// times with a 2-second delay between iterations) until the reported status equals
+/// "READY".  Once polling exits the final result is retrieved.
+///
+/// Key DSL concepts demonstrated:
+///   loop           — iterates the inner graph; evaluates `until` after each round
+///   until <expr>   — early-exit predicate; loop terminates immediately when true
+///   loopIteration  — built-in 0-based counter available inside every loop node
+///   delay          — pause between loop iterations
+///
+/// Context variables:
+///   ctx.jobType — type of job to submit
+///   ctx.payload — input payload for the job
+graph statusPolling {
+
+  /// Submits an async job for processing
+  node submitJob : JobSubmitterOperator {
+    input {
+      jobType = ctx.jobType
+      payload = ctx.payload
+    }
+  }
+
+  /// loop with until condition: polls job status every 2s, up to 20 iterations
+  /// loopIteration — implicit variable for current iteration count (0-based)
+  /// prev.checkStatus.status — references the previous iteration's checkStatus output
+  loop pollStatus {
+    max_iterations = 20
+    delay = 2s
+    depends_on = [submitJob]
+    node checkStatus : StatusCheckerOperator {
+      input {
+        jobId     = submitJob.output.jobId
+        iteration = loopIteration
+      }
+    }
+    until checkStatus.output.status == "READY"
+  }
+
+  /// Retrieves the final result after polling completes
+  node fetchResult : ResultFetcherOperator {
+    depends_on = [pollStatus]
+    input {
+      jobId  = submitJob.output.jobId
+      status = pollStatus.output.checkStatus.status
+    }
+  }
+}
