@@ -29,7 +29,7 @@
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
 
         <!-- Bloge version — keep in sync with the root reactor -->
-        <bloge.version>0.6.3-RC1</bloge.version>
+        <bloge.version>0.6.3-RC3</bloge.version>
 
         <!-- Spring Boot -->
         <spring-boot.version>3.5.13</spring-boot.version>

@@ -17,7 +17,7 @@
         <project.reporting.outputEncoding>UTF-8</project.reporting.outputEncoding>
         <java.version>25</java.version>
         <maven.compiler.release>25</maven.compiler.release>
-        <bloge.version>0.6.3-RC1</bloge.version>
+        <bloge.version>0.6.3-RC3</bloge.version>
         <junit.version>5.11.4</junit.version>
         <spring-boot.version>3.4.2</spring-boot.version>
         <micrometer.version>1.14.4</micrometer.version>
