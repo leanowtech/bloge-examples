@@ -91,7 +91,7 @@ bloge-examples/
 ## Version Notes
 
 - All three example families currently target Java 25.
-- Current BLOGE dependency line in this workspace is `0.6.3-RC4`.
+- Current BLOGE dependency line in this workspace is `0.6.3-RC5`.
 - Spring Boot versions differ by project:
 	- `graph-engine-examples`: `3.5.13`
 	- `resource-gateway-examples`: `3.5.13`
