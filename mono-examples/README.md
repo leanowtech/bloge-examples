@@ -30,6 +30,7 @@ These examples are optimized for first-time BLOGE readers who want to understand
 | Two Node Chain | `beginner/TwoNodeChainExample.java` \| `beginner/TwoNodeChainDslExample.java` \| `two-node-chain.bloge` | The simplest dependency edge: one node produces data and the next node consumes it |
 | Error Handling Showcase | `beginner/ErrorHandlingShowcaseExample.java` \| `beginner/ErrorHandlingShowcaseDslExample.java` \| `error-handling-showcase.bloge` | An intentionally failing node, explicit `GraphResult.errors()` inspection, and a focused fallback demonstration |
 | Error Boundary Replacement | `beginner/ErrorBoundaryReplacementExample.java` \| `beginner/ErrorBoundaryReplacementDslExample.java` \| `error-boundary-replacement.bloge` | Validates the BPMN Error Boundary replacement pattern (plan §3.2): a `fallback` marker value `{failed: true}` flows downstream and a `branch on` routes to manual-review or normal-success paths. Includes a strict (no-fallback) variant that surfaces `GraphResult.errors()` |
+| Expression Features | `beginner/ExpressionFeaturesDslExample.java` \| `expression-features.bloge` | DSL indexing (`items[0]`, `items[-1]`, safe `?[...]`), map lookup, string interpolation, and `when` expressions |
 
 ### Integration recipes
 
@@ -38,6 +39,7 @@ These examples show how BLOGE fits into framework and tooling workflows instead 
 | Example | Files | What it shows |
 |---|---|---|
 | Spring Boot starter | `integration/spring/*.java` \| `bloge/integration/spring/spring-ticket-triage.bloge` \| `integration/spring-boot-example/application.yml` | `@BlogeOperator` bean discovery, classpath DSL loading, a demo REST controller, and `/actuator/bloge` diagnostics inside a Spring Boot app. Example operators demonstrate LLM metadata annotation (`promptHint`, `usageExample`, `constraintsDescription`) |
+| Modular checkout imports | `ecommerce/ModularCheckoutDslExample.java` \| `bloge/modular/checkout.bloge` \| `bloge/modular/payment-flow.bloge` \| `bloge/modular/inventory-check.bloge` | DSL `import` declarations, classpath import resolution, and invoking imported graphs directly by alias |
 | Observability wiring | `integration/observability/ObservabilityExample.java` \| `integration/observability/application.yml` \| `integration/observability/grafana-dashboard.json` | Direct `MetricsExecutionListener` wiring plus Prometheus/OTLP/Grafana assets that mirror the same signals in a deployed app |
 | Maven plugin profile | `integration/maven/MavenPluginExample.java` \| `bloge/integration/plugin/metadata-catalog.bloge` \| `plugin-example.blogerc.json` | The `bloge-plugin-example` Maven profile for `export-metadata` (now outputs version 1.1.0 with LLM metadata fields), `validate` (compile-level operator resolution), and `lint`, scoped to a clean DSL catalog |
 
@@ -47,7 +49,7 @@ These examples show the new composition path between the `session` and `state_ma
 
 | Example | Files | What it shows |
 |---|---|---|
-| Session phase with nested state machine | `ecommerce/OrderSessionWithStateMachineExample.java` \| `ecommerce/OrderSessionWithStateMachineDslExample.java` \| `bloge/ecommerce/order-session-with-state-machine.bloge` | A `session` phase that delegates to a nested `state_machine`, forwards `SessionHandle.signal(...)` payloads into the nested machine, and resumes the outer workflow once the nested machine reaches a terminal state |
+| Session phase with nested state machine | `ecommerce/OrderSessionWithStateMachineExample.java` \| `ecommerce/OrderSessionWithStateMachineDslExample.java` \| `bloge/ecommerce/order-session-with-state-machine.bloge` | A `session` phase that delegates to a nested `state_machine`, forwards `SessionHandle.signal(...)` payloads into local and global transitions, and resumes the outer workflow once the nested machine reaches a terminal state |
 | State machine state with nested session | `approval/ReviewStateMachineWithSessionExample.java` \| `approval/ReviewStateMachineWithSessionDslExample.java` \| `bloge/approval/review-state-machine-with-session.bloge` | A `state_machine` state that runs a nested `session` to completion and uses the nested session outputs to drive guarded auto-transitions |
 
 ### Evolution plan validation examples
@@ -59,6 +61,26 @@ These examples validate the BPMN replacement patterns described in the [evolutio
 | Error Boundary Replacement (§3.2) | `beginner/ErrorBoundaryReplacementExample.java` \| `beginner/ErrorBoundaryReplacementDslExample.java` \| `error-boundary-replacement.bloge` | Proves that `fallback` marker values flow downstream and `branch on` routes correctly — no Error Boundary primitive needed. Three variants: strict failure path, fallback→manual-review, fallback→normal-success |
 | Interruptible Scope Replacement (§4.2) | `ecommerce/OrderCancellationSessionExample.java` \| `ecommerce/OrderCancellationSessionDslExample.java` \| `bloge/ecommerce/order-cancellation-session.bloge` | Proves that session signals route at phase boundaries rather than interrupting mid-node. A "cancel" signal redirects to a `cancelled` phase where refund and notification nodes execute to completion |
 | Timeout Escalation (§4.2) | `ecommerce/TimeoutEscalationStateMachineExample.java` \| `ecommerce/TimeoutEscalationStateMachineDslExample.java` \| `bloge/ecommerce/timeout-escalation-state-machine.bloge` | Proves that per-state `timeout` + `on_timeout` transitions replace BPMN Timer Boundary Events. The `pendingApproval` state auto-transitions to `escalated` when its timeout expires |
+
+### Decision table examples
+
+These examples demonstrate BLOGE 0.8.3-RC3 decision tables for auditable business rule matrices.
+
+| Example | Files | What it shows |
+|---|---|---|
+| Credit Tier Decision | `finance/CreditTierDecisionExample.java` \| `finance/CreditTierDecisionDslExample.java` \| `credit-tier-decision.bloge` | `hit=first`, chained credit-score ranges, and an `otherwise` fallback for underwriting tiers |
+| Loan Terms Decision | `finance/LoanTermsDecisionExample.java` \| `finance/LoanTermsDecisionDslExample.java` \| `loan-terms-decision.bloge` | `hit=unique`, multi-input rule conditions, structured outputs, and stable ambiguous-match violations |
+| Insurance Premium Decision | `insurance/InsurancePremiumDecisionExample.java` \| `insurance/InsurancePremiumDecisionDslExample.java` \| `insurance-premium-decision.bloge` | A two-input premium-pricing matrix with structured premium/tier outputs |
+| Applicable Discounts Decision | `ecommerce/ApplicableDiscountsDecisionExample.java` \| `ecommerce/ApplicableDiscountsDecisionDslExample.java` \| `bloge/ecommerce/applicable-discounts-decision.bloge` | `hit=collect`, empty collection results without `otherwise`, and multi-discount accumulation |
+| Customer Tier Decision | `customerservice/CustomerTierDecisionExample.java` \| `customerservice/CustomerTierDecisionDslExample.java` \| `customer-tier-decision.bloge` | Static and dynamic `in` membership checks plus stable invalid-collection violation handling |
+
+### Schema evolution examples
+
+These examples demonstrate BLOGE 0.8.3-RC3 publish-time schema compatibility checks.
+
+| Example | Files | What it shows |
+|---|---|---|
+| Customer Profile Schema Evolution | `schema/CustomerProfileSchemaEvolutionExample.java` | `VersionedSchema`, optional-field additions, deprecated-field warnings, reserved-name violations, and a small release-gate decision model |
 
 ### 1. Basic DAG (Parallel + Branching + Fault Tolerance)
 
@@ -242,6 +264,19 @@ validateOrder → [payment-processing ∥ inventory-fulfillment] → confirmOrde
 - Sub-graph B `inventory-fulfillment` (3 nodes): inventoryCheck → warehouseAllocation → shipmentCreation
 - **Demonstrates:** parallel sub-graph execution, sub-graph outputs aggregated into the parent graph, and retry/timeout inside sub-graphs
 
+#### 2.1b E-commerce — Modular Checkout Imports ⭐ DSL Import
+
+**Files**: `ecommerce/ModularCheckoutDslExample.java` | `modular/checkout.bloge` | `modular/payment-flow.bloge` | `modular/inventory-check.bloge`
+
+```
+checkout.bloge imports payment-flow.bloge + inventory-check.bloge
+loadCart → payment(paymentFlow) + inventory(inventoryCheck) → assembleCheckout
+```
+
+- `import "./payment-flow" as paymentFlow` resolves a sibling classpath DSL resource
+- `node payment : paymentFlow` invokes the imported graph directly by alias
+- **Demonstrates:** reusable DSL-only graph modules without pre-registering Java-built sub-graphs
+
 #### 2.2 Finance — End-to-End Loan Approval ⭐ Sub-Graph
 
 **Files**: `finance/LoanApprovalSubGraphExample.java` | `LoanApprovalSubGraphDslExample.java` | `loan-approval-subgraph.bloge`
@@ -309,6 +344,17 @@ fetchOrders → foreach processOrders (parallel) { validate → deductStock } �
 
 - `foreach processOrders`: traverses the order list in parallel, with each item passing through the `validate → deductStock` sub-graph
 - **Demonstrates:** implicit variables `item`, `item.field`, and `itemIndex`, parallel foreach, `max_concurrency`, and downstream nodes consuming foreach output
+
+#### 3.1b Batch Order Processing with Item Failure Tolerance — ForEach (Parallel)
+
+**Files**: `iteration/BatchOrderWithFailureExample.java` | `BatchOrderWithFailureDslExample.java` | `batch-order-with-failure.bloge`
+
+```
+loadOrders + loadConfig → foreach processOrders { process } → summarize
+```
+
+- `batch_size = max(loadConfig.output.batchSize, 1)` evaluates batch sizing from graph data
+- `on_item_failure = continue` records a per-item `__error__` placeholder while later items continue
 
 #### 3.2 Sequential Transfer Processing — ForEach (Sequential)
 
@@ -616,6 +662,7 @@ The long-running examples demonstrate the complete lifecycle of **suspend → si
 | `PatientConsentWaitDslExample` | Healthcare (DSL) | Same as above | |
 | `ScheduledWaitExample` | Reporting | Cron + deadline timers | Sequential scheduled waits: business-window cron gate followed by archival deadline |
 | `ScheduledWaitDslExample` | Reporting (DSL) | Same as above | Loads the shared `scheduled-wait.bloge` resource |
+| `RemoteWorkerExecutionDslExample` | Reporting (DSL) | Remote work item | `execution_mode = remote`, `worker_topic`, durable `RemoteWorkerEnvelope`, poll/claim worker handoff |
 
 **Long-running lifecycle**:
 
@@ -637,6 +684,18 @@ returns the durable facade directly. Existing example code continues to call fam
 methods such as `executeWithOperators()`, `publishEvent()`, and `resume()` on that facade,
 while new durable-specific scenarios can also use facade-only operations such as work-item
 dispatch without rebuilding the helper setup.
+
+#### 7.1 Remote Worker Execution — Durable Work Item Dispatch
+
+**Files**: `durable/RemoteWorkerExecutionDslExample.java` | `remote/remote-report-rendering.bloge`
+
+```
+prepareReport → renderPdf (execution_mode = remote, worker_topic = "workers.reporting.pdf")
+```
+
+- Compiles the remote node through `RemoteWorkerOperatorFactories.durable(...)`
+- Enqueues a JSON-friendly `RemoteWorkerEnvelope` into a `WorkItemStore` and suspends at `renderPdf`
+- Demonstrates worker-side poll/claim and the output payload shape a worker would complete with
 
 ### 8. Lambda Collection Operations (Lambda Collection Ops)
 
@@ -671,6 +730,8 @@ Multi-turn chatbot examples covering two implementation patterns:
 | `AiToolCallingDslExample` | Tool-calling · DSL | Same as above, DSL version backed by `ai-tool-calling.bloge` and `AiTool*` operators |
 | `AgentExample` | Agent loop · Java API | One embedded `AgentLoopOperator` node built with `AgentBuilder`; exposes `searchKnowledgeBase`, `createTicket`, and `escalateToHuman` as declarative tools, with `maxToolConcurrency(2)` limiting per-turn tool fan-out |
 | `AgentDslExample` | Agent loop · DSL | Same customer-support agent defined in `agent-customer-support.bloge`, including `max_tool_concurrency = 2`, and compiled through `AgentDslCompiler` |
+| `StreamingAnalysisAgentExample` | Streaming agent · Java API | One `StreamingAgentLoopOperator` node built with `AgentBuilder`, `memory(TokenBudget)`, and a mock streaming LLM that emits token/tool lifecycle chunks |
+| `StreamingAnalysisAgentDslExample` | Streaming agent · DSL | Same data-analysis agent defined with `stream agent` in `streaming-analysis-agent.bloge` |
 | `DynamicSubGraphExample` | Graph factory · Java API | `generateDynamicDsl → executePlan[dynamicSubGraph]` — upstream node emits DSL, `dynamicSubGraph` sandbox-validates, compiles, and executes it at runtime |
 
 Corresponding DSL resource files:
@@ -680,6 +741,7 @@ Corresponding DSL resource files:
 - `customer-service-chatbot-long-running.bloge`
 - `ai-tool-calling.bloge`
 - `agent-customer-support.bloge`
+- `streaming-analysis-agent.bloge`
 - `dynamic-agent.bloge`
 
 **Plan B lifecycle**:

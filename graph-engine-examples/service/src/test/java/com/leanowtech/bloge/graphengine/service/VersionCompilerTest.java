@@ -5,16 +5,20 @@ import com.leanowtech.bloge.core.operator.Operator;
 import com.leanowtech.bloge.core.operator.RemoteWorkerOperator;
 import com.leanowtech.bloge.core.runtime.registry.GraphDefinitionHasher;
 import com.leanowtech.bloge.core.spi.DefaultOperatorRegistry;
+import com.leanowtech.bloge.core.spi.JsonCodec;
 import com.leanowtech.bloge.durable.TaskInboxTaskStore;
 import com.leanowtech.bloge.durable.UserTaskOperator;
 import com.leanowtech.bloge.durable.store.memory.InMemoryWorkItemStore;
 import com.leanowtech.bloge.durable.store.memory.InMemoryTaskInboxStore;
+import com.leanowtech.bloge.dsl.compiler.DslGraphDefinitionCodec;
 import com.leanowtech.bloge.graphengine.model.GraphDefinition;
 import com.leanowtech.bloge.graphengine.model.GraphDefinitionStatus;
 import com.leanowtech.bloge.graphengine.model.GraphExecutionMode;
 import com.leanowtech.bloge.graphengine.model.GraphVersion;
 import com.leanowtech.bloge.graphengine.model.GraphVersionMetadata;
 import com.leanowtech.bloge.graphengine.model.GraphVersionStatus;
+import com.leanowtech.bloge.dsl.compiler.CompilationDiagnostic;
+import com.leanowtech.bloge.state.model.StateMachineDef;
 import org.junit.jupiter.api.Test;
 
 import java.util.List;
@@ -161,6 +165,55 @@ class VersionCompilerTest {
         assertEquals(RuntimeArtifactNames.stateMachineRuntimeName(version.versionId()), result.runtimeName());
         assertNotNull(result.stateMachine());
         assertEquals(result.runtimeName(), result.stateMachine().name());
+        assertEquals(StateMachineDef.computeContentHash(new StateMachineDef.HashInput(
+                "orderLifecycle",
+                result.stateMachine().states(),
+                result.stateMachine().initialStateId(),
+                result.stateMachine().maxTransitions(),
+                result.stateMachine().maxStateVisits(),
+                result.stateMachine().globalTransitions()
+        )), result.stateMachine().contentHash());
+    }
+
+    @Test
+    void encodedGraphWithRetryRoundTripsThroughRegistryCodec() {
+        DefaultOperatorRegistry registry = new DefaultOperatorRegistry();
+        registry.register("echo", (Operator<Object, Object>) (input, ctx) -> input);
+        VersionCompiler compiler = new VersionCompiler(GraphEngineRuntimeSupport.builder()
+                .operatorRegistry(registry)
+                .build());
+        GraphDefinition definition = definition("retry-graph");
+        GraphVersion version = version(
+                definition,
+                "version-retry-graph",
+                "1.0.0",
+                """
+                        graph retryFlow {
+                          node riskCheck : echo {
+                            retry = { attempts: 3, backoff: 1s, strategy: fixed }
+                            input {
+                              orderId = ctx.orderId
+                            }
+                          }
+                        }
+                        """
+        );
+
+        VersionCompileResult result = compiler.compile(definition, version);
+        DslGraphDefinitionCodec codec = GraphEngineDslCodecs.graphDefinitionCodec(JsonCodec.DEFAULT);
+        var encoded = codec.encode(result.graph()).orElseThrow();
+        var registryDefinition = com.leanowtech.bloge.core.runtime.registry.GraphDefinition.builder(
+                result.runtimeName(),
+                version.version(),
+                GraphDefinitionHasher.sha256Hex(encoded.definitionJson()),
+                encoded.definitionJson()
+        ).build();
+
+        var decoded = codec.decode(registryDefinition, registry);
+
+        assertTrue(result.valid());
+        assertEquals(result.runtimeName(), decoded.name());
+        assertTrue(decoded.nodes().containsKey("riskCheck"));
     }
 
     @Test
@@ -174,6 +227,18 @@ class VersionCompilerTest {
         assertFalse(result.valid());
         assertNull(result.graph());
         assertTrue(result.diagnostics().stream().anyMatch(GraphEngineDiagnostic::error));
+    }
+
+    @Test
+    void compilerHintDiagnosticsAreInformational() {
+        assertEquals(GraphEngineDiagnostic.Severity.ERROR,
+                VersionCompiler.compilationSeverity(CompilationDiagnostic.Level.ERROR));
+        assertEquals(GraphEngineDiagnostic.Severity.WARNING,
+                VersionCompiler.compilationSeverity(CompilationDiagnostic.Level.WARNING));
+        assertEquals(GraphEngineDiagnostic.Severity.INFO,
+                VersionCompiler.compilationSeverity(CompilationDiagnostic.Level.INFO));
+        assertEquals(GraphEngineDiagnostic.Severity.INFO,
+                VersionCompiler.compilationSeverity(CompilationDiagnostic.Level.HINT));
     }
 
     @Test

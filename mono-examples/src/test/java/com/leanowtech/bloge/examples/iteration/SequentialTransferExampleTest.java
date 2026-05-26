@@ -31,7 +31,10 @@ class SequentialTransferExampleTest {
         registry.register(subGraph.nodes().get("executeTransfer").operatorRef(), SequentialTransferExample.EXECUTE_TRANSFER);
         registry.register(subGraph.nodes().get("recordLedger").operatorRef(), SequentialTransferExample.RECORD_LEDGER);
 
-        var forEachOp = new ForEachOperator(subGraph, registry, true, List.of());
+        var forEachOp = ForEachOperator.builder(subGraph, registry)
+          .sequential(true)
+          .listeners(List.of())
+          .build();
 
         Graph mainGraph = Graph.builder("sequentialTransfer")
                 .node("fetchTransfers", SequentialTransferExample.FETCH_TRANSFERS)

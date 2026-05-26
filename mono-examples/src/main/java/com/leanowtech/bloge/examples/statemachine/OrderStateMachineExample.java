@@ -116,7 +116,7 @@ public final class OrderStateMachineExample {
         System.out.println("After CONFIRM: " + describe(result));
 
         // 4. Create a checkpoint (simulating persistence)
-        StateMachineCheckpoint checkpoint = executor.createCheckpoint(result.instance());
+        StateMachineCheckpoint checkpoint = executor.createCheckpoint(result.instance(), def);
         System.out.println("Checkpoint saved at state: " + checkpoint.currentStateId());
 
         // 4b. Derive a checkpoint variant with an extended deadline (toBuilder)

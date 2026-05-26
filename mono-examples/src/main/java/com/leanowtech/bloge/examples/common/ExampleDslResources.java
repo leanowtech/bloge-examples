@@ -3,6 +3,8 @@ package com.leanowtech.bloge.examples.common;
 import com.leanowtech.bloge.core.model.Graph;
 import com.leanowtech.bloge.core.spi.OperatorRegistry;
 import com.leanowtech.bloge.dsl.compiler.GraphLoader;
+import com.leanowtech.bloge.dsl.resolver.ClasspathGraphResolver;
+import com.leanowtech.bloge.dsl.resolver.GraphResolver;
 
 import java.io.IOException;
 import java.io.InputStream;
@@ -42,5 +44,35 @@ public final class ExampleDslResources {
      */
     public static Graph loadGraph(String resourcePath, OperatorRegistry registry) {
         return new GraphLoader(registry).load(readResource(resourcePath));
+    }
+
+    /**
+     * Compiles a DSL resource whose source may import sibling classpath resources.
+     *
+     * <p>The source location is set to the classpath resource so relative imports such as
+     * {@code import "./payment-flow" as paymentFlow} resolve beside the root resource.</p>
+     *
+     * @param resourcePath absolute resource path such as {@code /bloge/modular/checkout.bloge}
+     * @param registry     operator registry used for operator resolution during compilation
+     * @return compiled graph definition
+     */
+    public static Graph loadGraphWithClasspathImports(String resourcePath, OperatorRegistry registry) {
+        return loadGraph(resourcePath, registry, new ClasspathGraphResolver());
+    }
+
+    /**
+     * Compiles a DSL resource with an explicit import resolver.
+     *
+     * @param resourcePath absolute resource path such as {@code /bloge/modular/checkout.bloge}
+     * @param registry     operator registry used for operator resolution during compilation
+     * @param resolver     graph resolver used by DSL {@code import} declarations
+     * @return compiled graph definition
+     */
+    public static Graph loadGraph(String resourcePath, OperatorRegistry registry, GraphResolver resolver) {
+        String normalizedPath = resourcePath.startsWith("/") ? resourcePath.substring(1) : resourcePath;
+        return new GraphLoader(registry)
+                .withGraphResolver(resolver)
+                .withSourceLocation("classpath:" + normalizedPath)
+                .load(readResource(resourcePath));
     }
 }

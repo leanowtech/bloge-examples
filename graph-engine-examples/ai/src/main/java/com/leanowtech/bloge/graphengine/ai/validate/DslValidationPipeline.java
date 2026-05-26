@@ -234,17 +234,30 @@ public final class DslValidationPipeline {
         return new DslDiagnostic(
                 DslDiagnostic.Stage.COMPILE,
                 "dsl-compile",
-                switch (diagnostic.level()) {
-                    case ERROR -> DslDiagnostic.Severity.ERROR;
-                    case WARNING -> DslDiagnostic.Severity.WARNING;
-                    case INFO -> DslDiagnostic.Severity.INFO;
-                },
+                compilationSeverity(diagnostic.level()),
                 diagnostic.message(),
                 diagnostic.nodeId(),
                 diagnostic.field(),
                 Math.max(0, diagnostic.line()),
                 Math.max(0, diagnostic.column())
         );
+    }
+
+    /**
+     * Maps BLOGE compiler diagnostic levels into the graph-engine validation API.
+     *
+     * <p>{@link CompilationDiagnostic.Level#HINT} is advisory compiler feedback, so it is exposed
+     * as {@link DslDiagnostic.Severity#INFO} and does not make a validation result invalid.</p>
+     *
+     * @param level compiler diagnostic level emitted by {@code bloge-dsl}
+     * @return graph-engine validation severity
+     */
+    static DslDiagnostic.Severity compilationSeverity(CompilationDiagnostic.Level level) {
+        return switch (level) {
+            case ERROR -> DslDiagnostic.Severity.ERROR;
+            case WARNING -> DslDiagnostic.Severity.WARNING;
+            case INFO, HINT -> DslDiagnostic.Severity.INFO;
+        };
     }
 
     private static DslDiagnostic serviceDiagnostic(DslDiagnostic.Stage stage, String code, String message) {

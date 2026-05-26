@@ -1,0 +1,34 @@
+/// Demonstrates remote-worker node dispatch through a durable work item.
+graph remoteReportRendering {
+  node prepareReport : ReportPreparationOperator {
+    input {
+      reportId   = ctx.reportId
+      customerId = ctx.customerId
+    }
+    output {
+      reportId: String
+      customerId: String
+      pageCount: Number
+      format: String
+    }
+  }
+
+  node renderPdf : PdfRenderOperator {
+    depends_on = [prepareReport]
+    input {
+      reportId   = prepareReport.output.reportId
+      customerId = prepareReport.output.customerId
+      pageCount  = prepareReport.output.pageCount
+      format     = prepareReport.output.format
+    }
+    execution_mode = remote
+    worker_topic   = "workers.reporting.pdf"
+    timeout = 30s
+    retry = { attempts: 2, backoff: 1s, strategy: exponential }
+    output {
+      documentUrl: String
+      checksum: String
+      pageCount: Number
+    }
+  }
+}

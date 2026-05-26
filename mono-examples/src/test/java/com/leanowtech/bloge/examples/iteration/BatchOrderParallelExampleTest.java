@@ -46,7 +46,10 @@ class BatchOrderParallelExampleTest {
         registry.register(subGraph.nodes().get("validate").operatorRef(), BatchOrderParallelExample.VALIDATE_ORDER);
         registry.register(subGraph.nodes().get("deductStock").operatorRef(), BatchOrderParallelExample.DEDUCT_STOCK);
 
-        var forEachOp = new ForEachOperator(subGraph, registry, false, List.of());
+        var forEachOp = ForEachOperator.builder(subGraph, registry)
+          .sequential(false)
+          .listeners(List.of())
+          .build();
 
         Graph mainGraph = Graph.builder("batchOrderParallel")
                 .node("fetchOrders", BatchOrderParallelExample.FETCH_ORDERS)

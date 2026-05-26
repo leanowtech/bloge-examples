@@ -1,0 +1,40 @@
+/// Imported payment sub-graph used by checkout.bloge.
+graph paymentFlow {
+  input {
+    orderId: String
+    totalAmount: Number
+    paymentMethod: String
+  }
+
+  output {
+    paymentResult: {
+      paymentStatus: String
+      authCode: String
+      captureRequired: Boolean
+    }
+  }
+
+  node authorizePayment : PaymentAuthorizationOperator {
+    input {
+      orderId       = ctx.orderId
+      totalAmount   = ctx.totalAmount
+      paymentMethod = ctx.paymentMethod
+    }
+    output {
+      orderId: String
+      authorizationId: String
+      status: String
+      amount: Number
+    }
+  }
+
+  node paymentResult : PaymentResultOperator {
+    depends_on = [authorizePayment]
+    input { authorization = authorizePayment.output }
+    output {
+      paymentStatus: String
+      authCode: String
+      captureRequired: Boolean
+    }
+  }
+}

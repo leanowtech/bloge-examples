@@ -1,0 +1,20 @@
+/// Demonstrates index/member access, interpolation, and when expressions.
+graph expressionFeatures {
+
+  node buildCtx : ContextBuilderOperator {
+    input { seed = ctx.seed }
+  }
+
+  transform results {
+    firstItem   = buildCtx.output.items[0]
+    lastItem    = buildCtx.output.items[-1]
+    safeItem    = buildCtx.output.items?[1]
+    goldScore   = buildCtx.output.scores["gold"]
+    greeting    = "Hello ${buildCtx.output.user}! You have ${buildCtx.output.count} items."
+    tierBonus   = when buildCtx.output.tier {
+      "gold"    -> 10
+      "silver"  -> 5
+      otherwise -> 0
+    }
+  }
+}

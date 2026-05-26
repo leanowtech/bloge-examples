@@ -18,6 +18,7 @@ import java.util.LinkedHashMap;
 import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 @SuppressWarnings("preview")
@@ -78,6 +79,40 @@ class OrderSessionWithStateMachineExampleTest {
         assertTrue(Boolean.TRUE.equals(notifyCustomer.get("notified")));
     }
 
+    @Test
+    @Timeout(10)
+    void javaApi_globalCancelSignalCompletesWithoutShipping() throws Exception {
+        SessionStateSnapshot checkpoint = executeJavaApiCancelled();
+        Map<String, Object> orderingOutput = asMap(checkpoint.phaseOutputs().get("ordering"));
+        Map<String, Object> orderFlow = asMap(orderingOutput.get("orderFlow"));
+        Map<String, Object> stateMachine = asMap(orderFlow.get("stateMachine"));
+        Map<String, Object> fulfillmentOutput = asMap(checkpoint.phaseOutputs().get("fulfillment"));
+        Map<String, Object> notifyCustomer = asMap(fulfillmentOutput.get("notifyCustomer"));
+
+        assertEquals(SessionStatus.COMPLETED, checkpoint.status());
+        assertEquals("cancelled", stateMachine.get("currentStateId"));
+        assertFalse(orderFlow.containsKey("processing"));
+        assertEquals("cancelled", notifyCustomer.get("finalState"));
+        assertEquals("not-shipped", notifyCustomer.get("shipmentId"));
+    }
+
+    @Test
+    @Timeout(10)
+    void dsl_globalCancelSignalCompletesWithoutShipping() throws Exception {
+        SessionStateSnapshot checkpoint = executeDslCancelled();
+        Map<String, Object> orderingOutput = asMap(checkpoint.phaseOutputs().get("ordering"));
+        Map<String, Object> orderFlow = asMap(orderingOutput.get("orderFlow"));
+        Map<String, Object> stateMachine = asMap(orderFlow.get("stateMachine"));
+        Map<String, Object> fulfillmentOutput = asMap(checkpoint.phaseOutputs().get("fulfillment"));
+        Map<String, Object> notifyCustomer = asMap(fulfillmentOutput.get("notifyCustomer"));
+
+        assertEquals(SessionStatus.COMPLETED, checkpoint.status());
+        assertEquals("cancelled", stateMachine.get("currentStateId"));
+        assertFalse(orderFlow.containsKey("processing"));
+        assertEquals("cancelled", notifyCustomer.get("finalState"));
+        assertEquals("not-shipped", notifyCustomer.get("shipmentId"));
+    }
+
     private SessionStateSnapshot executeJavaApi() throws Exception {
         DefaultOperatorRegistry registry = new DefaultOperatorRegistry();
         OrderSessionWithStateMachineExample.registerOperators(registry);
@@ -100,6 +135,28 @@ class OrderSessionWithStateMachineExampleTest {
         }
     }
 
+            private SessionStateSnapshot executeJavaApiCancelled() throws Exception {
+            DefaultOperatorRegistry registry = new DefaultOperatorRegistry();
+            OrderSessionWithStateMachineExample.registerOperators(registry);
+            ExampleSessionSnapshotStore store = new ExampleSessionSnapshotStore();
+            try (SessionExecutor executor = OrderSessionWithStateMachineExample.newExecutor(store, registry)) {
+                SessionHandle handle = executor.start(
+                    OrderSessionWithStateMachineExample.buildSessionGraph(),
+                    new GraphContext(Map.of(
+                        "orderId", "ORD-3002",
+                        "amount", 149.99,
+                        "sessionId", "ORDER-SESSION-JAVA-CANCEL"
+                    ))
+                );
+                OrderSessionWithStateMachineExample.awaitStatus(store, handle.sessionId(), SessionStatus.SUSPENDED, Duration.ofSeconds(2));
+                handle.signal(Map.of("event", "submit", "submittedBy", "web"));
+                OrderSessionWithStateMachineExample.awaitStatus(store, handle.sessionId(), SessionStatus.SUSPENDED, Duration.ofSeconds(2));
+                handle.signal(Map.of("event", "cancel", "reason", "customer request"));
+                return OrderSessionWithStateMachineExample.awaitStatus(
+                    store, handle.sessionId(), SessionStatus.COMPLETED, Duration.ofSeconds(3));
+            }
+            }
+
     private SessionStateSnapshot executeDsl() throws Exception {
         DefaultOperatorRegistry registry = new DefaultOperatorRegistry();
         SessionGraph sessionGraph = OrderSessionWithStateMachineDslExample.compile(registry);
@@ -121,6 +178,28 @@ class OrderSessionWithStateMachineExampleTest {
                     store, handle.sessionId(), SessionStatus.COMPLETED, Duration.ofSeconds(3));
         }
     }
+
+            private SessionStateSnapshot executeDslCancelled() throws Exception {
+            DefaultOperatorRegistry registry = new DefaultOperatorRegistry();
+            SessionGraph sessionGraph = OrderSessionWithStateMachineDslExample.compile(registry);
+            ExampleSessionSnapshotStore store = new ExampleSessionSnapshotStore();
+            try (SessionExecutor executor = OrderSessionWithStateMachineExample.newExecutor(store, registry)) {
+                SessionHandle handle = executor.start(
+                    sessionGraph,
+                    new GraphContext(Map.of(
+                        "orderId", "ORD-4002",
+                        "amount", 89.50,
+                        "sessionId", "ORDER-SESSION-DSL-CANCEL"
+                    ))
+                );
+                OrderSessionWithStateMachineExample.awaitStatus(store, handle.sessionId(), SessionStatus.SUSPENDED, Duration.ofSeconds(2));
+                handle.signal(Map.of("event", "submit", "submittedBy", "api"));
+                OrderSessionWithStateMachineExample.awaitStatus(store, handle.sessionId(), SessionStatus.SUSPENDED, Duration.ofSeconds(2));
+                handle.signal(Map.of("event", "cancel", "reason", "customer request"));
+                return OrderSessionWithStateMachineExample.awaitStatus(
+                    store, handle.sessionId(), SessionStatus.COMPLETED, Duration.ofSeconds(3));
+            }
+            }
 
     private static Map<String, Object> asMap(Object value) {
         if (value instanceof Map<?, ?> map) {

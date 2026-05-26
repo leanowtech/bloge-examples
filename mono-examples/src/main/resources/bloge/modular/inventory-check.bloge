@@ -1,0 +1,42 @@
+/// Imported inventory reservation sub-graph used by checkout.bloge.
+graph inventoryCheck {
+  input {
+    orderId: String
+    sku: String
+    quantity: Number
+  }
+
+  output {
+    inventoryResult: {
+      reserved: Boolean
+      reservationId: String
+      warehouse: String
+      reservedQuantity: Number
+    }
+  }
+
+  node lookupStock : InventoryLookupOperator {
+    input { sku = ctx.sku }
+    output {
+      sku: String
+      availableQuantity: Number
+      warehouse: String
+    }
+  }
+
+  node inventoryResult : InventoryReservationOperator {
+    depends_on = [lookupStock]
+    input {
+      orderId  = ctx.orderId
+      sku      = ctx.sku
+      quantity = ctx.quantity
+      stock    = lookupStock.output
+    }
+    output {
+      reserved: Boolean
+      reservationId: String
+      warehouse: String
+      reservedQuantity: Number
+    }
+  }
+}

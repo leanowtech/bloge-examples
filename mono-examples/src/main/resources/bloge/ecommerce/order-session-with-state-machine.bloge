@@ -8,6 +8,10 @@ session orderWorkflow {
       max_transitions = 20
       max_state_visits = 5
 
+      global_transitions {
+        on cancel -> cancelled
+      }
+
       state draft [initial] {
         graph {
           node collectInfo : CollectOrderInfoOperator {
@@ -45,6 +49,7 @@ session orderWorkflow {
       }
 
       state shipped [terminal] { }
+      state cancelled [terminal] { }
     }
     then -> fulfillment
   }

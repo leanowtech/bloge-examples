@@ -48,12 +48,15 @@ public final class OrderSessionWithStateMachineExample {
         );
     };
 
-    static final Operator<Map<String, Object>, Map<String, Object>> NOTIFY_CUSTOMER = (input, ctx) -> Map.of(
-            "orderId", input.get("orderId"),
-            "finalState", input.get("finalState"),
-            "shipmentId", input.get("shipmentId"),
-            "notified", true
-    );
+    static final Operator<Map<String, Object>, Map<String, Object>> NOTIFY_CUSTOMER = (input, ctx) -> {
+        Object shipmentId = input.get("shipmentId");
+        return Map.of(
+                "orderId", input.get("orderId"),
+                "finalState", input.get("finalState"),
+                "shipmentId", shipmentId == null ? "not-shipped" : shipmentId,
+                "notified", true
+        );
+    };
 
     private OrderSessionWithStateMachineExample() {
     }
@@ -90,6 +93,7 @@ public final class OrderSessionWithStateMachineExample {
         return StateMachineBuilder.create("orderFlow")
                 .maxTransitions(20)
                 .maxStateVisits(5)
+                .globalTransition("cancel", "cancelled")
                 .state("draft").initial()
                     .graph(draftGraph)
                     .on("submit").goTo("pendingPayment")
@@ -104,6 +108,7 @@ public final class OrderSessionWithStateMachineExample {
                     .on("*").goTo("shipped")
                     .done()
                 .state("shipped").terminal().done()
+                                .state("cancelled").terminal().done()
                 .build();
     }
 
@@ -127,10 +132,11 @@ public final class OrderSessionWithStateMachineExample {
                     Map<String, Object> processing = asMap(orderFlow.get("processing"));
                     Map<String, Object> processingOutput = asMap(processing.get("output"));
                     Map<String, Object> shipOrder = asMap(processingOutput.get("shipOrder"));
+                    Object shipmentId = shipOrder.getOrDefault("shipmentId", "not-shipped");
                     return Map.of(
                             "orderId", ctx.get("orderId", String.class),
                             "finalState", stateMachine.get("currentStateId"),
-                            "shipmentId", shipOrder.get("shipmentId")
+                            "shipmentId", shipmentId
                     );
                 })
                 .build();

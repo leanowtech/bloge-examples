@@ -1,0 +1,18 @@
+/// Collects every discount that applies instead of choosing a single first match.
+graph applicableDiscountsDecision {
+
+  node fetchCustomer : CustomerFetchOperator {
+    input { customerId = ctx.customerId }
+  }
+
+  decision_table applicableDiscounts(
+    score     = fetchCustomer.output.loyaltyScore,
+    hasCoupon = fetchCustomer.output.hasCoupon,
+    isVip     = fetchCustomer.output.isVip
+  ) hit=collect -> String {
+    rule (score: score >= 500)       -> "loyalty_5pct"
+    rule (score: score >= 1000)      -> "loyalty_extra_3pct"
+    rule (hasCoupon: hasCoupon == true) -> "coupon_10pct"
+    rule (isVip: isVip == true)      -> "vip_free_shipping"
+  }
+}

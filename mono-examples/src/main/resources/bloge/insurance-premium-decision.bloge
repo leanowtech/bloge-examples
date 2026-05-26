@@ -1,0 +1,23 @@
+/// Prices an insurance policy with a two-input UNIQUE decision table.
+graph insurancePremiumDecision {
+
+  node fetchApplicant : InsuranceApplicantOperator {
+    input { applicantId = ctx.applicantId }
+  }
+
+  node assessRisk : RiskAssessmentOperator {
+    depends_on = [fetchApplicant]
+    input { applicantId = ctx.applicantId }
+  }
+
+  decision_table premiumCalc(
+    age       = fetchApplicant.output.age,
+    riskScore = assessRisk.output.riskScore
+  ) hit=unique -> { premium: Decimal, tier: String } {
+    rule (age: age < 30, riskScore: riskScore < 30)       -> { premium: 120.0, tier: "standard" }
+    rule (age: age < 30, riskScore: riskScore >= 30)      -> { premium: 180.0, tier: "elevated" }
+    rule (age: 30 <= age < 60, riskScore: riskScore < 50) -> { premium: 150.0, tier: "standard" }
+    rule (age: age >= 60, riskScore: riskScore < 40)      -> { premium: 220.0, tier: "senior" }
+    otherwise                                             -> { premium: 350.0, tier: "high-risk" }
+  }
+}

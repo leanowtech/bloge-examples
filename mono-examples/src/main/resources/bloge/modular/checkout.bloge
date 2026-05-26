@@ -1,0 +1,57 @@
+import "./payment-flow" as paymentFlow
+import "./inventory-check" as inventoryCheck
+
+/// Root checkout graph that composes imported payment and inventory graphs.
+graph modularCheckout {
+  node loadCart : CheckoutCartOperator {
+    input {
+      checkoutId = ctx.checkoutId
+      customerId = ctx.customerId
+    }
+    output {
+      checkoutId: String
+      orderId: String
+      customerId: String
+      sku: String
+      quantity: Number
+      totalAmount: Number
+      paymentMethod: String
+    }
+  }
+
+  node payment : paymentFlow {
+    depends_on = [loadCart]
+    input {
+      orderId       = loadCart.output.orderId
+      totalAmount   = loadCart.output.totalAmount
+      paymentMethod = loadCart.output.paymentMethod
+    }
+  }
+
+  node inventory : inventoryCheck {
+    depends_on = [loadCart]
+    input {
+      orderId  = loadCart.output.orderId
+      sku      = loadCart.output.sku
+      quantity = loadCart.output.quantity
+    }
+  }
+
+  node assembleCheckout : CheckoutAssemblerOperator {
+    depends_on = [payment, inventory]
+    input {
+      checkoutId = loadCart.output.checkoutId
+      orderId    = loadCart.output.orderId
+      payment    = payment.output.paymentResult
+      inventory  = inventory.output.inventoryResult
+    }
+    output {
+      checkoutId: String
+      orderId: String
+      status: String
+      paymentStatus: String
+      reservationId: String
+      captureRequired: Boolean
+    }
+  }
+}

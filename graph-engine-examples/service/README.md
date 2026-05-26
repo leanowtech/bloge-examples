@@ -91,7 +91,8 @@ substrate rather than introducing a separate orchestration engine:
   SESSION instances project phase status from the freshest active snapshot or
   durable session checkpoint, with live snapshots short-circuiting checkpoint
   I/O when present. STATE_MACHINE instances project state status from the
-  durable state-machine checkpoint. The same `GraphNodeState` DTO is reused
+  durable state-machine checkpoint, including administrative `TERMINATED`
+  checkpoints as `CANCELLED` for the current state. The same `GraphNodeState` DTO is reused
   across all three execution modes, with `operatorRef` / `waitType` populated
   only for GRAPH-mode nodes. The paged overload returns
   `PagedResult<GraphNodeState>` and supports in-memory status filtering plus
@@ -159,7 +160,9 @@ the standalone service keeps regression coverage for:
 | `testTerminalChain_...` | the `answer -> zrg -> end` chain completes with one active terminal outcome and nine skipped alternatives |
 
 All operators in the fixture are lightweight stubs so failures point at engine
-behavior instead of business logic. The call-activity scenario complements
+behavior instead of business logic. The fixture opts its `GraphLoader` into the
+compiler-scoped `ComplexityLimits.IMPORT` profile because the BPMN-derived graph
+intentionally exceeds the default authoring limits. The call-activity scenario complements
 `bloge-core`'s `SubGraphContextIsolationTest`: the core test proves the minimal
 isolation contract, while the service test re-validates the same guarantee
 inside a larger multi-pattern graph.
@@ -202,7 +205,9 @@ described in the AI-native graph-engine design:
 
 ## Runtime naming strategy
 
-The service derives deterministic runtime artifact names from stable product identifiers instead of publishing raw DSL root names directly. This prevents collisions between different product definitions that may happen to reuse the same top-level DSL name while keeping graph versions evolution-compatible inside the shared runtime registry.
+The service derives deterministic runtime artifact names from stable product identifiers instead of publishing raw DSL root names directly. This prevents collisions between different product definitions that may happen to reuse the same top-level DSL name while keeping graph versions evolution-compatible inside the shared runtime registry. Session and state-machine runtime renames preserve the compiler-provided `contentHash`, so durable checkpoint compatibility checks continue to compare the authored orchestration structure instead of the product-layer runtime name.
+
+Graph registry publication uses `GraphEngineDslCodecs.graphDefinitionCodec(...)` for DSL graph definitions. This keeps BLOGE's registry payload format while repairing retry-enabled AST round-trips introduced by the upgraded `retryOnCategories` metadata, so graphs with `retry = { ... }` remain decodable during schema-evolution checks and durable runtime publication.
 
 ## Typical wiring
 

@@ -1,0 +1,16 @@
+/// Routes customers with static and dynamic membership checks.
+graph customerTierDecision {
+
+  node fetchCustomer : CustomerLookupOperator {
+    input { customerId = ctx.customerId }
+  }
+
+  decision_table customerTier(
+    type    = fetchCustomer.output.accountType,
+    allowed = ctx.priorityTypes
+  ) hit=first -> String {
+    rule (type: type in ["vip", "enterprise", "gov"]) -> "priority"
+    rule (type: type in allowed)                        -> "preferred"
+    otherwise                                           -> "standard"
+  }
+}

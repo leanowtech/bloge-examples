@@ -793,6 +793,65 @@ class DefaultGraphEngineServiceTest {
     }
 
     @Test
+    void queryInstanceNodesMapsTerminatedStateMachineCurrentStateAsCancelled() {
+        try (Fixture fixture = new Fixture(false)) {
+            GraphDefinition definition = fixture.service.createDefinition(new CreateDefinitionCommand(
+                    "state-node-terminated",
+                    "tenant-a",
+                    "sales",
+                    "State node terminated",
+                    null, null, Map.of(), null, null
+            ));
+            GraphVersion version = publishStateMachine(fixture, definition, "1.0.0", """
+                    state_machine terminatedLifecycle {
+                      state draft [initial] {
+                        on submit -> review
+                      }
+
+                      state review {
+                        on approve -> approved
+                      }
+
+                      state approved [terminal] { }
+                    }
+                    """);
+            GraphInstance instance = fixture.createManagedGraphInstance(
+                    "exec-state-nodes-terminated",
+                    definition,
+                    version.versionId(),
+                    GraphExecutionMode.STATE_MACHINE,
+                    GraphInstanceStatus.TERMINATED
+            );
+            Instant first = Instant.parse("2025-01-01T02:30:00Z");
+            new ExecutionCheckpointStateMachineStore(fixture.checkpointStore).save(
+                    StateMachineCheckpoint.builder(instance.instanceId(), "terminatedLifecycle")
+                            .currentStateId("review")
+                            .status(com.leanowtech.bloge.state.model.StateMachineStatus.TERMINATED)
+                            .totalTransitions(1)
+                            .stateVisitCount(Map.of("draft", 1, "review", 1))
+                            .stateOutputs(Map.of("draft", Map.of("submitted", true)))
+                            .sharedContext(Map.of("orderId", "exec-state-nodes-terminated"))
+                            .history(List.of(new com.leanowtech.bloge.state.model.StateExecutionRecord(
+                                    "draft",
+                                    "submit",
+                                    Map.of("submitted", true),
+                                    "review",
+                                    first
+                            )))
+                            .startedAt(first.minusSeconds(10))
+                            .lastTransitionAt(first)
+                            .checkpointedAt(first.plusSeconds(5))
+                            .build()
+            );
+
+            List<GraphNodeState> nodes = fixture.service.queryInstanceNodes(instance.instanceId());
+
+            assertEquals(GraphNodeStatus.CANCELLED, nodes.get(1).status());
+            assertNull(nodes.get(1).waitType());
+        }
+    }
+
+    @Test
     void getVersionDiagramReturnsStoredLayoutWithoutProjectionOverlay() {
         try (Fixture fixture = new Fixture(false)) {
             GraphDefinition definition = fixture.service.createDefinition(new CreateDefinitionCommand(
@@ -3692,7 +3751,7 @@ class DefaultGraphEngineServiceTest {
                             null
                     ))
                     .graphRegistryStore(graphRegistryStore)
-                    .addGraphDefinitionCodec(new com.leanowtech.bloge.dsl.compiler.DslGraphDefinitionCodec(
+                    .addGraphDefinitionCodec(GraphEngineDslCodecs.graphDefinitionCodec(
                             JsonCodec.DEFAULT,
                             operatorRegistry -> new com.leanowtech.bloge.dsl.compiler.DslCompiler(
                                     operatorRegistry,

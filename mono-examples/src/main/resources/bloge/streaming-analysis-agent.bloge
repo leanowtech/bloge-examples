@@ -1,0 +1,25 @@
+/// Streaming data-analysis agent that emits token and tool lifecycle chunks.
+stream agent dataAnalyst {
+  model = "gpt-4o"
+  system_prompt = "You are a data analyst. Use tools to fetch and interpret metrics."
+  max_turns = 8
+  max_tool_concurrency = 3
+  temperature = 0.1
+  memory = token_budget(4096)
+  streaming_buffer_capacity = 32
+
+  tool fetchMetrics : MetricsFetchOperator {
+    description = "Fetch time-series metrics by name"
+    input {
+      metricName = tool_args.metricName
+      timeRange  = tool_args.timeRange
+    }
+  }
+
+  tool runQuery : QueryRunnerOperator {
+    description = "Run a SQL query against the analytics database"
+    input { sql = tool_args.sql }
+  }
+
+  exit_condition = finish_reason == "stop"
+}

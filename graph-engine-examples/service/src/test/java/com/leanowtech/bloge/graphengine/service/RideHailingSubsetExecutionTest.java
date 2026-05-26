@@ -5,7 +5,6 @@ import com.leanowtech.bloge.core.engine.GraphEngine;
 import com.leanowtech.bloge.core.engine.GraphResult;
 import com.leanowtech.bloge.core.model.ComplexityLimits;
 import com.leanowtech.bloge.core.model.Graph;
-import com.leanowtech.bloge.core.model.GraphComplexityValidator;
 import com.leanowtech.bloge.core.model.NodeStatus;
 import com.leanowtech.bloge.core.model.ReservedKeys;
 import com.leanowtech.bloge.core.operator.Operator;
@@ -226,20 +225,26 @@ class RideHailingSubsetExecutionTest {
 
         GraphLoader loader = new GraphLoader(registry);
         loader.compiler().withSchemaValidation(SchemaValidationLevel.OFF);
+        loader.withComplexityLimits(rideHailingImportLimits());
         loader.compiler().registerSubGraph("ride-auth-leg", buildRideAuthSubGraph(authBarrier));
-        var previousLimits = GraphComplexityValidator.getLimits();
-        Graph graph;
-        try {
-            GraphComplexityValidator.setLimits(ComplexityLimits.IMPORT.withRecommendedMaxBranchNesting(9));
-            graph = loader.load(dslPath());
-        } finally {
-            GraphComplexityValidator.setLimits(previousLimits);
-        }
+        Graph graph = loader.load(dslPath());
         GraphEngine engine = GraphEngine.builder()
                 .registry(registry)
                 .listeners(listeners)
                 .build();
         return new Scenario(graph, engine);
+    }
+
+    /**
+     * Returns the import profile required by the representative BPMN-derived graph fixture.
+     *
+     * <p>BLOGE 0.8.3 makes complexity limits compiler-scoped, so this test opts the loader into
+     * the import profile directly instead of relying on global validator mutation.</p>
+     *
+     * @return permissive complexity limits for this intentionally large fixture
+     */
+    private static ComplexityLimits rideHailingImportLimits() {
+        return ComplexityLimits.IMPORT.withRecommendedMaxBranchNesting(9);
     }
 
     private void registerMainGraphOperators(DefaultOperatorRegistry registry) {

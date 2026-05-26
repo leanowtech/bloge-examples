@@ -1,0 +1,28 @@
+/// Demonstrates foreach batch sizing with per-item failure tolerance.
+graph batchOrderWithFailure {
+
+  node loadOrders : OrderLoaderOperator {
+    input { batchId = ctx.batchId }
+  }
+
+  node loadConfig : BatchConfigOperator {
+    input { configId = ctx.configId }
+  }
+
+  foreach processOrders : (order, idx) in loadOrders.output.orders {
+    batch_size      = max(loadConfig.output.batchSize, 1)
+    on_item_failure = continue
+
+    node process : OrderProcessorOperator {
+      input {
+        orderId = order.id
+        index   = idx
+      }
+    }
+  }
+
+  node summarize : BatchFailureSummaryOperator {
+    depends_on = [processOrders]
+    input { results = processOrders.output }
+  }
+}

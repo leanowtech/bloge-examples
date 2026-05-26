@@ -3,6 +3,7 @@ package com.leanowtech.bloge.graphengine.ai.validate;
 import com.leanowtech.bloge.core.operator.Operator;
 import com.leanowtech.bloge.core.runtime.work.WorkItemNotifier;
 import com.leanowtech.bloge.core.spi.DefaultOperatorRegistry;
+import com.leanowtech.bloge.dsl.compiler.CompilationDiagnostic;
 import com.leanowtech.bloge.durable.store.memory.InMemoryWorkItemStore;
 import com.leanowtech.bloge.graphengine.model.GraphExecutionMode;
 
@@ -75,6 +76,18 @@ class DslValidationPipelineTest {
 
         assertTrue(result.valid());
         assertTrue(result.diagnostics().stream().noneMatch(d -> d.severity() == DslDiagnostic.Severity.ERROR));
+    }
+
+    @Test
+    void compilerHintDiagnosticsAreInformational() {
+        assertEquals(DslDiagnostic.Severity.ERROR,
+                DslValidationPipeline.compilationSeverity(CompilationDiagnostic.Level.ERROR));
+        assertEquals(DslDiagnostic.Severity.WARNING,
+                DslValidationPipeline.compilationSeverity(CompilationDiagnostic.Level.WARNING));
+        assertEquals(DslDiagnostic.Severity.INFO,
+                DslValidationPipeline.compilationSeverity(CompilationDiagnostic.Level.INFO));
+        assertEquals(DslDiagnostic.Severity.INFO,
+                DslValidationPipeline.compilationSeverity(CompilationDiagnostic.Level.HINT));
     }
 
     private static final class EchoOperator implements Operator<String, String> {

@@ -139,7 +139,8 @@ public final class RuntimeArtifactNames {
     }
 
     /**
-     * Rewrites a compiled state-machine definition to a version-pinned runtime name.
+    * Rewrites a compiled state-machine definition to a version-pinned runtime name while
+    * preserving the compiler-provided content hash used for checkpoint compatibility checks.
      *
      * @param stateMachine compiled state-machine definition
      * @param runtimeName version-pinned runtime name
@@ -154,7 +155,8 @@ public final class RuntimeArtifactNames {
                 stateMachine.maxTransitions(),
                 stateMachine.maxStateVisits(),
                 stateMachine.globalTimeout(),
-                stateMachine.globalTransitions()
+                stateMachine.globalTransitions(),
+                stateMachine.contentHash()
         );
     }
 

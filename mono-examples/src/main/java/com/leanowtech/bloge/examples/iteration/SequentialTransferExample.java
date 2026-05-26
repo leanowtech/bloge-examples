@@ -143,7 +143,10 @@ public class SequentialTransferExample {
         registry.register(subGraph.nodes().get("executeTransfer").operatorRef(), EXECUTE_TRANSFER);
         registry.register(subGraph.nodes().get("recordLedger").operatorRef(), RECORD_LEDGER);
 
-        var forEachOp = new ForEachOperator(subGraph, registry, true, List.of(listener));
+        var forEachOp = ForEachOperator.builder(subGraph, registry)
+            .sequential(true)
+            .listeners(List.of(listener))
+            .build();
 
         // Build main graph
         Graph mainGraph = Graph.builder("sequentialTransfer")

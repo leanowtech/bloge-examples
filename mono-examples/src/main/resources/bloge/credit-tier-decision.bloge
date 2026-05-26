@@ -1,0 +1,14 @@
+/// Classifies a finance applicant into a credit tier with an ordered decision table.
+graph creditTierDecision {
+
+  node fetchApplicant : FetchApplicantOperator {
+    input { applicantId = ctx.applicantId }
+  }
+
+  decision_table creditTier(score = fetchApplicant.output.score) hit=first -> String {
+    rule (score: score >= 750)       -> "platinum"
+    rule (score: 680 <= score < 750) -> "gold"
+    rule (score: 580 <= score < 680) -> "silver"
+    otherwise                        -> "rejected"
+  }
+}

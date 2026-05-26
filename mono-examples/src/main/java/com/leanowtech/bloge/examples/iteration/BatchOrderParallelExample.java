@@ -100,7 +100,10 @@ public class BatchOrderParallelExample {
 
         // Create ForEachOperator in parallel mode (sequential = false)
         var listener = new LoggingListener();
-        var forEachOp = new ForEachOperator(subGraph, registry, false, List.of(listener));
+        var forEachOp = ForEachOperator.builder(subGraph, registry)
+            .sequential(false)
+            .listeners(List.of(listener))
+            .build();
 
         // Build main graph
         Graph mainGraph = Graph.builder("batchOrderParallel")

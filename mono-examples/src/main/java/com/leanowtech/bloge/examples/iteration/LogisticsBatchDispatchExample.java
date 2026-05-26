@@ -136,7 +136,10 @@ public class LogisticsBatchDispatchExample {
                 .build();
 
         // --- Create ForEachOperator (parallel mode) ---
-        var forEachOp = new ForEachOperator(foreachSubGraph, registry, false, List.of(listener));
+        var forEachOp = ForEachOperator.builder(foreachSubGraph, registry)
+            .sequential(false)
+            .listeners(List.of(listener))
+            .build();
 
         // --- Create LoopOperator ---
         var loopOp = LoopOperator.withDurability(

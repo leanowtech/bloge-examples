@@ -1,0 +1,21 @@
+/// Selects loan terms from an underwriting matrix with UNIQUE hit policy.
+graph loanTermsDecision {
+
+  node fetchApplicant : FetchApplicantOperator {
+    input { applicantId = ctx.applicantId }
+  }
+
+  node fetchLoan : FetchLoanOperator {
+    input { loanId = ctx.loanId }
+  }
+
+  decision_table loanTerms(
+    score  = fetchApplicant.output.score,
+    amount = fetchLoan.output.requestedAmount
+  ) hit=unique -> { rate: Decimal, maxTerm: Int } {
+    rule (score: score >= 750, amount: amount <= 500000) -> { rate: 3.5, maxTerm: 30 }
+    rule (score: score >= 700, amount: amount <= 300000) -> { rate: 4.5, maxTerm: 25 }
+    rule (score: score >= 650, amount: amount <= 200000) -> { rate: 5.5, maxTerm: 20 }
+    otherwise                                            -> { rate: 7.0, maxTerm: 10 }
+  }
+}

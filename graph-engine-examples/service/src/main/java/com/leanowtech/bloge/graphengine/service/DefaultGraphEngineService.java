@@ -1795,7 +1795,7 @@ public class DefaultGraphEngineService implements GraphEngineService, AutoClosea
         try {
             return runtimeSupport.graphRegistryStore().checkEvolution(
                     compilation.runtimeName(),
-                    new com.leanowtech.bloge.dsl.compiler.DslGraphDefinitionCodec(runtimeSupport.jsonCodec()),
+                    GraphEngineDslCodecs.graphDefinitionCodec(runtimeSupport.jsonCodec()),
                     runtimeSupport.operatorRegistry() == null
                             ? new com.leanowtech.bloge.core.spi.DefaultOperatorRegistry()
                             : runtimeSupport.operatorRegistry(),
@@ -1821,7 +1821,7 @@ public class DefaultGraphEngineService implements GraphEngineService, AutoClosea
 
     private com.leanowtech.bloge.core.runtime.registry.GraphDefinition toRegistryDefinition(GraphVersion version,
                                                                                             VersionCompileResult compilation) {
-        var codec = new com.leanowtech.bloge.dsl.compiler.DslGraphDefinitionCodec(runtimeSupport.jsonCodec());
+        var codec = GraphEngineDslCodecs.graphDefinitionCodec(runtimeSupport.jsonCodec());
         var encoded = codec.encode(compilation.graph()).orElseThrow(() -> new GraphEngineServiceException(
                 GraphEngineServiceErrorCode.RUNTIME_UNAVAILABLE,
                 "Compiled graph could not be encoded for registry publication"
@@ -2272,14 +2272,28 @@ public class DefaultGraphEngineService implements GraphEngineService, AutoClosea
         boolean visited = projection.stateVisitCount().getOrDefault(stateId, 0) > 0
                 || projection.history().stream().anyMatch(record -> Objects.equals(stateId, record.stateId()));
         if (Objects.equals(stateId, projection.currentStateId())) {
-            return switch (projection.status()) {
-                case RUNNING -> GraphNodeStatus.RUNNING;
-                case WAITING_EVENT -> GraphNodeStatus.WAITING;
-                case COMPLETED -> GraphNodeStatus.COMPLETED;
-                case FAILED -> GraphNodeStatus.FAILED;
-            };
+            return stateMachineCurrentNodeStatus(projection.status());
         }
         return visited ? GraphNodeStatus.COMPLETED : GraphNodeStatus.NOT_STARTED;
+    }
+
+    /**
+     * Converts the lifecycle status of a state machine's current state into the node projection API.
+     *
+     * <p>{@link StateMachineStatus#TERMINATED} represents an administrative stop rather than a
+     * state graph failure, so the current state is projected as {@link GraphNodeStatus#CANCELLED}.</p>
+     *
+     * @param status durable state-machine lifecycle status
+     * @return graph-engine node projection status for the current state
+     */
+    static GraphNodeStatus stateMachineCurrentNodeStatus(StateMachineStatus status) {
+        return switch (status) {
+            case RUNNING -> GraphNodeStatus.RUNNING;
+            case WAITING_EVENT -> GraphNodeStatus.WAITING;
+            case COMPLETED -> GraphNodeStatus.COMPLETED;
+            case FAILED -> GraphNodeStatus.FAILED;
+            case TERMINATED -> GraphNodeStatus.CANCELLED;
+        };
     }
 
     private Instant firstPhaseTimestamp(List<RoundRecord> history, String phaseId) {

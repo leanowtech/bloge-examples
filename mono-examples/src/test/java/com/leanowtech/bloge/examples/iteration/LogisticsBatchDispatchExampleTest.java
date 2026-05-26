@@ -61,7 +61,10 @@ class LogisticsBatchDispatchExampleTest {
                     })
                 .build();
 
-        var forEachOp = new ForEachOperator(foreachSubGraph, registry, false, List.of());
+        var forEachOp = ForEachOperator.builder(foreachSubGraph, registry)
+          .sequential(false)
+          .listeners(List.of())
+          .build();
 
         var loopOp = LoopOperator.withDurability(
                 loopSubGraph,

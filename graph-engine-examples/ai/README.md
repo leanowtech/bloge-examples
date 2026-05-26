@@ -27,7 +27,7 @@ Under `com.leanowtech.bloge.graphengine.ai`:
 
 ## Validation (`validate` subpackage)
 
-- **`DslValidationPipeline`** — parse → lint → compile pipeline using `bloge-dsl` compilers and `bloge-lint` `QualityScorer`/`LintRunner`. Supports `GRAPH`, `SESSION`, `STATE_MACHINE` execution modes. Uses `LENIENT` compilation mode. Builder pattern with optional stores.
+- **`DslValidationPipeline`** — parse → lint → compile pipeline using `bloge-dsl` compilers and `bloge-lint` `QualityScorer`/`LintRunner`. Supports `GRAPH`, `SESSION`, `STATE_MACHINE` execution modes. Uses `LENIENT` compilation mode. Builder pattern with optional stores. Compiler `HINT` diagnostics are surfaced as `INFO` so advisory feedback does not invalidate generated DSL.
 - **`DslValidationResult`** — record: `dslSource`, `executionMode`, `declaredRootName`, `diagnostics`, `qualityScore`, `valid`
 - **`DslDiagnostic`** — record: `stage` (`PARSE`/`LINT`/`COMPILE`/`SERVICE`), `code`, `severity` (`ERROR`/`WARNING`/`INFO`), `message`, `nodeId`, `field`, `line`, `column`
 - **`QualityScoreSummary`** — quality score summary

@@ -94,7 +94,7 @@ public final class VersionCompiler {
         this.workItemNotifier = runtimeSupport.workItemNotifier();
         this.jsonCodec = runtimeSupport.jsonCodec();
         this.lintRunner = new LintRunner();
-        this.graphDefinitionCodec = new DslGraphDefinitionCodec(jsonCodec);
+        this.graphDefinitionCodec = GraphEngineDslCodecs.graphDefinitionCodec(jsonCodec);
         VersionCompilerCacheSettings cacheSettings = runtimeSupport.versionCompilerCacheSettings();
         this.compileCache = cacheSettings.enabled()
                 ? Caffeine.newBuilder()
@@ -520,11 +520,7 @@ public final class VersionCompiler {
                 .map(diagnostic -> new GraphEngineDiagnostic(
                         "compile",
                         "dsl-compile",
-                        switch (diagnostic.level()) {
-                            case ERROR -> GraphEngineDiagnostic.Severity.ERROR;
-                            case WARNING -> GraphEngineDiagnostic.Severity.WARNING;
-                            case INFO -> GraphEngineDiagnostic.Severity.INFO;
-                        },
+                        compilationSeverity(diagnostic.level()),
                         diagnostic.message(),
                         diagnostic.nodeId(),
                         diagnostic.field(),
@@ -532,6 +528,23 @@ public final class VersionCompiler {
                         diagnostic.column()
                 ))
                 .toList();
+    }
+
+    /**
+     * Maps BLOGE compiler diagnostic levels to product-layer version diagnostics.
+     *
+     * <p>{@link CompilationDiagnostic.Level#HINT} is non-blocking compiler guidance and is
+     * therefore projected as {@link GraphEngineDiagnostic.Severity#INFO}.</p>
+     *
+     * @param level compiler diagnostic level emitted by {@code bloge-dsl}
+     * @return product-layer diagnostic severity
+     */
+    static GraphEngineDiagnostic.Severity compilationSeverity(CompilationDiagnostic.Level level) {
+        return switch (level) {
+            case ERROR -> GraphEngineDiagnostic.Severity.ERROR;
+            case WARNING -> GraphEngineDiagnostic.Severity.WARNING;
+            case INFO, HINT -> GraphEngineDiagnostic.Severity.INFO;
+        };
     }
 
     private GraphEngineDiagnostic serviceError(String message, String code) {
