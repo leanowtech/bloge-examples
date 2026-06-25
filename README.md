@@ -103,4 +103,5 @@ bloge-examples/
 - `resource-gateway-examples/README.md` for API contract and test-layer breakdown
 - `mono-examples/README.md` for the full example catalog
 - `docs/ai/README.md` for AI prompt and DSL benchmark usage
-
+- `docs/example-ux-visualization-evolution.md` for the example UX visualization
+  evolution plan across graph-engine and resource-gateway
