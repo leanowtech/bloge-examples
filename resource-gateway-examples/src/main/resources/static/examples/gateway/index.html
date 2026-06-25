@@ -1,0 +1,58 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>BLOGE Resource Gateway Showcase</title>
+  <link rel="stylesheet" href="/examples/gateway/styles.css">
+</head>
+<body>
+  <main class="shell">
+    <header class="topbar">
+      <div>
+        <p class="eyebrow">BLOGE Examples</p>
+        <h1>Resource Gateway Showcase</h1>
+      </div>
+      <button id="load-resources" class="secondary" type="button">Resource Registry</button>
+    </header>
+
+    <section class="workspace">
+      <nav class="scenario-list" aria-label="Gateway scenarios">
+        <div class="panel-title">Scenarios</div>
+        <div id="scenarios" class="scenario-buttons"></div>
+      </nav>
+
+      <section class="diagram-panel" aria-label="Scenario diagram">
+        <div class="diagram-heading">
+          <div>
+            <p id="scenario-pattern" class="eyebrow">Loading</p>
+            <h2 id="scenario-title">Gateway graph</h2>
+          </div>
+          <div id="concepts" class="chips"></div>
+        </div>
+        <svg id="diagram" class="diagram" role="img" aria-label="Gateway graph diagram"></svg>
+      </section>
+
+      <aside class="inspector" aria-label="Scenario inspector">
+        <section class="tool-section">
+          <div class="panel-title">Sample Input</div>
+          <form id="input-form" class="input-form"></form>
+          <button id="run-scenario" class="primary" type="button">Run</button>
+        </section>
+
+        <section class="tool-section">
+          <div class="panel-title">Node</div>
+          <pre id="node-details" class="details">{}</pre>
+        </section>
+
+        <section class="tool-section output-section">
+          <div class="panel-title">Output</div>
+          <pre id="output" class="details">{}</pre>
+        </section>
+      </aside>
+    </section>
+  </main>
+
+  <script src="/examples/gateway/app.js"></script>
+</body>
+</html>

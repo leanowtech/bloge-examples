@@ -72,6 +72,27 @@ no new Java class.
 
 ## Public gateway API
 
+### Browser showcase
+
+The resource gateway now ships a static browser showcase at:
+
+```text
+http://localhost:8080/examples/gateway
+```
+
+The page renders the six built-in `.bloge` graphs as visual scenarios, shows
+resource nodes and fallback/streaming annotations, lets users edit sample input,
+and executes the existing public gateway endpoints. It does not introduce a
+second execution path.
+
+Showcase metadata APIs:
+
+| Method | Path | Description |
+|--------|------|-------------|
+| `GET` | `/api/gateway/examples/scenarios` | List the six built-in visual scenarios |
+| `GET` | `/api/gateway/examples/scenarios/{graphName}` | Load scenario metadata and run recipe |
+| `GET` | `/api/gateway/examples/scenarios/{graphName}/diagram` | Load the `bloge.visualLayout.v1` diagram for a scenario |
+
 ### Orchestration endpoints (`UserDashboardController`)
 
 | Method | Path | Graph | Description |

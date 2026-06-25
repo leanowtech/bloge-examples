@@ -68,6 +68,7 @@ Local endpoints:
 - `http://localhost:8080/api/gateway/resources/execute`
 - `http://localhost:8080/api/gateway/ai/search/stream?q=...`
 - `http://localhost:8080/admin/resources`
+- `http://localhost:8080/examples/gateway`
 
 ## Repository Layout
 
