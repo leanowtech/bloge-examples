@@ -68,6 +68,7 @@ import com.leanowtech.bloge.graphengine.model.GraphVersion;
 import com.leanowtech.bloge.graphengine.model.GraphVersionDiagram;
 import com.leanowtech.bloge.graphengine.model.GraphVersionStatus;
 import com.leanowtech.bloge.graphengine.model.RemoteWorkerBinding;
+import com.leanowtech.bloge.graphengine.model.VisualLayout;
 import com.leanowtech.bloge.graphengine.service.command.ClaimTaskCommand;
 import com.leanowtech.bloge.graphengine.service.command.CompleteRemoteWorkerJobCommand;
 import com.leanowtech.bloge.graphengine.service.command.CompleteTaskCommand;
@@ -876,6 +877,84 @@ class DefaultGraphEngineServiceTest {
             assertEquals(created.versionId(), diagram.versionId());
             assertEquals("1.0.0", diagram.version());
             assertEquals("{\"nodes\":[{\"id\":\"approval\"}]}", diagram.visualLayout());
+        }
+    }
+
+    @Test
+    void getVersionDiagramGeneratesDefaultLayoutWhenStoredLayoutIsMissing() {
+        try (Fixture fixture = new Fixture(false)) {
+            GraphDefinition definition = fixture.service.createDefinition(new CreateDefinitionCommand(
+                    "diagram-generated",
+                    "tenant-a",
+                    "sales",
+                    "Generated diagram",
+                    null, null, Map.of(), null, null
+            ));
+            GraphVersion created = fixture.service.createVersion(new CreateVersionCommand(
+                    definition.definitionKey(),
+                    definition.tenantId(),
+                    definition.namespace(),
+                    "1.0.0",
+                    """
+                            graph generatedDiagram {
+                              node fetch : echo {
+                                input { orderId = ctx.orderId }
+                              }
+                              transform assemble {
+                                result = fetch.output
+                              }
+                            }
+                            """,
+                    null,
+                    GraphMigrationPolicy.PIN_VERSION
+            ));
+
+            GraphVersionDiagram diagram = fixture.service.getVersionDiagram(created.versionId());
+            VisualLayout layout = (VisualLayout) JsonCodec.DEFAULT.deserialize(diagram.visualLayout());
+
+            assertEquals("bloge.visualLayout.v1", layout.schemaVersion());
+            assertEquals("generatedDiagram", layout.rootId());
+            assertEquals(GraphExecutionMode.GRAPH, layout.executionMode());
+            assertEquals(List.of("fetch", "assemble"), layout.nodes().stream().map(VisualLayout.Node::id).toList());
+            assertTrue(layout.edges().stream().anyMatch(edge ->
+                    "fetch".equals(edge.source()) && "assemble".equals(edge.target())));
+        }
+    }
+
+    @Test
+    void getVersionDiagramRegeneratesLayoutWhenStoredLayoutMissesCompiledNodes() {
+        try (Fixture fixture = new Fixture(false)) {
+            GraphDefinition definition = fixture.service.createDefinition(new CreateDefinitionCommand(
+                    "diagram-stale",
+                    "tenant-a",
+                    "sales",
+                    "Stale diagram",
+                    null, null, Map.of(), null, null
+            ));
+            GraphVersion created = fixture.service.createVersion(new CreateVersionCommand(
+                    definition.definitionKey(),
+                    definition.tenantId(),
+                    definition.namespace(),
+                    "1.0.0",
+                    """
+                            graph staleDiagram {
+                              node first : echo {
+                                input { value = ctx.value }
+                              }
+                              node second : echo {
+                                input { value = first.output }
+                              }
+                            }
+                            """,
+                    "{\"nodes\":[{\"id\":\"first\"}]}",
+                    GraphMigrationPolicy.PIN_VERSION
+            ));
+
+            GraphVersionDiagram diagram = fixture.service.getVersionDiagram(created.versionId());
+            VisualLayout layout = (VisualLayout) JsonCodec.DEFAULT.deserialize(diagram.visualLayout());
+
+            assertEquals("bloge.visualLayout.v1", layout.schemaVersion());
+            assertEquals(List.of("first", "second"), layout.nodes().stream().map(VisualLayout.Node::id).toList());
         }
     }
 

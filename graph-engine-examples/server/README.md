@@ -142,11 +142,51 @@ so retry-heavy executions do not trigger unbounded work-item scans.
 **Diagram APIs.**
 
 - `GET /api/v1/graphs/{key}/versions/{version}/diagram` returns the stored
-  `visualLayout` payload for one semantic version exactly as persisted (no JSON
-  reparsing or normalization)
-- `GET /api/v1/instances/{id}/diagram` returns that same `visualLayout` string
-  plus the current `nodeStates` overlay, reusing the exact projection exposed by
-  `GET /api/v1/instances/{id}/nodes`
+  `visualLayout` payload for one semantic version when that payload still
+  covers the compiled node set. If the stored layout is blank, malformed,
+  references missing nodes, or omits compiled nodes, the service returns a
+  deterministic `bloge.visualLayout.v1` fallback generated from the compiled
+  graph/session/state-machine artifact.
+- `GET /api/v1/instances/{id}/diagram` returns the same resolved
+  `visualLayout` string plus the current `nodeStates` overlay, reusing the exact
+  projection exposed by `GET /api/v1/instances/{id}/nodes`.
+
+`visualLayout` is presentation-only. BLOGE DSL and compiled metadata remain the
+source of truth for nodes, edges, branches, retries, waits, streams, schemas, and
+operator references. The v1 payload shape is:
+
+```json
+{
+  "schemaVersion": "bloge.visualLayout.v1",
+  "rootId": "approvalFlow",
+  "executionMode": "GRAPH",
+  "nodes": [
+    {
+      "id": "approval",
+      "kind": "extension",
+      "operatorRef": "user",
+      "label": "Approval",
+      "position": { "x": 80, "y": 80 },
+      "size": { "width": 180, "height": 72 },
+      "group": null,
+      "annotations": {
+        "timeout": "PT3S",
+        "retryAttempts": 1
+      }
+    }
+  ],
+  "edges": [
+    {
+      "id": "approval->done:output",
+      "source": "approval",
+      "target": "done",
+      "label": "output"
+    }
+  ],
+  "groups": [],
+  "viewport": { "x": 0, "y": 0, "zoom": 1 }
+}
+```
 
 **Instance event stream.** `GET /api/v1/instances/{id}/events` streams
 `GraphInstanceEvent` records over `text/event-stream`. The endpoint replays the

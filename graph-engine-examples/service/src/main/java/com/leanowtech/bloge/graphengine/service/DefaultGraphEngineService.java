@@ -161,6 +161,7 @@ public class DefaultGraphEngineService implements GraphEngineService, AutoClosea
     private final GraphEngineStores stores;
     private final GraphEngineRuntimeSupport runtimeSupport;
     private final VersionCompiler versionCompiler;
+    private final VisualLayoutGenerator visualLayoutGenerator;
     private final DurableGraphEngine durableGraphEngine;
     private final GraphEngineMetricsObserver metricsObserver;
     private final String stateMachineOwnerId = "graph-engine-service-" + UUID.randomUUID();
@@ -178,6 +179,7 @@ public class DefaultGraphEngineService implements GraphEngineService, AutoClosea
         this.stores = Objects.requireNonNull(stores, "stores");
         this.runtimeSupport = Objects.requireNonNull(runtimeSupport, "runtimeSupport");
         this.versionCompiler = new VersionCompiler(runtimeSupport);
+        this.visualLayoutGenerator = new VisualLayoutGenerator(runtimeSupport.jsonCodec());
         this.durableGraphEngine = runtimeSupport.durableGraphEngine();
         this.metricsObserver = runtimeSupport.metricsObserver();
     }
@@ -844,17 +846,25 @@ public class DefaultGraphEngineService implements GraphEngineService, AutoClosea
     @Override
     public GraphVersionDiagram getVersionDiagram(String versionId) {
         GraphVersion version = getVersion(versionId);
-        return new GraphVersionDiagram(version.versionId(), version.version(), version.visualLayout());
+        GraphDefinition definition = requireDefinition(version.definitionId());
+        VersionCompileResult compilation = versionCompiler.compile(definition, version);
+        return new GraphVersionDiagram(
+                version.versionId(),
+                version.version(),
+                visualLayoutGenerator.resolveLayout(definition, version, compilation)
+        );
     }
 
     @Override
     public GraphInstanceDiagram getInstanceDiagram(String instanceId) {
         GraphInstance instance = getInstance(instanceId);
         GraphVersion version = requireVersion(instance.versionId());
+        GraphDefinition definition = requireDefinition(version.definitionId());
+        VersionCompileResult compilation = versionCompiler.compile(definition, version);
         return new GraphInstanceDiagram(
                 instance.instanceId(),
                 version.versionId(),
-                version.visualLayout(),
+                visualLayoutGenerator.resolveLayout(definition, version, compilation),
                 queryInstanceNodes(instanceId)
         );
     }

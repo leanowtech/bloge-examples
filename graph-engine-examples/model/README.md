@@ -23,6 +23,9 @@ existing BLOGE runtime substrate.
 - `GraphVersionDiagram` and `GraphInstanceDiagram` DTOs for serving stored
   `visualLayout` payloads as-is, with instance diagrams adding the current
   node-state overlay
+- `VisualLayout` v1 records that define the presentation-only diagram contract
+  used by example UX screens; graph definitions, compiled metadata, and runtime
+  state remain authoritative for execution semantics
 - `GraphInstanceEvent` SSE payloads for streaming execution-journal activity on a
   single instance without exposing the raw journal schema directly
 - governance records such as `GraphAuditEntry` (whose `retryAttempt` field
