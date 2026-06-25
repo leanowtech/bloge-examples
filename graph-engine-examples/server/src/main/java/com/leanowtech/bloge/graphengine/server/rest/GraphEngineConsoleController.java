@@ -26,6 +26,7 @@ public class GraphEngineConsoleController {
             "/console/instances",
             "/console/deployments",
             "/console/operators",
+            "/console/authoring",
             "/console/tasks"
     })
     public String console() {

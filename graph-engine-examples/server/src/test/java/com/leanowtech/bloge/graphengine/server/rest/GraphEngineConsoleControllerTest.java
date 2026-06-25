@@ -6,6 +6,7 @@ import org.springframework.core.io.ClassPathResource;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 
+import java.nio.charset.StandardCharsets;
 import java.util.Arrays;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -22,7 +23,7 @@ class GraphEngineConsoleControllerTest {
     void forwardsConsoleRoutesToStaticUi() throws Exception {
         MockMvc mockMvc = MockMvcBuilders.standaloneSetup(new GraphEngineConsoleController()).build();
 
-        mockMvc.perform(get("/console/instances"))
+        mockMvc.perform(get("/console/authoring"))
                 .andExpect(status().isOk())
                 .andExpect(forwardedUrl("/console/index.html"));
     }
@@ -32,6 +33,22 @@ class GraphEngineConsoleControllerTest {
         assertThat(new ClassPathResource("static/console/index.html").exists()).isTrue();
         assertThat(new ClassPathResource("static/console/app.js").exists()).isTrue();
         assertThat(new ClassPathResource("static/console/styles.css").exists()).isTrue();
+    }
+
+    @Test
+    void consoleAssetsExposeVisualizationAndAuthoringApis() throws Exception {
+        String index = new ClassPathResource("static/console/index.html")
+                .getContentAsString(StandardCharsets.UTF_8);
+        String app = new ClassPathResource("static/console/app.js")
+                .getContentAsString(StandardCharsets.UTF_8);
+
+        assertThat(index).contains("Authoring", "Queues");
+        assertThat(app)
+                .contains("/api/v1/ai/validate")
+                .contains("/api/v1/ai/generate")
+                .contains("/diff/")
+                .contains("/api/v1/remote-workers/register")
+                .contains("/api/v1/remote-workers/items/");
     }
 
     @Test

@@ -27,8 +27,10 @@ and integration testing only.
 All endpoints are under `/api/v1`. Tenant and namespace scope are resolved per-request via `TenantContextHolder` (see `bloge-spring` tenant configuration).
 
 The module also serves a static browser console at `/console`. The console is
-read-mostly and consumes the same REST APIs listed below; it does not introduce
-another graph authoring or execution model.
+read-mostly and consumes the same REST APIs listed below for diagrams, runtime
+state, authoring validation/generation, version diff, task queues, remote
+workers, and dead-letter recovery; it does not introduce another graph authoring
+or execution model.
 
 | Prefix | Controller | Purpose |
 |---|---|---|

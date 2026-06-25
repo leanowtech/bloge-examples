@@ -35,6 +35,16 @@ function setOutput(target, value) {
   $(target).textContent = pretty(value ?? {});
 }
 
+function showDiagram() {
+  $('diagram').classList.remove('hidden');
+  $('tool-panel').classList.add('hidden');
+}
+
+function showToolPanel() {
+  $('diagram').classList.add('hidden');
+  $('tool-panel').classList.remove('hidden');
+}
+
 function activateTab(view) {
   state.view = view;
   closeEvents();
@@ -55,6 +65,7 @@ async function loadView() {
   setOutput('details', {});
   setOutput('runtime', {});
   clearDiagram();
+  showDiagram();
   if (state.view === 'graphs') {
     $('list-title').textContent = 'Graphs';
     state.list = await api('/api/v1/graphs');
@@ -75,6 +86,8 @@ async function loadView() {
     state.list = await api('/api/v1/operators');
     renderList(state.list, (item) => item.name || item.operatorName, (item) => item.name || item.operatorName, (item) => item.owner || item.description || '');
     if (state.list[0]) selectPlain(state.list[0], 'Operator');
+  } else if (state.view === 'authoring') {
+    loadAuthoring();
   } else {
     $('list-title').textContent = 'Queues';
     await loadQueues();
@@ -85,8 +98,7 @@ async function loadQueues() {
   const result = {};
   for (const [key, path] of Object.entries({
     tasks: '/api/v1/tasks',
-    deadLetters: '/api/v1/dead-letters',
-    remoteWorkers: '/api/v1/remote-workers'
+    deadLetters: '/api/v1/dead-letters'
   })) {
     try {
       result[key] = await api(path);
@@ -103,6 +115,229 @@ async function loadQueues() {
   $('entity-kicker').textContent = 'Queues';
   $('entity-title').textContent = 'Tasks / Workers / Dead Letters';
   setOutput('details', result);
+  renderQueueTool();
+}
+
+function loadAuthoring() {
+  $('list-title').textContent = 'Authoring';
+  const modes = [
+    { id: 'validate', title: 'DSL Validate', meta: '/api/v1/ai/validate' },
+    { id: 'generate', title: 'AI Generate', meta: '/api/v1/ai/generate' },
+    { id: 'diff', title: 'Version Diff', meta: '/api/v1/graphs/{key}/versions/{left}/diff/{right}' }
+  ];
+  state.list = modes;
+  renderList(modes, (item) => item.id, (item) => item.title, (item) => item.meta);
+  selectAuthoringMode(modes[0]);
+}
+
+function selectAuthoringMode(mode) {
+  closeEvents();
+  state.selected = mode;
+  $('entity-kicker').textContent = 'Authoring';
+  $('entity-title').textContent = mode.title;
+  $('actions').innerHTML = '';
+  setOutput('details', { endpoint: mode.meta });
+  setOutput('runtime', {});
+  clearDiagram();
+  showToolPanel();
+  if (mode.id === 'validate') renderValidateTool();
+  else if (mode.id === 'generate') renderGenerateTool();
+  else renderDiffTool();
+}
+
+function renderValidateTool() {
+  const panel = $('tool-panel');
+  panel.innerHTML = '';
+  const grid = toolGrid();
+  const dsl = textArea('', 'Paste BLOGE DSL source');
+  const card = toolCard('Validate Raw DSL');
+  card.classList.add('wide');
+  card.appendChild(field('DSL source', dsl));
+  card.appendChild(actionButton('Validate DSL', async () => {
+    setOutput('runtime', await api('/api/v1/ai/validate', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ dslSource: dsl.value })
+    }));
+  }, 'primary'));
+  grid.appendChild(card);
+  panel.appendChild(grid);
+}
+
+function renderGenerateTool() {
+  const panel = $('tool-panel');
+  panel.innerHTML = '';
+  const grid = toolGrid();
+  const request = textArea('', 'Describe the graph you want to generate');
+  const model = textInput('configured-model', 'Model');
+  const card = toolCard('Generate Draft DSL');
+  card.classList.add('wide');
+  card.appendChild(field('Request', request));
+  card.appendChild(field('Model', model));
+  card.appendChild(actionButton('Generate Draft', async () => {
+    setOutput('runtime', await api('/api/v1/ai/generate', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        naturalLanguageRequest: request.value,
+        model: model.value,
+        fewShotExampleCount: 1,
+        maxRepairRounds: 1,
+        temperature: 0.2,
+        maxTokens: 2048
+      })
+    }));
+  }, 'primary'));
+  grid.appendChild(card);
+  panel.appendChild(grid);
+}
+
+function renderDiffTool() {
+  const panel = $('tool-panel');
+  panel.innerHTML = '';
+  const grid = toolGrid();
+  const definitionKey = textInput('', 'definition key');
+  const leftVersion = textInput('', 'left version');
+  const rightVersion = textInput('', 'right version');
+  const card = toolCard('Compare Versions');
+  card.classList.add('wide');
+  card.appendChild(field('Definition key', definitionKey));
+  card.appendChild(field('Left version', leftVersion));
+  card.appendChild(field('Right version', rightVersion));
+  card.appendChild(actionButton('Load Diff', async () => {
+    const key = encodeURIComponent(definitionKey.value);
+    const left = encodeURIComponent(leftVersion.value);
+    const right = encodeURIComponent(rightVersion.value);
+    setOutput('runtime', await api(`/api/v1/graphs/${key}/versions/${left}/diff/${right}`));
+  }, 'primary'));
+  grid.appendChild(card);
+  panel.appendChild(grid);
+}
+
+function renderQueueTool() {
+  showToolPanel();
+  const panel = $('tool-panel');
+  panel.innerHTML = '';
+  const grid = toolGrid();
+  const workerId = textInput('console-worker', 'worker id');
+  const workerTopic = textInput('default', 'worker topic');
+  const limit = textInput('5', 'limit');
+  const leaseDuration = textInput('PT30S', 'lease duration');
+  const workerCard = toolCard('Remote Worker');
+  workerCard.appendChild(field('Worker id', workerId));
+  workerCard.appendChild(field('Worker topic', workerTopic));
+  workerCard.appendChild(field('Poll limit', limit));
+  workerCard.appendChild(field('Lease duration', leaseDuration));
+  workerCard.appendChild(actionButton('Register', async () => {
+    setOutput('runtime', await api('/api/v1/remote-workers/register', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ workerId: workerId.value, workerTopic: workerTopic.value })
+    }));
+  }, 'primary'));
+  workerCard.appendChild(actionButton('Poll Jobs', async () => {
+    setOutput('runtime', await api(`/api/v1/remote-workers/${encodeURIComponent(workerTopic.value)}/poll`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        workerId: workerId.value,
+        limit: Number.parseInt(limit.value, 10) || null,
+        leaseDuration: leaseDuration.value || null
+      })
+    }));
+  }));
+
+  const itemId = textInput('', 'item id');
+  const leaseToken = textInput('', 'lease token');
+  const expectedRevision = textInput('0', 'expected revision');
+  const callbackPayload = textArea('{}', 'JSON output or error text');
+  const callbackCard = toolCard('Worker Job Callback');
+  callbackCard.appendChild(field('Item id', itemId));
+  callbackCard.appendChild(field('Lease token', leaseToken));
+  callbackCard.appendChild(field('Expected revision', expectedRevision));
+  callbackCard.appendChild(field('Output / error', callbackPayload));
+  callbackCard.appendChild(actionButton('Heartbeat', async () => {
+    setOutput('runtime', await api(`/api/v1/remote-workers/items/${encodeURIComponent(itemId.value)}/heartbeat`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ leaseToken: leaseToken.value, leaseDuration: leaseDuration.value || null })
+    }));
+  }));
+  callbackCard.appendChild(actionButton('Complete', async () => {
+    await api(`/api/v1/remote-workers/items/${encodeURIComponent(itemId.value)}/complete`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        leaseToken: leaseToken.value,
+        expectedRevision: Number.parseInt(expectedRevision.value, 10),
+        output: parseJson(callbackPayload.value)
+      })
+    });
+    setOutput('runtime', { completed: itemId.value });
+  }, 'primary'));
+  callbackCard.appendChild(actionButton('Fail', async () => {
+    await api(`/api/v1/remote-workers/items/${encodeURIComponent(itemId.value)}/fail`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        leaseToken: leaseToken.value,
+        expectedRevision: Number.parseInt(expectedRevision.value, 10),
+        error: callbackPayload.value
+      })
+    });
+    setOutput('runtime', { failed: itemId.value });
+  }));
+
+  grid.appendChild(workerCard);
+  grid.appendChild(callbackCard);
+  panel.appendChild(grid);
+}
+
+function toolGrid() {
+  const grid = document.createElement('div');
+  grid.className = 'tool-grid';
+  return grid;
+}
+
+function toolCard(title) {
+  const card = document.createElement('section');
+  card.className = 'tool-card';
+  const heading = document.createElement('h3');
+  heading.textContent = title;
+  card.appendChild(heading);
+  return card;
+}
+
+function field(label, control) {
+  const wrapper = document.createElement('label');
+  wrapper.className = 'field';
+  const caption = document.createElement('span');
+  caption.textContent = label;
+  wrapper.appendChild(caption);
+  wrapper.appendChild(control);
+  return wrapper;
+}
+
+function textInput(value, placeholder) {
+  const input = document.createElement('input');
+  input.value = value;
+  input.placeholder = placeholder;
+  return input;
+}
+
+function textArea(value, placeholder) {
+  const textarea = document.createElement('textarea');
+  textarea.value = value;
+  textarea.placeholder = placeholder;
+  return textarea;
+}
+
+function parseJson(value) {
+  try {
+    return JSON.parse(value);
+  } catch {
+    return value;
+  }
 }
 
 function renderList(items, idOf, titleOf, metaOf) {
@@ -127,6 +362,7 @@ function renderList(items, idOf, titleOf, metaOf) {
     button.addEventListener('click', () => {
       if (state.view === 'graphs') selectGraph(item).catch(showError);
       else if (state.view === 'instances') selectInstance(item).catch(showError);
+      else if (state.view === 'authoring') selectAuthoringMode(item);
       else selectPlain(item, state.view);
     });
     list.appendChild(button);

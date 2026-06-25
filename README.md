@@ -48,6 +48,10 @@ Open the browser console:
 http://localhost:8080/console
 ```
 
+The console visualizes definitions, versions, deployments, instances, operators,
+tasks, workers, dead letters, DSL validation, draft generation, and version
+diffs using the existing `/api/v1` control-plane APIs.
+
 Enable instance event SSE journal for local testing:
 
 ```bash

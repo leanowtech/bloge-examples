@@ -202,6 +202,80 @@ h2 {
   background: #fdfefe;
 }
 
+.hidden {
+  display: none;
+}
+
+.tool-panel {
+  min-height: 570px;
+  overflow: auto;
+  padding: 18px;
+  background: #fdfefe;
+}
+
+.tool-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.tool-card {
+  display: grid;
+  gap: 10px;
+  min-width: 0;
+  padding: 14px;
+  border: 1px solid var(--line);
+  background: #ffffff;
+}
+
+.tool-card h3,
+.tool-card p {
+  margin: 0;
+}
+
+.tool-card h3 {
+  font-size: 16px;
+}
+
+.tool-card p {
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.tool-card.wide {
+  grid-column: 1 / -1;
+}
+
+.field {
+  display: grid;
+  gap: 5px;
+  min-width: 0;
+}
+
+.field span {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.field input,
+.field textarea,
+.field select {
+  width: 100%;
+  min-width: 0;
+  border: 1px solid var(--line);
+  padding: 9px 10px;
+  background: #ffffff;
+}
+
+.field textarea {
+  min-height: 170px;
+  resize: vertical;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+}
+
 .edge {
   stroke: var(--line-strong);
   stroke-width: 2;
@@ -329,5 +403,9 @@ h2 {
 
   .main-panel {
     min-height: 520px;
+  }
+
+  .tool-grid {
+    grid-template-columns: 1fr;
   }
 }
