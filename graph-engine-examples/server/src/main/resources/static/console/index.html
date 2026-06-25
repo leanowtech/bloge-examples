@@ -1,0 +1,61 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>BLOGE Graph Engine Console</title>
+  <link rel="stylesheet" href="/console/styles.css">
+</head>
+<body>
+  <main class="shell">
+    <header class="topbar">
+      <div>
+        <p class="eyebrow">BLOGE Graph Engine</p>
+        <h1>Control Plane Console</h1>
+      </div>
+      <div class="scope">
+        <input id="role-header" placeholder="X-Graph-Engine-Roles">
+        <button id="refresh" class="secondary" type="button">Refresh</button>
+      </div>
+    </header>
+
+    <nav class="tabs" aria-label="Console views">
+      <button class="tab active" data-view="graphs" type="button">Graphs</button>
+      <button class="tab" data-view="instances" type="button">Instances</button>
+      <button class="tab" data-view="deployments" type="button">Deployments</button>
+      <button class="tab" data-view="operators" type="button">Operators</button>
+      <button class="tab" data-view="tasks" type="button">Queues</button>
+    </nav>
+
+    <section class="workspace">
+      <aside class="list-panel">
+        <div id="list-title" class="panel-title">Graphs</div>
+        <div id="entity-list" class="entity-list"></div>
+      </aside>
+
+      <section class="main-panel">
+        <div class="main-heading">
+          <div>
+            <p id="entity-kicker" class="eyebrow">No selection</p>
+            <h2 id="entity-title">Select an item</h2>
+          </div>
+          <div id="actions" class="actions"></div>
+        </div>
+        <svg id="diagram" class="diagram" role="img" aria-label="Graph diagram"></svg>
+      </section>
+
+      <aside class="detail-panel">
+        <section class="detail-section">
+          <div class="panel-title">Details</div>
+          <pre id="details" class="details">{}</pre>
+        </section>
+        <section class="detail-section">
+          <div class="panel-title">Runtime</div>
+          <pre id="runtime" class="details">{}</pre>
+        </section>
+      </aside>
+    </section>
+  </main>
+  <script src="/console/app.js"></script>
+</body>
+</html>

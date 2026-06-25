@@ -42,6 +42,12 @@ mvn -f resource-gateway-examples/pom.xml clean verify
 mvn -f graph-engine-examples/pom.xml -pl server spring-boot:run
 ```
 
+Open the browser console:
+
+```text
+http://localhost:8080/console
+```
+
 Enable instance event SSE journal for local testing:
 
 ```bash

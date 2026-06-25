@@ -24,6 +24,7 @@ import com.leanowtech.bloge.graphengine.mybatis.GraphEngineStoreFactory;
 import com.leanowtech.bloge.graphengine.server.rest.CallerContextFilter;
 import com.leanowtech.bloge.graphengine.server.rest.BpmnImportController;
 import com.leanowtech.bloge.graphengine.server.rest.GraphAuthoringController;
+import com.leanowtech.bloge.graphengine.server.rest.GraphEngineConsoleController;
 import com.leanowtech.bloge.graphengine.server.rest.GraphDeadLetterController;
 import com.leanowtech.bloge.graphengine.server.rest.GraphDefinitionController;
 import com.leanowtech.bloge.graphengine.server.rest.GraphDeploymentController;
@@ -295,6 +296,7 @@ public class GraphEngineServerAutoConfiguration {
             GraphRemoteWorkerController.class,
             GraphDeadLetterController.class,
             GraphTaskController.class,
+            GraphEngineConsoleController.class,
             GlobalExceptionHandler.class
     })
     static class WebApiConfiguration {

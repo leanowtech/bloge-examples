@@ -88,6 +88,11 @@ cd bloge-examples-graph-engine
 mvn -pl server spring-boot:run
 ```
 
+The server includes a static browser console at `http://localhost:8080/console`.
+It consumes the existing `/api/v1` definition, version, deployment, instance,
+operator, task, worker, dead-letter, diagram, node-state, context, audit,
+transition, and event endpoints.
+
 The standalone server now defaults `spring.bloge.durable.mode=local`, so it boots with an
 embedded volatile H2 durable store for local development instead of requiring an external
 database first. Keep that preset for local verification only.
