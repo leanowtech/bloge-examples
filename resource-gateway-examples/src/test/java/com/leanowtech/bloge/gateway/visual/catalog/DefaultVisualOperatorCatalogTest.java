@@ -21,4 +21,17 @@ class DefaultVisualOperatorCatalogTest {
         assertThat(operator.ports().inputs().getFirst().schema().required()).containsExactly("applicantId");
         assertThat(operator.ports().outputs().getFirst().schema().properties()).containsKeys("score", "segment");
     }
+
+    @Test
+    void includesUserProvidedOperatorLibraryDefinitions() {
+        DefaultVisualOperatorCatalog catalog = VisualCatalogTestSupport.catalogWithLibrary(
+                VisualCatalogTestSupport.eligibilityLibrary("integer"));
+
+        OperatorDefinition operator = catalog.find("risk:eligibility").orElseThrow();
+
+        assertThat(operator.source().kind()).isEqualTo("user-library");
+        assertThat(operator.lowering().mode()).isEqualTo("transform");
+        assertThat(operator.ports().inputs().getFirst().schema().required())
+                .containsExactly("score", "amount");
+    }
 }

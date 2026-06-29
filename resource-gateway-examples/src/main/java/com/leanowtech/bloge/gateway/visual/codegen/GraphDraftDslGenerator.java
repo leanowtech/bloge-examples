@@ -74,6 +74,14 @@ public class GraphDraftDslGenerator {
         if ("resource-descriptor".equals(operator.source().kind())) {
             return resourceNodeToDsl(node, operator, nodesById);
         }
+        if ("transform".equals(operator.lowering().mode())) {
+            return loweredTransformToDsl(node, operator, nodesById);
+        }
+        if ("native".equals(operator.lowering().mode())
+                && !List.of("httpResource", "bloge:decisionTable", "bloge:transform")
+                .contains(operator.operatorRef())) {
+            return nativeOperatorNodeToDsl(node, operator, nodesById);
+        }
         return switch (operator.operatorRef()) {
             case "httpResource" -> httpResourceNodeToDsl(node, nodesById);
             case "bloge:decisionTable" -> decisionTableToDsl(node, nodesById);
@@ -85,6 +93,44 @@ public class GraphDraftDslGenerator {
                 yield "";
             }
         };
+    }
+
+    private String nativeOperatorNodeToDsl(GraphDraft.DraftNode node,
+                                           OperatorDefinition operator,
+                                           Map<String, GraphDraft.DraftNode> nodesById) {
+        String executableOperatorRef = stringValue(operator.lowering().operatorRef()).isBlank()
+                ? operator.operatorRef()
+                : operator.lowering().operatorRef();
+        StringBuilder block = new StringBuilder();
+        block.append("  node ").append(node.id()).append(" : ").append(executableOperatorRef).append(" {\n")
+                .append("    input {\n");
+        node.inputs().forEach((key, binding) -> block.append("      ")
+                .append(key).append(" = ").append(bindingToExpression(binding, nodesById)).append("\n"));
+        block.append("    }\n");
+        appendCommonExecutionConfig(block, node.config());
+        block.append("  }");
+        return block.toString();
+    }
+
+    private String loweredTransformToDsl(GraphDraft.DraftNode node,
+                                         OperatorDefinition operator,
+                                         Map<String, GraphDraft.DraftNode> nodesById) {
+        Map<String, String> inputExpressions = new LinkedHashMap<>();
+        node.inputs().forEach((key, binding) -> inputExpressions.put(key, bindingToExpression(binding, nodesById)));
+
+        Map<String, Object> assignments = objectMap(operator.lowering().parameters().get("assignments"));
+        if (assignments.isEmpty()) {
+            return transformToDsl(node, nodesById);
+        }
+
+        StringBuilder block = new StringBuilder();
+        block.append("  transform ").append(node.id()).append(" {\n");
+        assignments.forEach((key, value) -> block.append("    ")
+                .append(key).append(" = ")
+                .append(renderTemplateExpression(String.valueOf(value), inputExpressions))
+                .append("\n"));
+        block.append("  }");
+        return block.toString();
     }
 
     private String resourceNodeToDsl(GraphDraft.DraftNode node,
@@ -276,6 +322,16 @@ public class GraphDraftDslGenerator {
             return expression;
         }
         return renderLiteral(raw);
+    }
+
+    private static String renderTemplateExpression(String template, Map<String, String> inputExpressions) {
+        String expression = template;
+        for (Map.Entry<String, String> entry : inputExpressions.entrySet()) {
+            expression = expression
+                    .replace("{{input." + entry.getKey() + "}}", entry.getValue())
+                    .replace("{{" + entry.getKey() + "}}", entry.getValue());
+        }
+        return expression;
     }
 
     private static GraphDraft.Binding bindingFromMap(Map<?, ?> rawMap) {

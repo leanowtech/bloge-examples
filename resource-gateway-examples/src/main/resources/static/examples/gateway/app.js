@@ -186,7 +186,7 @@ async function loadScenarios() {
 
 async function loadVisualOperatorCatalog() {
   try {
-    const response = await fetch('/api/visual/operators?resourceOnly=true');
+    const response = await fetch('/api/visual/operators');
     if (!response.ok) {
       return;
     }
@@ -195,7 +195,21 @@ async function loadVisualOperatorCatalog() {
     state.visualOperators = operators;
     for (const operator of operators) {
       const operatorRef = operator.operatorRef || '';
+      if (!operatorRef || operatorRef === 'httpResource' || operatorRef === 'bloge:decisionTable' || operatorRef === 'bloge:transform') {
+        continue;
+      }
       if (!operatorRef.startsWith('resource:')) {
+        OPERATOR_TYPES[operatorRef] = {
+          label: operator.display?.name || readableName(operatorRef),
+          kind: 'custom',
+          operatorRef,
+          visualOperatorRef: operatorRef,
+          baseId: baseIdForResource(operatorRef),
+          inputSchema: operator.ports?.inputs?.[0]?.schema,
+          outputSchema: operator.ports?.outputs?.[0]?.schema,
+          configSchema: operator.configSchema,
+          lowering: operator.lowering
+        };
         continue;
       }
       const resourceId = operator.source?.resourceId
@@ -208,7 +222,9 @@ async function loadVisualOperatorCatalog() {
         visualOperatorRef: operatorRef,
         baseId: baseIdForResource(resourceId),
         resourceId,
-        inputSchema: operator.ports?.inputs?.[0]?.schema
+        inputSchema: operator.ports?.inputs?.[0]?.schema,
+        outputSchema: operator.ports?.outputs?.[0]?.schema,
+        lowering: operator.lowering
       };
     }
   } catch (error) {
@@ -406,7 +422,7 @@ function orderedBuilderNodes(builder = state.builder) {
 }
 
 function orderedDslNodes(builder = state.builder) {
-  const rank = { httpResource: 0, decisionTable: 1, transform: 2 };
+  const rank = { httpResource: 0, customOperator: 1, decisionTable: 2, transform: 3 };
   return [...builder.nodes].sort((left, right) => {
     const leftRank = rank[left.type] ?? 9;
     const rightRank = rank[right.type] ?? 9;
@@ -448,6 +464,12 @@ function builderEdges(builder = state.builder) {
     }
   }
 
+  for (const node of builder.nodes) {
+    for (const expression of nodeInputExpressions(node)) {
+      add(expressionSourceNode(expression), node.id, 'data');
+    }
+  }
+
   if (edges.length === 0) {
     const ordered = orderedBuilderNodes(builder);
     for (let i = 0; i < ordered.length - 1; i++) {
@@ -455,6 +477,24 @@ function builderEdges(builder = state.builder) {
     }
   }
   return edges;
+}
+
+function nodeInputExpressions(node) {
+  if (node.type === 'httpResource') {
+    return [node.applicantExpr];
+  }
+  if (node.type === 'decisionTable') {
+    return [node.scoreSource, node.amountSource];
+  }
+  if (node.type === 'customOperator') {
+    return Object.values(node.customInputs || {});
+  }
+  return [];
+}
+
+function expressionSourceNode(expression) {
+  const match = String(expression || '').match(/^([A-Za-z_][A-Za-z0-9_]*)\.output(?:\.payload)?(?:\..+)?$/);
+  return match ? match[1] : '';
 }
 
 function selectedBuilderNode() {
@@ -550,6 +590,14 @@ function renderSelectedOperatorEditor() {
     });
   }
 
+  for (const input of target.querySelectorAll('[data-custom-input]')) {
+    input.addEventListener('input', () => {
+      node.customInputs = node.customInputs || {};
+      node.customInputs[input.dataset.customInput] = input.value;
+      syncComposerFromBuilder();
+    });
+  }
+
   for (const input of target.querySelectorAll('[data-rule-field]')) {
     input.addEventListener('input', () => {
       const rule = node.rules[Number(input.dataset.ruleIndex)];
@@ -575,6 +623,21 @@ function operatorEditorBody(node) {
         ${textField('Node', node.id, '', true)}
         ${textField('Resource ID', node.resourceId, 'resourceId')}
         ${textField(`${readableName(node.paramName || 'param')} Expr`, node.applicantExpr, 'applicantExpr')}
+      </div>
+    `;
+  }
+  if (node.type === 'customOperator') {
+    const spec = specForNode(node);
+    const properties = schemaProperties(spec.inputSchema);
+    const names = Object.keys(properties);
+    const fields = (names.length ? names : Object.keys(node.customInputs || {})).map((name) =>
+      customInputField(name, node.customInputs?.[name] || `ctx.${name}`, properties[name])
+    ).join('');
+    return `
+      <div class="operator-fields">
+        ${textField('Node', node.id, '', true)}
+        ${textField('Operator', spec.visualOperatorRef || node.paletteType, '', true)}
+        ${fields}
       </div>
     `;
   }
@@ -638,6 +701,16 @@ function textField(label, value, field, disabled = false) {
   `;
 }
 
+function customInputField(name, value, property = {}) {
+  const type = property.type ? ` · ${property.type}` : '';
+  return `
+    <label>
+      <span>${escapeHtml(readableName(name) + type)}</span>
+      <input data-custom-input="${escapeHtml(name)}" value="${escapeHtml(value ?? '')}">
+    </label>
+  `;
+}
+
 function addDecisionRule(node) {
   const nextId = uniqueRuleId(node.rules);
   const insertAt = Math.max(0, node.rules.length - 1);
@@ -690,11 +763,12 @@ function addBuilderNode(type, position = null) {
 function createBuilderNode(type, x, y) {
   const spec = OPERATOR_TYPES[type];
   const resourceOperator = spec.kind === 'resource' && spec.resourceId;
+  const customOperator = spec.kind === 'custom';
   const id = uniqueNodeId(spec.baseId);
   const base = {
     id,
-    type: resourceOperator ? 'httpResource' : type,
-    paletteType: resourceOperator ? type : '',
+    type: resourceOperator ? 'httpResource' : (customOperator ? 'customOperator' : type),
+    paletteType: resourceOperator || customOperator ? type : '',
     x: Math.max(40, Math.round(x)),
     y: Math.max(80, Math.round(y))
   };
@@ -716,6 +790,12 @@ function createBuilderNode(type, x, y) {
       rules: defaultDecisionRules()
     };
   }
+  if (customOperator) {
+    return {
+      ...base,
+      customInputs: defaultInputExpressionsForOperator(spec)
+    };
+  }
   return {
     ...base,
     policyNode: firstDecisionTableId()
@@ -728,8 +808,20 @@ function defaultParamNameForOperator(spec) {
   if (required.length) {
     return required[0];
   }
-  const properties = schema.properties || {};
+  const properties = schemaProperties(spec?.inputSchema);
   return Object.keys(properties)[0] || 'applicantId';
+}
+
+function defaultInputExpressionsForOperator(spec) {
+  const schema = spec?.inputSchema?.schema || {};
+  const required = Array.isArray(schema.required) ? schema.required : [];
+  const properties = schemaProperties(spec?.inputSchema);
+  const names = required.length ? required : Object.keys(properties);
+  return Object.fromEntries(names.map((name) => [name, `ctx.${name}`]));
+}
+
+function schemaProperties(schemaEnvelope) {
+  return schemaEnvelope?.schema?.properties || {};
 }
 
 function nonOverlappingNodePosition(x, y) {
@@ -948,7 +1040,36 @@ function nodeToDsl(node, builder) {
       : `{ score: ${decisionNode.scoreSource}, segment: ctx.segment }`;
     return `  transform ${node.id} {\n    applicant       = ${applicant}\n    requestedAmount = ${decisionNode.amountSource}\n    policy          = ${decisionNode.id}.output\n  }`;
   }
+  if (node.type === 'customOperator') {
+    return customNodeToDsl(node);
+  }
   return '';
+}
+
+function customNodeToDsl(node) {
+  const spec = specForNode(node);
+  const inputs = node.customInputs || {};
+  if (spec.lowering?.mode === 'transform' && spec.lowering?.parameters?.assignments) {
+    const assignments = Object.entries(spec.lowering.parameters.assignments).map(([key, template]) =>
+      `    ${key} = ${renderTemplateExpression(String(template), inputs)}`
+    ).join('\n');
+    return `  transform ${node.id} {\n${assignments || '    result = {}'}\n  }`;
+  }
+  const executable = spec.lowering?.operatorRef || spec.operatorRef || spec.visualOperatorRef || node.paletteType;
+  const inputLines = Object.entries(inputs).map(([key, expression]) =>
+    `      ${key} = ${expression || 'null'}`
+  ).join('\n');
+  return `  node ${node.id} : ${executable} {\n    input {\n${inputLines}\n    }\n  }`;
+}
+
+function renderTemplateExpression(template, inputs) {
+  let expression = template;
+  for (const [name, value] of Object.entries(inputs || {})) {
+    expression = expression
+      .replaceAll(`{{input.${name}}}`, value || 'null')
+      .replaceAll(`{{${name}}}`, value || 'null');
+  }
+  return expression;
 }
 
 function builderToVisualDraft(builder = state.builder) {
@@ -1018,6 +1139,17 @@ function builderNodeToDraftNode(node, builder) {
       position: { x: node.x, y: node.y }
     };
   }
+  if (node.type === 'customOperator') {
+    return {
+      id: node.id,
+      operatorRef: node.paletteType,
+      label: labelForNode(node),
+      inputs: Object.fromEntries(Object.entries(node.customInputs || {})
+              .map(([key, expression]) => [key, bindingFromExpression(expression)])),
+      config: {},
+      position: { x: node.x, y: node.y }
+    };
+  }
   const decisionNode = builder.nodes.find((item) => item.id === node.policyNode)
     || builder.nodes.find((item) => item.type === 'decisionTable');
   const resourceNode = builder.nodes.find((item) => item.type === 'httpResource');
@@ -1071,6 +1203,9 @@ function labelForNode(node) {
   }
   if (node.type === 'transform') {
     return 'Transform';
+  }
+  if (node.type === 'customOperator') {
+    return specForNode(node).label || readableName(node.id);
   }
   return readableName(node.id);
 }

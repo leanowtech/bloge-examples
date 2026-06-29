@@ -218,6 +218,79 @@ input/output schemas used by the visual operator catalog:
 | `PUT` | `/admin/resource-design-contracts/{resourceId}` | Create or replace a visual contract | 200 / 400 |
 | `DELETE` | `/admin/resource-design-contracts/{resourceId}` | Delete a visual contract | 204 |
 
+User-provided visual operator libraries are imported through a separate admin API.
+Imported operators join the same `/api/visual/operators` catalog as built-ins and
+resource-backed virtual operators.
+
+| Method | Path | Description | Status |
+|--------|------|-------------|--------|
+| `GET` | `/admin/visual-operator-libraries` | List imported operator libraries | 200 |
+| `POST` | `/admin/visual-operator-libraries` | Import an operator library | 201 / 400 |
+| `GET` | `/admin/visual-operator-libraries/{libraryId}` | Get one imported library | 200 / 404 |
+| `PUT` | `/admin/visual-operator-libraries/{libraryId}` | Replace an imported library | 200 / 400 |
+| `DELETE` | `/admin/visual-operator-libraries/{libraryId}` | Delete an imported library | 204 |
+
+Minimal import example:
+
+```bash
+curl -X POST http://localhost:8080/admin/visual-operator-libraries \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "libraryId": "risk-policy",
+    "displayName": "Risk policy operators",
+    "version": "1.0.0",
+    "owner": "risk-team",
+    "operators": [{
+      "operatorRef": "risk:eligibility",
+      "display": {
+        "name": "Eligibility",
+        "description": "Evaluates a reusable eligibility predicate.",
+        "tags": ["risk", "policy"]
+      },
+      "source": { "kind": "user-library", "virtual": true },
+      "ports": {
+        "inputs": [{
+          "name": "inputs",
+          "required": true,
+          "schema": {
+            "schema": {
+              "type": "object",
+              "properties": {
+                "score": { "type": "integer" },
+                "amount": { "type": "number" }
+              },
+              "required": ["score", "amount"]
+            }
+          }
+        }],
+        "outputs": [{
+          "name": "output",
+          "required": true,
+          "schema": {
+            "schema": {
+              "type": "object",
+              "properties": {
+                "eligible": { "type": "boolean" },
+                "ruleId": { "type": "string" }
+              }
+            }
+          }
+        }]
+      },
+      "lowering": {
+        "mode": "transform",
+        "operatorRef": "transform",
+        "parameters": {
+          "assignments": {
+            "eligible": "{{input.score}} >= 700 && {{input.amount}} <= 300000",
+            "ruleId": "\"ELIGIBILITY_V1\""
+          }
+        }
+      }
+    }]
+  }'
+```
+
 ---
 
 ## Orchestration graphs
@@ -253,6 +326,7 @@ Seven `.bloge` graphs live in `src/main/resources/bloge/gateway/`:
 | Type | Role |
 |------|------|
 | `ResourceDesignContract` | Schema contract that turns a resource descriptor into a canvas-ready operator |
+| `OperatorLibrary` | User-provided operator catalog bundle with schema-aware `OperatorDefinition` entries |
 | `DefaultVisualOperatorCatalog` | Combines native visual operators with `resource:<resourceId>` virtual operators |
 | `GraphDraft` | Editable canvas graph model: nodes, bindings, edges, layout, output selection |
 | `GraphDraftValidator` | Validates operator references, required schema inputs, edges, and output selection |
@@ -576,7 +650,7 @@ Isolated component tests, some with lightweight Spring slices or mocks.
 | `DatabaseResourceRegistryTest` | 11 | CRUD, H2 persistence, in-memory cache |
 | `ResourceDescriptorBootstrapTest` | 7 | Seeding, refresh behavior, idempotency |
 | `GatewayDslCompilationTest` | 7 | DSL parsing, graph loading |
-| `Visual*Test` | 4 | Visual operator projection, draft validation, DSL lowering, runtime smoke path |
+| `Visual*Test` | 8 | Visual operator projection, imported libraries, draft validation, DSL lowering, runtime smoke path |
 
 ### Layer 3 — Orchestration tests
 

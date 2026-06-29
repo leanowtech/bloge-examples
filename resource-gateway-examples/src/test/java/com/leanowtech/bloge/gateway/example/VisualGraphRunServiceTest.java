@@ -1,6 +1,7 @@
 package com.leanowtech.bloge.gateway.example;
 
 import com.leanowtech.bloge.gateway.visual.catalog.VisualOperatorCatalog;
+import com.leanowtech.bloge.gateway.visual.catalog.VisualCatalogTestSupport;
 import com.leanowtech.bloge.gateway.visual.codegen.GraphDraftDslGenerator;
 import com.leanowtech.bloge.gateway.visual.draft.GraphDraft;
 import com.leanowtech.bloge.gateway.visual.runtime.VisualGraphRunResponse;
@@ -59,6 +60,50 @@ class VisualGraphRunServiceTest {
         assertThat(response.success()).isTrue();
         assertThat(response.generatedDsl()).contains("transform response");
         assertThat(response.output()).isEqualTo(Map.of("score", 720));
+    }
+
+    @Test
+    void runsUserProvidedTransformOperatorLibraryDefinition() {
+        VisualOperatorCatalog catalog = VisualCatalogTestSupport.catalogWithLibrary(
+                VisualCatalogTestSupport.eligibilityLibrary("integer"));
+        VisualGraphRunService service = new VisualGraphRunService(
+                new GraphDraftValidator(catalog),
+                new GraphDraftDslGenerator(catalog),
+                new DynamicGatewayComposerService(MockOperator.returning(null))
+        );
+        GraphDraft draft = new GraphDraft(
+                "",
+                "",
+                0,
+                "eligibilityPolicy",
+                "",
+                "",
+                "",
+                "",
+                null,
+                List.of(new GraphDraft.DraftNode(
+                        "eligibility",
+                        "risk:eligibility",
+                        "",
+                        Map.of(
+                                "score", GraphDraft.Binding.contextPath("score"),
+                                "amount", GraphDraft.Binding.contextPath("amount")
+                        ),
+                        Map.of(),
+                        null
+                )),
+                List.of(),
+                Map.of(),
+                new GraphDraft.OutputSelection("eligibility", "")
+        );
+
+        VisualGraphRunResponse response = service.run(draft, Map.of("score", 720, "amount", 250_000), "");
+
+        assertThat(response.validated()).isTrue();
+        assertThat(response.compiled()).isTrue();
+        assertThat(response.success()).isTrue();
+        assertThat(response.generatedDsl()).contains("eligible = ctx.score >= 700 && ctx.amount <= 300000");
+        assertThat(response.output()).isEqualTo(Map.of("eligible", true, "ruleId", "ELIGIBILITY_V1"));
     }
 
     private static VisualOperatorCatalog transformOnlyCatalog() {

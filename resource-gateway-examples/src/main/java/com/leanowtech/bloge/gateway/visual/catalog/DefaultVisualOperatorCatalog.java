@@ -6,6 +6,7 @@ import com.leanowtech.bloge.gateway.visual.model.SchemaEnvelope;
 import com.leanowtech.bloge.gateway.visual.resource.ResourceDesignContract;
 import com.leanowtech.bloge.gateway.visual.resource.ResourceDesignContractRegistry;
 
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
 import java.util.ArrayList;
@@ -25,18 +26,28 @@ public class DefaultVisualOperatorCatalog implements VisualOperatorCatalog {
     private final ResourceRegistry resourceRegistry;
     private final ResourceDesignContractRegistry contractRegistry;
     private final ResourceVirtualOperatorProjector projector;
+    private final OperatorLibraryRegistry libraryRegistry;
 
     /**
      * @param resourceRegistry resource descriptor registry
      * @param contractRegistry visual design contract registry
      * @param projector resource operator projector
      */
+    @Autowired
     public DefaultVisualOperatorCatalog(ResourceRegistry resourceRegistry,
                                         ResourceDesignContractRegistry contractRegistry,
-                                        ResourceVirtualOperatorProjector projector) {
+                                        ResourceVirtualOperatorProjector projector,
+                                        OperatorLibraryRegistry libraryRegistry) {
         this.resourceRegistry = resourceRegistry;
         this.contractRegistry = contractRegistry;
         this.projector = projector;
+        this.libraryRegistry = libraryRegistry;
+    }
+
+    DefaultVisualOperatorCatalog(ResourceRegistry resourceRegistry,
+                                 ResourceDesignContractRegistry contractRegistry,
+                                 ResourceVirtualOperatorProjector projector) {
+        this(resourceRegistry, contractRegistry, projector, OperatorLibraryRegistry.empty());
     }
 
     @Override
@@ -45,6 +56,7 @@ public class DefaultVisualOperatorCatalog implements VisualOperatorCatalog {
         List<OperatorDefinition> operators = new ArrayList<>();
         if (!effectiveQuery.resourceOnly()) {
             operators.addAll(nativeOperators());
+            operators.addAll(libraryRegistry.operators(effectiveQuery.includeDeprecated()));
         }
         for (ResourceDescriptor descriptor : resourceRegistry.all()) {
             Optional<ResourceDesignContract> contract = contractRegistry.findByResourceId(descriptor.resourceId());

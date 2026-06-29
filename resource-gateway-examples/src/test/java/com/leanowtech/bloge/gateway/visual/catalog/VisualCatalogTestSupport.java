@@ -11,6 +11,7 @@ import com.leanowtech.bloge.gateway.visual.resource.ResourceDesignContractRegist
 
 import java.time.Duration;
 import java.util.Collection;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
@@ -47,6 +48,114 @@ public final class VisualCatalogTestSupport {
                 new SingleResourceRegistry(descriptor),
                 contracts,
                 new ResourceVirtualOperatorProjector()
+        );
+    }
+
+    public static DefaultVisualOperatorCatalog catalogWithLibrary(OperatorLibrary library) {
+        InMemoryOperatorLibraryRegistry libraries = new InMemoryOperatorLibraryRegistry();
+        libraries.upsert(library);
+        return new DefaultVisualOperatorCatalog(
+                emptyResourceRegistry(),
+                new InMemoryResourceDesignContractRegistry(),
+                new ResourceVirtualOperatorProjector(),
+                libraries
+        );
+    }
+
+    public static DefaultVisualOperatorCatalog catalogWithLoanApplicantResourceAndLibrary(OperatorLibrary library) {
+        InMemoryOperatorLibraryRegistry libraries = new InMemoryOperatorLibraryRegistry();
+        libraries.upsert(library);
+        ResourceDesignContractRegistry contracts = new InMemoryResourceDesignContractRegistry();
+        contracts.upsert(new ResourceDesignContract(
+                "contract:" + RESOURCE_ID,
+                RESOURCE_ID,
+                "Loan applicant profile",
+                "Reads applicant facts.",
+                List.of("loan", "applicant"),
+                SchemaEnvelope.object(Map.of(
+                        "applicantId", Map.of("type", "string")
+                ), List.of("applicantId")),
+                SchemaEnvelope.object(Map.of(
+                        "score", Map.of("type", "integer"),
+                        "segment", Map.of("type", "string")
+                ), List.of()),
+                Map.of(),
+                "ACTIVE"
+        ));
+        return new DefaultVisualOperatorCatalog(
+                new SingleResourceRegistry(loanApplicantDescriptor()),
+                contracts,
+                new ResourceVirtualOperatorProjector(),
+                libraries
+        );
+    }
+
+    public static ResourceRegistry emptyResourceRegistry() {
+        return new ResourceRegistry() {
+            @Override
+            public ResourceDescriptor resolve(String resourceId) {
+                throw new com.leanowtech.bloge.gateway.exception.ResourceNotFoundException(resourceId);
+            }
+
+            @Override
+            public boolean contains(String resourceId) {
+                return false;
+            }
+
+            @Override
+            public Collection<ResourceDescriptor> all() {
+                return List.of();
+            }
+        };
+    }
+
+    public static OperatorDefinition eligibilityOperator(String scoreType) {
+        Map<String, Object> inputProperties = new LinkedHashMap<>();
+        inputProperties.put("score", Map.of("type", scoreType));
+        inputProperties.put("amount", Map.of("type", "number"));
+
+        Map<String, Object> outputProperties = new LinkedHashMap<>();
+        outputProperties.put("eligible", Map.of("type", "boolean"));
+        outputProperties.put("ruleId", Map.of("type", "string"));
+
+        return new OperatorDefinition(
+                "bloge.visualOperator.v1",
+                "risk:eligibility",
+                "1.0.0",
+                new OperatorDefinition.Display("Eligibility", "Evaluates a reusable eligibility predicate.",
+                        List.of("risk", "policy")),
+                new OperatorDefinition.Source("user-library", "", "", "", true),
+                new OperatorDefinition.Ports(
+                        List.of(new OperatorDefinition.Port("inputs",
+                                SchemaEnvelope.object(inputProperties, List.of("score", "amount")),
+                                true,
+                                "Eligibility inputs.")),
+                        List.of(new OperatorDefinition.Port("output",
+                                SchemaEnvelope.object(outputProperties, List.of()),
+                                true,
+                                "Eligibility result."))
+                ),
+                SchemaEnvelope.opaque(),
+                OperatorDefinition.Capabilities.pure(),
+                new OperatorDefinition.Lowering("transform", "transform", Map.of(
+                        "assignments", Map.of(
+                                "eligible", "{{input.score}} >= 700 && {{input.amount}} <= 300000",
+                                "ruleId", "\"ELIGIBILITY_V1\""
+                        )
+                )),
+                List.of()
+        );
+    }
+
+    public static OperatorLibrary eligibilityLibrary(String scoreType) {
+        return new OperatorLibrary(
+                "bloge.visualOperatorLibrary.v1",
+                "risk-policy",
+                "Risk policy operators",
+                "1.0.0",
+                "risk-team",
+                "ACTIVE",
+                List.of(eligibilityOperator(scoreType))
         );
     }
 

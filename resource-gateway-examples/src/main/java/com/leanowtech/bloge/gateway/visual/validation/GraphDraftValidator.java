@@ -9,6 +9,7 @@ import com.leanowtech.bloge.gateway.visual.model.SchemaEnvelope;
 import org.springframework.stereotype.Service;
 
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
@@ -47,6 +48,8 @@ public class GraphDraftValidator {
         }
 
         Set<String> nodeIds = new HashSet<>();
+        Map<String, GraphDraft.DraftNode> nodesById = new LinkedHashMap<>();
+        Map<String, OperatorDefinition> operatorsByNodeId = new LinkedHashMap<>();
         for (int i = 0; i < draft.nodes().size(); i++) {
             GraphDraft.DraftNode node = draft.nodes().get(i);
             String nodePath = "/nodes/" + i;
@@ -54,16 +57,19 @@ public class GraphDraftValidator {
                 diagnostics.add(VisualDiagnostic.error("visual.node.duplicateId",
                         "Duplicate node id: " + node.id(), nodePath + "/id"));
             }
+            nodesById.put(node.id(), node);
             Optional<OperatorDefinition> operator = catalog.find(node.operatorRef());
             if (operator.isEmpty()) {
                 diagnostics.add(VisualDiagnostic.error("visual.operator.unknown",
                         "Unknown operatorRef: " + node.operatorRef(), nodePath + "/operatorRef"));
                 continue;
             }
+            operatorsByNodeId.put(node.id(), operator.get());
             validateRequiredInputs(node, operator.get(), nodePath, diagnostics);
             validateUnknownInputs(node, operator.get(), nodePath, diagnostics);
         }
 
+        validateNodePathBindings(draft, nodesById, operatorsByNodeId, diagnostics);
         validateEdges(draft, diagnostics);
         if (!draft.output().nodeId().isBlank() && !nodeIds.contains(draft.output().nodeId())) {
             diagnostics.add(VisualDiagnostic.error("visual.output.unknownNode",
@@ -108,6 +114,130 @@ public class GraphDraftValidator {
         return operator.ports().inputs().isEmpty()
                 ? SchemaEnvelope.opaque()
                 : operator.ports().inputs().get(0).schema();
+    }
+
+    private static SchemaEnvelope firstOutputSchema(OperatorDefinition operator) {
+        return operator.ports().outputs().isEmpty()
+                ? SchemaEnvelope.opaque()
+                : operator.ports().outputs().get(0).schema();
+    }
+
+    private static void validateNodePathBindings(GraphDraft draft,
+                                                 Map<String, GraphDraft.DraftNode> nodesById,
+                                                 Map<String, OperatorDefinition> operatorsByNodeId,
+                                                 List<VisualDiagnostic> diagnostics) {
+        for (int i = 0; i < draft.nodes().size(); i++) {
+            GraphDraft.DraftNode node = draft.nodes().get(i);
+            OperatorDefinition targetOperator = operatorsByNodeId.get(node.id());
+            if (targetOperator == null) {
+                continue;
+            }
+            SchemaEnvelope targetSchema = firstInputSchema(targetOperator);
+            for (Map.Entry<String, GraphDraft.Binding> input : node.inputs().entrySet()) {
+                validateBinding(input.getValue(), input.getKey(), targetSchema, nodesById, operatorsByNodeId,
+                        "/nodes/" + i + "/inputs/" + input.getKey(), diagnostics);
+            }
+        }
+    }
+
+    private static void validateBinding(GraphDraft.Binding binding,
+                                        String inputName,
+                                        SchemaEnvelope targetSchema,
+                                        Map<String, GraphDraft.DraftNode> nodesById,
+                                        Map<String, OperatorDefinition> operatorsByNodeId,
+                                        String targetPath,
+                                        List<VisualDiagnostic> diagnostics) {
+        if ("objectTemplate".equals(binding.kind())) {
+            binding.fields().forEach((key, nested) -> validateBinding(nested, key, targetSchema, nodesById,
+                    operatorsByNodeId, targetPath + "/" + key, diagnostics));
+            return;
+        }
+        if (!"nodePath".equals(binding.kind())) {
+            return;
+        }
+
+        GraphDraft.DraftNode sourceNode = nodesById.get(binding.nodeId());
+        OperatorDefinition sourceOperator = operatorsByNodeId.get(binding.nodeId());
+        if (sourceNode == null || sourceOperator == null) {
+            diagnostics.add(VisualDiagnostic.error("visual.binding.unknownSource",
+                    "Binding source node does not exist: " + binding.nodeId(), targetPath));
+            return;
+        }
+
+        Map<String, Object> sourceProperty = propertyAtPath(firstOutputSchema(sourceOperator), binding.path());
+        if (sourceProperty == null) {
+            diagnostics.add(VisualDiagnostic.error("visual.binding.unknownOutputPath",
+                    "Source node '%s' output path does not exist: %s".formatted(binding.nodeId(), binding.path()),
+                    targetPath));
+            return;
+        }
+
+        Map<String, Object> targetProperty = objectProperty(targetSchema.properties().get(inputName));
+        String sourceType = schemaType(sourceProperty);
+        String targetType = schemaType(targetProperty);
+        if (!sourceType.isBlank() && !targetType.isBlank() && !typesCompatible(sourceType, targetType)) {
+            diagnostics.add(VisualDiagnostic.error("visual.binding.typeMismatch",
+                    "Cannot bind %s output '%s' to %s input '%s'."
+                            .formatted(sourceType, binding.path(), targetType, inputName),
+                    targetPath));
+        }
+    }
+
+    private static Map<String, Object> propertyAtPath(SchemaEnvelope schema, String path) {
+        if (path == null || path.isBlank()) {
+            return Map.of("type", schema.schema().getOrDefault("type", "object"));
+        }
+        Map<String, Object> properties = schema.properties();
+        Map<String, Object> current = null;
+        for (String segment : path.split("\\.")) {
+            if (segment.isBlank()) {
+                continue;
+            }
+            current = objectProperty(properties.get(segment));
+            if (current == null) {
+                return null;
+            }
+            Object nested = current.get("properties");
+            if (nested instanceof Map<?, ?> rawNested) {
+                Map<String, Object> nextProperties = new LinkedHashMap<>();
+                for (Map.Entry<?, ?> entry : rawNested.entrySet()) {
+                    nextProperties.put(String.valueOf(entry.getKey()), entry.getValue());
+                }
+                properties = nextProperties;
+            } else {
+                properties = Map.of();
+            }
+        }
+        return current;
+    }
+
+    @SuppressWarnings("unchecked")
+    private static Map<String, Object> objectProperty(Object value) {
+        if (!(value instanceof Map<?, ?> map)) {
+            return null;
+        }
+        Map<String, Object> copy = new LinkedHashMap<>();
+        map.forEach((key, item) -> copy.put(String.valueOf(key), item));
+        return copy;
+    }
+
+    private static String schemaType(Map<String, Object> property) {
+        if (property == null) {
+            return "";
+        }
+        Object type = property.get("type");
+        return type == null ? "" : String.valueOf(type);
+    }
+
+    private static boolean typesCompatible(String sourceType, String targetType) {
+        if (sourceType.equals(targetType)) {
+            return true;
+        }
+        return numeric(sourceType) && numeric(targetType);
+    }
+
+    private static boolean numeric(String type) {
+        return "number".equals(type) || "integer".equals(type);
     }
 
     private static void validateEdges(GraphDraft draft, List<VisualDiagnostic> diagnostics) {
