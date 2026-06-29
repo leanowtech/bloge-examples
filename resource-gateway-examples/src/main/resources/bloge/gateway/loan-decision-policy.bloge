@@ -1,0 +1,43 @@
+/// Loan Decision Policy — resource-backed decision-table graph
+///
+/// Fetches applicant facts through the generic httpResource operator, evaluates a
+/// UNIQUE decision table, and returns the matched policy row together with the
+/// input facts that explain why the rule matched.
+///
+/// Graph layout:
+///   fetchApplicant ──→ loanPolicy ──→ assembleLoanDecision
+///
+/// Context variables:
+///   ctx.applicantId      — applicant identifier
+///   ctx.requestedAmount  — requested loan amount
+graph loanDecisionPolicy {
+
+  /// Applicant risk facts from the descriptor-backed demo upstream.
+  node fetchApplicant : httpResource {
+    input {
+      resourceId = "loan-applicant-service.getProfile"
+      params = { applicantId: ctx.applicantId }
+    }
+    timeout = 3s
+    retry = { attempts: 1, backoff: 200ms }
+  }
+
+  /// Auditable underwriting matrix. UNIQUE guards against overlapping policy rows.
+  decision_table loanPolicy(
+    score  = fetchApplicant.output.payload.score,
+    amount = ctx.requestedAmount
+  ) hit=unique -> { decision: String, rate: Decimal, maxTerm: Int, reviewLane: String, ruleId: String } {
+    rule (score: score >= 760, amount: amount <= 500000)       -> { decision: "approved", rate: 3.5,  maxTerm: 360, reviewLane: "auto-approve",       ruleId: "R1" }
+    rule (score: 700 <= score < 760, amount: amount <= 300000) -> { decision: "approved", rate: 4.5,  maxTerm: 300, reviewLane: "standard",           ruleId: "R2" }
+    rule (score: 650 <= score < 700, amount: amount <= 200000) -> { decision: "manual_review", rate: 5.75, maxTerm: 240, reviewLane: "senior-underwriter", ruleId: "R3" }
+    otherwise                                                  -> { decision: "declined", rate: 0.0,  maxTerm: 0,   reviewLane: "decline",            ruleId: "R4" }
+  }
+
+  /// Public response payload for the browser showcase and README curl examples.
+  transform assembleLoanDecision {
+    applicant       = fetchApplicant.output.payload
+    requestedAmount = ctx.requestedAmount
+    policy          = loanPolicy.output
+    explanation     = "Decision table evaluated with hit=unique"
+  }
+}

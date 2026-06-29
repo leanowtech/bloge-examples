@@ -9,6 +9,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.util.Map;
@@ -27,6 +28,7 @@ import java.util.Map;
  *   <li>{@code GET /api/gateway/products/{productId}} — product detail with conditional routing</li>
  *   <li>{@code GET /api/gateway/orders/{userId}/enriched} — enriched order list via foreach</li>
  *   <li>{@code GET /api/gateway/credit-score/{userId}} — multi-provider credit score</li>
+ *   <li>{@code GET /api/gateway/loan-policy/{applicantId}?amount=...} — decision-table loan policy</li>
  * </ul>
  */
 @RestController
@@ -106,6 +108,25 @@ public class UserDashboardController {
         // assembleResult may be cancelled when the primary/secondary branch leaves
         // the other path un-resolved; fall back to individual branch nodes.
         return toResponse(result, "assembleResult", "assemblePrimary", "assembleSecondary");
+    }
+
+    /**
+     * Evaluates the resource-backed loan decision policy graph.
+     *
+     * @param applicantId     applicant identifier
+     * @param requestedAmount requested loan amount
+     * @return a JSON response containing applicant facts and the matched policy row
+     */
+    @GetMapping("/loan-policy/{applicantId}")
+    public ResponseEntity<GatewayResponse> loanDecisionPolicy(@PathVariable String applicantId,
+                                                              @RequestParam("amount") double requestedAmount) {
+        log.info("Loan policy request for applicantId={}, amount={}", applicantId, requestedAmount);
+        GraphContext ctx = new GraphContext(Map.of(
+                "applicantId", applicantId,
+                "requestedAmount", requestedAmount
+        ));
+        GraphResult result = graphService.execute("loanDecisionPolicy", ctx);
+        return toResponse(result, "assembleLoanDecision");
     }
 
     /**

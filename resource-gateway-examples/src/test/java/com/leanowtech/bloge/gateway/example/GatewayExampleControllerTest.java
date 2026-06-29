@@ -27,14 +27,16 @@ class GatewayExampleControllerTest {
     }
 
     @Test
-    void scenariosEndpointListsSixVisualExamples() throws Exception {
+    void scenariosEndpointListsSevenVisualExamples() throws Exception {
         mockMvc.perform(get("/api/gateway/examples/scenarios"))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.length()").value(6))
+                .andExpect(jsonPath("$.length()").value(7))
                 .andExpect(jsonPath("$[0].graphName").value("userDashboard"))
                 .andExpect(jsonPath("$[0].run.pathTemplate").value("/api/gateway/dashboard/{userId}"))
-                .andExpect(jsonPath("$[5].graphName").value("aiEnrichedSearch"))
-                .andExpect(jsonPath("$[5].run.mode").value("stream"));
+                .andExpect(jsonPath("$[1].graphName").value("loanDecisionPolicy"))
+                .andExpect(jsonPath("$[1].decisionTable.hitPolicy").value("unique"))
+                .andExpect(jsonPath("$[6].graphName").value("aiEnrichedSearch"))
+                .andExpect(jsonPath("$[6].run.mode").value("stream"));
     }
 
     @Test

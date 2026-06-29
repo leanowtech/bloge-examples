@@ -67,6 +67,11 @@
         </dependency>
         <dependency>
             <groupId>com.leanowtech.bloge</groupId>
+            <artifactId>bloge-durable</artifactId>
+            <version>${bloge.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>com.leanowtech.bloge</groupId>
             <artifactId>bloge-test</artifactId>
             <version>${bloge.version}</version>
             <scope>test</scope>

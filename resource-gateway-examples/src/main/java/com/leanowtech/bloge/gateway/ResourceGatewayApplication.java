@@ -19,8 +19,8 @@ import org.springframework.boot.autoconfigure.SpringBootApplication;
  * </ul>
  *
  * <p>The example now uses {@code bloge-spring} starter auto-configuration directly.
- * Because durable modules are not on the classpath, the starter creates the lightweight
- * core {@code GraphEngine}, operator discovery, and DSL loading path automatically.
+ * It runs in the request-response engine mode while keeping the BLOGE durable
+ * API types on the classpath for starter property binding compatibility.
  *
  * <p>It still sets {@code spring.classformat.ignore=true} defensively when scanning a mixed
  * preview-bytecode workspace so the standalone module can be launched directly with

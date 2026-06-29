@@ -12,7 +12,7 @@ import java.util.Optional;
 /**
  * In-memory catalog of the resource-gateway examples shown by the browser UI.
  *
- * <p>The catalog deliberately mirrors the six DSL graphs that ship under
+ * <p>The catalog deliberately mirrors the DSL graphs that ship under
  * {@code src/main/resources/bloge/gateway}. It keeps scenario copy, sample
  * inputs, endpoint recipes, and seeded diagram layouts together so the README,
  * tests, and UI do not drift into separate interpretations of the examples.</p>
@@ -31,6 +31,7 @@ public class GatewayExampleCatalog {
     public GatewayExampleCatalog() {
         Map<String, ScenarioEntry> entries = new LinkedHashMap<>();
         add(entries, userDashboard());
+        add(entries, loanDecisionPolicy());
         add(entries, productDetail());
         add(entries, enrichOrderList());
         add(entries, creditScore());
@@ -86,6 +87,7 @@ public class GatewayExampleCatalog {
                         List.of("parallel fan-out", "httpResource", "timeout", "retry", "fallback", "aggregation"),
                         Map.of("userId", "u1"),
                         new GatewayExampleRun("request", "GET", "/api/gateway/dashboard/{userId}", Map.of(), Map.of()),
+                        null,
                         null
                 ),
                 layout(graph,
@@ -114,6 +116,93 @@ public class GatewayExampleCatalog {
         );
     }
 
+    private ScenarioEntry loanDecisionPolicy() {
+        String graph = "loanDecisionPolicy";
+        return entry(
+                new GatewayExampleScenario(
+                        graph,
+                        "Loan Decision Policy",
+                        "loan-decision-policy.bloge",
+                        "Decision-table policy matrix",
+                        "Fetches applicant risk facts, evaluates a UNIQUE decision table, and returns the matched policy row.",
+                        List.of("decision_table", "hit=unique", "rule matrix", "httpResource", "explainable output"),
+                        Map.of("applicantId", "prime", "amount", 450000),
+                        new GatewayExampleRun(
+                                "request",
+                                "GET",
+                                "/api/gateway/loan-policy/{applicantId}?amount={amount}",
+                                Map.of(),
+                                Map.of()
+                        ),
+                        loanDecisionTable(),
+                        null
+                ),
+                layout(graph,
+                        List.of(
+                                node("fetchApplicant", "resource", "httpResource", "Applicant Profile", 80, 210, null,
+                                        Map.of("resourceId", "loan-applicant-service.getProfile", "payload", "score, segment, income")),
+                                node("loanPolicy", "decision-table", "DecisionTableOperator", "Loan Policy Matrix", 360, 210, "policyMatrix",
+                                        Map.of("hitPolicy", "unique", "rules", 4, "inputs", "score + amount")),
+                                node("assembleLoanDecision", "transform", null, "Decision Explain", 660, 210, null,
+                                        Map.of("includes", "applicant, requestedAmount, policy, explanation"))
+                        ),
+                        edges(
+                                edge("fetchApplicant", "loanPolicy", "risk facts"),
+                                edge("loanPolicy", "assembleLoanDecision", "matched rule")
+                        ),
+                        List.of(new ExampleVisualLayout.Group("policyMatrix", "Auditable rule matrix", "decision-table"))
+                )
+        );
+    }
+
+    private GatewayDecisionTable loanDecisionTable() {
+        return new GatewayDecisionTable(
+                "Loan policy matrix",
+                "unique",
+                List.of(
+                        new GatewayDecisionTable.Column("score", "Credit score"),
+                        new GatewayDecisionTable.Column("amount", "Requested amount")
+                ),
+                List.of(
+                        new GatewayDecisionTable.Column("decision", "Decision"),
+                        new GatewayDecisionTable.Column("rate", "Rate"),
+                        new GatewayDecisionTable.Column("maxTerm", "Max term"),
+                        new GatewayDecisionTable.Column("reviewLane", "Review lane"),
+                        new GatewayDecisionTable.Column("ruleId", "Rule")
+                ),
+                List.of(
+                        new GatewayDecisionTable.Row(
+                                "R1",
+                                Map.of("score", "score >= 760", "amount", "amount <= 500000"),
+                                Map.of("decision", "approved", "rate", 3.5, "maxTerm", 360,
+                                        "reviewLane", "auto-approve", "ruleId", "R1"),
+                                "Prime applicant under jumbo threshold."
+                        ),
+                        new GatewayDecisionTable.Row(
+                                "R2",
+                                Map.of("score", "700 <= score < 760", "amount", "amount <= 300000"),
+                                Map.of("decision", "approved", "rate", 4.5, "maxTerm", 300,
+                                        "reviewLane", "standard", "ruleId", "R2"),
+                                "Standard credit applicant within conservative amount."
+                        ),
+                        new GatewayDecisionTable.Row(
+                                "R3",
+                                Map.of("score", "650 <= score < 700", "amount", "amount <= 200000"),
+                                Map.of("decision", "manual_review", "rate", 5.75, "maxTerm", 240,
+                                        "reviewLane", "senior-underwriter", "ruleId", "R3"),
+                                "Borderline credit requires human review."
+                        ),
+                        new GatewayDecisionTable.Row(
+                                "R4",
+                                Map.of("score", "otherwise", "amount", "otherwise"),
+                                Map.of("decision", "declined", "rate", 0.0, "maxTerm", 0,
+                                        "reviewLane", "decline", "ruleId", "R4"),
+                                "No approval policy matched."
+                        )
+                )
+        );
+    }
+
     private ScenarioEntry productDetail() {
         String graph = "productDetail";
         return entry(
@@ -126,6 +215,7 @@ public class GatewayExampleCatalog {
                         List.of("conditional branch", "branch fallback", "resource descriptor", "unified response"),
                         Map.of("productId", "p1"),
                         new GatewayExampleRun("request", "GET", "/api/gateway/products/{productId}", Map.of(), Map.of()),
+                        null,
                         null
                 ),
                 layout(graph,
@@ -172,6 +262,7 @@ public class GatewayExampleCatalog {
                         List.of("foreach", "per-item fallback", "parallel enrichment", "collection transform"),
                         Map.of("userId", "u1"),
                         new GatewayExampleRun("request", "GET", "/api/gateway/orders/{userId}/enriched", Map.of(), Map.of()),
+                        null,
                         null
                 ),
                 layout(graph,
@@ -211,6 +302,7 @@ public class GatewayExampleCatalog {
                         List.of("degradation", "fallback", "branch on success", "provider provenance"),
                         Map.of("userId", "u1"),
                         new GatewayExampleRun("request", "GET", "/api/gateway/credit-score/{userId}", Map.of(), Map.of()),
+                        null,
                         null
                 ),
                 layout(graph,
@@ -260,6 +352,7 @@ public class GatewayExampleCatalog {
                                 ),
                                 Map.of("Content-Type", "application/json", "X-Tenant-Id", "demo-tenant", "X-Namespace", "local")
                         ),
+                        null,
                         null
                 ),
                 layout(graph,
@@ -285,6 +378,7 @@ public class GatewayExampleCatalog {
                         List.of("stream node", "SSE", "parallel stream fan-in", "citation lane"),
                         Map.of("query", "hello"),
                         new GatewayExampleRun("stream", "GET", "/api/gateway/ai/search/stream?q={query}", Map.of(), Map.of()),
+                        null,
                         null
                 ),
                 layout(graph,

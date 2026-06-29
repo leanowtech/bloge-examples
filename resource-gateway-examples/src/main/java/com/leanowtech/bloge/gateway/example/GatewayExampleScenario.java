@@ -14,6 +14,7 @@ import java.util.Map;
  * @param concepts DSL/runtime concepts that the scenario demonstrates
  * @param sampleInput browser-editable sample input
  * @param run recipe for invoking the existing gateway endpoint
+ * @param decisionTable optional decision-table metadata for matrix-oriented scenarios
  * @param diagramPath API path that returns the visual layout
  */
 public record GatewayExampleScenario(
@@ -25,6 +26,7 @@ public record GatewayExampleScenario(
         List<String> concepts,
         Map<String, Object> sampleInput,
         GatewayExampleRun run,
+        GatewayDecisionTable decisionTable,
         String diagramPath
 ) {
     /**

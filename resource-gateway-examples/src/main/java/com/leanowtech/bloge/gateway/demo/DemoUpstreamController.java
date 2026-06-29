@@ -34,6 +34,20 @@ public class DemoUpstreamController {
         );
     }
 
+    @GetMapping("/loan-applicants/{applicantId}")
+    public Map<String, Object> loanApplicant(@PathVariable String applicantId) {
+        return Map.of(
+                "code", 0,
+                "message", "ok",
+                "data", switch (applicantId) {
+                    case "standard" -> loanApplicant(applicantId, 720, 95_000, "new", "salary");
+                    case "borderline" -> loanApplicant(applicantId, 670, 68_000, "existing", "salary");
+                    case "decline" -> loanApplicant(applicantId, 590, 42_000, "new", "mixed");
+                    default -> loanApplicant("prime", 780, 180_000, "private-bank", "salary");
+                }
+        );
+    }
+
     @GetMapping("/orders")
     public Map<String, Object> listOrders(@RequestParam(value = "userId", required = false) String userId) {
         return Map.of(
@@ -150,6 +164,20 @@ public class DemoUpstreamController {
                 "orderId", orderId,
                 "total", total,
                 "status", status
+        );
+    }
+
+    private static Map<String, Object> loanApplicant(String applicantId,
+                                                     int score,
+                                                     int annualIncome,
+                                                     String segment,
+                                                     String incomeSource) {
+        return Map.of(
+                "applicantId", applicantId,
+                "score", score,
+                "annualIncome", annualIncome,
+                "segment", segment,
+                "incomeSource", incomeSource
         );
     }
 }

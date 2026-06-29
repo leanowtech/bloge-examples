@@ -12,6 +12,15 @@ function pretty(value) {
   return JSON.stringify(value, null, 2);
 }
 
+function escapeHtml(value) {
+  return String(value)
+    .replaceAll('&', '&amp;')
+    .replaceAll('<', '&lt;')
+    .replaceAll('>', '&gt;')
+    .replaceAll('"', '&quot;')
+    .replaceAll("'", '&#39;');
+}
+
 async function loadScenarios() {
   const response = await fetch('/api/gateway/examples/scenarios');
   state.scenarios = await response.json();
@@ -50,6 +59,7 @@ function renderScenario() {
   $('scenario-pattern').textContent = state.selected.pattern;
   $('concepts').innerHTML = state.selected.concepts.map((concept) => `<span class="chip">${concept}</span>`).join('');
   renderInputForm();
+  renderDecisionTable();
   renderDiagram();
   renderNodeDetails(state.layout.nodes[0]);
   $('output').textContent = pretty({});
@@ -102,6 +112,7 @@ function renderDiagram() {
   const width = Math.max(760, ...nodes.map((node) => node.position.x + node.size.width + 80));
   const height = Math.max(520, ...nodes.map((node) => node.position.y + node.size.height + 80));
   svg.setAttribute('viewBox', `0 0 ${width} ${height}`);
+  svg.setAttribute('preserveAspectRatio', 'xMinYMin meet');
   svg.innerHTML = `
     <defs>
       <marker id="arrow" markerWidth="10" markerHeight="10" refX="9" refY="3" orient="auto">
@@ -163,6 +174,55 @@ function renderDiagram() {
   }
 }
 
+function renderDecisionTable() {
+  const section = $('decision-table-section');
+  const target = $('decision-table');
+  const model = state.selected.decisionTable;
+  if (!model) {
+    section.hidden = true;
+    target.innerHTML = '';
+    return;
+  }
+
+  section.hidden = false;
+  $('decision-table-title').textContent = `${model.title} - hit=${model.hitPolicy}`;
+  const inputHeaders = model.inputs.map((column) =>
+    `<th scope="col" class="input-column">${escapeHtml(column.label)}</th>`
+  ).join('');
+  const outputHeaders = model.outputs.map((column) =>
+    `<th scope="col">${escapeHtml(column.label)}</th>`
+  ).join('');
+  const rows = model.rows.map((row) => {
+    const inputCells = model.inputs.map((column) =>
+      `<td>${escapeHtml(row.conditions[column.key] ?? '')}</td>`
+    ).join('');
+    const outputCells = model.outputs.map((column) =>
+      `<td>${escapeHtml(row.output[column.key] ?? '')}</td>`
+    ).join('');
+    return `
+      <tr data-rule-id="${escapeHtml(row.id)}" title="${escapeHtml(row.explanation)}">
+        <th scope="row">${escapeHtml(row.id)}</th>
+        ${inputCells}
+        ${outputCells}
+      </tr>
+    `;
+  }).join('');
+  target.innerHTML = `
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th scope="col">Rule</th>
+            ${inputHeaders}
+            ${outputHeaders}
+          </tr>
+        </thead>
+        <tbody>${rows}</tbody>
+      </table>
+    </div>
+  `;
+}
+
 function renderNodeDetails(node) {
   if (!node) {
     $('node-details').textContent = pretty({});
@@ -173,6 +233,7 @@ function renderNodeDetails(node) {
 
 async function runScenario() {
   closeStream();
+  highlightDecisionRow(null);
   const values = inputValues();
   const run = state.selected.run;
   const url = fillTemplate(run.pathTemplate, values);
@@ -191,6 +252,18 @@ async function runScenario() {
   const response = await fetch(url, options);
   const payload = await response.json();
   $('output').textContent = pretty({ status: response.status, payload });
+  highlightDecisionRow(payload);
+}
+
+function highlightDecisionRow(payload) {
+  const rows = document.querySelectorAll('[data-rule-id]');
+  rows.forEach((row) => row.classList.remove('matched'));
+  const ruleId = payload?.data?.policy?.ruleId;
+  if (!ruleId) return;
+  const matched = document.querySelector(`[data-rule-id="${CSS.escape(String(ruleId))}"]`);
+  if (matched) {
+    matched.classList.add('matched');
+  }
 }
 
 function streamScenario(url) {

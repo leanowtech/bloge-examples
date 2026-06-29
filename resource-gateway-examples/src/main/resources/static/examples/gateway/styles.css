@@ -209,7 +209,8 @@ h2 {
 }
 
 .node.foreach rect,
-.node.branch rect {
+.node.branch rect,
+.node.decision-table rect {
   stroke: var(--amber);
 }
 
@@ -243,6 +244,48 @@ h2 {
   min-height: 0;
   display: grid;
   grid-template-rows: auto 1fr;
+}
+
+.decision-table-section {
+  overflow: auto;
+}
+
+.decision-table {
+  overflow: auto;
+}
+
+.table-wrap {
+  min-width: 540px;
+}
+
+.decision-table table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+}
+
+.decision-table th,
+.decision-table td {
+  padding: 7px 8px;
+  border: 1px solid var(--line);
+  text-align: left;
+  vertical-align: top;
+}
+
+.decision-table th {
+  background: #f8fafc;
+  color: #334155;
+  font-weight: 800;
+}
+
+.decision-table .input-column {
+  color: var(--amber);
+}
+
+.decision-table tr.matched th,
+.decision-table tr.matched td {
+  background: #ecfdf3;
+  border-color: #7fd49b;
 }
 
 .input-form {

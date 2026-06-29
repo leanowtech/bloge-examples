@@ -20,6 +20,7 @@ class GatewayExampleCatalogTest {
                 .extracting(GatewayExampleScenario::graphName)
                 .containsExactly(
                         "userDashboard",
+                        "loanDecisionPolicy",
                         "productDetail",
                         "enrichOrderList",
                         "creditScore",
@@ -43,6 +44,17 @@ class GatewayExampleCatalogTest {
             assertThat(layout.rootId()).isEqualTo(scenario.graphName());
             assertThat(layout.nodes()).isNotEmpty();
         }
+    }
+
+    @Test
+    void loanPolicyScenarioExposesDecisionTableMetadata() {
+        GatewayExampleScenario scenario = catalog.scenario("loanDecisionPolicy").orElseThrow();
+
+        assertThat(scenario.decisionTable()).isNotNull();
+        assertThat(scenario.decisionTable().hitPolicy()).isEqualTo("unique");
+        assertThat(scenario.decisionTable().rows())
+                .extracting(GatewayDecisionTable.Row::id)
+                .containsExactly("R1", "R2", "R3", "R4");
     }
 
     @Test
