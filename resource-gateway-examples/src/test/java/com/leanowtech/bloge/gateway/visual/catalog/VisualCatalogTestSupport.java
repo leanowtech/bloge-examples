@@ -205,6 +205,51 @@ public final class VisualCatalogTestSupport {
         );
     }
 
+    public static OperatorDefinition numericPassOperator() {
+        Map<String, Object> valueProperties = new LinkedHashMap<>();
+        valueProperties.put("value", Map.of("type", "integer"));
+
+        return new OperatorDefinition(
+                "bloge.visualOperator.v1",
+                "risk:numericPass",
+                "1.0.0",
+                new OperatorDefinition.Display("Numeric pass",
+                        "Passes a numeric value through for dependency tests.",
+                        List.of("risk", "test")),
+                new OperatorDefinition.Source("user-library", "", "", "", true),
+                new OperatorDefinition.Ports(
+                        List.of(new OperatorDefinition.Port("inputs",
+                                SchemaEnvelope.object(valueProperties, List.of("value")),
+                                true,
+                                "Numeric input.")),
+                        List.of(new OperatorDefinition.Port("output",
+                                SchemaEnvelope.object(valueProperties, List.of()),
+                                true,
+                                "Numeric output."))
+                ),
+                SchemaEnvelope.opaque(),
+                OperatorDefinition.Capabilities.pure(),
+                new OperatorDefinition.Lowering("transform", "transform", Map.of(
+                        "assignments", Map.of(
+                                "value", "{{input.value}}"
+                        )
+                )),
+                List.of()
+        );
+    }
+
+    public static OperatorLibrary numericPassLibrary() {
+        return new OperatorLibrary(
+                "bloge.visualOperatorLibrary.v1",
+                "risk-numeric-pass",
+                "Numeric pass operators",
+                "1.0.0",
+                "risk-team",
+                "ACTIVE",
+                List.of(numericPassOperator())
+        );
+    }
+
     public static OperatorDefinition customerOrderMergeOperator() {
         Map<String, Object> idProperties = new LinkedHashMap<>();
         idProperties.put("id", Map.of("type", "string"));

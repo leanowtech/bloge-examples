@@ -4,6 +4,7 @@ import com.leanowtech.bloge.gateway.visual.catalog.OperatorDefinition;
 import com.leanowtech.bloge.gateway.visual.catalog.VisualOperatorCatalog;
 import com.leanowtech.bloge.gateway.visual.diagnostic.VisualDiagnostic;
 import com.leanowtech.bloge.gateway.visual.draft.GraphDraft;
+import com.leanowtech.bloge.gateway.visual.draft.GraphDraftDependencies;
 
 import org.springframework.stereotype.Service;
 
@@ -438,6 +439,13 @@ public class GraphDraftDslGenerator {
                 indegree.put(target, indegree.get(target) + 1);
             }
         });
+        draft.nodes().forEach(node -> GraphDraftDependencies.nodeDependencies(node).forEach(source -> {
+            String target = node.id();
+            if (nodesById.containsKey(source) && nodesById.containsKey(target)
+                    && outgoing.get(source).add(target)) {
+                indegree.put(target, indegree.get(target) + 1);
+            }
+        }));
         Deque<String> ready = new ArrayDeque<>();
         indegree.forEach((nodeId, degree) -> {
             if (degree == 0) {

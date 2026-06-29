@@ -113,7 +113,9 @@ in the source picker, and the server blocks unknown or type-incompatible
 `contextPath` bindings when the draft input schema is strict. Manual
 `expression` bindings are not blind escape hatches: server validation checks
 referenced `ctx.*` and `node.output.*` paths, and pure reference expressions are
-type-checked against the target input schema. The built-in `.bloge` scenarios
+type-checked against the target input schema. Node-path and expression
+references also participate in DAG validation and DSL topological ordering, even
+when the draft omits a matching visual edge. The built-in `.bloge` scenarios
 remain available in the left rail and continue to execute the public gateway
 endpoints.
 

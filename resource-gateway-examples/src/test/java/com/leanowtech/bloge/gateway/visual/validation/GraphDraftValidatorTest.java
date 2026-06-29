@@ -780,6 +780,54 @@ class GraphDraftValidatorTest {
                 .anySatisfy(diagnostic -> assertThat(diagnostic.code()).isEqualTo("visual.edge.cycle"));
     }
 
+    @Test
+    void rejectsCyclesCreatedByImplicitNodePathBindings() {
+        GraphDraftValidator validator = new GraphDraftValidator(
+                VisualCatalogTestSupport.catalogWithLibrary(
+                        VisualCatalogTestSupport.numericPassLibrary()));
+        GraphDraft draft = new GraphDraft(
+                "",
+                "",
+                0,
+                "implicitCycle",
+                "",
+                "",
+                "",
+                "",
+                null,
+                List.of(
+                        new GraphDraft.DraftNode(
+                                "passA",
+                                "risk:numericPass",
+                                "",
+                                Map.of("value", GraphDraft.Binding.nodePath("passB", "output", "value")),
+                                Map.of(),
+                                null
+                        ),
+                        new GraphDraft.DraftNode(
+                                "passB",
+                                "risk:numericPass",
+                                "",
+                                Map.of("value", GraphDraft.Binding.nodePath("passA", "output", "value")),
+                                Map.of(),
+                                null
+                        )
+                ),
+                List.of(),
+                Map.of(),
+                new GraphDraft.OutputSelection("passA", "")
+        );
+
+        VisualValidationResult result = validator.validate(draft);
+
+        assertThat(result.valid()).isFalse();
+        assertThat(result.diagnostics())
+                .anySatisfy(diagnostic -> {
+                    assertThat(diagnostic.code()).isEqualTo("visual.edge.cycle");
+                    assertThat(diagnostic.message()).contains("dependencies").contains("acyclic");
+                });
+    }
+
     private static GraphDraft typedEligibilityDraft(GraphDraft.Binding scoreBinding,
                                                     GraphDraft.DraftEdge edge) {
         return new GraphDraft(

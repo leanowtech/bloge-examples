@@ -583,7 +583,7 @@ schema path 查找 source/target 类型，而不能只检查顶层 `properties`�
 
 生成 DSL 必须稳定：
 
-1. 先按拓扑排序。
+1. 先按拓扑排序；拓扑依赖必须同时包含显式 edge 和 binding/expression 引用的上游节点。
 2. 同层节点按 `visualLayout.position.x`，再按 `id`。
 3. config 字段按固定顺序输出：`input`、`timeout`、`retry`、`fallback`、其他。
 4. transform 字段保持用户定义顺序。
@@ -1018,7 +1018,7 @@ flowchart TD
 
 - node id 重复。
 - edge 指向不存在节点。
-- 图中存在环，除非 BLOGE 语义明确支持该结构。
+- 图中存在环，除非 BLOGE 语义明确支持该结构；环检测必须覆盖显式 edge 和 binding/expression 隐式依赖。
 - outputNode 不存在。
 
 ### 11.3 Schema Compatibility

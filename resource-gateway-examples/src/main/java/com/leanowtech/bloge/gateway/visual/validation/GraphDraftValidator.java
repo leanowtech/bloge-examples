@@ -4,6 +4,7 @@ import com.leanowtech.bloge.gateway.visual.catalog.OperatorDefinition;
 import com.leanowtech.bloge.gateway.visual.catalog.VisualOperatorCatalog;
 import com.leanowtech.bloge.gateway.visual.diagnostic.VisualDiagnostic;
 import com.leanowtech.bloge.gateway.visual.draft.GraphDraft;
+import com.leanowtech.bloge.gateway.visual.draft.GraphDraftDependencies;
 import com.leanowtech.bloge.gateway.visual.model.SchemaEnvelope;
 
 import org.springframework.stereotype.Service;
@@ -1005,6 +1006,13 @@ public class GraphDraftValidator {
                 indegree.put(target, indegree.get(target) + 1);
             }
         });
+        draft.nodes().forEach(node -> GraphDraftDependencies.nodeDependencies(node).forEach(source -> {
+            String target = node.id();
+            if (nodesById.containsKey(source) && nodesById.containsKey(target)
+                    && outgoing.get(source).add(target)) {
+                indegree.put(target, indegree.get(target) + 1);
+            }
+        }));
         List<String> ready = new ArrayList<>();
         indegree.forEach((nodeId, degree) -> {
             if (degree == 0) {
@@ -1024,7 +1032,7 @@ public class GraphDraftValidator {
         }
         if (visited != nodesById.size()) {
             diagnostics.add(VisualDiagnostic.error("visual.edge.cycle",
-                    "Visual graph edges must form an acyclic dataflow graph.",
+                    "Visual graph dependencies must form an acyclic dataflow graph.",
                     "/edges"));
         }
     }
