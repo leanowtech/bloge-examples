@@ -139,6 +139,7 @@ const DRAG_START_THRESHOLD = 4;
 
 const state = {
   scenarios: [],
+  visualOperators: [],
   selected: null,
   layout: null,
   selectedNodeId: null,
@@ -151,6 +152,7 @@ const state = {
   suppressPaletteClick: false,
   suppressNodeClick: false,
   customDsl: DEFAULT_COMPOSER_DSL,
+  lastGeneratedVisualDsl: '',
   customContextText: '',
   customDecisionTable: DEFAULT_COMPOSER_DECISION_TABLE
 };
@@ -173,12 +175,45 @@ function escapeHtml(value) {
 }
 
 async function loadScenarios() {
+  await loadVisualOperatorCatalog();
   const response = await fetch('/api/gateway/examples/scenarios');
   state.customContextText = pretty(DEFAULT_COMPOSER_CONTEXT);
   syncComposerFromBuilder({ render: false });
   state.scenarios = [COMPOSER_SCENARIO, ...await response.json()];
   renderScenarioButtons();
   await selectScenario(COMPOSER_GRAPH);
+}
+
+async function loadVisualOperatorCatalog() {
+  try {
+    const response = await fetch('/api/visual/operators?resourceOnly=true');
+    if (!response.ok) {
+      return;
+    }
+    const payload = await response.json();
+    const operators = Array.isArray(payload.operators) ? payload.operators : [];
+    state.visualOperators = operators;
+    for (const operator of operators) {
+      const operatorRef = operator.operatorRef || '';
+      if (!operatorRef.startsWith('resource:')) {
+        continue;
+      }
+      const resourceId = operator.source?.resourceId
+        || operator.lowering?.parameters?.resourceId
+        || operatorRef.slice('resource:'.length);
+      OPERATOR_TYPES[operatorRef] = {
+        label: operator.display?.name || readableName(resourceId),
+        kind: 'resource',
+        operatorRef: 'httpResource',
+        visualOperatorRef: operatorRef,
+        baseId: baseIdForResource(resourceId),
+        resourceId,
+        inputSchema: operator.ports?.inputs?.[0]?.schema
+      };
+    }
+  } catch (error) {
+    console.debug('Visual operator catalog unavailable', error);
+  }
 }
 
 function renderScenarioButtons() {
@@ -426,6 +461,10 @@ function selectedBuilderNode() {
   return state.builder.nodes.find((node) => node.id === state.builder.selectedId) || null;
 }
 
+function specForNode(node) {
+  return OPERATOR_TYPES[node.paletteType] || OPERATOR_TYPES[node.type] || OPERATOR_TYPES.transform;
+}
+
 function payloadData(payload) {
   if (!payload) {
     return null;
@@ -436,6 +475,7 @@ function payloadData(payload) {
 function resetComposer() {
   state.builder = createDefaultBuilder();
   state.customDsl = builderToDsl(state.builder);
+  state.lastGeneratedVisualDsl = '';
   state.customContextText = pretty(DEFAULT_COMPOSER_CONTEXT);
   state.customDecisionTable = decisionTableFromBuilder(state.builder);
   state.layout = layoutFromBuilder(state.builder);
@@ -489,7 +529,7 @@ function renderSelectedOperatorEditor() {
     <div class="operator-editor-heading">
       <div>
         <div class="panel-title">Selected Operator</div>
-        <strong>${escapeHtml(OPERATOR_TYPES[node.type]?.label || node.type)}</strong>
+        <strong>${escapeHtml(specForNode(node).label || node.type)}</strong>
       </div>
       <button id="delete-operator" class="secondary compact danger" type="button">Delete</button>
     </div>
@@ -534,7 +574,7 @@ function operatorEditorBody(node) {
       <div class="operator-fields">
         ${textField('Node', node.id, '', true)}
         ${textField('Resource ID', node.resourceId, 'resourceId')}
-        ${textField('Applicant Expr', node.applicantExpr, 'applicantExpr')}
+        ${textField(`${readableName(node.paramName || 'param')} Expr`, node.applicantExpr, 'applicantExpr')}
       </div>
     `;
   }
@@ -625,18 +665,20 @@ function uniqueRuleId(rules) {
 }
 
 function addBuilderNode(type, position = null) {
-  if (!OPERATOR_TYPES[type]) return;
+  const spec = OPERATOR_TYPES[type];
+  if (!spec) return;
+  const isResource = spec.kind === 'resource';
   const ordered = orderedBuilderNodes();
   const last = ordered[ordered.length - 1];
   const firstDecision = state.builder.nodes.find((node) => node.type === 'decisionTable');
-  const fallbackX = type === 'httpResource' && firstDecision ? firstDecision.x - 280 : (last ? last.x + 280 : 80);
-  const fallbackY = type === 'httpResource' && firstDecision ? firstDecision.y : (last ? last.y : 210);
+  const fallbackX = (type === 'httpResource' || isResource) && firstDecision ? firstDecision.x - 280 : (last ? last.x + 280 : 80);
+  const fallbackY = (type === 'httpResource' || isResource) && firstDecision ? firstDecision.y : (last ? last.y : 210);
   const point = nonOverlappingNodePosition(position?.x ?? fallbackX, position?.y ?? fallbackY);
   const node = createBuilderNode(type, point.x, point.y);
   state.builder.nodes.push(node);
   state.builder.selectedId = node.id;
   state.selectedNodeId = node.id;
-  if (type === 'httpResource') {
+  if (node.type === 'httpResource') {
     applyResourceDefaults(node);
   }
   syncComposerFromBuilder();
@@ -647,18 +689,22 @@ function addBuilderNode(type, position = null) {
 
 function createBuilderNode(type, x, y) {
   const spec = OPERATOR_TYPES[type];
+  const resourceOperator = spec.kind === 'resource' && spec.resourceId;
   const id = uniqueNodeId(spec.baseId);
   const base = {
     id,
-    type,
+    type: resourceOperator ? 'httpResource' : type,
+    paletteType: resourceOperator ? type : '',
     x: Math.max(40, Math.round(x)),
     y: Math.max(80, Math.round(y))
   };
-  if (type === 'httpResource') {
+  if (type === 'httpResource' || resourceOperator) {
+    const paramName = defaultParamNameForOperator(spec);
     return {
       ...base,
-      resourceId: 'loan-applicant-service.getProfile',
-      applicantExpr: 'ctx.applicantId'
+      resourceId: spec.resourceId || 'loan-applicant-service.getProfile',
+      paramName,
+      applicantExpr: `ctx.${paramName}`
     };
   }
   if (type === 'decisionTable') {
@@ -674,6 +720,16 @@ function createBuilderNode(type, x, y) {
     ...base,
     policyNode: firstDecisionTableId()
   };
+}
+
+function defaultParamNameForOperator(spec) {
+  const schema = spec?.inputSchema?.schema || {};
+  const required = Array.isArray(schema.required) ? schema.required : [];
+  if (required.length) {
+    return required[0];
+  }
+  const properties = schema.properties || {};
+  return Object.keys(properties)[0] || 'applicantId';
 }
 
 function nonOverlappingNodePosition(x, y) {
@@ -745,9 +801,20 @@ function applyResourceDefaults(resourceNode) {
   } catch {
     context = {};
   }
-  context.applicantId = context.applicantId || 'prime';
+  const paramName = resourceNode.paramName || 'applicantId';
+  context[paramName] = context[paramName] || sampleValueForParam(paramName);
   context.requestedAmount = context.requestedAmount || 450000;
   state.customContextText = pretty(context);
+}
+
+function sampleValueForParam(paramName) {
+  const normalized = String(paramName || '').toLowerCase();
+  if (normalized.includes('amount')) return 450000;
+  if (normalized.includes('product')) return 'p1';
+  if (normalized.includes('order')) return 'o1';
+  if (normalized.includes('user')) return 'u1';
+  if (normalized.includes('applicant')) return 'prime';
+  return 'demo';
 }
 
 function firstDecisionTableId() {
@@ -776,11 +843,11 @@ function syncComposerFromBuilder(options = {}) {
 
 function layoutFromBuilder(builder) {
   const nodes = builder.nodes.map((node) => {
-    const spec = OPERATOR_TYPES[node.type] || OPERATOR_TYPES.transform;
+    const spec = specForNode(node);
     return {
       id: node.id,
       kind: spec.kind,
-      operatorRef: spec.operatorRef,
+      operatorRef: spec.visualOperatorRef || spec.operatorRef,
       label: labelForNode(node),
       position: { x: node.x, y: node.y },
       size: { ...NODE_SIZE },
@@ -855,7 +922,8 @@ function builderToDsl(builder) {
 
 function nodeToDsl(node, builder) {
   if (node.type === 'httpResource') {
-    return `  node ${node.id} : httpResource {\n    input {\n      resourceId = ${quote(node.resourceId)}\n      params = { applicantId: ${node.applicantExpr || 'ctx.applicantId'} }\n    }\n    timeout = 3s\n    retry = { attempts: 1, backoff: 200ms }\n  }`;
+    const paramName = node.paramName || 'applicantId';
+    return `  node ${node.id} : httpResource {\n    input {\n      resourceId = ${quote(node.resourceId)}\n      params = { ${paramName}: ${node.applicantExpr || `ctx.${paramName}`} }\n    }\n    timeout = 3s\n    retry = { attempts: 1, backoff: 200ms }\n  }`;
   }
   if (node.type === 'decisionTable') {
     const rules = node.rules.map((rule) => {
@@ -883,6 +951,108 @@ function nodeToDsl(node, builder) {
   return '';
 }
 
+function builderToVisualDraft(builder = state.builder) {
+  const layout = layoutFromBuilder(builder);
+  return {
+    schemaVersion: 'bloge.visualGraphDraft.v1',
+    graphName: builder.graphName,
+    tenantId: 'demo-tenant',
+    namespace: 'local',
+    environment: 'browser',
+    status: 'DRAFT',
+    nodes: builder.nodes.map((node) => builderNodeToDraftNode(node, builder)),
+    edges: builderEdges(builder).map((edge) => ({
+      id: `${edge.source}->${edge.target}`,
+      kind: 'data',
+      source: { nodeId: edge.source, port: 'output', path: '' },
+      target: { nodeId: edge.target, port: 'inputs', path: '' }
+    })),
+    visualLayout: layout,
+    output: { nodeId: composerOutputNode(), path: '' }
+  };
+}
+
+function builderNodeToDraftNode(node, builder) {
+  if (node.type === 'httpResource') {
+    const paramName = node.paramName || 'applicantId';
+    const operatorRef = node.paletteType?.startsWith('resource:') && node.paletteType.slice('resource:'.length) === node.resourceId
+      ? node.paletteType
+      : `resource:${node.resourceId}`;
+    return {
+      id: node.id,
+      operatorRef,
+      label: labelForNode(node),
+      inputs: {
+        [paramName]: bindingFromExpression(node.applicantExpr || `ctx.${paramName}`)
+      },
+      config: { timeout: '3s', retryAttempts: 1 },
+      position: { x: node.x, y: node.y }
+    };
+  }
+  if (node.type === 'decisionTable') {
+    return {
+      id: node.id,
+      operatorRef: 'bloge:decisionTable',
+      label: labelForNode(node),
+      inputs: {},
+      config: {
+        inputs: {
+          score: node.scoreSource,
+          amount: node.amountSource
+        },
+        hitPolicy: node.hitPolicy || 'unique',
+        outputType: '{ decision: String, rate: Decimal, maxTerm: Int, reviewLane: String, ruleId: String }',
+        rules: node.rules.map((rule) => ({
+          id: rule.id,
+          otherwise: Boolean(rule.otherwise),
+          conditions: rule.otherwise ? {} : { score: rule.score, amount: rule.amount },
+          output: {
+            decision: rule.decision,
+            rate: Number(rule.rate),
+            maxTerm: Number(rule.maxTerm),
+            reviewLane: rule.reviewLane,
+            ruleId: rule.id
+          }
+        }))
+      },
+      position: { x: node.x, y: node.y }
+    };
+  }
+  const decisionNode = builder.nodes.find((item) => item.id === node.policyNode)
+    || builder.nodes.find((item) => item.type === 'decisionTable');
+  const resourceNode = builder.nodes.find((item) => item.type === 'httpResource');
+  const previous = orderedBuilderNodes(builder).filter((item) => item.id !== node.id).at(-1);
+  const assignments = decisionNode
+    ? {
+        applicant: resourceNode ? `${resourceNode.id}.output.payload` : `{ score: ${decisionNode.scoreSource}, segment: ctx.segment }`,
+        requestedAmount: decisionNode.amountSource,
+        policy: `${decisionNode.id}.output`
+      }
+    : {
+        result: previous ? `${previous.id}.output` : '{}'
+      };
+  return {
+    id: node.id,
+    operatorRef: 'bloge:transform',
+    label: labelForNode(node),
+    inputs: {},
+    config: { assignments },
+    position: { x: node.x, y: node.y }
+  };
+}
+
+function bindingFromExpression(expression) {
+  const value = String(expression || '').trim();
+  if (value.startsWith('ctx.')) {
+    return { kind: 'contextPath', path: value.slice(4) };
+  }
+  const nodePath = value.match(/^([A-Za-z_][A-Za-z0-9_]*)\.output(?:\.payload)?(?:\.(.+))?$/);
+  if (nodePath) {
+    return { kind: 'nodePath', nodeId: nodePath[1], path: nodePath[2] || '' };
+  }
+  return { kind: 'expression', expr: value || '{}' };
+}
+
 function quote(value) {
   return `"${String(value ?? '').replaceAll('\\', '\\\\').replaceAll('"', '\\"')}"`;
 }
@@ -894,7 +1064,7 @@ function numberValue(value) {
 
 function labelForNode(node) {
   if (node.type === 'httpResource') {
-    return 'HTTP Resource';
+    return specForNode(node).label || 'HTTP Resource';
   }
   if (node.type === 'decisionTable') {
     return 'Decision Table';
@@ -912,6 +1082,19 @@ function readableName(value) {
     .replaceAll('-', ' ')
     .replace(/([a-z])([A-Z])/g, '$1 $2')
     .replace(/^./, (char) => char.toUpperCase());
+}
+
+function baseIdForResource(resourceId) {
+  const parts = String(resourceId || 'resource')
+    .split(/[^A-Za-z0-9]+/)
+    .filter(Boolean);
+  if (!parts.length) {
+    return 'resource';
+  }
+  return parts.map((part, index) => {
+    const lower = part.charAt(0).toLowerCase() + part.slice(1);
+    return index === 0 ? lower : lower.charAt(0).toUpperCase() + lower.slice(1);
+  }).join('');
 }
 
 function fillTemplate(template, values) {
@@ -1355,16 +1538,31 @@ async function runCustomGraph() {
 
   $('output').textContent = pretty({ status: 'running', graph: 'customLoanPolicy' });
   const outputNode = composerOutputNode();
-  const response = await fetch('/api/gateway/examples/compose/run', {
+  const builderDsl = builderToDsl(state.builder);
+  const useVisualDraft = state.customDsl === builderDsl || state.customDsl === state.lastGeneratedVisualDsl;
+  const response = await fetch(useVisualDraft ? '/api/visual/drafts/run' : '/api/gateway/examples/compose/run', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      dsl: state.customDsl,
-      context,
-      outputNode
-    })
+    body: JSON.stringify(useVisualDraft
+      ? {
+          draft: builderToVisualDraft(state.builder),
+          context,
+          outputNode
+        }
+      : {
+          dsl: state.customDsl,
+          context,
+          outputNode
+        })
   });
   const payload = await response.json();
+  if (payload.generatedDsl) {
+    state.customDsl = payload.generatedDsl;
+    state.lastGeneratedVisualDsl = payload.generatedDsl;
+    if (dslBox) {
+      dslBox.value = payload.generatedDsl;
+    }
+  }
   if (payload.layout) {
     state.layout = layoutFromBuilder(state.builder);
     renderNodeDetails(selectedBuilderNode() || state.layout.nodes?.[0]);

@@ -82,7 +82,10 @@ http://localhost:8080/examples/gateway
 
 The page opens on **Custom Composer**, a drag-and-drop graph builder. Users can
 drag operators such as `HTTP Resource`, `Decision Table`, and `Transform` onto
-the graph canvas, reposition existing nodes directly on the canvas, edit the
+the graph canvas. Resource operators are loaded from the visual operator catalog
+as `resource:<resourceId>` virtual operators, so descriptor-backed APIs can be
+dragged as schema-aware business operators and lowered back to `httpResource` at
+runtime. Users can reposition existing nodes directly on the canvas, edit the
 selected operator's properties, inspect the generated BLOGE DSL, run it with JSON
 context, and see diagnostics, output, graph highlighting, and the decision-table
 matrix update together. The built-in `.bloge` scenarios remain available in the
@@ -102,6 +105,10 @@ Showcase metadata APIs:
 | `GET` | `/api/gateway/examples/scenarios/{graphName}` | Load scenario metadata and run recipe |
 | `GET` | `/api/gateway/examples/scenarios/{graphName}/diagram` | Load the `bloge.visualLayout.v1` diagram for a scenario |
 | `POST` | `/api/gateway/examples/compose/run` | Compile and run submitted DSL with JSON context, returning diagnostics, output, layout, and decision-table metadata |
+| `GET` | `/api/visual/operators` | List native and resource-backed visual operator definitions |
+| `POST` | `/api/visual/drafts/validate` | Validate a visual graph draft against operator schemas |
+| `POST` | `/api/visual/drafts/compile` | Lower a visual graph draft to BLOGE DSL |
+| `POST` | `/api/visual/drafts/run` | Validate, compile, and execute a transient visual graph draft |
 
 ### Orchestration endpoints (`UserDashboardController`)
 
@@ -201,6 +208,16 @@ Base path: `/admin/resources`
 
 400 is returned when a descriptor contains an uncompilable bloge expression.
 
+Visual resource design contracts live beside descriptors and provide the
+input/output schemas used by the visual operator catalog:
+
+| Method | Path | Description | Status |
+|--------|------|-------------|--------|
+| `GET` | `/admin/resource-design-contracts` | List all visual resource contracts | 200 |
+| `GET` | `/admin/resource-design-contracts/{resourceId}` | Get one visual contract | 200 / 404 |
+| `PUT` | `/admin/resource-design-contracts/{resourceId}` | Create or replace a visual contract | 200 / 400 |
+| `DELETE` | `/admin/resource-design-contracts/{resourceId}` | Delete a visual contract | 204 |
+
 ---
 
 ## Orchestration graphs
@@ -230,6 +247,17 @@ Seven `.bloge` graphs live in `src/main/resources/bloge/gateway/`:
 | `ParameterMapping` | Maps bloge expressions to URL path variables, query parameters, and request body |
 | `ResourceRegistry` | Read-only lookup interface |
 | `WritableResourceRegistry` | Mutable extension — register, update, deregister at runtime |
+
+### Visual authoring (`gateway.visual`)
+
+| Type | Role |
+|------|------|
+| `ResourceDesignContract` | Schema contract that turns a resource descriptor into a canvas-ready operator |
+| `DefaultVisualOperatorCatalog` | Combines native visual operators with `resource:<resourceId>` virtual operators |
+| `GraphDraft` | Editable canvas graph model: nodes, bindings, edges, layout, output selection |
+| `GraphDraftValidator` | Validates operator references, required schema inputs, edges, and output selection |
+| `GraphDraftDslGenerator` | Lowers visual drafts into executable BLOGE DSL |
+| `VisualGraphRunService` | Reuses the dynamic BLOGE runner to validate, compile, and execute visual drafts |
 
 ### Expression evaluator (`gateway.expression`)
 
@@ -298,11 +326,12 @@ Wired by `@Order` — highest precedence first:
 | `UserDashboardController` | Orchestration endpoints for dashboard, products, orders, credit-score, loan-policy |
 | `ResourceExecuteController` | Unified `resourceId` execution endpoint backed by `resourceDispatch` |
 | `AiSearchStreamingController` | SSE streaming endpoint for AI search |
+| `VisualOperatorCatalogController` / `VisualGraphDraftController` | Visual operator discovery, draft validation, compilation, and execution |
 | `GatewayGraphService` | Shared graph-loading and execution service |
 | `GatewayResponse` | Uniform JSON response wrapper record |
 | `ResourceExecuteRequest` | Request DTO for unified resource dispatch (params, header/auth overrides, timeout) |
 | `GatewayProperties` | `@ConfigurationProperties(prefix = "gateway")` — `baseUrl`, `seedDescriptors` |
-| `ResourceDescriptorBootstrap` | Seeds 11 example descriptors on startup (idempotent, gated by `gateway.seed-descriptors`) |
+| `ResourceDescriptorBootstrap` | Seeds 12 example descriptors on startup (idempotent, gated by `gateway.seed-descriptors`) |
 
 ### Other
 
@@ -546,7 +575,8 @@ Isolated component tests, some with lightweight Spring slices or mocks.
 | `CircuitBreakerInterceptorTest` | 5 | State transitions, cool-down |
 | `DatabaseResourceRegistryTest` | 11 | CRUD, H2 persistence, in-memory cache |
 | `ResourceDescriptorBootstrapTest` | 7 | Seeding, refresh behavior, idempotency |
-| `GatewayDslCompilationTest` | 6 | DSL parsing, graph loading |
+| `GatewayDslCompilationTest` | 7 | DSL parsing, graph loading |
+| `Visual*Test` | 4 | Visual operator projection, draft validation, DSL lowering, runtime smoke path |
 
 ### Layer 3 — Orchestration tests
 
@@ -598,10 +628,11 @@ bloge-examples-resource-gateway/
     │   │   ├── operator/          HttpResourceOperator + helpers
     │   │   │   └── streaming/     3 mock streaming operators
     │   │   ├── resource/          Descriptor model, registries, admin controller
-    │   │   └── streaming/         SSE facade, bridged operator, TapNodeChannel
+    │   │   ├── streaming/         SSE facade, bridged operator, TapNodeChannel
+    │   │   └── visual/            Visual operator catalog, contracts, drafts, validation, DSL lowering
     │   └── resources/
     │       ├── application.yml
-    │       └── bloge/gateway/     5 orchestration graphs (.bloge)
+    │       └── bloge/gateway/     7 orchestration graphs (.bloge)
     └── test/
         ├── java/com/leanowtech/bloge/gateway/
         │   ├── ResourceGatewayApplicationTest
