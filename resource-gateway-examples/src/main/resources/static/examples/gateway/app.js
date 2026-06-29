@@ -70,11 +70,47 @@ const COMPOSER_SCENARIO = {
   graphName: COMPOSER_GRAPH,
   title: 'Custom Composer',
   pattern: 'Drag operators + decision_table',
+  description: 'Build a loan policy graph from reusable resource, decision-table, and transform operators, then execute the generated DSL immediately.',
   concepts: ['Drag compose', 'Decision table', 'Live diagnostics'],
   sampleInput: {},
   samplePresets: [],
   diagramPath: '',
   decisionTable: null
+};
+
+const SCENARIO_EXPLANATIONS = {
+  [COMPOSER_GRAPH]: {
+    capability: 'BLOGE turns a visual composition into the same executable graph DSL, keeping orchestration, resource calls, policy rules, and response shaping aligned.',
+    signal: 'The diagram, DSL preview, decision matrix, selected node details, and graph output update from one graph definition.'
+  },
+  userDashboard: {
+    capability: 'BLOGE models parallel fan-out, timeout, retry, fallback, and aggregation as graph semantics instead of scattered controller code.',
+    signal: 'Independent resource nodes converge into one dashboard response while failures can be isolated behind fallback behavior.'
+  },
+  loanDecisionPolicy: {
+    capability: 'BLOGE keeps the external fact fetch and the decision_table policy in one auditable graph with explicit rule output.',
+    signal: 'The matched rule row, decision summary, and response payload share the same ruleId.'
+  },
+  productDetail: {
+    capability: 'BLOGE branches on resource data, enriches only the relevant path, and normalizes branch-specific outputs into one response contract.',
+    signal: 'Physical, digital, and generic paths remain visible as branches while the final node produces a unified detail payload.'
+  },
+  enrichOrderList: {
+    capability: 'BLOGE expresses per-item foreach enrichment with parallel inner work and local fallback around each order.',
+    signal: 'One list fetch expands into item-level enrichment nodes before collecting the final order collection.'
+  },
+  creditScore: {
+    capability: 'BLOGE makes provider degradation a first-class graph path, preserving primary/secondary provenance in the output.',
+    signal: 'The fallback path is explicit on the diagram and the response can identify which provider supplied the score.'
+  },
+  resourceDispatch: {
+    capability: 'BLOGE uses a generic httpResource operator backed by descriptors, so new APIs can be added through metadata instead of custom operator classes.',
+    signal: 'Changing resourceId and params dispatches a different registered resource through the same execution path.'
+  },
+  aiEnrichedSearch: {
+    capability: 'BLOGE can orchestrate streaming operators alongside normal graph nodes and bridge each stream to a named SSE lane.',
+    signal: 'Metadata, token, and citation streams run in parallel but remain separated in the browser output.'
+  }
 };
 
 const OPERATOR_TYPES = {
@@ -181,7 +217,8 @@ async function selectScenario(graphName) {
 function renderScenario() {
   $('scenario-title').textContent = state.selected.title;
   $('scenario-pattern').textContent = state.selected.pattern;
-  $('concepts').innerHTML = state.selected.concepts.map((concept) => `<span class="chip">${concept}</span>`).join('');
+  $('concepts').innerHTML = state.selected.concepts.map((concept) => `<span class="chip">${escapeHtml(concept)}</span>`).join('');
+  renderExampleBrief();
   $('inspector').classList.toggle('composer-mode', isComposerSelected());
   renderInputForm();
   renderDecisionTable();
@@ -189,6 +226,16 @@ function renderScenario() {
   renderNodeDetails(state.layout?.nodes?.[0]);
   renderDecisionSummary(null);
   $('output').textContent = pretty({});
+}
+
+function renderExampleBrief() {
+  const insight = SCENARIO_EXPLANATIONS[state.selected.graphName] || {
+    capability: 'BLOGE makes the graph structure, resource calls, policies, and runtime result visible from one executable model.',
+    signal: 'Compare the selected graph path, node metadata, and output payload after running the example.'
+  };
+  $('example-description').textContent = state.selected.description || `${state.selected.title} demonstrates ${state.selected.pattern}.`;
+  $('example-capability').textContent = insight.capability;
+  $('example-signal').textContent = insight.signal;
 }
 
 function renderInputForm() {
