@@ -919,6 +919,8 @@ POST /api/visual/drafts/{draftId}/validate
 POST /api/visual/drafts/{draftId}/compile
 ```
 
+编译必须先执行 visual validation。只要存在 blocking diagnostic，响应必须返回 `compiled/generated=false`、空 DSL，并保留 validation diagnostics；不得生成看似可用但违反 schema/policy gate 的 DSL。
+
 响应：
 
 ```json

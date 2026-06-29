@@ -126,6 +126,10 @@ public class VisualGraphDraftController {
      */
     @PostMapping("/compile")
     public DslGenerationResult compile(@RequestBody GraphDraft draft) {
+        VisualValidationResult validation = validator.validate(draft);
+        if (!validation.valid()) {
+            return new DslGenerationResult(false, "", validation.diagnostics());
+        }
         return generator.generate(draft);
     }
 

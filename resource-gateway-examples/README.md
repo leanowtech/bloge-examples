@@ -133,7 +133,7 @@ Showcase metadata APIs:
 | `PUT` | `/api/visual/drafts/{draftId}` | Update a stored visual graph draft and increment revision |
 | `DELETE` | `/api/visual/drafts/{draftId}` | Delete a stored visual graph draft |
 | `POST` | `/api/visual/drafts/validate` | Validate a visual graph draft against operator schemas, typed port edges, and DAG constraints |
-| `POST` | `/api/visual/drafts/compile` | Lower a visual graph draft to BLOGE DSL |
+| `POST` | `/api/visual/drafts/compile` | Validate a visual graph draft, then lower it to BLOGE DSL |
 | `POST` | `/api/visual/drafts/run` | Validate, compile, and execute a transient visual graph draft |
 | `POST` | `/api/visual/drafts/{draftId}/run` | Execute a stored visual graph draft with submitted context |
 
