@@ -106,6 +106,62 @@ class VisualGraphRunServiceTest {
         assertThat(response.output()).isEqualTo(Map.of("eligible", true, "ruleId", "ELIGIBILITY_V1"));
     }
 
+    @Test
+    void outputNodeOverrideDoesNotReuseDraftOutputPath() {
+        VisualOperatorCatalog catalog = VisualCatalogTestSupport.catalogWithLibrary(
+                VisualCatalogTestSupport.eligibilityLibrary("integer"));
+        VisualGraphRunService service = new VisualGraphRunService(
+                new GraphDraftValidator(catalog),
+                new GraphDraftDslGenerator(catalog),
+                new DynamicGatewayComposerService(MockOperator.returning(null))
+        );
+        GraphDraft draft = new GraphDraft(
+                "",
+                "",
+                0,
+                "overrideOutputPolicy",
+                "",
+                "",
+                "",
+                "",
+                null,
+                List.of(
+                        new GraphDraft.DraftNode(
+                                "eligibility",
+                                "risk:eligibility",
+                                "",
+                                Map.of(
+                                        "score", GraphDraft.Binding.contextPath("score"),
+                                        "amount", GraphDraft.Binding.contextPath("amount")
+                                ),
+                                Map.of(),
+                                null
+                        ),
+                        new GraphDraft.DraftNode(
+                                "summary",
+                                "bloge:transform",
+                                "",
+                                Map.of(),
+                                Map.of("assignments", Map.of(
+                                        "score", "ctx.score",
+                                        "amount", "ctx.amount"
+                                )),
+                                null
+                        )
+                ),
+                List.of(),
+                Map.of(),
+                new GraphDraft.OutputSelection("eligibility", "eligible")
+        );
+
+        VisualGraphRunResponse defaultResponse = service.run(draft, Map.of("score", 720, "amount", 250_000), "");
+        VisualGraphRunResponse overrideResponse = service.run(draft, Map.of("score", 720, "amount", 250_000), "summary");
+
+        assertThat(defaultResponse.output()).isEqualTo(true);
+        assertThat(overrideResponse.outputNode()).isEqualTo("summary");
+        assertThat(overrideResponse.output()).isEqualTo(Map.of("score", 720, "amount", 250_000));
+    }
+
     private static VisualOperatorCatalog transformOnlyCatalog() {
         return new VisualOperatorCatalog() {
             private final com.leanowtech.bloge.gateway.visual.catalog.OperatorDefinition transform =

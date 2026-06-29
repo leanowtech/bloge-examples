@@ -37,9 +37,7 @@ public record OperatorDefinition(
      * Creates an operator definition.
      */
     public OperatorDefinition {
-        if (operatorRef == null || operatorRef.isBlank()) {
-            throw new IllegalArgumentException("operatorRef must not be blank");
-        }
+        operatorRef = operatorRef == null ? "" : operatorRef;
         schemaVersion = schemaVersion == null || schemaVersion.isBlank()
                 ? "bloge.visualOperator.v1"
                 : schemaVersion;

@@ -116,9 +116,10 @@ referenced `ctx.*` and `node.output.*` paths, and pure reference expressions are
 type-checked against the target input schema. Node-path and expression
 references also participate in DAG validation and DSL topological ordering, even
 when the draft omits a matching visual edge. Output selections are checked
-against the selected node's output port schema before compile/run as well. The
-built-in `.bloge` scenarios remain available in the left rail and continue to
-execute the public gateway endpoints.
+against the selected node's output port schema before compile/run as well, and
+the browser composer exposes the output node/path saved into `GraphDraft.output`.
+The built-in `.bloge` scenarios remain available in the left rail and continue
+to execute the public gateway endpoints.
 
 To see the decision-table UX, run the default composer graph, edit the `R3`
 decision row, or drag an `HTTP Resource` operator onto the canvas to turn the
@@ -144,6 +145,10 @@ Showcase metadata APIs:
 | `POST` | `/api/visual/drafts/compile` | Validate a visual graph draft, then lower it to BLOGE DSL |
 | `POST` | `/api/visual/drafts/run` | Validate, compile, and execute a transient visual graph draft |
 | `POST` | `/api/visual/drafts/{draftId}/run` | Execute a stored visual graph draft with submitted context |
+
+Visual run requests may pass `outputNode` to inspect a different node than the
+draft's saved output selection. In that case the response returns the override
+node's full output instead of reusing the saved `output.path`.
 
 ### Orchestration endpoints (`UserDashboardController`)
 
@@ -267,11 +272,11 @@ resource-backed virtual operators.
 | `DELETE` | `/admin/visual-operator-libraries/{libraryId}` | Delete an imported library | 204 |
 
 Create and update run the same validator before storage. The validator rejects
-empty libraries, duplicate port names, unsupported lowering modes, unsupported
-schema kinds, `required` fields not declared in `properties`, and array schemas
-without `items` across input, output, and config schemas, returning structured
-visual diagnostics instead of accepting a library that will fail later on the
-canvas.
+blank `libraryId`, blank or duplicate `operatorRef`, empty libraries, duplicate
+port names, unsupported lowering modes, unsupported schema kinds, `required`
+fields not declared in `properties`, and array schemas without `items` across
+input, output, and config schemas, returning structured visual diagnostics
+instead of accepting a library that will fail later on the canvas.
 
 Minimal import example:
 

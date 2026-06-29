@@ -967,6 +967,7 @@ body.dragging-operator * {
 }
 
 .operator-fields input,
+.operator-fields select,
 .rule-editor-table input {
   width: 100%;
   min-width: 0;
@@ -978,6 +979,7 @@ body.dragging-operator * {
 }
 
 .operator-fields input:disabled,
+.operator-fields select:disabled,
 .rule-editor-table input:disabled {
   color: var(--muted);
   background: var(--surface-strong);
@@ -1052,6 +1054,7 @@ body.dragging-operator * {
 .field input:focus,
 .field textarea:focus,
 .operator-fields input:focus,
+.operator-fields select:focus,
 .rule-editor-table input:focus,
 .binding-row select:focus,
 .binding-row input:focus,

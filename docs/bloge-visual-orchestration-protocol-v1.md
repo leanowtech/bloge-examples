@@ -836,6 +836,8 @@ resource-gateway 示例阶段已落地等价管理端点：
 MVP 至少阻断：
 
 - 空 operator library。
+- `libraryId` 缺失。
+- `operatorRef` 缺失或重复。
 - 算子没有 output port。
 - 同方向重复 port name。
 - 不支持的 lowering mode。
@@ -958,6 +960,10 @@ Content-Type: application/json
   "outputNode": "assembleLoanDecision"
 }
 ```
+
+`outputNode` 是运行期观察点 override。它指向与 draft `output.nodeId` 不同
+的节点时，响应返回该 override 节点的完整输出，不套用 draft 保存的
+`output.path`。
 
 响应：
 

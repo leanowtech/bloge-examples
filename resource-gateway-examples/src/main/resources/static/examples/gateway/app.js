@@ -487,6 +487,7 @@ function renderInputForm() {
         <div id="draft-status" class="draft-status" hidden></div>
       </div>
       <div id="selected-operator-editor" class="builder-panel"></div>
+      <div id="graph-output-editor" class="builder-panel"></div>
       <div class="builder-panel">
         <div class="panel-title">Server Check</div>
         <div class="visual-check-actions">
@@ -515,6 +516,7 @@ function renderInputForm() {
     renderOperatorLibraryControls();
     renderDraftControls();
     renderSelectedOperatorEditor();
+    renderGraphOutputEditor();
     renderVisualCheck();
     $('composer-dsl').addEventListener('input', (event) => {
       state.customDsl = event.target.value;
@@ -572,6 +574,7 @@ function createDefaultBuilder() {
   return {
     graphName: 'customLoanPolicy',
     selectedId: 'loanPolicy',
+    output: { nodeId: 'response', path: '' },
     nodes: [
       {
         id: 'loanPolicy',
@@ -1332,6 +1335,64 @@ function renderSelectedOperatorEditor() {
   }
 }
 
+function renderGraphOutputEditor() {
+  const target = $('graph-output-editor');
+  if (!target) return;
+  const output = ensureBuilderOutput(state.builder);
+  const selectedNode = state.builder.nodes.find((node) => node.id === output.nodeId);
+  const pathOptions = selectedNode ? outputPathOptionsForNode(selectedNode) : [];
+  const outputSummary = output.path ? `${output.nodeId}.${output.path}` : output.nodeId || 'No output';
+  const nodeOptions = orderedBuilderNodes().map((node) => {
+    const selected = node.id === output.nodeId ? ' selected' : '';
+    return `<option value="${escapeHtml(node.id)}"${selected}>${escapeHtml(labelForNode(node))} (${escapeHtml(node.id)})</option>`;
+  }).join('');
+  const pathOptionMarkup = pathOptions.map((option) => {
+    const selected = option.value === output.path ? ' selected' : '';
+    const type = option.type ? ` · ${option.type}` : '';
+    return `<option value="${escapeHtml(option.value)}"${selected}>${escapeHtml(option.label + type)}</option>`;
+  }).join('');
+
+  target.innerHTML = `
+    <div class="operator-editor-heading">
+      <div>
+        <div class="panel-title">Graph Output</div>
+        <strong>${escapeHtml(output.nodeId || 'No output')}</strong>
+      </div>
+    </div>
+    <div class="operator-fields">
+      <label>
+        <span>Output Node</span>
+        <select id="graph-output-node" aria-label="Graph output node">${nodeOptions}</select>
+      </label>
+      <label>
+        <span>Output Path</span>
+        <select id="graph-output-path" aria-label="Graph output path">${pathOptionMarkup}</select>
+      </label>
+    </div>
+    <div class="binding-status">Current: ${escapeHtml(outputSummary)}</div>
+  `;
+
+  const nodeSelect = $('graph-output-node');
+  if (nodeSelect) {
+    nodeSelect.addEventListener('change', () => {
+      state.builder.output = { nodeId: nodeSelect.value, path: '' };
+      syncComposerFromBuilder({ render: false });
+      renderGraphOutputEditor();
+    });
+  }
+  const pathSelect = $('graph-output-path');
+  if (pathSelect) {
+    pathSelect.addEventListener('change', () => {
+      state.builder.output = {
+        nodeId: output.nodeId,
+        path: pathSelect.value
+      };
+      syncComposerFromBuilder({ render: false });
+      renderGraphOutputEditor();
+    });
+  }
+}
+
 function operatorEditorBody(node) {
   if (node.type === 'httpResource') {
     return `
@@ -2079,8 +2140,28 @@ function firstDecisionTableId() {
   return state.builder.nodes.find((node) => node.type === 'decisionTable')?.id || 'loanPolicy';
 }
 
+function defaultOutputNodeForBuilder(builder = state.builder) {
+  const ordered = orderedBuilderNodes(builder);
+  const lastTransform = [...ordered].reverse().find((node) => node.type === 'transform');
+  return (lastTransform || ordered[ordered.length - 1])?.id || 'response';
+}
+
+function ensureBuilderOutput(builder = state.builder) {
+  const fallbackNodeId = defaultOutputNodeForBuilder(builder);
+  const requested = builder.output || {};
+  const nodeExists = builder.nodes.some((node) => node.id === requested.nodeId);
+  const nodeId = nodeExists ? requested.nodeId : fallbackNodeId;
+  const node = builder.nodes.find((item) => item.id === nodeId);
+  const pathOptions = outputPathOptionsForNode(node);
+  const requestedPath = String(requested.path || '');
+  const path = pathOptions.some((option) => option.value === requestedPath) ? requestedPath : '';
+  builder.output = { nodeId, path };
+  return builder.output;
+}
+
 function syncComposerFromBuilder(options = {}) {
   const render = options.render !== false;
+  ensureBuilderOutput(state.builder);
   state.customDsl = builderToDsl(state.builder);
   state.layout = layoutFromBuilder(state.builder);
   state.customDecisionTable = decisionTableFromBuilder(state.builder);
@@ -2096,6 +2177,7 @@ function syncComposerFromBuilder(options = {}) {
   if (render && isComposerSelected()) {
     renderDecisionTable();
     renderNodeDetails(selectedBuilderNode() || state.layout.nodes[0]);
+    renderGraphOutputEditor();
   }
 }
 
@@ -2270,6 +2352,7 @@ function renderTemplateExpression(template, inputs) {
 
 function builderToVisualDraft(builder = state.builder) {
   const layout = layoutFromBuilder(builder);
+  const output = ensureBuilderOutput(builder);
   return {
     schemaVersion: 'bloge.visualGraphDraft.v1',
     draftId: state.currentDraftId || '',
@@ -2288,7 +2371,7 @@ function builderToVisualDraft(builder = state.builder) {
       target: { nodeId: edge.target, port: edge.targetPort || 'inputs', path: edge.targetPath || '' }
     })),
     visualLayout: layout,
-    output: { nodeId: composerOutputNode(), path: '' }
+    output
   };
 }
 
@@ -2297,12 +2380,18 @@ function builderFromVisualDraft(draft) {
     .map((node) => [node.id, node]));
   const nodes = (draft.nodes || []).map((node) => builderNodeFromDraftNode(node, draft, layoutNodes));
   const selectedId = nodes[0]?.id || null;
-  return {
+  const builder = {
     graphName: draft.graphName || 'visualGraph',
     inputSchema: draft.inputSchema || null,
     selectedId,
+    output: {
+      nodeId: draft.output?.nodeId || '',
+      path: draft.output?.path || ''
+    },
     nodes
   };
+  ensureBuilderOutput(builder);
+  return builder;
 }
 
 function builderNodeFromDraftNode(node, draft, layoutNodes) {
@@ -2835,6 +2924,58 @@ function sourceHandlesForNode(node) {
       schema: field.schema
     }));
   });
+}
+
+function outputPathOptionsForNode(node) {
+  if (!node) {
+    return [];
+  }
+  const spec = specForNode(node);
+  const outputPorts = outputPortsForSpec(spec);
+  const options = [{
+    value: '',
+    label: 'Full output',
+    type: outputPorts.length === 1 ? schemaType(outputPorts[0]?.schema?.schema) : ''
+  }];
+  if (outputPorts.length > 1) {
+    for (const port of outputPorts) {
+      options.push({
+        value: port.name || spec.outputPort || 'output',
+        label: `${port.name || spec.outputPort || 'output'} port`,
+        type: schemaType(port.schema?.schema)
+      });
+    }
+  }
+  for (const handle of sourceHandlesForNode(node)) {
+    const value = outputSelectionPathForHandle(node, handle);
+    if (!value) {
+      continue;
+    }
+    options.push({
+      value,
+      label: endpointLabel(handle),
+      type: handle.type || schemaType(handle.schema)
+    });
+  }
+  const seen = new Set();
+  return options.filter((option) => {
+    if (seen.has(option.value)) {
+      return false;
+    }
+    seen.add(option.value);
+    return true;
+  });
+}
+
+function outputSelectionPathForHandle(node, handle) {
+  const spec = specForNode(node);
+  const outputPorts = outputPortsForSpec(spec);
+  const port = handle.port || spec.outputPort || 'output';
+  const path = handle.path || '';
+  if (!path) {
+    return outputPorts.length > 1 || port !== 'output' ? port : '';
+  }
+  return outputPorts.length > 1 ? `${port}.${path}` : path;
 }
 
 function targetHandlesForNode(node) {
@@ -3676,9 +3817,7 @@ async function runCustomGraph() {
 }
 
 function composerOutputNode() {
-  const ordered = orderedBuilderNodes();
-  const lastTransform = [...ordered].reverse().find((node) => node.type === 'transform');
-  return (lastTransform || ordered[ordered.length - 1])?.id || 'response';
+  return ensureBuilderOutput(state.builder).nodeId;
 }
 
 function highlightDecisionRow(payload) {

@@ -46,6 +46,83 @@ class OperatorLibraryValidatorTest {
     }
 
     @Test
+    void rejectsBlankLibraryIdAndOperatorRef() {
+        OperatorLibrary library = new OperatorLibrary(
+                "bloge.visualOperatorLibrary.v1",
+                "",
+                "Invalid",
+                "1.0.0",
+                "team",
+                "ACTIVE",
+                List.of(operator(
+                        "",
+                        new OperatorDefinition.Ports(
+                                List.of(),
+                                List.of(new OperatorDefinition.Port("output",
+                                        SchemaEnvelope.object(Map.of(), List.of()),
+                                        true,
+                                        "Output."))
+                        ),
+                        "native"
+                ))
+        );
+
+        VisualValidationResult result = validator.validate(library);
+
+        assertThat(result.valid()).isFalse();
+        assertThat(result.diagnostics())
+                .extracting("code")
+                .contains(
+                        "visual.library.id.required",
+                        "visual.operator.ref.required"
+                );
+    }
+
+    @Test
+    void rejectsDuplicateOperatorRefsInOneLibrary() {
+        OperatorDefinition first = operator(
+                "risk:eligibility",
+                new OperatorDefinition.Ports(
+                        List.of(),
+                        List.of(new OperatorDefinition.Port("output",
+                                SchemaEnvelope.object(Map.of(), List.of()),
+                                true,
+                                "Output."))
+                ),
+                "native"
+        );
+        OperatorDefinition duplicate = operator(
+                "risk:eligibility",
+                new OperatorDefinition.Ports(
+                        List.of(),
+                        List.of(new OperatorDefinition.Port("output",
+                                SchemaEnvelope.object(Map.of(), List.of()),
+                                true,
+                                "Output."))
+                ),
+                "native"
+        );
+        OperatorLibrary library = new OperatorLibrary(
+                "bloge.visualOperatorLibrary.v1",
+                "risk-duplicates",
+                "Risk duplicates",
+                "1.0.0",
+                "team",
+                "ACTIVE",
+                List.of(first, duplicate)
+        );
+
+        VisualValidationResult result = validator.validate(library);
+
+        assertThat(result.valid()).isFalse();
+        assertThat(result.diagnostics())
+                .anySatisfy(diagnostic -> {
+                    assertThat(diagnostic.code()).isEqualTo("visual.operator.ref.duplicate");
+                    assertThat(diagnostic.target()).isEqualTo("/operators/1/operatorRef");
+                });
+    }
+
+    @Test
     void rejectsOperatorWithoutOutputPort() {
         OperatorLibrary library = libraryWith(operator(
                 "risk:noOutput",

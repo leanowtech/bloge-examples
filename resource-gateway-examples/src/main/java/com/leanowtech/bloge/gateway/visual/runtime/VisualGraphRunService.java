@@ -80,7 +80,7 @@ public class VisualGraphRunService {
                 .map(VisualGraphRunService::fromCompilerDiagnostic)
                 .toList());
         Object output = dynamic.output();
-        if (!draft.output().path().isBlank()) {
+        if (shouldExtractDraftOutputPath(draft, dynamic.outputNode())) {
             output = extractPath(output, draft.output().path());
         }
         return new VisualGraphRunResponse(
@@ -99,6 +99,12 @@ public class VisualGraphRunService {
                 dynamic.decisionTable(),
                 generated.dsl()
         );
+    }
+
+    private static boolean shouldExtractDraftOutputPath(GraphDraft draft, String actualOutputNode) {
+        return !draft.output().path().isBlank()
+                && !draft.output().nodeId().isBlank()
+                && draft.output().nodeId().equals(actualOutputNode);
     }
 
     private static VisualGraphRunResponse blocked(GraphDraft draft,

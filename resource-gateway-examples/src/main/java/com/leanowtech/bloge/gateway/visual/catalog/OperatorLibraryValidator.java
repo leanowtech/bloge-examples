@@ -51,10 +51,28 @@ public class OperatorLibraryValidator {
                     "Operator library must contain at least one operator.",
                     "/operators"));
         }
-        for (int i = 0; i < library.operators().size(); i++) {
-            validateOperator(library.operators().get(i), "/operators/" + i, diagnostics);
+        if (library.libraryId().isBlank()) {
+            diagnostics.add(VisualDiagnostic.error("visual.library.id.required",
+                    "Operator library must declare a libraryId.",
+                    "/libraryId"));
         }
-        return new VisualValidationResult(false, diagnostics);
+        Set<String> operatorRefs = new LinkedHashSet<>();
+        for (int i = 0; i < library.operators().size(); i++) {
+            OperatorDefinition operator = library.operators().get(i);
+            String operatorPath = "/operators/" + i;
+            if (operator.operatorRef().isBlank()) {
+                diagnostics.add(VisualDiagnostic.error("visual.operator.ref.required",
+                        "Operator must declare an operatorRef.",
+                        operatorPath + "/operatorRef"));
+            } else if (!operatorRefs.add(operator.operatorRef())) {
+                diagnostics.add(VisualDiagnostic.error("visual.operator.ref.duplicate",
+                        "Operator library declares duplicate operatorRef '%s'."
+                                .formatted(operator.operatorRef()),
+                        operatorPath + "/operatorRef"));
+            }
+            validateOperator(operator, operatorPath, diagnostics);
+        }
+        return new VisualValidationResult(true, diagnostics);
     }
 
     private static void validateOperator(OperatorDefinition operator,

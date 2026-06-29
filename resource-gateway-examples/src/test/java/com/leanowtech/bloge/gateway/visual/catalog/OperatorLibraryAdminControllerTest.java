@@ -70,6 +70,48 @@ class OperatorLibraryAdminControllerTest {
     }
 
     @Test
+    void createRejectsDuplicateOperatorRefsWithStructuredDiagnostics() throws Exception {
+        String libraryJson = """
+                {
+                  "libraryId": "duplicate-risk",
+                  "displayName": "Duplicate risk",
+                  "operators": [
+                    {
+                      "operatorRef": "risk:eligibility",
+                      "ports": {
+                        "outputs": [{
+                          "name": "output",
+                          "schema": { "schema": { "type": "object" } },
+                          "required": true
+                        }]
+                      }
+                    },
+                    {
+                      "operatorRef": "risk:eligibility",
+                      "ports": {
+                        "outputs": [{
+                          "name": "output",
+                          "schema": { "schema": { "type": "object" } },
+                          "required": true
+                        }]
+                      }
+                    }
+                  ]
+                }
+                """;
+
+        mockMvc.perform(post("/admin/visual-operator-libraries")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(libraryJson))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.valid").value(false))
+                .andExpect(jsonPath("$.diagnostics[0].code").value("visual.operator.ref.duplicate"))
+                .andExpect(jsonPath("$.diagnostics[0].target").value("/operators/1/operatorRef"));
+
+        assertThat(registry.all()).isEmpty();
+    }
+
+    @Test
     void createStoresValidLibrary() throws Exception {
         OperatorLibrary library = VisualCatalogTestSupport.eligibilityLibrary("integer");
 
