@@ -953,6 +953,8 @@ resource-gateway 已有 rate limiting、cache、circuit breaker，可以作为�
 | `/compose/run` 只注册 `httpResource` | 无法执行通用算子 | 使用完整 OperatorRegistry 或可配置 registry |
 | diagnostics 只展示 compiler 信息 | 缺少 schema/权限/策略错误 | 增加 visual validation report |
 
+当前 `resource-gateway-examples` 已经把 `configSchema` 的第一层落成代码：用户导入 operator library 时会校验 config schema 本身，canvas inspector 会根据简单 config 字段渲染编辑控件，服务端 `GraphDraftValidator` 会在 validate/compile/run 前阻断缺必填 config、类型不匹配、enum 不匹配和禁止额外字段场景。复杂嵌套 config 的专业化控件仍属于后续增强，但服务端契约已经先行兜底。
+
 ### 19.3 新增
 
 - `VisualOperatorCatalogController`
@@ -1062,7 +1064,7 @@ Phase 1 的工程拆分、包结构、API、测试和 Definition of Done 见
 | 风险 | 严重度 | 说明 | 应对 |
 | --- | --- | --- | --- |
 | 画布和 DSL 双重真相 | 高 | 最终图不可解释 | GraphDraft 生成 DSL，visualLayout 只做表现 |
-| schema 太弱 | 高 | 拖线自由但运行失败 | 强制 input/output/config schema |
+| schema 太弱 | 高 | 拖线自由但运行失败 | 强制 input/output/config schema；示例项目已服务端阻断非法 config |
 | 表达式绕过类型系统 | 高 | 用户用字符串表达式破坏约束 | 表达式引用和结果类型推断 |
 | ResourceDescriptor 无 payload schema | 高 | 虚拟算子输出不可连接 | descriptor 增加 payload schema 或采样推断后人工确认 |
 | 前端写死领域 | 中 | 无法通用 | Palette 和 editor 全部 catalog-driven |

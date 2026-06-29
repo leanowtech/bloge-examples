@@ -100,6 +100,42 @@ class OperatorLibraryValidatorTest {
     }
 
     @Test
+    void rejectsInvalidConfigSchemaDetails() {
+        OperatorLibrary library = libraryWith(new OperatorDefinition(
+                "bloge.visualOperator.v1",
+                "risk:badConfigSchema",
+                "1.0.0",
+                new OperatorDefinition.Display("Bad config schema", "Test operator.", List.of("test")),
+                new OperatorDefinition.Source("user-library", "", "", "", true),
+                new OperatorDefinition.Ports(
+                        List.of(),
+                        List.of(new OperatorDefinition.Port("output",
+                                SchemaEnvelope.object(Map.of("accepted", Map.of("type", "boolean")), List.of()),
+                                true,
+                                "Output."))
+                ),
+                new SchemaEnvelope("json-schema", "2020-12", Map.of(
+                        "type", "object",
+                        "properties", Map.of(
+                                "modes", Map.of("type", "array")
+                        )
+                )),
+                OperatorDefinition.Capabilities.pure(),
+                new OperatorDefinition.Lowering("native", "risk:badConfigSchema", Map.of()),
+                List.of()
+        ));
+
+        VisualValidationResult result = validator.validate(library);
+
+        assertThat(result.valid()).isFalse();
+        assertThat(result.diagnostics())
+                .anySatisfy(diagnostic -> {
+                    assertThat(diagnostic.code()).isEqualTo("visual.schema.arrayItemsMissing");
+                    assertThat(diagnostic.target()).contains("configSchema");
+                });
+    }
+
+    @Test
     void rejectsDuplicatePortNamesAndUnsupportedLoweringMode() {
         OperatorLibrary library = libraryWith(operator(
                 "risk:badPorts",

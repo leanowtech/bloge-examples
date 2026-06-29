@@ -67,6 +67,7 @@ public class GraphDraftValidator {
             operatorsByNodeId.put(node.id(), operator.get());
             validateRequiredInputs(node, operator.get(), nodePath, diagnostics);
             validateUnknownInputs(node, operator.get(), nodePath, diagnostics);
+            validateConfig(node, operator.get(), nodePath, diagnostics);
         }
 
         validateNodePathBindings(draft, nodesById, operatorsByNodeId, diagnostics);
@@ -328,6 +329,12 @@ public class GraphDraftValidator {
         if (type == null) {
             type = property.get("type");
         }
+        if (type == null && property.containsKey("properties")) {
+            return "object";
+        }
+        if (type == null && property.containsKey("items")) {
+            return "array";
+        }
         return type == null ? "" : String.valueOf(type);
     }
 
@@ -478,6 +485,132 @@ public class GraphDraftValidator {
     private static boolean allowsAdditionalProperties(Map<String, Object> schema) {
         Object additional = schema.get("additionalProperties");
         return Boolean.TRUE.equals(additional) || additional instanceof Map<?, ?>;
+    }
+
+    private static void validateConfig(GraphDraft.DraftNode node,
+                                       OperatorDefinition operator,
+                                       String nodePath,
+                                       List<VisualDiagnostic> diagnostics) {
+        validateConfigValue(node.config(), operator.configSchema().schema(), nodePath + "/config", diagnostics);
+    }
+
+    private static void validateConfigValue(Object value,
+                                            Map<String, Object> schema,
+                                            String path,
+                                            List<VisualDiagnostic> diagnostics) {
+        String type = schemaType(schema);
+        if (type.isBlank() || "any".equals(type) || "opaque".equals(type)) {
+            return;
+        }
+        if ("object".equals(type)) {
+            validateConfigObject(value, schema, path, diagnostics);
+            return;
+        }
+        if ("array".equals(type)) {
+            validateConfigArray(value, schema, path, diagnostics);
+            return;
+        }
+        if ("enum".equals(type)) {
+            validateConfigEnum(value, schema, path, diagnostics);
+            return;
+        }
+        if (!configValueMatchesType(value, type)) {
+            diagnostics.add(VisualDiagnostic.error("visual.config.typeMismatch",
+                    "Config value at '%s' must be %s.".formatted(path, schemaTypeLabel(schema)),
+                    path));
+        }
+    }
+
+    private static void validateConfigObject(Object value,
+                                             Map<String, Object> schema,
+                                             String path,
+                                             List<VisualDiagnostic> diagnostics) {
+        if (!(value instanceof Map<?, ?> rawMap)) {
+            diagnostics.add(VisualDiagnostic.error("visual.config.typeMismatch",
+                    "Config value at '%s' must be object.".formatted(path),
+                    path));
+            return;
+        }
+        Map<String, Object> object = new LinkedHashMap<>();
+        rawMap.forEach((key, item) -> object.put(String.valueOf(key), item));
+        Map<String, Object> properties = propertiesOf(schema);
+        for (String required : requiredNamesOf(schema)) {
+            if (!object.containsKey(required) || object.get(required) == null) {
+                diagnostics.add(VisualDiagnostic.error("visual.config.required",
+                        "Required config '%s' is missing.".formatted(required),
+                        path + "/" + required));
+            }
+        }
+        Object additional = schema.get("additionalProperties");
+        for (Map.Entry<String, Object> entry : object.entrySet()) {
+            Map<String, Object> property = objectProperty(properties.get(entry.getKey()));
+            if (property != null) {
+                validateConfigValue(entry.getValue(), property, path + "/" + entry.getKey(), diagnostics);
+            } else if (Boolean.FALSE.equals(additional)) {
+                diagnostics.add(VisualDiagnostic.error("visual.config.unknown",
+                        "Config '%s' is not declared by configSchema.".formatted(entry.getKey()),
+                        path + "/" + entry.getKey()));
+            } else if (additional instanceof Map<?, ?> additionalSchema) {
+                validateConfigValue(entry.getValue(), objectProperty(additionalSchema),
+                        path + "/" + entry.getKey(), diagnostics);
+            }
+        }
+    }
+
+    private static void validateConfigArray(Object value,
+                                            Map<String, Object> schema,
+                                            String path,
+                                            List<VisualDiagnostic> diagnostics) {
+        if (!(value instanceof List<?> list)) {
+            diagnostics.add(VisualDiagnostic.error("visual.config.typeMismatch",
+                    "Config value at '%s' must be array.".formatted(path),
+                    path));
+            return;
+        }
+        Map<String, Object> items = objectProperty(schema.get("items"));
+        if (items == null) {
+            return;
+        }
+        for (int i = 0; i < list.size(); i++) {
+            validateConfigValue(list.get(i), items, path + "/" + i, diagnostics);
+        }
+    }
+
+    private static void validateConfigEnum(Object value,
+                                           Map<String, Object> schema,
+                                           String path,
+                                           List<VisualDiagnostic> diagnostics) {
+        Object rawValues = schema.get("values");
+        if (!(rawValues instanceof List<?> values) || values.isEmpty()) {
+            return;
+        }
+        if (!values.contains(value)) {
+            diagnostics.add(VisualDiagnostic.error("visual.config.enumMismatch",
+                    "Config value at '%s' must be one of %s.".formatted(path, values),
+                    path));
+        }
+    }
+
+    private static boolean configValueMatchesType(Object value, String type) {
+        return switch (type) {
+            case "string", "duration", "datetime" -> value instanceof String;
+            case "integer" -> isIntegerValue(value);
+            case "number", "decimal" -> value instanceof Number;
+            case "boolean" -> value instanceof Boolean;
+            case "null" -> value == null;
+            default -> true;
+        };
+    }
+
+    private static boolean isIntegerValue(Object value) {
+        if (value instanceof Byte || value instanceof Short || value instanceof Integer || value instanceof Long) {
+            return true;
+        }
+        if (value instanceof Number number) {
+            double doubleValue = number.doubleValue();
+            return Double.isFinite(doubleValue) && Math.rint(doubleValue) == doubleValue;
+        }
+        return false;
     }
 
     private static void validateAcyclic(GraphDraft draft,

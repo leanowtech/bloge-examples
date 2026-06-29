@@ -67,6 +67,7 @@ public class OperatorLibraryValidator {
         }
         validatePorts(operator, "inputs", operator.ports().inputs(), path + "/ports/inputs", diagnostics);
         validatePorts(operator, "outputs", operator.ports().outputs(), path + "/ports/outputs", diagnostics);
+        validateSchema(operator.configSchema().schema(), path + "/configSchema/schema", diagnostics);
         validateLowering(operator, path + "/lowering", diagnostics);
     }
 

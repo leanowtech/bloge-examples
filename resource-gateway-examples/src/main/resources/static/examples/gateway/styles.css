@@ -929,6 +929,20 @@ body.dragging-operator * {
   color: var(--text);
 }
 
+.config-checkbox {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.config-checkbox input {
+  width: auto;
+  min-width: auto;
+}
+
 .binding-status {
   color: var(--muted);
   font-size: 11px;

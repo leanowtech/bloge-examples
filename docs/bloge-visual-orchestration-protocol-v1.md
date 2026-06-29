@@ -272,7 +272,7 @@ MVP schema kind：
 | `source.kind` | 是 | `java-operator`、`resource-descriptor`、`subgraph`、`remote-worker`、`ai-tool`、`user-defined` |
 | `ports.inputs` | 是 | 至少一个输入端口，常规算子为 `input` |
 | `ports.outputs` | 是 | 至少一个输出端口，常规算子为 `output` |
-| `configSchema` | 否 | timeout/retry/fallback 之外的算子配置 |
+| `configSchema` | 否 | timeout/retry/fallback 之外的算子配置；导入时必须校验 schema 结构，draft 校验时必须约束 `node.config` |
 | `capabilities` | 是 | 决定运行、安全和画布限制 |
 | `policies` | 否 | 缺省按租户策略继承 |
 | `authoring` | 否 | 只影响画布体验 |
@@ -511,6 +511,7 @@ MVP schema kind：
 - `operatorFingerprint` 发布时必填，草稿时可由服务端补齐。
 - `inputs` 的 key 必须对应 input schema 字段。
 - `config` 必须满足 `configSchema`。
+  resource-gateway 示例已经把该规则落成服务端 gate：缺必填 config、类型不匹配、enum 不匹配、`additionalProperties=false` 下的未知 config 字段都会阻断 validate/compile/run。
 
 ### 7.4 DraftEdge
 
@@ -1027,6 +1028,7 @@ flowchart TD
 - target path 不存在。
 - 类型不兼容且没有 adapter。
 - `array<T>` 到 `array<U>` 时 item schema 不兼容。
+- node config 不满足 operator `configSchema`。
 
 警告：
 

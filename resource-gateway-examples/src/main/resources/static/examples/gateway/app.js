@@ -1268,6 +1268,16 @@ function renderSelectedOperatorEditor() {
     });
   }
 
+  for (const input of target.querySelectorAll('[data-config-field]')) {
+    const eventName = input.type === 'checkbox' || input.tagName === 'SELECT' ? 'change' : 'input';
+    input.addEventListener(eventName, () => {
+      setConfigValueFromInput(node, input);
+      updateConfigFieldStatus(node, input);
+      syncComposerFromBuilder({ render: false });
+      renderDiagram();
+    });
+  }
+
   for (const select of target.querySelectorAll('[data-binding-source]')) {
     select.addEventListener('change', () => {
       const source = sourceFromBindingValue(select.value);
@@ -1323,6 +1333,7 @@ function operatorEditorBody(node) {
         ${textField('Node', node.id, '', true)}
         ${textField('Resource ID', node.resourceId, 'resourceId')}
       </div>
+      ${renderConfigPanel(node)}
       ${renderInputBindingsPanel(node)}
     `;
   }
@@ -1333,6 +1344,7 @@ function operatorEditorBody(node) {
         ${textField('Node', node.id, '', true)}
         ${textField('Operator', spec.visualOperatorRef || node.paletteType, '', true)}
       </div>
+      ${renderConfigPanel(node)}
       ${renderInputBindingsPanel(node)}
     `;
   }
@@ -1393,6 +1405,192 @@ function textField(label, value, field, disabled = false) {
       <input ${attr} value="${escapeHtml(value ?? '')}" ${disabled ? 'disabled' : ''}>
     </label>
   `;
+}
+
+function renderConfigPanel(node) {
+  const spec = specForNode(node);
+  const fields = configFieldDescriptors(spec.configSchema);
+  const unknownRows = unknownConfigRows(node, spec);
+  if (!fields.length && !unknownRows.length) {
+    return '';
+  }
+  return `
+    <div class="binding-panel">
+      <div class="binding-panel-title">
+        <span>Config</span>
+        <small>configSchema checked</small>
+      </div>
+      ${fields.map((field) => renderConfigRow(node, field)).join('')}
+      ${unknownRows.join('')}
+    </div>
+  `;
+}
+
+function renderConfigRow(node, field) {
+  const status = configStatusForField(node, field);
+  const required = field.required ? 'Required' : 'Optional';
+  return `
+    <div class="binding-row ${escapeHtml(status.level)}" data-config-row="${escapeHtml(field.path)}">
+      <div class="binding-row-head">
+        <div>
+          <strong>${escapeHtml(readableName(field.path))}</strong>
+          <span>${escapeHtml(schemaType(field.schema) || 'any')} · ${escapeHtml(required)}</span>
+        </div>
+      </div>
+      ${renderConfigControl(node, field)}
+      <div class="binding-status" data-config-status>${escapeHtml(status.message)}</div>
+    </div>
+  `;
+}
+
+function renderConfigControl(node, field) {
+  const value = node.config?.[field.path];
+  const type = rawSchemaType(field.schema);
+  const attr = `data-config-field="${escapeHtml(field.path)}"`;
+  const values = Array.isArray(field.schema?.values) ? field.schema.values : [];
+  if (type === 'enum' && values.length) {
+    const hasValue = value !== undefined && value !== null && value !== '';
+    const blank = field.required
+      ? `<option value="" ${hasValue ? '' : 'selected'} disabled>Select...</option>`
+      : '<option value="">Unset</option>';
+    return `
+      <select ${attr} aria-label="${escapeHtml(readableName(field.path))} config">
+        ${blank}
+        ${values.map((item) => {
+          const stringValue = String(item);
+          const selected = value === item || String(value ?? '') === stringValue ? ' selected' : '';
+          return `<option value="${escapeHtml(stringValue)}"${selected}>${escapeHtml(stringValue)}</option>`;
+        }).join('')}
+      </select>
+    `;
+  }
+  if (type === 'boolean') {
+    return `
+      <label class="config-checkbox">
+        <input ${attr} type="checkbox" ${value === true ? 'checked' : ''}>
+        <span>${escapeHtml(value === true ? 'Enabled' : 'Disabled')}</span>
+      </label>
+    `;
+  }
+  if (type === 'integer' || type === 'number' || type === 'decimal') {
+    const step = type === 'integer' ? '1' : 'any';
+    return `<input ${attr} type="number" step="${step}" value="${escapeHtml(value ?? '')}">`;
+  }
+  const rendered = typeof value === 'object' && value !== null ? JSON.stringify(value) : (value ?? '');
+  return `<input ${attr} value="${escapeHtml(rendered)}">`;
+}
+
+function unknownConfigRows(node, spec) {
+  const schema = spec.configSchema?.schema || {};
+  if (schema.additionalProperties !== false) {
+    return [];
+  }
+  const declared = new Set(Object.keys(schema.properties || {}));
+  return Object.keys(node.config || {})
+    .filter((key) => !declared.has(key))
+    .map((key) => `
+      <div class="binding-row error">
+        <div class="binding-row-head">
+          <div>
+            <strong>${escapeHtml(readableName(key))}</strong>
+            <span>unknown · config</span>
+          </div>
+        </div>
+        <div class="binding-status">Not declared by configSchema.</div>
+      </div>
+    `);
+}
+
+function setConfigValueFromInput(node, input) {
+  const spec = specForNode(node);
+  const field = configFieldDescriptors(spec.configSchema)
+    .find((item) => item.path === input.dataset.configField);
+  if (!field) {
+    return;
+  }
+  node.config = node.config || {};
+  if (input.type !== 'checkbox' && input.value === '') {
+    if (field.required) {
+      node.config[field.path] = '';
+    } else {
+      delete node.config[field.path];
+    }
+    return;
+  }
+  node.config[field.path] = parseConfigInputValue(input, field.schema);
+}
+
+function updateConfigFieldStatus(node, input) {
+  const spec = specForNode(node);
+  const field = configFieldDescriptors(spec.configSchema)
+    .find((item) => item.path === input.dataset.configField);
+  if (!field) {
+    return;
+  }
+  const status = configStatusForField(node, field);
+  const row = input.closest('[data-config-row]');
+  if (!row) {
+    return;
+  }
+  row.classList.remove('info', 'success', 'error');
+  row.classList.add(status.level);
+  const statusNode = row.querySelector('[data-config-status]');
+  if (statusNode) {
+    statusNode.textContent = status.message;
+  }
+}
+
+function parseConfigInputValue(input, schema) {
+  const type = rawSchemaType(schema);
+  if (input.type === 'checkbox' || type === 'boolean') {
+    return Boolean(input.checked);
+  }
+  if (type === 'enum' && Array.isArray(schema?.values)) {
+    return schema.values.find((item) => String(item) === input.value) ?? input.value;
+  }
+  if (type === 'integer') {
+    return Number.parseInt(input.value || '0', 10);
+  }
+  if (type === 'number' || type === 'decimal') {
+    return Number(input.value || 0);
+  }
+  if (type === 'object' || type === 'array') {
+    try {
+      return JSON.parse(input.value || (type === 'array' ? '[]' : '{}'));
+    } catch {
+      return input.value;
+    }
+  }
+  return input.value;
+}
+
+function configStatusForField(node, field) {
+  const hasValue = Object.prototype.hasOwnProperty.call(node.config || {}, field.path);
+  const value = node.config?.[field.path];
+  if (!hasValue || value === null || value === '') {
+    return field.required
+      ? { level: 'error', message: 'Required config is missing.' }
+      : { level: 'info', message: 'Optional config is empty.' };
+  }
+  if (!configValueMatchesSchema(value, field.schema)) {
+    return { level: 'error', message: `Expected ${schemaType(field.schema) || 'schema-compatible'} value.` };
+  }
+  return { level: 'success', message: 'Config matches configSchema.' };
+}
+
+function configValueMatchesSchema(value, schema) {
+  const type = rawSchemaType(schema);
+  if (!type || type === 'any' || type === 'opaque') return true;
+  if (type === 'enum') {
+    return Array.isArray(schema?.values) && schema.values.some((item) => item === value || String(item) === String(value));
+  }
+  if (type === 'boolean') return typeof value === 'boolean';
+  if (type === 'integer') return Number.isInteger(Number(value));
+  if (type === 'number' || type === 'decimal') return Number.isFinite(Number(value));
+  if (type === 'object') return value !== null && typeof value === 'object' && !Array.isArray(value);
+  if (type === 'array') return Array.isArray(value);
+  if (type === 'null') return value === null;
+  return typeof value === 'string';
 }
 
 function renderInputBindingsPanel(node) {
@@ -1558,7 +1756,8 @@ function createBuilderNode(type, x, y) {
       resourceId: spec.resourceId || 'loan-applicant-service.getProfile',
       paramName,
       applicantExpr: paramInputs[paramName] || `ctx.${paramName}`,
-      paramInputs
+      paramInputs,
+      config: { timeout: '3s', retryAttempts: 1, ...defaultConfigForOperator(spec) }
     };
   }
   if (type === 'decisionTable') {
@@ -1573,7 +1772,8 @@ function createBuilderNode(type, x, y) {
   if (customOperator) {
     return {
       ...base,
-      ...defaultCustomInputStateForOperator(spec)
+      ...defaultCustomInputStateForOperator(spec),
+      config: defaultConfigForOperator(spec)
     };
   }
   return {
@@ -1618,6 +1818,16 @@ function defaultCustomInputStateForOperator(spec) {
     }
   }
   return { customInputs, customInputPorts, customInputPaths };
+}
+
+function defaultConfigForOperator(spec) {
+  const config = {};
+  for (const field of configFieldDescriptors(spec.configSchema)) {
+    if (Object.prototype.hasOwnProperty.call(field.schema || {}, 'default')) {
+      config[field.path] = field.schema.default;
+    }
+  }
+  return config;
 }
 
 function defaultResourceParamInputs(spec) {
@@ -1689,6 +1899,17 @@ function setExpressionForTargetInput(node, target, expression) {
 function requiredInputNamesForPort(port) {
   const required = port?.schema?.schema?.required;
   return Array.isArray(required) ? required : [];
+}
+
+function configFieldDescriptors(configSchema) {
+  const schema = configSchema?.schema || {};
+  const properties = schema.properties || {};
+  const required = new Set(Array.isArray(schema.required) ? schema.required.map(String) : []);
+  return Object.entries(properties).map(([name, childSchema]) => ({
+    path: name,
+    schema: childSchema && typeof childSchema === 'object' ? childSchema : {},
+    required: required.has(name)
+  }));
 }
 
 function schemaProperties(schemaEnvelope) {
@@ -2102,7 +2323,8 @@ function builderNodeFromDraftNode(node, draft, layoutNodes) {
       resourceId,
       paramName: inputName,
       applicantExpr: paramInputs[inputName] || `ctx.${inputName}`,
-      paramInputs
+      paramInputs,
+      config: { ...(node.config || {}) }
     };
   }
   if (node.operatorRef === 'bloge:decisionTable') {
@@ -2129,6 +2351,7 @@ function builderNodeFromDraftNode(node, draft, layoutNodes) {
     ...base,
     type: 'customOperator',
     paletteType: node.operatorRef,
+    config: { ...(node.config || {}) },
     customInputs: Object.fromEntries(Object.entries(node.inputs || {})
       .map(([key, binding]) => [key, expressionFromBinding(binding, draft)])),
     customInputPorts: Object.fromEntries(Object.entries(node.inputs || {})
@@ -2225,7 +2448,7 @@ function builderNodeToDraftNode(node, builder) {
           targetPort: specForNode(node).inputPort || 'params',
           builder
         })])),
-      config: { timeout: '3s', retryAttempts: 1 },
+      config: { timeout: '3s', retryAttempts: 1, ...(node.config || {}) },
       position: { x: node.x, y: node.y }
     };
   }
@@ -2270,7 +2493,7 @@ function builderNodeToDraftNode(node, builder) {
                 targetPath: node.customInputPaths?.[key] || key,
                 builder
               })])),
-      config: {},
+      config: { ...(node.config || {}) },
       position: { x: node.x, y: node.y }
     };
   }
@@ -2665,7 +2888,7 @@ function targetHandlesForNode(node) {
 }
 
 function schemaType(schema) {
-  const type = schema?.kind || schema?.type;
+  const type = rawSchemaType(schema);
   if (type === 'array') {
     const itemType = schemaType(schema?.items);
     return itemType ? `array<${itemType}>` : 'array';
@@ -2818,7 +3041,8 @@ function schemasCompatible(sourceSchema, targetSchema) {
 }
 
 function rawSchemaType(schema) {
-  return schema?.kind || schema?.type || '';
+  if (!schema) return '';
+  return schema.kind || schema.type || (schema.properties ? 'object' : (schema.items ? 'array' : ''));
 }
 
 function numericType(type) {

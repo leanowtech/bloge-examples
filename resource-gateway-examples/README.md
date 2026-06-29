@@ -101,9 +101,12 @@ the draft stores a stable key such as `customer.id` while `targetPort` and
 are expanded into field paths such as `applicant.score`, so imported operator
 libraries can expose realistic business payloads without flattening them first.
 Array bindings and edges compare item schemas, so `array<string>` cannot be wired
-into an input that requires `array<integer>`. The built-in `.bloge` scenarios
-remain available in the left rail and continue to execute the public gateway
-endpoints.
+into an input that requires `array<integer>`. Operator `configSchema` is also
+enforced: the browser inspector renders simple config controls for schema fields,
+and the server blocks missing required config, type mismatches, enum mismatches,
+and undeclared config fields when `additionalProperties=false`. The built-in
+`.bloge` scenarios remain available in the left rail and continue to execute the
+public gateway endpoints.
 
 To see the decision-table UX, run the default composer graph, edit the `R3`
 decision row, or drag an `HTTP Resource` operator onto the canvas to turn the
@@ -254,8 +257,9 @@ resource-backed virtual operators.
 Create and update run the same validator before storage. The validator rejects
 empty libraries, duplicate port names, unsupported lowering modes, unsupported
 schema kinds, `required` fields not declared in `properties`, and array schemas
-without `items`, returning structured visual diagnostics instead of accepting a
-library that will fail later on the canvas.
+without `items` across input, output, and config schemas, returning structured
+visual diagnostics instead of accepting a library that will fail later on the
+canvas.
 
 Minimal import example:
 
@@ -358,7 +362,7 @@ Seven `.bloge` graphs live in `src/main/resources/bloge/gateway/`:
 | `DefaultVisualOperatorCatalog` | Combines native visual operators with `resource:<resourceId>` virtual operators |
 | `GraphDraft` | Editable canvas graph model: nodes, port-aware bindings, edges, layout, output selection |
 | `DatabaseGraphDraftRepository` | H2-backed graph draft repository with revision assignment |
-| `GraphDraftValidator` | Validates operator references, required schema inputs, port-aware node bindings, typed port edges, DAG shape, and output selection |
+| `GraphDraftValidator` | Validates operator references, required schema inputs, node config against `configSchema`, port-aware node bindings, typed port edges, DAG shape, and output selection |
 | `GraphDraftDslGenerator` | Lowers visual drafts into executable BLOGE DSL |
 | `VisualGraphRunService` | Reuses the dynamic BLOGE runner to validate, compile, and execute visual drafts |
 
