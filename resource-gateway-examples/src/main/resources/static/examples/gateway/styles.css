@@ -765,6 +765,75 @@ body.dragging-operator * {
   color: var(--red);
 }
 
+.visual-check-actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px;
+}
+
+.visual-check-status {
+  min-height: 28px;
+  padding: 7px 8px;
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  background: var(--surface-subtle);
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 700;
+  overflow-wrap: anywhere;
+}
+
+.visual-check-status.success {
+  border-color: #86efac;
+  background: var(--green-soft);
+  color: var(--green);
+}
+
+.visual-check-status.warning {
+  border-color: #f8d18d;
+  background: var(--amber-soft);
+  color: #8a5a13;
+}
+
+.visual-check-status.error {
+  border-color: #fca5a5;
+  background: var(--red-soft);
+  color: var(--red);
+}
+
+.visual-diagnostics {
+  display: grid;
+  gap: 6px;
+}
+
+.visual-diagnostic {
+  display: grid;
+  gap: 3px;
+  padding: 7px 8px;
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  background: var(--surface-subtle);
+  font-size: 11px;
+  overflow-wrap: anywhere;
+}
+
+.visual-diagnostic strong {
+  color: var(--text);
+}
+
+.visual-diagnostic span {
+  color: var(--muted);
+  font-weight: 700;
+}
+
+.visual-diagnostic.error {
+  border-color: #fca5a5;
+}
+
+.visual-diagnostic.warning {
+  border-color: #f8d18d;
+}
+
 .operator-card.resource {
   border-color: #93b4f5;
   background: var(--blue-soft);

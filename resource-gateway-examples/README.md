@@ -89,11 +89,12 @@ runtime. Users can reposition existing nodes directly on the canvas, edit the
 selected operator's properties, bind every schema-declared input field from a
 schema-checked source picker or a manual expression, connect output handles to
 input handles under schema type constraints, import user-provided operator
-library JSON into the catalog, save/load/delete H2-backed graph drafts, inspect
-the generated BLOGE DSL, run it with JSON context, and see diagnostics, output,
-graph highlighting, and the decision-table matrix update together. The built-in
-`.bloge` scenarios remain available in the left rail and continue to execute the
-public gateway endpoints.
+library JSON into the catalog, save/load/delete H2-backed graph drafts, validate
+and compile the draft through the server-side visual graph APIs, inspect the
+generated BLOGE DSL, run it with JSON context, and see diagnostics, output, graph
+highlighting, and the decision-table matrix update together. The built-in `.bloge`
+scenarios remain available in the left rail and continue to execute the public
+gateway endpoints.
 
 To see the decision-table UX, run the default composer graph, edit the `R3`
 decision row, or drag an `HTTP Resource` operator onto the canvas to turn the

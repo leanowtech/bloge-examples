@@ -221,6 +221,11 @@ const state = {
   currentDraftId: '',
   currentDraftRevision: 0,
   draftMessage: null,
+  visualCheck: {
+    message: 'Not checked',
+    level: 'info',
+    diagnostics: []
+  },
   operatorLibraries: [],
   selectedLibraryId: '',
   libraryImportText: pretty(SAMPLE_OPERATOR_LIBRARY),
@@ -419,6 +424,15 @@ function renderInputForm() {
         <div id="draft-status" class="draft-status" hidden></div>
       </div>
       <div id="selected-operator-editor" class="builder-panel"></div>
+      <div class="builder-panel">
+        <div class="panel-title">Server Check</div>
+        <div class="visual-check-actions">
+          <button id="validate-visual-draft" class="secondary compact" type="button">Validate</button>
+          <button id="compile-visual-draft" class="secondary compact" type="button">Compile</button>
+        </div>
+        <div id="visual-check-status" class="visual-check-status"></div>
+        <div id="visual-diagnostics" class="visual-diagnostics"></div>
+      </div>
       <div class="field">
         <label for="composer-dsl">DSL Preview</label>
         <textarea id="composer-dsl" class="code-editor" spellcheck="false"></textarea>
@@ -438,6 +452,7 @@ function renderInputForm() {
     renderOperatorLibraryControls();
     renderDraftControls();
     renderSelectedOperatorEditor();
+    renderVisualCheck();
     $('composer-dsl').addEventListener('input', (event) => {
       state.customDsl = event.target.value;
     });
@@ -445,6 +460,8 @@ function renderInputForm() {
       state.customContextText = event.target.value;
     });
     $('reset-composer').addEventListener('click', resetComposer);
+    $('validate-visual-draft').addEventListener('click', validateVisualDraft);
+    $('compile-visual-draft').addEventListener('click', compileVisualDraft);
     return;
   }
   if (state.selected.samplePresets?.length) {
@@ -707,6 +724,7 @@ function resetComposer() {
   state.currentDraftId = '';
   state.currentDraftRevision = 0;
   state.draftMessage = null;
+  state.visualCheck = { message: 'Not checked', level: 'info', diagnostics: [] };
   state.customDsl = builderToDsl(state.builder);
   state.lastGeneratedVisualDsl = '';
   state.customContextText = pretty(DEFAULT_COMPOSER_CONTEXT);
@@ -826,6 +844,106 @@ function renderLibraryStatus() {
 function setLibraryMessage(text, level = 'info') {
   state.libraryMessage = text ? { text, level } : null;
   renderLibraryStatus();
+}
+
+function renderVisualCheck() {
+  const status = $('visual-check-status');
+  const list = $('visual-diagnostics');
+  if (!status || !list) return;
+  const check = state.visualCheck || {};
+  status.textContent = check.message || 'Not checked';
+  status.className = `visual-check-status ${check.level || 'info'}`;
+  const diagnostics = check.diagnostics || [];
+  if (!diagnostics.length) {
+    list.innerHTML = '';
+    list.hidden = true;
+    return;
+  }
+  list.hidden = false;
+  list.innerHTML = diagnostics.map((diagnostic) => {
+    const level = String(diagnostic.level || 'INFO').toLowerCase();
+    const target = diagnostic.target ? ` · ${diagnostic.target}` : '';
+    const location = diagnostic.line >= 0 ? ` · ${diagnostic.line}:${diagnostic.column}` : '';
+    return `
+      <div class="visual-diagnostic ${escapeHtml(level)}">
+        <strong>${escapeHtml(diagnostic.code || diagnostic.level || 'visual.info')}</strong>
+        <span>${escapeHtml((diagnostic.message || '') + target + location)}</span>
+      </div>
+    `;
+  }).join('');
+}
+
+function setVisualCheck(message, level = 'info', diagnostics = []) {
+  state.visualCheck = {
+    message,
+    level,
+    diagnostics: normalizeDiagnostics(diagnostics)
+  };
+  renderVisualCheck();
+}
+
+function normalizeDiagnostics(diagnostics) {
+  return Array.isArray(diagnostics) ? diagnostics : [];
+}
+
+function visualCheckLevel(diagnostics, success = true) {
+  if (diagnostics.some((diagnostic) => String(diagnostic.level || '').toUpperCase() === 'ERROR')) {
+    return 'error';
+  }
+  if (diagnostics.some((diagnostic) => String(diagnostic.level || '').toUpperCase() === 'WARNING')) {
+    return 'warning';
+  }
+  return success ? 'success' : 'error';
+}
+
+async function validateVisualDraft() {
+  setVisualCheck('Validating...', 'info');
+  try {
+    const response = await fetch('/api/visual/drafts/validate', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(builderToVisualDraft(state.builder))
+    });
+    const payload = await response.json();
+    const diagnostics = normalizeDiagnostics(payload.diagnostics);
+    setVisualCheck(
+      payload.valid ? 'Valid visual graph.' : 'Visual graph has errors.',
+      visualCheckLevel(diagnostics, payload.valid),
+      diagnostics
+    );
+    $('output').textContent = pretty({ status: response.status, validation: payload });
+  } catch (error) {
+    setVisualCheck(error.message, 'error');
+  }
+}
+
+async function compileVisualDraft() {
+  setVisualCheck('Compiling...', 'info');
+  try {
+    const response = await fetch('/api/visual/drafts/compile', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(builderToVisualDraft(state.builder))
+    });
+    const payload = await response.json();
+    const diagnostics = normalizeDiagnostics(payload.diagnostics);
+    if (payload.dsl) {
+      state.customDsl = payload.dsl;
+      state.lastGeneratedVisualDsl = payload.dsl;
+      const dslBox = $('composer-dsl');
+      if (dslBox) {
+        dslBox.value = payload.dsl;
+      }
+    }
+    setVisualCheck(
+      payload.generated ? 'Compiled visual graph.' : 'Visual graph did not compile.',
+      visualCheckLevel(diagnostics, payload.generated),
+      diagnostics
+    );
+    $('output').textContent = pretty({ status: response.status, compile: payload });
+  } catch (error) {
+    setVisualCheck(error.message, 'error');
+  }
 }
 
 async function loadOperatorLibraries(options = {}) {
@@ -1913,7 +2031,7 @@ function builderNodeToDraftNode(node, builder) {
       id: node.id,
       operatorRef,
       label: labelForNode(node),
-      inputs: Object.fromEntries(Object.entries(paramInputs)
+      inputs: Object.fromEntries(nonBlankInputEntries(paramInputs)
         .map(([key, expression]) => [key, bindingFromExpression(expression)])),
       config: { timeout: '3s', retryAttempts: 1 },
       position: { x: node.x, y: node.y }
@@ -1953,7 +2071,7 @@ function builderNodeToDraftNode(node, builder) {
       id: node.id,
       operatorRef: node.paletteType,
       label: labelForNode(node),
-      inputs: Object.fromEntries(Object.entries(node.customInputs || {})
+      inputs: Object.fromEntries(nonBlankInputEntries(node.customInputs || {})
               .map(([key, expression]) => [key, bindingFromExpression(expression)])),
       config: {},
       position: { x: node.x, y: node.y }
@@ -1992,6 +2110,11 @@ function bindingFromExpression(expression) {
     return { kind: 'nodePath', nodeId: nodePath[1], path: nodePath[2] || '' };
   }
   return { kind: 'expression', expr: value || '{}' };
+}
+
+function nonBlankInputEntries(inputs) {
+  return Object.entries(inputs || {})
+    .filter(([, expression]) => String(expression || '').trim());
 }
 
 function quote(value) {
@@ -2940,6 +3063,15 @@ async function runCustomGraph() {
         })
   });
   const payload = await response.json();
+  if (useVisualDraft) {
+    const diagnostics = normalizeDiagnostics(payload.diagnostics);
+    const ok = Boolean(payload.validated && payload.compiled && payload.success);
+    setVisualCheck(
+      ok ? 'Run completed.' : (payload.validated === false ? 'Visual validation failed.' : 'Run returned errors.'),
+      visualCheckLevel(diagnostics, ok),
+      diagnostics
+    );
+  }
   if (payload.generatedDsl) {
     state.customDsl = payload.generatedDsl;
     state.lastGeneratedVisualDsl = payload.generatedDsl;
