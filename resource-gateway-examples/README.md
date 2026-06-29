@@ -87,10 +87,11 @@ as `resource:<resourceId>` virtual operators, so descriptor-backed APIs can be
 dragged as schema-aware business operators and lowered back to `httpResource` at
 runtime. Users can reposition existing nodes directly on the canvas, edit the
 selected operator's properties, connect output handles to input handles under
-schema type constraints, inspect the generated BLOGE DSL, run it with JSON context,
-and see diagnostics, output, graph highlighting, and the decision-table matrix
-update together. The built-in `.bloge` scenarios remain available in the left rail
-and continue to execute the public gateway endpoints.
+schema type constraints, save/load/delete H2-backed graph drafts, inspect the
+generated BLOGE DSL, run it with JSON context, and see diagnostics, output, graph
+highlighting, and the decision-table matrix update together. The built-in `.bloge`
+scenarios remain available in the left rail and continue to execute the public
+gateway endpoints.
 
 To see the decision-table UX, run the default composer graph, edit the `R3`
 decision row, or drag an `HTTP Resource` operator onto the canvas to turn the
@@ -107,9 +108,15 @@ Showcase metadata APIs:
 | `GET` | `/api/gateway/examples/scenarios/{graphName}/diagram` | Load the `bloge.visualLayout.v1` diagram for a scenario |
 | `POST` | `/api/gateway/examples/compose/run` | Compile and run submitted DSL with JSON context, returning diagnostics, output, layout, and decision-table metadata |
 | `GET` | `/api/visual/operators` | List native and resource-backed visual operator definitions |
+| `GET` | `/api/visual/drafts` | List stored visual graph drafts |
+| `POST` | `/api/visual/drafts` | Save a new visual graph draft with assigned id and revision |
+| `GET` | `/api/visual/drafts/{draftId}` | Load a stored visual graph draft |
+| `PUT` | `/api/visual/drafts/{draftId}` | Update a stored visual graph draft and increment revision |
+| `DELETE` | `/api/visual/drafts/{draftId}` | Delete a stored visual graph draft |
 | `POST` | `/api/visual/drafts/validate` | Validate a visual graph draft against operator schemas, typed port edges, and DAG constraints |
 | `POST` | `/api/visual/drafts/compile` | Lower a visual graph draft to BLOGE DSL |
 | `POST` | `/api/visual/drafts/run` | Validate, compile, and execute a transient visual graph draft |
+| `POST` | `/api/visual/drafts/{draftId}/run` | Execute a stored visual graph draft with submitted context |
 
 ### Orchestration endpoints (`UserDashboardController`)
 

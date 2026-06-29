@@ -152,6 +152,10 @@ const state = {
   eventSource: null,
   lastPayload: null,
   builder: createDefaultBuilder(),
+  drafts: [],
+  currentDraftId: '',
+  currentDraftRevision: 0,
+  draftMessage: null,
   draggingOperatorType: null,
   paletteDrag: null,
   nodeDrag: null,
@@ -184,6 +188,7 @@ function escapeHtml(value) {
 
 async function loadScenarios() {
   await loadVisualOperatorCatalog();
+  await loadDraftList({ render: false });
   const response = await fetch('/api/gateway/examples/scenarios');
   state.customContextText = pretty(DEFAULT_COMPOSER_CONTEXT);
   syncComposerFromBuilder({ render: false });
@@ -313,6 +318,16 @@ function renderInputForm() {
         <div id="operator-palette" class="operator-palette"></div>
         <div id="connection-status" class="connection-status" hidden></div>
       </div>
+      <div class="builder-panel">
+        <div class="panel-title">Drafts</div>
+        <div class="draft-controls">
+          <select id="draft-select" aria-label="Stored graph drafts"></select>
+          <button id="save-draft" class="secondary compact" type="button">Save</button>
+          <button id="load-draft" class="secondary compact" type="button">Load</button>
+          <button id="delete-draft" class="secondary compact danger" type="button">Delete</button>
+        </div>
+        <div id="draft-status" class="draft-status" hidden></div>
+      </div>
       <div id="selected-operator-editor" class="builder-panel"></div>
       <div class="field">
         <label for="composer-dsl">DSL Preview</label>
@@ -330,6 +345,7 @@ function renderInputForm() {
     $('composer-context').value = state.customContextText;
     renderOperatorPalette();
     renderConnectionStatus();
+    renderDraftControls();
     renderSelectedOperatorEditor();
     $('composer-dsl').addEventListener('input', (event) => {
       state.customDsl = event.target.value;
@@ -598,6 +614,9 @@ function payloadData(payload) {
 
 function resetComposer() {
   state.builder = createDefaultBuilder();
+  state.currentDraftId = '';
+  state.currentDraftRevision = 0;
+  state.draftMessage = null;
   state.customDsl = builderToDsl(state.builder);
   state.lastGeneratedVisualDsl = '';
   state.customContextText = pretty(DEFAULT_COMPOSER_CONTEXT);
@@ -657,6 +676,128 @@ function renderConnectionStatus() {
 function setConnectionMessage(text, level = 'info') {
   state.connectionMessage = text ? { text, level } : null;
   renderConnectionStatus();
+}
+
+function renderDraftControls() {
+  const select = $('draft-select');
+  if (!select) return;
+  const options = ['<option value="">New draft</option>']
+    .concat(state.drafts.map((draft) => {
+      const label = `${draft.graphName || draft.draftId} @${draft.revision || 0}`;
+      return `<option value="${escapeHtml(draft.draftId)}">${escapeHtml(label)}</option>`;
+    }));
+  select.innerHTML = options.join('');
+  select.value = state.currentDraftId || '';
+  select.addEventListener('change', () => {
+    state.currentDraftId = select.value;
+    const draft = state.drafts.find((item) => item.draftId === select.value);
+    state.currentDraftRevision = draft?.revision || 0;
+    state.draftMessage = null;
+    renderDraftControls();
+  });
+
+  const saveButton = $('save-draft');
+  const loadButton = $('load-draft');
+  const deleteButton = $('delete-draft');
+  if (saveButton) {
+    saveButton.addEventListener('click', saveCurrentDraft);
+  }
+  if (loadButton) {
+    loadButton.disabled = !state.currentDraftId;
+    loadButton.addEventListener('click', loadSelectedDraft);
+  }
+  if (deleteButton) {
+    deleteButton.disabled = !state.currentDraftId;
+    deleteButton.addEventListener('click', deleteSelectedDraft);
+  }
+  renderDraftStatus();
+}
+
+function renderDraftStatus() {
+  const target = $('draft-status');
+  if (!target) return;
+  const current = state.currentDraftId
+    ? `Current ${state.currentDraftId}@${state.currentDraftRevision || 0}`
+    : 'Unsaved draft';
+  const message = state.draftMessage?.text || current;
+  target.hidden = false;
+  target.textContent = message;
+  target.className = `draft-status ${state.draftMessage?.level || 'info'}`;
+}
+
+function setDraftMessage(text, level = 'info') {
+  state.draftMessage = text ? { text, level } : null;
+  renderDraftStatus();
+}
+
+async function loadDraftList(options = {}) {
+  try {
+    const response = await fetch('/api/visual/drafts');
+    if (!response.ok) {
+      throw new Error(`Draft list failed with ${response.status}`);
+    }
+    state.drafts = await response.json();
+    if (state.currentDraftId && !state.drafts.some((draft) => draft.draftId === state.currentDraftId)) {
+      state.currentDraftId = '';
+      state.currentDraftRevision = 0;
+    }
+    if (options.render !== false) {
+      renderDraftControls();
+    }
+  } catch (error) {
+    setDraftMessage(error.message, 'error');
+  }
+}
+
+async function saveCurrentDraft() {
+  const draft = builderToVisualDraft(state.builder);
+  const draftId = state.currentDraftId;
+  const response = await fetch(draftId ? `/api/visual/drafts/${encodeURIComponent(draftId)}` : '/api/visual/drafts', {
+    method: draftId ? 'PUT' : 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(draft)
+  });
+  if (!response.ok) {
+    setDraftMessage(`Save failed with ${response.status}`, 'error');
+    return;
+  }
+  const stored = await response.json();
+  state.currentDraftId = stored.draftId || '';
+  state.currentDraftRevision = stored.revision || 0;
+  setDraftMessage(`Saved ${state.currentDraftId}@${state.currentDraftRevision}.`, 'success');
+  await loadDraftList();
+}
+
+async function loadSelectedDraft() {
+  if (!state.currentDraftId) return;
+  const response = await fetch(`/api/visual/drafts/${encodeURIComponent(state.currentDraftId)}`);
+  if (!response.ok) {
+    setDraftMessage(`Load failed with ${response.status}`, 'error');
+    return;
+  }
+  const draft = await response.json();
+  state.builder = builderFromVisualDraft(draft);
+  state.currentDraftId = draft.draftId || '';
+  state.currentDraftRevision = draft.revision || 0;
+  state.lastPayload = null;
+  state.lastGeneratedVisualDsl = '';
+  syncComposerFromBuilder({ render: false });
+  setDraftMessage(`Loaded ${state.currentDraftId}@${state.currentDraftRevision}.`, 'success');
+  renderScenario();
+}
+
+async function deleteSelectedDraft() {
+  if (!state.currentDraftId || !confirm(`Delete draft ${state.currentDraftId}?`)) return;
+  const deletedId = state.currentDraftId;
+  const response = await fetch(`/api/visual/drafts/${encodeURIComponent(deletedId)}`, { method: 'DELETE' });
+  if (!response.ok) {
+    setDraftMessage(`Delete failed with ${response.status}`, 'error');
+    return;
+  }
+  state.currentDraftId = '';
+  state.currentDraftRevision = 0;
+  setDraftMessage(`Deleted ${deletedId}.`, 'success');
+  await loadDraftList();
 }
 
 function renderSelectedOperatorEditor() {
@@ -1183,6 +1324,8 @@ function builderToVisualDraft(builder = state.builder) {
   const layout = layoutFromBuilder(builder);
   return {
     schemaVersion: 'bloge.visualGraphDraft.v1',
+    draftId: state.currentDraftId || '',
+    revision: state.currentDraftRevision || 0,
     graphName: builder.graphName,
     tenantId: 'demo-tenant',
     namespace: 'local',
@@ -1198,6 +1341,138 @@ function builderToVisualDraft(builder = state.builder) {
     visualLayout: layout,
     output: { nodeId: composerOutputNode(), path: '' }
   };
+}
+
+function builderFromVisualDraft(draft) {
+  const layoutNodes = Object.fromEntries((draft.visualLayout?.nodes || [])
+    .map((node) => [node.id, node]));
+  const nodes = (draft.nodes || []).map((node) => builderNodeFromDraftNode(node, draft, layoutNodes));
+  const selectedId = nodes[0]?.id || null;
+  return {
+    graphName: draft.graphName || 'visualGraph',
+    selectedId,
+    nodes
+  };
+}
+
+function builderNodeFromDraftNode(node, draft, layoutNodes) {
+  const layoutNode = layoutNodes[node.id] || {};
+  const position = node.position || layoutNode.position || {};
+  const base = {
+    id: node.id,
+    x: Math.max(40, Math.round(position.x ?? 80)),
+    y: Math.max(80, Math.round(position.y ?? 210))
+  };
+  if (node.operatorRef?.startsWith('resource:') || node.operatorRef === 'httpResource') {
+    const resourceId = node.operatorRef?.startsWith('resource:')
+      ? node.operatorRef.slice('resource:'.length)
+      : String(node.config?.resourceId || 'loan-applicant-service.getProfile');
+    const spec = OPERATOR_TYPES[`resource:${resourceId}`] || OPERATOR_TYPES.httpResource;
+    const inputName = Object.keys(node.inputs || {})[0] || defaultParamNameForOperator(spec);
+    return {
+      ...base,
+      type: 'httpResource',
+      paletteType: OPERATOR_TYPES[`resource:${resourceId}`] ? `resource:${resourceId}` : '',
+      resourceId,
+      paramName: inputName,
+      applicantExpr: expressionFromBinding(node.inputs?.[inputName], draft)
+    };
+  }
+  if (node.operatorRef === 'bloge:decisionTable') {
+    const inputConfig = node.config?.inputs || {};
+    return {
+      ...base,
+      type: 'decisionTable',
+      paletteType: '',
+      hitPolicy: node.config?.hitPolicy || 'unique',
+      scoreSource: expressionFromConfig(inputConfig.score, draft) || 'ctx.score',
+      amountSource: expressionFromConfig(inputConfig.amount, draft) || 'ctx.amount',
+      rules: decisionRulesFromDraft(node)
+    };
+  }
+  if (node.operatorRef === 'bloge:transform') {
+    return {
+      ...base,
+      type: 'transform',
+      paletteType: '',
+      policyNode: policyNodeFromDraft(node, draft) || firstDecisionTableIdFromNodes(draft.nodes || [])
+    };
+  }
+  return {
+    ...base,
+    type: 'customOperator',
+    paletteType: node.operatorRef,
+    customInputs: Object.fromEntries(Object.entries(node.inputs || {})
+      .map(([key, binding]) => [key, expressionFromBinding(binding, draft)]))
+  };
+}
+
+function expressionFromConfig(value, draft) {
+  if (value && typeof value === 'object' && value.kind) {
+    return expressionFromBinding(value, draft);
+  }
+  return String(value || '');
+}
+
+function expressionFromBinding(binding, draft) {
+  if (!binding) {
+    return '';
+  }
+  if (binding.kind === 'contextPath') {
+    return `ctx.${binding.path || ''}`;
+  }
+  if (binding.kind === 'nodePath') {
+    const source = (draft.nodes || []).find((node) => node.id === binding.nodeId);
+    const payloadSegment = source?.operatorRef?.startsWith('resource:') ? '.payload' : '';
+    const pathSegment = binding.path ? `.${binding.path}` : '';
+    return `${binding.nodeId}.output${payloadSegment}${pathSegment}`;
+  }
+  if (binding.kind === 'expression') {
+    return binding.expr || '{}';
+  }
+  if (binding.kind === 'constant') {
+    return JSON.stringify(binding.value);
+  }
+  if (binding.kind === 'objectTemplate') {
+    const fields = Object.entries(binding.fields || {})
+      .map(([key, nested]) => `${key}: ${expressionFromBinding(nested, draft)}`)
+      .join(', ');
+    return `{ ${fields} }`;
+  }
+  return JSON.stringify(binding.value ?? null);
+}
+
+function decisionRulesFromDraft(node) {
+  const rules = Array.isArray(node.config?.rules) ? node.config.rules : [];
+  if (!rules.length) {
+    return defaultDecisionRules();
+  }
+  return rules.map((rule, index) => ({
+    id: rule.id || `R${index + 1}`,
+    score: rule.otherwise ? 'otherwise' : String(rule.conditions?.score || 'score >= 700'),
+    amount: rule.otherwise ? 'otherwise' : String(rule.conditions?.amount || 'amount <= 300000'),
+    decision: String(rule.output?.decision || 'matched'),
+    rate: Number(rule.output?.rate || 0),
+    maxTerm: Number(rule.output?.maxTerm || 0),
+    reviewLane: String(rule.output?.reviewLane || ''),
+    otherwise: Boolean(rule.otherwise)
+  }));
+}
+
+function policyNodeFromDraft(node, draft) {
+  const assignment = node.config?.assignments?.policy;
+  if (typeof assignment === 'string') {
+    const match = assignment.match(/^([A-Za-z_][A-Za-z0-9_]*)\.output/);
+    if (match) {
+      return match[1];
+    }
+  }
+  const edge = (draft.edges || []).find((item) => item.target?.nodeId === node.id);
+  return edge?.source?.nodeId || '';
+}
+
+function firstDecisionTableIdFromNodes(nodes) {
+  return nodes.find((node) => node.operatorRef === 'bloge:decisionTable')?.id || 'loanPolicy';
 }
 
 function builderNodeToDraftNode(node, builder) {

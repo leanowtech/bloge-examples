@@ -672,6 +672,45 @@ body.dragging-operator * {
   color: var(--red);
 }
 
+.draft-controls {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto auto;
+  gap: 6px;
+}
+
+.draft-controls select {
+  min-width: 0;
+  padding: 7px 8px;
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  background: var(--surface-subtle);
+  color: var(--text);
+}
+
+.draft-status {
+  min-height: 28px;
+  padding: 7px 8px;
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  background: var(--surface-subtle);
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 700;
+  overflow-wrap: anywhere;
+}
+
+.draft-status.success {
+  border-color: #86efac;
+  background: var(--green-soft);
+  color: var(--green);
+}
+
+.draft-status.error {
+  border-color: #fca5a5;
+  background: var(--red-soft);
+  color: var(--red);
+}
+
 .operator-card.resource {
   border-color: #93b4f5;
   background: var(--blue-soft);
