@@ -144,6 +144,51 @@ class GraphDraftValidatorTest {
     }
 
     @Test
+    void acceptsConstantBindingWhenValueMatchesTargetSchema() {
+        GraphDraftValidator validator = new GraphDraftValidator(
+                VisualCatalogTestSupport.catalogWithLibrary(
+                        VisualCatalogTestSupport.eligibilityLibrary("integer")));
+        GraphDraft draft = contextEligibilityDraft(graphInputSchema(
+                Map.of(
+                        "amount", Map.of("type", "number")
+                ),
+                List.of("amount")
+        ), Map.of(
+                "score", GraphDraft.Binding.constant(720),
+                "amount", GraphDraft.Binding.contextPath("amount")
+        ));
+
+        VisualValidationResult result = validator.validate(draft);
+
+        assertThat(result.valid()).isTrue();
+    }
+
+    @Test
+    void rejectsConstantBindingWhenValueDoesNotMatchTargetSchema() {
+        GraphDraftValidator validator = new GraphDraftValidator(
+                VisualCatalogTestSupport.catalogWithLibrary(
+                        VisualCatalogTestSupport.eligibilityLibrary("integer")));
+        GraphDraft draft = contextEligibilityDraft(graphInputSchema(
+                Map.of(
+                        "amount", Map.of("type", "number")
+                ),
+                List.of("amount")
+        ), Map.of(
+                "score", GraphDraft.Binding.constant("high"),
+                "amount", GraphDraft.Binding.contextPath("amount")
+        ));
+
+        VisualValidationResult result = validator.validate(draft);
+
+        assertThat(result.valid()).isFalse();
+        assertThat(result.diagnostics())
+                .anySatisfy(diagnostic -> {
+                    assertThat(diagnostic.code()).isEqualTo("visual.binding.typeMismatch");
+                    assertThat(diagnostic.message()).contains("Constant").contains("score").contains("integer");
+                });
+    }
+
+    @Test
     void rejectsContextPathBindingWhenGraphInputPathDoesNotExist() {
         GraphDraftValidator validator = new GraphDraftValidator(
                 VisualCatalogTestSupport.catalogWithLibrary(
@@ -452,6 +497,59 @@ class GraphDraftValidatorTest {
                 .anySatisfy(diagnostic -> {
                     assertThat(diagnostic.code()).isEqualTo("visual.binding.typeMismatch");
                     assertThat(diagnostic.message()).contains("string").contains("integer");
+                });
+    }
+
+    @Test
+    void acceptsObjectTemplateWhenNestedRequiredFieldsAreBound() {
+        GraphDraftValidator validator = new GraphDraftValidator(
+                VisualCatalogTestSupport.catalogWithLoanApplicantResourceAndLibrary(
+                        VisualCatalogTestSupport.nestedApplicantEligibilityLibrary()));
+        GraphDraft draft = nestedApplicantEligibilityDraft(
+                Map.of("applicant", new GraphDraft.Binding(
+                        "objectTemplate",
+                        null,
+                        "",
+                        "",
+                        "",
+                        "inputs",
+                        "applicant",
+                        "",
+                        Map.of("score", GraphDraft.Binding.constant(720))
+                )),
+                List.of());
+
+        VisualValidationResult result = validator.validate(draft);
+
+        assertThat(result.valid()).isTrue();
+    }
+
+    @Test
+    void validatesObjectTemplateConstantFieldsAgainstNestedTargetPath() {
+        GraphDraftValidator validator = new GraphDraftValidator(
+                VisualCatalogTestSupport.catalogWithLoanApplicantResourceAndLibrary(
+                        VisualCatalogTestSupport.nestedApplicantEligibilityLibrary()));
+        GraphDraft draft = nestedApplicantEligibilityDraft(
+                Map.of("applicant", new GraphDraft.Binding(
+                        "objectTemplate",
+                        null,
+                        "",
+                        "",
+                        "",
+                        "inputs",
+                        "applicant",
+                        "",
+                        Map.of("score", GraphDraft.Binding.constant("high"))
+                )),
+                List.of());
+
+        VisualValidationResult result = validator.validate(draft);
+
+        assertThat(result.valid()).isFalse();
+        assertThat(result.diagnostics())
+                .anySatisfy(diagnostic -> {
+                    assertThat(diagnostic.code()).isEqualTo("visual.binding.typeMismatch");
+                    assertThat(diagnostic.message()).contains("applicant.score").contains("integer");
                 });
     }
 

@@ -142,9 +142,29 @@ public class GraphDraftValidator {
                                            String portName,
                                            String inputName) {
         return node.inputs().entrySet().stream()
-                .anyMatch(entry -> satisfiesRequiredPath(targetInputName(entry.getKey(), entry.getValue()),
-                        inputName)
-                        && bindingTargetsPort(operator, entry.getValue(), portName, inputName));
+                .anyMatch(entry -> bindingSatisfiesRequiredPath(entry.getKey(), entry.getValue(),
+                        operator, portName, inputName));
+    }
+
+    private static boolean bindingSatisfiesRequiredPath(String inputKey,
+                                                        GraphDraft.Binding binding,
+                                                        OperatorDefinition operator,
+                                                        String portName,
+                                                        String requiredPath) {
+        String inputName = targetInputName(inputKey, binding);
+        if (satisfiesRequiredPath(inputName, requiredPath)
+                && bindingTargetsPort(operator, binding, portName, inputName)) {
+            return true;
+        }
+        if (!"objectTemplate".equals(binding.kind())) {
+            return false;
+        }
+        return binding.fields().entrySet().stream()
+                .anyMatch(entry -> {
+                    String nestedInputKey = inputName.isBlank() ? entry.getKey() : inputName + "." + entry.getKey();
+                    return bindingSatisfiesRequiredPath(nestedInputKey, entry.getValue(),
+                            operator, portName, requiredPath);
+                });
     }
 
     private static boolean satisfiesRequiredPath(String inputName, String requiredPath) {
@@ -204,6 +224,10 @@ public class GraphDraftValidator {
         if ("expression".equals(binding.kind())) {
             validateExpressionBinding(binding, inputName, targetOperator, inputSchema,
                     nodesById, operatorsByNodeId, targetPath, diagnostics);
+            return;
+        }
+        if ("constant".equals(binding.kind())) {
+            validateConstantBinding(binding, inputName, targetOperator, targetPath, diagnostics);
             return;
         }
         if (!"nodePath".equals(binding.kind())) {
@@ -300,6 +324,38 @@ public class GraphDraftValidator {
                     "Cannot bind graph input %s 'ctx.%s' to %s input '%s.%s'."
                             .formatted(schemaTypeLabel(sourceProperty), binding.path(),
                                     schemaTypeLabel(targetProperty), targetPort.get().name(), inputName),
+                    targetPath));
+        }
+    }
+
+    private static void validateConstantBinding(GraphDraft.Binding binding,
+                                                String inputName,
+                                                OperatorDefinition targetOperator,
+                                                String targetPath,
+                                                List<VisualDiagnostic> diagnostics) {
+        Optional<OperatorDefinition.Port> targetPort = resolveInputPort(targetOperator, binding.targetPort(),
+                inputName);
+        if (targetPort.isEmpty()) {
+            diagnostics.add(VisualDiagnostic.error("visual.binding.unknownTargetPort",
+                    "Binding target input '%s' must target a declared port on operator '%s'."
+                            .formatted(inputName, targetOperator.operatorRef()),
+                    targetPath));
+            return;
+        }
+
+        Map<String, Object> targetProperty = propertyAtPath(targetPort.get().schema(), inputName);
+        if (targetProperty == null) {
+            diagnostics.add(VisualDiagnostic.error("visual.binding.unknownTargetPath",
+                    "Target port '%s' does not accept path '%s'."
+                            .formatted(targetPort.get().name(), inputName),
+                    targetPath));
+            return;
+        }
+
+        if (!constantValueMatchesSchema(binding.value(), targetProperty)) {
+            diagnostics.add(VisualDiagnostic.error("visual.binding.typeMismatch",
+                    "Constant value for input '%s.%s' must be %s."
+                            .formatted(targetPort.get().name(), inputName, schemaTypeLabel(targetProperty)),
                     targetPath));
         }
     }
@@ -736,6 +792,68 @@ public class GraphDraftValidator {
     private static boolean allowsAdditionalProperties(Map<String, Object> schema) {
         Object additional = schema.get("additionalProperties");
         return Boolean.TRUE.equals(additional) || additional instanceof Map<?, ?>;
+    }
+
+    private static boolean constantValueMatchesSchema(Object value, Map<String, Object> schema) {
+        Object rawEnum = schema.get("enum");
+        if (rawEnum instanceof List<?> values && !values.contains(value)) {
+            return false;
+        }
+
+        String type = schemaType(schema);
+        if (type.isBlank() || "any".equals(type) || "opaque".equals(type)) {
+            return true;
+        }
+        if ("object".equals(type)) {
+            return constantObjectMatchesSchema(value, schema);
+        }
+        if ("array".equals(type)) {
+            return constantArrayMatchesSchema(value, schema);
+        }
+        if ("enum".equals(type)) {
+            Object rawValues = schema.get("values");
+            return !(rawValues instanceof List<?> values) || values.isEmpty() || values.contains(value);
+        }
+        return configValueMatchesType(value, type);
+    }
+
+    private static boolean constantObjectMatchesSchema(Object value, Map<String, Object> schema) {
+        if (!(value instanceof Map<?, ?> rawMap)) {
+            return false;
+        }
+        Map<String, Object> object = new LinkedHashMap<>();
+        rawMap.forEach((key, item) -> object.put(String.valueOf(key), item));
+
+        for (String required : requiredNamesOf(schema)) {
+            if (!object.containsKey(required) || object.get(required) == null) {
+                return false;
+            }
+        }
+
+        Map<String, Object> properties = propertiesOf(schema);
+        Object additional = schema.get("additionalProperties");
+        for (Map.Entry<String, Object> entry : object.entrySet()) {
+            Map<String, Object> property = objectProperty(properties.get(entry.getKey()));
+            if (property != null) {
+                if (!constantValueMatchesSchema(entry.getValue(), property)) {
+                    return false;
+                }
+            } else if (Boolean.FALSE.equals(additional)) {
+                return false;
+            } else if (additional instanceof Map<?, ?> additionalSchema
+                    && !constantValueMatchesSchema(entry.getValue(), objectProperty(additionalSchema))) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    private static boolean constantArrayMatchesSchema(Object value, Map<String, Object> schema) {
+        if (!(value instanceof List<?> list)) {
+            return false;
+        }
+        Map<String, Object> items = objectProperty(schema.get("items"));
+        return items == null || list.stream().allMatch(item -> constantValueMatchesSchema(item, items));
     }
 
     private record ExpressionReference(boolean matched, Map<String, Object> schema, String label) {

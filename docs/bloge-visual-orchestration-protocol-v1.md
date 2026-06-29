@@ -1030,6 +1030,7 @@ flowchart TD
 - target path 不存在。
 - contextPath 在严格 graphInputSchema 中不存在。
 - expression 引用的 `ctx.*` 或 `node.output.*` path 不存在。
+- constant 值不满足 target schema。
 - 类型不兼容且没有 adapter。
 - 纯引用 expression 的 source schema 与 target schema 不兼容。
 - `array<T>` 到 `array<U>` 时 item schema 不兼容。
