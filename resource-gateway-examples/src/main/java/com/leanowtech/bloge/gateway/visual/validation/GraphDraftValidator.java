@@ -15,12 +15,25 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 /**
  * Schema-aware validator for visual graph drafts.
  */
 @Service
 public class GraphDraftValidator {
+
+    private static final String IDENTIFIER_PATTERN = "[A-Za-z_][A-Za-z0-9_]*";
+    private static final String PATH_PATTERN = IDENTIFIER_PATTERN + "(?:\\." + IDENTIFIER_PATTERN + ")*";
+    private static final Pattern PURE_CONTEXT_REFERENCE = Pattern.compile("^ctx(?:\\.(" + PATH_PATTERN + "))?$");
+    private static final Pattern PURE_NODE_REFERENCE = Pattern.compile(
+            "^(" + IDENTIFIER_PATTERN + ")\\.output(?:\\.(" + PATH_PATTERN + "))?$");
+    private static final Pattern CONTEXT_REFERENCE = Pattern.compile(
+            "(?<![A-Za-z0-9_.])ctx(?:\\.(" + PATH_PATTERN + "))?(?![A-Za-z0-9_])");
+    private static final Pattern NODE_REFERENCE = Pattern.compile(
+            "(?<![A-Za-z0-9_.])(" + IDENTIFIER_PATTERN + ")\\.output(?:\\.(" + PATH_PATTERN + "))?"
+                    + "(?![A-Za-z0-9_])");
 
     private final VisualOperatorCatalog catalog;
 
@@ -188,6 +201,11 @@ public class GraphDraftValidator {
             validateContextPathBinding(binding, inputName, targetOperator, inputSchema, targetPath, diagnostics);
             return;
         }
+        if ("expression".equals(binding.kind())) {
+            validateExpressionBinding(binding, inputName, targetOperator, inputSchema,
+                    nodesById, operatorsByNodeId, targetPath, diagnostics);
+            return;
+        }
         if (!"nodePath".equals(binding.kind())) {
             return;
         }
@@ -284,6 +302,192 @@ public class GraphDraftValidator {
                                     schemaTypeLabel(targetProperty), targetPort.get().name(), inputName),
                     targetPath));
         }
+    }
+
+    private static void validateExpressionBinding(GraphDraft.Binding binding,
+                                                  String inputName,
+                                                  OperatorDefinition targetOperator,
+                                                  SchemaEnvelope inputSchema,
+                                                  Map<String, GraphDraft.DraftNode> nodesById,
+                                                  Map<String, OperatorDefinition> operatorsByNodeId,
+                                                  String targetPath,
+                                                  List<VisualDiagnostic> diagnostics) {
+        String expression = binding.expr().trim();
+        if (expression.isBlank()) {
+            return;
+        }
+
+        Optional<OperatorDefinition.Port> targetPort = resolveInputPort(targetOperator, binding.targetPort(),
+                inputName);
+        if (targetPort.isEmpty()) {
+            diagnostics.add(VisualDiagnostic.error("visual.binding.unknownTargetPort",
+                    "Binding target input '%s' must target a declared port on operator '%s'."
+                            .formatted(inputName, targetOperator.operatorRef()),
+                    targetPath));
+            return;
+        }
+
+        Map<String, Object> targetProperty = propertyAtPath(targetPort.get().schema(), inputName);
+        if (targetProperty == null) {
+            diagnostics.add(VisualDiagnostic.error("visual.binding.unknownTargetPath",
+                    "Target port '%s' does not accept path '%s'."
+                            .formatted(targetPort.get().name(), inputName),
+                    targetPath));
+            return;
+        }
+
+        ExpressionReference pureReference = resolvePureExpressionReference(expression, inputSchema,
+                nodesById, operatorsByNodeId, targetPath, diagnostics);
+        if (pureReference.matched()) {
+            if (pureReference.schema() != null && !schemasCompatible(pureReference.schema(), targetProperty)) {
+                diagnostics.add(VisualDiagnostic.error("visual.binding.typeMismatch",
+                        "Cannot bind expression '%s' %s to %s input '%s.%s'."
+                                .formatted(pureReference.label(), schemaTypeLabel(pureReference.schema()),
+                                        schemaTypeLabel(targetProperty), targetPort.get().name(), inputName),
+                        targetPath));
+            }
+            return;
+        }
+
+        validateExpressionReferences(expression, inputSchema, nodesById, operatorsByNodeId, targetPath, diagnostics);
+    }
+
+    private static ExpressionReference resolvePureExpressionReference(String expression,
+                                                                      SchemaEnvelope inputSchema,
+                                                                      Map<String, GraphDraft.DraftNode> nodesById,
+                                                                      Map<String, OperatorDefinition> operatorsByNodeId,
+                                                                      String targetPath,
+                                                                      List<VisualDiagnostic> diagnostics) {
+        Matcher context = PURE_CONTEXT_REFERENCE.matcher(expression);
+        if (context.matches()) {
+            String path = context.group(1) == null ? "" : context.group(1);
+            return new ExpressionReference(true, resolveContextReference(path, inputSchema, targetPath, diagnostics),
+                    path.isBlank() ? "ctx" : "ctx." + path);
+        }
+
+        Matcher node = PURE_NODE_REFERENCE.matcher(expression);
+        if (node.matches()) {
+            String nodeId = node.group(1);
+            String outputPath = node.group(2) == null ? "" : node.group(2);
+            return new ExpressionReference(true,
+                    resolveNodeReference(nodeId, outputPath, nodesById, operatorsByNodeId, targetPath, diagnostics),
+                    outputPath.isBlank() ? nodeId + ".output" : nodeId + ".output." + outputPath);
+        }
+
+        return new ExpressionReference(false, null, "");
+    }
+
+    private static void validateExpressionReferences(String expression,
+                                                     SchemaEnvelope inputSchema,
+                                                     Map<String, GraphDraft.DraftNode> nodesById,
+                                                     Map<String, OperatorDefinition> operatorsByNodeId,
+                                                     String targetPath,
+                                                     List<VisualDiagnostic> diagnostics) {
+        String searchable = withoutQuotedStrings(expression);
+        Set<String> seenReferences = new HashSet<>();
+
+        Matcher context = CONTEXT_REFERENCE.matcher(searchable);
+        while (context.find()) {
+            String path = context.group(1) == null ? "" : context.group(1);
+            if (seenReferences.add("ctx:" + path)) {
+                resolveContextReference(path, inputSchema, targetPath, diagnostics);
+            }
+        }
+
+        Matcher node = NODE_REFERENCE.matcher(searchable);
+        while (node.find()) {
+            String nodeId = node.group(1);
+            String outputPath = node.group(2) == null ? "" : node.group(2);
+            if (seenReferences.add("node:" + nodeId + ":" + outputPath)) {
+                resolveNodeReference(nodeId, outputPath, nodesById, operatorsByNodeId, targetPath, diagnostics);
+            }
+        }
+    }
+
+    private static Map<String, Object> resolveContextReference(String path,
+                                                               SchemaEnvelope inputSchema,
+                                                               String targetPath,
+                                                               List<VisualDiagnostic> diagnostics) {
+        Map<String, Object> sourceProperty = propertyAtPath(inputSchema, path);
+        if (sourceProperty == null) {
+            diagnostics.add(VisualDiagnostic.error("visual.binding.unknownContextPath",
+                    "Graph input path does not exist: %s".formatted(path.isBlank() ? "ctx" : "ctx." + path),
+                    targetPath));
+        }
+        return sourceProperty;
+    }
+
+    private static Map<String, Object> resolveNodeReference(String nodeId,
+                                                            String outputPath,
+                                                            Map<String, GraphDraft.DraftNode> nodesById,
+                                                            Map<String, OperatorDefinition> operatorsByNodeId,
+                                                            String targetPath,
+                                                            List<VisualDiagnostic> diagnostics) {
+        GraphDraft.DraftNode sourceNode = nodesById.get(nodeId);
+        OperatorDefinition sourceOperator = operatorsByNodeId.get(nodeId);
+        if (sourceNode == null || sourceOperator == null) {
+            diagnostics.add(VisualDiagnostic.error("visual.binding.unknownSource",
+                    "Expression source node does not exist: " + nodeId, targetPath));
+            return null;
+        }
+
+        OutputReference outputReference = outputReference(sourceOperator, outputPath);
+        Optional<OperatorDefinition.Port> sourcePort = resolveOutputPort(sourceOperator, outputReference.port());
+        if (sourcePort.isEmpty()) {
+            diagnostics.add(VisualDiagnostic.error("visual.binding.unknownSourcePort",
+                    "Expression source port '%s' is not declared by operator '%s'."
+                            .formatted(outputReference.port(), sourceOperator.operatorRef()),
+                    targetPath));
+            return null;
+        }
+
+        Map<String, Object> sourceProperty = propertyAtPath(sourcePort.get().schema(), outputReference.path());
+        if (sourceProperty == null) {
+            diagnostics.add(VisualDiagnostic.error("visual.binding.unknownOutputPath",
+                    "Expression source node '%s' port '%s' output path does not exist: %s"
+                            .formatted(nodeId, sourcePort.get().name(), outputReference.path()),
+                    targetPath));
+        }
+        return sourceProperty;
+    }
+
+    private static OutputReference outputReference(OperatorDefinition operator, String outputPath) {
+        if (outputPath == null || outputPath.isBlank()) {
+            return new OutputReference("", "");
+        }
+        String[] segments = outputPath.split("\\.", 2);
+        String first = segments[0];
+        String rest = segments.length == 2 ? segments[1] : "";
+        boolean firstNamesPort = operator.ports().outputs().stream()
+                .anyMatch(port -> port.name().equals(first));
+        return firstNamesPort ? new OutputReference(first, rest) : new OutputReference("", outputPath);
+    }
+
+    private static String withoutQuotedStrings(String expression) {
+        StringBuilder result = new StringBuilder(expression.length());
+        boolean quoted = false;
+        boolean escaped = false;
+        char quote = '\0';
+        for (int i = 0; i < expression.length(); i++) {
+            char current = expression.charAt(i);
+            if (quoted) {
+                result.append(' ');
+                if (escaped) {
+                    escaped = false;
+                } else if (current == '\\') {
+                    escaped = true;
+                } else if (current == quote) {
+                    quoted = false;
+                }
+            } else if (current == '"' || current == '\'') {
+                quoted = true;
+                quote = current;
+                result.append(' ');
+            } else {
+                result.append(current);
+            }
+        }
+        return result.toString();
     }
 
     private static Map<String, Object> propertyAtPath(SchemaEnvelope schema, String path) {
@@ -532,6 +736,12 @@ public class GraphDraftValidator {
     private static boolean allowsAdditionalProperties(Map<String, Object> schema) {
         Object additional = schema.get("additionalProperties");
         return Boolean.TRUE.equals(additional) || additional instanceof Map<?, ?>;
+    }
+
+    private record ExpressionReference(boolean matched, Map<String, Object> schema, String label) {
+    }
+
+    private record OutputReference(String port, String path) {
     }
 
     private static void validateConfig(GraphDraft.DraftNode node,

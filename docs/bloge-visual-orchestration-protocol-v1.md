@@ -568,7 +568,7 @@ MVP schema kind：
 | `constant` | `value` | value 类型满足 target schema |
 | `contextPath` | `path` | path 能从 graphInputSchema 推导，且推导 schema 与 target schema 兼容；无法推导时必须标记 dynamic/opaque |
 | `nodePath` | `nodeId`、`sourcePort`、`targetPort`、`targetPath`、`path` | 上游存在、端口存在、可达、source/target schema 兼容 |
-| `expression` | `expr` | 语法、引用、结果类型校验 |
+| `expression` | `expr` | 语法、引用、结果类型校验；示例实现必须至少阻断不存在的 `ctx.*` / `node.output.*` 引用，并对纯引用表达式执行 source/target schema 兼容校验 |
 | `objectTemplate` | `fields` | 每个字段递归校验 |
 | `secretRef` | `secretRef` | 权限和环境可用 |
 
@@ -1029,7 +1029,9 @@ flowchart TD
 - source path 不存在。
 - target path 不存在。
 - contextPath 在严格 graphInputSchema 中不存在。
+- expression 引用的 `ctx.*` 或 `node.output.*` path 不存在。
 - 类型不兼容且没有 adapter。
+- 纯引用 expression 的 source schema 与 target schema 不兼容。
 - `array<T>` 到 `array<U>` 时 item schema 不兼容。
 - node config 不满足 operator `configSchema`。
 
