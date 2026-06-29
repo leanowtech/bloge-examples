@@ -6,10 +6,14 @@ import com.leanowtech.bloge.gateway.visual.codegen.DslGenerationResult;
 import com.leanowtech.bloge.gateway.visual.codegen.GraphDraftDslGenerator;
 import com.leanowtech.bloge.gateway.visual.draft.GraphDraft;
 import com.leanowtech.bloge.gateway.visual.draft.InMemoryGraphDraftRepository;
+import com.leanowtech.bloge.gateway.visual.publication.InMemoryVisualGraphPublicationRepository;
+import com.leanowtech.bloge.gateway.visual.publication.VisualGraphPublicationResult;
 import com.leanowtech.bloge.gateway.visual.model.SchemaEnvelope;
 import com.leanowtech.bloge.gateway.visual.validation.GraphDraftValidator;
 
 import org.junit.jupiter.api.Test;
+import org.springframework.http.HttpStatus;
+import org.springframework.http.ResponseEntity;
 
 import java.util.List;
 import java.util.Map;
@@ -77,6 +81,63 @@ class VisualGraphDraftControllerTest {
                 .containsEntry("eligibility", catalog.find("risk:eligibility").orElseThrow().fingerprint());
     }
 
+    @Test
+    void publishStoredDraftCreatesImmutablePublication() {
+        DefaultVisualOperatorCatalog catalog = VisualCatalogTestSupport.catalogWithLibrary(
+                VisualCatalogTestSupport.eligibilityLibrary("integer"));
+        InMemoryGraphDraftRepository drafts = new InMemoryGraphDraftRepository();
+        InMemoryVisualGraphPublicationRepository publications = new InMemoryVisualGraphPublicationRepository();
+        VisualGraphDraftController controller = controllerWithCatalog(catalog, drafts, publications);
+        GraphDraft stored = controller.create(eligibilityDraft(graphInputSchema(
+                Map.of(
+                        "score", Map.of("type", "integer"),
+                        "amount", Map.of("type", "number")
+                )
+        )));
+
+        ResponseEntity<VisualGraphPublicationResult> response = controller.publish(stored.draftId());
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.CREATED);
+        VisualGraphPublicationResult result = response.getBody();
+        assertThat(result).isNotNull();
+        assertThat(result.published()).isTrue();
+        assertThat(result.publication().publicationId()).isNotBlank();
+        assertThat(result.publication().dsl()).contains("transform eligibility");
+        assertThat(result.publication().operatorSnapshots())
+                .extracting("operatorRef")
+                .containsExactly("risk:eligibility");
+        assertThat(result.publication().operatorFingerprints()).containsKey("eligibility");
+        assertThat(publications.find(result.publication().publicationId())).contains(result.publication());
+    }
+
+    @Test
+    void publishRejectsInvalidStoredDraft() {
+        DefaultVisualOperatorCatalog catalog = VisualCatalogTestSupport.catalogWithLibrary(
+                VisualCatalogTestSupport.eligibilityLibrary("integer"));
+        InMemoryVisualGraphPublicationRepository publications = new InMemoryVisualGraphPublicationRepository();
+        VisualGraphDraftController controller = controllerWithCatalog(
+                catalog,
+                new InMemoryGraphDraftRepository(),
+                publications
+        );
+        GraphDraft stored = controller.create(eligibilityDraft(graphInputSchema(
+                Map.of(
+                        "score", Map.of("type", "string"),
+                        "amount", Map.of("type", "number")
+                )
+        )));
+
+        ResponseEntity<VisualGraphPublicationResult> response = controller.publish(stored.draftId());
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+        assertThat(response.getBody()).isNotNull();
+        assertThat(response.getBody().published()).isFalse();
+        assertThat(response.getBody().diagnostics())
+                .extracting("code")
+                .contains("visual.binding.typeMismatch");
+        assertThat(publications.all()).isEmpty();
+    }
+
     private static VisualGraphDraftController controllerWithEligibilityLibrary() {
         DefaultVisualOperatorCatalog catalog = VisualCatalogTestSupport.catalogWithLibrary(
                 VisualCatalogTestSupport.eligibilityLibrary("integer"));
@@ -85,12 +146,19 @@ class VisualGraphDraftControllerTest {
 
     private static VisualGraphDraftController controllerWithCatalog(DefaultVisualOperatorCatalog catalog,
                                                                     InMemoryGraphDraftRepository repository) {
+        return controllerWithCatalog(catalog, repository, new InMemoryVisualGraphPublicationRepository());
+    }
+
+    private static VisualGraphDraftController controllerWithCatalog(DefaultVisualOperatorCatalog catalog,
+                                                                    InMemoryGraphDraftRepository repository,
+                                                                    InMemoryVisualGraphPublicationRepository publications) {
         return new VisualGraphDraftController(
                 repository,
                 new GraphDraftValidator(catalog),
                 new GraphDraftDslGenerator(catalog),
                 null,
-                catalog
+                catalog,
+                publications
         );
     }
 

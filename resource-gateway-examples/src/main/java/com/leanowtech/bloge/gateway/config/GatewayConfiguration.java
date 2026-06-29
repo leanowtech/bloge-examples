@@ -18,6 +18,8 @@ import com.leanowtech.bloge.gateway.visual.catalog.DatabaseOperatorLibraryRegist
 import com.leanowtech.bloge.gateway.visual.catalog.OperatorLibraryRegistry;
 import com.leanowtech.bloge.gateway.visual.draft.DatabaseGraphDraftRepository;
 import com.leanowtech.bloge.gateway.visual.draft.GraphDraftRepository;
+import com.leanowtech.bloge.gateway.visual.publication.DatabaseVisualGraphPublicationRepository;
+import com.leanowtech.bloge.gateway.visual.publication.VisualGraphPublicationRepository;
 import com.leanowtech.bloge.operators.http.HttpRequestInput;
 import com.leanowtech.bloge.operators.http.HttpRequestOperator;
 
@@ -179,6 +181,20 @@ public class GatewayConfiguration {
     public GraphDraftRepository graphDraftRepository(JdbcTemplate jdbc,
                                                      ObjectMapper objectMapper) {
         return new DatabaseGraphDraftRepository(jdbc, objectMapper);
+    }
+
+    /**
+     * Database-backed repository for immutable visual graph publications.
+     *
+     * @param jdbc JDBC template for H2 access
+     * @param objectMapper Jackson mapper for publication serialization
+     * @return visual graph publication repository
+     */
+    @Bean
+    @ConditionalOnMissingBean
+    public VisualGraphPublicationRepository visualGraphPublicationRepository(JdbcTemplate jdbc,
+                                                                             ObjectMapper objectMapper) {
+        return new DatabaseVisualGraphPublicationRepository(jdbc, objectMapper);
     }
 
     // ── Interceptors ────────────────────────────────────────────────────

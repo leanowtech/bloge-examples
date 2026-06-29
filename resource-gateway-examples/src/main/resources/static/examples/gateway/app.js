@@ -510,6 +510,7 @@ function renderInputForm() {
         <div class="visual-check-actions">
           <button id="validate-visual-draft" class="secondary compact" type="button">Validate</button>
           <button id="compile-visual-draft" class="secondary compact" type="button">Compile</button>
+          <button id="publish-visual-draft" class="secondary compact" type="button">Publish</button>
         </div>
         <div id="visual-check-status" class="visual-check-status"></div>
         <div id="visual-diagnostics" class="visual-diagnostics"></div>
@@ -545,6 +546,7 @@ function renderInputForm() {
     $('reset-composer').addEventListener('click', resetComposer);
     $('validate-visual-draft').addEventListener('click', validateVisualDraft);
     $('compile-visual-draft').addEventListener('click', compileVisualDraft);
+    $('publish-visual-draft').addEventListener('click', publishVisualDraft);
     return;
   }
   if (state.selected.samplePresets?.length) {
@@ -1051,6 +1053,35 @@ async function compileVisualDraft() {
   }
 }
 
+async function publishVisualDraft() {
+  setVisualCheck('Publishing...', 'info');
+  try {
+    let draftId = state.currentDraftId;
+    if (!draftId) {
+      const stored = await saveCurrentDraft();
+      draftId = stored?.draftId || '';
+    }
+    if (!draftId) {
+      setVisualCheck('Draft was not saved.', 'error');
+      return;
+    }
+    const response = await fetch(`/api/visual/drafts/${encodeURIComponent(draftId)}/publish`, {
+      method: 'POST'
+    });
+    const payload = await response.json();
+    const diagnostics = normalizeDiagnostics(payload.diagnostics);
+    const publication = payload.publication || {};
+    setVisualCheck(
+      payload.published ? `Published ${publication.publicationId || ''}.` : 'Visual graph was not published.',
+      visualCheckLevel(diagnostics, payload.published),
+      diagnostics
+    );
+    $('output').textContent = pretty({ status: response.status, publication: payload });
+  } catch (error) {
+    setVisualCheck(error.message, 'error');
+  }
+}
+
 async function loadOperatorLibraries(options = {}) {
   try {
     const response = await fetch('/admin/visual-operator-libraries');
@@ -1211,13 +1242,14 @@ async function saveCurrentDraft() {
   });
   if (!response.ok) {
     setDraftMessage(`Save failed with ${response.status}`, 'error');
-    return;
+    return null;
   }
   const stored = await response.json();
   state.currentDraftId = stored.draftId || '';
   state.currentDraftRevision = stored.revision || 0;
   setDraftMessage(`Saved ${state.currentDraftId}@${state.currentDraftRevision}.`, 'success');
   await loadDraftList();
+  return stored;
 }
 
 async function loadSelectedDraft() {

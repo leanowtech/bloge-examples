@@ -122,6 +122,9 @@ Each catalog operator exposes a server-computed fingerprint, and saved drafts
 store per-node `operatorFingerprints`; validation blocks compile/run when a
 draft was authored against an older schema/lowering fingerprint than the catalog
 currently exposes.
+Stored drafts can be published into immutable visual graph artifacts that freeze
+the generated DSL, draft snapshot, operator schema snapshots, fingerprints,
+layout, and validation/generation reports for audit or later promotion.
 The built-in `.bloge` scenarios remain available in the left rail and continue
 to execute the public gateway endpoints.
 
@@ -149,6 +152,9 @@ Showcase metadata APIs:
 | `POST` | `/api/visual/drafts/compile` | Validate a visual graph draft, then lower it to BLOGE DSL |
 | `POST` | `/api/visual/drafts/run` | Validate, compile, and execute a transient visual graph draft |
 | `POST` | `/api/visual/drafts/{draftId}/run` | Execute a stored visual graph draft with submitted context |
+| `POST` | `/api/visual/drafts/{draftId}/publish` | Validate, compile, and publish an immutable visual graph artifact |
+| `GET` | `/api/visual/publications` | List immutable visual graph publications |
+| `GET` | `/api/visual/publications/{publicationId}` | Load a published visual graph artifact |
 
 Visual run requests may pass `outputNode` to inspect a different node than the
 draft's saved output selection. In that case the response returns the override
@@ -386,6 +392,8 @@ Seven `.bloge` graphs live in `src/main/resources/bloge/gateway/`:
 | `GraphDraftValidator` | Validates operator references, operator fingerprint drift, graph input `contextPath` bindings, literal constants, expression references, required schema inputs, node config against `configSchema`, port-aware node bindings, typed port edges, DAG shape, and output schema selection |
 | `GraphDraftDslGenerator` | Lowers visual drafts into executable BLOGE DSL |
 | `VisualGraphRunService` | Reuses the dynamic BLOGE runner to validate, compile, and execute visual drafts |
+| `VisualGraphPublication` | Immutable published visual graph artifact with DSL, draft, operator schema snapshots, fingerprints, layout, and validation reports |
+| `DatabaseVisualGraphPublicationRepository` | H2-backed immutable publication repository |
 
 ### Expression evaluator (`gateway.expression`)
 
@@ -707,7 +715,7 @@ Isolated component tests, some with lightweight Spring slices or mocks.
 | `DatabaseResourceRegistryTest` | 11 | CRUD, H2 persistence, in-memory cache |
 | `ResourceDescriptorBootstrapTest` | 7 | Seeding, refresh behavior, idempotency |
 | `GatewayDslCompilationTest` | 7 | DSL parsing, graph loading |
-| `Visual*Test` | 20 | Visual operator projection, imported libraries, draft persistence, typed edge validation, DSL lowering, runtime smoke path |
+| `Visual*Test` | 78 | Visual operator projection, imported libraries, draft/publication persistence, typed edge validation, DSL lowering, runtime smoke path |
 
 ### Layer 3 — Orchestration tests
 

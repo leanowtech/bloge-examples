@@ -950,7 +950,50 @@ POST /api/visual/drafts/{draftId}/compile
 }
 ```
 
-### 10.6 试运行
+### 10.6 发布不可变 artifact
+
+```http
+POST /api/visual/drafts/{draftId}/publish
+```
+
+发布必须先执行 visual validation 和 DSL generation。存在 blocking diagnostic 时
+响应必须返回 `published=false`，不得创建 artifact。发布成功后 artifact 必须不可变，
+并至少冻结：
+
+- draft snapshot。
+- operator schema snapshots。
+- operator fingerprints。
+- visual layout。
+- generated BLOGE DSL。
+- validation/generation report。
+
+resource-gateway 示例将 artifact 存入 `visual_graph_publications`，只提供 list/get，
+不提供 update/delete。
+
+响应：
+
+```json
+{
+  "published": true,
+  "publication": {
+    "schemaVersion": "bloge.visualGraphPublication.v1",
+    "publicationId": "pub-01H...",
+    "draftId": "draft-01H...",
+    "draftRevision": 7,
+    "dsl": "graph customLoanPolicy { ... }",
+    "operatorFingerprints": {
+      "fetchApplicant": "sha256:..."
+    },
+    "validation": {
+      "valid": true,
+      "diagnostics": []
+    }
+  },
+  "diagnostics": []
+}
+```
+
+### 10.7 试运行
 
 ```http
 POST /api/visual/drafts/{draftId}/run
@@ -1101,6 +1144,7 @@ MVP 可以用 H2，但模型要按未来迁移设计。
 | `visual_resource_design_contract` | resourceId 到设计时 schema 的合同 |
 | `visual_graph_draft` | graph draft 当前版本 |
 | `visual_graph_draft_revision` | draft 历史 revision |
+| `visual_graph_publications` | 不可变 visual graph 发布 artifact |
 | `visual_graph_run` | 试运行记录 |
 | `visual_graph_run_node` | 节点级结果和状态 |
 
