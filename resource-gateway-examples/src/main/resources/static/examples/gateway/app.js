@@ -636,14 +636,13 @@ function builderEdges(builder = state.builder) {
 function builderInputBindings(node) {
   const spec = specForNode(node);
   if (node.type === 'httpResource') {
-    const inputName = node.paramName || defaultParamNameForOperator(spec);
-    return [{
+    return Object.entries(resourceParamInputs(node, spec)).map(([inputName, expression]) => ({
       inputName,
-      expression: node.applicantExpr,
+      expression,
       targetPort: spec.inputPort || 'params',
       targetPath: inputName,
       label: inputName
-    }];
+    }));
   }
   if (node.type === 'decisionTable') {
     return [
@@ -1072,6 +1071,36 @@ function renderSelectedOperatorEditor() {
     });
   }
 
+  for (const select of target.querySelectorAll('[data-binding-source]')) {
+    select.addEventListener('change', () => {
+      const source = sourceFromBindingValue(select.value);
+      const bindingTarget = bindingTargetFromElement(select);
+      if (!source || !bindingTarget) return;
+      applyConnection(source, bindingTarget);
+    });
+  }
+
+  for (const input of target.querySelectorAll('[data-binding-expression]')) {
+    input.addEventListener('input', () => {
+      const bindingTarget = bindingTargetFromElement(input);
+      if (!bindingTarget) return;
+      setExpressionForTargetInput(node, bindingTarget, input.value);
+      syncComposerFromBuilder({ render: false });
+      renderDiagram();
+    });
+  }
+
+  for (const button of target.querySelectorAll('[data-clear-binding]')) {
+    button.addEventListener('click', () => {
+      const bindingTarget = bindingTargetFromElement(button);
+      if (!bindingTarget) return;
+      setExpressionForTargetInput(node, bindingTarget, '');
+      syncComposerFromBuilder({ render: false });
+      renderSelectedOperatorEditor();
+      renderDiagram();
+    });
+  }
+
   for (const input of target.querySelectorAll('[data-rule-field]')) {
     input.addEventListener('input', () => {
       const rule = node.rules[Number(input.dataset.ruleIndex)];
@@ -1096,23 +1125,18 @@ function operatorEditorBody(node) {
       <div class="operator-fields">
         ${textField('Node', node.id, '', true)}
         ${textField('Resource ID', node.resourceId, 'resourceId')}
-        ${textField(`${readableName(node.paramName || 'param')} Expr`, node.applicantExpr, 'applicantExpr')}
       </div>
+      ${renderInputBindingsPanel(node)}
     `;
   }
   if (node.type === 'customOperator') {
     const spec = specForNode(node);
-    const properties = schemaProperties(spec.inputSchema);
-    const names = Object.keys(properties);
-    const fields = (names.length ? names : Object.keys(node.customInputs || {})).map((name) =>
-      customInputField(name, node.customInputs?.[name] || `ctx.${name}`, properties[name])
-    ).join('');
     return `
       <div class="operator-fields">
         ${textField('Node', node.id, '', true)}
         ${textField('Operator', spec.visualOperatorRef || node.paletteType, '', true)}
-        ${fields}
       </div>
+      ${renderInputBindingsPanel(node)}
     `;
   }
   if (node.type === 'decisionTable') {
@@ -1130,9 +1154,8 @@ function operatorEditorBody(node) {
     return `
       <div class="operator-fields">
         ${textField('Node', node.id, '', true)}
-        ${textField('Score Expr', node.scoreSource, 'scoreSource')}
-        ${textField('Amount Expr', node.amountSource, 'amountSource')}
       </div>
+      ${renderInputBindingsPanel(node)}
       <div class="rule-editor">
         <div class="rule-editor-title">
           <span>Rules</span>
@@ -1175,14 +1198,91 @@ function textField(label, value, field, disabled = false) {
   `;
 }
 
-function customInputField(name, value, property = {}) {
-  const type = property.type ? ` · ${property.type}` : '';
+function renderInputBindingsPanel(node) {
+  const targets = targetHandlesForNode(node);
+  if (!targets.length) {
+    return '';
+  }
   return `
-    <label>
-      <span>${escapeHtml(readableName(name) + type)}</span>
-      <input data-custom-input="${escapeHtml(name)}" value="${escapeHtml(value ?? '')}">
-    </label>
+    <div class="binding-panel">
+      <div class="binding-panel-title">
+        <span>Input Bindings</span>
+        <small>schema checked</small>
+      </div>
+      ${targets.map((target) => renderInputBindingRow(node, target)).join('')}
+    </div>
   `;
+}
+
+function renderInputBindingRow(node, target) {
+  const expression = expressionForTargetInput(node, target);
+  const status = bindingStatusForTarget(node, target, expression);
+  const selectedSource = connectionSourceFromExpression(expression);
+  const selectedValue = selectedSource ? bindingSourceValue(selectedSource) : '';
+  const candidates = sourceCandidatesForTarget(target);
+  const hasSelectedCandidate = selectedValue
+    && candidates.some((candidate) => bindingSourceValue(candidate.source) === selectedValue);
+  const staleOption = selectedValue && !hasSelectedCandidate
+    ? `<option value="${escapeHtml(selectedValue)}" selected disabled>${escapeHtml(endpointLabel(selectedSource))} (unavailable)</option>`
+    : '';
+  const options = [
+    `<option value="" ${selectedValue ? '' : 'selected'}>Manual expression</option>`,
+    staleOption,
+    ...candidates.map((candidate) => {
+      const value = bindingSourceValue(candidate.source);
+      const selected = value === selectedValue ? ' selected' : '';
+      const disabled = candidate.compatibility.ok ? '' : ' disabled';
+      const type = candidate.source.type ? ` · ${candidate.source.type}` : '';
+      const suffix = candidate.compatibility.ok ? '' : ` · ${candidate.compatibility.message}`;
+      return `<option value="${escapeHtml(value)}"${selected}${disabled}>${escapeHtml(endpointLabel(candidate.source) + type + suffix)}</option>`;
+    })
+  ].join('');
+  const type = target.type || schemaType(schemaAtPath(specForNode(node).inputSchema, target.path)) || 'any';
+  const required = target.required ? 'Required' : 'Optional';
+  return `
+    <div class="binding-row ${escapeHtml(status.level)}">
+      <div class="binding-row-head">
+        <div>
+          <strong>${escapeHtml(readableName(target.path || target.port))}</strong>
+          <span>${escapeHtml(type)} · ${escapeHtml(required)}</span>
+        </div>
+        <button
+          class="secondary compact"
+          type="button"
+          data-clear-binding
+          data-binding-port="${escapeHtml(target.port)}"
+          data-binding-path="${escapeHtml(target.path || '')}">
+          Clear
+        </button>
+      </div>
+      <select
+        data-binding-source
+        data-binding-port="${escapeHtml(target.port)}"
+        data-binding-path="${escapeHtml(target.path || '')}"
+        aria-label="${escapeHtml(readableName(target.path || target.port))} source">
+        ${options}
+      </select>
+      <input
+        data-binding-expression
+        data-binding-port="${escapeHtml(target.port)}"
+        data-binding-path="${escapeHtml(target.path || '')}"
+        value="${escapeHtml(expression)}"
+        placeholder="ctx.${escapeHtml(target.path || 'value')}">
+      <div class="binding-status">${escapeHtml(status.message)}</div>
+    </div>
+  `;
+}
+
+function bindingTargetFromElement(element) {
+  const node = selectedBuilderNode();
+  if (!node) {
+    return null;
+  }
+  const port = element.dataset.bindingPort || '';
+  const path = element.dataset.bindingPath || '';
+  return targetHandlesForNode(node).find((target) =>
+    target.port === port && (target.path || '') === path
+  ) || null;
 }
 
 function addDecisionRule(node) {
@@ -1247,12 +1347,14 @@ function createBuilderNode(type, x, y) {
     y: Math.max(80, Math.round(y))
   };
   if (type === 'httpResource' || resourceOperator) {
-    const paramName = defaultParamNameForOperator(spec);
+    const paramInputs = defaultResourceParamInputs(spec);
+    const paramName = Object.keys(paramInputs)[0] || defaultParamNameForOperator(spec);
     return {
       ...base,
       resourceId: spec.resourceId || 'loan-applicant-service.getProfile',
       paramName,
-      applicantExpr: `ctx.${paramName}`
+      applicantExpr: paramInputs[paramName] || `ctx.${paramName}`,
+      paramInputs
     };
   }
   if (type === 'decisionTable') {
@@ -1292,6 +1394,72 @@ function defaultInputExpressionsForOperator(spec) {
   const properties = schemaProperties(spec?.inputSchema);
   const names = required.length ? required : Object.keys(properties);
   return Object.fromEntries(names.map((name) => [name, `ctx.${name}`]));
+}
+
+function defaultResourceParamInputs(spec) {
+  const inputs = defaultInputExpressionsForOperator(spec);
+  if (Object.keys(inputs).length) {
+    return inputs;
+  }
+  const paramName = defaultParamNameForOperator(spec);
+  return { [paramName]: `ctx.${paramName}` };
+}
+
+function resourceParamInputs(node, spec = specForNode(node)) {
+  if (node.paramInputs && typeof node.paramInputs === 'object' && Object.keys(node.paramInputs).length) {
+    return { ...node.paramInputs };
+  }
+  const paramName = node.paramName || defaultParamNameForOperator(spec);
+  return { [paramName]: node.applicantExpr || `ctx.${paramName}` };
+}
+
+function setResourceParamExpression(node, name, expression) {
+  const spec = specForNode(node);
+  node.paramInputs = {
+    ...resourceParamInputs(node, spec),
+    [name]: expression
+  };
+  node.paramName = name;
+  node.applicantExpr = expression;
+}
+
+function expressionForTargetInput(node, target) {
+  if (node.type === 'httpResource') {
+    return resourceParamInputs(node, specForNode(node))[target.path] || '';
+  }
+  if (node.type === 'decisionTable') {
+    return target.path === 'amount' ? node.amountSource : node.scoreSource;
+  }
+  if (node.type === 'customOperator') {
+    return node.customInputs?.[target.path] || '';
+  }
+  if (node.type === 'transform') {
+    return node.policyNode ? `${node.policyNode}.output` : '';
+  }
+  return '';
+}
+
+function setExpressionForTargetInput(node, target, expression) {
+  if (node.type === 'httpResource') {
+    setResourceParamExpression(node, target.path || defaultParamNameForOperator(specForNode(node)), expression);
+  } else if (node.type === 'decisionTable') {
+    if (target.path === 'amount') {
+      node.amountSource = expression;
+    } else {
+      node.scoreSource = expression;
+    }
+  } else if (node.type === 'customOperator') {
+    node.customInputs = node.customInputs || {};
+    node.customInputs[target.path] = expression;
+  } else if (node.type === 'transform') {
+    const source = connectionSourceFromExpression(expression);
+    node.policyNode = source?.nodeId || node.policyNode;
+  }
+}
+
+function requiredInputNames(spec) {
+  const required = spec?.inputSchema?.schema?.required;
+  return Array.isArray(required) ? required : [];
 }
 
 function schemaProperties(schemaEnvelope) {
@@ -1358,7 +1526,11 @@ function deleteSelectedBuilderNode() {
 function applyResourceDefaults(resourceNode) {
   const decisionNode = state.builder.nodes.find((node) => node.type === 'decisionTable');
   if (decisionNode) {
-    decisionNode.scoreSource = `${resourceNode.id}.output.payload.score`;
+    const scoreTarget = targetHandlesForNode(decisionNode).find((target) => target.path === 'score');
+    const scoreSource = preferredSourceExpressionForTarget(resourceNode, scoreTarget, ['score']);
+    if (scoreSource) {
+      decisionNode.scoreSource = scoreSource;
+    }
     decisionNode.amountSource = 'ctx.requestedAmount';
   }
   let context;
@@ -1367,10 +1539,27 @@ function applyResourceDefaults(resourceNode) {
   } catch {
     context = {};
   }
-  const paramName = resourceNode.paramName || 'applicantId';
-  context[paramName] = context[paramName] || sampleValueForParam(paramName);
+  const paramNames = Object.keys(resourceParamInputs(resourceNode, specForNode(resourceNode)));
+  for (const paramName of paramNames.length ? paramNames : [resourceNode.paramName || 'applicantId']) {
+    context[paramName] = context[paramName] || sampleValueForParam(paramName);
+  }
   context.requestedAmount = context.requestedAmount || 450000;
   state.customContextText = pretty(context);
+}
+
+function preferredSourceExpressionForTarget(sourceNode, target, preferredPaths = []) {
+  if (!sourceNode || !target) {
+    return '';
+  }
+  const compatible = sourceHandlesForNode(sourceNode)
+    .filter((source) => connectionCompatibility(source, target).ok);
+  for (const path of preferredPaths) {
+    const preferred = compatible.find((source) => source.path === path);
+    if (preferred) {
+      return expressionForConnectionSource(preferred);
+    }
+  }
+  return '';
 }
 
 function sampleValueForParam(paramName) {
@@ -1492,8 +1681,11 @@ function builderToDsl(builder) {
 
 function nodeToDsl(node, builder) {
   if (node.type === 'httpResource') {
-    const paramName = node.paramName || 'applicantId';
-    return `  node ${node.id} : httpResource {\n    input {\n      resourceId = ${quote(node.resourceId)}\n      params = { ${paramName}: ${node.applicantExpr || `ctx.${paramName}`} }\n    }\n    timeout = 3s\n    retry = { attempts: 1, backoff: 200ms }\n  }`;
+    const params = resourceParamInputs(node, specForNode(node));
+    const paramBody = Object.entries(params)
+      .map(([name, expression]) => `${name}: ${expression || 'null'}`)
+      .join(', ');
+    return `  node ${node.id} : httpResource {\n    input {\n      resourceId = ${quote(node.resourceId)}\n      params = { ${paramBody} }\n    }\n    timeout = 3s\n    retry = { attempts: 1, backoff: 200ms }\n  }`;
   }
   if (node.type === 'decisionTable') {
     const rules = node.rules.map((rule) => {
@@ -1598,14 +1790,20 @@ function builderNodeFromDraftNode(node, draft, layoutNodes) {
       ? node.operatorRef.slice('resource:'.length)
       : String(node.config?.resourceId || 'loan-applicant-service.getProfile');
     const spec = OPERATOR_TYPES[`resource:${resourceId}`] || OPERATOR_TYPES.httpResource;
-    const inputName = Object.keys(node.inputs || {})[0] || defaultParamNameForOperator(spec);
+    const paramInputs = Object.fromEntries(Object.entries(node.inputs || {})
+      .map(([key, binding]) => [key, expressionFromBinding(binding, draft)]));
+    if (!Object.keys(paramInputs).length) {
+      Object.assign(paramInputs, defaultResourceParamInputs(spec));
+    }
+    const inputName = Object.keys(paramInputs)[0] || defaultParamNameForOperator(spec);
     return {
       ...base,
       type: 'httpResource',
       paletteType: OPERATOR_TYPES[`resource:${resourceId}`] ? `resource:${resourceId}` : '',
       resourceId,
       paramName: inputName,
-      applicantExpr: expressionFromBinding(node.inputs?.[inputName], draft)
+      applicantExpr: paramInputs[inputName] || `ctx.${inputName}`,
+      paramInputs
     };
   }
   if (node.operatorRef === 'bloge:decisionTable') {
@@ -1707,7 +1905,7 @@ function firstDecisionTableIdFromNodes(nodes) {
 
 function builderNodeToDraftNode(node, builder) {
   if (node.type === 'httpResource') {
-    const paramName = node.paramName || 'applicantId';
+    const paramInputs = resourceParamInputs(node, specForNode(node));
     const operatorRef = node.paletteType?.startsWith('resource:') && node.paletteType.slice('resource:'.length) === node.resourceId
       ? node.paletteType
       : `resource:${node.resourceId}`;
@@ -1715,9 +1913,8 @@ function builderNodeToDraftNode(node, builder) {
       id: node.id,
       operatorRef,
       label: labelForNode(node),
-      inputs: {
-        [paramName]: bindingFromExpression(node.applicantExpr || `ctx.${paramName}`)
-      },
+      inputs: Object.fromEntries(Object.entries(paramInputs)
+        .map(([key, expression]) => [key, bindingFromExpression(expression)])),
       config: { timeout: '3s', retryAttempts: 1 },
       position: { x: node.x, y: node.y }
     };
@@ -2074,28 +2271,33 @@ function sourceHandlesForNode(node) {
 function targetHandlesForNode(node) {
   const spec = specForNode(node);
   if (node.type === 'httpResource') {
-    const path = node.paramName || defaultParamNameForOperator(spec);
-    return [{
+    const properties = schemaProperties(spec.inputSchema);
+    const names = Object.keys(properties).length ? Object.keys(properties) : Object.keys(resourceParamInputs(node, spec));
+    const required = requiredInputNames(spec);
+    return names.map((path) => ({
       nodeId: node.id,
       port: spec.inputPort || 'params',
       path,
-      type: schemaType(schemaProperties(spec.inputSchema)[path])
-    }];
+      type: schemaType(properties[path]),
+      required: required.includes(path)
+    }));
   }
   if (node.type === 'decisionTable') {
     return [
-      { nodeId: node.id, port: spec.inputPort || 'inputs', path: 'score', type: 'number' },
-      { nodeId: node.id, port: spec.inputPort || 'inputs', path: 'amount', type: 'number' }
+      { nodeId: node.id, port: spec.inputPort || 'inputs', path: 'score', type: 'number', required: true },
+      { nodeId: node.id, port: spec.inputPort || 'inputs', path: 'amount', type: 'number', required: true }
     ];
   }
   if (node.type === 'customOperator') {
     const properties = schemaProperties(spec.inputSchema);
     const names = Object.keys(properties).length ? Object.keys(properties) : Object.keys(node.customInputs || {});
+    const required = requiredInputNames(spec);
     return names.map((path) => ({
       nodeId: node.id,
       port: spec.inputPort || 'inputs',
       path,
-      type: schemaType(properties[path])
+      type: schemaType(properties[path]),
+      required: required.includes(path)
     }));
   }
   return [{
@@ -2108,6 +2310,83 @@ function targetHandlesForNode(node) {
 
 function schemaType(schema) {
   return schema?.type ? String(schema.type) : '';
+}
+
+function sourceCandidatesForTarget(target) {
+  const candidates = [];
+  for (const node of state.builder.nodes) {
+    if (node.id === target.nodeId) {
+      continue;
+    }
+    for (const source of sourceHandlesForNode(node)) {
+      candidates.push({
+        source,
+        compatibility: connectionCompatibility(source, target)
+      });
+    }
+  }
+  return candidates;
+}
+
+function bindingStatusForTarget(node, target, expression) {
+  const value = String(expression || '').trim();
+  if (!value) {
+    return target.required
+      ? { level: 'error', message: 'Required input is not bound.' }
+      : { level: 'info', message: 'Optional input is empty.' };
+  }
+  const source = connectionSourceFromExpression(value);
+  if (!source) {
+    return { level: 'info', message: 'Manual expression; schema can be checked after it targets a port.' };
+  }
+  const sourceNode = state.builder.nodes.find((item) => item.id === source.nodeId);
+  if (!sourceNode) {
+    return { level: 'error', message: `Source node '${source.nodeId}' does not exist.` };
+  }
+  const sourceHandle = sourceHandlesForNode(sourceNode).find((handle) =>
+    handle.port === source.port && (handle.path || '') === (source.path || '')
+  );
+  if (!sourceHandle) {
+    return { level: 'error', message: `Source path '${source.path || source.port}' is not exposed.` };
+  }
+  const compatibility = connectionCompatibility(sourceHandle, target);
+  if (!compatibility.ok) {
+    return { level: 'error', message: compatibility.message };
+  }
+  return { level: 'success', message: `Bound to ${endpointLabel(sourceHandle)}.` };
+}
+
+function bindingSourceValue(source) {
+  return encodeURIComponent(JSON.stringify({
+    nodeId: source.nodeId,
+    port: source.port,
+    path: source.path || ''
+  }));
+}
+
+function sourceFromBindingValue(value) {
+  if (!value) {
+    return null;
+  }
+  try {
+    const parsed = JSON.parse(decodeURIComponent(value));
+    const node = state.builder.nodes.find((item) => item.id === parsed.nodeId);
+    if (!node) {
+      return parsed;
+    }
+    return sourceHandlesForNode(node).find((handle) =>
+      handle.port === parsed.port && (handle.path || '') === (parsed.path || '')
+    ) || parsed;
+  } catch {
+    return null;
+  }
+}
+
+function endpointLabel(endpoint) {
+  if (!endpoint) {
+    return '';
+  }
+  return `${endpoint.nodeId}.${endpoint.path || endpoint.port}`;
 }
 
 function schemaAtPath(schemaEnvelope, path) {
@@ -2447,8 +2726,7 @@ function applyConnection(source, target) {
   if (!node) return;
   const expression = expressionForConnectionSource(source);
   if (node.type === 'httpResource') {
-    node.paramName = target.path || node.paramName || defaultParamNameForOperator(specForNode(node));
-    node.applicantExpr = expression;
+    setResourceParamExpression(node, target.path || defaultParamNameForOperator(specForNode(node)), expression);
   } else if (node.type === 'decisionTable') {
     if (target.path === 'amount') {
       node.amountSource = expression;
