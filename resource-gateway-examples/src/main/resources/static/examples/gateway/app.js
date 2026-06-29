@@ -1,4 +1,5 @@
 const COMPOSER_GRAPH = '__composer';
+const CONTEXT_SOURCE_ID = '__ctx';
 
 const DEFAULT_COMPOSER_DSL = `graph customLoanPolicy {
   decision_table loanPolicy(
@@ -520,6 +521,7 @@ function renderInputForm() {
     });
     $('composer-context').addEventListener('input', (event) => {
       state.customContextText = event.target.value;
+      renderSelectedOperatorEditor();
     });
     $('reset-composer').addEventListener('click', resetComposer);
     $('validate-visual-draft').addEventListener('click', validateVisualDraft);
@@ -683,7 +685,7 @@ function builderEdges(builder = state.builder) {
   for (const node of builder.nodes) {
     for (const binding of builderInputBindings(node)) {
       const source = connectionSourceFromExpression(binding.expression, builder);
-      if (!source) continue;
+      if (!source || source.nodeId === CONTEXT_SOURCE_ID) continue;
       add({
         source: source.nodeId,
         target: node.id,
@@ -756,6 +758,10 @@ function builderInputBindings(node) {
 
 function connectionSourceFromExpression(expression, builder = state.builder) {
   const value = String(expression || '').trim();
+  const contextMatch = value.match(/^ctx(?:\.(.+))?$/);
+  if (contextMatch) {
+    return contextSourceForPath(contextMatch[1] || '', builder);
+  }
   const outputMatch = value.match(/^([A-Za-z_][A-Za-z0-9_]*)\.output(?:\..+)?$/);
   if (outputMatch) {
     const sourceNode = builder.nodes.find((node) => node.id === outputMatch[1]);
@@ -2273,6 +2279,7 @@ function builderToVisualDraft(builder = state.builder) {
     namespace: 'local',
     environment: 'browser',
     status: 'DRAFT',
+    inputSchema: currentGraphInputSchema(builder),
     nodes: builder.nodes.map((node) => builderNodeToDraftNode(node, builder)),
     edges: builderEdges(builder).map((edge) => ({
       id: `${edge.source}:${edge.sourcePort || ''}.${edge.sourcePath || ''}->${edge.target}:${edge.targetPort || ''}.${edge.targetPath || ''}`,
@@ -2292,6 +2299,7 @@ function builderFromVisualDraft(draft) {
   const selectedId = nodes[0]?.id || null;
   return {
     graphName: draft.graphName || 'visualGraph',
+    inputSchema: draft.inputSchema || null,
     selectedId,
     nodes
   };
@@ -2897,7 +2905,10 @@ function schemaType(schema) {
 }
 
 function sourceCandidatesForTarget(target) {
-  const candidates = [];
+  const candidates = contextSourceHandles().map((source) => ({
+    source,
+    compatibility: connectionCompatibility(source, target)
+  }));
   for (const node of state.builder.nodes) {
     if (node.id === target.nodeId) {
       continue;
@@ -2922,6 +2933,13 @@ function bindingStatusForTarget(node, target, expression) {
   const source = connectionSourceFromExpression(value);
   if (!source) {
     return { level: 'info', message: 'Manual expression; schema can be checked after it targets a port.' };
+  }
+  if (source.nodeId === CONTEXT_SOURCE_ID) {
+    const compatibility = connectionCompatibility(source, target);
+    if (!compatibility.ok) {
+      return { level: 'error', message: compatibility.message };
+    }
+    return { level: 'success', message: `Bound to ${endpointLabel(source)}.` };
   }
   const sourceNode = state.builder.nodes.find((item) => item.id === source.nodeId);
   if (!sourceNode) {
@@ -2954,6 +2972,9 @@ function sourceFromBindingValue(value) {
   }
   try {
     const parsed = JSON.parse(decodeURIComponent(value));
+    if (parsed.nodeId === CONTEXT_SOURCE_ID) {
+      return contextSourceForPath(parsed.path || '');
+    }
     const node = state.builder.nodes.find((item) => item.id === parsed.nodeId);
     if (!node) {
       return parsed;
@@ -2969,6 +2990,9 @@ function sourceFromBindingValue(value) {
 function endpointLabel(endpoint) {
   if (!endpoint) {
     return '';
+  }
+  if (endpoint.nodeId === CONTEXT_SOURCE_ID) {
+    return endpoint.path ? `ctx.${endpoint.path}` : 'ctx';
   }
   return `${endpoint.nodeId}.${endpoint.path || endpoint.port}`;
 }
@@ -2992,6 +3016,79 @@ function schemaAtPath(schemaEnvelope, path) {
 function allowsAdditionalProperties(schema) {
   return schema?.additionalProperties === true
     || (schema?.additionalProperties && typeof schema.additionalProperties === 'object');
+}
+
+function currentGraphInputSchema(builder = state.builder) {
+  return builder?.inputSchema || schemaEnvelopeFromContextText(state.customContextText);
+}
+
+function schemaEnvelopeFromContextText(text) {
+  try {
+    const value = JSON.parse(text || '{}');
+    if (value && typeof value === 'object' && !Array.isArray(value)) {
+      return {
+        format: 'json-schema',
+        version: '2020-12',
+        schema: schemaFromValue(value)
+      };
+    }
+  } catch {
+    // Invalid JSON while editing should not make the draft impossible to save.
+  }
+  return {
+    format: 'json-schema',
+    version: '2020-12',
+    schema: { type: 'object', additionalProperties: true }
+  };
+}
+
+function schemaFromValue(value) {
+  if (value === null) return { type: 'null' };
+  if (Array.isArray(value)) {
+    return {
+      type: 'array',
+      items: value.length ? schemaFromValue(value[0]) : { type: 'any' }
+    };
+  }
+  if (typeof value === 'object') {
+    const properties = {};
+    for (const [key, item] of Object.entries(value)) {
+      properties[key] = schemaFromValue(item);
+    }
+    return {
+      type: 'object',
+      properties,
+      required: Object.keys(properties),
+      additionalProperties: false
+    };
+  }
+  if (typeof value === 'number') {
+    return { type: Number.isInteger(value) ? 'integer' : 'number' };
+  }
+  if (typeof value === 'boolean') return { type: 'boolean' };
+  return { type: 'string' };
+}
+
+function contextSourceHandles(builder = state.builder) {
+  const inputSchema = currentGraphInputSchema(builder);
+  return schemaFieldDescriptors(inputSchema).map((field) => ({
+    nodeId: CONTEXT_SOURCE_ID,
+    port: 'ctx',
+    path: field.path,
+    type: schemaType(field.schema),
+    schema: field.schema
+  }));
+}
+
+function contextSourceForPath(path, builder = state.builder) {
+  const schema = schemaAtPath(currentGraphInputSchema(builder), path);
+  return {
+    nodeId: CONTEXT_SOURCE_ID,
+    port: 'ctx',
+    path: path || '',
+    type: schemaType(schema),
+    schema
+  };
 }
 
 function connectionCompatibility(source, target) {
@@ -3350,6 +3447,9 @@ function applyConnection(source, target) {
 }
 
 function expressionForConnectionSource(source) {
+  if (source.nodeId === CONTEXT_SOURCE_ID) {
+    return source.path ? `ctx.${source.path}` : 'ctx';
+  }
   const payloadSegment = source.port && source.port !== 'output' ? `.${source.port}` : '';
   const pathSegment = source.path ? `.${source.path}` : '';
   return `${source.nodeId}.output${payloadSegment}${pathSegment}`;

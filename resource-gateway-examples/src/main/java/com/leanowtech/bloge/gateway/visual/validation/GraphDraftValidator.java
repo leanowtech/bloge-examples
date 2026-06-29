@@ -161,7 +161,8 @@ public class GraphDraftValidator {
             }
             for (Map.Entry<String, GraphDraft.Binding> input : node.inputs().entrySet()) {
                 String inputName = targetInputName(input.getKey(), input.getValue());
-                validateBinding(input.getValue(), inputName, targetOperator, nodesById, operatorsByNodeId,
+                validateBinding(input.getValue(), inputName, targetOperator, draft.inputSchema(),
+                        nodesById, operatorsByNodeId,
                         "/nodes/" + i + "/inputs/" + input.getKey(), diagnostics);
             }
         }
@@ -170,6 +171,7 @@ public class GraphDraftValidator {
     private static void validateBinding(GraphDraft.Binding binding,
                                         String inputName,
                                         OperatorDefinition targetOperator,
+                                        SchemaEnvelope inputSchema,
                                         Map<String, GraphDraft.DraftNode> nodesById,
                                         Map<String, OperatorDefinition> operatorsByNodeId,
                                         String targetPath,
@@ -177,9 +179,13 @@ public class GraphDraftValidator {
         if ("objectTemplate".equals(binding.kind())) {
             binding.fields().forEach((key, nested) -> {
                 String nestedInputName = inputName.isBlank() ? key : inputName + "." + key;
-                validateBinding(nested, nestedInputName, targetOperator, nodesById,
+                validateBinding(nested, nestedInputName, targetOperator, inputSchema, nodesById,
                         operatorsByNodeId, targetPath + "/" + key, diagnostics);
             });
+            return;
+        }
+        if ("contextPath".equals(binding.kind())) {
+            validateContextPathBinding(binding, inputName, targetOperator, inputSchema, targetPath, diagnostics);
             return;
         }
         if (!"nodePath".equals(binding.kind())) {
@@ -234,6 +240,47 @@ public class GraphDraftValidator {
             diagnostics.add(VisualDiagnostic.error("visual.binding.typeMismatch",
                     "Cannot bind %s output '%s.%s' to %s input '%s.%s'."
                             .formatted(schemaTypeLabel(sourceProperty), sourcePort.get().name(), binding.path(),
+                                    schemaTypeLabel(targetProperty), targetPort.get().name(), inputName),
+                    targetPath));
+        }
+    }
+
+    private static void validateContextPathBinding(GraphDraft.Binding binding,
+                                                   String inputName,
+                                                   OperatorDefinition targetOperator,
+                                                   SchemaEnvelope inputSchema,
+                                                   String targetPath,
+                                                   List<VisualDiagnostic> diagnostics) {
+        Map<String, Object> sourceProperty = propertyAtPath(inputSchema, binding.path());
+        if (sourceProperty == null) {
+            diagnostics.add(VisualDiagnostic.error("visual.binding.unknownContextPath",
+                    "Graph input path does not exist: ctx.%s".formatted(binding.path()),
+                    targetPath));
+            return;
+        }
+
+        Optional<OperatorDefinition.Port> targetPort = resolveInputPort(targetOperator, binding.targetPort(),
+                inputName);
+        if (targetPort.isEmpty()) {
+            diagnostics.add(VisualDiagnostic.error("visual.binding.unknownTargetPort",
+                    "Binding target input '%s' must target a declared port on operator '%s'."
+                            .formatted(inputName, targetOperator.operatorRef()),
+                    targetPath));
+            return;
+        }
+
+        Map<String, Object> targetProperty = propertyAtPath(targetPort.get().schema(), inputName);
+        if (targetProperty == null) {
+            diagnostics.add(VisualDiagnostic.error("visual.binding.unknownTargetPath",
+                    "Target port '%s' does not accept path '%s'."
+                            .formatted(targetPort.get().name(), inputName),
+                    targetPath));
+            return;
+        }
+        if (!schemasCompatible(sourceProperty, targetProperty)) {
+            diagnostics.add(VisualDiagnostic.error("visual.binding.typeMismatch",
+                    "Cannot bind graph input %s 'ctx.%s' to %s input '%s.%s'."
+                            .formatted(schemaTypeLabel(sourceProperty), binding.path(),
                                     schemaTypeLabel(targetProperty), targetPort.get().name(), inputName),
                     targetPath));
         }

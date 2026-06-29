@@ -2,6 +2,7 @@ package com.leanowtech.bloge.gateway.visual.validation;
 
 import com.leanowtech.bloge.gateway.visual.catalog.VisualCatalogTestSupport;
 import com.leanowtech.bloge.gateway.visual.draft.GraphDraft;
+import com.leanowtech.bloge.gateway.visual.model.SchemaEnvelope;
 
 import org.junit.jupiter.api.Test;
 
@@ -119,6 +120,79 @@ class GraphDraftValidatorTest {
         VisualValidationResult result = validator.validate(draft);
 
         assertThat(result.valid()).isTrue();
+    }
+
+    @Test
+    void acceptsContextPathBindingWhenGraphInputSchemaIsCompatible() {
+        GraphDraftValidator validator = new GraphDraftValidator(
+                VisualCatalogTestSupport.catalogWithLibrary(
+                        VisualCatalogTestSupport.eligibilityLibrary("integer")));
+        GraphDraft draft = contextEligibilityDraft(graphInputSchema(
+                Map.of(
+                        "score", Map.of("type", "integer"),
+                        "amount", Map.of("type", "number")
+                ),
+                List.of("score", "amount")
+        ), Map.of(
+                "score", GraphDraft.Binding.contextPath("score"),
+                "amount", GraphDraft.Binding.contextPath("amount")
+        ));
+
+        VisualValidationResult result = validator.validate(draft);
+
+        assertThat(result.valid()).isTrue();
+    }
+
+    @Test
+    void rejectsContextPathBindingWhenGraphInputPathDoesNotExist() {
+        GraphDraftValidator validator = new GraphDraftValidator(
+                VisualCatalogTestSupport.catalogWithLibrary(
+                        VisualCatalogTestSupport.eligibilityLibrary("integer")));
+        GraphDraft draft = contextEligibilityDraft(graphInputSchema(
+                Map.of(
+                        "score", Map.of("type", "integer"),
+                        "amount", Map.of("type", "number")
+                ),
+                List.of("score", "amount")
+        ), Map.of(
+                "score", GraphDraft.Binding.contextPath("riskScore"),
+                "amount", GraphDraft.Binding.contextPath("amount")
+        ));
+
+        VisualValidationResult result = validator.validate(draft);
+
+        assertThat(result.valid()).isFalse();
+        assertThat(result.diagnostics())
+                .anySatisfy(diagnostic -> {
+                    assertThat(diagnostic.code()).isEqualTo("visual.binding.unknownContextPath");
+                    assertThat(diagnostic.message()).contains("ctx.riskScore");
+                });
+    }
+
+    @Test
+    void rejectsContextPathBindingWhenGraphInputTypeDoesNotMatchTargetSchema() {
+        GraphDraftValidator validator = new GraphDraftValidator(
+                VisualCatalogTestSupport.catalogWithLibrary(
+                        VisualCatalogTestSupport.eligibilityLibrary("integer")));
+        GraphDraft draft = contextEligibilityDraft(graphInputSchema(
+                Map.of(
+                        "score", Map.of("type", "string"),
+                        "amount", Map.of("type", "number")
+                ),
+                List.of("score", "amount")
+        ), Map.of(
+                "score", GraphDraft.Binding.contextPath("score"),
+                "amount", GraphDraft.Binding.contextPath("amount")
+        ));
+
+        VisualValidationResult result = validator.validate(draft);
+
+        assertThat(result.valid()).isFalse();
+        assertThat(result.diagnostics())
+                .anySatisfy(diagnostic -> {
+                    assertThat(diagnostic.code()).isEqualTo("visual.binding.typeMismatch");
+                    assertThat(diagnostic.message()).contains("string").contains("integer").contains("ctx.score");
+                });
     }
 
     @Test
@@ -551,6 +625,36 @@ class GraphDraftValidatorTest {
                 Map.of(),
                 new GraphDraft.OutputSelection("eligibility", "")
         );
+    }
+
+    private static GraphDraft contextEligibilityDraft(SchemaEnvelope inputSchema,
+                                                      Map<String, GraphDraft.Binding> inputs) {
+        return new GraphDraft(
+                "",
+                "",
+                0,
+                "contextEligibility",
+                "",
+                "",
+                "",
+                "",
+                inputSchema,
+                List.of(new GraphDraft.DraftNode(
+                        "eligibility",
+                        "risk:eligibility",
+                        "",
+                        inputs,
+                        Map.of(),
+                        null
+                )),
+                List.of(),
+                Map.of(),
+                new GraphDraft.OutputSelection("eligibility", "")
+        );
+    }
+
+    private static SchemaEnvelope graphInputSchema(Map<String, Object> properties, List<String> required) {
+        return SchemaEnvelope.object(properties, required);
     }
 
     private static GraphDraft multiOutputEligibilityDraft(GraphDraft.Binding scoreBinding) {

@@ -494,6 +494,8 @@ MVP 可以先支持 `constant`、`contextPath`、`nodePath`、`expression`、`ob
 object path，例如 `applicant.score`；画布字段枚举和服务端校验都要按完整
 schema path 工作，否则复杂业务 payload 会被迫扁平化。
 
+当前 `resource-gateway-examples` 已把 `contextPath` 纳入 schema gate：前端会从 Context JSON 推导草稿 `inputSchema` 并把兼容的 `ctx.*` 字段放入 source picker，服务端会在严格 input schema 下阻断未知 `ctx` path 和 source/target 类型不兼容。
+
 ## 10. Schema 约束与连接规则
 
 字段级 schema envelope、类型兼容、缺 schema 降级和诊断 code 已在

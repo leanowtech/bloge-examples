@@ -104,9 +104,13 @@ Array bindings and edges compare item schemas, so `array<string>` cannot be wire
 into an input that requires `array<integer>`. Operator `configSchema` is also
 enforced: the browser inspector renders simple config controls for schema fields,
 and the server blocks missing required config, type mismatches, enum mismatches,
-and undeclared config fields when `additionalProperties=false`. The built-in
-`.bloge` scenarios remain available in the left rail and continue to execute the
-public gateway endpoints.
+and undeclared config fields when `additionalProperties=false`. Graph input
+bindings are schema-aware too: the composer derives a draft `inputSchema` from
+Context JSON for authoring, offers compatible `ctx.*` values in the source
+picker, and the server blocks unknown or type-incompatible `contextPath`
+bindings when the draft input schema is strict. The built-in `.bloge` scenarios
+remain available in the left rail and continue to execute the public gateway
+endpoints.
 
 To see the decision-table UX, run the default composer graph, edit the `R3`
 decision row, or drag an `HTTP Resource` operator onto the canvas to turn the
@@ -360,9 +364,9 @@ Seven `.bloge` graphs live in `src/main/resources/bloge/gateway/`:
 | `OperatorLibrary` | User-provided operator catalog bundle with schema-aware `OperatorDefinition` entries |
 | `DatabaseOperatorLibraryRegistry` | H2-backed user operator-library registry, so imported operator catalogs survive restart |
 | `DefaultVisualOperatorCatalog` | Combines native visual operators with `resource:<resourceId>` virtual operators |
-| `GraphDraft` | Editable canvas graph model: nodes, port-aware bindings, edges, layout, output selection |
+| `GraphDraft` | Editable canvas graph model: input schema, nodes, port-aware bindings, edges, layout, output selection |
 | `DatabaseGraphDraftRepository` | H2-backed graph draft repository with revision assignment |
-| `GraphDraftValidator` | Validates operator references, required schema inputs, node config against `configSchema`, port-aware node bindings, typed port edges, DAG shape, and output selection |
+| `GraphDraftValidator` | Validates operator references, graph input `contextPath` bindings, required schema inputs, node config against `configSchema`, port-aware node bindings, typed port edges, DAG shape, and output selection |
 | `GraphDraftDslGenerator` | Lowers visual drafts into executable BLOGE DSL |
 | `VisualGraphRunService` | Reuses the dynamic BLOGE runner to validate, compile, and execute visual drafts |
 
