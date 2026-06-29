@@ -100,8 +100,10 @@ the draft stores a stable key such as `customer.id` while `targetPort` and
 `targetPath` keep the actual schema location unambiguous. Nested object schemas
 are expanded into field paths such as `applicant.score`, so imported operator
 libraries can expose realistic business payloads without flattening them first.
-The built-in `.bloge` scenarios remain available in the left rail and continue
-to execute the public gateway endpoints.
+Array bindings and edges compare item schemas, so `array<string>` cannot be wired
+into an input that requires `array<integer>`. The built-in `.bloge` scenarios
+remain available in the left rail and continue to execute the public gateway
+endpoints.
 
 To see the decision-table UX, run the default composer graph, edit the `R3`
 decision row, or drag an `HTTP Resource` operator onto the canvas to turn the

@@ -229,20 +229,22 @@ public class GraphDraftValidator {
                     targetPath));
             return;
         }
-        String sourceType = schemaType(sourceProperty);
-        String targetType = schemaType(targetProperty);
-        if (!sourceType.isBlank() && !targetType.isBlank() && !typesCompatible(sourceType, targetType)) {
+        if (!schemasCompatible(sourceProperty, targetProperty)) {
             diagnostics.add(VisualDiagnostic.error("visual.binding.typeMismatch",
                     "Cannot bind %s output '%s.%s' to %s input '%s.%s'."
-                            .formatted(sourceType, sourcePort.get().name(), binding.path(),
-                                    targetType, targetPort.get().name(), inputName),
+                            .formatted(schemaTypeLabel(sourceProperty), sourcePort.get().name(), binding.path(),
+                                    schemaTypeLabel(targetProperty), targetPort.get().name(), inputName),
                     targetPath));
         }
     }
 
     private static Map<String, Object> propertyAtPath(SchemaEnvelope schema, String path) {
         if (path == null || path.isBlank()) {
-            return Map.of("type", schema.schema().getOrDefault("type", "object"));
+            Map<String, Object> root = new LinkedHashMap<>(schema.schema());
+            if (!root.containsKey("type") && !root.containsKey("kind")) {
+                root.put("type", "object");
+            }
+            return root;
         }
         Map<String, Object> currentSchema = schema.schema();
         Map<String, Object> properties = propertiesOf(currentSchema);
@@ -322,11 +324,35 @@ public class GraphDraftValidator {
         if (property == null) {
             return "";
         }
-        Object type = property.get("type");
+        Object type = property.get("kind");
+        if (type == null) {
+            type = property.get("type");
+        }
         return type == null ? "" : String.valueOf(type);
     }
 
-    private static boolean typesCompatible(String sourceType, String targetType) {
+    private static String schemaTypeLabel(Map<String, Object> schema) {
+        String type = schemaType(schema);
+        if ("array".equals(type)) {
+            Map<String, Object> items = objectProperty(schema.get("items"));
+            return items == null ? "array" : "array<" + schemaTypeLabel(items) + ">";
+        }
+        return type.isBlank() ? "unknown" : type;
+    }
+
+    private static boolean schemasCompatible(Map<String, Object> sourceSchema, Map<String, Object> targetSchema) {
+        String sourceType = schemaType(sourceSchema);
+        String targetType = schemaType(targetSchema);
+        if (sourceType.isBlank() || targetType.isBlank()
+                || "any".equals(sourceType) || "any".equals(targetType)
+                || "opaque".equals(sourceType) || "opaque".equals(targetType)) {
+            return true;
+        }
+        if ("array".equals(sourceType) && "array".equals(targetType)) {
+            Map<String, Object> sourceItems = objectProperty(sourceSchema.get("items"));
+            Map<String, Object> targetItems = objectProperty(targetSchema.get("items"));
+            return sourceItems == null || targetItems == null || schemasCompatible(sourceItems, targetItems);
+        }
         if (sourceType.equals(targetType)) {
             return true;
         }
@@ -334,7 +360,7 @@ public class GraphDraftValidator {
     }
 
     private static boolean numeric(String type) {
-        return "number".equals(type) || "integer".equals(type);
+        return "number".equals(type) || "integer".equals(type) || "decimal".equals(type);
     }
 
     private static void validateEdges(GraphDraft draft,
@@ -395,12 +421,11 @@ public class GraphDraftValidator {
                         edgePath + "/target/path"));
                 continue;
             }
-            String sourceType = schemaType(sourceProperty);
-            String targetType = schemaType(targetProperty);
-            if (!sourceType.isBlank() && !targetType.isBlank() && !typesCompatible(sourceType, targetType)) {
+            if (!schemasCompatible(sourceProperty, targetProperty)) {
                 diagnostics.add(VisualDiagnostic.error("visual.edge.typeMismatch",
                         "Cannot connect %s output '%s' to %s input '%s'."
-                                .formatted(sourceType, edge.source().path(), targetType, edge.target().path()),
+                                .formatted(schemaTypeLabel(sourceProperty), edge.source().path(),
+                                        schemaTypeLabel(targetProperty), edge.target().path()),
                         edgePath));
             }
         }

@@ -288,6 +288,66 @@ class GraphDraftValidatorTest {
     }
 
     @Test
+    void acceptsNodePathBindingWhenArrayItemTypesAreCompatible() {
+        GraphDraftValidator validator = new GraphDraftValidator(
+                VisualCatalogTestSupport.catalogWithLibrary(
+                        VisualCatalogTestSupport.listCompatibilityLibrary("integer", "number")));
+        GraphDraft draft = listCompatibilityDraft(
+                GraphDraft.Binding.nodePath("listFacts", "output", "items",
+                        "inputs", "items"),
+                new GraphDraft.DraftEdge("items", "data",
+                        new GraphDraft.Endpoint("listFacts", "output", "items"),
+                        new GraphDraft.Endpoint("listConsumer", "inputs", "items")));
+
+        VisualValidationResult result = validator.validate(draft);
+
+        assertThat(result.valid()).isTrue();
+    }
+
+    @Test
+    void rejectsNodePathBindingWhenArrayItemTypesDoNotMatch() {
+        GraphDraftValidator validator = new GraphDraftValidator(
+                VisualCatalogTestSupport.catalogWithLibrary(
+                        VisualCatalogTestSupport.listCompatibilityLibrary("string", "integer")));
+        GraphDraft draft = listCompatibilityDraft(
+                GraphDraft.Binding.nodePath("listFacts", "output", "items",
+                        "inputs", "items"),
+                new GraphDraft.DraftEdge("items", "data",
+                        new GraphDraft.Endpoint("listFacts", "output", "items"),
+                        new GraphDraft.Endpoint("listConsumer", "inputs", "items")));
+
+        VisualValidationResult result = validator.validate(draft);
+
+        assertThat(result.valid()).isFalse();
+        assertThat(result.diagnostics())
+                .anySatisfy(diagnostic -> {
+                    assertThat(diagnostic.code()).isEqualTo("visual.binding.typeMismatch");
+                    assertThat(diagnostic.message()).contains("array<string>").contains("array<integer>");
+                });
+    }
+
+    @Test
+    void rejectsEdgeWhenArrayItemTypesDoNotMatch() {
+        GraphDraftValidator validator = new GraphDraftValidator(
+                VisualCatalogTestSupport.catalogWithLibrary(
+                        VisualCatalogTestSupport.listCompatibilityLibrary("string", "integer")));
+        GraphDraft draft = listCompatibilityDraft(
+                GraphDraft.Binding.contextPath("items"),
+                new GraphDraft.DraftEdge("items", "data",
+                        new GraphDraft.Endpoint("listFacts", "output", "items"),
+                        new GraphDraft.Endpoint("listConsumer", "inputs", "items")));
+
+        VisualValidationResult result = validator.validate(draft);
+
+        assertThat(result.valid()).isFalse();
+        assertThat(result.diagnostics())
+                .anySatisfy(diagnostic -> {
+                    assertThat(diagnostic.code()).isEqualTo("visual.edge.typeMismatch");
+                    assertThat(diagnostic.message()).contains("array<string>").contains("array<integer>");
+                });
+    }
+
+    @Test
     void rejectsEdgeWhenSourcePathDoesNotExist() {
         GraphDraftValidator validator = new GraphDraftValidator(
                 VisualCatalogTestSupport.catalogWithLoanApplicantResourceAndLibrary(
@@ -481,6 +541,42 @@ class GraphDraftValidatorTest {
                 List.of(),
                 Map.of(),
                 new GraphDraft.OutputSelection("merge", "")
+        );
+    }
+
+    private static GraphDraft listCompatibilityDraft(GraphDraft.Binding itemsBinding,
+                                                     GraphDraft.DraftEdge edge) {
+        return new GraphDraft(
+                "",
+                "",
+                0,
+                "listCompatibility",
+                "",
+                "",
+                "",
+                "",
+                null,
+                List.of(
+                        new GraphDraft.DraftNode(
+                                "listFacts",
+                                "risk:listFacts",
+                                "",
+                                Map.of(),
+                                Map.of(),
+                                null
+                        ),
+                        new GraphDraft.DraftNode(
+                                "listConsumer",
+                                "risk:listConsumer",
+                                "",
+                                Map.of("items", itemsBinding),
+                                Map.of(),
+                                null
+                        )
+                ),
+                List.of(edge),
+                Map.of(),
+                new GraphDraft.OutputSelection("listConsumer", "")
         );
     }
 

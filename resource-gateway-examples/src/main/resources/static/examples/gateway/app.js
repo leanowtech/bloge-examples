@@ -2592,14 +2592,16 @@ function sourceHandlesForNode(node) {
         nodeId: node.id,
         port: port.name || spec.outputPort || 'output',
         path: '',
-        type: schemaType(port.schema?.schema)
+        type: schemaType(port.schema?.schema),
+        schema: port.schema?.schema || {}
       }];
     }
     return fields.map((field) => ({
       nodeId: node.id,
       port: port.name || spec.outputPort || 'output',
       path: field.path,
-      type: schemaType(field.schema)
+      type: schemaType(field.schema),
+      schema: field.schema
     }));
   });
 }
@@ -2622,6 +2624,7 @@ function targetHandlesForNode(node) {
         key: field.path,
         path: field.path,
         type: schemaType(field.schema),
+        schema: field.schema,
         required: field.required
       }));
     });
@@ -2648,6 +2651,7 @@ function targetHandlesForNode(node) {
         key: inputKeyForPortPath(spec, port.name || spec.inputPort || 'inputs', field.path),
         path: field.path,
         type: schemaType(field.schema),
+        schema: field.schema,
         required: field.required
       }));
     });
@@ -2661,7 +2665,12 @@ function targetHandlesForNode(node) {
 }
 
 function schemaType(schema) {
-  return schema?.type ? String(schema.type) : '';
+  const type = schema?.kind || schema?.type;
+  if (type === 'array') {
+    const itemType = schemaType(schema?.items);
+    return itemType ? `array<${itemType}>` : 'array';
+  }
+  return type ? String(type) : '';
 }
 
 function sourceCandidatesForTarget(target) {
@@ -2774,12 +2783,14 @@ function connectionCompatibility(source, target) {
   }
   const sourceNode = state.builder.nodes.find((node) => node.id === source.nodeId);
   const targetNode = state.builder.nodes.find((node) => node.id === target.nodeId);
-  const sourceSchema = source.type
+  const sourceSchema = source.schema
+    || (source.type
     ? { type: source.type }
-    : (sourceNode ? schemaAtPath(schemaForPort(specForNode(sourceNode), 'source', source.port), source.path) : null);
-  const targetSchema = target.type
+    : (sourceNode ? schemaAtPath(schemaForPort(specForNode(sourceNode), 'source', source.port), source.path) : null));
+  const targetSchema = target.schema
+    || (target.type
     ? { type: target.type }
-    : (targetNode ? schemaAtPath(schemaForPort(specForNode(targetNode), 'target', target.port), target.path) : null);
+    : (targetNode ? schemaAtPath(schemaForPort(specForNode(targetNode), 'target', target.port), target.path) : null));
   if (sourceSchema === null) {
     return { ok: false, message: `Source path '${source.path}' is not exposed.` };
   }
@@ -2788,18 +2799,30 @@ function connectionCompatibility(source, target) {
   }
   const sourceType = schemaType(sourceSchema);
   const targetType = schemaType(targetSchema);
-  if (sourceType && targetType && !typesCompatible(sourceType, targetType)) {
+  if (!schemasCompatible(sourceSchema, targetSchema)) {
     return { ok: false, message: `Type mismatch: ${sourceType} cannot feed ${targetType}.` };
   }
   return { ok: true, message: '' };
 }
 
-function typesCompatible(sourceType, targetType) {
+function schemasCompatible(sourceSchema, targetSchema) {
+  const sourceType = rawSchemaType(sourceSchema);
+  const targetType = rawSchemaType(targetSchema);
+  if (!sourceType || !targetType || sourceType === 'any' || targetType === 'any' || sourceType === 'opaque' || targetType === 'opaque') {
+    return true;
+  }
+  if (sourceType === 'array' && targetType === 'array') {
+    return !sourceSchema?.items || !targetSchema?.items || schemasCompatible(sourceSchema.items, targetSchema.items);
+  }
   return sourceType === targetType || (numericType(sourceType) && numericType(targetType));
 }
 
+function rawSchemaType(schema) {
+  return schema?.kind || schema?.type || '';
+}
+
 function numericType(type) {
-  return type === 'number' || type === 'integer';
+  return type === 'number' || type === 'integer' || type === 'decimal';
 }
 
 function wouldCreateCycle(sourceId, targetId) {

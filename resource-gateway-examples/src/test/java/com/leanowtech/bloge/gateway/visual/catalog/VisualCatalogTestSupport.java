@@ -317,6 +317,86 @@ public final class VisualCatalogTestSupport {
         );
     }
 
+    public static OperatorDefinition listFactsOperator(String itemType) {
+        Map<String, Object> outputProperties = new LinkedHashMap<>();
+        outputProperties.put("items", Map.of(
+                "type", "array",
+                "items", Map.of("type", itemType)
+        ));
+
+        return new OperatorDefinition(
+                "bloge.visualOperator.v1",
+                "risk:listFacts",
+                "1.0.0",
+                new OperatorDefinition.Display("List facts",
+                        "Produces typed list facts.",
+                        List.of("risk", "list")),
+                new OperatorDefinition.Source("user-library", "", "", "", false),
+                new OperatorDefinition.Ports(
+                        List.of(),
+                        List.of(new OperatorDefinition.Port("output",
+                                SchemaEnvelope.object(outputProperties, List.of()),
+                                true,
+                                "List facts."))
+                ),
+                SchemaEnvelope.opaque(),
+                OperatorDefinition.Capabilities.pure(),
+                new OperatorDefinition.Lowering("native", "riskListFacts", Map.of()),
+                List.of()
+        );
+    }
+
+    public static OperatorDefinition listConsumerOperator(String itemType) {
+        Map<String, Object> inputProperties = new LinkedHashMap<>();
+        inputProperties.put("items", Map.of(
+                "type", "array",
+                "items", Map.of("type", itemType)
+        ));
+
+        Map<String, Object> outputProperties = new LinkedHashMap<>();
+        outputProperties.put("accepted", Map.of("type", "boolean"));
+
+        return new OperatorDefinition(
+                "bloge.visualOperator.v1",
+                "risk:listConsumer",
+                "1.0.0",
+                new OperatorDefinition.Display("List consumer",
+                        "Consumes typed list facts.",
+                        List.of("risk", "list")),
+                new OperatorDefinition.Source("user-library", "", "", "", true),
+                new OperatorDefinition.Ports(
+                        List.of(new OperatorDefinition.Port("inputs",
+                                SchemaEnvelope.object(inputProperties, List.of("items")),
+                                true,
+                                "List inputs.")),
+                        List.of(new OperatorDefinition.Port("output",
+                                SchemaEnvelope.object(outputProperties, List.of()),
+                                true,
+                                "Consumer output."))
+                ),
+                SchemaEnvelope.opaque(),
+                OperatorDefinition.Capabilities.pure(),
+                new OperatorDefinition.Lowering("transform", "transform", Map.of(
+                        "assignments", Map.of(
+                                "accepted", "true"
+                        )
+                )),
+                List.of()
+        );
+    }
+
+    public static OperatorLibrary listCompatibilityLibrary(String sourceItemType, String targetItemType) {
+        return new OperatorLibrary(
+                "bloge.visualOperatorLibrary.v1",
+                "risk-list-compatibility",
+                "List compatibility operators",
+                "1.0.0",
+                "risk-team",
+                "ACTIVE",
+                List.of(listFactsOperator(sourceItemType), listConsumerOperator(targetItemType))
+        );
+    }
+
     public static ResourceDescriptor loanApplicantDescriptor() {
         return new ResourceDescriptor(
                 RESOURCE_ID,

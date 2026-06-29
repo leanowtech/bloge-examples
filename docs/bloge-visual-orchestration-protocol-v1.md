@@ -1026,6 +1026,7 @@ flowchart TD
 - source path 不存在。
 - target path 不存在。
 - 类型不兼容且没有 adapter。
+- `array<T>` 到 `array<U>` 时 item schema 不兼容。
 
 警告：
 

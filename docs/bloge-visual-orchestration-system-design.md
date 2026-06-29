@@ -524,6 +524,10 @@ schema path 工作，否则复杂业务 payload 会被迫扁平化。
 | `object` | `string` | 禁止或需表达式 | 不能隐式转 JSON |
 | `unknown` | 任意 | 警告 | 可继续草稿，不可无条件发布 |
 
+resource-gateway 示例当前已在 binding 和 edge 校验中递归检查 `array.items`
+兼容性；缺失 `items` 的旧 resource schema 仍按未知元素类型降级，用户导入
+operator library 则由 catalog validator 阻断。
+
 ### 10.3 required 字段规则
 
 对每个节点：
