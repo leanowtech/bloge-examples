@@ -97,9 +97,11 @@ carry both source output port and target input port metadata, so multi-port user
 operators are validated against the selected port schemas instead of falling back
 to the first declared port. When different input ports expose the same field name,
 the draft stores a stable key such as `customer.id` while `targetPort` and
-`targetPath` keep the actual schema location unambiguous. The built-in `.bloge`
-scenarios remain available in the left rail and continue to execute the public
-gateway endpoints.
+`targetPath` keep the actual schema location unambiguous. Nested object schemas
+are expanded into field paths such as `applicant.score`, so imported operator
+libraries can expose realistic business payloads without flattening them first.
+The built-in `.bloge` scenarios remain available in the left rail and continue
+to execute the public gateway endpoints.
 
 To see the decision-table UX, run the default composer graph, edit the `R3`
 decision row, or drag an `HTTP Resource` operator onto the canvas to turn the

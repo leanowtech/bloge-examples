@@ -490,7 +490,9 @@ node fetchApplicant : httpResource {
 MVP 可以先支持 `constant`、`contextPath`、`nodePath`、`expression`、`objectTemplate`。
 当多个 input port 暴露同名字段时，binding key 必须允许端口限定命名，
 例如 `customer.id` 和 `order.id`；真实校验位置由 `targetPort` 和
-`targetPath` 决定，而不是由 map key 猜测。
+`targetPath` 决定，而不是由 map key 猜测。`targetPath` 必须支持嵌套
+object path，例如 `applicant.score`；画布字段枚举和服务端校验都要按完整
+schema path 工作，否则复杂业务 payload 会被迫扁平化。
 
 ## 10. Schema 约束与连接规则
 
@@ -656,6 +658,7 @@ node fetchApplicant : httpResource {
 - 拖拽添加节点。
 - 节点移动、选择、删除、复制。
 - schema-aware 连线。
+- 嵌套 object schema 展开为可连接字段 path。
 - 连线时高亮可连接字段。
 - 不兼容连接给出错误原因和可选修复动作。
 - 运行后叠加节点状态：`NOT_STARTED`、`RUNNING`、`COMPLETED`、`FAILED`、`SKIPPED`、`CANCELLED`、`WAITING`。

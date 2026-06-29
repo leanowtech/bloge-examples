@@ -189,4 +189,41 @@ class GraphDraftDslGeneratorTest {
         assertThat(result.dsl()).contains("customerId = ctx.customerId");
         assertThat(result.dsl()).contains("orderId = ctx.orderId");
     }
+
+    @Test
+    void lowersNestedInputTemplateAlias() {
+        GraphDraftDslGenerator generator = new GraphDraftDslGenerator(
+                VisualCatalogTestSupport.catalogWithLibrary(
+                        VisualCatalogTestSupport.nestedApplicantEligibilityLibrary()));
+        GraphDraft draft = new GraphDraft(
+                "",
+                "",
+                0,
+                "nestedInputPath",
+                "",
+                "",
+                "",
+                "",
+                null,
+                List.of(new GraphDraft.DraftNode(
+                        "eligibility",
+                        "risk:nestedApplicantEligibility",
+                        "",
+                        Map.of(
+                                "applicant.score",
+                                GraphDraft.Binding.contextPath("score", "inputs", "applicant.score")
+                        ),
+                        Map.of(),
+                        null
+                )),
+                List.of(),
+                Map.of(),
+                new GraphDraft.OutputSelection("eligibility", "")
+        );
+
+        DslGenerationResult result = generator.generate(draft);
+
+        assertThat(result.generated()).isTrue();
+        assertThat(result.dsl()).contains("eligible = ctx.score >= 700");
+    }
 }

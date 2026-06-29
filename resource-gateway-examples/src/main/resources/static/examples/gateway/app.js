@@ -365,9 +365,7 @@ function outputPortsForSpec(spec) {
 
 function inputPortForInputPath(spec, path) {
   const ports = inputPortsForSpec(spec);
-  const matches = ports.filter((port) =>
-    Object.prototype.hasOwnProperty.call(schemaProperties(port.schema), path)
-  );
+  const matches = ports.filter((port) => schemaDeclaresPath(port.schema, path));
   if (matches.length === 1) {
     return matches[0].name;
   }
@@ -378,9 +376,7 @@ function inputKeyForPortPath(spec, portName, path) {
   if (!path) {
     return portName || spec?.inputPort || 'inputs';
   }
-  const matchingPorts = inputPortsForSpec(spec).filter((port) =>
-    Object.prototype.hasOwnProperty.call(schemaProperties(port.schema), path)
-  );
+  const matchingPorts = inputPortsForSpec(spec).filter((port) => schemaDeclaresPath(port.schema, path));
   return matchingPorts.length > 1 ? `${portName || spec?.inputPort || 'inputs'}.${path}` : path;
 }
 
@@ -1588,25 +1584,20 @@ function createBuilderNode(type, x, y) {
 
 function defaultParamNameForOperator(spec) {
   const primaryInput = inputPortsForSpec(spec)[0];
-  const schema = primaryInput?.schema?.schema || spec?.inputSchema?.schema || {};
-  const required = Array.isArray(schema.required) ? schema.required : [];
-  if (required.length) {
-    return required[0];
+  const fields = schemaDefaultInputFields(primaryInput?.schema || spec?.inputSchema);
+  if (fields.length) {
+    return fields[0].path;
   }
-  const properties = schemaProperties(primaryInput?.schema || spec?.inputSchema);
-  return Object.keys(properties)[0] || 'applicantId';
+  return 'applicantId';
 }
 
 function defaultInputExpressionsForOperator(spec) {
   const entries = [];
   for (const port of inputPortsForSpec(spec)) {
-    const schema = port?.schema?.schema || {};
-    const required = Array.isArray(schema.required) ? schema.required : [];
-    const properties = schemaProperties(port?.schema);
-    const names = required.length ? required : Object.keys(properties);
-    for (const name of names) {
-      if (!entries.some(([existing]) => existing === name)) {
-        entries.push([name, `ctx.${name}`]);
+    const fields = schemaDefaultInputFields(port?.schema);
+    for (const field of fields) {
+      if (!entries.some(([existing]) => existing === field.path)) {
+        entries.push([field.path, `ctx.${field.path}`]);
       }
     }
   }
@@ -1618,15 +1609,12 @@ function defaultCustomInputStateForOperator(spec) {
   const customInputPorts = {};
   const customInputPaths = {};
   for (const port of inputPortsForSpec(spec)) {
-    const schema = port?.schema?.schema || {};
-    const required = Array.isArray(schema.required) ? schema.required : [];
-    const properties = schemaProperties(port?.schema);
-    const names = required.length ? required : Object.keys(properties);
-    for (const name of names) {
-      const key = inputKeyForPortPath(spec, port.name, name);
-      customInputs[key] = `ctx.${name}`;
+    const fields = schemaDefaultInputFields(port?.schema);
+    for (const field of fields) {
+      const key = inputKeyForPortPath(spec, port.name, field.path);
+      customInputs[key] = `ctx.${field.path}`;
       customInputPorts[key] = port.name;
-      customInputPaths[key] = name;
+      customInputPaths[key] = field.path;
     }
   }
   return { customInputs, customInputPorts, customInputPaths };
@@ -1705,6 +1693,53 @@ function requiredInputNamesForPort(port) {
 
 function schemaProperties(schemaEnvelope) {
   return schemaEnvelope?.schema?.properties || {};
+}
+
+function schemaFieldDescriptors(schemaEnvelope) {
+  return schemaFieldsFromSchema(schemaEnvelope?.schema || {}, '', true);
+}
+
+function schemaDefaultInputFields(schemaEnvelope) {
+  const fields = schemaFieldDescriptors(schemaEnvelope);
+  const leafFields = fields.filter((field) => !hasSchemaProperties(field.schema));
+  const preferred = leafFields.length ? leafFields : fields;
+  const required = preferred.filter((field) => field.required);
+  return required.length ? required : preferred;
+}
+
+function schemaFieldsFromSchema(schema, prefix, parentRequired) {
+  const properties = schema?.properties || {};
+  const required = new Set(Array.isArray(schema?.required) ? schema.required.map(String) : []);
+  return Object.entries(properties).flatMap(([name, childSchema]) => {
+    const path = prefix ? `${prefix}.${name}` : name;
+    const normalizedSchema = childSchema && typeof childSchema === 'object' ? childSchema : {};
+    const fieldRequired = parentRequired && required.has(name);
+    const hasNestedRequired = Array.isArray(normalizedSchema.required) && normalizedSchema.required.length > 0;
+    return [
+      { path, schema: normalizedSchema, required: fieldRequired && !hasNestedRequired },
+      ...schemaFieldsFromSchema(normalizedSchema, path, fieldRequired)
+    ];
+  });
+}
+
+function hasSchemaProperties(schema) {
+  return Boolean(schema?.properties && Object.keys(schema.properties).length);
+}
+
+function schemaDeclaresPath(schemaEnvelope, path) {
+  if (!path) {
+    return true;
+  }
+  let current = schemaEnvelope?.schema || {};
+  for (const segment of String(path).split('.')) {
+    if (!segment) continue;
+    const properties = current.properties || {};
+    if (!Object.prototype.hasOwnProperty.call(properties, segment)) {
+      return false;
+    }
+    current = properties[segment] || {};
+  }
+  return true;
 }
 
 function nonOverlappingNodePosition(x, y) {
@@ -2551,9 +2586,8 @@ function sourceHandlesForNode(node) {
     }));
   }
   return outputPortsForSpec(spec).flatMap((port) => {
-    const properties = schemaProperties(port.schema);
-    const names = Object.keys(properties);
-    if (!names.length) {
+    const fields = schemaFieldDescriptors(port.schema);
+    if (!fields.length) {
       return [{
         nodeId: node.id,
         port: port.name || spec.outputPort || 'output',
@@ -2561,11 +2595,11 @@ function sourceHandlesForNode(node) {
         type: schemaType(port.schema?.schema)
       }];
     }
-    return names.map((path) => ({
+    return fields.map((field) => ({
       nodeId: node.id,
       port: port.name || spec.outputPort || 'output',
-      path,
-      type: schemaType(properties[path])
+      path: field.path,
+      type: schemaType(field.schema)
     }));
   });
 }
@@ -2574,16 +2608,21 @@ function targetHandlesForNode(node) {
   const spec = specForNode(node);
   if (node.type === 'httpResource') {
     return inputPortsForSpec(spec).flatMap((port) => {
-      const properties = schemaProperties(port.schema);
-      const names = Object.keys(properties).length ? Object.keys(properties) : Object.keys(resourceParamInputs(node, spec));
-      const required = requiredInputNamesForPort(port);
-      return names.map((path) => ({
+      const fields = schemaFieldDescriptors(port.schema);
+      const targets = fields.length
+        ? fields
+        : Object.keys(resourceParamInputs(node, spec)).map((path) => ({
+          path,
+          schema: schemaAtPath(port.schema, path) || {},
+          required: requiredInputNamesForPort(port).includes(path)
+        }));
+      return targets.map((field) => ({
         nodeId: node.id,
         port: port.name || spec.inputPort || 'params',
-        key: path,
-        path,
-        type: schemaType(properties[path]),
-        required: required.includes(path)
+        key: field.path,
+        path: field.path,
+        type: schemaType(field.schema),
+        required: field.required
       }));
     });
   }
@@ -2595,16 +2634,21 @@ function targetHandlesForNode(node) {
   }
   if (node.type === 'customOperator') {
     return inputPortsForSpec(spec).flatMap((port) => {
-      const properties = schemaProperties(port.schema);
-      const names = Object.keys(properties).length ? Object.keys(properties) : Object.keys(node.customInputs || {});
-      const required = requiredInputNamesForPort(port);
-      return names.map((path) => ({
+      const fields = schemaFieldDescriptors(port.schema);
+      const targets = fields.length
+        ? fields
+        : Object.keys(node.customInputs || {}).map((path) => ({
+          path,
+          schema: schemaAtPath(port.schema, path) || {},
+          required: requiredInputNamesForPort(port).includes(path)
+        }));
+      return targets.map((field) => ({
         nodeId: node.id,
         port: port.name || spec.inputPort || 'inputs',
-        key: inputKeyForPortPath(spec, port.name || spec.inputPort || 'inputs', path),
-        path,
-        type: schemaType(properties[path]),
-        required: required.includes(path)
+        key: inputKeyForPortPath(spec, port.name || spec.inputPort || 'inputs', field.path),
+        path: field.path,
+        type: schemaType(field.schema),
+        required: field.required
       }));
     });
   }

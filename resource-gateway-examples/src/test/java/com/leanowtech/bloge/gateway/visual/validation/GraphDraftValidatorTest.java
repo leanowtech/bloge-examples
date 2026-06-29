@@ -201,6 +201,93 @@ class GraphDraftValidatorTest {
     }
 
     @Test
+    void acceptsNodePathBindingToNestedTargetPath() {
+        GraphDraftValidator validator = new GraphDraftValidator(
+                VisualCatalogTestSupport.catalogWithLoanApplicantResourceAndLibrary(
+                        VisualCatalogTestSupport.nestedApplicantEligibilityLibrary()));
+        GraphDraft draft = nestedApplicantEligibilityDraft(
+                GraphDraft.Binding.nodePath("fetchApplicant", "payload", "score",
+                        "inputs", "applicant.score"),
+                new GraphDraft.DraftEdge("score", "data",
+                        new GraphDraft.Endpoint("fetchApplicant", "payload", "score"),
+                        new GraphDraft.Endpoint("eligibility", "inputs", "applicant.score")));
+
+        VisualValidationResult result = validator.validate(draft);
+
+        assertThat(result.valid()).isTrue();
+    }
+
+    @Test
+    void rejectsNodePathBindingWhenNestedTargetTypeDoesNotMatch() {
+        GraphDraftValidator validator = new GraphDraftValidator(
+                VisualCatalogTestSupport.catalogWithLoanApplicantResourceAndLibrary(
+                        VisualCatalogTestSupport.nestedApplicantEligibilityLibrary()));
+        GraphDraft draft = nestedApplicantEligibilityDraft(
+                GraphDraft.Binding.nodePath("fetchApplicant", "payload", "segment",
+                        "inputs", "applicant.score"),
+                new GraphDraft.DraftEdge("segment", "data",
+                        new GraphDraft.Endpoint("fetchApplicant", "payload", "segment"),
+                        new GraphDraft.Endpoint("eligibility", "inputs", "applicant.score")));
+
+        VisualValidationResult result = validator.validate(draft);
+
+        assertThat(result.valid()).isFalse();
+        assertThat(result.diagnostics())
+                .anySatisfy(diagnostic -> {
+                    assertThat(diagnostic.code()).isEqualTo("visual.binding.typeMismatch");
+                    assertThat(diagnostic.message()).contains("string").contains("integer");
+                });
+    }
+
+    @Test
+    void reportsMissingNestedRequiredInputPath() {
+        GraphDraftValidator validator = new GraphDraftValidator(
+                VisualCatalogTestSupport.catalogWithLoanApplicantResourceAndLibrary(
+                        VisualCatalogTestSupport.nestedApplicantEligibilityLibrary()));
+        GraphDraft draft = nestedApplicantEligibilityDraft(
+                Map.of(),
+                List.of());
+
+        VisualValidationResult result = validator.validate(draft);
+
+        assertThat(result.valid()).isFalse();
+        assertThat(result.diagnostics())
+                .anySatisfy(diagnostic -> {
+                    assertThat(diagnostic.code()).isEqualTo("visual.input.required");
+                    assertThat(diagnostic.message()).contains("applicant.score");
+                });
+    }
+
+    @Test
+    void validatesObjectTemplateFieldsAgainstNestedTargetPath() {
+        GraphDraftValidator validator = new GraphDraftValidator(
+                VisualCatalogTestSupport.catalogWithLoanApplicantResourceAndLibrary(
+                        VisualCatalogTestSupport.nestedApplicantEligibilityLibrary()));
+        GraphDraft draft = nestedApplicantEligibilityDraft(
+                Map.of("applicant", new GraphDraft.Binding(
+                        "objectTemplate",
+                        null,
+                        "",
+                        "",
+                        "",
+                        "inputs",
+                        "applicant",
+                        "",
+                        Map.of("score", GraphDraft.Binding.nodePath("fetchApplicant", "payload", "segment"))
+                )),
+                List.of());
+
+        VisualValidationResult result = validator.validate(draft);
+
+        assertThat(result.valid()).isFalse();
+        assertThat(result.diagnostics())
+                .anySatisfy(diagnostic -> {
+                    assertThat(diagnostic.code()).isEqualTo("visual.binding.typeMismatch");
+                    assertThat(diagnostic.message()).contains("string").contains("integer");
+                });
+    }
+
+    @Test
     void rejectsEdgeWhenSourcePathDoesNotExist() {
         GraphDraftValidator validator = new GraphDraftValidator(
                 VisualCatalogTestSupport.catalogWithLoanApplicantResourceAndLibrary(
@@ -394,6 +481,51 @@ class GraphDraftValidatorTest {
                 List.of(),
                 Map.of(),
                 new GraphDraft.OutputSelection("merge", "")
+        );
+    }
+
+    private static GraphDraft nestedApplicantEligibilityDraft(GraphDraft.Binding scoreBinding,
+                                                             GraphDraft.DraftEdge edge) {
+        return nestedApplicantEligibilityDraft(
+                Map.of(
+                        "applicant.score", scoreBinding
+                ),
+                List.of(edge));
+    }
+
+    private static GraphDraft nestedApplicantEligibilityDraft(Map<String, GraphDraft.Binding> inputs,
+                                                             List<GraphDraft.DraftEdge> edges) {
+        return new GraphDraft(
+                "",
+                "",
+                0,
+                "nestedTargetPath",
+                "",
+                "",
+                "",
+                "",
+                null,
+                List.of(
+                        new GraphDraft.DraftNode(
+                                "fetchApplicant",
+                                "resource:" + VisualCatalogTestSupport.RESOURCE_ID,
+                                "",
+                                Map.of("applicantId", GraphDraft.Binding.contextPath("applicantId")),
+                                Map.of(),
+                                null
+                        ),
+                        new GraphDraft.DraftNode(
+                                "eligibility",
+                                "risk:nestedApplicantEligibility",
+                                "",
+                                inputs,
+                                Map.of(),
+                                null
+                        )
+                ),
+                edges,
+                Map.of(),
+                new GraphDraft.OutputSelection("eligibility", "")
         );
     }
 }

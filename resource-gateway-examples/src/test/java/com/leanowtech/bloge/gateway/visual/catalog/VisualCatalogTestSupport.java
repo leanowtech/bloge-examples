@@ -261,6 +261,62 @@ public final class VisualCatalogTestSupport {
         );
     }
 
+    public static OperatorDefinition nestedApplicantEligibilityOperator() {
+        Map<String, Object> applicantProperties = new LinkedHashMap<>();
+        applicantProperties.put("score", Map.of("type", "integer"));
+
+        Map<String, Object> inputProperties = new LinkedHashMap<>();
+        inputProperties.put("applicant", Map.of(
+                "type", "object",
+                "properties", applicantProperties,
+                "required", List.of("score"),
+                "additionalProperties", false
+        ));
+
+        Map<String, Object> outputProperties = new LinkedHashMap<>();
+        outputProperties.put("eligible", Map.of("type", "boolean"));
+
+        return new OperatorDefinition(
+                "bloge.visualOperator.v1",
+                "risk:nestedApplicantEligibility",
+                "1.0.0",
+                new OperatorDefinition.Display("Nested applicant eligibility",
+                        "Evaluates nested applicant facts.",
+                        List.of("risk", "nested")),
+                new OperatorDefinition.Source("user-library", "", "", "", true),
+                new OperatorDefinition.Ports(
+                        List.of(new OperatorDefinition.Port("inputs",
+                                SchemaEnvelope.object(inputProperties, List.of("applicant")),
+                                true,
+                                "Nested applicant inputs.")),
+                        List.of(new OperatorDefinition.Port("output",
+                                SchemaEnvelope.object(outputProperties, List.of()),
+                                true,
+                                "Eligibility result."))
+                ),
+                SchemaEnvelope.opaque(),
+                OperatorDefinition.Capabilities.pure(),
+                new OperatorDefinition.Lowering("transform", "transform", Map.of(
+                        "assignments", Map.of(
+                                "eligible", "{{input.applicant.score}} >= 700"
+                        )
+                )),
+                List.of()
+        );
+    }
+
+    public static OperatorLibrary nestedApplicantEligibilityLibrary() {
+        return new OperatorLibrary(
+                "bloge.visualOperatorLibrary.v1",
+                "risk-nested-inputs",
+                "Nested input operators",
+                "1.0.0",
+                "risk-team",
+                "ACTIVE",
+                List.of(nestedApplicantEligibilityOperator())
+        );
+    }
+
     public static ResourceDescriptor loanApplicantDescriptor() {
         return new ResourceDescriptor(
                 RESOURCE_ID,

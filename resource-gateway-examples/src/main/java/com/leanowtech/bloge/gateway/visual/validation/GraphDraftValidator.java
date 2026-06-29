@@ -84,7 +84,7 @@ public class GraphDraftValidator {
                                                String nodePath,
                                                List<VisualDiagnostic> diagnostics) {
         for (OperatorDefinition.Port port : operator.ports().inputs()) {
-            for (String required : port.schema().required()) {
+            for (String required : requiredPaths(port.schema())) {
                 if (!hasInputForPort(node, operator, port.name(), required)) {
                     diagnostics.add(VisualDiagnostic.error("visual.input.required",
                             "Node '%s' requires input '%s' on port '%s'."
@@ -114,7 +114,7 @@ public class GraphDraftValidator {
             if (properties.isEmpty()) {
                 continue;
             }
-            if (!properties.containsKey(inputName)) {
+            if (propertyAtPath(targetPort.get().schema(), inputName) == null) {
                 diagnostics.add(VisualDiagnostic.warning("visual.input.unknown",
                         "Input '%s' is not declared by operator '%s' port '%s'."
                                 .formatted(inputName, operator.operatorRef(), targetPort.get().name()),
@@ -128,8 +128,13 @@ public class GraphDraftValidator {
                                            String portName,
                                            String inputName) {
         return node.inputs().entrySet().stream()
-                .anyMatch(entry -> inputName.equals(targetInputName(entry.getKey(), entry.getValue()))
+                .anyMatch(entry -> satisfiesRequiredPath(targetInputName(entry.getKey(), entry.getValue()),
+                        inputName)
                         && bindingTargetsPort(operator, entry.getValue(), portName, inputName));
+    }
+
+    private static boolean satisfiesRequiredPath(String inputName, String requiredPath) {
+        return inputName.equals(requiredPath) || inputName.startsWith(requiredPath + ".");
     }
 
     private static boolean bindingTargetsPort(OperatorDefinition operator,
@@ -169,8 +174,11 @@ public class GraphDraftValidator {
                                         String targetPath,
                                         List<VisualDiagnostic> diagnostics) {
         if ("objectTemplate".equals(binding.kind())) {
-            binding.fields().forEach((key, nested) -> validateBinding(nested, key, targetOperator, nodesById,
-                    operatorsByNodeId, targetPath + "/" + key, diagnostics));
+            binding.fields().forEach((key, nested) -> {
+                String nestedInputName = inputName.isBlank() ? key : inputName + "." + key;
+                validateBinding(nested, nestedInputName, targetOperator, nodesById,
+                        operatorsByNodeId, targetPath + "/" + key, diagnostics);
+            });
             return;
         }
         if (!"nodePath".equals(binding.kind())) {
@@ -213,7 +221,14 @@ public class GraphDraftValidator {
             return;
         }
 
-        Map<String, Object> targetProperty = objectProperty(targetPort.get().schema().properties().get(inputName));
+        Map<String, Object> targetProperty = propertyAtPath(targetPort.get().schema(), inputName);
+        if (targetProperty == null) {
+            diagnostics.add(VisualDiagnostic.error("visual.binding.unknownTargetPath",
+                    "Target port '%s' does not accept path '%s'."
+                            .formatted(targetPort.get().name(), inputName),
+                    targetPath));
+            return;
+        }
         String sourceType = schemaType(sourceProperty);
         String targetType = schemaType(targetProperty);
         if (!sourceType.isBlank() && !targetType.isBlank() && !typesCompatible(sourceType, targetType)) {
@@ -244,6 +259,41 @@ public class GraphDraftValidator {
             properties = propertiesOf(currentSchema);
         }
         return current;
+    }
+
+    private static List<String> requiredPaths(SchemaEnvelope schema) {
+        List<String> paths = new ArrayList<>();
+        collectRequiredPaths(schema.schema(), "", paths);
+        return paths;
+    }
+
+    private static void collectRequiredPaths(Map<String, Object> schema,
+                                             String prefix,
+                                             List<String> paths) {
+        Map<String, Object> properties = propertiesOf(schema);
+        for (String required : requiredNamesOf(schema)) {
+            Map<String, Object> child = objectProperty(properties.get(required));
+            String path = prefix.isBlank() ? required : prefix + "." + required;
+            if (child != null && !requiredNamesOf(child).isEmpty()) {
+                collectRequiredPaths(child, path, paths);
+            } else {
+                paths.add(path);
+            }
+        }
+    }
+
+    private static List<String> requiredNamesOf(Map<String, Object> schema) {
+        Object raw = schema.get("required");
+        if (!(raw instanceof List<?> list)) {
+            return List.of();
+        }
+        List<String> required = new ArrayList<>();
+        for (Object item : list) {
+            if (item != null) {
+                required.add(String.valueOf(item));
+            }
+        }
+        return required;
     }
 
     private static Map<String, Object> propertiesOf(Map<String, Object> schema) {
@@ -387,7 +437,7 @@ public class GraphDraftValidator {
             return Optional.of(ports.getFirst());
         }
         List<OperatorDefinition.Port> matches = ports.stream()
-                .filter(port -> port.schema().properties().containsKey(inputName))
+                .filter(port -> propertyAtPath(port.schema(), inputName) != null)
                 .toList();
         return matches.size() == 1 ? Optional.of(matches.getFirst()) : Optional.empty();
     }

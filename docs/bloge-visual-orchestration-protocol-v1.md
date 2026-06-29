@@ -575,6 +575,8 @@ MVP schema kind：
 schema 字段名。常规单端口输入可以继续使用 `score` 这样的字段名；当多个
 input port 都声明同名字段时，画布应使用 `customer.id`、`order.id` 这样的
 端口限定 key，并用 `targetPort` + `targetPath` 指向真实 schema 位置。
+`targetPath` 支持嵌套 object path，例如 `applicant.score`；校验必须沿完整
+schema path 查找 source/target 类型，而不能只检查顶层 `properties`。
 
 ### 7.6 GraphDraft 到 DSL 的排序
 
