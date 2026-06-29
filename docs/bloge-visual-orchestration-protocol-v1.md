@@ -801,6 +801,10 @@ POST /api/visual/operator-catalogs/validate
 Content-Type: application/json
 ```
 
+resource-gateway 示例阶段已落地等价管理端点：
+`POST /admin/visual-operator-libraries/validate`。导入和更新同样必须先执行
+该校验，禁止把 blocking diagnostics 的用户算子库写入 catalog。
+
 请求体：
 
 ```json
@@ -827,6 +831,16 @@ Content-Type: application/json
   ]
 }
 ```
+
+MVP 至少阻断：
+
+- 空 operator library。
+- 算子没有 output port。
+- 同方向重复 port name。
+- 不支持的 lowering mode。
+- 不支持的 schema `type` / `kind`。
+- `required` 中引用不存在的 `properties` 字段。
+- `array` schema 未声明 `items`。
 
 ### 10.3 保存 draft patch
 

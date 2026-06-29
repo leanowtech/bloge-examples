@@ -621,6 +621,12 @@ node fetchApplicant : httpResource {
 | `POST` | `/api/visual/operator-catalogs/validate` | 校验 catalog 定义 |
 | `GET` | `/api/visual/resource-operators` | 将 resource descriptors 投影为虚拟算子 |
 
+resource-gateway 示例当前以 `/admin/visual-operator-libraries` 暴露用户库管理：
+`POST /admin/visual-operator-libraries/validate` 只返回 diagnostics 不落库；
+`POST/PUT /admin/visual-operator-libraries` 在写入前执行同一校验，阻断空库、
+重复端口、不支持 lowering mode、非法 schema kind、缺失 `items` 的 array、
+以及 `required` 引用不存在字段等硬错误。
+
 ### 12.2 Draft API
 
 | Method | Path | 说明 |

@@ -243,10 +243,17 @@ resource-backed virtual operators.
 | Method | Path | Description | Status |
 |--------|------|-------------|--------|
 | `GET` | `/admin/visual-operator-libraries` | List imported operator libraries | 200 |
+| `POST` | `/admin/visual-operator-libraries/validate` | Validate an operator library without storing it | 200 |
 | `POST` | `/admin/visual-operator-libraries` | Import an operator library | 201 / 400 |
 | `GET` | `/admin/visual-operator-libraries/{libraryId}` | Get one imported library | 200 / 404 |
 | `PUT` | `/admin/visual-operator-libraries/{libraryId}` | Replace an imported library | 200 / 400 |
 | `DELETE` | `/admin/visual-operator-libraries/{libraryId}` | Delete an imported library | 204 |
+
+Create and update run the same validator before storage. The validator rejects
+empty libraries, duplicate port names, unsupported lowering modes, unsupported
+schema kinds, `required` fields not declared in `properties`, and array schemas
+without `items`, returning structured visual diagnostics instead of accepting a
+library that will fail later on the canvas.
 
 Minimal import example:
 
