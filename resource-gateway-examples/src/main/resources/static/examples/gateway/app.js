@@ -140,6 +140,71 @@ const OPERATOR_TYPES = {
   }
 };
 
+const CORE_OPERATOR_TYPES = new Set(Object.keys(OPERATOR_TYPES));
+
+const SAMPLE_OPERATOR_LIBRARY = {
+  libraryId: 'risk-policy',
+  displayName: 'Risk policy operators',
+  version: '1.0.0',
+  owner: 'risk-team',
+  operators: [
+    {
+      operatorRef: 'risk:eligibility',
+      display: {
+        name: 'Eligibility',
+        description: 'Evaluates a reusable eligibility predicate.',
+        tags: ['risk', 'policy']
+      },
+      source: { kind: 'user-library', virtual: true },
+      ports: {
+        inputs: [
+          {
+            name: 'inputs',
+            required: true,
+            schema: {
+              schema: {
+                type: 'object',
+                properties: {
+                  score: { type: 'integer' },
+                  amount: { type: 'number' }
+                },
+                required: ['score', 'amount'],
+                additionalProperties: false
+              }
+            }
+          }
+        ],
+        outputs: [
+          {
+            name: 'output',
+            required: true,
+            schema: {
+              schema: {
+                type: 'object',
+                properties: {
+                  eligible: { type: 'boolean' },
+                  ruleId: { type: 'string' }
+                },
+                additionalProperties: false
+              }
+            }
+          }
+        ]
+      },
+      lowering: {
+        mode: 'transform',
+        operatorRef: 'transform',
+        parameters: {
+          assignments: {
+            eligible: '{{input.score}} >= 700 && {{input.amount}} <= 300000',
+            ruleId: '"ELIGIBILITY_V1"'
+          }
+        }
+      }
+    }
+  ]
+};
+
 const NODE_SIZE = { width: 184, height: 76 };
 const DRAG_START_THRESHOLD = 4;
 
@@ -156,6 +221,10 @@ const state = {
   currentDraftId: '',
   currentDraftRevision: 0,
   draftMessage: null,
+  operatorLibraries: [],
+  selectedLibraryId: '',
+  libraryImportText: pretty(SAMPLE_OPERATOR_LIBRARY),
+  libraryMessage: null,
   draggingOperatorType: null,
   paletteDrag: null,
   nodeDrag: null,
@@ -188,6 +257,7 @@ function escapeHtml(value) {
 
 async function loadScenarios() {
   await loadVisualOperatorCatalog();
+  await loadOperatorLibraries({ render: false });
   await loadDraftList({ render: false });
   const response = await fetch('/api/gateway/examples/scenarios');
   state.customContextText = pretty(DEFAULT_COMPOSER_CONTEXT);
@@ -199,6 +269,7 @@ async function loadScenarios() {
 
 async function loadVisualOperatorCatalog() {
   try {
+    resetDynamicOperatorTypes();
     const response = await fetch('/api/visual/operators');
     if (!response.ok) {
       return;
@@ -246,6 +317,14 @@ async function loadVisualOperatorCatalog() {
     }
   } catch (error) {
     console.debug('Visual operator catalog unavailable', error);
+  }
+}
+
+function resetDynamicOperatorTypes() {
+  for (const key of Object.keys(OPERATOR_TYPES)) {
+    if (!CORE_OPERATOR_TYPES.has(key)) {
+      delete OPERATOR_TYPES[key];
+    }
   }
 }
 
@@ -319,6 +398,17 @@ function renderInputForm() {
         <div id="connection-status" class="connection-status" hidden></div>
       </div>
       <div class="builder-panel">
+        <div class="panel-title">Operator Libraries</div>
+        <div class="library-controls">
+          <select id="library-select" aria-label="Imported operator libraries"></select>
+          <button id="import-library" class="secondary compact" type="button">Import</button>
+          <button id="reload-libraries" class="secondary compact" type="button">Reload</button>
+          <button id="delete-library" class="secondary compact danger" type="button">Delete</button>
+        </div>
+        <textarea id="operator-library-json" class="library-editor" spellcheck="false"></textarea>
+        <div id="library-status" class="library-status" hidden></div>
+      </div>
+      <div class="builder-panel">
         <div class="panel-title">Drafts</div>
         <div class="draft-controls">
           <select id="draft-select" aria-label="Stored graph drafts"></select>
@@ -345,6 +435,7 @@ function renderInputForm() {
     $('composer-context').value = state.customContextText;
     renderOperatorPalette();
     renderConnectionStatus();
+    renderOperatorLibraryControls();
     renderDraftControls();
     renderSelectedOperatorEditor();
     $('composer-dsl').addEventListener('input', (event) => {
@@ -676,6 +767,145 @@ function renderConnectionStatus() {
 function setConnectionMessage(text, level = 'info') {
   state.connectionMessage = text ? { text, level } : null;
   renderConnectionStatus();
+}
+
+function renderOperatorLibraryControls() {
+  const select = $('library-select');
+  const editor = $('operator-library-json');
+  if (!select || !editor) return;
+  const options = ['<option value="">New library</option>']
+    .concat(state.operatorLibraries.map((library) => {
+      const count = Array.isArray(library.operators) ? library.operators.length : 0;
+      const label = `${library.displayName || library.libraryId} (${count})`;
+      return `<option value="${escapeHtml(library.libraryId)}">${escapeHtml(label)}</option>`;
+    }));
+  select.innerHTML = options.join('');
+  select.value = state.selectedLibraryId || '';
+  editor.value = state.libraryImportText || pretty(SAMPLE_OPERATOR_LIBRARY);
+
+  select.onchange = () => {
+    state.selectedLibraryId = select.value;
+    const library = state.operatorLibraries.find((item) => item.libraryId === select.value);
+    if (library) {
+      state.libraryImportText = pretty(library);
+    }
+    state.libraryMessage = null;
+    renderOperatorLibraryControls();
+  };
+  editor.oninput = () => {
+    state.libraryImportText = editor.value;
+  };
+
+  const importButton = $('import-library');
+  const reloadButton = $('reload-libraries');
+  const deleteButton = $('delete-library');
+  if (importButton) {
+    importButton.onclick = importOperatorLibrary;
+  }
+  if (reloadButton) {
+    reloadButton.onclick = reloadOperatorLibrariesAndCatalog;
+  }
+  if (deleteButton) {
+    deleteButton.disabled = !state.selectedLibraryId;
+    deleteButton.onclick = deleteSelectedOperatorLibrary;
+  }
+  renderLibraryStatus();
+}
+
+function renderLibraryStatus() {
+  const target = $('library-status');
+  if (!target) return;
+  const current = state.selectedLibraryId
+    ? `Selected ${state.selectedLibraryId}`
+    : `${state.operatorLibraries.length} imported libraries`;
+  const message = state.libraryMessage?.text || current;
+  target.hidden = false;
+  target.textContent = message;
+  target.className = `library-status ${state.libraryMessage?.level || 'info'}`;
+}
+
+function setLibraryMessage(text, level = 'info') {
+  state.libraryMessage = text ? { text, level } : null;
+  renderLibraryStatus();
+}
+
+async function loadOperatorLibraries(options = {}) {
+  try {
+    const response = await fetch('/admin/visual-operator-libraries');
+    if (!response.ok) {
+      throw new Error(`Library list failed with ${response.status}`);
+    }
+    state.operatorLibraries = await response.json();
+    if (state.selectedLibraryId
+        && !state.operatorLibraries.some((library) => library.libraryId === state.selectedLibraryId)) {
+      state.selectedLibraryId = '';
+      state.libraryImportText = pretty(SAMPLE_OPERATOR_LIBRARY);
+    }
+    if (options.render !== false) {
+      renderOperatorLibraryControls();
+    }
+  } catch (error) {
+    setLibraryMessage(error.message, 'error');
+  }
+}
+
+async function reloadOperatorLibrariesAndCatalog() {
+  await loadOperatorLibraries({ render: false });
+  await loadVisualOperatorCatalog();
+  renderOperatorPalette();
+  renderOperatorLibraryControls();
+  setLibraryMessage(`Loaded ${state.operatorLibraries.length} libraries.`, 'success');
+}
+
+async function importOperatorLibrary() {
+  let library;
+  try {
+    library = JSON.parse(state.libraryImportText || '{}');
+  } catch (error) {
+    setLibraryMessage(`Invalid JSON: ${error.message}`, 'error');
+    return;
+  }
+  if (!library.libraryId) {
+    setLibraryMessage('libraryId is required.', 'error');
+    return;
+  }
+  const response = await fetch('/admin/visual-operator-libraries', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(library)
+  });
+  const text = await response.text();
+  if (!response.ok) {
+    setLibraryMessage(text || `Import failed with ${response.status}`, 'error');
+    return;
+  }
+  const stored = JSON.parse(text);
+  state.selectedLibraryId = stored.libraryId;
+  state.libraryImportText = pretty(stored);
+  await loadOperatorLibraries({ render: false });
+  await loadVisualOperatorCatalog();
+  renderOperatorPalette();
+  renderOperatorLibraryControls();
+  setLibraryMessage(`Imported ${stored.libraryId}.`, 'success');
+}
+
+async function deleteSelectedOperatorLibrary() {
+  if (!state.selectedLibraryId || !confirm(`Delete operator library ${state.selectedLibraryId}?`)) return;
+  const deletedId = state.selectedLibraryId;
+  const response = await fetch(`/admin/visual-operator-libraries/${encodeURIComponent(deletedId)}`, {
+    method: 'DELETE'
+  });
+  if (!response.ok) {
+    setLibraryMessage(`Delete failed with ${response.status}`, 'error');
+    return;
+  }
+  state.selectedLibraryId = '';
+  state.libraryImportText = pretty(SAMPLE_OPERATOR_LIBRARY);
+  await loadOperatorLibraries({ render: false });
+  await loadVisualOperatorCatalog();
+  renderOperatorPalette();
+  renderOperatorLibraryControls();
+  setLibraryMessage(`Deleted ${deletedId}.`, 'success');
 }
 
 function renderDraftControls() {

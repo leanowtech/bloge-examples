@@ -87,11 +87,11 @@ as `resource:<resourceId>` virtual operators, so descriptor-backed APIs can be
 dragged as schema-aware business operators and lowered back to `httpResource` at
 runtime. Users can reposition existing nodes directly on the canvas, edit the
 selected operator's properties, connect output handles to input handles under
-schema type constraints, save/load/delete H2-backed graph drafts, inspect the
-generated BLOGE DSL, run it with JSON context, and see diagnostics, output, graph
-highlighting, and the decision-table matrix update together. The built-in `.bloge`
-scenarios remain available in the left rail and continue to execute the public
-gateway endpoints.
+schema type constraints, import user-provided operator library JSON into the
+catalog, save/load/delete H2-backed graph drafts, inspect the generated BLOGE DSL,
+run it with JSON context, and see diagnostics, output, graph highlighting, and the
+decision-table matrix update together. The built-in `.bloge` scenarios remain
+available in the left rail and continue to execute the public gateway endpoints.
 
 To see the decision-table UX, run the default composer graph, edit the `R3`
 decision row, or drag an `HTTP Resource` operator onto the canvas to turn the
