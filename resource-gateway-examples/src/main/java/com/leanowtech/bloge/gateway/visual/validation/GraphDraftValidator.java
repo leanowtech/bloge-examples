@@ -60,6 +60,7 @@ public class GraphDraftValidator {
         if (draft.nodes().isEmpty()) {
             diagnostics.add(VisualDiagnostic.error("visual.graph.empty", "Graph must contain at least one node.", "/nodes"));
         }
+        diagnostics.addAll(VisualSecretGuard.detectDraftSecrets(draft));
 
         Set<String> nodeIds = new HashSet<>();
         Map<String, GraphDraft.DraftNode> nodesById = new LinkedHashMap<>();

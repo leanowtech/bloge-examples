@@ -7,6 +7,7 @@ import com.leanowtech.bloge.gateway.visual.codegen.DslGenerationResult;
 import com.leanowtech.bloge.gateway.visual.codegen.GraphDraftDslGenerator;
 import com.leanowtech.bloge.gateway.visual.diagnostic.VisualDiagnostic;
 import com.leanowtech.bloge.gateway.visual.draft.GraphDraft;
+import com.leanowtech.bloge.gateway.visual.publication.VisualGraphPublication;
 import com.leanowtech.bloge.gateway.visual.validation.GraphDraftValidator;
 import com.leanowtech.bloge.gateway.visual.validation.VisualValidationResult;
 
@@ -98,6 +99,72 @@ public class VisualGraphRunService {
                 dynamic.layout(),
                 dynamic.decisionTable(),
                 generated.dsl()
+        );
+    }
+
+    /**
+     * Runs an immutable published visual graph artifact without consulting the current operator catalog.
+     *
+     * @param publication published artifact
+     * @param context initial graph context
+     * @param outputNode optional output node override
+     * @return run response
+     */
+    public VisualGraphRunResponse run(VisualGraphPublication publication,
+                                      Map<String, Object> context,
+                                      String outputNode) {
+        if (publication == null) {
+            return blocked(null, false, List.of(VisualDiagnostic.error("visual.publication.missing",
+                    "Visual graph publication is required.", "/publication")),
+                    List.of("Visual graph publication is required."), "");
+        }
+
+        List<VisualDiagnostic> diagnostics = new ArrayList<>(publication.validation().diagnostics());
+        if (!publication.validation().valid()) {
+            return blocked(publication.draft(), false, diagnostics,
+                    List.of("Published visual validation report contains errors."), publication.dsl());
+        }
+        diagnostics.addAll(publication.generation().diagnostics());
+        if (!publication.generation().generated() || publication.dsl().isBlank()) {
+            return blocked(publication.draft(), true, diagnostics,
+                    List.of("Published visual DSL is not executable."), publication.dsl());
+        }
+
+        Map<String, Object> effectiveContext = new LinkedHashMap<>(context == null ? Map.of() : context);
+        effectiveContext.putIfAbsent("tenantId", publication.tenantId());
+        effectiveContext.putIfAbsent("namespace", publication.namespace());
+        GraphDraft draft = publication.draft();
+        String selectedOutputNode = outputNode == null || outputNode.isBlank()
+                ? (draft == null ? "" : draft.output().nodeId())
+                : outputNode;
+
+        DynamicGraphRunResponse dynamic = dynamicRunner.run(new DynamicGraphRunRequest(
+                publication.dsl(),
+                effectiveContext,
+                selectedOutputNode
+        ));
+        diagnostics.addAll(dynamic.diagnostics().stream()
+                .map(VisualGraphRunService::fromCompilerDiagnostic)
+                .toList());
+        Object output = dynamic.output();
+        if (draft != null && shouldExtractDraftOutputPath(draft, dynamic.outputNode())) {
+            output = extractPath(output, draft.output().path());
+        }
+        return new VisualGraphRunResponse(
+                true,
+                dynamic.compiled(),
+                dynamic.success(),
+                dynamic.graphName(),
+                dynamic.outputNode(),
+                output,
+                dynamic.results(),
+                dynamic.statusMap(),
+                dynamic.elapsedMs(),
+                diagnostics,
+                dynamic.errors(),
+                dynamic.layout(),
+                dynamic.decisionTable(),
+                publication.dsl()
         );
     }
 

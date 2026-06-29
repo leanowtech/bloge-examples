@@ -2,10 +2,13 @@ package com.leanowtech.bloge.gateway.example;
 
 import com.leanowtech.bloge.gateway.visual.catalog.VisualOperatorCatalog;
 import com.leanowtech.bloge.gateway.visual.catalog.VisualCatalogTestSupport;
+import com.leanowtech.bloge.gateway.visual.codegen.DslGenerationResult;
 import com.leanowtech.bloge.gateway.visual.codegen.GraphDraftDslGenerator;
 import com.leanowtech.bloge.gateway.visual.draft.GraphDraft;
+import com.leanowtech.bloge.gateway.visual.publication.VisualGraphPublication;
 import com.leanowtech.bloge.gateway.visual.runtime.VisualGraphRunResponse;
 import com.leanowtech.bloge.gateway.visual.runtime.VisualGraphRunService;
+import com.leanowtech.bloge.gateway.visual.validation.VisualValidationResult;
 import com.leanowtech.bloge.gateway.visual.validation.GraphDraftValidator;
 import com.leanowtech.bloge.test.MockOperator;
 
@@ -160,6 +163,71 @@ class VisualGraphRunServiceTest {
         assertThat(defaultResponse.output()).isEqualTo(true);
         assertThat(overrideResponse.outputNode()).isEqualTo("summary");
         assertThat(overrideResponse.output()).isEqualTo(Map.of("score", 720, "amount", 250_000));
+    }
+
+    @Test
+    void runsPublishedArtifactFromFrozenDslWithoutCurrentCatalog() {
+        VisualGraphRunService service = new VisualGraphRunService(
+                null,
+                null,
+                new DynamicGatewayComposerService(MockOperator.returning(null))
+        );
+        GraphDraft draft = new GraphDraft(
+                "",
+                "draft-1",
+                2,
+                "publishedPolicy",
+                "",
+                "",
+                "",
+                "",
+                null,
+                List.of(new GraphDraft.DraftNode(
+                        "response",
+                        "risk:operatorRemovedFromCurrentCatalog",
+                        "",
+                        Map.of(),
+                        Map.of(),
+                        null
+                )),
+                List.of(),
+                Map.of(),
+                new GraphDraft.OutputSelection("response", "score")
+        );
+        String frozenDsl = """
+                graph publishedPolicy {
+                  transform response {
+                    score = ctx.score
+                  }
+                }
+                """;
+        VisualGraphPublication publication = new VisualGraphPublication(
+                "",
+                "pub-1",
+                draft.draftId(),
+                draft.revision(),
+                draft.graphName(),
+                draft.tenantId(),
+                draft.namespace(),
+                draft.environment(),
+                null,
+                draft,
+                List.of(),
+                Map.of(),
+                Map.of(),
+                frozenDsl,
+                new VisualValidationResult(true, List.of()),
+                new DslGenerationResult(true, frozenDsl, List.of())
+        );
+
+        VisualGraphRunResponse response = service.run(publication, Map.of("score", 720), "");
+
+        assertThat(response.validated()).isTrue();
+        assertThat(response.compiled()).isTrue();
+        assertThat(response.success()).isTrue();
+        assertThat(response.outputNode()).isEqualTo("response");
+        assertThat(response.output()).isEqualTo(720);
+        assertThat(response.generatedDsl()).isEqualTo(frozenDsl);
     }
 
     private static VisualOperatorCatalog transformOnlyCatalog() {

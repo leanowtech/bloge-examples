@@ -1,6 +1,7 @@
 package com.leanowtech.bloge.gateway.visual.catalog;
 
 import com.leanowtech.bloge.gateway.visual.diagnostic.VisualDiagnostic;
+import com.leanowtech.bloge.gateway.visual.validation.VisualSecretGuard;
 import com.leanowtech.bloge.gateway.visual.validation.VisualValidationResult;
 
 import org.springframework.stereotype.Service;
@@ -87,6 +88,7 @@ public class OperatorLibraryValidator {
         validatePorts(operator, "outputs", operator.ports().outputs(), path + "/ports/outputs", diagnostics);
         validateSchema(operator.configSchema().schema(), path + "/configSchema/schema", diagnostics);
         validateLowering(operator, path + "/lowering", diagnostics);
+        diagnostics.addAll(VisualSecretGuard.detectOperatorSecrets(operator, path));
     }
 
     private static void validatePorts(OperatorDefinition operator,

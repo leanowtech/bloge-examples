@@ -14,6 +14,7 @@ import java.util.List;
 import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 /**
  * Tests for H2-backed graph draft persistence.
@@ -56,6 +57,26 @@ class DatabaseGraphDraftRepositoryTest {
     }
 
     @Test
+    void saveIfRevisionUpdatesOnlyMatchingRevision() {
+        GraphDraft first = repository.save(simpleDraft("draft-1", 0));
+
+        GraphDraft updated = repository.saveIfRevision("draft-1", first.revision(),
+                first.withIdentity("draft-1", first.revision()))
+                .orElseThrow();
+
+        assertThat(updated.revision()).isEqualTo(2);
+        assertThat(repository.find("draft-1")).contains(updated);
+    }
+
+    @Test
+    void saveIfRevisionRejectsStaleRevision() {
+        GraphDraft first = repository.save(simpleDraft("draft-1", 0));
+
+        assertThat(repository.saveIfRevision("draft-1", first.revision() + 1, first)).isEmpty();
+        assertThat(repository.find("draft-1")).contains(first);
+    }
+
+    @Test
     void persistenceSurvivesReInit() {
         GraphDraft stored = repository.save(simpleDraft("draft-1", 0));
 
@@ -64,6 +85,25 @@ class DatabaseGraphDraftRepositoryTest {
 
         assertThat(reloaded.find("draft-1")).contains(stored);
         assertThat(reloaded.all()).hasSize(1);
+    }
+
+    @Test
+    void saveRejectsRawSecretMaterial() {
+        assertThatThrownBy(() -> repository.save(simpleDraft("draft-1", 0, Map.of(
+                "apiKey", "sk-repositorySecret123456"
+        ))))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("Raw secret material")
+                .hasMessageNotContaining("sk-repositorySecret123456");
+    }
+
+    @Test
+    void saveAllowsSecretReference() {
+        GraphDraft stored = repository.save(simpleDraft("draft-1", 0, Map.of(
+                "secretRef", "vault://gateway/service-token"
+        )));
+
+        assertThat(repository.find(stored.draftId())).contains(stored);
     }
 
     @Test
@@ -76,6 +116,10 @@ class DatabaseGraphDraftRepositoryTest {
     }
 
     private static GraphDraft simpleDraft(String draftId, long revision) {
+        return simpleDraft(draftId, revision, Map.of());
+    }
+
+    private static GraphDraft simpleDraft(String draftId, long revision, Map<String, Object> config) {
         return new GraphDraft(
                 "",
                 draftId,
@@ -91,7 +135,7 @@ class DatabaseGraphDraftRepositoryTest {
                         "bloge:transform",
                         "",
                         Map.of("score", GraphDraft.Binding.contextPath("score")),
-                        Map.of(),
+                        config,
                         null
                 )),
                 List.of(),

@@ -5,12 +5,16 @@ import com.leanowtech.bloge.gateway.visual.catalog.VisualCatalogTestSupport;
 import com.leanowtech.bloge.gateway.visual.codegen.DslGenerationResult;
 import com.leanowtech.bloge.gateway.visual.codegen.GraphDraftDslGenerator;
 import com.leanowtech.bloge.gateway.visual.draft.GraphDraft;
+import com.leanowtech.bloge.gateway.visual.draft.GraphDraftPatchRequest;
+import com.leanowtech.bloge.gateway.visual.draft.GraphDraftPatchResult;
+import com.leanowtech.bloge.gateway.visual.draft.GraphDraftPatchService;
 import com.leanowtech.bloge.gateway.visual.draft.InMemoryGraphDraftRepository;
 import com.leanowtech.bloge.gateway.visual.publication.InMemoryVisualGraphPublicationRepository;
 import com.leanowtech.bloge.gateway.visual.publication.VisualGraphPublicationResult;
 import com.leanowtech.bloge.gateway.visual.model.SchemaEnvelope;
 import com.leanowtech.bloge.gateway.visual.validation.GraphDraftValidator;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -79,6 +83,52 @@ class VisualGraphDraftControllerTest {
 
         assertThat(stored.operatorFingerprints())
                 .containsEntry("eligibility", catalog.find("risk:eligibility").orElseThrow().fingerprint());
+    }
+
+    @Test
+    void patchStoredDraftAppliesExpectedRevisionAndIncrementsRevision() {
+        VisualGraphDraftController controller = controllerWithEligibilityLibrary();
+        GraphDraft stored = controller.create(eligibilityDraft(graphInputSchema(
+                Map.of(
+                        "score", Map.of("type", "integer"),
+                        "amount", Map.of("type", "number")
+                )
+        )));
+
+        ResponseEntity<GraphDraftPatchResult> response = controller.patch(stored.draftId(),
+                new GraphDraftPatchRequest(stored.revision(), List.of(
+                        new GraphDraftPatchRequest.PatchOperation("replace", "/graphName", "patchedPolicy")
+                )));
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat(response.getBody()).isNotNull();
+        assertThat(response.getBody().patched()).isTrue();
+        assertThat(response.getBody().draft().graphName()).isEqualTo("patchedPolicy");
+        assertThat(response.getBody().draft().revision()).isEqualTo(stored.revision() + 1);
+    }
+
+    @Test
+    void patchStoredDraftRejectsStaleRevision() {
+        VisualGraphDraftController controller = controllerWithEligibilityLibrary();
+        GraphDraft stored = controller.create(eligibilityDraft(graphInputSchema(
+                Map.of(
+                        "score", Map.of("type", "integer"),
+                        "amount", Map.of("type", "number")
+                )
+        )));
+
+        ResponseEntity<GraphDraftPatchResult> response = controller.patch(stored.draftId(),
+                new GraphDraftPatchRequest(stored.revision() - 1, List.of(
+                        new GraphDraftPatchRequest.PatchOperation("replace", "/graphName", "stalePatch")
+                )));
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.CONFLICT);
+        assertThat(response.getBody()).isNotNull();
+        assertThat(response.getBody().patched()).isFalse();
+        assertThat(response.getBody().draft().revision()).isEqualTo(stored.revision());
+        assertThat(response.getBody().diagnostics())
+                .extracting("code")
+                .contains("visual.draft.revisionConflict");
     }
 
     @Test
@@ -153,12 +203,13 @@ class VisualGraphDraftControllerTest {
                                                                     InMemoryGraphDraftRepository repository,
                                                                     InMemoryVisualGraphPublicationRepository publications) {
         return new VisualGraphDraftController(
-                repository,
+                repository == null ? new InMemoryGraphDraftRepository() : repository,
                 new GraphDraftValidator(catalog),
                 new GraphDraftDslGenerator(catalog),
                 null,
                 catalog,
-                publications
+                publications,
+                new GraphDraftPatchService(new ObjectMapper())
         );
     }
 

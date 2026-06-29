@@ -37,6 +37,10 @@
 | I7 | 发布 artifact 必须不可变 | 包括 DSL、operator fingerprints、schemas、layout、validation report |
 | I8 | 真实 secret 不能进入 catalog、draft、layout 或 diagnostics | 只能保存 secret ref |
 
+resource-gateway 示例通过 `VisualSecretGuard` 在 operator library 校验、draft
+校验和 draft 持久化入口阻断明显明文 secret；diagnostic 只返回固定错误文案和
+artifact path，不回显 secret value。
+
 ## 3. 命名与版本
 
 ### 3.1 schemaVersion
@@ -852,6 +856,7 @@ MVP 至少阻断：
 - 不支持的 schema `type` / `kind`。
 - `required` 中引用不存在的 `properties` 字段。
 - `array` schema 未声明 `items`。
+- 明显明文 secret 出现在 lowering parameters、config schema 或 port schema。
 
 ### 10.3 保存 draft patch
 
@@ -893,6 +898,11 @@ Content-Type: application/json
 
 - `expectedRevision` 不匹配返回 `409 CONFLICT`。
 - 响应必须返回当前 server revision。
+
+resource-gateway 示例支持 `add`、`replace`、`remove` 三类 JSON patch 操作，
+并额外允许 `path=""` 的 root `replace`，用于浏览器把当前完整 `GraphDraft`
+作为一次带乐观锁的保存提交。服务端会在 repository 层执行
+`expectedRevision` guarded update，避免 check/save 两步之间覆盖其他编辑。
 
 ### 10.4 校验 draft
 
@@ -950,7 +960,64 @@ POST /api/visual/drafts/{draftId}/compile
 }
 ```
 
-### 10.6 发布不可变 artifact
+### 10.6 连线预检
+
+```http
+POST /api/visual/connections/check
+Content-Type: application/json
+```
+
+画布拖拽连线时可以先做浏览器本地快速判断，但释放连线前必须能调用服务端
+预检，以免浏览器复制的 schema 规则和发布门禁分叉。请求体包含当前 draft
+快照、source endpoint、target endpoint 和 edge kind；服务端临时追加一条
+preview edge，复用完整 draft validation 的 edge schema 与 DAG 规则，只返回
+与这条候选连接相关的 diagnostics。
+
+请求：
+
+```json
+{
+  "kind": "data",
+  "draft": {
+    "schemaVersion": "bloge.visualGraphDraft.v1",
+    "graphName": "customLoanPolicy",
+    "nodes": []
+  },
+  "source": {
+    "nodeId": "fetchApplicant",
+    "port": "payload",
+    "path": "score"
+  },
+  "target": {
+    "nodeId": "loanPolicy",
+    "port": "inputs",
+    "path": "score"
+  }
+}
+```
+
+响应：
+
+```json
+{
+  "accepted": true,
+  "edge": {
+    "id": "__preview_connection",
+    "kind": "data",
+    "source": { "nodeId": "fetchApplicant", "port": "payload", "path": "score" },
+    "target": { "nodeId": "loanPolicy", "port": "inputs", "path": "score" }
+  },
+  "diagnostics": []
+}
+```
+
+若 source path、target path、port 或类型不兼容，`accepted=false`，并返回
+`visual.edge.*` diagnostics；若会形成环，返回 `visual.edge.cycle`。
+
+resource-gateway 示例已提供 `POST /api/visual/connections/check`，浏览器画布在
+drop 连线时调用它作为最终写入 binding 的 gate。
+
+### 10.7 发布不可变 artifact
 
 ```http
 POST /api/visual/drafts/{draftId}/publish
@@ -967,7 +1034,7 @@ POST /api/visual/drafts/{draftId}/publish
 - generated BLOGE DSL。
 - validation/generation report。
 
-resource-gateway 示例将 artifact 存入 `visual_graph_publications`，只提供 list/get，
+resource-gateway 示例将 artifact 存入 `visual_graph_publications`，提供 list/get/run，
 不提供 update/delete。
 
 响应：
@@ -993,7 +1060,32 @@ resource-gateway 示例将 artifact 存入 `visual_graph_publications`，只提�
 }
 ```
 
-### 10.7 试运行
+### 10.8 运行发布 artifact
+
+```http
+POST /api/visual/publications/{publicationId}/run
+Content-Type: application/json
+```
+
+运行发布 artifact 时必须使用 artifact 内冻结的 DSL，不得重新根据当前 catalog
+lower draft。这样 operator library 后续变更不会影响已经发布的业务编排。
+请求体与 stored draft run 一致：
+
+```json
+{
+  "context": {
+    "applicantId": "prime",
+    "requestedAmount": 450000
+  },
+  "outputNode": "assembleLoanDecision"
+}
+```
+
+响应沿用 `VisualGraphRunResponse`，但 `generatedDsl` 必须等于 publication 内的
+frozen DSL。若 artifact 不存在返回 `404 NOT FOUND`；artifact 本身不可被修改或
+删除。
+
+### 10.9 试运行
 
 ```http
 POST /api/visual/drafts/{draftId}/run

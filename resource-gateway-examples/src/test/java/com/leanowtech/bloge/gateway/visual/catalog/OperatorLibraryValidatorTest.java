@@ -238,6 +238,33 @@ class OperatorLibraryValidatorTest {
                 );
     }
 
+    @Test
+    void rejectsRawSecretInLoweringParametersWithoutEchoingValue() {
+        String rawSecret = "sk-testSecretToken123456";
+        OperatorDefinition operator = operator(
+                "risk:secretLowering",
+                new OperatorDefinition.Ports(
+                        List.of(),
+                        List.of(new OperatorDefinition.Port("output",
+                                SchemaEnvelope.object(Map.of("accepted", Map.of("type", "boolean")), List.of()),
+                                true,
+                                "Output."))
+                ),
+                "native",
+                Map.of("apiKey", rawSecret)
+        );
+
+        VisualValidationResult result = validator.validate(libraryWith(operator));
+
+        assertThat(result.valid()).isFalse();
+        assertThat(result.diagnostics())
+                .anySatisfy(diagnostic -> {
+                    assertThat(diagnostic.code()).isEqualTo("visual.secret.raw");
+                    assertThat(diagnostic.message()).doesNotContain(rawSecret);
+                    assertThat(diagnostic.target()).contains("lowering").contains("apiKey");
+                });
+    }
+
     private static OperatorLibrary libraryWith(OperatorDefinition operator) {
         return new OperatorLibrary(
                 "bloge.visualOperatorLibrary.v1",
@@ -253,6 +280,13 @@ class OperatorLibraryValidatorTest {
     private static OperatorDefinition operator(String operatorRef,
                                                OperatorDefinition.Ports ports,
                                                String loweringMode) {
+        return operator(operatorRef, ports, loweringMode, Map.of());
+    }
+
+    private static OperatorDefinition operator(String operatorRef,
+                                               OperatorDefinition.Ports ports,
+                                               String loweringMode,
+                                               Map<String, Object> loweringParameters) {
         return new OperatorDefinition(
                 "bloge.visualOperator.v1",
                 operatorRef,
@@ -262,7 +296,7 @@ class OperatorLibraryValidatorTest {
                 ports,
                 SchemaEnvelope.opaque(),
                 OperatorDefinition.Capabilities.pure(),
-                new OperatorDefinition.Lowering(loweringMode, operatorRef, Map.of()),
+                new OperatorDefinition.Lowering(loweringMode, operatorRef, loweringParameters),
                 List.of()
         );
     }

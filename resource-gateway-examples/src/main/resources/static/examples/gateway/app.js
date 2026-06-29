@@ -993,6 +993,12 @@ function normalizeDiagnostics(diagnostics) {
   return Array.isArray(diagnostics) ? diagnostics : [];
 }
 
+function diagnosticMessage(diagnostics, fallback) {
+  const error = diagnostics.find((diagnostic) => String(diagnostic.level || '').toUpperCase() === 'ERROR');
+  const warning = diagnostics.find((diagnostic) => String(diagnostic.level || '').toUpperCase() === 'WARNING');
+  return error?.message || warning?.message || fallback;
+}
+
 function visualCheckLevel(diagnostics, success = true) {
   if (diagnostics.some((diagnostic) => String(diagnostic.level || '').toUpperCase() === 'ERROR')) {
     return 'error';
@@ -1235,16 +1241,32 @@ async function loadDraftList(options = {}) {
 async function saveCurrentDraft() {
   const draft = builderToVisualDraft(state.builder);
   const draftId = state.currentDraftId;
-  const response = await fetch(draftId ? `/api/visual/drafts/${encodeURIComponent(draftId)}` : '/api/visual/drafts', {
-    method: draftId ? 'PUT' : 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(draft)
-  });
+  const response = draftId
+    ? await fetch(`/api/visual/drafts/${encodeURIComponent(draftId)}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        expectedRevision: state.currentDraftRevision || 0,
+        patch: [{ op: 'replace', path: '', value: draft }]
+      })
+    })
+    : await fetch('/api/visual/drafts', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(draft)
+    });
+  const payload = await response.json().catch(() => null);
   if (!response.ok) {
-    setDraftMessage(`Save failed with ${response.status}`, 'error');
+    const diagnostics = normalizeDiagnostics(payload?.diagnostics);
+    const current = payload?.draft;
+    if (response.status === 409 && current?.revision !== undefined) {
+      state.currentDraftRevision = current.revision || 0;
+      await loadDraftList();
+    }
+    setDraftMessage(diagnosticMessage(diagnostics, `Save failed with ${response.status}`), 'error');
     return null;
   }
-  const stored = await response.json();
+  const stored = payload?.draft || payload;
   state.currentDraftId = stored.draftId || '';
   state.currentDraftRevision = stored.revision || 0;
   setDraftMessage(`Saved ${state.currentDraftId}@${state.currentDraftRevision}.`, 'success');
@@ -3583,21 +3605,68 @@ function finishConnectionDrag(event) {
   if (!drag || event.pointerId !== drag.pointerId) return;
   event.preventDefault();
   const target = connectionTargetAtPoint(event);
+  state.connectionDrag = null;
+  document.body.classList.remove('connecting-edge');
   if (target) {
     const compatibility = connectionCompatibility(drag.source, target);
     if (compatibility.ok) {
-      applyConnection(drag.source, target);
-      setConnectionMessage(
-        `Connected ${drag.source.nodeId}.${drag.source.path || drag.source.port} -> ${target.nodeId}.${target.path || target.port}.`,
-        'success'
-      );
+      setConnectionMessage('Checking connection with server...', 'info');
+      renderDiagram();
+      checkVisualConnectionOnServer(drag.source, target)
+        .then((serverCheck) => {
+          if (serverCheck.accepted) {
+            applyConnection(drag.source, target);
+            setConnectionMessage(
+              `Connected ${drag.source.nodeId}.${drag.source.path || drag.source.port} -> ${target.nodeId}.${target.path || target.port}.`,
+              'success'
+            );
+          } else {
+            setConnectionMessage(serverCheck.message, 'error');
+          }
+          renderDiagram();
+        })
+        .catch((error) => {
+          setConnectionMessage(error.message, 'error');
+          renderDiagram();
+        });
+      return;
     } else {
       setConnectionMessage(compatibility.message, 'error');
     }
   }
-  state.connectionDrag = null;
-  document.body.classList.remove('connecting-edge');
   renderDiagram();
+}
+
+async function checkVisualConnectionOnServer(source, target) {
+  const response = await fetch('/api/visual/connections/check', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      draft: builderToVisualDraft(state.builder),
+      kind: 'data',
+      source: {
+        nodeId: source.nodeId,
+        port: source.port || '',
+        path: source.path || ''
+      },
+      target: {
+        nodeId: target.nodeId,
+        port: target.port || '',
+        path: target.path || ''
+      }
+    })
+  });
+  if (!response.ok) {
+    throw new Error(`Connection check failed with ${response.status}`);
+  }
+  const payload = await response.json();
+  const diagnostics = normalizeDiagnostics(payload.diagnostics);
+  return {
+    accepted: Boolean(payload.accepted),
+    diagnostics,
+    message: diagnosticMessage(diagnostics, 'Connection rejected by server.'),
+    payload
+  };
 }
 
 function connectionTargetAtPoint(event) {

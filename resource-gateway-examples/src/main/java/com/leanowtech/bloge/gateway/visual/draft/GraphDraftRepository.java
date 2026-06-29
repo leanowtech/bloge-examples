@@ -30,6 +30,16 @@ public interface GraphDraftRepository {
     GraphDraft save(GraphDraft draft);
 
     /**
+     * Updates a draft only when the stored revision still matches the expected revision.
+     *
+     * @param draftId draft id
+     * @param expectedRevision revision observed by the caller
+     * @param draft draft to store
+     * @return updated draft when the revision matched
+     */
+    Optional<GraphDraft> saveIfRevision(String draftId, long expectedRevision, GraphDraft draft);
+
+    /**
      * Deletes a draft.
      *
      * @param draftId draft id

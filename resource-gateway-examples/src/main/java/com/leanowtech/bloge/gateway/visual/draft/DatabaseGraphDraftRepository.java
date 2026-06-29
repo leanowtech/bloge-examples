@@ -2,6 +2,7 @@ package com.leanowtech.bloge.gateway.visual.draft;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.leanowtech.bloge.gateway.visual.validation.VisualSecretGuard;
 
 import jakarta.annotation.PostConstruct;
 import org.slf4j.Logger;
@@ -31,6 +32,11 @@ public class DatabaseGraphDraftRepository implements GraphDraftRepository {
 
     private static final String SELECT_ALL = "SELECT draft_id, draft_json FROM visual_graph_drafts";
     private static final String UPSERT = "MERGE INTO visual_graph_drafts (draft_id, revision, draft_json) KEY (draft_id) VALUES (?, ?, ?)";
+    private static final String UPDATE_IF_REVISION = """
+            UPDATE visual_graph_drafts
+            SET revision = ?, draft_json = ?
+            WHERE draft_id = ? AND revision = ?
+            """;
     private static final String DELETE = "DELETE FROM visual_graph_drafts WHERE draft_id = ?";
 
     private final ConcurrentHashMap<String, GraphDraft> cache = new ConcurrentHashMap<>();
@@ -82,6 +88,7 @@ public class DatabaseGraphDraftRepository implements GraphDraftRepository {
 
     @Override
     public GraphDraft save(GraphDraft draft) {
+        VisualSecretGuard.requireNoDraftSecrets(draft);
         String draftId = draft.draftId().isBlank() ? UUID.randomUUID().toString() : draft.draftId();
         long currentRevision = cache.getOrDefault(draftId, draft.withIdentity(draftId, 0)).revision();
         long nextRevision = Math.max(draft.revision(), currentRevision) + 1;
@@ -90,6 +97,25 @@ public class DatabaseGraphDraftRepository implements GraphDraftRepository {
         cache.put(draftId, stored);
         log.info("Saved visual graph draft: {}@{}", draftId, nextRevision);
         return stored;
+    }
+
+    @Override
+    public Optional<GraphDraft> saveIfRevision(String draftId, long expectedRevision, GraphDraft draft) {
+        VisualSecretGuard.requireNoDraftSecrets(draft);
+        GraphDraft stored = draft.withIdentity(draftId, expectedRevision + 1);
+        int updated;
+        try {
+            updated = jdbc.update(UPDATE_IF_REVISION, stored.revision(), objectMapper.writeValueAsString(stored),
+                    draftId, expectedRevision);
+        } catch (JsonProcessingException e) {
+            throw new IllegalStateException("Failed to serialize visual graph draft: " + draftId, e);
+        }
+        if (updated == 0) {
+            return Optional.empty();
+        }
+        cache.put(draftId, stored);
+        log.info("Patched visual graph draft: {}@{}", draftId, stored.revision());
+        return Optional.of(stored);
     }
 
     @Override

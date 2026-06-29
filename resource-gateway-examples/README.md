@@ -88,9 +88,11 @@ dragged as schema-aware business operators and lowered back to `httpResource` at
 runtime. Users can reposition existing nodes directly on the canvas, edit the
 selected operator's properties, bind every schema-declared input field from a
 schema-checked source picker or a manual expression, connect output handles to
-input handles under schema type constraints, import user-provided operator
-library JSON into the catalog, save/load/delete H2-backed graph drafts, validate
-and compile the draft through the server-side visual graph APIs, inspect the
+input handles under schema type constraints, confirm dropped connections through
+the server-side visual connection API before mutating the draft, import user-provided operator
+library JSON into the catalog, save/load/delete H2-backed graph drafts with
+revision-guarded `PATCH` updates, validate and compile the draft through the
+server-side visual graph APIs, inspect the
 generated BLOGE DSL, run it with JSON context, and see diagnostics, output, graph
 highlighting, and the decision-table matrix update together. Node-path bindings
 carry both source output port and target input port metadata, so multi-port user
@@ -107,6 +109,8 @@ values cannot bypass required nested input types. Operator `configSchema` is
 also enforced: the browser inspector renders simple config controls for schema
 fields, and the server blocks missing required config, type mismatches, enum
 mismatches, and undeclared config fields when `additionalProperties=false`.
+Raw secret material is rejected from imported operator libraries and saved graph
+drafts; authoring artifacts may store only references such as `secretRef`.
 Graph input bindings are schema-aware too: the composer derives a draft
 `inputSchema` from Context JSON for authoring, offers compatible `ctx.*` values
 in the source picker, and the server blocks unknown or type-incompatible
@@ -124,7 +128,9 @@ draft was authored against an older schema/lowering fingerprint than the catalog
 currently exposes.
 Stored drafts can be published into immutable visual graph artifacts that freeze
 the generated DSL, draft snapshot, operator schema snapshots, fingerprints,
-layout, and validation/generation reports for audit or later promotion.
+layout, and validation/generation reports for audit or later promotion. Published
+artifacts can be run directly from their frozen DSL, so execution no longer
+depends on whatever the current operator catalog exposes after publication.
 The built-in `.bloge` scenarios remain available in the left rail and continue
 to execute the public gateway endpoints.
 
@@ -147,14 +153,17 @@ Showcase metadata APIs:
 | `POST` | `/api/visual/drafts` | Save a new visual graph draft with assigned id and revision |
 | `GET` | `/api/visual/drafts/{draftId}` | Load a stored visual graph draft |
 | `PUT` | `/api/visual/drafts/{draftId}` | Update a stored visual graph draft and increment revision |
+| `PATCH` | `/api/visual/drafts/{draftId}` | Apply an `expectedRevision` JSON patch and reject stale edits with `409 CONFLICT` |
 | `DELETE` | `/api/visual/drafts/{draftId}` | Delete a stored visual graph draft |
 | `POST` | `/api/visual/drafts/validate` | Validate a visual graph draft against operator schemas, typed port edges, and DAG constraints |
 | `POST` | `/api/visual/drafts/compile` | Validate a visual graph draft, then lower it to BLOGE DSL |
+| `POST` | `/api/visual/connections/check` | Check a proposed source-to-target canvas connection against the same schema and DAG rules used by draft validation |
 | `POST` | `/api/visual/drafts/run` | Validate, compile, and execute a transient visual graph draft |
 | `POST` | `/api/visual/drafts/{draftId}/run` | Execute a stored visual graph draft with submitted context |
 | `POST` | `/api/visual/drafts/{draftId}/publish` | Validate, compile, and publish an immutable visual graph artifact |
 | `GET` | `/api/visual/publications` | List immutable visual graph publications |
 | `GET` | `/api/visual/publications/{publicationId}` | Load a published visual graph artifact |
+| `POST` | `/api/visual/publications/{publicationId}/run` | Execute a published artifact from its frozen DSL |
 
 Visual run requests may pass `outputNode` to inspect a different node than the
 draft's saved output selection. In that case the response returns the override
@@ -388,8 +397,9 @@ Seven `.bloge` graphs live in `src/main/resources/bloge/gateway/`:
 | `DatabaseOperatorLibraryRegistry` | H2-backed user operator-library registry, so imported operator catalogs survive restart |
 | `DefaultVisualOperatorCatalog` | Combines native visual operators with `resource:<resourceId>` virtual operators |
 | `GraphDraft` | Editable canvas graph model: input schema, nodes, port-aware bindings, edges, layout, output selection, and operator fingerprint snapshots |
-| `DatabaseGraphDraftRepository` | H2-backed graph draft repository with revision assignment |
+| `DatabaseGraphDraftRepository` | H2-backed graph draft repository with revision assignment and expected-revision guarded updates |
 | `GraphDraftValidator` | Validates operator references, operator fingerprint drift, graph input `contextPath` bindings, literal constants, expression references, required schema inputs, node config against `configSchema`, port-aware node bindings, typed port edges, DAG shape, and output schema selection |
+| `VisualConnectionCheckService` | Reuses draft validation to accept or reject one proposed canvas edge before the browser writes a binding |
 | `GraphDraftDslGenerator` | Lowers visual drafts into executable BLOGE DSL |
 | `VisualGraphRunService` | Reuses the dynamic BLOGE runner to validate, compile, and execute visual drafts |
 | `VisualGraphPublication` | Immutable published visual graph artifact with DSL, draft, operator schema snapshots, fingerprints, layout, and validation reports |
@@ -715,7 +725,7 @@ Isolated component tests, some with lightweight Spring slices or mocks.
 | `DatabaseResourceRegistryTest` | 11 | CRUD, H2 persistence, in-memory cache |
 | `ResourceDescriptorBootstrapTest` | 7 | Seeding, refresh behavior, idempotency |
 | `GatewayDslCompilationTest` | 7 | DSL parsing, graph loading |
-| `Visual*Test` | 78 | Visual operator projection, imported libraries, draft/publication persistence, typed edge validation, DSL lowering, runtime smoke path |
+| `Visual*Test` | 93 | Visual operator projection, imported libraries, draft/publication persistence, revision-guarded patching, typed connection/edge validation, secret blocking, DSL lowering, runtime smoke path |
 
 ### Layer 3 — Orchestration tests
 

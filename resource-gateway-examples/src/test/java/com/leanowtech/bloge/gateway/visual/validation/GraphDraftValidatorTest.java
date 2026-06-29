@@ -716,6 +716,29 @@ class GraphDraftValidatorTest {
     }
 
     @Test
+    void rejectsRawSecretInDraftWithoutEchoingValue() {
+        String rawSecret = "Bearer draft-secret-token";
+        GraphDraftValidator validator = new GraphDraftValidator(
+                VisualCatalogTestSupport.catalogWithLibrary(
+                        VisualCatalogTestSupport.configurablePolicyLibrary()));
+        GraphDraft draft = configurablePolicyDraft(Map.of(
+                "threshold", 700,
+                "mode", "strict",
+                "authorization", rawSecret
+        ));
+
+        VisualValidationResult result = validator.validate(draft);
+
+        assertThat(result.valid()).isFalse();
+        assertThat(result.diagnostics())
+                .anySatisfy(diagnostic -> {
+                    assertThat(diagnostic.code()).isEqualTo("visual.secret.raw");
+                    assertThat(diagnostic.message()).doesNotContain(rawSecret);
+                    assertThat(diagnostic.target()).contains("authorization");
+                });
+    }
+
+    @Test
     void rejectsEdgeWhenSourcePathDoesNotExist() {
         GraphDraftValidator validator = new GraphDraftValidator(
                 VisualCatalogTestSupport.catalogWithLoanApplicantResourceAndLibrary(

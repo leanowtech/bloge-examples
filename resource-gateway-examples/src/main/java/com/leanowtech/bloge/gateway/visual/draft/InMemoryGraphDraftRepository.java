@@ -1,5 +1,7 @@
 package com.leanowtech.bloge.gateway.visual.draft;
 
+import com.leanowtech.bloge.gateway.visual.validation.VisualSecretGuard;
+
 import java.util.Collection;
 import java.util.Comparator;
 import java.util.Map;
@@ -28,12 +30,25 @@ public class InMemoryGraphDraftRepository implements GraphDraftRepository {
 
     @Override
     public GraphDraft save(GraphDraft draft) {
+        VisualSecretGuard.requireNoDraftSecrets(draft);
         String draftId = draft.draftId().isBlank() ? UUID.randomUUID().toString() : draft.draftId();
         long nextRevision = Math.max(draft.revision(), drafts.getOrDefault(draftId,
                 draft.withIdentity(draftId, 0)).revision()) + 1;
         GraphDraft stored = draft.withIdentity(draftId, nextRevision);
         drafts.put(draftId, stored);
         return stored;
+    }
+
+    @Override
+    public synchronized Optional<GraphDraft> saveIfRevision(String draftId, long expectedRevision, GraphDraft draft) {
+        VisualSecretGuard.requireNoDraftSecrets(draft);
+        GraphDraft current = drafts.get(draftId);
+        if (current == null || current.revision() != expectedRevision) {
+            return Optional.empty();
+        }
+        GraphDraft stored = draft.withIdentity(draftId, expectedRevision + 1);
+        drafts.put(draftId, stored);
+        return Optional.of(stored);
     }
 
     @Override

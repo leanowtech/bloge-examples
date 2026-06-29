@@ -4,7 +4,11 @@ import com.leanowtech.bloge.gateway.visual.codegen.DslGenerationResult;
 import com.leanowtech.bloge.gateway.visual.codegen.GraphDraftDslGenerator;
 import com.leanowtech.bloge.gateway.visual.catalog.OperatorDefinition;
 import com.leanowtech.bloge.gateway.visual.catalog.VisualOperatorCatalog;
+import com.leanowtech.bloge.gateway.visual.diagnostic.VisualDiagnostic;
 import com.leanowtech.bloge.gateway.visual.draft.GraphDraft;
+import com.leanowtech.bloge.gateway.visual.draft.GraphDraftPatchRequest;
+import com.leanowtech.bloge.gateway.visual.draft.GraphDraftPatchResult;
+import com.leanowtech.bloge.gateway.visual.draft.GraphDraftPatchService;
 import com.leanowtech.bloge.gateway.visual.draft.GraphDraftRepository;
 import com.leanowtech.bloge.gateway.visual.publication.VisualGraphPublication;
 import com.leanowtech.bloge.gateway.visual.publication.VisualGraphPublicationRepository;
@@ -19,7 +23,9 @@ import com.leanowtech.bloge.gateway.visual.validation.VisualValidationResult;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.DeleteMapping;
+import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
@@ -46,6 +52,7 @@ public class VisualGraphDraftController {
     private final VisualGraphRunService runner;
     private final VisualOperatorCatalog catalog;
     private final VisualGraphPublicationRepository publicationRepository;
+    private final GraphDraftPatchService patchService;
 
     /**
      * @param repository draft repository
@@ -58,13 +65,15 @@ public class VisualGraphDraftController {
                                       GraphDraftDslGenerator generator,
                                       VisualGraphRunService runner,
                                       VisualOperatorCatalog catalog,
-                                      VisualGraphPublicationRepository publicationRepository) {
+                                      VisualGraphPublicationRepository publicationRepository,
+                                      GraphDraftPatchService patchService) {
         this.repository = repository;
         this.validator = validator;
         this.generator = generator;
         this.runner = runner;
         this.catalog = catalog;
         this.publicationRepository = publicationRepository;
+        this.patchService = patchService;
     }
 
     /**
@@ -109,6 +118,42 @@ public class VisualGraphDraftController {
     @PutMapping("/{draftId}")
     public GraphDraft update(@PathVariable String draftId, @RequestBody GraphDraft draft) {
         return repository.save(withCurrentOperatorFingerprints(draft.withIdentity(draftId, draft.revision())));
+    }
+
+    /**
+     * Applies an optimistic-locking JSON patch to a stored draft.
+     *
+     * @param draftId draft id
+     * @param request patch request
+     * @return stored draft or conflict diagnostics
+     */
+    @PatchMapping("/{draftId}")
+    public ResponseEntity<GraphDraftPatchResult> patch(@PathVariable String draftId,
+                                                       @RequestBody GraphDraftPatchRequest request) {
+        Optional<GraphDraft> current = repository.find(draftId);
+        if (current.isEmpty()) {
+            return ResponseEntity.notFound().build();
+        }
+        List<VisualDiagnostic> preconditions = patchService.validateRequest(current.get(), request);
+        if (!preconditions.isEmpty()) {
+            HttpStatus status = hasDiagnostic(preconditions, "visual.draft.revisionConflict")
+                    ? HttpStatus.CONFLICT
+                    : HttpStatus.BAD_REQUEST;
+            return ResponseEntity.status(status)
+                    .body(GraphDraftPatchResult.rejected(current.get(), preconditions));
+        }
+        try {
+            GraphDraft patched = patchService.apply(current.get(), request)
+                    .withIdentity(draftId, current.get().revision());
+            GraphDraft candidate = withCurrentOperatorFingerprints(patched);
+            return repository.saveIfRevision(draftId, request.expectedRevision(), candidate)
+                    .map(stored -> ResponseEntity.ok(GraphDraftPatchResult.patched(stored)))
+                    .orElseGet(() -> conflictResponse(draftId, request.expectedRevision(), current.get()));
+        } catch (IllegalArgumentException ex) {
+            return ResponseEntity.badRequest().body(GraphDraftPatchResult.rejected(current.get(), List.of(
+                    VisualDiagnostic.error("visual.draft.patchInvalid", ex.getMessage(), "/patch")
+            )));
+        }
     }
 
     /**
@@ -238,5 +283,36 @@ public class VisualGraphDraftController {
                 .map(catalog::find)
                 .flatMap(Optional::stream)
                 .toList();
+    }
+
+    private ResponseEntity<GraphDraftPatchResult> conflictResponse(String draftId,
+                                                                   long expectedRevision,
+                                                                   GraphDraft fallback) {
+        GraphDraft current = repository.find(draftId).orElse(fallback);
+        return ResponseEntity.status(HttpStatus.CONFLICT)
+                .body(GraphDraftPatchResult.rejected(current, List.of(revisionConflictDiagnostic(
+                        expectedRevision, current.revision()))));
+    }
+
+    private static VisualDiagnostic revisionConflictDiagnostic(long expectedRevision, long currentRevision) {
+        return VisualDiagnostic.error("visual.draft.revisionConflict",
+                "Draft revision conflict: expected %d but current revision is %d."
+                        .formatted(expectedRevision, currentRevision),
+                "/expectedRevision");
+    }
+
+    private static boolean hasDiagnostic(List<VisualDiagnostic> diagnostics, String code) {
+        return diagnostics.stream().anyMatch(diagnostic -> code.equals(diagnostic.code()));
+    }
+
+    /**
+     * @param ex invalid draft payload
+     * @return structured bad request response
+     */
+    @ExceptionHandler(IllegalArgumentException.class)
+    public ResponseEntity<VisualValidationResult> handleBadRequest(IllegalArgumentException ex) {
+        return ResponseEntity.badRequest().body(new VisualValidationResult(false, List.of(
+                VisualDiagnostic.error("visual.draft.invalid", ex.getMessage(), "/")
+        )));
     }
 }

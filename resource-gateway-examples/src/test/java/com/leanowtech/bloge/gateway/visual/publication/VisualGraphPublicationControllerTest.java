@@ -4,6 +4,9 @@ import com.leanowtech.bloge.gateway.visual.catalog.OperatorDefinition;
 import com.leanowtech.bloge.gateway.visual.catalog.VisualCatalogTestSupport;
 import com.leanowtech.bloge.gateway.visual.codegen.DslGenerationResult;
 import com.leanowtech.bloge.gateway.visual.draft.GraphDraft;
+import com.leanowtech.bloge.gateway.visual.runtime.VisualGraphRunResponse;
+import com.leanowtech.bloge.gateway.visual.runtime.VisualGraphRunService;
+import com.leanowtech.bloge.gateway.visual.runtime.VisualStoredDraftRunRequest;
 import com.leanowtech.bloge.gateway.visual.validation.VisualValidationResult;
 
 import org.junit.jupiter.api.Test;
@@ -24,7 +27,7 @@ class VisualGraphPublicationControllerTest {
     void listAndGetPublications() {
         InMemoryVisualGraphPublicationRepository repository = new InMemoryVisualGraphPublicationRepository();
         VisualGraphPublication stored = repository.create(publication());
-        VisualGraphPublicationController controller = new VisualGraphPublicationController(repository);
+        VisualGraphPublicationController controller = new VisualGraphPublicationController(repository, runner());
 
         assertThat(controller.list()).containsExactly(stored);
         assertThat(controller.get(stored.publicationId()))
@@ -35,9 +38,31 @@ class VisualGraphPublicationControllerTest {
     @Test
     void getReturnsNotFoundForUnknownPublication() {
         VisualGraphPublicationController controller =
-                new VisualGraphPublicationController(new InMemoryVisualGraphPublicationRepository());
+                new VisualGraphPublicationController(new InMemoryVisualGraphPublicationRepository(), runner());
 
         assertThat(controller.get("missing").getStatusCode()).isEqualTo(HttpStatus.NOT_FOUND);
+    }
+
+    @Test
+    void runPublicationDelegatesToRunner() {
+        InMemoryVisualGraphPublicationRepository repository = new InMemoryVisualGraphPublicationRepository();
+        VisualGraphPublication stored = repository.create(publication());
+        CapturingRunService runner = new CapturingRunService();
+        VisualGraphPublicationController controller = new VisualGraphPublicationController(repository, runner);
+
+        ResponseEntity<VisualGraphRunResponse> response = controller.run(stored.publicationId(),
+                new VisualStoredDraftRunRequest(Map.of("score", 720), "eligibility"));
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat(response.getBody()).isNotNull();
+        assertThat(response.getBody().success()).isTrue();
+        assertThat(runner.publication).isEqualTo(stored);
+        assertThat(runner.context).containsEntry("score", 720);
+        assertThat(runner.outputNode).isEqualTo("eligibility");
+    }
+
+    private static VisualGraphRunService runner() {
+        return new CapturingRunService();
     }
 
     private static VisualGraphPublication publication() {
@@ -74,5 +99,40 @@ class VisualGraphPublicationControllerTest {
                 new VisualValidationResult(true, List.of()),
                 new DslGenerationResult(true, "graph visualPolicy {}", List.of())
         );
+    }
+
+    private static class CapturingRunService extends VisualGraphRunService {
+        private VisualGraphPublication publication;
+        private Map<String, Object> context;
+        private String outputNode;
+
+        CapturingRunService() {
+            super(null, null, null);
+        }
+
+        @Override
+        public VisualGraphRunResponse run(VisualGraphPublication publication,
+                                          Map<String, Object> context,
+                                          String outputNode) {
+            this.publication = publication;
+            this.context = context;
+            this.outputNode = outputNode;
+            return new VisualGraphRunResponse(
+                    true,
+                    true,
+                    true,
+                    publication.graphName(),
+                    outputNode,
+                    Map.of("ok", true),
+                    Map.of(),
+                    Map.of(),
+                    1,
+                    List.of(),
+                    List.of(),
+                    null,
+                    null,
+                    publication.dsl()
+            );
+        }
     }
 }
