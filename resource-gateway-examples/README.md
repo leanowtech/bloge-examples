@@ -80,13 +80,14 @@ The resource gateway now ships a static browser showcase at:
 http://localhost:8080/examples/gateway
 ```
 
-The page renders the seven built-in `.bloge` graphs as visual scenarios, shows
-resource nodes, decision-table rules, fallback/streaming annotations, lets users
-edit sample input or switch curated cases, and executes the existing public
-gateway endpoints. It does not introduce a second execution path.
+The page opens on **Custom Composer**, an editable DSL example that submits a
+browser-authored graph to the gateway, compiles it, runs it with JSON context,
+and renders the returned diagram, diagnostics, output, and decision-table matrix.
+The built-in `.bloge` scenarios remain available in the left rail and continue
+to execute the public gateway endpoints.
 
-To see the decision-table UX, choose **Loan Decision Policy**, run the default
-`prime / 450000` sample or click the four preset case buttons. The browser
+To see the decision-table UX, run the default composer graph or choose
+**Loan Decision Policy** and click the curated case buttons. The browser
 highlights the executed graph path, highlights the matched rule row, and renders
 a decision summary card from the same `ruleId` returned by the graph output.
 
@@ -97,6 +98,7 @@ Showcase metadata APIs:
 | `GET` | `/api/gateway/examples/scenarios` | List the seven built-in visual scenarios |
 | `GET` | `/api/gateway/examples/scenarios/{graphName}` | Load scenario metadata and run recipe |
 | `GET` | `/api/gateway/examples/scenarios/{graphName}/diagram` | Load the `bloge.visualLayout.v1` diagram for a scenario |
+| `POST` | `/api/gateway/examples/compose/run` | Compile and run submitted DSL with JSON context, returning diagnostics, output, layout, and decision-table metadata |
 
 ### Orchestration endpoints (`UserDashboardController`)
 

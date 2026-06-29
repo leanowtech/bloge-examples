@@ -1,10 +1,125 @@
+const COMPOSER_GRAPH = '__composer';
+
+const DEFAULT_COMPOSER_DSL = `graph customLoanPolicy {
+  decision_table loanPolicy(
+    score  = ctx.score,
+    amount = ctx.amount
+  ) hit=unique -> { decision: String, rate: Decimal, maxTerm: Int, reviewLane: String, ruleId: String } {
+    rule (score: score >= 760, amount: amount <= 500000)       -> { decision: "approved", rate: 3.5,  maxTerm: 360, reviewLane: "auto-approve",       ruleId: "R1" }
+    rule (score: 700 <= score < 760, amount: amount <= 300000) -> { decision: "approved", rate: 4.5,  maxTerm: 300, reviewLane: "standard",           ruleId: "R2" }
+    rule (score: 650 <= score < 700, amount: amount <= 200000) -> { decision: "manual_review", rate: 5.75, maxTerm: 240, reviewLane: "senior-underwriter", ruleId: "R3" }
+    otherwise                                                  -> { decision: "declined", rate: 0.0,  maxTerm: 0,   reviewLane: "decline",            ruleId: "R4" }
+  }
+
+  transform response {
+    applicant       = { score: ctx.score, segment: ctx.segment }
+    requestedAmount = ctx.amount
+    policy          = loanPolicy.output
+  }
+}`;
+
+const DEFAULT_COMPOSER_CONTEXT = {
+  score: 670,
+  amount: 180000,
+  segment: 'existing'
+};
+
+const DEFAULT_COMPOSER_DECISION_TABLE = {
+  title: 'LoanPolicy',
+  hitPolicy: 'unique',
+  inputs: [
+    { key: 'score', label: 'Score' },
+    { key: 'amount', label: 'Amount' }
+  ],
+  outputs: [
+    { key: 'decision', label: 'Decision' },
+    { key: 'rate', label: 'Rate' },
+    { key: 'maxTerm', label: 'MaxTerm' },
+    { key: 'reviewLane', label: 'ReviewLane' },
+    { key: 'ruleId', label: 'RuleId' }
+  ],
+  rows: [
+    {
+      id: 'R1',
+      conditions: { score: 'score >= 760', amount: 'amount <= 500000' },
+      output: { decision: 'approved', rate: 3.5, maxTerm: 360, reviewLane: 'auto-approve', ruleId: 'R1' },
+      explanation: 'Prime auto approval'
+    },
+    {
+      id: 'R2',
+      conditions: { score: '700 <= score < 760', amount: 'amount <= 300000' },
+      output: { decision: 'approved', rate: 4.5, maxTerm: 300, reviewLane: 'standard', ruleId: 'R2' },
+      explanation: 'Standard approval'
+    },
+    {
+      id: 'R3',
+      conditions: { score: '650 <= score < 700', amount: 'amount <= 200000' },
+      output: { decision: 'manual_review', rate: 5.75, maxTerm: 240, reviewLane: 'senior-underwriter', ruleId: 'R3' },
+      explanation: 'Manual review'
+    },
+    {
+      id: 'R4',
+      conditions: { score: 'otherwise', amount: 'otherwise' },
+      output: { decision: 'declined', rate: 0, maxTerm: 0, reviewLane: 'decline', ruleId: 'R4' },
+      explanation: 'Fallback rule'
+    }
+  ]
+};
+
+const COMPOSER_LAYOUT = {
+  schemaVersion: 'bloge.visualLayout.v1',
+  rootId: 'customLoanPolicy',
+  executionMode: 'GRAPH',
+  nodes: [
+    {
+      id: 'loanPolicy',
+      kind: 'decision-table',
+      operatorRef: '',
+      label: 'Loan Policy',
+      position: { x: 80, y: 210 },
+      size: { width: 184, height: 76 },
+      group: null,
+      annotations: { kind: 'decision-table' }
+    },
+    {
+      id: 'response',
+      kind: 'transform',
+      operatorRef: '',
+      label: 'Response',
+      position: { x: 360, y: 210 },
+      size: { width: 184, height: 76 },
+      group: null,
+      annotations: { kind: 'transform' }
+    }
+  ],
+  edges: [
+    { id: 'loanPolicy->response:', source: 'loanPolicy', target: 'response', label: '' }
+  ],
+  groups: [],
+  viewport: { x: 0, y: 0, zoom: 1 }
+};
+
+const COMPOSER_SCENARIO = {
+  graphName: COMPOSER_GRAPH,
+  title: 'Custom Composer',
+  pattern: 'Editable DSL + decision_table',
+  concepts: ['Self orchestration', 'Decision table', 'Live diagnostics'],
+  sampleInput: {},
+  samplePresets: [],
+  diagramPath: '',
+  decisionTable: null
+};
+
 const state = {
   scenarios: [],
   selected: null,
   layout: null,
   selectedNodeId: null,
   eventSource: null,
-  lastPayload: null
+  lastPayload: null,
+  customDsl: DEFAULT_COMPOSER_DSL,
+  customContextText: '',
+  customDecisionTable: DEFAULT_COMPOSER_DECISION_TABLE
 };
 
 const $ = (id) => document.getElementById(id);
@@ -24,9 +139,10 @@ function escapeHtml(value) {
 
 async function loadScenarios() {
   const response = await fetch('/api/gateway/examples/scenarios');
-  state.scenarios = await response.json();
+  state.customContextText = pretty(DEFAULT_COMPOSER_CONTEXT);
+  state.scenarios = [COMPOSER_SCENARIO, ...await response.json()];
   renderScenarioButtons();
-  await selectScenario(state.scenarios[0].graphName);
+  await selectScenario(COMPOSER_GRAPH);
 }
 
 function renderScenarioButtons() {
@@ -50,8 +166,12 @@ async function selectScenario(graphName) {
   state.selected = scenario;
   state.selectedNodeId = null;
   state.lastPayload = null;
-  const response = await fetch(scenario.diagramPath);
-  state.layout = await response.json();
+  if (isComposerSelected()) {
+    state.layout = COMPOSER_LAYOUT;
+  } else {
+    const response = await fetch(scenario.diagramPath);
+    state.layout = await response.json();
+  }
   renderScenarioButtons();
   renderScenario();
 }
@@ -60,10 +180,11 @@ function renderScenario() {
   $('scenario-title').textContent = state.selected.title;
   $('scenario-pattern').textContent = state.selected.pattern;
   $('concepts').innerHTML = state.selected.concepts.map((concept) => `<span class="chip">${concept}</span>`).join('');
+  $('inspector').classList.toggle('composer-mode', isComposerSelected());
   renderInputForm();
   renderDecisionTable();
   renderDiagram();
-  renderNodeDetails(state.layout.nodes[0]);
+  renderNodeDetails(state.layout?.nodes?.[0]);
   renderDecisionSummary(null);
   $('output').textContent = pretty({});
 }
@@ -71,6 +192,33 @@ function renderScenario() {
 function renderInputForm() {
   const form = $('input-form');
   form.innerHTML = '';
+  $('input-title').textContent = isComposerSelected() ? 'Composer' : 'Sample Input';
+  $('run-scenario').textContent = isComposerSelected() ? 'Run Custom Graph' : 'Run';
+  if (isComposerSelected()) {
+    form.innerHTML = `
+      <div class="field">
+        <label for="composer-dsl">BLOGE DSL</label>
+        <textarea id="composer-dsl" class="code-editor" spellcheck="false"></textarea>
+      </div>
+      <div class="field">
+        <label for="composer-context">Context JSON</label>
+        <textarea id="composer-context" class="context-editor" spellcheck="false"></textarea>
+      </div>
+      <div class="composer-actions">
+        <button id="reset-composer" class="secondary compact" type="button">Reset</button>
+      </div>
+    `;
+    $('composer-dsl').value = state.customDsl;
+    $('composer-context').value = state.customContextText;
+    $('composer-dsl').addEventListener('input', (event) => {
+      state.customDsl = event.target.value;
+    });
+    $('composer-context').addEventListener('input', (event) => {
+      state.customContextText = event.target.value;
+    });
+    $('reset-composer').addEventListener('click', resetComposer);
+    return;
+  }
   if (state.selected.samplePresets?.length) {
     const presets = document.createElement('div');
     presets.className = 'preset-grid';
@@ -111,6 +259,31 @@ function inputValues() {
   return values;
 }
 
+function isComposerSelected() {
+  return state.selected?.graphName === COMPOSER_GRAPH;
+}
+
+function currentDecisionTable() {
+  return isComposerSelected() ? state.customDecisionTable : state.selected?.decisionTable;
+}
+
+function payloadData(payload) {
+  if (!payload) {
+    return null;
+  }
+  return payload.data ?? payload.output ?? payload;
+}
+
+function resetComposer() {
+  state.customDsl = DEFAULT_COMPOSER_DSL;
+  state.customContextText = pretty(DEFAULT_COMPOSER_CONTEXT);
+  state.customDecisionTable = DEFAULT_COMPOSER_DECISION_TABLE;
+  state.layout = COMPOSER_LAYOUT;
+  state.selectedNodeId = null;
+  state.lastPayload = null;
+  renderScenario();
+}
+
 function fillTemplate(template, values) {
   return template.replace(/\{([^}]+)\}/g, (_, key) => encodeURIComponent(values[key] ?? ''));
 }
@@ -134,8 +307,9 @@ function replacePlaceholders(value, values) {
 
 function renderDiagram() {
   const svg = $('diagram');
-  const nodes = state.layout.nodes;
-  const edges = state.layout.edges;
+  const nodes = state.layout?.nodes || [];
+  const edges = state.layout?.edges || [];
+  const executed = state.lastPayload && currentDecisionTable();
   const width = Math.max(760, ...nodes.map((node) => node.position.x + node.size.width + 80));
   const height = Math.max(520, ...nodes.map((node) => node.position.y + node.size.height + 80));
   svg.setAttribute('viewBox', `0 0 ${width} ${height}`);
@@ -158,7 +332,7 @@ function renderDiagram() {
     const y2 = target.position.y + target.size.height / 2;
     const mid = (x1 + x2) / 2;
     const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
-    path.setAttribute('class', `edge ${state.lastPayload && state.selected.decisionTable ? 'executed' : ''}`);
+    path.setAttribute('class', `edge ${executed ? 'executed' : ''}`);
     path.setAttribute('marker-end', 'url(#arrow)');
     path.setAttribute('d', `M ${x1} ${y1} C ${mid} ${y1}, ${mid} ${y2}, ${x2} ${y2}`);
     svg.appendChild(path);
@@ -171,7 +345,7 @@ function renderDiagram() {
   }
   for (const node of nodes) {
     const group = document.createElementNS('http://www.w3.org/2000/svg', 'g');
-    group.setAttribute('class', `node ${node.kind} ${state.selectedNodeId === node.id ? 'selected' : ''} ${state.lastPayload && state.selected.decisionTable ? 'executed' : ''}`);
+    group.setAttribute('class', `node ${node.kind} ${state.selectedNodeId === node.id ? 'selected' : ''} ${executed ? 'executed' : ''}`);
     group.setAttribute('tabindex', '0');
     group.setAttribute('role', 'button');
     group.addEventListener('click', () => {
@@ -204,7 +378,7 @@ function renderDiagram() {
 function renderDecisionTable() {
   const section = $('decision-table-section');
   const target = $('decision-table');
-  const model = state.selected.decisionTable;
+  const model = currentDecisionTable();
   if (!model) {
     section.hidden = true;
     target.innerHTML = '';
@@ -264,6 +438,10 @@ async function runScenario() {
   highlightDecisionRow(null);
   renderDecisionSummary(null);
   renderDiagram();
+  if (isComposerSelected()) {
+    await runCustomGraph();
+    return;
+  }
   const values = inputValues();
   const run = state.selected.run;
   const url = fillTemplate(run.pathTemplate, values);
@@ -288,10 +466,49 @@ async function runScenario() {
   renderDiagram();
 }
 
+async function runCustomGraph() {
+  let context;
+  try {
+    context = JSON.parse(state.customContextText || '{}');
+  } catch (error) {
+    $('output').textContent = pretty({ status: 'invalid_context', error: error.message });
+    return;
+  }
+  if (!context || Array.isArray(context) || typeof context !== 'object') {
+    $('output').textContent = pretty({ status: 'invalid_context', error: 'Context JSON must be an object.' });
+    return;
+  }
+
+  $('output').textContent = pretty({ status: 'running', graph: 'customLoanPolicy' });
+  const response = await fetch('/api/gateway/examples/compose/run', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      dsl: state.customDsl,
+      context,
+      outputNode: 'response'
+    })
+  });
+  const payload = await response.json();
+  if (payload.layout) {
+    state.layout = payload.layout;
+    renderNodeDetails(state.layout.nodes?.[0]);
+  }
+  if (Object.prototype.hasOwnProperty.call(payload, 'decisionTable')) {
+    state.customDecisionTable = payload.decisionTable;
+  }
+  state.lastPayload = payload.output == null ? null : { data: payload.output, composer: payload };
+  $('output').textContent = pretty({ status: response.status, payload });
+  renderDecisionTable();
+  highlightDecisionRow(state.lastPayload);
+  renderDecisionSummary(state.lastPayload);
+  renderDiagram();
+}
+
 function highlightDecisionRow(payload) {
   const rows = document.querySelectorAll('[data-rule-id]');
   rows.forEach((row) => row.classList.remove('matched'));
-  const ruleId = payload?.data?.policy?.ruleId;
+  const ruleId = payloadData(payload)?.policy?.ruleId;
   if (!ruleId) return;
   const matched = document.querySelector(`[data-rule-id="${CSS.escape(String(ruleId))}"]`);
   if (matched) {
@@ -302,7 +519,7 @@ function highlightDecisionRow(payload) {
 function renderDecisionSummary(payload) {
   const section = $('decision-summary-section');
   const target = $('decision-summary');
-  const data = payload?.data;
+  const data = payloadData(payload);
   const policy = data?.policy;
   const applicant = data?.applicant;
   if (!policy || !applicant) {
