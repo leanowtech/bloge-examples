@@ -24,7 +24,8 @@ import java.util.Set;
  * multiple {@link ResponseProtocol} variants and {@link ParameterMapping} styles:
  *
  * <ul>
- *   <li><strong>BodyCode</strong> — {@code user-service.getProfile}</li>
+ *   <li><strong>BodyCode</strong> — {@code user-service.getProfile},
+ *       {@code loan-applicant-service.getProfile}</li>
  *   <li><strong>BodyFlag</strong> — {@code order-service.listOrders}</li>
  *   <li><strong>HttpStatus</strong> — {@code recommendation-service.forUser},
  *       {@code logistics-service.getShipping}</li>
@@ -80,6 +81,23 @@ public class ResourceDescriptorBootstrap {
                 Duration.ofSeconds(5),
                 new ParameterMapping(
                         Map.of("userId", "ctx.params.userId"),
+                        Map.of(),
+                        null
+                ),
+                new ResponseProtocol.BodyCode("code", Set.of(0, "0", "SUCCESS"), "message"),
+                "data"
+        ));
+
+        // ── Loan applicant service ── BodyCode protocol ───────────────────
+        syncSeededDescriptor(new ResourceDescriptor(
+                "loan-applicant-service.getProfile",
+                base + "/api/loan-applicants/{applicantId}",
+                "GET",
+                Map.of("Accept", "application/json"),
+                null,
+                Duration.ofSeconds(5),
+                new ParameterMapping(
+                        Map.of("applicantId", "ctx.params.applicantId"),
                         Map.of(),
                         null
                 ),

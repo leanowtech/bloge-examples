@@ -3,13 +3,23 @@ const state = {
   selected: null,
   layout: null,
   selectedNodeId: null,
-  eventSource: null
+  eventSource: null,
+  lastPayload: null
 };
 
 const $ = (id) => document.getElementById(id);
 
 function pretty(value) {
   return JSON.stringify(value, null, 2);
+}
+
+function escapeHtml(value) {
+  return String(value)
+    .replaceAll('&', '&amp;')
+    .replaceAll('<', '&lt;')
+    .replaceAll('>', '&gt;')
+    .replaceAll('"', '&quot;')
+    .replaceAll("'", '&#39;');
 }
 
 async function loadScenarios() {
@@ -39,6 +49,7 @@ async function selectScenario(graphName) {
   if (!scenario) return;
   state.selected = scenario;
   state.selectedNodeId = null;
+  state.lastPayload = null;
   const response = await fetch(scenario.diagramPath);
   state.layout = await response.json();
   renderScenarioButtons();
@@ -50,20 +61,46 @@ function renderScenario() {
   $('scenario-pattern').textContent = state.selected.pattern;
   $('concepts').innerHTML = state.selected.concepts.map((concept) => `<span class="chip">${concept}</span>`).join('');
   renderInputForm();
+  renderDecisionTable();
   renderDiagram();
   renderNodeDetails(state.layout.nodes[0]);
+  renderDecisionSummary(null);
   $('output').textContent = pretty({});
 }
 
 function renderInputForm() {
   const form = $('input-form');
   form.innerHTML = '';
+  if (state.selected.samplePresets?.length) {
+    const presets = document.createElement('div');
+    presets.className = 'preset-grid';
+    for (const preset of state.selected.samplePresets) {
+      const button = document.createElement('button');
+      button.type = 'button';
+      button.className = 'preset-button';
+      const expected = [preset.expected?.ruleId, preset.expected?.decision].filter(Boolean).join(' / ');
+      button.innerHTML = `<strong>${escapeHtml(preset.label)}</strong><span>${escapeHtml(expected)}</span>`;
+      button.addEventListener('click', () => applyPreset(preset));
+      presets.appendChild(button);
+    }
+    form.appendChild(presets);
+  }
   for (const [key, value] of Object.entries(state.selected.sampleInput)) {
     const wrapper = document.createElement('div');
     wrapper.className = 'field';
     wrapper.innerHTML = `<label for="input-${key}">${key}</label><input id="input-${key}" name="${key}" value="${value}">`;
     form.appendChild(wrapper);
   }
+}
+
+function applyPreset(preset) {
+  for (const [key, value] of Object.entries(preset.values || {})) {
+    const field = $(`input-${key}`);
+    if (field) {
+      field.value = value;
+    }
+  }
+  runScenario();
 }
 
 function inputValues() {
@@ -102,6 +139,7 @@ function renderDiagram() {
   const width = Math.max(760, ...nodes.map((node) => node.position.x + node.size.width + 80));
   const height = Math.max(520, ...nodes.map((node) => node.position.y + node.size.height + 80));
   svg.setAttribute('viewBox', `0 0 ${width} ${height}`);
+  svg.setAttribute('preserveAspectRatio', 'xMinYMin meet');
   svg.innerHTML = `
     <defs>
       <marker id="arrow" markerWidth="10" markerHeight="10" refX="9" refY="3" orient="auto">
@@ -120,7 +158,7 @@ function renderDiagram() {
     const y2 = target.position.y + target.size.height / 2;
     const mid = (x1 + x2) / 2;
     const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
-    path.setAttribute('class', 'edge');
+    path.setAttribute('class', `edge ${state.lastPayload && state.selected.decisionTable ? 'executed' : ''}`);
     path.setAttribute('marker-end', 'url(#arrow)');
     path.setAttribute('d', `M ${x1} ${y1} C ${mid} ${y1}, ${mid} ${y2}, ${x2} ${y2}`);
     svg.appendChild(path);
@@ -133,7 +171,7 @@ function renderDiagram() {
   }
   for (const node of nodes) {
     const group = document.createElementNS('http://www.w3.org/2000/svg', 'g');
-    group.setAttribute('class', `node ${node.kind} ${state.selectedNodeId === node.id ? 'selected' : ''}`);
+    group.setAttribute('class', `node ${node.kind} ${state.selectedNodeId === node.id ? 'selected' : ''} ${state.lastPayload && state.selected.decisionTable ? 'executed' : ''}`);
     group.setAttribute('tabindex', '0');
     group.setAttribute('role', 'button');
     group.addEventListener('click', () => {
@@ -163,6 +201,55 @@ function renderDiagram() {
   }
 }
 
+function renderDecisionTable() {
+  const section = $('decision-table-section');
+  const target = $('decision-table');
+  const model = state.selected.decisionTable;
+  if (!model) {
+    section.hidden = true;
+    target.innerHTML = '';
+    return;
+  }
+
+  section.hidden = false;
+  $('decision-table-title').textContent = `${model.title} - hit=${model.hitPolicy}`;
+  const inputHeaders = model.inputs.map((column) =>
+    `<th scope="col" class="input-column">${escapeHtml(column.label)}</th>`
+  ).join('');
+  const outputHeaders = model.outputs.map((column) =>
+    `<th scope="col">${escapeHtml(column.label)}</th>`
+  ).join('');
+  const rows = model.rows.map((row) => {
+    const inputCells = model.inputs.map((column) =>
+      `<td>${escapeHtml(row.conditions[column.key] ?? '')}</td>`
+    ).join('');
+    const outputCells = model.outputs.map((column) =>
+      `<td>${escapeHtml(row.output[column.key] ?? '')}</td>`
+    ).join('');
+    return `
+      <tr data-rule-id="${escapeHtml(row.id)}" title="${escapeHtml(row.explanation)}">
+        <th scope="row">${escapeHtml(row.id)}</th>
+        ${inputCells}
+        ${outputCells}
+      </tr>
+    `;
+  }).join('');
+  target.innerHTML = `
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th scope="col">Rule</th>
+            ${inputHeaders}
+            ${outputHeaders}
+          </tr>
+        </thead>
+        <tbody>${rows}</tbody>
+      </table>
+    </div>
+  `;
+}
+
 function renderNodeDetails(node) {
   if (!node) {
     $('node-details').textContent = pretty({});
@@ -173,6 +260,10 @@ function renderNodeDetails(node) {
 
 async function runScenario() {
   closeStream();
+  state.lastPayload = null;
+  highlightDecisionRow(null);
+  renderDecisionSummary(null);
+  renderDiagram();
   const values = inputValues();
   const run = state.selected.run;
   const url = fillTemplate(run.pathTemplate, values);
@@ -190,7 +281,51 @@ async function runScenario() {
   }
   const response = await fetch(url, options);
   const payload = await response.json();
+  state.lastPayload = payload;
   $('output').textContent = pretty({ status: response.status, payload });
+  highlightDecisionRow(payload);
+  renderDecisionSummary(payload);
+  renderDiagram();
+}
+
+function highlightDecisionRow(payload) {
+  const rows = document.querySelectorAll('[data-rule-id]');
+  rows.forEach((row) => row.classList.remove('matched'));
+  const ruleId = payload?.data?.policy?.ruleId;
+  if (!ruleId) return;
+  const matched = document.querySelector(`[data-rule-id="${CSS.escape(String(ruleId))}"]`);
+  if (matched) {
+    matched.classList.add('matched');
+  }
+}
+
+function renderDecisionSummary(payload) {
+  const section = $('decision-summary-section');
+  const target = $('decision-summary');
+  const data = payload?.data;
+  const policy = data?.policy;
+  const applicant = data?.applicant;
+  if (!policy || !applicant) {
+    section.hidden = true;
+    target.innerHTML = '';
+    return;
+  }
+
+  section.hidden = false;
+  target.innerHTML = `
+    <div class="decision-hero ${escapeHtml(policy.decision)}">
+      <span>${escapeHtml(policy.ruleId)}</span>
+      <strong>${escapeHtml(policy.decision)}</strong>
+    </div>
+    <dl class="decision-facts">
+      <div><dt>Score</dt><dd>${escapeHtml(applicant.score)}</dd></div>
+      <div><dt>Amount</dt><dd>${escapeHtml(data.requestedAmount)}</dd></div>
+      <div><dt>Rate</dt><dd>${escapeHtml(policy.rate)}%</dd></div>
+      <div><dt>Term</dt><dd>${escapeHtml(policy.maxTerm)} mo</dd></div>
+      <div><dt>Lane</dt><dd>${escapeHtml(policy.reviewLane)}</dd></div>
+      <div><dt>Segment</dt><dd>${escapeHtml(applicant.segment)}</dd></div>
+    </dl>
+  `;
 }
 
 function streamScenario(url) {

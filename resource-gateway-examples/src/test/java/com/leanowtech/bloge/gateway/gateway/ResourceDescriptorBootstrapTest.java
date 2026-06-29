@@ -42,7 +42,7 @@ class ResourceDescriptorBootstrapTest {
 
     @Test
     void seededDescriptorCount() {
-        assertThat(registry.all()).hasSize(11);
+        assertThat(registry.all()).hasSize(12);
     }
 
     @Test
@@ -94,7 +94,7 @@ class ResourceDescriptorBootstrapTest {
     void repeatSeedingDoesNotDuplicate() {
         // Seed again
         bootstrap.seedDescriptors();
-        assertThat(registry.all()).hasSize(11);
+        assertThat(registry.all()).hasSize(12);
     }
 
     @Test
@@ -106,7 +106,7 @@ class ResourceDescriptorBootstrapTest {
         var updatedBootstrap = new ResourceDescriptorBootstrap(registry, updatedProps);
         updatedBootstrap.seedDescriptors();
 
-        assertThat(registry.all()).hasSize(11);
+        assertThat(registry.all()).hasSize(12);
         assertThat(registry.all())
                 .extracting(ResourceDescriptor::urlTemplate)
                 .allMatch(url -> url.startsWith("http://updated-host:5678/"));

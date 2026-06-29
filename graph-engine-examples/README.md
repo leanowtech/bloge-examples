@@ -48,21 +48,19 @@ mvn install
 Build the standalone project from the repository root:
 
 ```bash
-mvn -f bloge-examples-graph-engine/pom.xml clean install
+mvn -f graph-engine-examples/pom.xml clean install
 ```
 
 Build a single module from the standalone project root:
 
 ```bash
-cd bloge-examples-graph-engine
-mvn -pl ai -am test
+mvn -f graph-engine-examples/pom.xml -pl ai -am test
 ```
 
 Package the standalone CLI fat jar:
 
 ```bash
-cd bloge-examples-graph-engine
-mvn -pl cli -am package -DskipTests
+mvn -f graph-engine-examples/pom.xml -pl cli -am package -DskipTests
 ```
 
 ## Run the CLI
@@ -84,8 +82,7 @@ java -jar cli/target/bloge-graph-engine-cli-1.0.0.jar validate --strict src/bpmn
 ## Run the server
 
 ```bash
-cd bloge-examples-graph-engine
-mvn -pl server spring-boot:run
+mvn -f graph-engine-examples/pom.xml -pl server spring-boot:run
 ```
 
 The server includes a static browser console at `http://localhost:8080/console`.
@@ -101,8 +98,7 @@ Instance event SSE (`GET /api/v1/instances/{id}/events`) depends on the durable
 execution event journal. Enable it when starting the server:
 
 ```bash
-cd bloge-examples-graph-engine
-mvn -pl server spring-boot:run -Dspring-boot.run.jvmArguments="-Dspring.bloge.event-journal.enabled=true"
+mvn -f graph-engine-examples/pom.xml -pl server spring-boot:run -Dspring-boot.run.jvmArguments="-Dspring.bloge.event-journal.enabled=true"
 ```
 
 ## Why standalone?
@@ -115,6 +111,6 @@ still showing how downstream products consume BLOGE as a library.
 ## Prompt resource packaging
 
 `bloge-graph-engine-ai` packages `docs/ai/*.md` from the repository root onto
-the classpath under `ai/`. Because the module now lives under
-`bloge-examples-graph-engine/ai/`, its resource directory is configured
-as `${project.basedir}/../../docs/ai`.
+the classpath under `ai/`. Because the module lives under
+`graph-engine-examples/ai/`, its resource directory is configured as
+`${project.basedir}/../../docs/ai`.

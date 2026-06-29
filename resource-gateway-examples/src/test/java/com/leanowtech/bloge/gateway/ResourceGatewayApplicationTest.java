@@ -98,6 +98,13 @@ class ResourceGatewayApplicationTest {
         assertThat((Map<String, Object>) credit.getBody().get("data"))
                 .containsEntry("provider", "primary");
 
+        var loanPolicy = restTemplate.getForEntity("/api/gateway/loan-policy/prime?amount=450000", Map.class);
+        assertThat(loanPolicy.getStatusCode()).isEqualTo(HttpStatusCode.valueOf(200));
+        assertThat(loanPolicy.getBody()).containsEntry("success", true);
+        assertThat((Map<String, Object>) ((Map<String, Object>) loanPolicy.getBody().get("data")).get("policy"))
+                .containsEntry("ruleId", "R1")
+                .containsEntry("decision", "approved");
+
         var headers = new HttpHeaders();
         headers.setContentType(MediaType.APPLICATION_JSON);
         headers.add("X-Tenant-Id", "demo-tenant");

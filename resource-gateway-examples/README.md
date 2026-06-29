@@ -26,9 +26,9 @@ manual runtime wiring.
 
 This example now uses the `bloge-spring` starter directly. There is no
 `excludeName` list and no local runtime `@Configuration` for operator
-discovery, DSL loading, or `GraphEngine` creation. Because `bloge-durable` is
-absent from the classpath, the starter safely creates the lightweight core
-engine path automatically.
+discovery, DSL loading, or `GraphEngine` creation. It still runs the gateway in
+the request-response engine mode; `bloge-durable` is present only because the
+starter's property model references durable API types during Spring Boot binding.
 
 Key gateway settings live in `application.yml`:
 
@@ -53,7 +53,7 @@ Serving Layer        REST controllers (UserDashboardController,
         │            ResourceExecuteController,
         │            AiSearchStreamingController) / SSE endpoints
         │
- Orchestration Layer  6 .bloge DSL graphs — declare API dependencies,
+ Orchestration Layer  7 .bloge DSL graphs — declare API dependencies,
          │            the engine handles topological scheduling + concurrency
         │
 Provider Layer       HttpResourceOperator — one generic operator that
@@ -80,16 +80,21 @@ The resource gateway now ships a static browser showcase at:
 http://localhost:8080/examples/gateway
 ```
 
-The page renders the six built-in `.bloge` graphs as visual scenarios, shows
-resource nodes and fallback/streaming annotations, lets users edit sample input,
-and executes the existing public gateway endpoints. It does not introduce a
-second execution path.
+The page renders the seven built-in `.bloge` graphs as visual scenarios, shows
+resource nodes, decision-table rules, fallback/streaming annotations, lets users
+edit sample input or switch curated cases, and executes the existing public
+gateway endpoints. It does not introduce a second execution path.
+
+To see the decision-table UX, choose **Loan Decision Policy**, run the default
+`prime / 450000` sample or click the four preset case buttons. The browser
+highlights the executed graph path, highlights the matched rule row, and renders
+a decision summary card from the same `ruleId` returned by the graph output.
 
 Showcase metadata APIs:
 
 | Method | Path | Description |
 |--------|------|-------------|
-| `GET` | `/api/gateway/examples/scenarios` | List the six built-in visual scenarios |
+| `GET` | `/api/gateway/examples/scenarios` | List the seven built-in visual scenarios |
 | `GET` | `/api/gateway/examples/scenarios/{graphName}` | Load scenario metadata and run recipe |
 | `GET` | `/api/gateway/examples/scenarios/{graphName}/diagram` | Load the `bloge.visualLayout.v1` diagram for a scenario |
 
@@ -101,6 +106,7 @@ Showcase metadata APIs:
 | `GET` | `/api/gateway/products/{productId}` | `productDetail` | Type-branched product enrichment |
 | `GET` | `/api/gateway/orders/{userId}/enriched` | `enrichOrderList` | Foreach order enrichment |
 | `GET` | `/api/gateway/credit-score/{userId}` | `creditScore` | Multi-provider degradation |
+| `GET` | `/api/gateway/loan-policy/{applicantId}?amount=450000` | `loanDecisionPolicy` | Resource-backed decision-table policy |
 
 All return a `GatewayResponse` wrapper:
 
@@ -194,11 +200,12 @@ Base path: `/admin/resources`
 
 ## Orchestration graphs
 
-Six `.bloge` graphs live in `src/main/resources/bloge/gateway/`:
+Seven `.bloge` graphs live in `src/main/resources/bloge/gateway/`:
 
 | Graph file | Pattern | Description |
 |------------|---------|-------------|
 | `user-dashboard.bloge` | Parallel fan-out | Fetches profile, orders, recommendations, wallet, and notifications concurrently; each node has independent timeout/retry/fallback settings |
+| `loan-decision-policy.bloge` | Decision-table policy matrix | Fetches applicant risk facts, evaluates a `hit=unique` loan policy table, and returns the matched rule id |
 | `product-detail.bloge` | Conditional branching | Fetches base product then branches on type (`physical` → shipping, `digital` → license, `otherwise` → generic) |
 | `enrich-order-list.bloge` | Foreach enrichment | Fetches the order list then enriches each order with shipping + invoice data in parallel |
 | `credit-score.bloge` | Provider degradation | Tries the primary credit provider; falls back to a secondary provider on failure |
@@ -283,7 +290,7 @@ Wired by `@Order` — highest precedence first:
 
 | Type | Role |
 |------|------|
-| `UserDashboardController` | Orchestration endpoints for dashboard, products, orders, credit-score |
+| `UserDashboardController` | Orchestration endpoints for dashboard, products, orders, credit-score, loan-policy |
 | `ResourceExecuteController` | Unified `resourceId` execution endpoint backed by `resourceDispatch` |
 | `AiSearchStreamingController` | SSE streaming endpoint for AI search |
 | `GatewayGraphService` | Shared graph-loading and execution service |
@@ -481,6 +488,7 @@ curl http://localhost:8080/api/gateway/dashboard/u1
 curl http://localhost:8080/api/gateway/products/p1
 curl http://localhost:8080/api/gateway/orders/u1/enriched
 curl http://localhost:8080/api/gateway/credit-score/u1
+curl "http://localhost:8080/api/gateway/loan-policy/prime?amount=450000"
 ```
 
 The unified resource-execute endpoint is useful when you want one-off calls with
