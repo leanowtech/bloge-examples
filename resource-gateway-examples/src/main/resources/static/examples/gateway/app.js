@@ -3,7 +3,8 @@ const state = {
   selected: null,
   layout: null,
   selectedNodeId: null,
-  eventSource: null
+  eventSource: null,
+  lastPayload: null
 };
 
 const $ = (id) => document.getElementById(id);
@@ -48,6 +49,7 @@ async function selectScenario(graphName) {
   if (!scenario) return;
   state.selected = scenario;
   state.selectedNodeId = null;
+  state.lastPayload = null;
   const response = await fetch(scenario.diagramPath);
   state.layout = await response.json();
   renderScenarioButtons();
@@ -62,18 +64,43 @@ function renderScenario() {
   renderDecisionTable();
   renderDiagram();
   renderNodeDetails(state.layout.nodes[0]);
+  renderDecisionSummary(null);
   $('output').textContent = pretty({});
 }
 
 function renderInputForm() {
   const form = $('input-form');
   form.innerHTML = '';
+  if (state.selected.samplePresets?.length) {
+    const presets = document.createElement('div');
+    presets.className = 'preset-grid';
+    for (const preset of state.selected.samplePresets) {
+      const button = document.createElement('button');
+      button.type = 'button';
+      button.className = 'preset-button';
+      const expected = [preset.expected?.ruleId, preset.expected?.decision].filter(Boolean).join(' / ');
+      button.innerHTML = `<strong>${escapeHtml(preset.label)}</strong><span>${escapeHtml(expected)}</span>`;
+      button.addEventListener('click', () => applyPreset(preset));
+      presets.appendChild(button);
+    }
+    form.appendChild(presets);
+  }
   for (const [key, value] of Object.entries(state.selected.sampleInput)) {
     const wrapper = document.createElement('div');
     wrapper.className = 'field';
     wrapper.innerHTML = `<label for="input-${key}">${key}</label><input id="input-${key}" name="${key}" value="${value}">`;
     form.appendChild(wrapper);
   }
+}
+
+function applyPreset(preset) {
+  for (const [key, value] of Object.entries(preset.values || {})) {
+    const field = $(`input-${key}`);
+    if (field) {
+      field.value = value;
+    }
+  }
+  runScenario();
 }
 
 function inputValues() {
@@ -131,7 +158,7 @@ function renderDiagram() {
     const y2 = target.position.y + target.size.height / 2;
     const mid = (x1 + x2) / 2;
     const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
-    path.setAttribute('class', 'edge');
+    path.setAttribute('class', `edge ${state.lastPayload && state.selected.decisionTable ? 'executed' : ''}`);
     path.setAttribute('marker-end', 'url(#arrow)');
     path.setAttribute('d', `M ${x1} ${y1} C ${mid} ${y1}, ${mid} ${y2}, ${x2} ${y2}`);
     svg.appendChild(path);
@@ -144,7 +171,7 @@ function renderDiagram() {
   }
   for (const node of nodes) {
     const group = document.createElementNS('http://www.w3.org/2000/svg', 'g');
-    group.setAttribute('class', `node ${node.kind} ${state.selectedNodeId === node.id ? 'selected' : ''}`);
+    group.setAttribute('class', `node ${node.kind} ${state.selectedNodeId === node.id ? 'selected' : ''} ${state.lastPayload && state.selected.decisionTable ? 'executed' : ''}`);
     group.setAttribute('tabindex', '0');
     group.setAttribute('role', 'button');
     group.addEventListener('click', () => {
@@ -233,7 +260,10 @@ function renderNodeDetails(node) {
 
 async function runScenario() {
   closeStream();
+  state.lastPayload = null;
   highlightDecisionRow(null);
+  renderDecisionSummary(null);
+  renderDiagram();
   const values = inputValues();
   const run = state.selected.run;
   const url = fillTemplate(run.pathTemplate, values);
@@ -251,8 +281,11 @@ async function runScenario() {
   }
   const response = await fetch(url, options);
   const payload = await response.json();
+  state.lastPayload = payload;
   $('output').textContent = pretty({ status: response.status, payload });
   highlightDecisionRow(payload);
+  renderDecisionSummary(payload);
+  renderDiagram();
 }
 
 function highlightDecisionRow(payload) {
@@ -264,6 +297,35 @@ function highlightDecisionRow(payload) {
   if (matched) {
     matched.classList.add('matched');
   }
+}
+
+function renderDecisionSummary(payload) {
+  const section = $('decision-summary-section');
+  const target = $('decision-summary');
+  const data = payload?.data;
+  const policy = data?.policy;
+  const applicant = data?.applicant;
+  if (!policy || !applicant) {
+    section.hidden = true;
+    target.innerHTML = '';
+    return;
+  }
+
+  section.hidden = false;
+  target.innerHTML = `
+    <div class="decision-hero ${escapeHtml(policy.decision)}">
+      <span>${escapeHtml(policy.ruleId)}</span>
+      <strong>${escapeHtml(policy.decision)}</strong>
+    </div>
+    <dl class="decision-facts">
+      <div><dt>Score</dt><dd>${escapeHtml(applicant.score)}</dd></div>
+      <div><dt>Amount</dt><dd>${escapeHtml(data.requestedAmount)}</dd></div>
+      <div><dt>Rate</dt><dd>${escapeHtml(policy.rate)}%</dd></div>
+      <div><dt>Term</dt><dd>${escapeHtml(policy.maxTerm)} mo</dd></div>
+      <div><dt>Lane</dt><dd>${escapeHtml(policy.reviewLane)}</dd></div>
+      <div><dt>Segment</dt><dd>${escapeHtml(applicant.segment)}</dd></div>
+    </dl>
+  `;
 }
 
 function streamScenario(url) {

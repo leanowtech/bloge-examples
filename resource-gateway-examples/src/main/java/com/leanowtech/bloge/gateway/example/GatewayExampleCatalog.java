@@ -86,6 +86,7 @@ public class GatewayExampleCatalog {
                         "Fetches five independent user-facing resources concurrently, then assembles a dashboard response.",
                         List.of("parallel fan-out", "httpResource", "timeout", "retry", "fallback", "aggregation"),
                         Map.of("userId", "u1"),
+                        noPresets(),
                         new GatewayExampleRun("request", "GET", "/api/gateway/dashboard/{userId}", Map.of(), Map.of()),
                         null,
                         null
@@ -127,6 +128,7 @@ public class GatewayExampleCatalog {
                         "Fetches applicant risk facts, evaluates a UNIQUE decision table, and returns the matched policy row.",
                         List.of("decision_table", "hit=unique", "rule matrix", "httpResource", "explainable output"),
                         Map.of("applicantId", "prime", "amount", 450000),
+                        loanDecisionPresets(),
                         new GatewayExampleRun(
                                 "request",
                                 "GET",
@@ -203,6 +205,31 @@ public class GatewayExampleCatalog {
         );
     }
 
+    private List<GatewayExamplePreset> loanDecisionPresets() {
+        return List.of(
+                preset("Prime auto approve", "prime", 450000, "R1", "approved"),
+                preset("Standard approve", "standard", 250000, "R2", "approved"),
+                preset("Manual review", "borderline", 180000, "R3", "manual_review"),
+                preset("Decline", "decline", 120000, "R4", "declined")
+        );
+    }
+
+    private GatewayExamplePreset preset(String label,
+                                        String applicantId,
+                                        int amount,
+                                        String ruleId,
+                                        String decision) {
+        return new GatewayExamplePreset(
+                label,
+                Map.of("applicantId", applicantId, "amount", amount),
+                Map.of("ruleId", ruleId, "decision", decision)
+        );
+    }
+
+    private List<GatewayExamplePreset> noPresets() {
+        return List.of();
+    }
+
     private ScenarioEntry productDetail() {
         String graph = "productDetail";
         return entry(
@@ -214,6 +241,7 @@ public class GatewayExampleCatalog {
                         "Loads a base product and routes to physical, digital, or generic enrichment before unifying the response.",
                         List.of("conditional branch", "branch fallback", "resource descriptor", "unified response"),
                         Map.of("productId", "p1"),
+                        noPresets(),
                         new GatewayExampleRun("request", "GET", "/api/gateway/products/{productId}", Map.of(), Map.of()),
                         null,
                         null
@@ -261,6 +289,7 @@ public class GatewayExampleCatalog {
                         "Loads orders once, then enriches every order with shipping and invoice data inside a parallel foreach scope.",
                         List.of("foreach", "per-item fallback", "parallel enrichment", "collection transform"),
                         Map.of("userId", "u1"),
+                        noPresets(),
                         new GatewayExampleRun("request", "GET", "/api/gateway/orders/{userId}/enriched", Map.of(), Map.of()),
                         null,
                         null
@@ -301,6 +330,7 @@ public class GatewayExampleCatalog {
                         "Tries the primary credit provider first and falls back to a secondary provider when the primary path fails.",
                         List.of("degradation", "fallback", "branch on success", "provider provenance"),
                         Map.of("userId", "u1"),
+                        noPresets(),
                         new GatewayExampleRun("request", "GET", "/api/gateway/credit-score/{userId}", Map.of(), Map.of()),
                         null,
                         null
@@ -341,6 +371,7 @@ public class GatewayExampleCatalog {
                         "Executes any registered resource by resourceId through the generic httpResource operator.",
                         List.of("descriptor registry", "parameter mapping", "header override", "response protocol"),
                         Map.of("resourceId", "user-service.getProfile", "userId", "u1"),
+                        noPresets(),
                         new GatewayExampleRun(
                                 "post",
                                 "POST",
@@ -377,6 +408,7 @@ public class GatewayExampleCatalog {
                         "Runs metadata, token, and citation streams in parallel and routes each stream to a separate SSE event lane.",
                         List.of("stream node", "SSE", "parallel stream fan-in", "citation lane"),
                         Map.of("query", "hello"),
+                        noPresets(),
                         new GatewayExampleRun("stream", "GET", "/api/gateway/ai/search/stream?q={query}", Map.of(), Map.of()),
                         null,
                         null

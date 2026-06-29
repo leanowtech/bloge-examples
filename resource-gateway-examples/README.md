@@ -82,13 +82,13 @@ http://localhost:8080/examples/gateway
 
 The page renders the seven built-in `.bloge` graphs as visual scenarios, shows
 resource nodes, decision-table rules, fallback/streaming annotations, lets users
-edit sample input, and executes the existing public gateway endpoints. It does
-not introduce a second execution path.
+edit sample input or switch curated cases, and executes the existing public
+gateway endpoints. It does not introduce a second execution path.
 
 To see the decision-table UX, choose **Loan Decision Policy**, run the default
-`prime / 450000` sample, then change `amount` or `applicantId` to watch the
-matched rule row move across the policy matrix while the graph output returns
-the same `ruleId`.
+`prime / 450000` sample or click the four preset case buttons. The browser
+highlights the executed graph path, highlights the matched rule row, and renders
+a decision summary card from the same `ruleId` returned by the graph output.
 
 Showcase metadata APIs:
 

@@ -13,6 +13,7 @@ import java.util.Map;
  * @param description concise explanation of the business flow
  * @param concepts DSL/runtime concepts that the scenario demonstrates
  * @param sampleInput browser-editable sample input
+ * @param samplePresets browser-selectable sample cases
  * @param run recipe for invoking the existing gateway endpoint
  * @param decisionTable optional decision-table metadata for matrix-oriented scenarios
  * @param diagramPath API path that returns the visual layout
@@ -25,6 +26,7 @@ public record GatewayExampleScenario(
         String description,
         List<String> concepts,
         Map<String, Object> sampleInput,
+        List<GatewayExamplePreset> samplePresets,
         GatewayExampleRun run,
         GatewayDecisionTable decisionTable,
         String diagramPath
@@ -42,6 +44,7 @@ public record GatewayExampleScenario(
         description = description == null ? "" : description;
         concepts = concepts == null ? List.of() : List.copyOf(concepts);
         sampleInput = sampleInput == null ? Map.of() : Map.copyOf(sampleInput);
+        samplePresets = samplePresets == null ? List.of() : List.copyOf(samplePresets);
         if (run == null) {
             throw new IllegalArgumentException("run must not be null");
         }

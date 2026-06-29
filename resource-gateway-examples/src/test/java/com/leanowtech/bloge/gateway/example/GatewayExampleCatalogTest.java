@@ -55,6 +55,12 @@ class GatewayExampleCatalogTest {
         assertThat(scenario.decisionTable().rows())
                 .extracting(GatewayDecisionTable.Row::id)
                 .containsExactly("R1", "R2", "R3", "R4");
+        assertThat(scenario.samplePresets())
+                .extracting(GatewayExamplePreset::label)
+                .containsExactly("Prime auto approve", "Standard approve", "Manual review", "Decline");
+        assertThat(scenario.samplePresets())
+                .extracting(preset -> preset.expected().get("ruleId"))
+                .containsExactly("R1", "R2", "R3", "R4");
     }
 
     @Test

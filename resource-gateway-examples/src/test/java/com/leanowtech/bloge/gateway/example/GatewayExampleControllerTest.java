@@ -35,6 +35,8 @@ class GatewayExampleControllerTest {
                 .andExpect(jsonPath("$[0].run.pathTemplate").value("/api/gateway/dashboard/{userId}"))
                 .andExpect(jsonPath("$[1].graphName").value("loanDecisionPolicy"))
                 .andExpect(jsonPath("$[1].decisionTable.hitPolicy").value("unique"))
+                .andExpect(jsonPath("$[1].samplePresets.length()").value(4))
+                .andExpect(jsonPath("$[1].samplePresets[0].expected.ruleId").value("R1"))
                 .andExpect(jsonPath("$[6].graphName").value("aiEnrichedSearch"))
                 .andExpect(jsonPath("$[6].run.mode").value("stream"));
     }
