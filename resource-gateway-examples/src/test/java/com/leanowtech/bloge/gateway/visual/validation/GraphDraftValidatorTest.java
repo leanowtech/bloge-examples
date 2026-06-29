@@ -54,6 +54,72 @@ class GraphDraftValidatorTest {
     }
 
     @Test
+    void rejectsGraphInputSchemaWithRequiredPathMissingFromProperties() {
+        GraphDraftValidator validator = new GraphDraftValidator(
+                VisualCatalogTestSupport.catalogWithLibrary(
+                        VisualCatalogTestSupport.eligibilityLibrary("integer")));
+        SchemaEnvelope inputSchema = new SchemaEnvelope(
+                SchemaEnvelope.JSON_SCHEMA,
+                "2020-12",
+                Map.of(
+                        "type", "object",
+                        "properties", Map.of(
+                                "score", Map.of("type", "integer"),
+                                "amount", Map.of("type", "number")
+                        ),
+                        "required", List.of("score", "amount", "riskTier"),
+                        "additionalProperties", false
+                ));
+        GraphDraft draft = contextEligibilityDraft(inputSchema, Map.of(
+                "score", GraphDraft.Binding.contextPath("score"),
+                "amount", GraphDraft.Binding.contextPath("amount")
+        ));
+
+        VisualValidationResult result = validator.validate(draft);
+
+        assertThat(result.valid()).isFalse();
+        assertThat(result.diagnostics())
+                .anySatisfy(diagnostic -> {
+                    assertThat(diagnostic.code()).isEqualTo("visual.schema.requiredUnknown");
+                    assertThat(diagnostic.target()).isEqualTo("/inputSchema/schema/required");
+                    assertThat(diagnostic.message()).contains("riskTier");
+                });
+    }
+
+    @Test
+    void rejectsGraphInputSchemaWithArrayMissingItems() {
+        GraphDraftValidator validator = new GraphDraftValidator(
+                VisualCatalogTestSupport.catalogWithLibrary(
+                        VisualCatalogTestSupport.eligibilityLibrary("integer")));
+        SchemaEnvelope inputSchema = new SchemaEnvelope(
+                SchemaEnvelope.JSON_SCHEMA,
+                "2020-12",
+                Map.of(
+                        "type", "object",
+                        "properties", Map.of(
+                                "score", Map.of("type", "integer"),
+                                "amount", Map.of("type", "number"),
+                                "history", Map.of("type", "array")
+                        ),
+                        "required", List.of("score", "amount"),
+                        "additionalProperties", false
+                ));
+        GraphDraft draft = contextEligibilityDraft(inputSchema, Map.of(
+                "score", GraphDraft.Binding.contextPath("score"),
+                "amount", GraphDraft.Binding.contextPath("amount")
+        ));
+
+        VisualValidationResult result = validator.validate(draft);
+
+        assertThat(result.valid()).isFalse();
+        assertThat(result.diagnostics())
+                .anySatisfy(diagnostic -> {
+                    assertThat(diagnostic.code()).isEqualTo("visual.schema.arrayItemsMissing");
+                    assertThat(diagnostic.target()).isEqualTo("/inputSchema/schema/properties/history/items");
+                });
+    }
+
+    @Test
     void rejectsNodePathBindingWhenOutputTypeDoesNotMatchTargetInputSchema() {
         GraphDraftValidator validator = new GraphDraftValidator(
                 VisualCatalogTestSupport.catalogWithLoanApplicantResourceAndLibrary(

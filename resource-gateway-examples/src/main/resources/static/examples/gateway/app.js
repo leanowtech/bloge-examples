@@ -208,6 +208,21 @@ const SAMPLE_OPERATOR_LIBRARY = {
 
 const NODE_SIZE = { width: 184, height: 76 };
 const DRAG_START_THRESHOLD = 4;
+const SUPPORTED_SCHEMA_KINDS = new Set([
+  'object',
+  'array',
+  'string',
+  'integer',
+  'number',
+  'decimal',
+  'boolean',
+  'duration',
+  'datetime',
+  'enum',
+  'any',
+  'opaque',
+  'null'
+]);
 
 const state = {
   scenarios: [],
@@ -244,6 +259,9 @@ const state = {
   suppressNodeClick: false,
   customDsl: DEFAULT_COMPOSER_DSL,
   lastGeneratedVisualDsl: '',
+  graphInputSchemaText: pretty(defaultGraphInputSchema()),
+  graphInputSchemaMessage: null,
+  graphInputSchemaDiagnostics: [],
   customContextText: '',
   customDecisionTable: DEFAULT_COMPOSER_DECISION_TABLE
 };
@@ -271,6 +289,7 @@ async function loadScenarios() {
   await loadDraftList({ render: false });
   const response = await fetch('/api/gateway/examples/scenarios');
   state.customContextText = pretty(DEFAULT_COMPOSER_CONTEXT);
+  syncGraphInputSchemaTextFromBuilder({ render: false });
   syncComposerFromBuilder({ render: false });
   state.scenarios = [COMPOSER_SCENARIO, ...await response.json()];
   renderScenarioButtons();
@@ -490,12 +509,14 @@ function renderInputForm() {
         <div class="panel-title">Operator Libraries</div>
         <div class="library-controls">
           <select id="library-select" aria-label="Imported operator libraries"></select>
+          <button id="validate-library" class="secondary compact" type="button">Validate</button>
           <button id="import-library" class="secondary compact" type="button">Import</button>
           <button id="reload-libraries" class="secondary compact" type="button">Reload</button>
           <button id="delete-library" class="secondary compact danger" type="button">Delete</button>
         </div>
         <textarea id="operator-library-json" class="library-editor" spellcheck="false"></textarea>
         <div id="library-status" class="library-status" hidden></div>
+        <div id="library-diagnostics" class="visual-diagnostics"></div>
       </div>
       <div class="builder-panel">
         <div class="panel-title">Drafts</div>
@@ -530,6 +551,12 @@ function renderInputForm() {
         <textarea id="composer-dsl" class="code-editor" spellcheck="false"></textarea>
       </div>
       <div class="field">
+        <label for="graph-input-schema">Graph Input Schema</label>
+        <textarea id="graph-input-schema" class="schema-editor" spellcheck="false"></textarea>
+        <div id="graph-input-schema-status" class="schema-status" hidden></div>
+        <div id="graph-input-schema-diagnostics" class="visual-diagnostics"></div>
+      </div>
+      <div class="field">
         <label for="composer-context">Context JSON</label>
         <textarea id="composer-context" class="context-editor" spellcheck="false"></textarea>
       </div>
@@ -538,6 +565,7 @@ function renderInputForm() {
       </div>
     `;
     $('composer-dsl').value = state.customDsl;
+    $('graph-input-schema').value = state.graphInputSchemaText;
     $('composer-context').value = state.customContextText;
     renderOperatorPalette();
     renderConnectionStatus();
@@ -549,6 +577,10 @@ function renderInputForm() {
     $('composer-dsl').addEventListener('input', (event) => {
       state.customDsl = event.target.value;
     });
+    $('graph-input-schema').addEventListener('input', (event) => {
+      updateGraphInputSchemaFromText(event.target.value);
+    });
+    renderGraphInputSchemaStatus();
     $('composer-context').addEventListener('input', (event) => {
       state.customContextText = event.target.value;
       renderSelectedOperatorEditor();
@@ -602,6 +634,7 @@ function inputValues() {
 function createDefaultBuilder() {
   return {
     graphName: 'customLoanPolicy',
+    inputSchema: defaultGraphInputSchema(),
     selectedId: 'loanPolicy',
     output: { nodeId: 'response', path: '' },
     nodes: [
@@ -848,6 +881,7 @@ function resetComposer() {
   state.visualCheck = { message: 'Not checked', level: 'info', diagnostics: [] };
   state.customDsl = builderToDsl(state.builder);
   state.lastGeneratedVisualDsl = '';
+  syncGraphInputSchemaTextFromBuilder({ render: false });
   state.customContextText = pretty(DEFAULT_COMPOSER_CONTEXT);
   state.customDecisionTable = decisionTableFromBuilder(state.builder);
   state.layout = layoutFromBuilder(state.builder);
@@ -935,8 +969,12 @@ function renderOperatorLibraryControls() {
   };
 
   const importButton = $('import-library');
+  const validateButton = $('validate-library');
   const reloadButton = $('reload-libraries');
   const deleteButton = $('delete-library');
+  if (validateButton) {
+    validateButton.onclick = validateOperatorLibrary;
+  }
   if (importButton) {
     importButton.onclick = importOperatorLibrary;
   }
@@ -960,10 +998,11 @@ function renderLibraryStatus() {
   target.hidden = false;
   target.textContent = message;
   target.className = `library-status ${state.libraryMessage?.level || 'info'}`;
+  renderDiagnosticList($('library-diagnostics'), normalizeDiagnostics(state.libraryMessage?.diagnostics));
 }
 
-function setLibraryMessage(text, level = 'info') {
-  state.libraryMessage = text ? { text, level } : null;
+function setLibraryMessage(text, level = 'info', diagnostics = []) {
+  state.libraryMessage = text ? { text, level, diagnostics: normalizeDiagnostics(diagnostics) } : null;
   renderLibraryStatus();
 }
 
@@ -974,14 +1013,19 @@ function renderVisualCheck() {
   const check = state.visualCheck || {};
   status.textContent = check.message || 'Not checked';
   status.className = `visual-check-status ${check.level || 'info'}`;
-  const diagnostics = check.diagnostics || [];
-  if (!diagnostics.length) {
+  renderDiagnosticList(list, check.diagnostics || []);
+}
+
+function renderDiagnosticList(list, diagnostics) {
+  if (!list) return;
+  const normalized = normalizeDiagnostics(diagnostics);
+  if (!normalized.length) {
     list.innerHTML = '';
     list.hidden = true;
     return;
   }
   list.hidden = false;
-  list.innerHTML = diagnostics.map((diagnostic) => {
+  list.innerHTML = normalized.map((diagnostic) => {
     const level = String(diagnostic.level || 'INFO').toLowerCase();
     const target = diagnostic.target ? ` · ${diagnostic.target}` : '';
     const location = diagnostic.line >= 0 ? ` · ${diagnostic.line}:${diagnostic.column}` : '';
@@ -1011,6 +1055,20 @@ function diagnosticMessage(diagnostics, fallback) {
   const error = diagnostics.find((diagnostic) => String(diagnostic.level || '').toUpperCase() === 'ERROR');
   const warning = diagnostics.find((diagnostic) => String(diagnostic.level || '').toUpperCase() === 'WARNING');
   return error?.message || warning?.message || fallback;
+}
+
+function validationResultMessage(valid, diagnostics, successMessage) {
+  if (!diagnostics.length) {
+    return valid === false ? 'Validation failed.' : successMessage;
+  }
+  const prefix = valid === false ? 'Invalid' : 'Valid with warnings';
+  const summary = diagnostics.slice(0, 3).map((diagnostic) => {
+    const code = diagnostic.code || diagnostic.level || 'visual.info';
+    const target = diagnostic.target ? ` @ ${diagnostic.target}` : '';
+    return `${code}: ${diagnostic.message || ''}${target}`;
+  }).join(' | ');
+  const remaining = diagnostics.length > 3 ? ` | +${diagnostics.length - 3} more` : '';
+  return `${prefix}: ${summary}${remaining}`;
 }
 
 function visualCheckLevel(diagnostics, success = true) {
@@ -1130,6 +1188,32 @@ async function reloadOperatorLibrariesAndCatalog() {
   setLibraryMessage(`Loaded ${state.operatorLibraries.length} libraries.`, 'success');
 }
 
+async function validateOperatorLibrary() {
+  let library;
+  try {
+    library = JSON.parse(state.libraryImportText || '{}');
+  } catch (error) {
+    setLibraryMessage(`Invalid JSON: ${error.message}`, 'error');
+    return;
+  }
+  const response = await fetch('/admin/visual-operator-libraries/validate', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(library)
+  });
+  const payload = await response.json().catch(() => null);
+  if (!response.ok) {
+    setLibraryMessage(`Validation failed with ${response.status}`, 'error');
+    return;
+  }
+  const diagnostics = normalizeDiagnostics(payload?.diagnostics);
+  setLibraryMessage(
+    validationResultMessage(payload?.valid, diagnostics, 'Operator library is valid.'),
+    visualCheckLevel(diagnostics, payload?.valid !== false),
+    diagnostics
+  );
+}
+
 async function importOperatorLibrary() {
   let library;
   try {
@@ -1149,7 +1233,17 @@ async function importOperatorLibrary() {
   });
   const text = await response.text();
   if (!response.ok) {
-    setLibraryMessage(text || `Import failed with ${response.status}`, 'error');
+    let payload = null;
+    try {
+      payload = text ? JSON.parse(text) : null;
+    } catch {
+    }
+    const diagnostics = normalizeDiagnostics(payload?.diagnostics);
+    setLibraryMessage(
+      validationResultMessage(payload?.valid, diagnostics, text || `Import failed with ${response.status}`),
+      'error',
+      diagnostics
+    );
     return;
   }
   const stored = JSON.parse(text);
@@ -1462,6 +1556,7 @@ async function loadSelectedDraft() {
   state.lastPayload = null;
   state.lastGeneratedVisualDsl = '';
   await loadDraftRevisions({ render: false });
+  syncGraphInputSchemaTextFromBuilder({ render: false });
   syncComposerFromBuilder({ render: false });
   setDraftMessage(`Loaded ${state.currentDraftId}@${state.currentDraftRevision}.`, 'success');
   renderScenario();
@@ -1479,6 +1574,7 @@ async function previewSelectedDraftRevision() {
   state.previewingDraftRevision = draft.revision || 0;
   state.lastPayload = null;
   state.lastGeneratedVisualDsl = '';
+  syncGraphInputSchemaTextFromBuilder({ render: false });
   syncComposerFromBuilder({ render: false });
   setDraftMessage(`Previewing revision @${state.previewingDraftRevision}. Save or Restore to create a new revision.`, 'info');
   renderScenario();
@@ -1494,6 +1590,7 @@ async function restoreSelectedDraftRevision() {
   state.currentDraftRevision = current.revision || state.currentDraftRevision;
   state.savedDraftSnapshot = current;
   state.previewingDraftRevision = draft.revision || 0;
+  syncGraphInputSchemaTextFromBuilder({ render: false });
   syncComposerFromBuilder({ render: false });
   const restored = await saveCurrentDraft();
   if (restored) {
@@ -2492,6 +2589,11 @@ function syncComposerFromBuilder(options = {}) {
   if (contextBox && contextBox.value !== state.customContextText) {
     contextBox.value = state.customContextText;
   }
+  const graphInputSchemaBox = $('graph-input-schema');
+  if (graphInputSchemaBox && graphInputSchemaBox.value !== state.graphInputSchemaText) {
+    graphInputSchemaBox.value = state.graphInputSchemaText;
+  }
+  renderGraphInputSchemaStatus();
   if (render && isComposerSelected()) {
     renderDecisionTable();
     renderNodeDetails(selectedBuilderNode() || state.layout.nodes[0]);
@@ -2706,9 +2808,15 @@ function builderFromVisualDraft(draft) {
     .map((node) => [node.id, node]));
   const nodes = (draft.nodes || []).map((node) => builderNodeFromDraftNode(node, draft, layoutNodes));
   const selectedId = nodes[0]?.id || null;
+  let inputSchema = null;
+  try {
+    inputSchema = draft.inputSchema ? normalizeGraphInputSchemaEnvelope(draft.inputSchema) : null;
+  } catch {
+    inputSchema = null;
+  }
   const builder = {
     graphName: draft.graphName || 'visualGraph',
-    inputSchema: draft.inputSchema || null,
+    inputSchema,
     selectedId,
     output: {
       nodeId: draft.output?.nodeId || '',
@@ -3487,7 +3595,204 @@ function allowsAdditionalProperties(schema) {
 }
 
 function currentGraphInputSchema(builder = state.builder) {
-  return builder?.inputSchema || schemaEnvelopeFromContextText(state.customContextText);
+  if (builder?.inputSchema) {
+    try {
+      const schema = normalizeGraphInputSchemaEnvelope(builder.inputSchema);
+      if (!graphInputSchemaStructuralDiagnostics(schema).length) {
+        return schema;
+      }
+    } catch {
+    }
+  }
+  try {
+    return parseGraphInputSchemaText(state.graphInputSchemaText);
+  } catch {
+    return schemaEnvelopeFromContextText(state.customContextText);
+  }
+}
+
+function defaultGraphInputSchema() {
+  return schemaEnvelopeFromContextText(pretty(DEFAULT_COMPOSER_CONTEXT));
+}
+
+function syncGraphInputSchemaTextFromBuilder(options = {}) {
+  const render = options.render !== false;
+  state.graphInputSchemaText = pretty(currentGraphInputSchema(state.builder));
+  state.graphInputSchemaMessage = null;
+  state.graphInputSchemaDiagnostics = [];
+  const textarea = $('graph-input-schema');
+  if (textarea && textarea.value !== state.graphInputSchemaText) {
+    textarea.value = state.graphInputSchemaText;
+  }
+  if (render) {
+    renderGraphInputSchemaStatus();
+    renderSelectedOperatorEditor();
+    renderGraphOutputEditor();
+    renderDiagram();
+  }
+}
+
+function updateGraphInputSchemaFromText(text) {
+  state.graphInputSchemaText = text;
+  try {
+    const schema = parseGraphInputSchemaText(text);
+    state.builder.inputSchema = schema;
+    state.graphInputSchemaMessage = {
+      level: 'success',
+      message: graphInputSchemaSummary(schema)
+    };
+    state.graphInputSchemaDiagnostics = [];
+    renderGraphInputSchemaStatus();
+    renderSelectedOperatorEditor();
+    renderGraphOutputEditor();
+    renderDiagram();
+  } catch (error) {
+    const diagnostics = normalizeDiagnostics(error.diagnostics);
+    state.graphInputSchemaMessage = {
+      level: 'error',
+      message: diagnosticMessage(diagnostics, `Invalid schema: ${error.message}`)
+    };
+    state.graphInputSchemaDiagnostics = diagnostics;
+    renderGraphInputSchemaStatus();
+  }
+}
+
+function renderGraphInputSchemaStatus() {
+  const target = $('graph-input-schema-status');
+  if (!target) return;
+  const message = state.graphInputSchemaMessage;
+  target.hidden = !message;
+  target.textContent = message?.message || '';
+  target.className = `schema-status ${message?.level || 'info'}`;
+  renderDiagnosticList($('graph-input-schema-diagnostics'), state.graphInputSchemaDiagnostics);
+}
+
+function graphInputSchemaSummary(schemaEnvelope) {
+  const fields = schemaFieldDescriptors(schemaEnvelope);
+  if (!fields.length) {
+    return 'Graph input schema is valid; no named ctx fields are declared.';
+  }
+  const required = fields.filter((field) => field.required).length;
+  return `Graph input schema is valid: ${fields.length} ctx fields, ${required} required.`;
+}
+
+function parseGraphInputSchemaText(text) {
+  let value;
+  try {
+    value = JSON.parse(text || '{}');
+  } catch (error) {
+    throw new Error(error.message);
+  }
+  const schema = normalizeGraphInputSchemaEnvelope(value);
+  const diagnostics = graphInputSchemaStructuralDiagnostics(schema);
+  if (diagnostics.length) {
+    const error = new Error(diagnosticMessage(diagnostics, 'Graph input schema is invalid.'));
+    error.diagnostics = diagnostics;
+    throw error;
+  }
+  return schema;
+}
+
+function normalizeGraphInputSchemaEnvelope(value) {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    throw new Error('schema must be a JSON object.');
+  }
+  const schema = Object.prototype.hasOwnProperty.call(value, 'schema')
+    ? value.schema
+    : value;
+  if (!schema || typeof schema !== 'object' || Array.isArray(schema)) {
+    throw new Error('schema must contain an object schema.');
+  }
+  return {
+    format: String(value.format || 'json-schema'),
+    version: String(value.version || '2020-12'),
+    schema
+  };
+}
+
+function graphInputSchemaStructuralDiagnostics(schemaEnvelope) {
+  const diagnostics = [];
+  validateSchemaStructure(schemaEnvelope?.schema || {}, 'schema', diagnostics);
+  return diagnostics;
+}
+
+function validateSchemaStructure(schema, path, diagnostics) {
+  const kind = rawSchemaType(schema);
+  if (!kind) {
+    return;
+  }
+  if (!SUPPORTED_SCHEMA_KINDS.has(kind)) {
+    diagnostics.push(graphInputSchemaDiagnostic(
+      'visual.schema.unsupportedType',
+      `Unsupported schema type/kind '${kind}'.`,
+      `${path}/type`
+    ));
+    return;
+  }
+  if (kind === 'object') {
+    const properties = schemaObjectProperties(schema);
+    for (const required of schemaRequiredNames(schema)) {
+      if (!Object.prototype.hasOwnProperty.call(properties, required)) {
+        diagnostics.push(graphInputSchemaDiagnostic(
+          'visual.schema.requiredUnknown',
+          `Required property '${required}' is not declared in properties.`,
+          `${path}/required`
+        ));
+      }
+    }
+    for (const [name, childSchema] of Object.entries(properties)) {
+      if (!childSchema || typeof childSchema !== 'object' || Array.isArray(childSchema)) {
+        diagnostics.push(graphInputSchemaDiagnostic(
+          'visual.schema.propertyInvalid',
+          `Property '${name}' must be a schema object.`,
+          `${path}/properties/${name}`
+        ));
+        continue;
+      }
+      validateSchemaStructure(childSchema, `${path}/properties/${name}`, diagnostics);
+    }
+  } else if (kind === 'array') {
+    const items = schema?.items;
+    if (!items || typeof items !== 'object' || Array.isArray(items)) {
+      diagnostics.push(graphInputSchemaDiagnostic(
+        'visual.schema.arrayItemsMissing',
+        'Array schema must declare an item schema.',
+        `${path}/items`
+      ));
+      return;
+    }
+    validateSchemaStructure(items, `${path}/items`, diagnostics);
+  } else if (kind === 'enum') {
+    if (!Array.isArray(schema?.values) || !schema.values.length) {
+      diagnostics.push(graphInputSchemaDiagnostic(
+        'visual.schema.enumValuesMissing',
+        'Enum schema must declare non-empty values.',
+        `${path}/values`
+      ));
+    }
+  }
+}
+
+function graphInputSchemaDiagnostic(code, message, target) {
+  return {
+    level: 'ERROR',
+    code,
+    message,
+    target: `/inputSchema/${target}`,
+    line: -1,
+    column: -1
+  };
+}
+
+function schemaObjectProperties(schema) {
+  const properties = schema?.properties;
+  return properties && typeof properties === 'object' && !Array.isArray(properties)
+    ? properties
+    : {};
+}
+
+function schemaRequiredNames(schema) {
+  return Array.isArray(schema?.required) ? schema.required.map(String) : [];
 }
 
 function schemaEnvelopeFromContextText(text) {

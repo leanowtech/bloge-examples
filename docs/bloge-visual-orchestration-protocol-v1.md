@@ -476,6 +476,14 @@ MVP schema kind：
 }
 ```
 
+`graphInputSchema` 是图的设计时输入契约，不是某次调试 payload 的影子。
+resource-gateway 示例在浏览器里把它暴露为独立的 Graph Input Schema 编辑区：
+默认值可以从初始 Context JSON 推断，但之后 schema 和 Context JSON 分离保存。
+浏览器在激活新 schema 前会执行与服务端 blocking 规则同口径的基础结构预检，
+并以内联 diagnostics 明细展示问题，避免把明显非法的 schema 误标为 valid。
+拖拽连线、`ctx.*` source picker、`contextPath` binding 校验和服务端 compile/run
+gate 都以这个 schema 为准；Context JSON 只作为一次运行或调试的样例输入。
+
 ### 7.2 DraftStatus
 
 | 状态 | 说明 | 可编辑 | 可发布 |
@@ -816,7 +824,9 @@ Content-Type: application/json
 
 resource-gateway 示例阶段已落地等价管理端点：
 `POST /admin/visual-operator-libraries/validate`。导入和更新同样必须先执行
-该校验，禁止把 blocking diagnostics 的用户算子库写入 catalog。
+该校验，禁止把 blocking diagnostics 的用户算子库写入 catalog。浏览器
+Operator Libraries 面板也应先调用该端点，把结构化 diagnostics 以明细列表
+展示给作者，再允许作者选择是否执行 Import。
 
 请求体：
 
@@ -922,6 +932,12 @@ GET /api/visual/drafts/{draftId}/revisions/{revision}
 ```http
 POST /api/visual/drafts/{draftId}/validate
 ```
+
+校验必须先检查 `GraphDraft.inputSchema` 自身的结构合法性，再使用它解析
+`ctx.*` 引用。resource-gateway 示例已经让 graph input schema、operator
+input/output port schema、operator `configSchema` 复用同一个结构校验器：不支持的
+`type/kind`、`required` 引用不存在的 property、array 缺少 `items`、enum 缺少
+values 等都会产生 blocking diagnostic。
 
 响应：
 

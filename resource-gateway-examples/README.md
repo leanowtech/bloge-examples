@@ -89,8 +89,9 @@ runtime. Users can reposition existing nodes directly on the canvas, edit the
 selected operator's properties, bind every schema-declared input field from a
 schema-checked source picker or a manual expression, connect output handles to
 input handles under schema type constraints, confirm dropped connections through
-the server-side visual connection API before mutating the draft, import user-provided operator
-library JSON into the catalog, save/load/delete H2-backed graph drafts with
+the server-side visual connection API before mutating the draft, validate
+user-provided operator library JSON before importing it into the catalog,
+save/load/delete H2-backed graph drafts with
 revision-guarded field-level `PATCH` updates, validate and compile the draft through the
 server-side visual graph APIs, inspect the
 generated BLOGE DSL, run it with JSON context, and see diagnostics, output, graph
@@ -111,9 +112,15 @@ fields, and the server blocks missing required config, type mismatches, enum
 mismatches, and undeclared config fields when `additionalProperties=false`.
 Raw secret material is rejected from imported operator libraries and saved graph
 drafts; authoring artifacts may store only references such as `secretRef`.
-Graph input bindings are schema-aware too: the composer derives a draft
-`inputSchema` from Context JSON for authoring, offers compatible `ctx.*` values
-in the source picker, and the server blocks unknown or type-incompatible
+Graph input bindings are schema-aware too: the composer exposes a dedicated
+Graph Input Schema editor that accepts a `SchemaEnvelope` or raw JSON Schema,
+stores it as the draft `inputSchema`, and keeps Context JSON as only the sample
+runtime payload. The browser performs the same basic structural preflight for
+blocking schema issues before activating that schema on the canvas, shows the
+local schema diagnostics inline, and the source picker offers compatible
+`ctx.*` values from the active declared schema.
+The server validates the graph input schema with the same structural gate used
+for operator port/config schemas, then blocks unknown or type-incompatible
 `contextPath` bindings when the draft input schema is strict. Manual
 `expression` bindings are not blind escape hatches: server validation checks
 referenced `ctx.*` and `node.output.*` paths, and pure reference expressions are
@@ -284,7 +291,9 @@ input/output schemas used by the visual operator catalog:
 
 User-provided visual operator libraries are imported through a separate admin API.
 Imported operators join the same `/api/visual/operators` catalog as built-ins and
-resource-backed virtual operators.
+resource-backed virtual operators. The browser Operator Libraries panel calls
+the validate endpoint directly, so authors can inspect an inline structured
+diagnostic list before storing a library.
 
 | Method | Path | Description | Status |
 |--------|------|-------------|--------|
@@ -730,7 +739,7 @@ Isolated component tests, some with lightweight Spring slices or mocks.
 | `DatabaseResourceRegistryTest` | 11 | CRUD, H2 persistence, in-memory cache |
 | `ResourceDescriptorBootstrapTest` | 7 | Seeding, refresh behavior, idempotency |
 | `GatewayDslCompilationTest` | 7 | DSL parsing, graph loading |
-| `Visual*Test` | 96 | Visual operator projection, imported libraries, draft/publication persistence and history, revision-guarded patching, typed connection/edge validation, secret blocking, DSL lowering, runtime smoke path |
+| `Visual*Test` | 98 | Visual operator projection, imported libraries, draft/publication persistence and history, revision-guarded patching, typed connection/edge validation, graph input schema gates, secret blocking, DSL lowering, runtime smoke path |
 
 ### Layer 3 — Orchestration tests
 
