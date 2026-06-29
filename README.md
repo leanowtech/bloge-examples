@@ -36,6 +36,42 @@ mvn -f resource-gateway-examples/pom.xml clean verify
 
 ## Run Key Examples
 
+### Start/Stop Visual Servers
+
+From the repository root, use the helper scripts for the two browser-backed
+Spring Boot examples:
+
+```bash
+./scripts/start-examples.sh
+./scripts/stop-examples.sh
+```
+
+By default, the scripts start Graph Engine on port `8080` and Resource Gateway
+on port `8081` so both visual consoles can run at the same time:
+
+- Graph Engine: `http://localhost:8080/console`
+- Resource Gateway: `http://localhost:8081/examples/gateway`
+
+Run only one service when needed:
+
+```bash
+./scripts/start-examples.sh graph-engine
+./scripts/start-examples.sh resource-gateway
+./scripts/stop-examples.sh graph-engine
+./scripts/stop-examples.sh resource-gateway
+```
+
+Override ports with environment variables:
+
+```bash
+GRAPH_ENGINE_PORT=18080 RESOURCE_GATEWAY_PORT=18081 ./scripts/start-examples.sh
+```
+
+PID files are written to `target/example-pids/`, and logs are written to
+`target/example-logs/`. The start script runs Graph Engine through its Maven
+`spring-boot:run` target and runs Resource Gateway from its repackaged Spring
+Boot jar.
+
 ### Graph Engine Server
 
 ```bash
