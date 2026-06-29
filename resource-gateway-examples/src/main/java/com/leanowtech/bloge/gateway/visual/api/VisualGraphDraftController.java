@@ -2,6 +2,8 @@ package com.leanowtech.bloge.gateway.visual.api;
 
 import com.leanowtech.bloge.gateway.visual.codegen.DslGenerationResult;
 import com.leanowtech.bloge.gateway.visual.codegen.GraphDraftDslGenerator;
+import com.leanowtech.bloge.gateway.visual.catalog.OperatorDefinition;
+import com.leanowtech.bloge.gateway.visual.catalog.VisualOperatorCatalog;
 import com.leanowtech.bloge.gateway.visual.draft.GraphDraft;
 import com.leanowtech.bloge.gateway.visual.draft.GraphDraftRepository;
 import com.leanowtech.bloge.gateway.visual.runtime.VisualGraphRunRequest;
@@ -22,6 +24,8 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.util.Collection;
+import java.util.LinkedHashMap;
+import java.util.Map;
 
 /**
  * Public API for visual graph drafts.
@@ -34,6 +38,7 @@ public class VisualGraphDraftController {
     private final GraphDraftValidator validator;
     private final GraphDraftDslGenerator generator;
     private final VisualGraphRunService runner;
+    private final VisualOperatorCatalog catalog;
 
     /**
      * @param repository draft repository
@@ -44,11 +49,13 @@ public class VisualGraphDraftController {
     public VisualGraphDraftController(GraphDraftRepository repository,
                                       GraphDraftValidator validator,
                                       GraphDraftDslGenerator generator,
-                                      VisualGraphRunService runner) {
+                                      VisualGraphRunService runner,
+                                      VisualOperatorCatalog catalog) {
         this.repository = repository;
         this.validator = validator;
         this.generator = generator;
         this.runner = runner;
+        this.catalog = catalog;
     }
 
     /**
@@ -67,7 +74,7 @@ public class VisualGraphDraftController {
      */
     @PostMapping
     public GraphDraft create(@RequestBody GraphDraft draft) {
-        return repository.save(draft);
+        return repository.save(withCurrentOperatorFingerprints(draft));
     }
 
     /**
@@ -92,7 +99,7 @@ public class VisualGraphDraftController {
      */
     @PutMapping("/{draftId}")
     public GraphDraft update(@PathVariable String draftId, @RequestBody GraphDraft draft) {
-        return repository.save(draft.withIdentity(draftId, draft.revision()));
+        return repository.save(withCurrentOperatorFingerprints(draft.withIdentity(draftId, draft.revision())));
     }
 
     /**
@@ -157,5 +164,15 @@ public class VisualGraphDraftController {
         return repository.find(draftId)
                 .map(draft -> ResponseEntity.ok(runner.run(draft, request.context(), request.outputNode())))
                 .orElseGet(() -> ResponseEntity.notFound().build());
+    }
+
+    private GraphDraft withCurrentOperatorFingerprints(GraphDraft draft) {
+        Map<String, String> fingerprints = new LinkedHashMap<>();
+        for (GraphDraft.DraftNode node : draft.nodes()) {
+            catalog.find(node.operatorRef())
+                    .map(OperatorDefinition::fingerprint)
+                    .ifPresent(fingerprint -> fingerprints.put(node.id(), fingerprint));
+        }
+        return draft.withOperatorFingerprints(fingerprints);
     }
 }

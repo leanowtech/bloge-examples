@@ -34,4 +34,37 @@ class DefaultVisualOperatorCatalogTest {
         assertThat(operator.ports().inputs().getFirst().schema().required())
                 .containsExactly("score", "amount");
     }
+
+    @Test
+    void computesStableFingerprintFromSchemaAndLoweringMetadata() {
+        OperatorDefinition integerScore = VisualCatalogTestSupport.eligibilityOperator("integer");
+        OperatorDefinition sameDefinition = VisualCatalogTestSupport.eligibilityOperator("integer");
+        OperatorDefinition stringScore = VisualCatalogTestSupport.eligibilityOperator("string");
+
+        assertThat(integerScore.fingerprint()).startsWith("sha256:");
+        assertThat(integerScore.fingerprint()).hasSize(71);
+        assertThat(integerScore.fingerprint()).isEqualTo(sameDefinition.fingerprint());
+        assertThat(integerScore.fingerprint()).isNotEqualTo(stringScore.fingerprint());
+    }
+
+    @Test
+    void ignoresUserSuppliedFingerprintAndRecomputesServerSide() {
+        OperatorDefinition base = VisualCatalogTestSupport.eligibilityOperator("integer");
+
+        OperatorDefinition forged = new OperatorDefinition(
+                base.schemaVersion(),
+                base.operatorRef(),
+                base.operatorVersion(),
+                "sha256:forged",
+                base.display(),
+                base.source(),
+                base.ports(),
+                base.configSchema(),
+                base.capabilities(),
+                base.lowering(),
+                base.diagnostics()
+        );
+
+        assertThat(forged.fingerprint()).isEqualTo(base.fingerprint());
+    }
 }

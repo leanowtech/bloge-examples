@@ -286,6 +286,7 @@ async function loadVisualOperatorCatalog() {
     for (const operator of operators) {
       const operatorRef = operator.operatorRef || '';
       if (!operatorRef || operatorRef === 'httpResource' || operatorRef === 'bloge:decisionTable' || operatorRef === 'bloge:transform') {
+        rememberCoreOperatorFingerprint(operatorRef, operator.fingerprint || '');
         continue;
       }
       if (!operatorRef.startsWith('resource:')) {
@@ -298,6 +299,7 @@ async function loadVisualOperatorCatalog() {
           kind: 'custom',
           operatorRef,
           visualOperatorRef: operatorRef,
+          fingerprint: operator.fingerprint || '',
           inputPort: primaryInput.name,
           outputPort: primaryOutput.name,
           baseId: baseIdForResource(operatorRef),
@@ -322,6 +324,7 @@ async function loadVisualOperatorCatalog() {
         kind: 'resource',
         operatorRef: 'httpResource',
         visualOperatorRef: operatorRef,
+        fingerprint: operator.fingerprint || '',
         inputPort: primaryInput.name,
         outputPort: primaryOutput.name,
         baseId: baseIdForResource(resourceId),
@@ -335,6 +338,20 @@ async function loadVisualOperatorCatalog() {
     }
   } catch (error) {
     console.debug('Visual operator catalog unavailable', error);
+  }
+}
+
+function rememberCoreOperatorFingerprint(operatorRef, fingerprint) {
+  if (!fingerprint) {
+    return;
+  }
+  const type = {
+    httpResource: 'httpResource',
+    'bloge:decisionTable': 'decisionTable',
+    'bloge:transform': 'transform'
+  }[operatorRef];
+  if (type && OPERATOR_TYPES[type]) {
+    OPERATOR_TYPES[type].fingerprint = fingerprint;
   }
 }
 
@@ -2371,8 +2388,16 @@ function builderToVisualDraft(builder = state.builder) {
       target: { nodeId: edge.target, port: edge.targetPort || 'inputs', path: edge.targetPath || '' }
     })),
     visualLayout: layout,
-    output
+    output,
+    operatorFingerprints: operatorFingerprintsForBuilder(builder)
   };
+}
+
+function operatorFingerprintsForBuilder(builder = state.builder) {
+  const saved = builder.operatorFingerprints || {};
+  return Object.fromEntries(builder.nodes
+    .map((node) => [node.id, saved[node.id] || specForNode(node).fingerprint || ''])
+    .filter((entry) => entry[1]));
 }
 
 function builderFromVisualDraft(draft) {
@@ -2388,6 +2413,7 @@ function builderFromVisualDraft(draft) {
       nodeId: draft.output?.nodeId || '',
       path: draft.output?.path || ''
     },
+    operatorFingerprints: { ...(draft.operatorFingerprints || {}) },
     nodes
   };
   ensureBuilderOutput(builder);

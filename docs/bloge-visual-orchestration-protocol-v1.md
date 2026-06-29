@@ -83,6 +83,12 @@ sha256(canonical(operatorRef + source + inputSchema + outputSchema + configSchem
 - operator schema 变化时做影响分析。
 - 发布后保证运行语义没有被静默替换。
 
+resource-gateway 示例中 `OperatorDefinition.fingerprint` 由服务端按规范化后的
+source、ports、configSchema、capabilities、lowering 等执行/约束相关元数据计算。
+`GraphDraft.operatorFingerprints` 按 node id 保存草稿创建或提交时看到的
+fingerprint；如果当前 catalog 暴露的同一算子 fingerprint 不同，validate/compile/run
+会以 drift error 阻断。
+
 ## 4. Schema 表达
 
 ### 4.1 SchemaEnvelope
@@ -459,6 +465,9 @@ MVP schema kind：
     "kind": "node",
     "nodeId": "assembleLoanDecision",
     "path": "output"
+  },
+  "operatorFingerprints": {
+    "fetchApplicant": "sha256:..."
   }
 }
 ```
@@ -481,7 +490,6 @@ MVP schema kind：
   "id": "fetchApplicant",
   "label": "Fetch Applicant",
   "operatorRef": "resource:loan-applicant-service.getProfile",
-  "operatorFingerprint": "sha256:...",
   "inputPort": "input",
   "outputPort": "output",
   "inputs": {
@@ -508,7 +516,7 @@ MVP schema kind：
 
 - `id` 必须符合 BLOGE DSL node id 规则。
 - `operatorRef` 必须能在 catalog 中解析。
-- `operatorFingerprint` 发布时必填，草稿时可由服务端补齐。
+- `operatorFingerprints[nodeId]` 发布时必填，草稿保存时由服务端补齐；若存在且与当前 catalog fingerprint 不一致，必须阻断发布/运行。
 - `inputs` 的 key 必须对应 input schema 字段。
 - `config` 必须满足 `configSchema`。
   resource-gateway 示例已经把该规则落成服务端 gate：缺必填 config、类型不匹配、enum 不匹配、`additionalProperties=false` 下的未知 config 字段都会阻断 validate/compile/run。
@@ -1043,6 +1051,7 @@ flowchart TD
 - `array<T>` 到 `array<U>` 时 item schema 不兼容。
 - node config 不满足 operator `configSchema`。
 - graph output selection 不满足 output port schema。
+- draft operator fingerprint 与当前 catalog fingerprint 不一致。
 
 警告：
 

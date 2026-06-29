@@ -22,6 +22,7 @@ import java.util.Map;
  * @param edges visual edges
  * @param visualLayout opaque visual layout model
  * @param output selected graph output
+ * @param operatorFingerprints operator fingerprint snapshot keyed by node id
  */
 public record GraphDraft(
         String schemaVersion,
@@ -36,7 +37,8 @@ public record GraphDraft(
         List<DraftNode> nodes,
         List<DraftEdge> edges,
         Map<String, Object> visualLayout,
-        OutputSelection output
+        OutputSelection output,
+        Map<String, String> operatorFingerprints
 ) {
     /**
      * Creates a graph draft.
@@ -57,6 +59,27 @@ public record GraphDraft(
         edges = edges == null ? List.of() : List.copyOf(edges);
         visualLayout = visualLayout == null ? Map.of() : new LinkedHashMap<>(visualLayout);
         output = output == null ? OutputSelection.empty() : output;
+        operatorFingerprints = operatorFingerprints == null ? Map.of() : new LinkedHashMap<>(operatorFingerprints);
+    }
+
+    /**
+     * Backward-compatible constructor for drafts created before operator fingerprint snapshots existed.
+     */
+    public GraphDraft(String schemaVersion,
+                      String draftId,
+                      long revision,
+                      String graphName,
+                      String tenantId,
+                      String namespace,
+                      String environment,
+                      String status,
+                      SchemaEnvelope inputSchema,
+                      List<DraftNode> nodes,
+                      List<DraftEdge> edges,
+                      Map<String, Object> visualLayout,
+                      OutputSelection output) {
+        this(schemaVersion, draftId, revision, graphName, tenantId, namespace, environment, status,
+                inputSchema, nodes, edges, visualLayout, output, Map.of());
     }
 
     /**
@@ -68,7 +91,18 @@ public record GraphDraft(
      */
     public GraphDraft withIdentity(String newDraftId, long newRevision) {
         return new GraphDraft(schemaVersion, newDraftId, newRevision, graphName, tenantId, namespace,
-                environment, status, inputSchema, nodes, edges, visualLayout, output);
+                environment, status, inputSchema, nodes, edges, visualLayout, output, operatorFingerprints);
+    }
+
+    /**
+     * Returns a copy carrying the operator fingerprints observed when the draft was saved/submitted.
+     *
+     * @param fingerprints operator fingerprints keyed by node id
+     * @return updated draft
+     */
+    public GraphDraft withOperatorFingerprints(Map<String, String> fingerprints) {
+        return new GraphDraft(schemaVersion, draftId, revision, graphName, tenantId, namespace,
+                environment, status, inputSchema, nodes, edges, visualLayout, output, fingerprints);
     }
 
     /**

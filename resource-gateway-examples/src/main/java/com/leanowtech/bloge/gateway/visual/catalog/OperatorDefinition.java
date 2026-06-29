@@ -3,9 +3,14 @@ package com.leanowtech.bloge.gateway.visual.catalog;
 import com.leanowtech.bloge.gateway.visual.diagnostic.VisualDiagnostic;
 import com.leanowtech.bloge.gateway.visual.model.SchemaEnvelope;
 
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
+import java.util.HexFormat;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.TreeMap;
 
 /**
  * Schema-aware visual operator definition exposed to the canvas.
@@ -13,6 +18,7 @@ import java.util.Map;
  * @param schemaVersion contract schema version
  * @param operatorRef stable operator reference
  * @param operatorVersion operator version
+ * @param fingerprint stable hash of executable/schema-relevant operator metadata
  * @param display display metadata
  * @param source implementation/source metadata
  * @param ports input/output ports
@@ -25,6 +31,7 @@ public record OperatorDefinition(
         String schemaVersion,
         String operatorRef,
         String operatorVersion,
+        String fingerprint,
         Display display,
         Source source,
         Ports ports,
@@ -49,6 +56,25 @@ public record OperatorDefinition(
         capabilities = capabilities == null ? Capabilities.pure() : capabilities;
         lowering = lowering == null ? new Lowering("native", operatorRef, Map.of()) : lowering;
         diagnostics = diagnostics == null ? List.of() : List.copyOf(diagnostics);
+        fingerprint = computeFingerprint(operatorRef, operatorVersion, source, ports, configSchema, capabilities,
+                lowering);
+    }
+
+    /**
+     * Backward-compatible constructor for callers that let the server compute the fingerprint.
+     */
+    public OperatorDefinition(String schemaVersion,
+                              String operatorRef,
+                              String operatorVersion,
+                              Display display,
+                              Source source,
+                              Ports ports,
+                              SchemaEnvelope configSchema,
+                              Capabilities capabilities,
+                              Lowering lowering,
+                              List<VisualDiagnostic> diagnostics) {
+        this(schemaVersion, operatorRef, operatorVersion, "", display, source, ports, configSchema,
+                capabilities, lowering, diagnostics);
     }
 
     /**
@@ -164,5 +190,142 @@ public record OperatorDefinition(
             operatorRef = operatorRef == null ? "" : operatorRef;
             parameters = parameters == null ? Map.of() : new LinkedHashMap<>(parameters);
         }
+    }
+
+    private static String computeFingerprint(String operatorRef,
+                                             String operatorVersion,
+                                             Source source,
+                                             Ports ports,
+                                             SchemaEnvelope configSchema,
+                                             Capabilities capabilities,
+                                             Lowering lowering) {
+        Map<String, Object> material = new LinkedHashMap<>();
+        material.put("operatorRef", operatorRef);
+        material.put("operatorVersion", operatorVersion);
+        material.put("source", source);
+        material.put("ports", ports);
+        material.put("configSchema", configSchema);
+        material.put("capabilities", capabilities);
+        material.put("lowering", lowering);
+        byte[] digest = sha256(canonicalize(material).getBytes(StandardCharsets.UTF_8));
+        return "sha256:" + HexFormat.of().formatHex(digest);
+    }
+
+    private static byte[] sha256(byte[] bytes) {
+        try {
+            return MessageDigest.getInstance("SHA-256").digest(bytes);
+        } catch (NoSuchAlgorithmException e) {
+            throw new IllegalStateException("SHA-256 is not available", e);
+        }
+    }
+
+    private static String canonicalize(Object value) {
+        if (value == null) {
+            return "null";
+        }
+        if (value instanceof String string) {
+            return quote(string);
+        }
+        if (value instanceof Number || value instanceof Boolean) {
+            return String.valueOf(value);
+        }
+        if (value instanceof SchemaEnvelope envelope) {
+            Map<String, Object> body = new LinkedHashMap<>();
+            body.put("format", envelope.format());
+            body.put("version", envelope.version());
+            body.put("schema", envelope.schema());
+            return canonicalize(body);
+        }
+        if (value instanceof Source source) {
+            Map<String, Object> body = new LinkedHashMap<>();
+            body.put("kind", source.kind());
+            body.put("resourceId", source.resourceId());
+            body.put("method", source.method());
+            body.put("urlTemplate", source.urlTemplate());
+            body.put("virtual", source.virtual());
+            return canonicalize(body);
+        }
+        if (value instanceof Ports ports) {
+            Map<String, Object> body = new LinkedHashMap<>();
+            body.put("inputs", ports.inputs());
+            body.put("outputs", ports.outputs());
+            return canonicalize(body);
+        }
+        if (value instanceof Port port) {
+            Map<String, Object> body = new LinkedHashMap<>();
+            body.put("name", port.name());
+            body.put("schema", port.schema());
+            body.put("required", port.required());
+            return canonicalize(body);
+        }
+        if (value instanceof Capabilities capabilities) {
+            Map<String, Object> body = new LinkedHashMap<>();
+            body.put("effect", capabilities.effect());
+            body.put("idempotency", capabilities.idempotency());
+            body.put("streaming", capabilities.streaming());
+            body.put("requiresSecrets", capabilities.requiresSecrets());
+            return canonicalize(body);
+        }
+        if (value instanceof Lowering lowering) {
+            Map<String, Object> body = new LinkedHashMap<>();
+            body.put("mode", lowering.mode());
+            body.put("operatorRef", lowering.operatorRef());
+            body.put("parameters", lowering.parameters());
+            return canonicalize(body);
+        }
+        if (value instanceof Map<?, ?> rawMap) {
+            Map<String, Object> sorted = new TreeMap<>();
+            rawMap.forEach((key, item) -> sorted.put(String.valueOf(key), item));
+            StringBuilder builder = new StringBuilder("{");
+            boolean first = true;
+            for (Map.Entry<String, Object> entry : sorted.entrySet()) {
+                if (!first) {
+                    builder.append(",");
+                }
+                builder.append(quote(entry.getKey())).append(":").append(canonicalize(entry.getValue()));
+                first = false;
+            }
+            return builder.append("}").toString();
+        }
+        if (value instanceof Iterable<?> iterable) {
+            StringBuilder builder = new StringBuilder("[");
+            boolean first = true;
+            for (Object item : iterable) {
+                if (!first) {
+                    builder.append(",");
+                }
+                builder.append(canonicalize(item));
+                first = false;
+            }
+            return builder.append("]").toString();
+        }
+        if (value.getClass().isArray()) {
+            int length = java.lang.reflect.Array.getLength(value);
+            StringBuilder builder = new StringBuilder("[");
+            for (int i = 0; i < length; i++) {
+                if (i > 0) {
+                    builder.append(",");
+                }
+                builder.append(canonicalize(java.lang.reflect.Array.get(value, i)));
+            }
+            return builder.append("]").toString();
+        }
+        return quote(String.valueOf(value));
+    }
+
+    private static String quote(String value) {
+        StringBuilder builder = new StringBuilder(value.length() + 2).append('"');
+        for (int i = 0; i < value.length(); i++) {
+            char current = value.charAt(i);
+            switch (current) {
+                case '"' -> builder.append("\\\"");
+                case '\\' -> builder.append("\\\\");
+                case '\n' -> builder.append("\\n");
+                case '\r' -> builder.append("\\r");
+                case '\t' -> builder.append("\\t");
+                default -> builder.append(current);
+            }
+        }
+        return builder.append('"').toString();
     }
 }

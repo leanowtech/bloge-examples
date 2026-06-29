@@ -118,6 +118,10 @@ references also participate in DAG validation and DSL topological ordering, even
 when the draft omits a matching visual edge. Output selections are checked
 against the selected node's output port schema before compile/run as well, and
 the browser composer exposes the output node/path saved into `GraphDraft.output`.
+Each catalog operator exposes a server-computed fingerprint, and saved drafts
+store per-node `operatorFingerprints`; validation blocks compile/run when a
+draft was authored against an older schema/lowering fingerprint than the catalog
+currently exposes.
 The built-in `.bloge` scenarios remain available in the left rail and continue
 to execute the public gateway endpoints.
 
@@ -377,9 +381,9 @@ Seven `.bloge` graphs live in `src/main/resources/bloge/gateway/`:
 | `OperatorLibrary` | User-provided operator catalog bundle with schema-aware `OperatorDefinition` entries |
 | `DatabaseOperatorLibraryRegistry` | H2-backed user operator-library registry, so imported operator catalogs survive restart |
 | `DefaultVisualOperatorCatalog` | Combines native visual operators with `resource:<resourceId>` virtual operators |
-| `GraphDraft` | Editable canvas graph model: input schema, nodes, port-aware bindings, edges, layout, output selection |
+| `GraphDraft` | Editable canvas graph model: input schema, nodes, port-aware bindings, edges, layout, output selection, and operator fingerprint snapshots |
 | `DatabaseGraphDraftRepository` | H2-backed graph draft repository with revision assignment |
-| `GraphDraftValidator` | Validates operator references, graph input `contextPath` bindings, literal constants, expression references, required schema inputs, node config against `configSchema`, port-aware node bindings, typed port edges, DAG shape, and output schema selection |
+| `GraphDraftValidator` | Validates operator references, operator fingerprint drift, graph input `contextPath` bindings, literal constants, expression references, required schema inputs, node config against `configSchema`, port-aware node bindings, typed port edges, DAG shape, and output schema selection |
 | `GraphDraftDslGenerator` | Lowers visual drafts into executable BLOGE DSL |
 | `VisualGraphRunService` | Reuses the dynamic BLOGE runner to validate, compile, and execute visual drafts |
 

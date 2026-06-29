@@ -5,6 +5,7 @@ import com.leanowtech.bloge.gateway.visual.catalog.VisualCatalogTestSupport;
 import com.leanowtech.bloge.gateway.visual.codegen.DslGenerationResult;
 import com.leanowtech.bloge.gateway.visual.codegen.GraphDraftDslGenerator;
 import com.leanowtech.bloge.gateway.visual.draft.GraphDraft;
+import com.leanowtech.bloge.gateway.visual.draft.InMemoryGraphDraftRepository;
 import com.leanowtech.bloge.gateway.visual.model.SchemaEnvelope;
 import com.leanowtech.bloge.gateway.visual.validation.GraphDraftValidator;
 
@@ -58,14 +59,38 @@ class VisualGraphDraftControllerTest {
         assertThat(result.dsl()).contains("transform eligibility");
     }
 
+    @Test
+    void createStoresCurrentOperatorFingerprintSnapshot() {
+        DefaultVisualOperatorCatalog catalog = VisualCatalogTestSupport.catalogWithLibrary(
+                VisualCatalogTestSupport.eligibilityLibrary("integer"));
+        VisualGraphDraftController controller = controllerWithCatalog(catalog, new InMemoryGraphDraftRepository());
+        GraphDraft draft = eligibilityDraft(graphInputSchema(
+                Map.of(
+                        "score", Map.of("type", "integer"),
+                        "amount", Map.of("type", "number")
+                )
+        ));
+
+        GraphDraft stored = controller.create(draft);
+
+        assertThat(stored.operatorFingerprints())
+                .containsEntry("eligibility", catalog.find("risk:eligibility").orElseThrow().fingerprint());
+    }
+
     private static VisualGraphDraftController controllerWithEligibilityLibrary() {
         DefaultVisualOperatorCatalog catalog = VisualCatalogTestSupport.catalogWithLibrary(
                 VisualCatalogTestSupport.eligibilityLibrary("integer"));
+        return controllerWithCatalog(catalog, null);
+    }
+
+    private static VisualGraphDraftController controllerWithCatalog(DefaultVisualOperatorCatalog catalog,
+                                                                    InMemoryGraphDraftRepository repository) {
         return new VisualGraphDraftController(
-                null,
+                repository,
                 new GraphDraftValidator(catalog),
                 new GraphDraftDslGenerator(catalog),
-                null
+                null,
+                catalog
         );
     }
 

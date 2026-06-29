@@ -79,6 +79,7 @@ public class GraphDraftValidator {
                 continue;
             }
             operatorsByNodeId.put(node.id(), operator.get());
+            validateOperatorFingerprint(node, operator.get(), draft.operatorFingerprints(), nodePath, diagnostics);
             validateRequiredInputs(node, operator.get(), nodePath, diagnostics);
             validateUnknownInputs(node, operator.get(), nodePath, diagnostics);
             validateConfig(node, operator.get(), nodePath, diagnostics);
@@ -89,6 +90,24 @@ public class GraphDraftValidator {
         validateAcyclic(draft, nodesById, diagnostics);
         validateOutputSelection(draft, nodeIds, operatorsByNodeId, diagnostics);
         return new VisualValidationResult(diagnostics.stream().noneMatch(VisualDiagnostic::error), diagnostics);
+    }
+
+    private static void validateOperatorFingerprint(GraphDraft.DraftNode node,
+                                                    OperatorDefinition operator,
+                                                    Map<String, String> operatorFingerprints,
+                                                    String nodePath,
+                                                    List<VisualDiagnostic> diagnostics) {
+        if (operatorFingerprints.isEmpty()) {
+            return;
+        }
+        String expected = operatorFingerprints.get(node.id());
+        if (expected == null || expected.isBlank() || expected.equals(operator.fingerprint())) {
+            return;
+        }
+        diagnostics.add(VisualDiagnostic.error("visual.operator.fingerprintMismatch",
+                "Node '%s' was authored against operator '%s' fingerprint '%s', but the catalog now exposes '%s'."
+                        .formatted(node.id(), operator.operatorRef(), expected, operator.fingerprint()),
+                nodePath + "/operatorRef"));
     }
 
     private static void validateOutputSelection(GraphDraft draft,

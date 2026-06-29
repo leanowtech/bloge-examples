@@ -144,6 +144,34 @@ class GraphDraftValidatorTest {
     }
 
     @Test
+    void rejectsDraftWhenOperatorFingerprintSnapshotHasDrifted() {
+        GraphDraftValidator validator = new GraphDraftValidator(
+                VisualCatalogTestSupport.catalogWithLibrary(
+                        VisualCatalogTestSupport.eligibilityLibrary("integer")));
+        GraphDraft draft = contextEligibilityDraft(graphInputSchema(
+                Map.of(
+                        "score", Map.of("type", "integer"),
+                        "amount", Map.of("type", "number")
+                ),
+                List.of("score", "amount")
+        ), Map.of(
+                "score", GraphDraft.Binding.contextPath("score"),
+                "amount", GraphDraft.Binding.contextPath("amount")
+        )).withOperatorFingerprints(Map.of("eligibility", "sha256:old-definition"));
+
+        VisualValidationResult result = validator.validate(draft);
+
+        assertThat(result.valid()).isFalse();
+        assertThat(result.diagnostics())
+                .anySatisfy(diagnostic -> {
+                    assertThat(diagnostic.code()).isEqualTo("visual.operator.fingerprintMismatch");
+                    assertThat(diagnostic.message())
+                            .contains("eligibility")
+                            .contains("sha256:old-definition");
+                });
+    }
+
+    @Test
     void acceptsConstantBindingWhenValueMatchesTargetSchema() {
         GraphDraftValidator validator = new GraphDraftValidator(
                 VisualCatalogTestSupport.catalogWithLibrary(
