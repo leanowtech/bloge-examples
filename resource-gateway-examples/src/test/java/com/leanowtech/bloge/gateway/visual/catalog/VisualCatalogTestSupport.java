@@ -159,6 +159,52 @@ public final class VisualCatalogTestSupport {
         );
     }
 
+    public static OperatorDefinition scoreFactsOperator() {
+        Map<String, Object> summaryProperties = new LinkedHashMap<>();
+        summaryProperties.put("band", Map.of("type", "string"));
+
+        Map<String, Object> factProperties = new LinkedHashMap<>();
+        factProperties.put("score", Map.of("type", "integer"));
+
+        return new OperatorDefinition(
+                "bloge.visualOperator.v1",
+                "risk:scoreFacts",
+                "1.0.0",
+                new OperatorDefinition.Display("Score facts", "Produces named output ports for score facts.",
+                        List.of("risk", "facts")),
+                new OperatorDefinition.Source("user-library", "", "", "", false),
+                new OperatorDefinition.Ports(
+                        List.of(),
+                        List.of(
+                                new OperatorDefinition.Port("summary",
+                                        SchemaEnvelope.object(summaryProperties, List.of()),
+                                        true,
+                                        "Human readable score summary."),
+                                new OperatorDefinition.Port("facts",
+                                        SchemaEnvelope.object(factProperties, List.of()),
+                                        true,
+                                        "Machine readable score facts.")
+                        )
+                ),
+                SchemaEnvelope.opaque(),
+                OperatorDefinition.Capabilities.pure(),
+                new OperatorDefinition.Lowering("native", "riskScoreFacts", Map.of()),
+                List.of()
+        );
+    }
+
+    public static OperatorLibrary multiOutputEligibilityLibrary(String scoreType) {
+        return new OperatorLibrary(
+                "bloge.visualOperatorLibrary.v1",
+                "risk-policy",
+                "Risk policy operators",
+                "1.0.0",
+                "risk-team",
+                "ACTIVE",
+                List.of(scoreFactsOperator(), eligibilityOperator(scoreType))
+        );
+    }
+
     public static ResourceDescriptor loanApplicantDescriptor() {
         return new ResourceDescriptor(
                 RESOURCE_ID,

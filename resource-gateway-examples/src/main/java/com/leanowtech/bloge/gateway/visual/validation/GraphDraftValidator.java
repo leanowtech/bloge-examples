@@ -83,12 +83,14 @@ public class GraphDraftValidator {
                                                OperatorDefinition operator,
                                                String nodePath,
                                                List<VisualDiagnostic> diagnostics) {
-        SchemaEnvelope schema = firstInputSchema(operator);
-        for (String required : schema.required()) {
-            if (!node.inputs().containsKey(required)) {
-                diagnostics.add(VisualDiagnostic.error("visual.input.required",
-                        "Node '%s' requires input '%s'.".formatted(node.id(), required),
-                        nodePath + "/inputs/" + required));
+        for (OperatorDefinition.Port port : operator.ports().inputs()) {
+            for (String required : port.schema().required()) {
+                if (!hasInputForPort(node, operator, port.name(), required)) {
+                    diagnostics.add(VisualDiagnostic.error("visual.input.required",
+                            "Node '%s' requires input '%s' on port '%s'."
+                                    .formatted(node.id(), required, port.name()),
+                            nodePath + "/inputs/" + required));
+                }
             }
         }
     }
@@ -97,30 +99,46 @@ public class GraphDraftValidator {
                                               OperatorDefinition operator,
                                               String nodePath,
                                               List<VisualDiagnostic> diagnostics) {
-        SchemaEnvelope schema = firstInputSchema(operator);
-        Map<String, Object> properties = schema.properties();
-        if (properties.isEmpty()) {
-            return;
-        }
-        for (String input : node.inputs().keySet()) {
-            if (!properties.containsKey(input)) {
+        for (Map.Entry<String, GraphDraft.Binding> input : node.inputs().entrySet()) {
+            Optional<OperatorDefinition.Port> targetPort = resolveInputPort(operator, input.getValue().targetPort(),
+                    input.getKey());
+            if (targetPort.isEmpty()) {
+                diagnostics.add(VisualDiagnostic.error("visual.input.unknownTargetPort",
+                        "Input '%s' must target a declared input port on operator '%s'."
+                                .formatted(input.getKey(), operator.operatorRef()),
+                        nodePath + "/inputs/" + input.getKey()));
+                continue;
+            }
+            Map<String, Object> properties = targetPort.get().schema().properties();
+            if (properties.isEmpty()) {
+                continue;
+            }
+            if (!properties.containsKey(input.getKey())) {
                 diagnostics.add(VisualDiagnostic.warning("visual.input.unknown",
-                        "Input '%s' is not declared by operator '%s'.".formatted(input, operator.operatorRef()),
-                        nodePath + "/inputs/" + input));
+                        "Input '%s' is not declared by operator '%s' port '%s'."
+                                .formatted(input.getKey(), operator.operatorRef(), targetPort.get().name()),
+                        nodePath + "/inputs/" + input.getKey()));
             }
         }
     }
 
-    private static SchemaEnvelope firstInputSchema(OperatorDefinition operator) {
-        return operator.ports().inputs().isEmpty()
-                ? SchemaEnvelope.opaque()
-                : operator.ports().inputs().get(0).schema();
+    private static boolean hasInputForPort(GraphDraft.DraftNode node,
+                                           OperatorDefinition operator,
+                                           String portName,
+                                           String inputName) {
+        GraphDraft.Binding binding = node.inputs().get(inputName);
+        return binding != null && bindingTargetsPort(operator, binding, portName, inputName);
     }
 
-    private static SchemaEnvelope firstOutputSchema(OperatorDefinition operator) {
-        return operator.ports().outputs().isEmpty()
-                ? SchemaEnvelope.opaque()
-                : operator.ports().outputs().get(0).schema();
+    private static boolean bindingTargetsPort(OperatorDefinition operator,
+                                              GraphDraft.Binding binding,
+                                              String portName,
+                                              String inputName) {
+        if (!binding.targetPort().isBlank()) {
+            return binding.targetPort().equals(portName);
+        }
+        Optional<OperatorDefinition.Port> resolved = resolveInputPort(operator, "", inputName);
+        return resolved.map(port -> port.name().equals(portName)).orElse(false);
     }
 
     private static void validateNodePathBindings(GraphDraft draft,
@@ -133,9 +151,8 @@ public class GraphDraftValidator {
             if (targetOperator == null) {
                 continue;
             }
-            SchemaEnvelope targetSchema = firstInputSchema(targetOperator);
             for (Map.Entry<String, GraphDraft.Binding> input : node.inputs().entrySet()) {
-                validateBinding(input.getValue(), input.getKey(), targetSchema, nodesById, operatorsByNodeId,
+                validateBinding(input.getValue(), input.getKey(), targetOperator, nodesById, operatorsByNodeId,
                         "/nodes/" + i + "/inputs/" + input.getKey(), diagnostics);
             }
         }
@@ -143,13 +160,13 @@ public class GraphDraftValidator {
 
     private static void validateBinding(GraphDraft.Binding binding,
                                         String inputName,
-                                        SchemaEnvelope targetSchema,
+                                        OperatorDefinition targetOperator,
                                         Map<String, GraphDraft.DraftNode> nodesById,
                                         Map<String, OperatorDefinition> operatorsByNodeId,
                                         String targetPath,
                                         List<VisualDiagnostic> diagnostics) {
         if ("objectTemplate".equals(binding.kind())) {
-            binding.fields().forEach((key, nested) -> validateBinding(nested, key, targetSchema, nodesById,
+            binding.fields().forEach((key, nested) -> validateBinding(nested, key, targetOperator, nodesById,
                     operatorsByNodeId, targetPath + "/" + key, diagnostics));
             return;
         }
@@ -165,21 +182,42 @@ public class GraphDraftValidator {
             return;
         }
 
-        Map<String, Object> sourceProperty = propertyAtPath(firstOutputSchema(sourceOperator), binding.path());
-        if (sourceProperty == null) {
-            diagnostics.add(VisualDiagnostic.error("visual.binding.unknownOutputPath",
-                    "Source node '%s' output path does not exist: %s".formatted(binding.nodeId(), binding.path()),
+        Optional<OperatorDefinition.Port> sourcePort = resolveOutputPort(sourceOperator, binding.sourcePort());
+        if (sourcePort.isEmpty()) {
+            diagnostics.add(VisualDiagnostic.error("visual.binding.unknownSourcePort",
+                    "Binding source port '%s' is not declared by operator '%s'."
+                            .formatted(binding.sourcePort(), sourceOperator.operatorRef()),
                     targetPath));
             return;
         }
 
-        Map<String, Object> targetProperty = objectProperty(targetSchema.properties().get(inputName));
+        Map<String, Object> sourceProperty = propertyAtPath(sourcePort.get().schema(), binding.path());
+        if (sourceProperty == null) {
+            diagnostics.add(VisualDiagnostic.error("visual.binding.unknownOutputPath",
+                    "Source node '%s' port '%s' output path does not exist: %s"
+                            .formatted(binding.nodeId(), sourcePort.get().name(), binding.path()),
+                    targetPath));
+            return;
+        }
+
+        Optional<OperatorDefinition.Port> targetPort = resolveInputPort(targetOperator, binding.targetPort(),
+                inputName);
+        if (targetPort.isEmpty()) {
+            diagnostics.add(VisualDiagnostic.error("visual.binding.unknownTargetPort",
+                    "Binding target input '%s' must target a declared port on operator '%s'."
+                            .formatted(inputName, targetOperator.operatorRef()),
+                    targetPath));
+            return;
+        }
+
+        Map<String, Object> targetProperty = objectProperty(targetPort.get().schema().properties().get(inputName));
         String sourceType = schemaType(sourceProperty);
         String targetType = schemaType(targetProperty);
         if (!sourceType.isBlank() && !targetType.isBlank() && !typesCompatible(sourceType, targetType)) {
             diagnostics.add(VisualDiagnostic.error("visual.binding.typeMismatch",
-                    "Cannot bind %s output '%s' to %s input '%s'."
-                            .formatted(sourceType, binding.path(), targetType, inputName),
+                    "Cannot bind %s output '%s.%s' to %s input '%s.%s'."
+                            .formatted(sourceType, sourcePort.get().name(), binding.path(),
+                                    targetType, targetPort.get().name(), inputName),
                     targetPath));
         }
     }
@@ -322,6 +360,37 @@ public class GraphDraftValidator {
         return ports.stream()
                 .filter(port -> port.name().equals(name))
                 .findFirst();
+    }
+
+    private static Optional<OperatorDefinition.Port> resolveOutputPort(OperatorDefinition operator,
+                                                                       String portName) {
+        if ((portName == null || portName.isBlank()) && operator.ports().outputs().isEmpty()) {
+            return Optional.of(opaquePort("output"));
+        }
+        return findPort(operator.ports().outputs(), portName);
+    }
+
+    private static Optional<OperatorDefinition.Port> resolveInputPort(OperatorDefinition operator,
+                                                                      String portName,
+                                                                      String inputName) {
+        if (portName != null && !portName.isBlank()) {
+            return findPort(operator.ports().inputs(), portName);
+        }
+        List<OperatorDefinition.Port> ports = operator.ports().inputs();
+        if (ports.isEmpty()) {
+            return Optional.of(opaquePort("inputs"));
+        }
+        if (ports.size() == 1) {
+            return Optional.of(ports.getFirst());
+        }
+        List<OperatorDefinition.Port> matches = ports.stream()
+                .filter(port -> port.schema().properties().containsKey(inputName))
+                .toList();
+        return matches.size() == 1 ? Optional.of(matches.getFirst()) : Optional.empty();
+    }
+
+    private static OperatorDefinition.Port opaquePort(String name) {
+        return new OperatorDefinition.Port(name, SchemaEnvelope.opaque(), false, "Implicit opaque port.");
     }
 
     private static boolean allowsAdditionalProperties(Map<String, Object> schema) {

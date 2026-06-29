@@ -553,7 +553,8 @@ MVP schema kind：
 {
   "kind": "nodePath",
   "nodeId": "fetchApplicant",
-  "port": "output",
+  "sourcePort": "payload",
+  "targetPort": "inputs",
   "path": "score"
 }
 ```
@@ -564,7 +565,7 @@ MVP schema kind：
 | --- | --- | --- |
 | `constant` | `value` | value 类型满足 target schema |
 | `contextPath` | `path` | path 能从 graphInputSchema 推导，或标记 dynamic |
-| `nodePath` | `nodeId`、`port`、`path` | 上游存在、可达、schema 兼容 |
+| `nodePath` | `nodeId`、`sourcePort`、`targetPort`、`path` | 上游存在、端口存在、可达、source/target schema 兼容 |
 | `expression` | `expr` | 语法、引用、结果类型校验 |
 | `objectTemplate` | `fields` | 每个字段递归校验 |
 | `secretRef` | `secretRef` | 权限和环境可用 |

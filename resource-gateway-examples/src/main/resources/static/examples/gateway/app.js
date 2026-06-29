@@ -288,16 +288,22 @@ async function loadVisualOperatorCatalog() {
         continue;
       }
       if (!operatorRef.startsWith('resource:')) {
+        const inputPorts = normalizeOperatorPorts(operator.ports?.inputs, 'inputs');
+        const outputPorts = normalizeOperatorPorts(operator.ports?.outputs, 'output');
+        const primaryInput = inputPorts[0] || { name: 'inputs', schema: null };
+        const primaryOutput = outputPorts[0] || { name: 'output', schema: null };
         OPERATOR_TYPES[operatorRef] = {
           label: operator.display?.name || readableName(operatorRef),
           kind: 'custom',
           operatorRef,
           visualOperatorRef: operatorRef,
-          inputPort: operator.ports?.inputs?.[0]?.name || 'inputs',
-          outputPort: operator.ports?.outputs?.[0]?.name || 'output',
+          inputPort: primaryInput.name,
+          outputPort: primaryOutput.name,
           baseId: baseIdForResource(operatorRef),
-          inputSchema: operator.ports?.inputs?.[0]?.schema,
-          outputSchema: operator.ports?.outputs?.[0]?.schema,
+          inputPorts,
+          outputPorts,
+          inputSchema: primaryInput.schema,
+          outputSchema: primaryOutput.schema,
           configSchema: operator.configSchema,
           lowering: operator.lowering
         };
@@ -306,23 +312,73 @@ async function loadVisualOperatorCatalog() {
       const resourceId = operator.source?.resourceId
         || operator.lowering?.parameters?.resourceId
         || operatorRef.slice('resource:'.length);
+      const inputPorts = normalizeOperatorPorts(operator.ports?.inputs, 'params');
+      const outputPorts = normalizeOperatorPorts(operator.ports?.outputs, 'payload');
+      const primaryInput = inputPorts[0] || { name: 'params', schema: null };
+      const primaryOutput = outputPorts[0] || { name: 'payload', schema: null };
       OPERATOR_TYPES[operatorRef] = {
         label: operator.display?.name || readableName(resourceId),
         kind: 'resource',
         operatorRef: 'httpResource',
         visualOperatorRef: operatorRef,
-        inputPort: operator.ports?.inputs?.[0]?.name || 'params',
-        outputPort: operator.ports?.outputs?.[0]?.name || 'payload',
+        inputPort: primaryInput.name,
+        outputPort: primaryOutput.name,
         baseId: baseIdForResource(resourceId),
         resourceId,
-        inputSchema: operator.ports?.inputs?.[0]?.schema,
-        outputSchema: operator.ports?.outputs?.[0]?.schema,
+        inputPorts,
+        outputPorts,
+        inputSchema: primaryInput.schema,
+        outputSchema: primaryOutput.schema,
         lowering: operator.lowering
       };
     }
   } catch (error) {
     console.debug('Visual operator catalog unavailable', error);
   }
+}
+
+function normalizeOperatorPorts(ports, fallbackName) {
+  if (!Array.isArray(ports) || ports.length === 0) {
+    return [];
+  }
+  return ports.map((port) => ({
+    name: port?.name || fallbackName,
+    schema: port?.schema || null,
+    required: Boolean(port?.required),
+    description: port?.description || ''
+  }));
+}
+
+function inputPortsForSpec(spec) {
+  if (Array.isArray(spec?.inputPorts) && spec.inputPorts.length) {
+    return spec.inputPorts;
+  }
+  return [{ name: spec?.inputPort || 'inputs', schema: spec?.inputSchema || null, required: true }];
+}
+
+function outputPortsForSpec(spec) {
+  if (Array.isArray(spec?.outputPorts) && spec.outputPorts.length) {
+    return spec.outputPorts;
+  }
+  return [{ name: spec?.outputPort || 'output', schema: spec?.outputSchema || null, required: true }];
+}
+
+function inputPortForInputPath(spec, path) {
+  const ports = inputPortsForSpec(spec);
+  const matches = ports.filter((port) =>
+    Object.prototype.hasOwnProperty.call(schemaProperties(port.schema), path)
+  );
+  if (matches.length === 1) {
+    return matches[0].name;
+  }
+  return ports[0]?.name || spec?.inputPort || 'inputs';
+}
+
+function schemaForPort(spec, role, portName) {
+  const ports = role === 'source' ? outputPortsForSpec(spec) : inputPortsForSpec(spec);
+  return ports.find((port) => port.name === portName)?.schema
+    || (role === 'source' ? spec?.outputSchema : spec?.inputSchema)
+    || null;
 }
 
 function resetDynamicOperatorTypes() {
@@ -620,7 +676,7 @@ function builderEdges(builder = state.builder) {
 
   for (const node of builder.nodes) {
     for (const binding of builderInputBindings(node)) {
-      const source = connectionSourceFromExpression(binding.expression);
+      const source = connectionSourceFromExpression(binding.expression, builder);
       if (!source) continue;
       add({
         source: source.nodeId,
@@ -683,7 +739,7 @@ function builderInputBindings(node) {
     return Object.entries(node.customInputs || {}).map(([inputName, expression]) => ({
       inputName,
       expression,
-      targetPort: spec.inputPort || 'inputs',
+      targetPort: node.customInputPorts?.[inputName] || inputPortForInputPath(spec, inputName),
       targetPath: inputName,
       label: inputName
     }));
@@ -691,9 +747,25 @@ function builderInputBindings(node) {
   return [];
 }
 
-function connectionSourceFromExpression(expression) {
-  const match = String(expression || '').trim()
-    .match(/^([A-Za-z_][A-Za-z0-9_]*)\.output(?:\.(payload))?(?:\.(.+))?$/);
+function connectionSourceFromExpression(expression, builder = state.builder) {
+  const value = String(expression || '').trim();
+  const outputMatch = value.match(/^([A-Za-z_][A-Za-z0-9_]*)\.output(?:\..+)?$/);
+  if (outputMatch) {
+    const sourceNode = builder.nodes.find((node) => node.id === outputMatch[1]);
+    if (sourceNode) {
+      const handle = sourceHandlesForNode(sourceNode).find((candidate) =>
+        expressionForConnectionSource(candidate) === value
+      );
+      if (handle) {
+        return {
+          nodeId: handle.nodeId,
+          port: handle.port,
+          path: handle.path || ''
+        };
+      }
+    }
+  }
+  const match = value.match(/^([A-Za-z_][A-Za-z0-9_]*)\.output(?:\.(payload))?(?:\.(.+))?$/);
   if (!match) {
     return null;
   }
@@ -1497,21 +1569,30 @@ function createBuilderNode(type, x, y) {
 }
 
 function defaultParamNameForOperator(spec) {
-  const schema = spec?.inputSchema?.schema || {};
+  const primaryInput = inputPortsForSpec(spec)[0];
+  const schema = primaryInput?.schema?.schema || spec?.inputSchema?.schema || {};
   const required = Array.isArray(schema.required) ? schema.required : [];
   if (required.length) {
     return required[0];
   }
-  const properties = schemaProperties(spec?.inputSchema);
+  const properties = schemaProperties(primaryInput?.schema || spec?.inputSchema);
   return Object.keys(properties)[0] || 'applicantId';
 }
 
 function defaultInputExpressionsForOperator(spec) {
-  const schema = spec?.inputSchema?.schema || {};
-  const required = Array.isArray(schema.required) ? schema.required : [];
-  const properties = schemaProperties(spec?.inputSchema);
-  const names = required.length ? required : Object.keys(properties);
-  return Object.fromEntries(names.map((name) => [name, `ctx.${name}`]));
+  const entries = [];
+  for (const port of inputPortsForSpec(spec)) {
+    const schema = port?.schema?.schema || {};
+    const required = Array.isArray(schema.required) ? schema.required : [];
+    const properties = schemaProperties(port?.schema);
+    const names = required.length ? required : Object.keys(properties);
+    for (const name of names) {
+      if (!entries.some(([existing]) => existing === name)) {
+        entries.push([name, `ctx.${name}`]);
+      }
+    }
+  }
+  return Object.fromEntries(entries);
 }
 
 function defaultResourceParamInputs(spec) {
@@ -1569,14 +1650,16 @@ function setExpressionForTargetInput(node, target, expression) {
   } else if (node.type === 'customOperator') {
     node.customInputs = node.customInputs || {};
     node.customInputs[target.path] = expression;
+    node.customInputPorts = node.customInputPorts || {};
+    node.customInputPorts[target.path] = target.port || inputPortForInputPath(specForNode(node), target.path);
   } else if (node.type === 'transform') {
     const source = connectionSourceFromExpression(expression);
     node.policyNode = source?.nodeId || node.policyNode;
   }
 }
 
-function requiredInputNames(spec) {
-  const required = spec?.inputSchema?.schema?.required;
+function requiredInputNamesForPort(port) {
+  const required = port?.schema?.schema?.required;
   return Array.isArray(required) ? required : [];
 }
 
@@ -1949,7 +2032,12 @@ function builderNodeFromDraftNode(node, draft, layoutNodes) {
     type: 'customOperator',
     paletteType: node.operatorRef,
     customInputs: Object.fromEntries(Object.entries(node.inputs || {})
-      .map(([key, binding]) => [key, expressionFromBinding(binding, draft)]))
+      .map(([key, binding]) => [key, expressionFromBinding(binding, draft)])),
+    customInputPorts: Object.fromEntries(Object.entries(node.inputs || {})
+      .map(([key, binding]) => [key, binding.targetPort || inputPortForInputPath(specForNode({
+        type: 'customOperator',
+        paletteType: node.operatorRef
+      }), key)]))
   };
 }
 
@@ -1969,7 +2057,8 @@ function expressionFromBinding(binding, draft) {
   }
   if (binding.kind === 'nodePath') {
     const source = (draft.nodes || []).find((node) => node.id === binding.nodeId);
-    const payloadSegment = source?.operatorRef?.startsWith('resource:') ? '.payload' : '';
+    const sourcePort = binding.sourcePort || (source?.operatorRef?.startsWith('resource:') ? 'payload' : 'output');
+    const payloadSegment = sourcePort && sourcePort !== 'output' ? `.${sourcePort}` : '';
     const pathSegment = binding.path ? `.${binding.path}` : '';
     return `${binding.nodeId}.output${payloadSegment}${pathSegment}`;
   }
@@ -2032,7 +2121,10 @@ function builderNodeToDraftNode(node, builder) {
       operatorRef,
       label: labelForNode(node),
       inputs: Object.fromEntries(nonBlankInputEntries(paramInputs)
-        .map(([key, expression]) => [key, bindingFromExpression(expression)])),
+        .map(([key, expression]) => [key, bindingFromExpression(expression, {
+          targetPort: specForNode(node).inputPort || 'params',
+          builder
+        })])),
       config: { timeout: '3s', retryAttempts: 1 },
       position: { x: node.x, y: node.y }
     };
@@ -2072,7 +2164,10 @@ function builderNodeToDraftNode(node, builder) {
       operatorRef: node.paletteType,
       label: labelForNode(node),
       inputs: Object.fromEntries(nonBlankInputEntries(node.customInputs || {})
-              .map(([key, expression]) => [key, bindingFromExpression(expression)])),
+              .map(([key, expression]) => [key, bindingFromExpression(expression, {
+                targetPort: node.customInputPorts?.[key] || inputPortForInputPath(specForNode(node), key),
+                builder
+              })])),
       config: {},
       position: { x: node.x, y: node.y }
     };
@@ -2100,16 +2195,27 @@ function builderNodeToDraftNode(node, builder) {
   };
 }
 
-function bindingFromExpression(expression) {
+function bindingFromExpression(expression, options = {}) {
   const value = String(expression || '').trim();
+  const withTargetPort = (binding) => {
+    if (options.targetPort) {
+      return { ...binding, targetPort: options.targetPort };
+    }
+    return binding;
+  };
   if (value.startsWith('ctx.')) {
-    return { kind: 'contextPath', path: value.slice(4) };
+    return withTargetPort({ kind: 'contextPath', path: value.slice(4) });
   }
-  const nodePath = value.match(/^([A-Za-z_][A-Za-z0-9_]*)\.output(?:\.payload)?(?:\.(.+))?$/);
-  if (nodePath) {
-    return { kind: 'nodePath', nodeId: nodePath[1], path: nodePath[2] || '' };
+  const source = connectionSourceFromExpression(value, options.builder || state.builder);
+  if (source) {
+    return withTargetPort({
+      kind: 'nodePath',
+      nodeId: source.nodeId,
+      sourcePort: source.port || 'output',
+      path: source.path || ''
+    });
   }
-  return { kind: 'expression', expr: value || '{}' };
+  return withTargetPort({ kind: 'expression', expr: value || '{}' });
 }
 
 function nonBlankInputEntries(inputs) {
@@ -2373,37 +2479,41 @@ function sourceHandlesForNode(node) {
       type: path === 'rate' ? 'number' : (path === 'maxTerm' ? 'integer' : 'string')
     }));
   }
-  const properties = schemaProperties(spec.outputSchema);
-  const names = Object.keys(properties);
-  if (!names.length) {
-    return [{
+  return outputPortsForSpec(spec).flatMap((port) => {
+    const properties = schemaProperties(port.schema);
+    const names = Object.keys(properties);
+    if (!names.length) {
+      return [{
+        nodeId: node.id,
+        port: port.name || spec.outputPort || 'output',
+        path: '',
+        type: schemaType(port.schema?.schema)
+      }];
+    }
+    return names.map((path) => ({
       nodeId: node.id,
-      port: spec.outputPort || 'output',
-      path: '',
-      type: schemaType(spec.outputSchema?.schema)
-    }];
-  }
-  return names.map((path) => ({
-    nodeId: node.id,
-    port: spec.outputPort || 'output',
-    path,
-    type: schemaType(properties[path])
-  }));
+      port: port.name || spec.outputPort || 'output',
+      path,
+      type: schemaType(properties[path])
+    }));
+  });
 }
 
 function targetHandlesForNode(node) {
   const spec = specForNode(node);
   if (node.type === 'httpResource') {
-    const properties = schemaProperties(spec.inputSchema);
-    const names = Object.keys(properties).length ? Object.keys(properties) : Object.keys(resourceParamInputs(node, spec));
-    const required = requiredInputNames(spec);
-    return names.map((path) => ({
-      nodeId: node.id,
-      port: spec.inputPort || 'params',
-      path,
-      type: schemaType(properties[path]),
-      required: required.includes(path)
-    }));
+    return inputPortsForSpec(spec).flatMap((port) => {
+      const properties = schemaProperties(port.schema);
+      const names = Object.keys(properties).length ? Object.keys(properties) : Object.keys(resourceParamInputs(node, spec));
+      const required = requiredInputNamesForPort(port);
+      return names.map((path) => ({
+        nodeId: node.id,
+        port: port.name || spec.inputPort || 'params',
+        path,
+        type: schemaType(properties[path]),
+        required: required.includes(path)
+      }));
+    });
   }
   if (node.type === 'decisionTable') {
     return [
@@ -2412,16 +2522,18 @@ function targetHandlesForNode(node) {
     ];
   }
   if (node.type === 'customOperator') {
-    const properties = schemaProperties(spec.inputSchema);
-    const names = Object.keys(properties).length ? Object.keys(properties) : Object.keys(node.customInputs || {});
-    const required = requiredInputNames(spec);
-    return names.map((path) => ({
-      nodeId: node.id,
-      port: spec.inputPort || 'inputs',
-      path,
-      type: schemaType(properties[path]),
-      required: required.includes(path)
-    }));
+    return inputPortsForSpec(spec).flatMap((port) => {
+      const properties = schemaProperties(port.schema);
+      const names = Object.keys(properties).length ? Object.keys(properties) : Object.keys(node.customInputs || {});
+      const required = requiredInputNamesForPort(port);
+      return names.map((path) => ({
+        nodeId: node.id,
+        port: port.name || spec.inputPort || 'inputs',
+        path,
+        type: schemaType(properties[path]),
+        required: required.includes(path)
+      }));
+    });
   }
   return [{
     nodeId: node.id,
@@ -2547,10 +2659,10 @@ function connectionCompatibility(source, target) {
   const targetNode = state.builder.nodes.find((node) => node.id === target.nodeId);
   const sourceSchema = source.type
     ? { type: source.type }
-    : (sourceNode ? schemaAtPath(specForNode(sourceNode).outputSchema, source.path) : null);
+    : (sourceNode ? schemaAtPath(schemaForPort(specForNode(sourceNode), 'source', source.port), source.path) : null);
   const targetSchema = target.type
     ? { type: target.type }
-    : (targetNode ? schemaAtPath(specForNode(targetNode).inputSchema, target.path) : null);
+    : (targetNode ? schemaAtPath(schemaForPort(specForNode(targetNode), 'target', target.port), target.path) : null);
   if (sourceSchema === null) {
     return { ok: false, message: `Source path '${source.path}' is not exposed.` };
   }
@@ -2859,6 +2971,8 @@ function applyConnection(source, target) {
   } else if (node.type === 'customOperator') {
     node.customInputs = node.customInputs || {};
     node.customInputs[target.path] = expression;
+    node.customInputPorts = node.customInputPorts || {};
+    node.customInputPorts[target.path] = target.port || inputPortForInputPath(specForNode(node), target.path);
   } else if (node.type === 'transform') {
     node.policyNode = source.nodeId;
   }
@@ -2869,7 +2983,7 @@ function applyConnection(source, target) {
 }
 
 function expressionForConnectionSource(source) {
-  const payloadSegment = source.port === 'payload' ? '.payload' : '';
+  const payloadSegment = source.port && source.port !== 'output' ? `.${source.port}` : '';
   const pathSegment = source.path ? `.${source.path}` : '';
   return `${source.nodeId}.output${payloadSegment}${pathSegment}`;
 }

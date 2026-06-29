@@ -481,7 +481,7 @@ node fetchApplicant : httpResource {
 | --- | --- | --- |
 | `constant` | 固定值 | `"approved"` |
 | `contextPath` | 从 `ctx` 读取 | `ctx.userId` |
-| `nodePath` | 从上游节点输出读取 | `fetchProfile.output.payload.name` |
+| `nodePath` | 从上游节点指定输出端口读取 | `fetchProfile.output.payload.name` |
 | `expression` | BLOGE 表达式 | `ctx.amount * 1.2` |
 | `objectTemplate` | 结构化对象模板 | `{ id: ctx.id, score: risk.output.score }` |
 | `transformRef` | 显式 transform 节点 | `normalizeApplicant.output` |
@@ -499,8 +499,8 @@ MVP 可以先支持 `constant`、`contextPath`、`nodePath`、`expression`、`ob
 当用户把 A 的输出连到 B 的输入时，系统必须检查：
 
 1. A 节点是否存在且可达。
-2. A 的输出 path 是否存在。
-3. B 的输入字段是否存在。
+2. A 的输出端口和输出 path 是否存在。
+3. B 的输入端口和输入字段是否存在。
 4. A 输出字段类型是否可赋值给 B 输入字段类型。
 5. B 输入字段是否 required。
 6. 如果类型不兼容，是否存在可插入 transform 或 adapter。

@@ -104,4 +104,51 @@ class GraphDraftDslGeneratorTest {
         assertThat(result.dsl()).contains("eligible = ctx.score >= 700 && ctx.amount <= 300000");
         assertThat(result.dsl()).contains("ruleId = \"ELIGIBILITY_V1\"");
     }
+
+    @Test
+    void lowersNodePathBindingFromNamedOutputPort() {
+        GraphDraftDslGenerator generator = new GraphDraftDslGenerator(
+                VisualCatalogTestSupport.catalogWithLibrary(
+                        VisualCatalogTestSupport.multiOutputEligibilityLibrary("integer")));
+        GraphDraft draft = new GraphDraft(
+                "",
+                "",
+                0,
+                "namedOutputPort",
+                "",
+                "",
+                "",
+                "",
+                null,
+                List.of(
+                        new GraphDraft.DraftNode(
+                                "scoreFacts",
+                                "risk:scoreFacts",
+                                "",
+                                Map.of(),
+                                Map.of(),
+                                null
+                        ),
+                        new GraphDraft.DraftNode(
+                                "eligibility",
+                                "risk:eligibility",
+                                "",
+                                Map.of(
+                                        "score", GraphDraft.Binding.nodePath("scoreFacts", "facts", "score"),
+                                        "amount", GraphDraft.Binding.contextPath("amount")
+                                ),
+                                Map.of(),
+                                null
+                        )
+                ),
+                List.of(),
+                Map.of(),
+                new GraphDraft.OutputSelection("eligibility", "")
+        );
+
+        DslGenerationResult result = generator.generate(draft);
+
+        assertThat(result.generated()).isTrue();
+        assertThat(result.dsl()).contains("eligible = scoreFacts.output.facts.score >= 700 && ctx.amount <= 300000");
+    }
 }

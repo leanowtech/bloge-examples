@@ -296,8 +296,12 @@ public class GraphDraftDslGenerator {
                                              Map<String, GraphDraft.DraftNode> nodesById) {
         GraphDraft.DraftNode source = nodesById.get(binding.nodeId());
         String base = binding.nodeId() + ".output";
-        if (source != null && source.operatorRef().startsWith("resource:")) {
+        String sourcePort = binding.sourcePort();
+        if (source != null && source.operatorRef().startsWith("resource:")
+                && (sourcePort.isBlank() || "payload".equals(sourcePort))) {
             base += ".payload";
+        } else if (!sourcePort.isBlank() && !"output".equals(sourcePort)) {
+            base += "." + sourcePort;
         }
         return pathExpression(base, binding.path());
     }
@@ -351,6 +355,8 @@ public class GraphDraftDslGenerator {
                 rawMap.get("value"),
                 stringValue(rawMap.get("path")),
                 stringValue(rawMap.get("nodeId")),
+                stringValue(rawMap.get("sourcePort")),
+                stringValue(rawMap.get("targetPort")),
                 stringValue(rawMap.get("expr")),
                 fields
         );

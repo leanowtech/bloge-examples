@@ -122,6 +122,51 @@ class GraphDraftValidatorTest {
     }
 
     @Test
+    void acceptsNodePathBindingFromSelectedOutputPort() {
+        GraphDraftValidator validator = new GraphDraftValidator(
+                VisualCatalogTestSupport.catalogWithLibrary(
+                        VisualCatalogTestSupport.multiOutputEligibilityLibrary("integer")));
+        GraphDraft draft = multiOutputEligibilityDraft(
+                GraphDraft.Binding.nodePath("scoreFacts", "facts", "score"));
+
+        VisualValidationResult result = validator.validate(draft);
+
+        assertThat(result.valid()).isTrue();
+    }
+
+    @Test
+    void rejectsNodePathBindingWhenSourcePortIsAmbiguous() {
+        GraphDraftValidator validator = new GraphDraftValidator(
+                VisualCatalogTestSupport.catalogWithLibrary(
+                        VisualCatalogTestSupport.multiOutputEligibilityLibrary("integer")));
+        GraphDraft draft = multiOutputEligibilityDraft(
+                GraphDraft.Binding.nodePath("scoreFacts", "score"));
+
+        VisualValidationResult result = validator.validate(draft);
+
+        assertThat(result.valid()).isFalse();
+        assertThat(result.diagnostics())
+                .anySatisfy(diagnostic -> assertThat(diagnostic.code())
+                        .isEqualTo("visual.binding.unknownSourcePort"));
+    }
+
+    @Test
+    void rejectsNodePathBindingWhenSelectedOutputPortDoesNotExposePath() {
+        GraphDraftValidator validator = new GraphDraftValidator(
+                VisualCatalogTestSupport.catalogWithLibrary(
+                        VisualCatalogTestSupport.multiOutputEligibilityLibrary("integer")));
+        GraphDraft draft = multiOutputEligibilityDraft(
+                GraphDraft.Binding.nodePath("scoreFacts", "summary", "score"));
+
+        VisualValidationResult result = validator.validate(draft);
+
+        assertThat(result.valid()).isFalse();
+        assertThat(result.diagnostics())
+                .anySatisfy(diagnostic -> assertThat(diagnostic.code())
+                        .isEqualTo("visual.binding.unknownOutputPath"));
+    }
+
+    @Test
     void rejectsEdgeWhenSourcePathDoesNotExist() {
         GraphDraftValidator validator = new GraphDraftValidator(
                 VisualCatalogTestSupport.catalogWithLoanApplicantResourceAndLibrary(
@@ -248,6 +293,46 @@ class GraphDraftValidatorTest {
                         )
                 ),
                 List.of(edge),
+                Map.of(),
+                new GraphDraft.OutputSelection("eligibility", "")
+        );
+    }
+
+    private static GraphDraft multiOutputEligibilityDraft(GraphDraft.Binding scoreBinding) {
+        return new GraphDraft(
+                "",
+                "",
+                0,
+                "multiOutputBinding",
+                "",
+                "",
+                "",
+                "",
+                null,
+                List.of(
+                        new GraphDraft.DraftNode(
+                                "scoreFacts",
+                                "risk:scoreFacts",
+                                "",
+                                Map.of(),
+                                Map.of(),
+                                null
+                        ),
+                        new GraphDraft.DraftNode(
+                                "eligibility",
+                                "risk:eligibility",
+                                "",
+                                Map.of(
+                                        "score", scoreBinding,
+                                        "amount", GraphDraft.Binding.contextPath("amount")
+                                ),
+                                Map.of(),
+                                null
+                        )
+                ),
+                List.of(new GraphDraft.DraftEdge("score", "data",
+                        new GraphDraft.Endpoint("scoreFacts", "facts", "score"),
+                        new GraphDraft.Endpoint("eligibility", "inputs", "score"))),
                 Map.of(),
                 new GraphDraft.OutputSelection("eligibility", "")
         );

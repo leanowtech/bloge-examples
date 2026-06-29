@@ -109,6 +109,8 @@ public record GraphDraft(
      * @param value literal value for constant bindings
      * @param path context/node path
      * @param nodeId source node id for nodePath bindings
+     * @param sourcePort source output port for nodePath bindings
+     * @param targetPort target input port for this binding
      * @param expr raw BLOGE expression
      * @param fields nested fields for objectTemplate bindings
      */
@@ -117,6 +119,8 @@ public record GraphDraft(
             Object value,
             String path,
             String nodeId,
+            String sourcePort,
+            String targetPort,
             String expr,
             Map<String, Binding> fields
     ) {
@@ -127,24 +131,30 @@ public record GraphDraft(
             kind = kind == null || kind.isBlank() ? "constant" : kind;
             path = path == null ? "" : path;
             nodeId = nodeId == null ? "" : nodeId;
+            sourcePort = sourcePort == null ? "" : sourcePort;
+            targetPort = targetPort == null ? "" : targetPort;
             expr = expr == null ? "" : expr;
             fields = fields == null ? Map.of() : new LinkedHashMap<>(fields);
         }
 
         public static Binding constant(Object value) {
-            return new Binding("constant", value, "", "", "", Map.of());
+            return new Binding("constant", value, "", "", "", "", "", Map.of());
         }
 
         public static Binding contextPath(String path) {
-            return new Binding("contextPath", null, path, "", "", Map.of());
+            return new Binding("contextPath", null, path, "", "", "", "", Map.of());
         }
 
         public static Binding nodePath(String nodeId, String path) {
-            return new Binding("nodePath", null, path, nodeId, "", Map.of());
+            return new Binding("nodePath", null, path, nodeId, "", "", "", Map.of());
+        }
+
+        public static Binding nodePath(String nodeId, String sourcePort, String path) {
+            return new Binding("nodePath", null, path, nodeId, sourcePort, "", "", Map.of());
         }
 
         public static Binding expression(String expr) {
-            return new Binding("expression", null, "", "", expr, Map.of());
+            return new Binding("expression", null, "", "", "", "", expr, Map.of());
         }
     }
 
