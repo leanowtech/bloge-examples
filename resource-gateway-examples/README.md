@@ -91,7 +91,7 @@ schema-checked source picker or a manual expression, connect output handles to
 input handles under schema type constraints, confirm dropped connections through
 the server-side visual connection API before mutating the draft, import user-provided operator
 library JSON into the catalog, save/load/delete H2-backed graph drafts with
-revision-guarded `PATCH` updates, validate and compile the draft through the
+revision-guarded field-level `PATCH` updates, validate and compile the draft through the
 server-side visual graph APIs, inspect the
 generated BLOGE DSL, run it with JSON context, and see diagnostics, output, graph
 highlighting, and the decision-table matrix update together. Node-path bindings
@@ -131,6 +131,9 @@ the generated DSL, draft snapshot, operator schema snapshots, fingerprints,
 layout, and validation/generation reports for audit or later promotion. Published
 artifacts can be run directly from their frozen DSL, so execution no longer
 depends on whatever the current operator catalog exposes after publication.
+The Drafts panel can also load revision history, preview an old snapshot on the
+canvas, and restore it as a new latest revision through the same guarded patch
+path.
 The built-in `.bloge` scenarios remain available in the left rail and continue
 to execute the public gateway endpoints.
 
@@ -152,6 +155,8 @@ Showcase metadata APIs:
 | `GET` | `/api/visual/drafts` | List stored visual graph drafts |
 | `POST` | `/api/visual/drafts` | Save a new visual graph draft with assigned id and revision |
 | `GET` | `/api/visual/drafts/{draftId}` | Load a stored visual graph draft |
+| `GET` | `/api/visual/drafts/{draftId}/revisions` | List immutable draft revision snapshots, newest first |
+| `GET` | `/api/visual/drafts/{draftId}/revisions/{revision}` | Load one immutable draft revision snapshot |
 | `PUT` | `/api/visual/drafts/{draftId}` | Update a stored visual graph draft and increment revision |
 | `PATCH` | `/api/visual/drafts/{draftId}` | Apply an `expectedRevision` JSON patch and reject stale edits with `409 CONFLICT` |
 | `DELETE` | `/api/visual/drafts/{draftId}` | Delete a stored visual graph draft |
@@ -397,7 +402,7 @@ Seven `.bloge` graphs live in `src/main/resources/bloge/gateway/`:
 | `DatabaseOperatorLibraryRegistry` | H2-backed user operator-library registry, so imported operator catalogs survive restart |
 | `DefaultVisualOperatorCatalog` | Combines native visual operators with `resource:<resourceId>` virtual operators |
 | `GraphDraft` | Editable canvas graph model: input schema, nodes, port-aware bindings, edges, layout, output selection, and operator fingerprint snapshots |
-| `DatabaseGraphDraftRepository` | H2-backed graph draft repository with revision assignment and expected-revision guarded updates |
+| `DatabaseGraphDraftRepository` | H2-backed graph draft repository with revision assignment, immutable revision history, and expected-revision guarded updates |
 | `GraphDraftValidator` | Validates operator references, operator fingerprint drift, graph input `contextPath` bindings, literal constants, expression references, required schema inputs, node config against `configSchema`, port-aware node bindings, typed port edges, DAG shape, and output schema selection |
 | `VisualConnectionCheckService` | Reuses draft validation to accept or reject one proposed canvas edge before the browser writes a binding |
 | `GraphDraftDslGenerator` | Lowers visual drafts into executable BLOGE DSL |
@@ -725,7 +730,7 @@ Isolated component tests, some with lightweight Spring slices or mocks.
 | `DatabaseResourceRegistryTest` | 11 | CRUD, H2 persistence, in-memory cache |
 | `ResourceDescriptorBootstrapTest` | 7 | Seeding, refresh behavior, idempotency |
 | `GatewayDslCompilationTest` | 7 | DSL parsing, graph loading |
-| `Visual*Test` | 93 | Visual operator projection, imported libraries, draft/publication persistence, revision-guarded patching, typed connection/edge validation, secret blocking, DSL lowering, runtime smoke path |
+| `Visual*Test` | 96 | Visual operator projection, imported libraries, draft/publication persistence and history, revision-guarded patching, typed connection/edge validation, secret blocking, DSL lowering, runtime smoke path |
 
 ### Layer 3 — Orchestration tests
 

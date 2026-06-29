@@ -109,6 +109,35 @@ public class VisualGraphDraftController {
     }
 
     /**
+     * Lists stored revisions for a draft.
+     *
+     * @param draftId draft id
+     * @return newest-first draft revision snapshots
+     */
+    @GetMapping("/{draftId}/revisions")
+    public ResponseEntity<List<GraphDraft>> revisions(@PathVariable String draftId) {
+        List<GraphDraft> revisions = repository.revisions(draftId);
+        if (revisions.isEmpty() && repository.find(draftId).isEmpty()) {
+            return ResponseEntity.notFound().build();
+        }
+        return ResponseEntity.ok(revisions);
+    }
+
+    /**
+     * Gets one stored draft revision.
+     *
+     * @param draftId draft id
+     * @param revision revision number
+     * @return draft revision snapshot when present
+     */
+    @GetMapping("/{draftId}/revisions/{revision}")
+    public ResponseEntity<GraphDraft> revision(@PathVariable String draftId, @PathVariable long revision) {
+        return repository.findRevision(draftId, revision)
+                .map(ResponseEntity::ok)
+                .orElseGet(() -> ResponseEntity.notFound().build());
+    }
+
+    /**
      * Updates a draft.
      *
      * @param draftId draft id

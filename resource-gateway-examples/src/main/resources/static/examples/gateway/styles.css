@@ -678,7 +678,14 @@ body.dragging-operator * {
   gap: 6px;
 }
 
-.draft-controls select {
+.draft-revision-controls {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto auto;
+  gap: 6px;
+}
+
+.draft-controls select,
+.draft-revision-controls select {
   min-width: 0;
   padding: 7px 8px;
   border: 1px solid var(--line);
@@ -1059,6 +1066,7 @@ body.dragging-operator * {
 .binding-row select:focus,
 .binding-row input:focus,
 .draft-controls select:focus,
+.draft-revision-controls select:focus,
 .library-controls select:focus,
 .library-editor:focus {
   outline: 2px solid rgba(23, 78, 166, 0.24);

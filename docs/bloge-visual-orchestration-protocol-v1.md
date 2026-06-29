@@ -899,10 +899,23 @@ Content-Type: application/json
 - `expectedRevision` 不匹配返回 `409 CONFLICT`。
 - 响应必须返回当前 server revision。
 
-resource-gateway 示例支持 `add`、`replace`、`remove` 三类 JSON patch 操作，
-并额外允许 `path=""` 的 root `replace`，用于浏览器把当前完整 `GraphDraft`
-作为一次带乐观锁的保存提交。服务端会在 repository 层执行
-`expectedRevision` guarded update，避免 check/save 两步之间覆盖其他编辑。
+resource-gateway 示例支持 `add`、`replace`、`remove` 三类 JSON patch 操作。
+浏览器保存已存在 draft 时会基于上一次 server revision 计算字段级 patch；
+若没有可用本地快照，才降级使用 `path=""` 的 root `replace`。服务端会在
+repository 层执行 `expectedRevision` guarded update，避免 check/save 两步之间
+覆盖其他编辑。
+
+resource-gateway 示例还提供 revision history：
+
+```http
+GET /api/visual/drafts/{draftId}/revisions
+GET /api/visual/drafts/{draftId}/revisions/{revision}
+```
+
+每次保存成功后，当前 draft 写入 `visual_graph_drafts`，同时把该 revision
+快照写入 `visual_graph_draft_revisions`，用于审计、对比和回滚前预览。
+浏览器 Drafts 面板已接入该 API：可以加载 revision 列表、把历史快照预览到
+画布上，并通过 guarded patch 把选中 revision 恢复成新的最新 revision。
 
 ### 10.4 校验 draft
 

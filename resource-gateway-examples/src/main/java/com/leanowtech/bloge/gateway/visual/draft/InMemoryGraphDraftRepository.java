@@ -4,6 +4,7 @@ import com.leanowtech.bloge.gateway.visual.validation.VisualSecretGuard;
 
 import java.util.Collection;
 import java.util.Comparator;
+import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
@@ -15,6 +16,7 @@ import java.util.concurrent.ConcurrentHashMap;
 public class InMemoryGraphDraftRepository implements GraphDraftRepository {
 
     private final Map<String, GraphDraft> drafts = new ConcurrentHashMap<>();
+    private final Map<String, ConcurrentHashMap<Long, GraphDraft>> revisions = new ConcurrentHashMap<>();
 
     @Override
     public Collection<GraphDraft> all() {
@@ -29,6 +31,18 @@ public class InMemoryGraphDraftRepository implements GraphDraftRepository {
     }
 
     @Override
+    public List<GraphDraft> revisions(String draftId) {
+        return revisions.getOrDefault(draftId, new ConcurrentHashMap<>()).values().stream()
+                .sorted(Comparator.comparingLong(GraphDraft::revision).reversed())
+                .toList();
+    }
+
+    @Override
+    public Optional<GraphDraft> findRevision(String draftId, long revision) {
+        return Optional.ofNullable(revisions.getOrDefault(draftId, new ConcurrentHashMap<>()).get(revision));
+    }
+
+    @Override
     public GraphDraft save(GraphDraft draft) {
         VisualSecretGuard.requireNoDraftSecrets(draft);
         String draftId = draft.draftId().isBlank() ? UUID.randomUUID().toString() : draft.draftId();
@@ -36,6 +50,7 @@ public class InMemoryGraphDraftRepository implements GraphDraftRepository {
                 draft.withIdentity(draftId, 0)).revision()) + 1;
         GraphDraft stored = draft.withIdentity(draftId, nextRevision);
         drafts.put(draftId, stored);
+        rememberRevision(stored);
         return stored;
     }
 
@@ -48,11 +63,18 @@ public class InMemoryGraphDraftRepository implements GraphDraftRepository {
         }
         GraphDraft stored = draft.withIdentity(draftId, expectedRevision + 1);
         drafts.put(draftId, stored);
+        rememberRevision(stored);
         return Optional.of(stored);
     }
 
     @Override
     public void delete(String draftId) {
         drafts.remove(draftId);
+        revisions.remove(draftId);
+    }
+
+    private void rememberRevision(GraphDraft draft) {
+        revisions.computeIfAbsent(draft.draftId(), ignored -> new ConcurrentHashMap<>())
+                .put(draft.revision(), draft);
     }
 }

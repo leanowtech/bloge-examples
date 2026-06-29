@@ -57,6 +57,20 @@ class DatabaseGraphDraftRepositoryTest {
     }
 
     @Test
+    void revisionsReturnNewestSnapshotsFirst() {
+        GraphDraft first = repository.save(simpleDraft("draft-1", 0));
+        GraphDraft second = repository.save(simpleDraft("draft-1", first.revision(), Map.of("mode", "review")));
+
+        assertThat(repository.revisions("draft-1"))
+                .extracting(GraphDraft::revision)
+                .containsExactly(second.revision(), first.revision());
+        assertThat(repository.findRevision("draft-1", first.revision()))
+                .contains(first);
+        assertThat(repository.findRevision("draft-1", second.revision()))
+                .contains(second);
+    }
+
+    @Test
     void saveIfRevisionUpdatesOnlyMatchingRevision() {
         GraphDraft first = repository.save(simpleDraft("draft-1", 0));
 
@@ -84,7 +98,18 @@ class DatabaseGraphDraftRepositoryTest {
         reloaded.init();
 
         assertThat(reloaded.find("draft-1")).contains(stored);
+        assertThat(reloaded.findRevision("draft-1", stored.revision())).contains(stored);
         assertThat(reloaded.all()).hasSize(1);
+    }
+
+    @Test
+    void deleteRemovesRevisionHistory() {
+        GraphDraft stored = repository.save(simpleDraft("draft-1", 0));
+
+        repository.delete(stored.draftId());
+
+        assertThat(repository.find(stored.draftId())).isEmpty();
+        assertThat(repository.revisions(stored.draftId())).isEmpty();
     }
 
     @Test

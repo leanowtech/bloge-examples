@@ -132,6 +132,33 @@ class VisualGraphDraftControllerTest {
     }
 
     @Test
+    void revisionsReturnStoredDraftHistory() {
+        VisualGraphDraftController controller = controllerWithEligibilityLibrary();
+        GraphDraft first = controller.create(eligibilityDraft(graphInputSchema(
+                Map.of(
+                        "score", Map.of("type", "integer"),
+                        "amount", Map.of("type", "number")
+                )
+        )));
+        ResponseEntity<GraphDraftPatchResult> patched = controller.patch(first.draftId(),
+                new GraphDraftPatchRequest(first.revision(), List.of(
+                        new GraphDraftPatchRequest.PatchOperation("replace", "/graphName", "revisionTwo")
+                )));
+        GraphDraft second = patched.getBody().draft();
+
+        ResponseEntity<List<GraphDraft>> response = controller.revisions(first.draftId());
+        ResponseEntity<GraphDraft> firstRevision = controller.revision(first.draftId(), first.revision());
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat(response.getBody()).isNotNull();
+        assertThat(response.getBody())
+                .extracting(GraphDraft::revision)
+                .containsExactly(second.revision(), first.revision());
+        assertThat(firstRevision.getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat(firstRevision.getBody()).isEqualTo(first);
+    }
+
+    @Test
     void publishStoredDraftCreatesImmutablePublication() {
         DefaultVisualOperatorCatalog catalog = VisualCatalogTestSupport.catalogWithLibrary(
                 VisualCatalogTestSupport.eligibilityLibrary("integer"));

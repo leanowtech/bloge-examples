@@ -1,6 +1,7 @@
 package com.leanowtech.bloge.gateway.visual.draft;
 
 import java.util.Collection;
+import java.util.List;
 import java.util.Optional;
 
 /**
@@ -20,6 +21,23 @@ public interface GraphDraftRepository {
      * @return draft when present
      */
     Optional<GraphDraft> find(String draftId);
+
+    /**
+     * Lists stored revisions for a draft, newest first.
+     *
+     * @param draftId draft id
+     * @return immutable draft snapshots by revision
+     */
+    List<GraphDraft> revisions(String draftId);
+
+    /**
+     * Finds one stored draft revision.
+     *
+     * @param draftId draft id
+     * @param revision revision number
+     * @return draft snapshot when present
+     */
+    Optional<GraphDraft> findRevision(String draftId, long revision);
 
     /**
      * Creates or updates a draft.

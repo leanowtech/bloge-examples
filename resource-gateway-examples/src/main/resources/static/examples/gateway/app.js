@@ -221,6 +221,10 @@ const state = {
   drafts: [],
   currentDraftId: '',
   currentDraftRevision: 0,
+  savedDraftSnapshot: null,
+  draftRevisions: [],
+  selectedDraftRevision: 0,
+  previewingDraftRevision: 0,
   draftMessage: null,
   visualCheck: {
     message: 'Not checked',
@@ -500,6 +504,12 @@ function renderInputForm() {
           <button id="save-draft" class="secondary compact" type="button">Save</button>
           <button id="load-draft" class="secondary compact" type="button">Load</button>
           <button id="delete-draft" class="secondary compact danger" type="button">Delete</button>
+        </div>
+        <div class="draft-revision-controls">
+          <select id="draft-revision-select" aria-label="Draft revision history"></select>
+          <button id="reload-revisions" class="secondary compact" type="button">History</button>
+          <button id="preview-revision" class="secondary compact" type="button">Preview</button>
+          <button id="restore-revision" class="secondary compact" type="button">Restore</button>
         </div>
         <div id="draft-status" class="draft-status" hidden></div>
       </div>
@@ -830,6 +840,10 @@ function resetComposer() {
   state.builder = createDefaultBuilder();
   state.currentDraftId = '';
   state.currentDraftRevision = 0;
+  state.savedDraftSnapshot = null;
+  state.draftRevisions = [];
+  state.selectedDraftRevision = 0;
+  state.previewingDraftRevision = 0;
   state.draftMessage = null;
   state.visualCheck = { message: 'Not checked', level: 'info', diagnostics: [] };
   state.customDsl = builderToDsl(state.builder);
@@ -1177,35 +1191,79 @@ function renderDraftControls() {
     }));
   select.innerHTML = options.join('');
   select.value = state.currentDraftId || '';
-  select.addEventListener('change', () => {
+  select.onchange = () => {
     state.currentDraftId = select.value;
     const draft = state.drafts.find((item) => item.draftId === select.value);
     state.currentDraftRevision = draft?.revision || 0;
+    state.savedDraftSnapshot = draft || null;
+    state.draftRevisions = [];
+    state.selectedDraftRevision = 0;
+    state.previewingDraftRevision = 0;
     state.draftMessage = null;
+    if (state.currentDraftId) {
+      loadDraftRevisions();
+    }
     renderDraftControls();
-  });
+  };
 
   const saveButton = $('save-draft');
   const loadButton = $('load-draft');
   const deleteButton = $('delete-draft');
   if (saveButton) {
-    saveButton.addEventListener('click', saveCurrentDraft);
+    saveButton.onclick = saveCurrentDraft;
   }
   if (loadButton) {
     loadButton.disabled = !state.currentDraftId;
-    loadButton.addEventListener('click', loadSelectedDraft);
+    loadButton.onclick = loadSelectedDraft;
   }
   if (deleteButton) {
     deleteButton.disabled = !state.currentDraftId;
-    deleteButton.addEventListener('click', deleteSelectedDraft);
+    deleteButton.onclick = deleteSelectedDraft;
   }
+  renderDraftRevisionControls();
   renderDraftStatus();
+}
+
+function renderDraftRevisionControls() {
+  const select = $('draft-revision-select');
+  if (!select) return;
+  const revisions = state.draftRevisions || [];
+  const options = revisions.length
+    ? revisions.map((draft) => {
+      const selected = Number(draft.revision || 0) === Number(state.selectedDraftRevision || 0) ? ' selected' : '';
+      const nodeCount = Array.isArray(draft.nodes) ? draft.nodes.length : 0;
+      return `<option value="${escapeHtml(draft.revision || 0)}"${selected}>@${escapeHtml(draft.revision || 0)} · ${escapeHtml(nodeCount)} nodes</option>`;
+    })
+    : [`<option value="">${state.currentDraftId ? 'No history loaded' : 'Select a draft'}</option>`];
+  select.innerHTML = options.join('');
+  select.disabled = !state.currentDraftId || !revisions.length;
+  select.onchange = () => {
+    state.selectedDraftRevision = Number(select.value || 0);
+  };
+
+  const reloadButton = $('reload-revisions');
+  const previewButton = $('preview-revision');
+  const restoreButton = $('restore-revision');
+  if (reloadButton) {
+    reloadButton.disabled = !state.currentDraftId;
+    reloadButton.onclick = loadDraftRevisions;
+  }
+  if (previewButton) {
+    previewButton.disabled = !state.currentDraftId || !state.selectedDraftRevision;
+    previewButton.onclick = previewSelectedDraftRevision;
+  }
+  if (restoreButton) {
+    restoreButton.disabled = !state.currentDraftId || !state.selectedDraftRevision;
+    restoreButton.onclick = restoreSelectedDraftRevision;
+  }
 }
 
 function renderDraftStatus() {
   const target = $('draft-status');
   if (!target) return;
-  const current = state.currentDraftId
+  const current = state.previewingDraftRevision
+    ? `Previewing ${state.currentDraftId}@${state.previewingDraftRevision}; current server revision is @${state.currentDraftRevision || 0}`
+    : state.currentDraftId
     ? `Current ${state.currentDraftId}@${state.currentDraftRevision || 0}`
     : 'Unsaved draft';
   const message = state.draftMessage?.text || current;
@@ -1229,6 +1287,10 @@ async function loadDraftList(options = {}) {
     if (state.currentDraftId && !state.drafts.some((draft) => draft.draftId === state.currentDraftId)) {
       state.currentDraftId = '';
       state.currentDraftRevision = 0;
+      state.savedDraftSnapshot = null;
+      state.draftRevisions = [];
+      state.selectedDraftRevision = 0;
+      state.previewingDraftRevision = 0;
     }
     if (options.render !== false) {
       renderDraftControls();
@@ -1238,29 +1300,70 @@ async function loadDraftList(options = {}) {
   }
 }
 
+async function loadDraftRevisions(options = {}) {
+  if (!state.currentDraftId) {
+    state.draftRevisions = [];
+    state.selectedDraftRevision = 0;
+    state.previewingDraftRevision = 0;
+    if (options.render !== false) {
+      renderDraftControls();
+    }
+    return [];
+  }
+  try {
+    const response = await fetch(`/api/visual/drafts/${encodeURIComponent(state.currentDraftId)}/revisions`);
+    if (!response.ok) {
+      throw new Error(`Revision history failed with ${response.status}`);
+    }
+    state.draftRevisions = await response.json();
+    if (!state.draftRevisions.some((draft) => Number(draft.revision || 0) === Number(state.selectedDraftRevision || 0))) {
+      state.selectedDraftRevision = state.currentDraftRevision || state.draftRevisions[0]?.revision || 0;
+    }
+    if (options.render !== false) {
+      renderDraftControls();
+    }
+    return state.draftRevisions;
+  } catch (error) {
+    setDraftMessage(error.message, 'error');
+    return [];
+  }
+}
+
 async function saveCurrentDraft() {
   const draft = builderToVisualDraft(state.builder);
   const draftId = state.currentDraftId;
-  const response = draftId
-    ? await fetch(`/api/visual/drafts/${encodeURIComponent(draftId)}`, {
+  const baseDraft = draftId ? currentSavedDraftSnapshot(draftId) : null;
+  let response;
+  if (draftId) {
+    const patch = draftPatchOperations(baseDraft, draft);
+    if (!patch.length) {
+      const current = baseDraft || draft;
+      state.savedDraftSnapshot = current;
+      setDraftMessage(`No changes in ${draftId}@${state.currentDraftRevision || 0}.`, 'success');
+      return current;
+    }
+    response = await fetch(`/api/visual/drafts/${encodeURIComponent(draftId)}`, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         expectedRevision: state.currentDraftRevision || 0,
-        patch: [{ op: 'replace', path: '', value: draft }]
+        patch
       })
-    })
-    : await fetch('/api/visual/drafts', {
+    });
+  } else {
+    response = await fetch('/api/visual/drafts', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(draft)
     });
+  }
   const payload = await response.json().catch(() => null);
   if (!response.ok) {
     const diagnostics = normalizeDiagnostics(payload?.diagnostics);
     const current = payload?.draft;
     if (response.status === 409 && current?.revision !== undefined) {
       state.currentDraftRevision = current.revision || 0;
+      state.savedDraftSnapshot = current;
       await loadDraftList();
     }
     setDraftMessage(diagnosticMessage(diagnostics, `Save failed with ${response.status}`), 'error');
@@ -1269,9 +1372,78 @@ async function saveCurrentDraft() {
   const stored = payload?.draft || payload;
   state.currentDraftId = stored.draftId || '';
   state.currentDraftRevision = stored.revision || 0;
+  state.savedDraftSnapshot = stored;
+  state.previewingDraftRevision = 0;
   setDraftMessage(`Saved ${state.currentDraftId}@${state.currentDraftRevision}.`, 'success');
-  await loadDraftList();
+  await loadDraftList({ render: false });
+  await loadDraftRevisions({ render: false });
+  renderDraftControls();
   return stored;
+}
+
+function currentSavedDraftSnapshot(draftId = state.currentDraftId) {
+  if (state.savedDraftSnapshot?.draftId === draftId
+      && Number(state.savedDraftSnapshot.revision || 0) === Number(state.currentDraftRevision || 0)) {
+    return state.savedDraftSnapshot;
+  }
+  const listed = state.drafts.find((draft) =>
+    draft.draftId === draftId && Number(draft.revision || 0) === Number(state.currentDraftRevision || 0)
+  );
+  return listed || null;
+}
+
+function draftPatchOperations(baseDraft, nextDraft) {
+  if (!baseDraft) {
+    return [{ op: 'replace', path: '', value: nextDraft }];
+  }
+  return jsonPatchDiff(normalizeDraftForPatch(baseDraft), normalizeDraftForPatch(nextDraft), '');
+}
+
+function normalizeDraftForPatch(draft) {
+  if (!draft || typeof draft !== 'object') {
+    return draft;
+  }
+  return {
+    ...draft,
+    draftId: state.currentDraftId || draft.draftId || '',
+    revision: state.currentDraftRevision || draft.revision || 0
+  };
+}
+
+function jsonPatchDiff(before, after, path) {
+  if (deepEqual(before, after)) {
+    return [];
+  }
+  if (!isPlainObject(before) || !isPlainObject(after)) {
+    return [{ op: 'replace', path, value: after }];
+  }
+  const operations = [];
+  const beforeKeys = Object.keys(before);
+  const afterKeys = Object.keys(after);
+  for (const key of beforeKeys.filter((item) => !Object.prototype.hasOwnProperty.call(after, item)).sort()) {
+    operations.push({ op: 'remove', path: `${path}/${jsonPointerEscape(key)}` });
+  }
+  for (const key of afterKeys.sort()) {
+    const childPath = `${path}/${jsonPointerEscape(key)}`;
+    if (!Object.prototype.hasOwnProperty.call(before, key)) {
+      operations.push({ op: 'add', path: childPath, value: after[key] });
+    } else {
+      operations.push(...jsonPatchDiff(before[key], after[key], childPath));
+    }
+  }
+  return operations;
+}
+
+function isPlainObject(value) {
+  return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
+}
+
+function deepEqual(left, right) {
+  return JSON.stringify(left) === JSON.stringify(right);
+}
+
+function jsonPointerEscape(segment) {
+  return String(segment).replaceAll('~', '~0').replaceAll('/', '~1');
 }
 
 async function loadSelectedDraft() {
@@ -1285,11 +1457,82 @@ async function loadSelectedDraft() {
   state.builder = builderFromVisualDraft(draft);
   state.currentDraftId = draft.draftId || '';
   state.currentDraftRevision = draft.revision || 0;
+  state.savedDraftSnapshot = draft;
+  state.previewingDraftRevision = 0;
   state.lastPayload = null;
   state.lastGeneratedVisualDsl = '';
+  await loadDraftRevisions({ render: false });
   syncComposerFromBuilder({ render: false });
   setDraftMessage(`Loaded ${state.currentDraftId}@${state.currentDraftRevision}.`, 'success');
   renderScenario();
+}
+
+async function previewSelectedDraftRevision() {
+  const draft = await selectedDraftRevisionSnapshot();
+  if (!draft) return;
+  const current = await loadCurrentDraftSnapshot();
+  if (!current) return;
+  state.builder = builderFromVisualDraft(draft);
+  state.currentDraftId = current.draftId || state.currentDraftId;
+  state.currentDraftRevision = current.revision || state.currentDraftRevision;
+  state.savedDraftSnapshot = current;
+  state.previewingDraftRevision = draft.revision || 0;
+  state.lastPayload = null;
+  state.lastGeneratedVisualDsl = '';
+  syncComposerFromBuilder({ render: false });
+  setDraftMessage(`Previewing revision @${state.previewingDraftRevision}. Save or Restore to create a new revision.`, 'info');
+  renderScenario();
+}
+
+async function restoreSelectedDraftRevision() {
+  const draft = await selectedDraftRevisionSnapshot();
+  if (!draft) return;
+  const current = await loadCurrentDraftSnapshot();
+  if (!current) return;
+  state.builder = builderFromVisualDraft(draft);
+  state.currentDraftId = current.draftId || state.currentDraftId;
+  state.currentDraftRevision = current.revision || state.currentDraftRevision;
+  state.savedDraftSnapshot = current;
+  state.previewingDraftRevision = draft.revision || 0;
+  syncComposerFromBuilder({ render: false });
+  const restored = await saveCurrentDraft();
+  if (restored) {
+    setDraftMessage(`Restored @${draft.revision || 0} as @${restored.revision || 0}.`, 'success');
+    renderScenario();
+  }
+}
+
+async function selectedDraftRevisionSnapshot() {
+  if (!state.currentDraftId || !state.selectedDraftRevision) {
+    return null;
+  }
+  const cached = state.draftRevisions.find((draft) =>
+    Number(draft.revision || 0) === Number(state.selectedDraftRevision)
+  );
+  if (cached) {
+    return cached;
+  }
+  const response = await fetch(`/api/visual/drafts/${encodeURIComponent(state.currentDraftId)}/revisions/${encodeURIComponent(state.selectedDraftRevision)}`);
+  if (!response.ok) {
+    setDraftMessage(`Revision load failed with ${response.status}`, 'error');
+    return null;
+  }
+  return response.json();
+}
+
+async function loadCurrentDraftSnapshot() {
+  if (!state.currentDraftId) {
+    return null;
+  }
+  const response = await fetch(`/api/visual/drafts/${encodeURIComponent(state.currentDraftId)}`);
+  if (!response.ok) {
+    setDraftMessage(`Current draft load failed with ${response.status}`, 'error');
+    return null;
+  }
+  const current = await response.json();
+  state.currentDraftRevision = current.revision || state.currentDraftRevision;
+  state.savedDraftSnapshot = current;
+  return current;
 }
 
 async function deleteSelectedDraft() {
@@ -1302,6 +1545,10 @@ async function deleteSelectedDraft() {
   }
   state.currentDraftId = '';
   state.currentDraftRevision = 0;
+  state.savedDraftSnapshot = null;
+  state.draftRevisions = [];
+  state.selectedDraftRevision = 0;
+  state.previewingDraftRevision = 0;
   setDraftMessage(`Deleted ${deletedId}.`, 'success');
   await loadDraftList();
 }
