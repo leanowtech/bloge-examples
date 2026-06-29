@@ -82,11 +82,11 @@ http://localhost:8080/examples/gateway
 
 The page opens on **Custom Composer**, a drag-and-drop graph builder. Users can
 drag operators such as `HTTP Resource`, `Decision Table`, and `Transform` onto
-the graph canvas, edit the selected operator's properties, inspect the generated
-BLOGE DSL, run it with JSON context, and see diagnostics, output, graph
-highlighting, and the decision-table matrix update together. The built-in
-`.bloge` scenarios remain available in the left rail and continue to execute the
-public gateway endpoints.
+the graph canvas, reposition existing nodes directly on the canvas, edit the
+selected operator's properties, inspect the generated BLOGE DSL, run it with JSON
+context, and see diagnostics, output, graph highlighting, and the decision-table
+matrix update together. The built-in `.bloge` scenarios remain available in the
+left rail and continue to execute the public gateway endpoints.
 
 To see the decision-table UX, run the default composer graph, edit the `R3`
 decision row, or drag an `HTTP Resource` operator onto the canvas to turn the

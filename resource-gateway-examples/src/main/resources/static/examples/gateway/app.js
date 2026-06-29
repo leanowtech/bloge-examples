@@ -98,6 +98,9 @@ const OPERATOR_TYPES = {
   }
 };
 
+const NODE_SIZE = { width: 184, height: 76 };
+const DRAG_START_THRESHOLD = 4;
+
 const state = {
   scenarios: [],
   selected: null,
@@ -107,10 +110,16 @@ const state = {
   lastPayload: null,
   builder: createDefaultBuilder(),
   draggingOperatorType: null,
+  paletteDrag: null,
+  nodeDrag: null,
+  suppressPaletteClick: false,
+  suppressNodeClick: false,
   customDsl: DEFAULT_COMPOSER_DSL,
   customContextText: '',
   customDecisionTable: DEFAULT_COMPOSER_DECISION_TABLE
 };
+
+let dragPreview = null;
 
 const $ = (id) => document.getElementById(id);
 
@@ -395,7 +404,6 @@ function renderOperatorPalette() {
     <button
       class="operator-card ${escapeHtml(spec.kind)}"
       type="button"
-      draggable="true"
       data-operator-type="${escapeHtml(type)}"
       data-testid="operator-${escapeHtml(type)}">
       <strong>${escapeHtml(spec.label)}</strong>
@@ -403,17 +411,18 @@ function renderOperatorPalette() {
     </button>
   `).join('');
   for (const button of target.querySelectorAll('[data-operator-type]')) {
-    const rememberDragType = () => {
-      state.draggingOperatorType = button.dataset.operatorType;
-    };
-    button.addEventListener('pointerdown', rememberDragType);
-    button.addEventListener('mousedown', rememberDragType);
+    button.addEventListener('pointerdown', (event) => startPaletteDrag(event, button));
     button.addEventListener('dragstart', (event) => {
-      rememberDragType();
+      state.draggingOperatorType = button.dataset.operatorType;
       event.dataTransfer.setData('application/x-bloge-operator', button.dataset.operatorType);
       event.dataTransfer.setData('text/plain', button.dataset.operatorType);
     });
+    button.addEventListener('dragend', cancelPaletteDrag);
     button.addEventListener('click', () => {
+      if (state.suppressPaletteClick) {
+        state.suppressPaletteClick = false;
+        return;
+      }
       addBuilderNode(button.dataset.operatorType);
       state.draggingOperatorType = null;
     });
@@ -575,7 +584,8 @@ function addBuilderNode(type, position = null) {
   const firstDecision = state.builder.nodes.find((node) => node.type === 'decisionTable');
   const fallbackX = type === 'httpResource' && firstDecision ? firstDecision.x - 280 : (last ? last.x + 280 : 80);
   const fallbackY = type === 'httpResource' && firstDecision ? firstDecision.y : (last ? last.y : 210);
-  const node = createBuilderNode(type, position?.x ?? fallbackX, position?.y ?? fallbackY);
+  const point = nonOverlappingNodePosition(position?.x ?? fallbackX, position?.y ?? fallbackY);
+  const node = createBuilderNode(type, point.x, point.y);
   state.builder.nodes.push(node);
   state.builder.selectedId = node.id;
   state.selectedNodeId = node.id;
@@ -585,6 +595,7 @@ function addBuilderNode(type, position = null) {
   syncComposerFromBuilder();
   renderInputForm();
   renderDiagram();
+  return node;
 }
 
 function createBuilderNode(type, x, y) {
@@ -615,6 +626,34 @@ function createBuilderNode(type, x, y) {
   return {
     ...base,
     policyNode: firstDecisionTableId()
+  };
+}
+
+function nonOverlappingNodePosition(x, y) {
+  let position = clampNodePosition(x, y);
+  for (let attempt = 0; attempt < 10; attempt++) {
+    const overlaps = state.builder.nodes.some((node) =>
+      rectanglesOverlap(position.x, position.y, NODE_SIZE.width, NODE_SIZE.height, node.x, node.y, NODE_SIZE.width, NODE_SIZE.height, 14)
+    );
+    if (!overlaps) {
+      return position;
+    }
+    position = clampNodePosition(position.x + 28, position.y + NODE_SIZE.height + 24);
+  }
+  return position;
+}
+
+function rectanglesOverlap(ax, ay, aw, ah, bx, by, bw, bh, gap = 0) {
+  return ax < bx + bw + gap
+    && ax + aw + gap > bx
+    && ay < by + bh + gap
+    && ay + ah + gap > by;
+}
+
+function clampNodePosition(x, y) {
+  return {
+    x: Math.max(40, Math.round(x)),
+    y: Math.max(80, Math.round(y))
   };
 }
 
@@ -697,7 +736,7 @@ function layoutFromBuilder(builder) {
       operatorRef: spec.operatorRef,
       label: labelForNode(node),
       position: { x: node.x, y: node.y },
-      size: { width: 184, height: 76 },
+      size: { ...NODE_SIZE },
       group: null,
       annotations: {
         type: node.type,
@@ -894,7 +933,16 @@ function renderDiagram() {
     group.setAttribute('data-node-id', node.id);
     group.setAttribute('tabindex', '0');
     group.setAttribute('role', 'button');
+    group.setAttribute('aria-label', `${node.label} node`);
+    if (isComposerSelected()) {
+      group.classList.add('draggable-node');
+      group.addEventListener('pointerdown', (event) => startNodeDrag(event, node));
+    }
     group.addEventListener('click', () => {
+      if (state.suppressNodeClick) {
+        state.suppressNodeClick = false;
+        return;
+      }
       state.selectedNodeId = node.id;
       if (isComposerSelected()) {
         state.builder.selectedId = node.id;
@@ -932,14 +980,15 @@ function configureComposerDropTarget(svg) {
   svg.ondragover = null;
   svg.ondragleave = null;
   svg.ondrop = null;
-  svg.onpointerup = null;
-  svg.onmouseup = null;
   if (!isComposerSelected()) {
     svg.classList.remove('drop-active');
     return;
   }
   svg.ondragover = (event) => {
     event.preventDefault();
+    if (event.dataTransfer) {
+      event.dataTransfer.dropEffect = 'copy';
+    }
     svg.classList.add('drop-active');
   };
   svg.ondragleave = () => {
@@ -950,30 +999,203 @@ function configureComposerDropTarget(svg) {
     svg.classList.remove('drop-active');
     const type = event.dataTransfer.getData('application/x-bloge-operator')
       || event.dataTransfer.getData('text/plain');
-    const point = svgPoint(svg, event);
-    addBuilderNode(type, { x: point.x - 92, y: point.y - 38 });
+    addBuilderNodeAtClientPoint(type, event.clientX, event.clientY);
     state.draggingOperatorType = null;
   };
-  const pointerDrop = (event) => {
-    if (!state.draggingOperatorType) return;
-    event.preventDefault();
-    const point = svgPoint(svg, event);
-    addBuilderNode(state.draggingOperatorType, { x: point.x - 92, y: point.y - 38 });
-    state.draggingOperatorType = null;
-  };
-  svg.onpointerup = pointerDrop;
-  svg.onmouseup = pointerDrop;
 }
 
 function svgPoint(svg, event) {
+  return svgPointFromClient(svg, event.clientX, event.clientY);
+}
+
+function svgPointFromClient(svg, clientX, clientY) {
   const point = svg.createSVGPoint();
-  point.x = event.clientX;
-  point.y = event.clientY;
+  point.x = clientX;
+  point.y = clientY;
   const transform = svg.getScreenCTM();
   if (!transform) {
     return { x: 80, y: 210 };
   }
   return point.matrixTransform(transform.inverse());
+}
+
+function addBuilderNodeAtClientPoint(type, clientX, clientY) {
+  const svg = $('diagram');
+  if (!svg || !pointInsideElement(svg, clientX, clientY)) return null;
+  const point = svgPointFromClient(svg, clientX, clientY);
+  return addBuilderNode(type, {
+    x: point.x - NODE_SIZE.width / 2,
+    y: point.y - NODE_SIZE.height / 2
+  });
+}
+
+function pointInsideElement(element, clientX, clientY) {
+  const rect = element.getBoundingClientRect();
+  return clientX >= rect.left
+    && clientX <= rect.right
+    && clientY >= rect.top
+    && clientY <= rect.bottom;
+}
+
+function startPaletteDrag(event, button) {
+  if (!isComposerSelected() || event.button !== 0) return;
+  state.paletteDrag = {
+    pointerId: event.pointerId,
+    type: button.dataset.operatorType,
+    startX: event.clientX,
+    startY: event.clientY,
+    active: false
+  };
+  state.draggingOperatorType = button.dataset.operatorType;
+  button.classList.add('drag-origin');
+  try {
+    button.setPointerCapture(event.pointerId);
+  } catch {
+    // Pointer capture is best-effort; document-level listeners handle the rest.
+  }
+}
+
+function handleDocumentPointerMove(event) {
+  if (state.paletteDrag) {
+    movePaletteDrag(event);
+  }
+  if (state.nodeDrag) {
+    moveNodeDrag(event);
+  }
+}
+
+function handleDocumentPointerUp(event) {
+  if (state.paletteDrag) {
+    finishPaletteDrag(event);
+  }
+  if (state.nodeDrag) {
+    finishNodeDrag(event);
+  }
+}
+
+function movePaletteDrag(event) {
+  const drag = state.paletteDrag;
+  if (!drag || event.pointerId !== drag.pointerId) return;
+  const moved = Math.hypot(event.clientX - drag.startX, event.clientY - drag.startY);
+  if (!drag.active && moved < DRAG_START_THRESHOLD) return;
+  drag.active = true;
+  event.preventDefault();
+  updateDragPreview(drag.type, event.clientX, event.clientY);
+  setDiagramDropActive(pointInsideElement($('diagram'), event.clientX, event.clientY));
+}
+
+function finishPaletteDrag(event) {
+  const drag = state.paletteDrag;
+  if (!drag || event.pointerId !== drag.pointerId) return;
+  const wasActive = drag.active;
+  if (wasActive) {
+    event.preventDefault();
+    addBuilderNodeAtClientPoint(drag.type, event.clientX, event.clientY);
+    state.suppressPaletteClick = true;
+    setTimeout(() => {
+      state.suppressPaletteClick = false;
+    }, 0);
+  }
+  cancelPaletteDrag();
+}
+
+function cancelPaletteDrag() {
+  state.paletteDrag = null;
+  state.draggingOperatorType = null;
+  setDiagramDropActive(false);
+  removeDragPreview();
+  document.querySelectorAll('.operator-card.drag-origin').forEach((card) => {
+    card.classList.remove('drag-origin');
+  });
+}
+
+function updateDragPreview(type, clientX, clientY) {
+  if (!dragPreview) {
+    dragPreview = document.createElement('div');
+    dragPreview.className = 'drag-preview';
+    document.body.appendChild(dragPreview);
+  }
+  const spec = OPERATOR_TYPES[type];
+  dragPreview.textContent = spec?.label || type;
+  dragPreview.style.left = `${clientX}px`;
+  dragPreview.style.top = `${clientY}px`;
+  dragPreview.classList.toggle('over-canvas', pointInsideElement($('diagram'), clientX, clientY));
+  document.body.classList.add('dragging-operator');
+}
+
+function removeDragPreview() {
+  if (dragPreview) {
+    dragPreview.remove();
+    dragPreview = null;
+  }
+  document.body.classList.remove('dragging-operator');
+}
+
+function setDiagramDropActive(active) {
+  const svg = $('diagram');
+  if (!svg) return;
+  svg.classList.toggle('drop-active', Boolean(active));
+}
+
+function startNodeDrag(event, visualNode) {
+  if (!isComposerSelected() || event.button !== 0) return;
+  const builderNode = state.builder.nodes.find((node) => node.id === visualNode.id);
+  if (!builderNode) return;
+  const svg = $('diagram');
+  const point = svgPointFromClient(svg, event.clientX, event.clientY);
+  state.nodeDrag = {
+    pointerId: event.pointerId,
+    nodeId: builderNode.id,
+    startX: event.clientX,
+    startY: event.clientY,
+    offsetX: point.x - builderNode.x,
+    offsetY: point.y - builderNode.y,
+    active: false
+  };
+  state.builder.selectedId = builderNode.id;
+  state.selectedNodeId = builderNode.id;
+  renderSelectedOperatorEditor();
+  renderNodeDetails(builderNode);
+  try {
+    event.currentTarget.setPointerCapture(event.pointerId);
+  } catch {
+    // Pointer capture is best-effort; document-level listeners handle the rest.
+  }
+}
+
+function moveNodeDrag(event) {
+  const drag = state.nodeDrag;
+  if (!drag || event.pointerId !== drag.pointerId) return;
+  const moved = Math.hypot(event.clientX - drag.startX, event.clientY - drag.startY);
+  if (!drag.active && moved < DRAG_START_THRESHOLD) return;
+  drag.active = true;
+  event.preventDefault();
+  const svg = $('diagram');
+  const point = svgPointFromClient(svg, event.clientX, event.clientY);
+  const position = clampNodePosition(point.x - drag.offsetX, point.y - drag.offsetY);
+  const node = state.builder.nodes.find((item) => item.id === drag.nodeId);
+  if (!node) return;
+  node.x = position.x;
+  node.y = position.y;
+  state.layout = layoutFromBuilder(state.builder);
+  renderNodeDetails(node);
+  renderDiagram();
+}
+
+function finishNodeDrag(event) {
+  const drag = state.nodeDrag;
+  if (!drag || event.pointerId !== drag.pointerId) return;
+  if (drag.active) {
+    event.preventDefault();
+    state.suppressNodeClick = true;
+    setTimeout(() => {
+      state.suppressNodeClick = false;
+    }, 0);
+    syncComposerFromBuilder({ render: false });
+    renderNodeDetails(selectedBuilderNode());
+    renderDiagram();
+  }
+  state.nodeDrag = null;
 }
 
 function renderDecisionTable() {
@@ -1185,8 +1407,18 @@ async function loadResources() {
   $('output').textContent = pretty(await response.json());
 }
 
+function installComposerDragHandlers() {
+  document.addEventListener('pointermove', handleDocumentPointerMove);
+  document.addEventListener('pointerup', handleDocumentPointerUp);
+  document.addEventListener('pointercancel', () => {
+    cancelPaletteDrag();
+    state.nodeDrag = null;
+  });
+}
+
 $('run-scenario').addEventListener('click', runScenario);
 $('load-resources').addEventListener('click', loadResources);
+installComposerDragHandlers();
 
 loadScenarios().catch((error) => {
   $('output').textContent = pretty({ error: error.message });
