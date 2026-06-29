@@ -80,16 +80,19 @@ The resource gateway now ships a static browser showcase at:
 http://localhost:8080/examples/gateway
 ```
 
-The page opens on **Custom Composer**, an editable DSL example that submits a
-browser-authored graph to the gateway, compiles it, runs it with JSON context,
-and renders the returned diagram, diagnostics, output, and decision-table matrix.
-The built-in `.bloge` scenarios remain available in the left rail and continue
-to execute the public gateway endpoints.
+The page opens on **Custom Composer**, a drag-and-drop graph builder. Users can
+drag operators such as `HTTP Resource`, `Decision Table`, and `Transform` onto
+the graph canvas, edit the selected operator's properties, inspect the generated
+BLOGE DSL, run it with JSON context, and see diagnostics, output, graph
+highlighting, and the decision-table matrix update together. The built-in
+`.bloge` scenarios remain available in the left rail and continue to execute the
+public gateway endpoints.
 
-To see the decision-table UX, run the default composer graph or choose
-**Loan Decision Policy** and click the curated case buttons. The browser
-highlights the executed graph path, highlights the matched rule row, and renders
-a decision summary card from the same `ruleId` returned by the graph output.
+To see the decision-table UX, run the default composer graph, edit the `R3`
+decision row, or drag an `HTTP Resource` operator onto the canvas to turn the
+policy into a resource-backed graph. The browser highlights the executed graph
+path, highlights the matched rule row, and renders a decision summary card from
+the same `ruleId` returned by the graph output.
 
 Showcase metadata APIs:
 

@@ -180,6 +180,19 @@ h2 {
   background: #fdfefe;
 }
 
+.diagram.composer-drop-target {
+  background:
+    linear-gradient(#eef2f7 1px, transparent 1px),
+    linear-gradient(90deg, #eef2f7 1px, transparent 1px),
+    #fdfefe;
+  background-size: 28px 28px;
+}
+
+.diagram.drop-active {
+  outline: 3px solid var(--blue);
+  outline-offset: -6px;
+}
+
 .edge {
   stroke: var(--line-strong);
   stroke-width: 2;
@@ -200,6 +213,10 @@ h2 {
   fill: #ffffff;
   stroke: var(--line-strong);
   stroke-width: 1.4;
+}
+
+.node {
+  cursor: pointer;
 }
 
 .node.resource rect {
@@ -408,6 +425,134 @@ h2 {
   margin-bottom: 12px;
 }
 
+.builder-panel {
+  display: grid;
+  gap: 10px;
+}
+
+.operator-palette {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.operator-card {
+  min-height: 58px;
+  padding: 8px;
+  border: 1px solid var(--line);
+  background: #fbfcfe;
+  color: var(--text);
+  text-align: left;
+  cursor: grab;
+}
+
+.operator-card:active {
+  cursor: grabbing;
+}
+
+.operator-card strong,
+.operator-card span {
+  display: block;
+}
+
+.operator-card strong {
+  font-size: 12px;
+}
+
+.operator-card span {
+  margin-top: 3px;
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.operator-card.resource {
+  border-color: #9bb8f8;
+}
+
+.operator-card.decision-table {
+  border-color: #efc17d;
+}
+
+.operator-card.transform {
+  border-color: #8bd2a2;
+}
+
+.operator-editor-heading,
+.rule-editor-title {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.operator-editor-heading strong {
+  font-size: 13px;
+}
+
+.operator-fields {
+  display: grid;
+  gap: 8px;
+}
+
+.operator-fields label {
+  display: grid;
+  gap: 5px;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.operator-fields input,
+.rule-editor-table input {
+  width: 100%;
+  min-width: 0;
+  padding: 7px 8px;
+  border: 1px solid var(--line);
+  background: #fbfcfe;
+  color: var(--text);
+}
+
+.operator-fields input:disabled,
+.rule-editor-table input:disabled {
+  color: var(--muted);
+  background: #eef2f7;
+}
+
+.rule-editor {
+  display: grid;
+  gap: 8px;
+}
+
+.rule-editor-title span {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.rule-editor-scroll {
+  overflow: auto;
+}
+
+.rule-editor-table {
+  min-width: 720px;
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+}
+
+.rule-editor-table th,
+.rule-editor-table td {
+  padding: 6px;
+  border: 1px solid var(--line);
+  text-align: left;
+}
+
+.rule-editor-table th {
+  background: #f8fafc;
+  color: #334155;
+}
+
 .field {
   display: grid;
   gap: 5px;
@@ -484,6 +629,10 @@ h2 {
 .secondary.compact {
   min-height: 32px;
   padding: 6px 10px;
+}
+
+.secondary.danger {
+  color: var(--red);
 }
 
 .details {

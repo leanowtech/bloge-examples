@@ -66,48 +66,36 @@ const DEFAULT_COMPOSER_DECISION_TABLE = {
   ]
 };
 
-const COMPOSER_LAYOUT = {
-  schemaVersion: 'bloge.visualLayout.v1',
-  rootId: 'customLoanPolicy',
-  executionMode: 'GRAPH',
-  nodes: [
-    {
-      id: 'loanPolicy',
-      kind: 'decision-table',
-      operatorRef: '',
-      label: 'Loan Policy',
-      position: { x: 80, y: 210 },
-      size: { width: 184, height: 76 },
-      group: null,
-      annotations: { kind: 'decision-table' }
-    },
-    {
-      id: 'response',
-      kind: 'transform',
-      operatorRef: '',
-      label: 'Response',
-      position: { x: 360, y: 210 },
-      size: { width: 184, height: 76 },
-      group: null,
-      annotations: { kind: 'transform' }
-    }
-  ],
-  edges: [
-    { id: 'loanPolicy->response:', source: 'loanPolicy', target: 'response', label: '' }
-  ],
-  groups: [],
-  viewport: { x: 0, y: 0, zoom: 1 }
-};
-
 const COMPOSER_SCENARIO = {
   graphName: COMPOSER_GRAPH,
   title: 'Custom Composer',
-  pattern: 'Editable DSL + decision_table',
-  concepts: ['Self orchestration', 'Decision table', 'Live diagnostics'],
+  pattern: 'Drag operators + decision_table',
+  concepts: ['Drag compose', 'Decision table', 'Live diagnostics'],
   sampleInput: {},
   samplePresets: [],
   diagramPath: '',
   decisionTable: null
+};
+
+const OPERATOR_TYPES = {
+  httpResource: {
+    label: 'HTTP Resource',
+    kind: 'resource',
+    operatorRef: 'httpResource',
+    baseId: 'fetchApplicant'
+  },
+  decisionTable: {
+    label: 'Decision Table',
+    kind: 'decision-table',
+    operatorRef: '',
+    baseId: 'loanPolicy'
+  },
+  transform: {
+    label: 'Transform',
+    kind: 'transform',
+    operatorRef: '',
+    baseId: 'response'
+  }
 };
 
 const state = {
@@ -117,6 +105,8 @@ const state = {
   selectedNodeId: null,
   eventSource: null,
   lastPayload: null,
+  builder: createDefaultBuilder(),
+  draggingOperatorType: null,
   customDsl: DEFAULT_COMPOSER_DSL,
   customContextText: '',
   customDecisionTable: DEFAULT_COMPOSER_DECISION_TABLE
@@ -140,6 +130,7 @@ function escapeHtml(value) {
 async function loadScenarios() {
   const response = await fetch('/api/gateway/examples/scenarios');
   state.customContextText = pretty(DEFAULT_COMPOSER_CONTEXT);
+  syncComposerFromBuilder({ render: false });
   state.scenarios = [COMPOSER_SCENARIO, ...await response.json()];
   renderScenarioButtons();
   await selectScenario(COMPOSER_GRAPH);
@@ -167,7 +158,9 @@ async function selectScenario(graphName) {
   state.selectedNodeId = null;
   state.lastPayload = null;
   if (isComposerSelected()) {
-    state.layout = COMPOSER_LAYOUT;
+    state.builder.selectedId = state.builder.selectedId || state.builder.nodes[0]?.id || null;
+    state.layout = layoutFromBuilder(state.builder);
+    state.selectedNodeId = state.builder.selectedId;
   } else {
     const response = await fetch(scenario.diagramPath);
     state.layout = await response.json();
@@ -196,8 +189,13 @@ function renderInputForm() {
   $('run-scenario').textContent = isComposerSelected() ? 'Run Custom Graph' : 'Run';
   if (isComposerSelected()) {
     form.innerHTML = `
+      <div class="builder-panel">
+        <div class="panel-title">Operator Palette</div>
+        <div id="operator-palette" class="operator-palette"></div>
+      </div>
+      <div id="selected-operator-editor" class="builder-panel"></div>
       <div class="field">
-        <label for="composer-dsl">BLOGE DSL</label>
+        <label for="composer-dsl">DSL Preview</label>
         <textarea id="composer-dsl" class="code-editor" spellcheck="false"></textarea>
       </div>
       <div class="field">
@@ -210,6 +208,8 @@ function renderInputForm() {
     `;
     $('composer-dsl').value = state.customDsl;
     $('composer-context').value = state.customContextText;
+    renderOperatorPalette();
+    renderSelectedOperatorEditor();
     $('composer-dsl').addEventListener('input', (event) => {
       state.customDsl = event.target.value;
     });
@@ -259,12 +259,115 @@ function inputValues() {
   return values;
 }
 
+function createDefaultBuilder() {
+  return {
+    graphName: 'customLoanPolicy',
+    selectedId: 'loanPolicy',
+    nodes: [
+      {
+        id: 'loanPolicy',
+        type: 'decisionTable',
+        x: 80,
+        y: 210,
+        hitPolicy: 'unique',
+        scoreSource: 'ctx.score',
+        amountSource: 'ctx.amount',
+        rules: defaultDecisionRules()
+      },
+      {
+        id: 'response',
+        type: 'transform',
+        x: 360,
+        y: 210
+      }
+    ]
+  };
+}
+
+function defaultDecisionRules() {
+  return DEFAULT_COMPOSER_DECISION_TABLE.rows.map((row) => ({
+    id: row.id,
+    score: row.conditions.score,
+    amount: row.conditions.amount,
+    decision: row.output.decision,
+    rate: row.output.rate,
+    maxTerm: row.output.maxTerm,
+    reviewLane: row.output.reviewLane,
+    otherwise: row.conditions.score === 'otherwise'
+  }));
+}
+
 function isComposerSelected() {
   return state.selected?.graphName === COMPOSER_GRAPH;
 }
 
 function currentDecisionTable() {
   return isComposerSelected() ? state.customDecisionTable : state.selected?.decisionTable;
+}
+
+function orderedBuilderNodes(builder = state.builder) {
+  return [...builder.nodes].sort((left, right) => {
+    if (left.x === right.x) {
+      return left.y - right.y;
+    }
+    return left.x - right.x;
+  });
+}
+
+function orderedDslNodes(builder = state.builder) {
+  const rank = { httpResource: 0, decisionTable: 1, transform: 2 };
+  return [...builder.nodes].sort((left, right) => {
+    const leftRank = rank[left.type] ?? 9;
+    const rightRank = rank[right.type] ?? 9;
+    if (leftRank === rightRank) {
+      return left.x - right.x;
+    }
+    return leftRank - rightRank;
+  });
+}
+
+function builderEdges(builder = state.builder) {
+  const edges = [];
+  const add = (source, target, label = '') => {
+    if (!source || !target || source === target) return;
+    if (edges.some((edge) => edge.source === source && edge.target === target)) return;
+    edges.push({ source, target, label });
+  };
+
+  const resources = builder.nodes.filter((node) => node.type === 'httpResource');
+  const decisions = builder.nodes.filter((node) => node.type === 'decisionTable');
+  const transforms = builder.nodes.filter((node) => node.type === 'transform');
+
+  for (const decision of decisions) {
+    for (const resource of resources) {
+      if ([decision.scoreSource, decision.amountSource].some((source) => String(source).startsWith(`${resource.id}.`))) {
+        add(resource.id, decision.id, 'facts');
+      }
+    }
+  }
+
+  for (const transform of transforms) {
+    const decision = builder.nodes.find((node) => node.id === transform.policyNode)
+      || decisions[0];
+    if (decision) {
+      add(decision.id, transform.id, 'policy');
+    } else {
+      const previous = orderedBuilderNodes(builder).filter((node) => node.id !== transform.id).at(-1);
+      add(previous?.id, transform.id);
+    }
+  }
+
+  if (edges.length === 0) {
+    const ordered = orderedBuilderNodes(builder);
+    for (let i = 0; i < ordered.length - 1; i++) {
+      add(ordered[i].id, ordered[i + 1].id);
+    }
+  }
+  return edges;
+}
+
+function selectedBuilderNode() {
+  return state.builder.nodes.find((node) => node.id === state.builder.selectedId) || null;
 }
 
 function payloadData(payload) {
@@ -275,13 +378,454 @@ function payloadData(payload) {
 }
 
 function resetComposer() {
-  state.customDsl = DEFAULT_COMPOSER_DSL;
+  state.builder = createDefaultBuilder();
+  state.customDsl = builderToDsl(state.builder);
   state.customContextText = pretty(DEFAULT_COMPOSER_CONTEXT);
-  state.customDecisionTable = DEFAULT_COMPOSER_DECISION_TABLE;
-  state.layout = COMPOSER_LAYOUT;
-  state.selectedNodeId = null;
+  state.customDecisionTable = decisionTableFromBuilder(state.builder);
+  state.layout = layoutFromBuilder(state.builder);
+  state.selectedNodeId = state.builder.selectedId;
   state.lastPayload = null;
   renderScenario();
+}
+
+function renderOperatorPalette() {
+  const target = $('operator-palette');
+  if (!target) return;
+  target.innerHTML = Object.entries(OPERATOR_TYPES).map(([type, spec]) => `
+    <button
+      class="operator-card ${escapeHtml(spec.kind)}"
+      type="button"
+      draggable="true"
+      data-operator-type="${escapeHtml(type)}"
+      data-testid="operator-${escapeHtml(type)}">
+      <strong>${escapeHtml(spec.label)}</strong>
+      <span>${escapeHtml(spec.kind)}</span>
+    </button>
+  `).join('');
+  for (const button of target.querySelectorAll('[data-operator-type]')) {
+    const rememberDragType = () => {
+      state.draggingOperatorType = button.dataset.operatorType;
+    };
+    button.addEventListener('pointerdown', rememberDragType);
+    button.addEventListener('mousedown', rememberDragType);
+    button.addEventListener('dragstart', (event) => {
+      rememberDragType();
+      event.dataTransfer.setData('application/x-bloge-operator', button.dataset.operatorType);
+      event.dataTransfer.setData('text/plain', button.dataset.operatorType);
+    });
+    button.addEventListener('click', () => {
+      addBuilderNode(button.dataset.operatorType);
+      state.draggingOperatorType = null;
+    });
+  }
+}
+
+function renderSelectedOperatorEditor() {
+  const target = $('selected-operator-editor');
+  if (!target) return;
+  const node = selectedBuilderNode();
+  if (!node) {
+    target.innerHTML = '<div class="panel-title">Selected Operator</div>';
+    return;
+  }
+
+  target.innerHTML = `
+    <div class="operator-editor-heading">
+      <div>
+        <div class="panel-title">Selected Operator</div>
+        <strong>${escapeHtml(OPERATOR_TYPES[node.type]?.label || node.type)}</strong>
+      </div>
+      <button id="delete-operator" class="secondary compact danger" type="button">Delete</button>
+    </div>
+    ${operatorEditorBody(node)}
+  `;
+
+  const deleteButton = $('delete-operator');
+  if (deleteButton) {
+    deleteButton.disabled = state.builder.nodes.length <= 1;
+    deleteButton.addEventListener('click', deleteSelectedBuilderNode);
+  }
+
+  for (const input of target.querySelectorAll('[data-node-field]')) {
+    input.addEventListener('input', () => {
+      const field = input.dataset.nodeField;
+      node[field] = input.value;
+      syncComposerFromBuilder();
+    });
+  }
+
+  for (const input of target.querySelectorAll('[data-rule-field]')) {
+    input.addEventListener('input', () => {
+      const rule = node.rules[Number(input.dataset.ruleIndex)];
+      if (!rule) return;
+      const field = input.dataset.ruleField;
+      rule[field] = input.type === 'number' ? Number(input.value) : input.value;
+      syncComposerFromBuilder();
+    });
+  }
+
+  const addRuleButton = $('add-decision-rule');
+  if (addRuleButton) {
+    addRuleButton.addEventListener('click', () => {
+      addDecisionRule(node);
+    });
+  }
+}
+
+function operatorEditorBody(node) {
+  if (node.type === 'httpResource') {
+    return `
+      <div class="operator-fields">
+        ${textField('Node', node.id, '', true)}
+        ${textField('Resource ID', node.resourceId, 'resourceId')}
+        ${textField('Applicant Expr', node.applicantExpr, 'applicantExpr')}
+      </div>
+    `;
+  }
+  if (node.type === 'decisionTable') {
+    const rows = node.rules.map((rule, index) => `
+      <tr>
+        <td>${escapeHtml(rule.id)}</td>
+        <td><input data-rule-index="${index}" data-rule-field="score" value="${escapeHtml(rule.score)}" ${rule.otherwise ? 'disabled' : ''}></td>
+        <td><input data-rule-index="${index}" data-rule-field="amount" value="${escapeHtml(rule.amount)}" ${rule.otherwise ? 'disabled' : ''}></td>
+        <td><input data-rule-index="${index}" data-rule-field="decision" value="${escapeHtml(rule.decision)}"></td>
+        <td><input type="number" step="0.01" data-rule-index="${index}" data-rule-field="rate" value="${escapeHtml(rule.rate)}"></td>
+        <td><input type="number" step="1" data-rule-index="${index}" data-rule-field="maxTerm" value="${escapeHtml(rule.maxTerm)}"></td>
+        <td><input data-rule-index="${index}" data-rule-field="reviewLane" value="${escapeHtml(rule.reviewLane)}"></td>
+      </tr>
+    `).join('');
+    return `
+      <div class="operator-fields">
+        ${textField('Node', node.id, '', true)}
+        ${textField('Score Expr', node.scoreSource, 'scoreSource')}
+        ${textField('Amount Expr', node.amountSource, 'amountSource')}
+      </div>
+      <div class="rule-editor">
+        <div class="rule-editor-title">
+          <span>Rules</span>
+          <button id="add-decision-rule" class="secondary compact" type="button">Add Rule</button>
+        </div>
+        <div class="rule-editor-scroll">
+          <table class="rule-editor-table">
+            <thead>
+              <tr>
+                <th>Rule</th>
+                <th>Score</th>
+                <th>Amount</th>
+                <th>Decision</th>
+                <th>Rate</th>
+                <th>Term</th>
+                <th>Lane</th>
+              </tr>
+            </thead>
+            <tbody>${rows}</tbody>
+          </table>
+        </div>
+      </div>
+    `;
+  }
+  return `
+    <div class="operator-fields">
+      ${textField('Node', node.id, '', true)}
+      ${textField('Policy Node', node.policyNode || firstDecisionTableId(), 'policyNode')}
+    </div>
+  `;
+}
+
+function textField(label, value, field, disabled = false) {
+  const attr = field ? `data-node-field="${escapeHtml(field)}"` : '';
+  return `
+    <label>
+      <span>${escapeHtml(label)}</span>
+      <input ${attr} value="${escapeHtml(value ?? '')}" ${disabled ? 'disabled' : ''}>
+    </label>
+  `;
+}
+
+function addDecisionRule(node) {
+  const nextId = uniqueRuleId(node.rules);
+  const insertAt = Math.max(0, node.rules.length - 1);
+  node.rules.splice(insertAt, 0, {
+    id: nextId,
+    score: 'score >= 720',
+    amount: 'amount <= 250000',
+    decision: 'approved',
+    rate: 4.25,
+    maxTerm: 300,
+    reviewLane: 'standard',
+    otherwise: false
+  });
+  syncComposerFromBuilder();
+  renderSelectedOperatorEditor();
+}
+
+function uniqueRuleId(rules) {
+  let index = rules.length + 1;
+  const used = new Set(rules.map((rule) => rule.id));
+  while (used.has(`R${index}`)) {
+    index++;
+  }
+  return `R${index}`;
+}
+
+function addBuilderNode(type, position = null) {
+  if (!OPERATOR_TYPES[type]) return;
+  const ordered = orderedBuilderNodes();
+  const last = ordered[ordered.length - 1];
+  const firstDecision = state.builder.nodes.find((node) => node.type === 'decisionTable');
+  const fallbackX = type === 'httpResource' && firstDecision ? firstDecision.x - 280 : (last ? last.x + 280 : 80);
+  const fallbackY = type === 'httpResource' && firstDecision ? firstDecision.y : (last ? last.y : 210);
+  const node = createBuilderNode(type, position?.x ?? fallbackX, position?.y ?? fallbackY);
+  state.builder.nodes.push(node);
+  state.builder.selectedId = node.id;
+  state.selectedNodeId = node.id;
+  if (type === 'httpResource') {
+    applyResourceDefaults(node);
+  }
+  syncComposerFromBuilder();
+  renderInputForm();
+  renderDiagram();
+}
+
+function createBuilderNode(type, x, y) {
+  const spec = OPERATOR_TYPES[type];
+  const id = uniqueNodeId(spec.baseId);
+  const base = {
+    id,
+    type,
+    x: Math.max(40, Math.round(x)),
+    y: Math.max(80, Math.round(y))
+  };
+  if (type === 'httpResource') {
+    return {
+      ...base,
+      resourceId: 'loan-applicant-service.getProfile',
+      applicantExpr: 'ctx.applicantId'
+    };
+  }
+  if (type === 'decisionTable') {
+    return {
+      ...base,
+      hitPolicy: 'unique',
+      scoreSource: 'ctx.score',
+      amountSource: 'ctx.amount',
+      rules: defaultDecisionRules()
+    };
+  }
+  return {
+    ...base,
+    policyNode: firstDecisionTableId()
+  };
+}
+
+function uniqueNodeId(baseId) {
+  const used = new Set(state.builder.nodes.map((node) => node.id));
+  if (!used.has(baseId)) {
+    return baseId;
+  }
+  let index = 2;
+  while (used.has(`${baseId}${index}`)) {
+    index++;
+  }
+  return `${baseId}${index}`;
+}
+
+function deleteSelectedBuilderNode() {
+  const selected = selectedBuilderNode();
+  if (!selected || state.builder.nodes.length <= 1) return;
+  state.builder.nodes = state.builder.nodes.filter((node) => node.id !== selected.id);
+  state.builder.selectedId = orderedBuilderNodes()[0]?.id || null;
+  state.selectedNodeId = state.builder.selectedId;
+  if (selected.type === 'httpResource' && !state.builder.nodes.some((node) => node.type === 'httpResource')) {
+    for (const node of state.builder.nodes.filter((item) => item.type === 'decisionTable')) {
+      node.scoreSource = 'ctx.score';
+      node.amountSource = 'ctx.amount';
+    }
+  }
+  syncComposerFromBuilder();
+  renderInputForm();
+  renderDiagram();
+}
+
+function applyResourceDefaults(resourceNode) {
+  const decisionNode = state.builder.nodes.find((node) => node.type === 'decisionTable');
+  if (decisionNode) {
+    decisionNode.scoreSource = `${resourceNode.id}.output.payload.score`;
+    decisionNode.amountSource = 'ctx.requestedAmount';
+  }
+  let context;
+  try {
+    context = JSON.parse(state.customContextText || '{}');
+  } catch {
+    context = {};
+  }
+  context.applicantId = context.applicantId || 'prime';
+  context.requestedAmount = context.requestedAmount || 450000;
+  state.customContextText = pretty(context);
+}
+
+function firstDecisionTableId() {
+  return state.builder.nodes.find((node) => node.type === 'decisionTable')?.id || 'loanPolicy';
+}
+
+function syncComposerFromBuilder(options = {}) {
+  const render = options.render !== false;
+  state.customDsl = builderToDsl(state.builder);
+  state.layout = layoutFromBuilder(state.builder);
+  state.customDecisionTable = decisionTableFromBuilder(state.builder);
+  state.selectedNodeId = state.builder.selectedId;
+  const dslBox = $('composer-dsl');
+  if (dslBox && dslBox.value !== state.customDsl) {
+    dslBox.value = state.customDsl;
+  }
+  const contextBox = $('composer-context');
+  if (contextBox && contextBox.value !== state.customContextText) {
+    contextBox.value = state.customContextText;
+  }
+  if (render && isComposerSelected()) {
+    renderDecisionTable();
+    renderNodeDetails(selectedBuilderNode() || state.layout.nodes[0]);
+  }
+}
+
+function layoutFromBuilder(builder) {
+  const nodes = builder.nodes.map((node) => {
+    const spec = OPERATOR_TYPES[node.type] || OPERATOR_TYPES.transform;
+    return {
+      id: node.id,
+      kind: spec.kind,
+      operatorRef: spec.operatorRef,
+      label: labelForNode(node),
+      position: { x: node.x, y: node.y },
+      size: { width: 184, height: 76 },
+      group: null,
+      annotations: {
+        type: node.type,
+        generated: true
+      }
+    };
+  });
+  const edges = builderEdges(builder).map((edge) => ({
+    id: `${edge.source}->${edge.target}:`,
+    source: edge.source,
+    target: edge.target,
+    label: edge.label
+  }));
+  return {
+    schemaVersion: 'bloge.visualLayout.v1',
+    rootId: builder.graphName,
+    executionMode: 'GRAPH',
+    nodes,
+    edges,
+    groups: [],
+    viewport: { x: 0, y: 0, zoom: 1 }
+  };
+}
+
+function decisionTableFromBuilder(builder) {
+  const node = builder.nodes.find((item) => item.type === 'decisionTable');
+  if (!node) {
+    return null;
+  }
+  return {
+    title: readableName(node.id),
+    hitPolicy: node.hitPolicy,
+    inputs: [
+      { key: 'score', label: 'Score' },
+      { key: 'amount', label: 'Amount' }
+    ],
+    outputs: [
+      { key: 'decision', label: 'Decision' },
+      { key: 'rate', label: 'Rate' },
+      { key: 'maxTerm', label: 'MaxTerm' },
+      { key: 'reviewLane', label: 'ReviewLane' },
+      { key: 'ruleId', label: 'RuleId' }
+    ],
+    rows: node.rules.map((rule) => ({
+      id: rule.id,
+      conditions: {
+        score: rule.otherwise ? 'otherwise' : rule.score,
+        amount: rule.otherwise ? 'otherwise' : rule.amount
+      },
+      output: {
+        decision: rule.decision,
+        rate: rule.rate,
+        maxTerm: rule.maxTerm,
+        reviewLane: rule.reviewLane,
+        ruleId: rule.id
+      },
+      explanation: rule.otherwise ? 'otherwise' : `${rule.score}, ${rule.amount}`
+    }))
+  };
+}
+
+function builderToDsl(builder) {
+  const body = orderedDslNodes(builder)
+    .map((node) => nodeToDsl(node, builder))
+    .filter(Boolean)
+    .join('\n\n');
+  return `graph ${builder.graphName} {\n\n${body}\n}`;
+}
+
+function nodeToDsl(node, builder) {
+  if (node.type === 'httpResource') {
+    return `  node ${node.id} : httpResource {\n    input {\n      resourceId = ${quote(node.resourceId)}\n      params = { applicantId: ${node.applicantExpr || 'ctx.applicantId'} }\n    }\n    timeout = 3s\n    retry = { attempts: 1, backoff: 200ms }\n  }`;
+  }
+  if (node.type === 'decisionTable') {
+    const rules = node.rules.map((rule) => {
+      const output = `{ decision: ${quote(rule.decision)}, rate: ${numberValue(rule.rate)}, maxTerm: ${numberValue(rule.maxTerm)}, reviewLane: ${quote(rule.reviewLane)}, ruleId: ${quote(rule.id)} }`;
+      if (rule.otherwise) {
+        return `    otherwise                                                  -> ${output}`;
+      }
+      return `    rule (score: ${rule.score}, amount: ${rule.amount}) -> ${output}`;
+    }).join('\n');
+    return `  decision_table ${node.id}(\n    score  = ${node.scoreSource},\n    amount = ${node.amountSource}\n  ) hit=${node.hitPolicy || 'unique'} -> { decision: String, rate: Decimal, maxTerm: Int, reviewLane: String, ruleId: String } {\n${rules}\n  }`;
+  }
+  if (node.type === 'transform') {
+    const decisionNode = builder.nodes.find((item) => item.id === node.policyNode)
+      || builder.nodes.find((item) => item.type === 'decisionTable');
+    const resourceNode = builder.nodes.find((item) => item.type === 'httpResource');
+    if (!decisionNode) {
+      const previous = orderedBuilderNodes(builder).filter((item) => item.id !== node.id).at(-1);
+      return `  transform ${node.id} {\n    result = ${previous ? `${previous.id}.output` : '{}'}\n  }`;
+    }
+    const applicant = resourceNode
+      ? `${resourceNode.id}.output.payload`
+      : `{ score: ${decisionNode.scoreSource}, segment: ctx.segment }`;
+    return `  transform ${node.id} {\n    applicant       = ${applicant}\n    requestedAmount = ${decisionNode.amountSource}\n    policy          = ${decisionNode.id}.output\n  }`;
+  }
+  return '';
+}
+
+function quote(value) {
+  return `"${String(value ?? '').replaceAll('\\', '\\\\').replaceAll('"', '\\"')}"`;
+}
+
+function numberValue(value) {
+  const number = Number(value);
+  return Number.isFinite(number) ? String(number) : '0';
+}
+
+function labelForNode(node) {
+  if (node.type === 'httpResource') {
+    return 'HTTP Resource';
+  }
+  if (node.type === 'decisionTable') {
+    return 'Decision Table';
+  }
+  if (node.type === 'transform') {
+    return 'Transform';
+  }
+  return readableName(node.id);
+}
+
+function readableName(value) {
+  if (!value) return '';
+  return String(value)
+    .replaceAll('_', ' ')
+    .replaceAll('-', ' ')
+    .replace(/([a-z])([A-Z])/g, '$1 $2')
+    .replace(/^./, (char) => char.toUpperCase());
 }
 
 function fillTemplate(template, values) {
@@ -307,6 +851,7 @@ function replacePlaceholders(value, values) {
 
 function renderDiagram() {
   const svg = $('diagram');
+  configureComposerDropTarget(svg);
   const nodes = state.layout?.nodes || [];
   const edges = state.layout?.edges || [];
   const executed = state.lastPayload && currentDecisionTable();
@@ -346,12 +891,19 @@ function renderDiagram() {
   for (const node of nodes) {
     const group = document.createElementNS('http://www.w3.org/2000/svg', 'g');
     group.setAttribute('class', `node ${node.kind} ${state.selectedNodeId === node.id ? 'selected' : ''} ${executed ? 'executed' : ''}`);
+    group.setAttribute('data-node-id', node.id);
     group.setAttribute('tabindex', '0');
     group.setAttribute('role', 'button');
     group.addEventListener('click', () => {
       state.selectedNodeId = node.id;
+      if (isComposerSelected()) {
+        state.builder.selectedId = node.id;
+        renderSelectedOperatorEditor();
+        renderNodeDetails(selectedBuilderNode() || node);
+      } else {
+        renderNodeDetails(node);
+      }
       renderDiagram();
-      renderNodeDetails(node);
     });
     const rect = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
     rect.setAttribute('x', String(node.position.x));
@@ -373,6 +925,55 @@ function renderDiagram() {
     group.appendChild(meta);
     svg.appendChild(group);
   }
+}
+
+function configureComposerDropTarget(svg) {
+  svg.classList.toggle('composer-drop-target', isComposerSelected());
+  svg.ondragover = null;
+  svg.ondragleave = null;
+  svg.ondrop = null;
+  svg.onpointerup = null;
+  svg.onmouseup = null;
+  if (!isComposerSelected()) {
+    svg.classList.remove('drop-active');
+    return;
+  }
+  svg.ondragover = (event) => {
+    event.preventDefault();
+    svg.classList.add('drop-active');
+  };
+  svg.ondragleave = () => {
+    svg.classList.remove('drop-active');
+  };
+  svg.ondrop = (event) => {
+    event.preventDefault();
+    svg.classList.remove('drop-active');
+    const type = event.dataTransfer.getData('application/x-bloge-operator')
+      || event.dataTransfer.getData('text/plain');
+    const point = svgPoint(svg, event);
+    addBuilderNode(type, { x: point.x - 92, y: point.y - 38 });
+    state.draggingOperatorType = null;
+  };
+  const pointerDrop = (event) => {
+    if (!state.draggingOperatorType) return;
+    event.preventDefault();
+    const point = svgPoint(svg, event);
+    addBuilderNode(state.draggingOperatorType, { x: point.x - 92, y: point.y - 38 });
+    state.draggingOperatorType = null;
+  };
+  svg.onpointerup = pointerDrop;
+  svg.onmouseup = pointerDrop;
+}
+
+function svgPoint(svg, event) {
+  const point = svg.createSVGPoint();
+  point.x = event.clientX;
+  point.y = event.clientY;
+  const transform = svg.getScreenCTM();
+  if (!transform) {
+    return { x: 80, y: 210 };
+  }
+  return point.matrixTransform(transform.inverse());
 }
 
 function renderDecisionTable() {
@@ -467,6 +1068,10 @@ async function runScenario() {
 }
 
 async function runCustomGraph() {
+  const dslBox = $('composer-dsl');
+  if (dslBox) {
+    state.customDsl = dslBox.value;
+  }
   let context;
   try {
     context = JSON.parse(state.customContextText || '{}');
@@ -480,19 +1085,20 @@ async function runCustomGraph() {
   }
 
   $('output').textContent = pretty({ status: 'running', graph: 'customLoanPolicy' });
+  const outputNode = composerOutputNode();
   const response = await fetch('/api/gateway/examples/compose/run', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
       dsl: state.customDsl,
       context,
-      outputNode: 'response'
+      outputNode
     })
   });
   const payload = await response.json();
   if (payload.layout) {
-    state.layout = payload.layout;
-    renderNodeDetails(state.layout.nodes?.[0]);
+    state.layout = layoutFromBuilder(state.builder);
+    renderNodeDetails(selectedBuilderNode() || state.layout.nodes?.[0]);
   }
   if (Object.prototype.hasOwnProperty.call(payload, 'decisionTable')) {
     state.customDecisionTable = payload.decisionTable;
@@ -503,6 +1109,12 @@ async function runCustomGraph() {
   highlightDecisionRow(state.lastPayload);
   renderDecisionSummary(state.lastPayload);
   renderDiagram();
+}
+
+function composerOutputNode() {
+  const ordered = orderedBuilderNodes();
+  const lastTransform = [...ordered].reverse().find((node) => node.type === 'transform');
+  return (lastTransform || ordered[ordered.length - 1])?.id || 'response';
 }
 
 function highlightDecisionRow(payload) {
