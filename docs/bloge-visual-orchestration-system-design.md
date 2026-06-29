@@ -305,11 +305,10 @@ node fetchApplicant : httpResource {
     "requiresSecrets": true,
     "supportsDryRun": false
   },
-  "policies": {
-    "allowedTenants": ["*"],
-    "allowedEnvironments": ["dev", "staging"],
-    "requiredPermissions": ["gateway.resource.execute"],
-    "egressPolicyRef": "default-http-egress"
+  "policy": {
+    "tenants": ["*"],
+    "namespaces": ["local", "default"],
+    "environments": ["dev", "staging"]
   },
   "authoring": {
     "defaultNodeId": "callResource",
@@ -631,7 +630,10 @@ resource-gateway 示例当前以 `/admin/visual-operator-libraries` 暴露用户
 `POST /admin/visual-operator-libraries/validate` 只返回 diagnostics 不落库；
 `POST/PUT /admin/visual-operator-libraries` 在写入前执行同一校验，阻断空库、
 重复端口、不支持 lowering mode、非法 schema kind、缺失 `items` 的 array、
-以及 `required` 引用不存在字段等硬错误。
+以及 `required` 引用不存在字段等硬错误。`OperatorDefinition.policy`
+当前已支持 `tenants`、`namespaces`、`environments`，`/api/visual/operators`
+可按 scope 过滤，`GraphDraftValidator` 在 validate/compile/run/publish 前
+返回 `visual.operator.policyDenied` 阻断越权 operator 使用。
 
 ### 12.2 Draft API
 
@@ -957,6 +959,11 @@ resource-gateway 已有 rate limiting、cache、circuit breaker，可以作为�
 
 当前 `resource-gateway-examples` 已经把 `configSchema` 的第一层落成代码：用户导入 operator library 时会校验 config schema 本身，canvas inspector 会根据简单 config 字段渲染编辑控件，服务端 `GraphDraftValidator` 会在 validate/compile/run 前阻断缺必填 config、类型不匹配、enum 不匹配和禁止额外字段场景。复杂嵌套 config 的专业化控件仍属于后续增强，但服务端契约已经先行兜底。
 
+当前 `resource-gateway-examples` 也已经把第一层 operator policy gate 落成代码：
+用户库可以声明 `policy.tenants`、`policy.namespaces`、`policy.environments`；
+浏览器使用当前 draft scope 拉取 catalog；服务端在 draft validate/compile/run/publish
+前再次阻断不匹配的 operator。完整 RBAC、secret 权限和 durable runtime 策略仍属于后续治理层增强。
+
 ### 19.3 新增
 
 - `VisualOperatorCatalogController`
@@ -1071,7 +1078,7 @@ Phase 1 的工程拆分、包结构、API、测试和 Definition of Done 见
 | ResourceDescriptor 无 payload schema | 高 | 虚拟算子输出不可连接 | descriptor 增加 payload schema 或采样推断后人工确认 |
 | 前端写死领域 | 中 | 无法通用 | Palette 和 editor 全部 catalog-driven |
 | 校验太慢 | 中 | 拖拽体验差 | 客户端快速校验 + 服务端增量校验 |
-| 权限后补 | 高 | 外部调用和密钥风险 | P0 引入 policy 字段，P1 至少服务端阻断 |
+| 权限后补 | 高 | 外部调用和密钥风险 | 第一层 operator scope policy 已服务端阻断；后续补 RBAC、secret 权限和 review gate |
 | 过早做全功能低代码 | 高 | 平台失控 | 先做 gateway MVP，限制节点类型 |
 
 ## 22. 待确认问题

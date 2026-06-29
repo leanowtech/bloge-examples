@@ -1,5 +1,7 @@
 package com.leanowtech.bloge.gateway.visual.catalog;
 
+import com.fasterxml.jackson.annotation.JsonAlias;
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.leanowtech.bloge.gateway.visual.diagnostic.VisualDiagnostic;
 import com.leanowtech.bloge.gateway.visual.model.SchemaEnvelope;
 
@@ -24,6 +26,7 @@ import java.util.TreeMap;
  * @param ports input/output ports
  * @param configSchema configuration schema
  * @param capabilities authoring and runtime capabilities
+ * @param policy tenant, namespace, and environment availability policy
  * @param lowering lowering metadata used by code generation
  * @param diagnostics non-blocking projection diagnostics
  */
@@ -37,6 +40,8 @@ public record OperatorDefinition(
         Ports ports,
         SchemaEnvelope configSchema,
         Capabilities capabilities,
+        @JsonAlias("policies")
+        Policy policy,
         Lowering lowering,
         List<VisualDiagnostic> diagnostics
 ) {
@@ -54,10 +59,29 @@ public record OperatorDefinition(
         ports = ports == null ? new Ports(List.of(), List.of()) : ports;
         configSchema = configSchema == null ? SchemaEnvelope.opaque() : configSchema;
         capabilities = capabilities == null ? Capabilities.pure() : capabilities;
+        policy = policy == null ? Policy.unrestricted() : policy;
         lowering = lowering == null ? new Lowering("native", operatorRef, Map.of()) : lowering;
         diagnostics = diagnostics == null ? List.of() : List.copyOf(diagnostics);
-        fingerprint = computeFingerprint(operatorRef, operatorVersion, source, ports, configSchema, capabilities,
+        fingerprint = computeFingerprint(operatorRef, operatorVersion, source, ports, configSchema, capabilities, policy,
                 lowering);
+    }
+
+    /**
+     * Backward-compatible constructor for callers that supply a fingerprint but no policy.
+     */
+    public OperatorDefinition(String schemaVersion,
+                              String operatorRef,
+                              String operatorVersion,
+                              String fingerprint,
+                              Display display,
+                              Source source,
+                              Ports ports,
+                              SchemaEnvelope configSchema,
+                              Capabilities capabilities,
+                              Lowering lowering,
+                              List<VisualDiagnostic> diagnostics) {
+        this(schemaVersion, operatorRef, operatorVersion, fingerprint, display, source, ports, configSchema,
+                capabilities, Policy.unrestricted(), lowering, diagnostics);
     }
 
     /**
@@ -74,7 +98,25 @@ public record OperatorDefinition(
                               Lowering lowering,
                               List<VisualDiagnostic> diagnostics) {
         this(schemaVersion, operatorRef, operatorVersion, "", display, source, ports, configSchema,
-                capabilities, lowering, diagnostics);
+                capabilities, Policy.unrestricted(), lowering, diagnostics);
+    }
+
+    /**
+     * Creates an operator definition with an explicit availability policy.
+     */
+    public OperatorDefinition(String schemaVersion,
+                              String operatorRef,
+                              String operatorVersion,
+                              Display display,
+                              Source source,
+                              Ports ports,
+                              SchemaEnvelope configSchema,
+                              Capabilities capabilities,
+                              Policy policy,
+                              Lowering lowering,
+                              List<VisualDiagnostic> diagnostics) {
+        this(schemaVersion, operatorRef, operatorVersion, "", display, source, ports, configSchema,
+                capabilities, policy, lowering, diagnostics);
     }
 
     /**
@@ -174,6 +216,82 @@ public record OperatorDefinition(
     }
 
     /**
+     * Availability policy for authoring and publishing.
+     *
+     * @param tenants allowed tenant ids; empty or "*" means any tenant
+     * @param namespaces allowed namespaces; empty or "*" means any namespace
+     * @param environments allowed environments; empty or "*" means any environment
+     */
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    public record Policy(
+            @JsonAlias("allowedTenants")
+            List<String> tenants,
+            @JsonAlias("allowedNamespaces")
+            List<String> namespaces,
+            @JsonAlias("allowedEnvironments")
+            List<String> environments
+    ) {
+        public Policy {
+            tenants = normalizeScope(tenants);
+            namespaces = normalizeScope(namespaces);
+            environments = normalizeScope(environments);
+        }
+
+        public static Policy unrestricted() {
+            return new Policy(List.of(), List.of(), List.of());
+        }
+
+        public boolean allowsTenant(String tenantId) {
+            return matches(tenants, tenantId);
+        }
+
+        public boolean allowsNamespace(String namespace) {
+            return matches(namespaces, namespace);
+        }
+
+        public boolean allowsEnvironment(String environment) {
+            return matches(environments, environment);
+        }
+
+        public boolean allows(String tenantId, String namespace, String environment) {
+            return allowsTenant(tenantId)
+                    && allowsNamespace(namespace)
+                    && allowsEnvironment(environment);
+        }
+
+        public List<String> violations(String tenantId, String namespace, String environment) {
+            List<String> violations = new java.util.ArrayList<>();
+            if (!allowsTenant(tenantId)) {
+                violations.add("tenant '%s' is not in %s".formatted(tenantId, tenants));
+            }
+            if (!allowsNamespace(namespace)) {
+                violations.add("namespace '%s' is not in %s".formatted(namespace, namespaces));
+            }
+            if (!allowsEnvironment(environment)) {
+                violations.add("environment '%s' is not in %s".formatted(environment, environments));
+            }
+            return violations;
+        }
+
+        private static boolean matches(List<String> allowed, String actual) {
+            return allowed.isEmpty()
+                    || allowed.contains("*")
+                    || (actual != null && !actual.isBlank() && allowed.contains(actual));
+        }
+
+        private static List<String> normalizeScope(List<String> values) {
+            if (values == null || values.isEmpty()) {
+                return List.of();
+            }
+            return values.stream()
+                    .filter(value -> value != null && !value.isBlank())
+                    .map(String::trim)
+                    .distinct()
+                    .toList();
+        }
+    }
+
+    /**
      * Lowering metadata.
      *
      * @param mode lowering mode
@@ -198,6 +316,7 @@ public record OperatorDefinition(
                                              Ports ports,
                                              SchemaEnvelope configSchema,
                                              Capabilities capabilities,
+                                             Policy policy,
                                              Lowering lowering) {
         Map<String, Object> material = new LinkedHashMap<>();
         material.put("operatorRef", operatorRef);
@@ -206,6 +325,7 @@ public record OperatorDefinition(
         material.put("ports", ports);
         material.put("configSchema", configSchema);
         material.put("capabilities", capabilities);
+        material.put("policy", policy);
         material.put("lowering", lowering);
         byte[] digest = sha256(canonicalize(material).getBytes(StandardCharsets.UTF_8));
         return "sha256:" + HexFormat.of().formatHex(digest);
@@ -264,6 +384,13 @@ public record OperatorDefinition(
             body.put("idempotency", capabilities.idempotency());
             body.put("streaming", capabilities.streaming());
             body.put("requiresSecrets", capabilities.requiresSecrets());
+            return canonicalize(body);
+        }
+        if (value instanceof Policy policy) {
+            Map<String, Object> body = new LinkedHashMap<>();
+            body.put("tenants", policy.tenants());
+            body.put("namespaces", policy.namespaces());
+            body.put("environments", policy.environments());
             return canonicalize(body);
         }
         if (value instanceof Lowering lowering) {

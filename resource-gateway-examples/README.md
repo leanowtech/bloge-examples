@@ -133,6 +133,13 @@ Each catalog operator exposes a server-computed fingerprint, and saved drafts
 store per-node `operatorFingerprints`; validation blocks compile/run when a
 draft was authored against an older schema/lowering fingerprint than the catalog
 currently exposes.
+Operator availability is also enforced by policy: imported operator definitions
+may declare allowed `tenants`, `namespaces`, and `environments`; the browser
+queries the catalog with the current draft scope from the Authoring Scope panel,
+and server-side validation blocks validate/compile/run/publish if a hand-edited
+draft references an operator outside that scope. Existing draft nodes whose
+operator is filtered out by the current scope are shown as unavailable instead
+of being silently treated as another operator type.
 Stored drafts can be published into immutable visual graph artifacts that freeze
 the generated DSL, draft snapshot, operator schema snapshots, fingerprints,
 layout, and validation/generation reports for audit or later promotion. Published
@@ -158,7 +165,7 @@ Showcase metadata APIs:
 | `GET` | `/api/gateway/examples/scenarios/{graphName}` | Load scenario metadata and run recipe |
 | `GET` | `/api/gateway/examples/scenarios/{graphName}/diagram` | Load the `bloge.visualLayout.v1` diagram for a scenario |
 | `POST` | `/api/gateway/examples/compose/run` | Compile and run submitted DSL with JSON context, returning diagnostics, output, layout, and decision-table metadata |
-| `GET` | `/api/visual/operators` | List native and resource-backed visual operator definitions |
+| `GET` | `/api/visual/operators` | List native, imported, and resource-backed visual operator definitions; supports `tenantId`, `namespace`, and `environment` policy filtering |
 | `GET` | `/api/visual/drafts` | List stored visual graph drafts |
 | `POST` | `/api/visual/drafts` | Save a new visual graph draft with assigned id and revision |
 | `GET` | `/api/visual/drafts/{draftId}` | Load a stored visual graph draft |
@@ -309,7 +316,9 @@ blank `libraryId`, blank or duplicate `operatorRef`, empty libraries, duplicate
 port names, unsupported lowering modes, unsupported schema kinds, `required`
 fields not declared in `properties`, and array schemas without `items` across
 input, output, and config schemas, returning structured visual diagnostics
-instead of accepting a library that will fail later on the canvas.
+instead of accepting a library that will fail later on the canvas. Operator
+`policy.tenants`, `policy.namespaces`, and `policy.environments` are stored with
+the library and enforced when scoped drafts use the operator.
 
 Minimal import example:
 
@@ -327,6 +336,11 @@ curl -X POST http://localhost:8080/admin/visual-operator-libraries \
         "name": "Eligibility",
         "description": "Evaluates a reusable eligibility predicate.",
         "tags": ["risk", "policy"]
+      },
+      "policy": {
+        "tenants": ["demo-tenant"],
+        "namespaces": ["local"],
+        "environments": ["browser"]
       },
       "source": { "kind": "user-library", "virtual": true },
       "ports": {
@@ -412,7 +426,7 @@ Seven `.bloge` graphs live in `src/main/resources/bloge/gateway/`:
 | `DefaultVisualOperatorCatalog` | Combines native visual operators with `resource:<resourceId>` virtual operators |
 | `GraphDraft` | Editable canvas graph model: input schema, nodes, port-aware bindings, edges, layout, output selection, and operator fingerprint snapshots |
 | `DatabaseGraphDraftRepository` | H2-backed graph draft repository with revision assignment, immutable revision history, and expected-revision guarded updates |
-| `GraphDraftValidator` | Validates operator references, operator fingerprint drift, graph input `contextPath` bindings, literal constants, expression references, required schema inputs, node config against `configSchema`, port-aware node bindings, typed port edges, DAG shape, and output schema selection |
+| `GraphDraftValidator` | Validates operator references, operator fingerprint drift, operator scope policy, graph input `contextPath` bindings, literal constants, expression references, required schema inputs, node config against `configSchema`, port-aware node bindings, typed port edges, DAG shape, and output schema selection |
 | `VisualConnectionCheckService` | Reuses draft validation to accept or reject one proposed canvas edge before the browser writes a binding |
 | `GraphDraftDslGenerator` | Lowers visual drafts into executable BLOGE DSL |
 | `VisualGraphRunService` | Reuses the dynamic BLOGE runner to validate, compile, and execute visual drafts |
@@ -739,7 +753,7 @@ Isolated component tests, some with lightweight Spring slices or mocks.
 | `DatabaseResourceRegistryTest` | 11 | CRUD, H2 persistence, in-memory cache |
 | `ResourceDescriptorBootstrapTest` | 7 | Seeding, refresh behavior, idempotency |
 | `GatewayDslCompilationTest` | 7 | DSL parsing, graph loading |
-| `Visual*Test` | 98 | Visual operator projection, imported libraries, draft/publication persistence and history, revision-guarded patching, typed connection/edge validation, graph input schema gates, secret blocking, DSL lowering, runtime smoke path |
+| `Visual*Test` | 102 | Visual operator projection, imported libraries, catalog policy filtering, draft/publication persistence and history, revision-guarded patching, typed connection/edge validation, graph input schema gates, secret blocking, DSL lowering, runtime smoke path |
 
 ### Layer 3 — Orchestration tests
 

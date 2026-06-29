@@ -156,6 +156,11 @@ const SAMPLE_OPERATOR_LIBRARY = {
         description: 'Evaluates a reusable eligibility predicate.',
         tags: ['risk', 'policy']
       },
+      policy: {
+        tenants: ['demo-tenant'],
+        namespaces: ['local'],
+        environments: ['browser']
+      },
       source: { kind: 'user-library', virtual: true },
       ports: {
         inputs: [
@@ -299,7 +304,7 @@ async function loadScenarios() {
 async function loadVisualOperatorCatalog() {
   try {
     resetDynamicOperatorTypes();
-    const response = await fetch('/api/visual/operators');
+    const response = await fetch(operatorCatalogUrl());
     if (!response.ok) {
       return;
     }
@@ -331,6 +336,7 @@ async function loadVisualOperatorCatalog() {
           inputSchema: primaryInput.schema,
           outputSchema: primaryOutput.schema,
           configSchema: operator.configSchema,
+          policy: operator.policy,
           lowering: operator.lowering
         };
         continue;
@@ -356,12 +362,71 @@ async function loadVisualOperatorCatalog() {
         outputPorts,
         inputSchema: primaryInput.schema,
         outputSchema: primaryOutput.schema,
+        policy: operator.policy,
         lowering: operator.lowering
       };
     }
   } catch (error) {
     console.debug('Visual operator catalog unavailable', error);
   }
+}
+
+function operatorCatalogUrl(builder = state.builder) {
+  const scope = builderScope(builder);
+  const params = new URLSearchParams();
+  params.set('tenantId', scope.tenantId);
+  params.set('namespace', scope.namespace);
+  params.set('environment', scope.environment);
+  return `/api/visual/operators?${params.toString()}`;
+}
+
+function builderScope(builder = state.builder) {
+  return {
+    tenantId: builder?.tenantId || 'demo-tenant',
+    namespace: builder?.namespace || 'local',
+    environment: builder?.environment || 'browser'
+  };
+}
+
+function scopeFromControls() {
+  return {
+    tenantId: normalizedScopeValue($('scope-tenant')?.value, 'demo-tenant'),
+    namespace: normalizedScopeValue($('scope-namespace')?.value, 'local'),
+    environment: normalizedScopeValue($('scope-environment')?.value, 'browser')
+  };
+}
+
+function normalizedScopeValue(value, fallback) {
+  const normalized = String(value || '').trim();
+  return normalized || fallback;
+}
+
+async function applyBuilderScopeFromControls() {
+  const next = scopeFromControls();
+  const current = builderScope();
+  state.builder.tenantId = next.tenantId;
+  state.builder.namespace = next.namespace;
+  state.builder.environment = next.environment;
+  if (current.tenantId !== next.tenantId
+      || current.namespace !== next.namespace
+      || current.environment !== next.environment) {
+    state.visualCheck = { message: 'Not checked', level: 'info', diagnostics: [] };
+  }
+  renderScopeStatus('Loading catalog...', 'info');
+  await loadVisualOperatorCatalog();
+  renderOperatorPalette();
+  renderSelectedOperatorEditor();
+  renderGraphOutputEditor();
+  renderVisualCheck();
+  renderScopeStatus();
+}
+
+function renderScopeStatus(message = '', level = 'info') {
+  const target = $('scope-status');
+  if (!target) return;
+  const scope = builderScope();
+  target.textContent = message || `${scope.tenantId} / ${scope.namespace} / ${scope.environment}`;
+  target.className = `scope-status ${level}`;
 }
 
 function rememberCoreOperatorFingerprint(operatorRef, fingerprint) {
@@ -501,6 +566,25 @@ function renderInputForm() {
   if (isComposerSelected()) {
     form.innerHTML = `
       <div class="builder-panel">
+        <div class="panel-title">Authoring Scope</div>
+        <div class="scope-controls">
+          <label>
+            <span>Tenant</span>
+            <input id="scope-tenant" value="${escapeHtml(builderScope().tenantId)}">
+          </label>
+          <label>
+            <span>Namespace</span>
+            <input id="scope-namespace" value="${escapeHtml(builderScope().namespace)}">
+          </label>
+          <label>
+            <span>Environment</span>
+            <input id="scope-environment" value="${escapeHtml(builderScope().environment)}">
+          </label>
+          <button id="apply-scope" class="secondary compact" type="button">Apply</button>
+        </div>
+        <div id="scope-status" class="scope-status"></div>
+      </div>
+      <div class="builder-panel">
         <div class="panel-title">Operator Palette</div>
         <div id="operator-palette" class="operator-palette"></div>
         <div id="connection-status" class="connection-status" hidden></div>
@@ -568,6 +652,7 @@ function renderInputForm() {
     $('graph-input-schema').value = state.graphInputSchemaText;
     $('composer-context').value = state.customContextText;
     renderOperatorPalette();
+    renderScopeStatus();
     renderConnectionStatus();
     renderOperatorLibraryControls();
     renderDraftControls();
@@ -586,6 +671,7 @@ function renderInputForm() {
       renderSelectedOperatorEditor();
     });
     $('reset-composer').addEventListener('click', resetComposer);
+    $('apply-scope').addEventListener('click', applyBuilderScopeFromControls);
     $('validate-visual-draft').addEventListener('click', validateVisualDraft);
     $('compile-visual-draft').addEventListener('click', compileVisualDraft);
     $('publish-visual-draft').addEventListener('click', publishVisualDraft);
@@ -634,6 +720,9 @@ function inputValues() {
 function createDefaultBuilder() {
   return {
     graphName: 'customLoanPolicy',
+    tenantId: 'demo-tenant',
+    namespace: 'local',
+    environment: 'browser',
     inputSchema: defaultGraphInputSchema(),
     selectedId: 'loanPolicy',
     output: { nodeId: 'response', path: '' },
@@ -859,7 +948,31 @@ function selectedBuilderNode() {
 }
 
 function specForNode(node) {
-  return OPERATOR_TYPES[node.paletteType] || OPERATOR_TYPES[node.type] || OPERATOR_TYPES.transform;
+  if (node?.paletteType && OPERATOR_TYPES[node.paletteType]) {
+    return OPERATOR_TYPES[node.paletteType];
+  }
+  if (node?.type === 'customOperator' && node?.paletteType) {
+    return unavailableOperatorSpec(node.paletteType);
+  }
+  return OPERATOR_TYPES[node?.type] || OPERATOR_TYPES.transform;
+}
+
+function unavailableOperatorSpec(operatorRef) {
+  return {
+    label: `Unavailable: ${readableName(operatorRef)}`,
+    kind: 'unavailable',
+    operatorRef,
+    visualOperatorRef: operatorRef,
+    inputPort: 'inputs',
+    outputPort: 'output',
+    baseId: baseIdForResource(operatorRef),
+    inputPorts: [],
+    outputPorts: [],
+    inputSchema: { schema: { type: 'opaque' } },
+    outputSchema: { schema: { type: 'opaque' } },
+    configSchema: { schema: { type: 'opaque' } },
+    unavailable: true
+  };
 }
 
 function payloadData(payload) {
@@ -1549,6 +1662,7 @@ async function loadSelectedDraft() {
   }
   const draft = await response.json();
   state.builder = builderFromVisualDraft(draft);
+  await loadVisualOperatorCatalog();
   state.currentDraftId = draft.draftId || '';
   state.currentDraftRevision = draft.revision || 0;
   state.savedDraftSnapshot = draft;
@@ -1568,6 +1682,7 @@ async function previewSelectedDraftRevision() {
   const current = await loadCurrentDraftSnapshot();
   if (!current) return;
   state.builder = builderFromVisualDraft(draft);
+  await loadVisualOperatorCatalog();
   state.currentDraftId = current.draftId || state.currentDraftId;
   state.currentDraftRevision = current.revision || state.currentDraftRevision;
   state.savedDraftSnapshot = current;
@@ -1586,6 +1701,7 @@ async function restoreSelectedDraftRevision() {
   const current = await loadCurrentDraftSnapshot();
   if (!current) return;
   state.builder = builderFromVisualDraft(draft);
+  await loadVisualOperatorCatalog();
   state.currentDraftId = current.draftId || state.currentDraftId;
   state.currentDraftRevision = current.revision || state.currentDraftRevision;
   state.savedDraftSnapshot = current;
@@ -1821,6 +1937,9 @@ function operatorEditorBody(node) {
   }
   if (node.type === 'customOperator') {
     const spec = specForNode(node);
+    if (spec.unavailable) {
+      return renderUnavailableOperatorPanel(node, spec);
+    }
     return `
       <div class="operator-fields">
         ${textField('Node', node.id, '', true)}
@@ -1875,6 +1994,33 @@ function operatorEditorBody(node) {
     <div class="operator-fields">
       ${textField('Node', node.id, '', true)}
       ${textField('Policy Node', node.policyNode || firstDecisionTableId(), 'policyNode')}
+    </div>
+  `;
+}
+
+function renderUnavailableOperatorPanel(node, spec) {
+  const scope = builderScope();
+  const inputs = Object.entries(node.customInputs || {});
+  const inputRows = inputs.length
+    ? inputs.map(([key, expression]) => `
+        <div class="unavailable-input-row">
+          <strong>${escapeHtml(key)}</strong>
+          <span>${escapeHtml(expression)}</span>
+        </div>
+      `).join('')
+    : '<div class="unavailable-input-row"><span>No saved input bindings.</span></div>';
+  return `
+    <div class="operator-fields">
+      ${textField('Node', node.id, '', true)}
+      ${textField('Operator', spec.visualOperatorRef || node.paletteType, '', true)}
+    </div>
+    <div class="operator-unavailable">
+      <strong>Operator unavailable in current authoring scope.</strong>
+      <span>${escapeHtml(scope.tenantId)} / ${escapeHtml(scope.namespace)} / ${escapeHtml(scope.environment)}</span>
+      <span>Reload the library or switch scope, then validate to get the server diagnostic.</span>
+    </div>
+    <div class="unavailable-inputs">
+      ${inputRows}
     </div>
   `;
 }
@@ -2773,14 +2919,15 @@ function renderTemplateExpression(template, inputs) {
 function builderToVisualDraft(builder = state.builder) {
   const layout = layoutFromBuilder(builder);
   const output = ensureBuilderOutput(builder);
+  const scope = builderScope(builder);
   return {
     schemaVersion: 'bloge.visualGraphDraft.v1',
     draftId: state.currentDraftId || '',
     revision: state.currentDraftRevision || 0,
     graphName: builder.graphName,
-    tenantId: 'demo-tenant',
-    namespace: 'local',
-    environment: 'browser',
+    tenantId: scope.tenantId,
+    namespace: scope.namespace,
+    environment: scope.environment,
     status: 'DRAFT',
     inputSchema: currentGraphInputSchema(builder),
     nodes: builder.nodes.map((node) => builderNodeToDraftNode(node, builder)),
@@ -2816,6 +2963,9 @@ function builderFromVisualDraft(draft) {
   }
   const builder = {
     graphName: draft.graphName || 'visualGraph',
+    tenantId: draft.tenantId || 'demo-tenant',
+    namespace: draft.namespace || 'local',
+    environment: draft.environment || 'browser',
     inputSchema,
     selectedId,
     output: {

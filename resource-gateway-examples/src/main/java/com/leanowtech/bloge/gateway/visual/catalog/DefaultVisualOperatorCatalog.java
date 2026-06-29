@@ -96,6 +96,15 @@ public class DefaultVisualOperatorCatalog implements VisualOperatorCatalog {
         if (!query.tags().isEmpty() && !operator.display().tags().containsAll(query.tags())) {
             return false;
         }
+        if (!query.tenantId().isBlank() && !operator.policy().allowsTenant(query.tenantId())) {
+            return false;
+        }
+        if (!query.namespace().isBlank() && !operator.policy().allowsNamespace(query.namespace())) {
+            return false;
+        }
+        if (!query.environment().isBlank() && !operator.policy().allowsEnvironment(query.environment())) {
+            return false;
+        }
         return true;
     }
 

@@ -1,5 +1,6 @@
 package com.leanowtech.bloge.gateway.visual.validation;
 
+import com.leanowtech.bloge.gateway.visual.catalog.OperatorDefinition;
 import com.leanowtech.bloge.gateway.visual.catalog.VisualCatalogTestSupport;
 import com.leanowtech.bloge.gateway.visual.draft.GraphDraft;
 import com.leanowtech.bloge.gateway.visual.model.SchemaEnvelope;
@@ -207,6 +208,35 @@ class GraphDraftValidatorTest {
         VisualValidationResult result = validator.validate(draft);
 
         assertThat(result.valid()).isTrue();
+    }
+
+    @Test
+    void rejectsDraftWhenOperatorPolicyDoesNotAllowEnvironment() {
+        GraphDraftValidator validator = new GraphDraftValidator(
+                VisualCatalogTestSupport.catalogWithLibrary(
+                        VisualCatalogTestSupport.eligibilityLibrary("integer",
+                                new OperatorDefinition.Policy(List.of("demo-tenant"), List.of("local"),
+                                        List.of("prod")))));
+        GraphDraft draft = contextEligibilityDraft(graphInputSchema(
+                Map.of(
+                        "score", Map.of("type", "integer"),
+                        "amount", Map.of("type", "number")
+                ),
+                List.of("score", "amount")
+        ), Map.of(
+                "score", GraphDraft.Binding.contextPath("score"),
+                "amount", GraphDraft.Binding.contextPath("amount")
+        ));
+
+        VisualValidationResult result = validator.validate(draft);
+
+        assertThat(result.valid()).isFalse();
+        assertThat(result.diagnostics())
+                .anySatisfy(diagnostic -> {
+                    assertThat(diagnostic.code()).isEqualTo("visual.operator.policyDenied");
+                    assertThat(diagnostic.message()).contains("environment='local'").contains("prod");
+                    assertThat(diagnostic.target()).isEqualTo("/nodes/0/operatorRef");
+                });
     }
 
     @Test

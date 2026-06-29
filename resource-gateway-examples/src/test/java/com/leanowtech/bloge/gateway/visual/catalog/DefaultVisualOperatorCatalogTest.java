@@ -2,6 +2,8 @@ package com.leanowtech.bloge.gateway.visual.catalog;
 
 import org.junit.jupiter.api.Test;
 
+import java.util.List;
+
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
@@ -66,5 +68,21 @@ class DefaultVisualOperatorCatalogTest {
         );
 
         assertThat(forged.fingerprint()).isEqualTo(base.fingerprint());
+    }
+
+    @Test
+    void filtersOperatorsByAuthoringScopePolicy() {
+        DefaultVisualOperatorCatalog catalog = VisualCatalogTestSupport.catalogWithLibrary(
+                VisualCatalogTestSupport.eligibilityLibrary("integer",
+                        new OperatorDefinition.Policy(List.of("demo-tenant"), List.of("local"), List.of("prod"))));
+
+        assertThat(catalog.list(new OperatorCatalogQuery("", List.of(), false, false,
+                "demo-tenant", "local", "prod")))
+                .extracting(OperatorDefinition::operatorRef)
+                .contains("risk:eligibility");
+        assertThat(catalog.list(new OperatorCatalogQuery("", List.of(), false, false,
+                "demo-tenant", "local", "browser")))
+                .extracting(OperatorDefinition::operatorRef)
+                .doesNotContain("risk:eligibility");
     }
 }

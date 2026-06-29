@@ -126,6 +126,57 @@ class OperatorLibraryAdminControllerTest {
                 .andExpect(jsonPath("$.operators[0].operatorRef").value("risk:eligibility"));
     }
 
+    @Test
+    void createStoresOperatorPolicyForCatalogGate() throws Exception {
+        OperatorLibrary library = VisualCatalogTestSupport.eligibilityLibrary("integer",
+                new OperatorDefinition.Policy(List.of("demo-tenant"), List.of("local"), List.of("browser")));
+
+        mockMvc.perform(post("/admin/visual-operator-libraries")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(library)))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.operators[0].policy.environments[0]").value("browser"));
+
+        mockMvc.perform(get("/admin/visual-operator-libraries/risk-policy"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.operators[0].policy.tenants[0]").value("demo-tenant"))
+                .andExpect(jsonPath("$.operators[0].policy.namespaces[0]").value("local"))
+                .andExpect(jsonPath("$.operators[0].policy.environments[0]").value("browser"));
+    }
+
+    @Test
+    void createAcceptsLegacyPoliciesAlias() throws Exception {
+        String libraryJson = """
+                {
+                  "libraryId": "legacy-policy",
+                  "operators": [{
+                    "operatorRef": "risk:legacyPolicy",
+                    "policies": {
+                      "allowedTenants": ["demo-tenant"],
+                      "allowedNamespaces": ["local"],
+                      "allowedEnvironments": ["browser"],
+                      "requiredPermissions": ["legacy.permission"]
+                    },
+                    "ports": {
+                      "outputs": [{
+                        "name": "output",
+                        "schema": { "schema": { "type": "object" } },
+                        "required": true
+                      }]
+                    }
+                  }]
+                }
+                """;
+
+        mockMvc.perform(post("/admin/visual-operator-libraries")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(libraryJson))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.operators[0].policy.tenants[0]").value("demo-tenant"))
+                .andExpect(jsonPath("$.operators[0].policy.namespaces[0]").value("local"))
+                .andExpect(jsonPath("$.operators[0].policy.environments[0]").value("browser"));
+    }
+
     private static OperatorLibrary invalidArrayLibrary() {
         OperatorDefinition operator = new OperatorDefinition(
                 "bloge.visualOperator.v1",

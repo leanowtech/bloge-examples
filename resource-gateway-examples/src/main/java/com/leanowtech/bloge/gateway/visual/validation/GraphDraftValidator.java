@@ -82,6 +82,7 @@ public class GraphDraftValidator {
             }
             operatorsByNodeId.put(node.id(), operator.get());
             validateOperatorFingerprint(node, operator.get(), draft.operatorFingerprints(), nodePath, diagnostics);
+            validateOperatorPolicy(draft, node, operator.get(), nodePath, diagnostics);
             validateRequiredInputs(node, operator.get(), nodePath, diagnostics);
             validateUnknownInputs(node, operator.get(), nodePath, diagnostics);
             validateConfig(node, operator.get(), nodePath, diagnostics);
@@ -109,6 +110,23 @@ public class GraphDraftValidator {
         diagnostics.add(VisualDiagnostic.error("visual.operator.fingerprintMismatch",
                 "Node '%s' was authored against operator '%s' fingerprint '%s', but the catalog now exposes '%s'."
                         .formatted(node.id(), operator.operatorRef(), expected, operator.fingerprint()),
+                nodePath + "/operatorRef"));
+    }
+
+    private static void validateOperatorPolicy(GraphDraft draft,
+                                               GraphDraft.DraftNode node,
+                                               OperatorDefinition operator,
+                                               String nodePath,
+                                               List<VisualDiagnostic> diagnostics) {
+        List<String> violations = operator.policy().violations(draft.tenantId(), draft.namespace(),
+                draft.environment());
+        if (violations.isEmpty()) {
+            return;
+        }
+        diagnostics.add(VisualDiagnostic.error("visual.operator.policyDenied",
+                "Operator '%s' is not available for draft scope tenant='%s', namespace='%s', environment='%s': %s."
+                        .formatted(operator.operatorRef(), draft.tenantId(), draft.namespace(), draft.environment(),
+                                String.join("; ", violations)),
                 nodePath + "/operatorRef"));
     }
 

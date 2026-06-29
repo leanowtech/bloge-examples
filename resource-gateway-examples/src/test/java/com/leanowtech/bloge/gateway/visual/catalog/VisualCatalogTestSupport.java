@@ -110,6 +110,10 @@ public final class VisualCatalogTestSupport {
     }
 
     public static OperatorDefinition eligibilityOperator(String scoreType) {
+        return eligibilityOperator(scoreType, OperatorDefinition.Policy.unrestricted());
+    }
+
+    public static OperatorDefinition eligibilityOperator(String scoreType, OperatorDefinition.Policy policy) {
         Map<String, Object> inputProperties = new LinkedHashMap<>();
         inputProperties.put("score", Map.of("type", scoreType));
         inputProperties.put("amount", Map.of("type", "number"));
@@ -137,6 +141,7 @@ public final class VisualCatalogTestSupport {
                 ),
                 SchemaEnvelope.opaque(),
                 OperatorDefinition.Capabilities.pure(),
+                policy,
                 new OperatorDefinition.Lowering("transform", "transform", Map.of(
                         "assignments", Map.of(
                                 "eligible", "{{input.score}} >= 700 && {{input.amount}} <= 300000",
@@ -148,6 +153,10 @@ public final class VisualCatalogTestSupport {
     }
 
     public static OperatorLibrary eligibilityLibrary(String scoreType) {
+        return eligibilityLibrary(scoreType, OperatorDefinition.Policy.unrestricted());
+    }
+
+    public static OperatorLibrary eligibilityLibrary(String scoreType, OperatorDefinition.Policy policy) {
         return new OperatorLibrary(
                 "bloge.visualOperatorLibrary.v1",
                 "risk-policy",
@@ -155,7 +164,7 @@ public final class VisualCatalogTestSupport {
                 "1.0.0",
                 "risk-team",
                 "ACTIVE",
-                List.of(eligibilityOperator(scoreType))
+                List.of(eligibilityOperator(scoreType, policy))
         );
     }
 

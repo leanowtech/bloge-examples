@@ -78,7 +78,7 @@ artifact path，不回显 secret value。
 每个可发布算子定义应生成 fingerprint：
 
 ```text
-sha256(canonical(operatorRef + source + inputSchema + outputSchema + configSchema + lowering + policies))
+sha256(canonical(operatorRef + source + inputSchema + outputSchema + configSchema + policy + lowering))
 ```
 
 用途：
@@ -238,12 +238,10 @@ MVP schema kind：
     "supportsDryRun": false,
     "requiresSecrets": true
   },
-  "policies": {
-    "requiredPermissions": ["resource.execute"],
-    "allowedTenants": ["*"],
-    "allowedNamespaces": ["local", "default"],
-    "allowedEnvironments": ["dev", "staging"],
-    "egressPolicyRef": "default-http-egress"
+  "policy": {
+    "tenants": ["*"],
+    "namespaces": ["local", "default"],
+    "environments": ["dev", "staging"]
   },
   "authoring": {
     "defaultNodeId": "fetchApplicant",
@@ -284,7 +282,7 @@ MVP schema kind：
 | `ports.outputs` | 是 | 至少一个输出端口，常规算子为 `output` |
 | `configSchema` | 否 | timeout/retry/fallback 之外的算子配置；导入时必须校验 schema 结构，draft 校验时必须约束 `node.config` |
 | `capabilities` | 是 | 决定运行、安全和画布限制 |
-| `policies` | 否 | 缺省按租户策略继承 |
+| `policy` | 否 | 算子可用性策略；缺省表示不限制 tenant/namespace/environment |
 | `authoring` | 否 | 只影响画布体验 |
 | `lowering` | 虚拟算子必填 | 生成 BLOGE DSL 所需 |
 
@@ -322,6 +320,27 @@ MVP schema kind：
 - `requiresSecrets=true` 的算子必须验证 secret binding。
 - `streaming=true` 的算子不能连接到只接受完整对象的普通节点，除非有 collector。
 - `durable=true` 的算子不能在 request-response-only runtime 中发布。
+
+### 5.5 policy
+
+resource-gateway 示例已经实现第一层确定性 policy gate：
+
+```json
+{
+  "policy": {
+    "tenants": ["demo-tenant"],
+    "namespaces": ["local"],
+    "environments": ["browser"]
+  }
+}
+```
+
+规则：
+
+- `tenants`、`namespaces`、`environments` 为空数组或缺失时表示不限制该维度。
+- `"*"` 可作为显式通配。
+- `/api/visual/operators` 支持 `tenantId`、`namespace`、`environment` 查询参数，浏览器按当前 draft scope 拉取可用算子。
+- `GraphDraftValidator` 仍是权威门禁：即使用户手工构造 draft 引用被过滤掉的 operator，validate/compile/run/publish 也会返回 `visual.operator.policyDenied`。
 
 ## 6. Resource Design Contract v1
 
@@ -868,6 +887,9 @@ MVP 至少阻断：
 - `array` schema 未声明 `items`。
 - 明显明文 secret 出现在 lowering parameters、config schema 或 port schema。
 
+导入后的 `policy` 不只是展示字段：catalog 查询会按 scope 过滤，draft
+validate/compile/run/publish 会再次以服务端 validator 阻断越权使用。
+
 ### 10.3 保存 draft patch
 
 ```http
@@ -1244,6 +1266,11 @@ MVP 至少做：
 - secretRef 未绑定或无权限读取。
 - request-response runtime 使用 durable-only operator。
 - 非幂等 mutation 缺 review gate。
+
+当前 resource-gateway 示例已经实现第一项：operator `policy.tenants`、
+`policy.namespaces`、`policy.environments` 与 `GraphDraft.tenantId`、
+`GraphDraft.namespace`、`GraphDraft.environment` 不匹配时返回
+`visual.operator.policyDenied`。
 
 ### 11.6 Runtime Drift
 

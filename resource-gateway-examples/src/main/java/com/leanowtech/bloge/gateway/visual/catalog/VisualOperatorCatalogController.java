@@ -30,16 +30,23 @@ public class VisualOperatorCatalogController {
      * @param tags required tags
      * @param resourceOnly whether to return only resource virtual operators
      * @param includeDeprecated include deprecated resource contracts
+     * @param tenantId tenant scope
+     * @param namespace namespace scope
+     * @param environment authoring environment scope
      * @return catalog response
      */
     @GetMapping
     public OperatorCatalogResponse list(@RequestParam(defaultValue = "") String search,
                                         @RequestParam(defaultValue = "") List<String> tags,
                                         @RequestParam(defaultValue = "false") boolean resourceOnly,
-                                        @RequestParam(defaultValue = "false") boolean includeDeprecated) {
+                                        @RequestParam(defaultValue = "false") boolean includeDeprecated,
+                                        @RequestParam(defaultValue = "") String tenantId,
+                                        @RequestParam(defaultValue = "") String namespace,
+                                        @RequestParam(defaultValue = "") String environment) {
         return new OperatorCatalogResponse(
                 "bloge.visualOperatorCatalog.v1",
-                catalog.list(new OperatorCatalogQuery(search, tags, resourceOnly, includeDeprecated)),
+                catalog.list(new OperatorCatalogQuery(search, tags, resourceOnly, includeDeprecated,
+                        tenantId, namespace, environment)),
                 List.of()
         );
     }

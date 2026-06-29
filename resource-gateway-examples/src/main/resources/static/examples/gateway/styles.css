@@ -579,6 +579,47 @@ body.connecting-edge * {
   gap: 10px;
 }
 
+.scope-controls {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr)) auto;
+  gap: 6px;
+  align-items: end;
+}
+
+.scope-controls label {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
+.scope-controls span {
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.scope-controls input {
+  min-width: 0;
+  padding: 7px 8px;
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  background: var(--surface-subtle);
+  color: var(--text);
+}
+
+.scope-status {
+  min-height: 28px;
+  padding: 7px 8px;
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  background: var(--surface-subtle);
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 700;
+  overflow-wrap: anywhere;
+}
+
 .operator-palette {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -884,6 +925,54 @@ body.dragging-operator * {
   box-shadow: inset 0 3px 0 var(--green);
 }
 
+.node.unavailable rect {
+  fill: #fff1f2;
+  stroke: #f43f5e;
+  stroke-dasharray: 6 4;
+}
+
+.node.unavailable .node-title {
+  fill: #9f1239;
+}
+
+.operator-unavailable {
+  display: grid;
+  gap: 5px;
+  padding: 8px;
+  border: 1px solid #fda4af;
+  border-radius: 5px;
+  background: #fff1f2;
+  color: #9f1239;
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+
+.operator-unavailable span {
+  color: #be123c;
+  font-weight: 700;
+}
+
+.unavailable-inputs {
+  display: grid;
+  gap: 6px;
+}
+
+.unavailable-input-row {
+  display: grid;
+  gap: 3px;
+  padding: 7px 8px;
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  background: var(--surface-subtle);
+  font-size: 11px;
+  overflow-wrap: anywhere;
+}
+
+.unavailable-input-row span {
+  color: var(--muted);
+  font-weight: 700;
+}
+
 .operator-editor-heading,
 .rule-editor-title {
   display: flex;
@@ -1087,6 +1176,7 @@ body.dragging-operator * {
 .field textarea:focus,
 .operator-fields input:focus,
 .operator-fields select:focus,
+.scope-controls input:focus,
 .rule-editor-table input:focus,
 .binding-row select:focus,
 .binding-row input:focus,
