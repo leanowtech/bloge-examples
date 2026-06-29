@@ -1,18 +1,27 @@
 :root {
   color-scheme: light;
-  --bg: #f5f7fa;
+  --bg: #eef2f6;
   --surface: #ffffff;
-  --line: #d8dee8;
-  --line-strong: #7e8b9b;
-  --text: #151c26;
-  --muted: #667085;
+  --surface-subtle: #f8fafc;
+  --surface-strong: #f1f5f9;
+  --line: #cbd5e1;
+  --line-strong: #64748b;
+  --text: #111827;
+  --muted: #475569;
   --blue: #1d4ed8;
-  --green: #15803d;
+  --blue-strong: #1e40af;
+  --blue-soft: #dbeafe;
+  --green: #166534;
+  --green-soft: #dcfce7;
   --amber: #b45309;
-  --red: #b42318;
-  --cyan: #0e7490;
+  --amber-soft: #fef3c7;
+  --red: #b91c1c;
+  --red-soft: #fee2e2;
+  --cyan: #0f766e;
+  --cyan-soft: #ccfbf1;
   --gray: #64748b;
-  --shadow: 0 10px 28px rgba(25, 35, 50, 0.08);
+  --shadow: 0 14px 34px rgba(15, 23, 42, 0.10);
+  --shadow-sm: 0 6px 18px rgba(15, 23, 42, 0.08);
 }
 
 * {
@@ -46,12 +55,13 @@ textarea {
   gap: 16px;
   padding: 16px 22px;
   border-bottom: 1px solid var(--line);
-  background: var(--surface);
+  background: #fbfdff;
+  box-shadow: 0 1px 0 rgba(15, 23, 42, 0.04);
 }
 
 .eyebrow {
   margin: 0 0 4px;
-  color: var(--muted);
+  color: #334155;
   font-size: 12px;
   font-weight: 800;
   text-transform: uppercase;
@@ -65,10 +75,12 @@ h2 {
 
 h1 {
   font-size: 24px;
+  color: #0f172a;
 }
 
 h2 {
   font-size: 20px;
+  color: #0f172a;
 }
 
 .scope {
@@ -81,14 +93,17 @@ h2 {
   width: 220px;
   min-width: 0;
   border: 1px solid var(--line);
+  border-radius: 6px;
   padding: 8px 10px;
+  background: var(--surface-subtle);
+  color: var(--text);
 }
 
 .tabs {
   display: flex;
   gap: 4px;
   padding: 8px 16px 0;
-  background: var(--surface);
+  background: #fbfdff;
   border-bottom: 1px solid var(--line);
 }
 
@@ -97,6 +112,7 @@ h2 {
   padding: 8px 12px;
   border: 1px solid transparent;
   border-bottom: none;
+  border-radius: 6px 6px 0 0;
   background: transparent;
   color: var(--muted);
   cursor: pointer;
@@ -107,6 +123,7 @@ h2 {
   color: var(--blue);
   background: var(--bg);
   border-color: var(--line);
+  box-shadow: inset 0 3px 0 var(--blue);
 }
 
 .workspace {
@@ -122,6 +139,7 @@ h2 {
 .detail-section {
   background: var(--surface);
   border: 1px solid var(--line);
+  border-radius: 6px;
   box-shadow: var(--shadow);
 }
 
@@ -133,7 +151,7 @@ h2 {
 
 .panel-title {
   margin-bottom: 10px;
-  color: var(--muted);
+  color: #334155;
   font-size: 12px;
   font-weight: 800;
   text-transform: uppercase;
@@ -147,10 +165,18 @@ h2 {
 .entity-button {
   width: 100%;
   border: 1px solid var(--line);
-  background: #fbfcfe;
+  border-radius: 6px;
+  background: var(--surface-subtle);
   padding: 10px;
   text-align: left;
   cursor: pointer;
+  color: var(--text);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.7);
+}
+
+.entity-button:hover {
+  border-color: #94a3b8;
+  background: #ffffff;
 }
 
 .entity-button strong {
@@ -170,7 +196,8 @@ h2 {
 
 .entity-button[aria-current="true"] {
   border-color: var(--blue);
-  box-shadow: inset 3px 0 0 var(--blue);
+  background: #eef5ff;
+  box-shadow: inset 3px 0 0 var(--blue), 0 0 0 1px rgba(29, 78, 216, 0.08);
 }
 
 .main-panel {
@@ -186,6 +213,8 @@ h2 {
   gap: 16px;
   padding: 16px 18px;
   border-bottom: 1px solid var(--line);
+  background: #fbfdff;
+  border-radius: 6px 6px 0 0;
 }
 
 .actions {
@@ -199,7 +228,11 @@ h2 {
   width: 100%;
   height: 100%;
   min-height: 570px;
-  background: #fdfefe;
+  background:
+    linear-gradient(#e5ebf3 1px, transparent 1px),
+    linear-gradient(90deg, #e5ebf3 1px, transparent 1px),
+    #ffffff;
+  background-size: 28px 28px;
 }
 
 .hidden {
@@ -210,7 +243,7 @@ h2 {
   min-height: 570px;
   overflow: auto;
   padding: 18px;
-  background: #fdfefe;
+  background: #ffffff;
 }
 
 .tool-grid {
@@ -225,7 +258,9 @@ h2 {
   min-width: 0;
   padding: 14px;
   border: 1px solid var(--line);
-  background: #ffffff;
+  border-radius: 6px;
+  background: var(--surface-subtle);
+  box-shadow: var(--shadow-sm);
 }
 
 .tool-card h3,
@@ -266,8 +301,10 @@ h2 {
   width: 100%;
   min-width: 0;
   border: 1px solid var(--line);
+  border-radius: 5px;
   padding: 9px 10px;
   background: #ffffff;
+  color: var(--text);
 }
 
 .field textarea {
@@ -288,33 +325,38 @@ h2 {
 }
 
 .node rect {
-  fill: #ffffff;
+  fill: #fbfdff;
   stroke: var(--line-strong);
   stroke-width: 1.4;
 }
 
 .node.running rect,
 .node.pending rect {
+  fill: #eff6ff;
   stroke: var(--blue);
 }
 
 .node.waiting rect,
 .node.retrying rect {
+  fill: var(--amber-soft);
   stroke: var(--amber);
 }
 
 .node.completed rect {
+  fill: #f0fdf4;
   stroke: var(--green);
 }
 
 .node.failed rect,
 .node.dead_lettered rect,
 .node.cancelled rect {
+  fill: var(--red-soft);
   stroke: var(--red);
 }
 
 .node.selected rect {
   stroke-width: 3;
+  filter: drop-shadow(0 6px 12px rgba(29, 78, 216, 0.16));
 }
 
 .node-title {
@@ -347,7 +389,9 @@ h2 {
   min-height: 170px;
   overflow: auto;
   padding: 10px;
-  background: #111827;
+  border: 1px solid #1f2937;
+  border-radius: 6px;
+  background: #0f172a;
   color: #d1fae5;
   font-size: 12px;
   line-height: 1.45;
@@ -358,6 +402,7 @@ h2 {
 .secondary {
   min-height: 36px;
   border: 1px solid transparent;
+  border-radius: 6px;
   padding: 8px 10px;
   cursor: pointer;
   font-weight: 800;
@@ -366,12 +411,22 @@ h2 {
 .primary {
   color: #ffffff;
   background: var(--blue);
+  box-shadow: var(--shadow-sm);
 }
 
 .secondary {
   color: var(--text);
-  background: #eef2f7;
-  border-color: #d4dbe5;
+  background: var(--surface-strong);
+  border-color: var(--line);
+}
+
+.primary:hover {
+  background: var(--blue-strong);
+}
+
+.secondary:hover {
+  border-color: #94a3b8;
+  background: #ffffff;
 }
 
 @media (max-width: 1160px) {
