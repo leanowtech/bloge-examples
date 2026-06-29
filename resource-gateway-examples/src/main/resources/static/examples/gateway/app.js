@@ -118,18 +118,24 @@ const OPERATOR_TYPES = {
     label: 'HTTP Resource',
     kind: 'resource',
     operatorRef: 'httpResource',
+    inputPort: 'input',
+    outputPort: 'output',
     baseId: 'fetchApplicant'
   },
   decisionTable: {
     label: 'Decision Table',
     kind: 'decision-table',
     operatorRef: '',
+    inputPort: 'inputs',
+    outputPort: 'output',
     baseId: 'loanPolicy'
   },
   transform: {
     label: 'Transform',
     kind: 'transform',
     operatorRef: '',
+    inputPort: 'inputs',
+    outputPort: 'output',
     baseId: 'response'
   }
 };
@@ -149,6 +155,8 @@ const state = {
   draggingOperatorType: null,
   paletteDrag: null,
   nodeDrag: null,
+  connectionDrag: null,
+  connectionMessage: null,
   suppressPaletteClick: false,
   suppressNodeClick: false,
   customDsl: DEFAULT_COMPOSER_DSL,
@@ -204,6 +212,8 @@ async function loadVisualOperatorCatalog() {
           kind: 'custom',
           operatorRef,
           visualOperatorRef: operatorRef,
+          inputPort: operator.ports?.inputs?.[0]?.name || 'inputs',
+          outputPort: operator.ports?.outputs?.[0]?.name || 'output',
           baseId: baseIdForResource(operatorRef),
           inputSchema: operator.ports?.inputs?.[0]?.schema,
           outputSchema: operator.ports?.outputs?.[0]?.schema,
@@ -220,6 +230,8 @@ async function loadVisualOperatorCatalog() {
         kind: 'resource',
         operatorRef: 'httpResource',
         visualOperatorRef: operatorRef,
+        inputPort: operator.ports?.inputs?.[0]?.name || 'params',
+        outputPort: operator.ports?.outputs?.[0]?.name || 'payload',
         baseId: baseIdForResource(resourceId),
         resourceId,
         inputSchema: operator.ports?.inputs?.[0]?.schema,
@@ -299,6 +311,7 @@ function renderInputForm() {
       <div class="builder-panel">
         <div class="panel-title">Operator Palette</div>
         <div id="operator-palette" class="operator-palette"></div>
+        <div id="connection-status" class="connection-status" hidden></div>
       </div>
       <div id="selected-operator-editor" class="builder-panel"></div>
       <div class="field">
@@ -316,6 +329,7 @@ function renderInputForm() {
     $('composer-dsl').value = state.customDsl;
     $('composer-context').value = state.customContextText;
     renderOperatorPalette();
+    renderConnectionStatus();
     renderSelectedOperatorEditor();
     $('composer-dsl').addEventListener('input', (event) => {
       state.customDsl = event.target.value;
@@ -435,66 +449,136 @@ function orderedDslNodes(builder = state.builder) {
 
 function builderEdges(builder = state.builder) {
   const edges = [];
-  const add = (source, target, label = '') => {
-    if (!source || !target || source === target) return;
-    if (edges.some((edge) => edge.source === source && edge.target === target)) return;
-    edges.push({ source, target, label });
+  const add = (edge) => {
+    if (!edge.source || !edge.target || edge.source === edge.target) return;
+    const key = [
+      edge.source,
+      edge.sourcePort || '',
+      edge.sourcePath || '',
+      edge.target,
+      edge.targetPort || '',
+      edge.targetPath || ''
+    ].join(':');
+    if (edges.some((item) => item.key === key)) return;
+    edges.push({ key, label: '', ...edge });
   };
 
-  const resources = builder.nodes.filter((node) => node.type === 'httpResource');
   const decisions = builder.nodes.filter((node) => node.type === 'decisionTable');
   const transforms = builder.nodes.filter((node) => node.type === 'transform');
-
-  for (const decision of decisions) {
-    for (const resource of resources) {
-      if ([decision.scoreSource, decision.amountSource].some((source) => String(source).startsWith(`${resource.id}.`))) {
-        add(resource.id, decision.id, 'facts');
-      }
-    }
-  }
 
   for (const transform of transforms) {
     const decision = builder.nodes.find((node) => node.id === transform.policyNode)
       || decisions[0];
     if (decision) {
-      add(decision.id, transform.id, 'policy');
+      add({
+        source: decision.id,
+        target: transform.id,
+        sourcePort: specForNode(decision).outputPort || 'output',
+        sourcePath: '',
+        targetPort: specForNode(transform).inputPort || 'inputs',
+        targetPath: 'policy',
+        label: 'policy'
+      });
     } else {
       const previous = orderedBuilderNodes(builder).filter((node) => node.id !== transform.id).at(-1);
-      add(previous?.id, transform.id);
+      if (previous) {
+        add({
+          source: previous.id,
+          target: transform.id,
+          sourcePort: specForNode(previous).outputPort || 'output',
+          sourcePath: '',
+          targetPort: specForNode(transform).inputPort || 'inputs',
+          targetPath: 'result'
+        });
+      }
     }
   }
 
   for (const node of builder.nodes) {
-    for (const expression of nodeInputExpressions(node)) {
-      add(expressionSourceNode(expression), node.id, 'data');
+    for (const binding of builderInputBindings(node)) {
+      const source = connectionSourceFromExpression(binding.expression);
+      if (!source) continue;
+      add({
+        source: source.nodeId,
+        target: node.id,
+        sourcePort: source.port,
+        sourcePath: source.path,
+        targetPort: binding.targetPort,
+        targetPath: binding.targetPath,
+        label: binding.label || 'data'
+      });
     }
   }
 
   if (edges.length === 0) {
     const ordered = orderedBuilderNodes(builder);
     for (let i = 0; i < ordered.length - 1; i++) {
-      add(ordered[i].id, ordered[i + 1].id);
+      add({
+        source: ordered[i].id,
+        target: ordered[i + 1].id,
+        sourcePort: specForNode(ordered[i]).outputPort || 'output',
+        sourcePath: '',
+        targetPort: specForNode(ordered[i + 1]).inputPort || 'inputs',
+        targetPath: ''
+      });
     }
   }
-  return edges;
+  return edges.map(({ key, ...edge }) => edge);
 }
 
-function nodeInputExpressions(node) {
+function builderInputBindings(node) {
+  const spec = specForNode(node);
   if (node.type === 'httpResource') {
-    return [node.applicantExpr];
+    const inputName = node.paramName || defaultParamNameForOperator(spec);
+    return [{
+      inputName,
+      expression: node.applicantExpr,
+      targetPort: spec.inputPort || 'params',
+      targetPath: inputName,
+      label: inputName
+    }];
   }
   if (node.type === 'decisionTable') {
-    return [node.scoreSource, node.amountSource];
+    return [
+      {
+        inputName: 'score',
+        expression: node.scoreSource,
+        targetPort: spec.inputPort || 'inputs',
+        targetPath: 'score',
+        label: 'score'
+      },
+      {
+        inputName: 'amount',
+        expression: node.amountSource,
+        targetPort: spec.inputPort || 'inputs',
+        targetPath: 'amount',
+        label: 'amount'
+      }
+    ];
   }
   if (node.type === 'customOperator') {
-    return Object.values(node.customInputs || {});
+    return Object.entries(node.customInputs || {}).map(([inputName, expression]) => ({
+      inputName,
+      expression,
+      targetPort: spec.inputPort || 'inputs',
+      targetPath: inputName,
+      label: inputName
+    }));
   }
   return [];
 }
 
-function expressionSourceNode(expression) {
-  const match = String(expression || '').match(/^([A-Za-z_][A-Za-z0-9_]*)\.output(?:\.payload)?(?:\..+)?$/);
-  return match ? match[1] : '';
+function connectionSourceFromExpression(expression) {
+  const match = String(expression || '').trim()
+    .match(/^([A-Za-z_][A-Za-z0-9_]*)\.output(?:\.(payload))?(?:\.(.+))?$/);
+  if (!match) {
+    return null;
+  }
+  return {
+    nodeId: match[1],
+    port: match[2] ? 'payload' : 'output',
+    path: match[3] || ''
+  };
 }
 
 function selectedBuilderNode() {
@@ -554,6 +638,25 @@ function renderOperatorPalette() {
       state.draggingOperatorType = null;
     });
   }
+}
+
+function renderConnectionStatus() {
+  const target = $('connection-status');
+  if (!target) return;
+  if (!state.connectionMessage?.text) {
+    target.hidden = true;
+    target.textContent = '';
+    target.className = 'connection-status';
+    return;
+  }
+  target.hidden = false;
+  target.textContent = state.connectionMessage.text;
+  target.className = `connection-status ${state.connectionMessage.level || 'info'}`;
+}
+
+function setConnectionMessage(text, level = 'info') {
+  state.connectionMessage = text ? { text, level } : null;
+  renderConnectionStatus();
 }
 
 function renderSelectedOperatorEditor() {
@@ -951,9 +1054,13 @@ function layoutFromBuilder(builder) {
     };
   });
   const edges = builderEdges(builder).map((edge) => ({
-    id: `${edge.source}->${edge.target}:`,
+    id: `${edge.source}:${edge.sourcePort || ''}.${edge.sourcePath || ''}->${edge.target}:${edge.targetPort || ''}.${edge.targetPath || ''}`,
     source: edge.source,
     target: edge.target,
+    sourcePort: edge.sourcePort || '',
+    sourcePath: edge.sourcePath || '',
+    targetPort: edge.targetPort || '',
+    targetPath: edge.targetPath || '',
     label: edge.label
   }));
   return {
@@ -1083,10 +1190,10 @@ function builderToVisualDraft(builder = state.builder) {
     status: 'DRAFT',
     nodes: builder.nodes.map((node) => builderNodeToDraftNode(node, builder)),
     edges: builderEdges(builder).map((edge) => ({
-      id: `${edge.source}->${edge.target}`,
+      id: `${edge.source}:${edge.sourcePort || ''}.${edge.sourcePath || ''}->${edge.target}:${edge.targetPort || ''}.${edge.targetPath || ''}`,
       kind: 'data',
-      source: { nodeId: edge.source, port: 'output', path: '' },
-      target: { nodeId: edge.target, port: 'inputs', path: '' }
+      source: { nodeId: edge.source, port: edge.sourcePort || 'output', path: edge.sourcePath || '' },
+      target: { nodeId: edge.target, port: edge.targetPort || 'inputs', path: edge.targetPath || '' }
     })),
     visualLayout: layout,
     output: { nodeId: composerOutputNode(), path: '' }
@@ -1275,10 +1382,14 @@ function renderDiagram() {
     const source = byId[edge.source];
     const target = byId[edge.target];
     if (!source || !target) continue;
-    const x1 = source.position.x + source.size.width;
-    const y1 = source.position.y + source.size.height / 2;
-    const x2 = target.position.x;
-    const y2 = target.position.y + target.size.height / 2;
+    const sourceBuilder = state.builder.nodes.find((node) => node.id === edge.source);
+    const targetBuilder = state.builder.nodes.find((node) => node.id === edge.target);
+    const sourcePoint = sourceHandlePoint(source, sourceBuilder, edge);
+    const targetPoint = targetHandlePoint(target, targetBuilder, edge);
+    const x1 = sourcePoint.x;
+    const y1 = sourcePoint.y;
+    const x2 = targetPoint.x;
+    const y2 = targetPoint.y;
     const mid = (x1 + x2) / 2;
     const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
     path.setAttribute('class', `edge ${executed ? 'executed' : ''}`);
@@ -1291,6 +1402,20 @@ function renderDiagram() {
     label.setAttribute('y', String((y1 + y2) / 2 - 6));
     label.textContent = edge.label || '';
     svg.appendChild(label);
+  }
+  if (state.connectionDrag) {
+    const source = byId[state.connectionDrag.source.nodeId];
+    const sourceBuilder = state.builder.nodes.find((node) => node.id === state.connectionDrag.source.nodeId);
+    if (source) {
+      const sourcePoint = sourceHandlePoint(source, sourceBuilder, state.connectionDrag.source);
+      const targetPoint = state.connectionDrag.current || sourcePoint;
+      const mid = (sourcePoint.x + targetPoint.x) / 2;
+      const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+      path.setAttribute('class', 'edge connection-preview');
+      path.setAttribute('marker-end', 'url(#arrow)');
+      path.setAttribute('d', `M ${sourcePoint.x} ${sourcePoint.y} C ${mid} ${sourcePoint.y}, ${mid} ${targetPoint.y}, ${targetPoint.x} ${targetPoint.y}`);
+      svg.appendChild(path);
+    }
   }
   for (const node of nodes) {
     const group = document.createElementNS('http://www.w3.org/2000/svg', 'g');
@@ -1336,8 +1461,240 @@ function renderDiagram() {
     meta.setAttribute('y', String(node.position.y + 52));
     meta.textContent = node.operatorRef || node.kind;
     group.appendChild(meta);
+    if (isComposerSelected()) {
+      renderPortHandles(group, node);
+    }
     svg.appendChild(group);
   }
+}
+
+function renderPortHandles(group, visualNode) {
+  const builderNode = state.builder.nodes.find((node) => node.id === visualNode.id);
+  if (!builderNode) return;
+  const sourceHandles = sourceHandlesForNode(builderNode);
+  const targetHandles = targetHandlesForNode(builderNode);
+
+  sourceHandles.forEach((handle, index) => {
+    const point = portPoint(visualNode, index, sourceHandles.length, 'source');
+    const circle = createPortCircle(point, 'source', builderNode, handle);
+    circle.addEventListener('pointerdown', (event) => startConnectionDrag(event, handle));
+    group.appendChild(circle);
+  });
+
+  targetHandles.forEach((handle, index) => {
+    const point = portPoint(visualNode, index, targetHandles.length, 'target');
+    const circle = createPortCircle(point, 'target', builderNode, handle);
+    circle.addEventListener('pointerdown', (event) => event.stopPropagation());
+    if (state.connectionDrag) {
+      const compatibility = connectionCompatibility(state.connectionDrag.source, handle);
+      circle.classList.toggle('compatible', compatibility.ok);
+      circle.classList.toggle('incompatible', !compatibility.ok);
+    }
+    group.appendChild(circle);
+  });
+}
+
+function createPortCircle(point, role, node, handle) {
+  const circle = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+  circle.setAttribute('class', `port-handle ${role}`);
+  circle.setAttribute('cx', String(point.x));
+  circle.setAttribute('cy', String(point.y));
+  circle.setAttribute('r', '6');
+  circle.dataset.portRole = role;
+  circle.dataset.nodeId = node.id;
+  circle.dataset.port = handle.port;
+  circle.dataset.path = handle.path || '';
+  const title = document.createElementNS('http://www.w3.org/2000/svg', 'title');
+  const type = handle.type ? `: ${handle.type}` : '';
+  title.textContent = `${node.id}.${handle.path || handle.port}${type}`;
+  circle.appendChild(title);
+  return circle;
+}
+
+function sourceHandlePoint(visualNode, builderNode, endpoint) {
+  const handles = builderNode ? sourceHandlesForNode(builderNode) : [];
+  const index = Math.max(0, handles.findIndex((handle) =>
+    handle.port === (endpoint.sourcePort || endpoint.port || 'output')
+      && (handle.path || '') === (endpoint.sourcePath || endpoint.path || '')
+  ));
+  return portPoint(visualNode, index, Math.max(1, handles.length), 'source');
+}
+
+function targetHandlePoint(visualNode, builderNode, endpoint) {
+  const handles = builderNode ? targetHandlesForNode(builderNode) : [];
+  const index = Math.max(0, handles.findIndex((handle) =>
+    handle.port === (endpoint.targetPort || endpoint.port || 'inputs')
+      && (handle.path || '') === (endpoint.targetPath || endpoint.path || '')
+  ));
+  return portPoint(visualNode, index, Math.max(1, handles.length), 'target');
+}
+
+function portPoint(visualNode, index, total, role) {
+  const size = visualNode.size || NODE_SIZE;
+  const x = role === 'source'
+    ? visualNode.position.x + size.width + 2
+    : visualNode.position.x - 2;
+  const y = visualNode.position.y + size.height * ((index + 1) / (total + 1));
+  return { x, y };
+}
+
+function sourceHandlesForNode(node) {
+  const spec = specForNode(node);
+  if (node.type === 'decisionTable') {
+    return ['decision', 'rate', 'maxTerm', 'reviewLane', 'ruleId'].map((path) => ({
+      nodeId: node.id,
+      port: spec.outputPort || 'output',
+      path,
+      type: path === 'rate' ? 'number' : (path === 'maxTerm' ? 'integer' : 'string')
+    }));
+  }
+  const properties = schemaProperties(spec.outputSchema);
+  const names = Object.keys(properties);
+  if (!names.length) {
+    return [{
+      nodeId: node.id,
+      port: spec.outputPort || 'output',
+      path: '',
+      type: schemaType(spec.outputSchema?.schema)
+    }];
+  }
+  return names.map((path) => ({
+    nodeId: node.id,
+    port: spec.outputPort || 'output',
+    path,
+    type: schemaType(properties[path])
+  }));
+}
+
+function targetHandlesForNode(node) {
+  const spec = specForNode(node);
+  if (node.type === 'httpResource') {
+    const path = node.paramName || defaultParamNameForOperator(spec);
+    return [{
+      nodeId: node.id,
+      port: spec.inputPort || 'params',
+      path,
+      type: schemaType(schemaProperties(spec.inputSchema)[path])
+    }];
+  }
+  if (node.type === 'decisionTable') {
+    return [
+      { nodeId: node.id, port: spec.inputPort || 'inputs', path: 'score', type: 'number' },
+      { nodeId: node.id, port: spec.inputPort || 'inputs', path: 'amount', type: 'number' }
+    ];
+  }
+  if (node.type === 'customOperator') {
+    const properties = schemaProperties(spec.inputSchema);
+    const names = Object.keys(properties).length ? Object.keys(properties) : Object.keys(node.customInputs || {});
+    return names.map((path) => ({
+      nodeId: node.id,
+      port: spec.inputPort || 'inputs',
+      path,
+      type: schemaType(properties[path])
+    }));
+  }
+  return [{
+    nodeId: node.id,
+    port: spec.inputPort || 'inputs',
+    path: 'input',
+    type: ''
+  }];
+}
+
+function schemaType(schema) {
+  return schema?.type ? String(schema.type) : '';
+}
+
+function schemaAtPath(schemaEnvelope, path) {
+  if (!path) {
+    return schemaEnvelope?.schema || { type: 'object' };
+  }
+  let current = schemaEnvelope?.schema || {};
+  for (const segment of String(path).split('.')) {
+    if (!segment) continue;
+    const properties = current.properties || {};
+    if (!Object.prototype.hasOwnProperty.call(properties, segment)) {
+      return allowsAdditionalProperties(current) ? {} : null;
+    }
+    current = properties[segment] || {};
+  }
+  return current;
+}
+
+function allowsAdditionalProperties(schema) {
+  return schema?.additionalProperties === true
+    || (schema?.additionalProperties && typeof schema.additionalProperties === 'object');
+}
+
+function connectionCompatibility(source, target) {
+  if (!source || !target) {
+    return { ok: false, message: 'Connection endpoint is missing.' };
+  }
+  if (source.nodeId === target.nodeId) {
+    return { ok: false, message: 'A node cannot connect to itself.' };
+  }
+  if (wouldCreateCycle(source.nodeId, target.nodeId)) {
+    return { ok: false, message: 'This connection would create a cycle.' };
+  }
+  const sourceNode = state.builder.nodes.find((node) => node.id === source.nodeId);
+  const targetNode = state.builder.nodes.find((node) => node.id === target.nodeId);
+  const sourceSchema = source.type
+    ? { type: source.type }
+    : (sourceNode ? schemaAtPath(specForNode(sourceNode).outputSchema, source.path) : null);
+  const targetSchema = target.type
+    ? { type: target.type }
+    : (targetNode ? schemaAtPath(specForNode(targetNode).inputSchema, target.path) : null);
+  if (sourceSchema === null) {
+    return { ok: false, message: `Source path '${source.path}' is not exposed.` };
+  }
+  if (targetSchema === null && targetNode?.type !== 'transform') {
+    return { ok: false, message: `Target path '${target.path}' is not accepted.` };
+  }
+  const sourceType = schemaType(sourceSchema);
+  const targetType = schemaType(targetSchema);
+  if (sourceType && targetType && !typesCompatible(sourceType, targetType)) {
+    return { ok: false, message: `Type mismatch: ${sourceType} cannot feed ${targetType}.` };
+  }
+  return { ok: true, message: '' };
+}
+
+function typesCompatible(sourceType, targetType) {
+  return sourceType === targetType || (numericType(sourceType) && numericType(targetType));
+}
+
+function numericType(type) {
+  return type === 'number' || type === 'integer';
+}
+
+function wouldCreateCycle(sourceId, targetId) {
+  if (!sourceId || !targetId || sourceId === targetId) {
+    return true;
+  }
+  const outgoing = new Map();
+  for (const node of state.builder.nodes) {
+    outgoing.set(node.id, []);
+  }
+  for (const edge of builderEdges()) {
+    if (!outgoing.has(edge.source)) {
+      outgoing.set(edge.source, []);
+    }
+    outgoing.get(edge.source).push(edge.target);
+  }
+  outgoing.get(sourceId)?.push(targetId);
+  const seen = new Set();
+  const stack = [targetId];
+  while (stack.length) {
+    const nodeId = stack.pop();
+    if (nodeId === sourceId) {
+      return true;
+    }
+    if (seen.has(nodeId)) {
+      continue;
+    }
+    seen.add(nodeId);
+    stack.push(...(outgoing.get(nodeId) || []));
+  }
+  return false;
 }
 
 function configureComposerDropTarget(svg) {
@@ -1427,6 +1784,9 @@ function handleDocumentPointerMove(event) {
   if (state.nodeDrag) {
     moveNodeDrag(event);
   }
+  if (state.connectionDrag) {
+    moveConnectionDrag(event);
+  }
 }
 
 function handleDocumentPointerUp(event) {
@@ -1435,6 +1795,9 @@ function handleDocumentPointerUp(event) {
   }
   if (state.nodeDrag) {
     finishNodeDrag(event);
+  }
+  if (state.connectionDrag) {
+    finishConnectionDrag(event);
   }
 }
 
@@ -1500,6 +1863,109 @@ function setDiagramDropActive(active) {
   const svg = $('diagram');
   if (!svg) return;
   svg.classList.toggle('drop-active', Boolean(active));
+}
+
+function startConnectionDrag(event, source) {
+  if (!isComposerSelected() || event.button !== 0) return;
+  event.preventDefault();
+  event.stopPropagation();
+  const svg = $('diagram');
+  state.connectionDrag = {
+    pointerId: event.pointerId,
+    source: { ...source },
+    current: svgPointFromClient(svg, event.clientX, event.clientY)
+  };
+  setConnectionMessage('', 'info');
+  document.body.classList.add('connecting-edge');
+  renderDiagram();
+}
+
+function moveConnectionDrag(event) {
+  const drag = state.connectionDrag;
+  if (!drag || event.pointerId !== drag.pointerId) return;
+  event.preventDefault();
+  const svg = $('diagram');
+  drag.current = svgPointFromClient(svg, event.clientX, event.clientY);
+  const target = connectionTargetAtPoint(event);
+  if (target) {
+    const compatibility = connectionCompatibility(drag.source, target);
+    setConnectionMessage(compatibility.ok
+      ? `${drag.source.nodeId}.${drag.source.path || drag.source.port} -> ${target.nodeId}.${target.path || target.port}`
+      : compatibility.message,
+      compatibility.ok ? 'info' : 'error');
+  } else {
+    renderConnectionStatus();
+  }
+  renderDiagram();
+}
+
+function finishConnectionDrag(event) {
+  const drag = state.connectionDrag;
+  if (!drag || event.pointerId !== drag.pointerId) return;
+  event.preventDefault();
+  const target = connectionTargetAtPoint(event);
+  if (target) {
+    const compatibility = connectionCompatibility(drag.source, target);
+    if (compatibility.ok) {
+      applyConnection(drag.source, target);
+      setConnectionMessage(
+        `Connected ${drag.source.nodeId}.${drag.source.path || drag.source.port} -> ${target.nodeId}.${target.path || target.port}.`,
+        'success'
+      );
+    } else {
+      setConnectionMessage(compatibility.message, 'error');
+    }
+  }
+  state.connectionDrag = null;
+  document.body.classList.remove('connecting-edge');
+  renderDiagram();
+}
+
+function connectionTargetAtPoint(event) {
+  const element = document.elementFromPoint(event.clientX, event.clientY);
+  const handle = element?.closest?.('[data-port-role="target"]');
+  if (!handle) {
+    return null;
+  }
+  const node = state.builder.nodes.find((item) => item.id === handle.dataset.nodeId);
+  if (!node) {
+    return null;
+  }
+  const candidate = targetHandlesForNode(node).find((item) =>
+    item.port === handle.dataset.port && (item.path || '') === (handle.dataset.path || '')
+  );
+  return candidate || null;
+}
+
+function applyConnection(source, target) {
+  const node = state.builder.nodes.find((item) => item.id === target.nodeId);
+  if (!node) return;
+  const expression = expressionForConnectionSource(source);
+  if (node.type === 'httpResource') {
+    node.paramName = target.path || node.paramName || defaultParamNameForOperator(specForNode(node));
+    node.applicantExpr = expression;
+  } else if (node.type === 'decisionTable') {
+    if (target.path === 'amount') {
+      node.amountSource = expression;
+    } else {
+      node.scoreSource = expression;
+    }
+  } else if (node.type === 'customOperator') {
+    node.customInputs = node.customInputs || {};
+    node.customInputs[target.path] = expression;
+  } else if (node.type === 'transform') {
+    node.policyNode = source.nodeId;
+  }
+  state.builder.selectedId = node.id;
+  state.selectedNodeId = node.id;
+  syncComposerFromBuilder({ render: false });
+  renderInputForm();
+}
+
+function expressionForConnectionSource(source) {
+  const payloadSegment = source.port === 'payload' ? '.payload' : '';
+  const pathSegment = source.path ? `.${source.path}` : '';
+  return `${source.nodeId}.output${payloadSegment}${pathSegment}`;
 }
 
 function startNodeDrag(event, visualNode) {

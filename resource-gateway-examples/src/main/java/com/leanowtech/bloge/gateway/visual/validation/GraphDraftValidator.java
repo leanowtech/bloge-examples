@@ -70,7 +70,8 @@ public class GraphDraftValidator {
         }
 
         validateNodePathBindings(draft, nodesById, operatorsByNodeId, diagnostics);
-        validateEdges(draft, diagnostics);
+        validateEdges(draft, nodesById, operatorsByNodeId, diagnostics);
+        validateAcyclic(draft, nodesById, diagnostics);
         if (!draft.output().nodeId().isBlank() && !nodeIds.contains(draft.output().nodeId())) {
             diagnostics.add(VisualDiagnostic.error("visual.output.unknownNode",
                     "Output node does not exist: " + draft.output().nodeId(), "/output/nodeId"));
@@ -187,7 +188,8 @@ public class GraphDraftValidator {
         if (path == null || path.isBlank()) {
             return Map.of("type", schema.schema().getOrDefault("type", "object"));
         }
-        Map<String, Object> properties = schema.properties();
+        Map<String, Object> currentSchema = schema.schema();
+        Map<String, Object> properties = propertiesOf(currentSchema);
         Map<String, Object> current = null;
         for (String segment : path.split("\\.")) {
             if (segment.isBlank()) {
@@ -195,20 +197,24 @@ public class GraphDraftValidator {
             }
             current = objectProperty(properties.get(segment));
             if (current == null) {
-                return null;
+                return allowsAdditionalProperties(currentSchema) ? Map.of() : null;
             }
-            Object nested = current.get("properties");
-            if (nested instanceof Map<?, ?> rawNested) {
-                Map<String, Object> nextProperties = new LinkedHashMap<>();
-                for (Map.Entry<?, ?> entry : rawNested.entrySet()) {
-                    nextProperties.put(String.valueOf(entry.getKey()), entry.getValue());
-                }
-                properties = nextProperties;
-            } else {
-                properties = Map.of();
-            }
+            currentSchema = current;
+            properties = propertiesOf(currentSchema);
         }
         return current;
+    }
+
+    private static Map<String, Object> propertiesOf(Map<String, Object> schema) {
+        Object nested = schema.get("properties");
+        if (!(nested instanceof Map<?, ?> rawNested)) {
+            return Map.of();
+        }
+        Map<String, Object> properties = new LinkedHashMap<>();
+        for (Map.Entry<?, ?> entry : rawNested.entrySet()) {
+            properties.put(String.valueOf(entry.getKey()), entry.getValue());
+        }
+        return properties;
     }
 
     @SuppressWarnings("unchecked")
@@ -240,22 +246,127 @@ public class GraphDraftValidator {
         return "number".equals(type) || "integer".equals(type);
     }
 
-    private static void validateEdges(GraphDraft draft, List<VisualDiagnostic> diagnostics) {
-        Set<String> nodeIds = new HashSet<>();
-        draft.nodes().forEach(node -> nodeIds.add(node.id()));
+    private static void validateEdges(GraphDraft draft,
+                                      Map<String, GraphDraft.DraftNode> nodesById,
+                                      Map<String, OperatorDefinition> operatorsByNodeId,
+                                      List<VisualDiagnostic> diagnostics) {
         for (int i = 0; i < draft.edges().size(); i++) {
             GraphDraft.DraftEdge edge = draft.edges().get(i);
             String edgePath = "/edges/" + i;
-            if (!nodeIds.contains(edge.source().nodeId())) {
+            GraphDraft.DraftNode sourceNode = nodesById.get(edge.source().nodeId());
+            GraphDraft.DraftNode targetNode = nodesById.get(edge.target().nodeId());
+            if (sourceNode == null) {
                 diagnostics.add(VisualDiagnostic.error("visual.edge.unknownSource",
                         "Edge source node does not exist: " + edge.source().nodeId(),
                         edgePath + "/source/nodeId"));
             }
-            if (!nodeIds.contains(edge.target().nodeId())) {
+            if (targetNode == null) {
                 diagnostics.add(VisualDiagnostic.error("visual.edge.unknownTarget",
                         "Edge target node does not exist: " + edge.target().nodeId(),
                         edgePath + "/target/nodeId"));
             }
+            OperatorDefinition sourceOperator = operatorsByNodeId.get(edge.source().nodeId());
+            OperatorDefinition targetOperator = operatorsByNodeId.get(edge.target().nodeId());
+            if (sourceOperator == null || targetOperator == null) {
+                continue;
+            }
+            Optional<OperatorDefinition.Port> sourcePort = findPort(sourceOperator.ports().outputs(),
+                    edge.source().port());
+            Optional<OperatorDefinition.Port> targetPort = findPort(targetOperator.ports().inputs(),
+                    edge.target().port());
+            if (sourcePort.isEmpty()) {
+                diagnostics.add(VisualDiagnostic.error("visual.edge.unknownSourcePort",
+                        "Source port '%s' is not declared by operator '%s'."
+                                .formatted(edge.source().port(), sourceOperator.operatorRef()),
+                        edgePath + "/source/port"));
+                continue;
+            }
+            if (targetPort.isEmpty()) {
+                diagnostics.add(VisualDiagnostic.error("visual.edge.unknownTargetPort",
+                        "Target port '%s' is not declared by operator '%s'."
+                                .formatted(edge.target().port(), targetOperator.operatorRef()),
+                        edgePath + "/target/port"));
+                continue;
+            }
+            Map<String, Object> sourceProperty = propertyAtPath(sourcePort.get().schema(), edge.source().path());
+            if (sourceProperty == null) {
+                diagnostics.add(VisualDiagnostic.error("visual.edge.unknownSourcePath",
+                        "Source port '%s' does not expose path '%s'."
+                                .formatted(edge.source().port(), edge.source().path()),
+                        edgePath + "/source/path"));
+                continue;
+            }
+            Map<String, Object> targetProperty = propertyAtPath(targetPort.get().schema(), edge.target().path());
+            if (targetProperty == null) {
+                diagnostics.add(VisualDiagnostic.error("visual.edge.unknownTargetPath",
+                        "Target port '%s' does not accept path '%s'."
+                                .formatted(edge.target().port(), edge.target().path()),
+                        edgePath + "/target/path"));
+                continue;
+            }
+            String sourceType = schemaType(sourceProperty);
+            String targetType = schemaType(targetProperty);
+            if (!sourceType.isBlank() && !targetType.isBlank() && !typesCompatible(sourceType, targetType)) {
+                diagnostics.add(VisualDiagnostic.error("visual.edge.typeMismatch",
+                        "Cannot connect %s output '%s' to %s input '%s'."
+                                .formatted(sourceType, edge.source().path(), targetType, edge.target().path()),
+                        edgePath));
+            }
+        }
+    }
+
+    private static Optional<OperatorDefinition.Port> findPort(List<OperatorDefinition.Port> ports, String name) {
+        if ((name == null || name.isBlank()) && ports.size() == 1) {
+            return Optional.of(ports.getFirst());
+        }
+        return ports.stream()
+                .filter(port -> port.name().equals(name))
+                .findFirst();
+    }
+
+    private static boolean allowsAdditionalProperties(Map<String, Object> schema) {
+        Object additional = schema.get("additionalProperties");
+        return Boolean.TRUE.equals(additional) || additional instanceof Map<?, ?>;
+    }
+
+    private static void validateAcyclic(GraphDraft draft,
+                                        Map<String, GraphDraft.DraftNode> nodesById,
+                                        List<VisualDiagnostic> diagnostics) {
+        Map<String, Set<String>> outgoing = new LinkedHashMap<>();
+        Map<String, Integer> indegree = new LinkedHashMap<>();
+        draft.nodes().forEach(node -> {
+            outgoing.put(node.id(), new HashSet<>());
+            indegree.put(node.id(), 0);
+        });
+        draft.edges().forEach(edge -> {
+            String source = edge.source().nodeId();
+            String target = edge.target().nodeId();
+            if (nodesById.containsKey(source) && nodesById.containsKey(target)
+                    && outgoing.get(source).add(target)) {
+                indegree.put(target, indegree.get(target) + 1);
+            }
+        });
+        List<String> ready = new ArrayList<>();
+        indegree.forEach((nodeId, degree) -> {
+            if (degree == 0) {
+                ready.add(nodeId);
+            }
+        });
+        int visited = 0;
+        for (int index = 0; index < ready.size(); index++) {
+            String nodeId = ready.get(index);
+            visited++;
+            for (String target : outgoing.get(nodeId)) {
+                int degree = indegree.compute(target, (ignored, current) -> current == null ? 0 : current - 1);
+                if (degree == 0) {
+                    ready.add(target);
+                }
+            }
+        }
+        if (visited != nodesById.size()) {
+            diagnostics.add(VisualDiagnostic.error("visual.edge.cycle",
+                    "Visual graph edges must form an acyclic dataflow graph.",
+                    "/edges"));
         }
     }
 }

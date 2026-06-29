@@ -86,10 +86,11 @@ the graph canvas. Resource operators are loaded from the visual operator catalog
 as `resource:<resourceId>` virtual operators, so descriptor-backed APIs can be
 dragged as schema-aware business operators and lowered back to `httpResource` at
 runtime. Users can reposition existing nodes directly on the canvas, edit the
-selected operator's properties, inspect the generated BLOGE DSL, run it with JSON
-context, and see diagnostics, output, graph highlighting, and the decision-table
-matrix update together. The built-in `.bloge` scenarios remain available in the
-left rail and continue to execute the public gateway endpoints.
+selected operator's properties, connect output handles to input handles under
+schema type constraints, inspect the generated BLOGE DSL, run it with JSON context,
+and see diagnostics, output, graph highlighting, and the decision-table matrix
+update together. The built-in `.bloge` scenarios remain available in the left rail
+and continue to execute the public gateway endpoints.
 
 To see the decision-table UX, run the default composer graph, edit the `R3`
 decision row, or drag an `HTTP Resource` operator onto the canvas to turn the
@@ -106,7 +107,7 @@ Showcase metadata APIs:
 | `GET` | `/api/gateway/examples/scenarios/{graphName}/diagram` | Load the `bloge.visualLayout.v1` diagram for a scenario |
 | `POST` | `/api/gateway/examples/compose/run` | Compile and run submitted DSL with JSON context, returning diagnostics, output, layout, and decision-table metadata |
 | `GET` | `/api/visual/operators` | List native and resource-backed visual operator definitions |
-| `POST` | `/api/visual/drafts/validate` | Validate a visual graph draft against operator schemas |
+| `POST` | `/api/visual/drafts/validate` | Validate a visual graph draft against operator schemas, typed port edges, and DAG constraints |
 | `POST` | `/api/visual/drafts/compile` | Lower a visual graph draft to BLOGE DSL |
 | `POST` | `/api/visual/drafts/run` | Validate, compile, and execute a transient visual graph draft |
 
@@ -331,7 +332,7 @@ Seven `.bloge` graphs live in `src/main/resources/bloge/gateway/`:
 | `DefaultVisualOperatorCatalog` | Combines native visual operators with `resource:<resourceId>` virtual operators |
 | `GraphDraft` | Editable canvas graph model: nodes, bindings, edges, layout, output selection |
 | `DatabaseGraphDraftRepository` | H2-backed graph draft repository with revision assignment |
-| `GraphDraftValidator` | Validates operator references, required schema inputs, edges, and output selection |
+| `GraphDraftValidator` | Validates operator references, required schema inputs, node bindings, typed port edges, DAG shape, and output selection |
 | `GraphDraftDslGenerator` | Lowers visual drafts into executable BLOGE DSL |
 | `VisualGraphRunService` | Reuses the dynamic BLOGE runner to validate, compile, and execute visual drafts |
 
@@ -655,7 +656,7 @@ Isolated component tests, some with lightweight Spring slices or mocks.
 | `DatabaseResourceRegistryTest` | 11 | CRUD, H2 persistence, in-memory cache |
 | `ResourceDescriptorBootstrapTest` | 7 | Seeding, refresh behavior, idempotency |
 | `GatewayDslCompilationTest` | 7 | DSL parsing, graph loading |
-| `Visual*Test` | 16 | Visual operator projection, imported libraries, draft persistence, draft validation, DSL lowering, runtime smoke path |
+| `Visual*Test` | 20 | Visual operator projection, imported libraries, draft persistence, typed edge validation, DSL lowering, runtime smoke path |
 
 ### Layer 3 — Orchestration tests
 

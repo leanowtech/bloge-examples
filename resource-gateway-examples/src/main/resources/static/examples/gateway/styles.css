@@ -292,6 +292,12 @@ h2 {
   stroke-width: 3;
 }
 
+.edge.connection-preview {
+  stroke: var(--blue);
+  stroke-width: 2.5;
+  stroke-dasharray: 7 5;
+}
+
 .edge-label {
   fill: var(--muted);
   font-size: 11px;
@@ -357,6 +363,38 @@ h2 {
 .node-meta {
   fill: var(--muted);
   font-size: 11px;
+}
+
+.port-handle {
+  cursor: crosshair;
+  pointer-events: all;
+  stroke: #ffffff;
+  stroke-width: 2;
+}
+
+.port-handle.source {
+  fill: var(--line-strong);
+}
+
+.port-handle.target {
+  fill: #ffffff;
+  stroke: var(--line-strong);
+}
+
+.port-handle.source:hover,
+.port-handle.target.compatible {
+  fill: var(--blue);
+  stroke: #ffffff;
+}
+
+.port-handle.target.incompatible {
+  fill: var(--red-soft);
+  stroke: var(--red);
+}
+
+body.connecting-edge,
+body.connecting-edge * {
+  cursor: crosshair !important;
 }
 
 .inspector {
@@ -609,6 +647,29 @@ body.dragging-operator * {
   margin-top: 3px;
   color: var(--muted);
   font-size: 11px;
+}
+
+.connection-status {
+  min-height: 28px;
+  padding: 7px 8px;
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  background: var(--surface-subtle);
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.connection-status.success {
+  border-color: #86efac;
+  background: var(--green-soft);
+  color: var(--green);
+}
+
+.connection-status.error {
+  border-color: #fca5a5;
+  background: var(--red-soft);
+  color: var(--red);
 }
 
 .operator-card.resource {
