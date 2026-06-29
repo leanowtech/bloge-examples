@@ -828,6 +828,94 @@ class GraphDraftValidatorTest {
                 });
     }
 
+    @Test
+    void acceptsOutputSelectionWhenPathExistsOnSingleOutputPort() {
+        GraphDraftValidator validator = new GraphDraftValidator(
+                VisualCatalogTestSupport.catalogWithLibrary(
+                        VisualCatalogTestSupport.eligibilityLibrary("integer")));
+        GraphDraft draft = contextEligibilityDraft(
+                graphInputSchema(
+                        Map.of(
+                                "score", Map.of("type", "integer"),
+                                "amount", Map.of("type", "number")
+                        ),
+                        List.of("score", "amount")
+                ),
+                Map.of(
+                        "score", GraphDraft.Binding.contextPath("score"),
+                        "amount", GraphDraft.Binding.contextPath("amount")
+                ),
+                new GraphDraft.OutputSelection("eligibility", "eligible")
+        );
+
+        VisualValidationResult result = validator.validate(draft);
+
+        assertThat(result.valid()).isTrue();
+    }
+
+    @Test
+    void rejectsOutputSelectionWhenPathDoesNotExistOnSingleOutputPort() {
+        GraphDraftValidator validator = new GraphDraftValidator(
+                VisualCatalogTestSupport.catalogWithLibrary(
+                        VisualCatalogTestSupport.eligibilityLibrary("integer")));
+        GraphDraft draft = contextEligibilityDraft(
+                graphInputSchema(
+                        Map.of(
+                                "score", Map.of("type", "integer"),
+                                "amount", Map.of("type", "number")
+                        ),
+                        List.of("score", "amount")
+                ),
+                Map.of(
+                        "score", GraphDraft.Binding.contextPath("score"),
+                        "amount", GraphDraft.Binding.contextPath("amount")
+                ),
+                new GraphDraft.OutputSelection("eligibility", "missing")
+        );
+
+        VisualValidationResult result = validator.validate(draft);
+
+        assertThat(result.valid()).isFalse();
+        assertThat(result.diagnostics())
+                .anySatisfy(diagnostic -> {
+                    assertThat(diagnostic.code()).isEqualTo("visual.output.unknownPath");
+                    assertThat(diagnostic.message()).contains("missing").contains("eligibility");
+                });
+    }
+
+    @Test
+    void acceptsOutputSelectionWhenPortQualifiedPathExistsOnMultiOutputNode() {
+        GraphDraftValidator validator = new GraphDraftValidator(
+                VisualCatalogTestSupport.catalogWithLibrary(
+                        VisualCatalogTestSupport.multiOutputEligibilityLibrary("integer")));
+        GraphDraft draft = new GraphDraft(
+                "",
+                "",
+                0,
+                "multiOutputSelection",
+                "",
+                "",
+                "",
+                "",
+                null,
+                List.of(new GraphDraft.DraftNode(
+                        "scoreFacts",
+                        "risk:scoreFacts",
+                        "",
+                        Map.of(),
+                        Map.of(),
+                        null
+                )),
+                List.of(),
+                Map.of(),
+                new GraphDraft.OutputSelection("scoreFacts", "facts.score")
+        );
+
+        VisualValidationResult result = validator.validate(draft);
+
+        assertThat(result.valid()).isTrue();
+    }
+
     private static GraphDraft typedEligibilityDraft(GraphDraft.Binding scoreBinding,
                                                     GraphDraft.DraftEdge edge) {
         return new GraphDraft(
@@ -869,6 +957,12 @@ class GraphDraftValidatorTest {
 
     private static GraphDraft contextEligibilityDraft(SchemaEnvelope inputSchema,
                                                       Map<String, GraphDraft.Binding> inputs) {
+        return contextEligibilityDraft(inputSchema, inputs, new GraphDraft.OutputSelection("eligibility", ""));
+    }
+
+    private static GraphDraft contextEligibilityDraft(SchemaEnvelope inputSchema,
+                                                      Map<String, GraphDraft.Binding> inputs,
+                                                      GraphDraft.OutputSelection output) {
         return new GraphDraft(
                 "",
                 "",
@@ -889,7 +983,7 @@ class GraphDraftValidatorTest {
                 )),
                 List.of(),
                 Map.of(),
-                new GraphDraft.OutputSelection("eligibility", "")
+                output
         );
     }
 

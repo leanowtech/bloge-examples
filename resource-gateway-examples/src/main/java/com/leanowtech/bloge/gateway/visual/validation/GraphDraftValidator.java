@@ -87,11 +87,46 @@ public class GraphDraftValidator {
         validateNodePathBindings(draft, nodesById, operatorsByNodeId, diagnostics);
         validateEdges(draft, nodesById, operatorsByNodeId, diagnostics);
         validateAcyclic(draft, nodesById, diagnostics);
-        if (!draft.output().nodeId().isBlank() && !nodeIds.contains(draft.output().nodeId())) {
-            diagnostics.add(VisualDiagnostic.error("visual.output.unknownNode",
-                    "Output node does not exist: " + draft.output().nodeId(), "/output/nodeId"));
-        }
+        validateOutputSelection(draft, nodeIds, operatorsByNodeId, diagnostics);
         return new VisualValidationResult(diagnostics.stream().noneMatch(VisualDiagnostic::error), diagnostics);
+    }
+
+    private static void validateOutputSelection(GraphDraft draft,
+                                                Set<String> nodeIds,
+                                                Map<String, OperatorDefinition> operatorsByNodeId,
+                                                List<VisualDiagnostic> diagnostics) {
+        GraphDraft.OutputSelection output = draft.output();
+        if (output.nodeId().isBlank()) {
+            return;
+        }
+        if (!nodeIds.contains(output.nodeId())) {
+            diagnostics.add(VisualDiagnostic.error("visual.output.unknownNode",
+                    "Output node does not exist: " + output.nodeId(), "/output/nodeId"));
+            return;
+        }
+        if (output.path().isBlank()) {
+            return;
+        }
+
+        OperatorDefinition operator = operatorsByNodeId.get(output.nodeId());
+        if (operator == null) {
+            return;
+        }
+        OutputReference outputReference = outputReference(operator, output.path());
+        Optional<OperatorDefinition.Port> outputPort = resolveOutputPort(operator, outputReference.port());
+        if (outputPort.isEmpty()) {
+            diagnostics.add(VisualDiagnostic.error("visual.output.unknownPort",
+                    "Output path '%s' must start with a declared output port on operator '%s'."
+                            .formatted(output.path(), operator.operatorRef()),
+                    "/output/path"));
+            return;
+        }
+        if (propertyAtPath(outputPort.get().schema(), outputReference.path()) == null) {
+            diagnostics.add(VisualDiagnostic.error("visual.output.unknownPath",
+                    "Output node '%s' port '%s' does not expose path '%s'."
+                            .formatted(output.nodeId(), outputPort.get().name(), outputReference.path()),
+                    "/output/path"));
+        }
     }
 
     private static void validateRequiredInputs(GraphDraft.DraftNode node,

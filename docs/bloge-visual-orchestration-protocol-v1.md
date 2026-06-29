@@ -1020,6 +1020,7 @@ flowchart TD
 - edge 指向不存在节点。
 - 图中存在环，除非 BLOGE 语义明确支持该结构；环检测必须覆盖显式 edge 和 binding/expression 隐式依赖。
 - outputNode 不存在。
+- outputPath 不存在，或多 output port 节点的 outputPath 未用 `port.path` 消歧。
 
 ### 11.3 Schema Compatibility
 
@@ -1035,6 +1036,7 @@ flowchart TD
 - 纯引用 expression 的 source schema 与 target schema 不兼容。
 - `array<T>` 到 `array<U>` 时 item schema 不兼容。
 - node config 不满足 operator `configSchema`。
+- graph output selection 不满足 output port schema。
 
 警告：
 

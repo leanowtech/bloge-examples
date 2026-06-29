@@ -115,9 +115,10 @@ in the source picker, and the server blocks unknown or type-incompatible
 referenced `ctx.*` and `node.output.*` paths, and pure reference expressions are
 type-checked against the target input schema. Node-path and expression
 references also participate in DAG validation and DSL topological ordering, even
-when the draft omits a matching visual edge. The built-in `.bloge` scenarios
-remain available in the left rail and continue to execute the public gateway
-endpoints.
+when the draft omits a matching visual edge. Output selections are checked
+against the selected node's output port schema before compile/run as well. The
+built-in `.bloge` scenarios remain available in the left rail and continue to
+execute the public gateway endpoints.
 
 To see the decision-table UX, run the default composer graph, edit the `R3`
 decision row, or drag an `HTTP Resource` operator onto the canvas to turn the
@@ -373,7 +374,7 @@ Seven `.bloge` graphs live in `src/main/resources/bloge/gateway/`:
 | `DefaultVisualOperatorCatalog` | Combines native visual operators with `resource:<resourceId>` virtual operators |
 | `GraphDraft` | Editable canvas graph model: input schema, nodes, port-aware bindings, edges, layout, output selection |
 | `DatabaseGraphDraftRepository` | H2-backed graph draft repository with revision assignment |
-| `GraphDraftValidator` | Validates operator references, graph input `contextPath` bindings, literal constants, expression references, required schema inputs, node config against `configSchema`, port-aware node bindings, typed port edges, DAG shape, and output selection |
+| `GraphDraftValidator` | Validates operator references, graph input `contextPath` bindings, literal constants, expression references, required schema inputs, node config against `configSchema`, port-aware node bindings, typed port edges, DAG shape, and output schema selection |
 | `GraphDraftDslGenerator` | Lowers visual drafts into executable BLOGE DSL |
 | `VisualGraphRunService` | Reuses the dynamic BLOGE runner to validate, compile, and execute visual drafts |
 
