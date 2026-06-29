@@ -1,7 +1,5 @@
 package com.leanowtech.bloge.gateway.visual.catalog;
 
-import org.springframework.stereotype.Component;
-
 import java.util.Collection;
 import java.util.Comparator;
 import java.util.Map;
@@ -11,7 +9,6 @@ import java.util.concurrent.ConcurrentHashMap;
 /**
  * In-memory visual operator library registry for the example application.
  */
-@Component
 public class InMemoryOperatorLibraryRegistry implements OperatorLibraryRegistry {
 
     private final Map<String, OperatorLibrary> libraries = new ConcurrentHashMap<>();

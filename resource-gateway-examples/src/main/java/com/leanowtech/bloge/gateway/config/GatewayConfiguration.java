@@ -14,6 +14,10 @@ import com.leanowtech.bloge.gateway.operator.ResponseValidator;
 import com.leanowtech.bloge.gateway.operator.UrlTemplateRenderer;
 import com.leanowtech.bloge.gateway.resource.DatabaseResourceRegistry;
 import com.leanowtech.bloge.gateway.resource.WritableResourceRegistry;
+import com.leanowtech.bloge.gateway.visual.catalog.DatabaseOperatorLibraryRegistry;
+import com.leanowtech.bloge.gateway.visual.catalog.OperatorLibraryRegistry;
+import com.leanowtech.bloge.gateway.visual.draft.DatabaseGraphDraftRepository;
+import com.leanowtech.bloge.gateway.visual.draft.GraphDraftRepository;
 import com.leanowtech.bloge.operators.http.HttpRequestInput;
 import com.leanowtech.bloge.operators.http.HttpRequestOperator;
 
@@ -147,6 +151,34 @@ public class GatewayConfiguration {
                                                               ObjectMapper objectMapper,
                                                               BlgeExpressionEvaluator evaluator) {
         return new DatabaseResourceRegistry(jdbc, objectMapper, evaluator);
+    }
+
+    /**
+     * Database-backed registry for user-provided visual operator libraries.
+     *
+     * @param jdbc JDBC template for H2 access
+     * @param objectMapper Jackson mapper for library serialization
+     * @return visual operator library registry
+     */
+    @Bean
+    @ConditionalOnMissingBean
+    public OperatorLibraryRegistry operatorLibraryRegistry(JdbcTemplate jdbc,
+                                                           ObjectMapper objectMapper) {
+        return new DatabaseOperatorLibraryRegistry(jdbc, objectMapper);
+    }
+
+    /**
+     * Database-backed repository for visual graph drafts.
+     *
+     * @param jdbc JDBC template for H2 access
+     * @param objectMapper Jackson mapper for draft serialization
+     * @return graph draft repository
+     */
+    @Bean
+    @ConditionalOnMissingBean
+    public GraphDraftRepository graphDraftRepository(JdbcTemplate jdbc,
+                                                     ObjectMapper objectMapper) {
+        return new DatabaseGraphDraftRepository(jdbc, objectMapper);
     }
 
     // ── Interceptors ────────────────────────────────────────────────────

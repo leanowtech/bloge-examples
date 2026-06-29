@@ -327,8 +327,10 @@ Seven `.bloge` graphs live in `src/main/resources/bloge/gateway/`:
 |------|------|
 | `ResourceDesignContract` | Schema contract that turns a resource descriptor into a canvas-ready operator |
 | `OperatorLibrary` | User-provided operator catalog bundle with schema-aware `OperatorDefinition` entries |
+| `DatabaseOperatorLibraryRegistry` | H2-backed user operator-library registry, so imported operator catalogs survive restart |
 | `DefaultVisualOperatorCatalog` | Combines native visual operators with `resource:<resourceId>` virtual operators |
 | `GraphDraft` | Editable canvas graph model: nodes, bindings, edges, layout, output selection |
+| `DatabaseGraphDraftRepository` | H2-backed graph draft repository with revision assignment |
 | `GraphDraftValidator` | Validates operator references, required schema inputs, edges, and output selection |
 | `GraphDraftDslGenerator` | Lowers visual drafts into executable BLOGE DSL |
 | `VisualGraphRunService` | Reuses the dynamic BLOGE runner to validate, compile, and execute visual drafts |
@@ -366,12 +368,15 @@ compiled graphs, and evaluates them against arbitrary data contexts. Used by
 - `TenantRateLimitException` — tenant quota exceeded (wait for window reset)
 - `ProviderCapacityException` — upstream 503-class failure (retryable with backoff)
 
-### Persistence & admin (`gateway.resource`)
+### Persistence & admin (`gateway.resource`, `gateway.visual`)
 
 | Type | Role |
 |------|------|
 | `DatabaseResourceRegistry` | `WritableResourceRegistry` backed by H2 via JDBC with an in-memory `ConcurrentHashMap` cache for hot-path reads |
+| `DatabaseOperatorLibraryRegistry` | Persists imported visual operator libraries in H2 as JSON blobs with cache-backed reads |
+| `DatabaseGraphDraftRepository` | Persists visual graph drafts and revision numbers in H2 |
 | `ResourceRegistryAdminController` | REST CRUD at `/admin/resources` |
+| `OperatorLibraryAdminController` | REST import/update/delete at `/admin/visual-operator-libraries` |
 
 ### Interceptor chain (`gateway.interceptor`)
 
@@ -650,7 +655,7 @@ Isolated component tests, some with lightweight Spring slices or mocks.
 | `DatabaseResourceRegistryTest` | 11 | CRUD, H2 persistence, in-memory cache |
 | `ResourceDescriptorBootstrapTest` | 7 | Seeding, refresh behavior, idempotency |
 | `GatewayDslCompilationTest` | 7 | DSL parsing, graph loading |
-| `Visual*Test` | 8 | Visual operator projection, imported libraries, draft validation, DSL lowering, runtime smoke path |
+| `Visual*Test` | 16 | Visual operator projection, imported libraries, draft persistence, draft validation, DSL lowering, runtime smoke path |
 
 ### Layer 3 — Orchestration tests
 

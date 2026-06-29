@@ -1,7 +1,5 @@
 package com.leanowtech.bloge.gateway.visual.draft;
 
-import org.springframework.stereotype.Component;
-
 import java.util.Collection;
 import java.util.Comparator;
 import java.util.Map;
@@ -12,7 +10,6 @@ import java.util.concurrent.ConcurrentHashMap;
 /**
  * In-memory graph draft repository for the example application.
  */
-@Component
 public class InMemoryGraphDraftRepository implements GraphDraftRepository {
 
     private final Map<String, GraphDraft> drafts = new ConcurrentHashMap<>();
