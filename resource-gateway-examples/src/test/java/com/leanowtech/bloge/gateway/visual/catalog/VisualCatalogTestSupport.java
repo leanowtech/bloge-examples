@@ -205,6 +205,62 @@ public final class VisualCatalogTestSupport {
         );
     }
 
+    public static OperatorDefinition customerOrderMergeOperator() {
+        Map<String, Object> idProperties = new LinkedHashMap<>();
+        idProperties.put("id", Map.of("type", "string"));
+
+        Map<String, Object> outputProperties = new LinkedHashMap<>();
+        outputProperties.put("customerId", Map.of("type", "string"));
+        outputProperties.put("orderId", Map.of("type", "string"));
+
+        return new OperatorDefinition(
+                "bloge.visualOperator.v1",
+                "risk:customerOrderMerge",
+                "1.0.0",
+                new OperatorDefinition.Display("Customer order merge",
+                        "Consumes duplicate field names through separate input ports.",
+                        List.of("risk", "merge")),
+                new OperatorDefinition.Source("user-library", "", "", "", true),
+                new OperatorDefinition.Ports(
+                        List.of(
+                                new OperatorDefinition.Port("customer",
+                                        SchemaEnvelope.object(idProperties, List.of("id")),
+                                        true,
+                                        "Customer facts."),
+                                new OperatorDefinition.Port("order",
+                                        SchemaEnvelope.object(idProperties, List.of("id")),
+                                        true,
+                                        "Order facts.")
+                        ),
+                        List.of(new OperatorDefinition.Port("output",
+                                SchemaEnvelope.object(outputProperties, List.of()),
+                                true,
+                                "Merged ids."))
+                ),
+                SchemaEnvelope.opaque(),
+                OperatorDefinition.Capabilities.pure(),
+                new OperatorDefinition.Lowering("transform", "transform", Map.of(
+                        "assignments", Map.of(
+                                "customerId", "{{input.customer.id}}",
+                                "orderId", "{{input.order.id}}"
+                        )
+                )),
+                List.of()
+        );
+    }
+
+    public static OperatorLibrary duplicateInputPathLibrary() {
+        return new OperatorLibrary(
+                "bloge.visualOperatorLibrary.v1",
+                "risk-duplicate-inputs",
+                "Duplicate input path operators",
+                "1.0.0",
+                "risk-team",
+                "ACTIVE",
+                List.of(customerOrderMergeOperator())
+        );
+    }
+
     public static ResourceDescriptor loanApplicantDescriptor() {
         return new ResourceDescriptor(
                 RESOURCE_ID,

@@ -151,4 +151,42 @@ class GraphDraftDslGeneratorTest {
         assertThat(result.generated()).isTrue();
         assertThat(result.dsl()).contains("eligible = scoreFacts.output.facts.score >= 700 && ctx.amount <= 300000");
     }
+
+    @Test
+    void lowersPortQualifiedInputTemplateAliases() {
+        GraphDraftDslGenerator generator = new GraphDraftDslGenerator(
+                VisualCatalogTestSupport.catalogWithLibrary(
+                        VisualCatalogTestSupport.duplicateInputPathLibrary()));
+        GraphDraft draft = new GraphDraft(
+                "",
+                "",
+                0,
+                "duplicateInputPath",
+                "",
+                "",
+                "",
+                "",
+                null,
+                List.of(new GraphDraft.DraftNode(
+                        "merge",
+                        "risk:customerOrderMerge",
+                        "",
+                        Map.of(
+                                "customer.id", GraphDraft.Binding.contextPath("customerId", "customer", "id"),
+                                "order.id", GraphDraft.Binding.contextPath("orderId", "order", "id")
+                        ),
+                        Map.of(),
+                        null
+                )),
+                List.of(),
+                Map.of(),
+                new GraphDraft.OutputSelection("merge", "")
+        );
+
+        DslGenerationResult result = generator.generate(draft);
+
+        assertThat(result.generated()).isTrue();
+        assertThat(result.dsl()).contains("customerId = ctx.customerId");
+        assertThat(result.dsl()).contains("orderId = ctx.orderId");
+    }
 }

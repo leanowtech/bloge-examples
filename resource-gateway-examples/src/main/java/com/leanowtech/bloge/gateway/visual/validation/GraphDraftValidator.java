@@ -100,12 +100,13 @@ public class GraphDraftValidator {
                                               String nodePath,
                                               List<VisualDiagnostic> diagnostics) {
         for (Map.Entry<String, GraphDraft.Binding> input : node.inputs().entrySet()) {
+            String inputName = targetInputName(input.getKey(), input.getValue());
             Optional<OperatorDefinition.Port> targetPort = resolveInputPort(operator, input.getValue().targetPort(),
-                    input.getKey());
+                    inputName);
             if (targetPort.isEmpty()) {
                 diagnostics.add(VisualDiagnostic.error("visual.input.unknownTargetPort",
                         "Input '%s' must target a declared input port on operator '%s'."
-                                .formatted(input.getKey(), operator.operatorRef()),
+                                .formatted(inputName, operator.operatorRef()),
                         nodePath + "/inputs/" + input.getKey()));
                 continue;
             }
@@ -113,10 +114,10 @@ public class GraphDraftValidator {
             if (properties.isEmpty()) {
                 continue;
             }
-            if (!properties.containsKey(input.getKey())) {
+            if (!properties.containsKey(inputName)) {
                 diagnostics.add(VisualDiagnostic.warning("visual.input.unknown",
                         "Input '%s' is not declared by operator '%s' port '%s'."
-                                .formatted(input.getKey(), operator.operatorRef(), targetPort.get().name()),
+                                .formatted(inputName, operator.operatorRef(), targetPort.get().name()),
                         nodePath + "/inputs/" + input.getKey()));
             }
         }
@@ -126,8 +127,9 @@ public class GraphDraftValidator {
                                            OperatorDefinition operator,
                                            String portName,
                                            String inputName) {
-        GraphDraft.Binding binding = node.inputs().get(inputName);
-        return binding != null && bindingTargetsPort(operator, binding, portName, inputName);
+        return node.inputs().entrySet().stream()
+                .anyMatch(entry -> inputName.equals(targetInputName(entry.getKey(), entry.getValue()))
+                        && bindingTargetsPort(operator, entry.getValue(), portName, inputName));
     }
 
     private static boolean bindingTargetsPort(OperatorDefinition operator,
@@ -152,7 +154,8 @@ public class GraphDraftValidator {
                 continue;
             }
             for (Map.Entry<String, GraphDraft.Binding> input : node.inputs().entrySet()) {
-                validateBinding(input.getValue(), input.getKey(), targetOperator, nodesById, operatorsByNodeId,
+                String inputName = targetInputName(input.getKey(), input.getValue());
+                validateBinding(input.getValue(), inputName, targetOperator, nodesById, operatorsByNodeId,
                         "/nodes/" + i + "/inputs/" + input.getKey(), diagnostics);
             }
         }
@@ -387,6 +390,10 @@ public class GraphDraftValidator {
                 .filter(port -> port.schema().properties().containsKey(inputName))
                 .toList();
         return matches.size() == 1 ? Optional.of(matches.getFirst()) : Optional.empty();
+    }
+
+    private static String targetInputName(String inputKey, GraphDraft.Binding binding) {
+        return binding.targetPath().isBlank() ? inputKey : binding.targetPath();
     }
 
     private static OperatorDefinition.Port opaquePort(String name) {

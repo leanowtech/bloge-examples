@@ -555,6 +555,7 @@ MVP schema kind：
   "nodeId": "fetchApplicant",
   "sourcePort": "payload",
   "targetPort": "inputs",
+  "targetPath": "score",
   "path": "score"
 }
 ```
@@ -565,10 +566,15 @@ MVP schema kind：
 | --- | --- | --- |
 | `constant` | `value` | value 类型满足 target schema |
 | `contextPath` | `path` | path 能从 graphInputSchema 推导，或标记 dynamic |
-| `nodePath` | `nodeId`、`sourcePort`、`targetPort`、`path` | 上游存在、端口存在、可达、source/target schema 兼容 |
+| `nodePath` | `nodeId`、`sourcePort`、`targetPort`、`targetPath`、`path` | 上游存在、端口存在、可达、source/target schema 兼容 |
 | `expression` | `expr` | 语法、引用、结果类型校验 |
 | `objectTemplate` | `fields` | 每个字段递归校验 |
 | `secretRef` | `secretRef` | 权限和环境可用 |
+
+`GraphDraft.nodes[].inputs` 的 map key 是稳定 binding key，不再要求等于
+schema 字段名。常规单端口输入可以继续使用 `score` 这样的字段名；当多个
+input port 都声明同名字段时，画布应使用 `customer.id`、`order.id` 这样的
+端口限定 key，并用 `targetPort` + `targetPath` 指向真实 schema 位置。
 
 ### 7.6 GraphDraft 到 DSL 的排序
 

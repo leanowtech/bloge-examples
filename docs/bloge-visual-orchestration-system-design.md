@@ -488,6 +488,9 @@ node fetchApplicant : httpResource {
 | `secretRef` | 密钥引用 | `secret("crm.apiKey")` |
 
 MVP 可以先支持 `constant`、`contextPath`、`nodePath`、`expression`、`objectTemplate`。
+当多个 input port 暴露同名字段时，binding key 必须允许端口限定命名，
+例如 `customer.id` 和 `order.id`；真实校验位置由 `targetPort` 和
+`targetPath` 决定，而不是由 map key 猜测。
 
 ## 10. Schema 约束与连接规则
 

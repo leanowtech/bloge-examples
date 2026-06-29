@@ -105,7 +105,8 @@ public class GraphDraftDslGenerator {
         block.append("  node ").append(node.id()).append(" : ").append(executableOperatorRef).append(" {\n")
                 .append("    input {\n");
         node.inputs().forEach((key, binding) -> block.append("      ")
-                .append(key).append(" = ").append(bindingToExpression(binding, nodesById)).append("\n"));
+                .append(targetInputName(key, binding)).append(" = ")
+                .append(bindingToExpression(binding, nodesById)).append("\n"));
         block.append("    }\n");
         appendCommonExecutionConfig(block, node.config());
         block.append("  }");
@@ -116,7 +117,8 @@ public class GraphDraftDslGenerator {
                                          OperatorDefinition operator,
                                          Map<String, GraphDraft.DraftNode> nodesById) {
         Map<String, String> inputExpressions = new LinkedHashMap<>();
-        node.inputs().forEach((key, binding) -> inputExpressions.put(key, bindingToExpression(binding, nodesById)));
+        node.inputs().forEach((key, binding) -> addInputExpressionAliases(inputExpressions, key, binding,
+                bindingToExpression(binding, nodesById)));
 
         Map<String, Object> assignments = objectMap(operator.lowering().parameters().get("assignments"));
         if (assignments.isEmpty()) {
@@ -176,7 +178,8 @@ public class GraphDraftDslGenerator {
         Map<String, Object> inputConfig = objectMap(node.config().get("inputs"));
         Map<String, String> inputs = new LinkedHashMap<>();
         if (inputConfig.isEmpty()) {
-            node.inputs().forEach((key, binding) -> inputs.put(key, bindingToExpression(binding, nodesById)));
+            node.inputs().forEach((key, binding) -> inputs.put(targetInputName(key, binding),
+                    bindingToExpression(binding, nodesById)));
         } else {
             inputConfig.forEach((key, value) -> inputs.put(key, expressionFromObject(value, nodesById)));
         }
@@ -214,7 +217,8 @@ public class GraphDraftDslGenerator {
         Map<String, Object> assignmentConfig = objectMap(node.config().get("assignments"));
         Map<String, String> assignments = new LinkedHashMap<>();
         if (assignmentConfig.isEmpty()) {
-            node.inputs().forEach((key, binding) -> assignments.put(key, bindingToExpression(binding, nodesById)));
+            node.inputs().forEach((key, binding) -> assignments.put(targetInputName(key, binding),
+                    bindingToExpression(binding, nodesById)));
         } else {
             assignmentConfig.forEach((key, value) -> assignments.put(key, expressionFromObject(value, nodesById)));
         }
@@ -338,6 +342,24 @@ public class GraphDraftDslGenerator {
         return expression;
     }
 
+    private static void addInputExpressionAliases(Map<String, String> inputExpressions,
+                                                  String inputKey,
+                                                  GraphDraft.Binding binding,
+                                                  String expression) {
+        String targetName = targetInputName(inputKey, binding);
+        inputExpressions.put(targetName, expression);
+        if (!binding.targetPort().isBlank()) {
+            inputExpressions.put(binding.targetPort() + "." + targetName, expression);
+        }
+        if (!inputKey.equals(targetName)) {
+            inputExpressions.put(inputKey, expression);
+        }
+    }
+
+    private static String targetInputName(String inputKey, GraphDraft.Binding binding) {
+        return binding.targetPath().isBlank() ? inputKey : binding.targetPath();
+    }
+
     private static GraphDraft.Binding bindingFromMap(Map<?, ?> rawMap) {
         Map<String, GraphDraft.Binding> fields = new LinkedHashMap<>();
         Object rawFields = rawMap.get("fields");
@@ -357,6 +379,7 @@ public class GraphDraftDslGenerator {
                 stringValue(rawMap.get("nodeId")),
                 stringValue(rawMap.get("sourcePort")),
                 stringValue(rawMap.get("targetPort")),
+                stringValue(rawMap.get("targetPath")),
                 stringValue(rawMap.get("expr")),
                 fields
         );

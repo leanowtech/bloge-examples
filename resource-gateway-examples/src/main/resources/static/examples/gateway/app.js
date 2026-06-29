@@ -374,6 +374,16 @@ function inputPortForInputPath(spec, path) {
   return ports[0]?.name || spec?.inputPort || 'inputs';
 }
 
+function inputKeyForPortPath(spec, portName, path) {
+  if (!path) {
+    return portName || spec?.inputPort || 'inputs';
+  }
+  const matchingPorts = inputPortsForSpec(spec).filter((port) =>
+    Object.prototype.hasOwnProperty.call(schemaProperties(port.schema), path)
+  );
+  return matchingPorts.length > 1 ? `${portName || spec?.inputPort || 'inputs'}.${path}` : path;
+}
+
 function schemaForPort(spec, role, portName) {
   const ports = role === 'source' ? outputPortsForSpec(spec) : inputPortsForSpec(spec);
   return ports.find((port) => port.name === portName)?.schema
@@ -739,8 +749,9 @@ function builderInputBindings(node) {
     return Object.entries(node.customInputs || {}).map(([inputName, expression]) => ({
       inputName,
       expression,
-      targetPort: node.customInputPorts?.[inputName] || inputPortForInputPath(spec, inputName),
-      targetPath: inputName,
+      targetPort: node.customInputPorts?.[inputName]
+        || inputPortForInputPath(spec, node.customInputPaths?.[inputName] || inputName),
+      targetPath: node.customInputPaths?.[inputName] || inputName,
       label: inputName
     }));
   }
@@ -1427,19 +1438,23 @@ function renderInputBindingRow(node, target) {
       return `<option value="${escapeHtml(value)}"${selected}${disabled}>${escapeHtml(endpointLabel(candidate.source) + type + suffix)}</option>`;
     })
   ].join('');
-  const type = target.type || schemaType(schemaAtPath(specForNode(node).inputSchema, target.path)) || 'any';
+  const type = target.type
+    || schemaType(schemaAtPath(schemaForPort(specForNode(node), 'target', target.port), target.path))
+    || 'any';
   const required = target.required ? 'Required' : 'Optional';
+  const label = target.key && target.key !== target.path ? target.key : (target.path || target.port);
   return `
     <div class="binding-row ${escapeHtml(status.level)}">
       <div class="binding-row-head">
         <div>
-          <strong>${escapeHtml(readableName(target.path || target.port))}</strong>
+          <strong>${escapeHtml(readableName(label))}</strong>
           <span>${escapeHtml(type)} · ${escapeHtml(required)}</span>
         </div>
         <button
           class="secondary compact"
           type="button"
           data-clear-binding
+          data-binding-key="${escapeHtml(target.key || target.path || '')}"
           data-binding-port="${escapeHtml(target.port)}"
           data-binding-path="${escapeHtml(target.path || '')}">
           Clear
@@ -1447,13 +1462,15 @@ function renderInputBindingRow(node, target) {
       </div>
       <select
         data-binding-source
+        data-binding-key="${escapeHtml(target.key || target.path || '')}"
         data-binding-port="${escapeHtml(target.port)}"
         data-binding-path="${escapeHtml(target.path || '')}"
-        aria-label="${escapeHtml(readableName(target.path || target.port))} source">
+        aria-label="${escapeHtml(readableName(label))} source">
         ${options}
       </select>
       <input
         data-binding-expression
+        data-binding-key="${escapeHtml(target.key || target.path || '')}"
         data-binding-port="${escapeHtml(target.port)}"
         data-binding-path="${escapeHtml(target.path || '')}"
         value="${escapeHtml(expression)}"
@@ -1470,8 +1487,9 @@ function bindingTargetFromElement(element) {
   }
   const port = element.dataset.bindingPort || '';
   const path = element.dataset.bindingPath || '';
+  const key = element.dataset.bindingKey || '';
   return targetHandlesForNode(node).find((target) =>
-    target.port === port && (target.path || '') === path
+    target.port === port && (target.path || '') === path && (!key || (target.key || target.path || '') === key)
   ) || null;
 }
 
@@ -1559,7 +1577,7 @@ function createBuilderNode(type, x, y) {
   if (customOperator) {
     return {
       ...base,
-      customInputs: defaultInputExpressionsForOperator(spec)
+      ...defaultCustomInputStateForOperator(spec)
     };
   }
   return {
@@ -1593,6 +1611,25 @@ function defaultInputExpressionsForOperator(spec) {
     }
   }
   return Object.fromEntries(entries);
+}
+
+function defaultCustomInputStateForOperator(spec) {
+  const customInputs = {};
+  const customInputPorts = {};
+  const customInputPaths = {};
+  for (const port of inputPortsForSpec(spec)) {
+    const schema = port?.schema?.schema || {};
+    const required = Array.isArray(schema.required) ? schema.required : [];
+    const properties = schemaProperties(port?.schema);
+    const names = required.length ? required : Object.keys(properties);
+    for (const name of names) {
+      const key = inputKeyForPortPath(spec, port.name, name);
+      customInputs[key] = `ctx.${name}`;
+      customInputPorts[key] = port.name;
+      customInputPaths[key] = name;
+    }
+  }
+  return { customInputs, customInputPorts, customInputPaths };
 }
 
 function defaultResourceParamInputs(spec) {
@@ -1630,7 +1667,7 @@ function expressionForTargetInput(node, target) {
     return target.path === 'amount' ? node.amountSource : node.scoreSource;
   }
   if (node.type === 'customOperator') {
-    return node.customInputs?.[target.path] || '';
+    return node.customInputs?.[target.key || target.path] || '';
   }
   if (node.type === 'transform') {
     return node.policyNode ? `${node.policyNode}.output` : '';
@@ -1648,10 +1685,13 @@ function setExpressionForTargetInput(node, target, expression) {
       node.scoreSource = expression;
     }
   } else if (node.type === 'customOperator') {
+    const key = target.key || target.path;
     node.customInputs = node.customInputs || {};
-    node.customInputs[target.path] = expression;
+    node.customInputs[key] = expression;
     node.customInputPorts = node.customInputPorts || {};
-    node.customInputPorts[target.path] = target.port || inputPortForInputPath(specForNode(node), target.path);
+    node.customInputPorts[key] = target.port || inputPortForInputPath(specForNode(node), target.path);
+    node.customInputPaths = node.customInputPaths || {};
+    node.customInputPaths[key] = target.path;
   } else if (node.type === 'transform') {
     const source = connectionSourceFromExpression(expression);
     node.policyNode = source?.nodeId || node.policyNode;
@@ -1919,7 +1959,7 @@ function nodeToDsl(node, builder) {
 
 function customNodeToDsl(node) {
   const spec = specForNode(node);
-  const inputs = node.customInputs || {};
+  const inputs = customInputTemplateValues(node);
   if (spec.lowering?.mode === 'transform' && spec.lowering?.parameters?.assignments) {
     const assignments = Object.entries(spec.lowering.parameters.assignments).map(([key, template]) =>
       `    ${key} = ${renderTemplateExpression(String(template), inputs)}`
@@ -1927,10 +1967,33 @@ function customNodeToDsl(node) {
     return `  transform ${node.id} {\n${assignments || '    result = {}'}\n  }`;
   }
   const executable = spec.lowering?.operatorRef || spec.operatorRef || spec.visualOperatorRef || node.paletteType;
-  const inputLines = Object.entries(inputs).map(([key, expression]) =>
+  const inputLines = customDslInputEntries(node).map(([key, expression]) =>
     `      ${key} = ${expression || 'null'}`
   ).join('\n');
   return `  node ${node.id} : ${executable} {\n    input {\n${inputLines}\n    }\n  }`;
+}
+
+function customInputTemplateValues(node) {
+  const values = {};
+  for (const [key, expression] of Object.entries(node.customInputs || {})) {
+    const targetPath = node.customInputPaths?.[key] || key;
+    const targetPort = node.customInputPorts?.[key] || '';
+    values[targetPath] = expression;
+    if (targetPort) {
+      values[`${targetPort}.${targetPath}`] = expression;
+    }
+    if (key !== targetPath) {
+      values[key] = expression;
+    }
+  }
+  return values;
+}
+
+function customDslInputEntries(node) {
+  return Object.entries(node.customInputs || {}).map(([key, expression]) => [
+    node.customInputPaths?.[key] || key,
+    expression
+  ]);
 }
 
 function renderTemplateExpression(template, inputs) {
@@ -2037,7 +2100,9 @@ function builderNodeFromDraftNode(node, draft, layoutNodes) {
       .map(([key, binding]) => [key, binding.targetPort || inputPortForInputPath(specForNode({
         type: 'customOperator',
         paletteType: node.operatorRef
-      }), key)]))
+      }), binding.targetPath || key)])),
+    customInputPaths: Object.fromEntries(Object.entries(node.inputs || {})
+      .map(([key, binding]) => [key, binding.targetPath || key]))
   };
 }
 
@@ -2165,7 +2230,9 @@ function builderNodeToDraftNode(node, builder) {
       label: labelForNode(node),
       inputs: Object.fromEntries(nonBlankInputEntries(node.customInputs || {})
               .map(([key, expression]) => [key, bindingFromExpression(expression, {
-                targetPort: node.customInputPorts?.[key] || inputPortForInputPath(specForNode(node), key),
+                targetPort: node.customInputPorts?.[key]
+                  || inputPortForInputPath(specForNode(node), node.customInputPaths?.[key] || key),
+                targetPath: node.customInputPaths?.[key] || key,
                 builder
               })])),
       config: {},
@@ -2198,10 +2265,14 @@ function builderNodeToDraftNode(node, builder) {
 function bindingFromExpression(expression, options = {}) {
   const value = String(expression || '').trim();
   const withTargetPort = (binding) => {
+    const metadata = {};
     if (options.targetPort) {
-      return { ...binding, targetPort: options.targetPort };
+      metadata.targetPort = options.targetPort;
     }
-    return binding;
+    if (options.targetPath) {
+      metadata.targetPath = options.targetPath;
+    }
+    return Object.keys(metadata).length ? { ...binding, ...metadata } : binding;
   };
   if (value.startsWith('ctx.')) {
     return withTargetPort({ kind: 'contextPath', path: value.slice(4) });
@@ -2509,6 +2580,7 @@ function targetHandlesForNode(node) {
       return names.map((path) => ({
         nodeId: node.id,
         port: port.name || spec.inputPort || 'params',
+        key: path,
         path,
         type: schemaType(properties[path]),
         required: required.includes(path)
@@ -2529,6 +2601,7 @@ function targetHandlesForNode(node) {
       return names.map((path) => ({
         nodeId: node.id,
         port: port.name || spec.inputPort || 'inputs',
+        key: inputKeyForPortPath(spec, port.name || spec.inputPort || 'inputs', path),
         path,
         type: schemaType(properties[path]),
         required: required.includes(path)
@@ -2969,10 +3042,13 @@ function applyConnection(source, target) {
       node.scoreSource = expression;
     }
   } else if (node.type === 'customOperator') {
+    const key = target.key || target.path;
     node.customInputs = node.customInputs || {};
-    node.customInputs[target.path] = expression;
+    node.customInputs[key] = expression;
     node.customInputPorts = node.customInputPorts || {};
-    node.customInputPorts[target.path] = target.port || inputPortForInputPath(specForNode(node), target.path);
+    node.customInputPorts[key] = target.port || inputPortForInputPath(specForNode(node), target.path);
+    node.customInputPaths = node.customInputPaths || {};
+    node.customInputPaths[key] = target.path;
   } else if (node.type === 'transform') {
     node.policyNode = source.nodeId;
   }

@@ -77,7 +77,7 @@ public record GraphDraft(
      * @param id node id
      * @param operatorRef visual operator reference
      * @param label display label
-     * @param inputs input bindings keyed by schema property/input name
+     * @param inputs input bindings keyed by stable binding key
      * @param config operator config
      * @param position canvas position
      */
@@ -111,6 +111,7 @@ public record GraphDraft(
      * @param nodeId source node id for nodePath bindings
      * @param sourcePort source output port for nodePath bindings
      * @param targetPort target input port for this binding
+     * @param targetPath target input path for this binding
      * @param expr raw BLOGE expression
      * @param fields nested fields for objectTemplate bindings
      */
@@ -121,6 +122,7 @@ public record GraphDraft(
             String nodeId,
             String sourcePort,
             String targetPort,
+            String targetPath,
             String expr,
             Map<String, Binding> fields
     ) {
@@ -133,28 +135,41 @@ public record GraphDraft(
             nodeId = nodeId == null ? "" : nodeId;
             sourcePort = sourcePort == null ? "" : sourcePort;
             targetPort = targetPort == null ? "" : targetPort;
+            targetPath = targetPath == null ? "" : targetPath;
             expr = expr == null ? "" : expr;
             fields = fields == null ? Map.of() : new LinkedHashMap<>(fields);
         }
 
         public static Binding constant(Object value) {
-            return new Binding("constant", value, "", "", "", "", "", Map.of());
+            return new Binding("constant", value, "", "", "", "", "", "", Map.of());
         }
 
         public static Binding contextPath(String path) {
-            return new Binding("contextPath", null, path, "", "", "", "", Map.of());
+            return new Binding("contextPath", null, path, "", "", "", "", "", Map.of());
+        }
+
+        public static Binding contextPath(String path, String targetPort, String targetPath) {
+            return new Binding("contextPath", null, path, "", "", targetPort, targetPath, "", Map.of());
         }
 
         public static Binding nodePath(String nodeId, String path) {
-            return new Binding("nodePath", null, path, nodeId, "", "", "", Map.of());
+            return new Binding("nodePath", null, path, nodeId, "", "", "", "", Map.of());
         }
 
         public static Binding nodePath(String nodeId, String sourcePort, String path) {
-            return new Binding("nodePath", null, path, nodeId, sourcePort, "", "", Map.of());
+            return new Binding("nodePath", null, path, nodeId, sourcePort, "", "", "", Map.of());
+        }
+
+        public static Binding nodePath(String nodeId,
+                                       String sourcePort,
+                                       String path,
+                                       String targetPort,
+                                       String targetPath) {
+            return new Binding("nodePath", null, path, nodeId, sourcePort, targetPort, targetPath, "", Map.of());
         }
 
         public static Binding expression(String expr) {
-            return new Binding("expression", null, "", "", "", "", expr, Map.of());
+            return new Binding("expression", null, "", "", "", "", "", expr, Map.of());
         }
     }
 

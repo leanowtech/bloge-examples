@@ -167,6 +167,40 @@ class GraphDraftValidatorTest {
     }
 
     @Test
+    void acceptsDuplicateInputPathsWhenTargetPortsAreExplicit() {
+        GraphDraftValidator validator = new GraphDraftValidator(
+                VisualCatalogTestSupport.catalogWithLibrary(
+                        VisualCatalogTestSupport.duplicateInputPathLibrary()));
+        GraphDraft draft = duplicateInputPathDraft(Map.of(
+                "customer.id", GraphDraft.Binding.contextPath("customerId", "customer", "id"),
+                "order.id", GraphDraft.Binding.contextPath("orderId", "order", "id")
+        ));
+
+        VisualValidationResult result = validator.validate(draft);
+
+        assertThat(result.valid()).isTrue();
+    }
+
+    @Test
+    void reportsMissingRequiredInputForOneDuplicatePathPort() {
+        GraphDraftValidator validator = new GraphDraftValidator(
+                VisualCatalogTestSupport.catalogWithLibrary(
+                        VisualCatalogTestSupport.duplicateInputPathLibrary()));
+        GraphDraft draft = duplicateInputPathDraft(Map.of(
+                "customer.id", GraphDraft.Binding.contextPath("customerId", "customer", "id")
+        ));
+
+        VisualValidationResult result = validator.validate(draft);
+
+        assertThat(result.valid()).isFalse();
+        assertThat(result.diagnostics())
+                .anySatisfy(diagnostic -> {
+                    assertThat(diagnostic.code()).isEqualTo("visual.input.required");
+                    assertThat(diagnostic.message()).contains("id").contains("order");
+                });
+    }
+
+    @Test
     void rejectsEdgeWhenSourcePathDoesNotExist() {
         GraphDraftValidator validator = new GraphDraftValidator(
                 VisualCatalogTestSupport.catalogWithLoanApplicantResourceAndLibrary(
@@ -335,6 +369,31 @@ class GraphDraftValidatorTest {
                         new GraphDraft.Endpoint("eligibility", "inputs", "score"))),
                 Map.of(),
                 new GraphDraft.OutputSelection("eligibility", "")
+        );
+    }
+
+    private static GraphDraft duplicateInputPathDraft(Map<String, GraphDraft.Binding> inputs) {
+        return new GraphDraft(
+                "",
+                "",
+                0,
+                "duplicateInputPath",
+                "",
+                "",
+                "",
+                "",
+                null,
+                List.of(new GraphDraft.DraftNode(
+                        "merge",
+                        "risk:customerOrderMerge",
+                        "",
+                        inputs,
+                        Map.of(),
+                        null
+                )),
+                List.of(),
+                Map.of(),
+                new GraphDraft.OutputSelection("merge", "")
         );
     }
 }
