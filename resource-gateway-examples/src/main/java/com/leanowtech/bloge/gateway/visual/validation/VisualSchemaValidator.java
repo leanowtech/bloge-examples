@@ -56,7 +56,6 @@ public final class VisualSchemaValidator {
     );
     private static final Set<String> UNSUPPORTED_CONSTRAINT_KEYWORDS = Set.of(
             "prefixItems",
-            "dependentSchemas",
             "unevaluatedProperties",
             "unevaluatedItems"
     );
@@ -142,6 +141,7 @@ public final class VisualSchemaValidator {
 	        validateObjectPatternProperties(schema, kind, path, diagnostics);
 	        validateObjectPropertyNames(schema, kind, path, diagnostics);
 	        validateObjectDependentRequired(schema, kind, path, diagnostics);
+	        validateObjectDependentSchemas(schema, kind, path, diagnostics);
 	        validateDefaultValue(schema, kind, path, diagnostics);
         if ("object".equals(kind)) {
             Map<String, Object> properties = objectProperties(schema, path, diagnostics);
@@ -264,6 +264,11 @@ public final class VisualSchemaValidator {
 	            if (!objectValueMatchesDependentRequired(object, schema)) {
 	                diagnostics.add(VisualDiagnostic.error("visual.schema.defaultConstraintMismatch",
 	                        "Schema default must satisfy object dependentRequired constraints.",
+	                        path));
+	            }
+	            if (!objectValueMatchesDependentSchemas(object, schema)) {
+	                diagnostics.add(VisualDiagnostic.error("visual.schema.defaultConstraintMismatch",
+	                        "Schema default must satisfy object dependentSchemas constraints.",
 	                        path));
 	            }
 	            Map<String, Object> properties = propertiesWithoutDiagnostics(schema);
@@ -593,6 +598,52 @@ public final class VisualSchemaValidator {
                             dependencyPath));
                 }
             }
+        }
+    }
+
+    private static void validateObjectDependentSchemas(Map<String, Object> schema,
+                                                       String kind,
+                                                       String path,
+                                                       List<VisualDiagnostic> diagnostics) {
+        if (!schema.containsKey("dependentSchemas")) {
+            return;
+        }
+        if (!objectKind(kind)) {
+            diagnostics.add(VisualDiagnostic.error("visual.schema.dependentSchemasConstraintTypeMismatch",
+                    "Object dependentSchemas constraints require schema type/kind object.",
+                    path));
+        }
+        Object raw = schema.get("dependentSchemas");
+        if (!(raw instanceof Map<?, ?> rawMap)) {
+            diagnostics.add(VisualDiagnostic.error("visual.schema.dependentSchemasInvalid",
+                    "Object schema dependentSchemas must be an object whose values are schema objects.",
+                    path + "/dependentSchemas"));
+            return;
+        }
+        Map<String, Object> properties = propertiesWithoutDiagnostics(schema);
+        for (Map.Entry<?, ?> entry : rawMap.entrySet()) {
+            String trigger = String.valueOf(entry.getKey());
+            String triggerPath = path + "/dependentSchemas/" + trigger;
+            if (trigger.isBlank()) {
+                diagnostics.add(VisualDiagnostic.error("visual.schema.dependentSchemasInvalid",
+                        "Object schema dependentSchemas keys must be non-blank property names.",
+                        triggerPath));
+            } else if (!properties.containsKey(trigger)) {
+                diagnostics.add(VisualDiagnostic.error("visual.schema.dependentSchemasUnknown",
+                        "Dependent-schema trigger property '%s' is not declared in properties."
+                                .formatted(trigger),
+                        triggerPath));
+            }
+            if (!(entry.getValue() instanceof Map<?, ?> dependentSchema)) {
+                diagnostics.add(VisualDiagnostic.error("visual.schema.dependentSchemasInvalid",
+                        "Object schema dependentSchemas entry '%s' must be a schema object."
+                                .formatted(trigger),
+                        triggerPath));
+                continue;
+            }
+            Map<String, Object> copy = new LinkedHashMap<>();
+            dependentSchema.forEach((key, item) -> copy.put(String.valueOf(key), item));
+            validateSchema(effectiveDependentObjectSchema(copy), triggerPath, diagnostics);
         }
     }
 
@@ -1345,6 +1396,23 @@ public final class VisualSchemaValidator {
 	        return true;
 	    }
 
+	    private static boolean objectValueMatchesDependentSchemas(Map<String, Object> value,
+	                                                              Map<String, Object> schema) {
+	        Map<String, Map<String, Object>> dependencies = dependentSchemasOf(schema);
+	        if (dependencies.isEmpty()) {
+	            return true;
+	        }
+	        for (Map.Entry<String, Map<String, Object>> entry : dependencies.entrySet()) {
+	            if (!presentObjectProperty(value, entry.getKey())) {
+	                continue;
+	            }
+	            if (!valueMatchesSchema(value, effectiveDependentObjectSchema(entry.getValue()))) {
+	                return false;
+	            }
+	        }
+	        return true;
+	    }
+
 	    private static Map<String, List<String>> dependentRequiredOf(Map<String, Object> schema) {
 	        Object raw = schema.get("dependentRequired");
 	        if (!(raw instanceof Map<?, ?> rawMap)) {
@@ -1364,6 +1432,38 @@ public final class VisualSchemaValidator {
 	            dependencies.put(String.valueOf(entry.getKey()), names);
 	        }
 	        return dependencies;
+	    }
+
+	    private static Map<String, Map<String, Object>> dependentSchemasOf(Map<String, Object> schema) {
+	        Object raw = schema.get("dependentSchemas");
+	        if (!(raw instanceof Map<?, ?> rawMap)) {
+	            return Map.of();
+	        }
+	        Map<String, Map<String, Object>> dependencies = new LinkedHashMap<>();
+	        for (Map.Entry<?, ?> entry : rawMap.entrySet()) {
+	            if (!(entry.getValue() instanceof Map<?, ?> rawSchema)) {
+	                continue;
+	            }
+	            Map<String, Object> copy = new LinkedHashMap<>();
+	            rawSchema.forEach((key, item) -> copy.put(String.valueOf(key), item));
+	            dependencies.put(String.valueOf(entry.getKey()), effectiveDependentObjectSchema(copy));
+	        }
+	        return dependencies;
+	    }
+
+	    private static Map<String, Object> effectiveDependentObjectSchema(Map<String, Object> schema) {
+	        Map<String, Object> effective = new LinkedHashMap<>(schema);
+	        if (schemaKind(effective).isBlank()
+	                && (effective.containsKey("required")
+	                || effective.containsKey("dependentRequired")
+	                || effective.containsKey("dependentSchemas")
+	                || effective.containsKey("minProperties")
+	                || effective.containsKey("maxProperties")
+	                || effective.containsKey("propertyNames")
+	                || effective.containsKey("patternProperties"))) {
+	            effective.put("type", "object");
+	        }
+	        return effective;
 	    }
 
 	    private static boolean presentObjectProperty(Map<String, Object> value, String property) {
@@ -1440,6 +1540,9 @@ public final class VisualSchemaValidator {
 	            return false;
 	        }
 	        if (!objectValueMatchesDependentRequired(object, schema)) {
+	            return false;
+	        }
+	        if (!objectValueMatchesDependentSchemas(object, schema)) {
 	            return false;
 	        }
 	        for (String required : requiredNamesWithoutDiagnostics(schema)) {

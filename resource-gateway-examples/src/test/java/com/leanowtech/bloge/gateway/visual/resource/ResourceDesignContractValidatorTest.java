@@ -328,6 +328,53 @@ class ResourceDesignContractValidatorTest {
     }
 
     @Test
+    void acceptsObjectDependentSchemasInResourceContractSchemas() {
+        ResourceDesignContract contract = new ResourceDesignContract(
+                "contract:orders",
+                "order-service.listOrders",
+                "Order list",
+                "Lists orders.",
+                List.of("order"),
+                SchemaEnvelope.object(Map.of(
+                        "payment", Map.of(
+                                "type", "object",
+                                "properties", Map.of(
+                                        "cardNumber", Map.of("type", "string"),
+                                        "billingZip", Map.of("type", "string"),
+                                        "method", Map.of("type", "string")
+                                ),
+                                "additionalProperties", false,
+                                "dependentSchemas", Map.of(
+                                        "cardNumber", Map.of(
+                                                "properties", Map.of(
+                                                        "billingZip", Map.of("type", "string")),
+                                                "required", List.of("billingZip"))))
+                ), List.of("payment")),
+                SchemaEnvelope.object(Map.of(
+                        "quote", Map.of(
+                                "type", "object",
+                                "properties", Map.of(
+                                        "discountCode", Map.of("type", "string"),
+                                        "discountReason", Map.of("type", "string")
+                                ),
+                                "additionalProperties", false,
+                                "dependentSchemas", Map.of(
+                                        "discountCode", Map.of(
+                                                "properties", Map.of(
+                                                        "discountReason", Map.of("type", "string")),
+                                                "required", List.of("discountReason"))))
+                ), List.of()),
+                Map.of(),
+                "ACTIVE"
+        );
+
+        VisualValidationResult result = validator.validate(contract);
+
+        assertThat(result.valid()).isTrue();
+        assertThat(result.diagnostics()).isEmpty();
+    }
+
+    @Test
     void rejectsObjectEnumAndConstValuesOutsideDeclaredShapeInResourceSchemas() {
         ResourceDesignContract contract = new ResourceDesignContract(
                 "contract:orders",

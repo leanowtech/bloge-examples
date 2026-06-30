@@ -1244,6 +1244,9 @@ public class GraphDraftValidator {
 	        if (!objectValueMatchesDependentRequired(object, schema)) {
 	            return false;
 	        }
+	        if (!objectValueMatchesDependentSchemas(object, schema)) {
+	            return false;
+	        }
 
 	        for (String required : requiredNamesOf(schema)) {
             if (!object.containsKey(required) || object.get(required) == null) {
@@ -1346,6 +1349,22 @@ public class GraphDraftValidator {
 	        return true;
 	    }
 
+	    private static boolean objectValueMatchesDependentSchemas(Map<?, ?> value, Map<String, Object> schema) {
+	        Map<String, Map<String, Object>> dependencies = dependentSchemasOf(schema);
+	        if (dependencies.isEmpty()) {
+	            return true;
+	        }
+	        for (Map.Entry<String, Map<String, Object>> entry : dependencies.entrySet()) {
+	            if (!presentObjectProperty(value, entry.getKey())) {
+	                continue;
+	            }
+	            if (!constantValueMatchesSchema(value, effectiveDependentObjectSchema(entry.getValue()))) {
+	                return false;
+	            }
+	        }
+	        return true;
+	    }
+
 	    private static Map<String, List<String>> dependentRequiredOf(Map<String, Object> schema) {
 	        Object raw = schema.get("dependentRequired");
 	        if (!(raw instanceof Map<?, ?> rawMap)) {
@@ -1365,6 +1384,38 @@ public class GraphDraftValidator {
 	            dependencies.put(String.valueOf(entry.getKey()), names);
 	        }
 	        return dependencies;
+	    }
+
+	    private static Map<String, Map<String, Object>> dependentSchemasOf(Map<String, Object> schema) {
+	        Object raw = schema.get("dependentSchemas");
+	        if (!(raw instanceof Map<?, ?> rawMap)) {
+	            return Map.of();
+	        }
+	        Map<String, Map<String, Object>> dependencies = new LinkedHashMap<>();
+	        for (Map.Entry<?, ?> entry : rawMap.entrySet()) {
+	            if (!(entry.getValue() instanceof Map<?, ?> rawSchema)) {
+	                continue;
+	            }
+	            Map<String, Object> copy = new LinkedHashMap<>();
+	            rawSchema.forEach((key, item) -> copy.put(String.valueOf(key), item));
+	            dependencies.put(String.valueOf(entry.getKey()), effectiveDependentObjectSchema(copy));
+	        }
+	        return dependencies;
+	    }
+
+	    private static Map<String, Object> effectiveDependentObjectSchema(Map<String, Object> schema) {
+	        Map<String, Object> effective = new LinkedHashMap<>(schema);
+	        if (schemaType(effective).isBlank()
+	                && (effective.containsKey("required")
+	                || effective.containsKey("dependentRequired")
+	                || effective.containsKey("dependentSchemas")
+	                || effective.containsKey("minProperties")
+	                || effective.containsKey("maxProperties")
+	                || effective.containsKey("propertyNames")
+	                || effective.containsKey("patternProperties"))) {
+	            effective.put("type", "object");
+	        }
+	        return effective;
 	    }
 
 	    private static boolean presentObjectProperty(Map<?, ?> value, String property) {
@@ -1628,6 +1679,12 @@ public class GraphDraftValidator {
 	                    path));
 	            return;
 	        }
+	        if (!objectValueMatchesDependentSchemas(object, schema)) {
+	            diagnostics.add(VisualDiagnostic.error("visual.config.constraintMismatch",
+	                    "Config value at '%s' must satisfy object dependentSchemas constraints.".formatted(path),
+	                    path));
+	            return;
+	        }
 	        Map<String, Object> properties = propertiesOf(schema);
         for (String required : requiredNamesOf(schema)) {
             if (!object.containsKey(required) || object.get(required) == null) {
@@ -1692,6 +1749,12 @@ public class GraphDraftValidator {
 	        if (!objectValueMatchesDependentRequired(object, schema)) {
 	            diagnostics.add(VisualDiagnostic.error("visual.config.constraintMismatch",
 	                    "Config value at '%s' must satisfy object dependentRequired constraints.".formatted(path),
+	                    path));
+	            return;
+	        }
+	        if (!objectValueMatchesDependentSchemas(object, schema)) {
+	            diagnostics.add(VisualDiagnostic.error("visual.config.constraintMismatch",
+	                    "Config value at '%s' must satisfy object dependentSchemas constraints.".formatted(path),
 	                    path));
 	            return;
 	        }

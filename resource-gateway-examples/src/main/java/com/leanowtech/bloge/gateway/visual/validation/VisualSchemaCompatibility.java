@@ -475,8 +475,13 @@ public final class VisualSchemaCompatibility {
 	        }
 	        Optional<String> dependentRequiredIssue =
 	                objectDependentRequiredCompatibilityIssue(sourceSchema, targetSchema, path);
-	        return dependentRequiredIssue.isPresent()
-	                ? dependentRequiredIssue
+	        if (dependentRequiredIssue.isPresent()) {
+	            return dependentRequiredIssue;
+	        }
+	        Optional<String> dependentSchemasIssue =
+	                objectDependentSchemasCompatibilityIssue(sourceSchema, targetSchema, path);
+	        return dependentSchemasIssue.isPresent()
+	                ? dependentSchemasIssue
 	                : objectPropertyBoundsCompatibilityIssue(sourceSchema, targetSchema, path);
 	    }
 
@@ -587,6 +592,45 @@ public final class VisualSchemaCompatibility {
 	                                    .formatted(trigger, dependency)));
 	                }
 	            }
+	        }
+	        return Optional.empty();
+	    }
+
+	    private static Optional<String> objectDependentSchemasCompatibilityIssue(Map<String, Object> sourceSchema,
+	                                                                             Map<String, Object> targetSchema,
+	                                                                             String path) {
+	        Map<String, Map<String, Object>> targetDependencies = dependentSchemasOf(targetSchema);
+	        if (targetDependencies.isEmpty()) {
+	            return Optional.empty();
+	        }
+	        List<Object> sourceValues = enumValues(sourceSchema);
+	        if (!sourceValues.isEmpty()
+	                && sourceValues.stream().allMatch(Map.class::isInstance)
+	                && sourceValues.stream().allMatch(value -> objectValueMatchesSchema(value, targetSchema))) {
+	            return Optional.empty();
+	        }
+	        Map<String, Map<String, Object>> sourceDependencies = dependentSchemasOf(sourceSchema);
+	        for (Map.Entry<String, Map<String, Object>> entry : targetDependencies.entrySet()) {
+	            String trigger = entry.getKey();
+	            if (sourceCannotContainProperty(sourceSchema, trigger)) {
+	                continue;
+	            }
+	            Map<String, Object> targetDependentSchema = effectiveDependentObjectSchema(entry.getValue());
+	            Optional<String> globalIssue = schemaCompatibilityIssue(sourceSchema, targetDependentSchema,
+	                    appendCompatibilityPath(path, "dependentSchemas/" + trigger));
+	            if (globalIssue.isEmpty()) {
+	                continue;
+	            }
+	            Map<String, Object> sourceDependentSchema = sourceDependencies.get(trigger);
+	            if (sourceDependentSchema != null
+	                    && schemaCompatibilityIssue(effectiveDependentObjectSchema(sourceDependentSchema),
+	                    targetDependentSchema,
+	                    appendCompatibilityPath(path, "dependentSchemas/" + trigger)).isEmpty()) {
+	                continue;
+	            }
+	            return Optional.of(reasonAt(path,
+	                    "target requires dependentSchemas '%s' but source does not guarantee the dependent schema"
+	                            .formatted(trigger)));
 	        }
 	        return Optional.empty();
 	    }
@@ -901,6 +945,9 @@ public final class VisualSchemaCompatibility {
 	            return false;
 	        }
 	        if (!objectValueMatchesDependentRequired(object, schema)) {
+	            return false;
+	        }
+	        if (!objectValueMatchesDependentSchemas(object, schema)) {
 	            return false;
 	        }
 	        Map<String, Object> properties = propertiesOf(schema);
@@ -1245,6 +1292,22 @@ public final class VisualSchemaCompatibility {
 	        return true;
 	    }
 
+	    private static boolean objectValueMatchesDependentSchemas(Map<?, ?> value, Map<String, Object> schema) {
+	        Map<String, Map<String, Object>> dependencies = dependentSchemasOf(schema);
+	        if (dependencies.isEmpty()) {
+	            return true;
+	        }
+	        for (Map.Entry<String, Map<String, Object>> entry : dependencies.entrySet()) {
+	            if (!presentObjectProperty(value, entry.getKey())) {
+	                continue;
+	            }
+	            if (!valueMatchesSchema(value, effectiveDependentObjectSchema(entry.getValue()))) {
+	                return false;
+	            }
+	        }
+	        return true;
+	    }
+
 	    private static Map<String, List<String>> dependentRequiredOf(Map<String, Object> schema) {
 	        Object raw = schema.get("dependentRequired");
 	        if (!(raw instanceof Map<?, ?> rawMap)) {
@@ -1264,6 +1327,38 @@ public final class VisualSchemaCompatibility {
 	            dependencies.put(String.valueOf(entry.getKey()), names);
 	        }
 	        return dependencies;
+	    }
+
+	    private static Map<String, Map<String, Object>> dependentSchemasOf(Map<String, Object> schema) {
+	        Object raw = schema.get("dependentSchemas");
+	        if (!(raw instanceof Map<?, ?> rawMap)) {
+	            return Map.of();
+	        }
+	        Map<String, Map<String, Object>> dependencies = new LinkedHashMap<>();
+	        for (Map.Entry<?, ?> entry : rawMap.entrySet()) {
+	            if (!(entry.getValue() instanceof Map<?, ?> rawSchema)) {
+	                continue;
+	            }
+	            Map<String, Object> copy = new LinkedHashMap<>();
+	            rawSchema.forEach((key, item) -> copy.put(String.valueOf(key), item));
+	            dependencies.put(String.valueOf(entry.getKey()), effectiveDependentObjectSchema(copy));
+	        }
+	        return dependencies;
+	    }
+
+	    private static Map<String, Object> effectiveDependentObjectSchema(Map<String, Object> schema) {
+	        Map<String, Object> effective = new LinkedHashMap<>(schema);
+	        if (schemaType(effective).isBlank()
+	                && (effective.containsKey("required")
+	                || effective.containsKey("dependentRequired")
+	                || effective.containsKey("dependentSchemas")
+	                || effective.containsKey("minProperties")
+	                || effective.containsKey("maxProperties")
+	                || effective.containsKey("propertyNames")
+	                || effective.containsKey("patternProperties"))) {
+	            effective.put("type", "object");
+	        }
+	        return effective;
 	    }
 
 	    private static boolean presentObjectProperty(Map<?, ?> value, String property) {

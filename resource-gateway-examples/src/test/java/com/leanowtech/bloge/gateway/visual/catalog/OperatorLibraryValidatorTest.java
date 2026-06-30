@@ -1616,6 +1616,43 @@ class OperatorLibraryValidatorTest {
     }
 
     @Test
+    void acceptsObjectDependentSchemasAcrossOperatorDefinitions() {
+        OperatorDefinition operator = new OperatorDefinition(
+                "bloge.visualOperator.v1",
+                "risk:objectDependentSchemasPolicy",
+                "1.0.0",
+                new OperatorDefinition.Display("Object dependent-schemas policy", "Test operator.", List.of("test")),
+                new OperatorDefinition.Source("user-library", "", "", "", true),
+                new OperatorDefinition.Ports(
+                        List.of(new OperatorDefinition.Port("payload",
+                                SchemaEnvelope.object(Map.of(
+                                        "payment", paymentDependentSchemasSchema(Map.of())
+                                ), List.of("payment")),
+                                true,
+                                "Input.")),
+                        List.of(new OperatorDefinition.Port("output",
+                                SchemaEnvelope.object(Map.of(
+                                        "quote", discountDependentSchemasSchema(Map.of())
+                                ), List.of()),
+                                true,
+                                "Output."))
+                ),
+                SchemaEnvelope.object(Map.of(
+                        "defaults", paymentDependentSchemasSchema(Map.of(
+                                "default", Map.of("cardNumber", "4111111111111111", "billingZip", "94105")))
+                ), List.of("defaults")),
+                OperatorDefinition.Capabilities.pure(),
+                new OperatorDefinition.Lowering("native", "riskObjectDependentSchemasPolicy", Map.of()),
+                List.of()
+        );
+
+        VisualValidationResult result = validator.validate(libraryWith(operator));
+
+        assertThat(result.diagnostics()).isEmpty();
+        assertThat(result.valid()).isTrue();
+    }
+
+    @Test
     void rejectsInvalidObjectPropertyBoundsAcrossOperatorDefinitions() {
         OperatorDefinition operator = new OperatorDefinition(
                 "bloge.visualOperator.v1",
@@ -1884,6 +1921,73 @@ class OperatorLibraryValidatorTest {
                         "/operators/0/ports/inputs/0/schema/schema/properties/payment/dependentRequired/cardNumber/0",
                         "/operators/0/ports/inputs/0/schema/schema/properties/payment/dependentRequired/cardNumber/1",
                         "/operators/0/ports/outputs/0/schema/schema/properties/quote/dependentRequired/missingTrigger",
+                        "/operators/0/configSchema/schema/properties/defaults/default",
+                        "/operators/0/configSchema/schema/properties/fixed/const",
+                        "/operators/0/configSchema/schema/properties/choices/enum/0"
+                );
+    }
+
+    @Test
+    void rejectsInvalidObjectDependentSchemasAcrossOperatorDefinitions() {
+        OperatorDefinition operator = new OperatorDefinition(
+                "bloge.visualOperator.v1",
+                "risk:badObjectDependentSchemasPolicy",
+                "1.0.0",
+                new OperatorDefinition.Display("Bad object dependent-schemas policy", "Test operator.",
+                        List.of("test")),
+                new OperatorDefinition.Source("user-library", "", "", "", true),
+                new OperatorDefinition.Ports(
+                        List.of(new OperatorDefinition.Port("payload",
+                                SchemaEnvelope.object(Map.of(
+                                        "payment", paymentDependentSchemasSchema(Map.of(
+                                                "dependentSchemas", Map.of(
+                                                        "cardNumber", "billingZip")))
+                                ), List.of("payment")),
+                                true,
+                                "Input.")),
+                        List.of(new OperatorDefinition.Port("output",
+                                SchemaEnvelope.object(Map.of(
+                                        "quote", discountDependentSchemasSchema(Map.of(
+                                                "dependentSchemas", Map.of(
+                                                        "missingTrigger", Map.of(
+                                                                "properties", Map.of(
+                                                                        "discountReason",
+                                                                        Map.of("type", "string")),
+                                                                "required", List.of("discountReason")))))
+                                ), List.of()),
+                                true,
+                                "Output."))
+                ),
+                SchemaEnvelope.object(Map.of(
+                        "defaults", paymentDependentSchemasSchema(Map.of(
+                                "default", Map.of("cardNumber", "4111111111111111"))),
+                        "fixed", paymentDependentSchemasSchema(Map.of(
+                                "const", Map.of("cardNumber", "4111111111111111"))),
+                        "choices", paymentDependentSchemasSchema(Map.of(
+                                "enum", List.of(Map.of("cardNumber", "4111111111111111"))))
+                ), List.of()),
+                OperatorDefinition.Capabilities.pure(),
+                new OperatorDefinition.Lowering("native", "riskBadObjectDependentSchemasPolicy", Map.of()),
+                List.of()
+        );
+
+        VisualValidationResult result = validator.validate(libraryWith(operator));
+
+        assertThat(result.valid()).isFalse();
+        assertThat(result.diagnostics())
+                .extracting("code")
+                .contains(
+                        "visual.schema.dependentSchemasInvalid",
+                        "visual.schema.dependentSchemasUnknown",
+                        "visual.schema.defaultConstraintMismatch",
+                        "visual.schema.constConstraintMismatch",
+                        "visual.schema.enumConstraintMismatch"
+                );
+        assertThat(result.diagnostics())
+                .extracting("target")
+                .contains(
+                        "/operators/0/ports/inputs/0/schema/schema/properties/payment/dependentSchemas/cardNumber",
+                        "/operators/0/ports/outputs/0/schema/schema/properties/quote/dependentSchemas/missingTrigger",
                         "/operators/0/configSchema/schema/properties/defaults/default",
                         "/operators/0/configSchema/schema/properties/fixed/const",
                         "/operators/0/configSchema/schema/properties/choices/enum/0"
@@ -2567,6 +2671,24 @@ class OperatorLibraryValidatorTest {
         return schema;
     }
 
+    private static Map<String, Object> paymentDependentSchemasSchema(Map<String, Object> overrides) {
+        Map<String, Object> schema = new LinkedHashMap<>();
+        schema.put("type", "object");
+        schema.put("properties", Map.of(
+                "cardNumber", Map.of("type", "string"),
+                "billingZip", Map.of("type", "string"),
+                "method", Map.of("type", "string")
+        ));
+        schema.put("additionalProperties", false);
+        schema.put("dependentSchemas", Map.of(
+                "cardNumber", Map.of(
+                        "properties", Map.of(
+                                "billingZip", Map.of("type", "string")),
+                        "required", List.of("billingZip"))));
+        schema.putAll(overrides);
+        return schema;
+    }
+
     private static Map<String, Object> arrayContainsPrimarySchema(Map<String, Object> overrides) {
         Map<String, Object> schema = new LinkedHashMap<>();
         schema.put("type", "array");
@@ -2586,6 +2708,23 @@ class OperatorLibraryValidatorTest {
         ));
         schema.put("additionalProperties", false);
         schema.put("dependentRequired", Map.of("discountCode", List.of("discountReason")));
+        schema.putAll(overrides);
+        return schema;
+    }
+
+    private static Map<String, Object> discountDependentSchemasSchema(Map<String, Object> overrides) {
+        Map<String, Object> schema = new LinkedHashMap<>();
+        schema.put("type", "object");
+        schema.put("properties", Map.of(
+                "discountCode", Map.of("type", "string"),
+                "discountReason", Map.of("type", "string")
+        ));
+        schema.put("additionalProperties", false);
+        schema.put("dependentSchemas", Map.of(
+                "discountCode", Map.of(
+                        "properties", Map.of(
+                                "discountReason", Map.of("type", "string")),
+                        "required", List.of("discountReason"))));
         schema.putAll(overrides);
         return schema;
     }
