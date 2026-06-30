@@ -127,6 +127,33 @@ class OperatorLibraryAdminControllerTest {
     }
 
     @Test
+    void createRejectsOperatorRefAlreadyOwnedByAnotherLibrary() throws Exception {
+        OperatorLibrary original = VisualCatalogTestSupport.eligibilityLibrary("integer");
+        OperatorLibrary duplicate = new OperatorLibrary(
+                "bloge.visualOperatorLibrary.v1",
+                "risk-policy-copy",
+                "Copy",
+                "1.0.0",
+                "risk-team",
+                "ACTIVE",
+                List.of(VisualCatalogTestSupport.eligibilityOperator("integer"))
+        );
+
+        mockMvc.perform(post("/admin/visual-operator-libraries")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(original)))
+                .andExpect(status().isCreated());
+
+        mockMvc.perform(post("/admin/visual-operator-libraries")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(duplicate)))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.valid").value(false))
+                .andExpect(jsonPath("$.diagnostics[0].code").value("visual.library.invalid"))
+                .andExpect(jsonPath("$.diagnostics[0].message").value("operatorRef 'risk:eligibility' already provided by library 'risk-policy'"));
+    }
+
+    @Test
     void createStoresOperatorPolicyForCatalogGate() throws Exception {
         OperatorLibrary library = VisualCatalogTestSupport.eligibilityLibrary("integer",
                 new OperatorDefinition.Policy(List.of("demo-tenant"), List.of("local"), List.of("browser")));

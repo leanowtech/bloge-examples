@@ -496,6 +496,9 @@ schema path 工作，否则复杂业务 payload 会被迫扁平化。
 `objectTemplate` 字段也要展开参与检查，且 `applicant` 与 `applicant.score`
 这样的 root/path 前缀重叠必须阻断。否则画布看到的是两个来源，DSL 运行时
 却只能得到最后一次写入或不确定覆盖。
+required 判断也必须沿展开后的字段证明：普通整对象 binding 可以凭 source
+schema 证明 `applicant.score` 存在，但 `objectTemplate` 不能只绑定
+`applicant` 父对象就满足嵌套 required，必须递归提供对应叶子字段。
 
 当前 `resource-gateway-examples` 已把 `contextPath` 纳入 schema gate：前端会从 Context JSON 推导草稿 `inputSchema` 并把兼容的 `ctx.*` 字段放入 source picker，服务端会在严格 input schema 下阻断未知 `ctx` path 和 source/target 类型不兼容。
 
@@ -539,7 +542,9 @@ target enum values 的子集，普通 `string` 不能直接接入 enum input。�
 绕过 target schema gate。
 浏览器侧的 connection hint 和 source picker 也要复用这些关键规则，至少覆盖
 object required 字段证明、array item 递归兼容、enum 值域子集和普通 `string`
-不能隐式接入 enum，减少画布交互与服务端裁决之间的断层。
+不能隐式接入 enum，减少画布交互与服务端裁决之间的断层。拖线落点和
+inspector source picker 写入 binding 前都必须调用服务端 connection preview
+gate，本地 hint 不能成为最终授权。
 同一节点内多个 binding 写入同一解析后输入目标，或 root/path 前缀重叠，
 会以 `visual.input.duplicateTarget` 阻断；不同 input port 上同名字段仍然合法，
 例如 `customer.id` 和 `order.id`。
@@ -646,8 +651,10 @@ node fetchApplicant : httpResource {
 resource-gateway 示例当前以 `/admin/visual-operator-libraries` 暴露用户库管理：
 `POST /admin/visual-operator-libraries/validate` 只返回 diagnostics 不落库；
 `POST/PUT /admin/visual-operator-libraries` 在写入前执行同一校验，阻断空库、
-重复端口、不支持 lowering mode、非法 schema kind、缺失 `items` 的 array、
-native lowering 缺可执行 BLOGE operatorRef、transform lowering 缺 assignments、
+重复 `operatorRef`、跨已导入库冲突的 `operatorRef`、重复端口、
+覆盖内置算子的 `operatorRef`、占用 `resource:` 命名空间的用户算子、
+不支持 lowering mode、非法 schema kind、缺失 `items` 的 array、native
+lowering 缺可执行 BLOGE operatorRef、transform lowering 缺 assignments、
 assignment target 不在 output schema 中、template 引用不存在 input path、
 以及 `required` 引用不存在字段等硬错误。`OperatorDefinition.policy`
 当前已支持 `tenants`、`namespaces`、`environments`，`/api/visual/operators`

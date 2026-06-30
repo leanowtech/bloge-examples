@@ -828,6 +828,35 @@ class GraphDraftValidatorTest {
     }
 
     @Test
+    void reportsMissingNestedRequiredInputPathInsideObjectTemplate() {
+        GraphDraftValidator validator = new GraphDraftValidator(
+                VisualCatalogTestSupport.catalogWithLoanApplicantResourceAndLibrary(
+                        VisualCatalogTestSupport.nestedApplicantEligibilityLibrary()));
+        GraphDraft draft = nestedApplicantEligibilityDraft(
+                Map.of("applicant", new GraphDraft.Binding(
+                        "objectTemplate",
+                        null,
+                        "",
+                        "",
+                        "",
+                        "inputs",
+                        "applicant",
+                        "",
+                        Map.of()
+                )),
+                List.of());
+
+        VisualValidationResult result = validator.validate(draft);
+
+        assertThat(result.valid()).isFalse();
+        assertThat(result.diagnostics())
+                .anySatisfy(diagnostic -> {
+                    assertThat(diagnostic.code()).isEqualTo("visual.input.required");
+                    assertThat(diagnostic.message()).contains("applicant.score");
+                });
+    }
+
+    @Test
     void validatesObjectTemplateFieldsAgainstNestedTargetPath() {
         GraphDraftValidator validator = new GraphDraftValidator(
                 VisualCatalogTestSupport.catalogWithLoanApplicantResourceAndLibrary(

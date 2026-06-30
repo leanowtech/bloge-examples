@@ -1858,11 +1858,39 @@ function renderSelectedOperatorEditor() {
   }
 
   for (const select of target.querySelectorAll('[data-binding-source]')) {
-    select.addEventListener('change', () => {
+    select.addEventListener('change', async () => {
       const source = sourceFromBindingValue(select.value);
       const bindingTarget = bindingTargetFromElement(select);
       if (!source || !bindingTarget) return;
-      applyConnection(source, bindingTarget);
+      const compatibility = connectionCompatibility(source, bindingTarget);
+      if (!compatibility.ok) {
+        setConnectionMessage(compatibility.message, 'error');
+        renderSelectedOperatorEditor();
+        return;
+      }
+      select.disabled = true;
+      setConnectionMessage('Checking connection with server...', 'info');
+      try {
+        const serverCheck = await checkVisualConnectionOnServer(source, bindingTarget);
+        if (serverCheck.accepted) {
+          applyConnection(source, bindingTarget);
+          setConnectionMessage(
+            `Connected ${source.nodeId}.${source.path || source.port} -> ${bindingTarget.nodeId}.${bindingTarget.path || bindingTarget.port}.`,
+            'success'
+          );
+          renderDiagram();
+        } else {
+          setConnectionMessage(serverCheck.message, 'error');
+          renderSelectedOperatorEditor();
+          renderDiagram();
+        }
+      } catch (error) {
+        setConnectionMessage(error.message, 'error');
+        renderSelectedOperatorEditor();
+        renderDiagram();
+      } finally {
+        select.disabled = false;
+      }
     });
   }
 

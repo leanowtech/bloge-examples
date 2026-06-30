@@ -23,6 +23,11 @@ import java.util.regex.Pattern;
 @Service
 public class OperatorLibraryValidator {
 
+    private static final Set<String> RESERVED_OPERATOR_REFS = Set.of(
+            "httpResource",
+            "bloge:decisionTable",
+            "bloge:transform"
+    );
     private static final Set<String> SUPPORTED_LOWERING_MODES = Set.of("native", "transform");
     private static final String IDENTIFIER_PATTERN = "[A-Za-z_][A-Za-z0-9_]*";
     private static final Pattern EXECUTABLE_OPERATOR_REF = Pattern.compile(
@@ -63,15 +68,27 @@ public class OperatorLibraryValidator {
                 diagnostics.add(VisualDiagnostic.error("visual.operator.ref.required",
                         "Operator must declare an operatorRef.",
                         operatorPath + "/operatorRef"));
-            } else if (!operatorRefs.add(operator.operatorRef())) {
-                diagnostics.add(VisualDiagnostic.error("visual.operator.ref.duplicate",
-                        "Operator library declares duplicate operatorRef '%s'."
-                                .formatted(operator.operatorRef()),
-                        operatorPath + "/operatorRef"));
+            } else {
+                if (isReservedOperatorRef(operator.operatorRef())) {
+                    diagnostics.add(VisualDiagnostic.error("visual.operator.ref.reserved",
+                            "OperatorRef '%s' is reserved by built-in or resource-backed visual operators."
+                                    .formatted(operator.operatorRef()),
+                            operatorPath + "/operatorRef"));
+                }
+                if (!operatorRefs.add(operator.operatorRef())) {
+                    diagnostics.add(VisualDiagnostic.error("visual.operator.ref.duplicate",
+                            "Operator library declares duplicate operatorRef '%s'."
+                                    .formatted(operator.operatorRef()),
+                            operatorPath + "/operatorRef"));
+                }
             }
             validateOperator(operator, operatorPath, diagnostics);
         }
         return new VisualValidationResult(true, diagnostics);
+    }
+
+    private static boolean isReservedOperatorRef(String operatorRef) {
+        return RESERVED_OPERATOR_REFS.contains(operatorRef) || operatorRef.startsWith("resource:");
     }
 
     private static void validateOperator(OperatorDefinition operator,

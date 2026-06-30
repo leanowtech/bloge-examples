@@ -248,12 +248,13 @@ public class GraphDraftValidator {
                                                         String portName,
                                                         String requiredPath) {
         String inputName = targetInputName(inputKey, binding);
-        if (satisfiesRequiredPath(inputName, requiredPath)
+        if (!"objectTemplate".equals(binding.kind())) {
+            return satisfiesRequiredPath(inputName, requiredPath)
+                    && bindingTargetsPort(operator, binding, portName, inputName);
+        }
+        if (inputName.equals(requiredPath)
                 && bindingTargetsPort(operator, binding, portName, inputName)) {
             return true;
-        }
-        if (!"objectTemplate".equals(binding.kind())) {
-            return false;
         }
         return binding.fields().entrySet().stream()
                 .anyMatch(entry -> {

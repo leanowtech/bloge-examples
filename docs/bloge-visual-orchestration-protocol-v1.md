@@ -641,6 +641,9 @@ schema path 查找 source/target 类型，而不能只检查顶层 `properties`�
 同一输入对象被多个来源覆盖的歧义。resource-gateway 示例以
 `visual.input.duplicateTarget` 返回该错误，并把 diagnostic target 定位到
 第二个冲突 binding。
+required 判断同样沿展开后的 path 工作：非模板整对象 binding 可以由 source
+schema 证明嵌套 required 字段存在；`objectTemplate` 必须递归提供 required
+叶子字段，不能仅用父对象 path 满足 `applicant.score` 这类嵌套要求。
 
 ### 7.6 GraphDraft 到 DSL 的排序
 
@@ -894,9 +897,13 @@ Content-Type: application/json
 
 resource-gateway 示例阶段已落地等价管理端点：
 `POST /admin/visual-operator-libraries/validate`。导入和更新同样必须先执行
-该校验，禁止把 blocking diagnostics 的用户算子库写入 catalog。浏览器
-Operator Libraries 面板也应先调用该端点，把结构化 diagnostics 以明细列表
-展示给作者，再允许作者选择是否执行 Import。
+该校验，禁止把 blocking diagnostics 的用户算子库写入 catalog。写入时还必须
+维护 catalog 合并不变量：一个 `operatorRef` 只能由一个已存储 library 拥有；
+跨库冲突必须返回结构化 409 diagnostics，而不能让浏览器看到多个同名算子。
+用户库也不能占用系统保留 ref：内置算子 `httpResource`、`bloge:decisionTable`、
+`bloge:transform` 和资源投影使用的 `resource:` 命名空间都必须由平台保留。
+浏览器 Operator Libraries 面板也应先调用该端点，把结构化 diagnostics 以明细
+列表展示给作者，再允许作者选择是否执行 Import。
 
 请求体：
 
@@ -1136,7 +1143,8 @@ binding 必须有可见 data edge。
 `visual.edge.*` diagnostics；若会形成环，返回 `visual.edge.cycle`。
 
 resource-gateway 示例已提供 `POST /api/visual/connections/check`，浏览器画布在
-drop 连线时调用它作为最终写入 binding 的 gate。
+drop 连线和 inspector source picker 写入 binding 前都调用它作为最终 gate；
+本地 connection hint/source picker 只负责提前收窄候选项，不能替代服务端预检。
 
 ### 10.7 发布不可变 artifact
 

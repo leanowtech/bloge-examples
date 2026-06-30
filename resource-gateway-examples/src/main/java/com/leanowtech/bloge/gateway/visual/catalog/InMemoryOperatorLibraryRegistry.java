@@ -2,6 +2,7 @@ package com.leanowtech.bloge.gateway.visual.catalog;
 
 import java.util.Collection;
 import java.util.Comparator;
+import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.ConcurrentHashMap;
@@ -27,6 +28,7 @@ public class InMemoryOperatorLibraryRegistry implements OperatorLibraryRegistry 
 
     @Override
     public OperatorLibrary upsert(OperatorLibrary library) {
+        ensureNoDuplicateOperatorRefs(library);
         libraries.put(library.libraryId(), library);
         return library;
     }
@@ -34,5 +36,20 @@ public class InMemoryOperatorLibraryRegistry implements OperatorLibraryRegistry 
     @Override
     public void delete(String libraryId) {
         libraries.remove(libraryId);
+    }
+
+    private void ensureNoDuplicateOperatorRefs(OperatorLibrary library) {
+        Map<String, String> ownerByOperatorRef = new LinkedHashMap<>();
+        libraries.values().stream()
+                .filter(existing -> !existing.libraryId().equals(library.libraryId()))
+                .forEach(existing -> existing.operators().forEach(operator ->
+                        ownerByOperatorRef.put(operator.operatorRef(), existing.libraryId())));
+        for (OperatorDefinition operator : library.operators()) {
+            String existingOwner = ownerByOperatorRef.get(operator.operatorRef());
+            if (existingOwner != null) {
+                throw new IllegalArgumentException("operatorRef '%s' already provided by library '%s'"
+                        .formatted(operator.operatorRef(), existingOwner));
+            }
+        }
     }
 }

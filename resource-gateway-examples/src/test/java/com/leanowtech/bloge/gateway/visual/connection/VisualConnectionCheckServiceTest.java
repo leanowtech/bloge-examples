@@ -3,6 +3,7 @@ package com.leanowtech.bloge.gateway.visual.connection;
 import com.leanowtech.bloge.gateway.visual.catalog.DefaultVisualOperatorCatalog;
 import com.leanowtech.bloge.gateway.visual.catalog.VisualCatalogTestSupport;
 import com.leanowtech.bloge.gateway.visual.draft.GraphDraft;
+import com.leanowtech.bloge.gateway.visual.model.SchemaEnvelope;
 import com.leanowtech.bloge.gateway.visual.validation.GraphDraftValidator;
 
 import org.junit.jupiter.api.Test;
@@ -58,6 +59,63 @@ class VisualConnectionCheckServiceTest {
     }
 
     @Test
+    void acceptsSchemaCompatibleContextPickerBinding() {
+        VisualConnectionCheckService service = connectionService(VisualCatalogTestSupport
+                .catalogWithLoanApplicantResourceAndLibrary(VisualCatalogTestSupport.eligibilityLibrary("integer")));
+        GraphDraft draft = resourceEligibilityDraft(graphInputSchema(), List.of());
+
+        VisualConnectionCheckResult result = service.check(new VisualConnectionCheckRequest(
+                draft,
+                new GraphDraft.Endpoint("__ctx", "ctx", "score"),
+                new GraphDraft.Endpoint("eligibility", "inputs", "score"),
+                "data"
+        ));
+
+        assertThat(result.accepted()).isTrue();
+        assertThat(result.diagnostics()).isEmpty();
+        assertThat(result.edge().source().nodeId()).isEqualTo("__ctx");
+        assertThat(result.edge().target().path()).isEqualTo("score");
+    }
+
+    @Test
+    void rejectsUnknownContextPickerPath() {
+        VisualConnectionCheckService service = connectionService(VisualCatalogTestSupport
+                .catalogWithLoanApplicantResourceAndLibrary(VisualCatalogTestSupport.eligibilityLibrary("integer")));
+        GraphDraft draft = resourceEligibilityDraft(graphInputSchema(), List.of());
+
+        VisualConnectionCheckResult result = service.check(new VisualConnectionCheckRequest(
+                draft,
+                new GraphDraft.Endpoint("__ctx", "ctx", "missingScore"),
+                new GraphDraft.Endpoint("eligibility", "inputs", "score"),
+                "data"
+        ));
+
+        assertThat(result.accepted()).isFalse();
+        assertThat(result.diagnostics())
+                .extracting("code")
+                .contains("visual.binding.unknownContextPath");
+    }
+
+    @Test
+    void rejectsIncompatibleContextPickerBinding() {
+        VisualConnectionCheckService service = connectionService(VisualCatalogTestSupport
+                .catalogWithLoanApplicantResourceAndLibrary(VisualCatalogTestSupport.eligibilityLibrary("integer")));
+        GraphDraft draft = resourceEligibilityDraft(graphInputSchema(), List.of());
+
+        VisualConnectionCheckResult result = service.check(new VisualConnectionCheckRequest(
+                draft,
+                new GraphDraft.Endpoint("__ctx", "ctx", "segment"),
+                new GraphDraft.Endpoint("eligibility", "inputs", "score"),
+                "data"
+        ));
+
+        assertThat(result.accepted()).isFalse();
+        assertThat(result.diagnostics())
+                .extracting("code")
+                .contains("visual.binding.typeMismatch");
+    }
+
+    @Test
     void rejectsConnectionThatWouldCreateCycle() {
         VisualConnectionCheckService service = connectionService(VisualCatalogTestSupport
                 .catalogWithLibrary(VisualCatalogTestSupport.numericPassLibrary()));
@@ -82,7 +140,18 @@ class VisualConnectionCheckServiceTest {
         return new VisualConnectionCheckService(new GraphDraftValidator(catalog));
     }
 
+    private static SchemaEnvelope graphInputSchema() {
+        return SchemaEnvelope.object(Map.of(
+                "score", Map.of("type", "integer"),
+                "segment", Map.of("type", "string")
+        ), List.of());
+    }
+
     private static GraphDraft resourceEligibilityDraft(List<GraphDraft.DraftEdge> edges) {
+        return resourceEligibilityDraft(null, edges);
+    }
+
+    private static GraphDraft resourceEligibilityDraft(SchemaEnvelope inputSchema, List<GraphDraft.DraftEdge> edges) {
         return new GraphDraft(
                 "",
                 "",
@@ -92,7 +161,7 @@ class VisualConnectionCheckServiceTest {
                 "",
                 "",
                 "",
-                null,
+                inputSchema,
                 List.of(
                         new GraphDraft.DraftNode(
                                 "fetchApplicant",

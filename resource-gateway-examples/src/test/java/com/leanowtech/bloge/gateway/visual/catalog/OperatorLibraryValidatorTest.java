@@ -131,6 +131,37 @@ class OperatorLibraryValidatorTest {
     }
 
     @Test
+    void rejectsSystemReservedOperatorRefs() {
+        OperatorDefinition builtInCollision = operator(
+                "httpResource",
+                outputOnlyPorts(Map.of("ok", Map.of("type", "boolean")), List.of()),
+                "native"
+        );
+        OperatorDefinition resourceNamespaceCollision = operator(
+                "resource:loan-applicant-service.getProfile",
+                outputOnlyPorts(Map.of("ok", Map.of("type", "boolean")), List.of()),
+                "native"
+        );
+        OperatorLibrary library = new OperatorLibrary(
+                "bloge.visualOperatorLibrary.v1",
+                "reserved-refs",
+                "Reserved refs",
+                "1.0.0",
+                "team",
+                "ACTIVE",
+                List.of(builtInCollision, resourceNamespaceCollision)
+        );
+
+        VisualValidationResult result = validator.validate(library);
+
+        assertThat(result.valid()).isFalse();
+        assertThat(result.diagnostics())
+                .filteredOn(diagnostic -> "visual.operator.ref.reserved".equals(diagnostic.code()))
+                .extracting("target")
+                .containsExactly("/operators/0/operatorRef", "/operators/1/operatorRef");
+    }
+
+    @Test
     void rejectsOperatorWithoutOutputPort() {
         OperatorLibrary library = libraryWith(operator(
                 "risk:noOutput",
