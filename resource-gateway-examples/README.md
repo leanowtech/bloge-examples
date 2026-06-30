@@ -203,7 +203,10 @@ runtime payload. The browser performs a matching structural preflight for
 blocking schema issues, including unsupported JSON Schema keywords, before
 activating that schema on the canvas, shows the local schema diagnostics inline,
 and the source picker offers compatible `ctx.*` values from the active declared
-schema.
+schema. Dynamic object maps are first-class in that picker: paths that flow
+through schema-shaped `additionalProperties` resolve to the additional-property
+schema, so ad hoc fields such as `ctx.attributes.region` can still be matched
+against typed operator inputs.
 The server validates the graph input schema with the same structural gate used
 for operator port/config schemas, including strict object `properties`,
 `additionalProperties`, `required`, enum value-domain, `const` shape checks,

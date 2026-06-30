@@ -3576,19 +3576,7 @@ function hasSchemaProperties(schema) {
 }
 
 function schemaDeclaresPath(schemaEnvelope, path) {
-  if (!path) {
-    return true;
-  }
-  let current = schemaEnvelope?.schema || {};
-  for (const segment of String(path).split('.')) {
-    if (!segment) continue;
-    const properties = current.properties || {};
-    if (!Object.prototype.hasOwnProperty.call(properties, segment)) {
-      return false;
-    }
-    current = properties[segment] || {};
-  }
-  return true;
+  return schemaAtPath(schemaEnvelope, path) !== null;
 }
 
 function nonOverlappingNodePosition(x, y) {
