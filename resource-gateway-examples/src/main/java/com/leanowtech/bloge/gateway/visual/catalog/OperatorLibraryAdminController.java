@@ -71,14 +71,20 @@ public class OperatorLibraryAdminController {
      *
      * @param library library body
      * @param force bypass stored-draft reference protection when re-importing an existing library
+     * @param ackWarnings true when the caller already reviewed non-blocking replacement warnings
      * @return stored library
      */
     @PostMapping
     public ResponseEntity<?> create(@RequestBody OperatorLibrary library,
-                                    @RequestParam(defaultValue = "false") boolean force) {
+                                    @RequestParam(defaultValue = "false") boolean force,
+                                    @RequestParam(defaultValue = "false") boolean ackWarnings) {
         VisualValidationResult validation = validateAgainstRegistry(library, force);
         if (!validation.valid()) {
             return ResponseEntity.status(validationFailureStatus(validation)).body(validation);
+        }
+        ResponseEntity<VisualValidationResult> warningGate = warningAcknowledgementResponse(validation, ackWarnings);
+        if (warningGate != null) {
+            return warningGate;
         }
         ResponseEntity<VisualValidationResult> impact = replacementImpactResponse(library, force);
         if (impact != null) {
@@ -117,12 +123,14 @@ public class OperatorLibraryAdminController {
      * @param libraryId library id
      * @param library library body
      * @param force bypass stored-draft reference protection
+     * @param ackWarnings true when the caller already reviewed non-blocking replacement warnings
      * @return stored library
      */
     @PutMapping("/{libraryId}")
     public ResponseEntity<?> update(@PathVariable String libraryId,
                                     @RequestBody OperatorLibrary library,
-                                    @RequestParam(defaultValue = "false") boolean force) {
+                                    @RequestParam(defaultValue = "false") boolean force,
+                                    @RequestParam(defaultValue = "false") boolean ackWarnings) {
         if (!libraryId.equals(library.libraryId())) {
             throw new IllegalArgumentException("Path libraryId '%s' does not match body libraryId '%s'"
                     .formatted(libraryId, library.libraryId()));
@@ -130,6 +138,10 @@ public class OperatorLibraryAdminController {
         VisualValidationResult validation = validateAgainstRegistry(library, force);
         if (!validation.valid()) {
             return ResponseEntity.status(validationFailureStatus(validation)).body(validation);
+        }
+        ResponseEntity<VisualValidationResult> warningGate = warningAcknowledgementResponse(validation, ackWarnings);
+        if (warningGate != null) {
+            return warningGate;
         }
         ResponseEntity<VisualValidationResult> impact = replacementImpactResponse(library, force);
         if (impact != null) {
@@ -419,6 +431,16 @@ public class OperatorLibraryAdminController {
             }
         }
         return diagnostics;
+    }
+
+    private static ResponseEntity<VisualValidationResult> warningAcknowledgementResponse(
+            VisualValidationResult validation,
+            boolean ackWarnings) {
+        if (ackWarnings || validation.diagnostics().stream()
+                .noneMatch(diagnostic -> "WARNING".equalsIgnoreCase(diagnostic.level()))) {
+            return null;
+        }
+        return ResponseEntity.status(HttpStatus.CONFLICT).body(validation);
     }
 
     /**

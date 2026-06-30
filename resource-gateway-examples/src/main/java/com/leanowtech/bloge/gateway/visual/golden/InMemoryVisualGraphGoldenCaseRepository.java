@@ -37,4 +37,9 @@ public class InMemoryVisualGraphGoldenCaseRepository implements VisualGraphGolde
         cases.put(caseId, stored);
         return stored;
     }
+
+    @Override
+    public boolean delete(String caseId) {
+        return caseId != null && cases.remove(caseId) != null;
+    }
 }

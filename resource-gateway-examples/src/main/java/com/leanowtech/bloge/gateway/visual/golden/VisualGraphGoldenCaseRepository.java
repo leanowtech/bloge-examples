@@ -41,4 +41,12 @@ public interface VisualGraphGoldenCaseRepository {
      * @return stored case with assigned identity
      */
     VisualGraphGoldenCase save(VisualGraphGoldenCase testCase);
+
+    /**
+     * Deletes one case.
+     *
+     * @param caseId case id
+     * @return true when a stored case was removed
+     */
+    boolean delete(String caseId);
 }

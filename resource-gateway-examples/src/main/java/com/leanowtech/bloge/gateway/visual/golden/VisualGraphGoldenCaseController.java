@@ -16,6 +16,7 @@ import com.leanowtech.bloge.gateway.visual.validation.VisualSchemaValidator;
 import com.leanowtech.bloge.gateway.visual.validation.VisualValidationResult;
 
 import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -94,6 +95,19 @@ public class VisualGraphGoldenCaseController {
         return repository.find(caseId)
                 .map(ResponseEntity::ok)
                 .orElseGet(() -> ResponseEntity.notFound().build());
+    }
+
+    /**
+     * Deletes one golden case.
+     *
+     * @param caseId case id
+     * @return no content when removed
+     */
+    @DeleteMapping("/{caseId}")
+    public ResponseEntity<Void> delete(@PathVariable String caseId) {
+        return repository.delete(caseId)
+                ? ResponseEntity.noContent().build()
+                : ResponseEntity.notFound().build();
     }
 
     /**

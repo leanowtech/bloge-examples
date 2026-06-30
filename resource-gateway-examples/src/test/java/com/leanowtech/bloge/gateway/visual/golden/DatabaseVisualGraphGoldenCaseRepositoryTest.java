@@ -106,6 +106,22 @@ class DatabaseVisualGraphGoldenCaseRepositoryTest {
         assertThat(repository.all()).hasSize(1);
     }
 
+    @Test
+    void deleteRemovesCaseFromCacheAndDatabase() {
+        VisualGraphGoldenCase stored = repository.save(caseRecord("case-1"));
+
+        assertThat(repository.delete(stored.caseId())).isTrue();
+        assertThat(repository.find(stored.caseId())).isEmpty();
+        assertThat(repository.all()).isEmpty();
+
+        DatabaseVisualGraphGoldenCaseRepository reloaded =
+                new DatabaseVisualGraphGoldenCaseRepository(jdbc, objectMapper);
+        reloaded.init();
+
+        assertThat(reloaded.find(stored.caseId())).isEmpty();
+        assertThat(reloaded.delete(stored.caseId())).isFalse();
+    }
+
     private static VisualGraphGoldenCase caseRecord(String caseId) {
         return new VisualGraphGoldenCase(
                 "",

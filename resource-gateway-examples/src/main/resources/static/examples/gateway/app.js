@@ -885,6 +885,7 @@ function renderInputForm() {
           <select id="golden-case-select" aria-label="Golden regression cases"></select>
           <button id="save-golden-case" class="secondary compact" type="button">Save Golden</button>
           <button id="run-golden-case" class="secondary compact" type="button">Run Golden</button>
+          <button id="delete-golden-case" class="secondary compact danger" type="button">Delete</button>
           <button id="run-golden-suite" class="secondary compact" type="button">Run Suite</button>
           <button id="certify-golden-suite" class="secondary compact" type="button">Certify</button>
         </div>
@@ -1915,9 +1916,10 @@ async function importOperatorLibrary() {
     state.libraryImportConfirmationKey = '';
   }
   const replacing = libraryExists(library.libraryId);
+  const mutationQuery = libraryMutationQuery(hasWarningDiagnostic(validation.diagnostics));
   const endpoint = replacing
-    ? `/admin/visual-operator-libraries/${encodeURIComponent(library.libraryId)}${libraryForceQuery()}`
-    : `/admin/visual-operator-libraries${libraryForceQuery()}`;
+    ? `/admin/visual-operator-libraries/${encodeURIComponent(library.libraryId)}${mutationQuery}`
+    : `/admin/visual-operator-libraries${mutationQuery}`;
   const response = await fetch(endpoint, {
     method: replacing ? 'PUT' : 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -1983,6 +1985,18 @@ async function deleteSelectedOperatorLibrary() {
 
 function libraryForceQuery() {
   return state.libraryForce ? '?force=true' : '';
+}
+
+function libraryMutationQuery(ackWarnings = false) {
+  const params = new URLSearchParams();
+  if (state.libraryForce) {
+    params.set('force', 'true');
+  }
+  if (ackWarnings) {
+    params.set('ackWarnings', 'true');
+  }
+  const query = params.toString();
+  return query ? `?${query}` : '';
 }
 
 function libraryExists(libraryId) {
@@ -2456,9 +2470,10 @@ function renderGoldenCaseControls() {
   const select = $('golden-case-select');
   const saveButton = $('save-golden-case');
   const runButton = $('run-golden-case');
+  const deleteButton = $('delete-golden-case');
   const suiteButton = $('run-golden-suite');
   const certifyButton = $('certify-golden-suite');
-  if (!select || !saveButton || !runButton || !suiteButton || !certifyButton) return;
+  if (!select || !saveButton || !runButton || !deleteButton || !suiteButton || !certifyButton) return;
   const options = state.goldenCases.length
     ? state.goldenCases.map((testCase) => {
       const selected = testCase.caseId === state.selectedGoldenCaseId ? ' selected' : '';
@@ -2474,6 +2489,8 @@ function renderGoldenCaseControls() {
   saveButton.onclick = saveGoldenCaseFromCurrentOutput;
   runButton.disabled = !state.selectedGoldenCaseId;
   runButton.onclick = runSelectedGoldenCase;
+  deleteButton.disabled = !state.selectedGoldenCaseId;
+  deleteButton.onclick = deleteSelectedGoldenCase;
   suiteButton.disabled = !state.selectedPublicationId;
   suiteButton.onclick = runPublicationGoldenSuite;
   certifyButton.disabled = !state.selectedPublicationId;
@@ -2903,6 +2920,35 @@ function selectedPublication() {
 
 function selectedGoldenCase() {
   return state.goldenCases.find((testCase) => testCase.caseId === state.selectedGoldenCaseId) || null;
+}
+
+async function deleteSelectedGoldenCase() {
+  const testCase = selectedGoldenCase();
+  if (!testCase) {
+    setPublicationMessage('Select a golden case first.', 'error');
+    return;
+  }
+  if (!confirm(`Delete golden case ${testCase.caseId}?`)) return;
+  const deletedId = testCase.caseId;
+  setPublicationMessage(`Deleting golden ${shortRunId(deletedId)}...`, 'info');
+  try {
+    const response = await fetch(`/api/visual/golden-cases/${encodeURIComponent(deletedId)}`, {
+      method: 'DELETE'
+    });
+    if (!response.ok) {
+      throw new Error(`Delete golden case failed with ${response.status}`);
+    }
+    if (state.selectedGoldenCaseId === deletedId) {
+      state.selectedGoldenCaseId = '';
+    }
+    await loadGoldenCases({ render: false });
+    await loadGoldenCertificationStatus({ render: false });
+    $('output').textContent = pretty({ status: response.status, deletedGoldenCase: { caseId: deletedId } });
+    setPublicationMessage(`Deleted golden ${shortRunId(deletedId)}.`, 'success');
+    renderPublicationControls();
+  } catch (error) {
+    setPublicationMessage(error.message, 'error');
+  }
 }
 
 async function saveGoldenCaseFromCurrentOutput() {

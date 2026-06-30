@@ -640,6 +640,41 @@ class OperatorLibraryAdminControllerTest {
     }
 
     @Test
+    void updateRequiresWarningAcknowledgementBeforeStoringFingerprintDrift() throws Exception {
+        OperatorLibrary original = VisualCatalogTestSupport.eligibilityLibrary("integer");
+        OperatorLibrary replacement = VisualCatalogTestSupport.eligibilityLibrary("string");
+        registry.upsert(original);
+        drafts.save(draftUsingOperator("risk:eligibility", original.operators().getFirst().fingerprint()));
+
+        mockMvc.perform(put("/admin/visual-operator-libraries/risk-policy")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(replacement)))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.valid").value(true))
+                .andExpect(jsonPath("$.diagnostics[0].level").value("WARNING"))
+                .andExpect(jsonPath("$.diagnostics[0].code").value("visual.library.operatorFingerprintDrift"));
+
+        assertThat(registry.find("risk-policy")).contains(original);
+    }
+
+    @Test
+    void createReimportStoresFingerprintDriftWhenWarningsAcknowledged() throws Exception {
+        OperatorLibrary original = VisualCatalogTestSupport.eligibilityLibrary("integer");
+        OperatorLibrary replacement = VisualCatalogTestSupport.eligibilityLibrary("string");
+        registry.upsert(original);
+        drafts.save(draftUsingOperator("risk:eligibility", original.operators().getFirst().fingerprint()));
+
+        mockMvc.perform(post("/admin/visual-operator-libraries")
+                        .param("ackWarnings", "true")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(replacement)))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.operators[0].operatorRef").value("risk:eligibility"));
+
+        assertThat(registry.find("risk-policy")).contains(replacement);
+    }
+
+    @Test
     void validateWarnsWhenReplacingPublishedOperatorRefWithDifferentFingerprint() throws Exception {
         OperatorLibrary original = VisualCatalogTestSupport.eligibilityLibrary("integer");
         OperatorLibrary replacement = VisualCatalogTestSupport.eligibilityLibrary("string");

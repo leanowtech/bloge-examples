@@ -47,6 +47,34 @@ class VisualGraphGoldenCaseControllerTest {
     }
 
     @Test
+    void deleteGoldenCaseRemovesItAndMakesCertificationStale() {
+        InMemoryVisualGraphPublicationRepository publications = new InMemoryVisualGraphPublicationRepository();
+        VisualGraphPublication publication = publications.create(publication());
+        VisualGraphGoldenCaseController controller = controller(publications,
+                new CapturingRunService(Map.of("approved", true)));
+        VisualGraphGoldenCase first = saveCase(controller, goldenCase(publication.publicationId(),
+                Map.of("approved", true)));
+        VisualGraphGoldenCase second = saveCase(controller, new VisualGraphGoldenCase("", "",
+                publication.publicationId(), "alternate approval", "", "eligibility",
+                Map.of("score", 760), Map.of("approved", true), null));
+        VisualGraphGoldenCertification certification = controller.certify(publication.publicationId()).getBody();
+
+        ResponseEntity<Void> response = controller.delete(first.caseId());
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.NO_CONTENT);
+        assertThat(controller.get(first.caseId()).getStatusCode()).isEqualTo(HttpStatus.NOT_FOUND);
+        assertThat(controller.list(publication.publicationId())).containsExactly(second);
+        ResponseEntity<VisualGraphGoldenCertificationStatus> status =
+                controller.certificationStatus(publication.publicationId());
+        assertThat(status.getBody()).isNotNull();
+        assertThat(status.getBody().status())
+                .isEqualTo(VisualGraphGoldenCertificationStatus.Status.STALE);
+        assertThat(status.getBody().caseCount()).isOne();
+        assertThat(status.getBody().caseSetFingerprint()).isNotEqualTo(certification.caseSetFingerprint());
+        assertThat(controller.delete(first.caseId()).getStatusCode()).isEqualTo(HttpStatus.NOT_FOUND);
+    }
+
+    @Test
     void saveRejectsGoldenCaseWhenContextViolatesPublicationInputSchema() {
         InMemoryVisualGraphPublicationRepository publications = new InMemoryVisualGraphPublicationRepository();
         VisualGraphPublication publication = publications.create(publication());

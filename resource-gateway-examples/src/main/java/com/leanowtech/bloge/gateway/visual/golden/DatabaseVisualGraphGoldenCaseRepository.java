@@ -98,6 +98,20 @@ public class DatabaseVisualGraphGoldenCaseRepository implements VisualGraphGolde
         return stored;
     }
 
+    @Override
+    public boolean delete(String caseId) {
+        if (caseId == null || caseId.isBlank()) {
+            return false;
+        }
+        VisualGraphGoldenCase removed = cache.remove(caseId);
+        int deletedRows = jdbc.update(DELETE, caseId);
+        if (removed != null || deletedRows > 0) {
+            log.info("Deleted visual graph golden case: {}", caseId);
+            return true;
+        }
+        return false;
+    }
+
     private void persist(VisualGraphGoldenCase testCase) {
         try {
             jdbc.update(DELETE, testCase.caseId());
