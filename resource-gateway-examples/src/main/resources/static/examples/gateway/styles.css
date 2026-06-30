@@ -1050,6 +1050,11 @@ body.dragging-operator * {
   color: var(--text);
 }
 
+.library-controls .config-checkbox {
+  grid-column: 1 / -1;
+  min-height: 28px;
+}
+
 .config-checkbox {
   display: flex;
   align-items: center;

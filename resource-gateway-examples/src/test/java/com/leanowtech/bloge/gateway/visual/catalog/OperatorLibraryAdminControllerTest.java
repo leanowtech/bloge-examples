@@ -156,8 +156,35 @@ class OperatorLibraryAdminControllerTest {
                         .content(objectMapper.writeValueAsString(duplicate)))
                 .andExpect(status().isConflict())
                 .andExpect(jsonPath("$.valid").value(false))
-                .andExpect(jsonPath("$.diagnostics[0].code").value("visual.library.invalid"))
-                .andExpect(jsonPath("$.diagnostics[0].message").value("operatorRef 'risk:eligibility' already provided by library 'risk-policy'"));
+                .andExpect(jsonPath("$.diagnostics[0].code").value("visual.library.operatorRefOwned"))
+                .andExpect(jsonPath("$.diagnostics[0].message").value("operatorRef 'risk:eligibility' already provided by library 'risk-policy'"))
+                .andExpect(jsonPath("$.diagnostics[0].target").value("/operators/0/operatorRef"));
+    }
+
+    @Test
+    void validateReportsOperatorRefAlreadyOwnedByAnotherLibrary() throws Exception {
+        OperatorLibrary original = VisualCatalogTestSupport.eligibilityLibrary("integer");
+        OperatorLibrary duplicate = new OperatorLibrary(
+                "bloge.visualOperatorLibrary.v1",
+                "risk-policy-copy",
+                "Copy",
+                "1.0.0",
+                "risk-team",
+                "ACTIVE",
+                List.of(VisualCatalogTestSupport.eligibilityOperator("integer"))
+        );
+        registry.upsert(original);
+
+        mockMvc.perform(post("/admin/visual-operator-libraries/validate")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(duplicate)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.valid").value(false))
+                .andExpect(jsonPath("$.diagnostics[0].code").value("visual.library.operatorRefOwned"))
+                .andExpect(jsonPath("$.diagnostics[0].message").value("operatorRef 'risk:eligibility' already provided by library 'risk-policy'"))
+                .andExpect(jsonPath("$.diagnostics[0].target").value("/operators/0/operatorRef"));
+
+        assertThat(registry.find("risk-policy-copy")).isEmpty();
     }
 
     @Test
@@ -271,6 +298,42 @@ class OperatorLibraryAdminControllerTest {
                 .andExpect(status().isConflict())
                 .andExpect(jsonPath("$.valid").value(false))
                 .andExpect(jsonPath("$.diagnostics[0].code").value("visual.library.inUse"));
+
+        assertThat(registry.find("risk-policy")).contains(original);
+    }
+
+    @Test
+    void validateReportsReimportRemovingOperatorRefReferencedByStoredDraft() throws Exception {
+        OperatorLibrary original = VisualCatalogTestSupport.multiOutputEligibilityLibrary("integer");
+        OperatorLibrary replacement = libraryWithScoreFactsOnly();
+        registry.upsert(original);
+        drafts.save(draftUsingOperator("risk:eligibility"));
+
+        mockMvc.perform(post("/admin/visual-operator-libraries/validate")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(replacement)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.valid").value(false))
+                .andExpect(jsonPath("$.diagnostics[0].code").value("visual.library.inUse"))
+                .andExpect(jsonPath("$.diagnostics[0].target").value("/drafts/draft-1/nodes/0/operatorRef"));
+
+        assertThat(registry.find("risk-policy")).contains(original);
+    }
+
+    @Test
+    void validateForceBypassesStoredDraftReferenceImpact() throws Exception {
+        OperatorLibrary original = VisualCatalogTestSupport.multiOutputEligibilityLibrary("integer");
+        OperatorLibrary replacement = libraryWithScoreFactsOnly();
+        registry.upsert(original);
+        drafts.save(draftUsingOperator("risk:eligibility"));
+
+        mockMvc.perform(post("/admin/visual-operator-libraries/validate")
+                        .param("force", "true")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(replacement)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.valid").value(true))
+                .andExpect(jsonPath("$.diagnostics").isEmpty());
 
         assertThat(registry.find("risk-policy")).contains(original);
     }

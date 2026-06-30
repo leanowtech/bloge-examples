@@ -68,9 +68,9 @@ public class OperatorLibraryAdminController {
     @PostMapping
     public ResponseEntity<?> create(@RequestBody OperatorLibrary library,
                                     @RequestParam(defaultValue = "false") boolean force) {
-        VisualValidationResult validation = validator.validate(library);
+        VisualValidationResult validation = validateAgainstRegistry(library, force);
         if (!validation.valid()) {
-            return ResponseEntity.badRequest().body(validation);
+            return ResponseEntity.status(validationFailureStatus(validation)).body(validation);
         }
         ResponseEntity<VisualValidationResult> impact = replacementImpactResponse(library, force);
         if (impact != null) {
@@ -83,11 +83,13 @@ public class OperatorLibraryAdminController {
      * Validates a library without storing it.
      *
      * @param library library body
+     * @param force bypass stored-draft replacement impact diagnostics
      * @return structured validation diagnostics
      */
     @PostMapping("/validate")
-    public VisualValidationResult validate(@RequestBody OperatorLibrary library) {
-        return validator.validate(library);
+    public VisualValidationResult validate(@RequestBody OperatorLibrary library,
+                                           @RequestParam(defaultValue = "false") boolean force) {
+        return validateAgainstRegistry(library, force);
     }
 
     /**
@@ -117,9 +119,9 @@ public class OperatorLibraryAdminController {
             throw new IllegalArgumentException("Path libraryId '%s' does not match body libraryId '%s'"
                     .formatted(libraryId, library.libraryId()));
         }
-        VisualValidationResult validation = validator.validate(library);
+        VisualValidationResult validation = validateAgainstRegistry(library, force);
         if (!validation.valid()) {
-            return ResponseEntity.badRequest().body(validation);
+            return ResponseEntity.status(validationFailureStatus(validation)).body(validation);
         }
         ResponseEntity<VisualValidationResult> impact = replacementImpactResponse(library, force);
         if (impact != null) {
@@ -153,14 +155,70 @@ public class OperatorLibraryAdminController {
         return ResponseEntity.noContent().build();
     }
 
+    private VisualValidationResult validateAgainstRegistry(OperatorLibrary library, boolean force) {
+        VisualValidationResult structural = validator.validate(library);
+        List<VisualDiagnostic> diagnostics = new ArrayList<>(structural.diagnostics());
+        diagnostics.addAll(operatorRefOwnershipDiagnostics(library));
+        if (!force) {
+            diagnostics.addAll(replacementImpactDiagnostics(library, "replaced without force=true"));
+        }
+        return new VisualValidationResult(false, diagnostics);
+    }
+
+    private List<VisualDiagnostic> operatorRefOwnershipDiagnostics(OperatorLibrary library) {
+        if (library == null || library.operators().isEmpty()) {
+            return List.of();
+        }
+        List<VisualDiagnostic> diagnostics = new ArrayList<>();
+        for (int i = 0; i < library.operators().size(); i++) {
+            OperatorDefinition operator = library.operators().get(i);
+            String owner = registry.all().stream()
+                    .filter(existing -> !existing.libraryId().equals(library.libraryId()))
+                    .flatMap(existing -> existing.operators().stream()
+                            .filter(existingOperator -> existingOperator.operatorRef().equals(operator.operatorRef()))
+                            .map(existingOperator -> existing.libraryId()))
+                    .findFirst()
+                    .orElse("");
+            if (!owner.isBlank()) {
+                diagnostics.add(VisualDiagnostic.error("visual.library.operatorRefOwned",
+                        "operatorRef '%s' already provided by library '%s'"
+                                .formatted(operator.operatorRef(), owner),
+                        "/operators/%d/operatorRef".formatted(i)));
+            }
+        }
+        return diagnostics;
+    }
+
+    private static HttpStatus validationFailureStatus(VisualValidationResult validation) {
+        return validation.diagnostics().stream()
+                .anyMatch(diagnostic -> "visual.library.operatorRefOwned".equals(diagnostic.code())
+                        || "visual.library.inUse".equals(diagnostic.code()))
+                ? HttpStatus.CONFLICT
+                : HttpStatus.BAD_REQUEST;
+    }
+
     private ResponseEntity<VisualValidationResult> replacementImpactResponse(OperatorLibrary replacement,
                                                                              boolean force) {
         if (force) {
             return null;
         }
+        List<VisualDiagnostic> diagnostics = replacementImpactDiagnostics(replacement,
+                "replaced without force=true");
+        if (diagnostics.isEmpty()) {
+            return null;
+        }
+        return ResponseEntity.status(HttpStatus.CONFLICT)
+                .body(new VisualValidationResult(false, diagnostics));
+    }
+
+    private List<VisualDiagnostic> replacementImpactDiagnostics(OperatorLibrary replacement,
+                                                                String action) {
+        if (replacement == null) {
+            return List.of();
+        }
         Optional<OperatorLibrary> existing = registry.find(replacement.libraryId());
         if (existing.isEmpty()) {
-            return null;
+            return List.of();
         }
         Set<String> replacementRefs = replacement.operators().stream()
                 .map(OperatorDefinition::operatorRef)
@@ -169,16 +227,7 @@ public class OperatorLibraryAdminController {
                 .map(OperatorDefinition::operatorRef)
                 .filter(operatorRef -> !replacementRefs.contains(operatorRef))
                 .collect(java.util.stream.Collectors.toCollection(LinkedHashSet::new));
-        List<VisualDiagnostic> diagnostics = storedDraftReferenceDiagnostics(
-                replacement.libraryId(),
-                removedRefs,
-                "replaced without force=true"
-        );
-        if (diagnostics.isEmpty()) {
-            return null;
-        }
-        return ResponseEntity.status(HttpStatus.CONFLICT)
-                .body(new VisualValidationResult(false, diagnostics));
+        return storedDraftReferenceDiagnostics(replacement.libraryId(), removedRefs, action);
     }
 
     private List<VisualDiagnostic> storedDraftReferenceDiagnostics(String libraryId,

@@ -255,6 +255,7 @@ const state = {
   operatorLibraries: [],
   selectedLibraryId: '',
   libraryImportText: pretty(SAMPLE_OPERATOR_LIBRARY),
+  libraryForce: false,
   libraryMessage: null,
   draggingOperatorType: null,
   paletteDrag: null,
@@ -647,6 +648,10 @@ function renderInputForm() {
           <button id="import-library" class="secondary compact" type="button">Import</button>
           <button id="reload-libraries" class="secondary compact" type="button">Reload</button>
           <button id="delete-library" class="secondary compact danger" type="button">Delete</button>
+          <label class="config-checkbox compact">
+            <input id="library-force" type="checkbox">
+            <span>Force</span>
+          </label>
         </div>
         <textarea id="operator-library-json" class="library-editor" spellcheck="false"></textarea>
         <div id="library-status" class="library-status" hidden></div>
@@ -1138,6 +1143,15 @@ function renderOperatorLibraryControls() {
   const validateButton = $('validate-library');
   const reloadButton = $('reload-libraries');
   const deleteButton = $('delete-library');
+  const forceToggle = $('library-force');
+  if (forceToggle) {
+    forceToggle.checked = Boolean(state.libraryForce);
+    forceToggle.onchange = () => {
+      state.libraryForce = forceToggle.checked;
+      state.libraryMessage = null;
+      renderLibraryStatus();
+    };
+  }
   if (validateButton) {
     validateButton.onclick = validateOperatorLibrary;
   }
@@ -1366,7 +1380,7 @@ async function validateOperatorLibrary() {
     setLibraryMessage(`Invalid JSON: ${error.message}`, 'error');
     return;
   }
-  const response = await fetch('/admin/visual-operator-libraries/validate', {
+  const response = await fetch(`/admin/visual-operator-libraries/validate${libraryForceQuery()}`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(library)
@@ -1396,8 +1410,12 @@ async function importOperatorLibrary() {
     setLibraryMessage('libraryId is required.', 'error');
     return;
   }
-  const response = await fetch('/admin/visual-operator-libraries', {
-    method: 'POST',
+  const replacing = libraryExists(library.libraryId);
+  const endpoint = replacing
+    ? `/admin/visual-operator-libraries/${encodeURIComponent(library.libraryId)}${libraryForceQuery()}`
+    : `/admin/visual-operator-libraries${libraryForceQuery()}`;
+  const response = await fetch(endpoint, {
+    method: replacing ? 'PUT' : 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(library)
   });
@@ -1423,17 +1441,29 @@ async function importOperatorLibrary() {
   await loadVisualOperatorCatalog();
   renderOperatorPalette();
   renderOperatorLibraryControls();
-  setLibraryMessage(`Imported ${stored.libraryId}.`, 'success');
+  setLibraryMessage(`${replacing ? 'Replaced' : 'Imported'} ${stored.libraryId}.`, 'success');
 }
 
 async function deleteSelectedOperatorLibrary() {
-  if (!state.selectedLibraryId || !confirm(`Delete operator library ${state.selectedLibraryId}?`)) return;
+  if (!state.selectedLibraryId) return;
+  const forced = Boolean(state.libraryForce);
+  const prompt = forced
+    ? `Force delete operator library ${state.selectedLibraryId}? Stored drafts that reference it may become invalid.`
+    : `Delete operator library ${state.selectedLibraryId}?`;
+  if (!confirm(prompt)) return;
   const deletedId = state.selectedLibraryId;
-  const response = await fetch(`/admin/visual-operator-libraries/${encodeURIComponent(deletedId)}`, {
-    method: 'DELETE'
-  });
+  const response = await fetch(
+    `/admin/visual-operator-libraries/${encodeURIComponent(deletedId)}${libraryForceQuery()}`,
+    { method: 'DELETE' }
+  );
   if (!response.ok) {
-    setLibraryMessage(`Delete failed with ${response.status}`, 'error');
+    const payload = await response.json().catch(() => null);
+    const diagnostics = normalizeDiagnostics(payload?.diagnostics);
+    setLibraryMessage(
+      validationResultMessage(payload?.valid, diagnostics, `Delete failed with ${response.status}`),
+      'error',
+      diagnostics
+    );
     return;
   }
   state.selectedLibraryId = '';
@@ -1443,6 +1473,14 @@ async function deleteSelectedOperatorLibrary() {
   renderOperatorPalette();
   renderOperatorLibraryControls();
   setLibraryMessage(`Deleted ${deletedId}.`, 'success');
+}
+
+function libraryForceQuery() {
+  return state.libraryForce ? '?force=true' : '';
+}
+
+function libraryExists(libraryId) {
+  return state.operatorLibraries.some((library) => library.libraryId === libraryId);
 }
 
 function renderDraftControls() {

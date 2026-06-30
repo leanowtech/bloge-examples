@@ -91,7 +91,9 @@ schema-checked source picker or a manual expression, connect output handles to
 input handles under schema type constraints, confirm dropped connections and
 input/config source-picker selections through the server-side visual connection API before
 mutating the draft, validate
-user-provided operator library JSON before importing it into the catalog,
+user-provided operator library JSON before importing it into the catalog, opt
+into `force=true` for explicit destructive operator-library replacement or
+deletion after inspecting impact diagnostics,
 save/load/delete H2-backed graph drafts with
 revision-guarded field-level `PATCH` updates and per-revision audit metadata,
 validate and compile the draft through the server-side visual graph APIs, inspect the
@@ -381,12 +383,18 @@ Imported operators join the same `/api/visual/operators` catalog as built-ins an
 resource-backed virtual operators when their library status is catalog-visible.
 The browser Operator Libraries panel calls
 the validate endpoint directly, so authors can inspect an inline structured
-diagnostic list before storing a library.
+diagnostic list before storing a library. That validation is registry-aware:
+it reports cross-library `operatorRef` ownership conflicts and replacement
+impact against stored drafts before an import or replace request mutates storage.
+The same panel exposes a `Force` switch that passes `force=true` to validate,
+import, replace, and delete requests when an author intentionally accepts the
+stored-draft impact. When the edited JSON uses an existing `libraryId`, the
+browser sends a `PUT` replace request; otherwise it sends a `POST` import.
 
 | Method | Path | Description | Status |
 |--------|------|-------------|--------|
 | `GET` | `/admin/visual-operator-libraries` | List imported operator libraries | 200 |
-| `POST` | `/admin/visual-operator-libraries/validate` | Validate an operator library without storing it | 200 |
+| `POST` | `/admin/visual-operator-libraries/validate` | Validate an operator library without storing it; use `force=true` to suppress stored-draft replacement impact diagnostics | 200 |
 | `POST` | `/admin/visual-operator-libraries` | Import or re-import an operator library; rejects removal of stored-draft operator refs unless `force=true` | 201 / 400 / 409 |
 | `GET` | `/admin/visual-operator-libraries/{libraryId}` | Get one imported library | 200 / 404 |
 | `PUT` | `/admin/visual-operator-libraries/{libraryId}` | Replace an imported library; rejects removal of stored-draft operator refs unless `force=true` | 200 / 400 / 409 |
@@ -837,7 +845,7 @@ curl -X POST http://localhost:8080/api/gateway/resources/execute \
 
 ## Test strategy
 
-The test suite is organised into four layers (40 top-level test classes, 341 executed
+The test suite is organised into four layers (40 top-level test classes, 344 executed
 tests, including nested JUnit suites):
 
 ### Layer 1 — Unit tests
@@ -863,7 +871,7 @@ Isolated component tests, some with lightweight Spring slices or mocks.
 | `ResourceDescriptorBootstrapTest` | 7 | Seeding, refresh behavior, idempotency |
 | `GatewayDslCompilationTest` | 7 | DSL parsing, graph loading |
 | Gateway example API suite | 13 | Dynamic composer service/controller, scenario catalog, example graph endpoints |
-| Visual authoring suite | 200 | Visual operator projection, resource design contract persistence and gates, resource-contract in-use delete protection, imported libraries, catalog lifecycle gates, deprecated operator draft resolution and active-scope fingerprinting, catalog token gates and policy filtering, cross-library operatorRef ownership, operator-library in-use change protection, system-reserved operatorRef gates, import-time lowering gates, draft/publication persistence and history, revision audit metadata, full-save/PATCH fingerprint preservation, service-managed fingerprint snapshot gates, structured malformed patch diagnostics, server-assigned create identity, revision-guarded full-save, patch, stored-run, delete, and publish conflict handling, operator fingerprint drift preservation and execution snapshot coverage gates, typed connection/edge validation including edge identity uniqueness and binding kind allow-list, input/config source-picker server preflight with duplicate-connection rejection, duplicate target input ownership, object required fields, object schema structure gates, required-array schema gates, nested objectTemplate required fields, enum value-domain and shape gates, config expression references and configSchema type gates, data edge/semantic dependency consistency, graph input schema gates, secret blocking, DSL lowering, compiler gating, dependency ordering, runtime smoke path |
+| Visual authoring suite | 203 | Visual operator projection, resource design contract persistence and gates, resource-contract in-use delete protection, imported libraries, registry-aware and impact-aware library validation, catalog lifecycle gates, deprecated operator draft resolution and active-scope fingerprinting, catalog token gates and policy filtering, cross-library operatorRef ownership, operator-library in-use change protection, system-reserved operatorRef gates, import-time lowering gates, draft/publication persistence and history, revision audit metadata, full-save/PATCH fingerprint preservation, service-managed fingerprint snapshot gates, structured malformed patch diagnostics, server-assigned create identity, revision-guarded full-save, patch, stored-run, delete, and publish conflict handling, operator fingerprint drift preservation and execution snapshot coverage gates, typed connection/edge validation including edge identity uniqueness and binding kind allow-list, input/config source-picker server preflight with duplicate-connection rejection, duplicate target input ownership, object required fields, object schema structure gates, required-array schema gates, nested objectTemplate required fields, enum value-domain and shape gates, config expression references and configSchema type gates, data edge/semantic dependency consistency, graph input schema gates, secret blocking, DSL lowering, compiler gating, dependency ordering, runtime smoke path |
 
 ### Layer 3 — Orchestration tests
 
