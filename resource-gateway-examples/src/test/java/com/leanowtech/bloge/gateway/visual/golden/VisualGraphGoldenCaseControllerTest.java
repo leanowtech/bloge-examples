@@ -69,6 +69,69 @@ class VisualGraphGoldenCaseControllerTest {
     }
 
     @Test
+    void runGoldenCasePassesWhenAssertionsMatch() {
+        InMemoryVisualGraphPublicationRepository publications = new InMemoryVisualGraphPublicationRepository();
+        VisualGraphPublication publication = publications.create(publication());
+        VisualGraphGoldenCaseController controller = controller(publications,
+                new CapturingRunService(Map.of("approved", true, "decision", "APPROVED")));
+        VisualGraphGoldenCase stored = controller.save(goldenCaseWithAssertions(publication.publicationId(),
+                List.of(
+                        assertion(VisualGraphGoldenAssertion.Mode.PATH_EQUALS, "/approved", true),
+                        assertion(VisualGraphGoldenAssertion.Mode.PATH_EXISTS, "/decision", null),
+                        assertion(VisualGraphGoldenAssertion.Mode.PATH_ABSENT, "/warnings", null)
+                ))).getBody();
+
+        ResponseEntity<VisualGraphGoldenCaseRunResult> response = controller.run(stored.caseId());
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat(response.getBody()).isNotNull();
+        assertThat(response.getBody().passed()).isTrue();
+        assertThat(response.getBody().diagnostics()).isEmpty();
+    }
+
+    @Test
+    void runGoldenCaseReturnsAssertionFailureDiagnostic() {
+        InMemoryVisualGraphPublicationRepository publications = new InMemoryVisualGraphPublicationRepository();
+        VisualGraphPublication publication = publications.create(publication());
+        VisualGraphGoldenCaseController controller = controller(publications,
+                new CapturingRunService(Map.of("approved", false)));
+        VisualGraphGoldenCase stored = controller.save(goldenCaseWithAssertions(publication.publicationId(),
+                List.of(assertion(VisualGraphGoldenAssertion.Mode.PATH_EQUALS, "/approved", true)))).getBody();
+
+        ResponseEntity<VisualGraphGoldenCaseRunResult> response = controller.run(stored.caseId());
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat(response.getBody()).isNotNull();
+        assertThat(response.getBody().passed()).isFalse();
+        assertThat(response.getBody().diagnostics())
+                .extracting(VisualDiagnostic::code)
+                .containsExactly("visual.golden.assertionFailed");
+        assertThat(response.getBody().diagnostics().getFirst().target())
+                .isEqualTo("/assertions/0/expectedValue");
+    }
+
+    @Test
+    void runGoldenCaseReturnsInvalidJsonPointerDiagnostic() {
+        InMemoryVisualGraphPublicationRepository publications = new InMemoryVisualGraphPublicationRepository();
+        VisualGraphPublication publication = publications.create(publication());
+        VisualGraphGoldenCaseController controller = controller(publications,
+                new CapturingRunService(Map.of("approved", true)));
+        VisualGraphGoldenCase stored = controller.save(goldenCaseWithAssertions(publication.publicationId(),
+                List.of(assertion(VisualGraphGoldenAssertion.Mode.PATH_EXISTS, "approved", null)))).getBody();
+
+        ResponseEntity<VisualGraphGoldenCaseRunResult> response = controller.run(stored.caseId());
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat(response.getBody()).isNotNull();
+        assertThat(response.getBody().passed()).isFalse();
+        assertThat(response.getBody().diagnostics())
+                .extracting(VisualDiagnostic::code)
+                .containsExactly("visual.golden.assertionInvalidPath");
+        assertThat(response.getBody().diagnostics().getFirst().target())
+                .isEqualTo("/assertions/0/path");
+    }
+
+    @Test
     void runGoldenCaseReturnsMismatchDiagnostic() {
         InMemoryVisualGraphPublicationRepository publications = new InMemoryVisualGraphPublicationRepository();
         VisualGraphPublication publication = publications.create(publication());
@@ -165,6 +228,7 @@ class VisualGraphGoldenCaseControllerTest {
         assertThat(certification.passedCases()).isEqualTo(1);
         assertThat(certification.failedCases()).isZero();
         assertThat(certification.runIds()).hasSize(1);
+        assertThat(certification.caseSetFingerprint()).isNotBlank();
         assertThat(runs.find(certification.runIds().get(0))).isPresent();
         assertThat(controller.certification(publication.publicationId()).getBody()).isEqualTo(certification);
     }
@@ -204,6 +268,144 @@ class VisualGraphGoldenCaseControllerTest {
     }
 
     @Test
+    void certificationStatusRequiresGoldenCases() {
+        InMemoryVisualGraphPublicationRepository publications = new InMemoryVisualGraphPublicationRepository();
+        VisualGraphPublication publication = publications.create(publication());
+        VisualGraphGoldenCaseController controller = controller(publications,
+                new CapturingRunService(Map.of()));
+
+        ResponseEntity<VisualGraphGoldenCertificationStatus> response =
+                controller.certificationStatus(publication.publicationId());
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat(response.getBody()).isNotNull();
+        assertThat(response.getBody().status())
+                .isEqualTo(VisualGraphGoldenCertificationStatus.Status.MISSING_CASES);
+        assertThat(response.getBody().promotionReady()).isFalse();
+        assertThat(response.getBody().diagnostics())
+                .extracting(VisualDiagnostic::code)
+                .containsExactly("visual.golden.status.noCases");
+    }
+
+    @Test
+    void certificationStatusRequiresCertificationRun() {
+        InMemoryVisualGraphPublicationRepository publications = new InMemoryVisualGraphPublicationRepository();
+        VisualGraphPublication publication = publications.create(publication());
+        VisualGraphGoldenCaseController controller = controller(publications,
+                new CapturingRunService(Map.of()));
+        controller.save(goldenCase(publication.publicationId(), Map.of("approved", true)));
+
+        ResponseEntity<VisualGraphGoldenCertificationStatus> response =
+                controller.certificationStatus(publication.publicationId());
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat(response.getBody()).isNotNull();
+        assertThat(response.getBody().status())
+                .isEqualTo(VisualGraphGoldenCertificationStatus.Status.UNCERTIFIED);
+        assertThat(response.getBody().promotionReady()).isFalse();
+        assertThat(response.getBody().caseSetFingerprint()).isNotBlank();
+        assertThat(response.getBody().diagnostics())
+                .extracting(VisualDiagnostic::code)
+                .containsExactly("visual.golden.status.uncertified");
+    }
+
+    @Test
+    void certificationStatusIsPromotionReadyAfterPassingCertification() {
+        InMemoryVisualGraphPublicationRepository publications = new InMemoryVisualGraphPublicationRepository();
+        VisualGraphPublication publication = publications.create(publication());
+        VisualGraphGoldenCaseController controller = controller(publications,
+                new CapturingRunService(Map.of("approved", true)));
+        controller.save(goldenCase(publication.publicationId(), Map.of("approved", true)));
+        VisualGraphGoldenCertification certification = controller.certify(publication.publicationId()).getBody();
+
+        ResponseEntity<VisualGraphGoldenCertificationStatus> response =
+                controller.certificationStatus(publication.publicationId());
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat(response.getBody()).isNotNull();
+        assertThat(response.getBody().status())
+                .isEqualTo(VisualGraphGoldenCertificationStatus.Status.CERTIFIED);
+        assertThat(response.getBody().promotionReady()).isTrue();
+        assertThat(response.getBody().certification()).isEqualTo(certification);
+        assertThat(response.getBody().caseSetFingerprint()).isEqualTo(certification.caseSetFingerprint());
+        assertThat(response.getBody().diagnostics()).isEmpty();
+    }
+
+    @Test
+    void certificationStatusFailsWhenLatestCertificationFailed() {
+        InMemoryVisualGraphPublicationRepository publications = new InMemoryVisualGraphPublicationRepository();
+        VisualGraphPublication publication = publications.create(publication());
+        VisualGraphGoldenCaseController controller = controller(publications,
+                new CapturingRunService(Map.of("approved", false)));
+        controller.save(goldenCase(publication.publicationId(), Map.of("approved", true)));
+        controller.certify(publication.publicationId());
+
+        ResponseEntity<VisualGraphGoldenCertificationStatus> response =
+                controller.certificationStatus(publication.publicationId());
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat(response.getBody()).isNotNull();
+        assertThat(response.getBody().status())
+                .isEqualTo(VisualGraphGoldenCertificationStatus.Status.FAILED);
+        assertThat(response.getBody().promotionReady()).isFalse();
+        assertThat(response.getBody().diagnostics())
+                .extracting(VisualDiagnostic::code)
+                .containsExactly("visual.golden.status.failed", "visual.golden.suiteFailed");
+    }
+
+    @Test
+    void certificationStatusBecomesStaleWhenCasesChangeAfterCertification() {
+        InMemoryVisualGraphPublicationRepository publications = new InMemoryVisualGraphPublicationRepository();
+        VisualGraphPublication publication = publications.create(publication());
+        VisualGraphGoldenCaseController controller = controller(publications,
+                new CapturingRunService(Map.of("approved", true)));
+        controller.save(goldenCase(publication.publicationId(), Map.of("approved", true)));
+        VisualGraphGoldenCertification certification = controller.certify(publication.publicationId()).getBody();
+        controller.save(new VisualGraphGoldenCase("", "", publication.publicationId(), "declined approval",
+                "", "eligibility", Map.of("score", 500), Map.of("approved", false), null));
+
+        ResponseEntity<VisualGraphGoldenCertificationStatus> response =
+                controller.certificationStatus(publication.publicationId());
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat(response.getBody()).isNotNull();
+        assertThat(response.getBody().status())
+                .isEqualTo(VisualGraphGoldenCertificationStatus.Status.STALE);
+        assertThat(response.getBody().promotionReady()).isFalse();
+        assertThat(response.getBody().caseCount()).isEqualTo(2);
+        assertThat(response.getBody().certification()).isEqualTo(certification);
+        assertThat(response.getBody().caseSetFingerprint()).isNotEqualTo(certification.caseSetFingerprint());
+        assertThat(response.getBody().diagnostics())
+                .extracting(VisualDiagnostic::code)
+                .containsExactly("visual.golden.status.stale");
+    }
+
+    @Test
+    void certificationStatusBecomesStaleWhenCaseAssertionsChangeAfterCertification() {
+        InMemoryVisualGraphPublicationRepository publications = new InMemoryVisualGraphPublicationRepository();
+        VisualGraphPublication publication = publications.create(publication());
+        VisualGraphGoldenCaseController controller = controller(publications,
+                new CapturingRunService(Map.of("approved", true)));
+        VisualGraphGoldenCase stored = controller.save(goldenCase(publication.publicationId(),
+                Map.of("approved", true))).getBody();
+        VisualGraphGoldenCertification certification = controller.certify(publication.publicationId()).getBody();
+        controller.save(new VisualGraphGoldenCase("", stored.caseId(), publication.publicationId(),
+                stored.name(), stored.description(), stored.outputNode(), stored.context(),
+                stored.expectedOutput(), List.of(assertion(VisualGraphGoldenAssertion.Mode.PATH_EQUALS,
+                        "/approved", true)), stored.createdAt()));
+
+        ResponseEntity<VisualGraphGoldenCertificationStatus> response =
+                controller.certificationStatus(publication.publicationId());
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat(response.getBody()).isNotNull();
+        assertThat(response.getBody().status())
+                .isEqualTo(VisualGraphGoldenCertificationStatus.Status.STALE);
+        assertThat(response.getBody().certification()).isEqualTo(certification);
+        assertThat(response.getBody().caseSetFingerprint()).isNotEqualTo(certification.caseSetFingerprint());
+    }
+
+    @Test
     void saveReturnsNotFoundForUnknownPublication() {
         VisualGraphGoldenCaseController controller = controller(new InMemoryVisualGraphPublicationRepository(),
                 new CapturingRunService(Map.of()));
@@ -233,6 +435,18 @@ class VisualGraphGoldenCaseControllerTest {
     private static VisualGraphGoldenCase goldenCase(String publicationId, Object expectedOutput) {
         return new VisualGraphGoldenCase("", "", publicationId, "prime approval", "", "eligibility",
                 Map.of("score", 720), expectedOutput, null);
+    }
+
+    private static VisualGraphGoldenCase goldenCaseWithAssertions(String publicationId,
+                                                                  List<VisualGraphGoldenAssertion> assertions) {
+        return new VisualGraphGoldenCase("", "", publicationId, "prime approval", "", "eligibility",
+                Map.of("score", 720), Map.of("legacy", "ignored"), assertions, null);
+    }
+
+    private static VisualGraphGoldenAssertion assertion(VisualGraphGoldenAssertion.Mode mode,
+                                                       String path,
+                                                       Object expectedValue) {
+        return new VisualGraphGoldenAssertion(mode, path, expectedValue);
     }
 
     private static VisualGraphPublication publication() {

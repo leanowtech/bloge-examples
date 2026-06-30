@@ -72,6 +72,7 @@ class DatabaseVisualGraphGoldenCertificationRepositoryTest {
                 certified ? 1 : 0,
                 certified ? 0 : 1,
                 List.of("run-1"),
+                "fingerprint-1",
                 certified ? List.of() : List.of(VisualDiagnostic.error(
                         "visual.golden.suiteFailed",
                         "suite failed",

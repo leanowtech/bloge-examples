@@ -162,6 +162,12 @@ class VisualAuthoringBrowserDomTest {
         waitForText(wait, By.id("output"), "\"output\": false");
         waitForText(wait, By.id("run-history-list"), "PUBLICATION");
 
+        selectByValue(wait, By.id("golden-assertion-mode"), "OUTPUT_EQUALS");
+        WebElement assertionValue = wait.until(ExpectedConditions.elementToBeClickable(
+                By.id("golden-assertion-value")
+        ));
+        assertionValue.clear();
+        assertionValue.sendKeys("false");
         click(wait, By.id("save-golden-case"));
         waitForText(wait, By.id("publication-status"), "Saved golden");
         waitForText(wait, By.id("golden-case-select"), "customLoanPolicy golden");
@@ -178,7 +184,7 @@ class VisualAuthoringBrowserDomTest {
 
         click(wait, By.id("certify-golden-suite"));
         waitForText(wait, By.id("publication-status"), "Certified");
-        waitForText(wait, By.id("golden-certification-status"), "Certified");
+        waitForText(wait, By.id("golden-certification-status"), "Promotion ready");
         waitForText(wait, By.id("output"), "\"goldenCertification\"");
         waitForText(wait, By.id("output"), "\"certified\": true");
 

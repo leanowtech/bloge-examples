@@ -1,7 +1,9 @@
 package com.leanowtech.bloge.gateway.visual.golden;
 
+import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.SerializationFeature;
 import com.leanowtech.bloge.gateway.visual.diagnostic.VisualDiagnostic;
 import com.leanowtech.bloge.gateway.visual.publication.VisualGraphPublication;
 import com.leanowtech.bloge.gateway.visual.publication.VisualGraphPublicationRepository;
@@ -19,9 +21,16 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
 import java.util.ArrayList;
 import java.util.Collection;
+import java.util.Comparator;
+import java.util.HexFormat;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 
 /**
  * Public API for golden regression cases bound to immutable visual graph publications.
@@ -141,6 +150,26 @@ public class VisualGraphGoldenCaseController {
     }
 
     /**
+     * Reads promotion-readiness status for one publication's latest golden certification.
+     *
+     * @param publicationId publication id
+     * @return current certification status
+     */
+    @GetMapping("/publications/{publicationId}/certification/status")
+    public ResponseEntity<VisualGraphGoldenCertificationStatus> certificationStatus(@PathVariable String publicationId) {
+        if (publicationRepository.find(publicationId).isEmpty()) {
+            return ResponseEntity.notFound().build();
+        }
+        List<VisualGraphGoldenCase> testCases = goldenCasesFor(publicationId);
+        return ResponseEntity.ok(VisualGraphGoldenCertificationStatus.from(
+                publicationId,
+                testCases,
+                certificationRepository.find(publicationId).orElse(null),
+                caseSetFingerprint(testCases)
+        ));
+    }
+
+    /**
      * Runs the publication golden suite and stores the latest certification.
      *
      * @param publicationId publication id
@@ -150,9 +179,10 @@ public class VisualGraphGoldenCaseController {
     public ResponseEntity<VisualGraphGoldenCertification> certify(@PathVariable String publicationId) {
         return publicationRepository.find(publicationId)
                 .map(publication -> {
-                    VisualGraphGoldenSuiteRunResult suite = runSuite(publication);
+                    List<VisualGraphGoldenCase> testCases = goldenCasesFor(publication.publicationId());
+                    VisualGraphGoldenSuiteRunResult suite = runSuite(publication, testCases);
                     return ResponseEntity.ok(certificationRepository.save(
-                            VisualGraphGoldenCertification.from(suite)));
+                            VisualGraphGoldenCertification.from(suite, caseSetFingerprint(testCases))));
                 })
                 .orElseGet(() -> ResponseEntity.notFound().build());
     }
@@ -164,7 +194,11 @@ public class VisualGraphGoldenCaseController {
     }
 
     private VisualGraphGoldenSuiteRunResult runSuite(VisualGraphPublication publication) {
-        List<VisualGraphGoldenCase> testCases = List.copyOf(repository.findByPublicationId(publication.publicationId()));
+        return runSuite(publication, goldenCasesFor(publication.publicationId()));
+    }
+
+    private VisualGraphGoldenSuiteRunResult runSuite(VisualGraphPublication publication,
+                                                     List<VisualGraphGoldenCase> testCases) {
         if (testCases.isEmpty()) {
             return VisualGraphGoldenSuiteRunResult.from(publication.publicationId(), List.of(), List.of(
                     VisualDiagnostic.error("visual.golden.noCases",
@@ -189,6 +223,10 @@ public class VisualGraphGoldenCaseController {
         return VisualGraphGoldenSuiteRunResult.from(publication.publicationId(), results, diagnostics);
     }
 
+    private List<VisualGraphGoldenCase> goldenCasesFor(String publicationId) {
+        return List.copyOf(repository.findByPublicationId(publicationId));
+    }
+
     private VisualGraphGoldenCaseRunResult runSingleCase(VisualGraphGoldenCase testCase,
                                                          VisualGraphPublication publication) {
         VisualGraphRunResponse response = runner.run(publication, testCase.context(), testCase.outputNode());
@@ -201,18 +239,119 @@ public class VisualGraphGoldenCaseController {
                     "Golden case '%s' did not complete successfully.".formatted(testCase.caseId()),
                     "/run"));
         }
-        if (!jsonEquals(testCase.expectedOutput(), recorded.output())) {
+        if (testCase.assertions().isEmpty() && !jsonEquals(testCase.expectedOutput(), recorded.output())) {
             diagnostics.add(VisualDiagnostic.error("visual.golden.outputMismatch",
                     "Golden case '%s' expected output does not match actual output.".formatted(testCase.caseId()),
                     "/expectedOutput"));
         }
+        if (!testCase.assertions().isEmpty()) {
+            diagnostics.addAll(assertionDiagnostics(testCase, recorded.output()));
+        }
         boolean passed = recorded.success() && diagnostics.stream().noneMatch(VisualDiagnostic::error);
         return new VisualGraphGoldenCaseRunResult(passed, testCase, recorded, diagnostics);
+    }
+
+    private List<VisualDiagnostic> assertionDiagnostics(VisualGraphGoldenCase testCase, Object actualOutput) {
+        JsonNode actualNode = objectMapper.valueToTree(actualOutput);
+        List<VisualDiagnostic> diagnostics = new ArrayList<>();
+        for (int i = 0; i < testCase.assertions().size(); i++) {
+            VisualGraphGoldenAssertion assertion = testCase.assertions().get(i);
+            String target = "/assertions/%d".formatted(i);
+            diagnostics.addAll(assertionDiagnostics(testCase.caseId(), assertion, actualNode, target));
+        }
+        return diagnostics;
+    }
+
+    private List<VisualDiagnostic> assertionDiagnostics(String caseId,
+                                                        VisualGraphGoldenAssertion assertion,
+                                                        JsonNode actualOutput,
+                                                        String target) {
+        if (assertion.mode() == VisualGraphGoldenAssertion.Mode.OUTPUT_EQUALS) {
+            return jsonEquals(assertion.expectedValue(), actualOutput)
+                    ? List.of()
+                    : List.of(assertionFailed(caseId, "output equals expected value", target + "/expectedValue"));
+        }
+        if (!validJsonPointer(assertion.path())) {
+            return List.of(VisualDiagnostic.error("visual.golden.assertionInvalidPath",
+                    "Golden case '%s' assertion path '%s' is not a JSON Pointer."
+                            .formatted(caseId, assertion.path()),
+                    target + "/path"));
+        }
+
+        JsonNode actualValue = actualOutput.at(assertion.path());
+        return switch (assertion.mode()) {
+            case PATH_EQUALS -> jsonEquals(assertion.expectedValue(), actualValue)
+                    ? List.of()
+                    : List.of(assertionFailed(caseId,
+                            "path '%s' equals expected value".formatted(assertion.path()),
+                            target + "/expectedValue"));
+            case PATH_EXISTS -> actualValue.isMissingNode()
+                    ? List.of(assertionFailed(caseId,
+                            "path '%s' exists".formatted(assertion.path()),
+                            target + "/path"))
+                    : List.of();
+            case PATH_ABSENT -> actualValue.isMissingNode()
+                    ? List.of()
+                    : List.of(assertionFailed(caseId,
+                            "path '%s' is absent".formatted(assertion.path()),
+                            target + "/path"));
+            case OUTPUT_EQUALS -> List.of();
+        };
+    }
+
+    private VisualDiagnostic assertionFailed(String caseId, String expectation, String target) {
+        return VisualDiagnostic.error("visual.golden.assertionFailed",
+                "Golden case '%s' assertion failed: expected %s.".formatted(caseId, expectation),
+                target);
     }
 
     private boolean jsonEquals(Object expected, Object actual) {
         JsonNode expectedNode = objectMapper.valueToTree(expected);
         JsonNode actualNode = objectMapper.valueToTree(actual);
         return expectedNode.equals(actualNode);
+    }
+
+    private boolean jsonEquals(Object expected, JsonNode actual) {
+        JsonNode expectedNode = objectMapper.valueToTree(expected);
+        return expectedNode.equals(actual);
+    }
+
+    private boolean validJsonPointer(String path) {
+        return path == null || path.isBlank() || path.startsWith("/");
+    }
+
+    private String caseSetFingerprint(Collection<VisualGraphGoldenCase> testCases) {
+        if (testCases == null || testCases.isEmpty()) {
+            return "";
+        }
+        List<Map<String, Object>> material = testCases.stream()
+                .sorted(Comparator.comparing(VisualGraphGoldenCase::caseId))
+                .map(this::caseFingerprintMaterial)
+                .toList();
+        try {
+            String json = objectMapper.writer()
+                    .with(SerializationFeature.ORDER_MAP_ENTRIES_BY_KEYS)
+                    .writeValueAsString(material);
+            MessageDigest digest = MessageDigest.getInstance("SHA-256");
+            return HexFormat.of().formatHex(digest.digest(json.getBytes(StandardCharsets.UTF_8)));
+        } catch (JsonProcessingException e) {
+            throw new IllegalStateException("Failed to serialize golden case fingerprint material.", e);
+        } catch (NoSuchAlgorithmException e) {
+            throw new IllegalStateException("SHA-256 is unavailable for golden case fingerprinting.", e);
+        }
+    }
+
+    private Map<String, Object> caseFingerprintMaterial(VisualGraphGoldenCase testCase) {
+        Map<String, Object> material = new LinkedHashMap<>();
+        material.put("caseId", testCase.caseId());
+        material.put("publicationId", testCase.publicationId());
+        material.put("name", testCase.name());
+        material.put("description", testCase.description());
+        material.put("outputNode", testCase.outputNode());
+        material.put("context", testCase.context());
+        material.put("expectedOutput", testCase.expectedOutput());
+        material.put("assertions", testCase.assertions());
+        material.put("createdAt", testCase.createdAt());
+        return material;
     }
 }

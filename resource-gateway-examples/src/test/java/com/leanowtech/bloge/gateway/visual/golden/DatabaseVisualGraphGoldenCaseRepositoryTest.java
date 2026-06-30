@@ -10,6 +10,7 @@ import org.springframework.jdbc.datasource.embedded.EmbeddedDatabaseBuilder;
 import org.springframework.jdbc.datasource.embedded.EmbeddedDatabaseType;
 
 import javax.sql.DataSource;
+import java.util.List;
 import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -54,6 +55,36 @@ class DatabaseVisualGraphGoldenCaseRepositoryTest {
 
         assertThat(reloaded.find("case-1")).contains(stored);
         assertThat(reloaded.all()).containsExactly(stored);
+    }
+
+    @Test
+    void persistencePreservesAssertions() {
+        VisualGraphGoldenCase stored = repository.save(new VisualGraphGoldenCase(
+                "",
+                "case-1",
+                "publication-1",
+                "approval assertion",
+                "",
+                "eligibility",
+                Map.of("score", 760),
+                Map.of("legacy", "ignored"),
+                List.of(new VisualGraphGoldenAssertion(
+                        VisualGraphGoldenAssertion.Mode.PATH_EQUALS,
+                        "/approved",
+                        true)),
+                null
+        ));
+
+        DatabaseVisualGraphGoldenCaseRepository reloaded =
+                new DatabaseVisualGraphGoldenCaseRepository(jdbc, objectMapper);
+        reloaded.init();
+
+        assertThat(reloaded.find("case-1")).contains(stored);
+        assertThat(reloaded.find("case-1").orElseThrow().assertions())
+                .containsExactly(new VisualGraphGoldenAssertion(
+                        VisualGraphGoldenAssertion.Mode.PATH_EQUALS,
+                        "/approved",
+                        true));
     }
 
     @Test

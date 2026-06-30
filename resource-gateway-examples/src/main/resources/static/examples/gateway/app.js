@@ -330,6 +330,10 @@ const state = {
   goldenCases: [],
   selectedGoldenCaseId: '',
   goldenCertification: null,
+  goldenCertificationStatus: null,
+  goldenAssertionMode: 'EXACT_OUTPUT',
+  goldenAssertionPath: '',
+  goldenAssertionValueText: '',
   runHistory: [],
   runHistoryFilters: {
     sourceKind: '',
@@ -406,7 +410,7 @@ async function loadScenarios() {
   await loadDraftList({ render: false });
   await loadPublicationList({ render: false });
   await loadGoldenCases({ render: false });
-  await loadGoldenCertification({ render: false });
+  await loadGoldenCertificationStatus({ render: false });
   await loadRunHistory({ render: false });
   const response = await fetch('/api/gateway/examples/scenarios');
   state.customContextText = pretty(DEFAULT_COMPOSER_CONTEXT);
@@ -867,6 +871,11 @@ function renderInputForm() {
           <button id="run-golden-case" class="secondary compact" type="button">Run Golden</button>
           <button id="run-golden-suite" class="secondary compact" type="button">Run Suite</button>
           <button id="certify-golden-suite" class="secondary compact" type="button">Certify</button>
+        </div>
+        <div class="golden-assertion-controls">
+          <select id="golden-assertion-mode" aria-label="Golden assertion mode"></select>
+          <input id="golden-assertion-path" type="text" placeholder="/approved" aria-label="Golden assertion JSON pointer">
+          <textarea id="golden-assertion-value" spellcheck="false" aria-label="Golden assertion expected JSON"></textarea>
         </div>
         <div id="golden-certification-status" class="certification-status" hidden></div>
         <div id="publication-status" class="draft-status" hidden></div>
@@ -1750,6 +1759,7 @@ async function publishVisualDraft() {
       state.selectedPublicationId = publication.publicationId;
       await loadPublicationList({ render: false });
       await loadGoldenCases({ render: false });
+      await loadGoldenCertificationStatus({ render: false });
       renderPublicationControls();
       setPublicationMessage(`Published ${publication.publicationId}.`, 'success');
     }
@@ -2379,7 +2389,7 @@ function renderPublicationControls() {
     state.publicationMessage = null;
     state.selectedGoldenCaseId = '';
     await loadGoldenCases({ render: false });
-    await loadGoldenCertification({ render: false });
+    await loadGoldenCertificationStatus({ render: false });
     renderPublicationControls();
   };
 
@@ -2393,7 +2403,7 @@ function renderPublicationControls() {
     reloadButton.onclick = async () => {
       await loadPublicationList({ render: false });
       await loadGoldenCases({ render: false });
-      await loadGoldenCertification({ render: false });
+      await loadGoldenCertificationStatus({ render: false });
       renderPublicationControls();
     };
   }
@@ -2428,6 +2438,47 @@ function renderGoldenCaseControls() {
   suiteButton.onclick = runPublicationGoldenSuite;
   certifyButton.disabled = !state.selectedPublicationId;
   certifyButton.onclick = certifyPublicationGoldenSuite;
+  renderGoldenAssertionControls();
+}
+
+function renderGoldenAssertionControls() {
+  const modeSelect = $('golden-assertion-mode');
+  const pathInput = $('golden-assertion-path');
+  const valueInput = $('golden-assertion-value');
+  if (!modeSelect || !pathInput || !valueInput) return;
+  const modes = [
+    ['EXACT_OUTPUT', 'Exact output'],
+    ['OUTPUT_EQUALS', 'Output equals'],
+    ['PATH_EQUALS', 'Path equals'],
+    ['PATH_EXISTS', 'Path exists'],
+    ['PATH_ABSENT', 'Path absent']
+  ];
+  modeSelect.innerHTML = modes.map(([value, label]) => {
+    const selected = state.goldenAssertionMode === value ? ' selected' : '';
+    return `<option value="${escapeHtml(value)}"${selected}>${escapeHtml(label)}</option>`;
+  }).join('');
+  modeSelect.disabled = !state.selectedPublicationId;
+  modeSelect.onchange = () => {
+    state.goldenAssertionMode = modeSelect.value || 'EXACT_OUTPUT';
+    renderGoldenAssertionControls();
+  };
+
+  const pathMode = state.goldenAssertionMode === 'PATH_EQUALS'
+    || state.goldenAssertionMode === 'PATH_EXISTS'
+    || state.goldenAssertionMode === 'PATH_ABSENT';
+  const valueMode = state.goldenAssertionMode === 'OUTPUT_EQUALS'
+    || state.goldenAssertionMode === 'PATH_EQUALS';
+  pathInput.value = state.goldenAssertionPath;
+  pathInput.disabled = !state.selectedPublicationId || !pathMode;
+  pathInput.oninput = () => {
+    state.goldenAssertionPath = pathInput.value;
+  };
+  valueInput.value = state.goldenAssertionValueText;
+  valueInput.disabled = !state.selectedPublicationId || !valueMode;
+  valueInput.placeholder = valueMode ? 'Expected JSON value' : '';
+  valueInput.oninput = () => {
+    state.goldenAssertionValueText = valueInput.value;
+  };
 }
 
 function goldenCaseOptionLabel(testCase) {
@@ -2439,11 +2490,22 @@ function goldenCaseOptionLabel(testCase) {
 function renderGoldenCertificationStatus() {
   const target = $('golden-certification-status');
   if (!target) return;
+  const status = state.goldenCertificationStatus;
   const certification = state.goldenCertification;
   target.hidden = false;
   if (!state.selectedPublicationId) {
     target.textContent = 'No publication selected';
     target.className = 'certification-status neutral';
+    return;
+  }
+  if (status) {
+    const passedCases = status.certification ? Number(status.certification.passedCases) || 0 : 0;
+    const totalCases = Number(status.caseCount) || Number(status.certification?.totalCases) || 0;
+    const time = status.certification?.certifiedAt
+      ? ` · ${new Date(status.certification.certifiedAt).toLocaleString()}`
+      : '';
+    target.textContent = `${goldenCertificationStatusLabel(status)} (${passedCases}/${totalCases})${time}`;
+    target.className = `certification-status ${goldenCertificationStatusClass(status)}`;
     return;
   }
   if (!certification) {
@@ -2457,6 +2519,31 @@ function renderGoldenCertificationStatus() {
   const time = certification.certifiedAt ? ` · ${new Date(certification.certifiedAt).toLocaleString()}` : '';
   target.textContent = `${label} (${passedCases}/${totalCases})${time}`;
   target.className = `certification-status ${certification.certified ? 'success' : 'error'}`;
+}
+
+function goldenCertificationStatusLabel(status) {
+  switch (status.status) {
+    case 'CERTIFIED':
+      return status.promotionReady ? 'Promotion ready' : 'Certified';
+    case 'STALE':
+      return 'Certification stale';
+    case 'FAILED':
+      return 'Certification failed';
+    case 'MISSING_CASES':
+      return 'Missing golden cases';
+    case 'UNCERTIFIED':
+      return 'Not certified';
+    default:
+      return status.status || 'Certification status';
+  }
+}
+
+function goldenCertificationStatusClass(status) {
+  if (status.promotionReady) return 'success';
+  if (status.status === 'STALE' || status.status === 'UNCERTIFIED' || status.status === 'MISSING_CASES') {
+    return 'warning';
+  }
+  return 'error';
 }
 
 function publicationOptionLabel(publication) {
@@ -2699,6 +2786,7 @@ async function loadGoldenCases(options = {}) {
     state.goldenCases = [];
     state.selectedGoldenCaseId = '';
     state.goldenCertification = null;
+    state.goldenCertificationStatus = null;
     if (options.render !== false) {
       renderGoldenCaseControls();
       renderGoldenCertificationStatus();
@@ -2725,6 +2813,7 @@ async function loadGoldenCases(options = {}) {
   } catch (error) {
     state.goldenCases = [];
     state.selectedGoldenCaseId = '';
+    state.goldenCertificationStatus = null;
     setPublicationMessage(error.message, 'error');
     if (options.render !== false) {
       renderGoldenCaseControls();
@@ -2733,9 +2822,10 @@ async function loadGoldenCases(options = {}) {
   }
 }
 
-async function loadGoldenCertification(options = {}) {
+async function loadGoldenCertificationStatus(options = {}) {
   if (!state.selectedPublicationId) {
     state.goldenCertification = null;
+    state.goldenCertificationStatus = null;
     if (options.render !== false) {
       renderGoldenCertificationStatus();
     }
@@ -2743,24 +2833,27 @@ async function loadGoldenCertification(options = {}) {
   }
   try {
     const response = await fetch(
-      `/api/visual/golden-cases/publications/${encodeURIComponent(state.selectedPublicationId)}/certification`
+      `/api/visual/golden-cases/publications/${encodeURIComponent(state.selectedPublicationId)}/certification/status`
     );
     if (response.status === 404) {
       state.goldenCertification = null;
+      state.goldenCertificationStatus = null;
     } else {
       if (!response.ok) {
-        throw new Error(`Golden certification failed with ${response.status}`);
+        throw new Error(`Golden certification status failed with ${response.status}`);
       }
-      state.goldenCertification = await response.json();
+      state.goldenCertificationStatus = await response.json();
+      state.goldenCertification = state.goldenCertificationStatus.certification || null;
     }
   } catch (error) {
+    state.goldenCertificationStatus = null;
     state.goldenCertification = null;
     setPublicationMessage(error.message, 'error');
   }
   if (options.render !== false) {
     renderGoldenCertificationStatus();
   }
-  return state.goldenCertification;
+  return state.goldenCertificationStatus;
 }
 
 function selectedPublication() {
@@ -2796,6 +2889,7 @@ async function saveGoldenCaseFromCurrentOutput() {
   const graphName = publication.graphName || publication.draft?.graphName || 'visual graph';
   const outputNode = state.lastPayload.composer?.outputNode || '';
   try {
+    const assertions = goldenAssertionsFromControls(state.lastPayload.data);
     const response = await fetch('/api/visual/golden-cases', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -2805,7 +2899,8 @@ async function saveGoldenCaseFromCurrentOutput() {
         description: 'Saved from the browser publication output.',
         outputNode,
         context,
-        expectedOutput: state.lastPayload.data
+        expectedOutput: state.lastPayload.data,
+        assertions
       })
     });
     if (!response.ok) {
@@ -2814,10 +2909,34 @@ async function saveGoldenCaseFromCurrentOutput() {
     const payload = await response.json();
     state.selectedGoldenCaseId = payload.caseId || '';
     setPublicationMessage(`Saved golden ${shortRunId(state.selectedGoldenCaseId)}.`, 'success');
-    await loadGoldenCases();
+    await loadGoldenCases({ render: false });
+    renderGoldenCaseControls();
+    await loadGoldenCertificationStatus();
   } catch (error) {
     setPublicationMessage(error.message, 'error');
   }
+}
+
+function goldenAssertionsFromControls(actualOutput) {
+  const mode = state.goldenAssertionMode || 'EXACT_OUTPUT';
+  if (mode === 'EXACT_OUTPUT') {
+    return [];
+  }
+  if ((mode === 'PATH_EQUALS' || mode === 'PATH_EXISTS' || mode === 'PATH_ABSENT')
+      && (!state.goldenAssertionPath || !state.goldenAssertionPath.startsWith('/'))) {
+    throw new Error('Golden assertion path must be a JSON Pointer starting with /.');
+  }
+  if (mode === 'PATH_EXISTS' || mode === 'PATH_ABSENT') {
+    return [{ mode, path: state.goldenAssertionPath || '', expectedValue: null }];
+  }
+  const expectedValue = state.goldenAssertionValueText && state.goldenAssertionValueText.trim()
+    ? JSON.parse(state.goldenAssertionValueText)
+    : actualOutput;
+  return [{
+    mode,
+    path: mode === 'PATH_EQUALS' ? state.goldenAssertionPath : '',
+    expectedValue
+  }];
 }
 
 async function runSelectedGoldenCase() {
@@ -2896,6 +3015,7 @@ async function certifyPublicationGoldenSuite() {
     }
     const payload = await response.json();
     state.goldenCertification = payload;
+    state.goldenCertificationStatus = null;
     const passedCases = Number(payload.passedCases) || 0;
     const totalCases = Number(payload.totalCases) || 0;
     setPublicationMessage(
@@ -2905,7 +3025,7 @@ async function certifyPublicationGoldenSuite() {
       payload.certified ? 'success' : 'error'
     );
     $('output').textContent = pretty({ status: response.status, goldenCertification: payload });
-    renderGoldenCertificationStatus();
+    await loadGoldenCertificationStatus();
     await loadRunHistory();
   } catch (error) {
     setPublicationMessage(error.message, 'error');

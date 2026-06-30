@@ -15,6 +15,7 @@ import java.util.List;
  * @param passedCases passing golden cases
  * @param failedCases failing golden cases
  * @param runIds run-history ids created by the suite
+ * @param caseSetFingerprint fingerprint of the evaluated golden case set
  * @param diagnostics suite-level diagnostics
  * @param certifiedAt certification timestamp
  */
@@ -26,6 +27,7 @@ public record VisualGraphGoldenCertification(
         int passedCases,
         int failedCases,
         List<String> runIds,
+        String caseSetFingerprint,
         List<VisualDiagnostic> diagnostics,
         Instant certifiedAt
 ) {
@@ -41,6 +43,7 @@ public record VisualGraphGoldenCertification(
         passedCases = Math.max(0, passedCases);
         failedCases = Math.max(0, failedCases);
         runIds = runIds == null ? List.of() : List.copyOf(runIds);
+        caseSetFingerprint = caseSetFingerprint == null ? "" : caseSetFingerprint;
         diagnostics = diagnostics == null ? List.of() : List.copyOf(diagnostics);
         certifiedAt = certifiedAt == null ? Instant.now() : certifiedAt;
     }
@@ -52,6 +55,18 @@ public record VisualGraphGoldenCertification(
      * @return certification record
      */
     public static VisualGraphGoldenCertification from(VisualGraphGoldenSuiteRunResult suite) {
+        return from(suite, "");
+    }
+
+    /**
+     * Builds a certification from a suite run.
+     *
+     * @param suite suite run result
+     * @param caseSetFingerprint fingerprint of evaluated golden cases
+     * @return certification record
+     */
+    public static VisualGraphGoldenCertification from(VisualGraphGoldenSuiteRunResult suite,
+                                                      String caseSetFingerprint) {
         List<String> runIds = suite.results().stream()
                 .map(result -> result.run().runId())
                 .filter(runId -> runId != null && !runId.isBlank())
@@ -64,6 +79,7 @@ public record VisualGraphGoldenCertification(
                 suite.passedCases(),
                 suite.failedCases(),
                 runIds,
+                caseSetFingerprint,
                 suite.diagnostics(),
                 null
         );

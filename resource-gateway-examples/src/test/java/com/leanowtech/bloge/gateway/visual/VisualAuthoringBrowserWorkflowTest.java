@@ -169,11 +169,19 @@ class VisualAuthoringBrowserWorkflowTest {
                 "description", "Browser workflow regression fixture",
                 "outputNode", "",
                 "context", Map.of("applicantId", "standard", "amount", 100_000),
-                "expectedOutput", true
+                "expectedOutput", false,
+                "assertions", List.of(Map.of(
+                        "mode", "OUTPUT_EQUALS",
+                        "expectedValue", true
+                ))
         ));
         assertThat(goldenCase)
                 .containsEntry("schemaVersion", "bloge.visualGraphGoldenCase.v1")
                 .containsEntry("publicationId", publicationId);
+        assertThat((List<Map<String, Object>>) goldenCase.get("assertions")).singleElement()
+                .satisfies(assertion -> assertThat(assertion)
+                        .containsEntry("mode", "OUTPUT_EQUALS")
+                        .containsEntry("expectedValue", true));
         String goldenCaseId = String.valueOf(goldenCase.get("caseId"));
         assertThat(goldenCaseId).isNotBlank();
 
@@ -204,10 +212,17 @@ class VisualAuthoringBrowserWorkflowTest {
                 .containsEntry("totalCases", 1)
                 .containsEntry("passedCases", 1)
                 .containsEntry("failedCases", 0);
+        assertThat(String.valueOf(certification.get("caseSetFingerprint"))).isNotBlank();
         assertThat((List<String>) certification.get("runIds")).hasSize(1);
         assertThat(getMap("/api/visual/golden-cases/publications/" + publicationId + "/certification"))
                 .containsEntry("certified", true)
                 .containsEntry("publicationId", publicationId);
+        assertThat(getMap("/api/visual/golden-cases/publications/" + publicationId + "/certification/status"))
+                .containsEntry("schemaVersion", "bloge.visualGraphGoldenCertificationStatus.v1")
+                .containsEntry("publicationId", publicationId)
+                .containsEntry("status", "CERTIFIED")
+                .containsEntry("promotionReady", true)
+                .containsEntry("caseCount", 1);
 
         Collection<?> runHistory = restTemplate.getForObject("/api/visual/runs", Collection.class);
         assertThat(runHistory).hasSizeGreaterThanOrEqualTo(5);
@@ -269,6 +284,7 @@ class VisualAuthoringBrowserWorkflowTest {
                 .contains("/api/visual/golden-cases/publications/")
                 .contains("/certify")
                 .contains("/certification")
+                .contains("/certification/status")
                 .contains("/admin/visual-operator-libraries")
                 .contains("preview-resource-contract")
                 .contains("save-resource-contract")
@@ -276,6 +292,9 @@ class VisualAuthoringBrowserWorkflowTest {
                 .contains("run-history-list")
                 .contains("run-history-stats")
                 .contains("save-golden-case")
+                .contains("golden-assertion-mode")
+                .contains("golden-assertion-value")
+                .contains("OUTPUT_EQUALS")
                 .contains("run-golden-case")
                 .contains("run-golden-suite")
                 .contains("certify-golden-suite")

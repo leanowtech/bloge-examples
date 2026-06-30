@@ -867,6 +867,32 @@ body.dragging-operator * {
   color: var(--text);
 }
 
+.golden-assertion-controls {
+  display: grid;
+  grid-template-columns: minmax(0, 0.75fr) minmax(0, 1fr);
+  gap: 6px;
+}
+
+.golden-assertion-controls select,
+.golden-assertion-controls input,
+.golden-assertion-controls textarea {
+  min-width: 0;
+  padding: 7px 8px;
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  background: var(--surface-subtle);
+  color: var(--text);
+  font: inherit;
+  font-size: 12px;
+}
+
+.golden-assertion-controls textarea {
+  grid-column: 1 / -1;
+  min-height: 54px;
+  resize: vertical;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+}
+
 .draft-status {
   min-height: 28px;
   padding: 7px 8px;
@@ -907,6 +933,12 @@ body.dragging-operator * {
   border-color: #86efac;
   background: var(--green-soft);
   color: var(--green);
+}
+
+.certification-status.warning {
+  border-color: #facc15;
+  background: #fef9c3;
+  color: #854d0e;
 }
 
 .certification-status.error {

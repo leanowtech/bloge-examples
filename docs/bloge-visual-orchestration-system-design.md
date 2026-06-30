@@ -702,11 +702,12 @@ publication 级 warning，提示 replay、recertification 或 republish 前需�
 | --- | --- | --- |
 | `GET` | `/api/visual/golden-cases?publicationId=...` | 当前已实现：查询绑定某个 immutable publication 的 golden regression cases |
 | `GET` | `/api/visual/golden-cases/{caseId}` | 当前已实现：读取单个 golden case |
-| `POST` | `/api/visual/golden-cases` | 当前已实现：为已发布版本保存样例 context、outputNode 和期望输出 |
-| `POST` | `/api/visual/golden-cases/{caseId}/run` | 当前已实现：用 frozen publication DSL 执行 golden case，写入 run history，并返回 pass/fail diagnostics |
+| `POST` | `/api/visual/golden-cases` | 当前已实现：为已发布版本保存样例 context、outputNode、期望输出和可选 output assertions |
+| `POST` | `/api/visual/golden-cases/{caseId}/run` | 当前已实现：用 frozen publication DSL 执行 golden case，写入 run history，并返回 exact-output 或 assertion diagnostics |
 | `POST` | `/api/visual/golden-cases/publications/{publicationId}/run` | 当前已实现：执行某个 publication 绑定的全部 golden cases，汇总 total/passed/failed 并为每个 case 写入 run history |
-| `POST` | `/api/visual/golden-cases/publications/{publicationId}/certify` | 当前已实现：执行 suite 并持久化该 publication 的最新 golden certification 状态 |
+| `POST` | `/api/visual/golden-cases/publications/{publicationId}/certify` | 当前已实现：执行 suite，持久化该 publication 的最新 golden certification，并记录当次 case-set fingerprint |
 | `GET` | `/api/visual/golden-cases/publications/{publicationId}/certification` | 当前已实现：读取该 publication 最近一次 golden certification |
+| `GET` | `/api/visual/golden-cases/publications/{publicationId}/certification/status` | 当前已实现：读取 promotion-readiness 状态，区分 `CERTIFIED`、`STALE`、`FAILED`、`MISSING_CASES`、`UNCERTIFIED` 并返回结构化 diagnostics |
 
 ### 12.5 与现有 API 的关系
 
@@ -998,7 +999,7 @@ resource-gateway 已有 rate limiting、cache、circuit breaker，可以作为�
 1. **Schema Drift Detection**：运行时采样输出，与声明 schema 比较。
 2. **Operator Usage Index**：每个 operator 被哪些 graph version 使用。
 3. **Descriptor Impact Analysis**：更新 descriptor 前提示影响的图。
-4. **Golden Test Cases**：当前已支持每个发布版本绑定样例输入和期望输出，并用 frozen publication DSL 执行 single-case 与 suite-level exact-output 回归；latest certification 作为独立控制面状态保存，不反写 immutable publication。后续可扩展容忍式断言、schema-level 断言、stale detection 和推广准入策略。
+4. **Golden Test Cases**：当前已支持每个发布版本绑定样例输入、期望输出和基础 output assertions，并用 frozen publication DSL 执行 single-case 与 suite-level 回归；浏览器 Publications 面板已支持从最近一次 publication run 输出保存 exact-output case 或单条 assertion；latest certification 作为独立控制面状态保存，不反写 immutable publication；promotion-readiness status 通过 case-set fingerprint 识别 stale certification，并以 `promotionReady` 与 diagnostics 支撑推广准入。后续可扩展容忍式断言和 schema-level 断言。
 5. **Runtime Trace Replay**：失败执行可以在画布上重放。
 6. **Dead Node Detection**：提示不可达节点、永不命中分支、未使用输出。
 7. **Policy Audit**：记录谁发布、谁覆盖权限、谁修改 descriptor。
@@ -1096,7 +1097,7 @@ Phase 1 的工程拆分、包结构、API、测试和 Definition of Done 见
 - visual layout 随版本保存。
 - schema compatibility diff。
 - operator/descriptor impact analysis。
-- golden test cases 基础版、publication suite run 和 latest certification 已落地，后续补断言模式、stale detection 和推广准入策略。
+- golden test cases 基础版、output assertion modes、publication suite run、latest certification 和 stale-aware promotion gate 已落地，后续补 schema-level / tolerance 断言。
 
 验收：
 
