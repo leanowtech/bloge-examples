@@ -52,11 +52,11 @@ public class ResourceDesignContractBootstrap {
         upsert("order-service.listOrders", "Order list", "Lists orders for a user or order lookup key.",
                 List.of("order"),
                 request(List.of(), field("userId", "string", "User id"), field("orderId", "string", "Order id")),
-                response(field("items", "array", "Orders"), field("total", "integer", "Order count")));
+                response(arrayField("items", "Orders"), field("total", "integer", "Order count")));
         upsert("recommendation-service.forUser", "Recommendations", "Fetches personalized recommendations.",
                 List.of("recommendation"),
                 request(List.of("userId"), field("userId", "string", "User id")),
-                response(field("items", "array", "Recommended items")));
+                response(arrayField("items", "Recommended items")));
         upsert("wallet-service.getBalance", "Wallet balance", "Reads wallet balance.",
                 List.of("wallet", "finance"),
                 request(List.of("userId"), field("userId", "string", "User id")),
@@ -64,7 +64,7 @@ public class ResourceDesignContractBootstrap {
         upsert("notification-service.unread", "Unread notifications", "Reads unread notifications.",
                 List.of("notification"),
                 request(List.of("userId"), field("userId", "string", "User id")),
-                response(field("count", "integer", "Unread count"), field("items", "array", "Notifications")));
+                response(field("count", "integer", "Unread count"), arrayField("items", "Notifications")));
         upsert("catalog-service.getProduct", "Product detail", "Reads catalog product details.",
                 List.of("catalog", "product"),
                 request(List.of("productId"), field("productId", "string", "Product id")),
@@ -139,6 +139,15 @@ public class ResourceDesignContractBootstrap {
                 "type", type,
                 "description", description
         ));
+    }
+
+    private static Map<String, Object> arrayField(String name, String description) {
+        Map<String, Object> field = field(name, "array", description);
+        field.put("items", Map.of(
+                "type", "object",
+                "additionalProperties", true
+        ));
+        return field;
     }
 
     private static Map<String, Object> withoutName(Map<String, Object> field) {

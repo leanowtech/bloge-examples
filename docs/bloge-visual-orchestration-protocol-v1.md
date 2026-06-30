@@ -438,6 +438,12 @@ resource-gateway 示例已经实现第一层确定性 policy gate：
 | `parameterMapping` | `lowering.inputTemplate.params` |
 | `payloadPath` | `lowering.outputPath` |
 
+resource-gateway 示例已经为 `ResourceDesignContract` 提供 admin validate/upsert
+gate：`requestSchema` 与 `responseSchema` 进入 virtual operator catalog 前必须
+通过同一套 schema 结构校验，`array` 缺少 `items`、`required` 引用未知字段、
+enum 缺少 values 和 examples 中的原始 secret 都会返回 blocking
+`VisualDiagnostic`，不会被持久化到设计合同 registry。
+
 ### 6.4 缺 schema 时的降级
 
 | 缺失项 | 允许出现在 palette | 允许连接 | 允许发布 | 诊断 |
@@ -1025,10 +1031,11 @@ POST /api/visual/drafts/{draftId}/validate
 ```
 
 校验必须先检查 `GraphDraft.inputSchema` 自身的结构合法性，再使用它解析
-`ctx.*` 引用。resource-gateway 示例已经让 graph input schema、operator
-input/output port schema、operator `configSchema` 复用同一个结构校验器：不支持的
-`type/kind`、`required` 引用不存在的 property、array 缺少 `items`、enum 缺少
-values 等都会产生 blocking diagnostic。
+`ctx.*` 引用。resource-gateway 示例已经让 graph input schema、
+`ResourceDesignContract` request/response schema、operator input/output port
+schema、operator `configSchema` 复用同一个结构校验器：不支持的 `type/kind`、
+`required` 引用不存在的 property、array 缺少 `items`、enum 缺少 values 等都会
+产生 blocking diagnostic。
 
 响应：
 

@@ -548,7 +548,11 @@ gate，本地 hint 不能成为最终授权。
 同一节点内多个 binding 写入同一解析后输入目标，或 root/path 前缀重叠，
 会以 `visual.input.duplicateTarget` 阻断；不同 input port 上同名字段仍然合法，
 例如 `customer.id` 和 `order.id`。
-缺失 `items` 的旧 resource schema 仍按未知元素类型降级，用户导入 operator library 则由 catalog validator 阻断。
+无 design contract 的旧 resource 仍按 opaque schema 降级；一旦注册
+`ResourceDesignContract`，request/response schema 就和用户导入 operator
+library 一样必须通过服务端结构校验，缺失 `items` 的 array、未知
+`required` 字段、缺失 enum values 和 examples 中的原始 secret 都会被
+admin upsert gate 阻断。
 
 ### 10.3 required 字段规则
 

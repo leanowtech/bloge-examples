@@ -67,6 +67,17 @@ public final class VisualSecretGuard {
     }
 
     /**
+     * @param value visual authoring artifact fragment to scan
+     * @param path diagnostic path prefix
+     * @return diagnostics for raw secret material
+     */
+    public static List<VisualDiagnostic> detectRawSecrets(Object value, String path) {
+        List<VisualDiagnostic> diagnostics = new ArrayList<>();
+        scan(value, path == null || path.isBlank() ? "/" : path, "", diagnostics);
+        return diagnostics;
+    }
+
+    /**
      * Throws an exception if a draft contains raw secret material.
      *
      * @param draft draft to verify
