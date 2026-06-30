@@ -115,6 +115,27 @@ class VisualAuthoringBrowserWorkflowTest {
         assertThat(storedDraft.revision()).isEqualTo(1);
         assertThat(storedDraft.operatorFingerprints()).containsKeys("fetchApplicant", "eligibility");
 
+        Map<String, Object> draftExport = getMap("/api/visual/drafts/" + storedDraft.draftId() + "/export");
+        assertThat(draftExport)
+                .containsEntry("schemaVersion", "bloge.visualGraphDraftExport.v1")
+                .containsEntry("sourceDraftId", storedDraft.draftId())
+                .containsEntry("sourceRevision", 1);
+        assertThat((List<Map<String, Object>>) draftExport.get("operatorSnapshots"))
+                .extracting(snapshot -> String.valueOf(snapshot.get("operatorRef")))
+                .contains("resource:loan-applicant-service.getProfile", "risk:eligibility");
+        Map<String, Object> draftImport = postMap("/api/visual/drafts/import", draftExport, HttpStatus.CREATED);
+        assertThat(draftImport)
+                .containsEntry("schemaVersion", "bloge.visualGraphDraftImportResult.v1")
+                .containsEntry("imported", true);
+        assertThat((List<Map<String, Object>>) draftImport.get("diagnostics")).isEmpty();
+        Map<String, Object> importedDraft = (Map<String, Object>) draftImport.get("draft");
+        assertThat(importedDraft)
+                .containsEntry("graphName", "browserSmokePolicy")
+                .containsEntry("revision", 1);
+        assertThat(String.valueOf(importedDraft.get("draftId"))).isNotBlank().isNotEqualTo(storedDraft.draftId());
+        assertThat((Map<String, Object>) importedDraft.get("operatorFingerprints"))
+                .containsKeys("fetchApplicant", "eligibility");
+
         ResponseEntity<VisualGraphRunResponse> runResponse = restTemplate.postForEntity(
                 "/api/visual/drafts/" + storedDraft.draftId() + "/run",
                 new VisualStoredDraftRunRequest(Map.of("applicantId", "standard", "amount", 100_000), "",
@@ -277,6 +298,8 @@ class VisualAuthoringBrowserWorkflowTest {
                 .contains("loadVisualOperatorCatalog")
                 .contains("/api/visual/connections/check")
                 .contains("/api/visual/drafts/run")
+                .contains("/api/visual/drafts/import")
+                .contains("/export")
                 .contains("/api/visual/publications")
                 .contains("/api/visual/runs")
                 .contains("/api/visual/runs/stats")
@@ -289,6 +312,9 @@ class VisualAuthoringBrowserWorkflowTest {
                 .contains("preview-resource-contract")
                 .contains("save-resource-contract")
                 .contains("save-resource-descriptor")
+                .contains("export-draft")
+                .contains("import-draft")
+                .contains("draft-bundle-json")
                 .contains("run-history-list")
                 .contains("run-history-stats")
                 .contains("save-golden-case")

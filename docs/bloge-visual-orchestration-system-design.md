@@ -679,6 +679,8 @@ publication 级 warning，提示 replay、recertification 或 republish 前需�
 | --- | --- | --- |
 | `POST` | `/api/visual/drafts` | 创建图草稿 |
 | `GET` | `/api/visual/drafts/{draftId}` | 获取草稿 |
+| `GET` | `/api/visual/drafts/{draftId}/export` | 当前已实现：导出 `bloge.visualGraphDraftExport.v1` 包，包含 draft snapshot、operator snapshots 和 export-time diagnostics |
+| `POST` | `/api/visual/drafts/import` | 当前已实现：以新 identity 导入 export bundle，刷新当前 catalog fingerprints，存储前校验 bundle/draft contract，并返回 `bloge.visualGraphDraftImportResult.v1` 目标环境 diagnostics |
 | `PATCH` | `/api/visual/drafts/{draftId}` | 保存节点、边、layout、binding patch |
 | `POST` | `/api/visual/drafts/{draftId}/validate` | 增量或全量校验 |
 | `POST` | `/api/visual/drafts/{draftId}/compile` | 生成 DSL 并编译 |

@@ -323,6 +323,7 @@ const state = {
   draftRevisions: [],
   selectedDraftRevision: 0,
   previewingDraftRevision: 0,
+  draftBundleText: '',
   draftMessage: null,
   publications: [],
   selectedPublicationId: '',
@@ -856,6 +857,11 @@ function renderInputForm() {
           <button id="preview-revision" class="secondary compact" type="button">Preview</button>
           <button id="restore-revision" class="secondary compact" type="button">Restore</button>
         </div>
+        <div class="draft-transfer-controls">
+          <button id="export-draft" class="secondary compact" type="button">Export</button>
+          <button id="import-draft" class="secondary compact" type="button">Import Bundle</button>
+        </div>
+        <textarea id="draft-bundle-json" class="library-editor draft-bundle-editor" spellcheck="false"></textarea>
         <div id="draft-status" class="draft-status" hidden></div>
       </div>
       <div class="builder-panel">
@@ -2298,6 +2304,9 @@ function renderDraftControls() {
   const saveButton = $('save-draft');
   const loadButton = $('load-draft');
   const deleteButton = $('delete-draft');
+  const exportButton = $('export-draft');
+  const importButton = $('import-draft');
+  const bundleEditor = $('draft-bundle-json');
   if (saveButton) {
     saveButton.onclick = saveCurrentDraft;
   }
@@ -2308,6 +2317,24 @@ function renderDraftControls() {
   if (deleteButton) {
     deleteButton.disabled = !state.currentDraftId;
     deleteButton.onclick = deleteSelectedDraft;
+  }
+  if (exportButton) {
+    exportButton.disabled = !state.currentDraftId;
+    exportButton.onclick = exportSelectedDraft;
+  }
+  if (importButton) {
+    importButton.disabled = !state.draftBundleText.trim();
+    importButton.onclick = importDraftBundle;
+  }
+  if (bundleEditor) {
+    bundleEditor.value = state.draftBundleText;
+    bundleEditor.oninput = () => {
+      state.draftBundleText = bundleEditor.value;
+      const button = $('import-draft');
+      if (button) {
+        button.disabled = !state.draftBundleText.trim();
+      }
+    };
   }
   renderDraftRevisionControls();
   renderDraftStatus();
@@ -3310,6 +3337,65 @@ async function loadSelectedDraft() {
   syncComposerFromBuilder({ render: false });
   setDraftMessage(`Loaded ${state.currentDraftId}@${state.currentDraftRevision}.`, 'success');
   renderScenario();
+}
+
+async function exportSelectedDraft() {
+  if (!state.currentDraftId) return;
+  const response = await fetch(`/api/visual/drafts/${encodeURIComponent(state.currentDraftId)}/export`);
+  const payload = await response.json().catch(() => null);
+  if (!response.ok) {
+    setDraftMessage(`Export failed with ${response.status}`, 'error');
+    return;
+  }
+  state.draftBundleText = pretty(payload);
+  setDraftMessage(`Exported ${payload.sourceDraftId}@${payload.sourceRevision || 0}.`, 'success');
+  $('output').textContent = pretty({ status: response.status, draftExport: payload });
+  renderDraftControls();
+}
+
+async function importDraftBundle() {
+  let bundle;
+  try {
+    bundle = JSON.parse(state.draftBundleText || '{}');
+  } catch (error) {
+    setDraftMessage(`Invalid draft bundle JSON: ${error.message}`, 'error');
+    return;
+  }
+  const response = await fetch('/api/visual/drafts/import', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(bundle)
+  });
+  const payload = await response.json().catch(() => null);
+  if (!response.ok) {
+    const diagnostics = normalizeDiagnostics(payload?.diagnostics);
+    setDraftMessage(diagnosticMessage(diagnostics, `Import failed with ${response.status}`), 'error');
+    return;
+  }
+  const importedDraft = payload?.draft || payload;
+  const diagnostics = normalizeDiagnostics(payload?.diagnostics);
+  state.builder = builderFromVisualDraft(importedDraft);
+  await loadVisualOperatorCatalog();
+  state.currentDraftId = importedDraft.draftId || '';
+  state.currentDraftRevision = importedDraft.revision || 0;
+  state.savedDraftSnapshot = importedDraft;
+  state.previewingDraftRevision = 0;
+  state.lastPayload = null;
+  state.lastGeneratedVisualDsl = '';
+  await loadDraftList({ render: false });
+  await loadDraftRevisions({ render: false });
+  syncGraphInputSchemaTextFromBuilder({ render: false });
+  syncComposerFromBuilder({ render: false });
+  const hasImportErrors = diagnostics.some((diagnostic) => String(diagnostic.level || '').toUpperCase() === 'ERROR');
+  const importMessage = diagnostics.length
+    ? `Imported ${state.currentDraftId}@${state.currentDraftRevision} with ${hasImportErrors ? 'errors' : 'warnings'}: ${diagnosticMessage(diagnostics, 'review diagnostics')}`
+    : `Imported ${state.currentDraftId}@${state.currentDraftRevision}.`;
+  setDraftMessage(
+    importMessage,
+    hasImportErrors ? 'error' : 'success'
+  );
+  renderScenario();
+  $('output').textContent = pretty({ status: response.status, draftImport: payload, importedDraft });
 }
 
 async function previewSelectedDraftRevision() {

@@ -6,6 +6,8 @@ import com.leanowtech.bloge.gateway.visual.catalog.OperatorDefinition;
 import com.leanowtech.bloge.gateway.visual.catalog.VisualOperatorCatalog;
 import com.leanowtech.bloge.gateway.visual.diagnostic.VisualDiagnostic;
 import com.leanowtech.bloge.gateway.visual.draft.GraphDraft;
+import com.leanowtech.bloge.gateway.visual.draft.GraphDraftExportBundle;
+import com.leanowtech.bloge.gateway.visual.draft.GraphDraftImportResult;
 import com.leanowtech.bloge.gateway.visual.draft.GraphDraftPatchRequest;
 import com.leanowtech.bloge.gateway.visual.draft.GraphDraftPatchResult;
 import com.leanowtech.bloge.gateway.visual.draft.GraphDraftPatchService;
@@ -117,6 +119,49 @@ public class VisualGraphDraftController {
         return repository.find(draftId)
                 .map(ResponseEntity::ok)
                 .orElseGet(() -> ResponseEntity.notFound().build());
+    }
+
+    /**
+     * Exports a stored draft as a portable package with current operator snapshots.
+     *
+     * @param draftId draft id
+     * @return export bundle when the draft exists
+     */
+    @GetMapping("/{draftId}/export")
+    public ResponseEntity<GraphDraftExportBundle> exportDraft(@PathVariable String draftId) {
+        return repository.find(draftId)
+                .map(draft -> ResponseEntity.ok(GraphDraftExportBundle.from(
+                        draft,
+                        operatorSnapshots(draft),
+                        validator.validate(draft).diagnostics()
+                )))
+                .orElseGet(() -> ResponseEntity.notFound().build());
+    }
+
+    /**
+     * Imports a portable draft package as a new stored draft.
+     *
+     * @param bundle exported draft package
+     * @return import result with a stored draft or contract diagnostics
+     */
+    @PostMapping("/import")
+    public ResponseEntity<GraphDraftImportResult> importDraft(@RequestBody GraphDraftExportBundle bundle) {
+        List<VisualDiagnostic> diagnostics = exportBundleContractDiagnostics(bundle);
+        if (!diagnostics.isEmpty()) {
+            return ResponseEntity.badRequest()
+                    .body(GraphDraftImportResult.rejected(diagnostics));
+        }
+        GraphDraft imported = bundle.draft()
+                .withIdentity("", 0)
+                .withRevisionMetadata(GraphDraft.RevisionMetadata.patch(
+                        "visual-canvas",
+                        "import",
+                        "Imported draft from export bundle.",
+                        List.of()
+                ));
+        GraphDraft stored = repository.save(withCurrentOperatorFingerprints(imported));
+        return ResponseEntity.status(HttpStatus.CREATED)
+                .body(GraphDraftImportResult.imported(stored, validator.validate(stored).diagnostics()));
     }
 
     /**
@@ -475,6 +520,37 @@ public class VisualGraphDraftController {
                     "/status"));
         }
         return diagnostics;
+    }
+
+    private static List<VisualDiagnostic> exportBundleContractDiagnostics(GraphDraftExportBundle bundle) {
+        if (bundle == null) {
+            return List.of(VisualDiagnostic.error("visual.draftExport.missing",
+                    "Graph draft export bundle is required.", "/"));
+        }
+        List<VisualDiagnostic> diagnostics = new ArrayList<>();
+        if (!GraphDraftExportBundle.SCHEMA_VERSION.equals(bundle.schemaVersion())) {
+            diagnostics.add(VisualDiagnostic.error("visual.draftExport.schemaVersion.unsupported",
+                    "Graph draft export schemaVersion '%s' is unsupported; visual authoring supports [%s]."
+                            .formatted(bundle.schemaVersion(), GraphDraftExportBundle.SCHEMA_VERSION),
+                    "/schemaVersion"));
+        }
+        if (bundle.draft() == null) {
+            diagnostics.add(VisualDiagnostic.error("visual.draftExport.draftMissing",
+                    "Graph draft export bundle must include a draft snapshot.", "/draft"));
+        } else {
+            draftContractDiagnostics(bundle.draft()).stream()
+                    .map(VisualGraphDraftController::draftBundleDiagnostic)
+                    .forEach(diagnostics::add);
+        }
+        return diagnostics;
+    }
+
+    private static VisualDiagnostic draftBundleDiagnostic(VisualDiagnostic diagnostic) {
+        String target = diagnostic.target().startsWith("/")
+                ? "/draft" + diagnostic.target()
+                : "/draft/" + diagnostic.target();
+        return new VisualDiagnostic(diagnostic.level(), diagnostic.code(), diagnostic.message(), target,
+                diagnostic.line(), diagnostic.column());
     }
 
     private ResponseEntity<GraphDraftPatchResult> conflictResponse(String draftId,

@@ -7,6 +7,8 @@ import com.leanowtech.bloge.gateway.visual.catalog.VisualCatalogTestSupport;
 import com.leanowtech.bloge.gateway.visual.codegen.DslGenerationResult;
 import com.leanowtech.bloge.gateway.visual.codegen.GraphDraftDslGenerator;
 import com.leanowtech.bloge.gateway.visual.draft.GraphDraft;
+import com.leanowtech.bloge.gateway.visual.draft.GraphDraftExportBundle;
+import com.leanowtech.bloge.gateway.visual.draft.GraphDraftImportResult;
 import com.leanowtech.bloge.gateway.visual.draft.GraphDraftPatchRequest;
 import com.leanowtech.bloge.gateway.visual.draft.GraphDraftPatchResult;
 import com.leanowtech.bloge.gateway.visual.draft.GraphDraftPatchService;
@@ -230,6 +232,169 @@ class VisualGraphDraftControllerTest {
         assertThat(second.revision()).isEqualTo(1);
         assertThat(repository.find(first.draftId()).orElseThrow().graphName()).isEqualTo(first.graphName());
         assertThat(repository.find(second.draftId()).orElseThrow().graphName()).isEqualTo("attemptedOverwrite");
+    }
+
+    @Test
+    void exportDraftIncludesOperatorSnapshotsAndValidationDiagnostics() {
+        DefaultVisualOperatorCatalog catalog = eligibilityCatalog();
+        VisualGraphDraftController controller = controllerWithCatalog(catalog, new InMemoryGraphDraftRepository());
+        GraphDraft stored = controller.create(eligibilityDraft(graphInputSchema(
+                Map.of(
+                        "score", Map.of("type", "string"),
+                        "amount", Map.of("type", "number")
+                )
+        )));
+
+        ResponseEntity<GraphDraftExportBundle> response = controller.exportDraft(stored.draftId());
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+        GraphDraftExportBundle bundle = response.getBody();
+        assertThat(bundle).isNotNull();
+        assertThat(bundle.schemaVersion()).isEqualTo(GraphDraftExportBundle.SCHEMA_VERSION);
+        assertThat(bundle.sourceDraftId()).isEqualTo(stored.draftId());
+        assertThat(bundle.sourceRevision()).isEqualTo(stored.revision());
+        assertThat(bundle.draft()).isEqualTo(stored);
+        assertThat(bundle.operatorSnapshots())
+                .extracting(OperatorDefinition::operatorRef)
+                .containsExactly("risk:eligibility");
+        assertThat(bundle.diagnostics())
+                .extracting("code")
+                .contains("visual.binding.typeMismatch");
+    }
+
+    @Test
+    void importDraftBundleCreatesNewDraftWithCurrentOperatorFingerprints() {
+        DefaultVisualOperatorCatalog initialCatalog = VisualCatalogTestSupport.catalogWithLibrary(
+                VisualCatalogTestSupport.eligibilityLibrary("integer"));
+        DefaultVisualOperatorCatalog evolvedCatalog = VisualCatalogTestSupport.catalogWithLibrary(
+                VisualCatalogTestSupport.eligibilityLibrary("number"));
+        InMemoryGraphDraftRepository initialRepository = new InMemoryGraphDraftRepository();
+        InMemoryGraphDraftRepository importedRepository = new InMemoryGraphDraftRepository();
+        VisualGraphDraftController initialController = controllerWithCatalog(initialCatalog, initialRepository);
+        VisualGraphDraftController importController = controllerWithCatalog(evolvedCatalog, importedRepository);
+        GraphDraft stored = initialController.create(eligibilityDraft(graphInputSchema(
+                Map.of(
+                        "score", Map.of("type", "integer"),
+                        "amount", Map.of("type", "number")
+                )
+        )));
+        GraphDraftExportBundle bundle = initialController.exportDraft(stored.draftId()).getBody();
+        String initialFingerprint = initialCatalog.find("risk:eligibility").orElseThrow().fingerprint();
+        String evolvedFingerprint = evolvedCatalog.find("risk:eligibility").orElseThrow().fingerprint();
+
+        ResponseEntity<GraphDraftImportResult> response = importController.importDraft(bundle);
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.CREATED);
+        assertThat(response.getBody()).isNotNull();
+        assertThat(response.getBody().schemaVersion()).isEqualTo(GraphDraftImportResult.SCHEMA_VERSION);
+        assertThat(response.getBody().imported()).isTrue();
+        assertThat(response.getBody().diagnostics()).isEmpty();
+        GraphDraft imported = response.getBody().draft();
+        assertThat(imported.draftId()).isNotBlank().isNotEqualTo(stored.draftId());
+        assertThat(imported.revision()).isEqualTo(1);
+        assertThat(imported.graphName()).isEqualTo(stored.graphName());
+        assertThat(imported.operatorFingerprints())
+                .containsEntry("eligibility", evolvedFingerprint)
+                .doesNotContainEntry("eligibility", initialFingerprint);
+        assertThat(imported.revisionMetadata().changeSource()).isEqualTo("import");
+        assertThat(imported.revisionMetadata().changeSummary()).isEqualTo("Imported draft from export bundle.");
+        assertThat(importedRepository.all()).containsExactly(imported);
+    }
+
+    @Test
+    void importDraftBundleReturnsTargetEnvironmentDiagnosticsForMissingOperators() {
+        DefaultVisualOperatorCatalog sourceCatalog = VisualCatalogTestSupport.catalogWithLibrary(
+                VisualCatalogTestSupport.eligibilityLibrary("integer"));
+        DefaultVisualOperatorCatalog targetCatalog = emptyCatalog();
+        InMemoryGraphDraftRepository targetRepository = new InMemoryGraphDraftRepository();
+        VisualGraphDraftController sourceController =
+                controllerWithCatalog(sourceCatalog, new InMemoryGraphDraftRepository());
+        VisualGraphDraftController targetController = controllerWithCatalog(targetCatalog, targetRepository);
+        GraphDraft stored = sourceController.create(eligibilityDraft(graphInputSchema(
+                Map.of(
+                        "score", Map.of("type", "integer"),
+                        "amount", Map.of("type", "number")
+                )
+        )));
+        GraphDraftExportBundle bundle = sourceController.exportDraft(stored.draftId()).getBody();
+
+        ResponseEntity<GraphDraftImportResult> response = targetController.importDraft(bundle);
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.CREATED);
+        assertThat(response.getBody()).isNotNull();
+        assertThat(response.getBody().imported()).isTrue();
+        assertThat(response.getBody().draft().draftId()).isNotBlank();
+        assertThat(targetRepository.all()).containsExactly(response.getBody().draft());
+        assertThat(response.getBody().diagnostics())
+                .extracting("code")
+                .contains("visual.operator.unknown");
+    }
+
+    @Test
+    void importDraftBundleRejectsUnsupportedBundleContractBeforeStorage() {
+        InMemoryGraphDraftRepository repository = new InMemoryGraphDraftRepository();
+        VisualGraphDraftController controller = controllerWithCatalog(eligibilityCatalog(), repository);
+        GraphDraft draft = eligibilityDraft(graphInputSchema(
+                Map.of(
+                        "score", Map.of("type", "integer"),
+                        "amount", Map.of("type", "number")
+                )
+        ));
+        GraphDraftExportBundle bundle = new GraphDraftExportBundle(
+                "bloge.visualGraphDraftExport.v2",
+                null,
+                "source-draft",
+                7,
+                draft,
+                List.of(),
+                List.of()
+        );
+
+        ResponseEntity<GraphDraftImportResult> response = controller.importDraft(bundle);
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+        assertThat(response.getBody()).isNotNull();
+        GraphDraftImportResult result = response.getBody();
+        assertThat(result.imported()).isFalse();
+        assertThat(result.draft()).isNull();
+        assertThat(result.diagnostics())
+                .extracting("code")
+                .containsExactly("visual.draftExport.schemaVersion.unsupported");
+        assertThat(repository.all()).isEmpty();
+    }
+
+    @Test
+    void importDraftBundleRejectsUnsupportedDraftContractBeforeStorage() {
+        InMemoryGraphDraftRepository repository = new InMemoryGraphDraftRepository();
+        VisualGraphDraftController controller = controllerWithCatalog(eligibilityCatalog(), repository);
+        GraphDraftExportBundle bundle = new GraphDraftExportBundle(
+                "",
+                null,
+                "source-draft",
+                7,
+                withSchemaVersion(eligibilityDraft(graphInputSchema(
+                        Map.of(
+                                "score", Map.of("type", "integer"),
+                                "amount", Map.of("type", "number")
+                        )
+                )), "bloge.visualGraphDraft.v2"),
+                List.of(),
+                List.of()
+        );
+
+        ResponseEntity<GraphDraftImportResult> response = controller.importDraft(bundle);
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+        assertThat(response.getBody()).isNotNull();
+        GraphDraftImportResult result = response.getBody();
+        assertThat(result.imported()).isFalse();
+        assertThat(result.draft()).isNull();
+        assertThat(result.diagnostics())
+                .anySatisfy(diagnostic -> {
+                    assertThat(diagnostic.code()).isEqualTo("visual.draft.schemaVersion.unsupported");
+                    assertThat(diagnostic.target()).isEqualTo("/draft/schemaVersion");
+                });
+        assertThat(repository.all()).isEmpty();
     }
 
     @Test
@@ -887,6 +1052,18 @@ class VisualGraphDraftControllerTest {
     private static DefaultVisualOperatorCatalog eligibilityCatalog() {
         return VisualCatalogTestSupport.catalogWithLibrary(
                 VisualCatalogTestSupport.eligibilityLibrary("integer"));
+    }
+
+    private static DefaultVisualOperatorCatalog emptyCatalog() {
+        return VisualCatalogTestSupport.catalogWithLibrary(new OperatorLibrary(
+                "bloge.visualOperatorLibrary.v1",
+                "empty-risk-policy",
+                "Empty risk policy operators",
+                "1.0.0",
+                "risk-team",
+                "ACTIVE",
+                List.of()
+        ));
     }
 
     private static VisualGraphDraftController controllerWithCatalog(DefaultVisualOperatorCatalog catalog,

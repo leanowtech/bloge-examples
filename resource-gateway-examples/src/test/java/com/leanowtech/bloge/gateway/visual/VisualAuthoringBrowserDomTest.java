@@ -140,6 +140,14 @@ class VisualAuthoringBrowserDomTest {
         click(wait, By.id("save-draft"));
         waitForText(wait, By.id("draft-status"), "Saved");
 
+        click(wait, By.id("export-draft"));
+        wait.until(ignored -> valueOf(By.id("draft-bundle-json"))
+                .contains("\"schemaVersion\": \"bloge.visualGraphDraftExport.v1\""));
+        waitForText(wait, By.id("draft-status"), "Exported");
+        click(wait, By.id("import-draft"));
+        waitForText(wait, By.id("draft-status"), "Imported");
+        waitForText(wait, By.id("output"), "\"importedDraft\"");
+
         click(wait, By.id("run-scenario"));
         waitForText(wait, By.id("visual-check-status"), "Run completed.");
         waitForText(wait, By.id("visual-diagnostics"), "visual.graph.unreachableNode");

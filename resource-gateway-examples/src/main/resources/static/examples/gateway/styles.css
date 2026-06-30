@@ -857,6 +857,12 @@ body.dragging-operator * {
   gap: 6px;
 }
 
+.draft-transfer-controls {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 6px;
+}
+
 .draft-controls select,
 .draft-revision-controls select {
   min-width: 0;
@@ -891,6 +897,10 @@ body.dragging-operator * {
   min-height: 54px;
   resize: vertical;
   font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+}
+
+.draft-bundle-editor {
+  min-height: 88px;
 }
 
 .draft-status {
