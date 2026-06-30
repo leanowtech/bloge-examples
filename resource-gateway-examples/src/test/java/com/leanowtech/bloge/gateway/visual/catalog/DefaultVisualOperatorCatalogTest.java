@@ -7,6 +7,9 @@ import com.leanowtech.bloge.gateway.visual.model.SchemaEnvelope;
 import com.leanowtech.bloge.gateway.visual.resource.InMemoryResourceDesignContractRegistry;
 import com.leanowtech.bloge.gateway.visual.resource.ResourceDesignContract;
 import com.leanowtech.bloge.gateway.visual.validation.VisualSchemaValidator;
+import com.leanowtech.bloge.core.operator.Operator;
+import com.leanowtech.bloge.core.operator.OperatorContext;
+import com.leanowtech.bloge.core.spi.DefaultOperatorRegistry;
 
 import org.junit.jupiter.api.Test;
 
@@ -72,6 +75,27 @@ class DefaultVisualOperatorCatalogTest {
         assertThat(operator.lowering().mode()).isEqualTo("transform");
         assertThat(operator.ports().inputs().getFirst().schema().required())
                 .containsExactly("score", "amount");
+    }
+
+    @Test
+    void includesJavaOperatorsFromRuntimeRegistry() {
+        DefaultOperatorRegistry registry = new DefaultOperatorRegistry();
+        registry.register("normalizeText", new NormalizeTextOperator());
+        DefaultVisualOperatorCatalog catalog = new DefaultVisualOperatorCatalog(
+                VisualCatalogTestSupport.emptyResourceRegistry(),
+                new InMemoryResourceDesignContractRegistry(),
+                new ResourceVirtualOperatorProjector(),
+                OperatorLibraryRegistry.empty(),
+                new JavaOperatorInventoryProjector(registry)
+        );
+
+        OperatorDefinition operator = catalog.find("normalizeText").orElseThrow();
+
+        assertThat(operator.source().kind()).isEqualTo("java-operator");
+        assertThat(operator.lowering().mode()).isEqualTo("native");
+        assertThat(operator.lowering().operatorRef()).isEqualTo("normalizeText");
+        assertThat(operator.ports().inputs().getFirst().schema().properties()).containsKey("raw");
+        assertThat(operator.ports().outputs().getFirst().schema().properties()).containsKey("value");
     }
 
     @Test
@@ -218,6 +242,19 @@ class DefaultVisualOperatorCatalogTest {
                 contracts,
                 new ResourceVirtualOperatorProjector()
         );
+    }
+
+    private record NormalizeInput(String raw) {
+    }
+
+    private record NormalizeOutput(String value) {
+    }
+
+    private static final class NormalizeTextOperator implements Operator<NormalizeInput, NormalizeOutput> {
+        @Override
+        public NormalizeOutput execute(NormalizeInput input, OperatorContext ctx) {
+            return new NormalizeOutput(input.raw().trim().toLowerCase(java.util.Locale.ROOT));
+        }
     }
 
     private record SingleResourceRegistry(ResourceDescriptor descriptor) implements ResourceRegistry {

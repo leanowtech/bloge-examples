@@ -27,6 +27,7 @@ public class DefaultVisualOperatorCatalog implements VisualOperatorCatalog {
     private final ResourceDesignContractRegistry contractRegistry;
     private final ResourceVirtualOperatorProjector projector;
     private final OperatorLibraryRegistry libraryRegistry;
+    private final JavaOperatorInventoryProjector javaOperatorProjector;
 
     /**
      * @param resourceRegistry resource descriptor registry
@@ -37,17 +38,29 @@ public class DefaultVisualOperatorCatalog implements VisualOperatorCatalog {
     public DefaultVisualOperatorCatalog(ResourceRegistry resourceRegistry,
                                         ResourceDesignContractRegistry contractRegistry,
                                         ResourceVirtualOperatorProjector projector,
-                                        OperatorLibraryRegistry libraryRegistry) {
+                                        OperatorLibraryRegistry libraryRegistry,
+                                        JavaOperatorInventoryProjector javaOperatorProjector) {
         this.resourceRegistry = resourceRegistry;
         this.contractRegistry = contractRegistry;
         this.projector = projector;
         this.libraryRegistry = libraryRegistry;
+        this.javaOperatorProjector = javaOperatorProjector == null
+                ? JavaOperatorInventoryProjector.empty()
+                : javaOperatorProjector;
     }
 
     DefaultVisualOperatorCatalog(ResourceRegistry resourceRegistry,
                                  ResourceDesignContractRegistry contractRegistry,
                                  ResourceVirtualOperatorProjector projector) {
-        this(resourceRegistry, contractRegistry, projector, OperatorLibraryRegistry.empty());
+        this(resourceRegistry, contractRegistry, projector, OperatorLibraryRegistry.empty(),
+                JavaOperatorInventoryProjector.empty());
+    }
+
+    DefaultVisualOperatorCatalog(ResourceRegistry resourceRegistry,
+                                 ResourceDesignContractRegistry contractRegistry,
+                                 ResourceVirtualOperatorProjector projector,
+                                 OperatorLibraryRegistry libraryRegistry) {
+        this(resourceRegistry, contractRegistry, projector, libraryRegistry, JavaOperatorInventoryProjector.empty());
     }
 
     @Override
@@ -56,6 +69,7 @@ public class DefaultVisualOperatorCatalog implements VisualOperatorCatalog {
         List<OperatorDefinition> operators = new ArrayList<>();
         if (!effectiveQuery.resourceOnly()) {
             operators.addAll(nativeOperators());
+            operators.addAll(javaOperatorProjector.project());
             operators.addAll(libraryRegistry.operators(effectiveQuery.includeDeprecated()));
         }
         for (ResourceDescriptor descriptor : resourceRegistry.all()) {

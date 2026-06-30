@@ -1,5 +1,12 @@
 package com.leanowtech.bloge.gateway.example;
 
+import com.leanowtech.bloge.core.operator.Operator;
+import com.leanowtech.bloge.core.operator.OperatorContext;
+import com.leanowtech.bloge.core.spi.DefaultOperatorRegistry;
+import com.leanowtech.bloge.gateway.visual.catalog.DefaultVisualOperatorCatalog;
+import com.leanowtech.bloge.gateway.visual.catalog.JavaOperatorInventoryProjector;
+import com.leanowtech.bloge.gateway.visual.catalog.OperatorLibraryRegistry;
+import com.leanowtech.bloge.gateway.visual.catalog.ResourceVirtualOperatorProjector;
 import com.leanowtech.bloge.gateway.visual.catalog.VisualOperatorCatalog;
 import com.leanowtech.bloge.gateway.visual.catalog.VisualCatalogTestSupport;
 import com.leanowtech.bloge.gateway.visual.codegen.DslGenerationResult;
@@ -7,6 +14,7 @@ import com.leanowtech.bloge.gateway.visual.codegen.GraphDraftDslGenerator;
 import com.leanowtech.bloge.gateway.visual.draft.GraphDraft;
 import com.leanowtech.bloge.gateway.visual.model.SchemaEnvelope;
 import com.leanowtech.bloge.gateway.visual.publication.VisualGraphPublication;
+import com.leanowtech.bloge.gateway.visual.resource.InMemoryResourceDesignContractRegistry;
 import com.leanowtech.bloge.gateway.visual.runtime.VisualGraphRunResponse;
 import com.leanowtech.bloge.gateway.visual.runtime.VisualGraphRunService;
 import com.leanowtech.bloge.gateway.visual.validation.VisualValidationResult;
@@ -62,6 +70,7 @@ class VisualGraphRunServiceTest {
 
         assertThat(response.validated()).isTrue();
         assertThat(response.compiled()).isTrue();
+        assertThat(response.errors()).isEmpty();
         assertThat(response.success()).isTrue();
         assertThat(response.generatedDsl()).contains("transform response");
         assertThat(response.output()).isEqualTo(Map.of("score", 720));
@@ -106,9 +115,59 @@ class VisualGraphRunServiceTest {
 
         assertThat(response.validated()).isTrue();
         assertThat(response.compiled()).isTrue();
+        assertThat(response.errors()).isEmpty();
         assertThat(response.success()).isTrue();
         assertThat(response.generatedDsl()).contains("eligible = ctx.score >= 700 && ctx.amount <= 300000");
         assertThat(response.output()).isEqualTo(Map.of("eligible", true, "ruleId", "ELIGIBILITY_V1"));
+    }
+
+    @Test
+    void runsJavaOperatorProjectedFromRuntimeRegistry() {
+        DefaultOperatorRegistry registry = new DefaultOperatorRegistry();
+        registry.register("normalizeText", new NormalizeTextOperator());
+        VisualOperatorCatalog catalog = new DefaultVisualOperatorCatalog(
+                VisualCatalogTestSupport.emptyResourceRegistry(),
+                new InMemoryResourceDesignContractRegistry(),
+                new ResourceVirtualOperatorProjector(),
+                OperatorLibraryRegistry.empty(),
+                JavaOperatorInventoryProjector.forRegistry(registry)
+        );
+        VisualGraphRunService service = new VisualGraphRunService(
+                new GraphDraftValidator(catalog),
+                new GraphDraftDslGenerator(catalog),
+                new DynamicGatewayComposerService(registry)
+        );
+        GraphDraft draft = withFingerprints(new GraphDraft(
+                "",
+                "",
+                0,
+                "javaOperatorPolicy",
+                "",
+                "",
+                "",
+                "",
+                null,
+                List.of(new GraphDraft.DraftNode(
+                        "normalize",
+                        "normalizeText",
+                        "",
+                        Map.of("raw", GraphDraft.Binding.contextPath("text")),
+                        Map.of(),
+                        null
+                )),
+                List.of(),
+                Map.of(),
+                new GraphDraft.OutputSelection("normalize", "value")
+        ), catalog);
+
+        VisualGraphRunResponse response = service.run(draft, Map.of("text", "  Hello BLOGE  "), "");
+
+        assertThat(response.validated()).isTrue();
+        assertThat(response.compiled()).isTrue();
+        assertThat(response.errors()).isEmpty();
+        assertThat(response.success()).isTrue();
+        assertThat(response.generatedDsl()).contains("node normalize : normalizeText");
+        assertThat(response.output()).isEqualTo("hello bloge");
     }
 
     @Test
@@ -390,5 +449,18 @@ class VisualGraphRunServiceTest {
                     .ifPresent(operator -> fingerprints.put(node.id(), operator.fingerprint()));
         }
         return draft.withOperatorFingerprints(fingerprints);
+    }
+
+    private record NormalizeInput(String raw) {
+    }
+
+    private record NormalizeOutput(String value) {
+    }
+
+    private static final class NormalizeTextOperator implements Operator<NormalizeInput, NormalizeOutput> {
+        @Override
+        public NormalizeOutput execute(NormalizeInput input, OperatorContext ctx) {
+            return new NormalizeOutput(input.raw().trim().toLowerCase(java.util.Locale.ROOT));
+        }
     }
 }

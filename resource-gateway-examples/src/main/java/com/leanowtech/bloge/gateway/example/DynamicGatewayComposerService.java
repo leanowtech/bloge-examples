@@ -1,5 +1,6 @@
 package com.leanowtech.bloge.gateway.example;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.leanowtech.bloge.core.context.GraphContext;
 import com.leanowtech.bloge.core.context.TenantContext;
 import com.leanowtech.bloge.core.engine.GraphEngine;
@@ -42,22 +43,39 @@ public class DynamicGatewayComposerService {
     private final GraphLoader graphLoader;
 
     /**
-     * Creates the dynamic composer service with the real generic HTTP resource operator.
+     * Creates the dynamic composer service with the runtime operator registry.
+     *
+     * @param registry executable BLOGE operator registry
+     * @param objectMapper mapper used to coerce visual DSL inputs into Java operator input types
+     */
+    @Autowired
+    public DynamicGatewayComposerService(OperatorRegistry registry, ObjectMapper objectMapper) {
+        this.graphEngine = GraphEngine.builder()
+                .registry(InputCoercingOperatorRegistry.wrap(registry, objectMapper))
+                .build();
+        this.graphLoader = new GraphLoader(registry);
+    }
+
+    /**
+     * Creates the dynamic composer service with a default object mapper for tests and examples.
+     *
+     * @param registry executable BLOGE operator registry
+     */
+    public DynamicGatewayComposerService(OperatorRegistry registry) {
+        this(registry, new ObjectMapper().findAndRegisterModules());
+    }
+
+    /**
+     * Test/backward-compatible constructor for a registry containing only {@code httpResource}.
      *
      * @param httpResourceOperator descriptor-backed resource operator
      */
-    @Autowired
     public DynamicGatewayComposerService(HttpResourceOperator httpResourceOperator) {
         this(dynamicRegistry(httpResourceOperator));
     }
 
     DynamicGatewayComposerService(Operator<Object, ?> httpResourceOperator) {
         this(dynamicRegistry(httpResourceOperator));
-    }
-
-    private DynamicGatewayComposerService(OperatorRegistry registry) {
-        this.graphEngine = GraphEngine.builder().registry(registry).build();
-        this.graphLoader = new GraphLoader(registry);
     }
 
     /**

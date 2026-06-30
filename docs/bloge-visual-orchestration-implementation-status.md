@@ -20,7 +20,7 @@ Operator Library / Resource Design Contract
         -> Immutable Publication
 ```
 
-现在最重要的判断不是“有没有画布雏形”，而是：这个示例已经具备通用画布的控制面骨架，但仍不是完整低代码平台。它可以严肃演示用户算子库、资源虚拟算子、OpenAPI 辅助生成 resource design contract、schema 约束连线、草稿、发布和运行；还没有覆盖 durable 实例、远程 worker/subgraph marketplace、生产 IAM 后台和多人协作。
+现在最重要的判断不是“有没有画布雏形”，而是：这个示例已经具备通用画布的控制面骨架，但仍不是完整低代码平台。它可以严肃演示用户算子库、Java OperatorRegistry 投影、资源虚拟算子、OpenAPI 辅助生成 resource design contract、schema 约束连线、草稿、发布和运行；还没有覆盖 durable 实例、远程 worker/subgraph marketplace、生产 IAM 后台和多人协作。
 
 ## 2. 已落地能力
 
@@ -29,15 +29,16 @@ Operator Library / Resource Design Contract
 | 用户算子库导入 | 已落地。支持 `bloge.visualOperatorLibrary.v1`、生命周期、policy、schema/lowering 校验、H2 持久化、跨库 `operatorRef` 归属保护和 replacement impact preflight。 | `visual/catalog/OperatorLibrary.java`、`OperatorLibraryValidator.java`、`OperatorLibraryAdminController.java`、`DatabaseOperatorLibraryRegistry.java` |
 | 视觉算子定义 | 已落地。`OperatorDefinition` 统一表达 operatorRef、fingerprint、display、source、ports、configSchema、capabilities、policy、lowering 和 diagnostics。 | `visual/catalog/OperatorDefinition.java` |
 | Resource 虚拟算子 | 已落地。`ResourceDescriptor + ResourceDesignContract` 投影为 `resource:<resourceId>`，运行时 lowering 到 `httpResource`。 | `visual/catalog/ResourceVirtualOperatorProjector.java`、`DefaultVisualOperatorCatalog.java` |
+| Java OperatorRegistry 投影 | 已落地基础版。Spring `OperatorRegistry` 中的 Java `Operator` / `StreamingOperator` 可投影为 visual operator，复用 BLOGE schema metadata、注解描述、capabilities 和 native lowering；运行时把 DSL map 输入适配到 Java DTO/record，并支持 record 输出路径选择。 | `visual/catalog/JavaOperatorInventoryProjector.java`、`config/GatewayConfiguration.java`、`example/InputCoercingOperatorRegistry.java`、`example/DynamicGatewayComposerService.java` |
 | Resource 设计合同 | 已落地。支持 H2 registry、bootstrap、admin API、schema/secret/lifecycle 校验、disable/delete impact guard、fingerprint drift warnings。 | `visual/resource/*` |
 | OpenAPI resource contract 导入辅助 | 已落地。`POST /admin/resource-design-contracts/from-openapi` 可从 OpenAPI operation 生成 `ResourceDesignContract` 草案，支持 operationId 或 path+method 定位、参数/requestBody/2xx JSON response schema 投影、local component `$ref` 到 `$defs` 改写，并复用 registry-aware validation；不会自动落库。 | `OpenApiResourceDesignContractImporter.java`、`ResourceDesignContractAdminController.java` |
-| Operator Catalog API | 已落地。支持 native、用户导入、resource-backed virtual operators；支持 search、tags、resourceOnly、includeDeprecated、tenant/namespace/environment policy filtering。 | `VisualOperatorCatalogController.java`、`DefaultVisualOperatorCatalog.java` |
+| Operator Catalog API | 已落地。支持 native、Java registry、用户导入、resource-backed virtual operators；支持 search、tags、resourceOnly、includeDeprecated、tenant/namespace/environment policy filtering。 | `VisualOperatorCatalogController.java`、`DefaultVisualOperatorCatalog.java` |
 | GraphDraft | 已落地。支持 `bloge.visualGraphDraft.v1`、nodes、edges、inputSchema、visualLayout、output、operatorFingerprints、revisionMetadata。 | `visual/draft/GraphDraft.java` |
 | 草稿持久化与并发控制 | 已落地。H2 和 in-memory repository，revision history，`saveIfRevision`，controller 层 stale update/run/delete/publish guard，field-level JSON Patch。 | `GraphDraftRepository.java`、`DatabaseGraphDraftRepository.java`、`VisualGraphDraftController.java`、`GraphDraftPatchService.java` |
 | Schema-aware validation | 已落地。支持输入/输出/config schema、contextPath/nodePath/expression/objectTemplate、data/dependency/route edges、DAG、output selection、policy、fingerprint drift、runtime context validation。 | `visual/validation/*` |
 | 连接预检 | 已落地。服务端模拟 preview edge/binding/config expression，返回与当前拖拽连接相关的结构化 diagnostics。 | `visual/connection/*` |
 | DSL 生成 | 已落地。支持 resource virtual operator、native user operator、transform lowering、branch lowering、dependency edges、named ports、root-object bindings、structured config expression。 | `visual/codegen/GraphDraftDslGenerator.java` |
-| Compile / Run | 已落地。运行前做 fingerprint、draft validation、runtime context validation，再生成 DSL 并调用现有 dynamic runner。 | `visual/runtime/VisualGraphRunService.java` |
+| Compile / Run | 已落地。运行前做 fingerprint、draft validation、runtime context validation，再生成 DSL 并调用现有 dynamic runner；Java operator 运行会在 gateway 边界做 typed input coercion。 | `visual/runtime/VisualGraphRunService.java`、`example/InputCoercingOperatorRegistry.java` |
 | Run history / node trace 摘要 | 已落地。transient draft、stored draft 和 publication run 会生成 `runId`，并持久化来源、revision、statusMap、diagnostics、errors、elapsedMs、DSL、context/output/results shape-only 摘要。 | `visual/runtime/VisualGraphRunRecord.java`、`DatabaseVisualGraphRunRepository.java`、`VisualGraphRunHistoryController.java` |
 | Immutable Publication | 已落地。发布物冻结 draft、operator snapshots、fingerprints、layout、DSL、validation report、generation report，并支持 H2 持久化和 publication run。 | `visual/publication/*` |
 | Browser Composer | 已落地。静态页面已从 catalog 拉取 operator palette，支持算子库导入、草稿、修订、发布、schema-aware picker/connection、DSL preview/run。 | `src/main/resources/static/examples/gateway/app.js`、`styles.css`、`index.html` |
@@ -76,7 +77,7 @@ Operator Library / Resource Design Contract
 | --- | --- | --- |
 | Durable / long-running graph authoring | 当前示例以 request-response 为主，不能覆盖长事务、人工审批、事件等待等编排。 | 平台化阶段 |
 | AsyncAPI / 更广义接口导入 | OpenAPI 到 resource contract 的第一层已落地；事件流、webhook、消息队列和完整 descriptor 生成仍未覆盖。 | 下一阶段 |
-| Java OperatorRegistry 自动投影 | 当前 native 内建算子有限，尚未把任意 Java operator inventory 完整归一化为 visual operator。 | 下一阶段 |
+| Java OperatorRegistry 深化 | 已支持基础投影和 typed DTO/record 运行；高级泛型展示、streaming UX、suspend/resume authoring 和更丰富注解语义仍需深化。 | 下一阶段 |
 | Subgraph / remote worker / AI tool source kinds | 设计已预留，当前示例主要覆盖 resource、native、user-library transform/branch/native lowering。 | 后续阶段 |
 | 生产 IAM / RBAC / 权限后台 | 当前 policy 是 tenant/namespace/environment availability gate，不是完整权限系统。 | 平台化阶段 |
 | 多人实时协作 | 当前通过 revision guard 防止覆盖，但没有 presence、merge、operation log 或 CRDT/OT。 | 后续阶段 |
@@ -84,8 +85,8 @@ Operator Library / Resource Design Contract
 
 ## 6. 下一步优先级
 
-1. **Java operator inventory projector**：让现有 BLOGE Java operators 也能进入同一 visual catalog，而不是只依赖手写内建定义。
-2. **前端回归验证**：给 catalog load、drag/drop connection preflight、draft save/publish/run 和 OpenAPI contract preview 建立浏览器级 smoke test。
+1. **前端回归验证**：给 catalog load、drag/drop connection preflight、draft save/publish/run、Java operator palette 和 OpenAPI contract preview 建立浏览器级 smoke test。
+2. **Java operator inventory 深化**：补 streaming/suspendable 画布交互、复杂泛型展示、注解扩展和 Java operator drift/兼容性策略。
 3. **OpenAPI 导入深化**：补 YAML 输入、descriptor 生成建议、更多 media type 策略和 operation/schema diff；仍必须走现有 `ResourceDesignContractValidator`，不能让未验证 schema 进入 catalog。
 4. **Run history 深化**：当前已经保存 shape-only run record；下一步可补查询过滤、run replay、golden case 绑定和 SLO 统计。
 5. **文档协议收敛**：把早期草案字段名逐步改成当前实现的 wire contract，并保留平台化抽象命名作为未来 ADR，而不是混在当前协议里。

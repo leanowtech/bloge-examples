@@ -72,7 +72,7 @@
    前端校验只改善体验，发布和运行前必须经过服务端 schema、policy、lowering 和 BLOGE compile。
 
 7. **Phase 1 核心闭环已经在 resource-gateway 内落地。**
-   后续重点是 Java operator inventory projector、前端回归、OpenAPI 导入深化和长期 graph-engine 控制面对齐。
+   Java operator inventory 基础投影也已进入 catalog；后续重点是前端回归、Java operator 深化、OpenAPI 导入深化和长期 graph-engine 控制面对齐。
 
 ## 5. 当前待确认决策
 
@@ -109,8 +109,8 @@ Phase 1 不以 UI 好看为验收，而以真实闭环为验收：
 
 如果继续代码实现，优先按实现状态审计第 6 章推进：
 
-1. Java operator inventory projector。
-2. 前端回归验证。
+1. 前端回归验证。
+2. Java operator inventory 深化。
 3. OpenAPI/resource contract 导入深化。
 4. Run history 查询、重放和 SLO 统计深化。
 5. 协议文档命名与当前 wire contract 收敛。

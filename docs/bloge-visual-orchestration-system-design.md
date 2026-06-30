@@ -32,7 +32,7 @@ Phase 1 实现蓝图：[BLOGE 可视化编排 Phase 1 实现蓝图](./bloge-visu
 
 事实：
 
-- `resource-gateway-examples` 已经落地 visual authoring slice：`OperatorDefinition`、`OperatorLibrary`、`ResourceDesignContract`、`GraphDraft`、连接预检、DSL 生成、运行和 immutable publication。
+- `resource-gateway-examples` 已经落地 visual authoring slice：`OperatorDefinition`、`OperatorLibrary`、Java OperatorRegistry 投影、`ResourceDesignContract`、`GraphDraft`、连接预检、DSL 生成、运行和 immutable publication。
 - `ResourceDescriptor` 已经描述外部 HTTP 资源的 URL、方法、Header、认证、超时、参数映射、响应协议和 payload 提取路径。
 - `HttpResourceOperator` 是通用资源算子，运行时根据 `resourceId` 解析 descriptor，再完成参数求值、请求构建、响应校验和 payload 提取。
 - `DatabaseResourceRegistry` 已经有 descriptor 持久化、热路径缓存和表达式预编译。
@@ -43,7 +43,7 @@ Phase 1 实现蓝图：[BLOGE 可视化编排 Phase 1 实现蓝图](./bloge-visu
 推断：
 
 - resource-gateway 的正确演进方向不是增加更多 provider-specific operators，而是将 `ResourceDescriptor` 泛化为“算子描述符 / 连接器描述符 / 虚拟算子定义”。
-- 现有 composer 已经不只是 MVP 原型；它是当前通用画布的可运行 Phase 1 示例。下一阶段应补 run history、operator inventory projector、导入辅助和长期 graph-engine 对齐。
+- 现有 composer 已经不只是 MVP 原型；它是当前通用画布的可运行 Phase 1 示例。下一阶段应补前端回归、Java operator 深化、导入辅助和长期 graph-engine 对齐。
 
 ### 2.2 graph-engine 已有能力
 

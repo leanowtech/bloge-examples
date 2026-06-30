@@ -5,6 +5,12 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.SerializationFeature;
 import com.fasterxml.jackson.databind.jsontype.NamedType;
 import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
+import com.leanowtech.bloge.core.operator.Operator;
+import com.leanowtech.bloge.core.operator.OperatorMeta;
+import com.leanowtech.bloge.core.operator.StreamingOperator;
+import com.leanowtech.bloge.core.operator.SuspendableOperator;
+import com.leanowtech.bloge.core.spi.DefaultOperatorRegistry;
+import com.leanowtech.bloge.core.spi.OperatorRegistry;
 import com.leanowtech.bloge.gateway.carrier.TenantMdcCarrier;
 import com.leanowtech.bloge.gateway.expression.BlgeExpressionEvaluator;
 import com.leanowtech.bloge.gateway.interceptor.QuotaConfigProvider;
@@ -26,11 +32,20 @@ import com.leanowtech.bloge.gateway.visual.runtime.DatabaseVisualGraphRunReposit
 import com.leanowtech.bloge.gateway.visual.runtime.VisualGraphRunRepository;
 import com.leanowtech.bloge.operators.http.HttpRequestInput;
 import com.leanowtech.bloge.operators.http.HttpRequestOperator;
+import com.leanowtech.bloge.spring.annotation.BlogeOperator;
 
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.jdbc.core.JdbcTemplate;
+
+import java.lang.reflect.Field;
+import java.lang.reflect.Modifier;
+import java.util.ArrayList;
+import java.util.IdentityHashMap;
+import java.util.LinkedHashSet;
+import java.util.List;
+import java.util.Set;
 
 /**
  * Central Spring configuration for the resource gateway example.
@@ -141,6 +156,39 @@ public class GatewayConfiguration {
         return new HttpResourceOperator(httpRequestOperator, registry, evaluator, renderer, extractor, validator);
     }
 
+    /**
+     * Runtime operator registry shared by DSL execution and the visual Java operator inventory.
+     *
+     * @param operators synchronous Java operators
+     * @param streamingOperators streaming Java operators
+     * @param suspendableOperators suspendable Java operators
+     * @return registry populated from Spring operator beans
+     */
+    @Bean
+    @ConditionalOnMissingBean
+    public OperatorRegistry operatorRegistry(List<Operator<?, ?>> operators,
+                                             List<StreamingOperator<?, ?>> streamingOperators,
+                                             List<SuspendableOperator<?, ?>> suspendableOperators) {
+        DefaultOperatorRegistry registry = new DefaultOperatorRegistry();
+        Set<Object> seen = java.util.Collections.newSetFromMap(new IdentityHashMap<>());
+        Set<String> names = new LinkedHashSet<>();
+        List<Object> candidates = new ArrayList<>();
+        candidates.addAll(operators == null ? List.of() : operators);
+        candidates.addAll(streamingOperators == null ? List.of() : streamingOperators);
+        candidates.addAll(suspendableOperators == null ? List.of() : suspendableOperators);
+        for (Object operator : candidates) {
+            if (operator == null || !seen.add(operator)) {
+                continue;
+            }
+            String name = operatorName(operator);
+            if (name.isBlank() || !names.add(name)) {
+                continue;
+            }
+            registry.registerRaw(name, operator);
+        }
+        return registry;
+    }
+
     // ── Persistence ─────────────────────────────────────────────────────
 
     /**
@@ -236,6 +284,36 @@ public class GatewayConfiguration {
 
     // ── Context carriers ────────────────────────────────────────────────
     // TenantMdcCarrier is registered via @Component scanning.
+
+    private static String operatorName(Object operator) {
+        BlogeOperator blogeOperator = operator.getClass().getAnnotation(BlogeOperator.class);
+        if (blogeOperator != null && !blogeOperator.value().isBlank()) {
+            return blogeOperator.value().trim();
+        }
+        String constantName = staticName(operator.getClass());
+        if (!constantName.isBlank()) {
+            return constantName;
+        }
+        OperatorMeta operatorMeta = operator.getClass().getAnnotation(OperatorMeta.class);
+        if (operatorMeta != null) {
+            return operator.getClass().getSimpleName();
+        }
+        return operator.getClass().getSimpleName();
+    }
+
+    private static String staticName(Class<?> type) {
+        try {
+            Field field = type.getField("NAME");
+            int modifiers = field.getModifiers();
+            if (Modifier.isStatic(modifiers) && String.class.equals(field.getType())) {
+                Object value = field.get(null);
+                return value == null ? "" : String.valueOf(value).trim();
+            }
+        } catch (ReflectiveOperationException ex) {
+            return "";
+        }
+        return "";
+    }
 
     @JsonTypeInfo(use = JsonTypeInfo.Id.NAME, include = JsonTypeInfo.As.PROPERTY, property = "type")
     private interface HttpAuthMixin {

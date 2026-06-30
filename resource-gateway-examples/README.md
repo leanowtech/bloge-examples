@@ -85,7 +85,11 @@ drag operators such as `HTTP Resource`, `Decision Table`, and `Transform` onto
 the graph canvas. Resource operators are loaded from the visual operator catalog
 as `resource:<resourceId>` virtual operators, so descriptor-backed APIs can be
 dragged as schema-aware business operators and lowered back to `httpResource` at
-runtime. Users can reposition existing nodes directly on the canvas, edit the
+runtime. Java operators registered in the Spring `OperatorRegistry` also enter
+the same catalog from BLOGE metadata and run through a typed-input adapter, so a
+visual DSL map can execute Java DTO/record operators without forcing authors to
+rewrite them as `Map<String,Object>` operators. Users can reposition existing
+nodes directly on the canvas, edit the
 selected operator's properties, bind every schema-declared input field from a
 schema-checked source picker or a manual expression, connect output handles to
 input handles under schema type constraints, confirm dropped connections and
@@ -401,7 +405,7 @@ Showcase metadata APIs:
 | `GET` | `/api/gateway/examples/scenarios/{graphName}` | Load scenario metadata and run recipe |
 | `GET` | `/api/gateway/examples/scenarios/{graphName}/diagram` | Load the `bloge.visualLayout.v1` diagram for a scenario |
 | `POST` | `/api/gateway/examples/compose/run` | Compile and run submitted DSL with JSON context, returning diagnostics, output, layout, and decision-table metadata |
-| `GET` | `/api/visual/operators` | List native, imported, and resource-backed visual operator definitions; supports `tenantId`, `namespace`, and `environment` policy filtering |
+| `GET` | `/api/visual/operators` | List native, Java registry, imported, and resource-backed visual operator definitions; supports `tenantId`, `namespace`, and `environment` policy filtering |
 | `GET` | `/api/visual/drafts` | List stored visual graph drafts |
 | `POST` | `/api/visual/drafts` | Save a new visual graph draft with server-assigned id/revision, ignoring submitted draft identity fields |
 | `GET` | `/api/visual/drafts/{draftId}` | Load a stored visual graph draft |
@@ -800,13 +804,15 @@ Seven `.bloge` graphs live in `src/main/resources/bloge/gateway/`:
 | `ResourceDesignContractValidator` | Blocks invalid resource authoring schemas and raw secret examples before resource contracts enter the virtual operator catalog |
 | `OperatorLibrary` | User-provided operator catalog bundle with schema-aware `OperatorDefinition` entries |
 | `DatabaseOperatorLibraryRegistry` | H2-backed user operator-library registry, so imported operator catalogs survive restart |
-| `DefaultVisualOperatorCatalog` | Combines native visual operators with `resource:<resourceId>` virtual operators |
+| `JavaOperatorInventoryProjector` | Projects registered BLOGE Java operators into visual operator definitions using registry metadata, schemas, annotations, and capabilities |
+| `DefaultVisualOperatorCatalog` | Combines native visual operators, Java registry operators, imported user libraries, and `resource:<resourceId>` virtual operators |
 | `GraphDraft` | Editable canvas graph model: input schema, nodes, port-aware bindings, edges, layout, output selection, and operator fingerprint snapshots |
 | `DatabaseGraphDraftRepository` | H2-backed graph draft repository with revision assignment, immutable revision history, and expected-revision guarded updates |
 | `GraphDraftValidator` | Validates the `bloge.visualGraphDraft.v1` draft contract, operator references, operator fingerprint drift, operator scope policy, graph input `contextPath` bindings, binding kind and edge kind allow-lists, literal constants, expression references, required schema inputs, node config against `configSchema`, port-aware node bindings, typed data edges, explicit dependency edges, branch route edges, edge identity/connection uniqueness, data edge/semantic dependency consistency, DAG shape, output schema selection, and output-reachability warnings for dangling nodes |
 | `VisualConnectionCheckService` | Reuses draft validation to accept or reject one proposed canvas edge before the browser writes a binding |
 | `GraphDraftDslGenerator` | Lowers visual drafts into executable BLOGE DSL |
 | `VisualGraphRunService` | Reuses the dynamic BLOGE runner to validate draft input context, compile, and execute visual drafts or frozen publications |
+| `InputCoercingOperatorRegistry` | Runtime adapter used by the dynamic runner to coerce visual DSL map inputs into Java DTO/record operator inputs before execution |
 | `VisualGraphPublication` | Immutable published visual graph artifact with DSL, draft, operator schema snapshots, fingerprints, layout, and validation reports |
 | `DatabaseVisualGraphPublicationRepository` | H2-backed immutable publication repository |
 

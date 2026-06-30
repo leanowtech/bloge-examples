@@ -295,7 +295,8 @@ public class VisualGraphRunService {
 
     private static Object recordAccessor(Object target, String accessor) {
         try {
-            Method method = target.getClass().getMethod(accessor);
+            Method method = target.getClass().getDeclaredMethod(accessor);
+            method.setAccessible(true);
             return method.invoke(target);
         } catch (ReflectiveOperationException ignored) {
             return null;
