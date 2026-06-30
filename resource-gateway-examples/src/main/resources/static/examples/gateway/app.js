@@ -1766,6 +1766,8 @@ async function publishVisualDraft() {
       await loadPublicationList({ render: false });
       await loadGoldenCases({ render: false });
       await loadGoldenCertificationStatus({ render: false });
+      await loadVisualOperatorCatalog();
+      renderOperatorPalette();
       renderPublicationControls();
       setPublicationMessage(`Published ${publication.publicationId}.`, 'success');
     }

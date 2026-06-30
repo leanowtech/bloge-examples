@@ -162,6 +162,12 @@ class VisualAuthoringBrowserDomTest {
         click(wait, By.id("publish-visual-draft"));
         waitForText(wait, By.id("visual-check-status"), "Published");
         waitForText(wait, By.id("publication-status"), "Published");
+        String publicationId = valueOf(By.id("publication-select"));
+        assertThat(publicationId).isNotBlank();
+        setControlValue(driver.findElement(By.id("operator-palette-search")), "");
+        wait.until(ExpectedConditions.visibilityOfElementLocated(
+                By.cssSelector("#operator-palette [data-operator-type='publication:" + publicationId + "']")
+        ));
 
         click(wait, By.id("run-publication"));
         waitForText(wait, By.id("publication-status"), "Ran");
