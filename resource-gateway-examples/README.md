@@ -524,8 +524,8 @@ operator catalog:
 |--------|------|-------------|--------|
 | `GET` | `/admin/resource-design-contracts` | List all visual resource contracts | 200 |
 | `GET` | `/admin/resource-design-contracts/{resourceId}` | Get one visual contract | 200 / 404 |
-| `POST` | `/admin/resource-design-contracts/validate` | Validate a visual resource contract without storing it | 200 |
-| `PUT` | `/admin/resource-design-contracts/{resourceId}` | Create or replace a visual contract | 200 / 400 |
+| `POST` | `/admin/resource-design-contracts/validate` | Validate a visual resource contract without storing it; use `force=true` to suppress stored-draft disablement impact diagnostics | 200 |
+| `PUT` | `/admin/resource-design-contracts/{resourceId}` | Create or replace a visual contract; rejects disablement of stored-draft `resource:<resourceId>` references unless `force=true` | 200 / 400 / 409 |
 | `DELETE` | `/admin/resource-design-contracts/{resourceId}` | Delete a visual contract; rejects stored-draft `resource:<resourceId>` references unless `force=true` | 204 / 409 |
 
 Validate and upsert run the same resource-contract validator before storage.
@@ -555,10 +555,10 @@ catalog-level schema gate, keeping native, imported, and virtual operators on
 one authoring contract.
 Bootstrap seeds only missing built-in contracts and does not overwrite a
 persisted contract that an author has already customized. Deleting a visual
-resource design contract is impact-aware: by default the admin API rejects
-deletion with `409 CONFLICT` when any stored draft still uses the corresponding
-`resource:<resourceId>` operator, and `force=true` is required for an explicit
-destructive removal.
+resource design contract or replacing it with `DISABLED` is impact-aware: by
+default the admin API rejects the operation with `409 CONFLICT` when any stored
+draft still uses the corresponding `resource:<resourceId>` operator, and
+`force=true` is required for an explicit destructive change.
 
 User-provided visual operator libraries are imported through a separate admin API.
 Imported operators join the same `/api/visual/operators` catalog as built-ins and

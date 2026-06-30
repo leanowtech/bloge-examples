@@ -70,11 +70,18 @@ public class ResourceDesignContractAdminController {
      * Validates a design contract without storing it.
      *
      * @param contract contract body
+     * @param force suppress stored-draft disablement impact diagnostics
      * @return structured validation diagnostics
      */
     @PostMapping("/validate")
-    public VisualValidationResult validate(@RequestBody ResourceDesignContract contract) {
-        return validator.validate(contract);
+    public VisualValidationResult validate(@RequestBody ResourceDesignContract contract,
+                                           @RequestParam(defaultValue = "false") boolean force) {
+        VisualValidationResult structural = validator.validate(contract);
+        List<VisualDiagnostic> diagnostics = new ArrayList<>(structural.diagnostics());
+        if (!force) {
+            diagnostics.addAll(disablementImpactDiagnostics(contract));
+        }
+        return new VisualValidationResult(false, diagnostics);
     }
 
     /**
@@ -82,11 +89,13 @@ public class ResourceDesignContractAdminController {
      *
      * @param resourceId descriptor id
      * @param contract new contract
+     * @param force bypass stored-draft disablement protection
      * @return stored contract
      */
     @PutMapping("/{resourceId:.+}")
     public ResponseEntity<?> upsert(@PathVariable String resourceId,
-                                    @RequestBody ResourceDesignContract contract) {
+                                    @RequestBody ResourceDesignContract contract,
+                                    @RequestParam(defaultValue = "false") boolean force) {
         VisualValidationResult validation = validator.validate(contract);
         if (!validation.valid()) {
             return ResponseEntity.badRequest().body(validation);
@@ -94,6 +103,13 @@ public class ResourceDesignContractAdminController {
         if (!resourceId.equals(contract.resourceId())) {
             throw new IllegalArgumentException("Path resourceId '%s' does not match body resourceId '%s'"
                     .formatted(resourceId, contract.resourceId()));
+        }
+        if (!force) {
+            List<VisualDiagnostic> diagnostics = disablementImpactDiagnostics(contract);
+            if (!diagnostics.isEmpty()) {
+                return ResponseEntity.status(HttpStatus.CONFLICT)
+                        .body(new VisualValidationResult(false, diagnostics));
+            }
         }
         return ResponseEntity.ok(registry.upsert(contract));
     }
@@ -109,7 +125,7 @@ public class ResourceDesignContractAdminController {
     public ResponseEntity<?> delete(@PathVariable String resourceId,
                                     @RequestParam(defaultValue = "false") boolean force) {
         if (!force && registry.findByResourceId(resourceId).isPresent()) {
-            List<VisualDiagnostic> diagnostics = storedDraftReferenceDiagnostics(resourceId);
+            List<VisualDiagnostic> diagnostics = storedDraftReferenceDiagnostics(resourceId, "deleted");
             if (!diagnostics.isEmpty()) {
                 return ResponseEntity.status(HttpStatus.CONFLICT)
                         .body(new VisualValidationResult(false, diagnostics));
@@ -119,7 +135,16 @@ public class ResourceDesignContractAdminController {
         return ResponseEntity.noContent().build();
     }
 
-    private List<VisualDiagnostic> storedDraftReferenceDiagnostics(String resourceId) {
+    private List<VisualDiagnostic> disablementImpactDiagnostics(ResourceDesignContract contract) {
+        if (contract == null
+                || contract.visibleInCatalog(true)
+                || registry.findByResourceId(contract.resourceId()).isEmpty()) {
+            return List.of();
+        }
+        return storedDraftReferenceDiagnostics(contract.resourceId(), "disabled without force=true");
+    }
+
+    private List<VisualDiagnostic> storedDraftReferenceDiagnostics(String resourceId, String action) {
         String operatorRef = "resource:" + resourceId;
         List<VisualDiagnostic> diagnostics = new ArrayList<>();
         for (GraphDraft draft : draftRepository.all()) {
@@ -127,8 +152,8 @@ public class ResourceDesignContractAdminController {
                 GraphDraft.DraftNode node = draft.nodes().get(i);
                 if (operatorRef.equals(node.operatorRef())) {
                     diagnostics.add(VisualDiagnostic.error("visual.resourceContract.inUse",
-                            "Resource design contract for '%s' cannot be deleted because draft '%s@%d' node '%s' still uses operatorRef '%s'."
-                                    .formatted(resourceId, draft.draftId(), draft.revision(),
+                            "Resource design contract for '%s' cannot be %s because draft '%s@%d' node '%s' still uses operatorRef '%s'."
+                                    .formatted(resourceId, action, draft.draftId(), draft.revision(),
                                             node.id(), node.operatorRef()),
                             "/drafts/%s/nodes/%d/operatorRef".formatted(draft.draftId(), i)));
                 }

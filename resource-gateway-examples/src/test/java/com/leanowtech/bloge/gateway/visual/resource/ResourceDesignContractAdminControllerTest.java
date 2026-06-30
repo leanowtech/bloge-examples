@@ -120,6 +120,78 @@ class ResourceDesignContractAdminControllerTest {
     }
 
     @Test
+    void upsertRejectsDisablingContractReferencedByStoredDraft() throws Exception {
+        ResourceDesignContract original = validContract(Map.of());
+        ResourceDesignContract disabled = validContract(Map.of(), ResourceDesignContract.STATUS_DISABLED);
+        registry.upsert(original);
+        drafts.save(draftUsingResource("order-service.listOrders"));
+
+        mockMvc.perform(put("/admin/resource-design-contracts/order-service.listOrders")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(disabled)))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.valid").value(false))
+                .andExpect(jsonPath("$.diagnostics[0].code").value("visual.resourceContract.inUse"))
+                .andExpect(jsonPath("$.diagnostics[0].message").value(
+                        "Resource design contract for 'order-service.listOrders' cannot be disabled without force=true because draft 'draft-1@1' node 'orders' still uses operatorRef 'resource:order-service.listOrders'."))
+                .andExpect(jsonPath("$.diagnostics[0].target").value("/drafts/draft-1/nodes/0/operatorRef"));
+
+        assertThat(registry.findByResourceId("order-service.listOrders")).contains(original);
+    }
+
+    @Test
+    void upsertForceBypassesDisabledContractReferenceGuard() throws Exception {
+        ResourceDesignContract disabled = validContract(Map.of(), ResourceDesignContract.STATUS_DISABLED);
+        registry.upsert(validContract(Map.of()));
+        drafts.save(draftUsingResource("order-service.listOrders"));
+
+        mockMvc.perform(put("/admin/resource-design-contracts/order-service.listOrders")
+                        .param("force", "true")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(disabled)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("DISABLED"));
+
+        assertThat(registry.findByResourceId("order-service.listOrders")).contains(disabled);
+    }
+
+    @Test
+    void validateReportsDisablingContractReferencedByStoredDraft() throws Exception {
+        ResourceDesignContract original = validContract(Map.of());
+        ResourceDesignContract disabled = validContract(Map.of(), ResourceDesignContract.STATUS_DISABLED);
+        registry.upsert(original);
+        drafts.save(draftUsingResource("order-service.listOrders"));
+
+        mockMvc.perform(post("/admin/resource-design-contracts/validate")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(disabled)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.valid").value(false))
+                .andExpect(jsonPath("$.diagnostics[0].code").value("visual.resourceContract.inUse"))
+                .andExpect(jsonPath("$.diagnostics[0].target").value("/drafts/draft-1/nodes/0/operatorRef"));
+
+        assertThat(registry.findByResourceId("order-service.listOrders")).contains(original);
+    }
+
+    @Test
+    void validateForceBypassesDisabledContractImpactDiagnostic() throws Exception {
+        ResourceDesignContract original = validContract(Map.of());
+        ResourceDesignContract disabled = validContract(Map.of(), ResourceDesignContract.STATUS_DISABLED);
+        registry.upsert(original);
+        drafts.save(draftUsingResource("order-service.listOrders"));
+
+        mockMvc.perform(post("/admin/resource-design-contracts/validate")
+                        .param("force", "true")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(disabled)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.valid").value(true))
+                .andExpect(jsonPath("$.diagnostics").isEmpty());
+
+        assertThat(registry.findByResourceId("order-service.listOrders")).contains(original);
+    }
+
+    @Test
     void upsertRejectsPathMismatchWithStructuredDiagnostic() throws Exception {
         ResourceDesignContract valid = validContract(Map.of());
 
