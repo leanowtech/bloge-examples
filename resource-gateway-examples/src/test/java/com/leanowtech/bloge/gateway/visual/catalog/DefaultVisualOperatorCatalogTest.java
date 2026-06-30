@@ -148,6 +148,41 @@ class DefaultVisualOperatorCatalogTest {
     }
 
     @Test
+    void projectsPublishedVisualGraphSelectedNamedOutputPathSchema() {
+        InMemoryVisualGraphPublicationRepository publications = new InMemoryVisualGraphPublicationRepository();
+        publications.create(publishedScoreFactsGraph("pub-score-facts", "facts.score"));
+        DefaultVisualOperatorCatalog catalog = publicationCatalog(publications);
+
+        OperatorDefinition operator = catalog.find("publication:pub-score-facts").orElseThrow();
+
+        assertThat(operator.ports().outputs().getFirst().schema().schema())
+                .containsEntry("type", "integer");
+    }
+
+    @Test
+    void projectsPublishedVisualGraphWholeMultiOutputAsPortObjectSchema() {
+        InMemoryVisualGraphPublicationRepository publications = new InMemoryVisualGraphPublicationRepository();
+        publications.create(publishedScoreFactsGraph("pub-score-facts-whole", ""));
+        DefaultVisualOperatorCatalog catalog = publicationCatalog(publications);
+
+        Map<String, Object> schema = catalog.find("publication:pub-score-facts-whole")
+                .orElseThrow()
+                .ports()
+                .outputs()
+                .getFirst()
+                .schema()
+                .schema();
+        @SuppressWarnings("unchecked")
+        List<String> required = (List<String>) schema.get("required");
+        @SuppressWarnings("unchecked")
+        Map<String, Object> properties = (Map<String, Object>) schema.get("properties");
+
+        assertThat(schema).containsEntry("type", "object");
+        assertThat(required).containsExactlyInAnyOrder("summary", "facts");
+        assertThat(properties).containsKeys("summary", "facts");
+    }
+
+    @Test
     void computesStableFingerprintFromSchemaAndLoweringMetadata() {
         OperatorDefinition integerScore = VisualCatalogTestSupport.eligibilityOperator("integer");
         OperatorDefinition sameDefinition = VisualCatalogTestSupport.eligibilityOperator("integer");
@@ -268,6 +303,19 @@ class DefaultVisualOperatorCatalogTest {
         );
     }
 
+    private static DefaultVisualOperatorCatalog publicationCatalog(
+            InMemoryVisualGraphPublicationRepository publications) {
+        return new DefaultVisualOperatorCatalog(
+                VisualCatalogTestSupport.emptyResourceRegistry(),
+                new InMemoryResourceDesignContractRegistry(),
+                new ResourceVirtualOperatorProjector(),
+                OperatorLibraryRegistry.empty(),
+                JavaOperatorInventoryProjector.empty(),
+                publications,
+                new VisualGraphPublicationOperatorProjector()
+        );
+    }
+
     private static DefaultVisualOperatorCatalog catalogWithResourceContractStatus(String status) {
         ResourceDescriptor descriptor = VisualCatalogTestSupport.loanApplicantDescriptor();
         InMemoryResourceDesignContractRegistry contracts = new InMemoryResourceDesignContractRegistry();
@@ -344,6 +392,59 @@ class DefaultVisualOperatorCatalogTest {
                 null,
                 draft,
                 List.of(eligibility),
+                draft.operatorFingerprints(),
+                Map.of(),
+                dsl,
+                new VisualValidationResult(true, List.of()),
+                new DslGenerationResult(true, dsl, List.of())
+        );
+    }
+
+    private static VisualGraphPublication publishedScoreFactsGraph(String publicationId, String outputPath) {
+        OperatorDefinition scoreFacts = VisualCatalogTestSupport.scoreFactsOperator();
+        GraphDraft draft = new GraphDraft(
+                "",
+                "draft-score-facts",
+                3,
+                "publishedScoreFacts",
+                "tenant-a",
+                "risk",
+                "prod",
+                "",
+                SchemaEnvelope.object(Map.of(), List.of()),
+                List.of(new GraphDraft.DraftNode(
+                        "scoreFacts",
+                        scoreFacts.operatorRef(),
+                        "",
+                        Map.of(),
+                        Map.of(),
+                        null
+                )),
+                List.of(),
+                Map.of(),
+                new GraphDraft.OutputSelection("scoreFacts", outputPath),
+                Map.of("scoreFacts", scoreFacts.fingerprint())
+        );
+        String dsl = """
+                graph publishedScoreFacts {
+                  node scoreFacts : riskScoreFacts {
+                    input {
+                    }
+                  }
+                }
+                """;
+        return new VisualGraphPublication(
+                "",
+                publicationId,
+                draft.draftId(),
+                draft.revision(),
+                draft.graphName(),
+                draft.tenantId(),
+                draft.namespace(),
+                draft.environment(),
+                null,
+                draft,
+                List.of(scoreFacts),
                 draft.operatorFingerprints(),
                 Map.of(),
                 dsl,
