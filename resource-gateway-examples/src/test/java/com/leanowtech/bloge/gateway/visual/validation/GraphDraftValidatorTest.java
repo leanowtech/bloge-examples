@@ -475,6 +475,44 @@ class GraphDraftValidatorTest {
     }
 
     @Test
+    void warnsAboutNodesThatDoNotReachSelectedOutput() {
+        GraphDraftValidator validator = new GraphDraftValidator(
+                VisualCatalogTestSupport.catalogWithLibrary(
+                        VisualCatalogTestSupport.multiOutputEligibilityLibrary("integer")));
+        GraphDraft draft = scoreFactsDependencyDraft(List.of(), "publishFacts");
+
+        VisualValidationResult result = validator.validate(draft);
+
+        assertThat(result.valid()).isTrue();
+        assertThat(result.diagnostics())
+                .anySatisfy(diagnostic -> {
+                    assertThat(diagnostic.level()).isEqualTo("WARNING");
+                    assertThat(diagnostic.code()).isEqualTo("visual.graph.unreachableNode");
+                    assertThat(diagnostic.message()).contains("prepareFacts").contains("publishFacts");
+                    assertThat(diagnostic.target()).isEqualTo("/nodes/0");
+                });
+    }
+
+    @Test
+    void treatsDependencyEdgesAsOutputReachability() {
+        GraphDraftValidator validator = new GraphDraftValidator(
+                VisualCatalogTestSupport.catalogWithLibrary(
+                        VisualCatalogTestSupport.multiOutputEligibilityLibrary("integer")));
+        GraphDraft draft = scoreFactsDependencyDraft(List.of(
+                new GraphDraft.DraftEdge("prepare-before-publish", "dependency",
+                        new GraphDraft.Endpoint("prepareFacts", "", ""),
+                        new GraphDraft.Endpoint("publishFacts", "", ""))
+        ), "publishFacts");
+
+        VisualValidationResult result = validator.validate(draft);
+
+        assertThat(result.valid()).isTrue();
+        assertThat(result.diagnostics())
+                .noneSatisfy(diagnostic -> assertThat(diagnostic.code())
+                        .isEqualTo("visual.graph.unreachableNode"));
+    }
+
+    @Test
     void rejectsDependencyEdgeTargetingNonNodeDslBlock() {
         GraphDraftValidator validator = new GraphDraftValidator(
                 VisualCatalogTestSupport.catalogWithLibrary(
@@ -564,6 +602,31 @@ class GraphDraftValidatorTest {
     }
 
     @Test
+    void treatsRouteEdgeSourceAsOutputReachable() {
+        GraphDraftValidator validator = new GraphDraftValidator(
+                VisualCatalogTestSupport.catalogWithLibrary(VisualCatalogTestSupport.routeLibrary()));
+        GraphDraft draft = routeDraft(List.of(
+                new GraphDraft.DraftEdge("route-physical", "route",
+                        new GraphDraft.Endpoint("routeByType", "", ""),
+                        new GraphDraft.Endpoint("physicalFacts", "", ""),
+                        "physical"),
+                new GraphDraft.DraftEdge("route-generic", "route",
+                        new GraphDraft.Endpoint("routeByType", "", ""),
+                        new GraphDraft.Endpoint("genericFacts", "", ""),
+                        "otherwise")
+        ));
+
+        VisualValidationResult result = validator.validate(draft);
+
+        assertThat(result.valid()).isTrue();
+        assertThat(result.diagnostics())
+                .noneSatisfy(diagnostic -> {
+                    assertThat(diagnostic.code()).isEqualTo("visual.graph.unreachableNode");
+                    assertThat(diagnostic.message()).contains("routeByType");
+                });
+    }
+
+    @Test
     void rejectsRouteEdgesFromNonBranchOperator() {
         GraphDraftValidator validator = new GraphDraftValidator(
                 VisualCatalogTestSupport.catalogWithLibrary(VisualCatalogTestSupport.routeLibrary()));
@@ -603,6 +666,48 @@ class GraphDraftValidatorTest {
         assertThat(result.diagnostics())
                 .anySatisfy(diagnostic -> assertThat(diagnostic.code())
                         .isEqualTo("visual.edge.routeConditionDuplicate"));
+    }
+
+    @Test
+    void rejectsOutputSelectionOnControlOnlyBranchNode() {
+        GraphDraftValidator validator = new GraphDraftValidator(
+                VisualCatalogTestSupport.catalogWithLibrary(VisualCatalogTestSupport.routeLibrary()));
+        GraphDraft base = routeDraft(List.of(
+                new GraphDraft.DraftEdge("route-physical", "route",
+                        new GraphDraft.Endpoint("routeByType", "", ""),
+                        new GraphDraft.Endpoint("physicalFacts", "", ""),
+                        "physical"),
+                new GraphDraft.DraftEdge("route-generic", "route",
+                        new GraphDraft.Endpoint("routeByType", "", ""),
+                        new GraphDraft.Endpoint("genericFacts", "", ""),
+                        "otherwise")
+        ));
+        GraphDraft draft = new GraphDraft(
+                base.schemaVersion(),
+                base.draftId(),
+                base.revision(),
+                base.graphName(),
+                base.tenantId(),
+                base.namespace(),
+                base.environment(),
+                base.status(),
+                base.inputSchema(),
+                base.nodes(),
+                base.edges(),
+                base.visualLayout(),
+                new GraphDraft.OutputSelection("routeByType", ""),
+                base.operatorFingerprints(),
+                base.revisionMetadata()
+        );
+
+        VisualValidationResult result = validator.validate(draft);
+
+        assertThat(result.valid()).isFalse();
+        assertThat(result.diagnostics())
+                .anySatisfy(diagnostic -> {
+                    assertThat(diagnostic.code()).isEqualTo("visual.output.unselectableNode");
+                    assertThat(diagnostic.target()).isEqualTo("/output/nodeId");
+                });
     }
 
     @Test

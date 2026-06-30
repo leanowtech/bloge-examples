@@ -149,6 +149,7 @@ public class GraphDraftValidator {
         }
         validateAcyclic(draft, nodesById, diagnostics);
         validateOutputSelection(draft, nodeIds, operatorsByNodeId, diagnostics);
+        validateOutputReachability(draft, nodesById, diagnostics);
         return new VisualValidationResult(diagnostics.stream().noneMatch(VisualDiagnostic::error), diagnostics);
     }
 
@@ -207,19 +208,23 @@ public class GraphDraftValidator {
                     "Output node does not exist: " + output.nodeId(), "/output/nodeId"));
             return;
         }
-        if (output.path().isBlank()) {
-            return;
-        }
 
         OperatorDefinition operator = operatorsByNodeId.get(output.nodeId());
         if (operator == null) {
             return;
         }
-        if (operator.ports().outputs().isEmpty()) {
+        if (operator.ports().outputs().isEmpty()
+                && ("branch".equals(operator.lowering().mode()) || !output.path().isBlank())) {
             diagnostics.add(VisualDiagnostic.error("visual.output.unselectableNode",
                     "Output node '%s' using operator '%s' does not expose output ports."
                             .formatted(output.nodeId(), operator.operatorRef()),
                     "/output/nodeId"));
+            return;
+        }
+        if (operator.ports().outputs().isEmpty()) {
+            return;
+        }
+        if (output.path().isBlank()) {
             return;
         }
         OutputReference outputReference = outputReference(operator, output.path());
@@ -236,6 +241,53 @@ public class GraphDraftValidator {
                     "Output node '%s' port '%s' does not expose path '%s'."
                             .formatted(output.nodeId(), outputPort.get().name(), outputReference.path()),
                     "/output/path"));
+        }
+    }
+
+    private static void validateOutputReachability(GraphDraft draft,
+                                                   Map<String, GraphDraft.DraftNode> nodesById,
+                                                   List<VisualDiagnostic> diagnostics) {
+        String outputNodeId = draft.output().nodeId();
+        if (outputNodeId.isBlank() || !nodesById.containsKey(outputNodeId) || nodesById.size() <= 1) {
+            return;
+        }
+
+        Map<String, Set<String>> predecessors = new LinkedHashMap<>();
+        draft.nodes().forEach(node -> predecessors.put(node.id(), new LinkedHashSet<>()));
+        draft.edges().forEach(edge -> {
+            String source = edge.source().nodeId();
+            String target = edge.target().nodeId();
+            if (nodesById.containsKey(source) && nodesById.containsKey(target)) {
+                predecessors.get(target).add(source);
+            }
+        });
+        draft.nodes().forEach(node -> GraphDraftDependencies.nodeDependencies(node).forEach(source -> {
+            if (nodesById.containsKey(source)) {
+                predecessors.get(node.id()).add(source);
+            }
+        }));
+
+        Set<String> reachable = new LinkedHashSet<>();
+        List<String> queue = new ArrayList<>();
+        reachable.add(outputNodeId);
+        queue.add(outputNodeId);
+        for (int i = 0; i < queue.size(); i++) {
+            String nodeId = queue.get(i);
+            for (String predecessor : predecessors.getOrDefault(nodeId, Set.of())) {
+                if (reachable.add(predecessor)) {
+                    queue.add(predecessor);
+                }
+            }
+        }
+
+        for (int i = 0; i < draft.nodes().size(); i++) {
+            GraphDraft.DraftNode node = draft.nodes().get(i);
+            if (!reachable.contains(node.id())) {
+                diagnostics.add(VisualDiagnostic.warning("visual.graph.unreachableNode",
+                        "Node '%s' is not on any data, dependency, route, input, or config reference path leading to selected output node '%s'."
+                                .formatted(node.id(), outputNodeId),
+                        "/nodes/" + i));
+            }
         }
     }
 

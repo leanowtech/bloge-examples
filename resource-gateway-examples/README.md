@@ -303,9 +303,14 @@ The browser treats repeated attempts to draw an already-applied data connection
 as an idempotent no-op instead of sending noisy duplicate edits to the server.
 Expression references in node inputs and executable config also
 participate in DAG validation and DSL topological ordering even when they are
-not represented by a direct edge. Output selections are checked
-against the selected node's output port schema before compile/run as well, and
-the browser composer exposes the output node/path saved into `GraphDraft.output`.
+not represented by a direct edge. Output selections are checked against the
+selected node's declared output port schema before compile/run, and control-only
+nodes such as branch routers cannot be selected as graph outputs.
+The validator also walks backward from the selected output through data,
+dependency, route, input, and config references and emits non-blocking
+`visual.graph.unreachableNode` warnings for nodes that do not contribute to that
+output path, helping authors catch dangling business logic in large canvases.
+The browser composer exposes the output node/path saved into `GraphDraft.output`.
 Each catalog operator exposes a server-computed fingerprint, and saved drafts
 store per-node `operatorFingerprints`; compile/run/publish require executable
 drafts to carry a fingerprint snapshot, and validation checks snapshots for
@@ -755,7 +760,7 @@ Seven `.bloge` graphs live in `src/main/resources/bloge/gateway/`:
 | `DefaultVisualOperatorCatalog` | Combines native visual operators with `resource:<resourceId>` virtual operators |
 | `GraphDraft` | Editable canvas graph model: input schema, nodes, port-aware bindings, edges, layout, output selection, and operator fingerprint snapshots |
 | `DatabaseGraphDraftRepository` | H2-backed graph draft repository with revision assignment, immutable revision history, and expected-revision guarded updates |
-| `GraphDraftValidator` | Validates the `bloge.visualGraphDraft.v1` draft contract, operator references, operator fingerprint drift, operator scope policy, graph input `contextPath` bindings, binding kind and edge kind allow-lists, literal constants, expression references, required schema inputs, node config against `configSchema`, port-aware node bindings, typed data edges, explicit dependency edges, branch route edges, edge identity/connection uniqueness, data edge/semantic dependency consistency, DAG shape, and output schema selection |
+| `GraphDraftValidator` | Validates the `bloge.visualGraphDraft.v1` draft contract, operator references, operator fingerprint drift, operator scope policy, graph input `contextPath` bindings, binding kind and edge kind allow-lists, literal constants, expression references, required schema inputs, node config against `configSchema`, port-aware node bindings, typed data edges, explicit dependency edges, branch route edges, edge identity/connection uniqueness, data edge/semantic dependency consistency, DAG shape, output schema selection, and output-reachability warnings for dangling nodes |
 | `VisualConnectionCheckService` | Reuses draft validation to accept or reject one proposed canvas edge before the browser writes a binding |
 | `GraphDraftDslGenerator` | Lowers visual drafts into executable BLOGE DSL |
 | `VisualGraphRunService` | Reuses the dynamic BLOGE runner to validate, compile, and execute visual drafts |
