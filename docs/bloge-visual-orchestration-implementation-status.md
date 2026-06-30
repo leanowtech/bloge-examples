@@ -81,11 +81,11 @@ Operator Library / Resource Design Contract
 | Subgraph / remote worker / AI tool source kinds | 设计已预留，当前示例主要覆盖 resource、native、user-library transform/branch/native lowering。 | 后续阶段 |
 | 生产 IAM / RBAC / 权限后台 | 当前 policy 是 tenant/namespace/environment availability gate，不是完整权限系统。 | 平台化阶段 |
 | 多人实时协作 | 当前通过 revision guard 防止覆盖，但没有 presence、merge、operation log 或 CRDT/OT。 | 后续阶段 |
-| 前端自动化回归 | 已新增 browser-facing HTTP smoke 和 Selenium/Chrome DOM smoke，覆盖静态入口、catalog、连接预检、draft save/run/publish、publication run、run history、Java operator palette、OpenAPI preview/save UI wiring、用户算子库导入、palette-to-canvas 拖拽、schema-aware connection 拖拽、schema-incompatible connection rejection、route/dependency/config 复杂连接拖拽、无输入端口用户算子的 UI schema 投影、graph output 选择、页面 warning diagnostics 渲染、server validation failure diagnostics 渲染和 publication run。revision restore/delete、更多失败场景和更多浏览器矩阵仍需补齐。 | 下一阶段 |
+| 前端自动化回归 | 已新增 browser-facing HTTP smoke 和 Selenium/Chrome DOM smoke，覆盖静态入口、catalog、连接预检、draft save/run/publish、draft revision preview/restore/delete、publication run、run history、Java operator palette、OpenAPI preview/save UI wiring、用户算子库导入、palette-to-canvas 拖拽、schema-aware connection 拖拽、schema-incompatible connection rejection、route/dependency/config 复杂连接拖拽、无输入端口用户算子的 UI schema 投影、graph output 选择、页面 warning diagnostics 渲染、server validation failure diagnostics 渲染和 publication run。更多失败场景和更多浏览器矩阵仍需补齐。 | 下一阶段 |
 
 ## 6. 下一步优先级
 
-1. **真实浏览器交互回归**：在现有 browser-facing HTTP + Selenium DOM smoke 基础上，补 revision restore/delete、更多失败场景和更多浏览器矩阵验证。
+1. **真实浏览器交互回归**：在现有 browser-facing HTTP + Selenium DOM smoke 基础上，补更多失败场景和更多浏览器矩阵验证。
 2. **Java operator inventory 深化**：补 streaming/suspendable 画布交互、复杂泛型展示、注解扩展和 Java operator drift/兼容性策略。
 3. **OpenAPI 导入深化**：补 YAML 输入、descriptor 生成建议、更多 media type 策略和 operation/schema diff；仍必须走现有 `ResourceDesignContractValidator`，不能让未验证 schema 进入 catalog。
 4. **Run history 深化**：当前已经保存 shape-only run record；下一步可补查询过滤、run replay、golden case 绑定和 SLO 统计。

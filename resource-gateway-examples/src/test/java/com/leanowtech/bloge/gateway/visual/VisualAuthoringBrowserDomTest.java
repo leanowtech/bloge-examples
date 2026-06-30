@@ -289,6 +289,46 @@ class VisualAuthoringBrowserDomTest {
                 .contains("depends_on = [loanPolicy]");
     }
 
+    @Test
+    void composerSupportsDraftRevisionPreviewRestoreAndDeleteInRealBrowser() {
+        driver = newChromeDriverOrSkip();
+        WebDriverWait wait = new WebDriverWait(driver, WAIT_TIMEOUT);
+        driver.get("http://localhost:" + port + "/examples/gateway");
+
+        waitForComposer(wait);
+        wait.until(ExpectedConditions.visibilityOfElementLocated(By.id("operator-palette")));
+        assertThat(valueOf(By.id("composer-dsl"))).contains("score >= 760");
+
+        click(wait, By.id("save-draft"));
+        waitForText(wait, By.id("draft-status"), "@1");
+
+        WebElement firstScoreRule = wait.until(ExpectedConditions.visibilityOfElementLocated(
+                By.cssSelector("[data-rule-index='0'][data-rule-field='score']")
+        ));
+        setControlValue(firstScoreRule, "score >= 780");
+        waitForValue(wait, By.cssSelector("[data-rule-index='0'][data-rule-field='score']"), "score >= 780");
+        waitForValue(wait, By.id("composer-dsl"), "score >= 780");
+
+        click(wait, By.id("save-draft"));
+        waitForText(wait, By.id("draft-status"), "@2");
+
+        click(wait, By.id("reload-revisions"));
+        selectByValue(wait, By.id("draft-revision-select"), "1");
+        click(wait, By.id("preview-revision"));
+        waitForText(wait, By.id("draft-status"), "Previewing revision @1");
+        waitForValue(wait, By.id("composer-dsl"), "score >= 760");
+        assertThat(valueOf(By.id("composer-dsl"))).doesNotContain("score >= 780");
+
+        click(wait, By.id("restore-revision"));
+        waitForText(wait, By.id("draft-status"), "Restored @1 as @3");
+        waitForValue(wait, By.id("composer-dsl"), "score >= 760");
+
+        useConfirm(true);
+        click(wait, By.id("delete-draft"));
+        waitForText(wait, By.id("draft-status"), "Deleted");
+        assertThat(valueOf(By.id("draft-select"))).isEmpty();
+    }
+
     private WebDriver newChromeDriverOrSkip() {
         ChromeOptions options = new ChromeOptions();
         options.addArguments(
@@ -366,6 +406,17 @@ class VisualAuthoringBrowserDomTest {
         );
     }
 
+    private void useConfirm(boolean value) {
+        ((JavascriptExecutor) driver).executeScript(
+                "window.__blogeConfirmValue = arguments[0];"
+                        + "window.confirm = function(message) {"
+                        + "  window.__blogeLastConfirm = message;"
+                        + "  return window.__blogeConfirmValue;"
+                        + "};",
+                value
+        );
+    }
+
     private void dragConnection(WebDriverWait wait, String sourceSelector, String targetSelector) {
         WebElement source = wait.until(ExpectedConditions.visibilityOfElementLocated(By.cssSelector(sourceSelector)));
         WebElement target = wait.until(ExpectedConditions.visibilityOfElementLocated(By.cssSelector(targetSelector)));
@@ -398,6 +449,9 @@ class VisualAuthoringBrowserDomTest {
     }
 
     private void selectByValue(WebDriverWait wait, By locator, String value) {
+        wait.until(ignored -> driver.findElement(locator)
+                .findElements(By.cssSelector("option[value=\"" + value + "\"]"))
+                .size() > 0);
         WebElement element = wait.until(ExpectedConditions.elementToBeClickable(locator));
         scrollIntoView(element);
         new Select(element).selectByValue(value);
