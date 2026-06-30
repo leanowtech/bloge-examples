@@ -154,8 +154,8 @@ class VisualGraphRunServiceTest {
         assertThat(response.errors()).contains("Runtime context validation failed.");
         assertThat(response.diagnostics())
                 .anySatisfy(diagnostic -> {
-                    assertThat(diagnostic.code()).isEqualTo("visual.context.schemaMismatch");
-                    assertThat(diagnostic.target()).isEqualTo("/context");
+                    assertThat(diagnostic.code()).isEqualTo("visual.context.typeMismatch");
+                    assertThat(diagnostic.target()).isEqualTo("/context/score");
                 });
     }
 
@@ -343,7 +343,7 @@ class VisualGraphRunServiceTest {
         assertThat(response.generatedDsl()).isEqualTo(frozenDsl);
         assertThat(response.diagnostics())
                 .anySatisfy(diagnostic -> assertThat(diagnostic.code())
-                        .isEqualTo("visual.context.schemaMismatch"));
+                        .isEqualTo("visual.context.requiredMissing"));
     }
 
     private static VisualOperatorCatalog transformOnlyCatalog() {

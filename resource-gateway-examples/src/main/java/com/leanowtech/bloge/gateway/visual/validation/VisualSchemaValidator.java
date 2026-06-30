@@ -118,9 +118,216 @@ public final class VisualSchemaValidator {
         if (valueMatchesSchema(value, effective.schema())) {
             return List.of();
         }
-        return List.of(VisualDiagnostic.error("visual.context.schemaMismatch",
-                "Runtime context does not satisfy graph inputSchema.",
-                path));
+        List<VisualDiagnostic> diagnostics = new ArrayList<>();
+        collectValueDiagnostics(value, effective.schema(), path, diagnostics);
+        if (diagnostics.isEmpty()) {
+            diagnostics.add(VisualDiagnostic.error("visual.context.schemaMismatch",
+                    "Runtime context does not satisfy graph inputSchema.",
+                    path));
+        }
+        return diagnostics;
+    }
+
+    @SuppressWarnings("unchecked")
+    private static void collectValueDiagnostics(Object value,
+                                                Map<String, Object> schema,
+                                                String path,
+                                                List<VisualDiagnostic> diagnostics) {
+        if (valueMatchesSchema(value, schema)) {
+            return;
+        }
+        String kind = schemaKind(schema);
+        if (kind.isBlank() || "any".equals(kind) || "opaque".equals(kind)) {
+            return;
+        }
+        if (!valueMatchesDeclaredType(value, schema, kind)) {
+            diagnostics.add(VisualDiagnostic.error("visual.context.typeMismatch",
+                    "Runtime value at '%s' is %s but graph inputSchema requires %s."
+                            .formatted(path, schemaKindForValue(value), kind),
+                    path));
+            return;
+        }
+        if (schema.containsKey("const") && !Objects.equals(schema.get("const"), value)) {
+            diagnostics.add(VisualDiagnostic.error("visual.context.constMismatch",
+                    "Runtime value at '%s' must equal const value '%s'."
+                            .formatted(path, schema.get("const")),
+                    path));
+            return;
+        }
+        Object rawEnum = "enum".equals(kind) ? schema.get("values") : schema.get("enum");
+        if (rawEnum instanceof List<?> values && !values.contains(value)) {
+            diagnostics.add(VisualDiagnostic.error("visual.context.enumMismatch",
+                    "Runtime value at '%s' must be one of %s.".formatted(path, values),
+                    path));
+            return;
+        }
+        if (numericKind(kind)) {
+            collectNumericValueDiagnostics(value, schema, path, diagnostics);
+            return;
+        }
+        if (stringKind(kind)) {
+            collectStringValueDiagnostics(value, schema, path, diagnostics);
+            return;
+        }
+        if ("array".equals(kind) && value instanceof List<?> list) {
+            collectArrayValueDiagnostics(list, schema, path, diagnostics);
+            return;
+        }
+        if ("object".equals(kind) && value instanceof Map<?, ?> rawMap) {
+            Map<String, Object> object = new LinkedHashMap<>();
+            rawMap.forEach((key, item) -> object.put(String.valueOf(key), item));
+            collectObjectValueDiagnostics(object, schema, path, diagnostics);
+        }
+    }
+
+    private static void collectNumericValueDiagnostics(Object value,
+                                                       Map<String, Object> schema,
+                                                       String path,
+                                                       List<VisualDiagnostic> diagnostics) {
+        if (!numericValueMatchesBounds(value, schema)) {
+            diagnostics.add(VisualDiagnostic.error("visual.context.numericConstraintMismatch",
+                    "Runtime numeric value at '%s' does not satisfy graph inputSchema bounds.".formatted(path),
+                    path));
+            return;
+        }
+        if (!numericValueMatchesMultipleOf(value, schema)) {
+            diagnostics.add(VisualDiagnostic.error("visual.context.numericConstraintMismatch",
+                    "Runtime numeric value at '%s' does not satisfy graph inputSchema multipleOf constraint."
+                            .formatted(path),
+                    path));
+        }
+    }
+
+    private static void collectStringValueDiagnostics(Object value,
+                                                      Map<String, Object> schema,
+                                                      String path,
+                                                      List<VisualDiagnostic> diagnostics) {
+        if (!stringValueMatchesLengthBounds(value, schema)) {
+            diagnostics.add(VisualDiagnostic.error("visual.context.stringConstraintMismatch",
+                    "Runtime string value at '%s' does not satisfy graph inputSchema length constraints."
+                            .formatted(path),
+                    path));
+            return;
+        }
+        if (!stringValueMatchesPattern(value, schema)) {
+            diagnostics.add(VisualDiagnostic.error("visual.context.stringConstraintMismatch",
+                    "Runtime string value at '%s' does not satisfy graph inputSchema pattern constraint."
+                            .formatted(path),
+                    path));
+            return;
+        }
+        if (!stringValueMatchesFormat(value, schema)) {
+            diagnostics.add(VisualDiagnostic.error("visual.context.stringConstraintMismatch",
+                    "Runtime string value at '%s' does not satisfy graph inputSchema format constraint."
+                            .formatted(path),
+                    path));
+        }
+    }
+
+    private static void collectArrayValueDiagnostics(List<?> value,
+                                                     Map<String, Object> schema,
+                                                     String path,
+                                                     List<VisualDiagnostic> diagnostics) {
+        if (!arrayValueMatchesItemBounds(value, schema)) {
+            diagnostics.add(VisualDiagnostic.error("visual.context.arrayConstraintMismatch",
+                    "Runtime array at '%s' does not satisfy graph inputSchema item count constraints."
+                            .formatted(path),
+                    path));
+            return;
+        }
+        if (!arrayValueMatchesUniqueItems(value, schema)) {
+            diagnostics.add(VisualDiagnostic.error("visual.context.arrayConstraintMismatch",
+                    "Runtime array at '%s' does not satisfy graph inputSchema uniqueItems constraint."
+                            .formatted(path),
+                    path));
+            return;
+        }
+        if (!arrayValueMatchesContains(value, schema)) {
+            diagnostics.add(VisualDiagnostic.error("visual.context.arrayConstraintMismatch",
+                    "Runtime array at '%s' does not satisfy graph inputSchema contains constraint."
+                            .formatted(path),
+                    path));
+        }
+        Map<String, Object> itemSchema = objectProperty(schema.get("items"));
+        List<Map<String, Object>> prefixItems = prefixItemsOf(schema);
+        for (int i = 0; i < value.size(); i++) {
+            Map<String, Object> itemSchemaForIndex = i < prefixItems.size()
+                    ? prefixItems.get(i)
+                    : itemSchema;
+            if (itemSchemaForIndex != null) {
+                collectValueDiagnostics(value.get(i), itemSchemaForIndex, path + "/" + i, diagnostics);
+            }
+        }
+    }
+
+    @SuppressWarnings("unchecked")
+    private static void collectObjectValueDiagnostics(Map<String, Object> value,
+                                                      Map<String, Object> schema,
+                                                      String path,
+                                                      List<VisualDiagnostic> diagnostics) {
+        if (!objectValueMatchesPropertyBounds(value, schema)) {
+            diagnostics.add(VisualDiagnostic.error("visual.context.objectConstraintMismatch",
+                    "Runtime object at '%s' does not satisfy graph inputSchema property count constraints."
+                            .formatted(path),
+                    path));
+            return;
+        }
+        if (!objectValueMatchesPropertyNames(value, schema)) {
+            diagnostics.add(VisualDiagnostic.error("visual.context.objectConstraintMismatch",
+                    "Runtime object at '%s' contains property names rejected by graph inputSchema."
+                            .formatted(path),
+                    path));
+        }
+        if (!objectValueMatchesDependentRequired(value, schema)) {
+            diagnostics.add(VisualDiagnostic.error("visual.context.objectConstraintMismatch",
+                    "Runtime object at '%s' does not satisfy graph inputSchema dependentRequired constraints."
+                            .formatted(path),
+                    path));
+        }
+        if (!objectValueMatchesDependentSchemas(value, schema)) {
+            diagnostics.add(VisualDiagnostic.error("visual.context.objectConstraintMismatch",
+                    "Runtime object at '%s' does not satisfy graph inputSchema dependentSchemas constraints."
+                            .formatted(path),
+                    path));
+        }
+        for (String required : requiredNamesWithoutDiagnostics(schema)) {
+            if (!value.containsKey(required) || value.get(required) == null) {
+                diagnostics.add(VisualDiagnostic.error("visual.context.requiredMissing",
+                        "Runtime object at '%s' is missing required graph inputSchema property '%s'."
+                                .formatted(path, required),
+                        path + "/" + pointerSegment(required)));
+            }
+        }
+        Map<String, Object> properties = propertiesWithoutDiagnostics(schema);
+        Object residual = residualPropertiesPolicy(schema);
+        for (Map.Entry<String, Object> entry : value.entrySet()) {
+            Object property = properties.get(entry.getKey());
+            List<Map<String, Object>> patternSchemas = matchingPatternPropertySchemas(schema, entry.getKey());
+            String propertyPath = path + "/" + pointerSegment(entry.getKey());
+            if (property instanceof Map<?, ?> propertySchema) {
+                collectValueDiagnostics(entry.getValue(), (Map<String, Object>) propertySchema,
+                        propertyPath, diagnostics);
+            }
+            for (Map<String, Object> patternSchema : patternSchemas) {
+                collectValueDiagnostics(entry.getValue(), patternSchema, propertyPath, diagnostics);
+            }
+            if (property instanceof Map<?, ?> || !patternSchemas.isEmpty()) {
+                continue;
+            }
+            if (Boolean.FALSE.equals(residual)) {
+                diagnostics.add(VisualDiagnostic.error("visual.context.unknownProperty",
+                        "Runtime object at '%s' contains undeclared property '%s'."
+                                .formatted(path, entry.getKey()),
+                        propertyPath));
+            } else if (residual instanceof Map<?, ?> residualSchema) {
+                collectValueDiagnostics(entry.getValue(), (Map<String, Object>) residualSchema,
+                        propertyPath, diagnostics);
+            }
+        }
+    }
+
+    private static String pointerSegment(String value) {
+        return value.replace("~", "~0").replace("/", "~1");
     }
 
     @SuppressWarnings("unchecked")
