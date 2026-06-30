@@ -96,7 +96,12 @@ class ResourceDesignContractAdminControllerTest {
                 .andExpect(jsonPath("$.contract.displayName").value("List orders"))
                 .andExpect(jsonPath("$.contract.requestSchema.schema.required[0]").value("userId"))
                 .andExpect(jsonPath("$.contract.responseSchema.schema.properties.items.items.properties.id.type")
-                        .value("string"));
+                        .value("string"))
+                .andExpect(jsonPath("$.descriptorSuggestion.resourceId").value("order-service.listOrders"))
+                .andExpect(jsonPath("$.descriptorSuggestion.urlTemplate")
+                        .value("https://api.example.test/v1/orders"))
+                .andExpect(jsonPath("$.descriptorSuggestion.parameterMapping.queryExpressions.userId")
+                        .value("ctx.params.userId"));
 
         assertThat(registry.all()).isEmpty();
     }
@@ -119,7 +124,9 @@ class ResourceDesignContractAdminControllerTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.validation.valid").value(true))
                 .andExpect(jsonPath("$.contract.resourceId").value("order-service.listOrders"))
-                .andExpect(jsonPath("$.contract.requestSchema.schema.properties.userId.type").value("string"));
+                .andExpect(jsonPath("$.contract.requestSchema.schema.properties.userId.type").value("string"))
+                .andExpect(jsonPath("$.descriptorSuggestion.urlTemplate")
+                        .value("https://api.example.test/v1/orders"));
 
         assertThat(registry.all()).isEmpty();
     }
@@ -463,6 +470,7 @@ class ResourceDesignContractAdminControllerTest {
     private static Map<String, Object> openApiOrderList() {
         return Map.of(
                 "openapi", "3.1.0",
+                "servers", List.of(Map.of("url", "https://api.example.test/v1")),
                 "paths", Map.of(
                         "/orders", Map.of(
                                 "get", Map.of(
@@ -518,6 +526,8 @@ class ResourceDesignContractAdminControllerTest {
     private static String openApiOrderListYaml() {
         return """
                 openapi: 3.1.0
+                servers:
+                  - url: https://api.example.test/v1
                 paths:
                   /orders:
                     get:

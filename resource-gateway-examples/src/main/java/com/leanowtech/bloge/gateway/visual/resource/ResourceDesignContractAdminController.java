@@ -113,7 +113,8 @@ public class ResourceDesignContractAdminController {
         }
         return new OpenApiResourceDesignContractImportResult(
                 importResult.contract(),
-                new VisualValidationResult(false, diagnostics)
+                new VisualValidationResult(false, diagnostics),
+                importResult.descriptorSuggestion()
         );
     }
 

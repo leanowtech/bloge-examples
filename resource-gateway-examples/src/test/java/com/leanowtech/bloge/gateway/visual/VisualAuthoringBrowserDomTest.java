@@ -100,6 +100,10 @@ class VisualAuthoringBrowserDomTest {
                 .contains("\"resourceId\": \"loan-applicant-service.getProfile\"")
                 .contains("\"requestSchema\"")
                 .contains("\"responseSchema\"");
+        assertThat(valueOf(By.id("resource-descriptor-json")))
+                .contains("\"resourceId\": \"loan-applicant-service.getProfile\"")
+                .contains("\"urlTemplate\": \"https://api.example.test/api/loan-applicants/{applicantId}\"")
+                .contains("\"applicantId\": \"ctx.params.applicantId\"");
 
         click(wait, By.id("save-resource-contract"));
         waitForText(wait,

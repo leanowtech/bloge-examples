@@ -220,6 +220,9 @@ const SAMPLE_OPENAPI_RESOURCE_CONTRACT = {
     title: 'Loan Applicant API',
     version: '1.0.0'
   },
+  servers: [
+    { url: 'https://api.example.test' }
+  ],
   paths: {
     '/api/loan-applicants/{applicantId}': {
       get: {
@@ -388,6 +391,7 @@ function createDefaultResourceContractImport() {
     status: 'ACTIVE',
     openApiText: pretty(SAMPLE_OPENAPI_RESOURCE_CONTRACT),
     contractText: '',
+    descriptorText: '',
     message: null
   };
 }
@@ -820,9 +824,11 @@ function renderInputForm() {
         <div class="resource-contract-actions">
           <button id="preview-resource-contract" class="secondary compact" type="button">Preview</button>
           <button id="save-resource-contract" class="secondary compact" type="button">Save Contract</button>
+          <button id="save-resource-descriptor" class="secondary compact" type="button">Save Descriptor</button>
           <button id="reset-resource-contract" class="secondary compact" type="button">Sample</button>
         </div>
         <textarea id="resource-contract-json" class="library-editor resource-contract-editor" spellcheck="false"></textarea>
+        <textarea id="resource-descriptor-json" class="library-editor resource-contract-editor" spellcheck="false"></textarea>
         <div id="resource-contract-status-message" class="library-status" hidden></div>
         <div id="resource-contract-diagnostics" class="visual-diagnostics"></div>
       </div>
@@ -1949,7 +1955,9 @@ function renderResourceContractImportControls() {
   const lifecycle = $('resource-contract-lifecycle');
   const openApiEditor = $('openapi-resource-json');
   const contractEditor = $('resource-contract-json');
-  if (!resourceId || !operationId || !path || !method || !lifecycle || !openApiEditor || !contractEditor) {
+  const descriptorEditor = $('resource-descriptor-json');
+  if (!resourceId || !operationId || !path || !method || !lifecycle || !openApiEditor || !contractEditor
+      || !descriptorEditor) {
     return;
   }
 
@@ -1966,6 +1974,7 @@ function renderResourceContractImportControls() {
   lifecycle.value = current.status || 'ACTIVE';
   openApiEditor.value = current.openApiText || pretty(SAMPLE_OPENAPI_RESOURCE_CONTRACT);
   contractEditor.value = current.contractText || '';
+  descriptorEditor.value = current.descriptorText || '';
 
   resourceId.oninput = () => {
     current.resourceId = resourceId.value;
@@ -1992,16 +2001,28 @@ function renderResourceContractImportControls() {
       saveButton.disabled = !current.contractText;
     }
   };
+  descriptorEditor.oninput = () => {
+    current.descriptorText = descriptorEditor.value;
+    const saveButton = $('save-resource-descriptor');
+    if (saveButton) {
+      saveButton.disabled = !current.descriptorText;
+    }
+  };
 
   const previewButton = $('preview-resource-contract');
-  const saveButton = $('save-resource-contract');
+  const saveContractButton = $('save-resource-contract');
+  const saveDescriptorButton = $('save-resource-descriptor');
   const resetButton = $('reset-resource-contract');
   if (previewButton) {
     previewButton.onclick = previewOpenApiResourceContract;
   }
-  if (saveButton) {
-    saveButton.disabled = !current.contractText;
-    saveButton.onclick = saveOpenApiResourceContract;
+  if (saveContractButton) {
+    saveContractButton.disabled = !current.contractText;
+    saveContractButton.onclick = saveOpenApiResourceContract;
+  }
+  if (saveDescriptorButton) {
+    saveDescriptorButton.disabled = !current.descriptorText;
+    saveDescriptorButton.onclick = saveOpenApiResourceDescriptor;
   }
   if (resetButton) {
     resetButton.onclick = resetResourceContractImport;
@@ -2020,6 +2041,20 @@ function updateProjectedResourceContractText(text) {
   const saveButton = $('save-resource-contract');
   if (saveButton) {
     saveButton.disabled = !current.contractText;
+  }
+}
+
+function updateProjectedResourceDescriptorText(text) {
+  const current = state.resourceContractImport || createDefaultResourceContractImport();
+  state.resourceContractImport = current;
+  current.descriptorText = text || '';
+  const descriptorEditor = $('resource-descriptor-json');
+  if (descriptorEditor) {
+    descriptorEditor.value = current.descriptorText;
+  }
+  const saveButton = $('save-resource-descriptor');
+  if (saveButton) {
+    saveButton.disabled = !current.descriptorText;
   }
 }
 
@@ -2060,6 +2095,7 @@ async function previewOpenApiResourceContract() {
     return;
   }
   updateProjectedResourceContractText('');
+  updateProjectedResourceDescriptorText('');
   setResourceContractImportMessage('Projecting OpenAPI operation...', 'info');
   const request = {
     resourceId: current.resourceId.trim(),
@@ -2088,10 +2124,13 @@ async function previewOpenApiResourceContract() {
     if (payload?.contract) {
       updateProjectedResourceContractText(pretty(payload.contract));
     }
+    if (payload?.descriptorSuggestion) {
+      updateProjectedResourceDescriptorText(pretty(payload.descriptorSuggestion));
+    }
     const valid = payload?.validation?.valid !== false;
     setResourceContractImportMessage(
       valid && payload?.contract
-        ? `Projected contract ${payload.contract.resourceId}. Review and save to refresh the palette.`
+        ? `Projected contract ${payload.contract.resourceId}. Review contract and descriptor drafts before saving.`
         : validationResultMessage(valid, diagnostics, 'OpenAPI projection completed.'),
       visualCheckLevel(diagnostics, valid),
       diagnostics
@@ -2148,6 +2187,58 @@ async function saveOpenApiResourceContract() {
     renderResourceContractImportControls();
     setResourceContractImportMessage(`Saved ${payload.resourceId}; palette refreshed.`, 'success');
     $('output').textContent = pretty({ status: response.status, resourceContract: payload });
+  } catch (error) {
+    setResourceContractImportMessage(error.message, 'error');
+  }
+}
+
+async function saveOpenApiResourceDescriptor() {
+  const current = state.resourceContractImport;
+  let descriptor;
+  try {
+    descriptor = JSON.parse(current.descriptorText || '{}');
+  } catch (error) {
+    setResourceContractImportMessage(`Invalid descriptor JSON: ${error.message}`, 'error');
+    return;
+  }
+  if (!descriptor.resourceId) {
+    setResourceContractImportMessage('Projected descriptor resourceId is required.', 'error');
+    return;
+  }
+  setResourceContractImportMessage('Saving resource descriptor...', 'info');
+  try {
+    let response = await fetch('/admin/resources', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(descriptor)
+    });
+    if (response.status === 409) {
+      response = await fetch(`/admin/resources/${encodeURIComponent(descriptor.resourceId)}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(descriptor)
+      });
+    }
+    const text = await response.text();
+    let payload = null;
+    try {
+      payload = text ? JSON.parse(text) : null;
+    } catch {
+    }
+    if (!response.ok) {
+      setResourceContractImportMessage(text || `Save descriptor failed with ${response.status}`, 'error');
+      return;
+    }
+    if (!payload) {
+      setResourceContractImportMessage('Save descriptor succeeded but no descriptor body was returned.', 'error');
+      return;
+    }
+    updateProjectedResourceDescriptorText(pretty(payload));
+    await loadVisualOperatorCatalog();
+    renderOperatorPalette();
+    renderResourceContractImportControls();
+    setResourceContractImportMessage(`Saved descriptor ${payload.resourceId}; palette refreshed.`, 'success');
+    $('output').textContent = pretty({ status: response.status, resourceDescriptor: payload });
   } catch (error) {
     setResourceContractImportMessage(error.message, 'error');
   }

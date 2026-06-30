@@ -211,8 +211,10 @@ class VisualAuthoringBrowserWorkflowTest {
                 .contains("/admin/visual-operator-libraries")
                 .contains("preview-resource-contract")
                 .contains("save-resource-contract")
+                .contains("save-resource-descriptor")
                 .contains("run-history-list")
                 .contains("/admin/resource-design-contracts/from-openapi")
+                .contains("/admin/resources")
                 .contains("/admin/resource-design-contracts/${encodeURIComponent(contract.resourceId)}");
     }
 
@@ -233,6 +235,10 @@ class VisualAuthoringBrowserWorkflowTest {
         assertThat(contract).containsEntry("resourceId", "loan-applicant-service.getProfile");
         assertThat((Map<String, Object>) contract.get("requestSchema")).isNotEmpty();
         assertThat((Map<String, Object>) contract.get("responseSchema")).isNotEmpty();
+        Map<String, Object> descriptor = (Map<String, Object>) preview.get("descriptorSuggestion");
+        assertThat(descriptor)
+                .containsEntry("resourceId", "loan-applicant-service.getProfile")
+                .containsEntry("urlTemplate", "https://api.example.test/api/loan-applicants/{applicantId}");
 
         Map<String, Object> saved = putMap(
                 "/admin/resource-design-contracts/loan-applicant-service.getProfile",
@@ -352,6 +358,8 @@ class VisualAuthoringBrowserWorkflowTest {
                 info:
                   title: Loan Applicant API
                   version: 1.0.0
+                servers:
+                  - url: https://api.example.test
                 paths:
                   /api/loan-applicants/{applicantId}:
                     get:

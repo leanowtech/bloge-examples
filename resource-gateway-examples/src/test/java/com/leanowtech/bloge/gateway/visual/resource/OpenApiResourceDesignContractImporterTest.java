@@ -1,5 +1,7 @@
 package com.leanowtech.bloge.gateway.visual.resource;
 
+import com.leanowtech.bloge.gateway.resource.ResourceDescriptor;
+
 import java.util.List;
 import java.util.Map;
 
@@ -30,6 +32,15 @@ class OpenApiResourceDesignContractImporterTest {
         assertThat(contract.requestSchema().required()).containsExactly("userId");
         assertThat(contract.requestSchema().properties()).containsKey("userId");
         assertThat(validator.validate(contract).valid()).isTrue();
+        ResourceDescriptor descriptor = result.descriptorSuggestion();
+        assertThat(descriptor).isNotNull();
+        assertThat(descriptor.resourceId()).isEqualTo("order-service.listOrders");
+        assertThat(descriptor.urlTemplate()).isEqualTo("https://api.example.test/v1/orders");
+        assertThat(descriptor.method()).isEqualTo("GET");
+        assertThat(descriptor.defaultHeaders()).containsEntry("Accept", "application/json");
+        assertThat(descriptor.parameterMapping().queryExpressions())
+                .containsEntry("userId", "ctx.params.userId");
+        assertThat(descriptor.parameterMapping().bodyExpression()).isNull();
 
         @SuppressWarnings("unchecked")
         Map<String, Object> items = (Map<String, Object>) contract.responseSchema().properties().get("items");
@@ -51,6 +62,43 @@ class OpenApiResourceDesignContractImporterTest {
         assertThat(result.contract().responseSchema().properties()).containsKey("items");
         assertThat(result.contract().responseSchema().schema()).containsKey("$defs");
         assertThat(validator.validate(result.contract()).valid()).isTrue();
+    }
+
+    @Test
+    void suggestsDescriptorForPathQueryAndJsonBody() {
+        OpenApiResourceDesignContractImportResult result = importer.project(
+                request("order-service.updateOrder", "updateOrder", null, null, openApiUpdateOrder())
+        );
+
+        assertThat(result.validation().valid()).isTrue();
+        ResourceDescriptor descriptor = result.descriptorSuggestion();
+        assertThat(descriptor).isNotNull();
+        assertThat(descriptor.urlTemplate()).isEqualTo("https://orders.example.test/orders/{orderId}");
+        assertThat(descriptor.method()).isEqualTo("PUT");
+        assertThat(descriptor.defaultHeaders())
+                .containsEntry("Accept", "application/json")
+                .containsEntry("Content-Type", "application/json");
+        assertThat(descriptor.parameterMapping().pathExpressions())
+                .containsEntry("orderId", "ctx.params.orderId");
+        assertThat(descriptor.parameterMapping().queryExpressions())
+                .containsEntry("expand", "ctx.params.expand");
+        assertThat(descriptor.parameterMapping().bodyExpression()).isEqualTo("ctx.params.body");
+    }
+
+    @Test
+    void warnsWhenDescriptorSuggestionUsesFallbackServer() {
+        Map<String, Object> openApi = new java.util.LinkedHashMap<>(openApiOrderList(false));
+        openApi.remove("servers");
+
+        OpenApiResourceDesignContractImportResult result = importer.project(
+                request("order-service.listOrders", "listOrders", null, null, openApi)
+        );
+
+        assertThat(result.validation().valid()).isTrue();
+        assertThat(result.descriptorSuggestion().urlTemplate()).isEqualTo("https://api.example.com/orders");
+        assertThat(result.validation().diagnostics())
+                .extracting("code")
+                .contains("visual.resourceContract.openapi.serverMissing");
     }
 
     @Test
@@ -174,6 +222,7 @@ class OpenApiResourceDesignContractImporterTest {
                 );
         return Map.of(
                 "openapi", "3.1.0",
+                "servers", List.of(Map.of("url", "https://api.example.test/v1")),
                 "paths", Map.of(
                         "/orders", Map.of(
                                 "get", Map.of(
@@ -228,9 +277,68 @@ class OpenApiResourceDesignContractImporterTest {
         );
     }
 
+    private static Map<String, Object> openApiUpdateOrder() {
+        return Map.of(
+                "openapi", "3.1.0",
+                "servers", List.of(Map.of("url", "https://orders.example.test")),
+                "paths", Map.of(
+                        "/orders/{orderId}", Map.of(
+                                "put", Map.of(
+                                        "operationId", "updateOrder",
+                                        "parameters", List.of(
+                                                Map.of(
+                                                        "name", "orderId",
+                                                        "in", "path",
+                                                        "required", true,
+                                                        "schema", Map.of("type", "string")
+                                                ),
+                                                Map.of(
+                                                        "name", "expand",
+                                                        "in", "query",
+                                                        "schema", Map.of("type", "string")
+                                                )
+                                        ),
+                                        "requestBody", Map.of(
+                                                "required", true,
+                                                "content", Map.of(
+                                                        "application/json", Map.of(
+                                                                "schema", Map.of(
+                                                                        "type", "object",
+                                                                        "properties", Map.of(
+                                                                                "status", Map.of("type", "string")
+                                                                        ),
+                                                                        "required", List.of("status")
+                                                                )
+                                                        )
+                                                )
+                                        ),
+                                        "responses", Map.of(
+                                                "200", Map.of(
+                                                        "description", "ok",
+                                                        "content", Map.of(
+                                                                "application/json", Map.of(
+                                                                        "schema", Map.of(
+                                                                                "type", "object",
+                                                                                "properties", Map.of(
+                                                                                        "id", Map.of("type", "string")
+                                                                                ),
+                                                                                "required", List.of("id")
+                                                                        )
+                                                                )
+                                                        )
+                                                )
+                                        )
+                                )
+                        )
+                )
+        );
+    }
+
     private static String openApiOrderListYaml() {
         return """
                 openapi: 3.1.0
+                servers:
+                  - url: https://api.example.test/v1
                 paths:
                   /orders:
                     get:

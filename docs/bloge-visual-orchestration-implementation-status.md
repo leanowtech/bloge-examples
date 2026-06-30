@@ -31,7 +31,7 @@ Operator Library / Resource Design Contract
 | Resource 虚拟算子 | 已落地。`ResourceDescriptor + ResourceDesignContract` 投影为 `resource:<resourceId>`，运行时 lowering 到 `httpResource`。 | `visual/catalog/ResourceVirtualOperatorProjector.java`、`DefaultVisualOperatorCatalog.java` |
 | Java OperatorRegistry 投影 | 已落地基础版。Spring `OperatorRegistry` 中的 Java `Operator` / `StreamingOperator` 可投影为 visual operator，复用 BLOGE schema metadata、注解描述、capabilities 和 native lowering；运行时把 DSL map 输入适配到 Java DTO/record，并支持 record 输出路径选择。 | `visual/catalog/JavaOperatorInventoryProjector.java`、`config/GatewayConfiguration.java`、`example/InputCoercingOperatorRegistry.java`、`example/DynamicGatewayComposerService.java` |
 | Resource 设计合同 | 已落地。支持 H2 registry、bootstrap、admin API、schema/secret/lifecycle 校验、disable/delete impact guard、fingerprint drift warnings。 | `visual/resource/*` |
-| OpenAPI resource contract 导入辅助 | 已落地。`POST /admin/resource-design-contracts/from-openapi` 可从 OpenAPI operation 生成 `ResourceDesignContract` 草案，支持 parsed `openApi` 或 raw JSON/YAML `openApiText` 输入、operationId 或 path+method 定位、参数/requestBody/2xx JSON response schema 投影、local component `$ref` 到 `$defs` 改写，并复用 registry-aware validation；不会自动落库。 | `OpenApiResourceDesignContractImporter.java`、`ResourceDesignContractAdminController.java` |
+| OpenAPI resource contract 导入辅助 | 已落地。`POST /admin/resource-design-contracts/from-openapi` 可从 OpenAPI operation 生成 `ResourceDesignContract` 草案和可审阅的 `ResourceDescriptor` 建议，支持 parsed `openApi` 或 raw JSON/YAML `openApiText` 输入、operationId 或 path+method 定位、参数/requestBody/2xx JSON response schema 投影、local component `$ref` 到 `$defs` 改写、server/path 到 `urlTemplate`、path/query/body 到 runtime parameter mapping，并复用 registry-aware validation；不会自动落库。 | `OpenApiResourceDesignContractImporter.java`、`ResourceDesignContractAdminController.java` |
 | Operator Catalog API | 已落地。支持 native、Java registry、用户导入、resource-backed virtual operators；支持 search、tags、resourceOnly、includeDeprecated、tenant/namespace/environment policy filtering。 | `VisualOperatorCatalogController.java`、`DefaultVisualOperatorCatalog.java` |
 | GraphDraft | 已落地。支持 `bloge.visualGraphDraft.v1`、nodes、edges、inputSchema、visualLayout、output、operatorFingerprints、revisionMetadata。 | `visual/draft/GraphDraft.java` |
 | 草稿持久化与并发控制 | 已落地。H2 和 in-memory repository，revision history，`saveIfRevision`，controller 层 stale update/run/delete/publish guard，field-level JSON Patch。 | `GraphDraftRepository.java`、`DatabaseGraphDraftRepository.java`、`VisualGraphDraftController.java`、`GraphDraftPatchService.java` |
@@ -76,18 +76,18 @@ Operator Library / Resource Design Contract
 | 缺口 | 影响 | 建议阶段 |
 | --- | --- | --- |
 | Durable / long-running graph authoring | 当前示例以 request-response 为主，不能覆盖长事务、人工审批、事件等待等编排。 | 平台化阶段 |
-| AsyncAPI / 更广义接口导入 | OpenAPI JSON/YAML 到 resource contract 的第一层已落地；事件流、webhook、消息队列和完整 descriptor 生成仍未覆盖。 | 下一阶段 |
+| AsyncAPI / 更广义接口导入 | OpenAPI JSON/YAML 到 resource contract 与基础 descriptor suggestion 的第一层已落地；事件流、webhook、消息队列、高级鉴权/header/cookie runtime 映射和完整 descriptor 自动化仍未覆盖。 | 下一阶段 |
 | Java OperatorRegistry 深化 | 已支持基础投影和 typed DTO/record 运行；高级泛型展示、streaming UX、suspend/resume authoring 和更丰富注解语义仍需深化。 | 下一阶段 |
 | Subgraph / remote worker / AI tool source kinds | 设计已预留，当前示例主要覆盖 resource、native、user-library transform/branch/native lowering。 | 后续阶段 |
 | 生产 IAM / RBAC / 权限后台 | 当前 policy 是 tenant/namespace/environment availability gate，不是完整权限系统。 | 平台化阶段 |
 | 多人实时协作 | 当前通过 revision guard 防止覆盖，但没有 presence、merge、operation log 或 CRDT/OT。 | 后续阶段 |
-| 前端自动化回归 | 已新增 browser-facing HTTP smoke 和 Selenium/Chrome DOM smoke，覆盖静态入口、catalog、连接预检、draft save/run/publish、draft revision preview/restore/delete、publication run、run history query/filter UI、Java operator palette、OpenAPI JSON/YAML preview/save UI wiring、用户算子库导入、palette-to-canvas 拖拽、schema-aware connection 拖拽、schema-incompatible connection rejection、route/dependency/config 复杂连接拖拽、无输入端口用户算子的 UI schema 投影、graph output 选择、页面 warning diagnostics 渲染、server validation failure diagnostics 渲染和 publication run。更多失败场景和更多浏览器矩阵仍需补齐。 | 下一阶段 |
+| 前端自动化回归 | 已新增 browser-facing HTTP smoke 和 Selenium/Chrome DOM smoke，覆盖静态入口、catalog、连接预检、draft save/run/publish、draft revision preview/restore/delete、publication run、run history query/filter UI、Java operator palette、OpenAPI JSON/YAML contract/descriptor preview 与 save UI wiring、用户算子库导入、palette-to-canvas 拖拽、schema-aware connection 拖拽、schema-incompatible connection rejection、route/dependency/config 复杂连接拖拽、无输入端口用户算子的 UI schema 投影、graph output 选择、页面 warning diagnostics 渲染、server validation failure diagnostics 渲染和 publication run。更多失败场景和更多浏览器矩阵仍需补齐。 | 下一阶段 |
 
 ## 6. 下一步优先级
 
 1. **真实浏览器交互回归**：在现有 browser-facing HTTP + Selenium DOM smoke 基础上，补更多失败场景和更多浏览器矩阵验证。
 2. **Java operator inventory 深化**：补 streaming/suspendable 画布交互、复杂泛型展示、注解扩展和 Java operator drift/兼容性策略。
-3. **OpenAPI 导入深化**：补 descriptor 生成建议、更多 media type 策略和 operation/schema diff；仍必须走现有 `ResourceDesignContractValidator`，不能让未验证 schema 进入 catalog。
+3. **OpenAPI 导入深化**：补更多 media type 策略、鉴权/header/cookie runtime 映射、descriptor diff 和 operation/schema diff；仍必须走现有 `ResourceDesignContractValidator`，不能让未验证 schema 进入 catalog。
 4. **Run history 深化**：当前已经保存 shape-only run record，并补了查询过滤和浏览器最近运行列表；下一步可补 run replay、golden case 绑定和 SLO 统计。
 5. **文档协议收敛**：把早期草案字段名逐步改成当前实现的 wire contract，并保留平台化抽象命名作为未来 ADR，而不是混在当前协议里。
 

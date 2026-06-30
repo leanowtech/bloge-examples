@@ -4,12 +4,16 @@ import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.dataformat.yaml.YAMLMapper;
+import com.leanowtech.bloge.gateway.resource.ParameterMapping;
+import com.leanowtech.bloge.gateway.resource.ResourceDescriptor;
+import com.leanowtech.bloge.gateway.resource.ResponseProtocol;
 import com.leanowtech.bloge.gateway.visual.diagnostic.VisualDiagnostic;
 import com.leanowtech.bloge.gateway.visual.model.SchemaEnvelope;
 import com.leanowtech.bloge.gateway.visual.validation.VisualValidationResult;
 
 import org.springframework.stereotype.Service;
 
+import java.time.Duration;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Comparator;
@@ -47,6 +51,7 @@ public class OpenApiResourceDesignContractImporter {
     private static final List<String> SCHEMA_ARRAY_KEYWORDS = List.of(
             "allOf", "oneOf", "anyOf", "prefixItems"
     );
+    private static final String FALLBACK_SERVER_URL = "https://api.example.com";
 
     /**
      * Projects one OpenAPI operation into a contract draft without storing it.
@@ -100,7 +105,9 @@ public class OpenApiResourceDesignContractImporter {
                 examples(operation),
                 request.status()
         );
-        return result(contract, diagnostics);
+        ResourceDescriptor descriptorSuggestion = descriptorSuggestion(openApi, operation,
+                request.resourceId(), diagnostics);
+        return result(contract, descriptorSuggestion, diagnostics);
     }
 
     private static Map<String, Object> openApiDocument(OpenApiResourceDesignContractImportRequest request,
@@ -723,11 +730,200 @@ public class OpenApiResourceDesignContractImporter {
         return examples;
     }
 
+    private ResourceDescriptor descriptorSuggestion(Map<String, Object> openApi,
+                                                    SelectedOperation selected,
+                                                    String resourceId,
+                                                    List<VisualDiagnostic> diagnostics) {
+        Map<String, String> pathExpressions = new LinkedHashMap<>();
+        Map<String, String> queryExpressions = new LinkedHashMap<>();
+        for (OpenApiParameter parameter : descriptorParameters(openApi, selected)) {
+            if ("path".equals(parameter.location())) {
+                putParameterExpression(pathExpressions, parameter, diagnostics);
+            } else if ("query".equals(parameter.location())) {
+                putParameterExpression(queryExpressions, parameter, diagnostics);
+            } else if ("header".equals(parameter.location()) || "cookie".equals(parameter.location())) {
+                diagnostics.add(VisualDiagnostic.warning(
+                        "visual.resourceContract.openapi.descriptorParameterLocationUnsupported",
+                        "OpenAPI %s parameter '%s' is present in the contract schema but cannot be mapped by ResourceDescriptor; review descriptorSuggestion before saving."
+                                .formatted(parameter.location(), parameter.name()),
+                        parameter.target()));
+            }
+        }
+
+        boolean hasBody = hasJsonRequestBody(openApi, selected);
+        Map<String, String> headers = new LinkedHashMap<>();
+        headers.put("Accept", "application/json");
+        if (hasBody) {
+            headers.put("Content-Type", "application/json");
+        }
+
+        return new ResourceDescriptor(
+                resourceId,
+                joinUrl(serverUrl(openApi, selected, diagnostics), selected.path()),
+                selected.method(),
+                headers,
+                null,
+                Duration.ofSeconds(30),
+                new ParameterMapping(pathExpressions, queryExpressions, hasBody ? "ctx.params.body" : null),
+                new ResponseProtocol.HttpStatus(),
+                null
+        );
+    }
+
+    private void putParameterExpression(Map<String, String> expressions,
+                                        OpenApiParameter parameter,
+                                        List<VisualDiagnostic> diagnostics) {
+        if (!expressionFieldName(parameter.name())) {
+            diagnostics.add(VisualDiagnostic.warning("visual.resourceContract.openapi.descriptorParameterUnsupported",
+                    "OpenAPI parameter '%s' is present in the contract schema but cannot be mapped by ResourceDescriptor because it is not a BLOGE field identifier; review descriptorSuggestion before saving."
+                            .formatted(parameter.name()),
+                    parameter.target()));
+            return;
+        }
+        expressions.put(parameter.name(), "ctx.params." + parameter.name());
+    }
+
+    private List<OpenApiParameter> descriptorParameters(Map<String, Object> openApi,
+                                                        SelectedOperation selected) {
+        Map<String, OpenApiParameter> parameters = new LinkedHashMap<>();
+        addDescriptorParameters(openApi, selected.pathItem().get("parameters"), parameters,
+                "/openApi/paths/" + pointerSegment(selected.path()) + "/parameters");
+        addDescriptorParameters(openApi, selected.operation().get("parameters"), parameters,
+                "/openApi/paths/" + pointerSegment(selected.path()) + "/" + selected.method()
+                        + "/parameters");
+        return List.copyOf(parameters.values());
+    }
+
+    private void addDescriptorParameters(Map<String, Object> openApi,
+                                         Object rawParameters,
+                                         Map<String, OpenApiParameter> parameters,
+                                         String target) {
+        if (!(rawParameters instanceof List<?> values)) {
+            return;
+        }
+        for (int i = 0; i < values.size(); i++) {
+            String parameterTarget = target + "/" + i;
+            Optional<Map<String, Object>> parameter = dereferenceObject(openApi, values.get(i),
+                    new ArrayList<>(), parameterTarget, "parameter");
+            if (parameter.isEmpty()) {
+                continue;
+            }
+            String name = string(parameter.get().get("name"));
+            String location = string(parameter.get().get("in")).toLowerCase(Locale.ROOT);
+            if (name.isBlank() || location.isBlank()) {
+                continue;
+            }
+            parameters.put(location + "\n" + name, new OpenApiParameter(name, location, parameterTarget));
+        }
+    }
+
+    private boolean hasJsonRequestBody(Map<String, Object> openApi, SelectedOperation selected) {
+        Object rawBody = selected.operation().get("requestBody");
+        if (rawBody == null) {
+            return false;
+        }
+        String bodyTarget = "/openApi/paths/" + pointerSegment(selected.path()) + "/" + selected.method()
+                + "/requestBody";
+        Optional<Map<String, Object>> requestBody = dereferenceObject(openApi, rawBody, new ArrayList<>(),
+                bodyTarget, "requestBody");
+        return requestBody.flatMap(body -> jsonContent(body, bodyTarget, new ArrayList<>(), false)).isPresent();
+    }
+
+    private String serverUrl(Map<String, Object> openApi,
+                             SelectedOperation selected,
+                             List<VisualDiagnostic> diagnostics) {
+        String operationTarget = "/openApi/paths/" + pointerSegment(selected.path()) + "/" + selected.method()
+                + "/servers";
+        Optional<String> operationServer = serverUrl(selected.operation().get("servers"), operationTarget,
+                diagnostics);
+        if (operationServer.isPresent()) {
+            return operationServer.get();
+        }
+        Optional<String> pathServer = serverUrl(selected.pathItem().get("servers"),
+                "/openApi/paths/" + pointerSegment(selected.path()) + "/servers", diagnostics);
+        if (pathServer.isPresent()) {
+            return pathServer.get();
+        }
+        Optional<String> rootServer = serverUrl(openApi.get("servers"), "/openApi/servers", diagnostics);
+        if (rootServer.isPresent()) {
+            return rootServer.get();
+        }
+        diagnostics.add(VisualDiagnostic.warning("visual.resourceContract.openapi.serverMissing",
+                "OpenAPI document has no servers entry; descriptorSuggestion uses https://api.example.com as a review placeholder.",
+                "/openApi/servers"));
+        return FALLBACK_SERVER_URL;
+    }
+
+    private Optional<String> serverUrl(Object rawServers,
+                                       String target,
+                                       List<VisualDiagnostic> diagnostics) {
+        if (!(rawServers instanceof List<?> servers)) {
+            return Optional.empty();
+        }
+        for (int i = 0; i < servers.size(); i++) {
+            if (!(servers.get(i) instanceof Map<?, ?> rawServer)) {
+                continue;
+            }
+            Map<String, Object> server = objectMap(rawServer);
+            String url = string(server.get("url"));
+            if (!url.isBlank()) {
+                return Optional.of(resolveServerVariables(url, server, target + "/" + i, diagnostics));
+            }
+        }
+        return Optional.empty();
+    }
+
+    private String resolveServerVariables(String url,
+                                          Map<String, Object> server,
+                                          String target,
+                                          List<VisualDiagnostic> diagnostics) {
+        Object rawVariables = server.get("variables");
+        if (!(rawVariables instanceof Map<?, ?> variables)) {
+            return url;
+        }
+        String resolved = url;
+        for (Map.Entry<String, Object> entry : objectMap(variables).entrySet()) {
+            if (!(entry.getValue() instanceof Map<?, ?> rawVariable)) {
+                continue;
+            }
+            String defaultValue = string(rawVariable.get("default"));
+            if (defaultValue.isBlank()) {
+                diagnostics.add(VisualDiagnostic.warning(
+                        "visual.resourceContract.openapi.serverVariableDefaultMissing",
+                        "OpenAPI server variable '%s' has no default; descriptorSuggestion keeps the URL placeholder."
+                                .formatted(entry.getKey()),
+                        target + "/variables/" + pointerSegment(entry.getKey())));
+                continue;
+            }
+            resolved = resolved.replace("{" + entry.getKey() + "}", defaultValue);
+        }
+        return resolved;
+    }
+
+    private static String joinUrl(String baseUrl, String path) {
+        String base = baseUrl == null ? "" : baseUrl.trim();
+        String suffix = path == null ? "" : path.trim();
+        if (base.endsWith("/") && suffix.startsWith("/")) {
+            return base.substring(0, base.length() - 1) + suffix;
+        }
+        if (!base.endsWith("/") && !suffix.startsWith("/")) {
+            return base + "/" + suffix;
+        }
+        return base + suffix;
+    }
+
     private OpenApiResourceDesignContractImportResult result(ResourceDesignContract contract,
+                                                            List<VisualDiagnostic> diagnostics) {
+        return result(contract, null, diagnostics);
+    }
+
+    private OpenApiResourceDesignContractImportResult result(ResourceDesignContract contract,
+                                                            ResourceDescriptor descriptorSuggestion,
                                                             List<VisualDiagnostic> diagnostics) {
         return new OpenApiResourceDesignContractImportResult(
                 contract,
-                new VisualValidationResult(false, diagnostics)
+                new VisualValidationResult(false, diagnostics),
+                descriptorSuggestion
         );
     }
 
@@ -741,6 +937,23 @@ public class OpenApiResourceDesignContractImporter {
 
     private static String string(Object value) {
         return value == null ? "" : String.valueOf(value).trim();
+    }
+
+    private static boolean expressionFieldName(String value) {
+        if (value == null || value.isBlank()) {
+            return false;
+        }
+        char first = value.charAt(0);
+        if (!Character.isLetter(first) && first != '_') {
+            return false;
+        }
+        for (int i = 1; i < value.length(); i++) {
+            char ch = value.charAt(i);
+            if (!Character.isLetterOrDigit(ch) && ch != '_') {
+                return false;
+            }
+        }
+        return true;
     }
 
     private static Map<String, Object> objectMap(Map<?, ?> map) {
@@ -786,5 +999,12 @@ public class OpenApiResourceDesignContractImporter {
             pathItem = pathItem == null ? Map.of() : Map.copyOf(pathItem);
             operation = operation == null ? Map.of() : Map.copyOf(operation);
         }
+    }
+
+    private record OpenApiParameter(
+            String name,
+            String location,
+            String target
+    ) {
     }
 }
