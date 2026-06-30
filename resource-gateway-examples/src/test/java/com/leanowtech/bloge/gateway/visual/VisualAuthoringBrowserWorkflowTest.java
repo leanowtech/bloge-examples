@@ -221,11 +221,12 @@ class VisualAuthoringBrowserWorkflowTest {
         Map<String, Object> preview = postMap("/admin/resource-design-contracts/from-openapi",
                 new OpenApiResourceDesignContractImportRequest(
                         "loan-applicant-service.getProfile",
-                        "getLoanApplicant",
+                        null,
+                        "/api/loan-applicants/{applicantId}",
+                        "GET",
                         null,
                         null,
-                        null,
-                        openApiLoanApplicant()
+                        openApiLoanApplicantYaml()
                 ));
         assertThat((Map<String, Object>) preview.get("validation")).containsEntry("valid", true);
         Map<String, Object> contract = (Map<String, Object>) preview.get("contract");
@@ -345,41 +346,38 @@ class VisualAuthoringBrowserWorkflowTest {
         return response.getBody();
     }
 
-    private static Map<String, Object> openApiLoanApplicant() {
-        return Map.of(
-                "openapi", "3.0.3",
-                "info", Map.of("title", "Loan Applicant API", "version", "1.0.0"),
-                "paths", Map.of(
-                        "/api/loan-applicants/{applicantId}", Map.of(
-                                "get", Map.of(
-                                        "operationId", "getLoanApplicant",
-                                        "parameters", List.of(Map.of(
-                                                "name", "applicantId",
-                                                "in", "path",
-                                                "required", true,
-                                                "schema", Map.of("type", "string")
-                                        )),
-                                        "responses", Map.of(
-                                                "200", Map.of(
-                                                        "description", "Applicant facts",
-                                                        "content", Map.of(
-                                                                "application/json", Map.of(
-                                                                        "schema", Map.of(
-                                                                                "type", "object",
-                                                                                "properties", Map.of(
-                                                                                        "score", Map.of("type", "integer"),
-                                                                                        "segment", Map.of("type", "string"),
-                                                                                        "income", Map.of("type", "number")
-                                                                                ),
-                                                                                "required", List.of("score")
-                                                                        )
-                                                                )
-                                                        )
-                                                )
-                                        )
-                                )
-                        )
-                )
-        );
+    private static String openApiLoanApplicantYaml() {
+        return """
+                openapi: 3.0.3
+                info:
+                  title: Loan Applicant API
+                  version: 1.0.0
+                paths:
+                  /api/loan-applicants/{applicantId}:
+                    get:
+                      operationId: getLoanApplicant
+                      parameters:
+                        - name: applicantId
+                          in: path
+                          required: true
+                          schema:
+                            type: string
+                      responses:
+                        '200':
+                          description: Applicant facts
+                          content:
+                            application/json:
+                              schema:
+                                type: object
+                                properties:
+                                  score:
+                                    type: integer
+                                  segment:
+                                    type: string
+                                  income:
+                                    type: number
+                                required:
+                                  - score
+                """;
     }
 }

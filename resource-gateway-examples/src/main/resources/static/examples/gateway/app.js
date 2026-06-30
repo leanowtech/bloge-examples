@@ -2051,15 +2051,12 @@ function resetResourceContractImport() {
 
 async function previewOpenApiResourceContract() {
   const current = state.resourceContractImport;
-  let openApi;
-  try {
-    openApi = JSON.parse(current.openApiText || '{}');
-  } catch (error) {
-    setResourceContractImportMessage(`Invalid OpenAPI JSON: ${error.message}`, 'error');
-    return;
-  }
   if (!current.resourceId?.trim()) {
     setResourceContractImportMessage('resourceId is required.', 'error');
+    return;
+  }
+  if (!current.openApiText?.trim()) {
+    setResourceContractImportMessage('OpenAPI JSON or YAML is required.', 'error');
     return;
   }
   updateProjectedResourceContractText('');
@@ -2070,7 +2067,7 @@ async function previewOpenApiResourceContract() {
     path: current.path?.trim() || null,
     method: current.path?.trim() ? current.method || null : null,
     status: current.status || null,
-    openApi
+    openApiText: current.openApiText
   };
   try {
     const response = await fetch('/admin/resource-design-contracts/from-openapi', {

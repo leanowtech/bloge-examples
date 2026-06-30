@@ -102,6 +102,29 @@ class ResourceDesignContractAdminControllerTest {
     }
 
     @Test
+    void fromOpenApiAcceptsYamlTextWithoutStoring() throws Exception {
+        OpenApiResourceDesignContractImportRequest request = new OpenApiResourceDesignContractImportRequest(
+                "order-service.listOrders",
+                null,
+                "/orders",
+                "GET",
+                null,
+                null,
+                openApiOrderListYaml()
+        );
+
+        mockMvc.perform(post("/admin/resource-design-contracts/from-openapi")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(request)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.validation.valid").value(true))
+                .andExpect(jsonPath("$.contract.resourceId").value("order-service.listOrders"))
+                .andExpect(jsonPath("$.contract.requestSchema.schema.properties.userId.type").value("string"));
+
+        assertThat(registry.all()).isEmpty();
+    }
+
+    @Test
     void upsertRejectsInvalidContract() throws Exception {
         ResourceDesignContract invalid = invalidArrayContract();
 
@@ -490,6 +513,40 @@ class ResourceDesignContractAdminControllerTest {
                         )
                 )
         );
+    }
+
+    private static String openApiOrderListYaml() {
+        return """
+                openapi: 3.1.0
+                paths:
+                  /orders:
+                    get:
+                      operationId: listOrders
+                      summary: List orders
+                      tags:
+                        - order
+                      parameters:
+                        - name: userId
+                          in: query
+                          required: true
+                          schema:
+                            type: string
+                      responses:
+                        '200':
+                          description: ok
+                          content:
+                            application/json:
+                              schema:
+                                type: object
+                                properties:
+                                  items:
+                                    type: array
+                                    items:
+                                      type: object
+                                      properties:
+                                        id:
+                                          type: string
+                """;
     }
 
     private static ResourceRegistry resourceRegistry(ResourceDescriptor descriptor) {

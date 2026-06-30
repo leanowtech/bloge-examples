@@ -1,5 +1,9 @@
 package com.leanowtech.bloge.gateway.visual.resource;
 
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.core.type.TypeReference;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.dataformat.yaml.YAMLMapper;
 import com.leanowtech.bloge.gateway.visual.diagnostic.VisualDiagnostic;
 import com.leanowtech.bloge.gateway.visual.model.SchemaEnvelope;
 import com.leanowtech.bloge.gateway.visual.validation.VisualValidationResult;
@@ -23,6 +27,10 @@ import java.util.Set;
  */
 @Service
 public class OpenApiResourceDesignContractImporter {
+
+    private static final ObjectMapper OPENAPI_TEXT_MAPPER = new YAMLMapper();
+    private static final TypeReference<Map<String, Object>> OPENAPI_MAP = new TypeReference<>() {
+    };
 
     private static final Set<String> HTTP_METHODS = Set.of(
             "get", "put", "post", "delete", "options", "head", "patch", "trace"
@@ -59,11 +67,11 @@ public class OpenApiResourceDesignContractImporter {
                     "OpenAPI import request must declare a resourceId.",
                     "/resourceId"));
         }
-        Map<String, Object> openApi = request.openApi();
-        if (openApi == null || openApi.isEmpty()) {
+        Map<String, Object> openApi = openApiDocument(request, diagnostics);
+        if (openApi.isEmpty() && !hasErrors(diagnostics)) {
             diagnostics.add(VisualDiagnostic.error("visual.resourceContract.openapi.documentMissing",
-                    "OpenAPI document is required.",
-                    "/openApi"));
+                    "OpenAPI document is required as openApi or openApiText.",
+                    blank(request.openApiText()) ? "/openApi" : "/openApiText"));
         }
         if (hasErrors(diagnostics)) {
             return result(null, diagnostics);
@@ -93,6 +101,25 @@ public class OpenApiResourceDesignContractImporter {
                 request.status()
         );
         return result(contract, diagnostics);
+    }
+
+    private static Map<String, Object> openApiDocument(OpenApiResourceDesignContractImportRequest request,
+                                                       List<VisualDiagnostic> diagnostics) {
+        if (request.openApi() != null && !request.openApi().isEmpty()) {
+            return request.openApi();
+        }
+        if (blank(request.openApiText())) {
+            return Map.of();
+        }
+        try {
+            Map<String, Object> parsed = OPENAPI_TEXT_MAPPER.readValue(request.openApiText(), OPENAPI_MAP);
+            return parsed == null ? Map.of() : parsed;
+        } catch (JsonProcessingException e) {
+            diagnostics.add(VisualDiagnostic.error("visual.resourceContract.openapi.documentMalformed",
+                    "OpenAPI document must be valid JSON or YAML: " + e.getOriginalMessage(),
+                    "/openApiText"));
+            return Map.of();
+        }
     }
 
     private Optional<SelectedOperation> selectOperation(OpenApiResourceDesignContractImportRequest request,

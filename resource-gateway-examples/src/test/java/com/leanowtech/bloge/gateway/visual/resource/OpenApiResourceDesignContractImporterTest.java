@@ -102,6 +102,48 @@ class OpenApiResourceDesignContractImporterTest {
         assertThat(result.contract().displayName()).isEqualTo("List orders");
     }
 
+    @Test
+    void projectsYamlOpenApiTextIntoValidContract() {
+        OpenApiResourceDesignContractImportResult result = importer.project(
+                new OpenApiResourceDesignContractImportRequest(
+                        "order-service.listOrders",
+                        null,
+                        "/orders",
+                        "GET",
+                        null,
+                        null,
+                        openApiOrderListYaml()
+                )
+        );
+
+        assertThat(result.validation().valid()).isTrue();
+        assertThat(result.contract()).isNotNull();
+        assertThat(result.contract().resourceId()).isEqualTo("order-service.listOrders");
+        assertThat(result.contract().requestSchema().properties()).containsKey("userId");
+        assertThat(validator.validate(result.contract()).valid()).isTrue();
+    }
+
+    @Test
+    void rejectsMalformedOpenApiTextWithDiagnostic() {
+        OpenApiResourceDesignContractImportResult result = importer.project(
+                new OpenApiResourceDesignContractImportRequest(
+                        "order-service.listOrders",
+                        null,
+                        "/orders",
+                        "GET",
+                        null,
+                        null,
+                        "openapi: \"3.1.0\"\npaths: ["
+                )
+        );
+
+        assertThat(result.contract()).isNull();
+        assertThat(result.validation().valid()).isFalse();
+        assertThat(result.validation().diagnostics())
+                .extracting("code")
+                .containsExactly("visual.resourceContract.openapi.documentMalformed");
+    }
+
     private static OpenApiResourceDesignContractImportRequest request(String resourceId,
                                                                       String operationId,
                                                                       String path,
@@ -184,5 +226,52 @@ class OpenApiResourceDesignContractImporterTest {
                         )
                 )
         );
+    }
+
+    private static String openApiOrderListYaml() {
+        return """
+                openapi: 3.1.0
+                paths:
+                  /orders:
+                    get:
+                      operationId: listOrders
+                      summary: List orders
+                      description: Lists orders for a user.
+                      tags:
+                        - order
+                      parameters:
+                        - name: userId
+                          in: query
+                          required: true
+                          schema:
+                            type: string
+                      responses:
+                        '200':
+                          description: ok
+                          content:
+                            application/json:
+                              schema:
+                                type: object
+                                properties:
+                                  items:
+                                    type: array
+                                    items:
+                                      $ref: '#/components/schemas/Order'
+                                required:
+                                  - items
+                components:
+                  schemas:
+                    Order:
+                      type: object
+                      properties:
+                        id:
+                          type: string
+                        total:
+                          type: number
+                          format: double
+                      required:
+                        - id
+                      additionalProperties: false
+                """;
     }
 }
