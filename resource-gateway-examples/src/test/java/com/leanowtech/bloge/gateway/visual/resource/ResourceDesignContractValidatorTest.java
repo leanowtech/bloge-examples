@@ -354,6 +354,38 @@ class ResourceDesignContractValidatorTest {
     }
 
     @Test
+    void acceptsNullableTypeArraysInResourceContractSchemas() {
+        ResourceDesignContract contract = new ResourceDesignContract(
+                "contract:orders",
+                "order-service.listOrders",
+                "Order list",
+                "Lists orders.",
+                List.of("order"),
+                SchemaEnvelope.object(Map.of(
+                        "filters", Map.of(
+                                "type", "object",
+                                "properties", Map.of(
+                                        "status", Map.of("type", List.of("string", "null")),
+                                        "limit", Map.of("type", List.of("integer", "null"))
+                                ))
+                ), List.of("filters")),
+                SchemaEnvelope.object(Map.of(
+                        "cursor", Map.of("type", List.of("string", "null")),
+                        "scores", Map.of(
+                                "type", "array",
+                                "items", Map.of("type", List.of("integer", "null")))
+                ), List.of()),
+                Map.of(),
+                "ACTIVE"
+        );
+
+        VisualValidationResult result = validator.validate(contract);
+
+        assertThat(result.valid()).isTrue();
+        assertThat(result.diagnostics()).isEmpty();
+    }
+
+    @Test
     void acceptsObjectDependentRequiredInResourceContractSchemas() {
         ResourceDesignContract contract = new ResourceDesignContract(
                 "contract:orders",

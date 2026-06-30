@@ -581,6 +581,32 @@ class OperatorLibraryValidatorTest {
     }
 
     @Test
+    void rejectsUnsupportedMultiConcreteTypeArraysAcrossOperatorDefinitions() {
+        OperatorLibrary library = libraryWith(operator(
+                "risk:badNullableUnion",
+                new OperatorDefinition.Ports(
+                        List.of(new OperatorDefinition.Port("payload",
+                                new SchemaEnvelope(SchemaEnvelope.JSON_SCHEMA, "2020-12", Map.of(
+                                        "type", "object",
+                                        "properties", Map.of(
+                                                "score", Map.of("type", List.of("integer", "string", "null")))
+                                )),
+                                true,
+                                "Input.")),
+                        List.of()
+                ),
+                "native"
+        ));
+
+        VisualValidationResult result = validator.validate(library);
+
+        assertThat(result.valid()).isFalse();
+        assertThat(result.diagnostics())
+                .extracting("code")
+                .contains("visual.schema.typeUnionUnsupported");
+    }
+
+    @Test
     void rejectsInvalidEnumSchemaShape() {
         OperatorLibrary library = libraryWith(operator(
                 "risk:badEnumSchema",
@@ -1771,6 +1797,48 @@ class OperatorLibraryValidatorTest {
 
         assertThat(result.diagnostics()).isEmpty();
         assertThat(result.valid()).isTrue();
+    }
+
+    @Test
+    void acceptsNullableTypeArraysAcrossOperatorDefinitions() {
+        Map<String, Object> nullableRoutingKey = new LinkedHashMap<>();
+        nullableRoutingKey.put("type", List.of("string", "null"));
+        nullableRoutingKey.put("default", null);
+
+        OperatorDefinition operator = new OperatorDefinition(
+                "bloge.visualOperator.v1",
+                "risk:nullableTypePolicy",
+                "1.0.0",
+                new OperatorDefinition.Display("Nullable type policy", "Test operator.", List.of("test")),
+                new OperatorDefinition.Source("user-library", "", "", "", true),
+                new OperatorDefinition.Ports(
+                        List.of(new OperatorDefinition.Port("payload",
+                                SchemaEnvelope.object(Map.of(
+                                        "score", Map.of("type", List.of("integer", "null")),
+                                        "segment", Map.of("type", List.of("string", "null"))
+                                ), List.of("score")),
+                                true,
+                                "Input.")),
+                        List.of(new OperatorDefinition.Port("output",
+                                SchemaEnvelope.object(Map.of(
+                                        "accepted", Map.of("type", "boolean"),
+                                        "reason", Map.of("type", List.of("string", "null"))
+                                ), List.of()),
+                                true,
+                                "Output."))
+                ),
+                SchemaEnvelope.object(Map.of(
+                        "routingKey", nullableRoutingKey
+                ), List.of()),
+                OperatorDefinition.Capabilities.pure(),
+                new OperatorDefinition.Lowering("native", "riskNullableTypePolicy", Map.of()),
+                List.of()
+        );
+
+        VisualValidationResult result = validator.validate(libraryWith(operator));
+
+        assertThat(result.valid()).isTrue();
+        assertThat(result.diagnostics()).isEmpty();
     }
 
     @Test

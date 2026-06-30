@@ -1031,6 +1031,9 @@ public class GraphDraftValidator {
         if (type == null) {
             type = property.get("type");
         }
+        if (type instanceof List<?> types) {
+            return nullableTypePrimary(types);
+        }
         if (type == null && property.containsKey("properties")) {
             return "object";
         }
@@ -1041,6 +1044,24 @@ public class GraphDraftValidator {
             return schemaTypeForValue(property.get("const"));
         }
         return type == null ? "" : String.valueOf(type);
+    }
+
+    private static String nullableTypePrimary(List<?> types) {
+        String primary = "";
+        int concreteTypes = 0;
+        for (Object item : types) {
+            if (!(item instanceof String type) || type.isBlank()) {
+                return String.valueOf(types);
+            }
+            if (!"null".equals(type)) {
+                primary = type;
+                concreteTypes++;
+            }
+        }
+        if (concreteTypes > 1) {
+            return String.valueOf(types);
+        }
+        return primary.isBlank() ? "null" : primary;
     }
 
     private static List<Object> enumValues(Map<String, Object> schema) {
@@ -1224,6 +1245,9 @@ public class GraphDraftValidator {
         List<Object> domainValues = enumValues(schema);
         if (!domainValues.isEmpty() && !domainValues.contains(value)) {
             return false;
+        }
+        if (value == null && schemaAllowsNull(schema)) {
+            return true;
         }
 
         String type = schemaType(schema);
@@ -1609,6 +1633,10 @@ public class GraphDraftValidator {
         if (type.isBlank() || "any".equals(type) || "opaque".equals(type)) {
             return;
         }
+        if (value == null && schemaAllowsNull(schema)) {
+            validateConfigEnum(value, schema, path, diagnostics);
+            return;
+        }
         if ("object".equals(type)) {
             validateConfigObject(value, schema, path, diagnostics);
             return;
@@ -1879,6 +1907,17 @@ public class GraphDraftValidator {
             case "null" -> value == null;
             default -> true;
         };
+    }
+
+    private static boolean schemaAllowsNull(Map<String, Object> schema) {
+        Object raw = schema.containsKey("kind") ? schema.get("kind") : schema.get("type");
+        if (raw instanceof List<?> types) {
+            return types.stream().anyMatch(type -> "null".equals(type));
+        }
+        if ("null".equals(raw)) {
+            return true;
+        }
+        return raw == null && schema.containsKey("const") && schema.get("const") == null;
     }
 
     private static boolean isIntegerValue(Object value) {

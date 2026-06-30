@@ -734,6 +734,9 @@ public class OperatorLibraryValidator {
         if (type instanceof String value && !value.isBlank()) {
             return value;
         }
+        if (type instanceof List<?> values) {
+            return nullableTypePrimary(values);
+        }
         if (schema.containsKey("properties")) {
             return "object";
         }
@@ -741,6 +744,24 @@ public class OperatorLibraryValidator {
             return "array";
         }
         return "";
+    }
+
+    private static String nullableTypePrimary(List<?> types) {
+        String primary = "";
+        int concreteTypes = 0;
+        for (Object item : types) {
+            if (!(item instanceof String type) || type.isBlank()) {
+                return String.valueOf(types);
+            }
+            if (!"null".equals(type)) {
+                primary = type;
+                concreteTypes++;
+            }
+        }
+        if (concreteTypes > 1) {
+            return String.valueOf(types);
+        }
+        return primary.isBlank() ? "null" : primary;
     }
 
     private static String operatorPath(String loweringPath) {

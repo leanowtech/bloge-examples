@@ -889,6 +889,18 @@ class GraphDraftValidatorTest {
     }
 
     @Test
+    void acceptsConstantNullBindingWhenTargetTypeIsNullable() {
+        GraphDraftValidator validator = new GraphDraftValidator(
+                VisualCatalogTestSupport.catalogWithLibrary(
+                        scoreTypeCompatibilityLibrary("integer", List.of("integer", "null"))));
+        GraphDraft draft = scoreConstantDraft(GraphDraft.Binding.constant(null));
+
+        VisualValidationResult result = validator.validate(draft);
+
+        assertThat(result.valid()).isTrue();
+    }
+
+    @Test
     void rejectsConstantBindingWhenStringValueViolatesTargetPattern() {
         GraphDraftValidator validator = new GraphDraftValidator(
                 VisualCatalogTestSupport.catalogWithLibrary(
@@ -2247,6 +2259,37 @@ class GraphDraftValidatorTest {
         GraphDraftValidator validator = new GraphDraftValidator(
                 VisualCatalogTestSupport.catalogWithLibrary(
                         VisualCatalogTestSupport.numericBoundsCompatibilityLibrary(300, 850, 0, 900)));
+        GraphDraft draft = numericBoundsCompatibilityDraft();
+
+        VisualValidationResult result = validator.validate(draft);
+
+        assertThat(result.valid()).isTrue();
+    }
+
+    @Test
+    void rejectsNodePathBindingWhenNullableSourceFeedsNonNullableTarget() {
+        GraphDraftValidator validator = new GraphDraftValidator(
+                VisualCatalogTestSupport.catalogWithLibrary(
+                        scoreTypeCompatibilityLibrary(List.of("integer", "null"), "integer")));
+        GraphDraft draft = numericBoundsCompatibilityDraft();
+
+        VisualValidationResult result = validator.validate(draft);
+
+        assertThat(result.valid()).isFalse();
+        assertThat(result.diagnostics())
+                .extracting("code")
+                .contains("visual.binding.typeMismatch", "visual.edge.typeMismatch");
+        assertThat(result.diagnostics())
+                .anySatisfy(diagnostic -> assertThat(diagnostic.message())
+                        .contains("source may produce null")
+                        .contains("target integer does not allow null"));
+    }
+
+    @Test
+    void acceptsNodePathBindingWhenNullableSourceFeedsNullableTarget() {
+        GraphDraftValidator validator = new GraphDraftValidator(
+                VisualCatalogTestSupport.catalogWithLibrary(
+                        scoreTypeCompatibilityLibrary(List.of("integer", "null"), List.of("integer", "null"))));
         GraphDraft draft = numericBoundsCompatibilityDraft();
 
         VisualValidationResult result = validator.validate(draft);
@@ -3938,6 +3981,100 @@ class GraphDraftValidatorTest {
                         new GraphDraft.Endpoint("scoreConsumer", "inputs", "score"))),
                 Map.of(),
                 new GraphDraft.OutputSelection("scoreConsumer", "")
+        );
+    }
+
+    private static GraphDraft scoreConstantDraft(GraphDraft.Binding scoreBinding) {
+        return new GraphDraft(
+                "",
+                "",
+                0,
+                "scoreConstant",
+                "",
+                "",
+                "",
+                "",
+                null,
+                List.of(new GraphDraft.DraftNode(
+                        "scoreConsumer",
+                        "risk:scoreConsumer",
+                        "",
+                        Map.of("score", scoreBinding),
+                        Map.of(),
+                        null
+                )),
+                List.of(),
+                Map.of(),
+                new GraphDraft.OutputSelection("scoreConsumer", "")
+        );
+    }
+
+    private static OperatorLibrary scoreTypeCompatibilityLibrary(Object sourceType, Object targetType) {
+        Map<String, Object> producerOutputProperties = new LinkedHashMap<>();
+        producerOutputProperties.put("score", Map.of("type", sourceType));
+
+        OperatorDefinition producer = new OperatorDefinition(
+                "bloge.visualOperator.v1",
+                "risk:scoreProducer",
+                "1.0.0",
+                new OperatorDefinition.Display("Score producer",
+                        "Produces a typed risk score.",
+                        List.of("risk", "numeric")),
+                new OperatorDefinition.Source("user-library", "", "", "", false),
+                new OperatorDefinition.Ports(
+                        List.of(),
+                        List.of(new OperatorDefinition.Port("output",
+                                SchemaEnvelope.object(producerOutputProperties, List.of()),
+                                true,
+                                "Score output."))
+                ),
+                SchemaEnvelope.opaque(),
+                OperatorDefinition.Capabilities.pure(),
+                new OperatorDefinition.Lowering("native", "riskScoreProducer", Map.of()),
+                List.of()
+        );
+
+        Map<String, Object> consumerInputProperties = new LinkedHashMap<>();
+        consumerInputProperties.put("score", Map.of("type", targetType));
+        Map<String, Object> consumerOutputProperties = new LinkedHashMap<>();
+        consumerOutputProperties.put("accepted", Map.of("type", "boolean"));
+
+        OperatorDefinition consumer = new OperatorDefinition(
+                "bloge.visualOperator.v1",
+                "risk:scoreConsumer",
+                "1.0.0",
+                new OperatorDefinition.Display("Score consumer",
+                        "Consumes a typed risk score.",
+                        List.of("risk", "numeric")),
+                new OperatorDefinition.Source("user-library", "", "", "", true),
+                new OperatorDefinition.Ports(
+                        List.of(new OperatorDefinition.Port("inputs",
+                                SchemaEnvelope.object(consumerInputProperties, List.of("score")),
+                                true,
+                                "Score input.")),
+                        List.of(new OperatorDefinition.Port("output",
+                                SchemaEnvelope.object(consumerOutputProperties, List.of()),
+                                true,
+                                "Consumer output."))
+                ),
+                SchemaEnvelope.opaque(),
+                OperatorDefinition.Capabilities.pure(),
+                new OperatorDefinition.Lowering("transform", "transform", Map.of(
+                        "assignments", Map.of(
+                                "accepted", "true"
+                        )
+                )),
+                List.of()
+        );
+
+        return new OperatorLibrary(
+                "bloge.visualOperatorLibrary.v1",
+                "risk-score-type-compatibility",
+                "Score type compatibility operators",
+                "1.0.0",
+                "risk-team",
+                "ACTIVE",
+                List.of(producer, consumer)
         );
     }
 

@@ -4753,9 +4753,10 @@ function schemaType(schema) {
   }
   if (type === 'array') {
     const itemType = schemaType(schema?.items);
-    return itemType ? `array<${itemType}>` : 'array';
+    const label = itemType ? `array<${itemType}>` : 'array';
+    return schemaAllowsNull(schema) ? `${label}|null` : label;
   }
-  return type ? String(type) : '';
+  return type ? `${String(type)}${schemaAllowsNull(schema) && type !== 'null' ? '|null' : ''}` : '';
 }
 
 function sourceCandidatesForTarget(target) {
@@ -5068,7 +5069,11 @@ function validateSchemaEnvelope(schemaEnvelope, diagnostics) {
 
 function validateSchemaStructure(schema, path, diagnostics) {
   validateUnsupportedSchemaKeywords(schema, path, diagnostics);
+  const invalidTypeArray = validateSchemaTypeArray(schema, path, diagnostics);
   const kind = rawSchemaType(schema);
+  if (invalidTypeArray) {
+    return;
+  }
   if (!kind) {
     return;
   }
@@ -5134,6 +5139,67 @@ function validateSchemaStructure(schema, path, diagnostics) {
   } else if (kind === 'enum') {
     validateCustomSchemaEnumValues(schema, path, diagnostics);
   }
+}
+
+function validateSchemaTypeArray(schema, path, diagnostics) {
+  const type = schema?.type;
+  if (!Array.isArray(type)) {
+    return false;
+  }
+  if (!type.length) {
+    diagnostics.push(graphInputSchemaDiagnostic(
+      'visual.schema.typeArrayInvalid',
+      'Schema type array must contain one supported type, optionally plus null.',
+      `${path}/type`
+    ));
+    return true;
+  }
+  let invalid = false;
+  let concreteTypes = 0;
+  const seen = new Set();
+  type.forEach((item, index) => {
+    const target = `${path}/type/${index}`;
+    if (typeof item !== 'string' || !item.trim()) {
+      diagnostics.push(graphInputSchemaDiagnostic(
+        'visual.schema.typeArrayInvalid',
+        'Schema type array entries must be non-blank strings.',
+        target
+      ));
+      invalid = true;
+      return;
+    }
+    if (seen.has(item)) {
+      diagnostics.push(graphInputSchemaDiagnostic(
+        'visual.schema.typeArrayDuplicate',
+        `Schema type array entry '${item}' is duplicated.`,
+        target
+      ));
+      invalid = true;
+      return;
+    }
+    seen.add(item);
+    if (!SUPPORTED_SCHEMA_KINDS.has(item)) {
+      diagnostics.push(graphInputSchemaDiagnostic(
+        'visual.schema.unsupportedType',
+        `Unsupported schema type/kind '${item}'.`,
+        target
+      ));
+      invalid = true;
+      return;
+    }
+    if (item !== 'null') {
+      concreteTypes += 1;
+    }
+  });
+  if (concreteTypes > 1) {
+    diagnostics.push(graphInputSchemaDiagnostic(
+      'visual.schema.typeUnionUnsupported',
+      'Schema type arrays support one concrete type, optionally plus null.',
+      `${path}/type`
+    ));
+    invalid = true;
+  }
+  return invalid;
 }
 
 function validateUnsupportedSchemaKeywords(schema, path, diagnostics) {
@@ -5288,7 +5354,7 @@ function validateSchemaEnum(schema, kind, path, diagnostics) {
   }
   validateSchemaEnumValues(values, `${path}/enum`, diagnostics);
   values.forEach((value, index) => {
-    if (!enumValueMatchesKind(value, kind)) {
+    if (!schemaValueMatchesDeclaredType(value, schema, kind)) {
       diagnostics.push(graphInputSchemaDiagnostic(
         'visual.schema.enumTypeMismatch',
         `Enum value at index ${index} must match schema type '${kind}'.`,
@@ -5369,7 +5435,7 @@ function validateSchemaConst(schema, kind, path, diagnostics) {
     return;
   }
   const constValue = schema.const;
-  if (!schemaValueMatchesType(constValue, kind)) {
+  if (!schemaValueMatchesDeclaredType(constValue, schema, kind)) {
     diagnostics.push(graphInputSchemaDiagnostic(
       'visual.schema.constTypeMismatch',
       `Const value must match schema type/kind '${kind}'.`,
@@ -6002,6 +6068,10 @@ function enumValueMatchesKind(value, kind) {
   return schemaValueMatchesType(value, kind);
 }
 
+function schemaValueMatchesDeclaredType(value, schema, kind) {
+  return value === null && schemaAllowsNull(schema) || schemaValueMatchesType(value, kind);
+}
+
 function schemaObjectProperties(schema) {
   const properties = schema?.properties;
   return properties && typeof properties === 'object' && !Array.isArray(properties)
@@ -6333,6 +6403,14 @@ function schemaCompatibilityIssue(sourceSchema, targetSchema, path = '') {
   const targetType = rawSchemaType(targetSchema);
   if (!sourceType || !targetType || sourceType === 'any' || targetType === 'any' || sourceType === 'opaque' || targetType === 'opaque') {
     return '';
+  }
+  if (schemaMayProduceNull(sourceSchema) && !schemaValueMatchesSchema(null, targetSchema)) {
+    return reasonAt(path, `source may produce null but target ${schemaType(targetSchema)} does not allow null`);
+  }
+  if (sourceType === 'null') {
+    return schemaValueMatchesSchema(null, targetSchema)
+      ? ''
+      : reasonAt(path, `source type null cannot feed target type ${schemaType(targetSchema)}`);
   }
   if (sourceType === 'array' && targetType === 'array') {
     return arrayPrefixItemsCompatibilityIssue(sourceSchema, targetSchema, path)
@@ -6902,6 +6980,10 @@ function canonicalSchemaValueKey(value) {
 
 function schemaValueMatchesSchema(value, schema) {
   const type = rawSchemaType(schema);
+  if (value === null && schemaAllowsNull(schema)) {
+    const values = schemaEnumValues(schema);
+    return !values.length || values.some((allowed) => schemaValuesEqual(allowed, null));
+  }
   if (!schemaValueMatchesType(value, type)) {
     return false;
   }
@@ -6948,11 +7030,52 @@ function schemaValueMatchesType(value, type) {
 
 function rawSchemaType(schema) {
   if (!schema) return '';
-  return schema.kind
-    || schema.type
+  const declared = schema.kind || schema.type;
+  if (Array.isArray(declared)) {
+    return nullableTypePrimary(declared);
+  }
+  return declared
     || (schema.properties ? 'object' : '')
     || (schema.items ? 'array' : '')
     || (Object.prototype.hasOwnProperty.call(schema, 'const') ? schemaTypeForValue(schema.const) : '');
+}
+
+function nullableTypePrimary(types) {
+  let primary = '';
+  let concreteTypes = 0;
+  for (const item of types) {
+    if (typeof item !== 'string' || !item.trim()) {
+      return String(types);
+    }
+    if (item !== 'null') {
+      primary = item;
+      concreteTypes += 1;
+    }
+  }
+  if (concreteTypes > 1) {
+    return String(types);
+  }
+  return primary || 'null';
+}
+
+function schemaMayProduceNull(schema) {
+  const values = schemaEnumValues(schema);
+  return values.length
+    ? values.some((value) => schemaValuesEqual(value, null))
+    : schemaAllowsNull(schema);
+}
+
+function schemaAllowsNull(schema) {
+  const declared = schema?.kind ?? schema?.type;
+  if (Array.isArray(declared)) {
+    return declared.includes('null');
+  }
+  if (declared === 'null') {
+    return true;
+  }
+  return declared === undefined
+    && Object.prototype.hasOwnProperty.call(schema || {}, 'const')
+    && schema.const === null;
 }
 
 function schemaTypeForValue(value) {

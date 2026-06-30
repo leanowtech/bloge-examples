@@ -110,7 +110,11 @@ public final class VisualSchemaValidator {
                                        String path,
                                        List<VisualDiagnostic> diagnostics) {
         boolean hasUnsupportedKeyword = validateUnsupportedKeywords(schema, path, diagnostics);
+        boolean invalidTypeArray = validateTypeArray(schema, path, diagnostics);
         String kind = schemaKind(schema);
+        if (invalidTypeArray) {
+            return;
+        }
         if (kind.isBlank()) {
             if (!hasUnsupportedKeyword) {
                 diagnostics.add(VisualDiagnostic.warning("visual.schema.opaque",
@@ -210,6 +214,59 @@ public final class VisualSchemaValidator {
             }
         }
         return unsupported;
+    }
+
+    private static boolean validateTypeArray(Map<String, Object> schema,
+                                             String path,
+                                             List<VisualDiagnostic> diagnostics) {
+        Object rawType = schema.get("type");
+        if (!(rawType instanceof List<?> types)) {
+            return false;
+        }
+        boolean invalid = false;
+        if (types.isEmpty()) {
+            diagnostics.add(VisualDiagnostic.error("visual.schema.typeArrayInvalid",
+                    "Schema type array must contain one supported type, optionally plus 'null'.",
+                    path + "/type"));
+            return true;
+        }
+        Set<String> seen = new LinkedHashSet<>();
+        int concreteTypes = 0;
+        for (int i = 0; i < types.size(); i++) {
+            Object item = types.get(i);
+            String typePath = path + "/type/" + i;
+            if (!(item instanceof String type) || type.isBlank()) {
+                diagnostics.add(VisualDiagnostic.error("visual.schema.typeArrayInvalid",
+                        "Schema type array entries must be non-blank strings.",
+                        typePath));
+                invalid = true;
+                continue;
+            }
+            if (!seen.add(type)) {
+                diagnostics.add(VisualDiagnostic.error("visual.schema.typeArrayDuplicate",
+                        "Schema type array entry '%s' is duplicated.".formatted(type),
+                        typePath));
+                invalid = true;
+                continue;
+            }
+            if (!SUPPORTED_SCHEMA_KINDS.contains(type)) {
+                diagnostics.add(VisualDiagnostic.error("visual.schema.unsupportedType",
+                        "Unsupported schema type/kind '%s'.".formatted(type),
+                        typePath));
+                invalid = true;
+                continue;
+            }
+            if (!"null".equals(type)) {
+                concreteTypes++;
+            }
+        }
+        if (concreteTypes > 1) {
+            diagnostics.add(VisualDiagnostic.error("visual.schema.typeUnionUnsupported",
+                    "Schema type arrays support one concrete type, optionally plus 'null'.",
+                    path + "/type"));
+            invalid = true;
+        }
+        return invalid;
     }
 
     @SuppressWarnings("unchecked")
@@ -358,7 +415,7 @@ public final class VisualSchemaValidator {
                     "Schema default must be one of %s.".formatted(values),
                     path));
         }
-        if (valueConstrainedKind(kind) && !enumValueMatchesKind(value, kind)) {
+        if (valueConstrainedKind(kind) && !valueMatchesDeclaredType(value, schema, kind)) {
             diagnostics.add(VisualDiagnostic.error("visual.schema.defaultTypeMismatch",
                     "Schema default must match type/kind '%s'.".formatted(kind),
                     path));
@@ -428,6 +485,9 @@ public final class VisualSchemaValidator {
         if (raw == null) {
             raw = schema.get("type");
         }
+        if (raw instanceof List<?> types) {
+            return nullableTypePrimary(types);
+        }
         if (raw == null && schema.containsKey("properties")) {
             return "object";
         }
@@ -438,6 +498,24 @@ public final class VisualSchemaValidator {
             return schemaKindForValue(schema.get("const"));
         }
         return raw == null ? "" : String.valueOf(raw);
+    }
+
+    private static String nullableTypePrimary(List<?> types) {
+        String primary = "";
+        int concreteTypes = 0;
+        for (Object item : types) {
+            if (!(item instanceof String type) || type.isBlank()) {
+                return String.valueOf(types);
+            }
+            if (!"null".equals(type)) {
+                primary = type;
+                concreteTypes++;
+            }
+        }
+        if (concreteTypes > 1) {
+            return String.valueOf(types);
+        }
+        return primary.isBlank() ? "null" : primary;
     }
 
     private static Map<String, Object> objectProperties(Map<String, Object> schema,
@@ -698,7 +776,7 @@ public final class VisualSchemaValidator {
             Object value = values.get(i);
             String valuePath = path + "/enum/" + i;
             if ((valueConstrainedKind(kind) || arrayKind(kind) || objectKind(kind))
-                    && !constValueMatchesKind(value, kind)) {
+                    && !valueMatchesDeclaredType(value, schema, kind)) {
                 diagnostics.add(VisualDiagnostic.error("visual.schema.enumTypeMismatch",
                         "Enum value at index %d must match schema type '%s'.".formatted(i, kind),
                         valuePath));
@@ -754,7 +832,7 @@ public final class VisualSchemaValidator {
             return;
         }
         Object constValue = schema.get("const");
-        if (!constValueMatchesKind(constValue, kind)) {
+        if (!valueMatchesDeclaredType(constValue, schema, kind)) {
             diagnostics.add(VisualDiagnostic.error("visual.schema.constTypeMismatch",
                     "Const value must match schema type/kind '%s'.".formatted(kind),
                     path + "/const"));
@@ -1675,7 +1753,7 @@ public final class VisualSchemaValidator {
 
 	    private static boolean valueMatchesSchema(Object value, Map<String, Object> schema) {
 	        String kind = schemaKind(schema);
-	        if (!constValueMatchesKind(value, kind)) {
+		        if (!valueMatchesDeclaredType(value, schema, kind)) {
 	            return false;
 	        }
 	        if (schema.containsKey("const") && !Objects.equals(schema.get("const"), value)) {
@@ -1838,6 +1916,21 @@ public final class VisualSchemaValidator {
             case "enum" -> true;
             default -> !valueConstrainedKind(kind) || enumValueMatchesKind(value, kind);
         };
+    }
+
+    private static boolean valueMatchesDeclaredType(Object value, Map<String, Object> schema, String kind) {
+        return value == null && schemaAllowsNull(schema) || constValueMatchesKind(value, kind);
+    }
+
+    private static boolean schemaAllowsNull(Map<String, Object> schema) {
+        Object raw = schema.containsKey("kind") ? schema.get("kind") : schema.get("type");
+        if (raw instanceof List<?> types) {
+            return types.stream().anyMatch(type -> "null".equals(type));
+        }
+        if ("null".equals(raw)) {
+            return true;
+        }
+        return raw == null && schema.containsKey("const") && schema.get("const") == null;
     }
 
     private static boolean enumValueMatchesKind(Object value, String kind) {
