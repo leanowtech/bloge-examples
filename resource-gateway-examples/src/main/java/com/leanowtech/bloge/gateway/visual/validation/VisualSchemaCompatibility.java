@@ -83,20 +83,55 @@ public final class VisualSchemaCompatibility {
                 return Optional.empty();
             }
             List<Object> incompatible = sourceEnumValues.stream()
-                    .filter(value -> !valueMatchesType(value, targetType))
+                    .filter(value -> !valueMatchesSchema(value, targetSchema))
                     .toList();
             return incompatible.isEmpty()
                     ? Optional.empty()
                     : Optional.of(reasonAt(path,
-                    "source enum value(s) %s do not match target type %s"
-                            .formatted(valueDomainLabel(incompatible), targetType)));
+                    "source enum value(s) %s do not match target schema %s"
+                            .formatted(valueDomainLabel(incompatible), schemaTypeLabel(targetSchema))));
         }
         if (sourceType.equals(targetType) || numeric(sourceType) && numeric(targetType)) {
-            return Optional.empty();
+            return numericBoundsCompatibilityIssue(sourceSchema, targetSchema, path);
         }
         return Optional.of(reasonAt(path,
                 "source type %s cannot feed target type %s"
                         .formatted(schemaTypeLabel(sourceSchema), schemaTypeLabel(targetSchema))));
+    }
+
+    private static Optional<String> numericBoundsCompatibilityIssue(Map<String, Object> sourceSchema,
+                                                                    Map<String, Object> targetSchema,
+                                                                    String path) {
+        if (!numeric(schemaType(sourceSchema)) || !numeric(schemaType(targetSchema))) {
+            return Optional.empty();
+        }
+        NumericBoundary targetLower = lowerBound(targetSchema);
+        if (targetLower != null) {
+            NumericBoundary sourceLower = lowerBound(sourceSchema);
+            if (sourceLower == null) {
+                return Optional.of(reasonAt(path,
+                        "target requires %s but source has no lower bound".formatted(targetLower.lowerLabel())));
+            }
+            if (!lowerBoundAtLeast(sourceLower, targetLower)) {
+                return Optional.of(reasonAt(path,
+                        "source lower bound %s is weaker than target lower bound %s"
+                                .formatted(sourceLower.lowerLabel(), targetLower.lowerLabel())));
+            }
+        }
+        NumericBoundary targetUpper = upperBound(targetSchema);
+        if (targetUpper != null) {
+            NumericBoundary sourceUpper = upperBound(sourceSchema);
+            if (sourceUpper == null) {
+                return Optional.of(reasonAt(path,
+                        "target requires %s but source has no upper bound".formatted(targetUpper.upperLabel())));
+            }
+            if (!upperBoundAtMost(sourceUpper, targetUpper)) {
+                return Optional.of(reasonAt(path,
+                        "source upper bound %s is weaker than target upper bound %s"
+                                .formatted(sourceUpper.upperLabel(), targetUpper.upperLabel())));
+            }
+        }
+        return Optional.empty();
     }
 
     private static Optional<String> objectSchemaCompatibilityIssue(Map<String, Object> sourceSchema,
@@ -292,6 +327,11 @@ public final class VisualSchemaCompatibility {
     }
 
     private static List<Object> enumValues(Map<String, Object> schema) {
+        if (schema.containsKey("const")) {
+            List<Object> values = new ArrayList<>();
+            values.add(schema.get("const"));
+            return values;
+        }
         Object rawEnum = schema.get("enum");
         if (rawEnum instanceof List<?> values) {
             return values.stream().map(Object.class::cast).distinct().toList();
@@ -330,6 +370,31 @@ public final class VisualSchemaCompatibility {
             case "null" -> value == null;
             default -> true;
         };
+    }
+
+    private static boolean valueMatchesSchema(Object value, Map<String, Object> schema) {
+        String type = schemaType(schema);
+        if (!valueMatchesType(value, type)) {
+            return false;
+        }
+        List<Object> values = enumValues(schema);
+        if (!values.isEmpty() && !values.contains(value)) {
+            return false;
+        }
+        return numericValueMatchesBounds(value, schema);
+    }
+
+    private static boolean numericValueMatchesBounds(Object value, Map<String, Object> schema) {
+        if (!(value instanceof Number number)) {
+            return true;
+        }
+        double numericValue = number.doubleValue();
+        NumericBoundary lower = lowerBound(schema);
+        if (lower != null && !lower.acceptsLower(numericValue)) {
+            return false;
+        }
+        NumericBoundary upper = upperBound(schema);
+        return upper == null || upper.acceptsUpper(numericValue);
     }
 
     private static boolean isIntegerValue(Object value) {
@@ -390,7 +455,117 @@ public final class VisualSchemaCompatibility {
         if (type == null && property.containsKey("items")) {
             return "array";
         }
+        if (type == null && property.containsKey("const")) {
+            return schemaTypeForValue(property.get("const"));
+        }
         return type == null ? "" : String.valueOf(type);
+    }
+
+    private static String schemaTypeForValue(Object value) {
+        if (value == null) {
+            return "null";
+        }
+        if (value instanceof String) {
+            return "string";
+        }
+        if (value instanceof Boolean) {
+            return "boolean";
+        }
+        if (isIntegerValue(value)) {
+            return "integer";
+        }
+        if (value instanceof Number) {
+            return "number";
+        }
+        if (value instanceof Map<?, ?>) {
+            return "object";
+        }
+        if (value instanceof List<?>) {
+            return "array";
+        }
+        return "";
+    }
+
+    private static NumericBoundary lowerBound(Map<String, Object> schema) {
+        NumericBoundary minimum = numericBoundary(schema.get("minimum"), false);
+        NumericBoundary exclusiveMinimum = numericBoundary(schema.get("exclusiveMinimum"), true);
+        if (minimum == null) {
+            return exclusiveMinimum;
+        }
+        if (exclusiveMinimum == null) {
+            return minimum;
+        }
+        int comparison = Double.compare(minimum.value(), exclusiveMinimum.value());
+        if (comparison > 0) {
+            return minimum;
+        }
+        if (comparison < 0) {
+            return exclusiveMinimum;
+        }
+        return exclusiveMinimum.exclusive() ? exclusiveMinimum : minimum;
+    }
+
+    private static NumericBoundary upperBound(Map<String, Object> schema) {
+        NumericBoundary maximum = numericBoundary(schema.get("maximum"), false);
+        NumericBoundary exclusiveMaximum = numericBoundary(schema.get("exclusiveMaximum"), true);
+        if (maximum == null) {
+            return exclusiveMaximum;
+        }
+        if (exclusiveMaximum == null) {
+            return maximum;
+        }
+        int comparison = Double.compare(maximum.value(), exclusiveMaximum.value());
+        if (comparison < 0) {
+            return maximum;
+        }
+        if (comparison > 0) {
+            return exclusiveMaximum;
+        }
+        return exclusiveMaximum.exclusive() ? exclusiveMaximum : maximum;
+    }
+
+    private static NumericBoundary numericBoundary(Object value, boolean exclusive) {
+        if (!(value instanceof Number number)) {
+            return null;
+        }
+        double numericValue = number.doubleValue();
+        return Double.isFinite(numericValue) ? new NumericBoundary(numericValue, exclusive) : null;
+    }
+
+    private static boolean lowerBoundAtLeast(NumericBoundary source, NumericBoundary target) {
+        int comparison = Double.compare(source.value(), target.value());
+        return comparison > 0 || comparison == 0 && (source.exclusive() || !target.exclusive());
+    }
+
+    private static boolean upperBoundAtMost(NumericBoundary source, NumericBoundary target) {
+        int comparison = Double.compare(source.value(), target.value());
+        return comparison < 0 || comparison == 0 && (source.exclusive() || !target.exclusive());
+    }
+
+    private record NumericBoundary(double value, boolean exclusive) {
+
+        private boolean acceptsLower(double candidate) {
+            return exclusive ? candidate > value : candidate >= value;
+        }
+
+        private boolean acceptsUpper(double candidate) {
+            return exclusive ? candidate < value : candidate <= value;
+        }
+
+        private String lowerLabel() {
+            return exclusive ? "value > " + trimNumber(value) : "value >= " + trimNumber(value);
+        }
+
+        private String upperLabel() {
+            return exclusive ? "value < " + trimNumber(value) : "value <= " + trimNumber(value);
+        }
+
+        private static String trimNumber(double value) {
+            if (Math.rint(value) == value) {
+                return String.valueOf((long) value);
+            }
+            return String.valueOf(value);
+        }
     }
 
     /**

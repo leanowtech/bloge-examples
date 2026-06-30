@@ -224,8 +224,8 @@ class OperatorLibraryValidatorTest {
 
         VisualValidationResult result = validator.validate(libraryWith(operator));
 
-        assertThat(result.valid()).isTrue();
         assertThat(result.diagnostics()).isEmpty();
+        assertThat(result.valid()).isTrue();
     }
 
     @Test
@@ -602,6 +602,164 @@ class OperatorLibraryValidatorTest {
     }
 
     @Test
+    void acceptsConstSchemasAcrossOperatorDefinitions() {
+        OperatorDefinition operator = new OperatorDefinition(
+                "bloge.visualOperator.v1",
+                "risk:constPolicy",
+                "1.0.0",
+                new OperatorDefinition.Display("Const policy", "Test operator.", List.of("test")),
+                new OperatorDefinition.Source("user-library", "", "", "", true),
+                new OperatorDefinition.Ports(
+                        List.of(new OperatorDefinition.Port("payload",
+                                SchemaEnvelope.object(Map.of(
+                                        "eventType", Map.of("const", "loan.submitted")
+                                ), List.of("eventType")),
+                                true,
+                                "Input.")),
+                        List.of(new OperatorDefinition.Port("output",
+                                SchemaEnvelope.object(Map.of(
+                                        "decision", Map.of("type", "string", "const", "APPROVE")
+                                ), List.of()),
+                                true,
+                                "Output."))
+                ),
+                SchemaEnvelope.object(Map.of(
+                        "strategy", Map.of("type", "string", "const", "strict", "default", "strict")
+                ), List.of("strategy")),
+                OperatorDefinition.Capabilities.pure(),
+                new OperatorDefinition.Lowering("native", "riskConstPolicy", Map.of()),
+                List.of()
+        );
+
+        VisualValidationResult result = validator.validate(libraryWith(operator));
+
+        assertThat(result.diagnostics()).isEmpty();
+        assertThat(result.valid()).isTrue();
+    }
+
+    @Test
+    void rejectsConstValueThatDoesNotMatchDeclaredSchemaType() {
+        OperatorDefinition operator = new OperatorDefinition(
+                "bloge.visualOperator.v1",
+                "risk:badConstPolicy",
+                "1.0.0",
+                new OperatorDefinition.Display("Bad const policy", "Test operator.", List.of("test")),
+                new OperatorDefinition.Source("user-library", "", "", "", true),
+                new OperatorDefinition.Ports(
+                        List.of(),
+                        List.of(new OperatorDefinition.Port("output",
+                                SchemaEnvelope.object(Map.of("accepted", Map.of("type", "boolean")), List.of()),
+                                true,
+                                "Output."))
+                ),
+                SchemaEnvelope.object(Map.of(
+                        "mode", Map.of("type", "integer", "const", "strict")
+                ), List.of()),
+                OperatorDefinition.Capabilities.pure(),
+                new OperatorDefinition.Lowering("native", "riskBadConstPolicy", Map.of()),
+                List.of()
+        );
+
+        VisualValidationResult result = validator.validate(libraryWith(operator));
+
+        assertThat(result.valid()).isFalse();
+        assertThat(result.diagnostics())
+                .anySatisfy(diagnostic -> {
+                    assertThat(diagnostic.code()).isEqualTo("visual.schema.constTypeMismatch");
+                    assertThat(diagnostic.target()).isEqualTo("/operators/0/configSchema/schema/properties/mode/const");
+                });
+    }
+
+    @Test
+    void acceptsNumericBoundsAcrossOperatorDefinitions() {
+        OperatorDefinition operator = new OperatorDefinition(
+                "bloge.visualOperator.v1",
+                "risk:numericBoundsPolicy",
+                "1.0.0",
+                new OperatorDefinition.Display("Numeric bounds policy", "Test operator.", List.of("test")),
+                new OperatorDefinition.Source("user-library", "", "", "", true),
+                new OperatorDefinition.Ports(
+                        List.of(new OperatorDefinition.Port("payload",
+                                SchemaEnvelope.object(Map.of(
+                                        "score", Map.of("type", "integer", "minimum", 300, "maximum", 900)
+                                ), List.of("score")),
+                                true,
+                                "Input.")),
+                        List.of(new OperatorDefinition.Port("output",
+                                SchemaEnvelope.object(Map.of(
+                                        "ratio", Map.of(
+                                                "type", "number",
+                                                "exclusiveMinimum", 0,
+                                                "exclusiveMaximum", 1
+                                        )
+                                ), List.of()),
+                                true,
+                                "Output."))
+                ),
+                SchemaEnvelope.object(Map.of(
+                        "threshold", Map.of("type", "integer", "minimum", 300, "maximum", 900, "default", 700)
+                ), List.of("threshold")),
+                OperatorDefinition.Capabilities.pure(),
+                new OperatorDefinition.Lowering("native", "riskNumericBoundsPolicy", Map.of()),
+                List.of()
+        );
+
+        VisualValidationResult result = validator.validate(libraryWith(operator));
+
+        assertThat(result.diagnostics()).isEmpty();
+        assertThat(result.valid()).isTrue();
+    }
+
+    @Test
+    void rejectsInvalidNumericBoundsAcrossOperatorDefinitions() {
+        OperatorDefinition operator = new OperatorDefinition(
+                "bloge.visualOperator.v1",
+                "risk:badNumericBoundsPolicy",
+                "1.0.0",
+                new OperatorDefinition.Display("Bad numeric bounds policy", "Test operator.", List.of("test")),
+                new OperatorDefinition.Source("user-library", "", "", "", true),
+                new OperatorDefinition.Ports(
+                        List.of(new OperatorDefinition.Port("payload",
+                                SchemaEnvelope.object(Map.of(
+                                        "score", Map.of("type", "integer", "minimum", "low")
+                                ), List.of("score")),
+                                true,
+                                "Input.")),
+                        List.of(new OperatorDefinition.Port("output",
+                                SchemaEnvelope.object(Map.of(
+                                        "risk", Map.of("type", "integer", "minimum", 900, "maximum", 300)
+                                ), List.of()),
+                                true,
+                                "Output."))
+                ),
+                SchemaEnvelope.object(Map.of(
+                        "threshold", Map.of("type", "integer", "minimum", 300, "maximum", 900, "default", 950)
+                ), List.of()),
+                OperatorDefinition.Capabilities.pure(),
+                new OperatorDefinition.Lowering("native", "riskBadNumericBoundsPolicy", Map.of()),
+                List.of()
+        );
+
+        VisualValidationResult result = validator.validate(libraryWith(operator));
+
+        assertThat(result.valid()).isFalse();
+        assertThat(result.diagnostics())
+                .extracting("code")
+                .contains(
+                        "visual.schema.numericConstraintInvalid",
+                        "visual.schema.numericBoundsInvalid",
+                        "visual.schema.defaultConstraintMismatch"
+                );
+        assertThat(result.diagnostics())
+                .extracting("target")
+                .contains(
+                        "/operators/0/ports/inputs/0/schema/schema/properties/score/minimum",
+                        "/operators/0/ports/outputs/0/schema/schema/properties/risk",
+                        "/operators/0/configSchema/schema/properties/threshold/default"
+                );
+    }
+
+    @Test
     void rejectsUnsupportedJsonSchemaKeywordsAcrossOperatorSchemas() {
         OperatorDefinition operator = new OperatorDefinition(
                 "bloge.visualOperator.v1",
@@ -625,13 +783,13 @@ class OperatorLibraryValidatorTest {
                                 ), List.of()),
                                 true,
                                 "Output."))
-                ),
-                SchemaEnvelope.object(Map.of(
-                        "threshold", Map.of("type", "integer", "minimum", 0)
-                ), List.of()),
-                OperatorDefinition.Capabilities.pure(),
-                new OperatorDefinition.Lowering("native", "risk:unsupportedSchemaKeywords", Map.of()),
-                List.of()
+	                ),
+	                SchemaEnvelope.object(Map.of(
+	                        "customerCode", Map.of("type", "string", "pattern", "^[A-Z]+$")
+	                ), List.of()),
+	                OperatorDefinition.Capabilities.pure(),
+	                new OperatorDefinition.Lowering("native", "risk:unsupportedSchemaKeywords", Map.of()),
+	                List.of()
         );
 
         VisualValidationResult result = validator.validate(libraryWith(operator));
@@ -646,12 +804,12 @@ class OperatorLibraryValidatorTest {
                 );
         assertThat(result.diagnostics())
                 .extracting("target")
-                .contains(
-                        "/operators/0/ports/inputs/0/schema/schema/properties/choice/oneOf",
-                        "/operators/0/ports/outputs/0/schema/schema/properties/customer/$ref",
-                        "/operators/0/configSchema/schema/properties/threshold/minimum"
-                );
-    }
+	                .contains(
+	                        "/operators/0/ports/inputs/0/schema/schema/properties/choice/oneOf",
+	                        "/operators/0/ports/outputs/0/schema/schema/properties/customer/$ref",
+	                        "/operators/0/configSchema/schema/properties/customerCode/pattern"
+	                );
+	    }
 
     @Test
     void rejectsUnsupportedSchemaEnvelopeAcrossOperatorSchemas() {

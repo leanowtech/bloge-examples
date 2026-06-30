@@ -270,8 +270,9 @@ class GraphDraftValidatorTest {
                 Map.of(
                         "type", "object",
                         "properties", Map.of(
-                                "score", Map.of("type", "integer", "minimum", 0),
+                                "score", Map.of("type", "integer"),
                                 "amount", Map.of("type", "number"),
+                                "customerCode", Map.of("type", "string", "pattern", "^[A-Z]+$"),
                                 "decision", Map.of("oneOf", List.of(
                                         Map.of("type", "string"),
                                         Map.of("type", "integer")
@@ -299,7 +300,7 @@ class GraphDraftValidatorTest {
         assertThat(result.diagnostics())
                 .extracting("target")
                 .contains(
-                        "/inputSchema/schema/properties/score/minimum",
+                        "/inputSchema/schema/properties/customerCode/pattern",
                         "/inputSchema/schema/properties/decision/oneOf",
                         "/inputSchema/schema/properties/customer/$ref"
                 );
@@ -1610,6 +1611,68 @@ class GraphDraftValidatorTest {
     }
 
     @Test
+    void acceptsConstBindingWhenSourceConstMatchesTargetConst() {
+        GraphDraftValidator validator = new GraphDraftValidator(
+                VisualCatalogTestSupport.catalogWithLibrary(
+                        VisualCatalogTestSupport.constCompatibilityLibrary("APPROVE", "APPROVE")));
+        GraphDraft draft = enumCompatibilityDraft();
+
+        VisualValidationResult result = validator.validate(draft);
+
+        assertThat(result.valid()).isTrue();
+    }
+
+    @Test
+    void rejectsConstBindingWhenSourceConstDiffersFromTargetConst() {
+        GraphDraftValidator validator = new GraphDraftValidator(
+                VisualCatalogTestSupport.catalogWithLibrary(
+                        VisualCatalogTestSupport.constCompatibilityLibrary("REJECT", "APPROVE")));
+        GraphDraft draft = enumCompatibilityDraft();
+
+        VisualValidationResult result = validator.validate(draft);
+
+        assertThat(result.valid()).isFalse();
+        assertThat(result.diagnostics())
+                .extracting("code")
+                .contains("visual.binding.typeMismatch", "visual.edge.typeMismatch");
+        assertThat(result.diagnostics())
+                .anySatisfy(diagnostic -> assertThat(diagnostic.message())
+                        .contains("enum<REJECT>")
+                        .contains("enum<APPROVE>")
+                        .contains("source enum value(s) [REJECT] are outside target enum [APPROVE]"));
+    }
+
+    @Test
+    void acceptsNumericBindingWhenSourceBoundsFitTargetBounds() {
+        GraphDraftValidator validator = new GraphDraftValidator(
+                VisualCatalogTestSupport.catalogWithLibrary(
+                        VisualCatalogTestSupport.numericBoundsCompatibilityLibrary(300, 850, 0, 900)));
+        GraphDraft draft = numericBoundsCompatibilityDraft();
+
+        VisualValidationResult result = validator.validate(draft);
+
+        assertThat(result.valid()).isTrue();
+    }
+
+    @Test
+    void rejectsNumericBindingWhenSourceLowerBoundIsWeakerThanTarget() {
+        GraphDraftValidator validator = new GraphDraftValidator(
+                VisualCatalogTestSupport.catalogWithLibrary(
+                        VisualCatalogTestSupport.numericBoundsCompatibilityLibrary(0, 850, 300, 900)));
+        GraphDraft draft = numericBoundsCompatibilityDraft();
+
+        VisualValidationResult result = validator.validate(draft);
+
+        assertThat(result.valid()).isFalse();
+        assertThat(result.diagnostics())
+                .extracting("code")
+                .contains("visual.binding.typeMismatch", "visual.edge.typeMismatch");
+        assertThat(result.diagnostics())
+                .anySatisfy(diagnostic -> assertThat(diagnostic.message())
+                        .contains("source lower bound value >= 0 is weaker than target lower bound value >= 300"));
+    }
+
+    @Test
     void acceptsObjectBindingWhenTargetRequiredFieldsArePresent() {
         GraphDraftValidator validator = new GraphDraftValidator(
                 VisualCatalogTestSupport.catalogWithLibrary(
@@ -1958,6 +2021,46 @@ class GraphDraftValidatorTest {
                     assertThat(diagnostic.code()).isEqualTo("visual.config.enumMismatch");
                     assertThat(diagnostic.message()).contains("strict").contains("relaxed");
                     assertThat(diagnostic.target()).isEqualTo("/nodes/0/config/mode");
+                });
+    }
+
+    @Test
+    void rejectsNodeConfigWhenConstDoesNotMatchConfigSchema() {
+        GraphDraftValidator validator = new GraphDraftValidator(
+                VisualCatalogTestSupport.catalogWithLibrary(standardConstConfigurablePolicyLibrary()));
+        GraphDraft draft = configurablePolicyDraft(Map.of(
+                "threshold", 700,
+                "mode", "relaxed"
+        ));
+
+        VisualValidationResult result = validator.validate(draft);
+
+        assertThat(result.valid()).isFalse();
+        assertThat(result.diagnostics())
+                .anySatisfy(diagnostic -> {
+                    assertThat(diagnostic.code()).isEqualTo("visual.config.enumMismatch");
+                    assertThat(diagnostic.message()).contains("strict");
+                    assertThat(diagnostic.target()).isEqualTo("/nodes/0/config/mode");
+                });
+    }
+
+    @Test
+    void rejectsNodeConfigWhenNumericValueViolatesConfigSchemaBounds() {
+        GraphDraftValidator validator = new GraphDraftValidator(
+                VisualCatalogTestSupport.catalogWithLibrary(numericBoundsConfigurablePolicyLibrary()));
+        GraphDraft draft = configurablePolicyDraft(Map.of(
+                "threshold", 950,
+                "mode", "strict"
+        ));
+
+        VisualValidationResult result = validator.validate(draft);
+
+        assertThat(result.valid()).isFalse();
+        assertThat(result.diagnostics())
+                .anySatisfy(diagnostic -> {
+                    assertThat(diagnostic.code()).isEqualTo("visual.config.constraintMismatch");
+                    assertThat(diagnostic.message()).contains("threshold").contains("integer");
+                    assertThat(diagnostic.target()).isEqualTo("/nodes/0/config/threshold");
                 });
     }
 
@@ -2619,6 +2722,48 @@ class GraphDraftValidatorTest {
         );
     }
 
+    private static GraphDraft numericBoundsCompatibilityDraft() {
+        return new GraphDraft(
+                "",
+                "",
+                0,
+                "numericBoundsCompatibility",
+                "",
+                "",
+                "",
+                "",
+                null,
+                List.of(
+                        new GraphDraft.DraftNode(
+                                "scoreProducer",
+                                "risk:scoreProducer",
+                                "",
+                                Map.of(),
+                                Map.of(),
+                                null
+                        ),
+                        new GraphDraft.DraftNode(
+                                "scoreConsumer",
+                                "risk:scoreConsumer",
+                                "",
+                                Map.of("score", GraphDraft.Binding.nodePath(
+                                        "scoreProducer",
+                                        "output",
+                                        "score",
+                                        "inputs",
+                                        "score")),
+                                Map.of(),
+                                null
+                        )
+                ),
+                List.of(new GraphDraft.DraftEdge("score", "data",
+                        new GraphDraft.Endpoint("scoreProducer", "output", "score"),
+                        new GraphDraft.Endpoint("scoreConsumer", "inputs", "score"))),
+                Map.of(),
+                new GraphDraft.OutputSelection("scoreConsumer", "")
+        );
+    }
+
     private static GraphDraft objectCompatibilityDraft() {
         return new GraphDraft(
                 "",
@@ -2826,6 +2971,92 @@ class GraphDraftValidatorTest {
         Map<String, Object> configProperties = new LinkedHashMap<>();
         configProperties.put("threshold", Map.of("type", "integer"));
         configProperties.put("mode", Map.of("type", "string", "enum", List.of("strict", "relaxed")));
+
+        OperatorDefinition operator = new OperatorDefinition(
+                "bloge.visualOperator.v1",
+                "risk:configurablePolicy",
+                "1.0.0",
+                new OperatorDefinition.Display("Configurable policy",
+                        "Evaluates policy behavior controlled by configSchema.",
+                        List.of("risk", "config")),
+                new OperatorDefinition.Source("user-library", "", "", "", true),
+                new OperatorDefinition.Ports(
+                        List.of(),
+                        List.of(new OperatorDefinition.Port("output",
+                                SchemaEnvelope.object(outputProperties, List.of()),
+                                true,
+                                "Policy output."))
+                ),
+                SchemaEnvelope.object(configProperties, List.of("threshold", "mode")),
+                OperatorDefinition.Capabilities.pure(),
+                new OperatorDefinition.Lowering("transform", "transform", Map.of(
+                        "assignments", Map.of("accepted", "true")
+                )),
+                List.of()
+        );
+        return new OperatorLibrary(
+                "bloge.visualOperatorLibrary.v1",
+                "risk-configurable-policy",
+                "Configurable policy operators",
+                "1.0.0",
+                "risk-team",
+                "ACTIVE",
+                List.of(operator)
+        );
+    }
+
+    private static OperatorLibrary standardConstConfigurablePolicyLibrary() {
+        Map<String, Object> outputProperties = new LinkedHashMap<>();
+        outputProperties.put("accepted", Map.of("type", "boolean"));
+
+        Map<String, Object> configProperties = new LinkedHashMap<>();
+        configProperties.put("threshold", Map.of("type", "integer"));
+        configProperties.put("mode", Map.of("type", "string", "const", "strict"));
+
+        OperatorDefinition operator = new OperatorDefinition(
+                "bloge.visualOperator.v1",
+                "risk:configurablePolicy",
+                "1.0.0",
+                new OperatorDefinition.Display("Configurable policy",
+                        "Evaluates policy behavior controlled by configSchema.",
+                        List.of("risk", "config")),
+                new OperatorDefinition.Source("user-library", "", "", "", true),
+                new OperatorDefinition.Ports(
+                        List.of(),
+                        List.of(new OperatorDefinition.Port("output",
+                                SchemaEnvelope.object(outputProperties, List.of()),
+                                true,
+                                "Policy output."))
+                ),
+                SchemaEnvelope.object(configProperties, List.of("threshold", "mode")),
+                OperatorDefinition.Capabilities.pure(),
+                new OperatorDefinition.Lowering("transform", "transform", Map.of(
+                        "assignments", Map.of("accepted", "true")
+                )),
+                List.of()
+        );
+        return new OperatorLibrary(
+                "bloge.visualOperatorLibrary.v1",
+                "risk-configurable-policy",
+                "Configurable policy operators",
+                "1.0.0",
+                "risk-team",
+                "ACTIVE",
+                List.of(operator)
+        );
+    }
+
+    private static OperatorLibrary numericBoundsConfigurablePolicyLibrary() {
+        Map<String, Object> outputProperties = new LinkedHashMap<>();
+        outputProperties.put("accepted", Map.of("type", "boolean"));
+
+        Map<String, Object> configProperties = new LinkedHashMap<>();
+        configProperties.put("threshold", Map.of(
+                "type", "integer",
+                "minimum", 300,
+                "maximum", 900
+        ));
+        configProperties.put("mode", Map.of("type", "string"));
 
         OperatorDefinition operator = new OperatorDefinition(
                 "bloge.visualOperator.v1",

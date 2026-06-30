@@ -995,10 +995,18 @@ public class GraphDraftValidator {
         if (type == null && property.containsKey("items")) {
             return "array";
         }
+        if (type == null && property.containsKey("const")) {
+            return schemaTypeForValue(property.get("const"));
+        }
         return type == null ? "" : String.valueOf(type);
     }
 
     private static List<Object> enumValues(Map<String, Object> schema) {
+        if (schema.containsKey("const")) {
+            List<Object> values = new ArrayList<>();
+            values.add(schema.get("const"));
+            return values;
+        }
         Object rawEnum = schema.get("enum");
         if (rawEnum instanceof List<?> values) {
             return values.stream().map(Object.class::cast).distinct().toList();
@@ -1007,6 +1015,31 @@ public class GraphDraftValidator {
             return values.stream().map(Object.class::cast).distinct().toList();
         }
         return List.of();
+    }
+
+    private static String schemaTypeForValue(Object value) {
+        if (value == null) {
+            return "null";
+        }
+        if (value instanceof String) {
+            return "string";
+        }
+        if (value instanceof Boolean) {
+            return "boolean";
+        }
+        if (isIntegerValue(value)) {
+            return "integer";
+        }
+        if (value instanceof Number) {
+            return "number";
+        }
+        if (value instanceof Map<?, ?>) {
+            return "object";
+        }
+        if (value instanceof List<?>) {
+            return "array";
+        }
+        return "";
     }
 
     private static void validateEdges(GraphDraft draft,
@@ -1141,8 +1174,8 @@ public class GraphDraftValidator {
     }
 
     private static boolean constantValueMatchesSchema(Object value, Map<String, Object> schema) {
-        Object rawEnum = schema.get("enum");
-        if (rawEnum instanceof List<?> values && !values.contains(value)) {
+        List<Object> domainValues = enumValues(schema);
+        if (!domainValues.isEmpty() && !domainValues.contains(value)) {
             return false;
         }
 
@@ -1160,7 +1193,7 @@ public class GraphDraftValidator {
             Object rawValues = schema.get("values");
             return !(rawValues instanceof List<?> values) || values.isEmpty() || values.contains(value);
         }
-        return configValueMatchesType(value, type);
+        return configValueMatchesType(value, type) && numericValueMatchesBounds(value, schema);
     }
 
     private static boolean constantObjectMatchesSchema(Object value, Map<String, Object> schema) {
@@ -1327,6 +1360,13 @@ public class GraphDraftValidator {
                     path));
             return;
         }
+        if (!numericValueMatchesBounds(value, schema)) {
+            diagnostics.add(VisualDiagnostic.error("visual.config.constraintMismatch",
+                    "Config value at '%s' must satisfy %s numeric bounds."
+                            .formatted(path, schemaTypeLabel(schema)),
+                    path));
+            return;
+        }
         validateConfigEnum(value, schema, path, diagnostics);
     }
 
@@ -1461,6 +1501,76 @@ public class GraphDraftValidator {
             return Double.isFinite(doubleValue) && Math.rint(doubleValue) == doubleValue;
         }
         return false;
+    }
+
+    private static boolean numericValueMatchesBounds(Object value, Map<String, Object> schema) {
+        if (!(value instanceof Number number)) {
+            return true;
+        }
+        double numericValue = number.doubleValue();
+        NumericBoundary lower = lowerBound(schema);
+        if (lower != null && !lower.acceptsLower(numericValue)) {
+            return false;
+        }
+        NumericBoundary upper = upperBound(schema);
+        return upper == null || upper.acceptsUpper(numericValue);
+    }
+
+    private static NumericBoundary lowerBound(Map<String, Object> schema) {
+        NumericBoundary minimum = numericBoundary(schema.get("minimum"), false);
+        NumericBoundary exclusiveMinimum = numericBoundary(schema.get("exclusiveMinimum"), true);
+        if (minimum == null) {
+            return exclusiveMinimum;
+        }
+        if (exclusiveMinimum == null) {
+            return minimum;
+        }
+        int comparison = Double.compare(minimum.value(), exclusiveMinimum.value());
+        if (comparison > 0) {
+            return minimum;
+        }
+        if (comparison < 0) {
+            return exclusiveMinimum;
+        }
+        return exclusiveMinimum.exclusive() ? exclusiveMinimum : minimum;
+    }
+
+    private static NumericBoundary upperBound(Map<String, Object> schema) {
+        NumericBoundary maximum = numericBoundary(schema.get("maximum"), false);
+        NumericBoundary exclusiveMaximum = numericBoundary(schema.get("exclusiveMaximum"), true);
+        if (maximum == null) {
+            return exclusiveMaximum;
+        }
+        if (exclusiveMaximum == null) {
+            return maximum;
+        }
+        int comparison = Double.compare(maximum.value(), exclusiveMaximum.value());
+        if (comparison < 0) {
+            return maximum;
+        }
+        if (comparison > 0) {
+            return exclusiveMaximum;
+        }
+        return exclusiveMaximum.exclusive() ? exclusiveMaximum : maximum;
+    }
+
+    private static NumericBoundary numericBoundary(Object value, boolean exclusive) {
+        if (!(value instanceof Number number)) {
+            return null;
+        }
+        double numericValue = number.doubleValue();
+        return Double.isFinite(numericValue) ? new NumericBoundary(numericValue, exclusive) : null;
+    }
+
+    private record NumericBoundary(double value, boolean exclusive) {
+
+        private boolean acceptsLower(double candidate) {
+            return exclusive ? candidate > value : candidate >= value;
+        }
+
+        private boolean acceptsUpper(double candidate) {
+            return exclusive ? candidate < value : candidate <= value;
+        }
     }
 
     private static void validateDataEdgeBindingConsistency(GraphDraft draft,

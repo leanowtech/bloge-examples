@@ -26,6 +26,30 @@ class ResourceDesignContractValidatorTest {
     }
 
     @Test
+    void acceptsNumericBoundsInResourceContractSchemas() {
+        ResourceDesignContract contract = new ResourceDesignContract(
+                "contract:orders",
+                "order-service.listOrders",
+                "Order list",
+                "Lists orders.",
+                List.of("order"),
+                SchemaEnvelope.object(Map.of(
+                        "minScore", Map.of("type", "integer", "minimum", 0, "maximum", 850)
+                ), List.of("minScore")),
+                SchemaEnvelope.object(Map.of(
+                        "score", Map.of("type", "integer", "minimum", 0, "maximum", 850)
+                ), List.of()),
+                Map.of(),
+                "ACTIVE"
+        );
+
+        VisualValidationResult result = validator.validate(contract);
+
+        assertThat(result.valid()).isTrue();
+        assertThat(result.diagnostics()).isEmpty();
+    }
+
+    @Test
     void rejectsArraySchemaWithoutItems() {
         ResourceDesignContract contract = new ResourceDesignContract(
                 "contract:orders",
@@ -63,7 +87,7 @@ class ResourceDesignContractValidatorTest {
                         "userId", Map.of("$ref", "#/$defs/UserId")
                 ), List.of()),
                 SchemaEnvelope.object(Map.of(
-                        "score", Map.of("type", "integer", "minimum", 0),
+                        "customerCode", Map.of("type", "string", "pattern", "^[A-Z]+$"),
                         "decision", Map.of("oneOf", List.of(
                                 Map.of("type", "string"),
                                 Map.of("type", "integer")
@@ -87,7 +111,7 @@ class ResourceDesignContractValidatorTest {
                 .extracting("target")
                 .contains(
                         "/requestSchema/schema/properties/userId/$ref",
-                        "/responseSchema/schema/properties/score/minimum",
+                        "/responseSchema/schema/properties/customerCode/pattern",
                         "/responseSchema/schema/properties/decision/oneOf"
                 );
     }

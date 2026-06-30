@@ -8,6 +8,7 @@ import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
 
 /**
@@ -45,12 +46,7 @@ public final class VisualSchemaValidator {
             "else"
     );
     private static final Set<String> UNSUPPORTED_CONSTRAINT_KEYWORDS = Set.of(
-            "const",
             "pattern",
-            "minimum",
-            "maximum",
-            "exclusiveMinimum",
-            "exclusiveMaximum",
             "multipleOf",
             "minLength",
             "maxLength",
@@ -128,6 +124,8 @@ public final class VisualSchemaValidator {
             return;
         }
         validateStandardEnum(schema, kind, path, diagnostics);
+        validateConstValue(schema, kind, path, diagnostics);
+        validateNumericBounds(schema, kind, path, diagnostics);
         validateDefaultValue(schema, kind, path, diagnostics);
         if ("object".equals(kind)) {
             Map<String, Object> properties = objectProperties(schema, path, diagnostics);
@@ -218,6 +216,11 @@ public final class VisualSchemaValidator {
         if (kind.isBlank() || "any".equals(kind) || "opaque".equals(kind)) {
             return;
         }
+        if (schema.containsKey("const") && !Objects.equals(schema.get("const"), value)) {
+            diagnostics.add(VisualDiagnostic.error("visual.schema.defaultConstMismatch",
+                    "Schema default must equal const value '%s'.".formatted(schema.get("const")),
+                    path));
+        }
         if ("object".equals(kind)) {
             if (!(value instanceof Map<?, ?> rawMap)) {
                 diagnostics.add(VisualDiagnostic.error("visual.schema.defaultTypeMismatch",
@@ -290,6 +293,11 @@ public final class VisualSchemaValidator {
                     "Schema default must match type/kind '%s'.".formatted(kind),
                     path));
         }
+        if (numericKind(kind) && !numericValueMatchesBounds(value, schema)) {
+            diagnostics.add(VisualDiagnostic.error("visual.schema.defaultConstraintMismatch",
+                    "Schema default must satisfy numeric bounds.",
+                    path));
+        }
     }
 
     private static Map<String, Object> propertiesWithoutDiagnostics(Map<String, Object> schema) {
@@ -326,6 +334,9 @@ public final class VisualSchemaValidator {
         }
         if (raw == null && schema.containsKey("items")) {
             return "array";
+        }
+        if (raw == null && schema.containsKey("const")) {
+            return schemaKindForValue(schema.get("const"));
         }
         return raw == null ? "" : String.valueOf(raw);
     }
@@ -389,6 +400,81 @@ public final class VisualSchemaValidator {
                 }
             }
         }
+        if (numericKind(kind)) {
+            for (int i = 0; i < values.size(); i++) {
+                if (enumValueMatchesKind(values.get(i), kind)
+                        && !numericValueMatchesBounds(values.get(i), schema)) {
+                    diagnostics.add(VisualDiagnostic.error("visual.schema.enumConstraintMismatch",
+                            "Enum value at index %d must satisfy numeric bounds.".formatted(i),
+                            path + "/enum/" + i));
+                }
+            }
+        }
+    }
+
+    private static void validateConstValue(Map<String, Object> schema,
+                                           String kind,
+                                           String path,
+                                           List<VisualDiagnostic> diagnostics) {
+        if (!schema.containsKey("const")) {
+            return;
+        }
+        Object constValue = schema.get("const");
+        if (!constValueMatchesKind(constValue, kind)) {
+            diagnostics.add(VisualDiagnostic.error("visual.schema.constTypeMismatch",
+                    "Const value must match schema type/kind '%s'.".formatted(kind),
+                    path + "/const"));
+        }
+        Object rawEnum = schema.get("enum");
+        if (rawEnum instanceof List<?> values && !values.contains(constValue)) {
+            diagnostics.add(VisualDiagnostic.error("visual.schema.constEnumMismatch",
+                    "Const value must be one of enum %s.".formatted(values),
+                    path + "/const"));
+        }
+        if ("enum".equals(kind)) {
+            Object rawValues = schema.get("values");
+            if (rawValues instanceof List<?> values && !values.contains(constValue)) {
+                diagnostics.add(VisualDiagnostic.error("visual.schema.constEnumMismatch",
+                        "Const value must be one of enum values %s.".formatted(values),
+                        path + "/const"));
+            }
+        }
+        if (numericKind(kind) && constValueMatchesKind(constValue, kind)
+                && !numericValueMatchesBounds(constValue, schema)) {
+            diagnostics.add(VisualDiagnostic.error("visual.schema.constConstraintMismatch",
+                    "Const value must satisfy numeric bounds.",
+                    path + "/const"));
+        }
+    }
+
+    private static void validateNumericBounds(Map<String, Object> schema,
+                                              String kind,
+                                              String path,
+                                              List<VisualDiagnostic> diagnostics) {
+        if (!hasNumericBounds(schema)) {
+            return;
+        }
+        boolean validNumericKind = numericKind(kind);
+        if (!validNumericKind) {
+            diagnostics.add(VisualDiagnostic.error("visual.schema.numericConstraintTypeMismatch",
+                    "Numeric bounds require schema type/kind integer, number, or decimal.",
+                    path));
+        }
+        validateNumericBoundary(schema, "minimum", path, diagnostics);
+        validateNumericBoundary(schema, "maximum", path, diagnostics);
+        validateNumericBoundary(schema, "exclusiveMinimum", path, diagnostics);
+        validateNumericBoundary(schema, "exclusiveMaximum", path, diagnostics);
+        if (!validNumericKind || !numericBoundariesValid(schema)) {
+            return;
+        }
+        NumericBoundary lower = lowerBound(schema);
+        NumericBoundary upper = upperBound(schema);
+        if (lower != null && upper != null && boundsContradict(lower, upper)) {
+            diagnostics.add(VisualDiagnostic.error("visual.schema.numericBoundsInvalid",
+                    "Numeric lower bound %s is incompatible with upper bound %s."
+                            .formatted(lower.lowerLabel(), upper.upperLabel()),
+                    path));
+        }
     }
 
     private static void validateCustomEnumValues(Map<String, Object> schema,
@@ -418,10 +504,124 @@ public final class VisualSchemaValidator {
         }
     }
 
+    private static boolean hasNumericBounds(Map<String, Object> schema) {
+        return schema.containsKey("minimum")
+                || schema.containsKey("maximum")
+                || schema.containsKey("exclusiveMinimum")
+                || schema.containsKey("exclusiveMaximum");
+    }
+
+    private static void validateNumericBoundary(Map<String, Object> schema,
+                                                String keyword,
+                                                String path,
+                                                List<VisualDiagnostic> diagnostics) {
+        if (!schema.containsKey(keyword)) {
+            return;
+        }
+        Object raw = schema.get(keyword);
+        if (!(raw instanceof Number number) || !Double.isFinite(number.doubleValue())) {
+            diagnostics.add(VisualDiagnostic.error("visual.schema.numericConstraintInvalid",
+                    "Numeric constraint '%s' must be a finite number.".formatted(keyword),
+                    path + "/" + keyword));
+        }
+    }
+
+    private static boolean numericBoundariesValid(Map<String, Object> schema) {
+        return (!schema.containsKey("minimum") || numericBoundaryValue(schema.get("minimum")).isPresent())
+                && (!schema.containsKey("maximum") || numericBoundaryValue(schema.get("maximum")).isPresent())
+                && (!schema.containsKey("exclusiveMinimum")
+                || numericBoundaryValue(schema.get("exclusiveMinimum")).isPresent())
+                && (!schema.containsKey("exclusiveMaximum")
+                || numericBoundaryValue(schema.get("exclusiveMaximum")).isPresent());
+    }
+
+    private static boolean numericValueMatchesBounds(Object value, Map<String, Object> schema) {
+        if (!(value instanceof Number number)) {
+            return true;
+        }
+        double numericValue = number.doubleValue();
+        NumericBoundary lower = lowerBound(schema);
+        if (lower != null && !lower.acceptsLower(numericValue)) {
+            return false;
+        }
+        NumericBoundary upper = upperBound(schema);
+        return upper == null || upper.acceptsUpper(numericValue);
+    }
+
+    private static NumericBoundary lowerBound(Map<String, Object> schema) {
+        NumericBoundary minimum = numericBoundary(schema.get("minimum"), false);
+        NumericBoundary exclusiveMinimum = numericBoundary(schema.get("exclusiveMinimum"), true);
+        if (minimum == null) {
+            return exclusiveMinimum;
+        }
+        if (exclusiveMinimum == null) {
+            return minimum;
+        }
+        int comparison = Double.compare(minimum.value(), exclusiveMinimum.value());
+        if (comparison > 0) {
+            return minimum;
+        }
+        if (comparison < 0) {
+            return exclusiveMinimum;
+        }
+        return exclusiveMinimum.exclusive() ? exclusiveMinimum : minimum;
+    }
+
+    private static NumericBoundary upperBound(Map<String, Object> schema) {
+        NumericBoundary maximum = numericBoundary(schema.get("maximum"), false);
+        NumericBoundary exclusiveMaximum = numericBoundary(schema.get("exclusiveMaximum"), true);
+        if (maximum == null) {
+            return exclusiveMaximum;
+        }
+        if (exclusiveMaximum == null) {
+            return maximum;
+        }
+        int comparison = Double.compare(maximum.value(), exclusiveMaximum.value());
+        if (comparison < 0) {
+            return maximum;
+        }
+        if (comparison > 0) {
+            return exclusiveMaximum;
+        }
+        return exclusiveMaximum.exclusive() ? exclusiveMaximum : maximum;
+    }
+
+    private static NumericBoundary numericBoundary(Object value, boolean exclusive) {
+        return numericBoundaryValue(value)
+                .map(boundaryValue -> new NumericBoundary(boundaryValue, exclusive))
+                .orElse(null);
+    }
+
+    private static java.util.Optional<Double> numericBoundaryValue(Object value) {
+        if (!(value instanceof Number number)) {
+            return java.util.Optional.empty();
+        }
+        double numericValue = number.doubleValue();
+        return Double.isFinite(numericValue) ? java.util.Optional.of(numericValue) : java.util.Optional.empty();
+    }
+
+    private static boolean boundsContradict(NumericBoundary lower, NumericBoundary upper) {
+        int comparison = Double.compare(lower.value(), upper.value());
+        return comparison > 0 || comparison == 0 && (lower.exclusive() || upper.exclusive());
+    }
+
+    private static boolean numericKind(String kind) {
+        return "integer".equals(kind) || "number".equals(kind) || "decimal".equals(kind);
+    }
+
     private static boolean valueConstrainedKind(String kind) {
         return switch (kind) {
             case "string", "duration", "datetime", "integer", "number", "decimal", "boolean", "null" -> true;
             default -> false;
+        };
+    }
+
+    private static boolean constValueMatchesKind(Object value, String kind) {
+        return switch (kind) {
+            case "object" -> value instanceof Map<?, ?>;
+            case "array" -> value instanceof List<?>;
+            case "enum" -> true;
+            default -> !valueConstrainedKind(kind) || enumValueMatchesKind(value, kind);
         };
     }
 
@@ -445,6 +645,57 @@ public final class VisualSchemaValidator {
             return Double.isFinite(doubleValue) && Math.rint(doubleValue) == doubleValue;
         }
         return false;
+    }
+
+    private static String schemaKindForValue(Object value) {
+        if (value == null) {
+            return "null";
+        }
+        if (value instanceof String) {
+            return "string";
+        }
+        if (value instanceof Boolean) {
+            return "boolean";
+        }
+        if (isIntegerValue(value)) {
+            return "integer";
+        }
+        if (value instanceof Number) {
+            return "number";
+        }
+        if (value instanceof Map<?, ?>) {
+            return "object";
+        }
+        if (value instanceof List<?>) {
+            return "array";
+        }
+        return "";
+    }
+
+    private record NumericBoundary(double value, boolean exclusive) {
+
+        private boolean acceptsLower(double candidate) {
+            return exclusive ? candidate > value : candidate >= value;
+        }
+
+        private boolean acceptsUpper(double candidate) {
+            return exclusive ? candidate < value : candidate <= value;
+        }
+
+        private String lowerLabel() {
+            return exclusive ? "value > " + trimNumber(value) : "value >= " + trimNumber(value);
+        }
+
+        private String upperLabel() {
+            return exclusive ? "value < " + trimNumber(value) : "value <= " + trimNumber(value);
+        }
+
+        private static String trimNumber(double value) {
+            if (Math.rint(value) == value) {
+                return String.valueOf((long) value);
+            }
+            return String.valueOf(value);
+        }
     }
 
     private static List<String> requiredNames(Map<String, Object> schema,

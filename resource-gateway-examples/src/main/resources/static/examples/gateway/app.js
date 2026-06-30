@@ -236,12 +236,7 @@ const SUPPORTED_SCHEMA_KINDS = new Set([
 const UNSUPPORTED_SCHEMA_REFERENCE_KEYWORDS = ['$ref', '$dynamicRef'];
 const UNSUPPORTED_SCHEMA_COMPOSITION_KEYWORDS = ['oneOf', 'anyOf', 'allOf', 'not', 'if', 'then', 'else'];
 const UNSUPPORTED_SCHEMA_CONSTRAINT_KEYWORDS = [
-  'const',
   'pattern',
-  'minimum',
-  'maximum',
-  'exclusiveMinimum',
-  'exclusiveMaximum',
   'multipleOf',
   'minLength',
   'maxLength',
@@ -4787,13 +4782,13 @@ function canvasTargetHandlesForNode(node) {
 
 function schemaType(schema) {
   const type = rawSchemaType(schema);
-  if (type === 'array') {
-    const itemType = schemaType(schema?.items);
-    return itemType ? `array<${itemType}>` : 'array';
-  }
   const values = schemaEnumValues(schema);
   if (values.length) {
     return `enum<${values.map(String).join('|')}>`;
+  }
+  if (type === 'array') {
+    const itemType = schemaType(schema?.items);
+    return itemType ? `array<${itemType}>` : 'array';
   }
   return type ? String(type) : '';
 }
@@ -5092,6 +5087,8 @@ function validateSchemaStructure(schema, path, diagnostics) {
     return;
   }
   validateSchemaEnum(schema, kind, path, diagnostics);
+  validateSchemaConst(schema, kind, path, diagnostics);
+  validateSchemaNumericBounds(schema, kind, path, diagnostics);
   if (kind === 'object') {
     const properties = validatedSchemaObjectProperties(schema, path, diagnostics);
     validateSchemaAdditionalProperties(schema, path, diagnostics);
@@ -5281,6 +5278,74 @@ function validateCustomSchemaEnumValues(schema, path, diagnostics) {
     return;
   }
   validateSchemaEnumValues(values, `${path}/values`, diagnostics);
+}
+
+function validateSchemaConst(schema, kind, path, diagnostics) {
+  if (!Object.prototype.hasOwnProperty.call(schema || {}, 'const')) {
+    return;
+  }
+  const constValue = schema.const;
+  if (!schemaValueMatchesType(constValue, kind)) {
+    diagnostics.push(graphInputSchemaDiagnostic(
+      'visual.schema.constTypeMismatch',
+      `Const value must match schema type/kind '${kind}'.`,
+      `${path}/const`
+    ));
+  }
+  if (Array.isArray(schema?.enum) && !schema.enum.some((value) => schemaValuesEqual(value, constValue))) {
+    diagnostics.push(graphInputSchemaDiagnostic(
+      'visual.schema.constEnumMismatch',
+      `Const value must be one of enum ${valueDomainLabel(schema.enum)}.`,
+      `${path}/const`
+    ));
+  }
+  if (kind === 'enum' && Array.isArray(schema?.values)
+      && !schema.values.some((value) => schemaValuesEqual(value, constValue))) {
+    diagnostics.push(graphInputSchemaDiagnostic(
+      'visual.schema.constEnumMismatch',
+      `Const value must be one of enum values ${valueDomainLabel(schema.values)}.`,
+      `${path}/const`
+    ));
+  }
+}
+
+function validateSchemaNumericBounds(schema, kind, path, diagnostics) {
+  if (!schemaHasNumericBounds(schema)) {
+    return;
+  }
+  const validNumericKind = numericType(kind);
+  if (!validNumericKind) {
+    diagnostics.push(graphInputSchemaDiagnostic(
+      'visual.schema.numericConstraintTypeMismatch',
+      'Numeric bounds require schema type/kind integer, number, or decimal.',
+      path
+    ));
+  }
+  for (const keyword of ['minimum', 'maximum', 'exclusiveMinimum', 'exclusiveMaximum']) {
+    if (!Object.prototype.hasOwnProperty.call(schema || {}, keyword)) {
+      continue;
+    }
+    const value = schema[keyword];
+    if (typeof value !== 'number' || !Number.isFinite(value)) {
+      diagnostics.push(graphInputSchemaDiagnostic(
+        'visual.schema.numericConstraintInvalid',
+        `Numeric constraint '${keyword}' must be a finite number.`,
+        `${path}/${keyword}`
+      ));
+    }
+  }
+  if (!validNumericKind || !numericBoundariesValid(schema)) {
+    return;
+  }
+  const lower = schemaLowerBound(schema);
+  const upper = schemaUpperBound(schema);
+  if (lower && upper && numericBoundsContradict(lower, upper)) {
+    diagnostics.push(graphInputSchemaDiagnostic(
+      'visual.schema.numericBoundsInvalid',
+      `Numeric lower bound ${numericLowerLabel(lower)} is incompatible with upper bound ${numericUpperLabel(upper)}.`,
+      path
+    ));
+  }
 }
 
 function validateSchemaEnumValues(values, path, diagnostics) {
@@ -5569,7 +5634,7 @@ function schemaCompatibilityIssue(sourceSchema, targetSchema, path = '') {
       return reasonAt(path, `target enum ${valueDomainLabel(targetEnumValues)} requires a finite source enum domain, but source is ${schemaType(sourceSchema)}`);
     }
     const outside = sourceEnumValues.filter((value) =>
-      !targetEnumValues.some((targetValue) => Object.is(targetValue, value))
+      !targetEnumValues.some((targetValue) => schemaValuesEqual(targetValue, value))
     );
     return outside.length
       ? reasonAt(path, `source enum value(s) ${valueDomainLabel(outside)} are outside target enum ${valueDomainLabel(targetEnumValues)}`)
@@ -5580,14 +5645,41 @@ function schemaCompatibilityIssue(sourceSchema, targetSchema, path = '') {
     if (!sourceEnumValues.length) {
       return '';
     }
-    const incompatible = sourceEnumValues.filter((value) => !schemaValueMatchesType(value, targetType));
+    const incompatible = sourceEnumValues.filter((value) => !schemaValueMatchesSchema(value, targetSchema));
     return incompatible.length
-      ? reasonAt(path, `source enum value(s) ${valueDomainLabel(incompatible)} do not match target type ${targetType}`)
+      ? reasonAt(path, `source enum value(s) ${valueDomainLabel(incompatible)} do not match target schema ${schemaType(targetSchema)}`)
       : '';
   }
   return sourceType === targetType || (numericType(sourceType) && numericType(targetType))
-    ? ''
+    ? numericBoundsCompatibilityIssue(sourceSchema, targetSchema, path)
     : reasonAt(path, `source type ${schemaType(sourceSchema)} cannot feed target type ${schemaType(targetSchema)}`);
+}
+
+function numericBoundsCompatibilityIssue(sourceSchema, targetSchema, path = '') {
+  if (!numericType(rawSchemaType(sourceSchema)) || !numericType(rawSchemaType(targetSchema))) {
+    return '';
+  }
+  const targetLower = schemaLowerBound(targetSchema);
+  if (targetLower) {
+    const sourceLower = schemaLowerBound(sourceSchema);
+    if (!sourceLower) {
+      return reasonAt(path, `target requires ${numericLowerLabel(targetLower)} but source has no lower bound`);
+    }
+    if (!lowerBoundAtLeast(sourceLower, targetLower)) {
+      return reasonAt(path, `source lower bound ${numericLowerLabel(sourceLower)} is weaker than target lower bound ${numericLowerLabel(targetLower)}`);
+    }
+  }
+  const targetUpper = schemaUpperBound(targetSchema);
+  if (targetUpper) {
+    const sourceUpper = schemaUpperBound(sourceSchema);
+    if (!sourceUpper) {
+      return reasonAt(path, `target requires ${numericUpperLabel(targetUpper)} but source has no upper bound`);
+    }
+    if (!upperBoundAtMost(sourceUpper, targetUpper)) {
+      return reasonAt(path, `source upper bound ${numericUpperLabel(sourceUpper)} is weaker than target upper bound ${numericUpperLabel(targetUpper)}`);
+    }
+  }
+  return '';
 }
 
 function objectSchemasCompatible(sourceSchema, targetSchema) {
@@ -5665,13 +5757,49 @@ function valueDomainLabel(values) {
 }
 
 function schemaEnumValues(schema) {
+  if (Object.prototype.hasOwnProperty.call(schema || {}, 'const')) {
+    return [schema.const];
+  }
   if (Array.isArray(schema?.enum)) {
-    return [...new Set(schema.enum)];
+    return uniqueSchemaValues(schema.enum);
   }
   if (rawSchemaType(schema) === 'enum' && Array.isArray(schema?.values)) {
-    return [...new Set(schema.values)];
+    return uniqueSchemaValues(schema.values);
   }
   return [];
+}
+
+function uniqueSchemaValues(values) {
+  const seen = new Set();
+  const unique = [];
+  for (const value of values) {
+    const key = schemaValueKey(value);
+    if (!seen.has(key)) {
+      seen.add(key);
+      unique.push(value);
+    }
+  }
+  return unique;
+}
+
+function schemaValuesEqual(left, right) {
+  return schemaValueKey(left) === schemaValueKey(right);
+}
+
+function schemaValueKey(value) {
+  return JSON.stringify(value);
+}
+
+function schemaValueMatchesSchema(value, schema) {
+  const type = rawSchemaType(schema);
+  if (!schemaValueMatchesType(value, type)) {
+    return false;
+  }
+  const values = schemaEnumValues(schema);
+  if (values.length && !values.some((allowed) => schemaValuesEqual(allowed, value))) {
+    return false;
+  }
+  return numericValueMatchesBounds(value, schema);
 }
 
 function schemaValueMatchesType(value, type) {
@@ -5684,7 +5812,7 @@ function schemaValueMatchesType(value, type) {
   if (type === 'number' || type === 'decimal') {
     return typeof value === 'number';
   }
-  if (type === 'string') {
+  if (type === 'string' || type === 'duration' || type === 'datetime') {
     return typeof value === 'string';
   }
   if (type === 'boolean') {
@@ -5704,11 +5832,115 @@ function schemaValueMatchesType(value, type) {
 
 function rawSchemaType(schema) {
   if (!schema) return '';
-  return schema.kind || schema.type || (schema.properties ? 'object' : (schema.items ? 'array' : ''));
+  return schema.kind
+    || schema.type
+    || (schema.properties ? 'object' : '')
+    || (schema.items ? 'array' : '')
+    || (Object.prototype.hasOwnProperty.call(schema, 'const') ? schemaTypeForValue(schema.const) : '');
+}
+
+function schemaTypeForValue(value) {
+  if (value === null) return 'null';
+  if (typeof value === 'string') return 'string';
+  if (typeof value === 'boolean') return 'boolean';
+  if (typeof value === 'number') return Number.isInteger(value) ? 'integer' : 'number';
+  if (Array.isArray(value)) return 'array';
+  if (value && typeof value === 'object') return 'object';
+  return '';
 }
 
 function numericType(type) {
   return type === 'number' || type === 'integer' || type === 'decimal';
+}
+
+function schemaHasNumericBounds(schema) {
+  return Object.prototype.hasOwnProperty.call(schema || {}, 'minimum')
+    || Object.prototype.hasOwnProperty.call(schema || {}, 'maximum')
+    || Object.prototype.hasOwnProperty.call(schema || {}, 'exclusiveMinimum')
+    || Object.prototype.hasOwnProperty.call(schema || {}, 'exclusiveMaximum');
+}
+
+function numericBoundariesValid(schema) {
+  return (!Object.prototype.hasOwnProperty.call(schema || {}, 'minimum') || numericBoundaryValue(schema.minimum) !== null)
+    && (!Object.prototype.hasOwnProperty.call(schema || {}, 'maximum') || numericBoundaryValue(schema.maximum) !== null)
+    && (!Object.prototype.hasOwnProperty.call(schema || {}, 'exclusiveMinimum') || numericBoundaryValue(schema.exclusiveMinimum) !== null)
+    && (!Object.prototype.hasOwnProperty.call(schema || {}, 'exclusiveMaximum') || numericBoundaryValue(schema.exclusiveMaximum) !== null);
+}
+
+function numericValueMatchesBounds(value, schema) {
+  if (typeof value !== 'number') {
+    return true;
+  }
+  const lower = schemaLowerBound(schema);
+  if (lower && !numericLowerAccepts(lower, value)) {
+    return false;
+  }
+  const upper = schemaUpperBound(schema);
+  return !upper || numericUpperAccepts(upper, value);
+}
+
+function schemaLowerBound(schema) {
+  const minimum = numericBoundary(schema?.minimum, false);
+  const exclusiveMinimum = numericBoundary(schema?.exclusiveMinimum, true);
+  if (!minimum) return exclusiveMinimum;
+  if (!exclusiveMinimum) return minimum;
+  if (minimum.value > exclusiveMinimum.value) return minimum;
+  if (minimum.value < exclusiveMinimum.value) return exclusiveMinimum;
+  return exclusiveMinimum.exclusive ? exclusiveMinimum : minimum;
+}
+
+function schemaUpperBound(schema) {
+  const maximum = numericBoundary(schema?.maximum, false);
+  const exclusiveMaximum = numericBoundary(schema?.exclusiveMaximum, true);
+  if (!maximum) return exclusiveMaximum;
+  if (!exclusiveMaximum) return maximum;
+  if (maximum.value < exclusiveMaximum.value) return maximum;
+  if (maximum.value > exclusiveMaximum.value) return exclusiveMaximum;
+  return exclusiveMaximum.exclusive ? exclusiveMaximum : maximum;
+}
+
+function numericBoundary(value, exclusive) {
+  const boundaryValue = numericBoundaryValue(value);
+  return boundaryValue === null ? null : { value: boundaryValue, exclusive };
+}
+
+function numericBoundaryValue(value) {
+  return typeof value === 'number' && Number.isFinite(value) ? value : null;
+}
+
+function lowerBoundAtLeast(source, target) {
+  return source.value > target.value
+    || (source.value === target.value && (source.exclusive || !target.exclusive));
+}
+
+function upperBoundAtMost(source, target) {
+  return source.value < target.value
+    || (source.value === target.value && (source.exclusive || !target.exclusive));
+}
+
+function numericBoundsContradict(lower, upper) {
+  return lower.value > upper.value
+    || (lower.value === upper.value && (lower.exclusive || upper.exclusive));
+}
+
+function numericLowerAccepts(boundary, candidate) {
+  return boundary.exclusive ? candidate > boundary.value : candidate >= boundary.value;
+}
+
+function numericUpperAccepts(boundary, candidate) {
+  return boundary.exclusive ? candidate < boundary.value : candidate <= boundary.value;
+}
+
+function numericLowerLabel(boundary) {
+  return boundary.exclusive ? `value > ${trimNumericLabel(boundary.value)}` : `value >= ${trimNumericLabel(boundary.value)}`;
+}
+
+function numericUpperLabel(boundary) {
+  return boundary.exclusive ? `value < ${trimNumericLabel(boundary.value)}` : `value <= ${trimNumericLabel(boundary.value)}`;
+}
+
+function trimNumericLabel(value) {
+  return Number.isInteger(value) ? String(value) : String(value);
 }
 
 function wouldCreateCycle(sourceId, targetId) {

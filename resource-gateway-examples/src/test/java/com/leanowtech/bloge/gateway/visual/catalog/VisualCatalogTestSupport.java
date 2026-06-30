@@ -573,6 +573,158 @@ public final class VisualCatalogTestSupport {
         );
     }
 
+    public static OperatorLibrary constCompatibilityLibrary(String sourceValue, String targetValue) {
+        Map<String, Object> producerOutputProperties = new LinkedHashMap<>();
+        producerOutputProperties.put("decision", Map.of("const", sourceValue));
+
+        OperatorDefinition producer = new OperatorDefinition(
+                "bloge.visualOperator.v1",
+                "risk:decisionProducer",
+                "1.0.0",
+                new OperatorDefinition.Display("Decision producer",
+                        "Produces a fixed business decision.",
+                        List.of("risk", "const")),
+                new OperatorDefinition.Source("user-library", "", "", "", false),
+                new OperatorDefinition.Ports(
+                        List.of(),
+                        List.of(new OperatorDefinition.Port("output",
+                                SchemaEnvelope.object(producerOutputProperties, List.of()),
+                                true,
+                                "Decision output."))
+                ),
+                SchemaEnvelope.opaque(),
+                OperatorDefinition.Capabilities.pure(),
+                new OperatorDefinition.Lowering("native", "riskDecisionProducer", Map.of()),
+                List.of()
+        );
+
+        Map<String, Object> consumerInputProperties = new LinkedHashMap<>();
+        consumerInputProperties.put("decision", Map.of(
+                "type", "string",
+                "const", targetValue
+        ));
+        Map<String, Object> consumerOutputProperties = new LinkedHashMap<>();
+        consumerOutputProperties.put("accepted", Map.of("type", "boolean"));
+
+        OperatorDefinition consumer = new OperatorDefinition(
+                "bloge.visualOperator.v1",
+                "risk:decisionConsumer",
+                "1.0.0",
+                new OperatorDefinition.Display("Decision consumer",
+                        "Consumes a fixed business decision.",
+                        List.of("risk", "const")),
+                new OperatorDefinition.Source("user-library", "", "", "", true),
+                new OperatorDefinition.Ports(
+                        List.of(new OperatorDefinition.Port("inputs",
+                                SchemaEnvelope.object(consumerInputProperties, List.of("decision")),
+                                true,
+                                "Decision input.")),
+                        List.of(new OperatorDefinition.Port("output",
+                                SchemaEnvelope.object(consumerOutputProperties, List.of()),
+                                true,
+                                "Consumer output."))
+                ),
+                SchemaEnvelope.opaque(),
+                OperatorDefinition.Capabilities.pure(),
+                new OperatorDefinition.Lowering("transform", "transform", Map.of(
+                        "assignments", Map.of(
+                                "accepted", "true"
+                        )
+                )),
+                List.of()
+        );
+
+        return new OperatorLibrary(
+                "bloge.visualOperatorLibrary.v1",
+                "risk-const-compatibility",
+                "Const compatibility operators",
+                "1.0.0",
+                "risk-team",
+                "ACTIVE",
+                List.of(producer, consumer)
+        );
+    }
+
+    public static OperatorLibrary numericBoundsCompatibilityLibrary(int sourceMinimum,
+                                                                    int sourceMaximum,
+                                                                    int targetMinimum,
+                                                                    int targetMaximum) {
+        Map<String, Object> producerOutputProperties = new LinkedHashMap<>();
+        producerOutputProperties.put("score", Map.of(
+                "type", "integer",
+                "minimum", sourceMinimum,
+                "maximum", sourceMaximum
+        ));
+
+        OperatorDefinition producer = new OperatorDefinition(
+                "bloge.visualOperator.v1",
+                "risk:scoreProducer",
+                "1.0.0",
+                new OperatorDefinition.Display("Score producer",
+                        "Produces a bounded risk score.",
+                        List.of("risk", "numeric")),
+                new OperatorDefinition.Source("user-library", "", "", "", false),
+                new OperatorDefinition.Ports(
+                        List.of(),
+                        List.of(new OperatorDefinition.Port("output",
+                                SchemaEnvelope.object(producerOutputProperties, List.of()),
+                                true,
+                                "Score output."))
+                ),
+                SchemaEnvelope.opaque(),
+                OperatorDefinition.Capabilities.pure(),
+                new OperatorDefinition.Lowering("native", "riskScoreProducer", Map.of()),
+                List.of()
+        );
+
+        Map<String, Object> consumerInputProperties = new LinkedHashMap<>();
+        consumerInputProperties.put("score", Map.of(
+                "type", "integer",
+                "minimum", targetMinimum,
+                "maximum", targetMaximum
+        ));
+        Map<String, Object> consumerOutputProperties = new LinkedHashMap<>();
+        consumerOutputProperties.put("accepted", Map.of("type", "boolean"));
+
+        OperatorDefinition consumer = new OperatorDefinition(
+                "bloge.visualOperator.v1",
+                "risk:scoreConsumer",
+                "1.0.0",
+                new OperatorDefinition.Display("Score consumer",
+                        "Consumes a bounded risk score.",
+                        List.of("risk", "numeric")),
+                new OperatorDefinition.Source("user-library", "", "", "", true),
+                new OperatorDefinition.Ports(
+                        List.of(new OperatorDefinition.Port("inputs",
+                                SchemaEnvelope.object(consumerInputProperties, List.of("score")),
+                                true,
+                                "Score input.")),
+                        List.of(new OperatorDefinition.Port("output",
+                                SchemaEnvelope.object(consumerOutputProperties, List.of()),
+                                true,
+                                "Consumer output."))
+                ),
+                SchemaEnvelope.opaque(),
+                OperatorDefinition.Capabilities.pure(),
+                new OperatorDefinition.Lowering("transform", "transform", Map.of(
+                        "assignments", Map.of(
+                                "accepted", "true"
+                        )
+                )),
+                List.of()
+        );
+
+        return new OperatorLibrary(
+                "bloge.visualOperatorLibrary.v1",
+                "risk-numeric-bounds-compatibility",
+                "Numeric bounds compatibility operators",
+                "1.0.0",
+                "risk-team",
+                "ACTIVE",
+                List.of(producer, consumer)
+        );
+    }
+
     public static OperatorDefinition applicantObjectProducerOperator(Map<String, Object> applicantProperties,
                                                                      List<String> required) {
         Map<String, Object> outputProperties = new LinkedHashMap<>();
