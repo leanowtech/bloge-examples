@@ -55,9 +55,6 @@ public final class VisualSchemaValidator {
             "else"
     );
     private static final Set<String> UNSUPPORTED_CONSTRAINT_KEYWORDS = Set.of(
-            "contains",
-            "minContains",
-            "maxContains",
             "prefixItems",
             "dependentSchemas",
             "unevaluatedProperties",
@@ -140,6 +137,7 @@ public final class VisualSchemaValidator {
 	        validateStringFormat(schema, kind, path, diagnostics);
 	        validateArrayItemBounds(schema, kind, path, diagnostics);
 	        validateArrayUniqueItems(schema, kind, path, diagnostics);
+	        validateArrayContains(schema, kind, path, diagnostics);
 	        validateObjectPropertyBounds(schema, kind, path, diagnostics);
 	        validateObjectPatternProperties(schema, kind, path, diagnostics);
 	        validateObjectPropertyNames(schema, kind, path, diagnostics);
@@ -319,6 +317,11 @@ public final class VisualSchemaValidator {
 	                        "Schema default must satisfy array uniqueItems constraint.",
 	                        path));
 	            }
+	            if (!arrayValueMatchesContains(list, schema)) {
+	                diagnostics.add(VisualDiagnostic.error("visual.schema.defaultConstraintMismatch",
+	                        "Schema default must satisfy array contains constraints.",
+	                        path));
+	            }
 	            Object items = schema.get("items");
 	            if (items instanceof Map<?, ?> itemSchema) {
 	                Map<String, Object> itemSchemaMap = (Map<String, Object>) itemSchema;
@@ -384,6 +387,15 @@ public final class VisualSchemaValidator {
         Map<String, Object> properties = new LinkedHashMap<>();
         rawMap.forEach((key, value) -> properties.put(String.valueOf(key), value));
         return properties;
+    }
+
+    private static Map<String, Object> objectProperty(Object value) {
+        if (!(value instanceof Map<?, ?> map)) {
+            return null;
+        }
+        Map<String, Object> copy = new LinkedHashMap<>();
+        map.forEach((key, item) -> copy.put(String.valueOf(key), item));
+        return copy;
     }
 
     private static List<String> requiredNamesWithoutDiagnostics(Map<String, Object> schema) {
@@ -825,10 +837,10 @@ public final class VisualSchemaValidator {
 	        }
 	    }
 
-		    private static void validateArrayUniqueItems(Map<String, Object> schema,
-		                                                 String kind,
-		                                                 String path,
-		                                                 List<VisualDiagnostic> diagnostics) {
+	    private static void validateArrayUniqueItems(Map<String, Object> schema,
+	                                                 String kind,
+	                                                 String path,
+	                                                 List<VisualDiagnostic> diagnostics) {
 	        if (!schema.containsKey("uniqueItems")) {
 	            return;
 	        }
@@ -843,6 +855,49 @@ public final class VisualSchemaValidator {
 	                    path + "/uniqueItems"));
 		        }
 		    }
+
+	    private static void validateArrayContains(Map<String, Object> schema,
+	                                              String kind,
+	                                              String path,
+	                                              List<VisualDiagnostic> diagnostics) {
+	        if (!hasArrayContains(schema)) {
+	            return;
+	        }
+	        boolean validArrayKind = arrayKind(kind);
+	        if (!validArrayKind) {
+	            diagnostics.add(VisualDiagnostic.error("visual.schema.containsConstraintTypeMismatch",
+	                    "Array contains constraints require schema type/kind array.",
+	                    path));
+	        }
+	        Object rawContains = schema.get("contains");
+	        if (!(rawContains instanceof Map<?, ?> containsSchema)) {
+	            diagnostics.add(VisualDiagnostic.error("visual.schema.containsConstraintInvalid",
+	                    "Array contains constraint must be a schema object.",
+	                    path + "/contains"));
+	        } else {
+	            Map<String, Object> copy = new LinkedHashMap<>();
+	            containsSchema.forEach((key, item) -> copy.put(String.valueOf(key), item));
+	            validateSchema(copy, path + "/contains", diagnostics);
+	        }
+	        validateArrayContainsBoundary(schema, "minContains", path, diagnostics);
+	        validateArrayContainsBoundary(schema, "maxContains", path, diagnostics);
+	        if (!schema.containsKey("contains")
+	                && (schema.containsKey("minContains") || schema.containsKey("maxContains"))) {
+	            diagnostics.add(VisualDiagnostic.error("visual.schema.containsConstraintInvalid",
+	                    "Array minContains/maxContains constraints require a contains schema.",
+	                    path));
+	        }
+	        if (!validArrayKind || !(rawContains instanceof Map<?, ?>) || !arrayContainsBoundariesValid(schema)) {
+	            return;
+	        }
+	        Long minimum = arrayMinContains(schema);
+	        Long maximum = arrayMaxContains(schema);
+	        if (minimum != null && maximum != null && minimum > maximum) {
+	            diagnostics.add(VisualDiagnostic.error("visual.schema.containsBoundsInvalid",
+	                    "Array minContains %d is greater than maxContains %d.".formatted(minimum, maximum),
+	                    path));
+	        }
+	    }
 
 	    private static void validateObjectPropertyBounds(Map<String, Object> schema,
 	                                                     String kind,
@@ -966,6 +1021,12 @@ public final class VisualSchemaValidator {
 		        return schema.containsKey("minItems")
 		                || schema.containsKey("maxItems");
 		    }
+
+	    private static boolean hasArrayContains(Map<String, Object> schema) {
+	        return schema.containsKey("contains")
+	                || schema.containsKey("minContains")
+	                || schema.containsKey("maxContains");
+	    }
 
 	    private static boolean hasObjectPropertyBounds(Map<String, Object> schema) {
 	        return schema.containsKey("minProperties")
@@ -1125,6 +1186,37 @@ public final class VisualSchemaValidator {
 	                && (!schema.containsKey("maxItems") || arrayItemBoundary(schema.get("maxItems")) != null);
 	    }
 
+	    private static void validateArrayContainsBoundary(Map<String, Object> schema,
+	                                                      String keyword,
+	                                                      String path,
+	                                                      List<VisualDiagnostic> diagnostics) {
+	        if (!schema.containsKey(keyword)) {
+	            return;
+	        }
+	        if (arrayItemBoundary(schema.get(keyword)) == null) {
+	            diagnostics.add(VisualDiagnostic.error("visual.schema.containsConstraintInvalid",
+	                    "Array contains constraint '%s' must be a non-negative integer.".formatted(keyword),
+	                    path + "/" + keyword));
+	        }
+	    }
+
+	    private static boolean arrayContainsBoundariesValid(Map<String, Object> schema) {
+	        return (!schema.containsKey("minContains") || arrayItemBoundary(schema.get("minContains")) != null)
+	                && (!schema.containsKey("maxContains") || arrayItemBoundary(schema.get("maxContains")) != null);
+	    }
+
+	    private static Long arrayMinContains(Map<String, Object> schema) {
+	        if (!schema.containsKey("contains")) {
+	            return null;
+	        }
+	        Long explicit = arrayItemBoundary(schema.get("minContains"));
+	        return explicit == null ? 1L : explicit;
+	    }
+
+	    private static Long arrayMaxContains(Map<String, Object> schema) {
+	        return arrayItemBoundary(schema.get("maxContains"));
+	    }
+
 	    private static boolean arrayValueMatchesItemBounds(Object value, Map<String, Object> schema) {
 	        if (!(value instanceof List<?> list)) {
 	            return true;
@@ -1145,12 +1237,31 @@ public final class VisualSchemaValidator {
 	        return new LinkedHashSet<>(list).size() == list.size();
 	    }
 
+	    private static boolean arrayValueMatchesContains(List<?> value, Map<String, Object> schema) {
+	        Map<String, Object> contains = objectProperty(schema.get("contains"));
+	        if (contains == null) {
+	            return true;
+	        }
+	        long matches = value.stream()
+	                .filter(item -> valueMatchesSchema(item, contains))
+	                .count();
+	        Long minimum = arrayMinContains(schema);
+	        if (minimum != null && matches < minimum) {
+	            return false;
+	        }
+	        Long maximum = arrayMaxContains(schema);
+	        return maximum == null || matches <= maximum;
+	    }
+
 	    @SuppressWarnings("unchecked")
 	    private static boolean arrayValueMatchesSchema(Object value, Map<String, Object> schema) {
 	        if (!(value instanceof List<?> list) || !arrayKind(schemaKind(schema))) {
 	            return true;
 	        }
 	        if (!arrayValueMatchesItemBounds(value, schema) || !arrayValueMatchesUniqueItems(value, schema)) {
+	            return false;
+	        }
+	        if (!arrayValueMatchesContains(list, schema)) {
 	            return false;
 	        }
 	        Object items = schema.get("items");
@@ -1366,6 +1477,9 @@ public final class VisualSchemaValidator {
 	    private static boolean valueMatchesSchema(Object value, Map<String, Object> schema) {
 	        String kind = schemaKind(schema);
 	        if (!constValueMatchesKind(value, kind)) {
+	            return false;
+	        }
+	        if (schema.containsKey("const") && !Objects.equals(schema.get("const"), value)) {
 	            return false;
 	        }
 	        Object rawEnum = schema.get("enum");

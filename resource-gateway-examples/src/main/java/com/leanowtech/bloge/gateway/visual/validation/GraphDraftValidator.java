@@ -1288,6 +1288,9 @@ public class GraphDraftValidator {
 	        if (!arrayValueMatchesUniqueItems(list, schema)) {
 	            return false;
 	        }
+	        if (!arrayValueMatchesContains(list, schema)) {
+	            return false;
+	        }
 		        Map<String, Object> items = objectProperty(schema.get("items"));
 		        return items == null || list.stream().allMatch(item -> constantValueMatchesSchema(item, items));
 		    }
@@ -1747,6 +1750,13 @@ public class GraphDraftValidator {
 	                    path));
 	            return;
 	        }
+	        if (!arrayValueMatchesContains(list, schema)) {
+	            diagnostics.add(VisualDiagnostic.error("visual.config.constraintMismatch",
+	                    "Config value at '%s' must satisfy array contains constraints."
+	                            .formatted(path),
+	                    path));
+	            return;
+	        }
 	        Map<String, Object> items = objectProperty(schema.get("items"));
 	        if (items == null) {
             return;
@@ -1891,6 +1901,34 @@ public class GraphDraftValidator {
 
 	    private static boolean arrayValueMatchesUniqueItems(List<?> value, Map<String, Object> schema) {
 	        return !Boolean.TRUE.equals(schema.get("uniqueItems")) || new HashSet<>(value).size() == value.size();
+	    }
+
+	    private static boolean arrayValueMatchesContains(List<?> value, Map<String, Object> schema) {
+	        Map<String, Object> contains = objectProperty(schema.get("contains"));
+	        if (contains == null) {
+	            return true;
+	        }
+	        long matches = value.stream()
+	                .filter(item -> constantValueMatchesSchema(item, contains))
+	                .count();
+	        Long minimum = arrayMinContains(schema);
+	        if (minimum != null && matches < minimum) {
+	            return false;
+	        }
+	        Long maximum = arrayMaxContains(schema);
+	        return maximum == null || matches <= maximum;
+	    }
+
+	    private static Long arrayMinContains(Map<String, Object> schema) {
+	        if (!schema.containsKey("contains")) {
+	            return null;
+	        }
+	        Long explicit = arrayItemBoundary(schema.get("minContains"));
+	        return explicit == null ? 1L : explicit;
+	    }
+
+	    private static Long arrayMaxContains(Map<String, Object> schema) {
+	        return arrayItemBoundary(schema.get("maxContains"));
 	    }
 
 	    private static Long stringLengthBoundary(Object value) {

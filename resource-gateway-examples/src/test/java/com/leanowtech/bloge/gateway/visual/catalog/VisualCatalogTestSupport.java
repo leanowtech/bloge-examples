@@ -524,6 +524,22 @@ public final class VisualCatalogTestSupport {
         );
     }
 
+    public static OperatorLibrary listContainsCompatibilityLibrary(int sourceMinContains,
+                                                                   int targetMinContains) {
+        return listCompatibilityLibrary(
+                Map.of(
+                        "type", "array",
+                        "items", Map.of("type", "string"),
+                        "contains", Map.of("type", "string", "const", "primary"),
+                        "minContains", sourceMinContains),
+                Map.of(
+                        "type", "array",
+                        "items", Map.of("type", "string"),
+                        "contains", Map.of("type", "string", "const", "primary"),
+                        "minContains", targetMinContains)
+        );
+    }
+
     public static OperatorLibrary objectPropertyBoundsCompatibilityLibrary(int sourceMinProperties,
                                                                            int sourceMaxProperties,
                                                                            int targetMinProperties,

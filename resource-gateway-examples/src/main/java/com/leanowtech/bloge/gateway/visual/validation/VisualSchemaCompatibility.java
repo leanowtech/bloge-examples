@@ -79,9 +79,13 @@ public final class VisualSchemaCompatibility {
 	                }
 	            }
 	            Optional<String> itemBoundsIssue = arrayItemBoundsCompatibilityIssue(sourceSchema, targetSchema, path);
-	            return itemBoundsIssue.isPresent()
-	                    ? itemBoundsIssue
-	                    : arrayUniqueItemsCompatibilityIssue(sourceSchema, targetSchema, path);
+	            if (itemBoundsIssue.isPresent()) {
+	                return itemBoundsIssue;
+	            }
+	            Optional<String> uniqueItemsIssue = arrayUniqueItemsCompatibilityIssue(sourceSchema, targetSchema, path);
+	            return uniqueItemsIssue.isPresent()
+	                    ? uniqueItemsIssue
+	                    : arrayContainsCompatibilityIssue(sourceSchema, targetSchema, path);
 	        }
         if ("object".equals(sourceType) && "object".equals(targetType)) {
             return objectSchemaCompatibilityIssue(sourceSchema, targetSchema, path);
@@ -330,6 +334,66 @@ public final class VisualSchemaCompatibility {
 	            return Optional.empty();
 	        }
 	        return Optional.of(reasonAt(path, "target requires uniqueItems=true but source does not guarantee uniqueness"));
+	    }
+
+	    private static Optional<String> arrayContainsCompatibilityIssue(Map<String, Object> sourceSchema,
+	                                                                    Map<String, Object> targetSchema,
+	                                                                    String path) {
+	        if (!"array".equals(schemaType(sourceSchema)) || !"array".equals(schemaType(targetSchema))) {
+	            return Optional.empty();
+	        }
+	        Map<String, Object> targetContains = objectProperty(targetSchema.get("contains"));
+	        if (targetContains == null) {
+	            return Optional.empty();
+	        }
+	        Long targetMinimum = arrayMinContains(targetSchema);
+	        Long targetMaximum = arrayMaxContains(targetSchema);
+	        if ((targetMinimum == null || targetMinimum == 0) && targetMaximum == null) {
+	            return Optional.empty();
+	        }
+	        List<Object> sourceValues = enumValues(sourceSchema);
+	        if (!sourceValues.isEmpty()
+	                && sourceValues.stream().allMatch(List.class::isInstance)
+	                && sourceValues.stream().allMatch(value -> arrayValueMatchesSchema(value, targetSchema))) {
+	            return Optional.empty();
+	        }
+	        Map<String, Object> sourceContains = objectProperty(sourceSchema.get("contains"));
+	        if (sourceContains == null) {
+	            return Optional.of(reasonAt(path,
+	                    "target requires contains but source does not guarantee matching array items"));
+	        }
+	        Optional<String> containsIssue = schemaCompatibilityIssue(sourceContains, targetContains,
+	                appendCompatibilityPath(path, "contains"));
+	        if (containsIssue.isPresent()) {
+	            return containsIssue;
+	        }
+	        if (targetMinimum != null) {
+	            Long sourceMinimum = arrayMinContains(sourceSchema);
+	            if (sourceMinimum == null) {
+	                return Optional.of(reasonAt(path,
+	                        "target requires contains count >= %d but source has no minContains"
+	                                .formatted(targetMinimum)));
+	            }
+	            if (sourceMinimum < targetMinimum) {
+	                return Optional.of(reasonAt(path,
+	                        "source minContains %d is weaker than target minContains %d"
+	                                .formatted(sourceMinimum, targetMinimum)));
+	            }
+	        }
+	        if (targetMaximum != null) {
+	            Long sourceMaximum = arrayMaxContains(sourceSchema);
+	            if (sourceMaximum == null) {
+	                return Optional.of(reasonAt(path,
+	                        "target requires contains count <= %d but source has no maxContains"
+	                                .formatted(targetMaximum)));
+	            }
+	            if (sourceMaximum > targetMaximum) {
+	                return Optional.of(reasonAt(path,
+	                        "source maxContains %d is weaker than target maxContains %d"
+	                                .formatted(sourceMaximum, targetMaximum)));
+	            }
+	        }
+	        return Optional.empty();
 	    }
 
 	    private static Optional<String> objectSchemaCompatibilityIssue(Map<String, Object> sourceSchema,
@@ -813,6 +877,9 @@ public final class VisualSchemaCompatibility {
 	        if (!arrayValueMatchesUniqueItems(list, schema)) {
 	            return false;
 	        }
+	        if (!arrayValueMatchesContains(list, schema)) {
+	            return false;
+	        }
 		        Map<String, Object> items = objectProperty(schema.get("items"));
 		        return items == null || list.stream().allMatch(item -> valueMatchesSchema(item, items));
 		    }
@@ -1040,6 +1107,18 @@ public final class VisualSchemaCompatibility {
 	        return null;
 	    }
 
+	    private static Long arrayMinContains(Map<String, Object> schema) {
+	        if (!schema.containsKey("contains")) {
+	            return null;
+	        }
+	        Long explicit = arrayItemBoundary(schema.get("minContains"));
+	        return explicit == null ? 1L : explicit;
+	    }
+
+	    private static Long arrayMaxContains(Map<String, Object> schema) {
+	        return arrayItemBoundary(schema.get("maxContains"));
+	    }
+
 	    private static boolean arrayValueMatchesItemBounds(List<?> value, Map<String, Object> schema) {
 	        long size = value.size();
 	        Long minimum = arrayItemBoundary(schema.get("minItems"));
@@ -1053,6 +1132,22 @@ public final class VisualSchemaCompatibility {
 		    private static boolean arrayValueMatchesUniqueItems(List<?> value, Map<String, Object> schema) {
 		        return !Boolean.TRUE.equals(schema.get("uniqueItems")) || arrayItemsUnique(value);
 		    }
+
+	    private static boolean arrayValueMatchesContains(List<?> value, Map<String, Object> schema) {
+	        Map<String, Object> contains = objectProperty(schema.get("contains"));
+	        if (contains == null) {
+	            return true;
+	        }
+	        long matches = value.stream()
+	                .filter(item -> valueMatchesSchema(item, contains))
+	                .count();
+	        Long minimum = arrayMinContains(schema);
+	        if (minimum != null && matches < minimum) {
+	            return false;
+	        }
+	        Long maximum = arrayMaxContains(schema);
+	        return maximum == null || matches <= maximum;
+	    }
 
 	    private static boolean arrayItemsUnique(List<?> value) {
 	        return new LinkedHashSet<>(value).size() == value.size();

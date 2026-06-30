@@ -236,9 +236,6 @@ const SUPPORTED_SCHEMA_KINDS = new Set([
 const UNSUPPORTED_SCHEMA_REFERENCE_KEYWORDS = ['$ref', '$dynamicRef'];
 const UNSUPPORTED_SCHEMA_COMPOSITION_KEYWORDS = ['oneOf', 'anyOf', 'allOf', 'not', 'if', 'then', 'else'];
 const UNSUPPORTED_SCHEMA_CONSTRAINT_KEYWORDS = [
-  'contains',
-  'minContains',
-  'maxContains',
   'prefixItems',
   'dependentSchemas',
   'unevaluatedProperties',
@@ -5069,6 +5066,7 @@ function validateSchemaStructure(schema, path, diagnostics) {
   validateSchemaStringFormat(schema, kind, path, diagnostics);
   validateSchemaArrayItemBounds(schema, kind, path, diagnostics);
   validateSchemaArrayUniqueItems(schema, kind, path, diagnostics);
+  validateSchemaArrayContains(schema, kind, path, diagnostics);
   validateSchemaObjectPropertyBounds(schema, kind, path, diagnostics);
   validateSchemaObjectPatternProperties(schema, kind, path, diagnostics);
   validateSchemaObjectPropertyNames(schema, kind, path, diagnostics);
@@ -5600,6 +5598,64 @@ function validateSchemaArrayUniqueItems(schema, kind, path, diagnostics) {
       'visual.schema.uniqueItemsConstraintInvalid',
       'Array uniqueItems constraint must be a boolean.',
       `${path}/uniqueItems`
+    ));
+  }
+}
+
+function validateSchemaArrayContains(schema, kind, path, diagnostics) {
+  if (!schemaHasArrayContains(schema)) {
+    return;
+  }
+  const validArrayKind = arrayType(kind);
+  if (!validArrayKind) {
+    diagnostics.push(graphInputSchemaDiagnostic(
+      'visual.schema.containsConstraintTypeMismatch',
+      'Array contains constraints require schema type/kind array.',
+      path
+    ));
+  }
+  const contains = schema?.contains;
+  if (!contains || typeof contains !== 'object' || Array.isArray(contains)) {
+    diagnostics.push(graphInputSchemaDiagnostic(
+      'visual.schema.containsConstraintInvalid',
+      'Array contains constraint must be a schema object.',
+      `${path}/contains`
+    ));
+  } else {
+    validateSchemaStructure(contains, `${path}/contains`, diagnostics);
+  }
+  for (const keyword of ['minContains', 'maxContains']) {
+    if (!Object.prototype.hasOwnProperty.call(schema || {}, keyword)) {
+      continue;
+    }
+    if (arrayItemBoundaryValue(schema[keyword]) === null) {
+      diagnostics.push(graphInputSchemaDiagnostic(
+        'visual.schema.containsConstraintInvalid',
+        `Array contains constraint '${keyword}' must be a non-negative integer.`,
+        `${path}/${keyword}`
+      ));
+    }
+  }
+  if (!Object.prototype.hasOwnProperty.call(schema || {}, 'contains')
+      && (Object.prototype.hasOwnProperty.call(schema || {}, 'minContains')
+        || Object.prototype.hasOwnProperty.call(schema || {}, 'maxContains'))) {
+    diagnostics.push(graphInputSchemaDiagnostic(
+      'visual.schema.containsConstraintInvalid',
+      'Array minContains/maxContains constraints require a contains schema.',
+      path
+    ));
+  }
+  if (!validArrayKind || !contains || typeof contains !== 'object' || Array.isArray(contains)
+      || !arrayContainsBoundariesValid(schema)) {
+    return;
+  }
+  const minimum = schemaMinContains(schema);
+  const maximum = schemaMaxContains(schema);
+  if (minimum !== null && maximum !== null && minimum > maximum) {
+    diagnostics.push(graphInputSchemaDiagnostic(
+      'visual.schema.containsBoundsInvalid',
+      `Array minContains ${minimum} is greater than maxContains ${maximum}.`,
+      path
     ));
   }
 }
@@ -6152,7 +6208,8 @@ function schemaCompatibilityIssue(sourceSchema, targetSchema, path = '') {
       }
     }
     return arrayItemBoundsCompatibilityIssue(sourceSchema, targetSchema, path)
-      || arrayUniqueItemsCompatibilityIssue(sourceSchema, targetSchema, path);
+      || arrayUniqueItemsCompatibilityIssue(sourceSchema, targetSchema, path)
+      || arrayContainsCompatibilityIssue(sourceSchema, targetSchema, path);
   }
   if (sourceType === 'object' && targetType === 'object') {
     return objectSchemaCompatibilityIssue(sourceSchema, targetSchema, path);
@@ -6338,6 +6395,54 @@ function arrayUniqueItemsCompatibilityIssue(sourceSchema, targetSchema, path = '
     return '';
   }
   return reasonAt(path, 'target requires uniqueItems=true but source does not guarantee uniqueness');
+}
+
+function arrayContainsCompatibilityIssue(sourceSchema, targetSchema, path = '') {
+  if (!arrayType(rawSchemaType(sourceSchema)) || !arrayType(rawSchemaType(targetSchema))) {
+    return '';
+  }
+  const targetContains = schemaContainsSchema(targetSchema);
+  if (!targetContains) {
+    return '';
+  }
+  const targetMinimum = schemaMinContains(targetSchema);
+  const targetMaximum = schemaMaxContains(targetSchema);
+  if ((targetMinimum === null || targetMinimum === 0) && targetMaximum === null) {
+    return '';
+  }
+  const sourceValues = schemaEnumValues(sourceSchema);
+  if (sourceValues.length
+      && sourceValues.every(Array.isArray)
+      && sourceValues.every((value) => arrayValueMatchesSchema(value, targetSchema))) {
+    return '';
+  }
+  const sourceContains = schemaContainsSchema(sourceSchema);
+  if (!sourceContains) {
+    return reasonAt(path, 'target requires contains but source does not guarantee matching array items');
+  }
+  const containsIssue = schemaCompatibilityIssue(sourceContains, targetContains, appendCompatibilityPath(path, 'contains'));
+  if (containsIssue) {
+    return containsIssue;
+  }
+  if (targetMinimum !== null) {
+    const sourceMinimum = schemaMinContains(sourceSchema);
+    if (sourceMinimum === null) {
+      return reasonAt(path, `target requires contains count >= ${targetMinimum} but source has no minContains`);
+    }
+    if (sourceMinimum < targetMinimum) {
+      return reasonAt(path, `source minContains ${sourceMinimum} is weaker than target minContains ${targetMinimum}`);
+    }
+  }
+  if (targetMaximum !== null) {
+    const sourceMaximum = schemaMaxContains(sourceSchema);
+    if (sourceMaximum === null) {
+      return reasonAt(path, `target requires contains count <= ${targetMaximum} but source has no maxContains`);
+    }
+    if (sourceMaximum > targetMaximum) {
+      return reasonAt(path, `source maxContains ${sourceMaximum} is weaker than target maxContains ${targetMaximum}`);
+    }
+  }
+  return '';
 }
 
 function objectSchemasCompatible(sourceSchema, targetSchema) {
@@ -6773,6 +6878,12 @@ function schemaHasArrayItemBounds(schema) {
     || Object.prototype.hasOwnProperty.call(schema || {}, 'maxItems');
 }
 
+function schemaHasArrayContains(schema) {
+  return Object.prototype.hasOwnProperty.call(schema || {}, 'contains')
+    || Object.prototype.hasOwnProperty.call(schema || {}, 'minContains')
+    || Object.prototype.hasOwnProperty.call(schema || {}, 'maxContains');
+}
+
 function schemaHasObjectPropertyBounds(schema) {
   return Object.prototype.hasOwnProperty.call(schema || {}, 'minProperties')
     || Object.prototype.hasOwnProperty.call(schema || {}, 'maxProperties');
@@ -6783,6 +6894,11 @@ function arrayItemBoundariesValid(schema) {
     && (!Object.prototype.hasOwnProperty.call(schema || {}, 'maxItems') || arrayItemBoundaryValue(schema.maxItems) !== null);
 }
 
+function arrayContainsBoundariesValid(schema) {
+  return (!Object.prototype.hasOwnProperty.call(schema || {}, 'minContains') || arrayItemBoundaryValue(schema.minContains) !== null)
+    && (!Object.prototype.hasOwnProperty.call(schema || {}, 'maxContains') || arrayItemBoundaryValue(schema.maxContains) !== null);
+}
+
 function arrayValueMatchesSchema(value, schema) {
   if (!Array.isArray(value) || rawSchemaType(schema) !== 'array') {
     return true;
@@ -6791,6 +6907,9 @@ function arrayValueMatchesSchema(value, schema) {
     return false;
   }
   if (!arrayValueMatchesUniqueItems(value, schema)) {
+    return false;
+  }
+  if (!arrayValueMatchesContains(value, schema)) {
     return false;
   }
   const items = schema?.items;
@@ -6812,6 +6931,23 @@ function arrayValueMatchesItemBounds(value, schema) {
 
 function arrayValueMatchesUniqueItems(value, schema) {
   return !Array.isArray(value) || schema?.uniqueItems !== true || arrayItemsUnique(value);
+}
+
+function arrayValueMatchesContains(value, schema) {
+  if (!Array.isArray(value)) {
+    return true;
+  }
+  const contains = schemaContainsSchema(schema);
+  if (!contains) {
+    return true;
+  }
+  const matches = value.filter((item) => schemaValueMatchesSchema(item, contains)).length;
+  const minimum = schemaMinContains(schema);
+  if (minimum !== null && matches < minimum) {
+    return false;
+  }
+  const maximum = schemaMaxContains(schema);
+  return maximum === null || matches <= maximum;
 }
 
 function arrayItemsUnique(value) {
@@ -6982,6 +7118,23 @@ function explicitSchemaMinItems(schema) {
 
 function explicitSchemaMaxItems(schema) {
   return arrayItemBoundaryValue(schema?.maxItems);
+}
+
+function schemaContainsSchema(schema) {
+  const contains = schema?.contains;
+  return contains && typeof contains === 'object' && !Array.isArray(contains) ? contains : null;
+}
+
+function schemaMinContains(schema) {
+  if (!Object.prototype.hasOwnProperty.call(schema || {}, 'contains')) {
+    return null;
+  }
+  const explicit = arrayItemBoundaryValue(schema?.minContains);
+  return explicit === null ? 1 : explicit;
+}
+
+function schemaMaxContains(schema) {
+  return arrayItemBoundaryValue(schema?.maxContains);
 }
 
 function schemaMinProperties(schema) {

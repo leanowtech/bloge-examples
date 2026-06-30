@@ -1319,6 +1319,115 @@ class OperatorLibraryValidatorTest {
     }
 
     @Test
+    void acceptsArrayContainsAcrossOperatorDefinitions() {
+        OperatorDefinition operator = new OperatorDefinition(
+                "bloge.visualOperator.v1",
+                "risk:arrayContainsPolicy",
+                "1.0.0",
+                new OperatorDefinition.Display("Array contains policy", "Test operator.", List.of("test")),
+                new OperatorDefinition.Source("user-library", "", "", "", true),
+                new OperatorDefinition.Ports(
+                        List.of(new OperatorDefinition.Port("payload",
+                                SchemaEnvelope.object(Map.of(
+                                        "channels", arrayContainsPrimarySchema(Map.of())
+                                ), List.of("channels")),
+                                true,
+                                "Input.")),
+                        List.of(new OperatorDefinition.Port("output",
+                                SchemaEnvelope.object(Map.of(
+                                        "flags", Map.of(
+                                                "type", "array",
+                                                "items", Map.of("type", "string"),
+                                                "contains", Map.of("type", "string", "pattern", "^critical\\."),
+                                                "minContains", 1)
+                                ), List.of()),
+                                true,
+                                "Output."))
+                ),
+                SchemaEnvelope.object(Map.of(
+                        "channels", arrayContainsPrimarySchema(Map.of(
+                                "default", List.of("secondary", "primary")))
+                ), List.of("channels")),
+                OperatorDefinition.Capabilities.pure(),
+                new OperatorDefinition.Lowering("native", "riskArrayContainsPolicy", Map.of()),
+                List.of()
+        );
+
+        VisualValidationResult result = validator.validate(libraryWith(operator));
+
+        assertThat(result.diagnostics()).isEmpty();
+        assertThat(result.valid()).isTrue();
+    }
+
+    @Test
+    void rejectsInvalidArrayContainsAcrossOperatorDefinitions() {
+        OperatorDefinition operator = new OperatorDefinition(
+                "bloge.visualOperator.v1",
+                "risk:badArrayContainsPolicy",
+                "1.0.0",
+                new OperatorDefinition.Display("Bad array contains policy", "Test operator.", List.of("test")),
+                new OperatorDefinition.Source("user-library", "", "", "", true),
+                new OperatorDefinition.Ports(
+                        List.of(new OperatorDefinition.Port("payload",
+                                SchemaEnvelope.object(Map.of(
+                                        "channels", arrayContainsPrimarySchema(Map.of(
+                                                "minContains", 2,
+                                                "maxContains", 1))
+                                ), List.of("channels")),
+                                true,
+                                "Input.")),
+                        List.of(new OperatorDefinition.Port("output",
+                                SchemaEnvelope.object(Map.of(
+                                        "segments", Map.of(
+                                                "type", "string",
+                                                "contains", Map.of("type", "string")),
+                                        "badContains", Map.of(
+                                                "type", "array",
+                                                "items", Map.of("type", "string"),
+                                                "contains", "primary")
+                                ), List.of()),
+                                true,
+                                "Output."))
+                ),
+                SchemaEnvelope.object(Map.of(
+                        "channels", arrayContainsPrimarySchema(Map.of(
+                                "default", List.of("secondary"))),
+                        "fixed", arrayContainsPrimarySchema(Map.of(
+                                "const", List.of("secondary"))),
+                        "choices", arrayContainsPrimarySchema(Map.of(
+                                "enum", List.of(List.of("secondary"))))
+                ), List.of()),
+                OperatorDefinition.Capabilities.pure(),
+                new OperatorDefinition.Lowering("native", "riskBadArrayContainsPolicy", Map.of()),
+                List.of()
+        );
+
+        VisualValidationResult result = validator.validate(libraryWith(operator));
+
+        assertThat(result.valid()).isFalse();
+        assertThat(result.diagnostics())
+                .extracting("code")
+                .contains(
+                        "visual.schema.containsBoundsInvalid",
+                        "visual.schema.containsConstraintTypeMismatch",
+                        "visual.schema.containsConstraintInvalid",
+                        "visual.schema.defaultConstraintMismatch",
+                        "visual.schema.constConstraintMismatch",
+                        "visual.schema.enumConstraintMismatch"
+                );
+        assertThat(result.diagnostics())
+                .extracting("target")
+                .contains(
+                        "/operators/0/ports/inputs/0/schema/schema/properties/channels",
+                        "/operators/0/ports/outputs/0/schema/schema/properties/segments",
+                        "/operators/0/ports/outputs/0/schema/schema/properties/badContains/contains",
+                        "/operators/0/configSchema/schema/properties/channels/default",
+                        "/operators/0/configSchema/schema/properties/fixed/const",
+                        "/operators/0/configSchema/schema/properties/choices/enum/0"
+                );
+    }
+
+    @Test
     void acceptsObjectPropertyBoundsAcrossOperatorDefinitions() {
         OperatorDefinition operator = new OperatorDefinition(
                 "bloge.visualOperator.v1",
@@ -2454,6 +2563,16 @@ class OperatorLibraryValidatorTest {
         ));
         schema.put("additionalProperties", false);
         schema.put("dependentRequired", Map.of("cardNumber", List.of("billingZip")));
+        schema.putAll(overrides);
+        return schema;
+    }
+
+    private static Map<String, Object> arrayContainsPrimarySchema(Map<String, Object> overrides) {
+        Map<String, Object> schema = new LinkedHashMap<>();
+        schema.put("type", "array");
+        schema.put("items", Map.of("type", "string"));
+        schema.put("contains", Map.of("type", "string", "const", "primary"));
+        schema.put("minContains", 1);
         schema.putAll(overrides);
         return schema;
     }

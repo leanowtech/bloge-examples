@@ -159,6 +159,39 @@ class ResourceDesignContractValidatorTest {
     }
 
     @Test
+    void acceptsArrayContainsInResourceContractSchemas() {
+        ResourceDesignContract contract = new ResourceDesignContract(
+                "contract:orders",
+                "order-service.listOrders",
+                "Order list",
+                "Lists orders.",
+                List.of("order"),
+                SchemaEnvelope.object(Map.of(
+                        "channels", Map.of(
+                                "type", "array",
+                                "items", Map.of("type", "string"),
+                                "contains", Map.of("type", "string", "const", "primary"),
+                                "minContains", 1,
+                                "maxContains", 1)
+                ), List.of("channels")),
+                SchemaEnvelope.object(Map.of(
+                        "flags", Map.of(
+                                "type", "array",
+                                "items", Map.of("type", "string"),
+                                "contains", Map.of("type", "string", "pattern", "^critical\\."),
+                                "minContains", 1)
+                ), List.of()),
+                Map.of(),
+                "ACTIVE"
+        );
+
+        VisualValidationResult result = validator.validate(contract);
+
+        assertThat(result.valid()).isTrue();
+        assertThat(result.diagnostics()).isEmpty();
+    }
+
+    @Test
     void acceptsObjectPropertyBoundsInResourceContractSchemas() {
         ResourceDesignContract contract = new ResourceDesignContract(
                 "contract:orders",
