@@ -609,7 +609,7 @@ function normalizeOperatorPorts(ports, fallbackName) {
 }
 
 function inputPortsForSpec(spec) {
-  if (Array.isArray(spec?.inputPorts) && spec.inputPorts.length) {
+  if (Array.isArray(spec?.inputPorts)) {
     return spec.inputPorts;
   }
   return [{ name: spec?.inputPort || 'inputs', schema: spec?.inputSchema || null, required: true }];
@@ -619,7 +619,7 @@ function outputPortsForSpec(spec) {
   if (spec?.lowering?.mode === 'branch') {
     return [];
   }
-  if (Array.isArray(spec?.outputPorts) && spec.outputPorts.length) {
+  if (Array.isArray(spec?.outputPorts)) {
     return spec.outputPorts;
   }
   return [{ name: spec?.outputPort || 'output', schema: spec?.outputSchema || null, required: true }];
@@ -1231,11 +1231,7 @@ function connectionSourceFromExpression(expression, builder = state.builder) {
         expressionForConnectionSource(candidate) === value
       );
       if (handle) {
-        return {
-          nodeId: handle.nodeId,
-          port: handle.port,
-          path: handle.path || ''
-        };
+        return { ...handle, path: handle.path || '' };
       }
     }
   }

@@ -1,9 +1,13 @@
 package com.leanowtech.bloge.gateway.visual;
 
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.leanowtech.bloge.gateway.ResourceGatewayApplication;
 import com.leanowtech.bloge.gateway.gateway.GatewayProperties;
 import com.leanowtech.bloge.gateway.gateway.ResourceDescriptorBootstrap;
 import com.leanowtech.bloge.gateway.resource.WritableResourceRegistry;
+import com.leanowtech.bloge.gateway.visual.catalog.OperatorLibrary;
+import com.leanowtech.bloge.gateway.visual.catalog.VisualCatalogTestSupport;
 
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Assumptions;
@@ -46,6 +50,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 class VisualAuthoringBrowserDomTest {
 
     private static final Duration WAIT_TIMEOUT = Duration.ofSeconds(12);
+    private static final ObjectMapper OBJECT_MAPPER = new ObjectMapper();
     private static final Path MAC_CHROME_BINARY = Path.of(
             "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"
     );
@@ -219,6 +224,71 @@ class VisualAuthoringBrowserDomTest {
         waitForText(wait, By.id("output"), "\"valid\": false");
     }
 
+    @Test
+    void composerSupportsConfigDependencyAndRouteConnectionDragsInRealBrowser() throws JsonProcessingException {
+        driver = newChromeDriverOrSkip();
+        WebDriverWait wait = new WebDriverWait(driver, WAIT_TIMEOUT);
+        driver.get("http://localhost:" + port + "/examples/gateway");
+
+        waitForComposer(wait);
+        wait.until(ExpectedConditions.visibilityOfElementLocated(By.id("operator-palette")));
+
+        importOperatorLibrary(wait, VisualCatalogTestSupport.routeLibrary());
+        importOperatorLibrary(wait, VisualCatalogTestSupport.configurablePolicyLibrary());
+
+        dragOperatorToCanvas(wait, "Type route", "risk:typeRoute", "riskTypeRoute", 140, 120);
+        dragOperatorToCanvas(wait, "Score facts", "risk:scoreFacts", "riskScoreFacts", 140, 120);
+        dragOperatorToCanvas(wait, "Configurable policy", "risk:configurablePolicy",
+                "riskConfigurablePolicy", 140, 120);
+
+        dragConnection(
+                wait,
+                "#diagram [data-node-id='loanPolicy'] [data-port-role='source'][data-port='output'][data-path='decision']",
+                "#diagram [data-node-id='riskTypeRoute'] [data-port-role='target'][data-port='inputs'][data-path='value']"
+        );
+        waitForText(wait, By.id("connection-status"),
+                "Connected loanPolicy.output.decision -> riskTypeRoute.inputs.value");
+
+        usePromptValue("approved");
+        dragConnection(
+                wait,
+                "#diagram [data-node-id='riskTypeRoute'] [data-port-role='source'][data-port='route'][data-path='']",
+                "#diagram [data-node-id='riskScoreFacts'] [data-port-role='target'][data-port='route'][data-path='']"
+        );
+        waitForText(wait, By.id("connection-status"),
+                "Connected riskTypeRoute.route -> riskScoreFacts.route");
+
+        dragConnection(
+                wait,
+                "#diagram [data-node-id='loanPolicy'] [data-port-role='source'][data-port='output'][data-path='maxTerm']",
+                "#diagram [data-node-id='riskScoreFacts'] [data-port-role='target'][data-port='dependency'][data-path='']"
+        );
+        waitForText(wait, By.id("connection-status"),
+                "Connected loanPolicy.output.maxTerm -> riskScoreFacts.dependency");
+
+        dragConnection(
+                wait,
+                "#diagram [data-node-id='loanPolicy'] [data-port-role='source'][data-port='output'][data-path='maxTerm']",
+                "#diagram [data-node-id='riskConfigurablePolicy'] [data-port-role='target'][data-port='config'][data-path='threshold']"
+        );
+        waitForText(wait, By.id("connection-status"),
+                "Connected loanPolicy.output.maxTerm -> riskConfigurablePolicy.config.threshold");
+        waitForValue(wait, By.cssSelector("[data-config-expression][data-config-field='threshold']"),
+                "loanPolicy.output.maxTerm");
+        waitForText(wait, By.id("selected-operator-editor"),
+                "Config expression bound to loanPolicy.output.maxTerm.");
+
+        selectByValue(wait, By.cssSelector("select[aria-label='Mode config']"), "strict");
+
+        click(wait, By.id("validate-visual-draft"));
+        waitForText(wait, By.id("visual-check-status"), "Valid visual graph.");
+
+        assertThat(valueOf(By.id("composer-dsl")))
+                .contains("branch on riskTypeRoute.output.value")
+                .contains("\"approved\" -> riskScoreFacts")
+                .contains("depends_on = [loanPolicy]");
+    }
+
     private WebDriver newChromeDriverOrSkip() {
         ChromeOptions options = new ChromeOptions();
         options.addArguments(
@@ -249,6 +319,30 @@ class VisualAuthoringBrowserDomTest {
         waitForAnyText(wait, By.id("library-status"), "Imported risk-policy", "Replaced risk-policy");
     }
 
+    private void importOperatorLibrary(WebDriverWait wait, OperatorLibrary library) throws JsonProcessingException {
+        WebElement editor = wait.until(ExpectedConditions.visibilityOfElementLocated(By.id("operator-library-json")));
+        setControlValue(editor, OBJECT_MAPPER.writeValueAsString(library));
+        click(wait, By.id("import-library"));
+        waitForAnyText(wait, By.id("library-status"),
+                "Imported " + library.libraryId(),
+                "Replaced " + library.libraryId());
+    }
+
+    private void dragOperatorToCanvas(WebDriverWait wait, String searchText, String operatorType,
+                                      String expectedNodeId, int xOffset, int yOffset) {
+        WebElement search = wait.until(ExpectedConditions.elementToBeClickable(By.id("operator-palette-search")));
+        search.clear();
+        search.sendKeys(searchText);
+        WebElement operator = wait.until(ExpectedConditions.elementToBeClickable(
+                By.cssSelector("[data-operator-type='" + operatorType + "']")
+        ));
+        WebElement diagram = wait.until(ExpectedConditions.visibilityOfElementLocated(By.id("diagram")));
+        dragOperatorToCanvas(operator, diagram, xOffset, yOffset);
+        wait.until(ExpectedConditions.visibilityOfElementLocated(
+                By.cssSelector("#diagram [data-node-id='" + expectedNodeId + "']")
+        ));
+    }
+
     private void dragOperatorToCanvas(WebElement operator, WebElement diagram, int xOffset, int yOffset) {
         scrollIntoView(operator);
         new Actions(driver)
@@ -259,6 +353,17 @@ class VisualAuthoringBrowserDomTest {
                 .pause(Duration.ofMillis(150))
                 .release()
                 .perform();
+    }
+
+    private void usePromptValue(String value) {
+        ((JavascriptExecutor) driver).executeScript(
+                "window.__blogePromptValues = [arguments[0]];"
+                        + "window.prompt = function(message, initial) {"
+                        + "  window.__blogeLastPrompt = { message: message, initial: initial };"
+                        + "  return window.__blogePromptValues.shift();"
+                        + "};",
+                value
+        );
     }
 
     private void dragConnection(WebDriverWait wait, String sourceSelector, String targetSelector) {
@@ -296,6 +401,15 @@ class VisualAuthoringBrowserDomTest {
         WebElement element = wait.until(ExpectedConditions.elementToBeClickable(locator));
         scrollIntoView(element);
         new Select(element).selectByValue(value);
+    }
+
+    private void waitForValue(WebDriverWait wait, By locator, String expected) {
+        try {
+            wait.until(ignored -> valueOf(locator).contains(expected));
+        } catch (TimeoutException ex) {
+            throw new AssertionError("Expected value '%s' was not present in %s. Actual='%s', output='%s'"
+                    .formatted(expected, locator, valueOf(locator), textOf(By.id("output"))), ex);
+        }
     }
 
     private void waitForComposer(WebDriverWait wait) {
@@ -345,6 +459,17 @@ class VisualAuthoringBrowserDomTest {
     private String valueOf(By locator) {
         WebElement element = driver.findElement(locator);
         return String.valueOf(element.getAttribute("value"));
+    }
+
+    private void setControlValue(WebElement element, String value) {
+        scrollIntoView(element);
+        ((JavascriptExecutor) driver).executeScript(
+                "arguments[0].value = arguments[1];"
+                        + "arguments[0].dispatchEvent(new Event('input', { bubbles: true }));"
+                        + "arguments[0].dispatchEvent(new Event('change', { bubbles: true }));",
+                element,
+                value
+        );
     }
 
     private void scrollIntoView(WebElement element) {
