@@ -252,6 +252,34 @@ class VisualGraphDraftControllerTest {
     }
 
     @Test
+    void updatePreservesSubmittedOperatorFingerprintSnapshot() {
+        DefaultVisualOperatorCatalog initialCatalog = VisualCatalogTestSupport.catalogWithLibrary(
+                VisualCatalogTestSupport.eligibilityLibrary("integer"));
+        DefaultVisualOperatorCatalog evolvedCatalog = VisualCatalogTestSupport.catalogWithLibrary(
+                VisualCatalogTestSupport.eligibilityLibrary("number"));
+        InMemoryGraphDraftRepository repository = new InMemoryGraphDraftRepository();
+        VisualGraphDraftController initialController = controllerWithCatalog(initialCatalog, repository);
+        VisualGraphDraftController evolvedController = controllerWithCatalog(evolvedCatalog, repository);
+        GraphDraft stored = initialController.create(eligibilityDraft(graphInputSchema(
+                Map.of(
+                        "score", Map.of("type", "integer"),
+                        "amount", Map.of("type", "number")
+                )
+        )));
+        String initialFingerprint = initialCatalog.find("risk:eligibility").orElseThrow().fingerprint();
+        String evolvedFingerprint = evolvedCatalog.find("risk:eligibility").orElseThrow().fingerprint();
+
+        GraphDraft updated = evolvedController.update(stored.draftId(), renameDraft(stored, "renamedPolicy"));
+
+        assertThat(updated.operatorFingerprints())
+                .containsEntry("eligibility", initialFingerprint)
+                .doesNotContainEntry("eligibility", evolvedFingerprint);
+        assertThat(validator(evolvedCatalog).validate(updated).diagnostics())
+                .extracting("code")
+                .contains("visual.operator.fingerprintMismatch");
+    }
+
+    @Test
     void patchStoredDraftRejectsStaleRevision() {
         VisualGraphDraftController controller = controllerWithEligibilityLibrary();
         GraphDraft stored = controller.create(eligibilityDraft(graphInputSchema(
@@ -485,6 +513,26 @@ class VisualGraphDraftControllerTest {
                 List.of(),
                 Map.of(),
                 new GraphDraft.OutputSelection("policy", "")
+        );
+    }
+
+    private static GraphDraft renameDraft(GraphDraft draft, String graphName) {
+        return new GraphDraft(
+                draft.schemaVersion(),
+                draft.draftId(),
+                draft.revision(),
+                graphName,
+                draft.tenantId(),
+                draft.namespace(),
+                draft.environment(),
+                draft.status(),
+                draft.inputSchema(),
+                draft.nodes(),
+                draft.edges(),
+                draft.visualLayout(),
+                draft.output(),
+                draft.operatorFingerprints(),
+                draft.revisionMetadata()
         );
     }
 

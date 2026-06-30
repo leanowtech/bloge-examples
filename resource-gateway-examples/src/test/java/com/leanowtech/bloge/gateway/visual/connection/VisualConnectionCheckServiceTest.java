@@ -38,6 +38,29 @@ class VisualConnectionCheckServiceTest {
     }
 
     @Test
+    void rejectsDuplicateDataConnectionPreview() {
+        VisualConnectionCheckService service = connectionService(VisualCatalogTestSupport
+                .catalogWithLoanApplicantResourceAndLibrary(VisualCatalogTestSupport.eligibilityLibrary("integer")));
+        GraphDraft draft = resourceEligibilityDraft(List.of(new GraphDraft.DraftEdge("score", "data",
+                new GraphDraft.Endpoint("fetchApplicant", "payload", "score"),
+                new GraphDraft.Endpoint("eligibility", "inputs", "score"))));
+
+        VisualConnectionCheckResult result = service.check(new VisualConnectionCheckRequest(
+                draft,
+                new GraphDraft.Endpoint("fetchApplicant", "payload", "score"),
+                new GraphDraft.Endpoint("eligibility", "inputs", "score"),
+                "data"
+        ));
+
+        assertThat(result.accepted()).isFalse();
+        assertThat(result.diagnostics())
+                .anySatisfy(diagnostic -> {
+                    assertThat(diagnostic.code()).isEqualTo("visual.edge.duplicateConnection");
+                    assertThat(diagnostic.target()).isEqualTo("/edges/1");
+                });
+    }
+
+    @Test
     void rejectsSchemaIncompatibleConnection() {
         VisualConnectionCheckService service = connectionService(VisualCatalogTestSupport
                 .catalogWithLoanApplicantResourceAndLibrary(VisualCatalogTestSupport.eligibilityLibrary("integer")));

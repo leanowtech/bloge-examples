@@ -1957,6 +1957,12 @@ function renderSelectedOperatorEditor() {
         renderSelectedOperatorEditor();
         return;
       }
+      if (connectionAlreadyApplied(source, bindingTarget)) {
+        setConnectionMessage('Connection already exists.', 'info');
+        renderSelectedOperatorEditor();
+        renderDiagram();
+        return;
+      }
       select.disabled = true;
       setConnectionMessage('Checking connection with server...', 'info');
       try {
@@ -4508,6 +4514,37 @@ function contextSourceForPath(path, builder = state.builder) {
   };
 }
 
+function connectionAlreadyApplied(source, target, builder = state.builder) {
+  const key = connectionKey(source, target);
+  return Boolean(key) && builderEdges(builder, { includeFallback: false })
+    .some((edge) => connectionKey(
+      {
+        nodeId: edge.source,
+        port: edge.sourcePort || '',
+        path: edge.sourcePath || ''
+      },
+      {
+        nodeId: edge.target,
+        port: edge.targetPort || '',
+        path: edge.targetPath || ''
+      }
+    ) === key);
+}
+
+function connectionKey(source, target) {
+  if (!source || !target || source.nodeId === CONTEXT_SOURCE_ID) {
+    return '';
+  }
+  return [
+    source.nodeId,
+    source.port || '',
+    source.path || '',
+    target.nodeId,
+    target.port || '',
+    target.path || ''
+  ].map((item) => String(item || '').trim()).join(':');
+}
+
 function connectionCompatibility(source, target) {
   if (!source || !target) {
     return { ok: false, message: 'Connection endpoint is missing.' };
@@ -4856,7 +4893,9 @@ function moveConnectionDrag(event) {
   if (target) {
     const compatibility = connectionCompatibility(drag.source, target);
     setConnectionMessage(compatibility.ok
-      ? `${drag.source.nodeId}.${drag.source.path || drag.source.port} -> ${target.nodeId}.${target.path || target.port}`
+      ? (connectionAlreadyApplied(drag.source, target)
+        ? 'Connection already exists.'
+        : `${drag.source.nodeId}.${drag.source.path || drag.source.port} -> ${target.nodeId}.${target.path || target.port}`)
       : compatibility.message,
       compatibility.ok ? 'info' : 'error');
   } else {
@@ -4875,6 +4914,11 @@ function finishConnectionDrag(event) {
   if (target) {
     const compatibility = connectionCompatibility(drag.source, target);
     if (compatibility.ok) {
+      if (connectionAlreadyApplied(drag.source, target)) {
+        setConnectionMessage('Connection already exists.', 'info');
+        renderDiagram();
+        return;
+      }
       setConnectionMessage('Checking connection with server...', 'info');
       renderDiagram();
       checkVisualConnectionOnServer(drag.source, target)

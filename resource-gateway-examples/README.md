@@ -155,11 +155,14 @@ blocks unknown or type-incompatible `contextPath` bindings when the draft input
 schema is strict. Manual
 `expression` bindings are not blind escape hatches: server validation checks
 referenced `ctx.*` and `node.output.*` paths, and pure reference expressions are
-type-checked against the target input schema. Data edges must match a real
-semantic dependency such as a node-path binding or config expression reference,
-and node-path bindings must be represented by a data edge in stored drafts, so
-the line shown on the canvas cannot silently diverge from what the DSL generator
-executes. Expression references in node inputs and executable config also
+type-checked against the target input schema. Data edges must have unique ids
+and unique source/target connection signatures, match a real semantic dependency
+such as a node-path binding or config expression reference, and node-path
+bindings must be represented by a data edge in stored drafts, so the line shown
+on the canvas cannot silently diverge from what the DSL generator executes.
+The browser treats repeated attempts to draw an already-applied data connection
+as an idempotent no-op instead of sending noisy duplicate edits to the server.
+Expression references in node inputs and executable config also
 participate in DAG validation and DSL topological ordering even when they are
 not represented by a direct edge. Output selections are checked
 against the selected node's output port schema before compile/run as well, and
@@ -168,12 +171,12 @@ Each catalog operator exposes a server-computed fingerprint, and saved drafts
 store per-node `operatorFingerprints`; compile/run/publish require executable
 drafts to carry a fingerprint snapshot, and validation checks snapshots for
 coverage and drift so a draft authored against an older schema/lowering
-fingerprint is blocked before execution. Revision-guarded `PATCH` updates
-preserve existing fingerprint snapshots and only fill missing entries for new
-nodes from the active catalog for the draft's current authoring scope, so
-routine metadata edits cannot silently rebase a draft onto a newer operator
-schema or turn a newly hand-injected deprecated/out-of-scope operator into an
-executable node.
+fingerprint is blocked before execution. Full `PUT` saves and revision-guarded
+`PATCH` updates preserve submitted/existing fingerprint snapshots and only fill
+missing entries for new nodes from the active catalog for the draft's current
+authoring scope, so routine metadata edits or full-form saves cannot silently
+rebase a draft onto a newer operator schema or turn a newly hand-injected
+deprecated/out-of-scope operator into an executable node.
 Operator availability is also enforced by policy: imported operator definitions
 may declare allowed `tenants`, `namespaces`, and `environments`; the browser
 queries the active catalog with the current draft scope from the Authoring Scope
@@ -505,7 +508,7 @@ Seven `.bloge` graphs live in `src/main/resources/bloge/gateway/`:
 | `DefaultVisualOperatorCatalog` | Combines native visual operators with `resource:<resourceId>` virtual operators |
 | `GraphDraft` | Editable canvas graph model: input schema, nodes, port-aware bindings, edges, layout, output selection, and operator fingerprint snapshots |
 | `DatabaseGraphDraftRepository` | H2-backed graph draft repository with revision assignment, immutable revision history, and expected-revision guarded updates |
-| `GraphDraftValidator` | Validates operator references, operator fingerprint drift, operator scope policy, graph input `contextPath` bindings, binding kind allow-list, literal constants, expression references, required schema inputs, node config against `configSchema`, port-aware node bindings, typed port edges, data edge/semantic dependency consistency, DAG shape, and output schema selection |
+| `GraphDraftValidator` | Validates operator references, operator fingerprint drift, operator scope policy, graph input `contextPath` bindings, binding kind allow-list, literal constants, expression references, required schema inputs, node config against `configSchema`, port-aware node bindings, typed port edges, edge identity/connection uniqueness, data edge/semantic dependency consistency, DAG shape, and output schema selection |
 | `VisualConnectionCheckService` | Reuses preview-mode draft validation to accept or reject one proposed canvas edge before the browser writes a binding |
 | `GraphDraftDslGenerator` | Lowers visual drafts into executable BLOGE DSL |
 | `VisualGraphRunService` | Reuses the dynamic BLOGE runner to validate, compile, and execute visual drafts |
@@ -807,7 +810,7 @@ curl -X POST http://localhost:8080/api/gateway/resources/execute \
 
 ## Test strategy
 
-The test suite is organised into four layers (40 top-level test classes, 318 executed
+The test suite is organised into four layers (40 top-level test classes, 322 executed
 tests, including nested JUnit suites):
 
 ### Layer 1 — Unit tests
@@ -833,7 +836,7 @@ Isolated component tests, some with lightweight Spring slices or mocks.
 | `ResourceDescriptorBootstrapTest` | 7 | Seeding, refresh behavior, idempotency |
 | `GatewayDslCompilationTest` | 7 | DSL parsing, graph loading |
 | Gateway example API suite | 13 | Dynamic composer service/controller, scenario catalog, example graph endpoints |
-| Visual authoring suite | 177 | Visual operator projection, resource design contract persistence and gates, imported libraries, catalog lifecycle gates, deprecated operator draft resolution and active-scope fingerprinting, catalog token gates and policy filtering, cross-library operatorRef ownership, system-reserved operatorRef gates, import-time lowering gates, draft/publication persistence and history, revision audit metadata, revision-guarded patching, operator fingerprint drift preservation and execution snapshot coverage gates, typed connection/edge validation including binding kind allow-list, input/config source-picker server preflight, duplicate target input ownership, object required fields, object schema structure gates, required-array schema gates, nested objectTemplate required fields, enum value-domain and shape gates, config expression references and configSchema type gates, data edge/semantic dependency consistency, graph input schema gates, secret blocking, DSL lowering, compiler gating, dependency ordering, runtime smoke path |
+| Visual authoring suite | 181 | Visual operator projection, resource design contract persistence and gates, imported libraries, catalog lifecycle gates, deprecated operator draft resolution and active-scope fingerprinting, catalog token gates and policy filtering, cross-library operatorRef ownership, system-reserved operatorRef gates, import-time lowering gates, draft/publication persistence and history, revision audit metadata, full-save/PATCH fingerprint preservation, revision-guarded patching, operator fingerprint drift preservation and execution snapshot coverage gates, typed connection/edge validation including edge identity uniqueness and binding kind allow-list, input/config source-picker server preflight with duplicate-connection rejection, duplicate target input ownership, object required fields, object schema structure gates, required-array schema gates, nested objectTemplate required fields, enum value-domain and shape gates, config expression references and configSchema type gates, data edge/semantic dependency consistency, graph input schema gates, secret blocking, DSL lowering, compiler gating, dependency ordering, runtime smoke path |
 
 ### Layer 3 — Orchestration tests
 

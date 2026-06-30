@@ -107,6 +107,7 @@ public class GraphDraftValidator {
 
         validateNodePathBindings(draft, nodesById, operatorsByNodeId, diagnostics);
         validateConfigReferences(draft, nodesById, operatorsByNodeId, diagnostics);
+        validateEdgeIdentity(draft, diagnostics);
         validateEdges(draft, nodesById, operatorsByNodeId, diagnostics);
         if (options.requireEdgeBindingConsistency()) {
             validateDataEdgeBindingConsistency(draft, nodesById, operatorsByNodeId, diagnostics);
@@ -1170,10 +1171,63 @@ public class GraphDraftValidator {
         return items == null || list.stream().allMatch(item -> constantValueMatchesSchema(item, items));
     }
 
+    private static void validateEdgeIdentity(GraphDraft draft, List<VisualDiagnostic> diagnostics) {
+        Set<String> edgeIds = new HashSet<>();
+        Set<EdgeSignature> edgeSignatures = new HashSet<>();
+        for (int i = 0; i < draft.edges().size(); i++) {
+            GraphDraft.DraftEdge edge = draft.edges().get(i);
+            String edgePath = "/edges/" + i;
+            if (!edgeIds.add(edge.id())) {
+                diagnostics.add(VisualDiagnostic.error("visual.edge.duplicateId",
+                        "Duplicate edge id: " + edge.id(), edgePath + "/id"));
+            }
+            EdgeSignature signature = EdgeSignature.from(edge);
+            if (!edgeSignatures.add(signature)) {
+                diagnostics.add(VisualDiagnostic.error("visual.edge.duplicateConnection",
+                        "Duplicate edge connection: " + signature.label(), edgePath));
+            }
+        }
+    }
+
     private record ExpressionReference(boolean matched, Map<String, Object> schema, String label) {
     }
 
     private record OutputReference(String port, String path) {
+    }
+
+    private record EdgeSignature(
+            String kind,
+            String sourceNodeId,
+            String sourcePort,
+            String sourcePath,
+            String targetNodeId,
+            String targetPort,
+            String targetPath
+    ) {
+
+        private static EdgeSignature from(GraphDraft.DraftEdge edge) {
+            return new EdgeSignature(
+                    normalizedEdgeValue(edge.kind()),
+                    normalizedEdgeValue(edge.source().nodeId()),
+                    normalizedEdgeValue(edge.source().port()),
+                    normalizePath(edge.source().path()),
+                    normalizedEdgeValue(edge.target().nodeId()),
+                    normalizedEdgeValue(edge.target().port()),
+                    normalizePath(edge.target().path())
+            );
+        }
+
+        private String label() {
+            return "%s:%s.%s.%s -> %s.%s.%s".formatted(
+                    kind,
+                    sourceNodeId,
+                    sourcePort,
+                    sourcePath,
+                    targetNodeId,
+                    targetPort,
+                    targetPath
+            );
+        }
     }
 
     private record CanvasConnection(
@@ -1618,6 +1672,10 @@ public class GraphDraftValidator {
 
     private static String normalizePath(String path) {
         return path == null ? "" : path.trim();
+    }
+
+    private static String normalizedEdgeValue(String value) {
+        return value == null ? "" : value.trim();
     }
 
     private static Map<String, Object> configChildSchema(Map<String, Object> schema, String key) {

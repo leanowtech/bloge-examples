@@ -285,6 +285,63 @@ class GraphDraftValidatorTest {
     }
 
     @Test
+    void rejectsDuplicateEdgeIds() {
+        GraphDraftValidator validator = new GraphDraftValidator(
+                VisualCatalogTestSupport.catalogWithLoanApplicantResourceAndLibrary(
+                        VisualCatalogTestSupport.eligibilityLibrary("integer")));
+        GraphDraft draft = typedEligibilityDraft(
+                Map.of(
+                        "score", GraphDraft.Binding.nodePath(
+                                "fetchApplicant", "payload", "score", "inputs", "score"),
+                        "amount", GraphDraft.Binding.nodePath(
+                                "fetchApplicant", "payload", "score", "inputs", "amount")
+                ),
+                List.of(
+                        new GraphDraft.DraftEdge("score-edge", "data",
+                                new GraphDraft.Endpoint("fetchApplicant", "payload", "score"),
+                                new GraphDraft.Endpoint("eligibility", "inputs", "score")),
+                        new GraphDraft.DraftEdge("score-edge", "data",
+                                new GraphDraft.Endpoint("fetchApplicant", "payload", "score"),
+                                new GraphDraft.Endpoint("eligibility", "inputs", "amount"))
+                ));
+
+        VisualValidationResult result = validator.validate(draft);
+
+        assertThat(result.valid()).isFalse();
+        assertThat(result.diagnostics())
+                .anySatisfy(diagnostic -> {
+                    assertThat(diagnostic.code()).isEqualTo("visual.edge.duplicateId");
+                    assertThat(diagnostic.target()).isEqualTo("/edges/1/id");
+                });
+    }
+
+    @Test
+    void rejectsDuplicateEdgeConnections() {
+        GraphDraftValidator validator = new GraphDraftValidator(
+                VisualCatalogTestSupport.catalogWithLoanApplicantResourceAndLibrary(
+                        VisualCatalogTestSupport.eligibilityLibrary("integer")));
+        GraphDraft draft = typedEligibilityDraft(
+                GraphDraft.Binding.nodePath("fetchApplicant", "payload", "score", "inputs", "score"),
+                List.of(
+                        new GraphDraft.DraftEdge("score-a", "data",
+                                new GraphDraft.Endpoint("fetchApplicant", "payload", "score"),
+                                new GraphDraft.Endpoint("eligibility", "inputs", "score")),
+                        new GraphDraft.DraftEdge("score-b", "data",
+                                new GraphDraft.Endpoint("fetchApplicant", "payload", "score"),
+                                new GraphDraft.Endpoint("eligibility", "inputs", "score"))
+                ));
+
+        VisualValidationResult result = validator.validate(draft);
+
+        assertThat(result.valid()).isFalse();
+        assertThat(result.diagnostics())
+                .anySatisfy(diagnostic -> {
+                    assertThat(diagnostic.code()).isEqualTo("visual.edge.duplicateConnection");
+                    assertThat(diagnostic.target()).isEqualTo("/edges/1");
+                });
+    }
+
+    @Test
     void rejectsDataEdgeWithoutMatchingNodePathBinding() {
         GraphDraftValidator validator = new GraphDraftValidator(
                 VisualCatalogTestSupport.catalogWithLoanApplicantResourceAndLibrary(
@@ -1620,6 +1677,16 @@ class GraphDraftValidatorTest {
 
     private static GraphDraft typedEligibilityDraft(GraphDraft.Binding scoreBinding,
                                                     List<GraphDraft.DraftEdge> edges) {
+        return typedEligibilityDraft(
+                Map.of(
+                        "score", scoreBinding,
+                        "amount", GraphDraft.Binding.contextPath("amount")
+                ),
+                edges);
+    }
+
+    private static GraphDraft typedEligibilityDraft(Map<String, GraphDraft.Binding> eligibilityInputs,
+                                                    List<GraphDraft.DraftEdge> edges) {
         return new GraphDraft(
                 "",
                 "",
@@ -1643,10 +1710,7 @@ class GraphDraftValidatorTest {
                                 "eligibility",
                                 "risk:eligibility",
                                 "",
-                                Map.of(
-                                        "score", scoreBinding,
-                                        "amount", GraphDraft.Binding.contextPath("amount")
-                                ),
+                                eligibilityInputs,
                                 Map.of(),
                                 null
                         )

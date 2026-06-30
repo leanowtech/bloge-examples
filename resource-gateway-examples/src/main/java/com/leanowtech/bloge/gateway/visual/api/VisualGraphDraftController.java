@@ -142,7 +142,7 @@ public class VisualGraphDraftController {
      */
     @PutMapping("/{draftId}")
     public GraphDraft update(@PathVariable String draftId, @RequestBody GraphDraft draft) {
-        return repository.save(withCurrentOperatorFingerprints(draft.withIdentity(draftId, draft.revision())));
+        return repository.save(withMissingCurrentOperatorFingerprints(draft.withIdentity(draftId, draft.revision())));
     }
 
     /**
