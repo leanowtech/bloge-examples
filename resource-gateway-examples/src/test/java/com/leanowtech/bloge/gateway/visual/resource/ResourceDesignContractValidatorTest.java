@@ -194,6 +194,60 @@ class ResourceDesignContractValidatorTest {
     }
 
     @Test
+    void rejectsObjectEnumAndConstValuesOutsideDeclaredShapeInResourceSchemas() {
+        ResourceDesignContract contract = new ResourceDesignContract(
+                "contract:orders",
+                "order-service.listOrders",
+                "Order list",
+                "Lists orders.",
+                List.of("order"),
+                SchemaEnvelope.object(Map.of(
+                        "status", Map.of(
+                                "type", "object",
+                                "required", List.of("code"),
+                                "additionalProperties", false,
+                                "properties", Map.of(
+                                        "code", Map.of("type", "string", "pattern", "^[A-Z]+$"),
+                                        "score", Map.of("type", "integer", "minimum", 0)
+                                ),
+                                "enum", List.of(
+                                        Map.of("score", 10),
+                                        Map.of("code", "ok"),
+                                        Map.of("code", "OK", "extra", true)
+                                ))
+                ), List.of("status")),
+                SchemaEnvelope.object(Map.of(
+                        "fixed", Map.of(
+                                "type", "object",
+                                "required", List.of("mode"),
+                                "additionalProperties", false,
+                                "properties", Map.of("mode", Map.of("type", "string")),
+                                "const", Map.of("mode", 7))
+                ), List.of()),
+                Map.of(),
+                "ACTIVE"
+        );
+
+        VisualValidationResult result = validator.validate(contract);
+
+        assertThat(result.valid()).isFalse();
+        assertThat(result.diagnostics())
+                .extracting("code")
+                .contains(
+                        "visual.schema.enumConstraintMismatch",
+                        "visual.schema.constConstraintMismatch"
+                );
+        assertThat(result.diagnostics())
+                .extracting("target")
+                .contains(
+                        "/requestSchema/schema/properties/status/enum/0",
+                        "/requestSchema/schema/properties/status/enum/1",
+                        "/requestSchema/schema/properties/status/enum/2",
+                        "/responseSchema/schema/properties/fixed/const"
+                );
+    }
+
+    @Test
     void acceptsStringPatternInResourceContractSchemas() {
         ResourceDesignContract contract = new ResourceDesignContract(
                 "contract:orders",

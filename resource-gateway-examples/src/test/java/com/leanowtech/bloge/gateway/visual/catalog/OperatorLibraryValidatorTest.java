@@ -1438,6 +1438,81 @@ class OperatorLibraryValidatorTest {
     }
 
     @Test
+    void rejectsObjectEnumAndConstValuesOutsideDeclaredShapeAcrossOperatorDefinitions() {
+        OperatorDefinition operator = new OperatorDefinition(
+                "bloge.visualOperator.v1",
+                "risk:badObjectValueDomainPolicy",
+                "1.0.0",
+                new OperatorDefinition.Display("Bad object value domain", "Test operator.", List.of("test")),
+                new OperatorDefinition.Source("user-library", "", "", "", true),
+                new OperatorDefinition.Ports(
+                        List.of(new OperatorDefinition.Port("input",
+                                SchemaEnvelope.object(Map.of(
+                                        "decision", Map.of(
+                                                "type", "object",
+                                                "required", List.of("code"),
+                                                "additionalProperties", false,
+                                                "properties", Map.of(
+                                                        "code", Map.of("type", "string", "pattern", "^[A-Z]+$"),
+                                                        "score", Map.of("type", "integer", "minimum", 0)
+                                                ),
+                                                "enum", List.of(
+                                                        Map.of("score", 10),
+                                                        Map.of("code", "ok"),
+                                                        Map.of("code", "OK", "extra", true)
+                                                ))
+                                ), List.of("decision")),
+                                true,
+                                "Input.")),
+                        List.of(new OperatorDefinition.Port("output",
+                                SchemaEnvelope.object(Map.of(
+                                        "tags", Map.of(
+                                                "type", "array",
+                                                "items", Map.of("type", "string", "minLength", 2),
+                                                "uniqueItems", true,
+                                                "enum", List.of(
+                                                        List.of("aa", "aa"),
+                                                        List.of("a")
+                                                ))
+                                ), List.of()),
+                                true,
+                                "Output."))
+                ),
+                SchemaEnvelope.object(Map.of(
+                        "fixed", Map.of(
+                                "type", "object",
+                                "required", List.of("mode"),
+                                "additionalProperties", false,
+                                "properties", Map.of("mode", Map.of("type", "string")),
+                                "const", Map.of("mode", 7))
+                ), List.of()),
+                OperatorDefinition.Capabilities.pure(),
+                new OperatorDefinition.Lowering("native", "riskBadObjectValueDomainPolicy", Map.of()),
+                List.of()
+        );
+
+        VisualValidationResult result = validator.validate(libraryWith(operator));
+
+        assertThat(result.valid()).isFalse();
+        assertThat(result.diagnostics())
+                .extracting("code")
+                .contains(
+                        "visual.schema.enumConstraintMismatch",
+                        "visual.schema.constConstraintMismatch"
+                );
+        assertThat(result.diagnostics())
+                .extracting("target")
+                .contains(
+                        "/operators/0/ports/inputs/0/schema/schema/properties/decision/enum/0",
+                        "/operators/0/ports/inputs/0/schema/schema/properties/decision/enum/1",
+                        "/operators/0/ports/inputs/0/schema/schema/properties/decision/enum/2",
+                        "/operators/0/ports/outputs/0/schema/schema/properties/tags/enum/0",
+                        "/operators/0/ports/outputs/0/schema/schema/properties/tags/enum/1",
+                        "/operators/0/configSchema/schema/properties/fixed/const"
+                );
+    }
+
+    @Test
     void rejectsUnsupportedJsonSchemaKeywordsAcrossOperatorSchemas() {
         OperatorDefinition operator = new OperatorDefinition(
                 "bloge.visualOperator.v1",

@@ -5239,9 +5239,6 @@ function validateSchemaEnum(schema, kind, path, diagnostics) {
     return;
   }
   validateSchemaEnumValues(values, `${path}/enum`, diagnostics);
-  if (!enumValueConstrainedKind(kind)) {
-    return;
-  }
   values.forEach((value, index) => {
     if (!enumValueMatchesKind(value, kind)) {
       diagnostics.push(graphInputSchemaDiagnostic(
@@ -5285,17 +5282,10 @@ function validateSchemaEnum(schema, kind, path, diagnostics) {
         `${path}/enum/${index}`
       ));
     }
-    if (arrayType(kind) && Array.isArray(value) && !arrayValueMatchesItemBounds(value, schema)) {
+    if (arrayType(kind) && Array.isArray(value) && !arrayValueMatchesSchema(value, schema)) {
       diagnostics.push(graphInputSchemaDiagnostic(
         'visual.schema.enumConstraintMismatch',
-        `Enum value at index ${index} must satisfy array item count constraints.`,
-        `${path}/enum/${index}`
-      ));
-    }
-    if (arrayType(kind) && Array.isArray(value) && !arrayValueMatchesUniqueItems(value, schema)) {
-      diagnostics.push(graphInputSchemaDiagnostic(
-        'visual.schema.enumConstraintMismatch',
-        `Enum value at index ${index} must satisfy array uniqueItems constraint.`,
+        `Enum value at index ${index} must satisfy array schema constraints.`,
         `${path}/enum/${index}`
       ));
     }
@@ -5303,10 +5293,10 @@ function validateSchemaEnum(schema, kind, path, diagnostics) {
         && value !== null
         && typeof value === 'object'
         && !Array.isArray(value)
-        && !objectValueMatchesPropertyBounds(value, schema)) {
+        && !objectValueMatchesSchema(value, schema)) {
       diagnostics.push(graphInputSchemaDiagnostic(
         'visual.schema.enumConstraintMismatch',
-        `Enum value at index ${index} must satisfy object property count constraints.`,
+        `Enum value at index ${index} must satisfy object schema constraints.`,
         `${path}/enum/${index}`
       ));
     }
@@ -5394,26 +5384,18 @@ function validateSchemaConst(schema, kind, path, diagnostics) {
     ));
   }
   if (arrayType(kind) && schemaValueMatchesType(constValue, kind)
-      && !arrayValueMatchesItemBounds(constValue, schema)) {
+      && !arrayValueMatchesSchema(constValue, schema)) {
     diagnostics.push(graphInputSchemaDiagnostic(
       'visual.schema.constConstraintMismatch',
-      'Const value must satisfy array item count constraints.',
-      `${path}/const`
-    ));
-  }
-  if (arrayType(kind) && schemaValueMatchesType(constValue, kind)
-      && !arrayValueMatchesUniqueItems(constValue, schema)) {
-    diagnostics.push(graphInputSchemaDiagnostic(
-      'visual.schema.constConstraintMismatch',
-      'Const value must satisfy array uniqueItems constraint.',
+      'Const value must satisfy array schema constraints.',
       `${path}/const`
     ));
   }
   if (kind === 'object' && schemaValueMatchesType(constValue, kind)
-      && !objectValueMatchesPropertyBounds(constValue, schema)) {
+      && !objectValueMatchesSchema(constValue, schema)) {
     diagnostics.push(graphInputSchemaDiagnostic(
       'visual.schema.constConstraintMismatch',
-      'Const value must satisfy object property count constraints.',
+      'Const value must satisfy object schema constraints.',
       `${path}/const`
     ));
   }
@@ -5676,10 +5658,6 @@ function validateSchemaEnumValues(values, path, diagnostics) {
     }
     seen.add(key);
   });
-}
-
-function enumValueConstrainedKind(kind) {
-  return ['string', 'duration', 'datetime', 'integer', 'number', 'decimal', 'boolean', 'null'].includes(kind);
 }
 
 function enumValueMatchesKind(value, kind) {

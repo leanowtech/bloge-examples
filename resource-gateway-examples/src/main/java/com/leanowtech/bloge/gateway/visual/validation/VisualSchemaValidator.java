@@ -444,80 +444,57 @@ public final class VisualSchemaValidator {
             return;
         }
         validateEnumValues(values, path + "/enum", diagnostics);
-        if (valueConstrainedKind(kind)) {
-            for (int i = 0; i < values.size(); i++) {
-                if (!enumValueMatchesKind(values.get(i), kind)) {
-                    diagnostics.add(VisualDiagnostic.error("visual.schema.enumTypeMismatch",
-                            "Enum value at index %d must match schema type '%s'.".formatted(i, kind),
-                            path + "/enum/" + i));
-                }
+        for (int i = 0; i < values.size(); i++) {
+            Object value = values.get(i);
+            String valuePath = path + "/enum/" + i;
+            if ((valueConstrainedKind(kind) || arrayKind(kind) || objectKind(kind))
+                    && !constValueMatchesKind(value, kind)) {
+                diagnostics.add(VisualDiagnostic.error("visual.schema.enumTypeMismatch",
+                        "Enum value at index %d must match schema type '%s'.".formatted(i, kind),
+                        valuePath));
+            }
+            if (numericKind(kind) && enumValueMatchesKind(value, kind)
+                    && !numericValueMatchesBounds(value, schema)) {
+                diagnostics.add(VisualDiagnostic.error("visual.schema.enumConstraintMismatch",
+                        "Enum value at index %d must satisfy numeric bounds.".formatted(i),
+                        valuePath));
+            }
+            if (numericKind(kind) && enumValueMatchesKind(value, kind)
+                    && !numericValueMatchesMultipleOf(value, schema)) {
+                diagnostics.add(VisualDiagnostic.error("visual.schema.enumConstraintMismatch",
+                        "Enum value at index %d must satisfy numeric multipleOf constraint.".formatted(i),
+                        valuePath));
+            }
+            if (stringKind(kind) && enumValueMatchesKind(value, kind)
+                    && !stringValueMatchesLengthBounds(value, schema)) {
+                diagnostics.add(VisualDiagnostic.error("visual.schema.enumConstraintMismatch",
+                        "Enum value at index %d must satisfy string length constraints.".formatted(i),
+                        valuePath));
+            }
+            if (stringKind(kind) && enumValueMatchesKind(value, kind)
+                    && !stringValueMatchesPattern(value, schema)) {
+                diagnostics.add(VisualDiagnostic.error("visual.schema.enumConstraintMismatch",
+                        "Enum value at index %d must satisfy string pattern constraint.".formatted(i),
+                        valuePath));
+            }
+            if (stringKind(kind) && enumValueMatchesKind(value, kind)
+                    && !stringValueMatchesFormat(value, schema)) {
+                diagnostics.add(VisualDiagnostic.error("visual.schema.enumConstraintMismatch",
+                        "Enum value at index %d must satisfy string format constraint.".formatted(i),
+                        valuePath));
+            }
+            if (arrayKind(kind) && value instanceof List<?> && !arrayValueMatchesSchema(value, schema)) {
+                diagnostics.add(VisualDiagnostic.error("visual.schema.enumConstraintMismatch",
+                        "Enum value at index %d must satisfy array schema constraints.".formatted(i),
+                        valuePath));
+            }
+            if (objectKind(kind) && value instanceof Map<?, ?> && !objectValueMatchesSchema(value, schema)) {
+                diagnostics.add(VisualDiagnostic.error("visual.schema.enumConstraintMismatch",
+                        "Enum value at index %d must satisfy object schema constraints.".formatted(i),
+                        valuePath));
             }
         }
-	        if (numericKind(kind)) {
-	            for (int i = 0; i < values.size(); i++) {
-	                if (enumValueMatchesKind(values.get(i), kind)
-	                        && !numericValueMatchesBounds(values.get(i), schema)) {
-	                    diagnostics.add(VisualDiagnostic.error("visual.schema.enumConstraintMismatch",
-	                            "Enum value at index %d must satisfy numeric bounds.".formatted(i),
-	                            path + "/enum/" + i));
-	                }
-	                if (enumValueMatchesKind(values.get(i), kind)
-	                        && !numericValueMatchesMultipleOf(values.get(i), schema)) {
-	                    diagnostics.add(VisualDiagnostic.error("visual.schema.enumConstraintMismatch",
-	                            "Enum value at index %d must satisfy numeric multipleOf constraint.".formatted(i),
-	                            path + "/enum/" + i));
-	                }
-	            }
-	        }
-	        if (stringKind(kind)) {
-	            for (int i = 0; i < values.size(); i++) {
-	                if (enumValueMatchesKind(values.get(i), kind)
-	                        && !stringValueMatchesLengthBounds(values.get(i), schema)) {
-	                    diagnostics.add(VisualDiagnostic.error("visual.schema.enumConstraintMismatch",
-	                            "Enum value at index %d must satisfy string length constraints.".formatted(i),
-	                            path + "/enum/" + i));
-	                }
-		                if (enumValueMatchesKind(values.get(i), kind)
-		                        && !stringValueMatchesPattern(values.get(i), schema)) {
-		                    diagnostics.add(VisualDiagnostic.error("visual.schema.enumConstraintMismatch",
-		                            "Enum value at index %d must satisfy string pattern constraint.".formatted(i),
-		                            path + "/enum/" + i));
-		                }
-	                if (enumValueMatchesKind(values.get(i), kind)
-	                        && !stringValueMatchesFormat(values.get(i), schema)) {
-	                    diagnostics.add(VisualDiagnostic.error("visual.schema.enumConstraintMismatch",
-	                            "Enum value at index %d must satisfy string format constraint.".formatted(i),
-	                            path + "/enum/" + i));
-	                }
-		            }
-		        }
-		        if (arrayKind(kind)) {
-		            for (int i = 0; i < values.size(); i++) {
-		                if (values.get(i) instanceof List<?>
-		                        && !arrayValueMatchesItemBounds(values.get(i), schema)) {
-	                    diagnostics.add(VisualDiagnostic.error("visual.schema.enumConstraintMismatch",
-	                            "Enum value at index %d must satisfy array item count constraints.".formatted(i),
-	                            path + "/enum/" + i));
-	                }
-	                if (values.get(i) instanceof List<?>
-	                        && !arrayValueMatchesUniqueItems(values.get(i), schema)) {
-	                    diagnostics.add(VisualDiagnostic.error("visual.schema.enumConstraintMismatch",
-	                            "Enum value at index %d must satisfy array uniqueItems constraint.".formatted(i),
-	                            path + "/enum/" + i));
-		            }
-		        }
-	        if (objectKind(kind)) {
-	            for (int i = 0; i < values.size(); i++) {
-	                if (values.get(i) instanceof Map<?, ?> value
-	                        && !objectValueMatchesPropertyBounds(value, schema)) {
-	                    diagnostics.add(VisualDiagnostic.error("visual.schema.enumConstraintMismatch",
-	                            "Enum value at index %d must satisfy object property count constraints.".formatted(i),
-	                            path + "/enum/" + i));
-	                }
-	            }
-	        }
-		    }
-	    }
+    }
 
     private static void validateConstValue(Map<String, Object> schema,
                                            String kind,
@@ -577,21 +554,15 @@ public final class VisualSchemaValidator {
 	                    path + "/const"));
 	        }
 		        if (arrayKind(kind) && constValueMatchesKind(constValue, kind)
-		                && !arrayValueMatchesItemBounds(constValue, schema)) {
+		                && !arrayValueMatchesSchema(constValue, schema)) {
 	            diagnostics.add(VisualDiagnostic.error("visual.schema.constConstraintMismatch",
-	                    "Const value must satisfy array item count constraints.",
+	                    "Const value must satisfy array schema constraints.",
 	                    path + "/const"));
 	        }
-		        if (arrayKind(kind) && constValueMatchesKind(constValue, kind)
-		                && !arrayValueMatchesUniqueItems(constValue, schema)) {
-		            diagnostics.add(VisualDiagnostic.error("visual.schema.constConstraintMismatch",
-		                    "Const value must satisfy array uniqueItems constraint.",
-		                    path + "/const"));
-		        }
 	        if (objectKind(kind) && constValueMatchesKind(constValue, kind)
-	                && !objectValueMatchesPropertyBounds(constValue, schema)) {
+	                && !objectValueMatchesSchema(constValue, schema)) {
 	            diagnostics.add(VisualDiagnostic.error("visual.schema.constConstraintMismatch",
-	                    "Const value must satisfy object property count constraints.",
+	                    "Const value must satisfy object schema constraints.",
 	                    path + "/const"));
 	        }
 		    }
@@ -1012,12 +983,28 @@ public final class VisualSchemaValidator {
 	        return maximum == null || size <= maximum;
 	    }
 
-		    private static boolean arrayValueMatchesUniqueItems(Object value, Map<String, Object> schema) {
-		        if (!(value instanceof List<?> list) || !Boolean.TRUE.equals(schema.get("uniqueItems"))) {
-		            return true;
-		        }
-		        return new LinkedHashSet<>(list).size() == list.size();
-		    }
+	    private static boolean arrayValueMatchesUniqueItems(Object value, Map<String, Object> schema) {
+	        if (!(value instanceof List<?> list) || !Boolean.TRUE.equals(schema.get("uniqueItems"))) {
+	            return true;
+	        }
+	        return new LinkedHashSet<>(list).size() == list.size();
+	    }
+
+	    @SuppressWarnings("unchecked")
+	    private static boolean arrayValueMatchesSchema(Object value, Map<String, Object> schema) {
+	        if (!(value instanceof List<?> list) || !arrayKind(schemaKind(schema))) {
+	            return true;
+	        }
+	        if (!arrayValueMatchesItemBounds(value, schema) || !arrayValueMatchesUniqueItems(value, schema)) {
+	            return false;
+	        }
+	        Object items = schema.get("items");
+	        if (!(items instanceof Map<?, ?> itemSchema)) {
+	            return true;
+	        }
+	        Map<String, Object> itemSchemaMap = (Map<String, Object>) itemSchema;
+	        return list.stream().allMatch(item -> valueMatchesSchema(item, itemSchemaMap));
+	    }
 
 	    private static void validateObjectPropertyBoundary(Map<String, Object> schema,
 	                                                       String keyword,
@@ -1050,6 +1037,63 @@ public final class VisualSchemaValidator {
 	        }
 	        Long maximum = objectPropertyBoundary(schema.get("maxProperties"));
 	        return maximum == null || size <= maximum;
+	    }
+
+	    @SuppressWarnings("unchecked")
+	    private static boolean objectValueMatchesSchema(Object value, Map<String, Object> schema) {
+	        if (!(value instanceof Map<?, ?> rawMap) || !objectKind(schemaKind(schema))) {
+	            return true;
+	        }
+	        Map<String, Object> object = new LinkedHashMap<>();
+	        rawMap.forEach((key, item) -> object.put(String.valueOf(key), item));
+	        if (!objectValueMatchesPropertyBounds(object, schema)) {
+	            return false;
+	        }
+	        for (String required : requiredNamesWithoutDiagnostics(schema)) {
+	            if (!object.containsKey(required) || object.get(required) == null) {
+	                return false;
+	            }
+	        }
+	        Map<String, Object> properties = propertiesWithoutDiagnostics(schema);
+	        Object additional = schema.get("additionalProperties");
+	        for (Map.Entry<String, Object> entry : object.entrySet()) {
+	            Object property = properties.get(entry.getKey());
+	            if (property instanceof Map<?, ?> propertySchema) {
+	                if (!valueMatchesSchema(entry.getValue(), (Map<String, Object>) propertySchema)) {
+	                    return false;
+	                }
+	            } else if (Boolean.FALSE.equals(additional)) {
+	                return false;
+	            } else if (additional instanceof Map<?, ?> additionalSchema
+	                    && !valueMatchesSchema(entry.getValue(), (Map<String, Object>) additionalSchema)) {
+	                return false;
+	            }
+	        }
+	        return true;
+	    }
+
+	    private static boolean valueMatchesSchema(Object value, Map<String, Object> schema) {
+	        String kind = schemaKind(schema);
+	        if (!constValueMatchesKind(value, kind)) {
+	            return false;
+	        }
+	        Object rawEnum = schema.get("enum");
+	        if (rawEnum instanceof List<?> values && !values.contains(value)) {
+	            return false;
+	        }
+	        if ("enum".equals(kind)) {
+	            Object rawValues = schema.get("values");
+	            if (rawValues instanceof List<?> values && !values.contains(value)) {
+	                return false;
+	            }
+	        }
+	        return numericValueMatchesBounds(value, schema)
+	                && numericValueMatchesMultipleOf(value, schema)
+	                && stringValueMatchesLengthBounds(value, schema)
+	                && stringValueMatchesPattern(value, schema)
+	                && stringValueMatchesFormat(value, schema)
+	                && arrayValueMatchesSchema(value, schema)
+	                && objectValueMatchesSchema(value, schema);
 	    }
 
 	    private static Long stringLengthBoundary(Object value) {
