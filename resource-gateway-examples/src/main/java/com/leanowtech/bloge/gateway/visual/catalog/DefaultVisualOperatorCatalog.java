@@ -3,6 +3,9 @@ package com.leanowtech.bloge.gateway.visual.catalog;
 import com.leanowtech.bloge.gateway.resource.ResourceDescriptor;
 import com.leanowtech.bloge.gateway.resource.ResourceRegistry;
 import com.leanowtech.bloge.gateway.visual.model.SchemaEnvelope;
+import com.leanowtech.bloge.gateway.visual.publication.InMemoryVisualGraphPublicationRepository;
+import com.leanowtech.bloge.gateway.visual.publication.VisualGraphPublication;
+import com.leanowtech.bloge.gateway.visual.publication.VisualGraphPublicationRepository;
 import com.leanowtech.bloge.gateway.visual.resource.ResourceDesignContract;
 import com.leanowtech.bloge.gateway.visual.resource.ResourceDesignContractRegistry;
 
@@ -28,6 +31,8 @@ public class DefaultVisualOperatorCatalog implements VisualOperatorCatalog {
     private final ResourceVirtualOperatorProjector projector;
     private final OperatorLibraryRegistry libraryRegistry;
     private final JavaOperatorInventoryProjector javaOperatorProjector;
+    private final VisualGraphPublicationRepository publicationRepository;
+    private final VisualGraphPublicationOperatorProjector publicationProjector;
 
     /**
      * @param resourceRegistry resource descriptor registry
@@ -39,7 +44,9 @@ public class DefaultVisualOperatorCatalog implements VisualOperatorCatalog {
                                         ResourceDesignContractRegistry contractRegistry,
                                         ResourceVirtualOperatorProjector projector,
                                         OperatorLibraryRegistry libraryRegistry,
-                                        JavaOperatorInventoryProjector javaOperatorProjector) {
+                                        JavaOperatorInventoryProjector javaOperatorProjector,
+                                        VisualGraphPublicationRepository publicationRepository,
+                                        VisualGraphPublicationOperatorProjector publicationProjector) {
         this.resourceRegistry = resourceRegistry;
         this.contractRegistry = contractRegistry;
         this.projector = projector;
@@ -47,20 +54,37 @@ public class DefaultVisualOperatorCatalog implements VisualOperatorCatalog {
         this.javaOperatorProjector = javaOperatorProjector == null
                 ? JavaOperatorInventoryProjector.empty()
                 : javaOperatorProjector;
+        this.publicationRepository = publicationRepository == null
+                ? new InMemoryVisualGraphPublicationRepository()
+                : publicationRepository;
+        this.publicationProjector = publicationProjector == null
+                ? new VisualGraphPublicationOperatorProjector()
+                : publicationProjector;
     }
 
     DefaultVisualOperatorCatalog(ResourceRegistry resourceRegistry,
                                  ResourceDesignContractRegistry contractRegistry,
                                  ResourceVirtualOperatorProjector projector) {
         this(resourceRegistry, contractRegistry, projector, OperatorLibraryRegistry.empty(),
-                JavaOperatorInventoryProjector.empty());
+                JavaOperatorInventoryProjector.empty(), new InMemoryVisualGraphPublicationRepository(),
+                new VisualGraphPublicationOperatorProjector());
     }
 
     DefaultVisualOperatorCatalog(ResourceRegistry resourceRegistry,
                                  ResourceDesignContractRegistry contractRegistry,
                                  ResourceVirtualOperatorProjector projector,
                                  OperatorLibraryRegistry libraryRegistry) {
-        this(resourceRegistry, contractRegistry, projector, libraryRegistry, JavaOperatorInventoryProjector.empty());
+        this(resourceRegistry, contractRegistry, projector, libraryRegistry, JavaOperatorInventoryProjector.empty(),
+                new InMemoryVisualGraphPublicationRepository(), new VisualGraphPublicationOperatorProjector());
+    }
+
+    public DefaultVisualOperatorCatalog(ResourceRegistry resourceRegistry,
+                                        ResourceDesignContractRegistry contractRegistry,
+                                        ResourceVirtualOperatorProjector projector,
+                                        OperatorLibraryRegistry libraryRegistry,
+                                        JavaOperatorInventoryProjector javaOperatorProjector) {
+        this(resourceRegistry, contractRegistry, projector, libraryRegistry, javaOperatorProjector,
+                new InMemoryVisualGraphPublicationRepository(), new VisualGraphPublicationOperatorProjector());
     }
 
     @Override
@@ -71,6 +95,9 @@ public class DefaultVisualOperatorCatalog implements VisualOperatorCatalog {
             operators.addAll(nativeOperators());
             operators.addAll(javaOperatorProjector.project());
             operators.addAll(libraryRegistry.operators(effectiveQuery.includeDeprecated()));
+            for (VisualGraphPublication publication : publicationRepository.all()) {
+                operators.add(publicationProjector.project(publication));
+            }
         }
         for (ResourceDescriptor descriptor : resourceRegistry.all()) {
             Optional<ResourceDesignContract> contract = contractRegistry.findByResourceId(descriptor.resourceId());

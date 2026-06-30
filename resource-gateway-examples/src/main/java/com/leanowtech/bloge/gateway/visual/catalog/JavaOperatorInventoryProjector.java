@@ -21,6 +21,7 @@ import com.leanowtech.bloge.core.spi.OperatorMetadata;
 import com.leanowtech.bloge.core.spi.OperatorRegistry;
 import com.leanowtech.bloge.gateway.visual.diagnostic.VisualDiagnostic;
 import com.leanowtech.bloge.gateway.visual.model.SchemaEnvelope;
+import com.leanowtech.bloge.gateway.visual.runtime.VisualGraphPublicationOperator;
 
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.ObjectProvider;
@@ -49,7 +50,8 @@ public class JavaOperatorInventoryProjector {
     private static final Set<String> RESERVED_OPERATOR_REFS = Set.of(
             "httpResource",
             "bloge:decisionTable",
-            "bloge:transform"
+            "bloge:transform",
+            VisualGraphPublicationOperator.NAME
     );
 
     private final OperatorRegistry registry;

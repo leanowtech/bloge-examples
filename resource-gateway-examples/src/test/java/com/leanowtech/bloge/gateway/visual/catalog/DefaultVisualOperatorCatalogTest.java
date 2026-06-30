@@ -2,11 +2,17 @@ package com.leanowtech.bloge.gateway.visual.catalog;
 
 import com.leanowtech.bloge.gateway.resource.ResourceDescriptor;
 import com.leanowtech.bloge.gateway.resource.ResourceRegistry;
+import com.leanowtech.bloge.gateway.visual.codegen.DslGenerationResult;
 import com.leanowtech.bloge.gateway.visual.diagnostic.VisualDiagnostic;
+import com.leanowtech.bloge.gateway.visual.draft.GraphDraft;
 import com.leanowtech.bloge.gateway.visual.model.SchemaEnvelope;
+import com.leanowtech.bloge.gateway.visual.publication.InMemoryVisualGraphPublicationRepository;
+import com.leanowtech.bloge.gateway.visual.publication.VisualGraphPublication;
 import com.leanowtech.bloge.gateway.visual.resource.InMemoryResourceDesignContractRegistry;
 import com.leanowtech.bloge.gateway.visual.resource.ResourceDesignContract;
+import com.leanowtech.bloge.gateway.visual.runtime.VisualGraphPublicationOperator;
 import com.leanowtech.bloge.gateway.visual.validation.VisualSchemaValidator;
+import com.leanowtech.bloge.gateway.visual.validation.VisualValidationResult;
 import com.leanowtech.bloge.core.operator.Operator;
 import com.leanowtech.bloge.core.operator.OperatorContext;
 import com.leanowtech.bloge.core.spi.DefaultOperatorRegistry;
@@ -96,6 +102,49 @@ class DefaultVisualOperatorCatalogTest {
         assertThat(operator.lowering().operatorRef()).isEqualTo("normalizeText");
         assertThat(operator.ports().inputs().getFirst().schema().properties()).containsKey("raw");
         assertThat(operator.ports().outputs().getFirst().schema().properties()).containsKey("value");
+    }
+
+    @Test
+    void includesPublishedVisualGraphsAsReusableSubgraphOperators() {
+        InMemoryVisualGraphPublicationRepository publications = new InMemoryVisualGraphPublicationRepository();
+        publications.create(publishedEligibilityGraph());
+        DefaultVisualOperatorCatalog catalog = new DefaultVisualOperatorCatalog(
+                VisualCatalogTestSupport.emptyResourceRegistry(),
+                new InMemoryResourceDesignContractRegistry(),
+                new ResourceVirtualOperatorProjector(),
+                OperatorLibraryRegistry.empty(),
+                JavaOperatorInventoryProjector.empty(),
+                publications,
+                new VisualGraphPublicationOperatorProjector()
+        );
+
+        OperatorDefinition operator = catalog.find("publication:pub-eligibility").orElseThrow();
+
+        assertThat(operator.source().kind()).isEqualTo("visual-publication");
+        assertThat(operator.source().virtual()).isTrue();
+        assertThat(operator.display().tags()).contains("publication", "subgraph", "visual-graph");
+        assertThat(operator.policy().tenants()).containsExactly("tenant-a");
+        assertThat(operator.policy().namespaces()).containsExactly("risk");
+        assertThat(operator.policy().environments()).containsExactly("prod");
+        assertThat(operator.lowering().mode()).isEqualTo("native");
+        assertThat(operator.lowering().operatorRef()).isEqualTo(VisualGraphPublicationOperator.NAME);
+        assertThat(operator.lowering().parameters()).containsEntry("publicationId", "pub-eligibility");
+        assertThat(operator.ports().inputs().getFirst().schema().required())
+                .containsExactlyInAnyOrder("score", "amount");
+        assertThat(operator.ports().outputs().getFirst().schema().schema())
+                .containsEntry("type", "boolean");
+
+        assertThat(catalog.list(new OperatorCatalogQuery("", List.of(), true, false)))
+                .extracting(OperatorDefinition::operatorRef)
+                .doesNotContain("publication:pub-eligibility");
+        assertThat(catalog.list(new OperatorCatalogQuery("", List.of(), false, false,
+                "tenant-a", "risk", "prod")))
+                .extracting(OperatorDefinition::operatorRef)
+                .contains("publication:pub-eligibility");
+        assertThat(catalog.list(new OperatorCatalogQuery("", List.of(), false, false,
+                "tenant-a", "risk", "local")))
+                .extracting(OperatorDefinition::operatorRef)
+                .doesNotContain("publication:pub-eligibility");
     }
 
     @Test
@@ -241,6 +290,65 @@ class DefaultVisualOperatorCatalogTest {
                 new SingleResourceRegistry(descriptor),
                 contracts,
                 new ResourceVirtualOperatorProjector()
+        );
+    }
+
+    private static VisualGraphPublication publishedEligibilityGraph() {
+        OperatorDefinition eligibility = VisualCatalogTestSupport.eligibilityOperator("integer");
+        GraphDraft draft = new GraphDraft(
+                "",
+                "draft-eligibility",
+                7,
+                "publishedEligibility",
+                "tenant-a",
+                "risk",
+                "prod",
+                "",
+                SchemaEnvelope.object(Map.of(
+                        "score", Map.of("type", "integer"),
+                        "amount", Map.of("type", "number")
+                ), List.of("score", "amount")),
+                List.of(new GraphDraft.DraftNode(
+                        "eligibility",
+                        eligibility.operatorRef(),
+                        "",
+                        Map.of(
+                                "score", GraphDraft.Binding.contextPath("score"),
+                                "amount", GraphDraft.Binding.contextPath("amount")
+                        ),
+                        Map.of(),
+                        null
+                )),
+                List.of(),
+                Map.of(),
+                new GraphDraft.OutputSelection("eligibility", "eligible"),
+                Map.of("eligibility", eligibility.fingerprint())
+        );
+        String dsl = """
+                graph publishedEligibility {
+                  transform eligibility {
+                    eligible = ctx.score >= 700 && ctx.amount <= 300000
+                    ruleId = "ELIGIBILITY_V1"
+                  }
+                }
+                """;
+        return new VisualGraphPublication(
+                "",
+                "pub-eligibility",
+                draft.draftId(),
+                draft.revision(),
+                draft.graphName(),
+                draft.tenantId(),
+                draft.namespace(),
+                draft.environment(),
+                null,
+                draft,
+                List.of(eligibility),
+                draft.operatorFingerprints(),
+                Map.of(),
+                dsl,
+                new VisualValidationResult(true, List.of()),
+                new DslGenerationResult(true, dsl, List.of())
         );
     }
 

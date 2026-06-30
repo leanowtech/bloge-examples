@@ -33,11 +33,14 @@ import com.leanowtech.bloge.gateway.visual.publication.VisualGraphPublicationRep
 import com.leanowtech.bloge.gateway.visual.resource.DatabaseResourceDesignContractRegistry;
 import com.leanowtech.bloge.gateway.visual.resource.ResourceDesignContractRegistry;
 import com.leanowtech.bloge.gateway.visual.runtime.DatabaseVisualGraphRunRepository;
+import com.leanowtech.bloge.gateway.visual.runtime.VisualGraphPublicationOperator;
 import com.leanowtech.bloge.gateway.visual.runtime.VisualGraphRunRepository;
+import com.leanowtech.bloge.gateway.visual.runtime.VisualGraphRunService;
 import com.leanowtech.bloge.operators.http.HttpRequestInput;
 import com.leanowtech.bloge.operators.http.HttpRequestOperator;
 import com.leanowtech.bloge.spring.annotation.BlogeOperator;
 
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -158,6 +161,21 @@ public class GatewayConfiguration {
                                                      PayloadExtractor extractor,
                                                      ResponseValidator validator) {
         return new HttpResourceOperator(httpRequestOperator, registry, evaluator, renderer, extractor, validator);
+    }
+
+    /**
+     * Runtime operator used by publication-backed virtual operators.
+     *
+     * @param repository immutable publication repository
+     * @param runnerProvider lazy runner provider to avoid eager registry cycles
+     * @return visual publication invocation operator
+     */
+    @Bean
+    @ConditionalOnMissingBean
+    public VisualGraphPublicationOperator visualGraphPublicationOperator(
+            VisualGraphPublicationRepository repository,
+            ObjectProvider<VisualGraphRunService> runnerProvider) {
+        return new VisualGraphPublicationOperator(repository, runnerProvider);
     }
 
     /**

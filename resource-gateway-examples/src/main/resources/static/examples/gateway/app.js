@@ -3503,6 +3503,7 @@ async function deleteSelectedDraft() {
   state.draftRevisions = [];
   state.selectedDraftRevision = 0;
   state.previewingDraftRevision = 0;
+  renderDraftControls();
   setDraftMessage(`Deleted ${deletedId}.`, 'success');
   await loadDraftList();
 }
@@ -5062,6 +5063,9 @@ function customNodeToDsl(node, builder) {
   const executable = spec.lowering?.operatorRef || spec.operatorRef || spec.visualOperatorRef || node.paletteType;
   const inputEntries = customDslInputEntries(node);
   const config = customBusinessConfig(node.config || {});
+  if (spec.sourceKind === 'visual-publication' && spec.lowering?.parameters?.publicationId && !config.publicationId) {
+    config.publicationId = spec.lowering.parameters.publicationId;
+  }
   if (Object.keys(config).length && !inputEntries.some(([key]) => key === 'config')) {
     inputEntries.push(['config', renderConfigDslValue(config)]);
   }

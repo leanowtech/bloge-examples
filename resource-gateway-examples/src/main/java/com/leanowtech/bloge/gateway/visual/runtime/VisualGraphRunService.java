@@ -231,8 +231,21 @@ public class VisualGraphRunService {
             return List.of();
         }
         return VisualSchemaValidator.validateValue(draft.inputSchema(),
-                context == null ? Map.of() : context,
+                schemaVisibleContext(context),
                 "/context");
+    }
+
+    private static Map<String, Object> schemaVisibleContext(Map<String, Object> context) {
+        if (context == null || context.isEmpty()) {
+            return Map.of();
+        }
+        Map<String, Object> visible = new LinkedHashMap<>();
+        context.forEach((key, value) -> {
+            if (key != null && !key.startsWith("_bloge")) {
+                visible.put(key, value);
+            }
+        });
+        return visible;
     }
 
     private static boolean shouldExtractDraftOutputPath(GraphDraft draft, String actualOutputNode) {

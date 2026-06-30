@@ -11,6 +11,7 @@ import com.leanowtech.bloge.gateway.visual.catalog.OperatorLibrary;
 import com.leanowtech.bloge.gateway.visual.catalog.VisualCatalogTestSupport;
 import com.leanowtech.bloge.gateway.visual.draft.GraphDraft;
 import com.leanowtech.bloge.gateway.visual.model.SchemaEnvelope;
+import com.leanowtech.bloge.gateway.visual.runtime.VisualGraphPublicationOperator;
 
 import org.junit.jupiter.api.Test;
 
@@ -579,6 +580,56 @@ class GraphDraftDslGeneratorTest {
     }
 
     @Test
+    void injectsFrozenPublicationIdForPublishedVisualGraphOperator() {
+        GraphDraftDslGenerator generator = new GraphDraftDslGenerator(
+                VisualCatalogTestSupport.catalogWithLibrary(publicationPolicyLibrary()));
+        GraphDraft draft = new GraphDraft(
+                "",
+                "",
+                0,
+                "publishedPolicyComposition",
+                "",
+                "",
+                "",
+                "",
+                null,
+                List.of(new GraphDraft.DraftNode(
+                        "publishedEligibility",
+                        "publication:pub-eligibility",
+                        "",
+                        Map.of(
+                                "score", GraphDraft.Binding.contextPath("score"),
+                                "amount", GraphDraft.Binding.contextPath("amount")
+                        ),
+                        Map.of(),
+                        null
+                )),
+                List.of(),
+                Map.of(),
+                new GraphDraft.OutputSelection("publishedEligibility", "")
+        );
+
+        DslGenerationResult result = generator.generate(draft);
+
+        assertThat(result.generated()).isTrue();
+        assertThat(result.dsl()).contains("node publishedEligibility : visualPublication");
+        assertThat(result.dsl()).contains("score = ctx.score");
+        assertThat(result.dsl()).contains("amount = ctx.amount");
+        assertThat(result.dsl()).contains("config = { publicationId: \"pub-eligibility\" }");
+
+        DefaultOperatorRegistry registry = new DefaultOperatorRegistry();
+        registry.registerRaw(VisualGraphPublicationOperator.NAME, new StubOperator());
+        GraphLoader loader = new GraphLoader(registry);
+        loader.withCompilationMode(CompilationMode.LENIENT);
+        var compilation = loader.loadWithDiagnostics(result.dsl());
+        Graph graph = compilation.graph();
+        assertThat(graph)
+                .as("compiler diagnostics: %s%nDSL:%n%s", compilation.diagnostics(), result.dsl())
+                .isNotNull();
+        assertThat(graph.nodes()).isNotEmpty();
+    }
+
+    @Test
     void rejectsNativeOperatorConfigKeysThatCannotRenderAsDslFields() {
         GraphDraftDslGenerator generator = new GraphDraftDslGenerator(
                 VisualCatalogTestSupport.catalogWithLibrary(nativePolicyLibrary("riskPolicy")));
@@ -958,6 +1009,45 @@ class GraphDraftDslGeneratorTest {
                 "bloge.visualOperatorLibrary.v1",
                 "risk-native-configurable-policy",
                 "Risk native configurable policy operators",
+                "1.0.0",
+                "risk-team",
+                "ACTIVE",
+                List.of(operator)
+        );
+    }
+
+    private static OperatorLibrary publicationPolicyLibrary() {
+        Map<String, Object> inputProperties = new LinkedHashMap<>();
+        inputProperties.put("score", Map.of("type", "integer"));
+        inputProperties.put("amount", Map.of("type", "number"));
+        OperatorDefinition operator = new OperatorDefinition(
+                "bloge.visualOperator.v1",
+                "publication:pub-eligibility",
+                "7",
+                new OperatorDefinition.Display("Published eligibility",
+                        "Invokes a frozen published visual graph.",
+                        List.of("publication", "subgraph")),
+                new OperatorDefinition.Source("visual-publication", "", "", "", true),
+                new OperatorDefinition.Ports(
+                        List.of(new OperatorDefinition.Port("inputs",
+                                SchemaEnvelope.object(inputProperties, List.of("score", "amount")),
+                                true,
+                                "Published graph inputs.")),
+                        List.of(new OperatorDefinition.Port("output",
+                                SchemaEnvelope.object(Map.of("eligible", Map.of("type", "boolean")), List.of()),
+                                true,
+                                "Published graph output."))
+                ),
+                SchemaEnvelope.opaque(),
+                OperatorDefinition.Capabilities.pure(),
+                new OperatorDefinition.Lowering("native", VisualGraphPublicationOperator.NAME,
+                        Map.of("publicationId", "pub-eligibility")),
+                List.of()
+        );
+        return new OperatorLibrary(
+                "bloge.visualOperatorLibrary.v1",
+                "published-visual-graphs",
+                "Published visual graphs",
                 "1.0.0",
                 "risk-team",
                 "ACTIVE",

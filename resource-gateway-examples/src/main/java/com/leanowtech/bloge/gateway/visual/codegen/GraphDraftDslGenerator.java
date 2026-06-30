@@ -146,6 +146,10 @@ public class GraphDraftDslGenerator {
         inputAssignments.forEach((key, expression) -> block.append("      ").append(key).append(" = ")
                         .append(expression).append("\n"));
         Map<String, Object> config = businessConfig(node.config());
+        if ("visual-publication".equals(operator.source().kind())) {
+            config = new LinkedHashMap<>(config);
+            config.putIfAbsent("publicationId", stringValue(operator.lowering().parameters().get("publicationId")));
+        }
         if (!config.isEmpty()) {
             if (inputAssignments.containsKey("config")) {
                 diagnostics.add(VisualDiagnostic.error("visual.codegen.configInput.conflict",

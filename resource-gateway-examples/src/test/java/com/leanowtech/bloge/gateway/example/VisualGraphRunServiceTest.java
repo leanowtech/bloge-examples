@@ -6,21 +6,26 @@ import com.leanowtech.bloge.core.spi.DefaultOperatorRegistry;
 import com.leanowtech.bloge.gateway.visual.catalog.DefaultVisualOperatorCatalog;
 import com.leanowtech.bloge.gateway.visual.catalog.JavaOperatorInventoryProjector;
 import com.leanowtech.bloge.gateway.visual.catalog.OperatorLibraryRegistry;
+import com.leanowtech.bloge.gateway.visual.catalog.OperatorDefinition;
 import com.leanowtech.bloge.gateway.visual.catalog.ResourceVirtualOperatorProjector;
 import com.leanowtech.bloge.gateway.visual.catalog.VisualOperatorCatalog;
 import com.leanowtech.bloge.gateway.visual.catalog.VisualCatalogTestSupport;
+import com.leanowtech.bloge.gateway.visual.catalog.VisualGraphPublicationOperatorProjector;
 import com.leanowtech.bloge.gateway.visual.codegen.DslGenerationResult;
 import com.leanowtech.bloge.gateway.visual.codegen.GraphDraftDslGenerator;
 import com.leanowtech.bloge.gateway.visual.draft.GraphDraft;
 import com.leanowtech.bloge.gateway.visual.model.SchemaEnvelope;
+import com.leanowtech.bloge.gateway.visual.publication.InMemoryVisualGraphPublicationRepository;
 import com.leanowtech.bloge.gateway.visual.publication.VisualGraphPublication;
 import com.leanowtech.bloge.gateway.visual.resource.InMemoryResourceDesignContractRegistry;
+import com.leanowtech.bloge.gateway.visual.runtime.VisualGraphPublicationOperator;
 import com.leanowtech.bloge.gateway.visual.runtime.VisualGraphRunResponse;
 import com.leanowtech.bloge.gateway.visual.runtime.VisualGraphRunService;
 import com.leanowtech.bloge.gateway.visual.validation.VisualValidationResult;
 import com.leanowtech.bloge.gateway.visual.validation.GraphDraftValidator;
 import com.leanowtech.bloge.test.MockOperator;
 
+import org.springframework.beans.factory.ObjectProvider;
 import org.junit.jupiter.api.Test;
 
 import java.util.LinkedHashMap;
@@ -340,6 +345,72 @@ class VisualGraphRunServiceTest {
     }
 
     @Test
+    void runsPublishedVisualGraphAsReusableSubgraphOperator() {
+        InMemoryVisualGraphPublicationRepository publications = new InMemoryVisualGraphPublicationRepository();
+        VisualGraphPublication publication = publications.create(publishedScoreGraph());
+        VisualGraphRunService frozenPublicationRunner = new VisualGraphRunService(
+                null,
+                null,
+                new DynamicGatewayComposerService(MockOperator.returning(null))
+        );
+        VisualGraphPublicationOperator publicationOperator = new VisualGraphPublicationOperator(
+                publications,
+                providerFor(frozenPublicationRunner)
+        );
+        DefaultOperatorRegistry runtimeRegistry = new DefaultOperatorRegistry();
+        runtimeRegistry.registerRaw(VisualGraphPublicationOperator.NAME, publicationOperator);
+        VisualOperatorCatalog catalog = new DefaultVisualOperatorCatalog(
+                VisualCatalogTestSupport.emptyResourceRegistry(),
+                new InMemoryResourceDesignContractRegistry(),
+                new ResourceVirtualOperatorProjector(),
+                OperatorLibraryRegistry.empty(),
+                JavaOperatorInventoryProjector.forRegistry(new DefaultOperatorRegistry()),
+                publications,
+                new VisualGraphPublicationOperatorProjector()
+        );
+        VisualGraphRunService service = new VisualGraphRunService(
+                new GraphDraftValidator(catalog),
+                new GraphDraftDslGenerator(catalog),
+                new DynamicGatewayComposerService(runtimeRegistry)
+        );
+        OperatorDefinition operator = catalog.find(VisualGraphPublicationOperatorProjector.operatorRef(
+                publication.publicationId())).orElseThrow();
+        GraphDraft draft = new GraphDraft(
+                "",
+                "outer-draft",
+                1,
+                "outerComposition",
+                "",
+                "",
+                "",
+                "",
+                SchemaEnvelope.object(Map.of("score", Map.of("type", "integer")), List.of("score")),
+                List.of(new GraphDraft.DraftNode(
+                        "publishedScore",
+                        operator.operatorRef(),
+                        "",
+                        Map.of("score", GraphDraft.Binding.contextPath("score")),
+                        Map.of(),
+                        null
+                )),
+                List.of(),
+                Map.of(),
+                new GraphDraft.OutputSelection("publishedScore", ""),
+                Map.of("publishedScore", operator.fingerprint())
+        );
+
+        VisualGraphRunResponse response = service.run(draft, Map.of("score", 720), "");
+
+        assertThat(response.validated()).isTrue();
+        assertThat(response.compiled()).isTrue();
+        assertThat(response.errors()).isEmpty();
+        assertThat(response.success()).isTrue();
+        assertThat(response.generatedDsl()).contains("node publishedScore : visualPublication");
+        assertThat(response.generatedDsl()).contains("config = { publicationId: \"pub-score\" }");
+        assertThat(response.output()).isEqualTo(720);
+    }
+
+    @Test
     void rejectsPublishedRunWhenContextViolatesFrozenInputSchema() {
         VisualGraphRunService service = new VisualGraphRunService(
                 null,
@@ -449,6 +520,100 @@ class VisualGraphRunServiceTest {
                     .ifPresent(operator -> fingerprints.put(node.id(), operator.fingerprint()));
         }
         return draft.withOperatorFingerprints(fingerprints);
+    }
+
+    private static VisualGraphPublication publishedScoreGraph() {
+        OperatorDefinition transformSnapshot = new OperatorDefinition(
+                "bloge.visualOperator.v1",
+                "bloge:transform",
+                "1.0.0",
+                new OperatorDefinition.Display("Transform", "Published transform snapshot.", List.of("logic")),
+                OperatorDefinition.Source.builtIn("bloge-dsl"),
+                new OperatorDefinition.Ports(
+                        List.of(new OperatorDefinition.Port("inputs", SchemaEnvelope.opaque(), false,
+                                "Inputs.")),
+                        List.of(new OperatorDefinition.Port("output",
+                                SchemaEnvelope.object(Map.of("score", Map.of("type", "integer")), List.of()),
+                                true,
+                                "Score output."))
+                ),
+                SchemaEnvelope.opaque(),
+                OperatorDefinition.Capabilities.pure(),
+                new OperatorDefinition.Lowering("dsl", "transform", Map.of()),
+                List.of()
+        );
+        GraphDraft draft = new GraphDraft(
+                "",
+                "draft-score",
+                3,
+                "publishedScore",
+                "",
+                "",
+                "",
+                "",
+                SchemaEnvelope.object(Map.of("score", Map.of("type", "integer")), List.of("score")),
+                List.of(new GraphDraft.DraftNode(
+                        "response",
+                        "bloge:transform",
+                        "",
+                        Map.of("score", GraphDraft.Binding.contextPath("score")),
+                        Map.of(),
+                        null
+                )),
+                List.of(),
+                Map.of(),
+                new GraphDraft.OutputSelection("response", "score"),
+                Map.of("response", transformSnapshot.fingerprint())
+        );
+        String frozenDsl = """
+                graph publishedScore {
+                  transform response {
+                    score = ctx.score
+                  }
+                }
+                """;
+        return new VisualGraphPublication(
+                "",
+                "pub-score",
+                draft.draftId(),
+                draft.revision(),
+                draft.graphName(),
+                draft.tenantId(),
+                draft.namespace(),
+                draft.environment(),
+                null,
+                draft,
+                List.of(transformSnapshot),
+                draft.operatorFingerprints(),
+                Map.of(),
+                frozenDsl,
+                new VisualValidationResult(true, List.of()),
+                new DslGenerationResult(true, frozenDsl, List.of())
+        );
+    }
+
+    private static ObjectProvider<VisualGraphRunService> providerFor(VisualGraphRunService service) {
+        return new ObjectProvider<>() {
+            @Override
+            public VisualGraphRunService getObject(Object... args) {
+                return service;
+            }
+
+            @Override
+            public VisualGraphRunService getIfAvailable() {
+                return service;
+            }
+
+            @Override
+            public VisualGraphRunService getIfUnique() {
+                return service;
+            }
+
+            @Override
+            public VisualGraphRunService getObject() {
+                return service;
+            }
+        };
     }
 
     private record NormalizeInput(String raw) {
