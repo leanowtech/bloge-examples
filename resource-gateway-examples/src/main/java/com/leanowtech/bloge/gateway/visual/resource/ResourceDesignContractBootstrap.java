@@ -102,6 +102,9 @@ public class ResourceDesignContractBootstrap {
                         List<String> tags,
                         SchemaEnvelope requestSchema,
                         SchemaEnvelope responseSchema) {
+        if (registry.findByResourceId(resourceId).isPresent()) {
+            return;
+        }
         registry.upsert(new ResourceDesignContract(
                 "contract:" + resourceId,
                 resourceId,

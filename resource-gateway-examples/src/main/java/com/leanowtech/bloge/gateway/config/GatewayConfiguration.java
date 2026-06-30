@@ -20,6 +20,8 @@ import com.leanowtech.bloge.gateway.visual.draft.DatabaseGraphDraftRepository;
 import com.leanowtech.bloge.gateway.visual.draft.GraphDraftRepository;
 import com.leanowtech.bloge.gateway.visual.publication.DatabaseVisualGraphPublicationRepository;
 import com.leanowtech.bloge.gateway.visual.publication.VisualGraphPublicationRepository;
+import com.leanowtech.bloge.gateway.visual.resource.DatabaseResourceDesignContractRegistry;
+import com.leanowtech.bloge.gateway.visual.resource.ResourceDesignContractRegistry;
 import com.leanowtech.bloge.operators.http.HttpRequestInput;
 import com.leanowtech.bloge.operators.http.HttpRequestOperator;
 
@@ -167,6 +169,20 @@ public class GatewayConfiguration {
     public OperatorLibraryRegistry operatorLibraryRegistry(JdbcTemplate jdbc,
                                                            ObjectMapper objectMapper) {
         return new DatabaseOperatorLibraryRegistry(jdbc, objectMapper);
+    }
+
+    /**
+     * Database-backed registry for resource design contracts used by visual virtual operators.
+     *
+     * @param jdbc JDBC template for H2 access
+     * @param objectMapper Jackson mapper for contract serialization
+     * @return visual resource design contract registry
+     */
+    @Bean
+    @ConditionalOnMissingBean
+    public ResourceDesignContractRegistry resourceDesignContractRegistry(JdbcTemplate jdbc,
+                                                                         ObjectMapper objectMapper) {
+        return new DatabaseResourceDesignContractRegistry(jdbc, objectMapper);
     }
 
     /**

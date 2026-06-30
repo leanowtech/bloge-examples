@@ -1,7 +1,5 @@
 package com.leanowtech.bloge.gateway.visual.resource;
 
-import org.springframework.stereotype.Component;
-
 import java.util.Collection;
 import java.util.Comparator;
 import java.util.Map;
@@ -11,7 +9,6 @@ import java.util.concurrent.ConcurrentHashMap;
 /**
  * In-memory contract registry for the example application.
  */
-@Component
 public class InMemoryResourceDesignContractRegistry implements ResourceDesignContractRegistry {
 
     private final Map<String, ResourceDesignContract> contracts = new ConcurrentHashMap<>();

@@ -442,7 +442,9 @@ resource-gateway 示例已经为 `ResourceDesignContract` 提供 admin validate/
 gate：`requestSchema` 与 `responseSchema` 进入 virtual operator catalog 前必须
 通过同一套 schema 结构校验，`array` 缺少 `items`、`required` 引用未知字段、
 enum 缺少 values 和 examples 中的原始 secret 都会返回 blocking
-`VisualDiagnostic`，不会被持久化到设计合同 registry。
+`VisualDiagnostic`，不会被持久化到设计合同 registry。示例实现使用
+H2-backed `ResourceDesignContractRegistry`，并且 bootstrap 只补齐缺失的内置
+contract，不覆盖已经持久化的用户修改。
 
 ### 6.4 缺 schema 时的降级
 
@@ -1418,7 +1420,7 @@ MVP 可以用 H2，但模型要按未来迁移设计。
 ### Phase A：不破坏现有 resource-gateway
 
 - 保持 `ResourceDescriptor` record 不变。
-- 新增 `ResourceDesignContract` 存储。
+- 新增 H2-backed `ResourceDesignContract` 存储。
 - 新增 projector：`ResourceDescriptor + ResourceDesignContract -> OperatorDefinition`。
 - 当前 `/admin/resources` 不变。
 

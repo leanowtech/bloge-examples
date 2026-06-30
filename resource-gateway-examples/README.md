@@ -310,8 +310,9 @@ Base path: `/admin/resources`
 
 400 is returned when a descriptor contains an uncompilable bloge expression.
 
-Visual resource design contracts live beside descriptors and provide the
-input/output schemas used by the visual operator catalog:
+Visual resource design contracts live beside descriptors, are stored in an
+H2-backed registry, and provide the input/output schemas used by the visual
+operator catalog:
 
 | Method | Path | Description | Status |
 |--------|------|-------------|--------|
@@ -327,6 +328,8 @@ fields not declared in `properties`, array schemas without `items`, enum schemas
 without values, and raw secret material in contract examples. Built-in bootstrap
 contracts pass the same gate, so resource-backed virtual operators do not enter
 the visual catalog with weaker schema guarantees than imported user operators.
+Bootstrap seeds only missing built-in contracts and does not overwrite a
+persisted contract that an author has already customized.
 
 User-provided visual operator libraries are imported through a separate admin API.
 Imported operators join the same `/api/visual/operators` catalog as built-ins and
@@ -470,6 +473,7 @@ Seven `.bloge` graphs live in `src/main/resources/bloge/gateway/`:
 | Type | Role |
 |------|------|
 | `ResourceDesignContract` | Schema contract that turns a resource descriptor into a canvas-ready operator |
+| `DatabaseResourceDesignContractRegistry` | H2-backed visual resource contract registry, so resource-backed operator schemas survive restart |
 | `ResourceDesignContractValidator` | Blocks invalid resource authoring schemas and raw secret examples before resource contracts enter the virtual operator catalog |
 | `OperatorLibrary` | User-provided operator catalog bundle with schema-aware `OperatorDefinition` entries |
 | `DatabaseOperatorLibraryRegistry` | H2-backed user operator-library registry, so imported operator catalogs survive restart |
@@ -803,7 +807,7 @@ Isolated component tests, some with lightweight Spring slices or mocks.
 | `DatabaseResourceRegistryTest` | 11 | CRUD, H2 persistence, in-memory cache |
 | `ResourceDescriptorBootstrapTest` | 7 | Seeding, refresh behavior, idempotency |
 | `GatewayDslCompilationTest` | 7 | DSL parsing, graph loading |
-| Visual authoring suite | 155 | Visual operator projection, resource design contract gates, imported libraries, catalog policy filtering, cross-library operatorRef ownership, system-reserved operatorRef gates, import-time lowering gates, draft/publication persistence and history, revision audit metadata, revision-guarded patching, typed connection/edge validation including binding kind allow-list, source-picker server preflight, duplicate target input ownership, object required fields, nested objectTemplate required fields, enum value domains, config expression references and configSchema type gates, data edge/semantic dependency consistency, graph input schema gates, secret blocking, DSL lowering, compiler gating, dependency ordering, runtime smoke path |
+| Visual authoring suite | 160 | Visual operator projection, resource design contract persistence and gates, imported libraries, catalog policy filtering, cross-library operatorRef ownership, system-reserved operatorRef gates, import-time lowering gates, draft/publication persistence and history, revision audit metadata, revision-guarded patching, typed connection/edge validation including binding kind allow-list, source-picker server preflight, duplicate target input ownership, object required fields, nested objectTemplate required fields, enum value domains, config expression references and configSchema type gates, data edge/semantic dependency consistency, graph input schema gates, secret blocking, DSL lowering, compiler gating, dependency ordering, runtime smoke path |
 
 ### Layer 3 — Orchestration tests
 

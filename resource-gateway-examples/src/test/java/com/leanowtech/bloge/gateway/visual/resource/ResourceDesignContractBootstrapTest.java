@@ -1,8 +1,12 @@
 package com.leanowtech.bloge.gateway.visual.resource;
 
+import com.leanowtech.bloge.gateway.visual.model.SchemaEnvelope;
 import com.leanowtech.bloge.gateway.visual.validation.VisualValidationResult;
 
 import org.junit.jupiter.api.Test;
+
+import java.util.List;
+import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -27,5 +31,32 @@ class ResourceDesignContractBootstrapTest {
                             .describedAs(contract.resourceId())
                             .isEmpty();
                 });
+    }
+
+    @Test
+    void seedContractsDoesNotOverwriteExistingContracts() {
+        InMemoryResourceDesignContractRegistry registry = new InMemoryResourceDesignContractRegistry();
+        registry.upsert(new ResourceDesignContract(
+                "contract:user-service.getProfile",
+                "user-service.getProfile",
+                "Customized user profile",
+                "User-maintained visual contract.",
+                List.of("custom"),
+                SchemaEnvelope.object(Map.of(
+                        "userId", Map.of("type", "string")
+                ), List.of("userId")),
+                SchemaEnvelope.object(Map.of(
+                        "customScore", Map.of("type", "integer")
+                ), List.of()),
+                Map.of(),
+                "ACTIVE"
+        ));
+        ResourceDesignContractBootstrap bootstrap = new ResourceDesignContractBootstrap(registry);
+
+        bootstrap.seedContracts();
+
+        assertThat(registry.findByResourceId("user-service.getProfile"))
+                .map(ResourceDesignContract::displayName)
+                .contains("Customized user profile");
     }
 }
