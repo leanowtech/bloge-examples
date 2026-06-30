@@ -15,8 +15,11 @@ import com.leanowtech.bloge.gateway.example.DynamicGatewayComposerService;
 import com.leanowtech.bloge.gateway.operator.HttpResourceOperator;
 import com.leanowtech.bloge.gateway.visual.publication.InMemoryVisualGraphPublicationRepository;
 import com.leanowtech.bloge.gateway.visual.publication.VisualGraphPublicationResult;
+import com.leanowtech.bloge.gateway.visual.publication.VisualGraphPublishRequest;
 import com.leanowtech.bloge.gateway.visual.model.SchemaEnvelope;
+import com.leanowtech.bloge.gateway.visual.runtime.VisualGraphRunResponse;
 import com.leanowtech.bloge.gateway.visual.runtime.VisualGraphRunService;
+import com.leanowtech.bloge.gateway.visual.runtime.VisualStoredDraftRunRequest;
 import com.leanowtech.bloge.gateway.visual.validation.GraphDraftValidator;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -502,6 +505,88 @@ class VisualGraphDraftControllerTest {
     }
 
     @Test
+    void deleteRejectsStaleExpectedRevisionAndKeepsCurrentDraft() {
+        InMemoryGraphDraftRepository drafts = new InMemoryGraphDraftRepository();
+        VisualGraphDraftController controller = controllerWithCatalog(eligibilityCatalog(), drafts);
+        GraphDraft first = controller.create(eligibilityDraft(graphInputSchema(
+                Map.of(
+                        "score", Map.of("type", "integer"),
+                        "amount", Map.of("type", "number")
+                )
+        )));
+        GraphDraftPatchResult patched = controller.patch(first.draftId(), new GraphDraftPatchRequest(
+                first.revision(),
+                List.of(new GraphDraftPatchRequest.PatchOperation("replace", "/graphName", "deleteGuarded"))
+        )).getBody();
+        assertThat(patched).isNotNull();
+
+        ResponseEntity<Object> response = controller.delete(first.draftId(), first.revision());
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.CONFLICT);
+        assertThat(response.getBody()).isInstanceOf(GraphDraftPatchResult.class);
+        GraphDraftPatchResult result = (GraphDraftPatchResult) response.getBody();
+        assertThat(result.draft()).isEqualTo(patched.draft());
+        assertThat(result.diagnostics())
+                .extracting("code")
+                .containsExactly("visual.draft.revisionConflict");
+        assertThat(drafts.find(first.draftId())).contains(patched.draft());
+    }
+
+    @Test
+    void deleteRemovesDraftWhenExpectedRevisionMatches() {
+        InMemoryGraphDraftRepository drafts = new InMemoryGraphDraftRepository();
+        VisualGraphDraftController controller = controllerWithCatalog(eligibilityCatalog(), drafts);
+        GraphDraft stored = controller.create(eligibilityDraft(graphInputSchema(
+                Map.of(
+                        "score", Map.of("type", "integer"),
+                        "amount", Map.of("type", "number")
+                )
+        )));
+
+        ResponseEntity<Object> response = controller.delete(stored.draftId(), stored.revision());
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.NO_CONTENT);
+        assertThat(drafts.find(stored.draftId())).isEmpty();
+    }
+
+    @Test
+    void runStoredDraftRejectsStaleExpectedRevision() {
+        InMemoryGraphDraftRepository drafts = new InMemoryGraphDraftRepository();
+        VisualGraphDraftController controller = controllerWithCatalog(eligibilityCatalog(), drafts);
+        GraphDraft first = controller.create(eligibilityDraft(graphInputSchema(
+                Map.of(
+                        "score", Map.of("type", "integer"),
+                        "amount", Map.of("type", "number")
+                )
+        )));
+        GraphDraftPatchResult patched = controller.patch(first.draftId(), new GraphDraftPatchRequest(
+                first.revision(),
+                List.of(new GraphDraftPatchRequest.PatchOperation("replace", "/graphName", "runGuarded"))
+        )).getBody();
+        assertThat(patched).isNotNull();
+
+        ResponseEntity<VisualGraphRunResponse> response = controller.runStored(first.draftId(),
+                new VisualStoredDraftRunRequest(
+                        Map.of("score", 720, "amount", 100_000),
+                        "eligibility",
+                        first.revision()
+                ));
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.CONFLICT);
+        assertThat(response.getBody()).isNotNull();
+        assertThat(response.getBody().success()).isFalse();
+        assertThat(response.getBody().diagnostics())
+                .anySatisfy(diagnostic -> {
+                    assertThat(diagnostic.code()).isEqualTo("visual.draft.revisionConflict");
+                    assertThat(diagnostic.message())
+                            .contains("expected %d".formatted(first.revision()))
+                            .contains("current revision is %d".formatted(patched.draft().revision()));
+                });
+        assertThat(response.getBody().errors())
+                .anySatisfy(error -> assertThat(error).contains("Draft revision conflict"));
+    }
+
+    @Test
     void publishStoredDraftCreatesImmutablePublication() {
         DefaultVisualOperatorCatalog catalog = VisualCatalogTestSupport.catalogWithLibrary(
                 VisualCatalogTestSupport.eligibilityLibrary("integer"));
@@ -515,7 +600,8 @@ class VisualGraphDraftControllerTest {
                 )
         )));
 
-        ResponseEntity<VisualGraphPublicationResult> response = controller.publish(stored.draftId());
+        ResponseEntity<VisualGraphPublicationResult> response = controller.publish(stored.draftId(),
+                new VisualGraphPublishRequest(stored.revision()));
 
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.CREATED);
         VisualGraphPublicationResult result = response.getBody();
@@ -528,6 +614,41 @@ class VisualGraphDraftControllerTest {
                 .containsExactly("risk:eligibility");
         assertThat(result.publication().operatorFingerprints()).containsKey("eligibility");
         assertThat(publications.find(result.publication().publicationId())).contains(result.publication());
+    }
+
+    @Test
+    void publishRejectsStaleExpectedRevision() {
+        DefaultVisualOperatorCatalog catalog = VisualCatalogTestSupport.catalogWithLibrary(
+                VisualCatalogTestSupport.eligibilityLibrary("integer"));
+        InMemoryGraphDraftRepository drafts = new InMemoryGraphDraftRepository();
+        InMemoryVisualGraphPublicationRepository publications = new InMemoryVisualGraphPublicationRepository();
+        VisualGraphDraftController controller = controllerWithCatalog(catalog, drafts, publications);
+        GraphDraft first = controller.create(eligibilityDraft(graphInputSchema(
+                Map.of(
+                        "score", Map.of("type", "integer"),
+                        "amount", Map.of("type", "number")
+                )
+        )));
+        GraphDraftPatchResult patched = controller.patch(first.draftId(), new GraphDraftPatchRequest(
+                first.revision(),
+                List.of(new GraphDraftPatchRequest.PatchOperation("replace", "/graphName", "latestDraft"))
+        )).getBody();
+        assertThat(patched).isNotNull();
+
+        ResponseEntity<VisualGraphPublicationResult> response = controller.publish(first.draftId(),
+                new VisualGraphPublishRequest(first.revision()));
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.CONFLICT);
+        assertThat(response.getBody()).isNotNull();
+        assertThat(response.getBody().published()).isFalse();
+        assertThat(response.getBody().diagnostics())
+                .anySatisfy(diagnostic -> {
+                    assertThat(diagnostic.code()).isEqualTo("visual.draft.revisionConflict");
+                    assertThat(diagnostic.message())
+                            .contains("expected %d".formatted(first.revision()))
+                            .contains("current revision is %d".formatted(patched.draft().revision()));
+                });
+        assertThat(publications.all()).isEmpty();
     }
 
     @Test
@@ -547,7 +668,7 @@ class VisualGraphDraftControllerTest {
                 )
         )));
 
-        ResponseEntity<VisualGraphPublicationResult> response = controller.publish(stored.draftId());
+        ResponseEntity<VisualGraphPublicationResult> response = controller.publish(stored.draftId(), null);
 
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
         assertThat(response.getBody()).isNotNull();
@@ -569,7 +690,7 @@ class VisualGraphDraftControllerTest {
         );
         GraphDraft stored = controller.create(nativePolicyDraft());
 
-        ResponseEntity<VisualGraphPublicationResult> response = controller.publish(stored.draftId());
+        ResponseEntity<VisualGraphPublicationResult> response = controller.publish(stored.draftId(), null);
 
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
         assertThat(response.getBody()).isNotNull();

@@ -13,6 +13,7 @@ import com.leanowtech.bloge.gateway.visual.draft.GraphDraftRepository;
 import com.leanowtech.bloge.gateway.visual.publication.VisualGraphPublication;
 import com.leanowtech.bloge.gateway.visual.publication.VisualGraphPublicationRepository;
 import com.leanowtech.bloge.gateway.visual.publication.VisualGraphPublicationResult;
+import com.leanowtech.bloge.gateway.visual.publication.VisualGraphPublishRequest;
 import com.leanowtech.bloge.gateway.visual.runtime.VisualGraphRunRequest;
 import com.leanowtech.bloge.gateway.visual.runtime.VisualGraphRunResponse;
 import com.leanowtech.bloge.gateway.visual.runtime.VisualGraphRunService;
@@ -31,6 +32,7 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.util.Collection;
@@ -214,10 +216,17 @@ public class VisualGraphDraftController {
      * Deletes a draft.
      *
      * @param draftId draft id
+     * @param expectedRevision optional revision precondition
      * @return empty response
      */
     @DeleteMapping("/{draftId}")
-    public ResponseEntity<Void> delete(@PathVariable String draftId) {
+    public ResponseEntity<Object> delete(@PathVariable String draftId,
+                                         @RequestParam(defaultValue = "0") long expectedRevision) {
+        long revision = Math.max(0, expectedRevision);
+        Optional<GraphDraft> current = repository.find(draftId);
+        if (revision > 0 && current.isPresent() && current.get().revision() != revision) {
+            return updateConflictResponse(draftId, revision, current.get());
+        }
         repository.delete(draftId);
         return ResponseEntity.noContent().build();
     }
@@ -266,7 +275,9 @@ public class VisualGraphDraftController {
     public ResponseEntity<VisualGraphRunResponse> runStored(@PathVariable String draftId,
                                                             @RequestBody VisualStoredDraftRunRequest request) {
         return repository.find(draftId)
-                .map(draft -> ResponseEntity.ok(runner.run(draft, request.context(), request.outputNode())))
+                .map(draft -> request.expectedRevision() > 0 && request.expectedRevision() != draft.revision()
+                        ? runConflictResponse(draftId, request.expectedRevision(), draft)
+                        : ResponseEntity.ok(runner.run(draft, request.context(), request.outputNode())))
                 .orElseGet(() -> ResponseEntity.notFound().build());
     }
 
@@ -274,12 +285,15 @@ public class VisualGraphDraftController {
      * Publishes a stored draft as an immutable visual graph artifact.
      *
      * @param draftId draft id
+     * @param request optional revision precondition
      * @return publication result
      */
     @PostMapping("/{draftId}/publish")
-    public ResponseEntity<VisualGraphPublicationResult> publish(@PathVariable String draftId) {
+    public ResponseEntity<VisualGraphPublicationResult> publish(@PathVariable String draftId,
+                                                                @RequestBody(required = false)
+                                                                VisualGraphPublishRequest request) {
         return repository.find(draftId)
-                .map(this::publishDraft)
+                .map(draft -> publishDraft(draftId, request == null ? 0 : request.expectedRevision(), draft))
                 .orElseGet(() -> ResponseEntity.notFound().build());
     }
 
@@ -295,7 +309,12 @@ public class VisualGraphDraftController {
         return draft.withOperatorFingerprints(fingerprintsWithExistingOrCurrentValues(current, draft));
     }
 
-    private ResponseEntity<VisualGraphPublicationResult> publishDraft(GraphDraft draft) {
+    private ResponseEntity<VisualGraphPublicationResult> publishDraft(String draftId,
+                                                                      long expectedRevision,
+                                                                      GraphDraft draft) {
+        if (expectedRevision > 0 && expectedRevision != draft.revision()) {
+            return publishConflictResponse(draftId, expectedRevision, draft);
+        }
         VisualValidationResult validation = validator.validate(draft);
         if (!validation.valid()) {
             return ResponseEntity.badRequest()
@@ -316,6 +335,39 @@ public class VisualGraphDraftController {
         ));
         return ResponseEntity.status(HttpStatus.CREATED)
                 .body(VisualGraphPublicationResult.published(publication));
+    }
+
+    private ResponseEntity<VisualGraphPublicationResult> publishConflictResponse(String draftId,
+                                                                                 long expectedRevision,
+                                                                                 GraphDraft fallback) {
+        GraphDraft current = repository.find(draftId).orElse(fallback);
+        return ResponseEntity.status(HttpStatus.CONFLICT)
+                .body(VisualGraphPublicationResult.rejected(List.of(revisionConflictDiagnostic(
+                        expectedRevision, current.revision()))));
+    }
+
+    private ResponseEntity<VisualGraphRunResponse> runConflictResponse(String draftId,
+                                                                       long expectedRevision,
+                                                                       GraphDraft fallback) {
+        GraphDraft current = repository.find(draftId).orElse(fallback);
+        VisualDiagnostic diagnostic = revisionConflictDiagnostic(expectedRevision, current.revision());
+        return ResponseEntity.status(HttpStatus.CONFLICT)
+                .body(new VisualGraphRunResponse(
+                        false,
+                        false,
+                        false,
+                        current.graphName(),
+                        current.output().nodeId(),
+                        null,
+                        Map.of(),
+                        Map.of(),
+                        0,
+                        List.of(diagnostic),
+                        List.of(diagnostic.message()),
+                        null,
+                        null,
+                        ""
+                ));
     }
 
     private Map<String, String> fingerprintsWithMissingCurrentValues(GraphDraft draft) {

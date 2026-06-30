@@ -1,6 +1,8 @@
 package com.leanowtech.bloge.gateway.visual.resource;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.leanowtech.bloge.gateway.visual.draft.GraphDraft;
+import com.leanowtech.bloge.gateway.visual.draft.InMemoryGraphDraftRepository;
 import com.leanowtech.bloge.gateway.visual.model.SchemaEnvelope;
 
 import org.junit.jupiter.api.BeforeEach;
@@ -13,6 +15,7 @@ import java.util.List;
 import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
@@ -25,16 +28,19 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 class ResourceDesignContractAdminControllerTest {
 
     private InMemoryResourceDesignContractRegistry registry;
+    private InMemoryGraphDraftRepository drafts;
     private MockMvc mockMvc;
     private ObjectMapper objectMapper;
 
     @BeforeEach
     void setUp() {
         registry = new InMemoryResourceDesignContractRegistry();
+        drafts = new InMemoryGraphDraftRepository();
         objectMapper = new ObjectMapper();
         ResourceDesignContractAdminController controller = new ResourceDesignContractAdminController(
                 registry,
-                new ResourceDesignContractValidator()
+                new ResourceDesignContractValidator(),
+                drafts
         );
         mockMvc = MockMvcBuilders.standaloneSetup(controller).build();
     }
@@ -112,6 +118,33 @@ class ResourceDesignContractAdminControllerTest {
         assertThat(registry.all()).isEmpty();
     }
 
+    @Test
+    void deleteRejectsContractReferencedByStoredDraft() throws Exception {
+        ResourceDesignContract contract = validContract(Map.of());
+        registry.upsert(contract);
+        drafts.save(draftUsingResource("order-service.listOrders"));
+
+        mockMvc.perform(delete("/admin/resource-design-contracts/order-service.listOrders"))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.valid").value(false))
+                .andExpect(jsonPath("$.diagnostics[0].code").value("visual.resourceContract.inUse"))
+                .andExpect(jsonPath("$.diagnostics[0].target").value("/drafts/draft-1/nodes/0/operatorRef"));
+
+        assertThat(registry.findByResourceId("order-service.listOrders")).contains(contract);
+    }
+
+    @Test
+    void deleteForceBypassesStoredDraftReferenceGuard() throws Exception {
+        registry.upsert(validContract(Map.of()));
+        drafts.save(draftUsingResource("order-service.listOrders"));
+
+        mockMvc.perform(delete("/admin/resource-design-contracts/order-service.listOrders")
+                        .param("force", "true"))
+                .andExpect(status().isNoContent());
+
+        assertThat(registry.findByResourceId("order-service.listOrders")).isEmpty();
+    }
+
     private static ResourceDesignContract invalidArrayContract() {
         return new ResourceDesignContract(
                 "contract:orders",
@@ -151,5 +184,31 @@ class ResourceDesignContractAdminControllerTest {
         return SchemaEnvelope.object(Map.of(
                 "userId", Map.of("type", "string")
         ), List.of("userId"));
+    }
+
+    private static GraphDraft draftUsingResource(String resourceId) {
+        return new GraphDraft(
+                "bloge.visualGraphDraft.v1",
+                "draft-1",
+                0,
+                "resourceImpact",
+                "demo-tenant",
+                "local",
+                "browser",
+                "DRAFT",
+                SchemaEnvelope.opaque(),
+                List.of(new GraphDraft.DraftNode(
+                        "orders",
+                        "resource:" + resourceId,
+                        "Orders",
+                        Map.of(),
+                        Map.of(),
+                        new GraphDraft.Position(0, 0)
+                )),
+                List.of(),
+                Map.of(),
+                new GraphDraft.OutputSelection("orders", ""),
+                Map.of("orders", "fingerprint")
+        );
     }
 }

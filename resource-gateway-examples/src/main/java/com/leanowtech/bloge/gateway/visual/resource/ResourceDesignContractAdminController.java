@@ -1,6 +1,8 @@
 package com.leanowtech.bloge.gateway.visual.resource;
 
 import com.leanowtech.bloge.gateway.visual.diagnostic.VisualDiagnostic;
+import com.leanowtech.bloge.gateway.visual.draft.GraphDraft;
+import com.leanowtech.bloge.gateway.visual.draft.GraphDraftRepository;
 import com.leanowtech.bloge.gateway.visual.validation.VisualValidationResult;
 
 import org.springframework.http.HttpStatus;
@@ -14,8 +16,10 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
+import java.util.ArrayList;
 import java.util.Collection;
 import java.util.List;
 
@@ -28,15 +32,19 @@ public class ResourceDesignContractAdminController {
 
     private final ResourceDesignContractRegistry registry;
     private final ResourceDesignContractValidator validator;
+    private final GraphDraftRepository draftRepository;
 
     /**
      * @param registry contract registry
      * @param validator contract validator
+     * @param draftRepository stored visual graph draft repository
      */
     public ResourceDesignContractAdminController(ResourceDesignContractRegistry registry,
-                                                 ResourceDesignContractValidator validator) {
+                                                 ResourceDesignContractValidator validator,
+                                                 GraphDraftRepository draftRepository) {
         this.registry = registry;
         this.validator = validator;
+        this.draftRepository = draftRepository;
     }
 
     /**
@@ -94,12 +102,39 @@ public class ResourceDesignContractAdminController {
      * Deletes a design contract.
      *
      * @param resourceId descriptor id
+     * @param force bypass stored-draft reference protection
      * @return empty response
      */
     @DeleteMapping("/{resourceId:.+}")
-    public ResponseEntity<Void> delete(@PathVariable String resourceId) {
+    public ResponseEntity<?> delete(@PathVariable String resourceId,
+                                    @RequestParam(defaultValue = "false") boolean force) {
+        if (!force && registry.findByResourceId(resourceId).isPresent()) {
+            List<VisualDiagnostic> diagnostics = storedDraftReferenceDiagnostics(resourceId);
+            if (!diagnostics.isEmpty()) {
+                return ResponseEntity.status(HttpStatus.CONFLICT)
+                        .body(new VisualValidationResult(false, diagnostics));
+            }
+        }
         registry.deleteByResourceId(resourceId);
         return ResponseEntity.noContent().build();
+    }
+
+    private List<VisualDiagnostic> storedDraftReferenceDiagnostics(String resourceId) {
+        String operatorRef = "resource:" + resourceId;
+        List<VisualDiagnostic> diagnostics = new ArrayList<>();
+        for (GraphDraft draft : draftRepository.all()) {
+            for (int i = 0; i < draft.nodes().size(); i++) {
+                GraphDraft.DraftNode node = draft.nodes().get(i);
+                if (operatorRef.equals(node.operatorRef())) {
+                    diagnostics.add(VisualDiagnostic.error("visual.resourceContract.inUse",
+                            "Resource design contract for '%s' cannot be deleted because draft '%s@%d' node '%s' still uses operatorRef '%s'."
+                                    .formatted(resourceId, draft.draftId(), draft.revision(),
+                                            node.id(), node.operatorRef()),
+                            "/drafts/%s/nodes/%d/operatorRef".formatted(draft.draftId(), i)));
+                }
+            }
+        }
+        return diagnostics;
     }
 
     /**

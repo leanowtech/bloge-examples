@@ -2,6 +2,8 @@ package com.leanowtech.bloge.gateway.visual.catalog;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
+import com.leanowtech.bloge.gateway.visual.draft.GraphDraft;
+import com.leanowtech.bloge.gateway.visual.draft.InMemoryGraphDraftRepository;
 import com.leanowtech.bloge.gateway.visual.model.SchemaEnvelope;
 
 import org.junit.jupiter.api.BeforeEach;
@@ -14,8 +16,10 @@ import java.util.List;
 import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -26,16 +30,19 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 class OperatorLibraryAdminControllerTest {
 
     private InMemoryOperatorLibraryRegistry registry;
+    private InMemoryGraphDraftRepository drafts;
     private MockMvc mockMvc;
     private ObjectMapper objectMapper;
 
     @BeforeEach
     void setUp() {
         registry = new InMemoryOperatorLibraryRegistry();
+        drafts = new InMemoryGraphDraftRepository();
         objectMapper = new ObjectMapper().registerModule(new JavaTimeModule());
         OperatorLibraryAdminController controller = new OperatorLibraryAdminController(
                 registry,
-                new OperatorLibraryValidator()
+                new OperatorLibraryValidator(),
+                drafts
         );
         mockMvc = MockMvcBuilders.standaloneSetup(controller).build();
     }
@@ -204,6 +211,86 @@ class OperatorLibraryAdminControllerTest {
                 .andExpect(jsonPath("$.operators[0].policy.environments[0]").value("browser"));
     }
 
+    @Test
+    void deleteRejectsLibraryReferencedByStoredDraft() throws Exception {
+        OperatorLibrary library = VisualCatalogTestSupport.eligibilityLibrary("integer");
+        registry.upsert(library);
+        drafts.save(draftUsingOperator("risk:eligibility"));
+
+        mockMvc.perform(delete("/admin/visual-operator-libraries/risk-policy"))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.valid").value(false))
+                .andExpect(jsonPath("$.diagnostics[0].code").value("visual.library.inUse"))
+                .andExpect(jsonPath("$.diagnostics[0].target").value("/drafts/draft-1/nodes/0/operatorRef"));
+
+        assertThat(registry.find("risk-policy")).contains(library);
+    }
+
+    @Test
+    void deleteForceBypassesStoredDraftReferenceGuard() throws Exception {
+        OperatorLibrary library = VisualCatalogTestSupport.eligibilityLibrary("integer");
+        registry.upsert(library);
+        drafts.save(draftUsingOperator("risk:eligibility"));
+
+        mockMvc.perform(delete("/admin/visual-operator-libraries/risk-policy")
+                        .param("force", "true"))
+                .andExpect(status().isNoContent());
+
+        assertThat(registry.find("risk-policy")).isEmpty();
+    }
+
+    @Test
+    void updateRejectsRemovingOperatorRefReferencedByStoredDraft() throws Exception {
+        OperatorLibrary original = VisualCatalogTestSupport.multiOutputEligibilityLibrary("integer");
+        OperatorLibrary replacement = libraryWithScoreFactsOnly();
+        registry.upsert(original);
+        drafts.save(draftUsingOperator("risk:eligibility"));
+
+        mockMvc.perform(put("/admin/visual-operator-libraries/risk-policy")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(replacement)))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.valid").value(false))
+                .andExpect(jsonPath("$.diagnostics[0].code").value("visual.library.inUse"))
+                .andExpect(jsonPath("$.diagnostics[0].message").value(
+                        "Operator library 'risk-policy' cannot be replaced without force=true because draft 'draft-1@1' node 'eligibility' still uses operatorRef 'risk:eligibility'."));
+
+        assertThat(registry.find("risk-policy")).contains(original);
+    }
+
+    @Test
+    void createRejectsReimportRemovingOperatorRefReferencedByStoredDraft() throws Exception {
+        OperatorLibrary original = VisualCatalogTestSupport.multiOutputEligibilityLibrary("integer");
+        OperatorLibrary replacement = libraryWithScoreFactsOnly();
+        registry.upsert(original);
+        drafts.save(draftUsingOperator("risk:eligibility"));
+
+        mockMvc.perform(post("/admin/visual-operator-libraries")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(replacement)))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.valid").value(false))
+                .andExpect(jsonPath("$.diagnostics[0].code").value("visual.library.inUse"));
+
+        assertThat(registry.find("risk-policy")).contains(original);
+    }
+
+    @Test
+    void updateForceBypassesRemovedOperatorRefGuard() throws Exception {
+        OperatorLibrary replacement = libraryWithScoreFactsOnly();
+        registry.upsert(VisualCatalogTestSupport.multiOutputEligibilityLibrary("integer"));
+        drafts.save(draftUsingOperator("risk:eligibility"));
+
+        mockMvc.perform(put("/admin/visual-operator-libraries/risk-policy")
+                        .param("force", "true")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(replacement)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.operators[0].operatorRef").value("risk:scoreFacts"));
+
+        assertThat(registry.find("risk-policy")).contains(replacement);
+    }
+
     private static OperatorLibrary invalidArrayLibrary() {
         OperatorDefinition operator = new OperatorDefinition(
                 "bloge.visualOperator.v1",
@@ -238,6 +325,44 @@ class OperatorLibraryAdminControllerTest {
                 "risk-team",
                 "ACTIVE",
                 List.of(operator)
+        );
+    }
+
+    private static GraphDraft draftUsingOperator(String operatorRef) {
+        return new GraphDraft(
+                "bloge.visualGraphDraft.v1",
+                "draft-1",
+                0,
+                "libraryImpact",
+                "demo-tenant",
+                "local",
+                "browser",
+                "DRAFT",
+                SchemaEnvelope.opaque(),
+                List.of(new GraphDraft.DraftNode(
+                        "eligibility",
+                        operatorRef,
+                        "Eligibility",
+                        Map.of(),
+                        Map.of(),
+                        new GraphDraft.Position(0, 0)
+                )),
+                List.of(),
+                Map.of(),
+                new GraphDraft.OutputSelection("eligibility", ""),
+                Map.of("eligibility", "fingerprint")
+        );
+    }
+
+    private static OperatorLibrary libraryWithScoreFactsOnly() {
+        return new OperatorLibrary(
+                "bloge.visualOperatorLibrary.v1",
+                "risk-policy",
+                "Risk policy operators",
+                "1.0.0",
+                "risk-team",
+                "ACTIVE",
+                List.of(VisualCatalogTestSupport.scoreFactsOperator())
         );
     }
 }

@@ -1300,20 +1300,24 @@ async function compileVisualDraft() {
 async function publishVisualDraft() {
   setVisualCheck('Publishing...', 'info');
   try {
-    let draftId = state.currentDraftId;
-    if (!draftId) {
-      const stored = await saveCurrentDraft();
-      draftId = stored?.draftId || '';
-    }
-    if (!draftId) {
+    const stored = await saveCurrentDraft();
+    if (!stored?.draftId) {
       setVisualCheck('Draft was not saved.', 'error');
       return;
     }
+    const draftId = stored.draftId;
+    const expectedRevision = stored.revision || state.currentDraftRevision || 0;
     const response = await fetch(`/api/visual/drafts/${encodeURIComponent(draftId)}/publish`, {
-      method: 'POST'
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ expectedRevision })
     });
     const payload = await response.json();
     const diagnostics = normalizeDiagnostics(payload.diagnostics);
+    if (response.status === 409) {
+      await loadCurrentDraftSnapshot();
+      await loadDraftList();
+    }
     const publication = payload.publication || {};
     setVisualCheck(
       payload.published ? `Published ${publication.publicationId || ''}.` : 'Visual graph was not published.',
@@ -1849,9 +1853,21 @@ async function fetchCurrentDraftSnapshot() {
 async function deleteSelectedDraft() {
   if (!state.currentDraftId || !confirm(`Delete draft ${state.currentDraftId}?`)) return;
   const deletedId = state.currentDraftId;
-  const response = await fetch(`/api/visual/drafts/${encodeURIComponent(deletedId)}`, { method: 'DELETE' });
+  const expectedRevision = state.currentDraftRevision || 0;
+  const response = await fetch(
+    `/api/visual/drafts/${encodeURIComponent(deletedId)}?expectedRevision=${encodeURIComponent(expectedRevision)}`,
+    { method: 'DELETE' }
+  );
   if (!response.ok) {
-    setDraftMessage(`Delete failed with ${response.status}`, 'error');
+    const payload = await response.json().catch(() => null);
+    const diagnostics = normalizeDiagnostics(payload?.diagnostics);
+    if (response.status === 409 && payload?.draft) {
+      state.currentDraftRevision = payload.draft.revision || state.currentDraftRevision;
+      state.savedDraftSnapshot = payload.draft;
+      await loadDraftList();
+      renderDraftControls();
+    }
+    setDraftMessage(diagnosticMessage(diagnostics, `Delete failed with ${response.status}`), 'error');
     return;
   }
   state.currentDraftId = '';
