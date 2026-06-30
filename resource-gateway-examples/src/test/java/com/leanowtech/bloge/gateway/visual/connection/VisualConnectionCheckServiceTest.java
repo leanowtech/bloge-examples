@@ -116,6 +116,46 @@ class VisualConnectionCheckServiceTest {
     }
 
     @Test
+    void acceptsSchemaCompatibleConfigSourcePickerExpression() {
+        VisualConnectionCheckService service = connectionService(VisualCatalogTestSupport
+                .catalogWithLoanApplicantResourceAndLibrary(VisualCatalogTestSupport.configurablePolicyLibrary()));
+        GraphDraft draft = resourceConfigDraft();
+
+        VisualConnectionCheckResult result = service.check(new VisualConnectionCheckRequest(
+                draft,
+                new GraphDraft.Endpoint("fetchApplicant", "payload", "score"),
+                new GraphDraft.Endpoint("policy", "config", "threshold"),
+                "data"
+        ));
+
+        assertThat(result.accepted()).isTrue();
+        assertThat(result.diagnostics()).isEmpty();
+        assertThat(result.edge().target().port()).isEqualTo("config");
+        assertThat(result.edge().target().path()).isEqualTo("threshold");
+    }
+
+    @Test
+    void rejectsSchemaIncompatibleConfigSourcePickerExpression() {
+        VisualConnectionCheckService service = connectionService(VisualCatalogTestSupport
+                .catalogWithLoanApplicantResourceAndLibrary(VisualCatalogTestSupport.configurablePolicyLibrary()));
+        GraphDraft draft = resourceConfigDraft();
+
+        VisualConnectionCheckResult result = service.check(new VisualConnectionCheckRequest(
+                draft,
+                new GraphDraft.Endpoint("fetchApplicant", "payload", "segment"),
+                new GraphDraft.Endpoint("policy", "config", "threshold"),
+                "data"
+        ));
+
+        assertThat(result.accepted()).isFalse();
+        assertThat(result.diagnostics())
+                .anySatisfy(diagnostic -> {
+                    assertThat(diagnostic.code()).isEqualTo("visual.config.typeMismatch");
+                    assertThat(diagnostic.target()).isEqualTo("/nodes/1/config/threshold/expr");
+                });
+    }
+
+    @Test
     void rejectsConnectionThatWouldCreateCycle() {
         VisualConnectionCheckService service = connectionService(VisualCatalogTestSupport
                 .catalogWithLibrary(VisualCatalogTestSupport.numericPassLibrary()));
@@ -183,6 +223,41 @@ class VisualConnectionCheckServiceTest {
                 edges,
                 Map.of(),
                 new GraphDraft.OutputSelection("eligibility", "")
+        );
+    }
+
+    private static GraphDraft resourceConfigDraft() {
+        return new GraphDraft(
+                "",
+                "",
+                0,
+                "configConnectionCheck",
+                "",
+                "",
+                "",
+                "",
+                null,
+                List.of(
+                        new GraphDraft.DraftNode(
+                                "fetchApplicant",
+                                "resource:" + VisualCatalogTestSupport.RESOURCE_ID,
+                                "",
+                                Map.of(),
+                                Map.of(),
+                                null
+                        ),
+                        new GraphDraft.DraftNode(
+                                "policy",
+                                "risk:configurablePolicy",
+                                "",
+                                Map.of(),
+                                Map.of("mode", "strict"),
+                                null
+                        )
+                ),
+                List.of(),
+                Map.of(),
+                new GraphDraft.OutputSelection("policy", "")
         );
     }
 

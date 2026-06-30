@@ -1840,7 +1840,46 @@ function renderSelectedOperatorEditor() {
   }
 
   for (const select of target.querySelectorAll('[data-config-source]')) {
-    select.addEventListener('change', () => {
+    select.addEventListener('change', async () => {
+      const spec = specForNode(node);
+      const field = configFieldDescriptors(spec.configSchema)
+        .find((item) => item.path === select.dataset.configField);
+      if (!field) {
+        return;
+      }
+      if (select.value && select.value !== CONFIG_MANUAL_EXPRESSION) {
+        const source = sourceFromBindingValue(select.value);
+        const configTarget = configTargetForField(node, field);
+        if (!source) {
+          renderSelectedOperatorEditor();
+          return;
+        }
+        const compatibility = connectionCompatibility(source, configTarget);
+        if (!compatibility.ok) {
+          setConnectionMessage(compatibility.message, 'error');
+          renderSelectedOperatorEditor();
+          return;
+        }
+        select.disabled = true;
+        setConnectionMessage('Checking config source with server...', 'info');
+        try {
+          const serverCheck = await checkVisualConnectionOnServer(source, configTarget);
+          if (!serverCheck.accepted) {
+            setConnectionMessage(serverCheck.message, 'error');
+            renderSelectedOperatorEditor();
+            renderDiagram();
+            return;
+          }
+          setConnectionMessage(`Config ${node.id}.${field.path} bound to ${endpointLabel(source)}.`, 'success');
+        } catch (error) {
+          setConnectionMessage(error.message, 'error');
+          renderSelectedOperatorEditor();
+          renderDiagram();
+          return;
+        } finally {
+          select.disabled = false;
+        }
+      }
       setConfigSourceFromSelect(node, select);
       syncComposerFromBuilder({ render: false });
       renderSelectedOperatorEditor();
@@ -4837,6 +4876,13 @@ async function checkVisualConnectionOnServer(source, target) {
   }
   const payload = await response.json();
   const diagnostics = normalizeDiagnostics(payload.diagnostics);
+  if (diagnostics.length) {
+    setVisualCheck(
+      payload.accepted ? 'Connection accepted with diagnostics.' : 'Connection rejected.',
+      visualCheckLevel(diagnostics, Boolean(payload.accepted)),
+      diagnostics
+    );
+  }
   return {
     accepted: Boolean(payload.accepted),
     diagnostics,

@@ -89,7 +89,7 @@ runtime. Users can reposition existing nodes directly on the canvas, edit the
 selected operator's properties, bind every schema-declared input field from a
 schema-checked source picker or a manual expression, connect output handles to
 input handles under schema type constraints, confirm dropped connections and
-source-picker selections through the server-side visual connection API before
+input/config source-picker selections through the server-side visual connection API before
 mutating the draft, validate
 user-provided operator library JSON before importing it into the catalog,
 save/load/delete H2-backed graph drafts with
@@ -123,7 +123,8 @@ fields, and the server blocks missing required config, type mismatches, enum
 mismatches, and undeclared config fields when `additionalProperties=false`.
 The inspector can switch a config field from a literal value to a source-backed
 expression using the same compatible `ctx.*` and upstream output picker used by
-input bindings. Structured config expressions such as `{ "kind": "expression",
+input bindings, and those picker selections are preflighted by the same server
+schema gate before the draft mutates. Structured config expressions such as `{ "kind": "expression",
 "expr": "ctx.threshold" }` are allowed without pretending to be literals; pure
 `ctx.*` or `node.output.*` references are checked against the target
 `configSchema` type when it can be proven, and the DSL preview/codegen lowers
@@ -788,7 +789,7 @@ curl -X POST http://localhost:8080/api/gateway/resources/execute \
 
 ## Test strategy
 
-The test suite is organised into four layers (40 top-level test classes, 309 executed
+The test suite is organised into four layers (40 top-level test classes, 311 executed
 tests, including nested JUnit suites):
 
 ### Layer 1 — Unit tests
@@ -814,7 +815,7 @@ Isolated component tests, some with lightweight Spring slices or mocks.
 | `ResourceDescriptorBootstrapTest` | 7 | Seeding, refresh behavior, idempotency |
 | `GatewayDslCompilationTest` | 7 | DSL parsing, graph loading |
 | Gateway example API suite | 13 | Dynamic composer service/controller, scenario catalog, example graph endpoints |
-| Visual authoring suite | 168 | Visual operator projection, resource design contract persistence and gates, imported libraries, catalog token gates and policy filtering, cross-library operatorRef ownership, system-reserved operatorRef gates, import-time lowering gates, draft/publication persistence and history, revision audit metadata, revision-guarded patching, operator fingerprint drift and snapshot coverage gates, typed connection/edge validation including binding kind allow-list, source-picker server preflight, duplicate target input ownership, object required fields, object schema structure gates, required-array schema gates, nested objectTemplate required fields, enum value-domain and shape gates, config expression references and configSchema type gates, data edge/semantic dependency consistency, graph input schema gates, secret blocking, DSL lowering, compiler gating, dependency ordering, runtime smoke path |
+| Visual authoring suite | 170 | Visual operator projection, resource design contract persistence and gates, imported libraries, catalog token gates and policy filtering, cross-library operatorRef ownership, system-reserved operatorRef gates, import-time lowering gates, draft/publication persistence and history, revision audit metadata, revision-guarded patching, operator fingerprint drift and snapshot coverage gates, typed connection/edge validation including binding kind allow-list, input/config source-picker server preflight, duplicate target input ownership, object required fields, object schema structure gates, required-array schema gates, nested objectTemplate required fields, enum value-domain and shape gates, config expression references and configSchema type gates, data edge/semantic dependency consistency, graph input schema gates, secret blocking, DSL lowering, compiler gating, dependency ordering, runtime smoke path |
 
 ### Layer 3 — Orchestration tests
 

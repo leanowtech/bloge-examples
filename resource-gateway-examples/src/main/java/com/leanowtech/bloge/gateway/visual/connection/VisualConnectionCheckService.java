@@ -20,6 +20,7 @@ public class VisualConnectionCheckService {
 
     private static final String PREVIEW_EDGE_ID = "__preview_connection";
     private static final String CONTEXT_SOURCE_NODE_ID = "__ctx";
+    private static final String CONFIG_TARGET_PORT = "config";
 
     private final GraphDraftValidator validator;
 
@@ -45,6 +46,9 @@ public class VisualConnectionCheckService {
 
         GraphDraft.DraftEdge edge = new GraphDraft.DraftEdge(PREVIEW_EDGE_ID, request.kind(),
                 request.source(), request.target());
+        if (CONFIG_TARGET_PORT.equals(request.target().port())) {
+            return checkConfigBinding(request, edge);
+        }
         if (CONTEXT_SOURCE_NODE_ID.equals(request.source().nodeId())) {
             return checkContextBinding(request, edge);
         }
@@ -56,6 +60,46 @@ public class VisualConnectionCheckService {
         VisualValidationResult validation = validator.validateConnectionPreview(candidate);
         List<VisualDiagnostic> diagnostics = validation.diagnostics().stream()
                 .filter(diagnostic -> relevantToConnection(diagnostic, previewIndex, request, nodeIndexes))
+                .toList();
+        return new VisualConnectionCheckResult(diagnostics.stream().noneMatch(VisualDiagnostic::error),
+                edge, diagnostics);
+    }
+
+    private VisualConnectionCheckResult checkConfigBinding(VisualConnectionCheckRequest request,
+                                                           GraphDraft.DraftEdge edge) {
+        int targetIndex = targetNodeIndex(request.draft(), request.target().nodeId());
+        if (targetIndex < 0) {
+            return new VisualConnectionCheckResult(false, edge, List.of(
+                    VisualDiagnostic.error("visual.edge.unknownTarget",
+                            "Connection target node does not exist: " + request.target().nodeId(),
+                            "/target/nodeId")
+            ));
+        }
+        if (request.target().path().isBlank()) {
+            return new VisualConnectionCheckResult(false, edge, List.of(
+                    VisualDiagnostic.error("visual.config.targetMissing",
+                            "Config connection target path is required.",
+                            "/target/path")
+            ));
+        }
+        if (request.source().nodeId().isBlank()) {
+            return new VisualConnectionCheckResult(false, edge, List.of(
+                    VisualDiagnostic.error("visual.edge.unknownSource",
+                            "Connection source node is required.",
+                            "/source/nodeId")
+            ));
+        }
+
+        GraphDraft candidate = draftWithPreviewConfigExpression(request.draft(), targetIndex,
+                request.target().path(), expressionForSource(request.source()));
+        String configPath = "/nodes/" + targetIndex + "/config/" + request.target().path();
+        String operatorPath = "/nodes/" + targetIndex + "/operatorRef";
+        Map<String, Integer> nodeIndexes = nodeIndexes(candidate);
+
+        VisualValidationResult validation = validator.validate(candidate);
+        List<VisualDiagnostic> diagnostics = validation.diagnostics().stream()
+                .filter(diagnostic -> relevantToConfigBinding(diagnostic, configPath, operatorPath,
+                        request, nodeIndexes))
                 .toList();
         return new VisualConnectionCheckResult(diagnostics.stream().noneMatch(VisualDiagnostic::error),
                 edge, diagnostics);
@@ -105,6 +149,43 @@ public class VisualConnectionCheckService {
                 draft.inputSchema(),
                 draft.nodes(),
                 edges,
+                draft.visualLayout(),
+                draft.output(),
+                draft.operatorFingerprints()
+        );
+    }
+
+    private static GraphDraft draftWithPreviewConfigExpression(GraphDraft draft,
+                                                               int targetIndex,
+                                                               String configPath,
+                                                               String expression) {
+        List<GraphDraft.DraftNode> nodes = new ArrayList<>(draft.nodes());
+        GraphDraft.DraftNode target = nodes.get(targetIndex);
+        Map<String, Object> config = new LinkedHashMap<>(target.config());
+        config.put(configPath, Map.of(
+                "kind", "expression",
+                "expr", expression
+        ));
+        nodes.set(targetIndex, new GraphDraft.DraftNode(
+                target.id(),
+                target.operatorRef(),
+                target.label(),
+                target.inputs(),
+                config,
+                target.position()
+        ));
+        return new GraphDraft(
+                draft.schemaVersion(),
+                draft.draftId(),
+                draft.revision(),
+                draft.graphName(),
+                draft.tenantId(),
+                draft.namespace(),
+                draft.environment(),
+                draft.status(),
+                draft.inputSchema(),
+                nodes,
+                draft.edges(),
                 draft.visualLayout(),
                 draft.output(),
                 draft.operatorFingerprints()
@@ -188,6 +269,18 @@ public class VisualConnectionCheckService {
         return targetAtOrBelow(target, bindingPath) || targetAtOrBelow(target, operatorPath);
     }
 
+    private static boolean relevantToConfigBinding(VisualDiagnostic diagnostic,
+                                                   String configPath,
+                                                   String operatorPath,
+                                                   VisualConnectionCheckRequest request,
+                                                   Map<String, Integer> nodeIndexes) {
+        String target = diagnostic.target();
+        return targetAtOrBelow(target, configPath)
+                || targetAtOrBelow(target, operatorPath)
+                || endpointNodeDiagnostic(target, request.source().nodeId(), nodeIndexes)
+                || endpointNodeDiagnostic(target, request.target().nodeId(), nodeIndexes);
+    }
+
     private static boolean targetAtOrBelow(String target, String path) {
         return target.equals(path) || target.startsWith(path + "/");
     }
@@ -195,5 +288,14 @@ public class VisualConnectionCheckService {
     private static boolean endpointNodeDiagnostic(String target, String nodeId, Map<String, Integer> nodeIndexes) {
         Integer index = nodeIndexes.get(nodeId);
         return index != null && target.startsWith("/nodes/" + index + "/operatorRef");
+    }
+
+    private static String expressionForSource(GraphDraft.Endpoint source) {
+        if (CONTEXT_SOURCE_NODE_ID.equals(source.nodeId())) {
+            return source.path().isBlank() ? "ctx" : "ctx." + source.path();
+        }
+        String portSegment = source.port().isBlank() || "output".equals(source.port()) ? "" : "." + source.port();
+        String pathSegment = source.path().isBlank() ? "" : "." + source.path();
+        return source.nodeId() + ".output" + portSegment + pathSegment;
     }
 }
