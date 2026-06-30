@@ -1,13 +1,19 @@
 package com.leanowtech.bloge.gateway.visual.catalog;
 
+import com.leanowtech.bloge.gateway.resource.ResourceDescriptor;
+import com.leanowtech.bloge.gateway.resource.ResourceRegistry;
 import com.leanowtech.bloge.gateway.visual.diagnostic.VisualDiagnostic;
+import com.leanowtech.bloge.gateway.visual.model.SchemaEnvelope;
 import com.leanowtech.bloge.gateway.visual.resource.InMemoryResourceDesignContractRegistry;
+import com.leanowtech.bloge.gateway.visual.resource.ResourceDesignContract;
 import com.leanowtech.bloge.gateway.visual.validation.VisualSchemaValidator;
 
 import org.junit.jupiter.api.Test;
 
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.List;
+import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -142,6 +148,25 @@ class DefaultVisualOperatorCatalogTest {
     }
 
     @Test
+    void filtersResourceBackedOperatorsByContractLifecycleStatus() {
+        DefaultVisualOperatorCatalog deprecatedCatalog = catalogWithResourceContractStatus("DEPRECATED");
+        DefaultVisualOperatorCatalog disabledCatalog = catalogWithResourceContractStatus("DISABLED");
+
+        assertThat(deprecatedCatalog.list(OperatorCatalogQuery.all()))
+                .extracting(OperatorDefinition::operatorRef)
+                .doesNotContain("resource:" + VisualCatalogTestSupport.RESOURCE_ID);
+        assertThat(deprecatedCatalog.list(new OperatorCatalogQuery("", List.of(), true, true)))
+                .extracting(OperatorDefinition::operatorRef)
+                .contains("resource:" + VisualCatalogTestSupport.RESOURCE_ID);
+        assertThat(deprecatedCatalog.find("resource:" + VisualCatalogTestSupport.RESOURCE_ID)).isPresent();
+
+        assertThat(disabledCatalog.list(new OperatorCatalogQuery("", List.of(), true, true)))
+                .extracting(OperatorDefinition::operatorRef)
+                .doesNotContain("resource:" + VisualCatalogTestSupport.RESOURCE_ID);
+        assertThat(disabledCatalog.find("resource:" + VisualCatalogTestSupport.RESOURCE_ID)).isEmpty();
+    }
+
+    @Test
     void resolvesDeprecatedLibraryOperatorsForStoredDrafts() {
         InMemoryOperatorLibraryRegistry libraries = new InMemoryOperatorLibraryRegistry();
         libraries.upsert(library("deprecated-policy", "DEPRECATED", VisualCatalogTestSupport.numericPassOperator()));
@@ -168,5 +193,50 @@ class DefaultVisualOperatorCatalogTest {
                 status,
                 List.of(operator)
         );
+    }
+
+    private static DefaultVisualOperatorCatalog catalogWithResourceContractStatus(String status) {
+        ResourceDescriptor descriptor = VisualCatalogTestSupport.loanApplicantDescriptor();
+        InMemoryResourceDesignContractRegistry contracts = new InMemoryResourceDesignContractRegistry();
+        contracts.upsert(new ResourceDesignContract(
+                "contract:" + VisualCatalogTestSupport.RESOURCE_ID,
+                VisualCatalogTestSupport.RESOURCE_ID,
+                "Loan applicant profile",
+                "Reads applicant facts.",
+                List.of("loan", "applicant"),
+                SchemaEnvelope.object(Map.of(
+                        "applicantId", Map.of("type", "string")
+                ), List.of("applicantId")),
+                SchemaEnvelope.object(Map.of(
+                        "score", Map.of("type", "integer")
+                ), List.of()),
+                Map.of(),
+                status
+        ));
+        return new DefaultVisualOperatorCatalog(
+                new SingleResourceRegistry(descriptor),
+                contracts,
+                new ResourceVirtualOperatorProjector()
+        );
+    }
+
+    private record SingleResourceRegistry(ResourceDescriptor descriptor) implements ResourceRegistry {
+        @Override
+        public ResourceDescriptor resolve(String resourceId) {
+            if (descriptor.resourceId().equals(resourceId)) {
+                return descriptor;
+            }
+            throw new com.leanowtech.bloge.gateway.exception.ResourceNotFoundException(resourceId);
+        }
+
+        @Override
+        public boolean contains(String resourceId) {
+            return descriptor.resourceId().equals(resourceId);
+        }
+
+        @Override
+        public Collection<ResourceDescriptor> all() {
+            return List.of(descriptor);
+        }
     }
 }

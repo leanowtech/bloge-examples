@@ -4,7 +4,9 @@ import com.leanowtech.bloge.gateway.visual.model.SchemaEnvelope;
 
 import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
+import java.util.Set;
 
 /**
  * Authoring contract that turns a resource descriptor into a schema-aware visual operator.
@@ -30,6 +32,16 @@ public record ResourceDesignContract(
         Map<String, Object> examples,
         String status
 ) {
+    public static final String STATUS_ACTIVE = "ACTIVE";
+    public static final String STATUS_DEPRECATED = "DEPRECATED";
+    public static final String STATUS_DISABLED = "DISABLED";
+
+    private static final Set<String> SUPPORTED_STATUSES = Set.of(
+            STATUS_ACTIVE,
+            STATUS_DEPRECATED,
+            STATUS_DISABLED
+    );
+
     /**
      * Creates a design contract.
      */
@@ -46,6 +58,28 @@ public record ResourceDesignContract(
         requestSchema = requestSchema == null ? SchemaEnvelope.opaque() : requestSchema;
         responseSchema = responseSchema == null ? SchemaEnvelope.opaque() : responseSchema;
         examples = examples == null ? Map.of() : new LinkedHashMap<>(examples);
-        status = status == null || status.isBlank() ? "ACTIVE" : status;
+        status = normalizeStatus(status);
+    }
+
+    /**
+     * @param status raw lifecycle status
+     * @return true when the status is part of the supported resource contract lifecycle
+     */
+    public static boolean isSupportedStatus(String status) {
+        return SUPPORTED_STATUSES.contains(normalizeStatus(status));
+    }
+
+    /**
+     * @return true when this contract should project a resource operator into the catalog
+     */
+    public boolean visibleInCatalog(boolean includeDeprecated) {
+        return STATUS_ACTIVE.equals(status)
+                || includeDeprecated && STATUS_DEPRECATED.equals(status);
+    }
+
+    private static String normalizeStatus(String value) {
+        return value == null || value.isBlank()
+                ? STATUS_ACTIVE
+                : value.trim().toUpperCase(Locale.ROOT);
     }
 }

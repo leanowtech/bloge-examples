@@ -26,6 +26,34 @@ class ResourceDesignContractValidatorTest {
     }
 
     @Test
+    void acceptsSupportedLifecycleStatuses() {
+        ResourceDesignContract deprecated = validContract(Map.of(), "deprecated");
+        ResourceDesignContract disabled = validContract(Map.of(), "DISABLED");
+
+        VisualValidationResult deprecatedResult = validator.validate(deprecated);
+        VisualValidationResult disabledResult = validator.validate(disabled);
+
+        assertThat(deprecatedResult.valid()).isTrue();
+        assertThat(disabledResult.valid()).isTrue();
+        assertThat(deprecated.status()).isEqualTo(ResourceDesignContract.STATUS_DEPRECATED);
+        assertThat(disabled.status()).isEqualTo(ResourceDesignContract.STATUS_DISABLED);
+    }
+
+    @Test
+    void rejectsUnsupportedLifecycleStatus() {
+        ResourceDesignContract archived = validContract(Map.of(), "ARCHIVED");
+
+        VisualValidationResult result = validator.validate(archived);
+
+        assertThat(result.valid()).isFalse();
+        assertThat(result.diagnostics())
+                .anySatisfy(diagnostic -> {
+                    assertThat(diagnostic.code()).isEqualTo("visual.resourceContract.status.unsupported");
+                    assertThat(diagnostic.target()).isEqualTo("/status");
+                });
+    }
+
+    @Test
     void acceptsNumericBoundsInResourceContractSchemas() {
         ResourceDesignContract contract = new ResourceDesignContract(
                 "contract:orders",
@@ -795,6 +823,10 @@ class ResourceDesignContractValidatorTest {
     }
 
     private static ResourceDesignContract validContract(Map<String, Object> examples) {
+        return validContract(examples, "ACTIVE");
+    }
+
+    private static ResourceDesignContract validContract(Map<String, Object> examples, String status) {
         return new ResourceDesignContract(
                 "contract:orders",
                 "order-service.listOrders",
@@ -809,7 +841,7 @@ class ResourceDesignContractValidatorTest {
                         )
                 ), List.of()),
                 examples,
-                "ACTIVE"
+                status
         );
     }
 

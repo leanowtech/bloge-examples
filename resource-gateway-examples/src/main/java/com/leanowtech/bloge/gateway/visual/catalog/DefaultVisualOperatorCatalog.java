@@ -60,10 +60,7 @@ public class DefaultVisualOperatorCatalog implements VisualOperatorCatalog {
         }
         for (ResourceDescriptor descriptor : resourceRegistry.all()) {
             Optional<ResourceDesignContract> contract = contractRegistry.findByResourceId(descriptor.resourceId());
-            if (!effectiveQuery.includeDeprecated()
-                    && contract.map(ResourceDesignContract::status)
-                    .map(status -> "DEPRECATED".equalsIgnoreCase(status))
-                    .orElse(false)) {
+            if (contract.isPresent() && !contract.get().visibleInCatalog(effectiveQuery.includeDeprecated())) {
                 continue;
             }
             operators.add(projector.project(descriptor, contract));

@@ -33,6 +33,12 @@ public class ResourceDesignContractValidator {
                     "Resource design contract must declare a resourceId.",
                     "/resourceId"));
         }
+        if (!ResourceDesignContract.isSupportedStatus(contract.status())) {
+            diagnostics.add(VisualDiagnostic.error("visual.resourceContract.status.unsupported",
+                    "Resource design contract status '%s' must be one of ACTIVE, DEPRECATED, or DISABLED."
+                            .formatted(contract.status()),
+                    "/status"));
+        }
         diagnostics.addAll(VisualSchemaValidator.validateEnvelope(
                 contract.requestSchema(), "/requestSchema"));
         diagnostics.addAll(VisualSchemaValidator.validateEnvelope(

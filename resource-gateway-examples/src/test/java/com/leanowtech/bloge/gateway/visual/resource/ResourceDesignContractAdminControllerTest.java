@@ -74,6 +74,21 @@ class ResourceDesignContractAdminControllerTest {
     }
 
     @Test
+    void upsertRejectsUnsupportedLifecycleStatus() throws Exception {
+        ResourceDesignContract invalid = validContract(Map.of(), "ARCHIVED");
+
+        mockMvc.perform(put("/admin/resource-design-contracts/order-service.listOrders")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(invalid)))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.valid").value(false))
+                .andExpect(jsonPath("$.diagnostics[0].code")
+                        .value("visual.resourceContract.status.unsupported"));
+
+        assertThat(registry.all()).isEmpty();
+    }
+
+    @Test
     void upsertRejectsRawSecretExamples() throws Exception {
         ResourceDesignContract invalid = validContract(Map.of(
                 "request", Map.of("token", "Bearer clear-text-token")
@@ -162,6 +177,10 @@ class ResourceDesignContractAdminControllerTest {
     }
 
     private static ResourceDesignContract validContract(Map<String, Object> examples) {
+        return validContract(examples, "ACTIVE");
+    }
+
+    private static ResourceDesignContract validContract(Map<String, Object> examples, String status) {
         return new ResourceDesignContract(
                 "contract:orders",
                 "order-service.listOrders",
@@ -176,7 +195,7 @@ class ResourceDesignContractAdminControllerTest {
                         )
                 ), List.of()),
                 examples,
-                "ACTIVE"
+                status
         );
     }
 
