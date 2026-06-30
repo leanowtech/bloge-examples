@@ -48,8 +48,17 @@ public class GraphDraftValidator {
     );
     private static final Set<String> SUPPORTED_EDGE_KINDS = Set.of("data", "dependency", "route");
     private static final Set<String> SERVICE_MANAGED_PUBLICATION_CONFIG_KEYS = Set.of("publicationId", "outputNode");
+    private static final Set<String> RESERVED_DSL_FIELD_NAMES = Set.of(
+            "graph", "node", "branch", "decision_table", "on", "input", "depends_on",
+            "timeout", "retry", "fallback", "execution_mode", "worker_topic", "compensate",
+            "saga", "true", "false", "schema", "output", "otherwise", "when", "transform",
+            "foreach", "sequential", "in", "loop", "parallel", "until", "carry", "wait",
+            "after", "await", "event", "where", "mode", "stream", "streaming", "buffer",
+            "let", "import", "as", "script", "exit", "exhausted"
+    );
     private static final String IDENTIFIER_PATTERN = "[A-Za-z_][A-Za-z0-9_]*";
     private static final String PATH_PATTERN = IDENTIFIER_PATTERN + "(?:\\." + IDENTIFIER_PATTERN + ")*";
+    private static final Pattern DSL_IDENTIFIER = Pattern.compile(IDENTIFIER_PATTERN);
     private static final Pattern PURE_CONTEXT_REFERENCE = Pattern.compile("^ctx(?:\\.(" + PATH_PATTERN + "))?$");
     private static final Pattern PURE_NODE_REFERENCE = Pattern.compile(
             "^(" + IDENTIFIER_PATTERN + ")\\.output(?:\\.(" + PATH_PATTERN + "))?$");
@@ -1946,7 +1955,28 @@ public class GraphDraftValidator {
         if ("visual-publication".equals(operator.source().kind())) {
             rejectServiceManagedPublicationConfig(node, nodePath, diagnostics);
         }
+        if ("bloge:transform".equals(operator.operatorRef())) {
+            validateTransformAssignmentKeys(node, nodePath, diagnostics);
+        }
         validateConfigValue(node.config(), operator.configSchema().schema(), nodePath + "/config", diagnostics);
+    }
+
+    private static void validateTransformAssignmentKeys(GraphDraft.DraftNode node,
+                                                        String nodePath,
+                                                        List<VisualDiagnostic> diagnostics) {
+        Object rawAssignments = node.config().get("assignments");
+        if (!(rawAssignments instanceof Map<?, ?> assignments)) {
+            return;
+        }
+        assignments.keySet().forEach(key -> {
+            String fieldName = String.valueOf(key);
+            if (!isDslFieldName(fieldName)) {
+                diagnostics.add(VisualDiagnostic.error("visual.transform.assignmentKey.invalid",
+                        "Transform assignment key '%s' cannot be rendered as a BLOGE DSL object field."
+                                .formatted(fieldName),
+                        nodePath + "/config/assignments/" + fieldName));
+            }
+        });
     }
 
     private static void rejectServiceManagedPublicationConfig(GraphDraft.DraftNode node,
@@ -2793,6 +2823,10 @@ public class GraphDraftValidator {
 
     private static String normalizedEdgeValue(String value) {
         return value == null ? "" : value.trim();
+    }
+
+    private static boolean isDslFieldName(String value) {
+        return DSL_IDENTIFIER.matcher(value).matches() && !RESERVED_DSL_FIELD_NAMES.contains(value);
     }
 
     private static Map<String, Object> configChildSchema(Map<String, Object> schema, String key) {

@@ -1020,6 +1020,49 @@ class GraphDraftValidatorTest {
     }
 
     @Test
+    void rejectsTransformAssignmentKeysThatCannotRenderAsDslFields() {
+        GraphDraftValidator validator = new GraphDraftValidator(
+                VisualCatalogTestSupport.catalogWithLibrary(
+                        VisualCatalogTestSupport.eligibilityLibrary("integer")));
+        GraphDraft draft = new GraphDraft(
+                "",
+                "",
+                0,
+                "invalidTransformAssignmentKey",
+                "",
+                "",
+                "",
+                "",
+                null,
+                List.of(new GraphDraft.DraftNode(
+                        "mapResult",
+                        "bloge:transform",
+                        "",
+                        Map.of(),
+                        Map.of("assignments", Map.of(
+                                "customer-id", "ctx.customerId",
+                                "mode", "\"strict\""
+                        )),
+                        null
+                )),
+                List.of(),
+                Map.of(),
+                new GraphDraft.OutputSelection("mapResult", "")
+        );
+
+        VisualValidationResult result = validator.validate(draft);
+
+        assertThat(result.valid()).isFalse();
+        assertThat(result.diagnostics())
+                .filteredOn(diagnostic -> "visual.transform.assignmentKey.invalid".equals(diagnostic.code()))
+                .extracting("target")
+                .containsExactlyInAnyOrder(
+                        "/nodes/0/config/assignments/customer-id",
+                        "/nodes/0/config/assignments/mode"
+                );
+    }
+
+    @Test
     void rejectsCycleCreatedByConfigExpressionReference() {
         GraphDraftValidator validator = new GraphDraftValidator(
                 VisualCatalogTestSupport.catalogWithLibrary(

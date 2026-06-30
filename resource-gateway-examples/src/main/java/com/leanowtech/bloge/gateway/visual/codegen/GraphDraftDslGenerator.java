@@ -120,7 +120,7 @@ public class GraphDraftDslGenerator {
             }
             case "bloge:transform" -> {
                 rejectUnsupportedExplicitDependencies(node, operator, dependencyEdges, diagnostics);
-                yield transformToDsl(node, nodesById);
+                yield transformToDsl(node, nodesById, diagnostics);
             }
             default -> {
                 diagnostics.add(VisualDiagnostic.error("visual.operator.unsupported",
@@ -181,7 +181,7 @@ public class GraphDraftDslGenerator {
 
         Map<String, Object> assignments = objectMap(operator.lowering().parameters().get("assignments"));
         if (assignments.isEmpty()) {
-            return transformToDsl(node, nodesById);
+            return transformToDsl(node, nodesById, List.of());
         }
 
         StringBuilder block = new StringBuilder();
@@ -298,14 +298,23 @@ public class GraphDraftDslGenerator {
     }
 
     private String transformToDsl(GraphDraft.DraftNode node,
-                                  Map<String, GraphDraft.DraftNode> nodesById) {
+                                  Map<String, GraphDraft.DraftNode> nodesById,
+                                  List<VisualDiagnostic> diagnostics) {
         Map<String, Object> assignmentConfig = objectMap(node.config().get("assignments"));
         Map<String, String> assignments = new LinkedHashMap<>();
         if (assignmentConfig.isEmpty()) {
             node.inputs().forEach((key, binding) -> assignments.put(targetInputName(key, binding),
                     bindingToExpression(binding, nodesById)));
         } else {
-            assignmentConfig.forEach((key, value) -> assignments.put(key, expressionFromObject(value, nodesById)));
+            assignmentConfig.forEach((key, value) -> {
+                if (!isDslFieldName(key)) {
+                    diagnostics.add(VisualDiagnostic.error("visual.codegen.transformAssignmentKey.invalid",
+                            "Transform assignment key '%s' cannot be rendered as a BLOGE DSL object field."
+                                    .formatted(key),
+                            "/nodes/" + node.id() + "/config/assignments/" + key));
+                }
+                assignments.put(key, expressionFromObject(value, nodesById));
+            });
         }
         if (assignments.isEmpty()) {
             assignments.put("result", "{}");

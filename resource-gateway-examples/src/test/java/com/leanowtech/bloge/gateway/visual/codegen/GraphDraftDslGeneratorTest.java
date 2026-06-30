@@ -770,6 +770,44 @@ class GraphDraftDslGeneratorTest {
     }
 
     @Test
+    void rejectsTransformAssignmentKeysThatCannotRenderAsDslFields() {
+        GraphDraftDslGenerator generator = new GraphDraftDslGenerator(
+                VisualCatalogTestSupport.catalogWithLibrary(
+                        VisualCatalogTestSupport.eligibilityLibrary("integer")));
+        GraphDraft draft = new GraphDraft(
+                "",
+                "",
+                0,
+                "transformKeywordAssignment",
+                "",
+                "",
+                "",
+                "",
+                null,
+                List.of(new GraphDraft.DraftNode(
+                        "mapResult",
+                        "bloge:transform",
+                        "",
+                        Map.of(),
+                        Map.of("assignments", Map.of("mode", "\"strict\"")),
+                        null
+                )),
+                List.of(),
+                Map.of(),
+                new GraphDraft.OutputSelection("mapResult", "")
+        );
+
+        DslGenerationResult result = generator.generate(draft);
+
+        assertThat(result.generated()).isFalse();
+        assertThat(result.diagnostics())
+                .anySatisfy(diagnostic -> {
+                    assertThat(diagnostic.code()).isEqualTo("visual.codegen.transformAssignmentKey.invalid");
+                    assertThat(diagnostic.target()).isEqualTo("/nodes/mapResult/config/assignments/mode");
+                });
+    }
+
+    @Test
     void rejectsDuplicateNativeInputLeafPathsDuringCodegen() {
         GraphDraftDslGenerator generator = new GraphDraftDslGenerator(
                 VisualCatalogTestSupport.catalogWithLibrary(nativeNestedPolicyLibrary()));
