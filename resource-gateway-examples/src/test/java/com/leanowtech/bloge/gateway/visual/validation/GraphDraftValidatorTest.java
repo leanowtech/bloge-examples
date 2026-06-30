@@ -144,6 +144,49 @@ class GraphDraftValidatorTest {
     }
 
     @Test
+    void rejectsDraftIdentifiersThatCannotRenderAsDslIdentifiers() {
+        GraphDraftValidator validator = new GraphDraftValidator(
+                VisualCatalogTestSupport.catalogWithLibrary(
+                        VisualCatalogTestSupport.eligibilityLibrary("integer")));
+        GraphDraft draft = new GraphDraft(
+                "",
+                "",
+                0,
+                "graph",
+                "",
+                "",
+                "",
+                "",
+                null,
+                List.of(new GraphDraft.DraftNode(
+                        "node",
+                        "risk:eligibility",
+                        "",
+                        Map.of(
+                                "score", GraphDraft.Binding.constant(720),
+                                "amount", GraphDraft.Binding.constant(1000)
+                        ),
+                        Map.of(),
+                        null
+                )),
+                List.of(),
+                Map.of(),
+                new GraphDraft.OutputSelection("node", "")
+        );
+
+        VisualValidationResult result = validator.validate(draft);
+
+        assertThat(result.valid()).isFalse();
+        assertThat(result.diagnostics())
+                .filteredOn(diagnostic -> diagnostic.code().endsWith(".invalid"))
+                .extracting("code", "target")
+                .contains(
+                        org.assertj.core.groups.Tuple.tuple("visual.graph.name.invalid", "/graphName"),
+                        org.assertj.core.groups.Tuple.tuple("visual.node.id.invalid", "/nodes/0/id")
+                );
+    }
+
+    @Test
     void rejectsGraphInputSchemaWithRequiredPathMissingFromProperties() {
         GraphDraftValidator validator = new GraphDraftValidator(
                 VisualCatalogTestSupport.catalogWithLibrary(

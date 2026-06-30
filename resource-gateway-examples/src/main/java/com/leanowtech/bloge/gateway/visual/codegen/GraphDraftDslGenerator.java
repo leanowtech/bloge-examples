@@ -69,8 +69,18 @@ public class GraphDraftDslGenerator {
         Map<String, List<String>> dependencyEdges = explicitDependencyEdges(draft);
         Map<String, List<GraphDraft.DraftEdge>> routeEdges = routeEdgesBySource(draft);
         StringBuilder dsl = new StringBuilder();
+        if (!isDslFieldName(draft.graphName())) {
+            diagnostics.add(VisualDiagnostic.error("visual.codegen.graphName.invalid",
+                    "Graph name '%s' cannot be rendered as a BLOGE DSL identifier.".formatted(draft.graphName()),
+                    "/graphName"));
+        }
         dsl.append("graph ").append(draft.graphName()).append(" {\n\n");
         for (GraphDraft.DraftNode node : orderedNodes(draft)) {
+            if (!isDslFieldName(node.id())) {
+                diagnostics.add(VisualDiagnostic.error("visual.codegen.nodeId.invalid",
+                        "Node id '%s' cannot be rendered as a BLOGE DSL identifier.".formatted(node.id()),
+                        "/nodes/" + node.id() + "/id"));
+            }
             Optional<OperatorDefinition> operator = catalog.find(node.operatorRef());
             if (operator.isEmpty()) {
                 diagnostics.add(VisualDiagnostic.error("visual.operator.unknown",

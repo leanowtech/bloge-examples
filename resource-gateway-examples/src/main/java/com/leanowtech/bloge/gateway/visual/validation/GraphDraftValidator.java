@@ -132,6 +132,7 @@ public class GraphDraftValidator {
         if (draft.nodes().isEmpty()) {
             diagnostics.add(VisualDiagnostic.error("visual.graph.empty", "Graph must contain at least one node.", "/nodes"));
         }
+        validateGraphIdentifier(draft.graphName(), diagnostics);
         diagnostics.addAll(VisualSecretGuard.detectDraftSecrets(draft));
         diagnostics.addAll(VisualSchemaValidator.validateEnvelope(draft.inputSchema(), "/inputSchema"));
 
@@ -141,6 +142,7 @@ public class GraphDraftValidator {
         for (int i = 0; i < draft.nodes().size(); i++) {
             GraphDraft.DraftNode node = draft.nodes().get(i);
             String nodePath = "/nodes/" + i;
+            validateNodeIdentifier(node, nodePath, diagnostics);
             if (!nodeIds.add(node.id())) {
                 diagnostics.add(VisualDiagnostic.error("visual.node.duplicateId",
                         "Duplicate node id: " + node.id(), nodePath + "/id"));
@@ -173,6 +175,26 @@ public class GraphDraftValidator {
         validateOutputSelection(draft, nodeIds, operatorsByNodeId, diagnostics);
         validateOutputReachability(draft, nodesById, diagnostics);
         return new VisualValidationResult(diagnostics.stream().noneMatch(VisualDiagnostic::error), diagnostics);
+    }
+
+    private static void validateGraphIdentifier(String graphName, List<VisualDiagnostic> diagnostics) {
+        if (isDslFieldName(graphName)) {
+            return;
+        }
+        diagnostics.add(VisualDiagnostic.error("visual.graph.name.invalid",
+                "Graph name '%s' cannot be rendered as a BLOGE DSL identifier.".formatted(graphName),
+                "/graphName"));
+    }
+
+    private static void validateNodeIdentifier(GraphDraft.DraftNode node,
+                                               String nodePath,
+                                               List<VisualDiagnostic> diagnostics) {
+        if (isDslFieldName(node.id())) {
+            return;
+        }
+        diagnostics.add(VisualDiagnostic.error("visual.node.id.invalid",
+                "Node id '%s' cannot be rendered as a BLOGE DSL identifier.".formatted(node.id()),
+                nodePath + "/id"));
     }
 
     private static void validateOperatorFingerprint(GraphDraft.DraftNode node,

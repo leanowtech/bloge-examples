@@ -116,6 +116,49 @@ class GraphDraftDslGeneratorTest {
     }
 
     @Test
+    void rejectsDraftIdentifiersThatCannotRenderAsDslIdentifiers() {
+        GraphDraftDslGenerator generator = new GraphDraftDslGenerator(
+                VisualCatalogTestSupport.catalogWithLibrary(
+                        VisualCatalogTestSupport.eligibilityLibrary("integer")));
+        GraphDraft draft = new GraphDraft(
+                "",
+                "",
+                0,
+                "graph",
+                "",
+                "",
+                "",
+                "",
+                null,
+                List.of(new GraphDraft.DraftNode(
+                        "node",
+                        "risk:eligibility",
+                        "",
+                        Map.of(
+                                "score", GraphDraft.Binding.constant(720),
+                                "amount", GraphDraft.Binding.constant(1000)
+                        ),
+                        Map.of(),
+                        null
+                )),
+                List.of(),
+                Map.of(),
+                new GraphDraft.OutputSelection("node", "")
+        );
+
+        DslGenerationResult result = generator.generate(draft);
+
+        assertThat(result.generated()).isFalse();
+        assertThat(result.diagnostics())
+                .filteredOn(diagnostic -> diagnostic.code().startsWith("visual.codegen."))
+                .extracting("code", "target")
+                .containsExactlyInAnyOrder(
+                        org.assertj.core.groups.Tuple.tuple("visual.codegen.graphName.invalid", "/graphName"),
+                        org.assertj.core.groups.Tuple.tuple("visual.codegen.nodeId.invalid", "/nodes/node/id")
+                );
+    }
+
+    @Test
     void lowersUserProvidedTransformOperator() {
         GraphDraftDslGenerator generator = new GraphDraftDslGenerator(
                 VisualCatalogTestSupport.catalogWithLibrary(
