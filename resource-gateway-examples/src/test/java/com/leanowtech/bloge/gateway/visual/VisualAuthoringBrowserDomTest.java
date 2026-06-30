@@ -101,8 +101,7 @@ class VisualAuthoringBrowserDomTest {
                 By.id("resource-contract-status-message"),
                 "Saved loan-applicant-service.getProfile");
 
-        click(wait, By.id("import-library"));
-        waitForText(wait, By.id("library-status"), "Imported risk-policy");
+        importSampleOperatorLibrary(wait);
 
         WebElement search = wait.until(ExpectedConditions.elementToBeClickable(By.id("operator-palette-search")));
         search.clear();
@@ -149,6 +148,43 @@ class VisualAuthoringBrowserDomTest {
         waitForText(wait, By.id("output"), "\"output\": false");
     }
 
+    @Test
+    void composerRejectsSchemaIncompatibleConnectionInRealBrowser() {
+        driver = newChromeDriverOrSkip();
+        WebDriverWait wait = new WebDriverWait(driver, WAIT_TIMEOUT);
+        driver.get("http://localhost:" + port + "/examples/gateway");
+
+        waitForComposer(wait);
+        wait.until(ExpectedConditions.visibilityOfElementLocated(By.id("operator-palette")));
+
+        importSampleOperatorLibrary(wait);
+
+        WebElement search = wait.until(ExpectedConditions.elementToBeClickable(By.id("operator-palette-search")));
+        search.clear();
+        search.sendKeys("Eligibility");
+        WebElement eligibility = wait.until(ExpectedConditions.elementToBeClickable(
+                By.cssSelector("[data-operator-type='risk:eligibility']")
+        ));
+        WebElement diagram = wait.until(ExpectedConditions.visibilityOfElementLocated(By.id("diagram")));
+        dragOperatorToCanvas(eligibility, diagram, 140, 120);
+        wait.until(ExpectedConditions.visibilityOfElementLocated(
+                By.cssSelector("#diagram [data-node-id='riskEligibility']")
+        ));
+        int edgeCount = driver.findElements(By.cssSelector("#diagram path.edge")).size();
+
+        dragConnection(
+                wait,
+                "#diagram [data-node-id='loanPolicy'] [data-port-role='source'][data-port='output'][data-path='decision']",
+                "#diagram [data-node-id='riskEligibility'] [data-port-role='target'][data-port='inputs'][data-path='score']"
+        );
+        waitForText(wait, By.id("connection-status"), "Type mismatch");
+        waitForText(wait, By.id("connection-status"), "string cannot feed integer");
+        assertThat(driver.findElements(By.cssSelector("#diagram path.edge")).size()).isEqualTo(edgeCount);
+        assertThat(valueOf(By.id("composer-dsl")))
+                .doesNotContain("loanPolicy.output.decision >= 700")
+                .contains("ctx.score >= 700");
+    }
+
     private WebDriver newChromeDriverOrSkip() {
         ChromeOptions options = new ChromeOptions();
         options.addArguments(
@@ -172,6 +208,11 @@ class VisualAuthoringBrowserDomTest {
         WebElement element = wait.until(ExpectedConditions.elementToBeClickable(locator));
         scrollIntoView(element);
         element.click();
+    }
+
+    private void importSampleOperatorLibrary(WebDriverWait wait) {
+        click(wait, By.id("import-library"));
+        waitForAnyText(wait, By.id("library-status"), "Imported risk-policy", "Replaced risk-policy");
     }
 
     private void dragOperatorToCanvas(WebElement operator, WebElement diagram, int xOffset, int yOffset) {
@@ -239,6 +280,23 @@ class VisualAuthoringBrowserDomTest {
         } catch (TimeoutException ex) {
             throw new AssertionError("Expected text '%s' was not present in %s. Actual='%s', output='%s'"
                     .formatted(expected, locator, textOf(locator), textOf(By.id("output"))), ex);
+        }
+    }
+
+    private void waitForAnyText(WebDriverWait wait, By locator, String... expectedValues) {
+        try {
+            wait.until(ignored -> {
+                String actual = textOf(locator);
+                for (String expected : expectedValues) {
+                    if (actual.contains(expected)) {
+                        return true;
+                    }
+                }
+                return false;
+            });
+        } catch (TimeoutException ex) {
+            throw new AssertionError("None of the expected texts %s were present in %s. Actual='%s', output='%s'"
+                    .formatted(List.of(expectedValues), locator, textOf(locator), textOf(By.id("output"))), ex);
         }
     }
 

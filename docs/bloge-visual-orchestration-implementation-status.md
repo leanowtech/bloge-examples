@@ -81,7 +81,7 @@ Operator Library / Resource Design Contract
 | Subgraph / remote worker / AI tool source kinds | 设计已预留，当前示例主要覆盖 resource、native、user-library transform/branch/native lowering。 | 后续阶段 |
 | 生产 IAM / RBAC / 权限后台 | 当前 policy 是 tenant/namespace/environment availability gate，不是完整权限系统。 | 平台化阶段 |
 | 多人实时协作 | 当前通过 revision guard 防止覆盖，但没有 presence、merge、operation log 或 CRDT/OT。 | 后续阶段 |
-| 前端自动化回归 | 已新增 browser-facing HTTP smoke 和 Selenium/Chrome DOM smoke，覆盖静态入口、catalog、连接预检、draft save/run/publish、publication run、run history、Java operator palette、OpenAPI preview/save UI wiring、用户算子库导入、palette-to-canvas 拖拽、schema-aware connection 拖拽、graph output 选择、页面 warning diagnostics 渲染和 publication run。失败诊断渲染、复杂 route/dependency 拖拽和更多浏览器矩阵仍需补齐。 | 下一阶段 |
+| 前端自动化回归 | 已新增 browser-facing HTTP smoke 和 Selenium/Chrome DOM smoke，覆盖静态入口、catalog、连接预检、draft save/run/publish、publication run、run history、Java operator palette、OpenAPI preview/save UI wiring、用户算子库导入、palette-to-canvas 拖拽、schema-aware connection 拖拽、schema-incompatible connection rejection、graph output 选择、页面 warning diagnostics 渲染和 publication run。复杂 route/dependency/config 拖拽、revision restore/delete 和更多浏览器矩阵仍需补齐。 | 下一阶段 |
 
 ## 6. 下一步优先级
 
