@@ -1362,6 +1362,36 @@ class GraphDraftValidatorTest {
     }
 
     @Test
+    void acceptsNestedConfigExpressionWhenNodeReferenceMatchesConfigSchema() {
+        GraphDraftValidator validator = new GraphDraftValidator(
+                VisualCatalogTestSupport.catalogWithLoanApplicantResourceAndLibrary(
+                        VisualCatalogTestSupport.nestedConfigPolicyLibrary()));
+        GraphDraft draft = nestedConfigPolicyDraft("fetchApplicant.output.payload.score");
+
+        VisualValidationResult result = validator.validate(draft);
+
+        assertThat(result.valid()).isTrue();
+    }
+
+    @Test
+    void rejectsNestedConfigExpressionWhenNodeReferenceTypeDoesNotMatchConfigSchema() {
+        GraphDraftValidator validator = new GraphDraftValidator(
+                VisualCatalogTestSupport.catalogWithLoanApplicantResourceAndLibrary(
+                        VisualCatalogTestSupport.nestedConfigPolicyLibrary()));
+        GraphDraft draft = nestedConfigPolicyDraft("fetchApplicant.output.payload.segment");
+
+        VisualValidationResult result = validator.validate(draft);
+
+        assertThat(result.valid()).isFalse();
+        assertThat(result.diagnostics())
+                .anySatisfy(diagnostic -> {
+                    assertThat(diagnostic.code()).isEqualTo("visual.config.typeMismatch");
+                    assertThat(diagnostic.target()).isEqualTo("/nodes/1/config/limits/threshold/expr");
+                    assertThat(diagnostic.message()).contains("segment").contains("string").contains("integer");
+                });
+    }
+
+    @Test
     void rejectsNodeConfigWhenRequiredConfigIsMissing() {
         GraphDraftValidator validator = new GraphDraftValidator(
                 VisualCatalogTestSupport.catalogWithLibrary(
@@ -2041,6 +2071,47 @@ class GraphDraftValidatorTest {
                         config,
                         null
                 )),
+                List.of(),
+                Map.of(),
+                new GraphDraft.OutputSelection("policy", "")
+        );
+    }
+
+    private static GraphDraft nestedConfigPolicyDraft(String thresholdExpression) {
+        return new GraphDraft(
+                "",
+                "",
+                0,
+                "nestedConfigPolicy",
+                "",
+                "",
+                "",
+                "",
+                null,
+                List.of(
+                        new GraphDraft.DraftNode(
+                                "fetchApplicant",
+                                "resource:" + VisualCatalogTestSupport.RESOURCE_ID,
+                                "",
+                                Map.of("applicantId", GraphDraft.Binding.constant("applicant-1")),
+                                Map.of(),
+                                null
+                        ),
+                        new GraphDraft.DraftNode(
+                                "policy",
+                                "risk:nestedConfigPolicy",
+                                "",
+                                Map.of(),
+                                Map.of("limits", Map.of(
+                                        "threshold", Map.of(
+                                                "kind", "expression",
+                                                "expr", thresholdExpression
+                                        ),
+                                        "mode", "strict"
+                                )),
+                                null
+                        )
+                ),
                 List.of(),
                 Map.of(),
                 new GraphDraft.OutputSelection("policy", "")

@@ -29,6 +29,15 @@ public class OperatorLibraryValidator {
             "bloge:transform"
     );
     private static final Set<String> SUPPORTED_LOWERING_MODES = Set.of("native", "transform");
+    private static final Set<String> EXECUTION_CONFIG_KEYS = Set.of("timeout", "retryAttempts");
+    private static final Set<String> RESERVED_DSL_FIELD_NAMES = Set.of(
+            "graph", "node", "branch", "decision_table", "on", "input", "depends_on",
+            "timeout", "retry", "fallback", "execution_mode", "worker_topic", "compensate",
+            "saga", "true", "false", "schema", "output", "otherwise", "when", "transform",
+            "foreach", "sequential", "in", "loop", "parallel", "until", "carry", "wait",
+            "after", "await", "event", "where", "mode", "stream", "streaming", "buffer",
+            "let", "import", "as", "script", "exit", "exhausted"
+    );
     private static final String IDENTIFIER_PATTERN = "[A-Za-z_][A-Za-z0-9_]*";
     private static final Pattern VISUAL_OPERATOR_REF = Pattern.compile(
             IDENTIFIER_PATTERN + "(?:(?::|\\.|-)" + IDENTIFIER_PATTERN + ")*");
@@ -182,6 +191,31 @@ public class OperatorLibraryValidator {
                             .formatted(operator.operatorRef(), executableOperatorRef),
                     path + "/operatorRef"));
         }
+        validateNativeDslFieldNames(operator, operatorPath(path), diagnostics);
+    }
+
+    private static void validateNativeDslFieldNames(OperatorDefinition operator,
+                                                    String operatorPath,
+                                                    List<VisualDiagnostic> diagnostics) {
+        for (int i = 0; i < operator.ports().inputs().size(); i++) {
+            OperatorDefinition.Port port = operator.ports().inputs().get(i);
+            if (!isDslFieldName(port.name())) {
+                diagnostics.add(VisualDiagnostic.error("visual.operator.lowering.dslField.invalid",
+                        "Native operator '%s' input port '%s' cannot be rendered as a BLOGE DSL input field."
+                                .formatted(operator.operatorRef(), port.name()),
+                        operatorPath + "/ports/inputs/" + i + "/name"));
+            }
+            validateDslSchemaPropertyNames(operator,
+                    port.schema().schema(),
+                    operatorPath + "/ports/inputs/" + i + "/schema/schema",
+                    Set.of(),
+                    diagnostics);
+        }
+        validateDslSchemaPropertyNames(operator,
+                operator.configSchema().schema(),
+                operatorPath + "/configSchema/schema",
+                EXECUTION_CONFIG_KEYS,
+                diagnostics);
     }
 
     private static void validateTransformLowering(OperatorDefinition operator,
@@ -229,6 +263,7 @@ public class OperatorLibraryValidator {
                     path));
             return;
         }
+        validateDslPathSegments(operator, target, path, diagnostics);
         if (propertyAtPath(output.schema(), target) == null) {
             diagnostics.add(VisualDiagnostic.error("visual.operator.lowering.assignmentTarget.unknown",
                     "Transform assignment target '%s' is not declared by output schema on operator '%s'."
@@ -402,6 +437,83 @@ public class OperatorLibraryValidator {
     private static boolean allowsAdditionalProperties(Map<String, Object> schema) {
         Object additional = schema.get("additionalProperties");
         return Boolean.TRUE.equals(additional) || additional instanceof Map<?, ?>;
+    }
+
+    private static void validateDslSchemaPropertyNames(OperatorDefinition operator,
+                                                       Map<String, Object> schema,
+                                                       String path,
+                                                       Set<String> allowedAtCurrentLevel,
+                                                       List<VisualDiagnostic> diagnostics) {
+        String kind = schemaKind(schema);
+        if ("array".equals(kind)) {
+            Map<String, Object> items = objectProperty(schema.get("items"));
+            if (items != null) {
+                validateDslSchemaPropertyNames(operator, items, path + "/items", Set.of(), diagnostics);
+            }
+            return;
+        }
+        if (!"object".equals(kind) && !schema.containsKey("properties")) {
+            return;
+        }
+        propertiesOf(schema).forEach((name, child) -> {
+            String propertyPath = path + "/properties/" + name;
+            if (!allowedAtCurrentLevel.contains(name)) {
+                validateDslFieldName(operator, name, propertyPath, diagnostics);
+            }
+            Map<String, Object> childSchema = objectProperty(child);
+            if (childSchema != null) {
+                validateDslSchemaPropertyNames(operator, childSchema, propertyPath, Set.of(), diagnostics);
+            }
+        });
+    }
+
+    private static void validateDslPathSegments(OperatorDefinition operator,
+                                                String path,
+                                                String diagnosticPath,
+                                                List<VisualDiagnostic> diagnostics) {
+        for (String segment : path.split("\\.")) {
+            validateDslFieldName(operator, segment, diagnosticPath, diagnostics);
+        }
+    }
+
+    private static void validateDslFieldName(OperatorDefinition operator,
+                                             String fieldName,
+                                             String path,
+                                             List<VisualDiagnostic> diagnostics) {
+        if (!isDslFieldName(fieldName)) {
+            diagnostics.add(VisualDiagnostic.error("visual.operator.lowering.dslField.invalid",
+                    "Operator '%s' field '%s' cannot be rendered as a BLOGE DSL field."
+                            .formatted(operator.operatorRef(), fieldName),
+                    path));
+        }
+    }
+
+    private static boolean isDslFieldName(String fieldName) {
+        return PORT_NAME.matcher(fieldName).matches() && !RESERVED_DSL_FIELD_NAMES.contains(fieldName);
+    }
+
+    private static String schemaKind(Map<String, Object> schema) {
+        Object kind = schema.get("kind");
+        if (kind instanceof String value && !value.isBlank()) {
+            return value;
+        }
+        Object type = schema.get("type");
+        if (type instanceof String value && !value.isBlank()) {
+            return value;
+        }
+        if (schema.containsKey("properties")) {
+            return "object";
+        }
+        if (schema.containsKey("items")) {
+            return "array";
+        }
+        return "";
+    }
+
+    private static String operatorPath(String loweringPath) {
+        return loweringPath.endsWith("/lowering")
+                ? loweringPath.substring(0, loweringPath.length() - "/lowering".length())
+                : loweringPath;
     }
 
 }

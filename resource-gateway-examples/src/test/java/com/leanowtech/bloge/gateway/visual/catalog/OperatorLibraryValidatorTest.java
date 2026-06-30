@@ -5,6 +5,7 @@ import com.leanowtech.bloge.gateway.visual.validation.VisualValidationResult;
 
 import org.junit.jupiter.api.Test;
 
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
@@ -536,6 +537,70 @@ class OperatorLibraryValidatorTest {
     }
 
     @Test
+    void rejectsNativeLoweringWhenInputSchemaUsesReservedDslFieldName() {
+        OperatorDefinition operator = operator(
+                "risk:reservedInputField",
+                new OperatorDefinition.Ports(
+                        List.of(new OperatorDefinition.Port("inputs",
+                                SchemaEnvelope.object(Map.of("mode", Map.of("type", "string")), List.of("mode")),
+                                true,
+                                "Inputs.")),
+                        List.of(new OperatorDefinition.Port("output",
+                                SchemaEnvelope.object(Map.of("accepted", Map.of("type", "boolean")), List.of()),
+                                true,
+                                "Output."))
+                ),
+                "native"
+        );
+
+        VisualValidationResult result = validator.validate(libraryWith(operator));
+
+        assertThat(result.valid()).isFalse();
+        assertThat(result.diagnostics())
+                .anySatisfy(diagnostic -> {
+                    assertThat(diagnostic.code()).isEqualTo("visual.operator.lowering.dslField.invalid");
+                    assertThat(diagnostic.target())
+                            .isEqualTo("/operators/0/ports/inputs/0/schema/schema/properties/mode");
+                });
+    }
+
+    @Test
+    void rejectsNativeLoweringWhenConfigSchemaUsesReservedDslFieldName() {
+        Map<String, Object> limits = new LinkedHashMap<>();
+        limits.put("mode", Map.of("type", "string"));
+        limits.put("threshold", Map.of("type", "integer"));
+        Map<String, Object> config = Map.of(
+                "limits", Map.of(
+                        "type", "object",
+                        "properties", limits,
+                        "required", List.of("mode"),
+                        "additionalProperties", false
+                ),
+                "timeout", Map.of("type", "duration")
+        );
+        OperatorDefinition operator = new OperatorDefinition(
+                "bloge.visualOperator.v1",
+                "risk:reservedConfigField",
+                "1.0.0",
+                new OperatorDefinition.Display("Reserved config", "Test operator.", List.of("test")),
+                new OperatorDefinition.Source("user-library", "", "", "", true),
+                outputOnlyPorts(Map.of("accepted", Map.of("type", "boolean")), List.of()),
+                SchemaEnvelope.object(config, List.of("limits")),
+                OperatorDefinition.Capabilities.pure(),
+                new OperatorDefinition.Lowering("native", "risk:reservedConfigField", Map.of()),
+                List.of()
+        );
+
+        VisualValidationResult result = validator.validate(libraryWith(operator));
+
+        assertThat(result.valid()).isFalse();
+        assertThat(result.diagnostics())
+                .filteredOn(diagnostic -> "visual.operator.lowering.dslField.invalid".equals(diagnostic.code()))
+                .extracting("target")
+                .containsExactly("/operators/0/configSchema/schema/properties/limits/properties/mode");
+    }
+
+    @Test
     void rejectsTransformLoweringWithoutAssignments() {
         OperatorDefinition operator = transformOperator(
                 "risk:missingAssignments",
@@ -576,6 +641,28 @@ class OperatorLibraryValidatorTest {
                         "visual.operator.lowering.assignmentTarget.unknown",
                         "visual.operator.lowering.assignmentTarget.required"
                 );
+    }
+
+    @Test
+    void rejectsTransformLoweringWhenAssignmentTargetUsesReservedDslFieldName() {
+        OperatorDefinition operator = transformOperator(
+                "risk:reservedAssignmentTarget",
+                Map.of("score", Map.of("type", "integer")),
+                List.of("score"),
+                Map.of("mode", Map.of("type", "string")),
+                List.of("mode"),
+                Map.of("mode", "\"strict\"")
+        );
+
+        VisualValidationResult result = validator.validate(libraryWith(operator));
+
+        assertThat(result.valid()).isFalse();
+        assertThat(result.diagnostics())
+                .anySatisfy(diagnostic -> {
+                    assertThat(diagnostic.code()).isEqualTo("visual.operator.lowering.dslField.invalid");
+                    assertThat(diagnostic.target())
+                            .isEqualTo("/operators/0/lowering/parameters/assignments/mode");
+                });
     }
 
     @Test

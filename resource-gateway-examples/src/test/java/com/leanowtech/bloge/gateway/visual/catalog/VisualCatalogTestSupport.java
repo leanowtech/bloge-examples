@@ -677,6 +677,61 @@ public final class VisualCatalogTestSupport {
         );
     }
 
+    public static OperatorLibrary nestedConfigPolicyLibrary() {
+        Map<String, Object> outputProperties = new LinkedHashMap<>();
+        outputProperties.put("accepted", Map.of("type", "boolean"));
+
+        Map<String, Object> limitsProperties = new LinkedHashMap<>();
+        limitsProperties.put("threshold", Map.of("type", "integer"));
+        limitsProperties.put("mode", Map.of(
+                "type", "enum",
+                "values", List.of("strict", "relaxed")
+        ));
+
+        Map<String, Object> configProperties = new LinkedHashMap<>();
+        configProperties.put("limits", Map.of(
+                "type", "object",
+                "properties", limitsProperties,
+                "required", List.of("threshold", "mode"),
+                "additionalProperties", false
+        ));
+
+        OperatorDefinition operator = new OperatorDefinition(
+                "bloge.visualOperator.v1",
+                "risk:nestedConfigPolicy",
+                "1.0.0",
+                new OperatorDefinition.Display("Nested config policy",
+                        "Evaluates policy behavior controlled by nested configSchema.",
+                        List.of("risk", "config")),
+                new OperatorDefinition.Source("user-library", "", "", "", true),
+                new OperatorDefinition.Ports(
+                        List.of(),
+                        List.of(new OperatorDefinition.Port("output",
+                                SchemaEnvelope.object(outputProperties, List.of()),
+                                true,
+                                "Policy output."))
+                ),
+                SchemaEnvelope.object(configProperties, List.of("limits")),
+                OperatorDefinition.Capabilities.pure(),
+                new OperatorDefinition.Lowering("transform", "transform", Map.of(
+                        "assignments", Map.of(
+                                "accepted", "true"
+                        )
+                )),
+                List.of()
+        );
+
+        return new OperatorLibrary(
+                "bloge.visualOperatorLibrary.v1",
+                "risk-nested-config-policy",
+                "Nested config policy operators",
+                "1.0.0",
+                "risk-team",
+                "ACTIVE",
+                List.of(operator)
+        );
+    }
+
     public static ResourceDescriptor loanApplicantDescriptor() {
         return new ResourceDescriptor(
                 RESOURCE_ID,

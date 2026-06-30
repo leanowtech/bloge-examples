@@ -179,6 +179,46 @@ class VisualConnectionCheckServiceTest {
     }
 
     @Test
+    void acceptsSchemaCompatibleNestedConfigSourcePickerExpression() {
+        VisualConnectionCheckService service = connectionService(VisualCatalogTestSupport
+                .catalogWithLoanApplicantResourceAndLibrary(VisualCatalogTestSupport.nestedConfigPolicyLibrary()));
+        GraphDraft draft = resourceNestedConfigDraft();
+
+        VisualConnectionCheckResult result = service.check(new VisualConnectionCheckRequest(
+                draft,
+                new GraphDraft.Endpoint("fetchApplicant", "payload", "score"),
+                new GraphDraft.Endpoint("policy", "config", "limits.threshold"),
+                "data"
+        ));
+
+        assertThat(result.accepted()).isTrue();
+        assertThat(result.diagnostics()).isEmpty();
+        assertThat(result.edge().target().port()).isEqualTo("config");
+        assertThat(result.edge().target().path()).isEqualTo("limits.threshold");
+    }
+
+    @Test
+    void rejectsSchemaIncompatibleNestedConfigSourcePickerExpression() {
+        VisualConnectionCheckService service = connectionService(VisualCatalogTestSupport
+                .catalogWithLoanApplicantResourceAndLibrary(VisualCatalogTestSupport.nestedConfigPolicyLibrary()));
+        GraphDraft draft = resourceNestedConfigDraft();
+
+        VisualConnectionCheckResult result = service.check(new VisualConnectionCheckRequest(
+                draft,
+                new GraphDraft.Endpoint("fetchApplicant", "payload", "segment"),
+                new GraphDraft.Endpoint("policy", "config", "limits.threshold"),
+                "data"
+        ));
+
+        assertThat(result.accepted()).isFalse();
+        assertThat(result.diagnostics())
+                .anySatisfy(diagnostic -> {
+                    assertThat(diagnostic.code()).isEqualTo("visual.config.typeMismatch");
+                    assertThat(diagnostic.target()).isEqualTo("/nodes/1/config/limits/threshold/expr");
+                });
+    }
+
+    @Test
     void rejectsConnectionThatWouldCreateCycle() {
         VisualConnectionCheckService service = connectionService(VisualCatalogTestSupport
                 .catalogWithLibrary(VisualCatalogTestSupport.numericPassLibrary()));
@@ -275,6 +315,41 @@ class VisualConnectionCheckServiceTest {
                                 "",
                                 Map.of(),
                                 Map.of("mode", "strict"),
+                                null
+                        )
+                ),
+                List.of(),
+                Map.of(),
+                new GraphDraft.OutputSelection("policy", "")
+        );
+    }
+
+    private static GraphDraft resourceNestedConfigDraft() {
+        return new GraphDraft(
+                "",
+                "",
+                0,
+                "nestedConfigConnectionCheck",
+                "",
+                "",
+                "",
+                "",
+                null,
+                List.of(
+                        new GraphDraft.DraftNode(
+                                "fetchApplicant",
+                                "resource:" + VisualCatalogTestSupport.RESOURCE_ID,
+                                "",
+                                Map.of(),
+                                Map.of(),
+                                null
+                        ),
+                        new GraphDraft.DraftNode(
+                                "policy",
+                                "risk:nestedConfigPolicy",
+                                "",
+                                Map.of(),
+                                Map.of("limits", Map.of("mode", "strict")),
                                 null
                         )
                 ),

@@ -92,7 +92,7 @@ public class VisualConnectionCheckService {
 
         GraphDraft candidate = draftWithPreviewConfigExpression(request.draft(), targetIndex,
                 request.target().path(), expressionForSource(request.source()));
-        String configPath = "/nodes/" + targetIndex + "/config/" + request.target().path();
+        String configPath = "/nodes/" + targetIndex + "/config/" + diagnosticPath(request.target().path());
         String operatorPath = "/nodes/" + targetIndex + "/operatorRef";
         Map<String, Integer> nodeIndexes = nodeIndexes(candidate);
 
@@ -162,7 +162,7 @@ public class VisualConnectionCheckService {
         List<GraphDraft.DraftNode> nodes = new ArrayList<>(draft.nodes());
         GraphDraft.DraftNode target = nodes.get(targetIndex);
         Map<String, Object> config = new LinkedHashMap<>(target.config());
-        config.put(configPath, Map.of(
+        putNestedConfigValue(config, configPath, Map.of(
                 "kind", "expression",
                 "expr", expression
         ));
@@ -190,6 +190,51 @@ public class VisualConnectionCheckService {
                 draft.output(),
                 draft.operatorFingerprints()
         );
+    }
+
+    private static void putNestedConfigValue(Map<String, Object> config, String path, Object value) {
+        List<String> segments = pathSegments(path);
+        if (segments.isEmpty()) {
+            return;
+        }
+        Map<String, Object> current = config;
+        for (int i = 0; i < segments.size() - 1; i++) {
+            String segment = segments.get(i);
+            Object existing = current.get(segment);
+            Map<String, Object> child = existing instanceof Map<?, ?> map && !isConfigBindingMap(map)
+                    ? mutableStringMap(map)
+                    : new LinkedHashMap<>();
+            current.put(segment, child);
+            current = child;
+        }
+        current.put(segments.get(segments.size() - 1), value);
+    }
+
+    private static boolean isConfigBindingMap(Map<?, ?> map) {
+        return map.get("kind") instanceof String;
+    }
+
+    private static Map<String, Object> mutableStringMap(Map<?, ?> map) {
+        Map<String, Object> copy = new LinkedHashMap<>();
+        map.forEach((key, item) -> copy.put(String.valueOf(key), item));
+        return copy;
+    }
+
+    private static List<String> pathSegments(String path) {
+        if (path == null || path.isBlank()) {
+            return List.of();
+        }
+        List<String> segments = new ArrayList<>();
+        for (String segment : path.split("\\.")) {
+            if (!segment.isBlank()) {
+                segments.add(segment.trim());
+            }
+        }
+        return segments;
+    }
+
+    private static String diagnosticPath(String path) {
+        return String.join("/", pathSegments(path));
     }
 
     private static GraphDraft draftWithPreviewBinding(GraphDraft draft,

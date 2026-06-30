@@ -383,6 +383,100 @@ class GraphDraftDslGeneratorTest {
     }
 
     @Test
+    void lowersNativeOperatorConfigSchemaValuesAsConfigInputObject() {
+        GraphDraftDslGenerator generator = new GraphDraftDslGenerator(
+                VisualCatalogTestSupport.catalogWithLibrary(nativeConfigurablePolicyLibrary()));
+        Map<String, Object> limits = new LinkedHashMap<>();
+        limits.put("threshold", Map.of("kind", "expression", "expr", "ctx.threshold"));
+        limits.put("policyMode", "strict");
+        Map<String, Object> config = new LinkedHashMap<>();
+        config.put("limits", limits);
+        config.put("enabled", true);
+        config.put("timeout", "3s");
+        config.put("retryAttempts", 2);
+        GraphDraft draft = new GraphDraft(
+                "",
+                "",
+                0,
+                "nativeConfigInput",
+                "",
+                "",
+                "",
+                "",
+                null,
+                List.of(new GraphDraft.DraftNode(
+                        "policy",
+                        "risk:configurableNativePolicy",
+                        "",
+                        Map.of("applicantId", GraphDraft.Binding.contextPath("applicantId")),
+                        config,
+                        null
+                )),
+                List.of(),
+                Map.of(),
+                new GraphDraft.OutputSelection("policy", "")
+        );
+
+        DslGenerationResult result = generator.generate(draft);
+
+        assertThat(result.generated()).isTrue();
+        assertThat(result.dsl()).contains("node policy : riskConfigurablePolicy");
+        assertThat(result.dsl()).contains("applicantId = ctx.applicantId");
+        assertThat(result.dsl()).contains("config = { limits: { threshold: ctx.threshold, policyMode: \"strict\" }, enabled: true }");
+        assertThat(result.dsl()).contains("timeout = 3s");
+        assertThat(result.dsl()).contains("retry = { attempts: 2, backoff: 200ms }");
+        assertThat(result.dsl()).doesNotContain("kind =");
+
+        DefaultOperatorRegistry registry = new DefaultOperatorRegistry();
+        registry.registerRaw("riskConfigurablePolicy", new StubOperator());
+        GraphLoader loader = new GraphLoader(registry);
+        loader.withCompilationMode(CompilationMode.LENIENT);
+        var compilation = loader.loadWithDiagnostics(result.dsl());
+        Graph graph = compilation.graph();
+        assertThat(graph)
+                .as("compiler diagnostics: %s%nDSL:%n%s", compilation.diagnostics(), result.dsl())
+                .isNotNull();
+        assertThat(graph.nodes()).isNotEmpty();
+    }
+
+    @Test
+    void rejectsNativeOperatorConfigKeysThatCannotRenderAsDslFields() {
+        GraphDraftDslGenerator generator = new GraphDraftDslGenerator(
+                VisualCatalogTestSupport.catalogWithLibrary(nativePolicyLibrary("riskPolicy")));
+        GraphDraft draft = new GraphDraft(
+                "",
+                "",
+                0,
+                "nativeConfigKeyword",
+                "",
+                "",
+                "",
+                "",
+                null,
+                List.of(new GraphDraft.DraftNode(
+                        "policy",
+                        "risk:legacyPolicy",
+                        "",
+                        Map.of("applicantId", GraphDraft.Binding.contextPath("applicantId")),
+                        Map.of("mode", "strict"),
+                        null
+                )),
+                List.of(),
+                Map.of(),
+                new GraphDraft.OutputSelection("policy", "")
+        );
+
+        DslGenerationResult result = generator.generate(draft);
+
+        assertThat(result.generated()).isFalse();
+        assertThat(result.diagnostics())
+                .anySatisfy(diagnostic -> {
+                    assertThat(diagnostic.code()).isEqualTo("visual.codegen.configKey.invalid");
+                    assertThat(diagnostic.target()).isEqualTo("/nodes/policy/config/mode");
+                });
+    }
+
+    @Test
     void rejectsDuplicateNativeInputLeafPathsDuringCodegen() {
         GraphDraftDslGenerator generator = new GraphDraftDslGenerator(
                 VisualCatalogTestSupport.catalogWithLibrary(nativeNestedPolicyLibrary()));
@@ -524,6 +618,58 @@ class GraphDraftDslGeneratorTest {
                 "bloge.visualOperatorLibrary.v1",
                 "risk-native-policy",
                 "Risk native policy operators",
+                "1.0.0",
+                "risk-team",
+                "ACTIVE",
+                List.of(operator)
+        );
+    }
+
+    private static OperatorLibrary nativeConfigurablePolicyLibrary() {
+        Map<String, Object> inputProperties = Map.of("applicantId", Map.of("type", "string"));
+        Map<String, Object> outputProperties = Map.of("decision", Map.of("type", "string"));
+        Map<String, Object> limitsProperties = new LinkedHashMap<>();
+        limitsProperties.put("threshold", Map.of("type", "integer"));
+        limitsProperties.put("policyMode", Map.of(
+                "type", "enum",
+                "values", List.of("strict", "relaxed")
+        ));
+        Map<String, Object> configProperties = new LinkedHashMap<>();
+        configProperties.put("limits", Map.of(
+                "type", "object",
+                "properties", limitsProperties,
+                "required", List.of("threshold", "policyMode"),
+                "additionalProperties", false
+        ));
+        configProperties.put("enabled", Map.of("type", "boolean"));
+
+        OperatorDefinition operator = new OperatorDefinition(
+                "bloge.visualOperator.v1",
+                "risk:configurableNativePolicy",
+                "1.0.0",
+                new OperatorDefinition.Display("Configurable native policy",
+                        "Delegates runtime policy decisions with config.",
+                        List.of("risk", "config")),
+                new OperatorDefinition.Source("user-library", "", "", "", false),
+                new OperatorDefinition.Ports(
+                        List.of(new OperatorDefinition.Port("inputs",
+                                SchemaEnvelope.object(inputProperties, List.of("applicantId")),
+                                true,
+                                "Policy inputs.")),
+                        List.of(new OperatorDefinition.Port("output",
+                                SchemaEnvelope.object(outputProperties, List.of()),
+                                true,
+                                "Policy output."))
+                ),
+                SchemaEnvelope.object(configProperties, List.of("limits")),
+                OperatorDefinition.Capabilities.pure(),
+                new OperatorDefinition.Lowering("native", "riskConfigurablePolicy", Map.of()),
+                List.of()
+        );
+        return new OperatorLibrary(
+                "bloge.visualOperatorLibrary.v1",
+                "risk-native-configurable-policy",
+                "Risk native configurable policy operators",
                 "1.0.0",
                 "risk-team",
                 "ACTIVE",

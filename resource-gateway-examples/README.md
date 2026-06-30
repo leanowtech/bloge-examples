@@ -120,13 +120,18 @@ input types; an `objectTemplate` for `applicant` must recursively provide
 input binding kinds are rejected before compile/run, so
 hand-edited drafts cannot fall through to DSL literal lowering and bypass the
 target schema gate. Operator `configSchema` is
-also enforced: the browser inspector renders simple config controls for schema
-fields, and the server blocks missing required config, type mismatches, enum
-mismatches, and undeclared config fields when `additionalProperties=false`.
-The inspector can switch a config field from a literal value to a source-backed
-expression using the same compatible `ctx.*` and upstream output picker used by
-input bindings, and those picker selections are preflighted by the same server
-schema gate before the draft mutates. Structured config expressions such as `{ "kind": "expression",
+also enforced: the browser inspector renders literal/source controls for schema
+leaf fields, including nested object paths such as `limits.threshold`, and the
+server blocks missing required config, type mismatches, enum mismatches, and
+undeclared config fields when `additionalProperties=false`. The inspector can
+switch a config field from a literal value to a source-backed expression using
+the same compatible `ctx.*` and upstream output picker used by input bindings,
+and those picker selections are preflighted by the same server schema gate
+before the draft mutates. Nested config picker previews are written as real
+object paths rather than flat dotted keys, so sibling config such as
+`limits.mode` is preserved while `limits.threshold` is tested, and saved drafts
+validate those nested config expressions against the same configSchema path.
+Structured config expressions such as `{ "kind": "expression",
 "expr": "ctx.threshold" }` are allowed without pretending to be literals; pure
 `ctx.*` or `node.output.*` references are checked against the target
 `configSchema` type when it can be proven, and the DSL preview/codegen lowers
@@ -422,8 +427,8 @@ fields or declared input template references, unsupported schema kinds,
 also match their declared type/kind, enum domain, required object properties,
 array item schema, and `additionalProperties` policy so canvas-generated default
 node config cannot start invalid. The browser consumes both root object defaults
-and field-level defaults from `configSchema` when a node is dragged from the
-palette. Invalid libraries return structured visual diagnostics instead of
+and nested field-level defaults from `configSchema` when a node is dragged from
+the palette. Invalid libraries return structured visual diagnostics instead of
 accepting a library that will fail later on the canvas.
 Operator
 `policy.tenants`, `policy.namespaces`, and `policy.environments` are stored with
@@ -443,7 +448,16 @@ for example `node policy : "risk:legacyPolicy"`. Native input lowering also
 groups `targetPort`/nested `targetPath` bindings into object literals, so
 schema-shaped inputs such as `applicant.score` compile as
 `applicant = { score: ctx.score }` instead of illegal dotted input-field
-assignments. Browser connection hints mirror the server's stricter schema rules
+assignments. Native operator `configSchema` values are also lowered as a
+business `config` input object while `timeout` and `retryAttempts` stay as
+execution config; structured config expressions remain expressions inside that
+object. Because the current BLOGE object-literal grammar does not support quoted
+field names, native config keys must be DSL-safe field identifiers and codegen
+returns `visual.codegen.configKey.invalid` instead of emitting DSL that will
+fail later. Operator library validation applies the same DSL-safe field-name
+gate to native input/config schemas and transform assignment targets, returning
+`visual.operator.lowering.dslField.invalid` before an unsafe library enters the
+catalog. Browser connection hints mirror the server's stricter schema rules
 for object required-field proof and enum value-domain subsets, while the server
 validator remains the publish/run authority. Draft compile and publish calls run
 the generated DSL through the BLOGE compiler before returning success, so a user
@@ -859,7 +873,7 @@ curl -X POST http://localhost:8080/api/gateway/resources/execute \
 
 ## Test strategy
 
-The test suite is organised into four layers (40 top-level test classes, 348 executed
+The test suite is organised into four layers (40 top-level test classes, 357 executed
 tests, including nested JUnit suites):
 
 ### Layer 1 — Unit tests
@@ -885,7 +899,7 @@ Isolated component tests, some with lightweight Spring slices or mocks.
 | `ResourceDescriptorBootstrapTest` | 7 | Seeding, refresh behavior, idempotency |
 | `GatewayDslCompilationTest` | 7 | DSL parsing, graph loading |
 | Gateway example API suite | 13 | Dynamic composer service/controller, scenario catalog, example graph endpoints |
-| Visual authoring suite | 207 | Visual operator projection, resource design contract persistence and gates, resource-contract in-use delete protection, imported libraries, registry-aware and impact-aware library validation, catalog lifecycle gates, deprecated operator draft resolution and active-scope fingerprinting, catalog token gates and policy filtering, cross-library operatorRef ownership, operator-library in-use change protection and same-ref fingerprint drift/missing-snapshot preflight warnings, system-reserved operatorRef gates, import-time lowering gates, schema default value gates, draft/publication persistence and history, revision audit metadata, full-save/PATCH fingerprint preservation, service-managed fingerprint snapshot gates, structured malformed patch diagnostics, server-assigned create identity, revision-guarded full-save, patch, stored-run, delete, and publish conflict handling, operator fingerprint drift preservation and execution snapshot coverage gates, typed connection/edge validation including edge identity uniqueness and binding kind allow-list, input/config source-picker server preflight with duplicate-connection rejection, duplicate target input ownership, object required fields, object schema structure gates, required-array schema gates, nested objectTemplate required fields, enum value-domain and shape gates, standard JSON Schema config enum gates, config expression references and configSchema type gates, data edge/semantic dependency consistency, graph input schema gates, secret blocking, DSL lowering, compiler gating, dependency ordering, runtime smoke path |
+| Visual authoring suite | 216 | Visual operator projection, resource design contract persistence and gates, resource-contract in-use delete protection, imported libraries, registry-aware and impact-aware library validation, catalog lifecycle gates, deprecated operator draft resolution and active-scope fingerprinting, catalog token gates and policy filtering, cross-library operatorRef ownership, operator-library in-use change protection and same-ref fingerprint drift/missing-snapshot preflight warnings, system-reserved operatorRef gates, import-time lowering gates including DSL-safe field-name gates, schema default value gates, draft/publication persistence and history, revision audit metadata, full-save/PATCH fingerprint preservation, service-managed fingerprint snapshot gates, structured malformed patch diagnostics, server-assigned create identity, revision-guarded full-save, patch, stored-run, delete, and publish conflict handling, operator fingerprint drift preservation and execution snapshot coverage gates, typed connection/edge validation including edge identity uniqueness and binding kind allow-list, input/config source-picker server preflight with duplicate-connection rejection and nested config paths, duplicate target input ownership, object required fields, object schema structure gates, required-array schema gates, nested objectTemplate required fields, enum value-domain and shape gates, standard JSON Schema config enum gates, nested config expression references and configSchema type gates, native config input lowering and DSL field-key diagnostics, data edge/semantic dependency consistency, graph input schema gates, secret blocking, DSL lowering, compiler gating, dependency ordering, runtime smoke path |
 
 ### Layer 3 — Orchestration tests
 

@@ -2380,7 +2380,7 @@ function renderConfigRow(node, field) {
 }
 
 function renderConfigControl(node, field) {
-  const value = node.config?.[field.path];
+  const value = configValueAtPath(node.config, field.path);
   const expressionMode = isConfigExpressionValue(value);
   const expression = expressionMode ? configExpressionForField(value) : '';
   const sourceSelect = renderConfigSourceSelect(node, field, expression, expressionMode);
@@ -2436,8 +2436,8 @@ function renderConfigSourceSelect(node, field, expression, expressionMode) {
 function renderLiteralConfigControl(node, field, value) {
   const type = rawSchemaType(field.schema);
   const attr = `data-config-field="${escapeHtml(field.path)}"`;
-  const values = Array.isArray(field.schema?.values) ? field.schema.values : [];
-  if (type === 'enum' && values.length) {
+  const values = schemaEnumValues(field.schema);
+  if (values.length) {
     const hasValue = value !== undefined && value !== null && value !== '';
     const blank = field.required
       ? `<option value="" ${hasValue ? '' : 'selected'} disabled>Select...</option>`
@@ -2473,6 +2473,10 @@ function isConfigExpressionValue(value) {
   return value && typeof value === 'object' && !Array.isArray(value) && value.kind === 'expression';
 }
 
+function isConfigBindingObject(value) {
+  return value && typeof value === 'object' && !Array.isArray(value) && typeof value.kind === 'string';
+}
+
 function configExpressionForField(value) {
   return isConfigExpressionValue(value) ? String(value.expr || '') : '';
 }
@@ -2491,23 +2495,45 @@ function configTargetForField(node, field) {
 
 function unknownConfigRows(node, spec) {
   const schema = spec.configSchema?.schema || {};
-  if (schema.additionalProperties !== false) {
-    return [];
-  }
-  const declared = new Set(Object.keys(schema.properties || {}));
-  return Object.keys(node.config || {})
-    .filter((key) => !declared.has(key))
-    .map((key) => `
+  return unknownConfigPaths(node.config || {}, schema, '')
+    .map((path) => `
       <div class="binding-row error">
         <div class="binding-row-head">
           <div>
-            <strong>${escapeHtml(readableName(key))}</strong>
+            <strong>${escapeHtml(readableName(path))}</strong>
             <span>unknown · config</span>
           </div>
         </div>
         <div class="binding-status">Not declared by configSchema.</div>
       </div>
     `);
+}
+
+function unknownConfigPaths(value, schema, prefix) {
+  if (!isConfigContainerObject(value)) {
+    return [];
+  }
+  const type = rawSchemaType(schema);
+  if (type && type !== 'object' && !schema?.properties) {
+    return [];
+  }
+  const properties = schema?.properties || {};
+  const additional = schema?.additionalProperties;
+  const additionalSchema = additional && typeof additional === 'object' && !Array.isArray(additional)
+    ? additional
+    : null;
+  const paths = [];
+  for (const [key, item] of Object.entries(value)) {
+    const path = prefix ? `${prefix}.${key}` : key;
+    if (Object.prototype.hasOwnProperty.call(properties, key)) {
+      paths.push(...unknownConfigPaths(item, properties[key] || {}, path));
+    } else if (additional === false) {
+      paths.push(path);
+    } else if (additionalSchema) {
+      paths.push(...unknownConfigPaths(item, additionalSchema, path));
+    }
+  }
+  return paths;
 }
 
 function setConfigValueFromInput(node, input) {
@@ -2520,13 +2546,13 @@ function setConfigValueFromInput(node, input) {
   node.config = node.config || {};
   if (input.type !== 'checkbox' && input.value === '') {
     if (field.required) {
-      node.config[field.path] = '';
+      setConfigValueAtPath(node.config, field.path, '');
     } else {
-      delete node.config[field.path];
+      deleteConfigValueAtPath(node.config, field.path);
     }
     return;
   }
-  node.config[field.path] = parseConfigInputValue(input, field.schema);
+  setConfigValueAtPath(node.config, field.path, parseConfigInputValue(input, field.schema));
 }
 
 function setConfigSourceFromSelect(node, select) {
@@ -2539,27 +2565,27 @@ function setConfigSourceFromSelect(node, select) {
   node.config = node.config || {};
   if (select.value === '') {
     if (field.required) {
-      node.config[field.path] = '';
+      setConfigValueAtPath(node.config, field.path, '');
     } else {
-      delete node.config[field.path];
+      deleteConfigValueAtPath(node.config, field.path);
     }
     return;
   }
   if (select.value === CONFIG_MANUAL_EXPRESSION) {
-    node.config[field.path] = {
+    setConfigValueAtPath(node.config, field.path, {
       kind: 'expression',
-      expr: configExpressionForField(node.config[field.path])
-    };
+      expr: configExpressionForField(configValueAtPath(node.config, field.path))
+    });
     return;
   }
   const source = sourceFromBindingValue(select.value);
   if (!source) {
     return;
   }
-  node.config[field.path] = {
+  setConfigValueAtPath(node.config, field.path, {
     kind: 'expression',
     expr: expressionForConnectionSource(source)
-  };
+  });
 }
 
 function setConfigExpressionFromInput(node, input) {
@@ -2570,10 +2596,10 @@ function setConfigExpressionFromInput(node, input) {
     return;
   }
   node.config = node.config || {};
-  node.config[field.path] = {
+  setConfigValueAtPath(node.config, field.path, {
     kind: 'expression',
     expr: input.value
-  };
+  });
 }
 
 function updateConfigFieldStatus(node, input) {
@@ -2598,11 +2624,12 @@ function updateConfigFieldStatus(node, input) {
 
 function parseConfigInputValue(input, schema) {
   const type = rawSchemaType(schema);
+  const values = schemaEnumValues(schema);
   if (input.type === 'checkbox' || type === 'boolean') {
     return Boolean(input.checked);
   }
-  if (type === 'enum' && Array.isArray(schema?.values)) {
-    return schema.values.find((item) => String(item) === input.value) ?? input.value;
+  if (values.length) {
+    return values.find((item) => String(item) === input.value) ?? input.value;
   }
   if (type === 'integer') {
     return Number.parseInt(input.value || '0', 10);
@@ -2621,8 +2648,8 @@ function parseConfigInputValue(input, schema) {
 }
 
 function configStatusForField(node, field) {
-  const hasValue = Object.prototype.hasOwnProperty.call(node.config || {}, field.path);
-  const value = node.config?.[field.path];
+  const hasValue = hasConfigPath(node.config || {}, field.path);
+  const value = configValueAtPath(node.config, field.path);
   if (!hasValue || value === null || value === '') {
     return field.required
       ? { level: 'error', message: 'Required config is missing.' }
@@ -2658,9 +2685,13 @@ function configExpressionStatusForField(node, field, expression) {
 
 function configValueMatchesSchema(value, schema) {
   const type = rawSchemaType(schema);
+  const values = schemaEnumValues(schema);
+  if (values.length) {
+    return values.some((item) => Object.is(item, value));
+  }
   if (!type || type === 'any' || type === 'opaque') return true;
   if (type === 'enum') {
-    return Array.isArray(schema?.values) && schema.values.some((item) => item === value || String(item) === String(value));
+    return false;
   }
   if (type === 'boolean') return typeof value === 'boolean';
   if (type === 'integer') return Number.isInteger(Number(value));
@@ -2904,10 +2935,10 @@ function defaultConfigForOperator(spec) {
   if (rootSchema.default && typeof rootSchema.default === 'object' && !Array.isArray(rootSchema.default)) {
     Object.assign(config, cloneJsonValue(rootSchema.default));
   }
-  for (const field of configFieldDescriptors(spec.configSchema)) {
-    if (!Object.prototype.hasOwnProperty.call(config, field.path)
+  for (const field of configDefaultFieldDescriptors(spec.configSchema)) {
+    if (!hasConfigPath(config, field.path)
         && Object.prototype.hasOwnProperty.call(field.schema || {}, 'default')) {
-      config[field.path] = cloneJsonValue(field.schema.default);
+      setConfigValueAtPath(config, field.path, cloneJsonValue(field.schema.default));
     }
   }
   return config;
@@ -2921,6 +2952,91 @@ function cloneJsonValue(value) {
     return Object.fromEntries(Object.entries(value).map(([key, item]) => [key, cloneJsonValue(item)]));
   }
   return value;
+}
+
+function configPathSegments(path) {
+  return String(path || '')
+    .split('.')
+    .map((segment) => segment.trim())
+    .filter(Boolean);
+}
+
+function hasConfigPath(config, path) {
+  const segments = configPathSegments(path);
+  if (!segments.length) {
+    return config !== undefined;
+  }
+  let current = config;
+  for (const segment of segments) {
+    if (!isConfigContainerObject(current) || !Object.prototype.hasOwnProperty.call(current, segment)) {
+      return false;
+    }
+    current = current[segment];
+  }
+  return true;
+}
+
+function configValueAtPath(config, path) {
+  const segments = configPathSegments(path);
+  let current = config;
+  for (const segment of segments) {
+    if (!isConfigContainerObject(current) || !Object.prototype.hasOwnProperty.call(current, segment)) {
+      return undefined;
+    }
+    current = current[segment];
+  }
+  return current;
+}
+
+function setConfigValueAtPath(config, path, value) {
+  const segments = configPathSegments(path);
+  if (!segments.length) {
+    return;
+  }
+  let current = config;
+  for (const segment of segments.slice(0, -1)) {
+    if (!isConfigContainerObject(current[segment])) {
+      current[segment] = {};
+    }
+    current = current[segment];
+  }
+  current[segments[segments.length - 1]] = value;
+}
+
+function deleteConfigValueAtPath(config, path) {
+  const segments = configPathSegments(path);
+  if (!segments.length) {
+    return;
+  }
+  let current = config;
+  const parents = [];
+  for (const segment of segments.slice(0, -1)) {
+    if (!isConfigContainerObject(current) || !isConfigContainerObject(current[segment])) {
+      return;
+    }
+    parents.push([current, segment]);
+    current = current[segment];
+  }
+  if (!isConfigContainerObject(current)) {
+    return;
+  }
+  delete current[segments[segments.length - 1]];
+  for (let i = parents.length - 1; i >= 0; i--) {
+    const [parent, segment] = parents[i];
+    if (isPlainObject(parent[segment]) && Object.keys(parent[segment]).length === 0) {
+      delete parent[segment];
+    } else {
+      break;
+    }
+  }
+}
+
+function isPlainObject(value) {
+  return value !== null && typeof value === 'object' && !Array.isArray(value);
+}
+
+function isConfigContainerObject(value) {
+  return isPlainObject(value) && !isConfigBindingObject(value);
 }
 
 function defaultResourceParamInputs(spec) {
@@ -2995,14 +3111,13 @@ function requiredInputNamesForPort(port) {
 }
 
 function configFieldDescriptors(configSchema) {
-  const schema = configSchema?.schema || {};
-  const properties = schema.properties || {};
-  const required = new Set(Array.isArray(schema.required) ? schema.required.map(String) : []);
-  return Object.entries(properties).map(([name, childSchema]) => ({
-    path: name,
-    schema: childSchema && typeof childSchema === 'object' ? childSchema : {},
-    required: required.has(name)
-  }));
+  const fields = schemaFieldsFromSchema(configSchema?.schema || {}, '', true);
+  const leaves = fields.filter((field) => !hasSchemaProperties(field.schema));
+  return leaves.length ? leaves : fields;
+}
+
+function configDefaultFieldDescriptors(configSchema) {
+  return schemaFieldsFromSchema(configSchema?.schema || {}, '', true);
 }
 
 function schemaProperties(schemaEnvelope) {
@@ -3343,10 +3458,16 @@ function customNodeToDsl(node) {
     return `  transform ${node.id} {\n${assignments || '    result = {}'}\n  }`;
   }
   const executable = spec.lowering?.operatorRef || spec.operatorRef || spec.visualOperatorRef || node.paletteType;
-  const inputLines = customDslInputEntries(node).map(([key, expression]) =>
+  const inputEntries = customDslInputEntries(node);
+  const config = customBusinessConfig(node.config || {});
+  if (Object.keys(config).length && !inputEntries.some(([key]) => key === 'config')) {
+    inputEntries.push(['config', renderConfigDslValue(config)]);
+  }
+  const inputLines = inputEntries.map(([key, expression]) =>
     `      ${key} = ${expression || 'null'}`
   ).join('\n');
-  return `  node ${node.id} : ${renderOperatorRefForDsl(executable)} {\n    input {\n${inputLines}\n    }\n  }`;
+  const executionConfig = commonExecutionConfigToDsl(node.config || {});
+  return `  node ${node.id} : ${renderOperatorRefForDsl(executable)} {\n    input {\n${inputLines}\n    }${executionConfig ? `\n${executionConfig}` : ''}\n  }`;
 }
 
 function customInputTemplateValues(node) {
@@ -3413,6 +3534,33 @@ function renderExpressionTreeValue(value) {
     `${key}: ${renderExpressionTreeValue(item)}`
   );
   return `{ ${fields.join(', ')} }`;
+}
+
+function customBusinessConfig(config = {}) {
+  return Object.fromEntries(Object.entries(config)
+    .filter(([key]) => key !== 'timeout' && key !== 'retryAttempts'));
+}
+
+function renderConfigDslValue(value) {
+  if (isConfigBindingObject(value)) {
+    return expressionFromConfig(value);
+  }
+  if (Array.isArray(value)) {
+    return `[${value.map((item) => renderConfigDslValue(item)).join(', ')}]`;
+  }
+  if (isPlainObject(value)) {
+    const fields = Object.entries(value).map(([key, item]) =>
+      `${key}: ${renderConfigDslValue(item)}`
+    );
+    return `{ ${fields.join(', ')} }`;
+  }
+  if (typeof value === 'number' || typeof value === 'boolean') {
+    return String(value);
+  }
+  if (value === null || value === undefined) {
+    return 'null';
+  }
+  return quote(value);
 }
 
 function renderOperatorRefForDsl(operatorRef) {
@@ -4153,6 +4301,10 @@ function schemaType(schema) {
   if (type === 'array') {
     const itemType = schemaType(schema?.items);
     return itemType ? `array<${itemType}>` : 'array';
+  }
+  const values = schemaEnumValues(schema);
+  if (values.length) {
+    return `enum<${values.map(String).join('|')}>`;
   }
   return type ? String(type) : '';
 }

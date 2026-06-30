@@ -28,6 +28,15 @@ import java.util.regex.Pattern;
 public class GraphDraftDslGenerator {
 
     private static final String DSL_IDENTIFIER_PATTERN = "[A-Za-z_][A-Za-z0-9_]*";
+    private static final Set<String> EXECUTION_CONFIG_KEYS = Set.of("timeout", "retryAttempts");
+    private static final Set<String> RESERVED_DSL_FIELD_NAMES = Set.of(
+            "graph", "node", "branch", "decision_table", "on", "input", "depends_on",
+            "timeout", "retry", "fallback", "execution_mode", "worker_topic", "compensate",
+            "saga", "true", "false", "schema", "output", "otherwise", "when", "transform",
+            "foreach", "sequential", "in", "loop", "parallel", "until", "carry", "wait",
+            "after", "await", "event", "where", "mode", "stream", "streaming", "buffer",
+            "let", "import", "as", "script", "exit", "exhausted"
+    );
     private static final Pattern DSL_IDENTIFIER = Pattern.compile(DSL_IDENTIFIER_PATTERN);
     private static final Pattern UNQUOTED_DSL_OPERATOR_REF = Pattern.compile(
             DSL_IDENTIFIER_PATTERN + "(?:\\." + DSL_IDENTIFIER_PATTERN + ")*");
@@ -113,9 +122,23 @@ public class GraphDraftDslGenerator {
         block.append("  node ").append(node.id()).append(" : ").append(renderOperatorRef(executableOperatorRef))
                 .append(" {\n")
                 .append("    input {\n");
-        renderNativeInputAssignments(node, nodesById, diagnostics)
-                .forEach((key, expression) -> block.append("      ").append(key).append(" = ")
+        Map<String, String> inputAssignments = renderNativeInputAssignments(node, nodesById, diagnostics);
+        inputAssignments.forEach((key, expression) -> block.append("      ").append(key).append(" = ")
                         .append(expression).append("\n"));
+        Map<String, Object> config = businessConfig(node.config());
+        if (!config.isEmpty()) {
+            if (inputAssignments.containsKey("config")) {
+                diagnostics.add(VisualDiagnostic.error("visual.codegen.configInput.conflict",
+                        "Native operator node '%s' cannot lower both an input path named 'config' and configSchema values."
+                                .formatted(node.id()),
+                        "/nodes/" + node.id() + "/config"));
+            } else {
+                block.append("      config = ")
+                        .append(renderConfigObjectLiteral(config, nodesById,
+                                "/nodes/" + node.id() + "/config", diagnostics))
+                        .append("\n");
+            }
+        }
         block.append("    }\n");
         appendCommonExecutionConfig(block, node.config(), nodesById);
         block.append("  }");
@@ -288,6 +311,16 @@ public class GraphDraftDslGenerator {
         }
     }
 
+    private static Map<String, Object> businessConfig(Map<String, Object> config) {
+        Map<String, Object> business = new LinkedHashMap<>();
+        config.forEach((key, value) -> {
+            if (!EXECUTION_CONFIG_KEYS.contains(key)) {
+                business.put(key, value);
+            }
+        });
+        return business;
+    }
+
     private static String renderObjectBindings(Map<String, GraphDraft.Binding> bindings,
                                                Map<String, GraphDraft.DraftNode> nodesById) {
         if (bindings.isEmpty()) {
@@ -330,7 +363,7 @@ public class GraphDraftDslGenerator {
         Map<String, Object> current = inputTree;
         for (int i = 0; i < segments.length; i++) {
             String segment = segments[i];
-            if (!DSL_IDENTIFIER.matcher(segment).matches()) {
+            if (!isDslFieldName(segment)) {
                 diagnostics.add(VisualDiagnostic.error("visual.codegen.inputPath.invalid",
                         "Native operator input path '%s' contains segment '%s' that cannot be rendered as BLOGE DSL."
                                 .formatted(inputPath, segment),
@@ -395,6 +428,55 @@ public class GraphDraftDslGenerator {
             }
         });
         return joiner.toString();
+    }
+
+    private static String renderConfigObjectLiteral(Map<?, ?> fields,
+                                                    Map<String, GraphDraft.DraftNode> nodesById,
+                                                    String path,
+                                                    List<VisualDiagnostic> diagnostics) {
+        if (fields.isEmpty()) {
+            return "{}";
+        }
+        StringJoiner joiner = new StringJoiner(", ", "{ ", " }");
+        fields.forEach((key, value) -> {
+            String name = String.valueOf(key);
+            if (!isDslFieldName(name)) {
+                diagnostics.add(VisualDiagnostic.error("visual.codegen.configKey.invalid",
+                        "Config key '%s' cannot be rendered as a BLOGE DSL object field.".formatted(name),
+                        path + "/" + name));
+            }
+            joiner.add(name + ": " + renderConfigValue(value, nodesById, path + "/" + name, diagnostics));
+        });
+        return joiner.toString();
+    }
+
+    private static String renderConfigValue(Object raw,
+                                            Map<String, GraphDraft.DraftNode> nodesById,
+                                            String path,
+                                            List<VisualDiagnostic> diagnostics) {
+        if (raw instanceof GraphDraft.Binding binding) {
+            return bindingToExpression(binding, nodesById);
+        }
+        if (raw instanceof Map<?, ?> rawMap) {
+            if (rawMap.containsKey("kind")) {
+                return bindingToExpression(bindingFromMap(rawMap), nodesById);
+            }
+            return renderConfigObjectLiteral(rawMap, nodesById, path, diagnostics);
+        }
+        if (raw instanceof Collection<?> collection) {
+            StringJoiner joiner = new StringJoiner(", ", "[", "]");
+            int index = 0;
+            for (Object item : collection) {
+                joiner.add(renderConfigValue(item, nodesById, path + "/" + index, diagnostics));
+                index++;
+            }
+            return joiner.toString();
+        }
+        return renderLiteral(raw);
+    }
+
+    private static boolean isDslFieldName(String value) {
+        return DSL_IDENTIFIER.matcher(value).matches() && !RESERVED_DSL_FIELD_NAMES.contains(value);
     }
 
     private static String bindingToExpression(GraphDraft.Binding binding,
