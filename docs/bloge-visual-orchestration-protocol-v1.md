@@ -634,6 +634,12 @@ input port 都声明同名字段时，画布应使用 `customer.id`、`order.id`
 端口限定 key，并用 `targetPort` + `targetPath` 指向真实 schema 位置。
 `targetPath` 支持嵌套 object path，例如 `applicant.score`；校验必须沿完整
 schema path 查找 source/target 类型，而不能只检查顶层 `properties`。
+同一节点内，每个解析后的 `targetPort + targetPath` 只能由一个 binding
+拥有；`objectTemplate` 的字段也要递归展开参与检查。`applicant` 与
+`applicant.score` 这种 root/path 前缀重叠必须阻断，否则编译时会出现
+同一输入对象被多个来源覆盖的歧义。resource-gateway 示例以
+`visual.input.duplicateTarget` 返回该错误，并把 diagnostic target 定位到
+第二个冲突 binding。
 
 ### 7.6 GraphDraft 到 DSL 的排序
 
@@ -659,6 +665,33 @@ node <nodeId> : <operatorRef> {
   }
 }
 ```
+
+当 executable `operatorRef` 不是 BLOGE DSL 可裸写的 `IDENT(.IDENT)*` 形式
+（例如 `risk:legacyPolicy` 或带 `-` 的用户命名空间 token），codegen 必须生成
+字符串形式的 operator reference：
+
+```bloge
+node <nodeId> : "risk:legacyPolicy" {
+  input {
+    <field> = <bindingExpr>
+  }
+}
+```
+
+native 输入 lowering 不能把嵌套 target path 直接写成 `applicant.score = ...`，
+因为 BLOGE `input` block 的左侧是顶层字段。画布 draft 中的
+`targetPort=applicant,targetPath=score` 必须降低为对象字面量：
+
+```bloge
+node policy : riskNestedPolicy {
+  input {
+    applicant = { score: ctx.score, segment: ctx.segment }
+  }
+}
+```
+
+浏览器 DSL preview 如果自行渲染 draft，也必须采用同样规则；否则 preview 和
+服务端 compile 会形成双重真相。
 
 ### 8.2 Resource Virtual Operator
 
@@ -1260,6 +1293,7 @@ flowchart TD
 - required input 无 binding。
 - source path 不存在。
 - target path 不存在。
+- 同一节点内多个 binding 写入同一 `targetPort + targetPath`，或 root/path 前缀重叠。
 - data edge 没有对应语义依赖，或 `nodePath` binding 没有对应 data edge。
 - contextPath 在严格 graphInputSchema 中不存在。
 - expression 引用的 `ctx.*` 或 `node.output.*` path 不存在。

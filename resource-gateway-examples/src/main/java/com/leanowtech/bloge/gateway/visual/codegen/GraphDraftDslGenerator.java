@@ -19,12 +19,18 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import java.util.StringJoiner;
+import java.util.regex.Pattern;
 
 /**
  * Lowers a visual graph draft into executable BLOGE DSL.
  */
 @Service
 public class GraphDraftDslGenerator {
+
+    private static final String DSL_IDENTIFIER_PATTERN = "[A-Za-z_][A-Za-z0-9_]*";
+    private static final Pattern DSL_IDENTIFIER = Pattern.compile(DSL_IDENTIFIER_PATTERN);
+    private static final Pattern UNQUOTED_DSL_OPERATOR_REF = Pattern.compile(
+            DSL_IDENTIFIER_PATTERN + "(?:\\." + DSL_IDENTIFIER_PATTERN + ")*");
 
     private final VisualOperatorCatalog catalog;
 
@@ -81,7 +87,7 @@ public class GraphDraftDslGenerator {
         if ("native".equals(operator.lowering().mode())
                 && !List.of("httpResource", "bloge:decisionTable", "bloge:transform")
                 .contains(operator.operatorRef())) {
-            return nativeOperatorNodeToDsl(node, operator, nodesById);
+            return nativeOperatorNodeToDsl(node, operator, nodesById, diagnostics);
         }
         return switch (operator.operatorRef()) {
             case "httpResource" -> httpResourceNodeToDsl(node, nodesById);
@@ -98,16 +104,18 @@ public class GraphDraftDslGenerator {
 
     private String nativeOperatorNodeToDsl(GraphDraft.DraftNode node,
                                            OperatorDefinition operator,
-                                           Map<String, GraphDraft.DraftNode> nodesById) {
+                                           Map<String, GraphDraft.DraftNode> nodesById,
+                                           List<VisualDiagnostic> diagnostics) {
         String executableOperatorRef = stringValue(operator.lowering().operatorRef()).isBlank()
                 ? operator.operatorRef()
                 : operator.lowering().operatorRef();
         StringBuilder block = new StringBuilder();
-        block.append("  node ").append(node.id()).append(" : ").append(executableOperatorRef).append(" {\n")
+        block.append("  node ").append(node.id()).append(" : ").append(renderOperatorRef(executableOperatorRef))
+                .append(" {\n")
                 .append("    input {\n");
-        node.inputs().forEach((key, binding) -> block.append("      ")
-                .append(targetInputName(key, binding)).append(" = ")
-                .append(bindingToExpression(binding, nodesById)).append("\n"));
+        renderNativeInputAssignments(node, nodesById, diagnostics)
+                .forEach((key, expression) -> block.append("      ").append(key).append(" = ")
+                        .append(expression).append("\n"));
         block.append("    }\n");
         appendCommonExecutionConfig(block, node.config(), nodesById);
         block.append("  }");
@@ -290,6 +298,105 @@ public class GraphDraftDslGenerator {
         return joiner.toString();
     }
 
+    private static Map<String, String> renderNativeInputAssignments(GraphDraft.DraftNode node,
+                                                                    Map<String, GraphDraft.DraftNode> nodesById,
+                                                                    List<VisualDiagnostic> diagnostics) {
+        Map<String, Object> inputTree = new LinkedHashMap<>();
+        node.inputs().forEach((key, binding) -> putNativeInput(inputTree, nativeInputPath(key, binding),
+                bindingToExpression(binding, nodesById), "/nodes/" + node.id() + "/inputs/" + key, diagnostics));
+        Map<String, String> rendered = new LinkedHashMap<>();
+        inputTree.forEach((key, value) -> {
+            if (value instanceof Map<?, ?> nested) {
+                rendered.put(key, renderExpressionObjectLiteral(nested));
+            } else {
+                rendered.put(key, String.valueOf(value));
+            }
+        });
+        return rendered;
+    }
+
+    private static void putNativeInput(Map<String, Object> inputTree,
+                                       String inputPath,
+                                       String expression,
+                                       String diagnosticPath,
+                                       List<VisualDiagnostic> diagnostics) {
+        String normalized = inputPath == null ? "" : inputPath.trim();
+        if (normalized.isBlank()) {
+            diagnostics.add(VisualDiagnostic.error("visual.codegen.inputPath.required",
+                    "Native operator input path is required.", diagnosticPath));
+            return;
+        }
+        String[] segments = normalized.split("\\.");
+        Map<String, Object> current = inputTree;
+        for (int i = 0; i < segments.length; i++) {
+            String segment = segments[i];
+            if (!DSL_IDENTIFIER.matcher(segment).matches()) {
+                diagnostics.add(VisualDiagnostic.error("visual.codegen.inputPath.invalid",
+                        "Native operator input path '%s' contains segment '%s' that cannot be rendered as BLOGE DSL."
+                                .formatted(inputPath, segment),
+                        diagnosticPath));
+                return;
+            }
+            boolean leaf = i == segments.length - 1;
+            Object existing = current.get(segment);
+            if (leaf) {
+                if (existing instanceof Map<?, ?>) {
+                    diagnostics.add(VisualDiagnostic.error("visual.codegen.inputPath.conflict",
+                            "Native operator input path '%s' conflicts with nested inputs.".formatted(inputPath),
+                            diagnosticPath));
+                    return;
+                }
+                if (existing instanceof String) {
+                    diagnostics.add(VisualDiagnostic.error("visual.codegen.inputPath.duplicate",
+                            "Native operator input path '%s' is assigned more than once.".formatted(inputPath),
+                            diagnosticPath));
+                    return;
+                }
+                current.put(segment, expression);
+                return;
+            }
+            if (existing instanceof String) {
+                diagnostics.add(VisualDiagnostic.error("visual.codegen.inputPath.conflict",
+                        "Native operator input path '%s' conflicts with a scalar input.".formatted(inputPath),
+                        diagnosticPath));
+                return;
+            }
+            if (!(existing instanceof Map<?, ?>)) {
+                Map<String, Object> child = new LinkedHashMap<>();
+                current.put(segment, child);
+                current = child;
+            } else {
+                @SuppressWarnings("unchecked")
+                Map<String, Object> child = (Map<String, Object>) existing;
+                current = child;
+            }
+        }
+    }
+
+    private static String nativeInputPath(String inputKey, GraphDraft.Binding binding) {
+        String inputName = targetInputName(inputKey, binding);
+        if (binding.targetPort().isBlank() || "inputs".equals(binding.targetPort())
+                || inputName.equals(binding.targetPort()) || inputName.startsWith(binding.targetPort() + ".")) {
+            return inputName;
+        }
+        return inputName.isBlank() ? binding.targetPort() : binding.targetPort() + "." + inputName;
+    }
+
+    private static String renderExpressionObjectLiteral(Map<?, ?> fields) {
+        if (fields.isEmpty()) {
+            return "{}";
+        }
+        StringJoiner joiner = new StringJoiner(", ", "{ ", " }");
+        fields.forEach((key, value) -> {
+            if (value instanceof Map<?, ?> nested) {
+                joiner.add(key + ": " + renderExpressionObjectLiteral(nested));
+            } else {
+                joiner.add(key + ": " + value);
+            }
+        });
+        return joiner.toString();
+    }
+
     private static String bindingToExpression(GraphDraft.Binding binding,
                                               Map<String, GraphDraft.DraftNode> nodesById) {
         return switch (binding.kind()) {
@@ -419,6 +526,13 @@ public class GraphDraftDslGenerator {
 
     private static String quote(String value) {
         return "\"" + value.replace("\\", "\\\\").replace("\"", "\\\"") + "\"";
+    }
+
+    private static String renderOperatorRef(String operatorRef) {
+        if (UNQUOTED_DSL_OPERATOR_REF.matcher(operatorRef).matches()) {
+            return operatorRef;
+        }
+        return quote(operatorRef);
     }
 
     private static Map<String, GraphDraft.DraftNode> nodesById(List<GraphDraft.DraftNode> nodes) {

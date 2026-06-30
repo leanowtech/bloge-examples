@@ -7,6 +7,7 @@ import com.leanowtech.bloge.gateway.visual.model.SchemaEnvelope;
 
 import org.junit.jupiter.api.Test;
 
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
@@ -677,6 +678,76 @@ class GraphDraftValidatorTest {
         VisualValidationResult result = validator.validate(draft);
 
         assertThat(result.valid()).isTrue();
+    }
+
+    @Test
+    void rejectsDuplicateInputTargetsOnSamePortAndPath() {
+        GraphDraftValidator validator = new GraphDraftValidator(
+                VisualCatalogTestSupport.catalogWithLibrary(
+                        VisualCatalogTestSupport.eligibilityLibrary("integer")));
+        Map<String, GraphDraft.Binding> inputs = new LinkedHashMap<>();
+        inputs.put("score", GraphDraft.Binding.contextPath("score"));
+        inputs.put("overrideScore", GraphDraft.Binding.contextPath("overrideScore", "inputs", "score"));
+        inputs.put("amount", GraphDraft.Binding.contextPath("amount"));
+        GraphDraft draft = contextEligibilityDraft(graphInputSchema(
+                Map.of(
+                        "score", Map.of("type", "integer"),
+                        "overrideScore", Map.of("type", "integer"),
+                        "amount", Map.of("type", "number")
+                ),
+                List.of("score", "overrideScore", "amount")
+        ), inputs);
+
+        VisualValidationResult result = validator.validate(draft);
+
+        assertThat(result.valid()).isFalse();
+        assertThat(result.diagnostics())
+                .anySatisfy(diagnostic -> {
+                    assertThat(diagnostic.code()).isEqualTo("visual.input.duplicateTarget");
+                    assertThat(diagnostic.message()).contains("inputs.score").contains("eligibility");
+                    assertThat(diagnostic.target()).isEqualTo("/nodes/0/inputs/overrideScore");
+                });
+    }
+
+    @Test
+    void rejectsDuplicateNestedTargetFromObjectTemplateField() {
+        GraphDraftValidator validator = new GraphDraftValidator(
+                VisualCatalogTestSupport.catalogWithLoanApplicantResourceAndLibrary(
+                        VisualCatalogTestSupport.nestedApplicantEligibilityLibrary()));
+        Map<String, GraphDraft.Binding> inputs = new LinkedHashMap<>();
+        inputs.put("applicant", new GraphDraft.Binding(
+                "objectTemplate",
+                null,
+                "",
+                "",
+                "",
+                "inputs",
+                "applicant",
+                "",
+                Map.of("score", GraphDraft.Binding.constant(720))
+        ));
+        inputs.put("manualScore", new GraphDraft.Binding(
+                "constant",
+                730,
+                "",
+                "",
+                "",
+                "inputs",
+                "applicant.score",
+                "",
+                Map.of()
+        ));
+        GraphDraft draft = nestedApplicantEligibilityDraft(inputs, List.of());
+
+        VisualValidationResult result = validator.validate(draft);
+
+        assertThat(result.valid()).isFalse();
+        assertThat(result.diagnostics())
+                .anySatisfy(diagnostic -> {
+                    assertThat(diagnostic.code()).isEqualTo("visual.input.duplicateTarget");
+                    assertThat(diagnostic.message()).contains("inputs.applicant.score").contains("eligibility");
+                    assertThat(diagnostic.target()).isEqualTo("/nodes/1/inputs/manualScore");
+                });
     }
 
     @Test

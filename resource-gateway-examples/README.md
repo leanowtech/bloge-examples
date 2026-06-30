@@ -342,7 +342,14 @@ references, unsupported schema kinds, `required` fields not declared in
 schemas, returning structured visual diagnostics instead of accepting a library
 that will fail later on the canvas. Operator
 `policy.tenants`, `policy.namespaces`, and `policy.environments` are stored with
-the library and enforced when scoped drafts use the operator.
+the library and enforced when scoped drafts use the operator. Browser DSL preview
+and server codegen keep namespace-safe executable refs intact by quoting native
+operator refs that cannot be written as bare BLOGE `IDENT(.IDENT)*` references,
+for example `node policy : "risk:legacyPolicy"`. Native input lowering also
+groups `targetPort`/nested `targetPath` bindings into object literals, so
+schema-shaped inputs such as `applicant.score` compile as
+`applicant = { score: ctx.score }` instead of illegal dotted input-field
+assignments.
 
 Minimal import example:
 
@@ -777,7 +784,7 @@ Isolated component tests, some with lightweight Spring slices or mocks.
 | `DatabaseResourceRegistryTest` | 11 | CRUD, H2 persistence, in-memory cache |
 | `ResourceDescriptorBootstrapTest` | 7 | Seeding, refresh behavior, idempotency |
 | `GatewayDslCompilationTest` | 7 | DSL parsing, graph loading |
-| Visual authoring suite | 133 | Visual operator projection, imported libraries, catalog policy filtering, import-time lowering gates, draft/publication persistence and history, revision audit metadata, revision-guarded patching, typed connection/edge validation including binding kind allow-list, object required fields, enum value domains, config expression references and configSchema type gates, data edge/semantic dependency consistency, graph input schema gates, secret blocking, DSL lowering and dependency ordering, runtime smoke path |
+| Visual authoring suite | 138 | Visual operator projection, imported libraries, catalog policy filtering, import-time lowering gates, draft/publication persistence and history, revision audit metadata, revision-guarded patching, typed connection/edge validation including binding kind allow-list, duplicate target input ownership, object required fields, enum value domains, config expression references and configSchema type gates, data edge/semantic dependency consistency, graph input schema gates, secret blocking, DSL lowering and dependency ordering, runtime smoke path |
 
 ### Layer 3 — Orchestration tests
 

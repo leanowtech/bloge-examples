@@ -492,6 +492,10 @@ MVP 可以先支持 `constant`、`contextPath`、`nodePath`、`expression`、`ob
 `targetPath` 决定，而不是由 map key 猜测。`targetPath` 必须支持嵌套
 object path，例如 `applicant.score`；画布字段枚举和服务端校验都要按完整
 schema path 工作，否则复杂业务 payload 会被迫扁平化。
+同一节点内解析后的 `targetPort + targetPath` 必须具备单一所有者；
+`objectTemplate` 字段也要展开参与检查，且 `applicant` 与 `applicant.score`
+这样的 root/path 前缀重叠必须阻断。否则画布看到的是两个来源，DSL 运行时
+却只能得到最后一次写入或不确定覆盖。
 
 当前 `resource-gateway-examples` 已把 `contextPath` 纳入 schema gate：前端会从 Context JSON 推导草稿 `inputSchema` 并把兼容的 `ctx.*` 字段放入 source picker，服务端会在严格 input schema 下阻断未知 `ctx` path 和 source/target 类型不兼容。
 
@@ -533,6 +537,9 @@ target enum values 的子集，普通 `string` 不能直接接入 enum input。�
 引用；`nodePath` binding 必须有可见 data edge，防止画布连线和 DSL 输入语义分叉。
 未知 binding kind 会在 `GraphDraftValidator` 被阻断，不能落到 codegen 的 literal fallback
 绕过 target schema gate。
+同一节点内多个 binding 写入同一解析后输入目标，或 root/path 前缀重叠，
+会以 `visual.input.duplicateTarget` 阻断；不同 input port 上同名字段仍然合法，
+例如 `customer.id` 和 `order.id`。
 缺失 `items` 的旧 resource schema 仍按未知元素类型降级，用户导入 operator library 则由 catalog validator 阻断。
 
 ### 10.3 required 字段规则
@@ -778,6 +785,13 @@ MVP 可用内存或 H2，正式方向应使用 graph-engine version store 或独
 
 - 将虚拟算子 lowering 为真实 BLOGE 节点。
 - 生成 BLOGE DSL。
+- 对 native executable `operatorRef` 做 DSL-safe 渲染：`IDENT(.IDENT)*` 裸写，
+  其他命名空间安全 token 生成字符串形式，避免用户库 import 成功但 DSL
+  preview/compile 失败。
+- 对 native 输入做对象树 lowering：`targetPort + targetPath` 先合成为
+  BLOGE 对象字面量，避免复杂 schema 绑定被输出成非法 dotted input field。
+- 浏览器 DSL preview 必须和服务端 codegen 使用同一类 native rendering 规则，
+  不能让画布展示一份不可编译的“近似 DSL”。
 - 保持稳定排序，减少 diff 噪音。
 - 将 compiler diagnostics 映射回 draft 节点。
 

@@ -1,10 +1,20 @@
 package com.leanowtech.bloge.gateway.visual.codegen;
 
+import com.leanowtech.bloge.core.model.Graph;
+import com.leanowtech.bloge.core.operator.Operator;
+import com.leanowtech.bloge.core.operator.OperatorContext;
+import com.leanowtech.bloge.core.spi.DefaultOperatorRegistry;
+import com.leanowtech.bloge.dsl.compiler.CompilationMode;
+import com.leanowtech.bloge.dsl.compiler.GraphLoader;
+import com.leanowtech.bloge.gateway.visual.catalog.OperatorDefinition;
+import com.leanowtech.bloge.gateway.visual.catalog.OperatorLibrary;
 import com.leanowtech.bloge.gateway.visual.catalog.VisualCatalogTestSupport;
 import com.leanowtech.bloge.gateway.visual.draft.GraphDraft;
+import com.leanowtech.bloge.gateway.visual.model.SchemaEnvelope;
 
 import org.junit.jupiter.api.Test;
 
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
@@ -287,6 +297,130 @@ class GraphDraftDslGeneratorTest {
     }
 
     @Test
+    void quotesNamespacedNativeOperatorRefSoGeneratedDslCompiles() {
+        GraphDraftDslGenerator generator = new GraphDraftDslGenerator(
+                VisualCatalogTestSupport.catalogWithLibrary(nativePolicyLibrary("risk:legacyPolicy")));
+        GraphDraft draft = new GraphDraft(
+                "",
+                "",
+                0,
+                "namespacedNativePolicy",
+                "",
+                "",
+                "",
+                "",
+                null,
+                List.of(new GraphDraft.DraftNode(
+                        "policy",
+                        "risk:legacyPolicy",
+                        "",
+                        Map.of("applicantId", GraphDraft.Binding.contextPath("applicantId")),
+                        Map.of(),
+                        null
+                )),
+                List.of(),
+                Map.of(),
+                new GraphDraft.OutputSelection("policy", "")
+        );
+
+        DslGenerationResult result = generator.generate(draft);
+
+        assertThat(result.generated()).isTrue();
+        assertThat(result.dsl()).contains("node policy : \"risk:legacyPolicy\"");
+
+        DefaultOperatorRegistry registry = new DefaultOperatorRegistry();
+        registry.registerRaw("risk:legacyPolicy", new StubOperator());
+        GraphLoader loader = new GraphLoader(registry);
+        loader.withCompilationMode(CompilationMode.LENIENT);
+        Graph graph = loader.loadWithDiagnostics(result.dsl()).graph();
+        assertThat(graph).isNotNull();
+        assertThat(graph.nodes()).isNotEmpty();
+    }
+
+    @Test
+    void lowersNativeNestedInputPathsToObjectLiteralThatCompiles() {
+        GraphDraftDslGenerator generator = new GraphDraftDslGenerator(
+                VisualCatalogTestSupport.catalogWithLibrary(nativeNestedPolicyLibrary()));
+        Map<String, GraphDraft.Binding> inputs = new LinkedHashMap<>();
+        inputs.put("score", GraphDraft.Binding.contextPath("score", "applicant", "score"));
+        inputs.put("segment", GraphDraft.Binding.contextPath("segment", "applicant", "segment"));
+        GraphDraft draft = new GraphDraft(
+                "",
+                "",
+                0,
+                "nativeNestedInput",
+                "",
+                "",
+                "",
+                "",
+                null,
+                List.of(new GraphDraft.DraftNode(
+                        "policy",
+                        "risk:nestedPolicy",
+                        "",
+                        inputs,
+                        Map.of(),
+                        null
+                )),
+                List.of(),
+                Map.of(),
+                new GraphDraft.OutputSelection("policy", "")
+        );
+
+        DslGenerationResult result = generator.generate(draft);
+
+        assertThat(result.generated()).isTrue();
+        assertThat(result.dsl()).contains("node policy : riskNestedPolicy");
+        assertThat(result.dsl()).contains("applicant = { score: ctx.score, segment: ctx.segment }");
+
+        DefaultOperatorRegistry registry = new DefaultOperatorRegistry();
+        registry.registerRaw("riskNestedPolicy", new StubOperator());
+        GraphLoader loader = new GraphLoader(registry);
+        loader.withCompilationMode(CompilationMode.LENIENT);
+        Graph graph = loader.loadWithDiagnostics(result.dsl()).graph();
+        assertThat(graph).isNotNull();
+        assertThat(graph.nodes()).isNotEmpty();
+    }
+
+    @Test
+    void rejectsDuplicateNativeInputLeafPathsDuringCodegen() {
+        GraphDraftDslGenerator generator = new GraphDraftDslGenerator(
+                VisualCatalogTestSupport.catalogWithLibrary(nativeNestedPolicyLibrary()));
+        Map<String, GraphDraft.Binding> inputs = new LinkedHashMap<>();
+        inputs.put("scoreFromContext", GraphDraft.Binding.contextPath("score", "applicant", "score"));
+        inputs.put("scoreOverride", GraphDraft.Binding.contextPath("overrideScore", "applicant", "score"));
+        GraphDraft draft = new GraphDraft(
+                "",
+                "",
+                0,
+                "duplicateNativeInput",
+                "",
+                "",
+                "",
+                "",
+                null,
+                List.of(new GraphDraft.DraftNode(
+                        "policy",
+                        "risk:nestedPolicy",
+                        "",
+                        inputs,
+                        Map.of(),
+                        null
+                )),
+                List.of(),
+                Map.of(),
+                new GraphDraft.OutputSelection("policy", "")
+        );
+
+        DslGenerationResult result = generator.generate(draft);
+
+        assertThat(result.generated()).isFalse();
+        assertThat(result.diagnostics())
+                .anySatisfy(diagnostic -> assertThat(diagnostic.code())
+                        .isEqualTo("visual.codegen.inputPath.duplicate"));
+    }
+
+    @Test
     void lowersPortQualifiedInputTemplateAliases() {
         GraphDraftDslGenerator generator = new GraphDraftDslGenerator(
                 VisualCatalogTestSupport.catalogWithLibrary(
@@ -359,5 +493,86 @@ class GraphDraftDslGeneratorTest {
 
         assertThat(result.generated()).isTrue();
         assertThat(result.dsl()).contains("eligible = ctx.score >= 700");
+    }
+
+    private static OperatorLibrary nativePolicyLibrary(String executableOperatorRef) {
+        Map<String, Object> inputProperties = Map.of("applicantId", Map.of("type", "string"));
+        Map<String, Object> outputProperties = Map.of("decision", Map.of("type", "string"));
+        OperatorDefinition operator = new OperatorDefinition(
+                "bloge.visualOperator.v1",
+                "risk:legacyPolicy",
+                "1.0.0",
+                new OperatorDefinition.Display("Legacy policy", "Delegates to a runtime policy operator.",
+                        List.of("risk", "legacy")),
+                new OperatorDefinition.Source("user-library", "", "", "", false),
+                new OperatorDefinition.Ports(
+                        List.of(new OperatorDefinition.Port("inputs",
+                                SchemaEnvelope.object(inputProperties, List.of("applicantId")),
+                                true,
+                                "Policy inputs.")),
+                        List.of(new OperatorDefinition.Port("output",
+                                SchemaEnvelope.object(outputProperties, List.of()),
+                                true,
+                                "Policy output."))
+                ),
+                SchemaEnvelope.opaque(),
+                OperatorDefinition.Capabilities.pure(),
+                new OperatorDefinition.Lowering("native", executableOperatorRef, Map.of()),
+                List.of()
+        );
+        return new OperatorLibrary(
+                "bloge.visualOperatorLibrary.v1",
+                "risk-native-policy",
+                "Risk native policy operators",
+                "1.0.0",
+                "risk-team",
+                "ACTIVE",
+                List.of(operator)
+        );
+    }
+
+    private static OperatorLibrary nativeNestedPolicyLibrary() {
+        Map<String, Object> applicantProperties = new LinkedHashMap<>();
+        applicantProperties.put("score", Map.of("type", "integer"));
+        applicantProperties.put("segment", Map.of("type", "string"));
+        Map<String, Object> outputProperties = Map.of("decision", Map.of("type", "string"));
+        OperatorDefinition operator = new OperatorDefinition(
+                "bloge.visualOperator.v1",
+                "risk:nestedPolicy",
+                "1.0.0",
+                new OperatorDefinition.Display("Nested policy", "Delegates nested applicant facts to runtime.",
+                        List.of("risk", "nested")),
+                new OperatorDefinition.Source("user-library", "", "", "", false),
+                new OperatorDefinition.Ports(
+                        List.of(new OperatorDefinition.Port("applicant",
+                                SchemaEnvelope.object(applicantProperties, List.of("score", "segment")),
+                                true,
+                                "Applicant facts.")),
+                        List.of(new OperatorDefinition.Port("output",
+                                SchemaEnvelope.object(outputProperties, List.of()),
+                                true,
+                                "Policy output."))
+                ),
+                SchemaEnvelope.opaque(),
+                OperatorDefinition.Capabilities.pure(),
+                new OperatorDefinition.Lowering("native", "riskNestedPolicy", Map.of()),
+                List.of()
+        );
+        return new OperatorLibrary(
+                "bloge.visualOperatorLibrary.v1",
+                "risk-native-nested-policy",
+                "Risk native nested policy operators",
+                "1.0.0",
+                "risk-team",
+                "ACTIVE",
+                List.of(operator)
+        );
+    }
+
+    private static class StubOperator implements Operator<Object, Object> {
+        @Override
+        public Object execute(Object input, OperatorContext ctx) {
+            return null;
+        }
     }
 }

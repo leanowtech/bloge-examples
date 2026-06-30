@@ -3062,7 +3062,7 @@ function customNodeToDsl(node) {
   const inputLines = customDslInputEntries(node).map(([key, expression]) =>
     `      ${key} = ${expression || 'null'}`
   ).join('\n');
-  return `  node ${node.id} : ${executable} {\n    input {\n${inputLines}\n    }\n  }`;
+  return `  node ${node.id} : ${renderOperatorRefForDsl(executable)} {\n    input {\n${inputLines}\n    }\n  }`;
 }
 
 function customInputTemplateValues(node) {
@@ -3082,10 +3082,58 @@ function customInputTemplateValues(node) {
 }
 
 function customDslInputEntries(node) {
-  return Object.entries(node.customInputs || {}).map(([key, expression]) => [
-    node.customInputPaths?.[key] || key,
-    expression
+  const inputTree = {};
+  for (const [key, expression] of Object.entries(node.customInputs || {})) {
+    putExpressionAtPath(inputTree, customDslInputPath(node, key), expression || 'null');
+  }
+  return Object.entries(inputTree).map(([key, value]) => [
+    key,
+    renderExpressionTreeValue(value)
   ]);
+}
+
+function customDslInputPath(node, key) {
+  const spec = specForNode(node);
+  const targetPath = node.customInputPaths?.[key] || key;
+  const targetPort = node.customInputPorts?.[key] || inputPortForInputPath(spec, targetPath);
+  if (!targetPort || targetPort === 'inputs' || targetPath === targetPort || targetPath.startsWith(`${targetPort}.`)) {
+    return targetPath;
+  }
+  return targetPath ? `${targetPort}.${targetPath}` : targetPort;
+}
+
+function putExpressionAtPath(tree, path, expression) {
+  const segments = String(path || '').split('.').filter(Boolean);
+  if (!segments.length) {
+    return;
+  }
+  let current = tree;
+  for (let index = 0; index < segments.length; index += 1) {
+    const segment = segments[index];
+    if (index === segments.length - 1) {
+      current[segment] = expression;
+      return;
+    }
+    if (!current[segment] || typeof current[segment] !== 'object' || Array.isArray(current[segment])) {
+      current[segment] = {};
+    }
+    current = current[segment];
+  }
+}
+
+function renderExpressionTreeValue(value) {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    return String(value ?? 'null');
+  }
+  const fields = Object.entries(value).map(([key, item]) =>
+    `${key}: ${renderExpressionTreeValue(item)}`
+  );
+  return `{ ${fields.join(', ')} }`;
+}
+
+function renderOperatorRefForDsl(operatorRef) {
+  const value = String(operatorRef || '');
+  return /^[A-Za-z_][A-Za-z0-9_]*(?:\.[A-Za-z_][A-Za-z0-9_]*)*$/.test(value) ? value : quote(value);
 }
 
 function renderTemplateExpression(template, inputs) {

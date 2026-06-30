@@ -99,6 +99,7 @@ public class GraphDraftValidator {
             operatorsByNodeId.put(node.id(), operator.get());
             validateOperatorFingerprint(node, operator.get(), draft.operatorFingerprints(), nodePath, diagnostics);
             validateOperatorPolicy(draft, node, operator.get(), nodePath, diagnostics);
+            validateDuplicateInputTargets(node, operator.get(), nodePath, diagnostics);
             validateRequiredInputs(node, operator.get(), nodePath, diagnostics);
             validateUnknownInputs(node, operator.get(), nodePath, diagnostics);
             validateConfig(node, operator.get(), nodePath, diagnostics);
@@ -277,6 +278,69 @@ public class GraphDraftValidator {
         }
         Optional<OperatorDefinition.Port> resolved = resolveInputPort(operator, "", inputName);
         return resolved.map(port -> port.name().equals(portName)).orElse(false);
+    }
+
+    private static void validateDuplicateInputTargets(GraphDraft.DraftNode node,
+                                                      OperatorDefinition operator,
+                                                      String nodePath,
+                                                      List<VisualDiagnostic> diagnostics) {
+        Map<InputTarget, String> claimedTargets = new LinkedHashMap<>();
+        node.inputs().forEach((inputKey, binding) -> collectInputTargets(inputKey, binding, operator,
+                "", "", nodePath + "/inputs/" + inputKey, node.id(), claimedTargets, diagnostics));
+    }
+
+    private static void collectInputTargets(String inputKey,
+                                            GraphDraft.Binding binding,
+                                            OperatorDefinition operator,
+                                            String inheritedPort,
+                                            String parentPath,
+                                            String targetPath,
+                                            String nodeId,
+                                            Map<InputTarget, String> claimedTargets,
+                                            List<VisualDiagnostic> diagnostics) {
+        String targetPort = binding.targetPort().isBlank() ? inheritedPort : binding.targetPort();
+        String inputName = targetInputName(inputKey, binding);
+        String inputPath = joinInputPath(parentPath, inputName);
+        if ("objectTemplate".equals(binding.kind()) && !binding.fields().isEmpty()) {
+            binding.fields().forEach((fieldName, nested) -> collectInputTargets(fieldName, nested, operator,
+                    targetPort, inputPath, targetPath + "/" + fieldName, nodeId, claimedTargets, diagnostics));
+            return;
+        }
+        claimInputTarget(operator, targetPort, inputPath, targetPath, nodeId, claimedTargets, diagnostics);
+    }
+
+    private static void claimInputTarget(OperatorDefinition operator,
+                                         String targetPort,
+                                         String inputPath,
+                                         String targetPath,
+                                         String nodeId,
+                                         Map<InputTarget, String> claimedTargets,
+                                         List<VisualDiagnostic> diagnostics) {
+        Optional<OperatorDefinition.Port> resolvedPort = resolveInputPort(operator, targetPort, inputPath);
+        if (resolvedPort.isEmpty()) {
+            return;
+        }
+        InputTarget target = new InputTarget(resolvedPort.get().name(), inputPath);
+        for (Map.Entry<InputTarget, String> claimed : claimedTargets.entrySet()) {
+            if (claimed.getKey().overlaps(target)) {
+                diagnostics.add(VisualDiagnostic.error("visual.input.duplicateTarget",
+                        "Input target '%s' on node '%s' is assigned more than once; first assignment is at '%s'."
+                                .formatted(target.label(), nodeId, claimed.getValue()),
+                        targetPath));
+                return;
+            }
+        }
+        claimedTargets.put(target, targetPath);
+    }
+
+    private static String joinInputPath(String parentPath, String childPath) {
+        if (parentPath == null || parentPath.isBlank()) {
+            return childPath == null ? "" : childPath;
+        }
+        if (childPath == null || childPath.isBlank()) {
+            return parentPath;
+        }
+        return parentPath + "." + childPath;
     }
 
     private static void validateNodePathBindings(GraphDraft draft,
@@ -1626,6 +1690,31 @@ public class GraphDraftValidator {
             diagnostics.add(VisualDiagnostic.error("visual.edge.cycle",
                     "Visual graph dependencies must form an acyclic dataflow graph.",
                     "/edges"));
+        }
+    }
+
+    private record InputTarget(String portName, String path) {
+
+        private boolean overlaps(InputTarget other) {
+            if (!portName.equals(other.portName)) {
+                return false;
+            }
+            if (path.isBlank() || other.path.isBlank()) {
+                return true;
+            }
+            return path.equals(other.path)
+                    || path.startsWith(other.path + ".")
+                    || other.path.startsWith(path + ".");
+        }
+
+        private String label() {
+            if (path.isBlank()) {
+                return portName;
+            }
+            if (portName.isBlank()) {
+                return path;
+            }
+            return portName + "." + path;
         }
     }
 }
