@@ -125,8 +125,8 @@ public class OperatorLibraryValidator {
         }
         validatePorts(operator, "inputs", operator.ports().inputs(), path + "/ports/inputs", diagnostics);
         validatePorts(operator, "outputs", operator.ports().outputs(), path + "/ports/outputs", diagnostics);
-        diagnostics.addAll(VisualSchemaValidator.validateSchema(
-                operator.configSchema().schema(), path + "/configSchema/schema"));
+        diagnostics.addAll(VisualSchemaValidator.validateEnvelope(
+                operator.configSchema(), path + "/configSchema"));
         validateLowering(operator, path + "/lowering", diagnostics);
         diagnostics.addAll(VisualSecretGuard.detectOperatorSecrets(operator, path));
     }
@@ -151,8 +151,8 @@ public class OperatorLibraryValidator {
                                 .formatted(operator.operatorRef(), direction, port.name()),
                         path + "/" + i + "/name"));
             }
-            diagnostics.addAll(VisualSchemaValidator.validateSchema(
-                    port.schema().schema(), path + "/" + i + "/schema/schema"));
+            diagnostics.addAll(VisualSchemaValidator.validateEnvelope(
+                    port.schema(), path + "/" + i + "/schema"));
         }
     }
 

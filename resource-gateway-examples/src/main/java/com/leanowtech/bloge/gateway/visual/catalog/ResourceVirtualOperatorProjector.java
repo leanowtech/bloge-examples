@@ -75,7 +75,7 @@ public class ResourceVirtualOperatorProjector {
     private static SchemaEnvelope resourceConfigSchema() {
         return SchemaEnvelope.object(Map.of(
                 "timeout", Map.of("type", "string", "description", "Optional BLOGE duration literal such as 3s."),
-                "retryAttempts", Map.of("type", "integer", "minimum", 0),
+                "retryAttempts", Map.of("type", "integer"),
                 "fallback", Map.of("type", "boolean")
         ), List.of());
     }

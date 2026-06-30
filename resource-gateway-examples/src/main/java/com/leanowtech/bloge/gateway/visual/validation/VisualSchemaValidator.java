@@ -1,6 +1,7 @@
 package com.leanowtech.bloge.gateway.visual.validation;
 
 import com.leanowtech.bloge.gateway.visual.diagnostic.VisualDiagnostic;
+import com.leanowtech.bloge.gateway.visual.model.SchemaEnvelope;
 
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
@@ -14,6 +15,7 @@ import java.util.Set;
  */
 public final class VisualSchemaValidator {
 
+    private static final Set<String> SUPPORTED_SCHEMA_VERSIONS = Set.of("2020-12");
     private static final Set<String> SUPPORTED_SCHEMA_KINDS = Set.of(
             "object",
             "array",
@@ -29,8 +31,69 @@ public final class VisualSchemaValidator {
             "opaque",
             "null"
     );
+    private static final Set<String> UNSUPPORTED_REFERENCE_KEYWORDS = Set.of(
+            "$ref",
+            "$dynamicRef"
+    );
+    private static final Set<String> UNSUPPORTED_COMPOSITION_KEYWORDS = Set.of(
+            "oneOf",
+            "anyOf",
+            "allOf",
+            "not",
+            "if",
+            "then",
+            "else"
+    );
+    private static final Set<String> UNSUPPORTED_CONSTRAINT_KEYWORDS = Set.of(
+            "const",
+            "pattern",
+            "minimum",
+            "maximum",
+            "exclusiveMinimum",
+            "exclusiveMaximum",
+            "multipleOf",
+            "minLength",
+            "maxLength",
+            "minItems",
+            "maxItems",
+            "uniqueItems",
+            "contains",
+            "minContains",
+            "maxContains",
+            "prefixItems",
+            "patternProperties",
+            "propertyNames",
+            "dependentRequired",
+            "dependentSchemas",
+            "unevaluatedProperties",
+            "unevaluatedItems"
+    );
 
     private VisualSchemaValidator() {
+    }
+
+    /**
+     * @param envelope schema envelope to validate
+     * @param path JSON pointer to the schema envelope
+     * @return diagnostics describing envelope or schema issues
+     */
+    public static List<VisualDiagnostic> validateEnvelope(SchemaEnvelope envelope, String path) {
+        List<VisualDiagnostic> diagnostics = new ArrayList<>();
+        SchemaEnvelope effective = envelope == null ? SchemaEnvelope.opaque() : envelope;
+        if (!SchemaEnvelope.JSON_SCHEMA.equals(effective.format())) {
+            diagnostics.add(VisualDiagnostic.error("visual.schema.formatUnsupported",
+                    "Unsupported schema format '%s'; visual authoring supports '%s'."
+                            .formatted(effective.format(), SchemaEnvelope.JSON_SCHEMA),
+                    path + "/format"));
+        }
+        if (!SUPPORTED_SCHEMA_VERSIONS.contains(effective.version())) {
+            diagnostics.add(VisualDiagnostic.error("visual.schema.versionUnsupported",
+                    "Unsupported schema version '%s'; visual authoring supports %s."
+                            .formatted(effective.version(), SUPPORTED_SCHEMA_VERSIONS),
+                    path + "/version"));
+        }
+        validateSchema(effective.schema(), path + "/schema", diagnostics);
+        return diagnostics;
     }
 
     /**
@@ -48,11 +111,14 @@ public final class VisualSchemaValidator {
     private static void validateSchema(Map<String, Object> schema,
                                        String path,
                                        List<VisualDiagnostic> diagnostics) {
+        boolean hasUnsupportedKeyword = validateUnsupportedKeywords(schema, path, diagnostics);
         String kind = schemaKind(schema);
         if (kind.isBlank()) {
-            diagnostics.add(VisualDiagnostic.warning("visual.schema.opaque",
-                    "Schema has no type/kind; it will be treated as opaque.",
-                    path));
+            if (!hasUnsupportedKeyword) {
+                diagnostics.add(VisualDiagnostic.warning("visual.schema.opaque",
+                        "Schema has no type/kind; it will be treated as opaque.",
+                        path));
+            }
             return;
         }
         if (!SUPPORTED_SCHEMA_KINDS.contains(kind)) {
@@ -96,6 +162,40 @@ public final class VisualSchemaValidator {
         } else if ("enum".equals(kind)) {
             validateCustomEnumValues(schema, path, diagnostics);
         }
+    }
+
+    private static boolean validateUnsupportedKeywords(Map<String, Object> schema,
+                                                       String path,
+                                                       List<VisualDiagnostic> diagnostics) {
+        boolean unsupported = false;
+        for (String keyword : UNSUPPORTED_REFERENCE_KEYWORDS) {
+            if (schema.containsKey(keyword)) {
+                diagnostics.add(VisualDiagnostic.error("visual.schema.refUnsupported",
+                        "Schema reference keyword '%s' is not supported by visual authoring schemas."
+                                .formatted(keyword),
+                        path + "/" + keyword));
+                unsupported = true;
+            }
+        }
+        for (String keyword : UNSUPPORTED_COMPOSITION_KEYWORDS) {
+            if (schema.containsKey(keyword)) {
+                diagnostics.add(VisualDiagnostic.error("visual.schema.compositionUnsupported",
+                        "JSON Schema composition keyword '%s' is not supported by visual authoring schemas."
+                                .formatted(keyword),
+                        path + "/" + keyword));
+                unsupported = true;
+            }
+        }
+        for (String keyword : UNSUPPORTED_CONSTRAINT_KEYWORDS) {
+            if (schema.containsKey(keyword)) {
+                diagnostics.add(VisualDiagnostic.error("visual.schema.constraintUnsupported",
+                        "JSON Schema constraint keyword '%s' is not supported by visual authoring schemas."
+                                .formatted(keyword),
+                        path + "/" + keyword));
+                unsupported = true;
+            }
+        }
+        return unsupported;
     }
 
     @SuppressWarnings("unchecked")

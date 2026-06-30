@@ -217,6 +217,91 @@ class GraphDraftValidatorTest {
     }
 
     @Test
+    void rejectsGraphInputSchemaWithUnsupportedJsonSchemaKeywords() {
+        GraphDraftValidator validator = new GraphDraftValidator(
+                VisualCatalogTestSupport.catalogWithLibrary(
+                        VisualCatalogTestSupport.eligibilityLibrary("integer")));
+        SchemaEnvelope inputSchema = new SchemaEnvelope(
+                SchemaEnvelope.JSON_SCHEMA,
+                "2020-12",
+                Map.of(
+                        "type", "object",
+                        "properties", Map.of(
+                                "score", Map.of("type", "integer", "minimum", 0),
+                                "amount", Map.of("type", "number"),
+                                "decision", Map.of("oneOf", List.of(
+                                        Map.of("type", "string"),
+                                        Map.of("type", "integer")
+                                )),
+                                "customer", Map.of("$ref", "#/$defs/Customer")
+                        ),
+                        "required", List.of("score", "amount"),
+                        "additionalProperties", false
+                ));
+        GraphDraft draft = contextEligibilityDraft(inputSchema, Map.of(
+                "score", GraphDraft.Binding.contextPath("score"),
+                "amount", GraphDraft.Binding.contextPath("amount")
+        ));
+
+        VisualValidationResult result = validator.validate(draft);
+
+        assertThat(result.valid()).isFalse();
+        assertThat(result.diagnostics())
+                .extracting("code")
+                .contains(
+                        "visual.schema.constraintUnsupported",
+                        "visual.schema.compositionUnsupported",
+                        "visual.schema.refUnsupported"
+                );
+        assertThat(result.diagnostics())
+                .extracting("target")
+                .contains(
+                        "/inputSchema/schema/properties/score/minimum",
+                        "/inputSchema/schema/properties/decision/oneOf",
+                        "/inputSchema/schema/properties/customer/$ref"
+                );
+    }
+
+    @Test
+    void rejectsGraphInputSchemaWithUnsupportedEnvelope() {
+        GraphDraftValidator validator = new GraphDraftValidator(
+                VisualCatalogTestSupport.catalogWithLibrary(
+                        VisualCatalogTestSupport.eligibilityLibrary("integer")));
+        SchemaEnvelope inputSchema = new SchemaEnvelope(
+                "protobuf",
+                "draft-07",
+                Map.of(
+                        "type", "object",
+                        "properties", Map.of(
+                                "score", Map.of("type", "integer"),
+                                "amount", Map.of("type", "number")
+                        ),
+                        "required", List.of("score", "amount"),
+                        "additionalProperties", false
+                ));
+        GraphDraft draft = contextEligibilityDraft(inputSchema, Map.of(
+                "score", GraphDraft.Binding.contextPath("score"),
+                "amount", GraphDraft.Binding.contextPath("amount")
+        ));
+
+        VisualValidationResult result = validator.validate(draft);
+
+        assertThat(result.valid()).isFalse();
+        assertThat(result.diagnostics())
+                .extracting("code")
+                .contains(
+                        "visual.schema.formatUnsupported",
+                        "visual.schema.versionUnsupported"
+                );
+        assertThat(result.diagnostics())
+                .extracting("target")
+                .contains(
+                        "/inputSchema/format",
+                        "/inputSchema/version"
+                );
+    }
+
+    @Test
     void rejectsNodePathBindingWhenOutputTypeDoesNotMatchTargetInputSchema() {
         GraphDraftValidator validator = new GraphDraftValidator(
                 VisualCatalogTestSupport.catalogWithLoanApplicantResourceAndLibrary(
@@ -1151,6 +1236,35 @@ class GraphDraftValidatorTest {
     }
 
     @Test
+    void rejectsObjectTemplateBindingToScalarRequiredInput() {
+        GraphDraftValidator validator = new GraphDraftValidator(
+                VisualCatalogTestSupport.catalogWithLibrary(
+                        VisualCatalogTestSupport.eligibilityLibrary("integer")));
+        GraphDraft draft = contextEligibilityDraft(null, Map.of(
+                "score", new GraphDraft.Binding(
+                        "objectTemplate",
+                        null,
+                        "",
+                        "",
+                        "",
+                        "inputs",
+                        "score",
+                        "",
+                        Map.of()),
+                "amount", GraphDraft.Binding.constant(1000)
+        ));
+
+        VisualValidationResult result = validator.validate(draft);
+
+        assertThat(result.valid()).isFalse();
+        assertThat(result.diagnostics())
+                .anySatisfy(diagnostic -> {
+                    assertThat(diagnostic.code()).isEqualTo("visual.binding.typeMismatch");
+                    assertThat(diagnostic.message()).contains("score").contains("integer");
+                });
+    }
+
+    @Test
     void validatesObjectTemplateConstantFieldsAgainstNestedTargetPath() {
         GraphDraftValidator validator = new GraphDraftValidator(
                 VisualCatalogTestSupport.catalogWithLoanApplicantResourceAndLibrary(
@@ -1486,6 +1600,29 @@ class GraphDraftValidatorTest {
         assertThat(result.diagnostics())
                 .extracting("code")
                 .contains("visual.config.typeMismatch", "visual.config.enumMismatch");
+    }
+
+    @Test
+    void rejectsObjectTemplateConfigWhenTargetSchemaIsScalar() {
+        GraphDraftValidator validator = new GraphDraftValidator(
+                VisualCatalogTestSupport.catalogWithLibrary(
+                        VisualCatalogTestSupport.configurablePolicyLibrary()));
+        GraphDraft draft = configurablePolicyDraft(Map.of(
+                "threshold", Map.of(
+                        "kind", "objectTemplate",
+                        "fields", Map.of()),
+                "mode", "strict"
+        ));
+
+        VisualValidationResult result = validator.validate(draft);
+
+        assertThat(result.valid()).isFalse();
+        assertThat(result.diagnostics())
+                .anySatisfy(diagnostic -> {
+                    assertThat(diagnostic.code()).isEqualTo("visual.config.typeMismatch");
+                    assertThat(diagnostic.target()).isEqualTo("/nodes/0/config/threshold");
+                    assertThat(diagnostic.message()).contains("threshold").contains("integer");
+                });
     }
 
     @Test

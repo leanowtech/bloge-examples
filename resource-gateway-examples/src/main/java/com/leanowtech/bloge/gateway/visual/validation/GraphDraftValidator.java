@@ -77,7 +77,7 @@ public class GraphDraftValidator {
             diagnostics.add(VisualDiagnostic.error("visual.graph.empty", "Graph must contain at least one node.", "/nodes"));
         }
         diagnostics.addAll(VisualSecretGuard.detectDraftSecrets(draft));
-        diagnostics.addAll(VisualSchemaValidator.validateSchema(draft.inputSchema().schema(), "/inputSchema/schema"));
+        diagnostics.addAll(VisualSchemaValidator.validateEnvelope(draft.inputSchema(), "/inputSchema"));
 
         Set<String> nodeIds = new HashSet<>();
         Map<String, GraphDraft.DraftNode> nodesById = new LinkedHashMap<>();
@@ -477,8 +477,36 @@ public class GraphDraftValidator {
                                         Map<String, GraphDraft.DraftNode> nodesById,
                                         Map<String, OperatorDefinition> operatorsByNodeId,
                                         String targetPath,
-                                        List<VisualDiagnostic> diagnostics) {
+        List<VisualDiagnostic> diagnostics) {
         if ("objectTemplate".equals(binding.kind())) {
+            Optional<OperatorDefinition.Port> targetPort = resolveInputPort(targetOperator, binding.targetPort(),
+                    inputName);
+            if (targetPort.isEmpty()) {
+                diagnostics.add(VisualDiagnostic.error("visual.binding.unknownTargetPort",
+                        "Binding target input '%s' must target a declared port on operator '%s'."
+                                .formatted(inputName, targetOperator.operatorRef()),
+                        targetPath));
+                return;
+            }
+            Map<String, Object> targetProperty = propertyAtPath(targetPort.get().schema(), inputName);
+            if (targetProperty == null) {
+                diagnostics.add(VisualDiagnostic.error("visual.binding.unknownTargetPath",
+                        "Target port '%s' does not accept path '%s'."
+                                .formatted(targetPort.get().name(), inputName),
+                        targetPath));
+                return;
+            }
+            String targetType = schemaType(targetProperty);
+            if (!targetType.isBlank()
+                    && !"object".equals(targetType)
+                    && !"any".equals(targetType)
+                    && !"opaque".equals(targetType)) {
+                diagnostics.add(VisualDiagnostic.error("visual.binding.typeMismatch",
+                        "Object template for input '%s.%s' must target object-compatible schema, but target is %s."
+                                .formatted(targetPort.get().name(), inputName, schemaTypeLabel(targetProperty)),
+                        targetPath));
+                return;
+            }
             binding.fields().forEach((key, nested) -> {
                 String nestedInputName = inputName.isBlank() ? key : inputName + "." + key;
                 validateBinding(nested, nestedInputName, targetOperator, inputSchema, nodesById,

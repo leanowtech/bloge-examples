@@ -33,10 +33,10 @@ public class ResourceDesignContractValidator {
                     "Resource design contract must declare a resourceId.",
                     "/resourceId"));
         }
-        diagnostics.addAll(VisualSchemaValidator.validateSchema(
-                contract.requestSchema().schema(), "/requestSchema/schema"));
-        diagnostics.addAll(VisualSchemaValidator.validateSchema(
-                contract.responseSchema().schema(), "/responseSchema/schema"));
+        diagnostics.addAll(VisualSchemaValidator.validateEnvelope(
+                contract.requestSchema(), "/requestSchema"));
+        diagnostics.addAll(VisualSchemaValidator.validateEnvelope(
+                contract.responseSchema(), "/responseSchema"));
         diagnostics.addAll(VisualSecretGuard.detectRawSecrets(contract.examples(), "/examples"));
         return new VisualValidationResult(true, diagnostics);
     }

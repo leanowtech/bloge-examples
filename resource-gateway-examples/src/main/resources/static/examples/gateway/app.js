@@ -214,6 +214,8 @@ const SAMPLE_OPERATOR_LIBRARY = {
 
 const NODE_SIZE = { width: 184, height: 76 };
 const DRAG_START_THRESHOLD = 4;
+const SUPPORTED_SCHEMA_FORMAT = 'json-schema';
+const SUPPORTED_SCHEMA_VERSION = '2020-12';
 const SUPPORTED_SCHEMA_KINDS = new Set([
   'object',
   'array',
@@ -229,6 +231,32 @@ const SUPPORTED_SCHEMA_KINDS = new Set([
   'opaque',
   'null'
 ]);
+const UNSUPPORTED_SCHEMA_REFERENCE_KEYWORDS = ['$ref', '$dynamicRef'];
+const UNSUPPORTED_SCHEMA_COMPOSITION_KEYWORDS = ['oneOf', 'anyOf', 'allOf', 'not', 'if', 'then', 'else'];
+const UNSUPPORTED_SCHEMA_CONSTRAINT_KEYWORDS = [
+  'const',
+  'pattern',
+  'minimum',
+  'maximum',
+  'exclusiveMinimum',
+  'exclusiveMaximum',
+  'multipleOf',
+  'minLength',
+  'maxLength',
+  'minItems',
+  'maxItems',
+  'uniqueItems',
+  'contains',
+  'minContains',
+  'maxContains',
+  'prefixItems',
+  'patternProperties',
+  'propertyNames',
+  'dependentRequired',
+  'dependentSchemas',
+  'unevaluatedProperties',
+  'unevaluatedItems'
+];
 
 const state = {
   scenarios: [],
@@ -4790,19 +4818,38 @@ function normalizeGraphInputSchemaEnvelope(value) {
     throw new Error('schema must contain an object schema.');
   }
   return {
-    format: String(value.format || 'json-schema'),
-    version: String(value.version || '2020-12'),
+    format: String(value.format || SUPPORTED_SCHEMA_FORMAT),
+    version: String(value.version || SUPPORTED_SCHEMA_VERSION),
     schema
   };
 }
 
 function graphInputSchemaStructuralDiagnostics(schemaEnvelope) {
   const diagnostics = [];
+  validateSchemaEnvelope(schemaEnvelope, diagnostics);
   validateSchemaStructure(schemaEnvelope?.schema || {}, 'schema', diagnostics);
   return diagnostics;
 }
 
+function validateSchemaEnvelope(schemaEnvelope, diagnostics) {
+  if ((schemaEnvelope?.format || SUPPORTED_SCHEMA_FORMAT) !== SUPPORTED_SCHEMA_FORMAT) {
+    diagnostics.push(graphInputSchemaDiagnostic(
+      'visual.schema.formatUnsupported',
+      `Unsupported schema format '${schemaEnvelope?.format}'; visual authoring supports '${SUPPORTED_SCHEMA_FORMAT}'.`,
+      'format'
+    ));
+  }
+  if ((schemaEnvelope?.version || SUPPORTED_SCHEMA_VERSION) !== SUPPORTED_SCHEMA_VERSION) {
+    diagnostics.push(graphInputSchemaDiagnostic(
+      'visual.schema.versionUnsupported',
+      `Unsupported schema version '${schemaEnvelope?.version}'; visual authoring supports ${SUPPORTED_SCHEMA_VERSION}.`,
+      'version'
+    ));
+  }
+}
+
 function validateSchemaStructure(schema, path, diagnostics) {
+  validateUnsupportedSchemaKeywords(schema, path, diagnostics);
   const kind = rawSchemaType(schema);
   if (!kind) {
     return;
@@ -4852,6 +4899,36 @@ function validateSchemaStructure(schema, path, diagnostics) {
     validateSchemaStructure(items, `${path}/items`, diagnostics);
   } else if (kind === 'enum') {
     validateCustomSchemaEnumValues(schema, path, diagnostics);
+  }
+}
+
+function validateUnsupportedSchemaKeywords(schema, path, diagnostics) {
+  for (const keyword of UNSUPPORTED_SCHEMA_REFERENCE_KEYWORDS) {
+    if (Object.prototype.hasOwnProperty.call(schema || {}, keyword)) {
+      diagnostics.push(graphInputSchemaDiagnostic(
+        'visual.schema.refUnsupported',
+        `Schema reference keyword '${keyword}' is not supported by visual authoring schemas.`,
+        `${path}/${keyword}`
+      ));
+    }
+  }
+  for (const keyword of UNSUPPORTED_SCHEMA_COMPOSITION_KEYWORDS) {
+    if (Object.prototype.hasOwnProperty.call(schema || {}, keyword)) {
+      diagnostics.push(graphInputSchemaDiagnostic(
+        'visual.schema.compositionUnsupported',
+        `JSON Schema composition keyword '${keyword}' is not supported by visual authoring schemas.`,
+        `${path}/${keyword}`
+      ));
+    }
+  }
+  for (const keyword of UNSUPPORTED_SCHEMA_CONSTRAINT_KEYWORDS) {
+    if (Object.prototype.hasOwnProperty.call(schema || {}, keyword)) {
+      diagnostics.push(graphInputSchemaDiagnostic(
+        'visual.schema.constraintUnsupported',
+        `JSON Schema constraint keyword '${keyword}' is not supported by visual authoring schemas.`,
+        `${path}/${keyword}`
+      ));
+    }
   }
 }
 

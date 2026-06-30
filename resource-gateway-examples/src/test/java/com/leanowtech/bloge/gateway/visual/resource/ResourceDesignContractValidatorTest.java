@@ -52,6 +52,78 @@ class ResourceDesignContractValidatorTest {
     }
 
     @Test
+    void rejectsUnsupportedJsonSchemaKeywords() {
+        ResourceDesignContract contract = new ResourceDesignContract(
+                "contract:orders",
+                "order-service.listOrders",
+                "Order list",
+                "Lists orders.",
+                List.of("order"),
+                SchemaEnvelope.object(Map.of(
+                        "userId", Map.of("$ref", "#/$defs/UserId")
+                ), List.of()),
+                SchemaEnvelope.object(Map.of(
+                        "score", Map.of("type", "integer", "minimum", 0),
+                        "decision", Map.of("oneOf", List.of(
+                                Map.of("type", "string"),
+                                Map.of("type", "integer")
+                        ))
+                ), List.of()),
+                Map.of(),
+                "ACTIVE"
+        );
+
+        VisualValidationResult result = validator.validate(contract);
+
+        assertThat(result.valid()).isFalse();
+        assertThat(result.diagnostics())
+                .extracting("code")
+                .contains(
+                        "visual.schema.refUnsupported",
+                        "visual.schema.constraintUnsupported",
+                        "visual.schema.compositionUnsupported"
+                );
+        assertThat(result.diagnostics())
+                .extracting("target")
+                .contains(
+                        "/requestSchema/schema/properties/userId/$ref",
+                        "/responseSchema/schema/properties/score/minimum",
+                        "/responseSchema/schema/properties/decision/oneOf"
+                );
+    }
+
+    @Test
+    void rejectsUnsupportedSchemaEnvelope() {
+        ResourceDesignContract contract = new ResourceDesignContract(
+                "contract:orders",
+                "order-service.listOrders",
+                "Order list",
+                "Lists orders.",
+                List.of("order"),
+                new SchemaEnvelope("json-schema", "draft-07", Map.of("type", "object")),
+                new SchemaEnvelope("avro", "2020-12", Map.of("type", "object")),
+                Map.of(),
+                "ACTIVE"
+        );
+
+        VisualValidationResult result = validator.validate(contract);
+
+        assertThat(result.valid()).isFalse();
+        assertThat(result.diagnostics())
+                .extracting("code")
+                .contains(
+                        "visual.schema.versionUnsupported",
+                        "visual.schema.formatUnsupported"
+                );
+        assertThat(result.diagnostics())
+                .extracting("target")
+                .contains(
+                        "/requestSchema/version",
+                        "/responseSchema/format"
+                );
+    }
+
+    @Test
     void rejectsRawSecretExamples() {
         ResourceDesignContract contract = validContract(Map.of(
                 "request", Map.of("apiKey", "sk-123456789012")

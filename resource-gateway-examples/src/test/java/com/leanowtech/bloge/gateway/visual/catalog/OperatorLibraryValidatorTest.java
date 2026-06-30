@@ -409,6 +409,100 @@ class OperatorLibraryValidatorTest {
     }
 
     @Test
+    void rejectsUnsupportedJsonSchemaKeywordsAcrossOperatorSchemas() {
+        OperatorDefinition operator = new OperatorDefinition(
+                "bloge.visualOperator.v1",
+                "risk:unsupportedSchemaKeywords",
+                "1.0.0",
+                new OperatorDefinition.Display("Unsupported schemas", "Test operator.", List.of("test")),
+                new OperatorDefinition.Source("user-library", "", "", "", true),
+                new OperatorDefinition.Ports(
+                        List.of(new OperatorDefinition.Port("input",
+                                SchemaEnvelope.object(Map.of(
+                                        "choice", Map.of("oneOf", List.of(
+                                                Map.of("type", "string"),
+                                                Map.of("type", "integer")
+                                        ))
+                                ), List.of()),
+                                true,
+                                "Input.")),
+                        List.of(new OperatorDefinition.Port("output",
+                                SchemaEnvelope.object(Map.of(
+                                        "customer", Map.of("$ref", "#/$defs/Customer")
+                                ), List.of()),
+                                true,
+                                "Output."))
+                ),
+                SchemaEnvelope.object(Map.of(
+                        "threshold", Map.of("type", "integer", "minimum", 0)
+                ), List.of()),
+                OperatorDefinition.Capabilities.pure(),
+                new OperatorDefinition.Lowering("native", "risk:unsupportedSchemaKeywords", Map.of()),
+                List.of()
+        );
+
+        VisualValidationResult result = validator.validate(libraryWith(operator));
+
+        assertThat(result.valid()).isFalse();
+        assertThat(result.diagnostics())
+                .extracting("code")
+                .contains(
+                        "visual.schema.compositionUnsupported",
+                        "visual.schema.refUnsupported",
+                        "visual.schema.constraintUnsupported"
+                );
+        assertThat(result.diagnostics())
+                .extracting("target")
+                .contains(
+                        "/operators/0/ports/inputs/0/schema/schema/properties/choice/oneOf",
+                        "/operators/0/ports/outputs/0/schema/schema/properties/customer/$ref",
+                        "/operators/0/configSchema/schema/properties/threshold/minimum"
+                );
+    }
+
+    @Test
+    void rejectsUnsupportedSchemaEnvelopeAcrossOperatorSchemas() {
+        OperatorDefinition operator = new OperatorDefinition(
+                "bloge.visualOperator.v1",
+                "risk:unsupportedSchemaEnvelope",
+                "1.0.0",
+                new OperatorDefinition.Display("Unsupported schema envelope", "Test operator.", List.of("test")),
+                new OperatorDefinition.Source("user-library", "", "", "", true),
+                new OperatorDefinition.Ports(
+                        List.of(new OperatorDefinition.Port("inputs",
+                                new SchemaEnvelope("json-schema", "draft-07", Map.of("type", "object")),
+                                true,
+                                "Input.")),
+                        List.of(new OperatorDefinition.Port("output",
+                                new SchemaEnvelope("avro", "2020-12", Map.of("type", "object")),
+                                true,
+                                "Output."))
+                ),
+                new SchemaEnvelope("json-schema", "draft-04", Map.of("type", "object")),
+                OperatorDefinition.Capabilities.pure(),
+                new OperatorDefinition.Lowering("native", "risk:unsupportedSchemaEnvelope", Map.of()),
+                List.of()
+        );
+
+        VisualValidationResult result = validator.validate(libraryWith(operator));
+
+        assertThat(result.valid()).isFalse();
+        assertThat(result.diagnostics())
+                .extracting("code")
+                .contains(
+                        "visual.schema.versionUnsupported",
+                        "visual.schema.formatUnsupported"
+                );
+        assertThat(result.diagnostics())
+                .extracting("target")
+                .contains(
+                        "/operators/0/ports/inputs/0/schema/version",
+                        "/operators/0/ports/outputs/0/schema/format",
+                        "/operators/0/configSchema/version"
+                );
+    }
+
+    @Test
     void rejectsConfigSchemaDefaultsThatDoNotMatchDeclaredSchema() {
         OperatorLibrary library = libraryWith(new OperatorDefinition(
                 "bloge.visualOperator.v1",

@@ -1,9 +1,12 @@
 package com.leanowtech.bloge.gateway.visual.catalog;
 
+import com.leanowtech.bloge.gateway.visual.diagnostic.VisualDiagnostic;
 import com.leanowtech.bloge.gateway.visual.resource.InMemoryResourceDesignContractRegistry;
+import com.leanowtech.bloge.gateway.visual.validation.VisualSchemaValidator;
 
 import org.junit.jupiter.api.Test;
 
+import java.util.ArrayList;
 import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -24,6 +27,32 @@ class DefaultVisualOperatorCatalogTest {
         assertThat(operator.lowering().operatorRef()).isEqualTo("httpResource");
         assertThat(operator.ports().inputs().getFirst().schema().required()).containsExactly("applicantId");
         assertThat(operator.ports().outputs().getFirst().schema().properties()).containsKeys("score", "segment");
+    }
+
+    @Test
+    void catalogOperatorsExposeSchemasAcceptedBySharedVisualSchemaGate() {
+        DefaultVisualOperatorCatalog catalog = VisualCatalogTestSupport.catalogWithLoanApplicantResource();
+
+        List<VisualDiagnostic> diagnostics = new ArrayList<>();
+        for (OperatorDefinition operator : catalog.list(OperatorCatalogQuery.all())) {
+            diagnostics.addAll(VisualSchemaValidator.validateEnvelope(
+                    operator.configSchema(),
+                    "/operators/" + operator.operatorRef() + "/configSchema"));
+            for (OperatorDefinition.Port port : operator.ports().inputs()) {
+                diagnostics.addAll(VisualSchemaValidator.validateEnvelope(
+                        port.schema(),
+                        "/operators/" + operator.operatorRef() + "/ports/inputs/" + port.name() + "/schema"));
+            }
+            for (OperatorDefinition.Port port : operator.ports().outputs()) {
+                diagnostics.addAll(VisualSchemaValidator.validateEnvelope(
+                        port.schema(),
+                        "/operators/" + operator.operatorRef() + "/ports/outputs/" + port.name() + "/schema"));
+            }
+        }
+
+        assertThat(diagnostics)
+                .filteredOn(VisualDiagnostic::error)
+                .isEmpty();
     }
 
     @Test
