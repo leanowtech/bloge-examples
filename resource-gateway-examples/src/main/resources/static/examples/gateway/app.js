@@ -1140,6 +1140,9 @@ function builderEdges(builder = state.builder, options = {}) {
   const transforms = builder.nodes.filter((node) => node.type === 'transform');
 
   for (const transform of transforms) {
+    if (transform.policyNodeCleared) {
+      continue;
+    }
     const decision = builder.nodes.find((node) => node.id === transform.policyNode)
       || decisions[0];
     if (decision) {
@@ -3597,6 +3600,13 @@ function renderSelectedOperatorEditor() {
     input.addEventListener('input', () => {
       const field = input.dataset.nodeField;
       node[field] = input.value;
+      if (field === 'policyNode') {
+        if (input.value.trim()) {
+          delete node.policyNodeCleared;
+        } else {
+          node.policyNodeCleared = true;
+        }
+      }
       syncComposerFromBuilder();
     });
   }
@@ -3891,7 +3901,7 @@ function operatorEditorBody(node) {
   return `
     <div class="operator-fields">
       ${textField('Node', node.id, '', true)}
-      ${textField('Policy Node', node.policyNode || firstDecisionTableId(), 'policyNode')}
+      ${textField('Policy Node', node.policyNodeCleared ? '' : (node.policyNode || firstDecisionTableId()), 'policyNode')}
     </div>
     ${renderOperatorContractPanel(node)}
   `;
@@ -4734,7 +4744,8 @@ function expressionForTargetInput(node, target) {
     return node.customInputs?.[target.key || target.path] || '';
   }
   if (node.type === 'transform') {
-    return node.policyNode ? `${node.policyNode}.output` : '';
+    const policyNode = node.policyNode || (node.policyNodeCleared ? '' : firstDecisionTableId());
+    return policyNode ? `${policyNode}.output` : '';
   }
   return '';
 }
@@ -4758,7 +4769,13 @@ function setExpressionForTargetInput(node, target, expression) {
     node.customInputPaths[key] = target.path;
   } else if (node.type === 'transform') {
     const source = connectionSourceFromExpression(expression);
-    node.policyNode = source?.nodeId || node.policyNode;
+    if (!String(expression || '').trim()) {
+      node.policyNode = '';
+      node.policyNodeCleared = true;
+    } else if (source?.nodeId) {
+      node.policyNode = source.nodeId;
+      delete node.policyNodeCleared;
+    }
   }
 }
 
@@ -4888,6 +4905,7 @@ function deleteSelectedBuilderNode() {
     .filter((edge) => edge.source !== selected.id && edge.target !== selected.id);
   state.builder.routeEdges = (state.builder.routeEdges || [])
     .filter((edge) => edge.source !== selected.id && edge.target !== selected.id);
+  removeBuilderReferencesToNode(selected.id);
   state.builder.selectedId = orderedBuilderNodes()[0]?.id || null;
   state.selectedNodeId = state.builder.selectedId;
   if (selected.type === 'httpResource' && !state.builder.nodes.some((node) => node.type === 'httpResource')) {
@@ -4899,6 +4917,65 @@ function deleteSelectedBuilderNode() {
   syncComposerFromBuilder();
   renderInputForm();
   renderDiagram();
+}
+
+function removeBuilderReferencesToNode(nodeId) {
+  for (const node of state.builder.nodes) {
+    if (node.type === 'httpResource') {
+      const params = resourceParamInputs(node, specForNode(node));
+      for (const [name, expression] of Object.entries(params)) {
+        if (expressionReferencesNode(expression, nodeId)) {
+          params[name] = fallbackContextExpression(name);
+        }
+      }
+      node.paramInputs = params;
+      if (expressionReferencesNode(node.applicantExpr, nodeId)) {
+        node.applicantExpr = fallbackContextExpression(node.paramName || defaultParamNameForOperator(specForNode(node)));
+      }
+    } else if (node.type === 'decisionTable') {
+      if (expressionReferencesNode(node.scoreSource, nodeId)) {
+        node.scoreSource = 'ctx.score';
+      }
+      if (expressionReferencesNode(node.amountSource, nodeId)) {
+        node.amountSource = 'ctx.amount';
+      }
+    } else if (node.type === 'customOperator') {
+      for (const [key, expression] of Object.entries(node.customInputs || {})) {
+        if (expressionReferencesNode(expression, nodeId)) {
+          node.customInputs[key] = fallbackContextExpression(customInputPathForKey(node, key));
+        }
+      }
+    } else if (node.type === 'transform' && node.policyNode === nodeId) {
+      node.policyNode = '';
+      node.policyNodeCleared = true;
+    }
+    removeConfigReferencesToNode(node.config, nodeId);
+  }
+}
+
+function removeConfigReferencesToNode(value, nodeId) {
+  if (!isConfigContainerObject(value)) {
+    return;
+  }
+  for (const [key, item] of Object.entries(value)) {
+    if (isConfigExpressionValue(item) && expressionReferencesNode(configExpressionForField(item), nodeId)) {
+      delete value[key];
+    } else if (isConfigContainerObject(item)) {
+      removeConfigReferencesToNode(item, nodeId);
+      if (Object.keys(item).length === 0) {
+        delete value[key];
+      }
+    }
+  }
+}
+
+function expressionReferencesNode(expression, nodeId) {
+  const source = connectionSourceFromExpression(expression, state.builder);
+  return Boolean(source && source.nodeId === nodeId);
+}
+
+function fallbackContextExpression(path) {
+  return path ? `ctx.${path}` : '';
 }
 
 function applyResourceDefaults(resourceNode) {
@@ -5110,9 +5187,14 @@ function nodeToDsl(node, builder) {
     return `  decision_table ${node.id}(\n    score  = ${node.scoreSource},\n    amount = ${node.amountSource}\n  ) hit=${node.hitPolicy || 'unique'} -> { decision: String, rate: Decimal, maxTerm: Int, reviewLane: String, ruleId: String } {\n${rules}\n  }`;
   }
   if (node.type === 'transform') {
-    const decisionNode = builder.nodes.find((item) => item.id === node.policyNode)
-      || builder.nodes.find((item) => item.type === 'decisionTable');
+    const decisionNode = node.policyNodeCleared
+      ? null
+      : builder.nodes.find((item) => item.id === node.policyNode)
+        || builder.nodes.find((item) => item.type === 'decisionTable');
     const resourceNode = builder.nodes.find((item) => item.type === 'httpResource');
+    if (node.policyNodeCleared) {
+      return `  transform ${node.id} {\n    result = {}\n  }`;
+    }
     if (!decisionNode) {
       const previous = orderedBuilderNodes(builder).filter((item) => item.id !== node.id).at(-1);
       return `  transform ${node.id} {\n    result = ${previous ? `${previous.id}.output` : '{}'}\n  }`;
@@ -5315,7 +5397,14 @@ function renderTemplateExpression(template, inputs) {
       .replaceAll(`{{input.${name}}}`, value || 'null')
       .replaceAll(`{{${name}}}`, value || 'null');
   }
-  return expression;
+  return replaceUnresolvedTemplateReferences(expression);
+}
+
+function replaceUnresolvedTemplateReferences(expression) {
+  return expression.replace(
+    /\{\{\s*(?:input\.)?[A-Za-z_][A-Za-z0-9_]*(?:\.[A-Za-z_][A-Za-z0-9_]*)*\s*\}\}/g,
+    'null'
+  );
 }
 
 function replaceTemplateDescendants(expression, prefix, value) {
@@ -5477,11 +5566,15 @@ function builderNodeFromDraftNode(node, draft, layoutNodes) {
     };
   }
   if (node.operatorRef === 'bloge:transform') {
+    const policyNode = policyNodeFromDraft(node, draft);
+    const assignments = node.config?.assignments;
+    const policyCleared = Boolean(assignments && typeof assignments === 'object' && !policyNode);
     return {
       ...base,
       type: 'transform',
       paletteType: '',
-      policyNode: policyNodeFromDraft(node, draft) || firstDecisionTableIdFromNodes(draft.nodes || [])
+      policyNode: policyNode || (policyCleared ? '' : firstDecisionTableIdFromNodes(draft.nodes || [])),
+      policyNodeCleared: policyCleared
     };
   }
   return {
@@ -5636,10 +5729,14 @@ function builderNodeToDraftNode(node, builder) {
     };
   }
   const decisionNode = builder.nodes.find((item) => item.id === node.policyNode)
-    || builder.nodes.find((item) => item.type === 'decisionTable');
+    || (node.policyNodeCleared ? null : builder.nodes.find((item) => item.type === 'decisionTable'));
   const resourceNode = builder.nodes.find((item) => item.type === 'httpResource');
   const previous = orderedBuilderNodes(builder).filter((item) => item.id !== node.id).at(-1);
-  const assignments = decisionNode
+  const assignments = node.policyNodeCleared
+    ? {
+        result: '{}'
+      }
+    : decisionNode
     ? {
         applicant: resourceNode ? `${resourceNode.id}.output.payload` : `{ score: ${decisionNode.scoreSource}, segment: ctx.segment }`,
         requestedAmount: decisionNode.amountSource,
@@ -9976,6 +10073,7 @@ function applyConnection(source, target) {
     node.customInputPaths[key] = target.path;
   } else if (node.type === 'transform') {
     node.policyNode = source.nodeId;
+    delete node.policyNodeCleared;
   }
   state.builder.selectedId = node.id;
   state.selectedNodeId = node.id;

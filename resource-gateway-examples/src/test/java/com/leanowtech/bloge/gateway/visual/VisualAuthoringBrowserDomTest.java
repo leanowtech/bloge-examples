@@ -255,6 +255,78 @@ class VisualAuthoringBrowserDomTest {
     }
 
     @Test
+    void composerClearsTransformPolicyBindingInRealBrowser() {
+        driver = newChromeDriverOrSkip();
+        WebDriverWait wait = new WebDriverWait(driver, WAIT_TIMEOUT);
+        driver.get("http://localhost:" + port + "/examples/gateway");
+
+        waitForComposer(wait);
+        wait.until(ExpectedConditions.visibilityOfElementLocated(By.id("operator-palette")));
+        assertThat(valueOf(By.id("composer-dsl"))).contains("policy          = loanPolicy.output");
+
+        click(wait, By.cssSelector("#diagram [data-node-id='response']"));
+        waitForText(wait, By.id("selected-operator-editor"), "Transform");
+        waitForValue(wait, By.cssSelector("[data-node-field='policyNode']"), "loanPolicy");
+
+        setControlValue(driver.findElement(By.cssSelector("[data-node-field='policyNode']")), "");
+        wait.until(ignored -> valueOf(By.cssSelector("[data-node-field='policyNode']")).isBlank());
+        wait.until(ignored -> valueOf(By.id("composer-dsl")).contains("result = {}"));
+        assertThat(valueOf(By.id("composer-dsl"))).doesNotContain("policy          = loanPolicy.output");
+
+        click(wait, By.id("save-draft"));
+        waitForText(wait, By.id("draft-status"), "Saved");
+        click(wait, By.id("export-draft"));
+        wait.until(ignored -> valueOf(By.id("draft-bundle-json"))
+                .contains("\"schemaVersion\": \"bloge.visualGraphDraftExport.v1\""));
+        assertThat(valueOf(By.id("draft-bundle-json")))
+                .contains("\"result\": \"{}\"")
+                .doesNotContain("\"policy\": \"loanPolicy.output\"");
+    }
+
+    @Test
+    void composerDeletesNodeAndCleansDownstreamBindingsInRealBrowser() {
+        driver = newChromeDriverOrSkip();
+        WebDriverWait wait = new WebDriverWait(driver, WAIT_TIMEOUT);
+        driver.get("http://localhost:" + port + "/examples/gateway");
+
+        waitForComposer(wait);
+        wait.until(ExpectedConditions.visibilityOfElementLocated(By.id("operator-palette")));
+
+        importSampleOperatorLibrary(wait);
+        dragOperatorToCanvas(wait, "Eligibility", "risk:eligibility", "riskEligibility", 140, 120);
+
+        dragConnection(
+                wait,
+                "#diagram [data-node-id='loanPolicy'] [data-port-role='source'][data-port='output'][data-path='maxTerm']",
+                "#diagram [data-node-id='riskEligibility'] [data-port-role='target'][data-port='inputs'][data-path='score']"
+        );
+        waitForText(wait, By.id("connection-status"),
+                "Connected loanPolicy.output.maxTerm -> riskEligibility.inputs.score");
+
+        click(wait, By.cssSelector("#diagram [data-node-id='riskEligibility']"));
+        waitForValue(wait, By.cssSelector("[data-binding-expression][data-binding-path='score']"),
+                "loanPolicy.output.maxTerm");
+
+        click(wait, By.cssSelector("#diagram [data-node-id='loanPolicy']"));
+        waitForText(wait, By.id("selected-operator-editor"), "Decision Table");
+        click(wait, By.id("delete-operator"));
+        wait.until(ignored -> driver.findElements(By.cssSelector("#diagram [data-node-id='loanPolicy']")).isEmpty());
+
+        click(wait, By.cssSelector("#diagram [data-node-id='riskEligibility']"));
+        waitForValue(wait, By.cssSelector("[data-binding-expression][data-binding-path='score']"), "ctx.score");
+        assertThat(valueOf(By.id("composer-dsl"))).doesNotContain("loanPolicy.output.maxTerm");
+
+        click(wait, By.id("save-draft"));
+        waitForText(wait, By.id("draft-status"), "Saved");
+        click(wait, By.id("export-draft"));
+        wait.until(ignored -> valueOf(By.id("draft-bundle-json"))
+                .contains("\"schemaVersion\": \"bloge.visualGraphDraftExport.v1\""));
+        assertThat(valueOf(By.id("draft-bundle-json")))
+                .doesNotContain("loanPolicy.output.maxTerm")
+                .doesNotContain("\"nodeId\": \"loanPolicy\"");
+    }
+
+    @Test
     void composerRendersServerValidationDiagnosticsInRealBrowser() {
         driver = newChromeDriverOrSkip();
         WebDriverWait wait = new WebDriverWait(driver, WAIT_TIMEOUT);
@@ -451,6 +523,22 @@ class VisualAuthoringBrowserDomTest {
                 .isEmpty();
     }
 
+    @Test
+    void composerDefaultsUnboundOptionalLoweringTemplateInputsInRealBrowser() throws JsonProcessingException {
+        driver = newChromeDriverOrSkip();
+        WebDriverWait wait = new WebDriverWait(driver, WAIT_TIMEOUT);
+        driver.get("http://localhost:" + port + "/examples/gateway");
+
+        waitForComposer(wait);
+        wait.until(ExpectedConditions.visibilityOfElementLocated(By.id("operator-palette")));
+
+        importOperatorLibrary(wait, optionalLoweringInputLibrary());
+        dragOperatorToCanvas(wait, "Optional boost", "risk:optionalBoost", "riskOptionalBoost", 140, 120);
+
+        waitForValue(wait, By.id("composer-dsl"), "result = ctx.score + null");
+        assertThat(valueOf(By.id("composer-dsl"))).doesNotContain("{{");
+    }
+
     private WebDriver newChromeDriverOrSkip() {
         ChromeOptions options = new ChromeOptions();
         options.addArguments(
@@ -488,6 +576,48 @@ class VisualAuthoringBrowserDomTest {
         waitForAnyText(wait, By.id("library-status"),
                 "Imported " + library.libraryId(),
                 "Replaced " + library.libraryId());
+    }
+
+    private static OperatorLibrary optionalLoweringInputLibrary() {
+        OperatorDefinition operator = new OperatorDefinition(
+                "bloge.visualOperator.v1",
+                "risk:optionalBoost",
+                "1.0.0",
+                new OperatorDefinition.Display("Optional boost",
+                        "Uses an optional lowering template input.",
+                        List.of("risk", "template")),
+                new OperatorDefinition.Source("user-library", "", "", "", true),
+                new OperatorDefinition.Ports(
+                        List.of(new OperatorDefinition.Port("inputs",
+                                SchemaEnvelope.object(Map.of(
+                                        "score", Map.of("type", "integer"),
+                                        "boost", Map.of("type", "integer")
+                                ), List.of("score")),
+                                true,
+                                "Score input.")),
+                        List.of(new OperatorDefinition.Port("output",
+                                SchemaEnvelope.object(Map.of(
+                                        "result", Map.of("type", "number")
+                                ), List.of("result")),
+                                true,
+                                "Boosted score output."))
+                ),
+                SchemaEnvelope.opaque(),
+                OperatorDefinition.Capabilities.pure(),
+                new OperatorDefinition.Lowering("transform", "transform", Map.of(
+                        "assignments", Map.of("result", "{{input.score}} + {{input.boost}}")
+                )),
+                List.of()
+        );
+        return new OperatorLibrary(
+                "bloge.visualOperatorLibrary.v1",
+                "risk-optional-lowering-input",
+                "Risk optional lowering input operators",
+                "1.0.0",
+                "risk-team",
+                "ACTIVE",
+                List.of(operator)
+        );
     }
 
     private static OperatorLibrary unsafeOutputLibrary() {
