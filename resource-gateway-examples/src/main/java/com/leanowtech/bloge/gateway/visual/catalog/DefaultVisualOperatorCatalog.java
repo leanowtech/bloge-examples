@@ -79,7 +79,7 @@ public class DefaultVisualOperatorCatalog implements VisualOperatorCatalog {
         if (operatorRef == null || operatorRef.isBlank()) {
             return Optional.empty();
         }
-        return list(OperatorCatalogQuery.all()).stream()
+        return list(new OperatorCatalogQuery("", List.of(), false, true)).stream()
                 .filter(operator -> operator.operatorRef().equals(operatorRef))
                 .findFirst();
     }

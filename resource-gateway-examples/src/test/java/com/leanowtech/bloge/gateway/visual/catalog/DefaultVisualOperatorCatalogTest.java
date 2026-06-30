@@ -112,6 +112,23 @@ class DefaultVisualOperatorCatalogTest {
         assertThat(catalog.find("risk:scoreFacts")).isEmpty();
     }
 
+    @Test
+    void resolvesDeprecatedLibraryOperatorsForStoredDrafts() {
+        InMemoryOperatorLibraryRegistry libraries = new InMemoryOperatorLibraryRegistry();
+        libraries.upsert(library("deprecated-policy", "DEPRECATED", VisualCatalogTestSupport.numericPassOperator()));
+        DefaultVisualOperatorCatalog catalog = new DefaultVisualOperatorCatalog(
+                VisualCatalogTestSupport.emptyResourceRegistry(),
+                new InMemoryResourceDesignContractRegistry(),
+                new ResourceVirtualOperatorProjector(),
+                libraries
+        );
+
+        assertThat(catalog.list(OperatorCatalogQuery.all()))
+                .extracting(OperatorDefinition::operatorRef)
+                .doesNotContain("risk:numericPass");
+        assertThat(catalog.find("risk:numericPass")).isPresent();
+    }
+
     private static OperatorLibrary library(String libraryId, String status, OperatorDefinition operator) {
         return new OperatorLibrary(
                 "bloge.visualOperatorLibrary.v1",
