@@ -6,6 +6,7 @@ import com.leanowtech.bloge.gateway.visual.catalog.VisualCatalogTestSupport;
 import com.leanowtech.bloge.gateway.visual.codegen.DslGenerationResult;
 import com.leanowtech.bloge.gateway.visual.diagnostic.VisualDiagnostic;
 import com.leanowtech.bloge.gateway.visual.draft.GraphDraft;
+import com.leanowtech.bloge.gateway.visual.model.SchemaEnvelope;
 import com.leanowtech.bloge.gateway.visual.publication.InMemoryVisualGraphPublicationRepository;
 import com.leanowtech.bloge.gateway.visual.publication.VisualGraphPublication;
 import com.leanowtech.bloge.gateway.visual.runtime.InMemoryVisualGraphRunRepository;
@@ -34,15 +35,102 @@ class VisualGraphGoldenCaseControllerTest {
         VisualGraphPublication publication = publications.create(publication());
         VisualGraphGoldenCaseController controller = controller(publications, new CapturingRunService(Map.of()));
 
-        ResponseEntity<VisualGraphGoldenCase> response = controller.save(goldenCase(publication.publicationId(),
+        ResponseEntity<?> response = controller.save(goldenCase(publication.publicationId(),
                 Map.of("approved", true)));
 
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
-        VisualGraphGoldenCase stored = response.getBody();
+        VisualGraphGoldenCase stored = (VisualGraphGoldenCase) response.getBody();
         assertThat(stored).isNotNull();
         assertThat(stored.caseId()).isNotBlank();
         assertThat(controller.list(publication.publicationId())).containsExactly(stored);
         assertThat(controller.get(stored.caseId()).getBody()).isEqualTo(stored);
+    }
+
+    @Test
+    void saveRejectsGoldenCaseWhenContextViolatesPublicationInputSchema() {
+        InMemoryVisualGraphPublicationRepository publications = new InMemoryVisualGraphPublicationRepository();
+        VisualGraphPublication publication = publications.create(publication());
+        VisualGraphGoldenCaseController controller = controller(publications, new CapturingRunService(Map.of()));
+        VisualGraphGoldenCase testCase = new VisualGraphGoldenCase("", "", publication.publicationId(),
+                "bad context", "", "eligibility", Map.of("score", "high"),
+                Map.of("approved", true), null);
+
+        ResponseEntity<?> response = controller.save(testCase);
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+        assertThat(response.getBody()).isInstanceOf(VisualValidationResult.class);
+        VisualValidationResult validation = (VisualValidationResult) response.getBody();
+        assertThat(validation.valid()).isFalse();
+        assertThat(validation.diagnostics())
+                .anySatisfy(diagnostic -> {
+                    assertThat(diagnostic.code()).isEqualTo("visual.context.typeMismatch");
+                    assertThat(diagnostic.target()).isEqualTo("/context/score");
+                });
+    }
+
+    @Test
+    void saveRejectsGoldenCaseWithUnsupportedSchemaVersion() {
+        InMemoryVisualGraphPublicationRepository publications = new InMemoryVisualGraphPublicationRepository();
+        VisualGraphPublication publication = publications.create(publication());
+        VisualGraphGoldenCaseController controller = controller(publications, new CapturingRunService(Map.of()));
+        VisualGraphGoldenCase testCase = new VisualGraphGoldenCase("bloge.visualGraphGoldenCase.v2", "",
+                publication.publicationId(), "future case", "", "eligibility",
+                Map.of("score", 720), Map.of("approved", true), null);
+
+        ResponseEntity<?> response = controller.save(testCase);
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+        assertThat(response.getBody()).isInstanceOf(VisualValidationResult.class);
+        VisualValidationResult validation = (VisualValidationResult) response.getBody();
+        assertThat(validation.valid()).isFalse();
+        assertThat(validation.diagnostics())
+                .anySatisfy(diagnostic -> {
+                    assertThat(diagnostic.code()).isEqualTo("visual.golden.schemaVersion.unsupported");
+                    assertThat(diagnostic.target()).isEqualTo("/schemaVersion");
+                });
+    }
+
+    @Test
+    void saveRejectsGoldenCaseWhenOutputNodeIsUnknown() {
+        InMemoryVisualGraphPublicationRepository publications = new InMemoryVisualGraphPublicationRepository();
+        VisualGraphPublication publication = publications.create(publication());
+        VisualGraphGoldenCaseController controller = controller(publications, new CapturingRunService(Map.of()));
+        VisualGraphGoldenCase testCase = new VisualGraphGoldenCase("", "", publication.publicationId(),
+                "bad output", "", "missingNode", Map.of("score", 720),
+                Map.of("approved", true), null);
+
+        ResponseEntity<?> response = controller.save(testCase);
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+        assertThat(response.getBody()).isInstanceOf(VisualValidationResult.class);
+        VisualValidationResult validation = (VisualValidationResult) response.getBody();
+        assertThat(validation.valid()).isFalse();
+        assertThat(validation.diagnostics())
+                .anySatisfy(diagnostic -> {
+                    assertThat(diagnostic.code()).isEqualTo("visual.golden.outputNode.unknown");
+                    assertThat(diagnostic.target()).isEqualTo("/outputNode");
+                });
+    }
+
+    @Test
+    void saveRejectsGoldenCaseWhenAssertionPathIsNotJsonPointer() {
+        InMemoryVisualGraphPublicationRepository publications = new InMemoryVisualGraphPublicationRepository();
+        VisualGraphPublication publication = publications.create(publication());
+        VisualGraphGoldenCaseController controller = controller(publications, new CapturingRunService(Map.of()));
+        VisualGraphGoldenCase testCase = goldenCaseWithAssertions(publication.publicationId(),
+                List.of(assertion(VisualGraphGoldenAssertion.Mode.PATH_EXISTS, "approved", null)));
+
+        ResponseEntity<?> response = controller.save(testCase);
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+        assertThat(response.getBody()).isInstanceOf(VisualValidationResult.class);
+        VisualValidationResult validation = (VisualValidationResult) response.getBody();
+        assertThat(validation.valid()).isFalse();
+        assertThat(validation.diagnostics())
+                .anySatisfy(diagnostic -> {
+                    assertThat(diagnostic.code()).isEqualTo("visual.golden.assertionInvalidPath");
+                    assertThat(diagnostic.target()).isEqualTo("/assertions/0/path");
+                });
     }
 
     @Test
@@ -52,8 +140,8 @@ class VisualGraphGoldenCaseControllerTest {
         InMemoryVisualGraphRunRepository runs = new InMemoryVisualGraphRunRepository();
         VisualGraphGoldenCaseController controller = controller(publications,
                 new CapturingRunService(Map.of("approved", true)), runs);
-        VisualGraphGoldenCase stored = controller.save(goldenCase(publication.publicationId(),
-                Map.of("approved", true))).getBody();
+        VisualGraphGoldenCase stored = saveCase(controller, goldenCase(publication.publicationId(),
+                Map.of("approved", true)));
 
         ResponseEntity<VisualGraphGoldenCaseRunResult> response = controller.run(stored.caseId());
 
@@ -74,12 +162,12 @@ class VisualGraphGoldenCaseControllerTest {
         VisualGraphPublication publication = publications.create(publication());
         VisualGraphGoldenCaseController controller = controller(publications,
                 new CapturingRunService(Map.of("approved", true, "decision", "APPROVED")));
-        VisualGraphGoldenCase stored = controller.save(goldenCaseWithAssertions(publication.publicationId(),
+        VisualGraphGoldenCase stored = saveCase(controller, goldenCaseWithAssertions(publication.publicationId(),
                 List.of(
                         assertion(VisualGraphGoldenAssertion.Mode.PATH_EQUALS, "/approved", true),
                         assertion(VisualGraphGoldenAssertion.Mode.PATH_EXISTS, "/decision", null),
                         assertion(VisualGraphGoldenAssertion.Mode.PATH_ABSENT, "/warnings", null)
-                ))).getBody();
+                )));
 
         ResponseEntity<VisualGraphGoldenCaseRunResult> response = controller.run(stored.caseId());
 
@@ -95,8 +183,8 @@ class VisualGraphGoldenCaseControllerTest {
         VisualGraphPublication publication = publications.create(publication());
         VisualGraphGoldenCaseController controller = controller(publications,
                 new CapturingRunService(Map.of("approved", false)));
-        VisualGraphGoldenCase stored = controller.save(goldenCaseWithAssertions(publication.publicationId(),
-                List.of(assertion(VisualGraphGoldenAssertion.Mode.PATH_EQUALS, "/approved", true)))).getBody();
+        VisualGraphGoldenCase stored = saveCase(controller, goldenCaseWithAssertions(publication.publicationId(),
+                List.of(assertion(VisualGraphGoldenAssertion.Mode.PATH_EQUALS, "/approved", true))));
 
         ResponseEntity<VisualGraphGoldenCaseRunResult> response = controller.run(stored.caseId());
 
@@ -114,10 +202,14 @@ class VisualGraphGoldenCaseControllerTest {
     void runGoldenCaseReturnsInvalidJsonPointerDiagnostic() {
         InMemoryVisualGraphPublicationRepository publications = new InMemoryVisualGraphPublicationRepository();
         VisualGraphPublication publication = publications.create(publication());
-        VisualGraphGoldenCaseController controller = controller(publications,
+        InMemoryVisualGraphGoldenCaseRepository goldenCases = new InMemoryVisualGraphGoldenCaseRepository();
+        VisualGraphGoldenCaseController controller = controller(goldenCases, publications,
                 new CapturingRunService(Map.of("approved", true)));
-        VisualGraphGoldenCase stored = controller.save(goldenCaseWithAssertions(publication.publicationId(),
-                List.of(assertion(VisualGraphGoldenAssertion.Mode.PATH_EXISTS, "approved", null)))).getBody();
+        VisualGraphGoldenCase stored = goldenCases.save(new VisualGraphGoldenCase("", "",
+                publication.publicationId(), "legacy bad assertion", "", "eligibility",
+                Map.of("score", 720), Map.of("legacy", "ignored"),
+                List.of(assertion(VisualGraphGoldenAssertion.Mode.PATH_EXISTS, "approved", null)),
+                null));
 
         ResponseEntity<VisualGraphGoldenCaseRunResult> response = controller.run(stored.caseId());
 
@@ -137,8 +229,8 @@ class VisualGraphGoldenCaseControllerTest {
         VisualGraphPublication publication = publications.create(publication());
         VisualGraphGoldenCaseController controller = controller(publications,
                 new CapturingRunService(Map.of("approved", false)));
-        VisualGraphGoldenCase stored = controller.save(goldenCase(publication.publicationId(),
-                Map.of("approved", true))).getBody();
+        VisualGraphGoldenCase stored = saveCase(controller, goldenCase(publication.publicationId(),
+                Map.of("approved", true)));
 
         ResponseEntity<VisualGraphGoldenCaseRunResult> response = controller.run(stored.caseId());
 
@@ -157,10 +249,10 @@ class VisualGraphGoldenCaseControllerTest {
         InMemoryVisualGraphRunRepository runs = new InMemoryVisualGraphRunRepository();
         VisualGraphGoldenCaseController controller = controller(publications,
                 new CapturingRunService(Map.of("approved", true)), runs);
-        VisualGraphGoldenCase passing = controller.save(goldenCase(publication.publicationId(),
-                Map.of("approved", true))).getBody();
-        VisualGraphGoldenCase failing = controller.save(goldenCase(publication.publicationId(),
-                Map.of("approved", false))).getBody();
+        VisualGraphGoldenCase passing = saveCase(controller, goldenCase(publication.publicationId(),
+                Map.of("approved", true)));
+        VisualGraphGoldenCase failing = saveCase(controller, goldenCase(publication.publicationId(),
+                Map.of("approved", false)));
 
         ResponseEntity<VisualGraphGoldenSuiteRunResult> response = controller.runPublication(publication.publicationId());
 
@@ -216,7 +308,7 @@ class VisualGraphGoldenCaseControllerTest {
         InMemoryVisualGraphRunRepository runs = new InMemoryVisualGraphRunRepository();
         VisualGraphGoldenCaseController controller = controller(publications,
                 new CapturingRunService(Map.of("approved", true)), runs);
-        controller.save(goldenCase(publication.publicationId(), Map.of("approved", true)));
+        saveCase(controller, goldenCase(publication.publicationId(), Map.of("approved", true)));
 
         ResponseEntity<VisualGraphGoldenCertification> response = controller.certify(publication.publicationId());
 
@@ -239,7 +331,7 @@ class VisualGraphGoldenCaseControllerTest {
         VisualGraphPublication publication = publications.create(publication());
         VisualGraphGoldenCaseController controller = controller(publications,
                 new CapturingRunService(Map.of("approved", false)));
-        controller.save(goldenCase(publication.publicationId(), Map.of("approved", true)));
+        saveCase(controller, goldenCase(publication.publicationId(), Map.of("approved", true)));
 
         ResponseEntity<VisualGraphGoldenCertification> response = controller.certify(publication.publicationId());
 
@@ -293,7 +385,7 @@ class VisualGraphGoldenCaseControllerTest {
         VisualGraphPublication publication = publications.create(publication());
         VisualGraphGoldenCaseController controller = controller(publications,
                 new CapturingRunService(Map.of()));
-        controller.save(goldenCase(publication.publicationId(), Map.of("approved", true)));
+        saveCase(controller, goldenCase(publication.publicationId(), Map.of("approved", true)));
 
         ResponseEntity<VisualGraphGoldenCertificationStatus> response =
                 controller.certificationStatus(publication.publicationId());
@@ -315,7 +407,7 @@ class VisualGraphGoldenCaseControllerTest {
         VisualGraphPublication publication = publications.create(publication());
         VisualGraphGoldenCaseController controller = controller(publications,
                 new CapturingRunService(Map.of("approved", true)));
-        controller.save(goldenCase(publication.publicationId(), Map.of("approved", true)));
+        saveCase(controller, goldenCase(publication.publicationId(), Map.of("approved", true)));
         VisualGraphGoldenCertification certification = controller.certify(publication.publicationId()).getBody();
 
         ResponseEntity<VisualGraphGoldenCertificationStatus> response =
@@ -337,7 +429,7 @@ class VisualGraphGoldenCaseControllerTest {
         VisualGraphPublication publication = publications.create(publication());
         VisualGraphGoldenCaseController controller = controller(publications,
                 new CapturingRunService(Map.of("approved", false)));
-        controller.save(goldenCase(publication.publicationId(), Map.of("approved", true)));
+        saveCase(controller, goldenCase(publication.publicationId(), Map.of("approved", true)));
         controller.certify(publication.publicationId());
 
         ResponseEntity<VisualGraphGoldenCertificationStatus> response =
@@ -359,9 +451,9 @@ class VisualGraphGoldenCaseControllerTest {
         VisualGraphPublication publication = publications.create(publication());
         VisualGraphGoldenCaseController controller = controller(publications,
                 new CapturingRunService(Map.of("approved", true)));
-        controller.save(goldenCase(publication.publicationId(), Map.of("approved", true)));
+        saveCase(controller, goldenCase(publication.publicationId(), Map.of("approved", true)));
         VisualGraphGoldenCertification certification = controller.certify(publication.publicationId()).getBody();
-        controller.save(new VisualGraphGoldenCase("", "", publication.publicationId(), "declined approval",
+        saveCase(controller, new VisualGraphGoldenCase("", "", publication.publicationId(), "declined approval",
                 "", "eligibility", Map.of("score", 500), Map.of("approved", false), null));
 
         ResponseEntity<VisualGraphGoldenCertificationStatus> response =
@@ -386,10 +478,10 @@ class VisualGraphGoldenCaseControllerTest {
         VisualGraphPublication publication = publications.create(publication());
         VisualGraphGoldenCaseController controller = controller(publications,
                 new CapturingRunService(Map.of("approved", true)));
-        VisualGraphGoldenCase stored = controller.save(goldenCase(publication.publicationId(),
-                Map.of("approved", true))).getBody();
+        VisualGraphGoldenCase stored = saveCase(controller, goldenCase(publication.publicationId(),
+                Map.of("approved", true)));
         VisualGraphGoldenCertification certification = controller.certify(publication.publicationId()).getBody();
-        controller.save(new VisualGraphGoldenCase("", stored.caseId(), publication.publicationId(),
+        saveCase(controller, new VisualGraphGoldenCase("", stored.caseId(), publication.publicationId(),
                 stored.name(), stored.description(), stored.outputNode(), stored.context(),
                 stored.expectedOutput(), List.of(assertion(VisualGraphGoldenAssertion.Mode.PATH_EQUALS,
                         "/approved", true)), stored.createdAt()));
@@ -414,16 +506,37 @@ class VisualGraphGoldenCaseControllerTest {
                 .isEqualTo(HttpStatus.NOT_FOUND);
     }
 
+    private static VisualGraphGoldenCase saveCase(VisualGraphGoldenCaseController controller,
+                                                  VisualGraphGoldenCase testCase) {
+        ResponseEntity<?> response = controller.save(testCase);
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat(response.getBody()).isInstanceOf(VisualGraphGoldenCase.class);
+        return (VisualGraphGoldenCase) response.getBody();
+    }
+
     private static VisualGraphGoldenCaseController controller(InMemoryVisualGraphPublicationRepository publications,
                                                              VisualGraphRunService runner) {
         return controller(publications, runner, new InMemoryVisualGraphRunRepository());
     }
 
+    private static VisualGraphGoldenCaseController controller(InMemoryVisualGraphGoldenCaseRepository goldenCases,
+                                                             InMemoryVisualGraphPublicationRepository publications,
+                                                             VisualGraphRunService runner) {
+        return controller(goldenCases, publications, runner, new InMemoryVisualGraphRunRepository());
+    }
+
     private static VisualGraphGoldenCaseController controller(InMemoryVisualGraphPublicationRepository publications,
                                                              VisualGraphRunService runner,
                                                              InMemoryVisualGraphRunRepository runs) {
+        return controller(new InMemoryVisualGraphGoldenCaseRepository(), publications, runner, runs);
+    }
+
+    private static VisualGraphGoldenCaseController controller(InMemoryVisualGraphGoldenCaseRepository goldenCases,
+                                                             InMemoryVisualGraphPublicationRepository publications,
+                                                             VisualGraphRunService runner,
+                                                             InMemoryVisualGraphRunRepository runs) {
         return new VisualGraphGoldenCaseController(
-                new InMemoryVisualGraphGoldenCaseRepository(),
+                goldenCases,
                 publications,
                 runner,
                 runs,
@@ -460,7 +573,7 @@ class VisualGraphGoldenCaseControllerTest {
                 "",
                 "",
                 "",
-                null,
+                SchemaEnvelope.object(Map.of("score", Map.of("type", "integer")), List.of("score")),
                 List.of(new GraphDraft.DraftNode(
                         "eligibility",
                         "risk:eligibility",

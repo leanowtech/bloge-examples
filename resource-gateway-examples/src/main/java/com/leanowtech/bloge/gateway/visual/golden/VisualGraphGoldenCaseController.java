@@ -5,12 +5,15 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.SerializationFeature;
 import com.leanowtech.bloge.gateway.visual.diagnostic.VisualDiagnostic;
+import com.leanowtech.bloge.gateway.visual.draft.GraphDraft;
 import com.leanowtech.bloge.gateway.visual.publication.VisualGraphPublication;
 import com.leanowtech.bloge.gateway.visual.publication.VisualGraphPublicationRepository;
 import com.leanowtech.bloge.gateway.visual.runtime.VisualGraphRunResponse;
 import com.leanowtech.bloge.gateway.visual.runtime.VisualGraphRunRecord;
 import com.leanowtech.bloge.gateway.visual.runtime.VisualGraphRunRepository;
 import com.leanowtech.bloge.gateway.visual.runtime.VisualGraphRunService;
+import com.leanowtech.bloge.gateway.visual.validation.VisualSchemaValidator;
+import com.leanowtech.bloge.gateway.visual.validation.VisualValidationResult;
 
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -31,6 +34,7 @@ import java.util.HexFormat;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 
 /**
  * Public API for golden regression cases bound to immutable visual graph publications.
@@ -99,10 +103,17 @@ public class VisualGraphGoldenCaseController {
      * @return stored case when publication exists
      */
     @PostMapping
-    public ResponseEntity<VisualGraphGoldenCase> save(@RequestBody VisualGraphGoldenCase testCase) {
-        if (testCase == null || testCase.publicationId().isBlank()
-                || publicationRepository.find(testCase.publicationId()).isEmpty()) {
+    public ResponseEntity<?> save(@RequestBody VisualGraphGoldenCase testCase) {
+        if (testCase == null || testCase.publicationId().isBlank()) {
             return ResponseEntity.notFound().build();
+        }
+        Optional<VisualGraphPublication> publication = publicationRepository.find(testCase.publicationId());
+        if (publication.isEmpty()) {
+            return ResponseEntity.notFound().build();
+        }
+        VisualValidationResult validation = validateGoldenCase(testCase, publication.get());
+        if (!validation.valid()) {
+            return ResponseEntity.badRequest().body(validation);
         }
         return ResponseEntity.ok(repository.save(testCase));
     }
@@ -221,6 +232,57 @@ public class VisualGraphGoldenCaseController {
                     "/results"));
         }
         return VisualGraphGoldenSuiteRunResult.from(publication.publicationId(), results, diagnostics);
+    }
+
+    private VisualValidationResult validateGoldenCase(VisualGraphGoldenCase testCase,
+                                                      VisualGraphPublication publication) {
+        List<VisualDiagnostic> diagnostics = new ArrayList<>();
+        if (!VisualGraphGoldenCase.SCHEMA_VERSION.equals(testCase.schemaVersion())) {
+            diagnostics.add(VisualDiagnostic.error("visual.golden.schemaVersion.unsupported",
+                    "Golden case schemaVersion '%s' is unsupported; visual authoring supports '%s'."
+                            .formatted(testCase.schemaVersion(), VisualGraphGoldenCase.SCHEMA_VERSION),
+                    "/schemaVersion"));
+        }
+        GraphDraft draft = publication.draft();
+        if (draft != null) {
+            validateGoldenOutputNode(testCase, draft, diagnostics);
+            diagnostics.addAll(VisualSchemaValidator.validateValue(draft.inputSchema(), testCase.context(),
+                    "/context"));
+        }
+        validateGoldenAssertions(testCase, diagnostics);
+        return new VisualValidationResult(false, diagnostics);
+    }
+
+    private static void validateGoldenOutputNode(VisualGraphGoldenCase testCase,
+                                                 GraphDraft draft,
+                                                 List<VisualDiagnostic> diagnostics) {
+        if (testCase.outputNode().isBlank()) {
+            return;
+        }
+        boolean known = draft.nodes().stream()
+                .anyMatch(node -> node.id().equals(testCase.outputNode()));
+        if (known) {
+            return;
+        }
+        diagnostics.add(VisualDiagnostic.error("visual.golden.outputNode.unknown",
+                "Golden case outputNode '%s' does not exist in publication '%s'."
+                        .formatted(testCase.outputNode(), testCase.publicationId()),
+                "/outputNode"));
+    }
+
+    private void validateGoldenAssertions(VisualGraphGoldenCase testCase,
+                                          List<VisualDiagnostic> diagnostics) {
+        for (int i = 0; i < testCase.assertions().size(); i++) {
+            VisualGraphGoldenAssertion assertion = testCase.assertions().get(i);
+            if (assertion.mode() == VisualGraphGoldenAssertion.Mode.OUTPUT_EQUALS
+                    || validJsonPointer(assertion.path())) {
+                continue;
+            }
+            diagnostics.add(VisualDiagnostic.error("visual.golden.assertionInvalidPath",
+                    "Golden case '%s' assertion path '%s' is not a JSON Pointer."
+                            .formatted(testCase.caseId(), assertion.path()),
+                    "/assertions/%d/path".formatted(i)));
+        }
     }
 
     private List<VisualGraphGoldenCase> goldenCasesFor(String publicationId) {
