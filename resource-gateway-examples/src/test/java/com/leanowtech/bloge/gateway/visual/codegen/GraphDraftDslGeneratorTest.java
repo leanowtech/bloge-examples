@@ -138,7 +138,7 @@ class GraphDraftDslGeneratorTest {
                                 "score", GraphDraft.Binding.contextPath("score"),
                                 "amount", GraphDraft.Binding.contextPath("amount")
                         ),
-                        Map.of(),
+                        Map.of("publicationId", "evil-publication", "outputNode", "tamperedOutput"),
                         null
                 )),
                 List.of(),
@@ -616,6 +616,8 @@ class GraphDraftDslGeneratorTest {
         assertThat(result.dsl()).contains("score = ctx.score");
         assertThat(result.dsl()).contains("amount = ctx.amount");
         assertThat(result.dsl()).contains("config = { publicationId: \"pub-eligibility\" }");
+        assertThat(result.dsl()).doesNotContain("evil-publication");
+        assertThat(result.dsl()).doesNotContain("outputNode");
 
         DefaultOperatorRegistry registry = new DefaultOperatorRegistry();
         registry.registerRaw(VisualGraphPublicationOperator.NAME, new StubOperator());

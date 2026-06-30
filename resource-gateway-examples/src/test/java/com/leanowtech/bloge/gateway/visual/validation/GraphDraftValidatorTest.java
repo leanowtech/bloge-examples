@@ -3128,6 +3128,58 @@ class GraphDraftValidatorTest {
     }
 
     @Test
+    void rejectsServiceManagedConfigForPublicationBackedOperators() {
+        GraphDraftValidator validator = new GraphDraftValidator(
+                VisualCatalogTestSupport.catalogWithLibrary(publicationPolicyLibrary()));
+        GraphDraft draft = new GraphDraft(
+                "",
+                "",
+                0,
+                "publishedPolicyComposition",
+                "",
+                "",
+                "",
+                "",
+                graphInputSchema(
+                        Map.of(
+                                "score", Map.of("type", "integer"),
+                                "amount", Map.of("type", "number")
+                        ),
+                        List.of("score", "amount")
+                ),
+                List.of(new GraphDraft.DraftNode(
+                        "publishedEligibility",
+                        "publication:pub-eligibility",
+                        "",
+                        Map.of(
+                                "score", GraphDraft.Binding.contextPath("score"),
+                                "amount", GraphDraft.Binding.contextPath("amount")
+                        ),
+                        Map.of("publicationId", "evil-publication", "outputNode", "tamperedOutput"),
+                        null
+                )),
+                List.of(),
+                Map.of(),
+                new GraphDraft.OutputSelection("publishedEligibility", "")
+        );
+
+        VisualValidationResult result = validator.validate(draft);
+
+        assertThat(result.valid()).isFalse();
+        assertThat(result.diagnostics())
+                .anySatisfy(diagnostic -> {
+                    assertThat(diagnostic.code()).isEqualTo("visual.config.serviceManaged");
+                    assertThat(diagnostic.target()).isEqualTo("/nodes/0/config/publicationId");
+                    assertThat(diagnostic.message()).contains("publicationId").contains("service-managed");
+                })
+                .anySatisfy(diagnostic -> {
+                    assertThat(diagnostic.code()).isEqualTo("visual.config.serviceManaged");
+                    assertThat(diagnostic.target()).isEqualTo("/nodes/0/config/outputNode");
+                    assertThat(diagnostic.message()).contains("outputNode").contains("service-managed");
+                });
+    }
+
+    @Test
     void acceptsStructuredConfigExpressionWhenPureContextReferenceMatchesConfigSchema() {
         GraphDraftValidator validator = new GraphDraftValidator(
                 VisualCatalogTestSupport.catalogWithLibrary(
@@ -5886,6 +5938,45 @@ class GraphDraftValidatorTest {
         return List.of(
                 Map.of("type", "integer"),
                 Map.of("type", "string")
+        );
+    }
+
+    private static OperatorLibrary publicationPolicyLibrary() {
+        Map<String, Object> inputProperties = new LinkedHashMap<>();
+        inputProperties.put("score", Map.of("type", "integer"));
+        inputProperties.put("amount", Map.of("type", "number"));
+        OperatorDefinition operator = new OperatorDefinition(
+                "bloge.visualOperator.v1",
+                "publication:pub-eligibility",
+                "7",
+                new OperatorDefinition.Display("Published eligibility",
+                        "Invokes a frozen published visual graph.",
+                        List.of("publication", "subgraph")),
+                new OperatorDefinition.Source("visual-publication", "", "", "", true),
+                new OperatorDefinition.Ports(
+                        List.of(new OperatorDefinition.Port("inputs",
+                                SchemaEnvelope.object(inputProperties, List.of("score", "amount")),
+                                true,
+                                "Published graph inputs.")),
+                        List.of(new OperatorDefinition.Port("output",
+                                SchemaEnvelope.object(Map.of("eligible", Map.of("type", "boolean")), List.of()),
+                                true,
+                                "Published graph output."))
+                ),
+                SchemaEnvelope.opaque(),
+                OperatorDefinition.Capabilities.pure(),
+                new OperatorDefinition.Lowering("native", "visualPublication",
+                        Map.of("publicationId", "pub-eligibility")),
+                List.of()
+        );
+        return new OperatorLibrary(
+                "bloge.visualOperatorLibrary.v1",
+                "published-visual-graphs",
+                "Published visual graphs",
+                "1.0.0",
+                "risk-team",
+                "ACTIVE",
+                List.of(operator)
         );
     }
 

@@ -49,10 +49,14 @@ public class VisualGraphPublicationOperator implements Operator<Object, Object> 
     public Object execute(Object input, OperatorContext ctx) {
         Map<String, Object> rawInput = objectMap(input);
         Map<String, Object> config = objectMap(rawInput.remove("config"));
-        String publicationId = firstText(config.get("publicationId"), rawInput.remove("publicationId"));
-        if (publicationId.isBlank()) {
+        String resolvedPublicationId = firstText(config.get("publicationId"));
+        if (resolvedPublicationId.isBlank()) {
+            resolvedPublicationId = firstText(rawInput.remove("publicationId"));
+        }
+        if (resolvedPublicationId.isBlank()) {
             throw new IllegalArgumentException("visualPublication input config.publicationId is required.");
         }
+        String publicationId = resolvedPublicationId;
 
         VisualGraphPublication publication = repository.find(publicationId)
                 .orElseThrow(() -> new IllegalArgumentException(

@@ -47,6 +47,7 @@ public class GraphDraftValidator {
             GraphDraft.SCHEMA_VERSION
     );
     private static final Set<String> SUPPORTED_EDGE_KINDS = Set.of("data", "dependency", "route");
+    private static final Set<String> SERVICE_MANAGED_PUBLICATION_CONFIG_KEYS = Set.of("publicationId", "outputNode");
     private static final String IDENTIFIER_PATTERN = "[A-Za-z_][A-Za-z0-9_]*";
     private static final String PATH_PATTERN = IDENTIFIER_PATTERN + "(?:\\." + IDENTIFIER_PATTERN + ")*";
     private static final Pattern PURE_CONTEXT_REFERENCE = Pattern.compile("^ctx(?:\\.(" + PATH_PATTERN + "))?$");
@@ -1942,7 +1943,23 @@ public class GraphDraftValidator {
                                        OperatorDefinition operator,
                                        String nodePath,
                                        List<VisualDiagnostic> diagnostics) {
+        if ("visual-publication".equals(operator.source().kind())) {
+            rejectServiceManagedPublicationConfig(node, nodePath, diagnostics);
+        }
         validateConfigValue(node.config(), operator.configSchema().schema(), nodePath + "/config", diagnostics);
+    }
+
+    private static void rejectServiceManagedPublicationConfig(GraphDraft.DraftNode node,
+                                                              String nodePath,
+                                                              List<VisualDiagnostic> diagnostics) {
+        for (String key : SERVICE_MANAGED_PUBLICATION_CONFIG_KEYS) {
+            if (node.config().containsKey(key)) {
+                diagnostics.add(VisualDiagnostic.error("visual.config.serviceManaged",
+                        "Publication-backed operator config '%s' is service-managed and cannot be authored in draft config."
+                                .formatted(key),
+                        nodePath + "/config/" + key));
+            }
+        }
     }
 
     private static void validateConfigValue(Object value,

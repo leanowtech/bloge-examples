@@ -411,6 +411,71 @@ class VisualGraphRunServiceTest {
     }
 
     @Test
+    void preservesPublicationIdBusinessInputForReusableSubgraphOperator() {
+        InMemoryVisualGraphPublicationRepository publications = new InMemoryVisualGraphPublicationRepository();
+        VisualGraphPublication publication = publications.create(publishedPublicationIdEchoGraph());
+        VisualGraphRunService frozenPublicationRunner = new VisualGraphRunService(
+                null,
+                null,
+                new DynamicGatewayComposerService(MockOperator.returning(null))
+        );
+        VisualGraphPublicationOperator publicationOperator = new VisualGraphPublicationOperator(
+                publications,
+                providerFor(frozenPublicationRunner)
+        );
+        DefaultOperatorRegistry runtimeRegistry = new DefaultOperatorRegistry();
+        runtimeRegistry.registerRaw(VisualGraphPublicationOperator.NAME, publicationOperator);
+        VisualOperatorCatalog catalog = new DefaultVisualOperatorCatalog(
+                VisualCatalogTestSupport.emptyResourceRegistry(),
+                new InMemoryResourceDesignContractRegistry(),
+                new ResourceVirtualOperatorProjector(),
+                OperatorLibraryRegistry.empty(),
+                JavaOperatorInventoryProjector.forRegistry(new DefaultOperatorRegistry()),
+                publications,
+                new VisualGraphPublicationOperatorProjector()
+        );
+        VisualGraphRunService service = new VisualGraphRunService(
+                new GraphDraftValidator(catalog),
+                new GraphDraftDslGenerator(catalog),
+                new DynamicGatewayComposerService(runtimeRegistry)
+        );
+        OperatorDefinition operator = catalog.find(VisualGraphPublicationOperatorProjector.operatorRef(
+                publication.publicationId())).orElseThrow();
+        GraphDraft draft = new GraphDraft(
+                "",
+                "outer-publication-id-draft",
+                1,
+                "outerPublicationIdComposition",
+                "",
+                "",
+                "",
+                "",
+                SchemaEnvelope.object(Map.of("publicationId", Map.of("type", "string")), List.of("publicationId")),
+                List.of(new GraphDraft.DraftNode(
+                        "publishedEcho",
+                        operator.operatorRef(),
+                        "",
+                        Map.of("publicationId", GraphDraft.Binding.contextPath("publicationId")),
+                        Map.of(),
+                        null
+                )),
+                List.of(),
+                Map.of(),
+                new GraphDraft.OutputSelection("publishedEcho", ""),
+                Map.of("publishedEcho", operator.fingerprint())
+        );
+
+        VisualGraphRunResponse response = service.run(draft, Map.of("publicationId", "business-pub-id"), "");
+
+        assertThat(response.validated()).isTrue();
+        assertThat(response.compiled()).isTrue();
+        assertThat(response.errors()).isEmpty();
+        assertThat(response.success()).isTrue();
+        assertThat(response.generatedDsl()).contains("config = { publicationId: \"pub-publication-id-echo\" }");
+        assertThat(response.output()).isEqualTo("business-pub-id");
+    }
+
+    @Test
     void rejectsPublishedRunWhenContextViolatesFrozenInputSchema() {
         VisualGraphRunService service = new VisualGraphRunService(
                 null,
@@ -575,6 +640,76 @@ class VisualGraphRunServiceTest {
         return new VisualGraphPublication(
                 "",
                 "pub-score",
+                draft.draftId(),
+                draft.revision(),
+                draft.graphName(),
+                draft.tenantId(),
+                draft.namespace(),
+                draft.environment(),
+                null,
+                draft,
+                List.of(transformSnapshot),
+                draft.operatorFingerprints(),
+                Map.of(),
+                frozenDsl,
+                new VisualValidationResult(true, List.of()),
+                new DslGenerationResult(true, frozenDsl, List.of())
+        );
+    }
+
+    private static VisualGraphPublication publishedPublicationIdEchoGraph() {
+        OperatorDefinition transformSnapshot = new OperatorDefinition(
+                "bloge.visualOperator.v1",
+                "bloge:transform",
+                "1.0.0",
+                new OperatorDefinition.Display("Transform", "Published transform snapshot.", List.of("logic")),
+                OperatorDefinition.Source.builtIn("bloge-dsl"),
+                new OperatorDefinition.Ports(
+                        List.of(new OperatorDefinition.Port("inputs", SchemaEnvelope.opaque(), false,
+                                "Inputs.")),
+                        List.of(new OperatorDefinition.Port("output",
+                                SchemaEnvelope.object(Map.of("publicationId", Map.of("type", "string")), List.of()),
+                                true,
+                                "Publication id echo output."))
+                ),
+                SchemaEnvelope.opaque(),
+                OperatorDefinition.Capabilities.pure(),
+                new OperatorDefinition.Lowering("dsl", "transform", Map.of()),
+                List.of()
+        );
+        GraphDraft draft = new GraphDraft(
+                "",
+                "draft-publication-id-echo",
+                1,
+                "publishedPublicationIdEcho",
+                "",
+                "",
+                "",
+                "",
+                SchemaEnvelope.object(Map.of("publicationId", Map.of("type", "string")), List.of("publicationId")),
+                List.of(new GraphDraft.DraftNode(
+                        "response",
+                        "bloge:transform",
+                        "",
+                        Map.of("publicationId", GraphDraft.Binding.contextPath("publicationId")),
+                        Map.of(),
+                        null
+                )),
+                List.of(),
+                Map.of(),
+                new GraphDraft.OutputSelection("response", "publicationId"),
+                Map.of("response", transformSnapshot.fingerprint())
+        );
+        String frozenDsl = """
+                graph publishedPublicationIdEcho {
+                  transform response {
+                    publicationId = ctx.publicationId
+                  }
+                }
+                """;
+        return new VisualGraphPublication(
+                "",
+                "pub-publication-id-echo",
                 draft.draftId(),
                 draft.revision(),
                 draft.graphName(),
