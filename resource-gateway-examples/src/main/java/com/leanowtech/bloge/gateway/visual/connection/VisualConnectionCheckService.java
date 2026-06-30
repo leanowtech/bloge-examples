@@ -1,5 +1,7 @@
 package com.leanowtech.bloge.gateway.visual.connection;
 
+import com.leanowtech.bloge.gateway.visual.catalog.OperatorDefinition;
+import com.leanowtech.bloge.gateway.visual.catalog.VisualOperatorCatalog;
 import com.leanowtech.bloge.gateway.visual.diagnostic.VisualDiagnostic;
 import com.leanowtech.bloge.gateway.visual.draft.GraphDraft;
 import com.leanowtech.bloge.gateway.visual.validation.GraphDraftValidator;
@@ -11,6 +13,9 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
+import java.util.regex.Pattern;
+import java.util.regex.PatternSyntaxException;
 import java.util.function.Predicate;
 
 /**
@@ -24,12 +29,15 @@ public class VisualConnectionCheckService {
     private static final String CONFIG_TARGET_PORT = "config";
 
     private final GraphDraftValidator validator;
+    private final VisualOperatorCatalog catalog;
 
     /**
      * @param validator graph draft validator
+     * @param catalog visual operator catalog
      */
-    public VisualConnectionCheckService(GraphDraftValidator validator) {
+    public VisualConnectionCheckService(GraphDraftValidator validator, VisualOperatorCatalog catalog) {
         this.validator = validator;
+        this.catalog = catalog;
     }
 
     /**
@@ -77,7 +85,7 @@ public class VisualConnectionCheckService {
                             "/target/nodeId")
             ));
         }
-        String inputKey = previewBindingKey(request.target());
+        String inputKey = previewBindingKey(request.draft(), request.target());
         GraphDraft.Binding binding = GraphDraft.Binding.nodePath(
                 request.source().nodeId(),
                 request.source().port(),
@@ -96,7 +104,7 @@ public class VisualConnectionCheckService {
                 diagnostic -> relevantToConnection(diagnostic, previewIndex, bindingPath, operatorPath,
                         request, nodeIndexes));
         return new VisualConnectionCheckResult(diagnostics.stream().noneMatch(VisualDiagnostic::error),
-                edge, diagnostics);
+                edge, inputKey, diagnostics);
     }
 
     private VisualConnectionCheckResult checkDependencyEdge(VisualConnectionCheckRequest request,
@@ -193,7 +201,7 @@ public class VisualConnectionCheckService {
             ));
         }
 
-        String inputKey = previewBindingKey(request.target());
+        String inputKey = previewBindingKey(request.draft(), request.target());
         GraphDraft.Binding binding = GraphDraft.Binding.contextPath(
                 request.source().path(),
                 request.target().port(),
@@ -207,7 +215,7 @@ public class VisualConnectionCheckService {
         List<VisualDiagnostic> diagnostics = preflightDiagnostics(validation,
                 diagnostic -> relevantToContextBinding(diagnostic, bindingPath, operatorPath));
         return new VisualConnectionCheckResult(diagnostics.stream().noneMatch(VisualDiagnostic::error),
-                edge, diagnostics);
+                edge, inputKey, diagnostics);
     }
 
     private static GraphDraft draftWithPreviewEdge(GraphDraft draft, GraphDraft.DraftEdge edge) {
@@ -428,11 +436,155 @@ public class VisualConnectionCheckService {
         return -1;
     }
 
-    private static String previewBindingKey(GraphDraft.Endpoint target) {
+    private String previewBindingKey(GraphDraft draft, GraphDraft.Endpoint target) {
         if (target.path() != null && !target.path().isBlank()) {
+            if (!target.port().isBlank() && inputPathDeclaredByMultiplePorts(draft, target.nodeId(), target.path())) {
+                return target.port() + "." + target.path();
+            }
             return target.path();
         }
         return target.port() == null || target.port().isBlank() ? "input" : target.port();
+    }
+
+    private boolean inputPathDeclaredByMultiplePorts(GraphDraft draft, String nodeId, String path) {
+        Optional<OperatorDefinition> operator = targetOperator(draft, nodeId);
+        if (operator.isEmpty()) {
+            return false;
+        }
+        long matches = operator.get().ports().inputs().stream()
+                .filter(port -> schemaAtPath(port.schema().schema(), path) != null)
+                .limit(2)
+                .count();
+        return matches > 1;
+    }
+
+    private Optional<OperatorDefinition> targetOperator(GraphDraft draft, String nodeId) {
+        return draft.nodes().stream()
+                .filter(node -> node.id().equals(nodeId))
+                .findFirst()
+                .flatMap(node -> catalog.find(node.operatorRef()));
+    }
+
+    private static Map<String, Object> schemaAtPath(Map<String, Object> schema, String path) {
+        if (path == null || path.isBlank()) {
+            return schema;
+        }
+        Map<String, Object> current = schema == null ? Map.of() : schema;
+        for (String segment : path.split("\\.")) {
+            if (segment.isBlank()) {
+                continue;
+            }
+            if ("array".equals(schemaType(current))) {
+                Integer index = arrayIndexSegment(segment);
+                if (index == null) {
+                    return null;
+                }
+                Map<String, Object> item = arrayItemSchemaForIndex(current, index);
+                if (item == null) {
+                    return null;
+                }
+                current = item;
+                continue;
+            }
+            Map<String, Object> properties = propertiesOf(current);
+            Map<String, Object> next = objectSchema(properties.get(segment));
+            if (next == null) {
+                next = patternPropertySchema(current, segment);
+            }
+            if (next == null) {
+                next = additionalPropertySchema(current);
+            }
+            if (next == null) {
+                return null;
+            }
+            current = next;
+        }
+        return current;
+    }
+
+    private static Map<String, Object> arrayItemSchemaForIndex(Map<String, Object> schema, int index) {
+        Object prefixItems = schema.get("prefixItems");
+        if (prefixItems instanceof List<?> list && index < list.size()) {
+            return objectSchema(list.get(index));
+        }
+        return objectSchema(schema.get("items"));
+    }
+
+    private static Integer arrayIndexSegment(String segment) {
+        try {
+            int index = Integer.parseInt(segment);
+            return index < 0 ? null : index;
+        } catch (NumberFormatException ex) {
+            return null;
+        }
+    }
+
+    private static Map<String, Object> patternPropertySchema(Map<String, Object> schema, String propertyName) {
+        List<Map<String, Object>> matches = new ArrayList<>();
+        for (Map.Entry<String, Object> entry : propertiesMap(schema.get("patternProperties")).entrySet()) {
+            try {
+                if (Pattern.compile(entry.getKey()).matcher(propertyName).find()) {
+                    Map<String, Object> candidate = objectSchema(entry.getValue());
+                    if (candidate != null) {
+                        matches.add(candidate);
+                    }
+                }
+            } catch (PatternSyntaxException ignored) {
+                return null;
+            }
+        }
+        return matches.size() == 1 ? matches.getFirst() : null;
+    }
+
+    private static Map<String, Object> additionalPropertySchema(Map<String, Object> schema) {
+        Object additional = schema.get("additionalProperties");
+        if (Boolean.TRUE.equals(additional)) {
+            return Map.of();
+        }
+        return objectSchema(additional);
+    }
+
+    private static Map<String, Object> propertiesOf(Map<String, Object> schema) {
+        return propertiesMap(schema.get("properties"));
+    }
+
+    private static Map<String, Object> propertiesMap(Object raw) {
+        if (!(raw instanceof Map<?, ?> map)) {
+            return Map.of();
+        }
+        Map<String, Object> properties = new LinkedHashMap<>();
+        map.forEach((key, value) -> properties.put(String.valueOf(key), value));
+        return properties;
+    }
+
+    private static Map<String, Object> objectSchema(Object raw) {
+        if (!(raw instanceof Map<?, ?> map)) {
+            return null;
+        }
+        Map<String, Object> schema = new LinkedHashMap<>();
+        map.forEach((key, value) -> schema.put(String.valueOf(key), value));
+        return schema;
+    }
+
+    private static String schemaType(Map<String, Object> schema) {
+        Object type = schema.get("kind");
+        if (type == null) {
+            type = schema.get("type");
+        }
+        if (type instanceof List<?> types) {
+            return types.stream()
+                    .filter(item -> item != null && !"null".equals(String.valueOf(item)))
+                    .map(String::valueOf)
+                    .findFirst()
+                    .orElse("null");
+        }
+        if (type == null && schema.containsKey("properties")) {
+            return "object";
+        }
+        if (type == null && schema.containsKey("items")) {
+            return "array";
+        }
+        return type == null ? "" : String.valueOf(type);
     }
 
     private static boolean relevantToConnection(VisualDiagnostic diagnostic,

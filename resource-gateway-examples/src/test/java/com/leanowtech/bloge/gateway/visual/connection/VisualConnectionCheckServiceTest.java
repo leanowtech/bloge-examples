@@ -356,6 +356,24 @@ class VisualConnectionCheckServiceTest {
     }
 
     @Test
+    void returnsPortQualifiedBindingKeyForDuplicateInputPathPorts() {
+        VisualConnectionCheckService service = connectionService(VisualCatalogTestSupport
+                .catalogWithLibrary(VisualCatalogTestSupport.duplicateInputPathLibrary()));
+        GraphDraft draft = customerOrderMergeDraft();
+
+        VisualConnectionCheckResult result = service.check(new VisualConnectionCheckRequest(
+                draft,
+                new GraphDraft.Endpoint("__ctx", "ctx", "customer.id"),
+                new GraphDraft.Endpoint("merge", "customer", "id"),
+                "data"
+        ));
+
+        assertThat(result.accepted()).isTrue();
+        assertThat(result.diagnostics()).isEmpty();
+        assertThat(result.bindingKey()).isEqualTo("customer.id");
+    }
+
+    @Test
     void acceptsNodeOutputRootPortPickerBinding() {
         VisualConnectionCheckService service = connectionService(VisualCatalogTestSupport
                 .catalogWithLibrary(VisualCatalogTestSupport.rootObjectPortLibrary()));
@@ -640,7 +658,7 @@ class VisualConnectionCheckServiceTest {
     }
 
     private static VisualConnectionCheckService connectionService(DefaultVisualOperatorCatalog catalog) {
-        return new VisualConnectionCheckService(new GraphDraftValidator(catalog));
+        return new VisualConnectionCheckService(new GraphDraftValidator(catalog), catalog);
     }
 
     private static SchemaEnvelope graphInputSchema() {

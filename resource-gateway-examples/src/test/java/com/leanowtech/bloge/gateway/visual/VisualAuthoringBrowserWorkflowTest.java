@@ -101,6 +101,7 @@ class VisualAuthoringBrowserWorkflowTest {
         assertThat(connectionResponse.getStatusCode()).isEqualTo(HttpStatusCode.valueOf(200));
         assertThat(connectionResponse.getBody()).isNotNull();
         assertThat(connectionResponse.getBody().accepted()).isTrue();
+        assertThat(connectionResponse.getBody().bindingKey()).isEqualTo("score");
         assertThat(connectionResponse.getBody().diagnostics()).isEmpty();
 
         ResponseEntity<GraphDraft> createResponse = restTemplate.postForEntity(
@@ -297,6 +298,8 @@ class VisualAuthoringBrowserWorkflowTest {
         assertThat(app.getBody())
                 .contains("loadVisualOperatorCatalog")
                 .contains("/api/visual/connections/check")
+                .contains("bindingKey")
+                .contains("targetWithServerBindingKey")
                 .contains("/api/visual/drafts/run")
                 .contains("/api/visual/drafts/import")
                 .contains("/export")

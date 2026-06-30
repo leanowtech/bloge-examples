@@ -3641,9 +3641,10 @@ function renderSelectedOperatorEditor() {
       try {
         const serverCheck = await checkVisualConnectionOnServer(source, bindingTarget);
         if (serverCheck.accepted) {
-          applyConnection(source, bindingTarget);
+          const checkedTarget = targetWithServerBindingKey(bindingTarget, serverCheck);
+          applyConnection(source, checkedTarget);
           setConnectionMessage(
-            `Connected ${endpointLabel(source)} -> ${endpointLabel(bindingTarget)}.`,
+            `Connected ${endpointLabel(source)} -> ${endpointLabel(checkedTarget)}.`,
             'success'
           );
           renderDiagram();
@@ -9738,9 +9739,10 @@ function finishConnectionDrag(event) {
       checkVisualConnectionOnServer(drag.source, target)
         .then((serverCheck) => {
           if (serverCheck.accepted) {
-            applyConnection(drag.source, target);
+            const checkedTarget = targetWithServerBindingKey(target, serverCheck);
+            applyConnection(drag.source, checkedTarget);
             setConnectionMessage(
-              `Connected ${endpointLabel(drag.source)} -> ${endpointLabel(target)}.`,
+              `Connected ${endpointLabel(drag.source)} -> ${endpointLabel(checkedTarget)}.`,
               'success'
             );
           } else {
@@ -9797,10 +9799,18 @@ async function checkVisualConnectionOnServer(source, target) {
   }
   return {
     accepted: Boolean(payload.accepted),
+    bindingKey: payload.bindingKey || '',
     diagnostics,
     message: diagnosticMessage(diagnostics, 'Connection rejected by server.'),
     payload
   };
+}
+
+function targetWithServerBindingKey(target, serverCheck) {
+  if (!serverCheck?.bindingKey || target.port === 'config' || target.kind === 'dependency' || target.kind === 'route') {
+    return target;
+  }
+  return { ...target, key: serverCheck.bindingKey };
 }
 
 function connectionTargetAtPoint(event) {
