@@ -1504,6 +1504,46 @@ class GraphDraftValidatorTest {
     }
 
     @Test
+    void acceptsNodePathBindingWhenArrayItemBoundsFitTargetBounds() {
+        GraphDraftValidator validator = new GraphDraftValidator(
+                VisualCatalogTestSupport.catalogWithLibrary(
+                        VisualCatalogTestSupport.listItemBoundsCompatibilityLibrary(2, 3, 1, 4)));
+        GraphDraft draft = listCompatibilityDraft(
+                GraphDraft.Binding.nodePath("listFacts", "output", "items",
+                        "inputs", "items"),
+                new GraphDraft.DraftEdge("items", "data",
+                        new GraphDraft.Endpoint("listFacts", "output", "items"),
+                        new GraphDraft.Endpoint("listConsumer", "inputs", "items")));
+
+        VisualValidationResult result = validator.validate(draft);
+
+        assertThat(result.valid()).isTrue();
+    }
+
+    @Test
+    void rejectsNodePathBindingWhenArrayItemBoundsAreWeakerThanTarget() {
+        GraphDraftValidator validator = new GraphDraftValidator(
+                VisualCatalogTestSupport.catalogWithLibrary(
+                        VisualCatalogTestSupport.listItemBoundsCompatibilityLibrary(0, 5, 1, 4)));
+        GraphDraft draft = listCompatibilityDraft(
+                GraphDraft.Binding.nodePath("listFacts", "output", "items",
+                        "inputs", "items"),
+                new GraphDraft.DraftEdge("items", "data",
+                        new GraphDraft.Endpoint("listFacts", "output", "items"),
+                        new GraphDraft.Endpoint("listConsumer", "inputs", "items")));
+
+        VisualValidationResult result = validator.validate(draft);
+
+        assertThat(result.valid()).isFalse();
+        assertThat(result.diagnostics())
+                .extracting("code")
+                .contains("visual.binding.typeMismatch", "visual.edge.typeMismatch");
+        assertThat(result.diagnostics())
+                .anySatisfy(diagnostic -> assertThat(diagnostic.message())
+                        .contains("source minItems 0 is weaker than target minItems 1"));
+    }
+
+    @Test
     void rejectsNodePathBindingWhenArrayItemTypesDoNotMatch() {
         GraphDraftValidator validator = new GraphDraftValidator(
                 VisualCatalogTestSupport.catalogWithLibrary(
@@ -1670,6 +1710,36 @@ class GraphDraftValidatorTest {
         assertThat(result.diagnostics())
                 .anySatisfy(diagnostic -> assertThat(diagnostic.message())
                         .contains("source lower bound value >= 0 is weaker than target lower bound value >= 300"));
+    }
+
+    @Test
+    void acceptsStringBindingWhenSourceLengthBoundsFitTargetBounds() {
+        GraphDraftValidator validator = new GraphDraftValidator(
+                VisualCatalogTestSupport.catalogWithLibrary(
+                        VisualCatalogTestSupport.stringLengthCompatibilityLibrary(8, 12, 6, 16)));
+        GraphDraft draft = stringLengthCompatibilityDraft();
+
+        VisualValidationResult result = validator.validate(draft);
+
+        assertThat(result.valid()).isTrue();
+    }
+
+    @Test
+    void rejectsStringBindingWhenSourceMinLengthIsWeakerThanTarget() {
+        GraphDraftValidator validator = new GraphDraftValidator(
+                VisualCatalogTestSupport.catalogWithLibrary(
+                        VisualCatalogTestSupport.stringLengthCompatibilityLibrary(4, 12, 8, 16)));
+        GraphDraft draft = stringLengthCompatibilityDraft();
+
+        VisualValidationResult result = validator.validate(draft);
+
+        assertThat(result.valid()).isFalse();
+        assertThat(result.diagnostics())
+                .extracting("code")
+                .contains("visual.binding.typeMismatch", "visual.edge.typeMismatch");
+        assertThat(result.diagnostics())
+                .anySatisfy(diagnostic -> assertThat(diagnostic.message())
+                        .contains("source minLength 4 is weaker than target minLength 8"));
     }
 
     @Test
@@ -2061,6 +2131,46 @@ class GraphDraftValidatorTest {
                     assertThat(diagnostic.code()).isEqualTo("visual.config.constraintMismatch");
                     assertThat(diagnostic.message()).contains("threshold").contains("integer");
                     assertThat(diagnostic.target()).isEqualTo("/nodes/0/config/threshold");
+                });
+    }
+
+    @Test
+    void rejectsNodeConfigWhenStringValueViolatesConfigSchemaLength() {
+        GraphDraftValidator validator = new GraphDraftValidator(
+                VisualCatalogTestSupport.catalogWithLibrary(stringLengthConfigurablePolicyLibrary()));
+        GraphDraft draft = configurablePolicyDraft(Map.of(
+                "threshold", 700,
+                "mode", "qa"
+        ));
+
+        VisualValidationResult result = validator.validate(draft);
+
+        assertThat(result.valid()).isFalse();
+        assertThat(result.diagnostics())
+                .anySatisfy(diagnostic -> {
+                    assertThat(diagnostic.code()).isEqualTo("visual.config.constraintMismatch");
+                    assertThat(diagnostic.message()).contains("mode").contains("string length");
+                    assertThat(diagnostic.target()).isEqualTo("/nodes/0/config/mode");
+                });
+    }
+
+    @Test
+    void rejectsNodeConfigWhenArrayValueViolatesConfigSchemaItemBounds() {
+        GraphDraftValidator validator = new GraphDraftValidator(
+                VisualCatalogTestSupport.catalogWithLibrary(arrayItemBoundsConfigurablePolicyLibrary()));
+        GraphDraft draft = configurablePolicyDraft(Map.of(
+                "threshold", 700,
+                "channels", List.of("web")
+        ));
+
+        VisualValidationResult result = validator.validate(draft);
+
+        assertThat(result.valid()).isFalse();
+        assertThat(result.diagnostics())
+                .anySatisfy(diagnostic -> {
+                    assertThat(diagnostic.code()).isEqualTo("visual.config.constraintMismatch");
+                    assertThat(diagnostic.message()).contains("channels").contains("array item count");
+                    assertThat(diagnostic.target()).isEqualTo("/nodes/0/config/channels");
                 });
     }
 
@@ -2764,6 +2874,48 @@ class GraphDraftValidatorTest {
         );
     }
 
+    private static GraphDraft stringLengthCompatibilityDraft() {
+        return new GraphDraft(
+                "",
+                "",
+                0,
+                "stringLengthCompatibility",
+                "",
+                "",
+                "",
+                "",
+                null,
+                List.of(
+                        new GraphDraft.DraftNode(
+                                "customerIdProducer",
+                                "risk:customerIdProducer",
+                                "",
+                                Map.of(),
+                                Map.of(),
+                                null
+                        ),
+                        new GraphDraft.DraftNode(
+                                "customerIdConsumer",
+                                "risk:customerIdConsumer",
+                                "",
+                                Map.of("customerId", GraphDraft.Binding.nodePath(
+                                        "customerIdProducer",
+                                        "output",
+                                        "customerId",
+                                        "inputs",
+                                        "customerId")),
+                                Map.of(),
+                                null
+                        )
+                ),
+                List.of(new GraphDraft.DraftEdge("customerId", "data",
+                        new GraphDraft.Endpoint("customerIdProducer", "output", "customerId"),
+                        new GraphDraft.Endpoint("customerIdConsumer", "inputs", "customerId"))),
+                Map.of(),
+                new GraphDraft.OutputSelection("customerIdConsumer", "")
+        );
+    }
+
     private static GraphDraft objectCompatibilityDraft() {
         return new GraphDraft(
                 "",
@@ -3074,6 +3226,97 @@ class GraphDraftValidatorTest {
                                 "Policy output."))
                 ),
                 SchemaEnvelope.object(configProperties, List.of("threshold", "mode")),
+                OperatorDefinition.Capabilities.pure(),
+                new OperatorDefinition.Lowering("transform", "transform", Map.of(
+                        "assignments", Map.of("accepted", "true")
+                )),
+                List.of()
+        );
+        return new OperatorLibrary(
+                "bloge.visualOperatorLibrary.v1",
+                "risk-configurable-policy",
+                "Configurable policy operators",
+                "1.0.0",
+                "risk-team",
+                "ACTIVE",
+                List.of(operator)
+        );
+    }
+
+    private static OperatorLibrary stringLengthConfigurablePolicyLibrary() {
+        Map<String, Object> outputProperties = new LinkedHashMap<>();
+        outputProperties.put("accepted", Map.of("type", "boolean"));
+
+        Map<String, Object> configProperties = new LinkedHashMap<>();
+        configProperties.put("threshold", Map.of("type", "integer"));
+        configProperties.put("mode", Map.of(
+                "type", "string",
+                "minLength", 4,
+                "maxLength", 12
+        ));
+
+        OperatorDefinition operator = new OperatorDefinition(
+                "bloge.visualOperator.v1",
+                "risk:configurablePolicy",
+                "1.0.0",
+                new OperatorDefinition.Display("Configurable policy",
+                        "Evaluates policy behavior controlled by configSchema.",
+                        List.of("risk", "config")),
+                new OperatorDefinition.Source("user-library", "", "", "", true),
+                new OperatorDefinition.Ports(
+                        List.of(),
+                        List.of(new OperatorDefinition.Port("output",
+                                SchemaEnvelope.object(outputProperties, List.of()),
+                                true,
+                                "Policy output."))
+                ),
+                SchemaEnvelope.object(configProperties, List.of("threshold", "mode")),
+                OperatorDefinition.Capabilities.pure(),
+                new OperatorDefinition.Lowering("transform", "transform", Map.of(
+                        "assignments", Map.of("accepted", "true")
+                )),
+                List.of()
+        );
+        return new OperatorLibrary(
+                "bloge.visualOperatorLibrary.v1",
+                "risk-configurable-policy",
+                "Configurable policy operators",
+                "1.0.0",
+                "risk-team",
+                "ACTIVE",
+                List.of(operator)
+        );
+    }
+
+    private static OperatorLibrary arrayItemBoundsConfigurablePolicyLibrary() {
+        Map<String, Object> outputProperties = new LinkedHashMap<>();
+        outputProperties.put("accepted", Map.of("type", "boolean"));
+
+        Map<String, Object> configProperties = new LinkedHashMap<>();
+        configProperties.put("threshold", Map.of("type", "integer"));
+        configProperties.put("channels", Map.of(
+                "type", "array",
+                "items", Map.of("type", "string"),
+                "minItems", 2,
+                "maxItems", 4
+        ));
+
+        OperatorDefinition operator = new OperatorDefinition(
+                "bloge.visualOperator.v1",
+                "risk:configurablePolicy",
+                "1.0.0",
+                new OperatorDefinition.Display("Configurable policy",
+                        "Evaluates policy behavior controlled by configSchema.",
+                        List.of("risk", "config")),
+                new OperatorDefinition.Source("user-library", "", "", "", true),
+                new OperatorDefinition.Ports(
+                        List.of(),
+                        List.of(new OperatorDefinition.Port("output",
+                                SchemaEnvelope.object(outputProperties, List.of()),
+                                true,
+                                "Policy output."))
+                ),
+                SchemaEnvelope.object(configProperties, List.of("threshold", "channels")),
                 OperatorDefinition.Capabilities.pure(),
                 new OperatorDefinition.Lowering("transform", "transform", Map.of(
                         "assignments", Map.of("accepted", "true")

@@ -410,10 +410,14 @@ public final class VisualCatalogTestSupport {
     }
 
     public static OperatorDefinition listFactsOperator(String itemType) {
+        return listFactsOperator(Map.of("type", itemType));
+    }
+
+    public static OperatorDefinition listFactsOperator(Map<String, Object> itemsSchema) {
         Map<String, Object> outputProperties = new LinkedHashMap<>();
         outputProperties.put("items", Map.of(
                 "type", "array",
-                "items", Map.of("type", itemType)
+                "items", itemsSchema
         ));
 
         return new OperatorDefinition(
@@ -439,10 +443,14 @@ public final class VisualCatalogTestSupport {
     }
 
     public static OperatorDefinition listConsumerOperator(String itemType) {
+        return listConsumerOperator(Map.of("type", itemType));
+    }
+
+    public static OperatorDefinition listConsumerOperator(Map<String, Object> itemsSchema) {
         Map<String, Object> inputProperties = new LinkedHashMap<>();
         inputProperties.put("items", Map.of(
                 "type", "array",
-                "items", Map.of("type", itemType)
+                "items", itemsSchema
         ));
 
         Map<String, Object> outputProperties = new LinkedHashMap<>();
@@ -478,6 +486,87 @@ public final class VisualCatalogTestSupport {
     }
 
     public static OperatorLibrary listCompatibilityLibrary(String sourceItemType, String targetItemType) {
+        return listCompatibilityLibrary(
+                Map.of("type", "array", "items", Map.of("type", sourceItemType)),
+                Map.of("type", "array", "items", Map.of("type", targetItemType))
+        );
+    }
+
+    public static OperatorLibrary listItemBoundsCompatibilityLibrary(int sourceMinItems,
+                                                                     int sourceMaxItems,
+                                                                     int targetMinItems,
+                                                                     int targetMaxItems) {
+        return listCompatibilityLibrary(
+                Map.of(
+                        "type", "array",
+                        "items", Map.of("type", "integer"),
+                        "minItems", sourceMinItems,
+                        "maxItems", sourceMaxItems),
+                Map.of(
+                        "type", "array",
+                        "items", Map.of("type", "integer"),
+                        "minItems", targetMinItems,
+                        "maxItems", targetMaxItems)
+        );
+    }
+
+    private static OperatorLibrary listCompatibilityLibrary(Map<String, Object> sourceArraySchema,
+                                                            Map<String, Object> targetArraySchema) {
+        Map<String, Object> sourceProperties = new LinkedHashMap<>();
+        sourceProperties.put("items", sourceArraySchema);
+        OperatorDefinition producer = new OperatorDefinition(
+                "bloge.visualOperator.v1",
+                "risk:listFacts",
+                "1.0.0",
+                new OperatorDefinition.Display("List facts",
+                        "Produces typed list facts.",
+                        List.of("risk", "list")),
+                new OperatorDefinition.Source("user-library", "", "", "", false),
+                new OperatorDefinition.Ports(
+                        List.of(),
+                        List.of(new OperatorDefinition.Port("output",
+                                SchemaEnvelope.object(sourceProperties, List.of()),
+                                true,
+                                "List facts."))
+                ),
+                SchemaEnvelope.opaque(),
+                OperatorDefinition.Capabilities.pure(),
+                new OperatorDefinition.Lowering("native", "riskListFacts", Map.of()),
+                List.of()
+        );
+
+        Map<String, Object> targetProperties = new LinkedHashMap<>();
+        targetProperties.put("items", targetArraySchema);
+        Map<String, Object> outputProperties = new LinkedHashMap<>();
+        outputProperties.put("accepted", Map.of("type", "boolean"));
+        OperatorDefinition consumer = new OperatorDefinition(
+                "bloge.visualOperator.v1",
+                "risk:listConsumer",
+                "1.0.0",
+                new OperatorDefinition.Display("List consumer",
+                        "Consumes typed list facts.",
+                        List.of("risk", "list")),
+                new OperatorDefinition.Source("user-library", "", "", "", true),
+                new OperatorDefinition.Ports(
+                        List.of(new OperatorDefinition.Port("inputs",
+                                SchemaEnvelope.object(targetProperties, List.of("items")),
+                                true,
+                                "List inputs.")),
+                        List.of(new OperatorDefinition.Port("output",
+                                SchemaEnvelope.object(outputProperties, List.of()),
+                                true,
+                                "Consumer output."))
+                ),
+                SchemaEnvelope.opaque(),
+                OperatorDefinition.Capabilities.pure(),
+                new OperatorDefinition.Lowering("transform", "transform", Map.of(
+                        "assignments", Map.of(
+                                "accepted", "true"
+                        )
+                )),
+                List.of()
+        );
+
         return new OperatorLibrary(
                 "bloge.visualOperatorLibrary.v1",
                 "risk-list-compatibility",
@@ -485,7 +574,7 @@ public final class VisualCatalogTestSupport {
                 "1.0.0",
                 "risk-team",
                 "ACTIVE",
-                List.of(listFactsOperator(sourceItemType), listConsumerOperator(targetItemType))
+                List.of(producer, consumer)
         );
     }
 
@@ -718,6 +807,86 @@ public final class VisualCatalogTestSupport {
                 "bloge.visualOperatorLibrary.v1",
                 "risk-numeric-bounds-compatibility",
                 "Numeric bounds compatibility operators",
+                "1.0.0",
+                "risk-team",
+                "ACTIVE",
+                List.of(producer, consumer)
+        );
+    }
+
+    public static OperatorLibrary stringLengthCompatibilityLibrary(int sourceMinLength,
+                                                                   int sourceMaxLength,
+                                                                   int targetMinLength,
+                                                                   int targetMaxLength) {
+        Map<String, Object> producerOutputProperties = new LinkedHashMap<>();
+        producerOutputProperties.put("customerId", Map.of(
+                "type", "string",
+                "minLength", sourceMinLength,
+                "maxLength", sourceMaxLength
+        ));
+
+        OperatorDefinition producer = new OperatorDefinition(
+                "bloge.visualOperator.v1",
+                "risk:customerIdProducer",
+                "1.0.0",
+                new OperatorDefinition.Display("Customer id producer",
+                        "Produces a bounded customer id.",
+                        List.of("risk", "string")),
+                new OperatorDefinition.Source("user-library", "", "", "", false),
+                new OperatorDefinition.Ports(
+                        List.of(),
+                        List.of(new OperatorDefinition.Port("output",
+                                SchemaEnvelope.object(producerOutputProperties, List.of()),
+                                true,
+                                "Customer id output."))
+                ),
+                SchemaEnvelope.opaque(),
+                OperatorDefinition.Capabilities.pure(),
+                new OperatorDefinition.Lowering("native", "riskCustomerIdProducer", Map.of()),
+                List.of()
+        );
+
+        Map<String, Object> consumerInputProperties = new LinkedHashMap<>();
+        consumerInputProperties.put("customerId", Map.of(
+                "type", "string",
+                "minLength", targetMinLength,
+                "maxLength", targetMaxLength
+        ));
+        Map<String, Object> consumerOutputProperties = new LinkedHashMap<>();
+        consumerOutputProperties.put("accepted", Map.of("type", "boolean"));
+
+        OperatorDefinition consumer = new OperatorDefinition(
+                "bloge.visualOperator.v1",
+                "risk:customerIdConsumer",
+                "1.0.0",
+                new OperatorDefinition.Display("Customer id consumer",
+                        "Consumes a bounded customer id.",
+                        List.of("risk", "string")),
+                new OperatorDefinition.Source("user-library", "", "", "", true),
+                new OperatorDefinition.Ports(
+                        List.of(new OperatorDefinition.Port("inputs",
+                                SchemaEnvelope.object(consumerInputProperties, List.of("customerId")),
+                                true,
+                                "Customer id input.")),
+                        List.of(new OperatorDefinition.Port("output",
+                                SchemaEnvelope.object(consumerOutputProperties, List.of()),
+                                true,
+                                "Consumer output."))
+                ),
+                SchemaEnvelope.opaque(),
+                OperatorDefinition.Capabilities.pure(),
+                new OperatorDefinition.Lowering("transform", "transform", Map.of(
+                        "assignments", Map.of(
+                                "accepted", "true"
+                        )
+                )),
+                List.of()
+        );
+
+        return new OperatorLibrary(
+                "bloge.visualOperatorLibrary.v1",
+                "risk-string-length-compatibility",
+                "String length compatibility operators",
                 "1.0.0",
                 "risk-team",
                 "ACTIVE",

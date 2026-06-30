@@ -1193,7 +1193,9 @@ public class GraphDraftValidator {
             Object rawValues = schema.get("values");
             return !(rawValues instanceof List<?> values) || values.isEmpty() || values.contains(value);
         }
-        return configValueMatchesType(value, type) && numericValueMatchesBounds(value, schema);
+	        return configValueMatchesType(value, type)
+	                && numericValueMatchesBounds(value, schema)
+	                && stringValueMatchesLengthBounds(value, schema);
     }
 
     private static boolean constantObjectMatchesSchema(Object value, Map<String, Object> schema) {
@@ -1227,13 +1229,16 @@ public class GraphDraftValidator {
         return true;
     }
 
-    private static boolean constantArrayMatchesSchema(Object value, Map<String, Object> schema) {
-        if (!(value instanceof List<?> list)) {
-            return false;
-        }
-        Map<String, Object> items = objectProperty(schema.get("items"));
-        return items == null || list.stream().allMatch(item -> constantValueMatchesSchema(item, items));
-    }
+	    private static boolean constantArrayMatchesSchema(Object value, Map<String, Object> schema) {
+	        if (!(value instanceof List<?> list)) {
+	            return false;
+	        }
+	        if (!arrayValueMatchesItemBounds(list, schema)) {
+	            return false;
+	        }
+	        Map<String, Object> items = objectProperty(schema.get("items"));
+	        return items == null || list.stream().allMatch(item -> constantValueMatchesSchema(item, items));
+	    }
 
     private static void validateEdgeIdentity(GraphDraft draft, List<VisualDiagnostic> diagnostics) {
         Set<String> edgeIds = new HashSet<>();
@@ -1360,15 +1365,22 @@ public class GraphDraftValidator {
                     path));
             return;
         }
-        if (!numericValueMatchesBounds(value, schema)) {
-            diagnostics.add(VisualDiagnostic.error("visual.config.constraintMismatch",
-                    "Config value at '%s' must satisfy %s numeric bounds."
-                            .formatted(path, schemaTypeLabel(schema)),
-                    path));
-            return;
-        }
-        validateConfigEnum(value, schema, path, diagnostics);
-    }
+	        if (!numericValueMatchesBounds(value, schema)) {
+	            diagnostics.add(VisualDiagnostic.error("visual.config.constraintMismatch",
+	                    "Config value at '%s' must satisfy %s numeric bounds."
+	                            .formatted(path, schemaTypeLabel(schema)),
+	                    path));
+	            return;
+	        }
+	        if (!stringValueMatchesLengthBounds(value, schema)) {
+	            diagnostics.add(VisualDiagnostic.error("visual.config.constraintMismatch",
+	                    "Config value at '%s' must satisfy %s string length constraints."
+	                            .formatted(path, schemaTypeLabel(schema)),
+	                    path));
+	            return;
+	        }
+	        validateConfigEnum(value, schema, path, diagnostics);
+	    }
 
     private static void validateConfigObjectTemplate(Map<?, ?> fields,
                                                      Map<String, Object> schema,
@@ -1451,14 +1463,21 @@ public class GraphDraftValidator {
                                             Map<String, Object> schema,
                                             String path,
                                             List<VisualDiagnostic> diagnostics) {
-        if (!(value instanceof List<?> list)) {
-            diagnostics.add(VisualDiagnostic.error("visual.config.typeMismatch",
-                    "Config value at '%s' must be array.".formatted(path),
-                    path));
-            return;
-        }
-        Map<String, Object> items = objectProperty(schema.get("items"));
-        if (items == null) {
+	        if (!(value instanceof List<?> list)) {
+	            diagnostics.add(VisualDiagnostic.error("visual.config.typeMismatch",
+	                    "Config value at '%s' must be array.".formatted(path),
+	                    path));
+	            return;
+	        }
+	        if (!arrayValueMatchesItemBounds(list, schema)) {
+	            diagnostics.add(VisualDiagnostic.error("visual.config.constraintMismatch",
+	                    "Config value at '%s' must satisfy array item count constraints."
+	                            .formatted(path),
+	                    path));
+	            return;
+	        }
+	        Map<String, Object> items = objectProperty(schema.get("items"));
+	        if (items == null) {
             return;
         }
         for (int i = 0; i < list.size(); i++) {
@@ -1503,9 +1522,9 @@ public class GraphDraftValidator {
         return false;
     }
 
-    private static boolean numericValueMatchesBounds(Object value, Map<String, Object> schema) {
-        if (!(value instanceof Number number)) {
-            return true;
+	    private static boolean numericValueMatchesBounds(Object value, Map<String, Object> schema) {
+	        if (!(value instanceof Number number)) {
+	            return true;
         }
         double numericValue = number.doubleValue();
         NumericBoundary lower = lowerBound(schema);
@@ -1513,10 +1532,55 @@ public class GraphDraftValidator {
             return false;
         }
         NumericBoundary upper = upperBound(schema);
-        return upper == null || upper.acceptsUpper(numericValue);
-    }
+	        return upper == null || upper.acceptsUpper(numericValue);
+	    }
 
-    private static NumericBoundary lowerBound(Map<String, Object> schema) {
+	    private static boolean stringValueMatchesLengthBounds(Object value, Map<String, Object> schema) {
+	        if (!(value instanceof String string)) {
+	            return true;
+	        }
+	        long length = string.codePoints().count();
+	        Long minimum = stringLengthBoundary(schema.get("minLength"));
+	        if (minimum != null && length < minimum) {
+	            return false;
+	        }
+	        Long maximum = stringLengthBoundary(schema.get("maxLength"));
+	        return maximum == null || length <= maximum;
+	    }
+
+	    private static boolean arrayValueMatchesItemBounds(List<?> value, Map<String, Object> schema) {
+	        long size = value.size();
+	        Long minimum = arrayItemBoundary(schema.get("minItems"));
+	        if (minimum != null && size < minimum) {
+	            return false;
+	        }
+	        Long maximum = arrayItemBoundary(schema.get("maxItems"));
+	        return maximum == null || size <= maximum;
+	    }
+
+	    private static Long stringLengthBoundary(Object value) {
+	        if (!(value instanceof Number number)) {
+	            return null;
+	        }
+	        double numericValue = number.doubleValue();
+	        if (!Double.isFinite(numericValue) || Math.rint(numericValue) != numericValue || numericValue < 0) {
+	            return null;
+	        }
+	        return (long) numericValue;
+	    }
+
+	    private static Long arrayItemBoundary(Object value) {
+	        if (!(value instanceof Number number)) {
+	            return null;
+	        }
+	        double numericValue = number.doubleValue();
+	        if (!Double.isFinite(numericValue) || Math.rint(numericValue) != numericValue || numericValue < 0) {
+	            return null;
+	        }
+	        return (long) numericValue;
+	    }
+
+	    private static NumericBoundary lowerBound(Map<String, Object> schema) {
         NumericBoundary minimum = numericBoundary(schema.get("minimum"), false);
         NumericBoundary exclusiveMinimum = numericBoundary(schema.get("exclusiveMinimum"), true);
         if (minimum == null) {

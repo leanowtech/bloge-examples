@@ -50,6 +50,61 @@ class ResourceDesignContractValidatorTest {
     }
 
     @Test
+    void acceptsStringLengthConstraintsInResourceContractSchemas() {
+        ResourceDesignContract contract = new ResourceDesignContract(
+                "contract:orders",
+                "order-service.listOrders",
+                "Order list",
+                "Lists orders.",
+                List.of("order"),
+                SchemaEnvelope.object(Map.of(
+                        "customerId", Map.of("type", "string", "minLength", 8, "maxLength", 16)
+                ), List.of("customerId")),
+                SchemaEnvelope.object(Map.of(
+                        "trackingCode", Map.of("type", "string", "minLength", 10, "maxLength", 24)
+                ), List.of()),
+                Map.of(),
+                "ACTIVE"
+        );
+
+        VisualValidationResult result = validator.validate(contract);
+
+        assertThat(result.valid()).isTrue();
+        assertThat(result.diagnostics()).isEmpty();
+    }
+
+    @Test
+    void acceptsArrayItemBoundsInResourceContractSchemas() {
+        ResourceDesignContract contract = new ResourceDesignContract(
+                "contract:orders",
+                "order-service.listOrders",
+                "Order list",
+                "Lists orders.",
+                List.of("order"),
+                SchemaEnvelope.object(Map.of(
+                        "ids", Map.of(
+                                "type", "array",
+                                "items", Map.of("type", "string"),
+                                "minItems", 1,
+                                "maxItems", 50)
+                ), List.of("ids")),
+                SchemaEnvelope.object(Map.of(
+                        "items", Map.of(
+                                "type", "array",
+                                "items", Map.of("type", "object", "additionalProperties", true),
+                                "maxItems", 50)
+                ), List.of()),
+                Map.of(),
+                "ACTIVE"
+        );
+
+        VisualValidationResult result = validator.validate(contract);
+
+        assertThat(result.valid()).isTrue();
+        assertThat(result.diagnostics()).isEmpty();
+    }
+
+    @Test
     void rejectsArraySchemaWithoutItems() {
         ResourceDesignContract contract = new ResourceDesignContract(
                 "contract:orders",

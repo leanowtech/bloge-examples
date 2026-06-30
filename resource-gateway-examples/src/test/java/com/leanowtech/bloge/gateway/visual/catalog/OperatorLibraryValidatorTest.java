@@ -760,6 +760,201 @@ class OperatorLibraryValidatorTest {
     }
 
     @Test
+    void acceptsStringLengthConstraintsAcrossOperatorDefinitions() {
+        OperatorDefinition operator = new OperatorDefinition(
+                "bloge.visualOperator.v1",
+                "risk:stringLengthPolicy",
+                "1.0.0",
+                new OperatorDefinition.Display("String length policy", "Test operator.", List.of("test")),
+                new OperatorDefinition.Source("user-library", "", "", "", true),
+                new OperatorDefinition.Ports(
+                        List.of(new OperatorDefinition.Port("payload",
+                                SchemaEnvelope.object(Map.of(
+                                        "customerId", Map.of("type", "string", "minLength", 8, "maxLength", 16)
+                                ), List.of("customerId")),
+                                true,
+                                "Input.")),
+                        List.of(new OperatorDefinition.Port("output",
+                                SchemaEnvelope.object(Map.of(
+                                        "trackingCode", Map.of("type", "string", "minLength", 10, "maxLength", 24)
+                                ), List.of()),
+                                true,
+                                "Output."))
+                ),
+                SchemaEnvelope.object(Map.of(
+                        "channel", Map.of("type", "string", "minLength", 3, "maxLength", 12, "default", "web")
+                ), List.of("channel")),
+                OperatorDefinition.Capabilities.pure(),
+                new OperatorDefinition.Lowering("native", "riskStringLengthPolicy", Map.of()),
+                List.of()
+        );
+
+        VisualValidationResult result = validator.validate(libraryWith(operator));
+
+        assertThat(result.diagnostics()).isEmpty();
+        assertThat(result.valid()).isTrue();
+    }
+
+    @Test
+    void rejectsInvalidStringLengthConstraintsAcrossOperatorDefinitions() {
+        OperatorDefinition operator = new OperatorDefinition(
+                "bloge.visualOperator.v1",
+                "risk:badStringLengthPolicy",
+                "1.0.0",
+                new OperatorDefinition.Display("Bad string length policy", "Test operator.", List.of("test")),
+                new OperatorDefinition.Source("user-library", "", "", "", true),
+                new OperatorDefinition.Ports(
+                        List.of(new OperatorDefinition.Port("payload",
+                                SchemaEnvelope.object(Map.of(
+                                        "customerId", Map.of("type", "string", "minLength", 10, "maxLength", 4)
+                                ), List.of("customerId")),
+                                true,
+                                "Input.")),
+                        List.of(new OperatorDefinition.Port("output",
+                                SchemaEnvelope.object(Map.of(
+                                        "trackingCode", Map.of("type", "string", "maxLength", "short")
+                                ), List.of()),
+                                true,
+                                "Output."))
+                ),
+                SchemaEnvelope.object(Map.of(
+                        "channel", Map.of("type", "string", "minLength", 3, "maxLength", 12, "default", "ok")
+                ), List.of()),
+                OperatorDefinition.Capabilities.pure(),
+                new OperatorDefinition.Lowering("native", "riskBadStringLengthPolicy", Map.of()),
+                List.of()
+        );
+
+        VisualValidationResult result = validator.validate(libraryWith(operator));
+
+        assertThat(result.valid()).isFalse();
+        assertThat(result.diagnostics())
+                .extracting("code")
+                .contains(
+                        "visual.schema.stringLengthBoundsInvalid",
+                        "visual.schema.stringLengthConstraintInvalid",
+                        "visual.schema.defaultConstraintMismatch"
+                );
+        assertThat(result.diagnostics())
+                .extracting("target")
+                .contains(
+                        "/operators/0/ports/inputs/0/schema/schema/properties/customerId",
+                        "/operators/0/ports/outputs/0/schema/schema/properties/trackingCode/maxLength",
+                        "/operators/0/configSchema/schema/properties/channel/default"
+                );
+    }
+
+    @Test
+    void acceptsArrayItemBoundsAcrossOperatorDefinitions() {
+        OperatorDefinition operator = new OperatorDefinition(
+                "bloge.visualOperator.v1",
+                "risk:arrayBoundsPolicy",
+                "1.0.0",
+                new OperatorDefinition.Display("Array bounds policy", "Test operator.", List.of("test")),
+                new OperatorDefinition.Source("user-library", "", "", "", true),
+                new OperatorDefinition.Ports(
+                        List.of(new OperatorDefinition.Port("payload",
+                                SchemaEnvelope.object(Map.of(
+                                        "items", Map.of(
+                                                "type", "array",
+                                                "items", Map.of("type", "integer"),
+                                                "minItems", 1,
+                                                "maxItems", 5)
+                                ), List.of("items")),
+                                true,
+                                "Input.")),
+                        List.of(new OperatorDefinition.Port("output",
+                                SchemaEnvelope.object(Map.of(
+                                        "segments", Map.of(
+                                                "type", "array",
+                                                "items", Map.of("type", "string"),
+                                                "minItems", 1,
+                                                "maxItems", 3)
+                                ), List.of()),
+                                true,
+                                "Output."))
+                ),
+                SchemaEnvelope.object(Map.of(
+                        "channels", Map.of(
+                                "type", "array",
+                                "items", Map.of("type", "string"),
+                                "minItems", 1,
+                                "maxItems", 3,
+                                "default", List.of("web"))
+                ), List.of("channels")),
+                OperatorDefinition.Capabilities.pure(),
+                new OperatorDefinition.Lowering("native", "riskArrayBoundsPolicy", Map.of()),
+                List.of()
+        );
+
+        VisualValidationResult result = validator.validate(libraryWith(operator));
+
+        assertThat(result.diagnostics()).isEmpty();
+        assertThat(result.valid()).isTrue();
+    }
+
+    @Test
+    void rejectsInvalidArrayItemBoundsAcrossOperatorDefinitions() {
+        OperatorDefinition operator = new OperatorDefinition(
+                "bloge.visualOperator.v1",
+                "risk:badArrayBoundsPolicy",
+                "1.0.0",
+                new OperatorDefinition.Display("Bad array bounds policy", "Test operator.", List.of("test")),
+                new OperatorDefinition.Source("user-library", "", "", "", true),
+                new OperatorDefinition.Ports(
+                        List.of(new OperatorDefinition.Port("payload",
+                                SchemaEnvelope.object(Map.of(
+                                        "items", Map.of(
+                                                "type", "array",
+                                                "items", Map.of("type", "integer"),
+                                                "minItems", 3,
+                                                "maxItems", 1)
+                                ), List.of("items")),
+                                true,
+                                "Input.")),
+                        List.of(new OperatorDefinition.Port("output",
+                                SchemaEnvelope.object(Map.of(
+                                        "segments", Map.of(
+                                                "type", "array",
+                                                "items", Map.of("type", "string"),
+                                                "maxItems", "many")
+                                ), List.of()),
+                                true,
+                                "Output."))
+                ),
+                SchemaEnvelope.object(Map.of(
+                        "channels", Map.of(
+                                "type", "array",
+                                "items", Map.of("type", "string"),
+                                "minItems", 1,
+                                "maxItems", 2,
+                                "default", List.of("web", "app", "branch"))
+                ), List.of()),
+                OperatorDefinition.Capabilities.pure(),
+                new OperatorDefinition.Lowering("native", "riskBadArrayBoundsPolicy", Map.of()),
+                List.of()
+        );
+
+        VisualValidationResult result = validator.validate(libraryWith(operator));
+
+        assertThat(result.valid()).isFalse();
+        assertThat(result.diagnostics())
+                .extracting("code")
+                .contains(
+                        "visual.schema.arrayItemBoundsInvalid",
+                        "visual.schema.arrayItemConstraintInvalid",
+                        "visual.schema.defaultConstraintMismatch"
+                );
+        assertThat(result.diagnostics())
+                .extracting("target")
+                .contains(
+                        "/operators/0/ports/inputs/0/schema/schema/properties/items",
+                        "/operators/0/ports/outputs/0/schema/schema/properties/segments/maxItems",
+                        "/operators/0/configSchema/schema/properties/channels/default"
+                );
+    }
+
+    @Test
     void rejectsUnsupportedJsonSchemaKeywordsAcrossOperatorSchemas() {
         OperatorDefinition operator = new OperatorDefinition(
                 "bloge.visualOperator.v1",

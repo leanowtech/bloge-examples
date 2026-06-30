@@ -50,20 +50,25 @@ public final class VisualSchemaCompatibility {
                 || "opaque".equals(sourceType) || "opaque".equals(targetType)) {
             return Optional.empty();
         }
-        if ("array".equals(sourceType) && "array".equals(targetType)) {
-            Map<String, Object> sourceItems = objectProperty(sourceSchema.get("items"));
-            Map<String, Object> targetItems = objectProperty(targetSchema.get("items"));
-            return sourceItems == null || targetItems == null
-                    ? Optional.empty()
-                    : schemaCompatibilityIssue(sourceItems, targetItems, appendCompatibilityPath(path, "items"));
-        }
+	        if ("array".equals(sourceType) && "array".equals(targetType)) {
+	            Map<String, Object> sourceItems = objectProperty(sourceSchema.get("items"));
+	            Map<String, Object> targetItems = objectProperty(targetSchema.get("items"));
+	            if (sourceItems != null && targetItems != null) {
+	                Optional<String> itemIssue = schemaCompatibilityIssue(sourceItems, targetItems,
+	                        appendCompatibilityPath(path, "items"));
+	                if (itemIssue.isPresent()) {
+	                    return itemIssue;
+	                }
+	            }
+	            return arrayItemBoundsCompatibilityIssue(sourceSchema, targetSchema, path);
+	        }
         if ("object".equals(sourceType) && "object".equals(targetType)) {
             return objectSchemaCompatibilityIssue(sourceSchema, targetSchema, path);
         }
         List<Object> targetEnumValues = enumValues(targetSchema);
-        if (!targetEnumValues.isEmpty()) {
-            List<Object> sourceEnumValues = enumValues(sourceSchema);
-            if (sourceEnumValues.isEmpty()) {
+	        if (!targetEnumValues.isEmpty()) {
+	            List<Object> sourceEnumValues = enumValues(sourceSchema);
+	            if (sourceEnumValues.isEmpty()) {
                 return Optional.of(reasonAt(path,
                         "target enum %s requires a finite source enum domain, but source is %s"
                                 .formatted(valueDomainLabel(targetEnumValues), schemaTypeLabel(sourceSchema))));
@@ -75,28 +80,31 @@ public final class VisualSchemaCompatibility {
                     ? Optional.empty()
                     : Optional.of(reasonAt(path,
                     "source enum value(s) %s are outside target enum %s"
-                            .formatted(valueDomainLabel(outside), valueDomainLabel(targetEnumValues))));
-        }
-        if ("enum".equals(sourceType)) {
-            List<Object> sourceEnumValues = enumValues(sourceSchema);
-            if (sourceEnumValues.isEmpty()) {
-                return Optional.empty();
-            }
-            List<Object> incompatible = sourceEnumValues.stream()
-                    .filter(value -> !valueMatchesSchema(value, targetSchema))
-                    .toList();
+	                            .formatted(valueDomainLabel(outside), valueDomainLabel(targetEnumValues))));
+	        }
+	        List<Object> sourceEnumValues = enumValues(sourceSchema);
+	        if (!sourceEnumValues.isEmpty()) {
+	            List<Object> incompatible = sourceEnumValues.stream()
+	                    .filter(value -> !valueMatchesSchema(value, targetSchema))
+	                    .toList();
             return incompatible.isEmpty()
                     ? Optional.empty()
                     : Optional.of(reasonAt(path,
                     "source enum value(s) %s do not match target schema %s"
-                            .formatted(valueDomainLabel(incompatible), schemaTypeLabel(targetSchema))));
-        }
-        if (sourceType.equals(targetType) || numeric(sourceType) && numeric(targetType)) {
-            return numericBoundsCompatibilityIssue(sourceSchema, targetSchema, path);
-        }
-        return Optional.of(reasonAt(path,
-                "source type %s cannot feed target type %s"
-                        .formatted(schemaTypeLabel(sourceSchema), schemaTypeLabel(targetSchema))));
+	                            .formatted(valueDomainLabel(incompatible), schemaTypeLabel(targetSchema))));
+	        }
+	        if (numeric(sourceType) && numeric(targetType)) {
+	            return numericBoundsCompatibilityIssue(sourceSchema, targetSchema, path);
+	        }
+	        if (stringLike(sourceType) && stringLike(targetType)) {
+	            return stringLengthCompatibilityIssue(sourceSchema, targetSchema, path);
+	        }
+	        if (sourceType.equals(targetType)) {
+	            return Optional.empty();
+	        }
+	        return Optional.of(reasonAt(path,
+	                "source type %s cannot feed target type %s"
+	                        .formatted(schemaTypeLabel(sourceSchema), schemaTypeLabel(targetSchema))));
     }
 
     private static Optional<String> numericBoundsCompatibilityIssue(Map<String, Object> sourceSchema,
@@ -131,12 +139,82 @@ public final class VisualSchemaCompatibility {
                                 .formatted(sourceUpper.upperLabel(), targetUpper.upperLabel())));
             }
         }
-        return Optional.empty();
-    }
+	        return Optional.empty();
+	    }
 
-    private static Optional<String> objectSchemaCompatibilityIssue(Map<String, Object> sourceSchema,
-                                                                   Map<String, Object> targetSchema,
-                                                                   String path) {
+	    private static Optional<String> stringLengthCompatibilityIssue(Map<String, Object> sourceSchema,
+	                                                                   Map<String, Object> targetSchema,
+	                                                                   String path) {
+	        if (!stringLike(schemaType(sourceSchema)) || !stringLike(schemaType(targetSchema))) {
+	            return Optional.empty();
+	        }
+	        Long targetMinimum = stringMinLength(targetSchema);
+	        if (targetMinimum != null) {
+	            Long sourceMinimum = stringMinLength(sourceSchema);
+	            if (sourceMinimum == null) {
+	                return Optional.of(reasonAt(path,
+	                        "target requires length >= %d but source has no minLength".formatted(targetMinimum)));
+	            }
+	            if (sourceMinimum < targetMinimum) {
+	                return Optional.of(reasonAt(path,
+	                        "source minLength %d is weaker than target minLength %d"
+	                                .formatted(sourceMinimum, targetMinimum)));
+	            }
+	        }
+	        Long targetMaximum = stringMaxLength(targetSchema);
+	        if (targetMaximum != null) {
+	            Long sourceMaximum = stringMaxLength(sourceSchema);
+	            if (sourceMaximum == null) {
+	                return Optional.of(reasonAt(path,
+	                        "target requires length <= %d but source has no maxLength".formatted(targetMaximum)));
+	            }
+	            if (sourceMaximum > targetMaximum) {
+	                return Optional.of(reasonAt(path,
+	                        "source maxLength %d is weaker than target maxLength %d"
+	                                .formatted(sourceMaximum, targetMaximum)));
+	            }
+	        }
+	        return Optional.empty();
+	    }
+
+	    private static Optional<String> arrayItemBoundsCompatibilityIssue(Map<String, Object> sourceSchema,
+	                                                                      Map<String, Object> targetSchema,
+	                                                                      String path) {
+	        if (!"array".equals(schemaType(sourceSchema)) || !"array".equals(schemaType(targetSchema))) {
+	            return Optional.empty();
+	        }
+	        Long targetMinimum = arrayMinItems(targetSchema);
+	        if (targetMinimum != null) {
+	            Long sourceMinimum = arrayMinItems(sourceSchema);
+	            if (sourceMinimum == null) {
+	                return Optional.of(reasonAt(path,
+	                        "target requires item count >= %d but source has no minItems".formatted(targetMinimum)));
+	            }
+	            if (sourceMinimum < targetMinimum) {
+	                return Optional.of(reasonAt(path,
+	                        "source minItems %d is weaker than target minItems %d"
+	                                .formatted(sourceMinimum, targetMinimum)));
+	            }
+	        }
+	        Long targetMaximum = arrayMaxItems(targetSchema);
+	        if (targetMaximum != null) {
+	            Long sourceMaximum = arrayMaxItems(sourceSchema);
+	            if (sourceMaximum == null) {
+	                return Optional.of(reasonAt(path,
+	                        "target requires item count <= %d but source has no maxItems".formatted(targetMaximum)));
+	            }
+	            if (sourceMaximum > targetMaximum) {
+	                return Optional.of(reasonAt(path,
+	                        "source maxItems %d is weaker than target maxItems %d"
+	                                .formatted(sourceMaximum, targetMaximum)));
+	            }
+	        }
+	        return Optional.empty();
+	    }
+
+	    private static Optional<String> objectSchemaCompatibilityIssue(Map<String, Object> sourceSchema,
+	                                                                   Map<String, Object> targetSchema,
+	                                                                   String path) {
         Map<String, Object> sourceProperties = propertiesOf(sourceSchema);
         Map<String, Object> targetProperties = propertiesOf(targetSchema);
         Set<String> sourceRequired = new LinkedHashSet<>(requiredNamesOf(sourceSchema));
@@ -357,20 +435,26 @@ public final class VisualSchemaCompatibility {
         return values.stream().map(String::valueOf).toList().toString();
     }
 
-    private static boolean numeric(String type) {
-        return "number".equals(type) || "integer".equals(type) || "decimal".equals(type);
-    }
+	    private static boolean numeric(String type) {
+	        return "number".equals(type) || "integer".equals(type) || "decimal".equals(type);
+	    }
+
+	    private static boolean stringLike(String type) {
+	        return "string".equals(type) || "duration".equals(type) || "datetime".equals(type);
+	    }
 
     private static boolean valueMatchesType(Object value, String type) {
         return switch (type) {
             case "string", "duration", "datetime" -> value instanceof String;
             case "integer" -> isIntegerValue(value);
             case "number", "decimal" -> value instanceof Number;
-            case "boolean" -> value instanceof Boolean;
-            case "null" -> value == null;
-            default -> true;
-        };
-    }
+	            case "boolean" -> value instanceof Boolean;
+	            case "null" -> value == null;
+	            case "array" -> value instanceof List<?>;
+	            case "object" -> value instanceof Map<?, ?>;
+	            default -> true;
+	        };
+	    }
 
     private static boolean valueMatchesSchema(Object value, Map<String, Object> schema) {
         String type = schemaType(schema);
@@ -381,8 +465,10 @@ public final class VisualSchemaCompatibility {
         if (!values.isEmpty() && !values.contains(value)) {
             return false;
         }
-        return numericValueMatchesBounds(value, schema);
-    }
+	        return numericValueMatchesBounds(value, schema)
+	                && stringValueMatchesLengthBounds(value, schema)
+	                && arrayValueMatchesSchema(value, schema);
+	    }
 
     private static boolean numericValueMatchesBounds(Object value, Map<String, Object> schema) {
         if (!(value instanceof Number number)) {
@@ -394,8 +480,33 @@ public final class VisualSchemaCompatibility {
             return false;
         }
         NumericBoundary upper = upperBound(schema);
-        return upper == null || upper.acceptsUpper(numericValue);
-    }
+	        return upper == null || upper.acceptsUpper(numericValue);
+	    }
+
+	    private static boolean stringValueMatchesLengthBounds(Object value, Map<String, Object> schema) {
+	        if (!(value instanceof String string)) {
+	            return true;
+	        }
+	        long length = string.codePoints().count();
+	        Long minimum = stringMinLength(schema);
+	        if (minimum != null && length < minimum) {
+	            return false;
+	        }
+	        Long maximum = stringMaxLength(schema);
+	        return maximum == null || length <= maximum;
+	    }
+
+	    @SuppressWarnings("unchecked")
+	    private static boolean arrayValueMatchesSchema(Object value, Map<String, Object> schema) {
+	        if (!(value instanceof List<?> list) || !"array".equals(schemaType(schema))) {
+	            return true;
+	        }
+	        if (!arrayValueMatchesItemBounds(list, schema)) {
+	            return false;
+	        }
+	        Map<String, Object> items = objectProperty(schema.get("items"));
+	        return items == null || list.stream().allMatch(item -> valueMatchesSchema(item, items));
+	    }
 
     private static boolean isIntegerValue(Object value) {
         if (value instanceof Byte || value instanceof Short || value instanceof Integer || value instanceof Long) {
@@ -461,9 +572,9 @@ public final class VisualSchemaCompatibility {
         return type == null ? "" : String.valueOf(type);
     }
 
-    private static String schemaTypeForValue(Object value) {
-        if (value == null) {
-            return "null";
+	    private static String schemaTypeForValue(Object value) {
+	        if (value == null) {
+	            return "null";
         }
         if (value instanceof String) {
             return "string";
@@ -483,10 +594,80 @@ public final class VisualSchemaCompatibility {
         if (value instanceof List<?>) {
             return "array";
         }
-        return "";
-    }
+	        return "";
+	    }
 
-    private static NumericBoundary lowerBound(Map<String, Object> schema) {
+	    private static Long stringMinLength(Map<String, Object> schema) {
+	        return stringLengthBoundary(schema.get("minLength"));
+	    }
+
+	    private static Long stringMaxLength(Map<String, Object> schema) {
+	        return stringLengthBoundary(schema.get("maxLength"));
+	    }
+
+	    private static Long stringLengthBoundary(Object value) {
+	        if (!(value instanceof Number number)) {
+	            return null;
+	        }
+	        double numericValue = number.doubleValue();
+	        if (!Double.isFinite(numericValue) || Math.rint(numericValue) != numericValue || numericValue < 0) {
+	            return null;
+	        }
+	        return (long) numericValue;
+	    }
+
+	    private static Long arrayMinItems(Map<String, Object> schema) {
+	        Long explicit = arrayItemBoundary(schema.get("minItems"));
+	        if (explicit != null) {
+	            return explicit;
+	        }
+	        List<Object> values = enumValues(schema);
+	        if (!values.isEmpty() && values.stream().allMatch(List.class::isInstance)) {
+	            return values.stream()
+	                    .map(value -> (long) ((List<?>) value).size())
+	                    .min(Long::compareTo)
+	                    .orElse(null);
+	        }
+	        return null;
+	    }
+
+	    private static Long arrayMaxItems(Map<String, Object> schema) {
+	        Long explicit = arrayItemBoundary(schema.get("maxItems"));
+	        if (explicit != null) {
+	            return explicit;
+	        }
+	        List<Object> values = enumValues(schema);
+	        if (!values.isEmpty() && values.stream().allMatch(List.class::isInstance)) {
+	            return values.stream()
+	                    .map(value -> (long) ((List<?>) value).size())
+	                    .max(Long::compareTo)
+	                    .orElse(null);
+	        }
+	        return null;
+	    }
+
+	    private static boolean arrayValueMatchesItemBounds(List<?> value, Map<String, Object> schema) {
+	        long size = value.size();
+	        Long minimum = arrayItemBoundary(schema.get("minItems"));
+	        if (minimum != null && size < minimum) {
+	            return false;
+	        }
+	        Long maximum = arrayItemBoundary(schema.get("maxItems"));
+	        return maximum == null || size <= maximum;
+	    }
+
+	    private static Long arrayItemBoundary(Object value) {
+	        if (!(value instanceof Number number)) {
+	            return null;
+	        }
+	        double numericValue = number.doubleValue();
+	        if (!Double.isFinite(numericValue) || Math.rint(numericValue) != numericValue || numericValue < 0) {
+	            return null;
+	        }
+	        return (long) numericValue;
+	    }
+
+	    private static NumericBoundary lowerBound(Map<String, Object> schema) {
         NumericBoundary minimum = numericBoundary(schema.get("minimum"), false);
         NumericBoundary exclusiveMinimum = numericBoundary(schema.get("exclusiveMinimum"), true);
         if (minimum == null) {

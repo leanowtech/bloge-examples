@@ -238,10 +238,6 @@ const UNSUPPORTED_SCHEMA_COMPOSITION_KEYWORDS = ['oneOf', 'anyOf', 'allOf', 'not
 const UNSUPPORTED_SCHEMA_CONSTRAINT_KEYWORDS = [
   'pattern',
   'multipleOf',
-  'minLength',
-  'maxLength',
-  'minItems',
-  'maxItems',
   'uniqueItems',
   'contains',
   'minContains',
@@ -5089,6 +5085,8 @@ function validateSchemaStructure(schema, path, diagnostics) {
   validateSchemaEnum(schema, kind, path, diagnostics);
   validateSchemaConst(schema, kind, path, diagnostics);
   validateSchemaNumericBounds(schema, kind, path, diagnostics);
+  validateSchemaStringLengthBounds(schema, kind, path, diagnostics);
+  validateSchemaArrayItemBounds(schema, kind, path, diagnostics);
   if (kind === 'object') {
     const properties = validatedSchemaObjectProperties(schema, path, diagnostics);
     validateSchemaAdditionalProperties(schema, path, diagnostics);
@@ -5264,6 +5262,20 @@ function validateSchemaEnum(schema, kind, path, diagnostics) {
         `${path}/enum/${index}`
       ));
     }
+    if (stringType(kind) && !stringValueMatchesLengthBounds(value, schema)) {
+      diagnostics.push(graphInputSchemaDiagnostic(
+        'visual.schema.enumConstraintMismatch',
+        `Enum value at index ${index} must satisfy string length constraints.`,
+        `${path}/enum/${index}`
+      ));
+    }
+    if (arrayType(kind) && Array.isArray(value) && !arrayValueMatchesItemBounds(value, schema)) {
+      diagnostics.push(graphInputSchemaDiagnostic(
+        'visual.schema.enumConstraintMismatch',
+        `Enum value at index ${index} must satisfy array item count constraints.`,
+        `${path}/enum/${index}`
+      ));
+    }
   });
 }
 
@@ -5307,6 +5319,30 @@ function validateSchemaConst(schema, kind, path, diagnostics) {
       `${path}/const`
     ));
   }
+  if (numericType(kind) && schemaValueMatchesType(constValue, kind)
+      && !numericValueMatchesBounds(constValue, schema)) {
+    diagnostics.push(graphInputSchemaDiagnostic(
+      'visual.schema.constConstraintMismatch',
+      'Const value must satisfy numeric bounds.',
+      `${path}/const`
+    ));
+  }
+  if (stringType(kind) && schemaValueMatchesType(constValue, kind)
+      && !stringValueMatchesLengthBounds(constValue, schema)) {
+    diagnostics.push(graphInputSchemaDiagnostic(
+      'visual.schema.constConstraintMismatch',
+      'Const value must satisfy string length constraints.',
+      `${path}/const`
+    ));
+  }
+  if (arrayType(kind) && schemaValueMatchesType(constValue, kind)
+      && !arrayValueMatchesItemBounds(constValue, schema)) {
+    diagnostics.push(graphInputSchemaDiagnostic(
+      'visual.schema.constConstraintMismatch',
+      'Const value must satisfy array item count constraints.',
+      `${path}/const`
+    ));
+  }
 }
 
 function validateSchemaNumericBounds(schema, kind, path, diagnostics) {
@@ -5343,6 +5379,82 @@ function validateSchemaNumericBounds(schema, kind, path, diagnostics) {
     diagnostics.push(graphInputSchemaDiagnostic(
       'visual.schema.numericBoundsInvalid',
       `Numeric lower bound ${numericLowerLabel(lower)} is incompatible with upper bound ${numericUpperLabel(upper)}.`,
+      path
+    ));
+  }
+}
+
+function validateSchemaStringLengthBounds(schema, kind, path, diagnostics) {
+  if (!schemaHasStringLengthBounds(schema)) {
+    return;
+  }
+  const validStringKind = stringType(kind);
+  if (!validStringKind) {
+    diagnostics.push(graphInputSchemaDiagnostic(
+      'visual.schema.stringLengthConstraintTypeMismatch',
+      'String length constraints require schema type/kind string, duration, or datetime.',
+      path
+    ));
+  }
+  for (const keyword of ['minLength', 'maxLength']) {
+    if (!Object.prototype.hasOwnProperty.call(schema || {}, keyword)) {
+      continue;
+    }
+    if (stringLengthBoundaryValue(schema[keyword]) === null) {
+      diagnostics.push(graphInputSchemaDiagnostic(
+        'visual.schema.stringLengthConstraintInvalid',
+        `String length constraint '${keyword}' must be a non-negative integer.`,
+        `${path}/${keyword}`
+      ));
+    }
+  }
+  if (!validStringKind || !stringLengthBoundariesValid(schema)) {
+    return;
+  }
+  const minimum = schemaMinLength(schema);
+  const maximum = schemaMaxLength(schema);
+  if (minimum !== null && maximum !== null && minimum > maximum) {
+    diagnostics.push(graphInputSchemaDiagnostic(
+      'visual.schema.stringLengthBoundsInvalid',
+      `String minLength ${minimum} is greater than maxLength ${maximum}.`,
+      path
+    ));
+  }
+}
+
+function validateSchemaArrayItemBounds(schema, kind, path, diagnostics) {
+  if (!schemaHasArrayItemBounds(schema)) {
+    return;
+  }
+  const validArrayKind = arrayType(kind);
+  if (!validArrayKind) {
+    diagnostics.push(graphInputSchemaDiagnostic(
+      'visual.schema.arrayItemConstraintTypeMismatch',
+      'Array item count constraints require schema type/kind array.',
+      path
+    ));
+  }
+  for (const keyword of ['minItems', 'maxItems']) {
+    if (!Object.prototype.hasOwnProperty.call(schema || {}, keyword)) {
+      continue;
+    }
+    if (arrayItemBoundaryValue(schema[keyword]) === null) {
+      diagnostics.push(graphInputSchemaDiagnostic(
+        'visual.schema.arrayItemConstraintInvalid',
+        `Array item count constraint '${keyword}' must be a non-negative integer.`,
+        `${path}/${keyword}`
+      ));
+    }
+  }
+  if (!validArrayKind || !arrayItemBoundariesValid(schema)) {
+    return;
+  }
+  const minimum = schemaMinItems(schema);
+  const maximum = schemaMaxItems(schema);
+  if (minimum !== null && maximum !== null && minimum > maximum) {
+    diagnostics.push(graphInputSchemaDiagnostic(
+      'visual.schema.arrayItemBoundsInvalid',
+      `Array minItems ${minimum} is greater than maxItems ${maximum}.`,
       path
     ));
   }
@@ -5620,9 +5732,13 @@ function schemaCompatibilityIssue(sourceSchema, targetSchema, path = '') {
     return '';
   }
   if (sourceType === 'array' && targetType === 'array') {
-    return !sourceSchema?.items || !targetSchema?.items
-      ? ''
-      : schemaCompatibilityIssue(sourceSchema.items, targetSchema.items, appendCompatibilityPath(path, 'items'));
+    if (sourceSchema?.items && targetSchema?.items) {
+      const itemIssue = schemaCompatibilityIssue(sourceSchema.items, targetSchema.items, appendCompatibilityPath(path, 'items'));
+      if (itemIssue) {
+        return itemIssue;
+      }
+    }
+    return arrayItemBoundsCompatibilityIssue(sourceSchema, targetSchema, path);
   }
   if (sourceType === 'object' && targetType === 'object') {
     return objectSchemaCompatibilityIssue(sourceSchema, targetSchema, path);
@@ -5640,18 +5756,21 @@ function schemaCompatibilityIssue(sourceSchema, targetSchema, path = '') {
       ? reasonAt(path, `source enum value(s) ${valueDomainLabel(outside)} are outside target enum ${valueDomainLabel(targetEnumValues)}`)
       : '';
   }
-  if (sourceType === 'enum') {
-    const sourceEnumValues = schemaEnumValues(sourceSchema);
-    if (!sourceEnumValues.length) {
-      return '';
-    }
+  const sourceEnumValues = schemaEnumValues(sourceSchema);
+  if (sourceEnumValues.length) {
     const incompatible = sourceEnumValues.filter((value) => !schemaValueMatchesSchema(value, targetSchema));
     return incompatible.length
       ? reasonAt(path, `source enum value(s) ${valueDomainLabel(incompatible)} do not match target schema ${schemaType(targetSchema)}`)
       : '';
   }
-  return sourceType === targetType || (numericType(sourceType) && numericType(targetType))
-    ? numericBoundsCompatibilityIssue(sourceSchema, targetSchema, path)
+  if (numericType(sourceType) && numericType(targetType)) {
+    return numericBoundsCompatibilityIssue(sourceSchema, targetSchema, path);
+  }
+  if (stringType(sourceType) && stringType(targetType)) {
+    return stringLengthCompatibilityIssue(sourceSchema, targetSchema, path);
+  }
+  return sourceType === targetType
+    ? ''
     : reasonAt(path, `source type ${schemaType(sourceSchema)} cannot feed target type ${schemaType(targetSchema)}`);
 }
 
@@ -5677,6 +5796,60 @@ function numericBoundsCompatibilityIssue(sourceSchema, targetSchema, path = '') 
     }
     if (!upperBoundAtMost(sourceUpper, targetUpper)) {
       return reasonAt(path, `source upper bound ${numericUpperLabel(sourceUpper)} is weaker than target upper bound ${numericUpperLabel(targetUpper)}`);
+    }
+  }
+  return '';
+}
+
+function stringLengthCompatibilityIssue(sourceSchema, targetSchema, path = '') {
+  if (!stringType(rawSchemaType(sourceSchema)) || !stringType(rawSchemaType(targetSchema))) {
+    return '';
+  }
+  const targetMinimum = schemaMinLength(targetSchema);
+  if (targetMinimum !== null) {
+    const sourceMinimum = schemaMinLength(sourceSchema);
+    if (sourceMinimum === null) {
+      return reasonAt(path, `target requires length >= ${targetMinimum} but source has no minLength`);
+    }
+    if (sourceMinimum < targetMinimum) {
+      return reasonAt(path, `source minLength ${sourceMinimum} is weaker than target minLength ${targetMinimum}`);
+    }
+  }
+  const targetMaximum = schemaMaxLength(targetSchema);
+  if (targetMaximum !== null) {
+    const sourceMaximum = schemaMaxLength(sourceSchema);
+    if (sourceMaximum === null) {
+      return reasonAt(path, `target requires length <= ${targetMaximum} but source has no maxLength`);
+    }
+    if (sourceMaximum > targetMaximum) {
+      return reasonAt(path, `source maxLength ${sourceMaximum} is weaker than target maxLength ${targetMaximum}`);
+    }
+  }
+  return '';
+}
+
+function arrayItemBoundsCompatibilityIssue(sourceSchema, targetSchema, path = '') {
+  if (!arrayType(rawSchemaType(sourceSchema)) || !arrayType(rawSchemaType(targetSchema))) {
+    return '';
+  }
+  const targetMinimum = schemaMinItems(targetSchema);
+  if (targetMinimum !== null) {
+    const sourceMinimum = schemaMinItems(sourceSchema);
+    if (sourceMinimum === null) {
+      return reasonAt(path, `target requires item count >= ${targetMinimum} but source has no minItems`);
+    }
+    if (sourceMinimum < targetMinimum) {
+      return reasonAt(path, `source minItems ${sourceMinimum} is weaker than target minItems ${targetMinimum}`);
+    }
+  }
+  const targetMaximum = schemaMaxItems(targetSchema);
+  if (targetMaximum !== null) {
+    const sourceMaximum = schemaMaxItems(sourceSchema);
+    if (sourceMaximum === null) {
+      return reasonAt(path, `target requires item count <= ${targetMaximum} but source has no maxItems`);
+    }
+    if (sourceMaximum > targetMaximum) {
+      return reasonAt(path, `source maxItems ${sourceMaximum} is weaker than target maxItems ${targetMaximum}`);
     }
   }
   return '';
@@ -5799,7 +5972,9 @@ function schemaValueMatchesSchema(value, schema) {
   if (values.length && !values.some((allowed) => schemaValuesEqual(allowed, value))) {
     return false;
   }
-  return numericValueMatchesBounds(value, schema);
+  return numericValueMatchesBounds(value, schema)
+    && stringValueMatchesLengthBounds(value, schema)
+    && arrayValueMatchesSchema(value, schema);
 }
 
 function schemaValueMatchesType(value, type) {
@@ -5853,11 +6028,132 @@ function numericType(type) {
   return type === 'number' || type === 'integer' || type === 'decimal';
 }
 
+function stringType(type) {
+  return type === 'string' || type === 'duration' || type === 'datetime';
+}
+
+function arrayType(type) {
+  return type === 'array';
+}
+
 function schemaHasNumericBounds(schema) {
   return Object.prototype.hasOwnProperty.call(schema || {}, 'minimum')
     || Object.prototype.hasOwnProperty.call(schema || {}, 'maximum')
     || Object.prototype.hasOwnProperty.call(schema || {}, 'exclusiveMinimum')
     || Object.prototype.hasOwnProperty.call(schema || {}, 'exclusiveMaximum');
+}
+
+function schemaHasStringLengthBounds(schema) {
+  return Object.prototype.hasOwnProperty.call(schema || {}, 'minLength')
+    || Object.prototype.hasOwnProperty.call(schema || {}, 'maxLength');
+}
+
+function stringLengthBoundariesValid(schema) {
+  return (!Object.prototype.hasOwnProperty.call(schema || {}, 'minLength') || stringLengthBoundaryValue(schema.minLength) !== null)
+    && (!Object.prototype.hasOwnProperty.call(schema || {}, 'maxLength') || stringLengthBoundaryValue(schema.maxLength) !== null);
+}
+
+function stringValueMatchesLengthBounds(value, schema) {
+  if (typeof value !== 'string') {
+    return true;
+  }
+  const length = stringCodePointLength(value);
+  const minimum = schemaMinLength(schema);
+  if (minimum !== null && length < minimum) {
+    return false;
+  }
+  const maximum = schemaMaxLength(schema);
+  return maximum === null || length <= maximum;
+}
+
+function schemaMinLength(schema) {
+  return stringLengthBoundaryValue(schema?.minLength);
+}
+
+function schemaMaxLength(schema) {
+  return stringLengthBoundaryValue(schema?.maxLength);
+}
+
+function stringLengthBoundaryValue(value) {
+  return typeof value === 'number' && Number.isFinite(value) && Number.isInteger(value) && value >= 0
+    ? value
+    : null;
+}
+
+function stringCodePointLength(value) {
+  return Array.from(String(value ?? '')).length;
+}
+
+function schemaHasArrayItemBounds(schema) {
+  return Object.prototype.hasOwnProperty.call(schema || {}, 'minItems')
+    || Object.prototype.hasOwnProperty.call(schema || {}, 'maxItems');
+}
+
+function arrayItemBoundariesValid(schema) {
+  return (!Object.prototype.hasOwnProperty.call(schema || {}, 'minItems') || arrayItemBoundaryValue(schema.minItems) !== null)
+    && (!Object.prototype.hasOwnProperty.call(schema || {}, 'maxItems') || arrayItemBoundaryValue(schema.maxItems) !== null);
+}
+
+function arrayValueMatchesSchema(value, schema) {
+  if (!Array.isArray(value) || rawSchemaType(schema) !== 'array') {
+    return true;
+  }
+  if (!arrayValueMatchesItemBounds(value, schema)) {
+    return false;
+  }
+  const items = schema?.items;
+  return !items || value.every((item) => schemaValueMatchesSchema(item, items));
+}
+
+function arrayValueMatchesItemBounds(value, schema) {
+  if (!Array.isArray(value)) {
+    return true;
+  }
+  const size = value.length;
+  const minimum = explicitSchemaMinItems(schema);
+  if (minimum !== null && size < minimum) {
+    return false;
+  }
+  const maximum = explicitSchemaMaxItems(schema);
+  return maximum === null || size <= maximum;
+}
+
+function schemaMinItems(schema) {
+  const explicit = explicitSchemaMinItems(schema);
+  if (explicit !== null) {
+    return explicit;
+  }
+  const values = schemaEnumValues(schema);
+  if (values.length && values.every(Array.isArray)) {
+    return Math.min(...values.map((value) => value.length));
+  }
+  return null;
+}
+
+function schemaMaxItems(schema) {
+  const explicit = explicitSchemaMaxItems(schema);
+  if (explicit !== null) {
+    return explicit;
+  }
+  const values = schemaEnumValues(schema);
+  if (values.length && values.every(Array.isArray)) {
+    return Math.max(...values.map((value) => value.length));
+  }
+  return null;
+}
+
+function explicitSchemaMinItems(schema) {
+  return arrayItemBoundaryValue(schema?.minItems);
+}
+
+function explicitSchemaMaxItems(schema) {
+  return arrayItemBoundaryValue(schema?.maxItems);
+}
+
+function arrayItemBoundaryValue(value) {
+  return typeof value === 'number' && Number.isFinite(value) && Number.isInteger(value) && value >= 0
+    ? value
+    : null;
 }
 
 function numericBoundariesValid(schema) {

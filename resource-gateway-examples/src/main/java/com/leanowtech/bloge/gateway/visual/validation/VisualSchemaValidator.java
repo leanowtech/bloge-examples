@@ -45,15 +45,11 @@ public final class VisualSchemaValidator {
             "then",
             "else"
     );
-    private static final Set<String> UNSUPPORTED_CONSTRAINT_KEYWORDS = Set.of(
-            "pattern",
-            "multipleOf",
-            "minLength",
-            "maxLength",
-            "minItems",
-            "maxItems",
-            "uniqueItems",
-            "contains",
+	    private static final Set<String> UNSUPPORTED_CONSTRAINT_KEYWORDS = Set.of(
+	            "pattern",
+	            "multipleOf",
+	            "uniqueItems",
+	            "contains",
             "minContains",
             "maxContains",
             "prefixItems",
@@ -123,10 +119,12 @@ public final class VisualSchemaValidator {
                     path + "/type"));
             return;
         }
-        validateStandardEnum(schema, kind, path, diagnostics);
-        validateConstValue(schema, kind, path, diagnostics);
-        validateNumericBounds(schema, kind, path, diagnostics);
-        validateDefaultValue(schema, kind, path, diagnostics);
+	        validateStandardEnum(schema, kind, path, diagnostics);
+	        validateConstValue(schema, kind, path, diagnostics);
+	        validateNumericBounds(schema, kind, path, diagnostics);
+	        validateStringLengthBounds(schema, kind, path, diagnostics);
+	        validateArrayItemBounds(schema, kind, path, diagnostics);
+	        validateDefaultValue(schema, kind, path, diagnostics);
         if ("object".equals(kind)) {
             Map<String, Object> properties = objectProperties(schema, path, diagnostics);
             validateAdditionalProperties(schema, path, diagnostics);
@@ -256,16 +254,21 @@ public final class VisualSchemaValidator {
             }
             return;
         }
-        if ("array".equals(kind)) {
-            if (!(value instanceof List<?> list)) {
-                diagnostics.add(VisualDiagnostic.error("visual.schema.defaultTypeMismatch",
-                        "Schema default must match type/kind '%s'.".formatted(kind),
-                        path));
-                return;
-            }
-            Object items = schema.get("items");
-            if (items instanceof Map<?, ?> itemSchema) {
-                Map<String, Object> itemSchemaMap = (Map<String, Object>) itemSchema;
+	        if ("array".equals(kind)) {
+	            if (!(value instanceof List<?> list)) {
+	                diagnostics.add(VisualDiagnostic.error("visual.schema.defaultTypeMismatch",
+	                        "Schema default must match type/kind '%s'.".formatted(kind),
+	                        path));
+	                return;
+	            }
+	            if (!arrayValueMatchesItemBounds(value, schema)) {
+	                diagnostics.add(VisualDiagnostic.error("visual.schema.defaultConstraintMismatch",
+	                        "Schema default must satisfy array item count constraints.",
+	                        path));
+	            }
+	            Object items = schema.get("items");
+	            if (items instanceof Map<?, ?> itemSchema) {
+	                Map<String, Object> itemSchemaMap = (Map<String, Object>) itemSchema;
                 for (int i = 0; i < list.size(); i++) {
                     validateDefaultValue(itemSchemaMap, schemaKind(itemSchemaMap), path + "/" + i,
                             diagnostics, list.get(i));
@@ -293,12 +296,17 @@ public final class VisualSchemaValidator {
                     "Schema default must match type/kind '%s'.".formatted(kind),
                     path));
         }
-        if (numericKind(kind) && !numericValueMatchesBounds(value, schema)) {
-            diagnostics.add(VisualDiagnostic.error("visual.schema.defaultConstraintMismatch",
-                    "Schema default must satisfy numeric bounds.",
-                    path));
-        }
-    }
+	        if (numericKind(kind) && !numericValueMatchesBounds(value, schema)) {
+	            diagnostics.add(VisualDiagnostic.error("visual.schema.defaultConstraintMismatch",
+	                    "Schema default must satisfy numeric bounds.",
+	                    path));
+	        }
+	        if (stringKind(kind) && !stringValueMatchesLengthBounds(value, schema)) {
+	            diagnostics.add(VisualDiagnostic.error("visual.schema.defaultConstraintMismatch",
+	                    "Schema default must satisfy string length constraints.",
+	                    path));
+	        }
+	    }
 
     private static Map<String, Object> propertiesWithoutDiagnostics(Map<String, Object> schema) {
         Object raw = schema.get("properties");
@@ -400,17 +408,37 @@ public final class VisualSchemaValidator {
                 }
             }
         }
-        if (numericKind(kind)) {
-            for (int i = 0; i < values.size(); i++) {
-                if (enumValueMatchesKind(values.get(i), kind)
-                        && !numericValueMatchesBounds(values.get(i), schema)) {
+	        if (numericKind(kind)) {
+	            for (int i = 0; i < values.size(); i++) {
+	                if (enumValueMatchesKind(values.get(i), kind)
+	                        && !numericValueMatchesBounds(values.get(i), schema)) {
                     diagnostics.add(VisualDiagnostic.error("visual.schema.enumConstraintMismatch",
                             "Enum value at index %d must satisfy numeric bounds.".formatted(i),
                             path + "/enum/" + i));
-                }
-            }
-        }
-    }
+	                }
+	            }
+	        }
+	        if (stringKind(kind)) {
+	            for (int i = 0; i < values.size(); i++) {
+	                if (enumValueMatchesKind(values.get(i), kind)
+	                        && !stringValueMatchesLengthBounds(values.get(i), schema)) {
+	                    diagnostics.add(VisualDiagnostic.error("visual.schema.enumConstraintMismatch",
+	                            "Enum value at index %d must satisfy string length constraints.".formatted(i),
+	                            path + "/enum/" + i));
+	                }
+	            }
+	        }
+	        if (arrayKind(kind)) {
+	            for (int i = 0; i < values.size(); i++) {
+	                if (values.get(i) instanceof List<?>
+	                        && !arrayValueMatchesItemBounds(values.get(i), schema)) {
+	                    diagnostics.add(VisualDiagnostic.error("visual.schema.enumConstraintMismatch",
+	                            "Enum value at index %d must satisfy array item count constraints.".formatted(i),
+	                            path + "/enum/" + i));
+	                }
+	            }
+	        }
+	    }
 
     private static void validateConstValue(Map<String, Object> schema,
                                            String kind,
@@ -439,13 +467,25 @@ public final class VisualSchemaValidator {
                         path + "/const"));
             }
         }
-        if (numericKind(kind) && constValueMatchesKind(constValue, kind)
-                && !numericValueMatchesBounds(constValue, schema)) {
-            diagnostics.add(VisualDiagnostic.error("visual.schema.constConstraintMismatch",
-                    "Const value must satisfy numeric bounds.",
-                    path + "/const"));
-        }
-    }
+	        if (numericKind(kind) && constValueMatchesKind(constValue, kind)
+	                && !numericValueMatchesBounds(constValue, schema)) {
+	            diagnostics.add(VisualDiagnostic.error("visual.schema.constConstraintMismatch",
+	                    "Const value must satisfy numeric bounds.",
+	                    path + "/const"));
+	        }
+	        if (stringKind(kind) && constValueMatchesKind(constValue, kind)
+	                && !stringValueMatchesLengthBounds(constValue, schema)) {
+	            diagnostics.add(VisualDiagnostic.error("visual.schema.constConstraintMismatch",
+	                    "Const value must satisfy string length constraints.",
+	                    path + "/const"));
+	        }
+	        if (arrayKind(kind) && constValueMatchesKind(constValue, kind)
+	                && !arrayValueMatchesItemBounds(constValue, schema)) {
+	            diagnostics.add(VisualDiagnostic.error("visual.schema.constConstraintMismatch",
+	                    "Const value must satisfy array item count constraints.",
+	                    path + "/const"));
+	        }
+	    }
 
     private static void validateNumericBounds(Map<String, Object> schema,
                                               String kind,
@@ -474,12 +514,66 @@ public final class VisualSchemaValidator {
                     "Numeric lower bound %s is incompatible with upper bound %s."
                             .formatted(lower.lowerLabel(), upper.upperLabel()),
                     path));
-        }
-    }
+	        }
+	    }
 
-    private static void validateCustomEnumValues(Map<String, Object> schema,
-                                                 String path,
-                                                 List<VisualDiagnostic> diagnostics) {
+	    private static void validateStringLengthBounds(Map<String, Object> schema,
+	                                                   String kind,
+	                                                   String path,
+	                                                   List<VisualDiagnostic> diagnostics) {
+	        if (!hasStringLengthBounds(schema)) {
+	            return;
+	        }
+	        boolean validStringKind = stringKind(kind);
+	        if (!validStringKind) {
+	            diagnostics.add(VisualDiagnostic.error("visual.schema.stringLengthConstraintTypeMismatch",
+	                    "String length constraints require schema type/kind string, duration, or datetime.",
+	                    path));
+	        }
+	        validateStringLengthBoundary(schema, "minLength", path, diagnostics);
+	        validateStringLengthBoundary(schema, "maxLength", path, diagnostics);
+	        if (!validStringKind || !stringLengthBoundariesValid(schema)) {
+	            return;
+	        }
+	        Long minimum = stringLengthBoundary(schema.get("minLength"));
+	        Long maximum = stringLengthBoundary(schema.get("maxLength"));
+	        if (minimum != null && maximum != null && minimum > maximum) {
+	            diagnostics.add(VisualDiagnostic.error("visual.schema.stringLengthBoundsInvalid",
+	                    "String minLength %d is greater than maxLength %d.".formatted(minimum, maximum),
+	                    path));
+	        }
+	    }
+
+	    private static void validateArrayItemBounds(Map<String, Object> schema,
+	                                                String kind,
+	                                                String path,
+	                                                List<VisualDiagnostic> diagnostics) {
+	        if (!hasArrayItemBounds(schema)) {
+	            return;
+	        }
+	        boolean validArrayKind = arrayKind(kind);
+	        if (!validArrayKind) {
+	            diagnostics.add(VisualDiagnostic.error("visual.schema.arrayItemConstraintTypeMismatch",
+	                    "Array item count constraints require schema type/kind array.",
+	                    path));
+	        }
+	        validateArrayItemBoundary(schema, "minItems", path, diagnostics);
+	        validateArrayItemBoundary(schema, "maxItems", path, diagnostics);
+	        if (!validArrayKind || !arrayItemBoundariesValid(schema)) {
+	            return;
+	        }
+	        Long minimum = arrayItemBoundary(schema.get("minItems"));
+	        Long maximum = arrayItemBoundary(schema.get("maxItems"));
+	        if (minimum != null && maximum != null && minimum > maximum) {
+	            diagnostics.add(VisualDiagnostic.error("visual.schema.arrayItemBoundsInvalid",
+	                    "Array minItems %d is greater than maxItems %d.".formatted(minimum, maximum),
+	                    path));
+	        }
+	    }
+
+	    private static void validateCustomEnumValues(Map<String, Object> schema,
+	                                                 String path,
+	                                                 List<VisualDiagnostic> diagnostics) {
         Object values = schema.get("values");
         if (!(values instanceof List<?> list) || list.isEmpty()) {
             diagnostics.add(VisualDiagnostic.error("visual.schema.enumValuesMissing",
@@ -504,12 +598,22 @@ public final class VisualSchemaValidator {
         }
     }
 
-    private static boolean hasNumericBounds(Map<String, Object> schema) {
-        return schema.containsKey("minimum")
-                || schema.containsKey("maximum")
-                || schema.containsKey("exclusiveMinimum")
-                || schema.containsKey("exclusiveMaximum");
-    }
+	    private static boolean hasNumericBounds(Map<String, Object> schema) {
+	        return schema.containsKey("minimum")
+	                || schema.containsKey("maximum")
+	                || schema.containsKey("exclusiveMinimum")
+	                || schema.containsKey("exclusiveMaximum");
+	    }
+
+	    private static boolean hasStringLengthBounds(Map<String, Object> schema) {
+	        return schema.containsKey("minLength")
+	                || schema.containsKey("maxLength");
+	    }
+
+	    private static boolean hasArrayItemBounds(Map<String, Object> schema) {
+	        return schema.containsKey("minItems")
+	                || schema.containsKey("maxItems");
+	    }
 
     private static void validateNumericBoundary(Map<String, Object> schema,
                                                 String keyword,
@@ -535,18 +639,104 @@ public final class VisualSchemaValidator {
                 || numericBoundaryValue(schema.get("exclusiveMaximum")).isPresent());
     }
 
-    private static boolean numericValueMatchesBounds(Object value, Map<String, Object> schema) {
-        if (!(value instanceof Number number)) {
-            return true;
-        }
+	    private static boolean numericValueMatchesBounds(Object value, Map<String, Object> schema) {
+	        if (!(value instanceof Number number)) {
+	            return true;
+	        }
         double numericValue = number.doubleValue();
         NumericBoundary lower = lowerBound(schema);
         if (lower != null && !lower.acceptsLower(numericValue)) {
             return false;
         }
         NumericBoundary upper = upperBound(schema);
-        return upper == null || upper.acceptsUpper(numericValue);
-    }
+	        return upper == null || upper.acceptsUpper(numericValue);
+	    }
+
+	    private static void validateStringLengthBoundary(Map<String, Object> schema,
+	                                                     String keyword,
+	                                                     String path,
+	                                                     List<VisualDiagnostic> diagnostics) {
+	        if (!schema.containsKey(keyword)) {
+	            return;
+	        }
+	        if (stringLengthBoundary(schema.get(keyword)) == null) {
+	            diagnostics.add(VisualDiagnostic.error("visual.schema.stringLengthConstraintInvalid",
+	                    "String length constraint '%s' must be a non-negative integer.".formatted(keyword),
+	                    path + "/" + keyword));
+	        }
+	    }
+
+	    private static boolean stringLengthBoundariesValid(Map<String, Object> schema) {
+	        return (!schema.containsKey("minLength") || stringLengthBoundary(schema.get("minLength")) != null)
+	                && (!schema.containsKey("maxLength") || stringLengthBoundary(schema.get("maxLength")) != null);
+	    }
+
+	    private static boolean stringValueMatchesLengthBounds(Object value, Map<String, Object> schema) {
+	        if (!(value instanceof String string)) {
+	            return true;
+	        }
+	        long length = string.codePoints().count();
+	        Long minimum = stringLengthBoundary(schema.get("minLength"));
+	        if (minimum != null && length < minimum) {
+	            return false;
+	        }
+	        Long maximum = stringLengthBoundary(schema.get("maxLength"));
+	        return maximum == null || length <= maximum;
+	    }
+
+	    private static void validateArrayItemBoundary(Map<String, Object> schema,
+	                                                  String keyword,
+	                                                  String path,
+	                                                  List<VisualDiagnostic> diagnostics) {
+	        if (!schema.containsKey(keyword)) {
+	            return;
+	        }
+	        if (arrayItemBoundary(schema.get(keyword)) == null) {
+	            diagnostics.add(VisualDiagnostic.error("visual.schema.arrayItemConstraintInvalid",
+	                    "Array item count constraint '%s' must be a non-negative integer.".formatted(keyword),
+	                    path + "/" + keyword));
+	        }
+	    }
+
+	    private static boolean arrayItemBoundariesValid(Map<String, Object> schema) {
+	        return (!schema.containsKey("minItems") || arrayItemBoundary(schema.get("minItems")) != null)
+	                && (!schema.containsKey("maxItems") || arrayItemBoundary(schema.get("maxItems")) != null);
+	    }
+
+	    private static boolean arrayValueMatchesItemBounds(Object value, Map<String, Object> schema) {
+	        if (!(value instanceof List<?> list)) {
+	            return true;
+	        }
+	        long size = list.size();
+	        Long minimum = arrayItemBoundary(schema.get("minItems"));
+	        if (minimum != null && size < minimum) {
+	            return false;
+	        }
+	        Long maximum = arrayItemBoundary(schema.get("maxItems"));
+	        return maximum == null || size <= maximum;
+	    }
+
+	    private static Long stringLengthBoundary(Object value) {
+	        if (!(value instanceof Number number)) {
+	            return null;
+	        }
+	        double numericValue = number.doubleValue();
+	        if (!Double.isFinite(numericValue) || Math.rint(numericValue) != numericValue || numericValue < 0) {
+	            return null;
+	        }
+	        return (long) numericValue;
+	    }
+
+	    private static Long arrayItemBoundary(Object value) {
+	        if (!(value instanceof Number number)) {
+	            return null;
+	        }
+	        double numericValue = number.doubleValue();
+	        if (!Double.isFinite(numericValue) || Math.rint(numericValue) != numericValue || numericValue < 0) {
+	            return null;
+	        }
+	        return (long) numericValue;
+	    }
 
     private static NumericBoundary lowerBound(Map<String, Object> schema) {
         NumericBoundary minimum = numericBoundary(schema.get("minimum"), false);
@@ -605,9 +795,17 @@ public final class VisualSchemaValidator {
         return comparison > 0 || comparison == 0 && (lower.exclusive() || upper.exclusive());
     }
 
-    private static boolean numericKind(String kind) {
-        return "integer".equals(kind) || "number".equals(kind) || "decimal".equals(kind);
-    }
+	    private static boolean numericKind(String kind) {
+	        return "integer".equals(kind) || "number".equals(kind) || "decimal".equals(kind);
+	    }
+
+	    private static boolean stringKind(String kind) {
+	        return "string".equals(kind) || "duration".equals(kind) || "datetime".equals(kind);
+	    }
+
+	    private static boolean arrayKind(String kind) {
+	        return "array".equals(kind);
+	    }
 
     private static boolean valueConstrainedKind(String kind) {
         return switch (kind) {
