@@ -106,6 +106,13 @@ the draft stores a stable key such as `customer.id` while `targetPort` and
 `targetPath` keep the actual schema location unambiguous. Nested object schemas
 are expanded into field paths such as `applicant.score`, so imported operator
 libraries can expose realistic business payloads without flattening them first.
+The browser also exposes whole-port root handles for user operators and graph
+input `ctx`, allowing a compatible business object to be dragged as one binding
+while the server still proves the nested required fields and target types.
+Schema-declared config fields are canvas targets too: dragging an upstream
+output to a `configSchema` handle writes the same expression-backed config value
+as the inspector picker, runs the same server preflight, and keeps the visual
+dependency visible without persisting config edges as executable data edges.
 Object bindings and edges compare required nested fields, so an applicant object
 without required `tier` cannot feed an input requiring `applicant.tier`, even
 when `tier` exists only as an optional source field. Array bindings
@@ -214,7 +221,10 @@ Stored drafts can be published into immutable visual graph artifacts that freeze
 the generated DSL, draft snapshot, operator schema snapshots, fingerprints,
 layout, and validation/generation reports for audit or later promotion. Published
 artifacts can be run directly from their frozen DSL, so execution no longer
-depends on whatever the current operator catalog exposes after publication.
+depends on whatever the current operator catalog exposes after publication. The
+browser's Publications panel lists these immutable artifacts, refreshes after a
+successful publish, and runs the selected artifact with the current Context JSON
+without rewriting the draft currently being edited on the canvas.
 The Drafts panel can also load revision history, preview an old snapshot on the
 canvas, and restore it as a new latest revision through the same guarded patch
 path. Each stored revision carries `revisionMetadata` with created/updated
@@ -430,8 +440,7 @@ node config cannot start invalid. The browser consumes both root object defaults
 and nested field-level defaults from `configSchema` when a node is dragged from
 the palette. Invalid libraries return structured visual diagnostics instead of
 accepting a library that will fail later on the canvas.
-Operator
-`policy.tenants`, `policy.namespaces`, and `policy.environments` are stored with
+Operator `policy.tenants`, `policy.namespaces`, and `policy.environments` are stored with
 the library and enforced when scoped drafts use the operator. `DEPRECATED`
 libraries stop appearing in the default palette but continue to resolve for
 stored draft validation/compile/run, and the browser keeps their schemas
@@ -448,7 +457,9 @@ for example `node policy : "risk:legacyPolicy"`. Native input lowering also
 groups `targetPort`/nested `targetPath` bindings into object literals, so
 schema-shaped inputs such as `applicant.score` compile as
 `applicant = { score: ctx.score }` instead of illegal dotted input-field
-assignments. Native operator `configSchema` values are also lowered as a
+assignments. Transform lowering also expands template references below a root
+port object binding, so `{{input.customer.id}}` can render as `ctx.customer.id`
+when the whole `customer` port is bound at once. Native operator `configSchema` values are also lowered as a
 business `config` input object while `timeout` and `retryAttempts` stay as
 execution config; structured config expressions remain expressions inside that
 object. Because the current BLOGE object-literal grammar does not support quoted
@@ -873,7 +884,7 @@ curl -X POST http://localhost:8080/api/gateway/resources/execute \
 
 ## Test strategy
 
-The test suite is organised into four layers (40 top-level test classes, 357 executed
+The test suite is organised into four layers (40 top-level test classes, 360 executed
 tests, including nested JUnit suites):
 
 ### Layer 1 — Unit tests
@@ -899,7 +910,7 @@ Isolated component tests, some with lightweight Spring slices or mocks.
 | `ResourceDescriptorBootstrapTest` | 7 | Seeding, refresh behavior, idempotency |
 | `GatewayDslCompilationTest` | 7 | DSL parsing, graph loading |
 | Gateway example API suite | 13 | Dynamic composer service/controller, scenario catalog, example graph endpoints |
-| Visual authoring suite | 216 | Visual operator projection, resource design contract persistence and gates, resource-contract in-use delete protection, imported libraries, registry-aware and impact-aware library validation, catalog lifecycle gates, deprecated operator draft resolution and active-scope fingerprinting, catalog token gates and policy filtering, cross-library operatorRef ownership, operator-library in-use change protection and same-ref fingerprint drift/missing-snapshot preflight warnings, system-reserved operatorRef gates, import-time lowering gates including DSL-safe field-name gates, schema default value gates, draft/publication persistence and history, revision audit metadata, full-save/PATCH fingerprint preservation, service-managed fingerprint snapshot gates, structured malformed patch diagnostics, server-assigned create identity, revision-guarded full-save, patch, stored-run, delete, and publish conflict handling, operator fingerprint drift preservation and execution snapshot coverage gates, typed connection/edge validation including edge identity uniqueness and binding kind allow-list, input/config source-picker server preflight with duplicate-connection rejection and nested config paths, duplicate target input ownership, object required fields, object schema structure gates, required-array schema gates, nested objectTemplate required fields, enum value-domain and shape gates, standard JSON Schema config enum gates, nested config expression references and configSchema type gates, native config input lowering and DSL field-key diagnostics, data edge/semantic dependency consistency, graph input schema gates, secret blocking, DSL lowering, compiler gating, dependency ordering, runtime smoke path |
+| Visual authoring suite | 219 | Visual operator projection, resource design contract persistence and gates, resource-contract in-use delete protection, imported libraries, registry-aware and impact-aware library validation, catalog lifecycle gates, deprecated operator draft resolution and active-scope fingerprinting, catalog token gates and policy filtering, cross-library operatorRef ownership, operator-library in-use change protection and same-ref fingerprint drift/missing-snapshot preflight warnings, system-reserved operatorRef gates, import-time lowering gates including DSL-safe field-name gates, schema default value gates, draft/publication persistence and history, revision audit metadata, full-save/PATCH fingerprint preservation, service-managed fingerprint snapshot gates, structured malformed patch diagnostics, server-assigned create identity, revision-guarded full-save, patch, stored-run, delete, and publish conflict handling, operator fingerprint drift preservation and execution snapshot coverage gates, typed connection/edge validation including edge identity uniqueness and binding kind allow-list, input/config source-picker server preflight with duplicate-connection rejection and nested config paths, duplicate target input ownership, root-port object binding, object required fields, object schema structure gates, required-array schema gates, nested objectTemplate required fields, enum value-domain and shape gates, standard JSON Schema config enum gates, nested config expression references and configSchema type gates, native config input lowering and DSL field-key diagnostics, data edge/semantic dependency consistency, graph input schema gates, secret blocking, DSL lowering, compiler gating, dependency ordering, runtime smoke path |
 
 ### Layer 3 — Orchestration tests
 

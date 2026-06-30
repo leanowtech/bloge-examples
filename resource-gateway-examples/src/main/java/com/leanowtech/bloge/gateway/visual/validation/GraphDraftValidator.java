@@ -273,6 +273,9 @@ public class GraphDraftValidator {
     }
 
     private static boolean satisfiesRequiredPath(String inputName, String requiredPath) {
+        if (inputName == null || inputName.isBlank()) {
+            return true;
+        }
         return inputName.equals(requiredPath)
                 || inputName.startsWith(requiredPath + ".")
                 || requiredPath.startsWith(inputName + ".");

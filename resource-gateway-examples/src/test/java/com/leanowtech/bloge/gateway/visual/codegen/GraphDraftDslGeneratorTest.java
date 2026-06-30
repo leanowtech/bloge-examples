@@ -553,6 +553,54 @@ class GraphDraftDslGeneratorTest {
     }
 
     @Test
+    void lowersRootPortBindingTemplateDescendants() {
+        GraphDraftDslGenerator generator = new GraphDraftDslGenerator(
+                VisualCatalogTestSupport.catalogWithLibrary(
+                        VisualCatalogTestSupport.duplicateInputPathLibrary()));
+        Map<String, GraphDraft.Binding> inputs = new LinkedHashMap<>();
+        inputs.put("", new GraphDraft.Binding(
+                "contextPath",
+                null,
+                "customer",
+                "",
+                "",
+                "customer",
+                "",
+                "",
+                Map.of()
+        ));
+        inputs.put("order.id", GraphDraft.Binding.contextPath("orderId", "order", "id"));
+        GraphDraft draft = new GraphDraft(
+                "",
+                "",
+                0,
+                "rootPortInput",
+                "",
+                "",
+                "",
+                "",
+                null,
+                List.of(new GraphDraft.DraftNode(
+                        "merge",
+                        "risk:customerOrderMerge",
+                        "",
+                        inputs,
+                        Map.of(),
+                        null
+                )),
+                List.of(),
+                Map.of(),
+                new GraphDraft.OutputSelection("merge", "")
+        );
+
+        DslGenerationResult result = generator.generate(draft);
+
+        assertThat(result.generated()).isTrue();
+        assertThat(result.dsl()).contains("customerId = ctx.customer.id");
+        assertThat(result.dsl()).contains("orderId = ctx.orderId");
+    }
+
+    @Test
     void lowersNestedInputTemplateAlias() {
         GraphDraftDslGenerator generator = new GraphDraftDslGenerator(
                 VisualCatalogTestSupport.catalogWithLibrary(

@@ -247,6 +247,9 @@ const state = {
   selectedDraftRevision: 0,
   previewingDraftRevision: 0,
   draftMessage: null,
+  publications: [],
+  selectedPublicationId: '',
+  publicationMessage: null,
   visualCheck: {
     message: 'Not checked',
     level: 'info',
@@ -295,6 +298,7 @@ async function loadScenarios() {
   await loadVisualOperatorCatalog();
   await loadOperatorLibraries({ render: false });
   await loadDraftList({ render: false });
+  await loadPublicationList({ render: false });
   const response = await fetch('/api/gateway/examples/scenarios');
   state.customContextText = pretty(DEFAULT_COMPOSER_CONTEXT);
   syncGraphInputSchemaTextFromBuilder({ render: false });
@@ -674,6 +678,15 @@ function renderInputForm() {
         </div>
         <div id="draft-status" class="draft-status" hidden></div>
       </div>
+      <div class="builder-panel">
+        <div class="panel-title">Publications</div>
+        <div class="draft-controls">
+          <select id="publication-select" aria-label="Published visual graphs"></select>
+          <button id="run-publication" class="secondary compact" type="button">Run</button>
+          <button id="reload-publications" class="secondary compact" type="button">Reload</button>
+        </div>
+        <div id="publication-status" class="draft-status" hidden></div>
+      </div>
       <div id="selected-operator-editor" class="builder-panel"></div>
       <div id="graph-output-editor" class="builder-panel"></div>
       <div class="builder-panel">
@@ -712,6 +725,7 @@ function renderInputForm() {
     renderConnectionStatus();
     renderOperatorLibraryControls();
     renderDraftControls();
+    renderPublicationControls();
     renderSelectedOperatorEditor();
     renderGraphOutputEditor();
     renderVisualCheck();
@@ -848,6 +862,7 @@ function orderedDslNodes(builder = state.builder) {
 function builderEdges(builder = state.builder, options = {}) {
   const edges = [];
   const includeFallback = options.includeFallback !== false;
+  const includeConfig = options.includeConfig === true;
   const add = (edge) => {
     if (!edge.source || !edge.target || edge.source === edge.target) return;
     const key = [
@@ -907,6 +922,21 @@ function builderEdges(builder = state.builder, options = {}) {
         label: binding.label || 'data'
       });
     }
+    if (includeConfig) {
+      for (const binding of builderConfigBindings(node, builder)) {
+        const source = connectionSourceFromExpression(binding.expression, builder);
+        if (!source || source.nodeId === CONTEXT_SOURCE_ID) continue;
+        add({
+          source: source.nodeId,
+          target: node.id,
+          sourcePort: source.port,
+          sourcePath: source.path,
+          targetPort: 'config',
+          targetPath: binding.targetPath,
+          label: binding.label || 'config'
+        });
+      }
+    }
   }
 
   if (includeFallback && edges.length === 0) {
@@ -923,6 +953,21 @@ function builderEdges(builder = state.builder, options = {}) {
     }
   }
   return edges.map(({ key, ...edge }) => edge);
+}
+
+function builderConfigBindings(node, builder = state.builder) {
+  const spec = specForNode(node);
+  return configFieldDescriptors(spec.configSchema)
+    .map((field) => {
+      const value = configValueAtPath(node.config || {}, field.path);
+      const expression = isConfigExpressionValue(value) ? configExpressionForField(value) : '';
+      return {
+        expression,
+        targetPath: field.path,
+        label: `config:${field.path}`
+      };
+    })
+    .filter((binding) => binding.expression && connectionSourceFromExpression(binding.expression, builder));
 }
 
 function builderInputBindings(node) {
@@ -1341,6 +1386,12 @@ async function publishVisualDraft() {
       await loadDraftList();
     }
     const publication = payload.publication || {};
+    if (payload.published && publication.publicationId) {
+      state.selectedPublicationId = publication.publicationId;
+      await loadPublicationList({ render: false });
+      renderPublicationControls();
+      setPublicationMessage(`Published ${publication.publicationId}.`, 'success');
+    }
     setVisualCheck(
       payload.published ? `Published ${publication.publicationId || ''}.` : 'Visual graph was not published.',
       visualCheckLevel(diagnostics, payload.published),
@@ -1649,6 +1700,145 @@ function renderDraftStatus() {
 function setDraftMessage(text, level = 'info') {
   state.draftMessage = text ? { text, level } : null;
   renderDraftStatus();
+}
+
+function renderPublicationControls() {
+  const select = $('publication-select');
+  if (!select) return;
+  const options = state.publications.length
+    ? state.publications.map((publication) => {
+      const selected = publication.publicationId === state.selectedPublicationId ? ' selected' : '';
+      return `<option value="${escapeHtml(publication.publicationId)}"${selected}>${escapeHtml(publicationOptionLabel(publication))}</option>`;
+    })
+    : ['<option value="">No publications</option>'];
+  select.innerHTML = options.join('');
+  select.disabled = !state.publications.length;
+  select.onchange = () => {
+    state.selectedPublicationId = select.value;
+    state.publicationMessage = null;
+    renderPublicationControls();
+  };
+
+  const runButton = $('run-publication');
+  const reloadButton = $('reload-publications');
+  if (runButton) {
+    runButton.disabled = !state.selectedPublicationId;
+    runButton.onclick = runSelectedPublication;
+  }
+  if (reloadButton) {
+    reloadButton.onclick = loadPublicationList;
+  }
+  renderPublicationStatus();
+}
+
+function publicationOptionLabel(publication) {
+  const revision = publication.draftRevision || publication.draft?.revision || 0;
+  const graph = publication.graphName || publication.draft?.graphName || publication.publicationId;
+  return `${graph} @${revision} · ${publication.publicationId}`;
+}
+
+function renderPublicationStatus() {
+  const target = $('publication-status');
+  if (!target) return;
+  const selected = state.publications.find((publication) =>
+    publication.publicationId === state.selectedPublicationId);
+  const current = selected
+    ? `Selected ${selected.publicationId}`
+    : `${state.publications.length} published artifacts`;
+  const message = state.publicationMessage?.text || current;
+  target.hidden = false;
+  target.textContent = message;
+  target.className = `draft-status ${state.publicationMessage?.level || 'info'}`;
+}
+
+function setPublicationMessage(text, level = 'info') {
+  state.publicationMessage = text ? { text, level } : null;
+  renderPublicationStatus();
+}
+
+async function loadPublicationList(options = {}) {
+  try {
+    const response = await fetch('/api/visual/publications');
+    if (!response.ok) {
+      throw new Error(`Publication list failed with ${response.status}`);
+    }
+    state.publications = await response.json();
+    if (state.selectedPublicationId
+        && !state.publications.some((publication) => publication.publicationId === state.selectedPublicationId)) {
+      state.selectedPublicationId = '';
+    }
+    if (!state.selectedPublicationId && state.publications.length) {
+      state.selectedPublicationId = state.publications[0].publicationId;
+    }
+    if (options.render !== false) {
+      renderPublicationControls();
+    }
+    return state.publications;
+  } catch (error) {
+    setPublicationMessage(error.message, 'error');
+    return [];
+  }
+}
+
+function selectedPublication() {
+  return state.publications.find((publication) =>
+    publication.publicationId === state.selectedPublicationId) || null;
+}
+
+async function runSelectedPublication() {
+  const publication = selectedPublication();
+  if (!publication) {
+    setPublicationMessage('Select a publication first.', 'error');
+    return;
+  }
+  let context;
+  try {
+    context = JSON.parse(state.customContextText || '{}');
+  } catch (error) {
+    setPublicationMessage('Context JSON is invalid.', 'error');
+    $('output').textContent = pretty({ status: 'invalid_context', error: error.message });
+    return;
+  }
+  if (!context || Array.isArray(context) || typeof context !== 'object') {
+    setPublicationMessage('Context JSON must be an object.', 'error');
+    $('output').textContent = pretty({ status: 'invalid_context', error: 'Context JSON must be an object.' });
+    return;
+  }
+
+  setPublicationMessage(`Running ${publication.publicationId}...`, 'info');
+  setVisualCheck(`Running published ${publication.publicationId}...`, 'info');
+  try {
+    const response = await fetch(`/api/visual/publications/${encodeURIComponent(publication.publicationId)}/run`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ context, outputNode: '' })
+    });
+    const payload = await response.json();
+    const diagnostics = normalizeDiagnostics(payload.diagnostics);
+    const ok = Boolean(payload.validated && payload.compiled && payload.success);
+    const level = visualCheckLevel(diagnostics, ok);
+    setVisualCheck(
+      ok ? 'Published run completed.' : 'Published run returned errors.',
+      level,
+      diagnostics
+    );
+    setPublicationMessage(
+      ok ? `Ran ${publication.publicationId}.` : `Run returned errors for ${publication.publicationId}.`,
+      level
+    );
+    if (Object.prototype.hasOwnProperty.call(payload, 'decisionTable')) {
+      state.customDecisionTable = payload.decisionTable;
+    }
+    state.lastPayload = payload.output == null ? null : { data: payload.output, composer: payload };
+    $('output').textContent = pretty({ status: response.status, publicationRun: payload });
+    renderDecisionTable();
+    highlightDecisionRow(state.lastPayload);
+    renderDecisionSummary(state.lastPayload);
+    renderDiagram();
+  } catch (error) {
+    setPublicationMessage(error.message, 'error');
+    setVisualCheck(error.message, 'error');
+  }
 }
 
 async function loadDraftList(options = {}) {
@@ -2116,7 +2306,7 @@ function renderSelectedOperatorEditor() {
         if (serverCheck.accepted) {
           applyConnection(source, bindingTarget);
           setConnectionMessage(
-            `Connected ${source.nodeId}.${source.path || source.port} -> ${bindingTarget.nodeId}.${bindingTarget.path || bindingTarget.port}.`,
+            `Connected ${endpointLabel(source)} -> ${endpointLabel(bindingTarget)}.`,
             'success'
           );
           renderDiagram();
@@ -2491,6 +2681,11 @@ function configTargetForField(node, field) {
     type: schemaType(field.schema),
     schema: field.schema
   };
+}
+
+function configTargetsForNode(node) {
+  const spec = specForNode(node);
+  return configFieldDescriptors(spec.configSchema).map((field) => configTargetForField(node, field));
 }
 
 function unknownConfigRows(node, spec) {
@@ -3344,7 +3539,7 @@ function layoutFromBuilder(builder) {
       }
     };
   });
-  const edges = builderEdges(builder).map((edge) => ({
+  const edges = builderEdges(builder, { includeConfig: true }).map((edge) => ({
     id: `${edge.source}:${edge.sourcePort || ''}.${edge.sourcePath || ''}->${edge.target}:${edge.targetPort || ''}.${edge.targetPath || ''}`,
     source: edge.source,
     target: edge.target,
@@ -3475,11 +3670,13 @@ function customInputTemplateValues(node) {
   for (const [key, expression] of Object.entries(node.customInputs || {})) {
     const targetPath = node.customInputPaths?.[key] || key;
     const targetPort = node.customInputPorts?.[key] || '';
-    values[targetPath] = expression;
-    if (targetPort) {
-      values[`${targetPort}.${targetPath}`] = expression;
+    if (targetPath) {
+      values[targetPath] = expression;
     }
-    if (key !== targetPath) {
+    if (targetPort) {
+      values[targetPath ? `${targetPort}.${targetPath}` : targetPort] = expression;
+    }
+    if (key && key !== targetPath) {
       values[key] = expression;
     }
   }
@@ -3571,11 +3768,28 @@ function renderOperatorRefForDsl(operatorRef) {
 function renderTemplateExpression(template, inputs) {
   let expression = template;
   for (const [name, value] of Object.entries(inputs || {})) {
+    if (name) {
+      expression = replaceTemplateDescendants(expression, `input.${name}`, value || 'null');
+      expression = replaceTemplateDescendants(expression, name, value || 'null');
+    }
     expression = expression
       .replaceAll(`{{input.${name}}}`, value || 'null')
       .replaceAll(`{{${name}}}`, value || 'null');
   }
   return expression;
+}
+
+function replaceTemplateDescendants(expression, prefix, value) {
+  const escaped = prefix.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const pattern = new RegExp(`\\{\\{${escaped}\\.([A-Za-z_][A-Za-z0-9_]*(?:\\.[A-Za-z_][A-Za-z0-9_]*)*)\\}\\}`, 'g');
+  return expression.replace(pattern, (_, path) => expressionWithPath(value, path));
+}
+
+function expressionWithPath(expression, path) {
+  if (!path) {
+    return expression;
+  }
+  return `${expression}.${path}`;
 }
 
 function builderToVisualDraft(builder = state.builder) {
@@ -3894,6 +4108,9 @@ function bindingFromExpression(expression, options = {}) {
   }
   const source = connectionSourceFromExpression(value, options.builder || state.builder);
   if (source) {
+    if (source.nodeId === CONTEXT_SOURCE_ID) {
+      return withTargetPort({ kind: 'contextPath', path: source.path || '' });
+    }
     return withTargetPort({
       kind: 'nodePath',
       nodeId: source.nodeId,
@@ -4089,7 +4306,7 @@ function renderPortHandles(group, visualNode) {
   const builderNode = state.builder.nodes.find((node) => node.id === visualNode.id);
   if (!builderNode) return;
   const sourceHandles = sourceHandlesForNode(builderNode);
-  const targetHandles = targetHandlesForNode(builderNode);
+  const targetHandles = canvasTargetHandlesForNode(builderNode);
 
   sourceHandles.forEach((handle, index) => {
     const point = portPoint(visualNode, index, sourceHandles.length, 'source');
@@ -4123,7 +4340,7 @@ function createPortCircle(point, role, node, handle) {
   circle.dataset.path = handle.path || '';
   const title = document.createElementNS('http://www.w3.org/2000/svg', 'title');
   const type = handle.type ? `: ${handle.type}` : '';
-  title.textContent = `${node.id}.${handle.path || handle.port}${type}`;
+  title.textContent = `${endpointLabel(handle)}${type}`;
   circle.appendChild(title);
   return circle;
 }
@@ -4138,7 +4355,7 @@ function sourceHandlePoint(visualNode, builderNode, endpoint) {
 }
 
 function targetHandlePoint(visualNode, builderNode, endpoint) {
-  const handles = builderNode ? targetHandlesForNode(builderNode) : [];
+  const handles = builderNode ? canvasTargetHandlesForNode(builderNode) : [];
   const index = Math.max(0, handles.findIndex((handle) =>
     handle.port === (endpoint.targetPort || endpoint.port || 'inputs')
       && (handle.path || '') === (endpoint.targetPath || endpoint.path || '')
@@ -4166,23 +4383,25 @@ function sourceHandlesForNode(node) {
     }));
   }
   return outputPortsForSpec(spec).flatMap((port) => {
-    const fields = schemaFieldDescriptors(port.schema);
-    if (!fields.length) {
-      return [{
-        nodeId: node.id,
-        port: port.name || spec.outputPort || 'output',
-        path: '',
-        type: schemaType(port.schema?.schema),
-        schema: port.schema?.schema || {}
-      }];
-    }
-    return fields.map((field) => ({
+    const portName = port.name || spec.outputPort || 'output';
+    const root = {
       nodeId: node.id,
-      port: port.name || spec.outputPort || 'output',
-      path: field.path,
-      type: schemaType(field.schema),
-      schema: field.schema
-    }));
+      port: portName,
+      path: '',
+      type: schemaType(port.schema?.schema),
+      schema: port.schema?.schema || {}
+    };
+    const fields = schemaFieldDescriptors(port.schema);
+    return [
+      root,
+      ...fields.map((field) => ({
+        nodeId: node.id,
+        port: portName,
+        path: field.path,
+        type: schemaType(field.schema),
+        schema: field.schema
+      }))
+    ];
   });
 }
 
@@ -4242,6 +4461,7 @@ function targetHandlesForNode(node) {
   const spec = specForNode(node);
   if (node.type === 'httpResource') {
     return inputPortsForSpec(spec).flatMap((port) => {
+      const portName = port.name || spec.inputPort || 'params';
       const fields = schemaFieldDescriptors(port.schema);
       const targets = fields.length
         ? fields
@@ -4252,7 +4472,7 @@ function targetHandlesForNode(node) {
         }));
       return targets.map((field) => ({
         nodeId: node.id,
-        port: port.name || spec.inputPort || 'params',
+        port: portName,
         key: field.path,
         path: field.path,
         type: schemaType(field.schema),
@@ -4269,6 +4489,7 @@ function targetHandlesForNode(node) {
   }
   if (node.type === 'customOperator') {
     return inputPortsForSpec(spec).flatMap((port) => {
+      const portName = port.name || spec.inputPort || 'inputs';
       const fields = schemaFieldDescriptors(port.schema);
       const targets = fields.length
         ? fields
@@ -4277,15 +4498,26 @@ function targetHandlesForNode(node) {
           schema: schemaAtPath(port.schema, path) || {},
           required: requiredInputNamesForPort(port).includes(path)
         }));
-      return targets.map((field) => ({
-        nodeId: node.id,
-        port: port.name || spec.inputPort || 'inputs',
-        key: inputKeyForPortPath(spec, port.name || spec.inputPort || 'inputs', field.path),
-        path: field.path,
-        type: schemaType(field.schema),
-        schema: field.schema,
-        required: field.required
-      }));
+      return [
+        {
+          nodeId: node.id,
+          port: portName,
+          key: '',
+          path: '',
+          type: schemaType(port.schema?.schema),
+          schema: port.schema?.schema || {},
+          required: Boolean(port.required) && !targets.some((field) => field.required)
+        },
+        ...targets.map((field) => ({
+          nodeId: node.id,
+          port: portName,
+          key: inputKeyForPortPath(spec, portName, field.path),
+          path: field.path,
+          type: schemaType(field.schema),
+          schema: field.schema,
+          required: field.required
+        }))
+      ];
     });
   }
   return [{
@@ -4294,6 +4526,13 @@ function targetHandlesForNode(node) {
     path: 'input',
     type: ''
   }];
+}
+
+function canvasTargetHandlesForNode(node) {
+  return [
+    ...targetHandlesForNode(node),
+    ...configTargetsForNode(node)
+  ];
 }
 
 function schemaType(schema) {
@@ -4399,7 +4638,11 @@ function endpointLabel(endpoint) {
   if (endpoint.nodeId === CONTEXT_SOURCE_ID) {
     return endpoint.path ? `ctx.${endpoint.path}` : 'ctx';
   }
-  return `${endpoint.nodeId}.${endpoint.path || endpoint.port}`;
+  return [
+    endpoint.nodeId,
+    endpoint.port || 'output',
+    endpoint.path || ''
+  ].filter(Boolean).join('.');
 }
 
 function schemaAtPath(schemaEnvelope, path) {
@@ -4807,13 +5050,22 @@ function schemaFromValue(value) {
 
 function contextSourceHandles(builder = state.builder) {
   const inputSchema = currentGraphInputSchema(builder);
-  return schemaFieldDescriptors(inputSchema).map((field) => ({
-    nodeId: CONTEXT_SOURCE_ID,
-    port: 'ctx',
-    path: field.path,
-    type: schemaType(field.schema),
-    schema: field.schema
-  }));
+  return [
+    {
+      nodeId: CONTEXT_SOURCE_ID,
+      port: 'ctx',
+      path: '',
+      type: schemaType(inputSchema.schema),
+      schema: inputSchema.schema || {}
+    },
+    ...schemaFieldDescriptors(inputSchema).map((field) => ({
+      nodeId: CONTEXT_SOURCE_ID,
+      port: 'ctx',
+      path: field.path,
+      type: schemaType(field.schema),
+      schema: field.schema
+    }))
+  ];
 }
 
 function contextSourceForPath(path, builder = state.builder) {
@@ -4829,7 +5081,7 @@ function contextSourceForPath(path, builder = state.builder) {
 
 function connectionAlreadyApplied(source, target, builder = state.builder) {
   const key = connectionKey(source, target);
-  return Boolean(key) && builderEdges(builder, { includeFallback: false })
+  return Boolean(key) && builderEdges(builder, { includeFallback: false, includeConfig: true })
     .some((edge) => connectionKey(
       {
         nodeId: edge.source,
@@ -4990,7 +5242,7 @@ function wouldCreateCycle(sourceId, targetId) {
   for (const node of state.builder.nodes) {
     outgoing.set(node.id, []);
   }
-  for (const edge of builderEdges(state.builder, { includeFallback: false })) {
+  for (const edge of builderEdges(state.builder, { includeFallback: false, includeConfig: true })) {
     if (!outgoing.has(edge.source)) {
       outgoing.set(edge.source, []);
     }
@@ -5208,7 +5460,7 @@ function moveConnectionDrag(event) {
     setConnectionMessage(compatibility.ok
       ? (connectionAlreadyApplied(drag.source, target)
         ? 'Connection already exists.'
-        : `${drag.source.nodeId}.${drag.source.path || drag.source.port} -> ${target.nodeId}.${target.path || target.port}`)
+        : `${endpointLabel(drag.source)} -> ${endpointLabel(target)}`)
       : compatibility.message,
       compatibility.ok ? 'info' : 'error');
   } else {
@@ -5239,7 +5491,7 @@ function finishConnectionDrag(event) {
           if (serverCheck.accepted) {
             applyConnection(drag.source, target);
             setConnectionMessage(
-              `Connected ${drag.source.nodeId}.${drag.source.path || drag.source.port} -> ${target.nodeId}.${target.path || target.port}.`,
+              `Connected ${endpointLabel(drag.source)} -> ${endpointLabel(target)}.`,
               'success'
             );
           } else {
@@ -5308,7 +5560,7 @@ function connectionTargetAtPoint(event) {
   if (!node) {
     return null;
   }
-  const candidate = targetHandlesForNode(node).find((item) =>
+  const candidate = canvasTargetHandlesForNode(node).find((item) =>
     item.port === handle.dataset.port && (item.path || '') === (handle.dataset.path || '')
   );
   return candidate || null;
@@ -5318,7 +5570,13 @@ function applyConnection(source, target) {
   const node = state.builder.nodes.find((item) => item.id === target.nodeId);
   if (!node) return;
   const expression = expressionForConnectionSource(source);
-  if (node.type === 'httpResource') {
+  if (target.port === 'config') {
+    node.config = node.config || {};
+    setConfigValueAtPath(node.config, target.path, {
+      kind: 'expression',
+      expr: expression
+    });
+  } else if (node.type === 'httpResource') {
     setResourceParamExpression(node, target.path || defaultParamNameForOperator(specForNode(node)), expression);
   } else if (node.type === 'decisionTable') {
     if (target.path === 'amount') {

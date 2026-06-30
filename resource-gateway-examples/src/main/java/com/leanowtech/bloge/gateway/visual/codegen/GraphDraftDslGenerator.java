@@ -529,11 +529,28 @@ public class GraphDraftDslGenerator {
     private static String renderTemplateExpression(String template, Map<String, String> inputExpressions) {
         String expression = template;
         for (Map.Entry<String, String> entry : inputExpressions.entrySet()) {
+            if (!entry.getKey().isBlank()) {
+                expression = replaceTemplateDescendants(expression, "input." + entry.getKey(), entry.getValue());
+                expression = replaceTemplateDescendants(expression, entry.getKey(), entry.getValue());
+            }
             expression = expression
                     .replace("{{input." + entry.getKey() + "}}", entry.getValue())
                     .replace("{{" + entry.getKey() + "}}", entry.getValue());
         }
         return expression;
+    }
+
+    private static String replaceTemplateDescendants(String expression, String prefix, String value) {
+        Pattern pattern = Pattern.compile("\\{\\{" + Pattern.quote(prefix)
+                + "\\.(" + DSL_IDENTIFIER_PATTERN + "(?:\\." + DSL_IDENTIFIER_PATTERN + ")*)}}");
+        java.util.regex.Matcher matcher = pattern.matcher(expression);
+        StringBuilder result = new StringBuilder();
+        while (matcher.find()) {
+            matcher.appendReplacement(result, java.util.regex.Matcher.quoteReplacement(
+                    pathExpression(value, matcher.group(1))));
+        }
+        matcher.appendTail(result);
+        return result.toString();
     }
 
     private static void addInputExpressionAliases(Map<String, String> inputExpressions,
@@ -543,7 +560,9 @@ public class GraphDraftDslGenerator {
         String targetName = targetInputName(inputKey, binding);
         inputExpressions.put(targetName, expression);
         if (!binding.targetPort().isBlank()) {
-            inputExpressions.put(binding.targetPort() + "." + targetName, expression);
+            inputExpressions.put(targetName.isBlank()
+                    ? binding.targetPort()
+                    : binding.targetPort() + "." + targetName, expression);
         }
         if (!inputKey.equals(targetName)) {
             inputExpressions.put(inputKey, expression);

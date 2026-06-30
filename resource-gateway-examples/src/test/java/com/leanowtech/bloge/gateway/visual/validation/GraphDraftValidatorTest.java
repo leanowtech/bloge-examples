@@ -951,6 +951,38 @@ class GraphDraftValidatorTest {
     }
 
     @Test
+    void acceptsRootObjectBindingForRequiredPortFields() {
+        GraphDraftValidator validator = new GraphDraftValidator(
+                VisualCatalogTestSupport.catalogWithLibrary(
+                        VisualCatalogTestSupport.duplicateInputPathLibrary()));
+        GraphDraft draft = rootCustomerOrderDraft(customerOrderInputSchema(
+                Map.of("id", Map.of("type", "string")),
+                List.of("id")));
+
+        VisualValidationResult result = validator.validate(draft);
+
+        assertThat(result.valid()).isTrue();
+    }
+
+    @Test
+    void rejectsRootObjectBindingWhenSourceObjectMissesRequiredTargetField() {
+        GraphDraftValidator validator = new GraphDraftValidator(
+                VisualCatalogTestSupport.catalogWithLibrary(
+                        VisualCatalogTestSupport.duplicateInputPathLibrary()));
+        GraphDraft draft = rootCustomerOrderDraft(customerOrderInputSchema(
+                Map.of("name", Map.of("type", "string")),
+                List.of("name")));
+
+        VisualValidationResult result = validator.validate(draft);
+
+        assertThat(result.valid()).isFalse();
+        assertThat(result.diagnostics())
+                .extracting("code")
+                .contains("visual.binding.typeMismatch")
+                .doesNotContain("visual.input.required");
+    }
+
+    @Test
     void acceptsNodePathBindingToNestedTargetPath() {
         GraphDraftValidator validator = new GraphDraftValidator(
                 VisualCatalogTestSupport.catalogWithLoanApplicantResourceAndLibrary(
@@ -1916,6 +1948,57 @@ class GraphDraftValidatorTest {
                 Map.of(),
                 new GraphDraft.OutputSelection("merge", "")
         );
+    }
+
+    private static GraphDraft rootCustomerOrderDraft(SchemaEnvelope inputSchema) {
+        Map<String, GraphDraft.Binding> inputs = new LinkedHashMap<>();
+        inputs.put("", new GraphDraft.Binding(
+                "contextPath",
+                null,
+                "customer",
+                "",
+                "",
+                "customer",
+                "",
+                "",
+                Map.of()
+        ));
+        inputs.put("order.id", GraphDraft.Binding.contextPath("orderId", "order", "id"));
+        return new GraphDraft(
+                "",
+                "",
+                0,
+                "rootCustomerOrder",
+                "",
+                "",
+                "",
+                "",
+                inputSchema,
+                List.of(new GraphDraft.DraftNode(
+                        "merge",
+                        "risk:customerOrderMerge",
+                        "",
+                        inputs,
+                        Map.of(),
+                        null
+                )),
+                List.of(),
+                Map.of(),
+                new GraphDraft.OutputSelection("merge", "")
+        );
+    }
+
+    private static SchemaEnvelope customerOrderInputSchema(Map<String, Object> customerProperties,
+                                                           List<String> customerRequired) {
+        Map<String, Object> properties = new LinkedHashMap<>();
+        properties.put("customer", Map.of(
+                "type", "object",
+                "properties", customerProperties,
+                "required", customerRequired,
+                "additionalProperties", false
+        ));
+        properties.put("orderId", Map.of("type", "string"));
+        return SchemaEnvelope.object(properties, List.of("customer", "orderId"));
     }
 
     private static GraphDraft listCompatibilityDraft(GraphDraft.Binding itemsBinding,
