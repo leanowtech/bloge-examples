@@ -240,7 +240,6 @@ const UNSUPPORTED_SCHEMA_CONSTRAINT_KEYWORDS = [
   'minContains',
   'maxContains',
   'prefixItems',
-  'dependentRequired',
   'dependentSchemas',
   'unevaluatedProperties',
   'unevaluatedItems'
@@ -5073,6 +5072,7 @@ function validateSchemaStructure(schema, path, diagnostics) {
   validateSchemaObjectPropertyBounds(schema, kind, path, diagnostics);
   validateSchemaObjectPatternProperties(schema, kind, path, diagnostics);
   validateSchemaObjectPropertyNames(schema, kind, path, diagnostics);
+  validateSchemaObjectDependentRequired(schema, kind, path, diagnostics);
   if (kind === 'object') {
     const properties = validatedSchemaObjectProperties(schema, path, diagnostics);
     validateSchemaAdditionalProperties(schema, path, diagnostics);
@@ -5715,6 +5715,80 @@ function validateSchemaObjectPropertyNames(schema, kind, path, diagnostics) {
   validateSchemaStructure(effectivePropertyNameSchema(propertyNameSchema), `${path}/propertyNames`, diagnostics);
 }
 
+function validateSchemaObjectDependentRequired(schema, kind, path, diagnostics) {
+  if (!Object.prototype.hasOwnProperty.call(schema || {}, 'dependentRequired')) {
+    return;
+  }
+  if (kind !== 'object') {
+    diagnostics.push(graphInputSchemaDiagnostic(
+      'visual.schema.dependentRequiredConstraintTypeMismatch',
+      'Object dependentRequired constraints require schema type/kind object.',
+      path
+    ));
+  }
+  const dependentRequired = schema?.dependentRequired;
+  if (!dependentRequired || typeof dependentRequired !== 'object' || Array.isArray(dependentRequired)) {
+    diagnostics.push(graphInputSchemaDiagnostic(
+      'visual.schema.dependentRequiredInvalid',
+      'Object schema dependentRequired must be an object whose values are arrays of property names.',
+      `${path}/dependentRequired`
+    ));
+    return;
+  }
+  const properties = schemaObjectProperties(schema);
+  for (const [trigger, dependencies] of Object.entries(dependentRequired)) {
+    const triggerPath = `${path}/dependentRequired/${trigger}`;
+    if (!trigger.trim()) {
+      diagnostics.push(graphInputSchemaDiagnostic(
+        'visual.schema.dependentRequiredInvalid',
+        'Object schema dependentRequired keys must be non-blank property names.',
+        triggerPath
+      ));
+    } else if (!Object.prototype.hasOwnProperty.call(properties, trigger)) {
+      diagnostics.push(graphInputSchemaDiagnostic(
+        'visual.schema.dependentRequiredUnknown',
+        `Dependent-required trigger property '${trigger}' is not declared in properties.`,
+        triggerPath
+      ));
+    }
+    if (!Array.isArray(dependencies)) {
+      diagnostics.push(graphInputSchemaDiagnostic(
+        'visual.schema.dependentRequiredInvalid',
+        `Object schema dependentRequired entry '${trigger}' must be an array of property names.`,
+        triggerPath
+      ));
+      continue;
+    }
+    const seen = new Set();
+    dependencies.forEach((dependency, index) => {
+      const dependencyPath = `${triggerPath}/${index}`;
+      if (typeof dependency !== 'string' || !dependency.trim()) {
+        diagnostics.push(graphInputSchemaDiagnostic(
+          'visual.schema.dependentRequiredInvalid',
+          'Object schema dependentRequired entries must be non-blank strings.',
+          dependencyPath
+        ));
+        return;
+      }
+      if (seen.has(dependency)) {
+        diagnostics.push(graphInputSchemaDiagnostic(
+          'visual.schema.dependentRequiredDuplicate',
+          `Dependent-required property '${dependency}' is duplicated.`,
+          dependencyPath
+        ));
+      }
+      seen.add(dependency);
+      if (!Object.prototype.hasOwnProperty.call(properties, dependency)) {
+        diagnostics.push(graphInputSchemaDiagnostic(
+          'visual.schema.dependentRequiredUnknown',
+          `Dependent-required property '${dependency}' is not declared in properties.`,
+          dependencyPath
+        ));
+      }
+    });
+  }
+}
+
 function validateSchemaEnumValues(values, path, diagnostics) {
   const seen = new Set();
   values.forEach((value, index) => {
@@ -6337,6 +6411,7 @@ function objectSchemaCompatibilityIssue(sourceSchema, targetSchema, path = '') {
   }
   return objectPatternPropertiesCompatibilityIssue(sourceSchema, targetSchema, path)
     || objectPropertyNamesCompatibilityIssue(sourceSchema, targetSchema, path)
+    || objectDependentRequiredCompatibilityIssue(sourceSchema, targetSchema, path)
     || objectPropertyBoundsCompatibilityIssue(sourceSchema, targetSchema, path);
 }
 
@@ -6383,6 +6458,33 @@ function objectPropertyNamesCompatibilityIssue(sourceSchema, targetSchema, path 
     return '';
   }
   return reasonAt(path, 'target requires propertyNames but source does not guarantee matching property names');
+}
+
+function objectDependentRequiredCompatibilityIssue(sourceSchema, targetSchema, path = '') {
+  const targetDependencies = schemaDependentRequired(targetSchema);
+  if (!Object.keys(targetDependencies).length) {
+    return '';
+  }
+  const sourceValues = schemaEnumValues(sourceSchema);
+  if (sourceValues.length
+      && sourceValues.every((value) => value !== null && typeof value === 'object' && !Array.isArray(value))
+      && sourceValues.every((value) => objectValueMatchesSchema(value, targetSchema))) {
+    return '';
+  }
+  const sourceRequired = new Set(schemaRequiredNames(sourceSchema));
+  const sourceDependencies = schemaDependentRequired(sourceSchema);
+  for (const [trigger, dependencies] of Object.entries(targetDependencies)) {
+    if (sourceCannotContainProperty(sourceSchema, trigger)) {
+      continue;
+    }
+    const sourceTriggerDependencies = sourceDependencies[trigger] || [];
+    for (const dependency of dependencies) {
+      if (!sourceRequired.has(dependency) && !sourceTriggerDependencies.includes(dependency)) {
+        return reasonAt(path, `target requires dependentRequired '${trigger}' -> '${dependency}' but source does not guarantee the dependency`);
+      }
+    }
+  }
+  return '';
 }
 
 function objectPropertyBoundsCompatibilityIssue(sourceSchema, targetSchema, path = '') {
@@ -6737,6 +6839,9 @@ function objectValueMatchesSchema(value, schema) {
   if (!objectValueMatchesPatternProperties(value, schema)) {
     return false;
   }
+  if (!objectValueMatchesDependentRequired(value, schema)) {
+    return false;
+  }
   const properties = schemaObjectProperties(schema);
   for (const required of schemaRequiredNames(schema)) {
     if (!Object.prototype.hasOwnProperty.call(value, required) || value[required] === null) {
@@ -6805,6 +6910,46 @@ function objectValueMatchesPatternProperties(value, schema) {
     }
   }
   return true;
+}
+
+function objectValueMatchesDependentRequired(value, schema) {
+  if (value === null || typeof value !== 'object' || Array.isArray(value)) {
+    return true;
+  }
+  const dependencies = schemaDependentRequired(schema);
+  for (const [trigger, required] of Object.entries(dependencies)) {
+    if (!presentObjectProperty(value, trigger)) {
+      continue;
+    }
+    if (!required.every((dependency) => presentObjectProperty(value, dependency))) {
+      return false;
+    }
+  }
+  return true;
+}
+
+function schemaDependentRequired(schema) {
+  const dependentRequired = schema?.dependentRequired;
+  if (!dependentRequired || typeof dependentRequired !== 'object' || Array.isArray(dependentRequired)) {
+    return {};
+  }
+  const result = {};
+  for (const [trigger, dependencies] of Object.entries(dependentRequired)) {
+    result[trigger] = Array.isArray(dependencies)
+      ? dependencies.filter((dependency) => typeof dependency === 'string' && dependency.trim())
+      : [];
+  }
+  return result;
+}
+
+function presentObjectProperty(value, property) {
+  return Object.prototype.hasOwnProperty.call(value, property) && value[property] !== null;
+}
+
+function sourceCannotContainProperty(sourceSchema, property) {
+  return sourceSchema?.additionalProperties === false
+    && !Object.prototype.hasOwnProperty.call(schemaObjectProperties(sourceSchema), property)
+    && !matchingPatternPropertySchemas(sourceSchema, property).length;
 }
 
 function schemaMinItems(schema) {

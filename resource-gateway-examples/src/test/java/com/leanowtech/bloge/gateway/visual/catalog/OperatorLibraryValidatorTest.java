@@ -1470,6 +1470,43 @@ class OperatorLibraryValidatorTest {
     }
 
     @Test
+    void acceptsObjectDependentRequiredAcrossOperatorDefinitions() {
+        OperatorDefinition operator = new OperatorDefinition(
+                "bloge.visualOperator.v1",
+                "risk:objectDependentRequiredPolicy",
+                "1.0.0",
+                new OperatorDefinition.Display("Object dependent-required policy", "Test operator.", List.of("test")),
+                new OperatorDefinition.Source("user-library", "", "", "", true),
+                new OperatorDefinition.Ports(
+                        List.of(new OperatorDefinition.Port("payload",
+                                SchemaEnvelope.object(Map.of(
+                                        "payment", paymentDependentRequiredSchema(Map.of())
+                                ), List.of("payment")),
+                                true,
+                                "Input.")),
+                        List.of(new OperatorDefinition.Port("output",
+                                SchemaEnvelope.object(Map.of(
+                                        "quote", discountDependentRequiredSchema(Map.of())
+                                ), List.of()),
+                                true,
+                                "Output."))
+                ),
+                SchemaEnvelope.object(Map.of(
+                        "defaults", paymentDependentRequiredSchema(Map.of(
+                                "default", Map.of("cardNumber", "4111111111111111", "billingZip", "94105")))
+                ), List.of("defaults")),
+                OperatorDefinition.Capabilities.pure(),
+                new OperatorDefinition.Lowering("native", "riskObjectDependentRequiredPolicy", Map.of()),
+                List.of()
+        );
+
+        VisualValidationResult result = validator.validate(libraryWith(operator));
+
+        assertThat(result.diagnostics()).isEmpty();
+        assertThat(result.valid()).isTrue();
+    }
+
+    @Test
     void rejectsInvalidObjectPropertyBoundsAcrossOperatorDefinitions() {
         OperatorDefinition operator = new OperatorDefinition(
                 "bloge.visualOperator.v1",
@@ -1675,6 +1712,72 @@ class OperatorLibraryValidatorTest {
                         "/operators/0/ports/inputs/0/schema/schema/properties/labels/enum/0",
                         "/operators/0/configSchema/schema/properties/routing/default",
                         "/operators/0/configSchema/schema/properties/fixed/const"
+                );
+    }
+
+    @Test
+    void rejectsInvalidObjectDependentRequiredAcrossOperatorDefinitions() {
+        OperatorDefinition operator = new OperatorDefinition(
+                "bloge.visualOperator.v1",
+                "risk:badObjectDependentRequiredPolicy",
+                "1.0.0",
+                new OperatorDefinition.Display("Bad object dependent-required policy", "Test operator.",
+                        List.of("test")),
+                new OperatorDefinition.Source("user-library", "", "", "", true),
+                new OperatorDefinition.Ports(
+                        List.of(new OperatorDefinition.Port("payload",
+                                SchemaEnvelope.object(Map.of(
+                                        "payment", paymentDependentRequiredSchema(Map.of(
+                                                "properties", Map.of(
+                                                        "cardNumber", Map.of("type", "string")),
+                                                "dependentRequired", Map.of(
+                                                        "cardNumber", List.of("billingZip", "billingZip"))))
+                                ), List.of("payment")),
+                                true,
+                                "Input.")),
+                        List.of(new OperatorDefinition.Port("output",
+                                SchemaEnvelope.object(Map.of(
+                                        "quote", discountDependentRequiredSchema(Map.of(
+                                                "dependentRequired", Map.of(
+                                                        "missingTrigger", List.of("discountReason"))))
+                                ), List.of()),
+                                true,
+                                "Output."))
+                ),
+                SchemaEnvelope.object(Map.of(
+                        "defaults", paymentDependentRequiredSchema(Map.of(
+                                "default", Map.of("cardNumber", "4111111111111111"))),
+                        "fixed", paymentDependentRequiredSchema(Map.of(
+                                "const", Map.of("cardNumber", "4111111111111111"))),
+                        "choices", paymentDependentRequiredSchema(Map.of(
+                                "enum", List.of(Map.of("cardNumber", "4111111111111111"))))
+                ), List.of()),
+                OperatorDefinition.Capabilities.pure(),
+                new OperatorDefinition.Lowering("native", "riskBadObjectDependentRequiredPolicy", Map.of()),
+                List.of()
+        );
+
+        VisualValidationResult result = validator.validate(libraryWith(operator));
+
+        assertThat(result.valid()).isFalse();
+        assertThat(result.diagnostics())
+                .extracting("code")
+                .contains(
+                        "visual.schema.dependentRequiredUnknown",
+                        "visual.schema.dependentRequiredDuplicate",
+                        "visual.schema.defaultConstraintMismatch",
+                        "visual.schema.constConstraintMismatch",
+                        "visual.schema.enumConstraintMismatch"
+                );
+        assertThat(result.diagnostics())
+                .extracting("target")
+                .contains(
+                        "/operators/0/ports/inputs/0/schema/schema/properties/payment/dependentRequired/cardNumber/0",
+                        "/operators/0/ports/inputs/0/schema/schema/properties/payment/dependentRequired/cardNumber/1",
+                        "/operators/0/ports/outputs/0/schema/schema/properties/quote/dependentRequired/missingTrigger",
+                        "/operators/0/configSchema/schema/properties/defaults/default",
+                        "/operators/0/configSchema/schema/properties/fixed/const",
+                        "/operators/0/configSchema/schema/properties/choices/enum/0"
                 );
     }
 
@@ -2339,6 +2442,33 @@ class OperatorLibraryValidatorTest {
                 status,
                 List.of(VisualCatalogTestSupport.eligibilityOperator("integer"))
         );
+    }
+
+    private static Map<String, Object> paymentDependentRequiredSchema(Map<String, Object> overrides) {
+        Map<String, Object> schema = new LinkedHashMap<>();
+        schema.put("type", "object");
+        schema.put("properties", Map.of(
+                "cardNumber", Map.of("type", "string"),
+                "billingZip", Map.of("type", "string"),
+                "method", Map.of("type", "string")
+        ));
+        schema.put("additionalProperties", false);
+        schema.put("dependentRequired", Map.of("cardNumber", List.of("billingZip")));
+        schema.putAll(overrides);
+        return schema;
+    }
+
+    private static Map<String, Object> discountDependentRequiredSchema(Map<String, Object> overrides) {
+        Map<String, Object> schema = new LinkedHashMap<>();
+        schema.put("type", "object");
+        schema.put("properties", Map.of(
+                "discountCode", Map.of("type", "string"),
+                "discountReason", Map.of("type", "string")
+        ));
+        schema.put("additionalProperties", false);
+        schema.put("dependentRequired", Map.of("discountCode", List.of("discountReason")));
+        schema.putAll(overrides);
+        return schema;
     }
 
     private static OperatorLibrary libraryWith(OperatorDefinition operator) {

@@ -59,7 +59,6 @@ public final class VisualSchemaValidator {
             "minContains",
             "maxContains",
             "prefixItems",
-            "dependentRequired",
             "dependentSchemas",
             "unevaluatedProperties",
             "unevaluatedItems"
@@ -144,6 +143,7 @@ public final class VisualSchemaValidator {
 	        validateObjectPropertyBounds(schema, kind, path, diagnostics);
 	        validateObjectPatternProperties(schema, kind, path, diagnostics);
 	        validateObjectPropertyNames(schema, kind, path, diagnostics);
+	        validateObjectDependentRequired(schema, kind, path, diagnostics);
 	        validateDefaultValue(schema, kind, path, diagnostics);
         if ("object".equals(kind)) {
             Map<String, Object> properties = objectProperties(schema, path, diagnostics);
@@ -261,6 +261,11 @@ public final class VisualSchemaValidator {
 	            if (!objectValueMatchesPatternProperties(object, schema)) {
 	                diagnostics.add(VisualDiagnostic.error("visual.schema.defaultConstraintMismatch",
 	                        "Schema default must satisfy object patternProperties constraints.",
+	                        path));
+	            }
+	            if (!objectValueMatchesDependentRequired(object, schema)) {
+	                diagnostics.add(VisualDiagnostic.error("visual.schema.defaultConstraintMismatch",
+	                        "Schema default must satisfy object dependentRequired constraints.",
 	                        path));
 	            }
 	            Map<String, Object> properties = propertiesWithoutDiagnostics(schema);
@@ -512,6 +517,71 @@ public final class VisualSchemaValidator {
                     path + "/propertyNames"));
         }
         validateSchema(effectivePropertyNameSchema(propertyNameSchema), path + "/propertyNames", diagnostics);
+    }
+
+    private static void validateObjectDependentRequired(Map<String, Object> schema,
+                                                        String kind,
+                                                        String path,
+                                                        List<VisualDiagnostic> diagnostics) {
+        if (!schema.containsKey("dependentRequired")) {
+            return;
+        }
+        if (!objectKind(kind)) {
+            diagnostics.add(VisualDiagnostic.error("visual.schema.dependentRequiredConstraintTypeMismatch",
+                    "Object dependentRequired constraints require schema type/kind object.",
+                    path));
+        }
+        Object raw = schema.get("dependentRequired");
+        if (!(raw instanceof Map<?, ?> rawMap)) {
+            diagnostics.add(VisualDiagnostic.error("visual.schema.dependentRequiredInvalid",
+                    "Object schema dependentRequired must be an object whose values are arrays of property names.",
+                    path + "/dependentRequired"));
+            return;
+        }
+        Map<String, Object> properties = propertiesWithoutDiagnostics(schema);
+        for (Map.Entry<?, ?> entry : rawMap.entrySet()) {
+            String trigger = String.valueOf(entry.getKey());
+            String triggerPath = path + "/dependentRequired/" + trigger;
+            if (trigger.isBlank()) {
+                diagnostics.add(VisualDiagnostic.error("visual.schema.dependentRequiredInvalid",
+                        "Object schema dependentRequired keys must be non-blank property names.",
+                        triggerPath));
+            } else if (!properties.containsKey(trigger)) {
+                diagnostics.add(VisualDiagnostic.error("visual.schema.dependentRequiredUnknown",
+                        "Dependent-required trigger property '%s' is not declared in properties."
+                                .formatted(trigger),
+                        triggerPath));
+            }
+            if (!(entry.getValue() instanceof List<?> dependencies)) {
+                diagnostics.add(VisualDiagnostic.error("visual.schema.dependentRequiredInvalid",
+                        "Object schema dependentRequired entry '%s' must be an array of property names."
+                                .formatted(trigger),
+                        triggerPath));
+                continue;
+            }
+            Set<String> seen = new LinkedHashSet<>();
+            for (int i = 0; i < dependencies.size(); i++) {
+                Object dependency = dependencies.get(i);
+                String dependencyPath = triggerPath + "/" + i;
+                if (!(dependency instanceof String name) || name.isBlank()) {
+                    diagnostics.add(VisualDiagnostic.error("visual.schema.dependentRequiredInvalid",
+                            "Object schema dependentRequired entries must be non-blank strings.",
+                            dependencyPath));
+                    continue;
+                }
+                if (!seen.add(name)) {
+                    diagnostics.add(VisualDiagnostic.error("visual.schema.dependentRequiredDuplicate",
+                            "Dependent-required property '%s' is duplicated.".formatted(name),
+                            dependencyPath));
+                }
+                if (!properties.containsKey(name)) {
+                    diagnostics.add(VisualDiagnostic.error("visual.schema.dependentRequiredUnknown",
+                            "Dependent-required property '%s' is not declared in properties."
+                                    .formatted(name),
+                            dependencyPath));
+                }
+            }
+        }
     }
 
     private static void validateStandardEnum(Map<String, Object> schema,
@@ -1145,6 +1215,50 @@ public final class VisualSchemaValidator {
 	        return true;
 	    }
 
+	    private static boolean objectValueMatchesDependentRequired(Map<String, Object> value,
+	                                                               Map<String, Object> schema) {
+	        Map<String, List<String>> dependencies = dependentRequiredOf(schema);
+	        if (dependencies.isEmpty()) {
+	            return true;
+	        }
+	        for (Map.Entry<String, List<String>> entry : dependencies.entrySet()) {
+	            if (!presentObjectProperty(value, entry.getKey())) {
+	                continue;
+	            }
+	            for (String dependency : entry.getValue()) {
+	                if (!presentObjectProperty(value, dependency)) {
+	                    return false;
+	                }
+	            }
+	        }
+	        return true;
+	    }
+
+	    private static Map<String, List<String>> dependentRequiredOf(Map<String, Object> schema) {
+	        Object raw = schema.get("dependentRequired");
+	        if (!(raw instanceof Map<?, ?> rawMap)) {
+	            return Map.of();
+	        }
+	        Map<String, List<String>> dependencies = new LinkedHashMap<>();
+	        for (Map.Entry<?, ?> entry : rawMap.entrySet()) {
+	            if (!(entry.getValue() instanceof List<?> rawDependencies)) {
+	                continue;
+	            }
+	            List<String> names = new ArrayList<>();
+	            for (Object dependency : rawDependencies) {
+	                if (dependency instanceof String name && !name.isBlank()) {
+	                    names.add(name);
+	                }
+	            }
+	            dependencies.put(String.valueOf(entry.getKey()), names);
+	        }
+	        return dependencies;
+	    }
+
+	    private static boolean presentObjectProperty(Map<String, Object> value, String property) {
+	        return value.containsKey(property) && value.get(property) != null;
+	    }
+
 	    private static List<Map<String, Object>> matchingPatternPropertySchemas(Map<String, Object> schema,
 	                                                                            String propertyName) {
 	        Map<String, Object> patternProperties = patternPropertiesOf(schema);
@@ -1212,6 +1326,9 @@ public final class VisualSchemaValidator {
 	            return false;
 	        }
 	        if (!objectValueMatchesPatternProperties(object, schema)) {
+	            return false;
+	        }
+	        if (!objectValueMatchesDependentRequired(object, schema)) {
 	            return false;
 	        }
 	        for (String required : requiredNamesWithoutDiagnostics(schema)) {

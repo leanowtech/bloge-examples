@@ -794,6 +794,100 @@ public final class VisualCatalogTestSupport {
         return payloadSchema;
     }
 
+    public static OperatorLibrary objectDependentRequiredCompatibilityLibrary(Object sourceDependentRequired,
+                                                                              List<String> sourceRequired,
+                                                                              Object targetDependentRequired,
+                                                                              List<String> targetRequired) {
+        Map<String, Object> sourcePayloadSchema = objectDependentRequiredPayloadSchema(
+                sourceDependentRequired, sourceRequired);
+        Map<String, Object> targetPayloadSchema = objectDependentRequiredPayloadSchema(
+                targetDependentRequired, targetRequired);
+
+        Map<String, Object> sourceProperties = new LinkedHashMap<>();
+        sourceProperties.put("payload", sourcePayloadSchema);
+        OperatorDefinition producer = new OperatorDefinition(
+                "bloge.visualOperator.v1",
+                "risk:objectFacts",
+                "1.0.0",
+                new OperatorDefinition.Display("Object facts",
+                        "Produces object facts.",
+                        List.of("risk", "object")),
+                new OperatorDefinition.Source("user-library", "", "", "", false),
+                new OperatorDefinition.Ports(
+                        List.of(),
+                        List.of(new OperatorDefinition.Port("output",
+                                SchemaEnvelope.object(sourceProperties, List.of()),
+                                true,
+                                "Object facts."))
+                ),
+                SchemaEnvelope.opaque(),
+                OperatorDefinition.Capabilities.pure(),
+                new OperatorDefinition.Lowering("native", "riskObjectFacts", Map.of()),
+                List.of()
+        );
+
+        Map<String, Object> targetProperties = new LinkedHashMap<>();
+        targetProperties.put("payload", targetPayloadSchema);
+        Map<String, Object> outputProperties = new LinkedHashMap<>();
+        outputProperties.put("accepted", Map.of("type", "boolean"));
+        OperatorDefinition consumer = new OperatorDefinition(
+                "bloge.visualOperator.v1",
+                "risk:objectConsumer",
+                "1.0.0",
+                new OperatorDefinition.Display("Object consumer",
+                        "Consumes object facts.",
+                        List.of("risk", "object")),
+                new OperatorDefinition.Source("user-library", "", "", "", true),
+                new OperatorDefinition.Ports(
+                        List.of(new OperatorDefinition.Port("inputs",
+                                SchemaEnvelope.object(targetProperties, List.of("payload")),
+                                true,
+                                "Object inputs.")),
+                        List.of(new OperatorDefinition.Port("output",
+                                SchemaEnvelope.object(outputProperties, List.of()),
+                                true,
+                                "Consumer output."))
+                ),
+                SchemaEnvelope.opaque(),
+                OperatorDefinition.Capabilities.pure(),
+                new OperatorDefinition.Lowering("transform", "transform", Map.of(
+                        "assignments", Map.of(
+                                "accepted", "true"
+                        )
+                )),
+                List.of()
+        );
+
+        return new OperatorLibrary(
+                "bloge.visualOperatorLibrary.v1",
+                "risk-object-dependent-required-compatibility",
+                "Object dependent-required compatibility operators",
+                "1.0.0",
+                "risk-team",
+                "ACTIVE",
+                List.of(producer, consumer)
+        );
+    }
+
+    private static Map<String, Object> objectDependentRequiredPayloadSchema(Object dependentRequired,
+                                                                            List<String> required) {
+        Map<String, Object> payloadSchema = new LinkedHashMap<>();
+        payloadSchema.put("type", "object");
+        payloadSchema.put("properties", Map.of(
+                "cardNumber", Map.of("type", "string"),
+                "billingZip", Map.of("type", "string"),
+                "method", Map.of("type", "string")
+        ));
+        payloadSchema.put("additionalProperties", false);
+        if (dependentRequired != null) {
+            payloadSchema.put("dependentRequired", dependentRequired);
+        }
+        if (required != null && !required.isEmpty()) {
+            payloadSchema.put("required", required);
+        }
+        return payloadSchema;
+    }
+
     private static OperatorLibrary listCompatibilityLibrary(Map<String, Object> sourceArraySchema,
                                                             Map<String, Object> targetArraySchema) {
         Map<String, Object> sourceProperties = new LinkedHashMap<>();

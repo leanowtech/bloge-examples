@@ -406,8 +406,13 @@ public final class VisualSchemaCompatibility {
 	            return patternPropertiesIssue;
 	        }
 	        Optional<String> propertyNamesIssue = objectPropertyNamesCompatibilityIssue(sourceSchema, targetSchema, path);
-	        return propertyNamesIssue.isPresent()
-	                ? propertyNamesIssue
+	        if (propertyNamesIssue.isPresent()) {
+	            return propertyNamesIssue;
+	        }
+	        Optional<String> dependentRequiredIssue =
+	                objectDependentRequiredCompatibilityIssue(sourceSchema, targetSchema, path);
+	        return dependentRequiredIssue.isPresent()
+	                ? dependentRequiredIssue
 	                : objectPropertyBoundsCompatibilityIssue(sourceSchema, targetSchema, path);
 	    }
 
@@ -487,6 +492,39 @@ public final class VisualSchemaCompatibility {
 	        }
 	        return Optional.of(reasonAt(path,
 	                "target requires propertyNames but source does not guarantee matching property names"));
+	    }
+
+	    private static Optional<String> objectDependentRequiredCompatibilityIssue(Map<String, Object> sourceSchema,
+	                                                                              Map<String, Object> targetSchema,
+	                                                                              String path) {
+	        Map<String, List<String>> targetDependencies = dependentRequiredOf(targetSchema);
+	        if (targetDependencies.isEmpty()) {
+	            return Optional.empty();
+	        }
+	        List<Object> sourceValues = enumValues(sourceSchema);
+	        if (!sourceValues.isEmpty()
+	                && sourceValues.stream().allMatch(Map.class::isInstance)
+	                && sourceValues.stream().allMatch(value -> objectValueMatchesSchema(value, targetSchema))) {
+	            return Optional.empty();
+	        }
+	        Set<String> sourceRequired = new LinkedHashSet<>(requiredNamesOf(sourceSchema));
+	        Map<String, List<String>> sourceDependencies = dependentRequiredOf(sourceSchema);
+	        for (Map.Entry<String, List<String>> entry : targetDependencies.entrySet()) {
+	            String trigger = entry.getKey();
+	            if (sourceCannotContainProperty(sourceSchema, trigger)) {
+	                continue;
+	            }
+	            List<String> sourceTriggerDependencies = sourceDependencies.getOrDefault(trigger, List.of());
+	            for (String dependency : entry.getValue()) {
+	                if (!sourceRequired.contains(dependency)
+	                        && !sourceTriggerDependencies.contains(dependency)) {
+	                    return Optional.of(reasonAt(path,
+	                            "target requires dependentRequired '%s' -> '%s' but source does not guarantee the dependency"
+	                                    .formatted(trigger, dependency)));
+	                }
+	            }
+	        }
+	        return Optional.empty();
 	    }
 
 	    private static Optional<String> objectPropertyBoundsCompatibilityIssue(Map<String, Object> sourceSchema,
@@ -795,6 +833,9 @@ public final class VisualSchemaCompatibility {
 	        if (!objectValueMatchesPatternProperties(object, schema)) {
 	            return false;
 	        }
+	        if (!objectValueMatchesDependentRequired(object, schema)) {
+	            return false;
+	        }
 	        Map<String, Object> properties = propertiesOf(schema);
 	        for (String required : requiredNamesOf(schema)) {
 	            if (!object.containsKey(required) || object.get(required) == null) {
@@ -1089,6 +1130,55 @@ public final class VisualSchemaCompatibility {
 	            }
 	        }
 	        return true;
+	    }
+
+	    private static boolean objectValueMatchesDependentRequired(Map<?, ?> value, Map<String, Object> schema) {
+	        Map<String, List<String>> dependencies = dependentRequiredOf(schema);
+	        if (dependencies.isEmpty()) {
+	            return true;
+	        }
+	        for (Map.Entry<String, List<String>> entry : dependencies.entrySet()) {
+	            if (!presentObjectProperty(value, entry.getKey())) {
+	                continue;
+	            }
+	            for (String dependency : entry.getValue()) {
+	                if (!presentObjectProperty(value, dependency)) {
+	                    return false;
+	                }
+	            }
+	        }
+	        return true;
+	    }
+
+	    private static Map<String, List<String>> dependentRequiredOf(Map<String, Object> schema) {
+	        Object raw = schema.get("dependentRequired");
+	        if (!(raw instanceof Map<?, ?> rawMap)) {
+	            return Map.of();
+	        }
+	        Map<String, List<String>> dependencies = new LinkedHashMap<>();
+	        for (Map.Entry<?, ?> entry : rawMap.entrySet()) {
+	            if (!(entry.getValue() instanceof List<?> rawDependencies)) {
+	                continue;
+	            }
+	            List<String> names = new ArrayList<>();
+	            for (Object dependency : rawDependencies) {
+	                if (dependency instanceof String name && !name.isBlank()) {
+	                    names.add(name);
+	                }
+	            }
+	            dependencies.put(String.valueOf(entry.getKey()), names);
+	        }
+	        return dependencies;
+	    }
+
+	    private static boolean presentObjectProperty(Map<?, ?> value, String property) {
+	        return value.containsKey(property) && value.get(property) != null;
+	    }
+
+	    private static boolean sourceCannotContainProperty(Map<String, Object> sourceSchema, String property) {
+	        return Boolean.FALSE.equals(sourceSchema.get("additionalProperties"))
+	                && !propertiesOf(sourceSchema).containsKey(property)
+	                && matchingPatternPropertySchemas(sourceSchema, property).isEmpty();
 	    }
 
 	    private static List<Map<String, Object>> matchingPatternPropertySchemas(Map<String, Object> schema,

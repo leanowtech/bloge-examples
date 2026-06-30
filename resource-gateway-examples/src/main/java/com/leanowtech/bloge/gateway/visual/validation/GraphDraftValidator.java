@@ -1241,6 +1241,9 @@ public class GraphDraftValidator {
 	        if (!objectValueMatchesPatternProperties(object, schema)) {
 	            return false;
 	        }
+	        if (!objectValueMatchesDependentRequired(object, schema)) {
+	            return false;
+	        }
 
 	        for (String required : requiredNamesOf(schema)) {
             if (!object.containsKey(required) || object.get(required) == null) {
@@ -1320,6 +1323,49 @@ public class GraphDraftValidator {
 	            }
 	        }
 	        return true;
+	    }
+
+	    private static boolean objectValueMatchesDependentRequired(Map<?, ?> value, Map<String, Object> schema) {
+	        Map<String, List<String>> dependencies = dependentRequiredOf(schema);
+	        if (dependencies.isEmpty()) {
+	            return true;
+	        }
+	        for (Map.Entry<String, List<String>> entry : dependencies.entrySet()) {
+	            if (!presentObjectProperty(value, entry.getKey())) {
+	                continue;
+	            }
+	            for (String dependency : entry.getValue()) {
+	                if (!presentObjectProperty(value, dependency)) {
+	                    return false;
+	                }
+	            }
+	        }
+	        return true;
+	    }
+
+	    private static Map<String, List<String>> dependentRequiredOf(Map<String, Object> schema) {
+	        Object raw = schema.get("dependentRequired");
+	        if (!(raw instanceof Map<?, ?> rawMap)) {
+	            return Map.of();
+	        }
+	        Map<String, List<String>> dependencies = new LinkedHashMap<>();
+	        for (Map.Entry<?, ?> entry : rawMap.entrySet()) {
+	            if (!(entry.getValue() instanceof List<?> rawDependencies)) {
+	                continue;
+	            }
+	            List<String> names = new ArrayList<>();
+	            for (Object dependency : rawDependencies) {
+	                if (dependency instanceof String name && !name.isBlank()) {
+	                    names.add(name);
+	                }
+	            }
+	            dependencies.put(String.valueOf(entry.getKey()), names);
+	        }
+	        return dependencies;
+	    }
+
+	    private static boolean presentObjectProperty(Map<?, ?> value, String property) {
+	        return value.containsKey(property) && value.get(property) != null;
 	    }
 
 	    private static List<Map<String, Object>> matchingPatternPropertySchemas(Map<String, Object> schema,
@@ -1573,6 +1619,12 @@ public class GraphDraftValidator {
 	                    path));
 	            return;
 	        }
+	        if (!objectValueMatchesDependentRequired(object, schema)) {
+	            diagnostics.add(VisualDiagnostic.error("visual.config.constraintMismatch",
+	                    "Config value at '%s' must satisfy object dependentRequired constraints.".formatted(path),
+	                    path));
+	            return;
+	        }
 	        Map<String, Object> properties = propertiesOf(schema);
         for (String required : requiredNamesOf(schema)) {
             if (!object.containsKey(required) || object.get(required) == null) {
@@ -1631,6 +1683,12 @@ public class GraphDraftValidator {
 	        if (!objectValueMatchesPatternProperties(object, schema)) {
 	            diagnostics.add(VisualDiagnostic.error("visual.config.constraintMismatch",
 	                    "Config value at '%s' must satisfy object patternProperties constraints.".formatted(path),
+	                    path));
+	            return;
+	        }
+	        if (!objectValueMatchesDependentRequired(object, schema)) {
+	            diagnostics.add(VisualDiagnostic.error("visual.config.constraintMismatch",
+	                    "Config value at '%s' must satisfy object dependentRequired constraints.".formatted(path),
 	                    path));
 	            return;
 	        }
