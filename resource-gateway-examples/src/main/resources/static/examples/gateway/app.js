@@ -6837,7 +6837,8 @@ function connectionAlreadyApplied(source, target, builder = state.builder) {
       {
         nodeId: edge.target,
         port: edge.targetPort || '',
-        path: edge.targetPath || ''
+        path: edge.targetPath || '',
+        condition: edge.condition || ''
       },
       edge.kind || 'data'
     ) === key);
@@ -6860,7 +6861,7 @@ function connectionKey(source, target, kind = 'data') {
       edgeKind,
       source.nodeId,
       target.nodeId,
-      target.condition || 'otherwise'
+      routeConditionKey(target.condition || 'otherwise')
     ].map((item) => String(item || '').trim()).join(':');
   }
   return [
@@ -6872,6 +6873,38 @@ function connectionKey(source, target, kind = 'data') {
     target.port || '',
     target.path || ''
   ].map((item) => String(item || '').trim()).join(':');
+}
+
+function routeConditionKey(condition) {
+  const value = String(condition || '').trim();
+  if (!value || value.toLowerCase() === 'otherwise') {
+    return 'otherwise';
+  }
+  return routeConditionLiteralKey(routeConditionLiteralValue(value));
+}
+
+function routeConditionLiteralValue(condition) {
+  if (condition === 'true') return true;
+  if (condition === 'false') return false;
+  if (condition === 'null') return null;
+  if (/^[-+]?\d+$/.test(condition)) {
+    const value = Number(condition);
+    return Number.isFinite(value) ? value : condition;
+  }
+  if (/^[-+]?(?:\d+|\d+\.\d*|\d*\.\d+)(?:[eE][-+]?\d+)?$/.test(condition)) {
+    const value = Number(condition);
+    return Number.isFinite(value) ? value : condition;
+  }
+  const parsedString = parseStaticStringLiteral(condition);
+  return parsedString.matched ? parsedString.value : condition;
+}
+
+function routeConditionLiteralKey(value) {
+  if (value === null) return 'null';
+  if (typeof value === 'string') return `string:${value}`;
+  if (typeof value === 'boolean') return `boolean:${value}`;
+  if (typeof value === 'number') return `number:${numberLabel(value)}`;
+  return `${typeof value}:${String(value)}`;
 }
 
 function connectionCompatibility(source, target) {
