@@ -111,6 +111,7 @@ public final class VisualSchemaValidator {
                                        List<VisualDiagnostic> diagnostics) {
         boolean hasUnsupportedKeyword = validateUnsupportedKeywords(schema, path, diagnostics);
         boolean invalidTypeArray = validateTypeArray(schema, path, diagnostics);
+        validateDefinitions(schema, path, diagnostics);
         String kind = schemaKind(schema);
         if (invalidTypeArray) {
             return;
@@ -214,6 +215,39 @@ public final class VisualSchemaValidator {
             }
         }
         return unsupported;
+    }
+
+    @SuppressWarnings("unchecked")
+    private static void validateDefinitions(Map<String, Object> schema,
+                                            String path,
+                                            List<VisualDiagnostic> diagnostics) {
+        if (!schema.containsKey("$defs")) {
+            return;
+        }
+        Object raw = schema.get("$defs");
+        if (!(raw instanceof Map<?, ?> definitions)) {
+            diagnostics.add(VisualDiagnostic.error("visual.schema.defsInvalid",
+                    "Schema $defs must be an object whose values are schemas.",
+                    path + "/$defs"));
+            return;
+        }
+        for (Map.Entry<?, ?> entry : definitions.entrySet()) {
+            String name = String.valueOf(entry.getKey());
+            String definitionPath = path + "/$defs/" + name;
+            if (name.isBlank()) {
+                diagnostics.add(VisualDiagnostic.error("visual.schema.defsInvalid",
+                        "Schema $defs keys must be non-blank names.",
+                        definitionPath));
+                continue;
+            }
+            if (!(entry.getValue() instanceof Map<?, ?> nested)) {
+                diagnostics.add(VisualDiagnostic.error("visual.schema.defsInvalid",
+                        "Schema $defs entry '%s' must be a schema object.".formatted(name),
+                        definitionPath));
+                continue;
+            }
+            validateSchema((Map<String, Object>) nested, definitionPath, diagnostics);
+        }
     }
 
     private static boolean validateTypeArray(Map<String, Object> schema,

@@ -2298,6 +2298,18 @@ class GraphDraftValidatorTest {
     }
 
     @Test
+    void acceptsNodePathBindingThroughLocalDefinitionsReferences() {
+        GraphDraftValidator validator = new GraphDraftValidator(
+                VisualCatalogTestSupport.catalogWithLibrary(
+                        scoreDefinitionsCompatibilityLibrary("integer", "integer")));
+        GraphDraft draft = numericBoundsCompatibilityDraft();
+
+        VisualValidationResult result = validator.validate(draft);
+
+        assertThat(result.valid()).isTrue();
+    }
+
+    @Test
     void rejectsNumericBindingWhenSourceLowerBoundIsWeakerThanTarget() {
         GraphDraftValidator validator = new GraphDraftValidator(
                 VisualCatalogTestSupport.catalogWithLibrary(
@@ -4076,6 +4088,82 @@ class GraphDraftValidatorTest {
                 "ACTIVE",
                 List.of(producer, consumer)
         );
+    }
+
+    private static OperatorLibrary scoreDefinitionsCompatibilityLibrary(Object sourceType, Object targetType) {
+        OperatorDefinition producer = new OperatorDefinition(
+                "bloge.visualOperator.v1",
+                "risk:scoreProducer",
+                "1.0.0",
+                new OperatorDefinition.Display("Score producer",
+                        "Produces referenced risk score facts.",
+                        List.of("risk", "numeric")),
+                new OperatorDefinition.Source("user-library", "", "", "", false),
+                new OperatorDefinition.Ports(
+                        List.of(),
+                        List.of(new OperatorDefinition.Port("output",
+                                scoreReferenceEnvelope(sourceType),
+                                true,
+                                "Score output."))
+                ),
+                SchemaEnvelope.opaque(),
+                OperatorDefinition.Capabilities.pure(),
+                new OperatorDefinition.Lowering("native", "riskScoreProducer", Map.of()),
+                List.of()
+        );
+
+        Map<String, Object> consumerOutputProperties = new LinkedHashMap<>();
+        consumerOutputProperties.put("accepted", Map.of("type", "boolean"));
+        OperatorDefinition consumer = new OperatorDefinition(
+                "bloge.visualOperator.v1",
+                "risk:scoreConsumer",
+                "1.0.0",
+                new OperatorDefinition.Display("Score consumer",
+                        "Consumes referenced risk score facts.",
+                        List.of("risk", "numeric")),
+                new OperatorDefinition.Source("user-library", "", "", "", true),
+                new OperatorDefinition.Ports(
+                        List.of(new OperatorDefinition.Port("inputs",
+                                scoreReferenceEnvelope(targetType),
+                                true,
+                                "Score input.")),
+                        List.of(new OperatorDefinition.Port("output",
+                                SchemaEnvelope.object(consumerOutputProperties, List.of()),
+                                true,
+                                "Consumer output."))
+                ),
+                SchemaEnvelope.opaque(),
+                OperatorDefinition.Capabilities.pure(),
+                new OperatorDefinition.Lowering("transform", "transform", Map.of(
+                        "assignments", Map.of(
+                                "accepted", "true"
+                        )
+                )),
+                List.of()
+        );
+
+        return new OperatorLibrary(
+                "bloge.visualOperatorLibrary.v1",
+                "risk-score-defs-compatibility",
+                "Score definitions compatibility operators",
+                "1.0.0",
+                "risk-team",
+                "ACTIVE",
+                List.of(producer, consumer)
+        );
+    }
+
+    private static SchemaEnvelope scoreReferenceEnvelope(Object scoreType) {
+        return new SchemaEnvelope(SchemaEnvelope.JSON_SCHEMA, "2020-12", Map.of(
+                "type", "object",
+                "properties", Map.of(
+                        "score", Map.of("$ref", "#/$defs/Score")
+                ),
+                "required", List.of("score"),
+                "$defs", Map.of(
+                        "Score", Map.of("type", scoreType)
+                )
+        ));
     }
 
     private static GraphDraft stringLengthCompatibilityDraft() {

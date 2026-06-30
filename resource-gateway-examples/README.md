@@ -240,7 +240,8 @@ sample for concrete dynamic keys that are accepted by the active graph input
 schema, so map-style payloads do not require users to hand-type every expression.
 The server validates the graph input schema with the same structural gate used
 for operator port/config schemas, including nullable single-concrete type arrays
-such as `["string", "null"]`, strict object `properties`,
+such as `["string", "null"]`, pure local `$defs` references such as
+`{"$ref":"#/$defs/Customer"}`, strict object `properties`,
 `additionalProperties`, `required`, enum value-domain, `const` shape checks,
 numeric bound/`multipleOf` validation, string length validation, string
 pattern/format validation, array item-count validation, `uniqueItems` validation, array `prefixItems` validation, object
@@ -252,10 +253,13 @@ blocks unknown or type-incompatible `contextPath` bindings when the draft input
 schema is strict. The shared schema gate treats the currently supported
 `SchemaEnvelope` as an explicit authoring contract: `format` must be
 `json-schema`, `version` must be `2020-12`, and the schema body must stay within
-the canvas-supported subset. `$ref`/`$dynamicRef`, composition and conditional
-keywords such as `oneOf`, `anyOf`, `allOf`, `not`, `if`, `then`, and `else`,
-and unenforced constraint keywords such as unevaluated-item constraints
-are rejected instead of being silently ignored. Multi-concrete `type` arrays
+the canvas-supported subset. Pure `#/$defs/...` `$ref` nodes are normalized to
+their referenced schema before validation and type matching; remote refs,
+unresolved refs, `$dynamicRef`, `$ref` nodes with validation-affecting siblings,
+composition and conditional keywords such as `oneOf`, `anyOf`, `allOf`, `not`,
+`if`, `then`, and `else`, and unenforced constraint keywords such as
+unevaluated-item constraints are rejected instead of being silently ignored.
+Multi-concrete `type` arrays
 such as `["integer", "string", "null"]` are also rejected until the canvas has
 real union semantics instead of picking a lossy primary type. Manual
 `expression` bindings are not blind escape hatches: server validation checks
@@ -484,8 +488,8 @@ Validate and upsert run the same resource-contract validator before storage.
 The validator rejects unsupported request/response schema kinds, `required`
 fields not declared in `properties`, array schemas without `items`, enum schemas
 without values, unsupported schema envelope format/version, unsupported JSON
-Schema reference/composition/constraint keywords, multi-concrete type arrays,
-and raw secret material in
+Schema remote or unresolved references, composition/constraint keywords,
+multi-concrete type arrays, and raw secret material in
 contract examples. Supported object schemas may constrain dynamic key names with
 `propertyNames` using the same string enum/const, length, pattern, and format
 subset enforced elsewhere in the canvas, and may constrain dynamic key values
@@ -552,7 +556,7 @@ references, assignment expressions that are statically known to violate the
 declared output schema, unsupported schema kinds, multi-concrete type arrays,
 `required` fields not declared in `properties`, and array schemas without
 `items` across input, output, and config schemas. It also rejects unsupported
-schema envelope format/version, JSON Schema references,
+schema envelope format/version, JSON Schema remote or unresolved references,
 composition/conditional keywords, and constraint keywords the canvas does not
 currently enforce, so imported schemas cannot imply validation behavior that
 drag/drop hints, server validation, or DSL generation will ignore. Schema
@@ -1047,7 +1051,7 @@ Isolated component tests, some with lightweight Spring slices or mocks.
 | `ResourceDescriptorBootstrapTest` | 7 | Seeding, refresh behavior, idempotency |
 | `GatewayDslCompilationTest` | 7 | DSL parsing, graph loading |
 | Gateway example API suite | 13 | Dynamic composer service/controller, scenario catalog, example graph endpoints |
-| Visual authoring suite | 384 | Visual operator projection, resource design contract persistence and gates, resource-contract in-use delete protection, imported libraries, registry-aware and impact-aware library validation, catalog lifecycle gates, deprecated operator draft resolution and active-scope fingerprinting, catalog token gates and policy filtering, policy wildcard scope gates, cross-library operatorRef ownership, operator-library in-use change protection and same-ref fingerprint drift/missing-snapshot preflight warnings, system-reserved operatorRef gates, import-time lowering/canonicalization gates including DSL-safe field-name gates, schema default value gates, nullable type-array gates, transform assignment output-schema gates, unsupported schema envelope and JSON Schema keyword gates, const value-domain gates, enum/const array-object shape gates, numeric bound/`multipleOf`, string length, string pattern/format, array item-count, array `uniqueItems`, array `prefixItems`, array `contains`, object property-count, object `propertyNames`, object `patternProperties`, object `dependentRequired`, object `dependentSchemas`, and object `unevaluatedProperties` schema gates, built-in and virtual catalog schema-gate parity, draft/publication persistence and history, revision audit metadata, full-save/PATCH fingerprint preservation, service-managed fingerprint snapshot gates, structured malformed patch diagnostics, server-assigned create identity, revision-guarded full-save, patch, stored-run, delete, and publish conflict handling, operator fingerprint drift preservation and execution snapshot coverage gates, typed connection/edge validation including nullable-source compatibility, edge identity uniqueness plus binding and edge kind allow-lists, binding and edge kind canonicalization, static literal expression gates, input/config/root-port source-picker server preflight with duplicate-connection rejection, post-drop binding simulation, and nested config paths, duplicate target input ownership, root-port object binding from context and upstream operator output, stable root-port input keys, object required fields, object schema structure gates, required-array schema gates, nested input/config objectTemplate required fields and object-compatible targets, enum value-domain and shape gates, standard JSON Schema config enum gates, standard JSON Schema config const gates, numeric bound/`multipleOf`, string length, string pattern/format, array item-count, array `uniqueItems`, array `prefixItems`, array `contains`, object property-count, object `propertyNames`, object `patternProperties`, object `dependentRequired`, object `dependentSchemas`, and object `unevaluatedProperties` config gates, nested config expression references and configSchema type gates, native config input lowering and DSL field-key diagnostics, data edge/semantic dependency consistency, graph input schema gates, secret blocking, DSL lowering, compiler gating, dependency ordering, runtime smoke path |
+| Visual authoring suite | 389 | Visual operator projection, resource design contract persistence and gates, resource-contract in-use delete protection, imported libraries, registry-aware and impact-aware library validation, catalog lifecycle gates, deprecated operator draft resolution and active-scope fingerprinting, catalog token gates and policy filtering, policy wildcard scope gates, cross-library operatorRef ownership, operator-library in-use change protection and same-ref fingerprint drift/missing-snapshot preflight warnings, system-reserved operatorRef gates, import-time lowering/canonicalization gates including DSL-safe field-name gates, schema default value gates, nullable type-array gates, local `$defs` reference normalization gates, transform assignment output-schema gates, unsupported schema envelope and JSON Schema keyword gates, const value-domain gates, enum/const array-object shape gates, numeric bound/`multipleOf`, string length, string pattern/format, array item-count, array `uniqueItems`, array `prefixItems`, array `contains`, object property-count, object `propertyNames`, object `patternProperties`, object `dependentRequired`, object `dependentSchemas`, and object `unevaluatedProperties` schema gates, built-in and virtual catalog schema-gate parity, draft/publication persistence and history, revision audit metadata, full-save/PATCH fingerprint preservation, service-managed fingerprint snapshot gates, structured malformed patch diagnostics, server-assigned create identity, revision-guarded full-save, patch, stored-run, delete, and publish conflict handling, operator fingerprint drift preservation and execution snapshot coverage gates, typed connection/edge validation including nullable-source compatibility and local `$defs` references, edge identity uniqueness plus binding and edge kind allow-lists, binding and edge kind canonicalization, static literal expression gates, input/config/root-port source-picker server preflight with duplicate-connection rejection, post-drop binding simulation, and nested config paths, duplicate target input ownership, root-port object binding from context and upstream operator output, stable root-port input keys, object required fields, object schema structure gates, required-array schema gates, nested input/config objectTemplate required fields and object-compatible targets, enum value-domain and shape gates, standard JSON Schema config enum gates, standard JSON Schema config const gates, numeric bound/`multipleOf`, string length, string pattern/format, array item-count, array `uniqueItems`, array `prefixItems`, array `contains`, object property-count, object `propertyNames`, object `patternProperties`, object `dependentRequired`, object `dependentSchemas`, and object `unevaluatedProperties` config gates, nested config expression references and configSchema type gates, native config input lowering and DSL field-key diagnostics, data edge/semantic dependency consistency, graph input schema gates, secret blocking, DSL lowering, compiler gating, dependency ordering, runtime smoke path |
 
 ### Layer 3 — Orchestration tests
 

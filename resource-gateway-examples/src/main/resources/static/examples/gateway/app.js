@@ -239,6 +239,17 @@ const UNSUPPORTED_SCHEMA_CONSTRAINT_KEYWORDS = [
   'unevaluatedItems'
 ];
 const SUPPORTED_SCHEMA_STRING_FORMATS = new Set(['date', 'date-time', 'duration', 'email', 'uri', 'uuid']);
+const LOCAL_SCHEMA_DEFS_REF_PREFIX = '#/$defs/';
+const SCHEMA_REF_ANNOTATION_KEYS = new Set([
+  '$ref',
+  '$comment',
+  'title',
+  'description',
+  'examples',
+  'deprecated',
+  'readOnly',
+  'writeOnly'
+]);
 
 const state = {
   scenarios: [],
@@ -5039,8 +5050,106 @@ function normalizeGraphInputSchemaEnvelope(value) {
   return {
     format: String(value.format || SUPPORTED_SCHEMA_FORMAT),
     version: String(value.version || SUPPORTED_SCHEMA_VERSION),
-    schema
+    schema: resolveLocalSchemaRefs(schema)
   };
+}
+
+function resolveLocalSchemaRefs(schema) {
+  const root = deepCloneSchemaValue(schema);
+  const resolved = resolveLocalSchemaRefValue(root, root, []);
+  return isPlainObject(resolved) ? resolved : root;
+}
+
+function resolveLocalSchemaRefValue(value, root, stack) {
+  if (Array.isArray(value)) {
+    return value.map((item) => resolveLocalSchemaRefValue(item, root, stack));
+  }
+  if (!isPlainObject(value)) {
+    return value;
+  }
+  const ref = expandableLocalSchemaRef(value);
+  if (ref) {
+    if (stack.includes(ref)) {
+      return value;
+    }
+    const target = resolveSchemaJsonPointer(root, ref);
+    if (!isPlainObject(target)) {
+      return value;
+    }
+    stack.push(ref);
+    const resolvedTarget = resolveLocalSchemaRefValue(deepCloneSchemaValue(target), root, stack);
+    stack.pop();
+    if (!isPlainObject(resolvedTarget)) {
+      return value;
+    }
+    const merged = { ...resolvedTarget };
+    for (const [key, item] of Object.entries(value)) {
+      if (key !== '$ref') {
+        merged[key] = deepCloneSchemaValue(item);
+      }
+    }
+    return merged;
+  }
+  const resolved = {};
+  for (const [key, item] of Object.entries(value)) {
+    resolved[key] = resolveLocalSchemaRefValue(item, root, stack);
+  }
+  return resolved;
+}
+
+function expandableLocalSchemaRef(schema) {
+  const ref = schema?.$ref;
+  if (typeof ref !== 'string' || !ref.startsWith(LOCAL_SCHEMA_DEFS_REF_PREFIX)) {
+    return '';
+  }
+  return Object.keys(schema).every((key) => SCHEMA_REF_ANNOTATION_KEYS.has(key)) ? ref : '';
+}
+
+function resolveSchemaJsonPointer(root, ref) {
+  if (!ref.startsWith('#/')) {
+    return undefined;
+  }
+  let current = root;
+  for (const rawToken of ref.slice(2).split('/')) {
+    const token = decodeJsonPointerToken(rawToken);
+    if (Array.isArray(current)) {
+      const index = arrayIndexSegment(token);
+      if (index === null || index >= current.length) {
+        return undefined;
+      }
+      current = current[index];
+    } else if (isPlainObject(current)) {
+      current = current[token];
+    } else {
+      return undefined;
+    }
+    if (current === undefined || current === null) {
+      return undefined;
+    }
+  }
+  return current;
+}
+
+function decodeJsonPointerToken(token) {
+  return String(token).replace(/~1/g, '/').replace(/~0/g, '~');
+}
+
+function deepCloneSchemaValue(value) {
+  if (Array.isArray(value)) {
+    return value.map(deepCloneSchemaValue);
+  }
+  if (isPlainObject(value)) {
+    const copy = {};
+    for (const [key, item] of Object.entries(value)) {
+      copy[key] = deepCloneSchemaValue(item);
+    }
+    return copy;
+  }
+  return value;
+}
+
+function isPlainObject(value) {
+  return !!value && typeof value === 'object' && !Array.isArray(value);
 }
 
 function graphInputSchemaStructuralDiagnostics(schemaEnvelope) {
@@ -5070,6 +5179,7 @@ function validateSchemaEnvelope(schemaEnvelope, diagnostics) {
 function validateSchemaStructure(schema, path, diagnostics) {
   validateUnsupportedSchemaKeywords(schema, path, diagnostics);
   const invalidTypeArray = validateSchemaTypeArray(schema, path, diagnostics);
+  validateSchemaDefinitions(schema, path, diagnostics);
   const kind = rawSchemaType(schema);
   if (invalidTypeArray) {
     return;
@@ -5200,6 +5310,41 @@ function validateSchemaTypeArray(schema, path, diagnostics) {
     invalid = true;
   }
   return invalid;
+}
+
+function validateSchemaDefinitions(schema, path, diagnostics) {
+  if (!Object.prototype.hasOwnProperty.call(schema || {}, '$defs')) {
+    return;
+  }
+  const definitions = schema.$defs;
+  if (!isPlainObject(definitions)) {
+    diagnostics.push(graphInputSchemaDiagnostic(
+      'visual.schema.defsInvalid',
+      'Schema $defs must be an object whose values are schemas.',
+      `${path}/$defs`
+    ));
+    return;
+  }
+  for (const [name, definition] of Object.entries(definitions)) {
+    const target = `${path}/$defs/${name}`;
+    if (!name.trim()) {
+      diagnostics.push(graphInputSchemaDiagnostic(
+        'visual.schema.defsInvalid',
+        'Schema $defs keys must be non-blank names.',
+        target
+      ));
+      continue;
+    }
+    if (!isPlainObject(definition)) {
+      diagnostics.push(graphInputSchemaDiagnostic(
+        'visual.schema.defsInvalid',
+        `Schema $defs entry '${name}' must be a schema object.`,
+        target
+      ));
+      continue;
+    }
+    validateSchemaStructure(definition, target, diagnostics);
+  }
 }
 
 function validateUnsupportedSchemaKeywords(schema, path, diagnostics) {

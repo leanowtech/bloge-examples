@@ -386,6 +386,56 @@ class ResourceDesignContractValidatorTest {
     }
 
     @Test
+    void acceptsLocalDefinitionsReferencesInResourceContractSchemas() {
+        ResourceDesignContract contract = new ResourceDesignContract(
+                "contract:orders",
+                "order-service.listOrders",
+                "Order list",
+                "Lists orders.",
+                List.of("order"),
+                new SchemaEnvelope(SchemaEnvelope.JSON_SCHEMA, "2020-12", Map.of(
+                        "type", "object",
+                        "properties", Map.of(
+                                "filters", Map.of("$ref", "#/$defs/OrderFilters")
+                        ),
+                        "required", List.of("filters"),
+                        "$defs", Map.of(
+                                "OrderFilters", Map.of(
+                                        "type", "object",
+                                        "properties", Map.of(
+                                                "status", Map.of("type", "string"),
+                                                "limit", Map.of("type", "integer")
+                                        ),
+                                        "required", List.of("status"),
+                                        "additionalProperties", false)
+                        )
+                )),
+                new SchemaEnvelope(SchemaEnvelope.JSON_SCHEMA, "2020-12", Map.of(
+                        "type", "object",
+                        "properties", Map.of(
+                                "summary", Map.of("$ref", "#/$defs/OrderSummary")
+                        ),
+                        "$defs", Map.of(
+                                "OrderSummary", Map.of(
+                                        "type", "object",
+                                        "properties", Map.of(
+                                                "count", Map.of("type", "integer"),
+                                                "cursor", Map.of("type", List.of("string", "null"))
+                                        ),
+                                        "additionalProperties", false)
+                        )
+                )),
+                Map.of(),
+                "ACTIVE"
+        );
+
+        VisualValidationResult result = validator.validate(contract);
+
+        assertThat(result.valid()).isTrue();
+        assertThat(result.diagnostics()).isEmpty();
+    }
+
+    @Test
     void acceptsObjectDependentRequiredInResourceContractSchemas() {
         ResourceDesignContract contract = new ResourceDesignContract(
                 "contract:orders",

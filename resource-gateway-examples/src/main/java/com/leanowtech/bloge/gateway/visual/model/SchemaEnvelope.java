@@ -18,6 +18,17 @@ public record SchemaEnvelope(
         Map<String, Object> schema
 ) {
     public static final String JSON_SCHEMA = "json-schema";
+    private static final String DEFS_POINTER_PREFIX = "#/$defs/";
+    private static final List<String> REF_ANNOTATION_KEYS = List.of(
+            "$ref",
+            "$comment",
+            "title",
+            "description",
+            "examples",
+            "deprecated",
+            "readOnly",
+            "writeOnly"
+    );
 
     /**
      * Creates a schema envelope.
@@ -25,7 +36,7 @@ public record SchemaEnvelope(
     public SchemaEnvelope {
         format = format == null || format.isBlank() ? JSON_SCHEMA : format;
         version = version == null || version.isBlank() ? "2020-12" : version;
-        schema = schema == null ? Map.of() : deepCopy(schema);
+        schema = schema == null ? Map.of() : resolveLocalReferences(deepCopy(schema));
     }
 
     /**
@@ -92,18 +103,133 @@ public record SchemaEnvelope(
         return properties().containsKey(name);
     }
 
-    @SuppressWarnings("unchecked")
     private static Map<String, Object> deepCopy(Map<String, Object> source) {
         Map<String, Object> copy = new LinkedHashMap<>();
-        source.forEach((key, value) -> {
-            if (value instanceof Map<?, ?> map) {
-                copy.put(key, deepCopy((Map<String, Object>) map));
-            } else if (value instanceof List<?> list) {
-                copy.put(key, List.copyOf(list));
-            } else {
-                copy.put(key, value);
+        source.forEach((key, value) -> copy.put(key, deepCopyValue(value)));
+        return copy;
+    }
+
+    @SuppressWarnings("unchecked")
+    private static Object deepCopyValue(Object value) {
+        if (value instanceof Map<?, ?> map) {
+            Map<String, Object> copy = new LinkedHashMap<>();
+            map.forEach((key, item) -> copy.put(String.valueOf(key), deepCopyValue(item)));
+            return copy;
+        }
+        if (value instanceof List<?> list) {
+            List<Object> copy = new ArrayList<>(list.size());
+            for (Object item : list) {
+                copy.add(deepCopyValue(item));
             }
-        });
+            return copy;
+        }
+        return value;
+    }
+
+    private static Map<String, Object> resolveLocalReferences(Map<String, Object> root) {
+        Object resolved = resolveLocalReferences(root, root, new ArrayList<>());
+        return resolved instanceof Map<?, ?> map ? objectMap(map) : root;
+    }
+
+    private static Object resolveLocalReferences(Object value,
+                                                 Map<String, Object> root,
+                                                 List<String> referenceStack) {
+        if (value instanceof List<?> list) {
+            List<Object> resolved = new ArrayList<>(list.size());
+            for (Object item : list) {
+                resolved.add(resolveLocalReferences(item, root, referenceStack));
+            }
+            return resolved;
+        }
+        if (!(value instanceof Map<?, ?> rawMap)) {
+            return value;
+        }
+
+        Map<String, Object> map = objectMap(rawMap);
+        String ref = expandableLocalRef(map);
+        if (ref != null) {
+            if (referenceStack.contains(ref)) {
+                return map;
+            }
+            Object target = resolveJsonPointer(root, ref);
+            if (!(target instanceof Map<?, ?> targetMap)) {
+                return map;
+            }
+            referenceStack.add(ref);
+            Object resolvedTarget = resolveLocalReferences(deepCopyValue(targetMap), root, referenceStack);
+            referenceStack.remove(referenceStack.size() - 1);
+            if (!(resolvedTarget instanceof Map<?, ?> resolvedTargetMap)) {
+                return map;
+            }
+            Map<String, Object> merged = objectMap(resolvedTargetMap);
+            for (Map.Entry<String, Object> entry : map.entrySet()) {
+                if (!"$ref".equals(entry.getKey())) {
+                    merged.put(entry.getKey(), deepCopyValue(entry.getValue()));
+                }
+            }
+            return merged;
+        }
+
+        Map<String, Object> resolved = new LinkedHashMap<>();
+        map.forEach((key, item) -> resolved.put(key, resolveLocalReferences(item, root, referenceStack)));
+        return resolved;
+    }
+
+    private static String expandableLocalRef(Map<String, Object> schema) {
+        Object raw = schema.get("$ref");
+        if (!(raw instanceof String ref) || !ref.startsWith(DEFS_POINTER_PREFIX)) {
+            return null;
+        }
+        for (String key : schema.keySet()) {
+            if (!REF_ANNOTATION_KEYS.contains(key)) {
+                return null;
+            }
+        }
+        return ref;
+    }
+
+    private static Object resolveJsonPointer(Map<String, Object> root, String ref) {
+        if (!ref.startsWith("#/")) {
+            return null;
+        }
+        Object current = root;
+        String[] tokens = ref.substring(2).split("/");
+        for (String token : tokens) {
+            String key = decodeJsonPointerToken(token);
+            if (current instanceof Map<?, ?> map) {
+                current = map.get(key);
+            } else if (current instanceof List<?> list) {
+                Integer index = listIndex(key);
+                if (index == null || index >= list.size()) {
+                    return null;
+                }
+                current = list.get(index);
+            } else {
+                return null;
+            }
+            if (current == null) {
+                return null;
+            }
+        }
+        return current;
+    }
+
+    private static String decodeJsonPointerToken(String token) {
+        return token.replace("~1", "/").replace("~0", "~");
+    }
+
+    private static Integer listIndex(String value) {
+        try {
+            int index = Integer.parseInt(value);
+            return index < 0 ? null : index;
+        } catch (NumberFormatException ex) {
+            return null;
+        }
+    }
+
+    private static Map<String, Object> objectMap(Map<?, ?> map) {
+        Map<String, Object> copy = new LinkedHashMap<>();
+        map.forEach((key, value) -> copy.put(String.valueOf(key), value));
         return copy;
     }
 }
