@@ -1319,6 +1319,104 @@ class OperatorLibraryValidatorTest {
     }
 
     @Test
+    void acceptsArrayPrefixItemsAcrossOperatorDefinitions() {
+        OperatorDefinition operator = new OperatorDefinition(
+                "bloge.visualOperator.v1",
+                "risk:arrayPrefixItemsPolicy",
+                "1.0.0",
+                new OperatorDefinition.Display("Array prefix-items policy", "Test operator.", List.of("test")),
+                new OperatorDefinition.Source("user-library", "", "", "", true),
+                new OperatorDefinition.Ports(
+                        List.of(new OperatorDefinition.Port("payload",
+                                SchemaEnvelope.object(Map.of(
+                                        "tuple", tuplePrefixItemsSchema(Map.of())
+                                ), List.of("tuple")),
+                                true,
+                                "Input.")),
+                        List.of(new OperatorDefinition.Port("output",
+                                SchemaEnvelope.object(Map.of(
+                                        "audit", tuplePrefixItemsSchema(Map.of())
+                                ), List.of()),
+                                true,
+                                "Output."))
+                ),
+                SchemaEnvelope.object(Map.of(
+                        "tuple", tuplePrefixItemsSchema(Map.of(
+                                "default", List.of(42, "route", "tail")))
+                ), List.of("tuple")),
+                OperatorDefinition.Capabilities.pure(),
+                new OperatorDefinition.Lowering("native", "riskArrayPrefixItemsPolicy", Map.of()),
+                List.of()
+        );
+
+        VisualValidationResult result = validator.validate(libraryWith(operator));
+
+        assertThat(result.diagnostics()).isEmpty();
+        assertThat(result.valid()).isTrue();
+    }
+
+    @Test
+    void rejectsInvalidArrayPrefixItemsAcrossOperatorDefinitions() {
+        OperatorDefinition operator = new OperatorDefinition(
+                "bloge.visualOperator.v1",
+                "risk:badArrayPrefixItemsPolicy",
+                "1.0.0",
+                new OperatorDefinition.Display("Bad array prefix-items policy", "Test operator.", List.of("test")),
+                new OperatorDefinition.Source("user-library", "", "", "", true),
+                new OperatorDefinition.Ports(
+                        List.of(new OperatorDefinition.Port("payload",
+                                SchemaEnvelope.object(Map.of(
+                                        "tuple", tuplePrefixItemsSchema(Map.of(
+                                                "prefixItems", List.of("integer")))
+                                ), List.of("tuple")),
+                                true,
+                                "Input.")),
+                        List.of(new OperatorDefinition.Port("output",
+                                SchemaEnvelope.object(Map.of(
+                                        "segments", Map.of(
+                                                "type", "string",
+                                                "prefixItems", List.of(Map.of("type", "string")))
+                                ), List.of()),
+                                true,
+                                "Output."))
+                ),
+                SchemaEnvelope.object(Map.of(
+                        "tuple", tuplePrefixItemsSchema(Map.of(
+                                "default", List.of("bad", "route"))),
+                        "fixed", tuplePrefixItemsSchema(Map.of(
+                                "const", List.of("bad", "route"))),
+                        "choices", tuplePrefixItemsSchema(Map.of(
+                                "enum", List.of(List.of("bad", "route"))))
+                ), List.of()),
+                OperatorDefinition.Capabilities.pure(),
+                new OperatorDefinition.Lowering("native", "riskBadArrayPrefixItemsPolicy", Map.of()),
+                List.of()
+        );
+
+        VisualValidationResult result = validator.validate(libraryWith(operator));
+
+        assertThat(result.valid()).isFalse();
+        assertThat(result.diagnostics())
+                .extracting("code")
+                .contains(
+                        "visual.schema.prefixItemsInvalid",
+                        "visual.schema.prefixItemsConstraintTypeMismatch",
+                        "visual.schema.defaultTypeMismatch",
+                        "visual.schema.constConstraintMismatch",
+                        "visual.schema.enumConstraintMismatch"
+                );
+        assertThat(result.diagnostics())
+                .extracting("target")
+                .contains(
+                        "/operators/0/ports/inputs/0/schema/schema/properties/tuple/prefixItems/0",
+                        "/operators/0/ports/outputs/0/schema/schema/properties/segments",
+                        "/operators/0/configSchema/schema/properties/tuple/default/0",
+                        "/operators/0/configSchema/schema/properties/fixed/const",
+                        "/operators/0/configSchema/schema/properties/choices/enum/0"
+                );
+    }
+
+    @Test
     void acceptsArrayContainsAcrossOperatorDefinitions() {
         OperatorDefinition operator = new OperatorDefinition(
                 "bloge.visualOperator.v1",
@@ -2667,6 +2765,19 @@ class OperatorLibraryValidatorTest {
         ));
         schema.put("additionalProperties", false);
         schema.put("dependentRequired", Map.of("cardNumber", List.of("billingZip")));
+        schema.putAll(overrides);
+        return schema;
+    }
+
+    private static Map<String, Object> tuplePrefixItemsSchema(Map<String, Object> overrides) {
+        Map<String, Object> schema = new LinkedHashMap<>();
+        schema.put("type", "array");
+        schema.put("prefixItems", List.of(
+                Map.of("type", "integer"),
+                Map.of("type", "string")
+        ));
+        schema.put("items", Map.of("type", "string"));
+        schema.put("minItems", 2);
         schema.putAll(overrides);
         return schema;
     }

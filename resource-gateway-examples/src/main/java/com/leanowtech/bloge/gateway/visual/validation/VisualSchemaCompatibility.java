@@ -69,14 +69,13 @@ public final class VisualSchemaCompatibility {
             return Optional.empty();
         }
 	        if ("array".equals(sourceType) && "array".equals(targetType)) {
-	            Map<String, Object> sourceItems = objectProperty(sourceSchema.get("items"));
-	            Map<String, Object> targetItems = objectProperty(targetSchema.get("items"));
-	            if (sourceItems != null && targetItems != null) {
-	                Optional<String> itemIssue = schemaCompatibilityIssue(sourceItems, targetItems,
-	                        appendCompatibilityPath(path, "items"));
-	                if (itemIssue.isPresent()) {
-	                    return itemIssue;
-	                }
+	            Optional<String> prefixItemsIssue = arrayPrefixItemsCompatibilityIssue(sourceSchema, targetSchema, path);
+	            if (prefixItemsIssue.isPresent()) {
+	                return prefixItemsIssue;
+	            }
+	            Optional<String> itemIssue = arrayItemsCompatibilityIssue(sourceSchema, targetSchema, path);
+	            if (itemIssue.isPresent()) {
+	                return itemIssue;
 	            }
 	            Optional<String> itemBoundsIssue = arrayItemBoundsCompatibilityIssue(sourceSchema, targetSchema, path);
 	            if (itemBoundsIssue.isPresent()) {
@@ -312,6 +311,79 @@ public final class VisualSchemaCompatibility {
 	                return Optional.of(reasonAt(path,
 	                        "source maxItems %d is weaker than target maxItems %d"
 	                                .formatted(sourceMaximum, targetMaximum)));
+	            }
+	        }
+	        return Optional.empty();
+	    }
+
+	    private static Optional<String> arrayItemsCompatibilityIssue(Map<String, Object> sourceSchema,
+	                                                                 Map<String, Object> targetSchema,
+	                                                                 String path) {
+	        Map<String, Object> targetItems = objectProperty(targetSchema.get("items"));
+	        if (targetItems == null) {
+	            return Optional.empty();
+	        }
+	        int firstUniformIndex = Math.max(prefixItemsOf(sourceSchema).size(), prefixItemsOf(targetSchema).size());
+	        Long sourceMaximum = arrayMaxItems(sourceSchema);
+	        if (sourceMaximum != null && sourceMaximum <= firstUniformIndex) {
+	            return Optional.empty();
+	        }
+	        Map<String, Object> sourceItems = objectProperty(sourceSchema.get("items"));
+	        if (sourceItems == null) {
+	            return Optional.of(reasonAt(path,
+	                    "target requires items but source does not constrain additional array items"));
+	        }
+	        return schemaCompatibilityIssue(sourceItems, targetItems, appendCompatibilityPath(path, "items"));
+	    }
+
+	    private static Optional<String> arrayPrefixItemsCompatibilityIssue(Map<String, Object> sourceSchema,
+	                                                                       Map<String, Object> targetSchema,
+	                                                                       String path) {
+	        if (!"array".equals(schemaType(sourceSchema)) || !"array".equals(schemaType(targetSchema))) {
+	            return Optional.empty();
+	        }
+	        List<Map<String, Object>> targetPrefixItems = prefixItemsOf(targetSchema);
+	        List<Map<String, Object>> sourcePrefixItems = prefixItemsOf(sourceSchema);
+	        Map<String, Object> sourceItems = objectProperty(sourceSchema.get("items"));
+	        Map<String, Object> targetItems = objectProperty(targetSchema.get("items"));
+	        if (targetPrefixItems.isEmpty() && sourcePrefixItems.size() <= targetPrefixItems.size()) {
+	            return Optional.empty();
+	        }
+	        List<Object> sourceValues = enumValues(sourceSchema);
+	        if (!sourceValues.isEmpty()
+	                && sourceValues.stream().allMatch(List.class::isInstance)
+	                && sourceValues.stream().allMatch(value -> arrayValueMatchesSchema(value, targetSchema))) {
+	            return Optional.empty();
+	        }
+	        Long sourceMaximum = arrayMaxItems(sourceSchema);
+	        for (int i = 0; i < targetPrefixItems.size(); i++) {
+	            if (sourceMaximum != null && sourceMaximum <= i) {
+	                continue;
+	            }
+	            Map<String, Object> sourceItem = i < sourcePrefixItems.size()
+	                    ? sourcePrefixItems.get(i)
+	                    : sourceItems;
+	            if (sourceItem == null) {
+	                return Optional.of(reasonAt(path,
+	                        "target requires prefixItems[%d] but source does not constrain that array item"
+	                                .formatted(i)));
+	            }
+	            Optional<String> nestedIssue = schemaCompatibilityIssue(sourceItem, targetPrefixItems.get(i),
+	                    appendCompatibilityPath(path, "prefixItems/" + i));
+	            if (nestedIssue.isPresent()) {
+	                return nestedIssue;
+	            }
+	        }
+	        if (targetItems != null) {
+	            for (int i = targetPrefixItems.size(); i < sourcePrefixItems.size(); i++) {
+	                if (sourceMaximum != null && sourceMaximum <= i) {
+	                    continue;
+	                }
+	                Optional<String> nestedIssue = schemaCompatibilityIssue(sourcePrefixItems.get(i), targetItems,
+	                        appendCompatibilityPath(path, "prefixItems/" + i));
+	                if (nestedIssue.isPresent()) {
+	                    return nestedIssue;
+	                }
 	            }
 	        }
 	        return Optional.empty();
@@ -924,9 +996,37 @@ public final class VisualSchemaCompatibility {
 	        if (!arrayValueMatchesContains(list, schema)) {
 	            return false;
 	        }
-		        Map<String, Object> items = objectProperty(schema.get("items"));
-		        return items == null || list.stream().allMatch(item -> valueMatchesSchema(item, items));
+		        for (int i = 0; i < list.size(); i++) {
+		            Map<String, Object> itemSchema = arrayItemSchemaForIndex(schema, i);
+		            if (itemSchema != null && !valueMatchesSchema(list.get(i), itemSchema)) {
+		                return false;
+		            }
+		        }
+		        return true;
 		    }
+
+	    private static Map<String, Object> arrayItemSchemaForIndex(Map<String, Object> schema, int index) {
+	        List<Map<String, Object>> prefixItems = prefixItemsOf(schema);
+	        if (index < prefixItems.size()) {
+	            return prefixItems.get(index);
+	        }
+	        return objectProperty(schema.get("items"));
+	    }
+
+	    private static List<Map<String, Object>> prefixItemsOf(Map<String, Object> schema) {
+	        Object raw = schema.get("prefixItems");
+	        if (!(raw instanceof List<?> values)) {
+	            return List.of();
+	        }
+	        List<Map<String, Object>> prefixItems = new ArrayList<>();
+	        for (Object value : values) {
+	            Map<String, Object> itemSchema = objectProperty(value);
+	            if (itemSchema != null) {
+	                prefixItems.add(itemSchema);
+	            }
+	        }
+	        return prefixItems;
+	    }
 
 	    @SuppressWarnings("unchecked")
 	    private static boolean objectValueMatchesSchema(Object value, Map<String, Object> schema) {

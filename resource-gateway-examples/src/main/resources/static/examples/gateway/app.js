@@ -236,7 +236,6 @@ const SUPPORTED_SCHEMA_KINDS = new Set([
 const UNSUPPORTED_SCHEMA_REFERENCE_KEYWORDS = ['$ref', '$dynamicRef'];
 const UNSUPPORTED_SCHEMA_COMPOSITION_KEYWORDS = ['oneOf', 'anyOf', 'allOf', 'not', 'if', 'then', 'else'];
 const UNSUPPORTED_SCHEMA_CONSTRAINT_KEYWORDS = [
-  'prefixItems',
   'unevaluatedProperties',
   'unevaluatedItems'
 ];
@@ -4868,6 +4867,18 @@ function schemaAtPath(schemaEnvelope, path) {
   let current = schemaEnvelope?.schema || {};
   for (const segment of String(path).split('.')) {
     if (!segment) continue;
+    if (rawSchemaType(current) === 'array') {
+      const index = arrayIndexSegment(segment);
+      if (index === null) {
+        return null;
+      }
+      const itemSchema = arrayItemSchemaForIndex(current, index);
+      if (!itemSchema) {
+        return null;
+      }
+      current = itemSchema;
+      continue;
+    }
     const properties = current.properties || {};
     if (!Object.prototype.hasOwnProperty.call(properties, segment)) {
       const pattern = patternPropertySchema(current, segment);
@@ -4885,6 +4896,13 @@ function schemaAtPath(schemaEnvelope, path) {
     current = properties[segment] || {};
   }
   return current;
+}
+
+function arrayIndexSegment(segment) {
+  if (!/^(0|[1-9]\d*)$/.test(String(segment))) {
+    return null;
+  }
+  return Number(segment);
 }
 
 function additionalPropertySchema(schema) {
@@ -5065,6 +5083,7 @@ function validateSchemaStructure(schema, path, diagnostics) {
   validateSchemaStringFormat(schema, kind, path, diagnostics);
   validateSchemaArrayItemBounds(schema, kind, path, diagnostics);
   validateSchemaArrayUniqueItems(schema, kind, path, diagnostics);
+  validateSchemaArrayPrefixItems(schema, kind, path, diagnostics);
   validateSchemaArrayContains(schema, kind, path, diagnostics);
   validateSchemaObjectPropertyBounds(schema, kind, path, diagnostics);
   validateSchemaObjectPatternProperties(schema, kind, path, diagnostics);
@@ -5600,6 +5619,40 @@ function validateSchemaArrayUniqueItems(schema, kind, path, diagnostics) {
       `${path}/uniqueItems`
     ));
   }
+}
+
+function validateSchemaArrayPrefixItems(schema, kind, path, diagnostics) {
+  if (!Object.prototype.hasOwnProperty.call(schema || {}, 'prefixItems')) {
+    return;
+  }
+  if (!arrayType(kind)) {
+    diagnostics.push(graphInputSchemaDiagnostic(
+      'visual.schema.prefixItemsConstraintTypeMismatch',
+      'Array prefixItems constraints require schema type/kind array.',
+      path
+    ));
+  }
+  const prefixItems = schema?.prefixItems;
+  if (!Array.isArray(prefixItems)) {
+    diagnostics.push(graphInputSchemaDiagnostic(
+      'visual.schema.prefixItemsInvalid',
+      'Array schema prefixItems must be an array of schema objects.',
+      `${path}/prefixItems`
+    ));
+    return;
+  }
+  prefixItems.forEach((itemSchema, index) => {
+    const itemPath = `${path}/prefixItems/${index}`;
+    if (!itemSchema || typeof itemSchema !== 'object' || Array.isArray(itemSchema)) {
+      diagnostics.push(graphInputSchemaDiagnostic(
+        'visual.schema.prefixItemsInvalid',
+        `Array schema prefixItems entry ${index} must be a schema object.`,
+        itemPath
+      ));
+      return;
+    }
+    validateSchemaStructure(itemSchema, itemPath, diagnostics);
+  });
 }
 
 function validateSchemaArrayContains(schema, kind, path, diagnostics) {
@@ -6249,13 +6302,9 @@ function schemaCompatibilityIssue(sourceSchema, targetSchema, path = '') {
     return '';
   }
   if (sourceType === 'array' && targetType === 'array') {
-    if (sourceSchema?.items && targetSchema?.items) {
-      const itemIssue = schemaCompatibilityIssue(sourceSchema.items, targetSchema.items, appendCompatibilityPath(path, 'items'));
-      if (itemIssue) {
-        return itemIssue;
-      }
-    }
-    return arrayItemBoundsCompatibilityIssue(sourceSchema, targetSchema, path)
+    return arrayPrefixItemsCompatibilityIssue(sourceSchema, targetSchema, path)
+      || arrayItemsCompatibilityIssue(sourceSchema, targetSchema, path)
+      || arrayItemBoundsCompatibilityIssue(sourceSchema, targetSchema, path)
       || arrayUniqueItemsCompatibilityIssue(sourceSchema, targetSchema, path)
       || arrayContainsCompatibilityIssue(sourceSchema, targetSchema, path);
   }
@@ -6426,6 +6475,67 @@ function arrayItemBoundsCompatibilityIssue(sourceSchema, targetSchema, path = ''
     }
     if (sourceMaximum > targetMaximum) {
       return reasonAt(path, `source maxItems ${sourceMaximum} is weaker than target maxItems ${targetMaximum}`);
+    }
+  }
+  return '';
+}
+
+function arrayItemsCompatibilityIssue(sourceSchema, targetSchema, path = '') {
+  const targetItems = schemaItemsSchema(targetSchema);
+  if (!targetItems) {
+    return '';
+  }
+  const firstUniformIndex = Math.max(schemaPrefixItems(sourceSchema).length, schemaPrefixItems(targetSchema).length);
+  const sourceMaximum = schemaMaxItems(sourceSchema);
+  if (sourceMaximum !== null && sourceMaximum <= firstUniformIndex) {
+    return '';
+  }
+  const sourceItems = schemaItemsSchema(sourceSchema);
+  if (!sourceItems) {
+    return reasonAt(path, 'target requires items but source does not constrain additional array items');
+  }
+  return schemaCompatibilityIssue(sourceItems, targetItems, appendCompatibilityPath(path, 'items'));
+}
+
+function arrayPrefixItemsCompatibilityIssue(sourceSchema, targetSchema, path = '') {
+  if (!arrayType(rawSchemaType(sourceSchema)) || !arrayType(rawSchemaType(targetSchema))) {
+    return '';
+  }
+  const targetPrefixItems = schemaPrefixItems(targetSchema);
+  const sourcePrefixItems = schemaPrefixItems(sourceSchema);
+  if (!targetPrefixItems.length && sourcePrefixItems.length <= targetPrefixItems.length) {
+    return '';
+  }
+  const sourceValues = schemaEnumValues(sourceSchema);
+  if (sourceValues.length
+      && sourceValues.every(Array.isArray)
+      && sourceValues.every((value) => arrayValueMatchesSchema(value, targetSchema))) {
+    return '';
+  }
+  const sourceMaximum = schemaMaxItems(sourceSchema);
+  for (let index = 0; index < targetPrefixItems.length; index += 1) {
+    if (sourceMaximum !== null && sourceMaximum <= index) {
+      continue;
+    }
+    const sourceItem = sourcePrefixItems[index] || schemaItemsSchema(sourceSchema);
+    if (!sourceItem) {
+      return reasonAt(path, `target requires prefixItems[${index}] but source does not constrain that array item`);
+    }
+    const nested = schemaCompatibilityIssue(sourceItem, targetPrefixItems[index], appendCompatibilityPath(path, `prefixItems/${index}`));
+    if (nested) {
+      return nested;
+    }
+  }
+  const targetItems = schemaItemsSchema(targetSchema);
+  if (targetItems) {
+    for (let index = targetPrefixItems.length; index < sourcePrefixItems.length; index += 1) {
+      if (sourceMaximum !== null && sourceMaximum <= index) {
+        continue;
+      }
+      const nested = schemaCompatibilityIssue(sourcePrefixItems[index], targetItems, appendCompatibilityPath(path, `prefixItems/${index}`));
+      if (nested) {
+        return nested;
+      }
     }
   }
   return '';
@@ -6991,8 +7101,10 @@ function arrayValueMatchesSchema(value, schema) {
   if (!arrayValueMatchesContains(value, schema)) {
     return false;
   }
-  const items = schema?.items;
-  return !items || value.every((item) => schemaValueMatchesSchema(item, items));
+  return value.every((item, index) => {
+    const itemSchema = arrayItemSchemaForIndex(schema, index);
+    return !itemSchema || schemaValueMatchesSchema(item, itemSchema);
+  });
 }
 
 function arrayValueMatchesItemBounds(value, schema) {
@@ -7027,6 +7139,26 @@ function arrayValueMatchesContains(value, schema) {
   }
   const maximum = schemaMaxContains(schema);
   return maximum === null || matches <= maximum;
+}
+
+function arrayItemSchemaForIndex(schema, index) {
+  const prefixItems = schemaPrefixItems(schema);
+  if (index < prefixItems.length) {
+    return prefixItems[index];
+  }
+  return schemaItemsSchema(schema);
+}
+
+function schemaPrefixItems(schema) {
+  const prefixItems = schema?.prefixItems;
+  return Array.isArray(prefixItems)
+    ? prefixItems.filter((itemSchema) => itemSchema && typeof itemSchema === 'object' && !Array.isArray(itemSchema))
+    : [];
+}
+
+function schemaItemsSchema(schema) {
+  const items = schema?.items;
+  return items && typeof items === 'object' && !Array.isArray(items) ? items : null;
 }
 
 function arrayItemsUnique(value) {

@@ -540,6 +540,24 @@ public final class VisualCatalogTestSupport {
         );
     }
 
+    public static OperatorLibrary listPrefixItemsCompatibilityLibrary(Object sourcePrefixItems,
+                                                                      Object targetPrefixItems) {
+        return listCompatibilityLibrary(
+                listPrefixItemsSchema(sourcePrefixItems),
+                listPrefixItemsSchema(targetPrefixItems)
+        );
+    }
+
+    private static Map<String, Object> listPrefixItemsSchema(Object prefixItems) {
+        Map<String, Object> schema = new LinkedHashMap<>();
+        schema.put("type", "array");
+        schema.put("items", Map.of("type", "string"));
+        if (prefixItems != null) {
+            schema.put("prefixItems", prefixItems);
+        }
+        return schema;
+    }
+
     public static OperatorLibrary objectPropertyBoundsCompatibilityLibrary(int sourceMinProperties,
                                                                            int sourceMaxProperties,
                                                                            int targetMinProperties,

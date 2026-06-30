@@ -55,7 +55,6 @@ public final class VisualSchemaValidator {
             "else"
     );
     private static final Set<String> UNSUPPORTED_CONSTRAINT_KEYWORDS = Set.of(
-            "prefixItems",
             "unevaluatedProperties",
             "unevaluatedItems"
     );
@@ -136,6 +135,7 @@ public final class VisualSchemaValidator {
 	        validateStringFormat(schema, kind, path, diagnostics);
 	        validateArrayItemBounds(schema, kind, path, diagnostics);
 	        validateArrayUniqueItems(schema, kind, path, diagnostics);
+	        validateArrayPrefixItems(schema, kind, path, diagnostics);
 	        validateArrayContains(schema, kind, path, diagnostics);
 	        validateObjectPropertyBounds(schema, kind, path, diagnostics);
 	        validateObjectPatternProperties(schema, kind, path, diagnostics);
@@ -328,12 +328,18 @@ public final class VisualSchemaValidator {
 	                        path));
 	            }
 	            Object items = schema.get("items");
-	            if (items instanceof Map<?, ?> itemSchema) {
-	                Map<String, Object> itemSchemaMap = (Map<String, Object>) itemSchema;
-                for (int i = 0; i < list.size(); i++) {
-                    validateDefaultValue(itemSchemaMap, schemaKind(itemSchemaMap), path + "/" + i,
-                            diagnostics, list.get(i));
-                }
+	            Map<String, Object> itemSchemaMap = items instanceof Map<?, ?> itemSchema
+	                    ? (Map<String, Object>) itemSchema
+	                    : null;
+	            List<Map<String, Object>> prefixItems = prefixItemsOf(schema);
+	            for (int i = 0; i < list.size(); i++) {
+	                Map<String, Object> itemSchemaForIndex = i < prefixItems.size()
+	                        ? prefixItems.get(i)
+	                        : itemSchemaMap;
+	                if (itemSchemaForIndex != null) {
+	                    validateDefaultValue(itemSchemaForIndex, schemaKind(itemSchemaForIndex), path + "/" + i,
+	                            diagnostics, list.get(i));
+	                }
             }
             return;
         }
@@ -888,10 +894,10 @@ public final class VisualSchemaValidator {
 	        }
 	    }
 
-	    private static void validateArrayUniqueItems(Map<String, Object> schema,
-	                                                 String kind,
-	                                                 String path,
-	                                                 List<VisualDiagnostic> diagnostics) {
+    private static void validateArrayUniqueItems(Map<String, Object> schema,
+                                                 String kind,
+                                                 String path,
+                                                 List<VisualDiagnostic> diagnostics) {
 	        if (!schema.containsKey("uniqueItems")) {
 	            return;
 	        }
@@ -904,12 +910,45 @@ public final class VisualSchemaValidator {
 	            diagnostics.add(VisualDiagnostic.error("visual.schema.uniqueItemsConstraintInvalid",
 	                    "Array uniqueItems constraint must be a boolean.",
 	                    path + "/uniqueItems"));
-		        }
-		    }
+        }
+    }
 
-	    private static void validateArrayContains(Map<String, Object> schema,
-	                                              String kind,
-	                                              String path,
+    @SuppressWarnings("unchecked")
+    private static void validateArrayPrefixItems(Map<String, Object> schema,
+                                                 String kind,
+                                                 String path,
+                                                 List<VisualDiagnostic> diagnostics) {
+        if (!schema.containsKey("prefixItems")) {
+            return;
+        }
+        if (!arrayKind(kind)) {
+            diagnostics.add(VisualDiagnostic.error("visual.schema.prefixItemsConstraintTypeMismatch",
+                    "Array prefixItems constraints require schema type/kind array.",
+                    path));
+        }
+        Object raw = schema.get("prefixItems");
+        if (!(raw instanceof List<?> values)) {
+            diagnostics.add(VisualDiagnostic.error("visual.schema.prefixItemsInvalid",
+                    "Array schema prefixItems must be an array of schema objects.",
+                    path + "/prefixItems"));
+            return;
+        }
+        for (int i = 0; i < values.size(); i++) {
+            Object value = values.get(i);
+            String itemPath = path + "/prefixItems/" + i;
+            if (!(value instanceof Map<?, ?> itemSchema)) {
+                diagnostics.add(VisualDiagnostic.error("visual.schema.prefixItemsInvalid",
+                        "Array schema prefixItems entry %d must be a schema object.".formatted(i),
+                        itemPath));
+                continue;
+            }
+            validateSchema((Map<String, Object>) itemSchema, itemPath, diagnostics);
+        }
+    }
+
+    private static void validateArrayContains(Map<String, Object> schema,
+                                              String kind,
+                                              String path,
 	                                              List<VisualDiagnostic> diagnostics) {
 	        if (!hasArrayContains(schema)) {
 	            return;
@@ -1316,11 +1355,34 @@ public final class VisualSchemaValidator {
 	            return false;
 	        }
 	        Object items = schema.get("items");
-	        if (!(items instanceof Map<?, ?> itemSchema)) {
-	            return true;
+	        Map<String, Object> itemSchemaMap = items instanceof Map<?, ?> itemSchema
+	                ? (Map<String, Object>) itemSchema
+	                : null;
+	        List<Map<String, Object>> prefixItems = prefixItemsOf(schema);
+	        for (int i = 0; i < list.size(); i++) {
+	            Map<String, Object> itemSchemaForIndex = i < prefixItems.size()
+	                    ? prefixItems.get(i)
+	                    : itemSchemaMap;
+	            if (itemSchemaForIndex != null && !valueMatchesSchema(list.get(i), itemSchemaForIndex)) {
+	                return false;
+	            }
 	        }
-	        Map<String, Object> itemSchemaMap = (Map<String, Object>) itemSchema;
-	        return list.stream().allMatch(item -> valueMatchesSchema(item, itemSchemaMap));
+	        return true;
+	    }
+
+	    @SuppressWarnings("unchecked")
+	    private static List<Map<String, Object>> prefixItemsOf(Map<String, Object> schema) {
+	        Object raw = schema.get("prefixItems");
+	        if (!(raw instanceof List<?> values)) {
+	            return List.of();
+	        }
+	        List<Map<String, Object>> prefixItems = new ArrayList<>();
+	        for (Object value : values) {
+	            if (value instanceof Map<?, ?> itemSchema) {
+	                prefixItems.add((Map<String, Object>) itemSchema);
+	            }
+	        }
+	        return prefixItems;
 	    }
 
 	    private static void validateObjectPropertyBoundary(Map<String, Object> schema,

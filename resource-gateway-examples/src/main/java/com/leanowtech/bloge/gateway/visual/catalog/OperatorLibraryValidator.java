@@ -501,6 +501,18 @@ public class OperatorLibraryValidator {
             if (segment.isBlank()) {
                 continue;
             }
+            if ("array".equals(schemaKind(currentSchema))) {
+                Integer index = arrayIndexSegment(segment);
+                if (index == null) {
+                    return null;
+                }
+                current = arrayItemSchemaForIndex(currentSchema, index);
+                if (current == null) {
+                    return null;
+                }
+                currentSchema = current;
+                continue;
+            }
             current = objectProperty(propertiesOf(currentSchema).get(segment));
             if (current == null) {
                 current = patternPropertySchema(currentSchema, segment);
@@ -514,6 +526,38 @@ public class OperatorLibraryValidator {
             currentSchema = current;
         }
         return current;
+    }
+
+    private static Integer arrayIndexSegment(String segment) {
+        try {
+            int index = Integer.parseInt(segment);
+            return index < 0 ? null : index;
+        } catch (NumberFormatException ex) {
+            return null;
+        }
+    }
+
+    private static Map<String, Object> arrayItemSchemaForIndex(Map<String, Object> schema, int index) {
+        List<Map<String, Object>> prefixItems = prefixItemsOf(schema);
+        if (index < prefixItems.size()) {
+            return prefixItems.get(index);
+        }
+        return objectProperty(schema.get("items"));
+    }
+
+    private static List<Map<String, Object>> prefixItemsOf(Map<String, Object> schema) {
+        Object raw = schema.get("prefixItems");
+        if (!(raw instanceof List<?> values)) {
+            return List.of();
+        }
+        List<Map<String, Object>> prefixItems = new ArrayList<>();
+        for (Object value : values) {
+            Map<String, Object> itemSchema = objectProperty(value);
+            if (itemSchema != null) {
+                prefixItems.add(itemSchema);
+            }
+        }
+        return prefixItems;
     }
 
     private static List<String> requiredPaths(Map<String, Object> schema) {

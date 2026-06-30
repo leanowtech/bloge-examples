@@ -928,6 +928,19 @@ public class GraphDraftValidator {
             if (segment.isBlank()) {
                 continue;
             }
+            if ("array".equals(schemaType(currentSchema))) {
+                Integer index = arrayIndexSegment(segment);
+                if (index == null) {
+                    return null;
+                }
+                current = arrayItemSchemaForIndex(currentSchema, index);
+                if (current == null) {
+                    return null;
+                }
+                currentSchema = current;
+                properties = propertiesOf(currentSchema);
+                continue;
+            }
             current = objectProperty(properties.get(segment));
             if (current == null) {
                 current = patternPropertySchema(currentSchema, segment);
@@ -942,6 +955,15 @@ public class GraphDraftValidator {
             properties = propertiesOf(currentSchema);
         }
         return current;
+    }
+
+    private static Integer arrayIndexSegment(String segment) {
+        try {
+            int index = Integer.parseInt(segment);
+            return index < 0 ? null : index;
+        } catch (NumberFormatException ex) {
+            return null;
+        }
     }
 
     private static List<String> requiredPaths(SchemaEnvelope schema) {
@@ -1294,8 +1316,13 @@ public class GraphDraftValidator {
 	        if (!arrayValueMatchesContains(list, schema)) {
 	            return false;
 	        }
-		        Map<String, Object> items = objectProperty(schema.get("items"));
-		        return items == null || list.stream().allMatch(item -> constantValueMatchesSchema(item, items));
+	        for (int i = 0; i < list.size(); i++) {
+	            Map<String, Object> itemSchema = arrayItemSchemaForIndex(schema, i);
+	            if (itemSchema != null && !constantValueMatchesSchema(list.get(i), itemSchema)) {
+	                return false;
+	            }
+	        }
+	        return true;
 		    }
 
 	    private static boolean objectValueMatchesPropertyBounds(Map<?, ?> value, Map<String, Object> schema) {
@@ -1820,12 +1847,11 @@ public class GraphDraftValidator {
 	                    path));
 	            return;
 	        }
-	        Map<String, Object> items = objectProperty(schema.get("items"));
-	        if (items == null) {
-            return;
-        }
         for (int i = 0; i < list.size(); i++) {
-            validateConfigValue(list.get(i), items, path + "/" + i, diagnostics);
+            Map<String, Object> itemSchema = arrayItemSchemaForIndex(schema, i);
+            if (itemSchema != null) {
+                validateConfigValue(list.get(i), itemSchema, path + "/" + i, diagnostics);
+            }
         }
     }
 
@@ -1980,6 +2006,29 @@ public class GraphDraftValidator {
 	        }
 	        Long maximum = arrayMaxContains(schema);
 	        return maximum == null || matches <= maximum;
+	    }
+
+	    private static Map<String, Object> arrayItemSchemaForIndex(Map<String, Object> schema, int index) {
+	        List<Map<String, Object>> prefixItems = prefixItemsOf(schema);
+	        if (index < prefixItems.size()) {
+	            return prefixItems.get(index);
+	        }
+	        return objectProperty(schema.get("items"));
+	    }
+
+	    private static List<Map<String, Object>> prefixItemsOf(Map<String, Object> schema) {
+	        Object raw = schema.get("prefixItems");
+	        if (!(raw instanceof List<?> values)) {
+	            return List.of();
+	        }
+	        List<Map<String, Object>> prefixItems = new ArrayList<>();
+	        for (Object value : values) {
+	            Map<String, Object> itemSchema = objectProperty(value);
+	            if (itemSchema != null) {
+	                prefixItems.add(itemSchema);
+	            }
+	        }
+	        return prefixItems;
 	    }
 
 	    private static Long arrayMinContains(Map<String, Object> schema) {
