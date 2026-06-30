@@ -8,6 +8,7 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import java.util.regex.Pattern;
+import java.util.regex.PatternSyntaxException;
 
 /**
  * Shared schema compatibility helpers for visual authoring.
@@ -60,7 +61,10 @@ public final class VisualSchemaCompatibility {
 	                    return itemIssue;
 	                }
 	            }
-	            return arrayItemBoundsCompatibilityIssue(sourceSchema, targetSchema, path);
+	            Optional<String> itemBoundsIssue = arrayItemBoundsCompatibilityIssue(sourceSchema, targetSchema, path);
+	            return itemBoundsIssue.isPresent()
+	                    ? itemBoundsIssue
+	                    : arrayUniqueItemsCompatibilityIssue(sourceSchema, targetSchema, path);
 	        }
         if ("object".equals(sourceType) && "object".equals(targetType)) {
             return objectSchemaCompatibilityIssue(sourceSchema, targetSchema, path);
@@ -94,10 +98,16 @@ public final class VisualSchemaCompatibility {
 	                            .formatted(valueDomainLabel(incompatible), schemaTypeLabel(targetSchema))));
 	        }
 	        if (numeric(sourceType) && numeric(targetType)) {
-	            return numericBoundsCompatibilityIssue(sourceSchema, targetSchema, path);
+	            Optional<String> boundsIssue = numericBoundsCompatibilityIssue(sourceSchema, targetSchema, path);
+	            return boundsIssue.isPresent()
+	                    ? boundsIssue
+	                    : numericMultipleOfCompatibilityIssue(sourceSchema, targetSchema, path);
 	        }
 	        if (stringLike(sourceType) && stringLike(targetType)) {
-	            return stringLengthCompatibilityIssue(sourceSchema, targetSchema, path);
+	            Optional<String> patternIssue = stringPatternCompatibilityIssue(sourceSchema, targetSchema, path);
+	            return patternIssue.isPresent()
+	                    ? patternIssue
+	                    : stringLengthCompatibilityIssue(sourceSchema, targetSchema, path);
 	        }
 	        if (sourceType.equals(targetType)) {
 	            return Optional.empty();
@@ -107,8 +117,8 @@ public final class VisualSchemaCompatibility {
 	                        .formatted(schemaTypeLabel(sourceSchema), schemaTypeLabel(targetSchema))));
     }
 
-    private static Optional<String> numericBoundsCompatibilityIssue(Map<String, Object> sourceSchema,
-                                                                    Map<String, Object> targetSchema,
+	    private static Optional<String> numericBoundsCompatibilityIssue(Map<String, Object> sourceSchema,
+	                                                                    Map<String, Object> targetSchema,
                                                                     String path) {
         if (!numeric(schemaType(sourceSchema)) || !numeric(schemaType(targetSchema))) {
             return Optional.empty();
@@ -139,6 +149,30 @@ public final class VisualSchemaCompatibility {
                                 .formatted(sourceUpper.upperLabel(), targetUpper.upperLabel())));
             }
         }
+	        return Optional.empty();
+	    }
+
+	    private static Optional<String> numericMultipleOfCompatibilityIssue(Map<String, Object> sourceSchema,
+	                                                                        Map<String, Object> targetSchema,
+	                                                                        String path) {
+	        if (!numeric(schemaType(sourceSchema)) || !numeric(schemaType(targetSchema))) {
+	            return Optional.empty();
+	        }
+	        Double targetMultipleOf = numericMultipleOf(targetSchema.get("multipleOf"));
+	        if (targetMultipleOf == null) {
+	            return Optional.empty();
+	        }
+	        Double sourceMultipleOf = numericMultipleOf(sourceSchema.get("multipleOf"));
+	        if (sourceMultipleOf == null) {
+	            return Optional.of(reasonAt(path,
+	                    "target requires multipleOf %s but source has no multipleOf"
+	                            .formatted(numberLabel(targetMultipleOf))));
+	        }
+	        if (!numericValueIsMultipleOf(sourceMultipleOf, targetMultipleOf)) {
+	            return Optional.of(reasonAt(path,
+	                    "source multipleOf %s is weaker than target multipleOf %s"
+	                            .formatted(numberLabel(sourceMultipleOf), numberLabel(targetMultipleOf))));
+	        }
 	        return Optional.empty();
 	    }
 
@@ -177,6 +211,29 @@ public final class VisualSchemaCompatibility {
 	        return Optional.empty();
 	    }
 
+	    private static Optional<String> stringPatternCompatibilityIssue(Map<String, Object> sourceSchema,
+	                                                                    Map<String, Object> targetSchema,
+	                                                                    String path) {
+	        if (!stringLike(schemaType(sourceSchema)) || !stringLike(schemaType(targetSchema))) {
+	            return Optional.empty();
+	        }
+	        String targetPattern = stringPattern(targetSchema);
+	        if (targetPattern == null) {
+	            return Optional.empty();
+	        }
+	        String sourcePattern = stringPattern(sourceSchema);
+	        if (targetPattern.equals(sourcePattern)) {
+	            return Optional.empty();
+	        }
+	        if (sourcePattern == null) {
+	            return Optional.of(reasonAt(path,
+	                    "target requires pattern '%s' but source has no pattern".formatted(targetPattern)));
+	        }
+	        return Optional.of(reasonAt(path,
+	                "source pattern '%s' cannot be proven compatible with target pattern '%s'"
+	                        .formatted(sourcePattern, targetPattern)));
+	    }
+
 	    private static Optional<String> arrayItemBoundsCompatibilityIssue(Map<String, Object> sourceSchema,
 	                                                                      Map<String, Object> targetSchema,
 	                                                                      String path) {
@@ -210,6 +267,25 @@ public final class VisualSchemaCompatibility {
 	            }
 	        }
 	        return Optional.empty();
+	    }
+
+	    private static Optional<String> arrayUniqueItemsCompatibilityIssue(Map<String, Object> sourceSchema,
+	                                                                       Map<String, Object> targetSchema,
+	                                                                       String path) {
+	        if (!"array".equals(schemaType(sourceSchema)) || !"array".equals(schemaType(targetSchema))
+	                || !Boolean.TRUE.equals(targetSchema.get("uniqueItems"))) {
+	            return Optional.empty();
+	        }
+	        if (Boolean.TRUE.equals(sourceSchema.get("uniqueItems"))) {
+	            return Optional.empty();
+	        }
+	        List<Object> sourceValues = enumValues(sourceSchema);
+	        if (!sourceValues.isEmpty()
+	                && sourceValues.stream().allMatch(List.class::isInstance)
+	                && sourceValues.stream().allMatch(value -> arrayItemsUnique((List<?>) value))) {
+	            return Optional.empty();
+	        }
+	        return Optional.of(reasonAt(path, "target requires uniqueItems=true but source does not guarantee uniqueness"));
 	    }
 
 	    private static Optional<String> objectSchemaCompatibilityIssue(Map<String, Object> sourceSchema,
@@ -466,21 +542,31 @@ public final class VisualSchemaCompatibility {
             return false;
         }
 	        return numericValueMatchesBounds(value, schema)
+	                && numericValueMatchesMultipleOf(value, schema)
 	                && stringValueMatchesLengthBounds(value, schema)
+	                && stringValueMatchesPattern(value, schema)
 	                && arrayValueMatchesSchema(value, schema);
 	    }
 
-    private static boolean numericValueMatchesBounds(Object value, Map<String, Object> schema) {
-        if (!(value instanceof Number number)) {
-            return true;
+	    private static boolean numericValueMatchesBounds(Object value, Map<String, Object> schema) {
+	        if (!(value instanceof Number number)) {
+	            return true;
         }
         double numericValue = number.doubleValue();
         NumericBoundary lower = lowerBound(schema);
         if (lower != null && !lower.acceptsLower(numericValue)) {
             return false;
         }
-        NumericBoundary upper = upperBound(schema);
+	        NumericBoundary upper = upperBound(schema);
 	        return upper == null || upper.acceptsUpper(numericValue);
+	    }
+
+	    private static boolean numericValueMatchesMultipleOf(Object value, Map<String, Object> schema) {
+	        if (!(value instanceof Number number)) {
+	            return true;
+	        }
+	        Double multipleOf = numericMultipleOf(schema.get("multipleOf"));
+	        return multipleOf == null || numericValueIsMultipleOf(number.doubleValue(), multipleOf);
 	    }
 
 	    private static boolean stringValueMatchesLengthBounds(Object value, Map<String, Object> schema) {
@@ -496,12 +582,30 @@ public final class VisualSchemaCompatibility {
 	        return maximum == null || length <= maximum;
 	    }
 
+	    private static boolean stringValueMatchesPattern(Object value, Map<String, Object> schema) {
+	        if (!(value instanceof String string)) {
+	            return true;
+	        }
+	        String rawPattern = stringPattern(schema);
+	        if (rawPattern == null) {
+	            return true;
+	        }
+	        try {
+	            return Pattern.compile(rawPattern).matcher(string).find();
+	        } catch (PatternSyntaxException ex) {
+	            return true;
+	        }
+	    }
+
 	    @SuppressWarnings("unchecked")
 	    private static boolean arrayValueMatchesSchema(Object value, Map<String, Object> schema) {
 	        if (!(value instanceof List<?> list) || !"array".equals(schemaType(schema))) {
 	            return true;
 	        }
 	        if (!arrayValueMatchesItemBounds(list, schema)) {
+	            return false;
+	        }
+	        if (!arrayValueMatchesUniqueItems(list, schema)) {
 	            return false;
 	        }
 	        Map<String, Object> items = objectProperty(schema.get("items"));
@@ -605,6 +709,11 @@ public final class VisualSchemaCompatibility {
 	        return stringLengthBoundary(schema.get("maxLength"));
 	    }
 
+	    private static String stringPattern(Map<String, Object> schema) {
+	        Object rawPattern = schema.get("pattern");
+	        return rawPattern instanceof String pattern ? pattern : null;
+	    }
+
 	    private static Long stringLengthBoundary(Object value) {
 	        if (!(value instanceof Number number)) {
 	            return null;
@@ -656,6 +765,14 @@ public final class VisualSchemaCompatibility {
 	        return maximum == null || size <= maximum;
 	    }
 
+	    private static boolean arrayValueMatchesUniqueItems(List<?> value, Map<String, Object> schema) {
+	        return !Boolean.TRUE.equals(schema.get("uniqueItems")) || arrayItemsUnique(value);
+	    }
+
+	    private static boolean arrayItemsUnique(List<?> value) {
+	        return new LinkedHashSet<>(value).size() == value.size();
+	    }
+
 	    private static Long arrayItemBoundary(Object value) {
 	        if (!(value instanceof Number number)) {
 	            return null;
@@ -705,13 +822,36 @@ public final class VisualSchemaCompatibility {
         return exclusiveMaximum.exclusive() ? exclusiveMaximum : maximum;
     }
 
-    private static NumericBoundary numericBoundary(Object value, boolean exclusive) {
-        if (!(value instanceof Number number)) {
-            return null;
+	    private static NumericBoundary numericBoundary(Object value, boolean exclusive) {
+	        if (!(value instanceof Number number)) {
+	            return null;
         }
         double numericValue = number.doubleValue();
-        return Double.isFinite(numericValue) ? new NumericBoundary(numericValue, exclusive) : null;
-    }
+	        return Double.isFinite(numericValue) ? new NumericBoundary(numericValue, exclusive) : null;
+	    }
+
+	    private static Double numericMultipleOf(Object value) {
+	        if (!(value instanceof Number number)) {
+	            return null;
+	        }
+	        double numericValue = number.doubleValue();
+	        return Double.isFinite(numericValue) && numericValue > 0 ? numericValue : null;
+	    }
+
+	    private static boolean numericValueIsMultipleOf(double value, double multipleOf) {
+	        if (!Double.isFinite(value) || !Double.isFinite(multipleOf) || multipleOf <= 0) {
+	            return true;
+	        }
+	        double quotient = value / multipleOf;
+	        double nearest = Math.rint(quotient);
+	        double tolerance = 1.0e-9 * Math.max(1.0, Math.abs(quotient));
+	        return Math.abs(quotient - nearest) <= tolerance;
+	    }
+
+	    private static String numberLabel(double value) {
+	        long whole = (long) value;
+	        return value == whole ? Long.toString(whole) : Double.toString(value);
+	    }
 
     private static boolean lowerBoundAtLeast(NumericBoundary source, NumericBoundary target) {
         int comparison = Double.compare(source.value(), target.value());

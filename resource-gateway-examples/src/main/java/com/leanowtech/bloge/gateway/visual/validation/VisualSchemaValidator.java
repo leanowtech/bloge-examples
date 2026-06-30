@@ -10,6 +10,8 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
+import java.util.regex.Pattern;
+import java.util.regex.PatternSyntaxException;
 
 /**
  * Shared structural validator for schema envelopes used by visual authoring.
@@ -46,11 +48,8 @@ public final class VisualSchemaValidator {
             "else"
     );
 	    private static final Set<String> UNSUPPORTED_CONSTRAINT_KEYWORDS = Set.of(
-	            "pattern",
-	            "multipleOf",
-	            "uniqueItems",
 	            "contains",
-            "minContains",
+	            "minContains",
             "maxContains",
             "prefixItems",
             "patternProperties",
@@ -122,8 +121,11 @@ public final class VisualSchemaValidator {
 	        validateStandardEnum(schema, kind, path, diagnostics);
 	        validateConstValue(schema, kind, path, diagnostics);
 	        validateNumericBounds(schema, kind, path, diagnostics);
+	        validateNumericMultipleOf(schema, kind, path, diagnostics);
 	        validateStringLengthBounds(schema, kind, path, diagnostics);
+	        validateStringPattern(schema, kind, path, diagnostics);
 	        validateArrayItemBounds(schema, kind, path, diagnostics);
+	        validateArrayUniqueItems(schema, kind, path, diagnostics);
 	        validateDefaultValue(schema, kind, path, diagnostics);
         if ("object".equals(kind)) {
             Map<String, Object> properties = objectProperties(schema, path, diagnostics);
@@ -266,6 +268,11 @@ public final class VisualSchemaValidator {
 	                        "Schema default must satisfy array item count constraints.",
 	                        path));
 	            }
+	            if (!arrayValueMatchesUniqueItems(value, schema)) {
+	                diagnostics.add(VisualDiagnostic.error("visual.schema.defaultConstraintMismatch",
+	                        "Schema default must satisfy array uniqueItems constraint.",
+	                        path));
+	            }
 	            Object items = schema.get("items");
 	            if (items instanceof Map<?, ?> itemSchema) {
 	                Map<String, Object> itemSchemaMap = (Map<String, Object>) itemSchema;
@@ -301,9 +308,19 @@ public final class VisualSchemaValidator {
 	                    "Schema default must satisfy numeric bounds.",
 	                    path));
 	        }
+	        if (numericKind(kind) && !numericValueMatchesMultipleOf(value, schema)) {
+	            diagnostics.add(VisualDiagnostic.error("visual.schema.defaultConstraintMismatch",
+	                    "Schema default must satisfy numeric multipleOf constraint.",
+	                    path));
+	        }
 	        if (stringKind(kind) && !stringValueMatchesLengthBounds(value, schema)) {
 	            diagnostics.add(VisualDiagnostic.error("visual.schema.defaultConstraintMismatch",
 	                    "Schema default must satisfy string length constraints.",
+	                    path));
+	        }
+	        if (stringKind(kind) && !stringValueMatchesPattern(value, schema)) {
+	            diagnostics.add(VisualDiagnostic.error("visual.schema.defaultConstraintMismatch",
+	                    "Schema default must satisfy string pattern constraint.",
 	                    path));
 	        }
 	    }
@@ -412,9 +429,15 @@ public final class VisualSchemaValidator {
 	            for (int i = 0; i < values.size(); i++) {
 	                if (enumValueMatchesKind(values.get(i), kind)
 	                        && !numericValueMatchesBounds(values.get(i), schema)) {
-                    diagnostics.add(VisualDiagnostic.error("visual.schema.enumConstraintMismatch",
-                            "Enum value at index %d must satisfy numeric bounds.".formatted(i),
-                            path + "/enum/" + i));
+	                    diagnostics.add(VisualDiagnostic.error("visual.schema.enumConstraintMismatch",
+	                            "Enum value at index %d must satisfy numeric bounds.".formatted(i),
+	                            path + "/enum/" + i));
+	                }
+	                if (enumValueMatchesKind(values.get(i), kind)
+	                        && !numericValueMatchesMultipleOf(values.get(i), schema)) {
+	                    diagnostics.add(VisualDiagnostic.error("visual.schema.enumConstraintMismatch",
+	                            "Enum value at index %d must satisfy numeric multipleOf constraint.".formatted(i),
+	                            path + "/enum/" + i));
 	                }
 	            }
 	        }
@@ -426,6 +449,12 @@ public final class VisualSchemaValidator {
 	                            "Enum value at index %d must satisfy string length constraints.".formatted(i),
 	                            path + "/enum/" + i));
 	                }
+	                if (enumValueMatchesKind(values.get(i), kind)
+	                        && !stringValueMatchesPattern(values.get(i), schema)) {
+	                    diagnostics.add(VisualDiagnostic.error("visual.schema.enumConstraintMismatch",
+	                            "Enum value at index %d must satisfy string pattern constraint.".formatted(i),
+	                            path + "/enum/" + i));
+	                }
 	            }
 	        }
 	        if (arrayKind(kind)) {
@@ -434,6 +463,12 @@ public final class VisualSchemaValidator {
 	                        && !arrayValueMatchesItemBounds(values.get(i), schema)) {
 	                    diagnostics.add(VisualDiagnostic.error("visual.schema.enumConstraintMismatch",
 	                            "Enum value at index %d must satisfy array item count constraints.".formatted(i),
+	                            path + "/enum/" + i));
+	                }
+	                if (values.get(i) instanceof List<?>
+	                        && !arrayValueMatchesUniqueItems(values.get(i), schema)) {
+	                    diagnostics.add(VisualDiagnostic.error("visual.schema.enumConstraintMismatch",
+	                            "Enum value at index %d must satisfy array uniqueItems constraint.".formatted(i),
 	                            path + "/enum/" + i));
 	                }
 	            }
@@ -473,10 +508,22 @@ public final class VisualSchemaValidator {
 	                    "Const value must satisfy numeric bounds.",
 	                    path + "/const"));
 	        }
+	        if (numericKind(kind) && constValueMatchesKind(constValue, kind)
+	                && !numericValueMatchesMultipleOf(constValue, schema)) {
+	            diagnostics.add(VisualDiagnostic.error("visual.schema.constConstraintMismatch",
+	                    "Const value must satisfy numeric multipleOf constraint.",
+	                    path + "/const"));
+	        }
 	        if (stringKind(kind) && constValueMatchesKind(constValue, kind)
 	                && !stringValueMatchesLengthBounds(constValue, schema)) {
 	            diagnostics.add(VisualDiagnostic.error("visual.schema.constConstraintMismatch",
 	                    "Const value must satisfy string length constraints.",
+	                    path + "/const"));
+	        }
+	        if (stringKind(kind) && constValueMatchesKind(constValue, kind)
+	                && !stringValueMatchesPattern(constValue, schema)) {
+	            diagnostics.add(VisualDiagnostic.error("visual.schema.constConstraintMismatch",
+	                    "Const value must satisfy string pattern constraint.",
 	                    path + "/const"));
 	        }
 	        if (arrayKind(kind) && constValueMatchesKind(constValue, kind)
@@ -485,11 +532,17 @@ public final class VisualSchemaValidator {
 	                    "Const value must satisfy array item count constraints.",
 	                    path + "/const"));
 	        }
+	        if (arrayKind(kind) && constValueMatchesKind(constValue, kind)
+	                && !arrayValueMatchesUniqueItems(constValue, schema)) {
+	            diagnostics.add(VisualDiagnostic.error("visual.schema.constConstraintMismatch",
+	                    "Const value must satisfy array uniqueItems constraint.",
+	                    path + "/const"));
+	        }
 	    }
 
-    private static void validateNumericBounds(Map<String, Object> schema,
-                                              String kind,
-                                              String path,
+	    private static void validateNumericBounds(Map<String, Object> schema,
+	                                              String kind,
+	                                              String path,
                                               List<VisualDiagnostic> diagnostics) {
         if (!hasNumericBounds(schema)) {
             return;
@@ -514,6 +567,25 @@ public final class VisualSchemaValidator {
                     "Numeric lower bound %s is incompatible with upper bound %s."
                             .formatted(lower.lowerLabel(), upper.upperLabel()),
                     path));
+	        }
+	    }
+
+	    private static void validateNumericMultipleOf(Map<String, Object> schema,
+	                                                  String kind,
+	                                                  String path,
+	                                                  List<VisualDiagnostic> diagnostics) {
+	        if (!schema.containsKey("multipleOf")) {
+	            return;
+	        }
+	        if (!numericKind(kind)) {
+	            diagnostics.add(VisualDiagnostic.error("visual.schema.multipleOfConstraintTypeMismatch",
+	                    "Numeric multipleOf constraints require schema type/kind integer, number, or decimal.",
+	                    path));
+	        }
+	        if (numericMultipleOf(schema.get("multipleOf")) == null) {
+	            diagnostics.add(VisualDiagnostic.error("visual.schema.multipleOfConstraintInvalid",
+	                    "Numeric multipleOf constraint must be a finite number greater than zero.",
+	                    path + "/multipleOf"));
 	        }
 	    }
 
@@ -571,6 +643,53 @@ public final class VisualSchemaValidator {
 	        }
 	    }
 
+	    private static void validateArrayUniqueItems(Map<String, Object> schema,
+	                                                 String kind,
+	                                                 String path,
+	                                                 List<VisualDiagnostic> diagnostics) {
+	        if (!schema.containsKey("uniqueItems")) {
+	            return;
+	        }
+	        if (!arrayKind(kind)) {
+	            diagnostics.add(VisualDiagnostic.error("visual.schema.uniqueItemsConstraintTypeMismatch",
+	                    "Array uniqueItems constraints require schema type/kind array.",
+	                    path));
+	        }
+	        if (!(schema.get("uniqueItems") instanceof Boolean)) {
+	            diagnostics.add(VisualDiagnostic.error("visual.schema.uniqueItemsConstraintInvalid",
+	                    "Array uniqueItems constraint must be a boolean.",
+	                    path + "/uniqueItems"));
+	        }
+	    }
+
+	    private static void validateStringPattern(Map<String, Object> schema,
+	                                              String kind,
+	                                              String path,
+	                                              List<VisualDiagnostic> diagnostics) {
+	        if (!hasStringPattern(schema)) {
+	            return;
+	        }
+	        if (!stringKind(kind)) {
+	            diagnostics.add(VisualDiagnostic.error("visual.schema.patternConstraintTypeMismatch",
+	                    "String pattern constraints require schema type/kind string, duration, or datetime.",
+	                    path));
+	        }
+	        Object rawPattern = schema.get("pattern");
+	        if (!(rawPattern instanceof String pattern)) {
+	            diagnostics.add(VisualDiagnostic.error("visual.schema.patternConstraintInvalid",
+	                    "String pattern constraint must be a string.",
+	                    path + "/pattern"));
+	            return;
+	        }
+	        try {
+	            Pattern.compile(pattern);
+	        } catch (PatternSyntaxException ex) {
+	            diagnostics.add(VisualDiagnostic.error("visual.schema.patternConstraintInvalid",
+	                    "String pattern constraint must be a valid regular expression.",
+	                    path + "/pattern"));
+	        }
+	    }
+
 	    private static void validateCustomEnumValues(Map<String, Object> schema,
 	                                                 String path,
 	                                                 List<VisualDiagnostic> diagnostics) {
@@ -608,6 +727,10 @@ public final class VisualSchemaValidator {
 	    private static boolean hasStringLengthBounds(Map<String, Object> schema) {
 	        return schema.containsKey("minLength")
 	                || schema.containsKey("maxLength");
+	    }
+
+	    private static boolean hasStringPattern(Map<String, Object> schema) {
+	        return schema.containsKey("pattern");
 	    }
 
 	    private static boolean hasArrayItemBounds(Map<String, Object> schema) {
@@ -648,8 +771,16 @@ public final class VisualSchemaValidator {
         if (lower != null && !lower.acceptsLower(numericValue)) {
             return false;
         }
-        NumericBoundary upper = upperBound(schema);
+	        NumericBoundary upper = upperBound(schema);
 	        return upper == null || upper.acceptsUpper(numericValue);
+	    }
+
+	    private static boolean numericValueMatchesMultipleOf(Object value, Map<String, Object> schema) {
+	        if (!(value instanceof Number number)) {
+	            return true;
+	        }
+	        Double multipleOf = numericMultipleOf(schema.get("multipleOf"));
+	        return multipleOf == null || numericValueIsMultipleOf(number.doubleValue(), multipleOf);
 	    }
 
 	    private static void validateStringLengthBoundary(Map<String, Object> schema,
@@ -684,6 +815,26 @@ public final class VisualSchemaValidator {
 	        return maximum == null || length <= maximum;
 	    }
 
+	    private static boolean stringValueMatchesPattern(Object value, Map<String, Object> schema) {
+	        if (!(value instanceof String string)) {
+	            return true;
+	        }
+	        Pattern pattern = compiledStringPattern(schema);
+	        return pattern == null || pattern.matcher(string).find();
+	    }
+
+	    private static Pattern compiledStringPattern(Map<String, Object> schema) {
+	        Object rawPattern = schema.get("pattern");
+	        if (!(rawPattern instanceof String pattern)) {
+	            return null;
+	        }
+	        try {
+	            return Pattern.compile(pattern);
+	        } catch (PatternSyntaxException ex) {
+	            return null;
+	        }
+	    }
+
 	    private static void validateArrayItemBoundary(Map<String, Object> schema,
 	                                                  String keyword,
 	                                                  String path,
@@ -714,6 +865,13 @@ public final class VisualSchemaValidator {
 	        }
 	        Long maximum = arrayItemBoundary(schema.get("maxItems"));
 	        return maximum == null || size <= maximum;
+	    }
+
+	    private static boolean arrayValueMatchesUniqueItems(Object value, Map<String, Object> schema) {
+	        if (!(value instanceof List<?> list) || !Boolean.TRUE.equals(schema.get("uniqueItems"))) {
+	            return true;
+	        }
+	        return new LinkedHashSet<>(list).size() == list.size();
 	    }
 
 	    private static Long stringLengthBoundary(Object value) {
@@ -782,13 +940,31 @@ public final class VisualSchemaValidator {
                 .orElse(null);
     }
 
-    private static java.util.Optional<Double> numericBoundaryValue(Object value) {
-        if (!(value instanceof Number number)) {
-            return java.util.Optional.empty();
+	    private static java.util.Optional<Double> numericBoundaryValue(Object value) {
+	        if (!(value instanceof Number number)) {
+	            return java.util.Optional.empty();
         }
         double numericValue = number.doubleValue();
-        return Double.isFinite(numericValue) ? java.util.Optional.of(numericValue) : java.util.Optional.empty();
-    }
+	        return Double.isFinite(numericValue) ? java.util.Optional.of(numericValue) : java.util.Optional.empty();
+	    }
+
+	    private static Double numericMultipleOf(Object value) {
+	        if (!(value instanceof Number number)) {
+	            return null;
+	        }
+	        double numericValue = number.doubleValue();
+	        return Double.isFinite(numericValue) && numericValue > 0 ? numericValue : null;
+	    }
+
+	    private static boolean numericValueIsMultipleOf(double value, double multipleOf) {
+	        if (!Double.isFinite(value) || !Double.isFinite(multipleOf) || multipleOf <= 0) {
+	            return true;
+	        }
+	        double quotient = value / multipleOf;
+	        double nearest = Math.rint(quotient);
+	        double tolerance = 1.0e-9 * Math.max(1.0, Math.abs(quotient));
+	        return Math.abs(quotient - nearest) <= tolerance;
+	    }
 
     private static boolean boundsContradict(NumericBoundary lower, NumericBoundary upper) {
         int comparison = Double.compare(lower.value(), upper.value());

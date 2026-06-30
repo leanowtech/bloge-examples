@@ -260,6 +260,34 @@ class GraphDraftValidatorTest {
     }
 
     @Test
+    void acceptsGraphInputSchemaWithStringPattern() {
+        GraphDraftValidator validator = new GraphDraftValidator(
+                VisualCatalogTestSupport.catalogWithLibrary(
+                        VisualCatalogTestSupport.eligibilityLibrary("integer")));
+        SchemaEnvelope inputSchema = new SchemaEnvelope(
+                SchemaEnvelope.JSON_SCHEMA,
+                "2020-12",
+                Map.of(
+                        "type", "object",
+                        "properties", Map.of(
+                                "score", Map.of("type", "integer"),
+                                "amount", Map.of("type", "number"),
+                                "customerCode", Map.of("type", "string", "pattern", "^[A-Z]{2}\\d{4}$")
+                        ),
+                        "required", List.of("score", "amount"),
+                        "additionalProperties", false
+                ));
+        GraphDraft draft = contextEligibilityDraft(inputSchema, Map.of(
+                "score", GraphDraft.Binding.contextPath("score"),
+                "amount", GraphDraft.Binding.contextPath("amount")
+        ));
+
+        VisualValidationResult result = validator.validate(draft);
+
+        assertThat(result.valid()).isTrue();
+    }
+
+    @Test
     void rejectsGraphInputSchemaWithUnsupportedJsonSchemaKeywords() {
         GraphDraftValidator validator = new GraphDraftValidator(
                 VisualCatalogTestSupport.catalogWithLibrary(
@@ -293,14 +321,12 @@ class GraphDraftValidatorTest {
         assertThat(result.diagnostics())
                 .extracting("code")
                 .contains(
-                        "visual.schema.constraintUnsupported",
                         "visual.schema.compositionUnsupported",
                         "visual.schema.refUnsupported"
                 );
         assertThat(result.diagnostics())
                 .extracting("target")
                 .contains(
-                        "/inputSchema/schema/properties/customerCode/pattern",
                         "/inputSchema/schema/properties/decision/oneOf",
                         "/inputSchema/schema/properties/customer/$ref"
                 );
@@ -859,6 +885,24 @@ class GraphDraftValidatorTest {
                 .anySatisfy(diagnostic -> {
                     assertThat(diagnostic.code()).isEqualTo("visual.binding.typeMismatch");
                     assertThat(diagnostic.message()).contains("Constant").contains("score").contains("integer");
+                });
+    }
+
+    @Test
+    void rejectsConstantBindingWhenStringValueViolatesTargetPattern() {
+        GraphDraftValidator validator = new GraphDraftValidator(
+                VisualCatalogTestSupport.catalogWithLibrary(
+                        VisualCatalogTestSupport.stringPatternCompatibilityLibrary("^[A-Z]{2}\\d{4}$",
+                                "^[A-Z]{2}\\d{4}$")));
+        GraphDraft draft = stringPatternConstantDraft("bad-code");
+
+        VisualValidationResult result = validator.validate(draft);
+
+        assertThat(result.valid()).isFalse();
+        assertThat(result.diagnostics())
+                .anySatisfy(diagnostic -> {
+                    assertThat(diagnostic.code()).isEqualTo("visual.binding.typeMismatch");
+                    assertThat(diagnostic.message()).contains("Constant").contains("customerId").contains("string");
                 });
     }
 
@@ -1544,6 +1588,46 @@ class GraphDraftValidatorTest {
     }
 
     @Test
+    void acceptsNodePathBindingWhenArrayUniqueItemsFitTarget() {
+        GraphDraftValidator validator = new GraphDraftValidator(
+                VisualCatalogTestSupport.catalogWithLibrary(
+                        VisualCatalogTestSupport.listUniqueItemsCompatibilityLibrary(true, true)));
+        GraphDraft draft = listCompatibilityDraft(
+                GraphDraft.Binding.nodePath("listFacts", "output", "items",
+                        "inputs", "items"),
+                new GraphDraft.DraftEdge("items", "data",
+                        new GraphDraft.Endpoint("listFacts", "output", "items"),
+                        new GraphDraft.Endpoint("listConsumer", "inputs", "items")));
+
+        VisualValidationResult result = validator.validate(draft);
+
+        assertThat(result.valid()).isTrue();
+    }
+
+    @Test
+    void rejectsNodePathBindingWhenArrayUniqueItemsAreNotGuaranteed() {
+        GraphDraftValidator validator = new GraphDraftValidator(
+                VisualCatalogTestSupport.catalogWithLibrary(
+                        VisualCatalogTestSupport.listUniqueItemsCompatibilityLibrary(false, true)));
+        GraphDraft draft = listCompatibilityDraft(
+                GraphDraft.Binding.nodePath("listFacts", "output", "items",
+                        "inputs", "items"),
+                new GraphDraft.DraftEdge("items", "data",
+                        new GraphDraft.Endpoint("listFacts", "output", "items"),
+                        new GraphDraft.Endpoint("listConsumer", "inputs", "items")));
+
+        VisualValidationResult result = validator.validate(draft);
+
+        assertThat(result.valid()).isFalse();
+        assertThat(result.diagnostics())
+                .extracting("code")
+                .contains("visual.binding.typeMismatch", "visual.edge.typeMismatch");
+        assertThat(result.diagnostics())
+                .anySatisfy(diagnostic -> assertThat(diagnostic.message())
+                        .contains("target requires uniqueItems=true but source does not guarantee uniqueness"));
+    }
+
+    @Test
     void rejectsNodePathBindingWhenArrayItemTypesDoNotMatch() {
         GraphDraftValidator validator = new GraphDraftValidator(
                 VisualCatalogTestSupport.catalogWithLibrary(
@@ -1713,6 +1797,36 @@ class GraphDraftValidatorTest {
     }
 
     @Test
+    void acceptsNumericBindingWhenSourceMultipleOfFitsTargetMultipleOf() {
+        GraphDraftValidator validator = new GraphDraftValidator(
+                VisualCatalogTestSupport.catalogWithLibrary(
+                        VisualCatalogTestSupport.numericMultipleOfCompatibilityLibrary(10, 5)));
+        GraphDraft draft = numericBoundsCompatibilityDraft();
+
+        VisualValidationResult result = validator.validate(draft);
+
+        assertThat(result.valid()).isTrue();
+    }
+
+    @Test
+    void rejectsNumericBindingWhenSourceMultipleOfIsWeakerThanTarget() {
+        GraphDraftValidator validator = new GraphDraftValidator(
+                VisualCatalogTestSupport.catalogWithLibrary(
+                        VisualCatalogTestSupport.numericMultipleOfCompatibilityLibrary(5, 10)));
+        GraphDraft draft = numericBoundsCompatibilityDraft();
+
+        VisualValidationResult result = validator.validate(draft);
+
+        assertThat(result.valid()).isFalse();
+        assertThat(result.diagnostics())
+                .extracting("code")
+                .contains("visual.binding.typeMismatch", "visual.edge.typeMismatch");
+        assertThat(result.diagnostics())
+                .anySatisfy(diagnostic -> assertThat(diagnostic.message())
+                        .contains("source multipleOf 5 is weaker than target multipleOf 10"));
+    }
+
+    @Test
     void acceptsStringBindingWhenSourceLengthBoundsFitTargetBounds() {
         GraphDraftValidator validator = new GraphDraftValidator(
                 VisualCatalogTestSupport.catalogWithLibrary(
@@ -1740,6 +1854,38 @@ class GraphDraftValidatorTest {
         assertThat(result.diagnostics())
                 .anySatisfy(diagnostic -> assertThat(diagnostic.message())
                         .contains("source minLength 4 is weaker than target minLength 8"));
+    }
+
+    @Test
+    void acceptsStringBindingWhenSourcePatternMatchesTargetPattern() {
+        GraphDraftValidator validator = new GraphDraftValidator(
+                VisualCatalogTestSupport.catalogWithLibrary(
+                        VisualCatalogTestSupport.stringPatternCompatibilityLibrary("^[A-Z]{2}\\d{4}$",
+                                "^[A-Z]{2}\\d{4}$")));
+        GraphDraft draft = stringLengthCompatibilityDraft();
+
+        VisualValidationResult result = validator.validate(draft);
+
+        assertThat(result.valid()).isTrue();
+    }
+
+    @Test
+    void rejectsStringBindingWhenSourcePatternCannotProveTargetPattern() {
+        GraphDraftValidator validator = new GraphDraftValidator(
+                VisualCatalogTestSupport.catalogWithLibrary(
+                        VisualCatalogTestSupport.stringPatternCompatibilityLibrary("^[A-Z]+$",
+                                "^[A-Z]{2}\\d{4}$")));
+        GraphDraft draft = stringLengthCompatibilityDraft();
+
+        VisualValidationResult result = validator.validate(draft);
+
+        assertThat(result.valid()).isFalse();
+        assertThat(result.diagnostics())
+                .extracting("code")
+                .contains("visual.binding.typeMismatch", "visual.edge.typeMismatch");
+        assertThat(result.diagnostics())
+                .anySatisfy(diagnostic -> assertThat(diagnostic.message())
+                        .contains("source pattern '^[A-Z]+$' cannot be proven compatible"));
     }
 
     @Test
@@ -2135,6 +2281,26 @@ class GraphDraftValidatorTest {
     }
 
     @Test
+    void rejectsNodeConfigWhenNumericValueViolatesConfigSchemaMultipleOf() {
+        GraphDraftValidator validator = new GraphDraftValidator(
+                VisualCatalogTestSupport.catalogWithLibrary(numericMultipleOfConfigurablePolicyLibrary()));
+        GraphDraft draft = configurablePolicyDraft(Map.of(
+                "threshold", 705,
+                "mode", "strict"
+        ));
+
+        VisualValidationResult result = validator.validate(draft);
+
+        assertThat(result.valid()).isFalse();
+        assertThat(result.diagnostics())
+                .anySatisfy(diagnostic -> {
+                    assertThat(diagnostic.code()).isEqualTo("visual.config.constraintMismatch");
+                    assertThat(diagnostic.message()).contains("threshold").contains("multipleOf");
+                    assertThat(diagnostic.target()).isEqualTo("/nodes/0/config/threshold");
+                });
+    }
+
+    @Test
     void rejectsNodeConfigWhenStringValueViolatesConfigSchemaLength() {
         GraphDraftValidator validator = new GraphDraftValidator(
                 VisualCatalogTestSupport.catalogWithLibrary(stringLengthConfigurablePolicyLibrary()));
@@ -2155,6 +2321,26 @@ class GraphDraftValidatorTest {
     }
 
     @Test
+    void rejectsNodeConfigWhenStringValueViolatesConfigSchemaPattern() {
+        GraphDraftValidator validator = new GraphDraftValidator(
+                VisualCatalogTestSupport.catalogWithLibrary(stringPatternConfigurablePolicyLibrary()));
+        GraphDraft draft = configurablePolicyDraft(Map.of(
+                "threshold", 700,
+                "mode", "qa"
+        ));
+
+        VisualValidationResult result = validator.validate(draft);
+
+        assertThat(result.valid()).isFalse();
+        assertThat(result.diagnostics())
+                .anySatisfy(diagnostic -> {
+                    assertThat(diagnostic.code()).isEqualTo("visual.config.constraintMismatch");
+                    assertThat(diagnostic.message()).contains("mode").contains("string pattern");
+                    assertThat(diagnostic.target()).isEqualTo("/nodes/0/config/mode");
+                });
+    }
+
+    @Test
     void rejectsNodeConfigWhenArrayValueViolatesConfigSchemaItemBounds() {
         GraphDraftValidator validator = new GraphDraftValidator(
                 VisualCatalogTestSupport.catalogWithLibrary(arrayItemBoundsConfigurablePolicyLibrary()));
@@ -2170,6 +2356,26 @@ class GraphDraftValidatorTest {
                 .anySatisfy(diagnostic -> {
                     assertThat(diagnostic.code()).isEqualTo("visual.config.constraintMismatch");
                     assertThat(diagnostic.message()).contains("channels").contains("array item count");
+                    assertThat(diagnostic.target()).isEqualTo("/nodes/0/config/channels");
+                });
+    }
+
+    @Test
+    void rejectsNodeConfigWhenArrayValueViolatesConfigSchemaUniqueItems() {
+        GraphDraftValidator validator = new GraphDraftValidator(
+                VisualCatalogTestSupport.catalogWithLibrary(arrayUniqueItemsConfigurablePolicyLibrary()));
+        GraphDraft draft = configurablePolicyDraft(Map.of(
+                "threshold", 700,
+                "channels", List.of("web", "web")
+        ));
+
+        VisualValidationResult result = validator.validate(draft);
+
+        assertThat(result.valid()).isFalse();
+        assertThat(result.diagnostics())
+                .anySatisfy(diagnostic -> {
+                    assertThat(diagnostic.code()).isEqualTo("visual.config.constraintMismatch");
+                    assertThat(diagnostic.message()).contains("channels").contains("uniqueItems");
                     assertThat(diagnostic.target()).isEqualTo("/nodes/0/config/channels");
                 });
     }
@@ -2916,6 +3122,31 @@ class GraphDraftValidatorTest {
         );
     }
 
+    private static GraphDraft stringPatternConstantDraft(String customerId) {
+        return new GraphDraft(
+                "",
+                "",
+                0,
+                "stringPatternConstant",
+                "",
+                "",
+                "",
+                "",
+                null,
+                List.of(new GraphDraft.DraftNode(
+                        "customerIdConsumer",
+                        "risk:customerIdConsumer",
+                        "",
+                        Map.of("customerId", GraphDraft.Binding.constant(customerId)),
+                        Map.of(),
+                        null
+                )),
+                List.of(),
+                Map.of(),
+                new GraphDraft.OutputSelection("customerIdConsumer", "")
+        );
+    }
+
     private static GraphDraft objectCompatibilityDraft() {
         return new GraphDraft(
                 "",
@@ -3243,6 +3474,50 @@ class GraphDraftValidatorTest {
         );
     }
 
+    private static OperatorLibrary numericMultipleOfConfigurablePolicyLibrary() {
+        Map<String, Object> outputProperties = new LinkedHashMap<>();
+        outputProperties.put("accepted", Map.of("type", "boolean"));
+
+        Map<String, Object> configProperties = new LinkedHashMap<>();
+        configProperties.put("threshold", Map.of(
+                "type", "integer",
+                "multipleOf", 10
+        ));
+        configProperties.put("mode", Map.of("type", "string"));
+
+        OperatorDefinition operator = new OperatorDefinition(
+                "bloge.visualOperator.v1",
+                "risk:configurablePolicy",
+                "1.0.0",
+                new OperatorDefinition.Display("Configurable policy",
+                        "Evaluates policy behavior controlled by configSchema.",
+                        List.of("risk", "config")),
+                new OperatorDefinition.Source("user-library", "", "", "", true),
+                new OperatorDefinition.Ports(
+                        List.of(),
+                        List.of(new OperatorDefinition.Port("output",
+                                SchemaEnvelope.object(outputProperties, List.of()),
+                                true,
+                                "Policy output."))
+                ),
+                SchemaEnvelope.object(configProperties, List.of("threshold", "mode")),
+                OperatorDefinition.Capabilities.pure(),
+                new OperatorDefinition.Lowering("transform", "transform", Map.of(
+                        "assignments", Map.of("accepted", "true")
+                )),
+                List.of()
+        );
+        return new OperatorLibrary(
+                "bloge.visualOperatorLibrary.v1",
+                "risk-configurable-policy",
+                "Configurable policy operators",
+                "1.0.0",
+                "risk-team",
+                "ACTIVE",
+                List.of(operator)
+        );
+    }
+
     private static OperatorLibrary stringLengthConfigurablePolicyLibrary() {
         Map<String, Object> outputProperties = new LinkedHashMap<>();
         outputProperties.put("accepted", Map.of("type", "boolean"));
@@ -3253,6 +3528,50 @@ class GraphDraftValidatorTest {
                 "type", "string",
                 "minLength", 4,
                 "maxLength", 12
+        ));
+
+        OperatorDefinition operator = new OperatorDefinition(
+                "bloge.visualOperator.v1",
+                "risk:configurablePolicy",
+                "1.0.0",
+                new OperatorDefinition.Display("Configurable policy",
+                        "Evaluates policy behavior controlled by configSchema.",
+                        List.of("risk", "config")),
+                new OperatorDefinition.Source("user-library", "", "", "", true),
+                new OperatorDefinition.Ports(
+                        List.of(),
+                        List.of(new OperatorDefinition.Port("output",
+                                SchemaEnvelope.object(outputProperties, List.of()),
+                                true,
+                                "Policy output."))
+                ),
+                SchemaEnvelope.object(configProperties, List.of("threshold", "mode")),
+                OperatorDefinition.Capabilities.pure(),
+                new OperatorDefinition.Lowering("transform", "transform", Map.of(
+                        "assignments", Map.of("accepted", "true")
+                )),
+                List.of()
+        );
+        return new OperatorLibrary(
+                "bloge.visualOperatorLibrary.v1",
+                "risk-configurable-policy",
+                "Configurable policy operators",
+                "1.0.0",
+                "risk-team",
+                "ACTIVE",
+                List.of(operator)
+        );
+    }
+
+    private static OperatorLibrary stringPatternConfigurablePolicyLibrary() {
+        Map<String, Object> outputProperties = new LinkedHashMap<>();
+        outputProperties.put("accepted", Map.of("type", "boolean"));
+
+        Map<String, Object> configProperties = new LinkedHashMap<>();
+        configProperties.put("threshold", Map.of("type", "integer"));
+        configProperties.put("mode", Map.of(
+                "type", "string",
+                "pattern", "^[a-z]{4,12}$"
         ));
 
         OperatorDefinition operator = new OperatorDefinition(
@@ -3299,6 +3618,51 @@ class GraphDraftValidatorTest {
                 "items", Map.of("type", "string"),
                 "minItems", 2,
                 "maxItems", 4
+        ));
+
+        OperatorDefinition operator = new OperatorDefinition(
+                "bloge.visualOperator.v1",
+                "risk:configurablePolicy",
+                "1.0.0",
+                new OperatorDefinition.Display("Configurable policy",
+                        "Evaluates policy behavior controlled by configSchema.",
+                        List.of("risk", "config")),
+                new OperatorDefinition.Source("user-library", "", "", "", true),
+                new OperatorDefinition.Ports(
+                        List.of(),
+                        List.of(new OperatorDefinition.Port("output",
+                                SchemaEnvelope.object(outputProperties, List.of()),
+                                true,
+                                "Policy output."))
+                ),
+                SchemaEnvelope.object(configProperties, List.of("threshold", "channels")),
+                OperatorDefinition.Capabilities.pure(),
+                new OperatorDefinition.Lowering("transform", "transform", Map.of(
+                        "assignments", Map.of("accepted", "true")
+                )),
+                List.of()
+        );
+        return new OperatorLibrary(
+                "bloge.visualOperatorLibrary.v1",
+                "risk-configurable-policy",
+                "Configurable policy operators",
+                "1.0.0",
+                "risk-team",
+                "ACTIVE",
+                List.of(operator)
+        );
+    }
+
+    private static OperatorLibrary arrayUniqueItemsConfigurablePolicyLibrary() {
+        Map<String, Object> outputProperties = new LinkedHashMap<>();
+        outputProperties.put("accepted", Map.of("type", "boolean"));
+
+        Map<String, Object> configProperties = new LinkedHashMap<>();
+        configProperties.put("threshold", Map.of("type", "integer"));
+        configProperties.put("channels", Map.of(
+                "type", "array",
+                "items", Map.of("type", "string"),
+                "uniqueItems", true
         ));
 
         OperatorDefinition operator = new OperatorDefinition(

@@ -50,6 +50,30 @@ class ResourceDesignContractValidatorTest {
     }
 
     @Test
+    void acceptsNumericMultipleOfInResourceContractSchemas() {
+        ResourceDesignContract contract = new ResourceDesignContract(
+                "contract:orders",
+                "order-service.listOrders",
+                "Order list",
+                "Lists orders.",
+                List.of("order"),
+                SchemaEnvelope.object(Map.of(
+                        "amountCents", Map.of("type", "integer", "multipleOf", 5)
+                ), List.of("amountCents")),
+                SchemaEnvelope.object(Map.of(
+                        "score", Map.of("type", "integer", "multipleOf", 10)
+                ), List.of()),
+                Map.of(),
+                "ACTIVE"
+        );
+
+        VisualValidationResult result = validator.validate(contract);
+
+        assertThat(result.valid()).isTrue();
+        assertThat(result.diagnostics()).isEmpty();
+    }
+
+    @Test
     void acceptsStringLengthConstraintsInResourceContractSchemas() {
         ResourceDesignContract contract = new ResourceDesignContract(
                 "contract:orders",
@@ -93,6 +117,60 @@ class ResourceDesignContractValidatorTest {
                                 "type", "array",
                                 "items", Map.of("type", "object", "additionalProperties", true),
                                 "maxItems", 50)
+                ), List.of()),
+                Map.of(),
+                "ACTIVE"
+        );
+
+        VisualValidationResult result = validator.validate(contract);
+
+        assertThat(result.valid()).isTrue();
+        assertThat(result.diagnostics()).isEmpty();
+    }
+
+    @Test
+    void acceptsArrayUniqueItemsInResourceContractSchemas() {
+        ResourceDesignContract contract = new ResourceDesignContract(
+                "contract:orders",
+                "order-service.listOrders",
+                "Order list",
+                "Lists orders.",
+                List.of("order"),
+                SchemaEnvelope.object(Map.of(
+                        "ids", Map.of(
+                                "type", "array",
+                                "items", Map.of("type", "string"),
+                                "uniqueItems", true)
+                ), List.of("ids")),
+                SchemaEnvelope.object(Map.of(
+                        "segments", Map.of(
+                                "type", "array",
+                                "items", Map.of("type", "string"),
+                                "uniqueItems", true)
+                ), List.of()),
+                Map.of(),
+                "ACTIVE"
+        );
+
+        VisualValidationResult result = validator.validate(contract);
+
+        assertThat(result.valid()).isTrue();
+        assertThat(result.diagnostics()).isEmpty();
+    }
+
+    @Test
+    void acceptsStringPatternInResourceContractSchemas() {
+        ResourceDesignContract contract = new ResourceDesignContract(
+                "contract:orders",
+                "order-service.listOrders",
+                "Order list",
+                "Lists orders.",
+                List.of("order"),
+                SchemaEnvelope.object(Map.of(
+                        "customerCode", Map.of("type", "string", "pattern", "^[A-Z]{2}\\d{4}$")
+                ), List.of("customerCode")),
+                SchemaEnvelope.object(Map.of(
+                        "trackingCode", Map.of("type", "string", "pattern", "^TRK-[A-Z0-9]{8}$")
                 ), List.of()),
                 Map.of(),
                 "ACTIVE"
@@ -159,14 +237,12 @@ class ResourceDesignContractValidatorTest {
                 .extracting("code")
                 .contains(
                         "visual.schema.refUnsupported",
-                        "visual.schema.constraintUnsupported",
                         "visual.schema.compositionUnsupported"
                 );
         assertThat(result.diagnostics())
                 .extracting("target")
                 .contains(
                         "/requestSchema/schema/properties/userId/$ref",
-                        "/responseSchema/schema/properties/customerCode/pattern",
                         "/responseSchema/schema/properties/decision/oneOf"
                 );
     }

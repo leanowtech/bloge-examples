@@ -760,6 +760,91 @@ class OperatorLibraryValidatorTest {
     }
 
     @Test
+    void acceptsNumericMultipleOfAcrossOperatorDefinitions() {
+        OperatorDefinition operator = new OperatorDefinition(
+                "bloge.visualOperator.v1",
+                "risk:numericMultiplePolicy",
+                "1.0.0",
+                new OperatorDefinition.Display("Numeric multiple policy", "Test operator.", List.of("test")),
+                new OperatorDefinition.Source("user-library", "", "", "", true),
+                new OperatorDefinition.Ports(
+                        List.of(new OperatorDefinition.Port("payload",
+                                SchemaEnvelope.object(Map.of(
+                                        "score", Map.of("type", "integer", "multipleOf", 5)
+                                ), List.of("score")),
+                                true,
+                                "Input.")),
+                        List.of(new OperatorDefinition.Port("output",
+                                SchemaEnvelope.object(Map.of(
+                                        "ratio", Map.of("type", "number", "multipleOf", 0.25)
+                                ), List.of()),
+                                true,
+                                "Output."))
+                ),
+                SchemaEnvelope.object(Map.of(
+                        "threshold", Map.of("type", "integer", "multipleOf", 10, "default", 700)
+                ), List.of("threshold")),
+                OperatorDefinition.Capabilities.pure(),
+                new OperatorDefinition.Lowering("native", "riskNumericMultiplePolicy", Map.of()),
+                List.of()
+        );
+
+        VisualValidationResult result = validator.validate(libraryWith(operator));
+
+        assertThat(result.diagnostics()).isEmpty();
+        assertThat(result.valid()).isTrue();
+    }
+
+    @Test
+    void rejectsInvalidNumericMultipleOfAcrossOperatorDefinitions() {
+        OperatorDefinition operator = new OperatorDefinition(
+                "bloge.visualOperator.v1",
+                "risk:badNumericMultiplePolicy",
+                "1.0.0",
+                new OperatorDefinition.Display("Bad numeric multiple policy", "Test operator.", List.of("test")),
+                new OperatorDefinition.Source("user-library", "", "", "", true),
+                new OperatorDefinition.Ports(
+                        List.of(new OperatorDefinition.Port("payload",
+                                SchemaEnvelope.object(Map.of(
+                                        "score", Map.of("type", "integer", "multipleOf", 0)
+                                ), List.of("score")),
+                                true,
+                                "Input.")),
+                        List.of(new OperatorDefinition.Port("output",
+                                SchemaEnvelope.object(Map.of(
+                                        "risk", Map.of("type", "string", "multipleOf", 10)
+                                ), List.of()),
+                                true,
+                                "Output."))
+                ),
+                SchemaEnvelope.object(Map.of(
+                        "threshold", Map.of("type", "integer", "multipleOf", 10, "default", 705)
+                ), List.of()),
+                OperatorDefinition.Capabilities.pure(),
+                new OperatorDefinition.Lowering("native", "riskBadNumericMultiplePolicy", Map.of()),
+                List.of()
+        );
+
+        VisualValidationResult result = validator.validate(libraryWith(operator));
+
+        assertThat(result.valid()).isFalse();
+        assertThat(result.diagnostics())
+                .extracting("code")
+                .contains(
+                        "visual.schema.multipleOfConstraintInvalid",
+                        "visual.schema.multipleOfConstraintTypeMismatch",
+                        "visual.schema.defaultConstraintMismatch"
+                );
+        assertThat(result.diagnostics())
+                .extracting("target")
+                .contains(
+                        "/operators/0/ports/inputs/0/schema/schema/properties/score/multipleOf",
+                        "/operators/0/ports/outputs/0/schema/schema/properties/risk",
+                        "/operators/0/configSchema/schema/properties/threshold/default"
+                );
+    }
+
+    @Test
     void acceptsStringLengthConstraintsAcrossOperatorDefinitions() {
         OperatorDefinition operator = new OperatorDefinition(
                 "bloge.visualOperator.v1",
@@ -840,6 +925,93 @@ class OperatorLibraryValidatorTest {
                 .contains(
                         "/operators/0/ports/inputs/0/schema/schema/properties/customerId",
                         "/operators/0/ports/outputs/0/schema/schema/properties/trackingCode/maxLength",
+                        "/operators/0/configSchema/schema/properties/channel/default"
+                );
+    }
+
+    @Test
+    void acceptsStringPatternsAcrossOperatorDefinitions() {
+        OperatorDefinition operator = new OperatorDefinition(
+                "bloge.visualOperator.v1",
+                "risk:stringPatternPolicy",
+                "1.0.0",
+                new OperatorDefinition.Display("String pattern policy", "Test operator.", List.of("test")),
+                new OperatorDefinition.Source("user-library", "", "", "", true),
+                new OperatorDefinition.Ports(
+                        List.of(new OperatorDefinition.Port("payload",
+                                SchemaEnvelope.object(Map.of(
+                                        "customerCode", Map.of("type", "string", "pattern", "^[A-Z]{2}\\d{4}$")
+                                ), List.of("customerCode")),
+                                true,
+                                "Input.")),
+                        List.of(new OperatorDefinition.Port("output",
+                                SchemaEnvelope.object(Map.of(
+                                        "trackingCode", Map.of("type", "string", "pattern", "^TRK-[A-Z0-9]{8}$")
+                                ), List.of()),
+                                true,
+                                "Output."))
+                ),
+                SchemaEnvelope.object(Map.of(
+                        "channel", Map.of("type", "string", "pattern", "^[A-Z]{3}-\\d{2}$", "default", "WEB-01")
+                ), List.of("channel")),
+                OperatorDefinition.Capabilities.pure(),
+                new OperatorDefinition.Lowering("native", "riskStringPatternPolicy", Map.of()),
+                List.of()
+        );
+
+        VisualValidationResult result = validator.validate(libraryWith(operator));
+
+        assertThat(result.diagnostics()).isEmpty();
+        assertThat(result.valid()).isTrue();
+    }
+
+    @Test
+    void rejectsInvalidStringPatternsAcrossOperatorDefinitions() {
+        OperatorDefinition operator = new OperatorDefinition(
+                "bloge.visualOperator.v1",
+                "risk:badStringPatternPolicy",
+                "1.0.0",
+                new OperatorDefinition.Display("Bad string pattern policy", "Test operator.", List.of("test")),
+                new OperatorDefinition.Source("user-library", "", "", "", true),
+                new OperatorDefinition.Ports(
+                        List.of(new OperatorDefinition.Port("payload",
+                                SchemaEnvelope.object(Map.of(
+                                        "customerCode", Map.of("type", "string", "pattern", 123)
+                                ), List.of("customerCode")),
+                                true,
+                                "Input.")),
+                        List.of(new OperatorDefinition.Port("output",
+                                SchemaEnvelope.object(Map.of(
+                                        "trackingCode", Map.of("type", "string", "pattern", "[A-Z")
+                                ), List.of()),
+                                true,
+                                "Output."))
+                ),
+                SchemaEnvelope.object(Map.of(
+                        "threshold", Map.of("type", "integer", "pattern", "^\\d+$"),
+                        "channel", Map.of("type", "string", "pattern", "^[A-Z]{3}$", "default", "web")
+                ), List.of()),
+                OperatorDefinition.Capabilities.pure(),
+                new OperatorDefinition.Lowering("native", "riskBadStringPatternPolicy", Map.of()),
+                List.of()
+        );
+
+        VisualValidationResult result = validator.validate(libraryWith(operator));
+
+        assertThat(result.valid()).isFalse();
+        assertThat(result.diagnostics())
+                .extracting("code")
+                .contains(
+                        "visual.schema.patternConstraintInvalid",
+                        "visual.schema.patternConstraintTypeMismatch",
+                        "visual.schema.defaultConstraintMismatch"
+                );
+        assertThat(result.diagnostics())
+                .extracting("target")
+                .contains(
+                        "/operators/0/ports/inputs/0/schema/schema/properties/customerCode/pattern",
+                        "/operators/0/ports/outputs/0/schema/schema/properties/trackingCode/pattern",
+                        "/operators/0/configSchema/schema/properties/threshold",
                         "/operators/0/configSchema/schema/properties/channel/default"
                 );
     }
@@ -955,6 +1127,110 @@ class OperatorLibraryValidatorTest {
     }
 
     @Test
+    void acceptsArrayUniqueItemsAcrossOperatorDefinitions() {
+        OperatorDefinition operator = new OperatorDefinition(
+                "bloge.visualOperator.v1",
+                "risk:arrayUniquePolicy",
+                "1.0.0",
+                new OperatorDefinition.Display("Array unique policy", "Test operator.", List.of("test")),
+                new OperatorDefinition.Source("user-library", "", "", "", true),
+                new OperatorDefinition.Ports(
+                        List.of(new OperatorDefinition.Port("payload",
+                                SchemaEnvelope.object(Map.of(
+                                        "items", Map.of(
+                                                "type", "array",
+                                                "items", Map.of("type", "string"),
+                                                "uniqueItems", true)
+                                ), List.of("items")),
+                                true,
+                                "Input.")),
+                        List.of(new OperatorDefinition.Port("output",
+                                SchemaEnvelope.object(Map.of(
+                                        "segments", Map.of(
+                                                "type", "array",
+                                                "items", Map.of("type", "integer"),
+                                                "uniqueItems", true)
+                                ), List.of()),
+                                true,
+                                "Output."))
+                ),
+                SchemaEnvelope.object(Map.of(
+                        "channels", Map.of(
+                                "type", "array",
+                                "items", Map.of("type", "string"),
+                                "uniqueItems", true,
+                                "default", List.of("web", "app"))
+                ), List.of("channels")),
+                OperatorDefinition.Capabilities.pure(),
+                new OperatorDefinition.Lowering("native", "riskArrayUniquePolicy", Map.of()),
+                List.of()
+        );
+
+        VisualValidationResult result = validator.validate(libraryWith(operator));
+
+        assertThat(result.diagnostics()).isEmpty();
+        assertThat(result.valid()).isTrue();
+    }
+
+    @Test
+    void rejectsInvalidArrayUniqueItemsAcrossOperatorDefinitions() {
+        OperatorDefinition operator = new OperatorDefinition(
+                "bloge.visualOperator.v1",
+                "risk:badArrayUniquePolicy",
+                "1.0.0",
+                new OperatorDefinition.Display("Bad array unique policy", "Test operator.", List.of("test")),
+                new OperatorDefinition.Source("user-library", "", "", "", true),
+                new OperatorDefinition.Ports(
+                        List.of(new OperatorDefinition.Port("payload",
+                                SchemaEnvelope.object(Map.of(
+                                        "items", Map.of(
+                                                "type", "array",
+                                                "items", Map.of("type", "integer"),
+                                                "uniqueItems", "yes")
+                                ), List.of("items")),
+                                true,
+                                "Input.")),
+                        List.of(new OperatorDefinition.Port("output",
+                                SchemaEnvelope.object(Map.of(
+                                        "segments", Map.of(
+                                                "type", "string",
+                                                "uniqueItems", true)
+                                ), List.of()),
+                                true,
+                                "Output."))
+                ),
+                SchemaEnvelope.object(Map.of(
+                        "channels", Map.of(
+                                "type", "array",
+                                "items", Map.of("type", "string"),
+                                "uniqueItems", true,
+                                "default", List.of("web", "web"))
+                ), List.of()),
+                OperatorDefinition.Capabilities.pure(),
+                new OperatorDefinition.Lowering("native", "riskBadArrayUniquePolicy", Map.of()),
+                List.of()
+        );
+
+        VisualValidationResult result = validator.validate(libraryWith(operator));
+
+        assertThat(result.valid()).isFalse();
+        assertThat(result.diagnostics())
+                .extracting("code")
+                .contains(
+                        "visual.schema.uniqueItemsConstraintInvalid",
+                        "visual.schema.uniqueItemsConstraintTypeMismatch",
+                        "visual.schema.defaultConstraintMismatch"
+                );
+        assertThat(result.diagnostics())
+                .extracting("target")
+                .contains(
+                        "/operators/0/ports/inputs/0/schema/schema/properties/items/uniqueItems",
+                        "/operators/0/ports/outputs/0/schema/schema/properties/segments",
+                        "/operators/0/configSchema/schema/properties/channels/default"
+                );
+    }
+
+    @Test
     void rejectsUnsupportedJsonSchemaKeywordsAcrossOperatorSchemas() {
         OperatorDefinition operator = new OperatorDefinition(
                 "bloge.visualOperator.v1",
@@ -994,17 +1270,15 @@ class OperatorLibraryValidatorTest {
                 .extracting("code")
                 .contains(
                         "visual.schema.compositionUnsupported",
-                        "visual.schema.refUnsupported",
-                        "visual.schema.constraintUnsupported"
+                        "visual.schema.refUnsupported"
                 );
         assertThat(result.diagnostics())
                 .extracting("target")
-	                .contains(
-	                        "/operators/0/ports/inputs/0/schema/schema/properties/choice/oneOf",
-	                        "/operators/0/ports/outputs/0/schema/schema/properties/customer/$ref",
-	                        "/operators/0/configSchema/schema/properties/customerCode/pattern"
-	                );
-	    }
+		                .contains(
+		                        "/operators/0/ports/inputs/0/schema/schema/properties/choice/oneOf",
+		                        "/operators/0/ports/outputs/0/schema/schema/properties/customer/$ref"
+		                );
+		    }
 
     @Test
     void rejectsUnsupportedSchemaEnvelopeAcrossOperatorSchemas() {

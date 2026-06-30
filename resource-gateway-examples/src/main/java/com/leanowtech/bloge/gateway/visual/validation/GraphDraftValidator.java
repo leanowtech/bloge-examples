@@ -19,6 +19,7 @@ import java.util.Optional;
 import java.util.Set;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
+import java.util.regex.PatternSyntaxException;
 
 import static com.leanowtech.bloge.gateway.visual.validation.VisualSchemaCompatibility.compatibilityReason;
 import static com.leanowtech.bloge.gateway.visual.validation.VisualSchemaCompatibility.schemaCompatibilityIssue;
@@ -1195,7 +1196,9 @@ public class GraphDraftValidator {
         }
 	        return configValueMatchesType(value, type)
 	                && numericValueMatchesBounds(value, schema)
-	                && stringValueMatchesLengthBounds(value, schema);
+	                && numericValueMatchesMultipleOf(value, schema)
+	                && stringValueMatchesLengthBounds(value, schema)
+	                && stringValueMatchesPattern(value, schema);
     }
 
     private static boolean constantObjectMatchesSchema(Object value, Map<String, Object> schema) {
@@ -1234,6 +1237,9 @@ public class GraphDraftValidator {
 	            return false;
 	        }
 	        if (!arrayValueMatchesItemBounds(list, schema)) {
+	            return false;
+	        }
+	        if (!arrayValueMatchesUniqueItems(list, schema)) {
 	            return false;
 	        }
 	        Map<String, Object> items = objectProperty(schema.get("items"));
@@ -1372,9 +1378,23 @@ public class GraphDraftValidator {
 	                    path));
 	            return;
 	        }
+	        if (!numericValueMatchesMultipleOf(value, schema)) {
+	            diagnostics.add(VisualDiagnostic.error("visual.config.constraintMismatch",
+	                    "Config value at '%s' must satisfy %s numeric multipleOf constraint."
+	                            .formatted(path, schemaTypeLabel(schema)),
+	                    path));
+	            return;
+	        }
 	        if (!stringValueMatchesLengthBounds(value, schema)) {
 	            diagnostics.add(VisualDiagnostic.error("visual.config.constraintMismatch",
 	                    "Config value at '%s' must satisfy %s string length constraints."
+	                            .formatted(path, schemaTypeLabel(schema)),
+	                    path));
+	            return;
+	        }
+	        if (!stringValueMatchesPattern(value, schema)) {
+	            diagnostics.add(VisualDiagnostic.error("visual.config.constraintMismatch",
+	                    "Config value at '%s' must satisfy %s string pattern constraint."
 	                            .formatted(path, schemaTypeLabel(schema)),
 	                    path));
 	            return;
@@ -1476,6 +1496,13 @@ public class GraphDraftValidator {
 	                    path));
 	            return;
 	        }
+	        if (!arrayValueMatchesUniqueItems(list, schema)) {
+	            diagnostics.add(VisualDiagnostic.error("visual.config.constraintMismatch",
+	                    "Config value at '%s' must satisfy array uniqueItems constraint."
+	                            .formatted(path),
+	                    path));
+	            return;
+	        }
 	        Map<String, Object> items = objectProperty(schema.get("items"));
 	        if (items == null) {
             return;
@@ -1531,8 +1558,16 @@ public class GraphDraftValidator {
         if (lower != null && !lower.acceptsLower(numericValue)) {
             return false;
         }
-        NumericBoundary upper = upperBound(schema);
+	        NumericBoundary upper = upperBound(schema);
 	        return upper == null || upper.acceptsUpper(numericValue);
+	    }
+
+	    private static boolean numericValueMatchesMultipleOf(Object value, Map<String, Object> schema) {
+	        if (!(value instanceof Number number)) {
+	            return true;
+	        }
+	        Double multipleOf = numericMultipleOf(schema.get("multipleOf"));
+	        return multipleOf == null || numericValueIsMultipleOf(number.doubleValue(), multipleOf);
 	    }
 
 	    private static boolean stringValueMatchesLengthBounds(Object value, Map<String, Object> schema) {
@@ -1548,6 +1583,21 @@ public class GraphDraftValidator {
 	        return maximum == null || length <= maximum;
 	    }
 
+	    private static boolean stringValueMatchesPattern(Object value, Map<String, Object> schema) {
+	        if (!(value instanceof String string)) {
+	            return true;
+	        }
+	        Object rawPattern = schema.get("pattern");
+	        if (!(rawPattern instanceof String pattern)) {
+	            return true;
+	        }
+	        try {
+	            return Pattern.compile(pattern).matcher(string).find();
+	        } catch (PatternSyntaxException ex) {
+	            return true;
+	        }
+	    }
+
 	    private static boolean arrayValueMatchesItemBounds(List<?> value, Map<String, Object> schema) {
 	        long size = value.size();
 	        Long minimum = arrayItemBoundary(schema.get("minItems"));
@@ -1556,6 +1606,10 @@ public class GraphDraftValidator {
 	        }
 	        Long maximum = arrayItemBoundary(schema.get("maxItems"));
 	        return maximum == null || size <= maximum;
+	    }
+
+	    private static boolean arrayValueMatchesUniqueItems(List<?> value, Map<String, Object> schema) {
+	        return !Boolean.TRUE.equals(schema.get("uniqueItems")) || new HashSet<>(value).size() == value.size();
 	    }
 
 	    private static Long stringLengthBoundary(Object value) {
@@ -1618,13 +1672,31 @@ public class GraphDraftValidator {
         return exclusiveMaximum.exclusive() ? exclusiveMaximum : maximum;
     }
 
-    private static NumericBoundary numericBoundary(Object value, boolean exclusive) {
-        if (!(value instanceof Number number)) {
-            return null;
+	    private static NumericBoundary numericBoundary(Object value, boolean exclusive) {
+	        if (!(value instanceof Number number)) {
+	            return null;
         }
         double numericValue = number.doubleValue();
-        return Double.isFinite(numericValue) ? new NumericBoundary(numericValue, exclusive) : null;
-    }
+	        return Double.isFinite(numericValue) ? new NumericBoundary(numericValue, exclusive) : null;
+	    }
+
+	    private static Double numericMultipleOf(Object value) {
+	        if (!(value instanceof Number number)) {
+	            return null;
+	        }
+	        double numericValue = number.doubleValue();
+	        return Double.isFinite(numericValue) && numericValue > 0 ? numericValue : null;
+	    }
+
+	    private static boolean numericValueIsMultipleOf(double value, double multipleOf) {
+	        if (!Double.isFinite(value) || !Double.isFinite(multipleOf) || multipleOf <= 0) {
+	            return true;
+	        }
+	        double quotient = value / multipleOf;
+	        double nearest = Math.rint(quotient);
+	        double tolerance = 1.0e-9 * Math.max(1.0, Math.abs(quotient));
+	        return Math.abs(quotient - nearest) <= tolerance;
+	    }
 
     private record NumericBoundary(double value, boolean exclusive) {
 

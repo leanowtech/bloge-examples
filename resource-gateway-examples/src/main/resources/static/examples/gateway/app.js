@@ -236,9 +236,6 @@ const SUPPORTED_SCHEMA_KINDS = new Set([
 const UNSUPPORTED_SCHEMA_REFERENCE_KEYWORDS = ['$ref', '$dynamicRef'];
 const UNSUPPORTED_SCHEMA_COMPOSITION_KEYWORDS = ['oneOf', 'anyOf', 'allOf', 'not', 'if', 'then', 'else'];
 const UNSUPPORTED_SCHEMA_CONSTRAINT_KEYWORDS = [
-  'pattern',
-  'multipleOf',
-  'uniqueItems',
   'contains',
   'minContains',
   'maxContains',
@@ -5085,8 +5082,11 @@ function validateSchemaStructure(schema, path, diagnostics) {
   validateSchemaEnum(schema, kind, path, diagnostics);
   validateSchemaConst(schema, kind, path, diagnostics);
   validateSchemaNumericBounds(schema, kind, path, diagnostics);
+  validateSchemaNumericMultipleOf(schema, kind, path, diagnostics);
   validateSchemaStringLengthBounds(schema, kind, path, diagnostics);
+  validateSchemaStringPattern(schema, kind, path, diagnostics);
   validateSchemaArrayItemBounds(schema, kind, path, diagnostics);
+  validateSchemaArrayUniqueItems(schema, kind, path, diagnostics);
   if (kind === 'object') {
     const properties = validatedSchemaObjectProperties(schema, path, diagnostics);
     validateSchemaAdditionalProperties(schema, path, diagnostics);
@@ -5262,6 +5262,20 @@ function validateSchemaEnum(schema, kind, path, diagnostics) {
         `${path}/enum/${index}`
       ));
     }
+    if (numericType(kind) && !numericValueMatchesBounds(value, schema)) {
+      diagnostics.push(graphInputSchemaDiagnostic(
+        'visual.schema.enumConstraintMismatch',
+        `Enum value at index ${index} must satisfy numeric bounds.`,
+        `${path}/enum/${index}`
+      ));
+    }
+    if (numericType(kind) && !numericValueMatchesMultipleOf(value, schema)) {
+      diagnostics.push(graphInputSchemaDiagnostic(
+        'visual.schema.enumConstraintMismatch',
+        `Enum value at index ${index} must satisfy numeric multipleOf constraint.`,
+        `${path}/enum/${index}`
+      ));
+    }
     if (stringType(kind) && !stringValueMatchesLengthBounds(value, schema)) {
       diagnostics.push(graphInputSchemaDiagnostic(
         'visual.schema.enumConstraintMismatch',
@@ -5269,10 +5283,24 @@ function validateSchemaEnum(schema, kind, path, diagnostics) {
         `${path}/enum/${index}`
       ));
     }
+    if (stringType(kind) && !stringValueMatchesPattern(value, schema)) {
+      diagnostics.push(graphInputSchemaDiagnostic(
+        'visual.schema.enumConstraintMismatch',
+        `Enum value at index ${index} must satisfy string pattern constraint.`,
+        `${path}/enum/${index}`
+      ));
+    }
     if (arrayType(kind) && Array.isArray(value) && !arrayValueMatchesItemBounds(value, schema)) {
       diagnostics.push(graphInputSchemaDiagnostic(
         'visual.schema.enumConstraintMismatch',
         `Enum value at index ${index} must satisfy array item count constraints.`,
+        `${path}/enum/${index}`
+      ));
+    }
+    if (arrayType(kind) && Array.isArray(value) && !arrayValueMatchesUniqueItems(value, schema)) {
+      diagnostics.push(graphInputSchemaDiagnostic(
+        'visual.schema.enumConstraintMismatch',
+        `Enum value at index ${index} must satisfy array uniqueItems constraint.`,
         `${path}/enum/${index}`
       ));
     }
@@ -5327,6 +5355,14 @@ function validateSchemaConst(schema, kind, path, diagnostics) {
       `${path}/const`
     ));
   }
+  if (numericType(kind) && schemaValueMatchesType(constValue, kind)
+      && !numericValueMatchesMultipleOf(constValue, schema)) {
+    diagnostics.push(graphInputSchemaDiagnostic(
+      'visual.schema.constConstraintMismatch',
+      'Const value must satisfy numeric multipleOf constraint.',
+      `${path}/const`
+    ));
+  }
   if (stringType(kind) && schemaValueMatchesType(constValue, kind)
       && !stringValueMatchesLengthBounds(constValue, schema)) {
     diagnostics.push(graphInputSchemaDiagnostic(
@@ -5335,11 +5371,27 @@ function validateSchemaConst(schema, kind, path, diagnostics) {
       `${path}/const`
     ));
   }
+  if (stringType(kind) && schemaValueMatchesType(constValue, kind)
+      && !stringValueMatchesPattern(constValue, schema)) {
+    diagnostics.push(graphInputSchemaDiagnostic(
+      'visual.schema.constConstraintMismatch',
+      'Const value must satisfy string pattern constraint.',
+      `${path}/const`
+    ));
+  }
   if (arrayType(kind) && schemaValueMatchesType(constValue, kind)
       && !arrayValueMatchesItemBounds(constValue, schema)) {
     diagnostics.push(graphInputSchemaDiagnostic(
       'visual.schema.constConstraintMismatch',
       'Const value must satisfy array item count constraints.',
+      `${path}/const`
+    ));
+  }
+  if (arrayType(kind) && schemaValueMatchesType(constValue, kind)
+      && !arrayValueMatchesUniqueItems(constValue, schema)) {
+    diagnostics.push(graphInputSchemaDiagnostic(
+      'visual.schema.constConstraintMismatch',
+      'Const value must satisfy array uniqueItems constraint.',
       `${path}/const`
     ));
   }
@@ -5384,6 +5436,26 @@ function validateSchemaNumericBounds(schema, kind, path, diagnostics) {
   }
 }
 
+function validateSchemaNumericMultipleOf(schema, kind, path, diagnostics) {
+  if (!Object.prototype.hasOwnProperty.call(schema || {}, 'multipleOf')) {
+    return;
+  }
+  if (!numericType(kind)) {
+    diagnostics.push(graphInputSchemaDiagnostic(
+      'visual.schema.multipleOfConstraintTypeMismatch',
+      'Numeric multipleOf constraints require schema type/kind integer, number, or decimal.',
+      path
+    ));
+  }
+  if (numericMultipleOfValue(schema.multipleOf) === null) {
+    diagnostics.push(graphInputSchemaDiagnostic(
+      'visual.schema.multipleOfConstraintInvalid',
+      'Numeric multipleOf constraint must be a finite number greater than zero.',
+      `${path}/multipleOf`
+    ));
+  }
+}
+
 function validateSchemaStringLengthBounds(schema, kind, path, diagnostics) {
   if (!schemaHasStringLengthBounds(schema)) {
     return;
@@ -5422,6 +5494,36 @@ function validateSchemaStringLengthBounds(schema, kind, path, diagnostics) {
   }
 }
 
+function validateSchemaStringPattern(schema, kind, path, diagnostics) {
+  if (!schemaHasStringPattern(schema)) {
+    return;
+  }
+  if (!stringType(kind)) {
+    diagnostics.push(graphInputSchemaDiagnostic(
+      'visual.schema.patternConstraintTypeMismatch',
+      'String pattern constraints require schema type/kind string, duration, or datetime.',
+      path
+    ));
+  }
+  if (typeof schema.pattern !== 'string') {
+    diagnostics.push(graphInputSchemaDiagnostic(
+      'visual.schema.patternConstraintInvalid',
+      'String pattern constraint must be a string.',
+      `${path}/pattern`
+    ));
+    return;
+  }
+  try {
+    new RegExp(schema.pattern);
+  } catch {
+    diagnostics.push(graphInputSchemaDiagnostic(
+      'visual.schema.patternConstraintInvalid',
+      'String pattern constraint must be a valid regular expression.',
+      `${path}/pattern`
+    ));
+  }
+}
+
 function validateSchemaArrayItemBounds(schema, kind, path, diagnostics) {
   if (!schemaHasArrayItemBounds(schema)) {
     return;
@@ -5456,6 +5558,26 @@ function validateSchemaArrayItemBounds(schema, kind, path, diagnostics) {
       'visual.schema.arrayItemBoundsInvalid',
       `Array minItems ${minimum} is greater than maxItems ${maximum}.`,
       path
+    ));
+  }
+}
+
+function validateSchemaArrayUniqueItems(schema, kind, path, diagnostics) {
+  if (!Object.prototype.hasOwnProperty.call(schema || {}, 'uniqueItems')) {
+    return;
+  }
+  if (!arrayType(kind)) {
+    diagnostics.push(graphInputSchemaDiagnostic(
+      'visual.schema.uniqueItemsConstraintTypeMismatch',
+      'Array uniqueItems constraints require schema type/kind array.',
+      path
+    ));
+  }
+  if (typeof schema.uniqueItems !== 'boolean') {
+    diagnostics.push(graphInputSchemaDiagnostic(
+      'visual.schema.uniqueItemsConstraintInvalid',
+      'Array uniqueItems constraint must be a boolean.',
+      `${path}/uniqueItems`
     ));
   }
 }
@@ -5738,7 +5860,8 @@ function schemaCompatibilityIssue(sourceSchema, targetSchema, path = '') {
         return itemIssue;
       }
     }
-    return arrayItemBoundsCompatibilityIssue(sourceSchema, targetSchema, path);
+    return arrayItemBoundsCompatibilityIssue(sourceSchema, targetSchema, path)
+      || arrayUniqueItemsCompatibilityIssue(sourceSchema, targetSchema, path);
   }
   if (sourceType === 'object' && targetType === 'object') {
     return objectSchemaCompatibilityIssue(sourceSchema, targetSchema, path);
@@ -5764,10 +5887,12 @@ function schemaCompatibilityIssue(sourceSchema, targetSchema, path = '') {
       : '';
   }
   if (numericType(sourceType) && numericType(targetType)) {
-    return numericBoundsCompatibilityIssue(sourceSchema, targetSchema, path);
+    return numericBoundsCompatibilityIssue(sourceSchema, targetSchema, path)
+      || numericMultipleOfCompatibilityIssue(sourceSchema, targetSchema, path);
   }
   if (stringType(sourceType) && stringType(targetType)) {
-    return stringLengthCompatibilityIssue(sourceSchema, targetSchema, path);
+    return stringPatternCompatibilityIssue(sourceSchema, targetSchema, path)
+      || stringLengthCompatibilityIssue(sourceSchema, targetSchema, path);
   }
   return sourceType === targetType
     ? ''
@@ -5801,6 +5926,24 @@ function numericBoundsCompatibilityIssue(sourceSchema, targetSchema, path = '') 
   return '';
 }
 
+function numericMultipleOfCompatibilityIssue(sourceSchema, targetSchema, path = '') {
+  if (!numericType(rawSchemaType(sourceSchema)) || !numericType(rawSchemaType(targetSchema))) {
+    return '';
+  }
+  const targetMultipleOf = numericMultipleOfValue(targetSchema?.multipleOf);
+  if (targetMultipleOf === null) {
+    return '';
+  }
+  const sourceMultipleOf = numericMultipleOfValue(sourceSchema?.multipleOf);
+  if (sourceMultipleOf === null) {
+    return reasonAt(path, `target requires multipleOf ${numberLabel(targetMultipleOf)} but source has no multipleOf`);
+  }
+  if (!numericValueIsMultipleOf(sourceMultipleOf, targetMultipleOf)) {
+    return reasonAt(path, `source multipleOf ${numberLabel(sourceMultipleOf)} is weaker than target multipleOf ${numberLabel(targetMultipleOf)}`);
+  }
+  return '';
+}
+
 function stringLengthCompatibilityIssue(sourceSchema, targetSchema, path = '') {
   if (!stringType(rawSchemaType(sourceSchema)) || !stringType(rawSchemaType(targetSchema))) {
     return '';
@@ -5828,6 +5971,24 @@ function stringLengthCompatibilityIssue(sourceSchema, targetSchema, path = '') {
   return '';
 }
 
+function stringPatternCompatibilityIssue(sourceSchema, targetSchema, path = '') {
+  if (!stringType(rawSchemaType(sourceSchema)) || !stringType(rawSchemaType(targetSchema))) {
+    return '';
+  }
+  const targetPattern = schemaPatternValue(targetSchema);
+  if (targetPattern === null) {
+    return '';
+  }
+  const sourcePattern = schemaPatternValue(sourceSchema);
+  if (sourcePattern === targetPattern) {
+    return '';
+  }
+  if (sourcePattern === null) {
+    return reasonAt(path, `target requires pattern '${targetPattern}' but source has no pattern`);
+  }
+  return reasonAt(path, `source pattern '${sourcePattern}' cannot be proven compatible with target pattern '${targetPattern}'`);
+}
+
 function arrayItemBoundsCompatibilityIssue(sourceSchema, targetSchema, path = '') {
   if (!arrayType(rawSchemaType(sourceSchema)) || !arrayType(rawSchemaType(targetSchema))) {
     return '';
@@ -5853,6 +6014,20 @@ function arrayItemBoundsCompatibilityIssue(sourceSchema, targetSchema, path = ''
     }
   }
   return '';
+}
+
+function arrayUniqueItemsCompatibilityIssue(sourceSchema, targetSchema, path = '') {
+  if (!arrayType(rawSchemaType(sourceSchema)) || !arrayType(rawSchemaType(targetSchema)) || targetSchema?.uniqueItems !== true) {
+    return '';
+  }
+  if (sourceSchema?.uniqueItems === true) {
+    return '';
+  }
+  const sourceValues = schemaEnumValues(sourceSchema);
+  if (sourceValues.length && sourceValues.every(Array.isArray) && sourceValues.every(arrayItemsUnique)) {
+    return '';
+  }
+  return reasonAt(path, 'target requires uniqueItems=true but source does not guarantee uniqueness');
 }
 
 function objectSchemasCompatible(sourceSchema, targetSchema) {
@@ -5973,7 +6148,9 @@ function schemaValueMatchesSchema(value, schema) {
     return false;
   }
   return numericValueMatchesBounds(value, schema)
+    && numericValueMatchesMultipleOf(value, schema)
     && stringValueMatchesLengthBounds(value, schema)
+    && stringValueMatchesPattern(value, schema)
     && arrayValueMatchesSchema(value, schema);
 }
 
@@ -6048,6 +6225,10 @@ function schemaHasStringLengthBounds(schema) {
     || Object.prototype.hasOwnProperty.call(schema || {}, 'maxLength');
 }
 
+function schemaHasStringPattern(schema) {
+  return Object.prototype.hasOwnProperty.call(schema || {}, 'pattern');
+}
+
 function stringLengthBoundariesValid(schema) {
   return (!Object.prototype.hasOwnProperty.call(schema || {}, 'minLength') || stringLengthBoundaryValue(schema.minLength) !== null)
     && (!Object.prototype.hasOwnProperty.call(schema || {}, 'maxLength') || stringLengthBoundaryValue(schema.maxLength) !== null);
@@ -6064,6 +6245,25 @@ function stringValueMatchesLengthBounds(value, schema) {
   }
   const maximum = schemaMaxLength(schema);
   return maximum === null || length <= maximum;
+}
+
+function stringValueMatchesPattern(value, schema) {
+  if (typeof value !== 'string') {
+    return true;
+  }
+  const pattern = schemaPatternValue(schema);
+  if (pattern === null) {
+    return true;
+  }
+  try {
+    return new RegExp(pattern).test(value);
+  } catch {
+    return true;
+  }
+}
+
+function schemaPatternValue(schema) {
+  return typeof schema?.pattern === 'string' ? schema.pattern : null;
 }
 
 function schemaMinLength(schema) {
@@ -6101,6 +6301,9 @@ function arrayValueMatchesSchema(value, schema) {
   if (!arrayValueMatchesItemBounds(value, schema)) {
     return false;
   }
+  if (!arrayValueMatchesUniqueItems(value, schema)) {
+    return false;
+  }
   const items = schema?.items;
   return !items || value.every((item) => schemaValueMatchesSchema(item, items));
 }
@@ -6116,6 +6319,22 @@ function arrayValueMatchesItemBounds(value, schema) {
   }
   const maximum = explicitSchemaMaxItems(schema);
   return maximum === null || size <= maximum;
+}
+
+function arrayValueMatchesUniqueItems(value, schema) {
+  return !Array.isArray(value) || schema?.uniqueItems !== true || arrayItemsUnique(value);
+}
+
+function arrayItemsUnique(value) {
+  const seen = new Set();
+  for (const item of value) {
+    const key = schemaValueKey(item);
+    if (seen.has(key)) {
+      return false;
+    }
+    seen.add(key);
+  }
+  return true;
 }
 
 function schemaMinItems(schema) {
@@ -6173,6 +6392,34 @@ function numericValueMatchesBounds(value, schema) {
   }
   const upper = schemaUpperBound(schema);
   return !upper || numericUpperAccepts(upper, value);
+}
+
+function numericValueMatchesMultipleOf(value, schema) {
+  if (typeof value !== 'number') {
+    return true;
+  }
+  const multipleOf = numericMultipleOfValue(schema?.multipleOf);
+  return multipleOf === null || numericValueIsMultipleOf(value, multipleOf);
+}
+
+function numericMultipleOfValue(value) {
+  return typeof value === 'number' && Number.isFinite(value) && value > 0
+    ? value
+    : null;
+}
+
+function numericValueIsMultipleOf(value, multipleOf) {
+  if (!Number.isFinite(value) || !Number.isFinite(multipleOf) || multipleOf <= 0) {
+    return true;
+  }
+  const quotient = value / multipleOf;
+  const nearest = Math.round(quotient);
+  const tolerance = 1.0e-9 * Math.max(1, Math.abs(quotient));
+  return Math.abs(quotient - nearest) <= tolerance;
+}
+
+function numberLabel(value) {
+  return String(value);
 }
 
 function schemaLowerBound(schema) {
