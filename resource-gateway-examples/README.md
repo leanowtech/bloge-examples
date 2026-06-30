@@ -135,7 +135,10 @@ paths share one address model. Library lifecycle status is explicit:
 `ACTIVE` libraries enter the authoring catalog, `DEPRECATED` libraries are hidden
 unless `/api/visual/operators?includeDeprecated=true` is used while remaining
 resolvable for stored drafts, and `DISABLED` libraries remain stored for
-audit/admin workflows but never enter the public canvas catalog.
+audit/admin workflows but never enter the public canvas catalog. When a loaded
+draft still references a deprecated operator, the browser fetches its schema as a
+node-only spec so existing bindings stay schema-aware without re-adding that
+operator to the drag palette.
 Raw secret material is rejected from imported operator libraries and saved graph
 drafts; authoring artifacts may store only references such as `secretRef`.
 Graph input bindings are schema-aware too: the composer exposes a dedicated
@@ -171,11 +174,12 @@ nodes, so routine metadata edits cannot silently rebase a draft onto a newer
 operator schema.
 Operator availability is also enforced by policy: imported operator definitions
 may declare allowed `tenants`, `namespaces`, and `environments`; the browser
-queries the catalog with the current draft scope from the Authoring Scope panel,
-and server-side validation blocks validate/compile/run/publish if a hand-edited
-draft references an operator outside that scope. Existing draft nodes whose
-operator is filtered out by the current scope are shown as unavailable instead
-of being silently treated as another operator type.
+queries the active catalog with the current draft scope from the Authoring Scope
+panel, then fetches deprecated specs only for operator refs already present in
+the current draft. Server-side validation blocks validate/compile/run/publish if
+a hand-edited draft references an operator outside that scope. Existing draft
+nodes whose operator is filtered out by the current scope are shown as
+unavailable instead of being silently treated as another operator type.
 Stored drafts can be published into immutable visual graph artifacts that freeze
 the generated DSL, draft snapshot, operator schema snapshots, fingerprints,
 layout, and validation/generation reports for audit or later promotion. Published
@@ -376,9 +380,10 @@ Operator
 `policy.tenants`, `policy.namespaces`, and `policy.environments` are stored with
 the library and enforced when scoped drafts use the operator. `DEPRECATED`
 libraries stop appearing in the default palette but continue to resolve for
-stored draft validation/compile/run; use `DISABLED` when operators must be
-removed from all executable authoring paths. Browser DSL preview and server
-codegen keep namespace-safe executable refs intact by quoting native
+stored draft validation/compile/run, and the browser keeps their schemas
+available only for existing nodes; use `DISABLED` when operators must be removed
+from all executable authoring paths. Browser DSL preview and server codegen keep
+namespace-safe executable refs intact by quoting native
 operator refs that cannot be written as bare BLOGE `IDENT(.IDENT)*` references,
 for example `node policy : "risk:legacyPolicy"`. Native input lowering also
 groups `targetPort`/nested `targetPath` bindings into object literals, so

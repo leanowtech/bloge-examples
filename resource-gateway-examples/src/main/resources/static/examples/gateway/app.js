@@ -312,73 +312,121 @@ async function loadVisualOperatorCatalog() {
     const payload = await response.json();
     const operators = Array.isArray(payload.operators) ? payload.operators : [];
     state.visualOperators = operators;
+    const activeOperatorRefs = new Set();
     for (const operator of operators) {
-      const operatorRef = operator.operatorRef || '';
-      if (!operatorRef || operatorRef === 'httpResource' || operatorRef === 'bloge:decisionTable' || operatorRef === 'bloge:transform') {
-        rememberCoreOperatorFingerprint(operatorRef, operator.fingerprint || '');
-        continue;
+      const operatorRef = rememberCatalogOperator(operator);
+      if (operatorRef) {
+        activeOperatorRefs.add(operatorRef);
       }
-      if (!operatorRef.startsWith('resource:')) {
-        const inputPorts = normalizeOperatorPorts(operator.ports?.inputs, 'inputs');
-        const outputPorts = normalizeOperatorPorts(operator.ports?.outputs, 'output');
-        const primaryInput = inputPorts[0] || { name: 'inputs', schema: null };
-        const primaryOutput = outputPorts[0] || { name: 'output', schema: null };
-        OPERATOR_TYPES[operatorRef] = {
-          label: operator.display?.name || readableName(operatorRef),
-          kind: 'custom',
-          operatorRef,
-          visualOperatorRef: operatorRef,
-          fingerprint: operator.fingerprint || '',
-          inputPort: primaryInput.name,
-          outputPort: primaryOutput.name,
-          baseId: baseIdForResource(operatorRef),
-          inputPorts,
-          outputPorts,
-          inputSchema: primaryInput.schema,
-          outputSchema: primaryOutput.schema,
-          configSchema: operator.configSchema,
-          policy: operator.policy,
-          lowering: operator.lowering
-        };
-        continue;
+    }
+    const nodeOnlyRefs = operatorRefsRequiredByBuilder()
+      .filter((operatorRef) => !activeOperatorRefs.has(operatorRef));
+    if (nodeOnlyRefs.length) {
+      const deprecatedResponse = await fetch(operatorCatalogUrl(state.builder, { includeDeprecated: true }));
+      if (deprecatedResponse.ok) {
+        const deprecatedPayload = await deprecatedResponse.json();
+        const required = new Set(nodeOnlyRefs);
+        const deprecatedOperators = Array.isArray(deprecatedPayload.operators)
+          ? deprecatedPayload.operators
+          : [];
+        for (const operator of deprecatedOperators) {
+          if (required.has(operator.operatorRef || '')) {
+            rememberCatalogOperator(operator, { paletteVisible: false, deprecated: true });
+          }
+        }
       }
-      const resourceId = operator.source?.resourceId
-        || operator.lowering?.parameters?.resourceId
-        || operatorRef.slice('resource:'.length);
-      const inputPorts = normalizeOperatorPorts(operator.ports?.inputs, 'params');
-      const outputPorts = normalizeOperatorPorts(operator.ports?.outputs, 'payload');
-      const primaryInput = inputPorts[0] || { name: 'params', schema: null };
-      const primaryOutput = outputPorts[0] || { name: 'payload', schema: null };
-      OPERATOR_TYPES[operatorRef] = {
-        label: operator.display?.name || readableName(resourceId),
-        kind: 'resource',
-        operatorRef: 'httpResource',
-        visualOperatorRef: operatorRef,
-        fingerprint: operator.fingerprint || '',
-        inputPort: primaryInput.name,
-        outputPort: primaryOutput.name,
-        baseId: baseIdForResource(resourceId),
-        resourceId,
-        inputPorts,
-        outputPorts,
-        inputSchema: primaryInput.schema,
-        outputSchema: primaryOutput.schema,
-        configSchema: operator.configSchema,
-        policy: operator.policy,
-        lowering: operator.lowering
-      };
     }
   } catch (error) {
     console.debug('Visual operator catalog unavailable', error);
   }
 }
 
-function operatorCatalogUrl(builder = state.builder) {
+function rememberCatalogOperator(operator, options = {}) {
+  const operatorRef = operator.operatorRef || '';
+  if (!operatorRef || operatorRef === 'httpResource' || operatorRef === 'bloge:decisionTable' || operatorRef === 'bloge:transform') {
+    rememberCoreOperatorFingerprint(operatorRef, operator.fingerprint || '');
+    return operatorRef;
+  }
+  if (!operatorRef.startsWith('resource:')) {
+    const inputPorts = normalizeOperatorPorts(operator.ports?.inputs, 'inputs');
+    const outputPorts = normalizeOperatorPorts(operator.ports?.outputs, 'output');
+    const primaryInput = inputPorts[0] || { name: 'inputs', schema: null };
+    const primaryOutput = outputPorts[0] || { name: 'output', schema: null };
+    OPERATOR_TYPES[operatorRef] = {
+      label: operator.display?.name || readableName(operatorRef),
+      kind: 'custom',
+      operatorRef,
+      visualOperatorRef: operatorRef,
+      fingerprint: operator.fingerprint || '',
+      inputPort: primaryInput.name,
+      outputPort: primaryOutput.name,
+      baseId: baseIdForResource(operatorRef),
+      inputPorts,
+      outputPorts,
+      inputSchema: primaryInput.schema,
+      outputSchema: primaryOutput.schema,
+      configSchema: operator.configSchema,
+      policy: operator.policy,
+      lowering: operator.lowering,
+      paletteVisible: options.paletteVisible !== false,
+      deprecated: Boolean(options.deprecated)
+    };
+    return operatorRef;
+  }
+  const resourceId = operator.source?.resourceId
+    || operator.lowering?.parameters?.resourceId
+    || operatorRef.slice('resource:'.length);
+  const inputPorts = normalizeOperatorPorts(operator.ports?.inputs, 'params');
+  const outputPorts = normalizeOperatorPorts(operator.ports?.outputs, 'payload');
+  const primaryInput = inputPorts[0] || { name: 'params', schema: null };
+  const primaryOutput = outputPorts[0] || { name: 'payload', schema: null };
+  OPERATOR_TYPES[operatorRef] = {
+    label: operator.display?.name || readableName(resourceId),
+    kind: 'resource',
+    operatorRef: 'httpResource',
+    visualOperatorRef: operatorRef,
+    fingerprint: operator.fingerprint || '',
+    inputPort: primaryInput.name,
+    outputPort: primaryOutput.name,
+    baseId: baseIdForResource(resourceId),
+    resourceId,
+    inputPorts,
+    outputPorts,
+    inputSchema: primaryInput.schema,
+    outputSchema: primaryOutput.schema,
+    configSchema: operator.configSchema,
+    policy: operator.policy,
+    lowering: operator.lowering,
+    paletteVisible: options.paletteVisible !== false,
+    deprecated: Boolean(options.deprecated)
+  };
+  return operatorRef;
+}
+
+function operatorRefsRequiredByBuilder(builder = state.builder) {
+  const refs = new Set();
+  for (const node of builder?.nodes || []) {
+    if (node.type === 'customOperator' && node.paletteType) {
+      refs.add(node.paletteType);
+    }
+    if (node.type === 'httpResource' && node.resourceId) {
+      refs.add(node.paletteType?.startsWith('resource:')
+        ? node.paletteType
+        : `resource:${node.resourceId}`);
+    }
+  }
+  return [...refs];
+}
+
+function operatorCatalogUrl(builder = state.builder, options = {}) {
   const scope = builderScope(builder);
   const params = new URLSearchParams();
   params.set('tenantId', scope.tenantId);
   params.set('namespace', scope.namespace);
   params.set('environment', scope.environment);
+  if (options.includeDeprecated) {
+    params.set('includeDeprecated', 'true');
+  }
   return `/api/visual/operators?${params.toString()}`;
 }
 
@@ -1009,7 +1057,9 @@ function resetComposer() {
 function renderOperatorPalette() {
   const target = $('operator-palette');
   if (!target) return;
-  target.innerHTML = Object.entries(OPERATOR_TYPES).map(([type, spec]) => `
+  target.innerHTML = Object.entries(OPERATOR_TYPES)
+    .filter(([, spec]) => spec.paletteVisible !== false)
+    .map(([type, spec]) => `
     <button
       class="operator-card ${escapeHtml(spec.kind)}"
       type="button"
