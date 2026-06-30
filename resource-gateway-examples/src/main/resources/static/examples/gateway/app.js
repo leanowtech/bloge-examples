@@ -4152,7 +4152,7 @@ function validateSchemaStructure(schema, path, diagnostics) {
   }
   if (kind === 'object') {
     const properties = schemaObjectProperties(schema);
-    for (const required of schemaRequiredNames(schema)) {
+    for (const required of validatedSchemaRequiredNames(schema, path, diagnostics)) {
       if (!Object.prototype.hasOwnProperty.call(properties, required)) {
         diagnostics.push(graphInputSchemaDiagnostic(
           'visual.schema.requiredUnknown',
@@ -4203,6 +4203,44 @@ function graphInputSchemaDiagnostic(code, message, target) {
     line: -1,
     column: -1
   };
+}
+
+function validatedSchemaRequiredNames(schema, path, diagnostics) {
+  const required = schema?.required;
+  if (required === undefined) {
+    return [];
+  }
+  if (!Array.isArray(required)) {
+    diagnostics.push(graphInputSchemaDiagnostic(
+      'visual.schema.requiredInvalid',
+      'Object schema required must be an array of property names.',
+      `${path}/required`
+    ));
+    return [];
+  }
+  const names = [];
+  const seen = new Set();
+  required.forEach((item, index) => {
+    if (typeof item !== 'string' || !item.trim()) {
+      diagnostics.push(graphInputSchemaDiagnostic(
+        'visual.schema.requiredInvalid',
+        'Object schema required entries must be non-blank strings.',
+        `${path}/required/${index}`
+      ));
+      return;
+    }
+    if (seen.has(item)) {
+      diagnostics.push(graphInputSchemaDiagnostic(
+        'visual.schema.requiredDuplicate',
+        `Object schema required entry '${item}' is duplicated.`,
+        `${path}/required/${index}`
+      ));
+      return;
+    }
+    seen.add(item);
+    names.push(item);
+  });
+  return names;
 }
 
 function schemaObjectProperties(schema) {

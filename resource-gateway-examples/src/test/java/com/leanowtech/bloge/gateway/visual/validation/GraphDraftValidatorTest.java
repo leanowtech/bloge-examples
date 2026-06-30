@@ -89,6 +89,37 @@ class GraphDraftValidatorTest {
     }
 
     @Test
+    void rejectsGraphInputSchemaWithInvalidRequiredShape() {
+        GraphDraftValidator validator = new GraphDraftValidator(
+                VisualCatalogTestSupport.catalogWithLibrary(
+                        VisualCatalogTestSupport.eligibilityLibrary("integer")));
+        SchemaEnvelope inputSchema = new SchemaEnvelope(
+                SchemaEnvelope.JSON_SCHEMA,
+                "2020-12",
+                Map.of(
+                        "type", "object",
+                        "properties", Map.of(
+                                "score", Map.of("type", "integer"),
+                                "amount", Map.of("type", "number")
+                        ),
+                        "required", "score"
+                ));
+        GraphDraft draft = contextEligibilityDraft(inputSchema, Map.of(
+                "score", GraphDraft.Binding.contextPath("score"),
+                "amount", GraphDraft.Binding.contextPath("amount")
+        ));
+
+        VisualValidationResult result = validator.validate(draft);
+
+        assertThat(result.valid()).isFalse();
+        assertThat(result.diagnostics())
+                .anySatisfy(diagnostic -> {
+                    assertThat(diagnostic.code()).isEqualTo("visual.schema.requiredInvalid");
+                    assertThat(diagnostic.target()).isEqualTo("/inputSchema/schema/required");
+                });
+    }
+
+    @Test
     void rejectsGraphInputSchemaWithArrayMissingItems() {
         GraphDraftValidator validator = new GraphDraftValidator(
                 VisualCatalogTestSupport.catalogWithLibrary(

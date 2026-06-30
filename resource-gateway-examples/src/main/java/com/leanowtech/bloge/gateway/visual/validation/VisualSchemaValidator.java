@@ -4,6 +4,7 @@ import com.leanowtech.bloge.gateway.visual.diagnostic.VisualDiagnostic;
 
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -62,7 +63,8 @@ public final class VisualSchemaValidator {
         }
         if ("object".equals(kind)) {
             Map<String, Object> properties = objectProperties(schema);
-            for (String required : requiredNames(schema)) {
+            List<String> requiredNames = requiredNames(schema, path, diagnostics);
+            for (String required : requiredNames) {
                 if (!properties.containsKey(required)) {
                     diagnostics.add(VisualDiagnostic.error("visual.schema.requiredUnknown",
                             "Required property '%s' is not declared in properties.".formatted(required),
@@ -122,16 +124,36 @@ public final class VisualSchemaValidator {
         return properties;
     }
 
-    private static List<String> requiredNames(Map<String, Object> schema) {
+    private static List<String> requiredNames(Map<String, Object> schema,
+                                              String path,
+                                              List<VisualDiagnostic> diagnostics) {
         Object raw = schema.get("required");
+        if (raw == null) {
+            return List.of();
+        }
         if (!(raw instanceof List<?> list)) {
+            diagnostics.add(VisualDiagnostic.error("visual.schema.requiredInvalid",
+                    "Object schema required must be an array of property names.",
+                    path + "/required"));
             return List.of();
         }
         List<String> required = new ArrayList<>();
-        for (Object item : list) {
-            if (item != null) {
-                required.add(String.valueOf(item));
+        Set<String> seen = new LinkedHashSet<>();
+        for (int i = 0; i < list.size(); i++) {
+            Object item = list.get(i);
+            if (!(item instanceof String name) || name.isBlank()) {
+                diagnostics.add(VisualDiagnostic.error("visual.schema.requiredInvalid",
+                        "Object schema required entries must be non-blank strings.",
+                        path + "/required/" + i));
+                continue;
             }
+            if (!seen.add(name)) {
+                diagnostics.add(VisualDiagnostic.error("visual.schema.requiredDuplicate",
+                        "Object schema required entry '%s' is duplicated.".formatted(name),
+                        path + "/required/" + i));
+                continue;
+            }
+            required.add(name);
         }
         return required;
     }

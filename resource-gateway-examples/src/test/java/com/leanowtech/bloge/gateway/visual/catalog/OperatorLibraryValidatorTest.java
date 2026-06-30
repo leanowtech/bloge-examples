@@ -216,6 +216,37 @@ class OperatorLibraryValidatorTest {
     }
 
     @Test
+    void rejectsInvalidRequiredSchemaShape() {
+        OperatorLibrary library = libraryWith(operator(
+                "risk:badRequired",
+                new OperatorDefinition.Ports(
+                        List.of(),
+                        List.of(new OperatorDefinition.Port("output",
+                                new SchemaEnvelope("json-schema", "2020-12", Map.of(
+                                        "type", "object",
+                                        "properties", Map.of(
+                                                "score", Map.of("type", "integer")
+                                        ),
+                                        "required", List.of("score", "", 42, "score")
+                                )),
+                                true,
+                                "Bad required."))
+                ),
+                "native"
+        ));
+
+        VisualValidationResult result = validator.validate(library);
+
+        assertThat(result.valid()).isFalse();
+        assertThat(result.diagnostics())
+                .extracting("code")
+                .contains(
+                        "visual.schema.requiredInvalid",
+                        "visual.schema.requiredDuplicate"
+                );
+    }
+
+    @Test
     void rejectsInvalidConfigSchemaDetails() {
         OperatorLibrary library = libraryWith(new OperatorDefinition(
                 "bloge.visualOperator.v1",
