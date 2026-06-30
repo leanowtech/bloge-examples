@@ -1274,6 +1274,29 @@ class GraphDraftValidatorTest {
     }
 
     @Test
+    void rejectsContextPathBindingWhenDynamicPropertyNameViolatesGraphInputSchema() {
+        GraphDraftValidator validator = new GraphDraftValidator(
+                VisualCatalogTestSupport.catalogWithLibrary(
+                        VisualCatalogTestSupport.eligibilityLibrary("integer")));
+        GraphDraft draft = contextEligibilityDraft(
+                dynamicAdditionalGraphInputSchema(Map.of("type", "integer"), Map.of("pattern", "^risk[A-Z].*")),
+                Map.of(
+                        "score", GraphDraft.Binding.contextPath("badScore"),
+                        "amount", GraphDraft.Binding.constant(1000)
+                ));
+
+        VisualValidationResult result = validator.validate(draft);
+
+        assertThat(result.valid()).isFalse();
+        assertThat(result.diagnostics())
+                .anySatisfy(diagnostic -> {
+                    assertThat(diagnostic.code()).isEqualTo("visual.binding.unknownContextPath");
+                    assertThat(diagnostic.message()).contains("ctx.badScore");
+                    assertThat(diagnostic.target()).isEqualTo("/nodes/0/inputs/score");
+                });
+    }
+
+    @Test
     void rejectsContextPathBindingWhenAdditionalPropertiesSchemaTypeDoesNotMatch() {
         GraphDraftValidator validator = new GraphDraftValidator(
                 VisualCatalogTestSupport.catalogWithLibrary(
@@ -4381,6 +4404,16 @@ class GraphDraftValidatorTest {
                 "type", "object",
                 "properties", Map.of(),
                 "additionalProperties", additionalProperties
+        ));
+    }
+
+    private static SchemaEnvelope dynamicAdditionalGraphInputSchema(Object additionalProperties,
+                                                                    Object propertyNames) {
+        return new SchemaEnvelope(SchemaEnvelope.JSON_SCHEMA, "2020-12", Map.of(
+                "type", "object",
+                "properties", Map.of(),
+                "additionalProperties", additionalProperties,
+                "propertyNames", propertyNames
         ));
     }
 

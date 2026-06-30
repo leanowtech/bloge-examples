@@ -924,7 +924,7 @@ public final class VisualSchemaCompatibility {
 	        };
 	    }
 
-    private static boolean valueMatchesSchema(Object value, Map<String, Object> schema) {
+    public static boolean valueMatchesSchema(Object value, Map<String, Object> schema) {
         String type = schemaType(schema);
         if (value == null && schemaAllowsNull(schema)) {
             List<Object> values = enumValues(schema);

@@ -5,6 +5,7 @@ import com.leanowtech.bloge.gateway.visual.catalog.VisualOperatorCatalog;
 import com.leanowtech.bloge.gateway.visual.diagnostic.VisualDiagnostic;
 import com.leanowtech.bloge.gateway.visual.draft.GraphDraft;
 import com.leanowtech.bloge.gateway.visual.validation.GraphDraftValidator;
+import com.leanowtech.bloge.gateway.visual.validation.VisualSchemaCompatibility;
 import com.leanowtech.bloge.gateway.visual.validation.VisualValidationResult;
 
 import org.springframework.stereotype.Service;
@@ -489,6 +490,9 @@ public class VisualConnectionCheckService {
             Map<String, Object> properties = propertiesOf(current);
             Map<String, Object> next = objectSchema(properties.get(segment));
             if (next == null) {
+                if (!propertyNameAllowedBySchema(current, segment)) {
+                    return null;
+                }
                 next = patternPropertySchema(current, segment);
             }
             if (next == null) {
@@ -534,6 +538,18 @@ public class VisualConnectionCheckService {
             }
         }
         return matches.size() == 1 ? matches.getFirst() : null;
+    }
+
+    private static boolean propertyNameAllowedBySchema(Map<String, Object> schema, String propertyName) {
+        Map<String, Object> propertyNameSchema = objectSchema(schema.get("propertyNames"));
+        if (propertyNameSchema == null) {
+            return true;
+        }
+        Map<String, Object> effectiveSchema = new LinkedHashMap<>(propertyNameSchema);
+        if (!effectiveSchema.containsKey("type") && !effectiveSchema.containsKey("kind")) {
+            effectiveSchema.put("type", "string");
+        }
+        return VisualSchemaCompatibility.valueMatchesSchema(propertyName, effectiveSchema);
     }
 
     private static Map<String, Object> additionalPropertySchema(Map<String, Object> schema) {

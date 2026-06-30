@@ -6413,6 +6413,9 @@ function schemaAtPath(schemaEnvelope, path) {
     }
     const properties = current.properties || {};
     if (!Object.prototype.hasOwnProperty.call(properties, segment)) {
+      if (!propertyNameAllowedBySchema(current, segment)) {
+        return null;
+      }
       const pattern = patternPropertySchema(current, segment);
       if (pattern) {
         current = pattern;
@@ -6450,6 +6453,12 @@ function additionalPropertySchema(schema) {
 function patternPropertySchema(schema, propertyName) {
   const matches = matchingPatternPropertySchemas(schema, propertyName);
   return matches.length === 1 ? matches[0] : null;
+}
+
+function propertyNameAllowedBySchema(schema, propertyName) {
+  const propertyNameSchema = schemaPropertyNameSchema(schema);
+  return !propertyNameSchema
+    || schemaValueMatchesSchema(String(propertyName), effectivePropertyNameSchema(propertyNameSchema));
 }
 
 function currentGraphInputSchema(builder = state.builder) {

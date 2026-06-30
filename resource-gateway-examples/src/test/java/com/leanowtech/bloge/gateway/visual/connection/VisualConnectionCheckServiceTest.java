@@ -557,6 +557,29 @@ class VisualConnectionCheckServiceTest {
     }
 
     @Test
+    void rejectsContextPickerBindingWhenDynamicPropertyNameViolatesGraphInputSchema() {
+        VisualConnectionCheckService service = connectionService(VisualCatalogTestSupport
+                .catalogWithLoanApplicantResourceAndLibrary(VisualCatalogTestSupport.eligibilityLibrary("integer")));
+        GraphDraft draft = resourceEligibilityDraft(
+                dynamicAdditionalGraphInputSchema(Map.of("type", "integer"), Map.of("pattern", "^risk[A-Z].*")),
+                List.of());
+
+        VisualConnectionCheckResult result = service.check(new VisualConnectionCheckRequest(
+                draft,
+                new GraphDraft.Endpoint("__ctx", "ctx", "badScore"),
+                new GraphDraft.Endpoint("eligibility", "inputs", "score"),
+                "data"
+        ));
+
+        assertThat(result.accepted()).isFalse();
+        assertThat(result.diagnostics())
+                .anySatisfy(diagnostic -> {
+                    assertThat(diagnostic.code()).isEqualTo("visual.binding.unknownContextPath");
+                    assertThat(diagnostic.message()).contains("ctx.badScore");
+                });
+    }
+
+    @Test
     void acceptsSchemaCompatibleConfigSourcePickerExpression() {
         VisualConnectionCheckService service = connectionService(VisualCatalogTestSupport
                 .catalogWithLoanApplicantResourceAndLibrary(VisualCatalogTestSupport.configurablePolicyLibrary()));
@@ -695,6 +718,16 @@ class VisualConnectionCheckServiceTest {
                 "type", "object",
                 "properties", Map.of(),
                 "additionalProperties", additionalProperties
+        ));
+    }
+
+    private static SchemaEnvelope dynamicAdditionalGraphInputSchema(Object additionalProperties,
+                                                                    Object propertyNames) {
+        return new SchemaEnvelope(SchemaEnvelope.JSON_SCHEMA, "2020-12", Map.of(
+                "type", "object",
+                "properties", Map.of(),
+                "additionalProperties", additionalProperties,
+                "propertyNames", propertyNames
         ));
     }
 

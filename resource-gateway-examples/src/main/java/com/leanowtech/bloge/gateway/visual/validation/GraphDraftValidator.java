@@ -1168,6 +1168,9 @@ public class GraphDraftValidator {
             }
             current = objectProperty(properties.get(segment));
             if (current == null) {
+                if (!propertyNameAllowedBySchema(currentSchema, segment)) {
+                    return null;
+                }
                 current = patternPropertySchema(currentSchema, segment);
             }
             if (current == null) {
@@ -1703,6 +1706,14 @@ public class GraphDraftValidator {
     private static Map<String, Object> patternPropertySchema(Map<String, Object> schema, String propertyName) {
         List<Map<String, Object>> matches = matchingPatternPropertySchemas(schema, propertyName);
         return matches.size() == 1 ? matches.getFirst() : null;
+    }
+
+    private static boolean propertyNameAllowedBySchema(Map<String, Object> schema, String propertyName) {
+        Map<String, Object> propertyNameSchema = propertyNameSchema(schema);
+        if (propertyNameSchema == null) {
+            return true;
+        }
+        return constantValueMatchesSchema(propertyName, effectivePropertyNameSchema(propertyNameSchema));
     }
 
     private static boolean constantValueMatchesSchema(Object value, Map<String, Object> schema) {

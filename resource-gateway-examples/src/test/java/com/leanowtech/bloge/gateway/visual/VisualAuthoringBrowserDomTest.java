@@ -651,6 +651,67 @@ class VisualAuthoringBrowserDomTest {
     }
 
     @Test
+    void composerFiltersDynamicContextFieldsByPropertyNamesInRealBrowser() throws JsonProcessingException {
+        driver = newChromeDriverOrSkip();
+        WebDriverWait wait = new WebDriverWait(driver, WAIT_TIMEOUT);
+        driver.get("http://localhost:" + port + "/examples/gateway");
+
+        waitForComposer(wait);
+        wait.until(ExpectedConditions.visibilityOfElementLocated(By.id("operator-palette")));
+        setControlValue(driver.findElement(By.id("graph-input-schema")), """
+                {
+                  "type": "object",
+                  "properties": {},
+                  "additionalProperties": { "type": "integer" },
+                  "propertyNames": { "pattern": "^risk[A-Z].*" }
+                }
+                """);
+        waitForText(wait, By.id("graph-input-schema-status"), "Graph input schema is valid");
+        setControlValue(driver.findElement(By.id("composer-context")), """
+                {
+                  "riskScore": 720,
+                  "riskAmount": 250000,
+                  "badScore": 720
+                }
+                """);
+
+        importSampleOperatorLibrary(wait);
+        dragOperatorToCanvas(wait, "Eligibility", "risk:eligibility", "riskEligibility", 140, 120);
+        List<String> scoreSourceOptions = driver.findElements(By.cssSelector(
+                        "[data-binding-source][data-binding-path='score'] option"))
+                .stream()
+                .map(WebElement::getText)
+                .toList();
+        assertThat(scoreSourceOptions).anyMatch(option -> option.contains("ctx.riskScore"));
+        assertThat(scoreSourceOptions).anyMatch(option -> option.contains("ctx.riskAmount"));
+        assertThat(scoreSourceOptions).noneMatch(option -> option.contains("ctx.badScore"));
+
+        selectByValue(wait,
+                By.cssSelector("[data-binding-source][data-binding-path='score']"),
+                bindingSourceValue("__ctx", "ctx", "riskScore"));
+        waitForText(wait, By.id("connection-status"), "Connected ctx.riskScore");
+        selectByValue(wait,
+                By.cssSelector("[data-binding-source][data-binding-path='amount']"),
+                bindingSourceValue("__ctx", "ctx", "riskAmount"));
+        waitForText(wait, By.id("connection-status"), "Connected ctx.riskAmount");
+
+        waitForValue(wait, By.id("composer-dsl"),
+                "eligible = ctx.riskScore >= 700 && ctx.riskAmount <= 300000");
+
+        click(wait, By.id("save-draft"));
+        waitForText(wait, By.id("draft-status"), "Saved");
+        click(wait, By.id("export-draft"));
+        wait.until(ignored -> valueOf(By.id("draft-bundle-json"))
+                .contains("\"schemaVersion\": \"bloge.visualGraphDraftExport.v1\""));
+        assertThat(valueOf(By.id("draft-bundle-json")))
+                .contains("\"path\": \"riskScore\"")
+                .contains("\"path\": \"riskAmount\"")
+                .contains("\"targetPath\": \"score\"")
+                .contains("\"targetPath\": \"amount\"")
+                .doesNotContain("\"path\": \"badScore\"");
+    }
+
+    @Test
     void composerPreservesDuplicateInputPathPortsInRealBrowser() throws JsonProcessingException {
         driver = newChromeDriverOrSkip();
         WebDriverWait wait = new WebDriverWait(driver, WAIT_TIMEOUT);
