@@ -128,6 +128,9 @@ input bindings. Structured config expressions such as `{ "kind": "expression",
 `ctx.*` or `node.output.*` references are checked against the target
 `configSchema` type when it can be proven, and the DSL preview/codegen lowers
 those structured expressions back to plain BLOGE DSL expressions.
+Imported operator libraries must use namespace-safe `operatorRef` values and
+single-token input/output port names, so palette keys, canvas endpoints, and DSL
+paths share one address model.
 Raw secret material is rejected from imported operator libraries and saved graph
 drafts; authoring artifacts may store only references such as `secretRef`.
 Graph input bindings are schema-aware too: the composer exposes a dedicated
@@ -785,7 +788,7 @@ curl -X POST http://localhost:8080/api/gateway/resources/execute \
 
 ## Test strategy
 
-The test suite is organised into four layers (40 top-level test classes, 308 executed
+The test suite is organised into four layers (40 top-level test classes, 309 executed
 tests, including nested JUnit suites):
 
 ### Layer 1 — Unit tests
@@ -811,7 +814,7 @@ Isolated component tests, some with lightweight Spring slices or mocks.
 | `ResourceDescriptorBootstrapTest` | 7 | Seeding, refresh behavior, idempotency |
 | `GatewayDslCompilationTest` | 7 | DSL parsing, graph loading |
 | Gateway example API suite | 13 | Dynamic composer service/controller, scenario catalog, example graph endpoints |
-| Visual authoring suite | 167 | Visual operator projection, resource design contract persistence and gates, imported libraries, catalog policy filtering, cross-library operatorRef ownership, system-reserved operatorRef gates, import-time lowering gates, draft/publication persistence and history, revision audit metadata, revision-guarded patching, operator fingerprint drift and snapshot coverage gates, typed connection/edge validation including binding kind allow-list, source-picker server preflight, duplicate target input ownership, object required fields, object schema structure gates, required-array schema gates, nested objectTemplate required fields, enum value-domain and shape gates, config expression references and configSchema type gates, data edge/semantic dependency consistency, graph input schema gates, secret blocking, DSL lowering, compiler gating, dependency ordering, runtime smoke path |
+| Visual authoring suite | 168 | Visual operator projection, resource design contract persistence and gates, imported libraries, catalog token gates and policy filtering, cross-library operatorRef ownership, system-reserved operatorRef gates, import-time lowering gates, draft/publication persistence and history, revision audit metadata, revision-guarded patching, operator fingerprint drift and snapshot coverage gates, typed connection/edge validation including binding kind allow-list, source-picker server preflight, duplicate target input ownership, object required fields, object schema structure gates, required-array schema gates, nested objectTemplate required fields, enum value-domain and shape gates, config expression references and configSchema type gates, data edge/semantic dependency consistency, graph input schema gates, secret blocking, DSL lowering, compiler gating, dependency ordering, runtime smoke path |
 
 ### Layer 3 — Orchestration tests
 

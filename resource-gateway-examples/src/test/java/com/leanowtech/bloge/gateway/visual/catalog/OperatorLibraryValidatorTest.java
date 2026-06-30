@@ -162,6 +162,48 @@ class OperatorLibraryValidatorTest {
     }
 
     @Test
+    void rejectsUnsafeOperatorRefAndPortNames() {
+        OperatorDefinition operator = new OperatorDefinition(
+                "bloge.visualOperator.v1",
+                "risk badRef",
+                "1.0.0",
+                new OperatorDefinition.Display("Bad tokens", "Test operator.", List.of("test")),
+                new OperatorDefinition.Source("user-library", "", "", "", true),
+                new OperatorDefinition.Ports(
+                        List.of(new OperatorDefinition.Port("bad.input",
+                                SchemaEnvelope.object(Map.of("score", Map.of("type", "integer")), List.of()),
+                                true,
+                                "Bad input.")),
+                        List.of(new OperatorDefinition.Port("bad-output",
+                                SchemaEnvelope.object(Map.of("accepted", Map.of("type", "boolean")), List.of()),
+                                true,
+                                "Bad output."))
+                ),
+                SchemaEnvelope.opaque(),
+                OperatorDefinition.Capabilities.pure(),
+                new OperatorDefinition.Lowering("native", "risk:safeExecutableRef", Map.of()),
+                List.of()
+        );
+
+        VisualValidationResult result = validator.validate(libraryWith(operator));
+
+        assertThat(result.valid()).isFalse();
+        assertThat(result.diagnostics())
+                .extracting("code")
+                .contains(
+                        "visual.operator.ref.invalid",
+                        "visual.operator.port.name.invalid"
+                );
+        assertThat(result.diagnostics())
+                .filteredOn(diagnostic -> "visual.operator.port.name.invalid".equals(diagnostic.code()))
+                .extracting("target")
+                .containsExactly(
+                        "/operators/0/ports/inputs/0/name",
+                        "/operators/0/ports/outputs/0/name"
+                );
+    }
+
+    @Test
     void rejectsOperatorWithoutOutputPort() {
         OperatorLibrary library = libraryWith(operator(
                 "risk:noOutput",

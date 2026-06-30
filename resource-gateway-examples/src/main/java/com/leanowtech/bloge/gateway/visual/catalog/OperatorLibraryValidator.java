@@ -30,6 +30,9 @@ public class OperatorLibraryValidator {
     );
     private static final Set<String> SUPPORTED_LOWERING_MODES = Set.of("native", "transform");
     private static final String IDENTIFIER_PATTERN = "[A-Za-z_][A-Za-z0-9_]*";
+    private static final Pattern VISUAL_OPERATOR_REF = Pattern.compile(
+            IDENTIFIER_PATTERN + "(?:(?::|\\.|-)" + IDENTIFIER_PATTERN + ")*");
+    private static final Pattern PORT_NAME = Pattern.compile(IDENTIFIER_PATTERN);
     private static final Pattern EXECUTABLE_OPERATOR_REF = Pattern.compile(
             IDENTIFIER_PATTERN + "(?:(?::|\\.|-)" + IDENTIFIER_PATTERN + ")*");
     private static final Pattern PATH_PATTERN = Pattern.compile(
@@ -75,6 +78,12 @@ public class OperatorLibraryValidator {
                                     .formatted(operator.operatorRef()),
                             operatorPath + "/operatorRef"));
                 }
+                if (!VISUAL_OPERATOR_REF.matcher(operator.operatorRef()).matches()) {
+                    diagnostics.add(VisualDiagnostic.error("visual.operator.ref.invalid",
+                            "OperatorRef '%s' must be a namespace-safe visual operator token."
+                                    .formatted(operator.operatorRef()),
+                            operatorPath + "/operatorRef"));
+                }
                 if (!operatorRefs.add(operator.operatorRef())) {
                     diagnostics.add(VisualDiagnostic.error("visual.operator.ref.duplicate",
                             "Operator library declares duplicate operatorRef '%s'."
@@ -115,6 +124,12 @@ public class OperatorLibraryValidator {
         Set<String> seen = new LinkedHashSet<>();
         for (int i = 0; i < ports.size(); i++) {
             OperatorDefinition.Port port = ports.get(i);
+            if (!PORT_NAME.matcher(port.name()).matches()) {
+                diagnostics.add(VisualDiagnostic.error("visual.operator.port.name.invalid",
+                        "Operator '%s' declares %s port '%s', but port names must be single identifier tokens."
+                                .formatted(operator.operatorRef(), direction, port.name()),
+                        path + "/" + i + "/name"));
+            }
             if (!seen.add(port.name())) {
                 diagnostics.add(VisualDiagnostic.error("visual.operator.port.duplicate",
                         "Operator '%s' declares duplicate %s port '%s'."
