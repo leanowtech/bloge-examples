@@ -272,6 +272,28 @@ class VisualConnectionCheckServiceTest {
     }
 
     @Test
+    void rejectsRouteEdgePreviewWhenConditionDoesNotMatchSelectorSchema() {
+        VisualConnectionCheckService service = connectionService(VisualCatalogTestSupport
+                .catalogWithLibrary(VisualCatalogTestSupport.routeLibrary()));
+        GraphDraft draft = routePreviewDraft(List.of());
+
+        VisualConnectionCheckResult result = service.check(new VisualConnectionCheckRequest(
+                draft,
+                new GraphDraft.Endpoint("routeByType", "route", ""),
+                new GraphDraft.Endpoint("physicalFacts", "route", ""),
+                "route",
+                "true"
+        ));
+
+        assertThat(result.accepted()).isFalse();
+        assertThat(result.diagnostics())
+                .anySatisfy(diagnostic -> {
+                    assertThat(diagnostic.code()).isEqualTo("visual.edge.routeConditionTypeMismatch");
+                    assertThat(diagnostic.target()).isEqualTo("/edges/0/condition");
+                });
+    }
+
+    @Test
     void acceptsSchemaCompatibleContextPickerBinding() {
         VisualConnectionCheckService service = connectionService(VisualCatalogTestSupport
                 .catalogWithLoanApplicantResourceAndLibrary(VisualCatalogTestSupport.eligibilityLibrary("integer")));

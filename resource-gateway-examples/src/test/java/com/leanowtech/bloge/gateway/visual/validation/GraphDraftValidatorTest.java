@@ -646,6 +646,92 @@ class GraphDraftValidatorTest {
     }
 
     @Test
+    void rejectsRouteConditionThatDoesNotMatchSelectorType() {
+        GraphDraftValidator validator = new GraphDraftValidator(
+                VisualCatalogTestSupport.catalogWithLibrary(VisualCatalogTestSupport.routeLibrary()));
+        GraphDraft draft = routeDraft(List.of(new GraphDraft.DraftEdge("route-true", "route",
+                new GraphDraft.Endpoint("routeByType", "", ""),
+                new GraphDraft.Endpoint("physicalFacts", "", ""),
+                "true")));
+
+        VisualValidationResult result = validator.validate(draft);
+
+        assertThat(result.valid()).isFalse();
+        assertThat(result.diagnostics())
+                .anySatisfy(diagnostic -> {
+                    assertThat(diagnostic.code()).isEqualTo("visual.edge.routeConditionTypeMismatch");
+                    assertThat(diagnostic.target()).isEqualTo("/edges/0/condition");
+                });
+    }
+
+    @Test
+    void rejectsRouteConditionOutsideSelectorEnumDomain() {
+        GraphDraftValidator validator = new GraphDraftValidator(
+                VisualCatalogTestSupport.catalogWithLibrary(selectorRouteLibrary(
+                        Map.of("type", "string", "enum", List.of("physical", "digital")))));
+        GraphDraft draft = routeDraft(selectorInputSchema(
+                Map.of("type", "string", "enum", List.of("physical", "digital"))),
+                List.of(new GraphDraft.DraftEdge("route-virtual", "route",
+                        new GraphDraft.Endpoint("routeByType", "", ""),
+                        new GraphDraft.Endpoint("physicalFacts", "", ""),
+                        "virtual")));
+
+        VisualValidationResult result = validator.validate(draft);
+
+        assertThat(result.valid()).isFalse();
+        assertThat(result.diagnostics())
+                .anySatisfy(diagnostic -> {
+                    assertThat(diagnostic.code()).isEqualTo("visual.edge.routeConditionTypeMismatch");
+                    assertThat(diagnostic.message()).contains("virtual").contains("routeByType");
+                    assertThat(diagnostic.target()).isEqualTo("/edges/0/condition");
+                });
+    }
+
+    @Test
+    void acceptsBooleanAndNullRouteConditionsForNullableSelector() {
+        GraphDraftValidator validator = new GraphDraftValidator(
+                VisualCatalogTestSupport.catalogWithLibrary(selectorRouteLibrary(
+                        Map.of("type", List.of("boolean", "null")))));
+        GraphDraft draft = routeDraft(selectorInputSchema(Map.of("type", List.of("boolean", "null"))),
+                List.of(
+                        new GraphDraft.DraftEdge("route-true", "route",
+                                new GraphDraft.Endpoint("routeByType", "", ""),
+                                new GraphDraft.Endpoint("physicalFacts", "", ""),
+                                "true"),
+                        new GraphDraft.DraftEdge("route-null", "route",
+                                new GraphDraft.Endpoint("routeByType", "", ""),
+                                new GraphDraft.Endpoint("genericFacts", "", ""),
+                                "null")
+                ));
+
+        VisualValidationResult result = validator.validate(draft);
+
+        assertThat(result.valid()).isTrue();
+        assertThat(result.diagnostics())
+                .noneSatisfy(diagnostic -> assertThat(diagnostic.code())
+                        .isEqualTo("visual.edge.routeConditionTypeMismatch"));
+    }
+
+    @Test
+    void rejectsNumericRouteConditionOutsideSelectorBounds() {
+        Map<String, Object> selectorSchema = Map.of("type", "integer", "minimum", 1, "maximum", 3);
+        GraphDraftValidator validator = new GraphDraftValidator(
+                VisualCatalogTestSupport.catalogWithLibrary(selectorRouteLibrary(selectorSchema)));
+        GraphDraft draft = routeDraft(selectorInputSchema(selectorSchema),
+                List.of(new GraphDraft.DraftEdge("route-five", "route",
+                        new GraphDraft.Endpoint("routeByType", "", ""),
+                        new GraphDraft.Endpoint("physicalFacts", "", ""),
+                        "5")));
+
+        VisualValidationResult result = validator.validate(draft);
+
+        assertThat(result.valid()).isFalse();
+        assertThat(result.diagnostics())
+                .anySatisfy(diagnostic -> assertThat(diagnostic.code())
+                        .isEqualTo("visual.edge.routeConditionTypeMismatch"));
+    }
+
+    @Test
     void treatsRouteEdgeSourceAsOutputReachable() {
         GraphDraftValidator validator = new GraphDraftValidator(
                 VisualCatalogTestSupport.catalogWithLibrary(VisualCatalogTestSupport.routeLibrary()));
@@ -4365,6 +4451,10 @@ class GraphDraftValidatorTest {
     }
 
     private static GraphDraft routeDraft(List<GraphDraft.DraftEdge> edges) {
+        return routeDraft(selectorInputSchema(Map.of("type", "string")), edges);
+    }
+
+    private static GraphDraft routeDraft(SchemaEnvelope inputSchema, List<GraphDraft.DraftEdge> edges) {
         return new GraphDraft(
                 "",
                 "",
@@ -4374,9 +4464,7 @@ class GraphDraftValidatorTest {
                 "",
                 "",
                 "",
-                SchemaEnvelope.object(Map.of(
-                        "productType", Map.of("type", "string")
-                ), List.of("productType")),
+                inputSchema,
                 List.of(
                         new GraphDraft.DraftNode(
                                 "routeByType",
@@ -4406,6 +4494,42 @@ class GraphDraftValidatorTest {
                 edges,
                 Map.of(),
                 new GraphDraft.OutputSelection("physicalFacts", "")
+        );
+    }
+
+    private static SchemaEnvelope selectorInputSchema(Map<String, Object> selectorSchema) {
+        return SchemaEnvelope.object(Map.of("productType", selectorSchema), List.of("productType"));
+    }
+
+    private static OperatorLibrary selectorRouteLibrary(Map<String, Object> selectorSchema) {
+        OperatorDefinition base = VisualCatalogTestSupport.typeRouteOperator();
+        OperatorDefinition route = new OperatorDefinition(
+                base.schemaVersion(),
+                base.operatorRef(),
+                base.operatorVersion(),
+                base.display(),
+                base.source(),
+                new OperatorDefinition.Ports(
+                        List.of(new OperatorDefinition.Port("inputs",
+                                SchemaEnvelope.object(Map.of("value", selectorSchema), List.of("value")),
+                                true,
+                                "Route selector input.")),
+                        List.of()
+                ),
+                base.configSchema(),
+                base.capabilities(),
+                base.policy(),
+                base.lowering(),
+                base.diagnostics()
+        );
+        return new OperatorLibrary(
+                "bloge.visualOperatorLibrary.v1",
+                "risk-routes-domain",
+                "Risk route domain operators",
+                "1.0.0",
+                "risk-team",
+                "ACTIVE",
+                List.of(route, VisualCatalogTestSupport.scoreFactsOperator())
         );
     }
 

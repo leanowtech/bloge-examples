@@ -57,6 +57,11 @@ public class GraphDraftValidator {
     private static final Pattern NODE_REFERENCE = Pattern.compile(
             "(?<![A-Za-z0-9_.])(" + IDENTIFIER_PATTERN + ")\\.output(?:\\.(" + PATH_PATTERN + "))?"
                     + "(?![A-Za-z0-9_])");
+    private static final Pattern BRANCH_SELECTOR_TEMPLATE = Pattern.compile("^\\{\\{\\s*((?:input\\.)?"
+            + PATH_PATTERN + ")\\s*}}$");
+    private static final Pattern INTEGER_LITERAL = Pattern.compile("[-+]?\\d+");
+    private static final Pattern NUMBER_LITERAL = Pattern.compile(
+            "[-+]?(?:\\d+|\\d+\\.\\d*|\\d*\\.\\d+)(?:[eE][-+]?\\d+)?");
     private static final Set<String> SUPPORTED_STRING_FORMATS = Set.of(
             "date",
             "date-time",
@@ -1302,6 +1307,7 @@ public class GraphDraftValidator {
                     edgePath + "/condition"));
             return;
         }
+        validateRouteConditionDomain(edge, sourceOperator, condition, edgePath, diagnostics);
         String normalizedCondition = normalizedRouteCondition(condition);
         Set<String> conditions = routeConditionsBySource.computeIfAbsent(edge.source().nodeId(),
                 ignored -> new LinkedHashSet<>());
@@ -1311,6 +1317,130 @@ public class GraphDraftValidator {
                             .formatted(edge.source().nodeId(), condition),
                     edgePath + "/condition"));
         }
+    }
+
+    private static void validateRouteConditionDomain(GraphDraft.DraftEdge edge,
+                                                     OperatorDefinition sourceOperator,
+                                                     String condition,
+                                                     String edgePath,
+                                                     List<VisualDiagnostic> diagnostics) {
+        if ("otherwise".equalsIgnoreCase(condition)) {
+            return;
+        }
+        Optional<Map<String, Object>> selectorSchema = branchSelectorSchema(sourceOperator);
+        if (selectorSchema.isEmpty()) {
+            return;
+        }
+        Object value = routeConditionLiteral(condition);
+        if (constantValueMatchesSchema(value, selectorSchema.get())) {
+            return;
+        }
+        diagnostics.add(VisualDiagnostic.error("visual.edge.routeConditionTypeMismatch",
+                "Route condition '%s' on branch node '%s' must match selector schema %s."
+                        .formatted(condition, edge.source().nodeId(), schemaTypeLabel(selectorSchema.get())),
+                edgePath + "/condition"));
+    }
+
+    private static Optional<Map<String, Object>> branchSelectorSchema(OperatorDefinition operator) {
+        Object rawExpression = operator.lowering().parameters().get("expression");
+        if (!(rawExpression instanceof String expression)) {
+            return Optional.empty();
+        }
+        Matcher matcher = BRANCH_SELECTOR_TEMPLATE.matcher(expression.trim());
+        if (!matcher.matches()) {
+            return Optional.empty();
+        }
+        String inputPath = matcher.group(1);
+        if (inputPath.startsWith("input.")) {
+            inputPath = inputPath.substring("input.".length());
+        }
+        return Optional.ofNullable(operatorInputPropertyAtPath(operator, inputPath));
+    }
+
+    private static Map<String, Object> operatorInputPropertyAtPath(OperatorDefinition operator, String inputPath) {
+        if (inputPath == null || inputPath.isBlank()) {
+            return null;
+        }
+        String[] segments = inputPath.split("\\.", 2);
+        String first = segments[0];
+        String rest = segments.length == 2 ? segments[1] : "";
+        for (OperatorDefinition.Port port : operator.ports().inputs()) {
+            if (port.name().equals(first)) {
+                return rest.isBlank() ? propertyAtPath(port.schema(), "") : propertyAtPath(port.schema(), rest);
+            }
+        }
+        if (operator.ports().inputs().size() == 1) {
+            return propertyAtPath(operator.ports().inputs().getFirst().schema(), inputPath);
+        }
+        return null;
+    }
+
+    private static Object routeConditionLiteral(String condition) {
+        String trimmed = condition.trim();
+        if ("true".equals(trimmed)) {
+            return true;
+        }
+        if ("false".equals(trimmed)) {
+            return false;
+        }
+        if ("null".equals(trimmed)) {
+            return null;
+        }
+        if (INTEGER_LITERAL.matcher(trimmed).matches()) {
+            try {
+                long value = Long.parseLong(trimmed);
+                if (value >= Integer.MIN_VALUE && value <= Integer.MAX_VALUE) {
+                    return (int) value;
+                }
+                return value;
+            } catch (NumberFormatException ignored) {
+                return trimmed;
+            }
+        }
+        if (NUMBER_LITERAL.matcher(trimmed).matches()) {
+            try {
+                return Double.parseDouble(trimmed);
+            } catch (NumberFormatException ignored) {
+                return trimmed;
+            }
+        }
+        if (quotedRouteString(trimmed)) {
+            return unescapeRouteString(trimmed.substring(1, trimmed.length() - 1));
+        }
+        return trimmed;
+    }
+
+    private static boolean quotedRouteString(String value) {
+        return value.length() >= 2
+                && ((value.startsWith("\"") && value.endsWith("\""))
+                || (value.startsWith("'") && value.endsWith("'")));
+    }
+
+    private static String unescapeRouteString(String value) {
+        StringBuilder result = new StringBuilder();
+        boolean escaped = false;
+        for (int i = 0; i < value.length(); i++) {
+            char current = value.charAt(i);
+            if (!escaped) {
+                if (current == '\\') {
+                    escaped = true;
+                } else {
+                    result.append(current);
+                }
+                continue;
+            }
+            result.append(switch (current) {
+                case 'n' -> '\n';
+                case 'r' -> '\r';
+                case 't' -> '\t';
+                default -> current;
+            });
+            escaped = false;
+        }
+        if (escaped) {
+            result.append('\\');
+        }
+        return result.toString();
     }
 
     private static boolean containsRouteControlSyntax(String condition) {
