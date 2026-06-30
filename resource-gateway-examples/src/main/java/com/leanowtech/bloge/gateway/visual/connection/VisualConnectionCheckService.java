@@ -48,7 +48,7 @@ public class VisualConnectionCheckService {
         int previewIndex = candidate.edges().size() - 1;
         Map<String, Integer> nodeIndexes = nodeIndexes(candidate);
 
-        VisualValidationResult validation = validator.validate(candidate);
+        VisualValidationResult validation = validator.validateConnectionPreview(candidate);
         List<VisualDiagnostic> diagnostics = validation.diagnostics().stream()
                 .filter(diagnostic -> relevantToConnection(diagnostic, previewIndex, request, nodeIndexes))
                 .toList();

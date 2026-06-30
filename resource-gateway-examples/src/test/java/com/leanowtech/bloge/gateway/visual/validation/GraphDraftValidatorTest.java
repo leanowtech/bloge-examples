@@ -190,6 +190,131 @@ class GraphDraftValidatorTest {
     }
 
     @Test
+    void rejectsDataEdgeWithoutMatchingNodePathBinding() {
+        GraphDraftValidator validator = new GraphDraftValidator(
+                VisualCatalogTestSupport.catalogWithLoanApplicantResourceAndLibrary(
+                        VisualCatalogTestSupport.eligibilityLibrary("integer")));
+        GraphDraft draft = typedEligibilityDraft(
+                GraphDraft.Binding.constant(720),
+                new GraphDraft.DraftEdge("score", "data",
+                        new GraphDraft.Endpoint("fetchApplicant", "payload", "score"),
+                        new GraphDraft.Endpoint("eligibility", "inputs", "score")));
+
+        VisualValidationResult result = validator.validate(draft);
+
+        assertThat(result.valid()).isFalse();
+        assertThat(result.diagnostics())
+                .anySatisfy(diagnostic -> {
+                    assertThat(diagnostic.code()).isEqualTo("visual.edge.bindingMissing");
+                    assertThat(diagnostic.message()).contains("fetchApplicant.payload.score");
+                });
+    }
+
+    @Test
+    void rejectsNodePathBindingWithoutMatchingDataEdge() {
+        GraphDraftValidator validator = new GraphDraftValidator(
+                VisualCatalogTestSupport.catalogWithLoanApplicantResourceAndLibrary(
+                        VisualCatalogTestSupport.eligibilityLibrary("integer")));
+        GraphDraft draft = typedEligibilityDraft(
+                GraphDraft.Binding.nodePath("fetchApplicant", "score"),
+                List.of());
+
+        VisualValidationResult result = validator.validate(draft);
+
+        assertThat(result.valid()).isFalse();
+        assertThat(result.diagnostics())
+                .anySatisfy(diagnostic -> {
+                    assertThat(diagnostic.code()).isEqualTo("visual.binding.edgeMissing");
+                    assertThat(diagnostic.message()).contains("fetchApplicant.payload.score");
+                });
+    }
+
+    @Test
+    void acceptsDataEdgeRepresentingConfigExpressionReference() {
+        GraphDraftValidator validator = new GraphDraftValidator(
+                VisualCatalogTestSupport.catalogWithLibrary(
+                        VisualCatalogTestSupport.eligibilityLibrary("integer")));
+        GraphDraft draft = eligibilityToTransformConfigDraft("eligibility.output.eligible",
+                List.of(new GraphDraft.DraftEdge("eligible", "data",
+                        new GraphDraft.Endpoint("eligibility", "output", "eligible"),
+                        new GraphDraft.Endpoint("mapResult", "inputs", "eligible"))));
+
+        VisualValidationResult result = validator.validate(draft);
+
+        assertThat(result.valid()).isTrue();
+    }
+
+    @Test
+    void rejectsConfigExpressionWhenNodeReferencePathDoesNotExist() {
+        GraphDraftValidator validator = new GraphDraftValidator(
+                VisualCatalogTestSupport.catalogWithLibrary(
+                        VisualCatalogTestSupport.eligibilityLibrary("integer")));
+        GraphDraft draft = eligibilityToTransformConfigDraft("eligibility.output.missing", List.of());
+
+        VisualValidationResult result = validator.validate(draft);
+
+        assertThat(result.valid()).isFalse();
+        assertThat(result.diagnostics())
+                .anySatisfy(diagnostic -> {
+                    assertThat(diagnostic.code()).isEqualTo("visual.binding.unknownOutputPath");
+                    assertThat(diagnostic.message()).contains("eligibility").contains("missing");
+                    assertThat(diagnostic.target()).contains("/config/assignments/eligible");
+                });
+    }
+
+    @Test
+    void rejectsCycleCreatedByConfigExpressionReference() {
+        GraphDraftValidator validator = new GraphDraftValidator(
+                VisualCatalogTestSupport.catalogWithLibrary(
+                        VisualCatalogTestSupport.numericPassLibrary()));
+        GraphDraft draft = new GraphDraft(
+                "",
+                "",
+                0,
+                "configCycle",
+                "",
+                "",
+                "",
+                "",
+                null,
+                List.of(
+                        new GraphDraft.DraftNode(
+                                "mapValue",
+                                "bloge:transform",
+                                "",
+                                Map.of(),
+                                Map.of("assignments", Map.of("value", "passValue.output.value")),
+                                null
+                        ),
+                        new GraphDraft.DraftNode(
+                                "passValue",
+                                "risk:numericPass",
+                                "",
+                                Map.of("value", GraphDraft.Binding.nodePath(
+                                        "mapValue",
+                                        "output",
+                                        "value",
+                                        "inputs",
+                                        "value")),
+                                Map.of(),
+                                null
+                        )
+                ),
+                List.of(new GraphDraft.DraftEdge("value", "data",
+                        new GraphDraft.Endpoint("mapValue", "output", "value"),
+                        new GraphDraft.Endpoint("passValue", "inputs", "value"))),
+                Map.of(),
+                new GraphDraft.OutputSelection("passValue", "")
+        );
+
+        VisualValidationResult result = validator.validate(draft);
+
+        assertThat(result.valid()).isFalse();
+        assertThat(result.diagnostics())
+                .anySatisfy(diagnostic -> assertThat(diagnostic.code()).isEqualTo("visual.edge.cycle"));
+    }
+
+    @Test
     void acceptsContextPathBindingWhenGraphInputSchemaIsCompatible() {
         GraphDraftValidator validator = new GraphDraftValidator(
                 VisualCatalogTestSupport.catalogWithLibrary(
@@ -1189,6 +1314,11 @@ class GraphDraftValidatorTest {
 
     private static GraphDraft typedEligibilityDraft(GraphDraft.Binding scoreBinding,
                                                     GraphDraft.DraftEdge edge) {
+        return typedEligibilityDraft(scoreBinding, List.of(edge));
+    }
+
+    private static GraphDraft typedEligibilityDraft(GraphDraft.Binding scoreBinding,
+                                                    List<GraphDraft.DraftEdge> edges) {
         return new GraphDraft(
                 "",
                 "",
@@ -1220,7 +1350,7 @@ class GraphDraftValidatorTest {
                                 null
                         )
                 ),
-                List.of(edge),
+                edges,
                 Map.of(),
                 new GraphDraft.OutputSelection("eligibility", "")
         );
@@ -1255,6 +1385,51 @@ class GraphDraftValidatorTest {
                 List.of(),
                 Map.of(),
                 output
+        );
+    }
+
+    private static GraphDraft eligibilityToTransformConfigDraft(String eligibleExpression,
+                                                                List<GraphDraft.DraftEdge> edges) {
+        return new GraphDraft(
+                "",
+                "",
+                0,
+                "configExpression",
+                "",
+                "",
+                "",
+                "",
+                graphInputSchema(
+                        Map.of(
+                                "score", Map.of("type", "integer"),
+                                "amount", Map.of("type", "number")
+                        ),
+                        List.of("score", "amount")
+                ),
+                List.of(
+                        new GraphDraft.DraftNode(
+                                "eligibility",
+                                "risk:eligibility",
+                                "",
+                                Map.of(
+                                        "score", GraphDraft.Binding.contextPath("score"),
+                                        "amount", GraphDraft.Binding.contextPath("amount")
+                                ),
+                                Map.of(),
+                                null
+                        ),
+                        new GraphDraft.DraftNode(
+                                "mapResult",
+                                "bloge:transform",
+                                "",
+                                Map.of(),
+                                Map.of("assignments", Map.of("eligible", eligibleExpression)),
+                                null
+                        )
+                ),
+                edges,
+                Map.of(),
+                new GraphDraft.OutputSelection("mapResult", "")
         );
     }
 

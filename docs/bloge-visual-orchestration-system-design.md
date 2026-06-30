@@ -528,8 +528,10 @@ schema path 工作，否则复杂业务 payload 会被迫扁平化。
 resource-gateway 示例当前已在 binding 和 edge 校验中递归检查 object required
 字段、`array.items` 兼容性和 enum 值域集合：target object 的 required 字段必须
 能从 source schema 中证明为 required 且类型兼容，source enum values 必须是
-target enum values 的子集，普通 `string` 不能直接接入 enum input。缺失 `items` 的旧 resource
-schema 仍按未知元素类型降级，用户导入 operator library 则由 catalog validator 阻断。
+target enum values 的子集，普通 `string` 不能直接接入 enum input。正式 draft
+还会校验 data edge 与语义依赖一致，包含 `nodePath` binding 和 config expression
+引用；`nodePath` binding 必须有可见 data edge，防止画布连线和 DSL 输入语义分叉。
+缺失 `items` 的旧 resource schema 仍按未知元素类型降级，用户导入 operator library 则由 catalog validator 阻断。
 
 ### 10.3 required 字段规则
 
@@ -537,6 +539,7 @@ schema 仍按未知元素类型降级，用户导入 operator library 则由 cat
 
 - 所有 required input 必须有 binding。
 - binding 不能引用不可达节点。
+- data edge 必须对应一个实际语义依赖；`nodePath` binding 必须对应画布上的 data edge。
 - binding 如果引用 optional 输出字段，需要下游声明 fallback、default 或 nullable。
 - 如果输入 schema 有 `oneOf` / union，需要 UI 显示分支选择，不能让用户凭感觉填字段。
 
@@ -966,7 +969,7 @@ resource-gateway 已有 rate limiting、cache、circuit breaker，可以作为�
 | `/compose/run` 只注册 `httpResource` | 无法执行通用算子 | 使用完整 OperatorRegistry 或可配置 registry |
 | diagnostics 只展示 compiler 信息 | 缺少 schema/权限/策略错误 | 增加 visual validation report |
 
-当前 `resource-gateway-examples` 已经把 `configSchema` 的第一层落成代码：用户导入 operator library 时会校验 config schema 本身，canvas inspector 会根据简单 config 字段渲染编辑控件，服务端 `GraphDraftValidator` 会在 validate/compile/run 前阻断缺必填 config、类型不匹配、enum 不匹配和禁止额外字段场景。复杂嵌套 config 的专业化控件仍属于后续增强，但服务端契约已经先行兜底。
+当前 `resource-gateway-examples` 已经把 `configSchema` 的第一层落成代码：用户导入 operator library 时会校验 config schema 本身，canvas inspector 会根据简单 config 字段渲染编辑控件，服务端 `GraphDraftValidator` 会在 validate/compile/run 前阻断缺必填 config、类型不匹配、enum 不匹配和禁止额外字段场景。它还区分正式校验与连接预检：正式 draft 阻断 data edge / semantic dependency 不一致，连接预检则允许尚未写入 binding 的 preview edge 先通过 schema 与 DAG gate。config 中的表达式引用已经参与引用存在性校验、DAG cycle gate 和拓扑排序。复杂嵌套 config 的专业化控件仍属于后续增强，但服务端契约已经先行兜底。
 
 当前 `resource-gateway-examples` 也已经把第一层 operator policy gate 落成代码：
 用户库可以声明 `policy.tenants`、`policy.namespaces`、`policy.environments`；

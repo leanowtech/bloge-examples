@@ -592,6 +592,7 @@ gate 都以这个 schema 为准；Context JSON 只作为一次运行或调试的
 边规则：
 
 - `data` edge 必须通过 schema compatibility。
+- 正式 draft 中，`data` edge 必须有对应的语义依赖，例如 `nodePath` binding 或可解析的 config expression 引用；`nodePath` binding 也必须有对应的 `data` edge，防止画布显示的数据线和实际编译输入分叉。
 - object schema 按结构证明校验：target required 字段必须在 source schema 中显式声明为 required，并递归满足类型兼容。
 - enum schema 按值域集合校验：source enum values 必须是 target enum values 的子集；普通 `string` 不能直接连到 enum input，必须先经过显式 transform。
 - `control` edge 不传递字段，只影响执行顺序。
@@ -1039,8 +1040,11 @@ Content-Type: application/json
 画布拖拽连线时可以先做浏览器本地快速判断，但释放连线前必须能调用服务端
 预检，以免浏览器复制的 schema 规则和发布门禁分叉。请求体包含当前 draft
 快照、source endpoint、target endpoint 和 edge kind；服务端临时追加一条
-preview edge，复用完整 draft validation 的 edge schema 与 DAG 规则，只返回
-与这条候选连接相关的 diagnostics。
+preview edge，复用 draft validation 的 edge schema 与 DAG 规则，只返回
+与这条候选连接相关的 diagnostics。预检阶段尚未写入 target binding，因此不会执行
+正式 draft 的 edge/semantic dependency 一致性 gate；drop 成功写入后，后续
+validate/compile/run 会再次要求 data edge 对应真实语义依赖，且 `nodePath`
+binding 必须有可见 data edge。
 
 请求：
 
@@ -1247,6 +1251,7 @@ flowchart TD
 - required input 无 binding。
 - source path 不存在。
 - target path 不存在。
+- data edge 没有对应语义依赖，或 `nodePath` binding 没有对应 data edge。
 - contextPath 在严格 graphInputSchema 中不存在。
 - expression 引用的 `ctx.*` 或 `node.output.*` path 不存在。
 - constant 值不满足 target schema。

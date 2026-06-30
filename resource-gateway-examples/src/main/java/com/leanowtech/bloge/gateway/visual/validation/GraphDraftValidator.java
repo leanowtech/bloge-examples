@@ -25,6 +25,8 @@ import java.util.regex.Pattern;
 @Service
 public class GraphDraftValidator {
 
+    private static final ValidationOptions STRICT_VALIDATION = new ValidationOptions(true);
+    private static final ValidationOptions CONNECTION_PREVIEW_VALIDATION = new ValidationOptions(false);
     private static final String IDENTIFIER_PATTERN = "[A-Za-z_][A-Za-z0-9_]*";
     private static final String PATH_PATTERN = IDENTIFIER_PATTERN + "(?:\\." + IDENTIFIER_PATTERN + ")*";
     private static final Pattern PURE_CONTEXT_REFERENCE = Pattern.compile("^ctx(?:\\.(" + PATH_PATTERN + "))?$");
@@ -52,6 +54,20 @@ public class GraphDraftValidator {
      * @return validation result
      */
     public VisualValidationResult validate(GraphDraft draft) {
+        return validate(draft, STRICT_VALIDATION);
+    }
+
+    /**
+     * Validates a draft while checking one transient canvas connection that has not written its binding yet.
+     *
+     * @param draft graph draft carrying the preview edge
+     * @return validation result
+     */
+    public VisualValidationResult validateConnectionPreview(GraphDraft draft) {
+        return validate(draft, CONNECTION_PREVIEW_VALIDATION);
+    }
+
+    private VisualValidationResult validate(GraphDraft draft, ValidationOptions options) {
         List<VisualDiagnostic> diagnostics = new ArrayList<>();
         if (draft == null) {
             diagnostics.add(VisualDiagnostic.error("visual.draft.missing", "Graph draft is required.", "/"));
@@ -89,7 +105,11 @@ public class GraphDraftValidator {
         }
 
         validateNodePathBindings(draft, nodesById, operatorsByNodeId, diagnostics);
+        validateConfigReferences(draft, nodesById, operatorsByNodeId, diagnostics);
         validateEdges(draft, nodesById, operatorsByNodeId, diagnostics);
+        if (options.requireEdgeBindingConsistency()) {
+            validateDataEdgeBindingConsistency(draft, nodesById, operatorsByNodeId, diagnostics);
+        }
         validateAcyclic(draft, nodesById, diagnostics);
         validateOutputSelection(draft, nodeIds, operatorsByNodeId, diagnostics);
         return new VisualValidationResult(diagnostics.stream().noneMatch(VisualDiagnostic::error), diagnostics);
@@ -276,6 +296,59 @@ public class GraphDraftValidator {
                         "/nodes/" + i + "/inputs/" + input.getKey(), diagnostics);
             }
         }
+    }
+
+    private static void validateConfigReferences(GraphDraft draft,
+                                                 Map<String, GraphDraft.DraftNode> nodesById,
+                                                 Map<String, OperatorDefinition> operatorsByNodeId,
+                                                 List<VisualDiagnostic> diagnostics) {
+        for (int i = 0; i < draft.nodes().size(); i++) {
+            GraphDraft.DraftNode node = draft.nodes().get(i);
+            validateConfigReferenceValue(node.config(), draft.inputSchema(), nodesById, operatorsByNodeId,
+                    "/nodes/" + i + "/config", diagnostics);
+        }
+    }
+
+    private static void validateConfigReferenceValue(Object value,
+                                                     SchemaEnvelope inputSchema,
+                                                     Map<String, GraphDraft.DraftNode> nodesById,
+                                                     Map<String, OperatorDefinition> operatorsByNodeId,
+                                                     String targetPath,
+                                                     List<VisualDiagnostic> diagnostics) {
+        if (value instanceof String expression) {
+            if (!looksLikeReferenceExpression(expression)) {
+                return;
+            }
+            validateExpressionReferences(expression, inputSchema, nodesById, operatorsByNodeId, targetPath,
+                    diagnostics);
+            return;
+        }
+        if (value instanceof Map<?, ?> map) {
+            if ("expression".equals(map.get("kind"))) {
+                Object expression = map.get("expr");
+                validateExpressionReferences(expression == null ? "" : String.valueOf(expression),
+                        inputSchema, nodesById, operatorsByNodeId, targetPath + "/expr", diagnostics);
+                return;
+            }
+            if ("objectTemplate".equals(map.get("kind")) && map.get("fields") instanceof Map<?, ?> fields) {
+                fields.forEach((key, item) -> validateConfigReferenceValue(item, inputSchema, nodesById,
+                        operatorsByNodeId, targetPath + "/fields/" + key, diagnostics));
+                return;
+            }
+            map.forEach((key, item) -> validateConfigReferenceValue(item, inputSchema, nodesById,
+                    operatorsByNodeId, targetPath + "/" + key, diagnostics));
+            return;
+        }
+        if (value instanceof List<?> list) {
+            for (int i = 0; i < list.size(); i++) {
+                validateConfigReferenceValue(list.get(i), inputSchema, nodesById, operatorsByNodeId,
+                        targetPath + "/" + i, diagnostics);
+            }
+        }
+    }
+
+    private static boolean looksLikeReferenceExpression(String expression) {
+        return expression.contains("ctx.") || expression.contains(".output");
     }
 
     private static void validateBinding(GraphDraft.Binding binding,
@@ -984,6 +1057,19 @@ public class GraphDraftValidator {
     private record OutputReference(String port, String path) {
     }
 
+    private record CanvasConnection(
+            String sourceNodeId,
+            String sourcePort,
+            String sourcePath,
+            String targetNodeId,
+            String targetPort,
+            String targetPath
+    ) {
+    }
+
+    private record ValidationOptions(boolean requireEdgeBindingConsistency) {
+    }
+
     private static void validateConfig(GraphDraft.DraftNode node,
                                        OperatorDefinition operator,
                                        String nodePath,
@@ -1108,6 +1194,266 @@ public class GraphDraftValidator {
             return Double.isFinite(doubleValue) && Math.rint(doubleValue) == doubleValue;
         }
         return false;
+    }
+
+    private static void validateDataEdgeBindingConsistency(GraphDraft draft,
+                                                           Map<String, GraphDraft.DraftNode> nodesById,
+                                                           Map<String, OperatorDefinition> operatorsByNodeId,
+                                                           List<VisualDiagnostic> diagnostics) {
+        Map<CanvasConnection, String> edgePaths = new LinkedHashMap<>();
+        for (int i = 0; i < draft.edges().size(); i++) {
+            GraphDraft.DraftEdge edge = draft.edges().get(i);
+            if (!"data".equals(edge.kind())) {
+                continue;
+            }
+            String edgePath = "/edges/" + i;
+            edgeConnection(edge, nodesById, operatorsByNodeId)
+                    .ifPresent(connection -> edgePaths.putIfAbsent(connection, edgePath));
+        }
+
+        Set<CanvasConnection> semanticConnections = new HashSet<>();
+        for (int i = 0; i < draft.nodes().size(); i++) {
+            GraphDraft.DraftNode node = draft.nodes().get(i);
+            OperatorDefinition operator = operatorsByNodeId.get(node.id());
+            if (operator == null) {
+                continue;
+            }
+            int nodeIndex = i;
+            node.inputs().forEach((inputKey, binding) -> collectNodePathBindingConnections(
+                    node,
+                    operator,
+                    inputKey,
+                    binding,
+                    "/nodes/" + nodeIndex + "/inputs/" + inputKey,
+                    nodesById,
+                    operatorsByNodeId,
+                    edgePaths,
+                    semanticConnections,
+                    diagnostics));
+            collectConfigReferenceConnections(node, operator, nodesById, operatorsByNodeId, semanticConnections);
+        }
+
+        edgePaths.forEach((connection, edgePath) -> {
+            if (!semanticConnections.contains(connection)) {
+                diagnostics.add(VisualDiagnostic.error("visual.edge.bindingMissing",
+                        "Data edge %s must match a nodePath binding or expression reference on target node '%s'."
+                                .formatted(connectionLabel(connection), connection.targetNodeId()),
+                        edgePath));
+            }
+        });
+    }
+
+    private static void collectNodePathBindingConnections(GraphDraft.DraftNode targetNode,
+                                                          OperatorDefinition targetOperator,
+                                                          String inputKey,
+                                                          GraphDraft.Binding binding,
+                                                          String bindingPath,
+                                                          Map<String, GraphDraft.DraftNode> nodesById,
+                                                          Map<String, OperatorDefinition> operatorsByNodeId,
+                                                          Map<CanvasConnection, String> edgePaths,
+                                                          Set<CanvasConnection> semanticConnections,
+                                                          List<VisualDiagnostic> diagnostics) {
+        String inputName = targetInputName(inputKey, binding);
+        if ("objectTemplate".equals(binding.kind())) {
+            binding.fields().forEach((key, nested) -> {
+                String nestedInputName = inputName.isBlank() ? key : inputName + "." + key;
+                collectNodePathBindingConnections(targetNode, targetOperator, nestedInputName, nested,
+                        bindingPath + "/" + key, nodesById, operatorsByNodeId, edgePaths, semanticConnections,
+                        diagnostics);
+            });
+            return;
+        }
+        if (!"nodePath".equals(binding.kind())) {
+            return;
+        }
+
+        Optional<CanvasConnection> connection = bindingConnection(targetNode, targetOperator, inputName, binding,
+                nodesById, operatorsByNodeId);
+        if (connection.isEmpty()) {
+            return;
+        }
+        semanticConnections.add(connection.get());
+        if (!edgePaths.containsKey(connection.get())) {
+            diagnostics.add(VisualDiagnostic.error("visual.binding.edgeMissing",
+                    "NodePath binding %s must be represented by a matching data edge."
+                            .formatted(connectionLabel(connection.get())),
+                    bindingPath));
+        }
+    }
+
+    private static void collectConfigReferenceConnections(GraphDraft.DraftNode targetNode,
+                                                          OperatorDefinition targetOperator,
+                                                          Map<String, GraphDraft.DraftNode> nodesById,
+                                                          Map<String, OperatorDefinition> operatorsByNodeId,
+                                                          Set<CanvasConnection> connections) {
+        collectConfigReferenceConnections(targetNode, targetOperator, targetNode.config(), "",
+                nodesById, operatorsByNodeId, connections);
+    }
+
+    private static void collectConfigReferenceConnections(GraphDraft.DraftNode targetNode,
+                                                          OperatorDefinition targetOperator,
+                                                          Object value,
+                                                          String configPath,
+                                                          Map<String, GraphDraft.DraftNode> nodesById,
+                                                          Map<String, OperatorDefinition> operatorsByNodeId,
+                                                          Set<CanvasConnection> connections) {
+        if (value instanceof String expression) {
+            if (looksLikeReferenceExpression(expression)) {
+                collectExpressionConnections(expression, targetNode, targetOperator, configTargetPath(configPath),
+                        nodesById, operatorsByNodeId, connections);
+            }
+            return;
+        }
+        if (value instanceof Map<?, ?> map) {
+            if ("expression".equals(map.get("kind"))) {
+                Object expression = map.get("expr");
+                collectExpressionConnections(expression == null ? "" : String.valueOf(expression),
+                        targetNode, targetOperator, configTargetPath(configPath), nodesById, operatorsByNodeId,
+                        connections);
+                return;
+            }
+            if ("objectTemplate".equals(map.get("kind")) && map.get("fields") instanceof Map<?, ?> fields) {
+                fields.forEach((key, item) -> collectConfigReferenceConnections(targetNode, targetOperator, item,
+                        appendPath(configPath, "fields." + key), nodesById, operatorsByNodeId, connections));
+                return;
+            }
+            map.forEach((key, item) -> collectConfigReferenceConnections(targetNode, targetOperator, item,
+                    appendPath(configPath, String.valueOf(key)), nodesById, operatorsByNodeId, connections));
+            return;
+        }
+        if (value instanceof List<?> list) {
+            for (int i = 0; i < list.size(); i++) {
+                collectConfigReferenceConnections(targetNode, targetOperator, list.get(i),
+                        appendPath(configPath, String.valueOf(i)), nodesById, operatorsByNodeId, connections);
+            }
+        }
+    }
+
+    private static void collectExpressionConnections(String expression,
+                                                     GraphDraft.DraftNode targetNode,
+                                                     OperatorDefinition targetOperator,
+                                                     String targetPath,
+                                                     Map<String, GraphDraft.DraftNode> nodesById,
+                                                     Map<String, OperatorDefinition> operatorsByNodeId,
+                                                     Set<CanvasConnection> connections) {
+        if (expression == null || expression.isBlank() || targetPath.isBlank()) {
+            return;
+        }
+        Optional<OperatorDefinition.Port> targetPort = resolveInputPort(targetOperator, "", targetPath);
+        if (targetPort.isEmpty() || propertyAtPath(targetPort.get().schema(), targetPath) == null) {
+            return;
+        }
+
+        Matcher matcher = NODE_REFERENCE.matcher(withoutQuotedStrings(expression));
+        while (matcher.find()) {
+            String nodeId = matcher.group(1);
+            String outputPath = matcher.group(2) == null ? "" : matcher.group(2);
+            OperatorDefinition sourceOperator = operatorsByNodeId.get(nodeId);
+            if (!nodesById.containsKey(nodeId) || sourceOperator == null) {
+                continue;
+            }
+            OutputReference outputReference = outputReference(sourceOperator, outputPath);
+            Optional<OperatorDefinition.Port> sourcePort = resolveOutputPort(sourceOperator, outputReference.port());
+            if (sourcePort.isEmpty()
+                    || propertyAtPath(sourcePort.get().schema(), outputReference.path()) == null) {
+                continue;
+            }
+            connections.add(new CanvasConnection(
+                    nodeId,
+                    sourcePort.get().name(),
+                    normalizePath(outputReference.path()),
+                    targetNode.id(),
+                    targetPort.get().name(),
+                    normalizePath(targetPath)
+            ));
+        }
+    }
+
+    private static String appendPath(String prefix, String segment) {
+        return prefix.isBlank() ? segment : prefix + "." + segment;
+    }
+
+    private static String configTargetPath(String configPath) {
+        if (configPath == null || configPath.isBlank()) {
+            return "";
+        }
+        String[] segments = configPath.split("\\.");
+        return segments.length == 0 ? "" : segments[segments.length - 1];
+    }
+
+    private static Optional<CanvasConnection> edgeConnection(GraphDraft.DraftEdge edge,
+                                                            Map<String, GraphDraft.DraftNode> nodesById,
+                                                            Map<String, OperatorDefinition> operatorsByNodeId) {
+        if (!nodesById.containsKey(edge.source().nodeId()) || !nodesById.containsKey(edge.target().nodeId())) {
+            return Optional.empty();
+        }
+        OperatorDefinition sourceOperator = operatorsByNodeId.get(edge.source().nodeId());
+        OperatorDefinition targetOperator = operatorsByNodeId.get(edge.target().nodeId());
+        if (sourceOperator == null || targetOperator == null) {
+            return Optional.empty();
+        }
+        Optional<OperatorDefinition.Port> sourcePort = findPort(sourceOperator.ports().outputs(),
+                edge.source().port());
+        Optional<OperatorDefinition.Port> targetPort = findPort(targetOperator.ports().inputs(),
+                edge.target().port());
+        if (sourcePort.isEmpty() || targetPort.isEmpty()
+                || propertyAtPath(sourcePort.get().schema(), edge.source().path()) == null
+                || propertyAtPath(targetPort.get().schema(), edge.target().path()) == null) {
+            return Optional.empty();
+        }
+        return Optional.of(new CanvasConnection(
+                edge.source().nodeId(),
+                sourcePort.get().name(),
+                normalizePath(edge.source().path()),
+                edge.target().nodeId(),
+                targetPort.get().name(),
+                normalizePath(edge.target().path())
+        ));
+    }
+
+    private static Optional<CanvasConnection> bindingConnection(GraphDraft.DraftNode targetNode,
+                                                               OperatorDefinition targetOperator,
+                                                               String inputName,
+                                                               GraphDraft.Binding binding,
+                                                               Map<String, GraphDraft.DraftNode> nodesById,
+                                                               Map<String, OperatorDefinition> operatorsByNodeId) {
+        if (!nodesById.containsKey(binding.nodeId())) {
+            return Optional.empty();
+        }
+        OperatorDefinition sourceOperator = operatorsByNodeId.get(binding.nodeId());
+        if (sourceOperator == null) {
+            return Optional.empty();
+        }
+        Optional<OperatorDefinition.Port> sourcePort = resolveOutputPort(sourceOperator, binding.sourcePort());
+        Optional<OperatorDefinition.Port> targetPort = resolveInputPort(targetOperator, binding.targetPort(),
+                inputName);
+        if (sourcePort.isEmpty() || targetPort.isEmpty()
+                || propertyAtPath(sourcePort.get().schema(), binding.path()) == null
+                || propertyAtPath(targetPort.get().schema(), inputName) == null) {
+            return Optional.empty();
+        }
+        return Optional.of(new CanvasConnection(
+                binding.nodeId(),
+                sourcePort.get().name(),
+                normalizePath(binding.path()),
+                targetNode.id(),
+                targetPort.get().name(),
+                normalizePath(inputName)
+        ));
+    }
+
+    private static String normalizePath(String path) {
+        return path == null ? "" : path.trim();
+    }
+
+    private static String connectionLabel(CanvasConnection connection) {
+        return "'%s.%s.%s -> %s.%s.%s'".formatted(
+                connection.sourceNodeId(),
+                connection.sourcePort(),
+                connection.sourcePath(),
+                connection.targetNodeId(),
+                connection.targetPort(),
+                connection.targetPath());
     }
 
     private static void validateAcyclic(GraphDraft draft,

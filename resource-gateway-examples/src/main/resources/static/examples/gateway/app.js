@@ -789,8 +789,9 @@ function orderedDslNodes(builder = state.builder) {
   });
 }
 
-function builderEdges(builder = state.builder) {
+function builderEdges(builder = state.builder, options = {}) {
   const edges = [];
+  const includeFallback = options.includeFallback !== false;
   const add = (edge) => {
     if (!edge.source || !edge.target || edge.source === edge.target) return;
     const key = [
@@ -852,7 +853,7 @@ function builderEdges(builder = state.builder) {
     }
   }
 
-  if (edges.length === 0) {
+  if (includeFallback && edges.length === 0) {
     const ordered = orderedBuilderNodes(builder);
     for (let i = 0; i < ordered.length - 1; i++) {
       add({
@@ -2949,7 +2950,7 @@ function builderToVisualDraft(builder = state.builder) {
     status: 'DRAFT',
     inputSchema: currentGraphInputSchema(builder),
     nodes: builder.nodes.map((node) => builderNodeToDraftNode(node, builder)),
-    edges: builderEdges(builder).map((edge) => ({
+    edges: builderEdges(builder, { includeFallback: false }).map((edge) => ({
       id: `${edge.source}:${edge.sourcePort || ''}.${edge.sourcePath || ''}->${edge.target}:${edge.targetPort || ''}.${edge.targetPath || ''}`,
       kind: 'data',
       source: { nodeId: edge.source, port: edge.sourcePort || 'output', path: edge.sourcePath || '' },
@@ -4095,7 +4096,7 @@ function wouldCreateCycle(sourceId, targetId) {
   for (const node of state.builder.nodes) {
     outgoing.set(node.id, []);
   }
-  for (const edge of builderEdges()) {
+  for (const edge of builderEdges(state.builder, { includeFallback: false })) {
     if (!outgoing.has(edge.source)) {
       outgoing.set(edge.source, []);
     }

@@ -1,6 +1,8 @@
 package com.leanowtech.bloge.gateway.visual.draft;
 
+import java.util.Collection;
 import java.util.LinkedHashSet;
+import java.util.Map;
 import java.util.Set;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -28,6 +30,7 @@ public final class GraphDraftDependencies {
     public static Set<String> nodeDependencies(GraphDraft.DraftNode node) {
         Set<String> dependencies = new LinkedHashSet<>();
         node.inputs().values().forEach(binding -> collectBindingDependencies(binding, dependencies));
+        collectConfigDependencies(node.config(), dependencies);
         return dependencies;
     }
 
@@ -47,6 +50,48 @@ public final class GraphDraftDependencies {
             while (matcher.find()) {
                 dependencies.add(matcher.group(1));
             }
+        }
+    }
+
+    private static void collectConfigDependencies(Object value, Set<String> dependencies) {
+        if (value instanceof String expression) {
+            collectExpressionDependencies(expression, dependencies);
+            return;
+        }
+        if (value instanceof GraphDraft.Binding binding) {
+            collectBindingDependencies(binding, dependencies);
+            return;
+        }
+        if (value instanceof Map<?, ?> map) {
+            Object kind = map.get("kind");
+            if ("nodePath".equals(kind)) {
+                Object nodeId = map.get("nodeId");
+                if (nodeId != null && !String.valueOf(nodeId).isBlank()) {
+                    dependencies.add(String.valueOf(nodeId));
+                }
+                return;
+            }
+            if ("expression".equals(kind)) {
+                Object expr = map.get("expr");
+                collectExpressionDependencies(expr == null ? "" : String.valueOf(expr), dependencies);
+                return;
+            }
+            if ("objectTemplate".equals(kind) && map.get("fields") instanceof Map<?, ?> fields) {
+                fields.values().forEach(nested -> collectConfigDependencies(nested, dependencies));
+                return;
+            }
+            map.values().forEach(nested -> collectConfigDependencies(nested, dependencies));
+            return;
+        }
+        if (value instanceof Collection<?> collection) {
+            collection.forEach(item -> collectConfigDependencies(item, dependencies));
+        }
+    }
+
+    private static void collectExpressionDependencies(String expression, Set<String> dependencies) {
+        Matcher matcher = NODE_REFERENCE.matcher(withoutQuotedStrings(expression));
+        while (matcher.find()) {
+            dependencies.add(matcher.group(1));
         }
     }
 

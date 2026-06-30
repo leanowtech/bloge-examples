@@ -201,6 +201,54 @@ class GraphDraftDslGeneratorTest {
     }
 
     @Test
+    void ordersNodesByConfigExpressionDependencies() {
+        GraphDraftDslGenerator generator = new GraphDraftDslGenerator(
+                VisualCatalogTestSupport.catalogWithLibrary(
+                        VisualCatalogTestSupport.multiOutputEligibilityLibrary("integer")));
+        GraphDraft draft = new GraphDraft(
+                "",
+                "",
+                0,
+                "configDependencyOrder",
+                "",
+                "",
+                "",
+                "",
+                null,
+                List.of(
+                        new GraphDraft.DraftNode(
+                                "mapScore",
+                                "bloge:transform",
+                                "",
+                                Map.of(),
+                                Map.of("assignments", Map.of("score", "scoreFacts.output.facts.score")),
+                                null
+                        ),
+                        new GraphDraft.DraftNode(
+                                "scoreFacts",
+                                "risk:scoreFacts",
+                                "",
+                                Map.of(),
+                                Map.of(),
+                                null
+                        )
+                ),
+                List.of(new GraphDraft.DraftEdge("score", "data",
+                        new GraphDraft.Endpoint("scoreFacts", "facts", "score"),
+                        new GraphDraft.Endpoint("mapScore", "inputs", "score"))),
+                Map.of(),
+                new GraphDraft.OutputSelection("mapScore", "")
+        );
+
+        DslGenerationResult result = generator.generate(draft);
+
+        assertThat(result.generated()).isTrue();
+        assertThat(result.dsl().indexOf("node scoreFacts : riskScoreFacts"))
+                .isLessThan(result.dsl().indexOf("transform mapScore"));
+        assertThat(result.dsl()).contains("score = scoreFacts.output.facts.score");
+    }
+
+    @Test
     void lowersPortQualifiedInputTemplateAliases() {
         GraphDraftDslGenerator generator = new GraphDraftDslGenerator(
                 VisualCatalogTestSupport.catalogWithLibrary(

@@ -130,9 +130,13 @@ for operator port/config schemas, then blocks unknown or type-incompatible
 `contextPath` bindings when the draft input schema is strict. Manual
 `expression` bindings are not blind escape hatches: server validation checks
 referenced `ctx.*` and `node.output.*` paths, and pure reference expressions are
-type-checked against the target input schema. Node-path and expression
-references also participate in DAG validation and DSL topological ordering, even
-when the draft omits a matching visual edge. Output selections are checked
+type-checked against the target input schema. Data edges must match a real
+semantic dependency such as a node-path binding or config expression reference,
+and node-path bindings must be represented by a data edge in stored drafts, so
+the line shown on the canvas cannot silently diverge from what the DSL generator
+executes. Expression references in node inputs and executable config also
+participate in DAG validation and DSL topological ordering even when they are
+not represented by a direct edge. Output selections are checked
 against the selected node's output port schema before compile/run as well, and
 the browser composer exposes the output node/path saved into `GraphDraft.output`.
 Each catalog operator exposes a server-computed fingerprint, and saved drafts
@@ -434,8 +438,8 @@ Seven `.bloge` graphs live in `src/main/resources/bloge/gateway/`:
 | `DefaultVisualOperatorCatalog` | Combines native visual operators with `resource:<resourceId>` virtual operators |
 | `GraphDraft` | Editable canvas graph model: input schema, nodes, port-aware bindings, edges, layout, output selection, and operator fingerprint snapshots |
 | `DatabaseGraphDraftRepository` | H2-backed graph draft repository with revision assignment, immutable revision history, and expected-revision guarded updates |
-| `GraphDraftValidator` | Validates operator references, operator fingerprint drift, operator scope policy, graph input `contextPath` bindings, literal constants, expression references, required schema inputs, node config against `configSchema`, port-aware node bindings, typed port edges, DAG shape, and output schema selection |
-| `VisualConnectionCheckService` | Reuses draft validation to accept or reject one proposed canvas edge before the browser writes a binding |
+| `GraphDraftValidator` | Validates operator references, operator fingerprint drift, operator scope policy, graph input `contextPath` bindings, literal constants, expression references, required schema inputs, node config against `configSchema`, port-aware node bindings, typed port edges, data edge/semantic dependency consistency, DAG shape, and output schema selection |
+| `VisualConnectionCheckService` | Reuses preview-mode draft validation to accept or reject one proposed canvas edge before the browser writes a binding |
 | `GraphDraftDslGenerator` | Lowers visual drafts into executable BLOGE DSL |
 | `VisualGraphRunService` | Reuses the dynamic BLOGE runner to validate, compile, and execute visual drafts |
 | `VisualGraphPublication` | Immutable published visual graph artifact with DSL, draft, operator schema snapshots, fingerprints, layout, and validation reports |
@@ -761,7 +765,7 @@ Isolated component tests, some with lightweight Spring slices or mocks.
 | `DatabaseResourceRegistryTest` | 11 | CRUD, H2 persistence, in-memory cache |
 | `ResourceDescriptorBootstrapTest` | 7 | Seeding, refresh behavior, idempotency |
 | `GatewayDslCompilationTest` | 7 | DSL parsing, graph loading |
-| Visual authoring suite | 116 | Visual operator projection, imported libraries, catalog policy filtering, draft/publication persistence and history, revision audit metadata, revision-guarded patching, typed connection/edge validation including object required fields and enum value domains, graph input schema gates, secret blocking, DSL lowering, runtime smoke path |
+| Visual authoring suite | 122 | Visual operator projection, imported libraries, catalog policy filtering, draft/publication persistence and history, revision audit metadata, revision-guarded patching, typed connection/edge validation including object required fields, enum value domains, config expression references, data edge/semantic dependency consistency, graph input schema gates, secret blocking, DSL lowering and dependency ordering, runtime smoke path |
 
 ### Layer 3 — Orchestration tests
 
