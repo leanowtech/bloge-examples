@@ -1,5 +1,9 @@
 package com.leanowtech.bloge.gateway.visual.resource;
 
+import com.leanowtech.bloge.gateway.resource.ResourceDescriptor;
+import com.leanowtech.bloge.gateway.resource.ResourceRegistry;
+import com.leanowtech.bloge.gateway.visual.catalog.OperatorDefinition;
+import com.leanowtech.bloge.gateway.visual.catalog.ResourceVirtualOperatorProjector;
 import com.leanowtech.bloge.gateway.visual.diagnostic.VisualDiagnostic;
 import com.leanowtech.bloge.gateway.visual.draft.GraphDraft;
 import com.leanowtech.bloge.gateway.visual.draft.GraphDraftRepository;
@@ -22,6 +26,7 @@ import org.springframework.web.bind.annotation.RestController;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.List;
+import java.util.Optional;
 
 /**
  * Admin API for resource design contracts consumed by the visual canvas.
@@ -33,18 +38,26 @@ public class ResourceDesignContractAdminController {
     private final ResourceDesignContractRegistry registry;
     private final ResourceDesignContractValidator validator;
     private final GraphDraftRepository draftRepository;
+    private final ResourceRegistry resourceRegistry;
+    private final ResourceVirtualOperatorProjector projector;
 
     /**
      * @param registry contract registry
      * @param validator contract validator
      * @param draftRepository stored visual graph draft repository
+     * @param resourceRegistry resource descriptor registry
+     * @param projector resource virtual operator projector
      */
     public ResourceDesignContractAdminController(ResourceDesignContractRegistry registry,
                                                  ResourceDesignContractValidator validator,
-                                                 GraphDraftRepository draftRepository) {
+                                                 GraphDraftRepository draftRepository,
+                                                 ResourceRegistry resourceRegistry,
+                                                 ResourceVirtualOperatorProjector projector) {
         this.registry = registry;
         this.validator = validator;
         this.draftRepository = draftRepository;
+        this.resourceRegistry = resourceRegistry;
+        this.projector = projector;
     }
 
     /**
@@ -76,12 +89,7 @@ public class ResourceDesignContractAdminController {
     @PostMapping("/validate")
     public VisualValidationResult validate(@RequestBody ResourceDesignContract contract,
                                            @RequestParam(defaultValue = "false") boolean force) {
-        VisualValidationResult structural = validator.validate(contract);
-        List<VisualDiagnostic> diagnostics = new ArrayList<>(structural.diagnostics());
-        if (!force) {
-            diagnostics.addAll(disablementImpactDiagnostics(contract));
-        }
-        return new VisualValidationResult(false, diagnostics);
+        return validateAgainstRegistry(contract, force);
     }
 
     /**
@@ -96,20 +104,13 @@ public class ResourceDesignContractAdminController {
     public ResponseEntity<?> upsert(@PathVariable String resourceId,
                                     @RequestBody ResourceDesignContract contract,
                                     @RequestParam(defaultValue = "false") boolean force) {
-        VisualValidationResult validation = validator.validate(contract);
+        VisualValidationResult validation = validateAgainstRegistry(contract, force);
         if (!validation.valid()) {
-            return ResponseEntity.badRequest().body(validation);
+            return ResponseEntity.status(validationFailureStatus(validation)).body(validation);
         }
         if (!resourceId.equals(contract.resourceId())) {
             throw new IllegalArgumentException("Path resourceId '%s' does not match body resourceId '%s'"
                     .formatted(resourceId, contract.resourceId()));
-        }
-        if (!force) {
-            List<VisualDiagnostic> diagnostics = disablementImpactDiagnostics(contract);
-            if (!diagnostics.isEmpty()) {
-                return ResponseEntity.status(HttpStatus.CONFLICT)
-                        .body(new VisualValidationResult(false, diagnostics));
-            }
         }
         return ResponseEntity.ok(registry.upsert(contract));
     }
@@ -135,6 +136,23 @@ public class ResourceDesignContractAdminController {
         return ResponseEntity.noContent().build();
     }
 
+    private VisualValidationResult validateAgainstRegistry(ResourceDesignContract contract, boolean force) {
+        VisualValidationResult structural = validator.validate(contract);
+        List<VisualDiagnostic> diagnostics = new ArrayList<>(structural.diagnostics());
+        diagnostics.addAll(replacementFingerprintDriftDiagnostics(contract));
+        if (!force) {
+            diagnostics.addAll(disablementImpactDiagnostics(contract));
+        }
+        return new VisualValidationResult(false, diagnostics);
+    }
+
+    private static HttpStatus validationFailureStatus(VisualValidationResult validation) {
+        return validation.diagnostics().stream()
+                .anyMatch(diagnostic -> "visual.resourceContract.inUse".equals(diagnostic.code()))
+                ? HttpStatus.CONFLICT
+                : HttpStatus.BAD_REQUEST;
+    }
+
     private List<VisualDiagnostic> disablementImpactDiagnostics(ResourceDesignContract contract) {
         if (contract == null
                 || contract.visibleInCatalog(true)
@@ -142,6 +160,52 @@ public class ResourceDesignContractAdminController {
             return List.of();
         }
         return storedDraftReferenceDiagnostics(contract.resourceId(), "disabled without force=true");
+    }
+
+    private List<VisualDiagnostic> replacementFingerprintDriftDiagnostics(ResourceDesignContract replacement) {
+        if (replacement == null || !replacement.visibleInCatalog(true)) {
+            return List.of();
+        }
+        Optional<ResourceDesignContract> existing = registry.findByResourceId(replacement.resourceId());
+        if (existing.isEmpty() || !resourceRegistry.contains(replacement.resourceId())) {
+            return List.of();
+        }
+
+        ResourceDescriptor descriptor = resourceRegistry.resolve(replacement.resourceId());
+        OperatorDefinition replacementOperator = projector.project(descriptor, Optional.of(replacement));
+        if (projector.project(descriptor, existing).fingerprint().equals(replacementOperator.fingerprint())) {
+            return List.of();
+        }
+
+        String operatorRef = "resource:" + replacement.resourceId();
+        List<VisualDiagnostic> diagnostics = new ArrayList<>();
+        for (GraphDraft draft : draftRepository.all()) {
+            for (int i = 0; i < draft.nodes().size(); i++) {
+                GraphDraft.DraftNode node = draft.nodes().get(i);
+                if (!operatorRef.equals(node.operatorRef())) {
+                    continue;
+                }
+                String savedFingerprint = draft.operatorFingerprints().get(node.id());
+                if (savedFingerprint == null || savedFingerprint.isBlank()) {
+                    diagnostics.add(VisualDiagnostic.warning("visual.resourceContract.operatorFingerprintSnapshotMissing",
+                            "Resource design contract '%s' changes operatorRef '%s' used by draft '%s@%d' node '%s', but the draft has no saved operator fingerprint; review and resave the draft before execution."
+                                    .formatted(replacement.resourceId(), operatorRef, draft.draftId(),
+                                            draft.revision(), node.id()),
+                            "/drafts/%s/nodes/%d/operatorRef".formatted(draft.draftId(), i)));
+                    continue;
+                }
+                if (savedFingerprint.equals(replacementOperator.fingerprint())) {
+                    continue;
+                }
+                diagnostics.add(VisualDiagnostic.warning("visual.resourceContract.operatorFingerprintDrift",
+                        "Resource design contract '%s' changes operatorRef '%s' used by draft '%s@%d' node '%s' from saved fingerprint '%s' to '%s'; review and resave the draft before execution."
+                                .formatted(replacement.resourceId(), operatorRef, draft.draftId(),
+                                        draft.revision(), node.id(), savedFingerprint,
+                                        replacementOperator.fingerprint()),
+                        "/drafts/%s/nodes/%d/operatorRef".formatted(draft.draftId(), i)));
+            }
+        }
+        return diagnostics;
     }
 
     private List<VisualDiagnostic> storedDraftReferenceDiagnostics(String resourceId, String action) {
