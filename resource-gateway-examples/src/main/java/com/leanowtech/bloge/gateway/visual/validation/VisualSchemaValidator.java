@@ -105,6 +105,24 @@ public final class VisualSchemaValidator {
         return diagnostics;
     }
 
+    /**
+     * Validates a runtime value against the supported visual schema subset.
+     *
+     * @param envelope schema envelope
+     * @param value runtime value
+     * @param path JSON pointer to the runtime value
+     * @return diagnostics describing value/schema mismatches
+     */
+    public static List<VisualDiagnostic> validateValue(SchemaEnvelope envelope, Object value, String path) {
+        SchemaEnvelope effective = envelope == null ? SchemaEnvelope.opaque() : envelope;
+        if (valueMatchesSchema(value, effective.schema())) {
+            return List.of();
+        }
+        return List.of(VisualDiagnostic.error("visual.context.schemaMismatch",
+                "Runtime context does not satisfy graph inputSchema.",
+                path));
+    }
+
     @SuppressWarnings("unchecked")
     private static void validateSchema(Map<String, Object> schema,
                                        String path,

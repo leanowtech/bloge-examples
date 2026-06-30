@@ -9,6 +9,7 @@ import com.leanowtech.bloge.gateway.visual.diagnostic.VisualDiagnostic;
 import com.leanowtech.bloge.gateway.visual.draft.GraphDraft;
 import com.leanowtech.bloge.gateway.visual.publication.VisualGraphPublication;
 import com.leanowtech.bloge.gateway.visual.validation.GraphDraftValidator;
+import com.leanowtech.bloge.gateway.visual.validation.VisualSchemaValidator;
 import com.leanowtech.bloge.gateway.visual.validation.VisualValidationResult;
 
 import org.springframework.stereotype.Service;
@@ -89,6 +90,11 @@ public class VisualGraphRunService {
         if (!validation.valid()) {
             return blocked(draft, false, diagnostics, List.of("Visual validation failed."), "");
         }
+        List<VisualDiagnostic> contextDiagnostics = validateRuntimeContext(draft, context);
+        diagnostics.addAll(contextDiagnostics);
+        if (!contextDiagnostics.isEmpty()) {
+            return blocked(draft, true, diagnostics, List.of("Runtime context validation failed."), "");
+        }
 
         DslGenerationResult generated = generator.generate(draft);
         diagnostics.addAll(generated.diagnostics());
@@ -160,6 +166,12 @@ public class VisualGraphRunService {
             return blocked(publication.draft(), true, diagnostics,
                     List.of("Published visual DSL is not executable."), publication.dsl());
         }
+        List<VisualDiagnostic> contextDiagnostics = validateRuntimeContext(publication.draft(), context);
+        diagnostics.addAll(contextDiagnostics);
+        if (!contextDiagnostics.isEmpty()) {
+            return blocked(publication.draft(), true, diagnostics,
+                    List.of("Runtime context validation failed."), publication.dsl());
+        }
 
         Map<String, Object> effectiveContext = new LinkedHashMap<>(context == null ? Map.of() : context);
         effectiveContext.putIfAbsent("tenantId", publication.tenantId());
@@ -212,6 +224,15 @@ public class VisualGraphRunService {
                     "/nodes/" + i + "/operatorRef"));
         }
         return diagnostics;
+    }
+
+    private static List<VisualDiagnostic> validateRuntimeContext(GraphDraft draft, Map<String, Object> context) {
+        if (draft == null) {
+            return List.of();
+        }
+        return VisualSchemaValidator.validateValue(draft.inputSchema(),
+                context == null ? Map.of() : context,
+                "/context");
     }
 
     private static boolean shouldExtractDraftOutputPath(GraphDraft draft, String actualOutputNode) {

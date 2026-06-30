@@ -5,6 +5,7 @@ import com.leanowtech.bloge.gateway.visual.catalog.VisualCatalogTestSupport;
 import com.leanowtech.bloge.gateway.visual.codegen.DslGenerationResult;
 import com.leanowtech.bloge.gateway.visual.codegen.GraphDraftDslGenerator;
 import com.leanowtech.bloge.gateway.visual.draft.GraphDraft;
+import com.leanowtech.bloge.gateway.visual.model.SchemaEnvelope;
 import com.leanowtech.bloge.gateway.visual.publication.VisualGraphPublication;
 import com.leanowtech.bloge.gateway.visual.runtime.VisualGraphRunResponse;
 import com.leanowtech.bloge.gateway.visual.runtime.VisualGraphRunService;
@@ -108,6 +109,54 @@ class VisualGraphRunServiceTest {
         assertThat(response.success()).isTrue();
         assertThat(response.generatedDsl()).contains("eligible = ctx.score >= 700 && ctx.amount <= 300000");
         assertThat(response.output()).isEqualTo(Map.of("eligible", true, "ruleId", "ELIGIBILITY_V1"));
+    }
+
+    @Test
+    void rejectsDraftRunWhenContextViolatesInputSchema() {
+        VisualOperatorCatalog catalog = VisualCatalogTestSupport.catalogWithLibrary(
+                VisualCatalogTestSupport.eligibilityLibrary("integer"));
+        VisualGraphRunService service = new VisualGraphRunService(
+                new GraphDraftValidator(catalog),
+                new GraphDraftDslGenerator(catalog),
+                new DynamicGatewayComposerService(MockOperator.returning(null))
+        );
+        GraphDraft draft = withFingerprints(new GraphDraft(
+                "",
+                "",
+                0,
+                "eligibilityPolicy",
+                "",
+                "",
+                "",
+                "",
+                eligibilityInputSchema(),
+                List.of(new GraphDraft.DraftNode(
+                        "eligibility",
+                        "risk:eligibility",
+                        "",
+                        Map.of(
+                                "score", GraphDraft.Binding.contextPath("score"),
+                                "amount", GraphDraft.Binding.contextPath("amount")
+                        ),
+                        Map.of(),
+                        null
+                )),
+                List.of(),
+                Map.of(),
+                new GraphDraft.OutputSelection("eligibility", "")
+        ), catalog);
+
+        VisualGraphRunResponse response = service.run(draft, Map.of("score", "720", "amount", 250_000), "");
+
+        assertThat(response.validated()).isTrue();
+        assertThat(response.compiled()).isFalse();
+        assertThat(response.success()).isFalse();
+        assertThat(response.errors()).contains("Runtime context validation failed.");
+        assertThat(response.diagnostics())
+                .anySatisfy(diagnostic -> {
+                    assertThat(diagnostic.code()).isEqualTo("visual.context.schemaMismatch");
+                    assertThat(diagnostic.target()).isEqualTo("/context");
+                });
     }
 
     @Test
@@ -231,6 +280,72 @@ class VisualGraphRunServiceTest {
         assertThat(response.generatedDsl()).isEqualTo(frozenDsl);
     }
 
+    @Test
+    void rejectsPublishedRunWhenContextViolatesFrozenInputSchema() {
+        VisualGraphRunService service = new VisualGraphRunService(
+                null,
+                null,
+                new DynamicGatewayComposerService(MockOperator.returning(null))
+        );
+        GraphDraft draft = new GraphDraft(
+                "",
+                "draft-1",
+                2,
+                "publishedPolicy",
+                "",
+                "",
+                "",
+                "",
+                eligibilityInputSchema(),
+                List.of(new GraphDraft.DraftNode(
+                        "response",
+                        "risk:operatorRemovedFromCurrentCatalog",
+                        "",
+                        Map.of(),
+                        Map.of(),
+                        null
+                )),
+                List.of(),
+                Map.of(),
+                new GraphDraft.OutputSelection("response", "eligible")
+        );
+        String frozenDsl = """
+                graph publishedPolicy {
+                  transform response {
+                    eligible = ctx.score >= 700 && ctx.amount <= 300000
+                  }
+                }
+                """;
+        VisualGraphPublication publication = new VisualGraphPublication(
+                "",
+                "pub-1",
+                draft.draftId(),
+                draft.revision(),
+                draft.graphName(),
+                draft.tenantId(),
+                draft.namespace(),
+                draft.environment(),
+                null,
+                draft,
+                List.of(),
+                Map.of(),
+                Map.of(),
+                frozenDsl,
+                new VisualValidationResult(true, List.of()),
+                new DslGenerationResult(true, frozenDsl, List.of())
+        );
+
+        VisualGraphRunResponse response = service.run(publication, Map.of("score", 720), "");
+
+        assertThat(response.validated()).isTrue();
+        assertThat(response.compiled()).isFalse();
+        assertThat(response.success()).isFalse();
+        assertThat(response.generatedDsl()).isEqualTo(frozenDsl);
+        assertThat(response.diagnostics())
+                .anySatisfy(diagnostic -> assertThat(diagnostic.code())
+                        .isEqualTo("visual.context.schemaMismatch"));
+    }
+
     private static VisualOperatorCatalog transformOnlyCatalog() {
         return new VisualOperatorCatalog() {
             private final com.leanowtech.bloge.gateway.visual.catalog.OperatorDefinition transform =
@@ -259,6 +374,13 @@ class VisualGraphRunServiceTest {
                 return "bloge:transform".equals(operatorRef) ? Optional.of(transform) : Optional.empty();
             }
         };
+    }
+
+    private static SchemaEnvelope eligibilityInputSchema() {
+        return SchemaEnvelope.object(Map.of(
+                "score", Map.of("type", "integer"),
+                "amount", Map.of("type", "number")
+        ), List.of("score", "amount"));
     }
 
     private static GraphDraft withFingerprints(GraphDraft draft, VisualOperatorCatalog catalog) {
