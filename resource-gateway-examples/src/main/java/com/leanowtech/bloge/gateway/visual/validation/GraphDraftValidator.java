@@ -304,12 +304,17 @@ public class GraphDraftValidator {
                                                  List<VisualDiagnostic> diagnostics) {
         for (int i = 0; i < draft.nodes().size(); i++) {
             GraphDraft.DraftNode node = draft.nodes().get(i);
-            validateConfigReferenceValue(node.config(), draft.inputSchema(), nodesById, operatorsByNodeId,
-                    "/nodes/" + i + "/config", diagnostics);
+            OperatorDefinition operator = operatorsByNodeId.get(node.id());
+            if (operator == null) {
+                continue;
+            }
+            validateConfigReferenceValue(node.config(), operator.configSchema().schema(), draft.inputSchema(),
+                    nodesById, operatorsByNodeId, "/nodes/" + i + "/config", diagnostics);
         }
     }
 
     private static void validateConfigReferenceValue(Object value,
+                                                     Map<String, Object> configSchema,
                                                      SchemaEnvelope inputSchema,
                                                      Map<String, GraphDraft.DraftNode> nodesById,
                                                      Map<String, OperatorDefinition> operatorsByNodeId,
@@ -319,31 +324,69 @@ public class GraphDraftValidator {
             if (!looksLikeReferenceExpression(expression)) {
                 return;
             }
-            validateExpressionReferences(expression, inputSchema, nodesById, operatorsByNodeId, targetPath,
-                    diagnostics);
+            validateConfigExpressionValue(expression, configSchema, inputSchema, nodesById, operatorsByNodeId,
+                    targetPath, diagnostics);
             return;
         }
         if (value instanceof Map<?, ?> map) {
             if ("expression".equals(map.get("kind"))) {
                 Object expression = map.get("expr");
-                validateExpressionReferences(expression == null ? "" : String.valueOf(expression),
+                validateConfigExpressionValue(expression == null ? "" : String.valueOf(expression), configSchema,
                         inputSchema, nodesById, operatorsByNodeId, targetPath + "/expr", diagnostics);
                 return;
             }
             if ("objectTemplate".equals(map.get("kind")) && map.get("fields") instanceof Map<?, ?> fields) {
-                fields.forEach((key, item) -> validateConfigReferenceValue(item, inputSchema, nodesById,
+                fields.forEach((key, item) -> validateConfigReferenceValue(item,
+                        configChildSchema(configSchema, String.valueOf(key)), inputSchema, nodesById,
                         operatorsByNodeId, targetPath + "/fields/" + key, diagnostics));
                 return;
             }
-            map.forEach((key, item) -> validateConfigReferenceValue(item, inputSchema, nodesById,
+            map.forEach((key, item) -> validateConfigReferenceValue(item,
+                    configChildSchema(configSchema, String.valueOf(key)), inputSchema, nodesById,
                     operatorsByNodeId, targetPath + "/" + key, diagnostics));
             return;
         }
         if (value instanceof List<?> list) {
+            Map<String, Object> items = objectProperty(configSchema.get("items"));
             for (int i = 0; i < list.size(); i++) {
-                validateConfigReferenceValue(list.get(i), inputSchema, nodesById, operatorsByNodeId,
+                validateConfigReferenceValue(list.get(i), items == null ? Map.of() : items, inputSchema,
+                        nodesById, operatorsByNodeId,
                         targetPath + "/" + i, diagnostics);
             }
+        }
+    }
+
+    private static void validateConfigExpressionValue(String expression,
+                                                      Map<String, Object> targetSchema,
+                                                      SchemaEnvelope inputSchema,
+                                                      Map<String, GraphDraft.DraftNode> nodesById,
+                                                      Map<String, OperatorDefinition> operatorsByNodeId,
+                                                      String targetPath,
+                                                      List<VisualDiagnostic> diagnostics) {
+        if (expression == null || expression.isBlank()) {
+            return;
+        }
+        ExpressionReference pureReference = resolvePureExpressionReference(expression.trim(), inputSchema,
+                nodesById, operatorsByNodeId, targetPath, diagnostics);
+        if (pureReference.matched()) {
+            validateConfigReferenceType(pureReference.schema(), targetSchema, pureReference.label(), targetPath,
+                    diagnostics);
+            return;
+        }
+        validateExpressionReferences(expression, inputSchema, nodesById, operatorsByNodeId, targetPath,
+                diagnostics);
+    }
+
+    private static void validateConfigReferenceType(Map<String, Object> sourceSchema,
+                                                    Map<String, Object> targetSchema,
+                                                    String label,
+                                                    String targetPath,
+                                                    List<VisualDiagnostic> diagnostics) {
+        if (sourceSchema != null && targetSchema != null && !schemasCompatible(sourceSchema, targetSchema)) {
+            diagnostics.add(VisualDiagnostic.error("visual.config.typeMismatch",
+                    "Cannot assign config expression '%s' %s to config %s."
+                            .formatted(label, schemaTypeLabel(sourceSchema), schemaTypeLabel(targetSchema)),
+                    targetPath));
         }
     }
 
@@ -1081,6 +1124,20 @@ public class GraphDraftValidator {
                                             Map<String, Object> schema,
                                             String path,
                                             List<VisualDiagnostic> diagnostics) {
+        if (value instanceof Map<?, ?> map) {
+            Object kind = map.get("kind");
+            if ("constant".equals(kind)) {
+                validateConfigValue(map.get("value"), schema, path + "/value", diagnostics);
+                return;
+            }
+            if ("expression".equals(kind)) {
+                return;
+            }
+            if ("objectTemplate".equals(kind) && map.get("fields") instanceof Map<?, ?> fields) {
+                validateConfigObjectTemplate(fields, schema, path, diagnostics);
+                return;
+            }
+        }
         String type = schemaType(schema);
         if (type.isBlank() || "any".equals(type) || "opaque".equals(type)) {
             return;
@@ -1101,6 +1158,47 @@ public class GraphDraftValidator {
             diagnostics.add(VisualDiagnostic.error("visual.config.typeMismatch",
                     "Config value at '%s' must be %s.".formatted(path, schemaTypeLabel(schema)),
                     path));
+        }
+    }
+
+    private static void validateConfigObjectTemplate(Map<?, ?> fields,
+                                                     Map<String, Object> schema,
+                                                     String path,
+                                                     List<VisualDiagnostic> diagnostics) {
+        String type = schemaType(schema);
+        if (type.isBlank() || "any".equals(type) || "opaque".equals(type)) {
+            return;
+        }
+        if (!"object".equals(type)) {
+            diagnostics.add(VisualDiagnostic.error("visual.config.typeMismatch",
+                    "Config value at '%s' must be %s.".formatted(path, schemaTypeLabel(schema)),
+                    path));
+            return;
+        }
+
+        Map<String, Object> object = new LinkedHashMap<>();
+        fields.forEach((key, item) -> object.put(String.valueOf(key), item));
+        Map<String, Object> properties = propertiesOf(schema);
+        for (String required : requiredNamesOf(schema)) {
+            if (!object.containsKey(required) || object.get(required) == null) {
+                diagnostics.add(VisualDiagnostic.error("visual.config.required",
+                        "Required config '%s' is missing.".formatted(required),
+                        path + "/fields/" + required));
+            }
+        }
+        Object additional = schema.get("additionalProperties");
+        for (Map.Entry<String, Object> entry : object.entrySet()) {
+            Map<String, Object> property = objectProperty(properties.get(entry.getKey()));
+            if (property != null) {
+                validateConfigValue(entry.getValue(), property, path + "/fields/" + entry.getKey(), diagnostics);
+            } else if (Boolean.FALSE.equals(additional)) {
+                diagnostics.add(VisualDiagnostic.error("visual.config.unknown",
+                        "Config '%s' is not declared by configSchema.".formatted(entry.getKey()),
+                        path + "/fields/" + entry.getKey()));
+            } else if (additional instanceof Map<?, ?> additionalSchema) {
+                validateConfigValue(entry.getValue(), objectProperty(additionalSchema),
+                        path + "/fields/" + entry.getKey(), diagnostics);
+            }
         }
     }
 
@@ -1444,6 +1542,29 @@ public class GraphDraftValidator {
 
     private static String normalizePath(String path) {
         return path == null ? "" : path.trim();
+    }
+
+    private static Map<String, Object> configChildSchema(Map<String, Object> schema, String key) {
+        if (schema == null || schema.isEmpty()) {
+            return Map.of();
+        }
+        String type = schemaType(schema);
+        if ("object".equals(type) || schema.containsKey("properties")) {
+            Map<String, Object> property = objectProperty(propertiesOf(schema).get(key));
+            if (property != null) {
+                return property;
+            }
+            Object additional = schema.get("additionalProperties");
+            if (additional instanceof Map<?, ?> additionalSchema) {
+                Map<String, Object> additionalProperty = objectProperty(additionalSchema);
+                return additionalProperty == null ? Map.of() : additionalProperty;
+            }
+        }
+        if ("array".equals(type) && schema.get("items") instanceof Map<?, ?> items) {
+            Map<String, Object> itemSchema = objectProperty(items);
+            return itemSchema == null ? Map.of() : itemSchema;
+        }
+        return Map.of();
     }
 
     private static String connectionLabel(CanvasConnection connection) {

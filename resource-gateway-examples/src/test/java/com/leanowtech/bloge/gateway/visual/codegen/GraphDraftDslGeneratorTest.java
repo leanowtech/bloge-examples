@@ -67,6 +67,44 @@ class GraphDraftDslGeneratorTest {
     }
 
     @Test
+    void lowersStructuredExecutionConfigExpressions() {
+        GraphDraftDslGenerator generator = new GraphDraftDslGenerator(
+                VisualCatalogTestSupport.catalogWithLoanApplicantResource());
+        GraphDraft draft = new GraphDraft(
+                "",
+                "",
+                0,
+                "dynamicExecutionConfig",
+                "",
+                "",
+                "",
+                "",
+                null,
+                List.of(new GraphDraft.DraftNode(
+                        "fetchApplicant",
+                        "resource:" + VisualCatalogTestSupport.RESOURCE_ID,
+                        "",
+                        Map.of("applicantId", GraphDraft.Binding.contextPath("applicantId")),
+                        Map.of(
+                                "timeout", Map.of("kind", "expression", "expr", "ctx.timeoutBudget"),
+                                "retryAttempts", Map.of("kind", "expression", "expr", "ctx.retryAttempts")
+                        ),
+                        null
+                )),
+                List.of(),
+                Map.of(),
+                new GraphDraft.OutputSelection("fetchApplicant", "")
+        );
+
+        DslGenerationResult result = generator.generate(draft);
+
+        assertThat(result.generated()).isTrue();
+        assertThat(result.dsl()).contains("timeout = ctx.timeoutBudget");
+        assertThat(result.dsl()).contains("retry = { attempts: ctx.retryAttempts, backoff: 200ms }");
+        assertThat(result.dsl()).doesNotContain("kind=expression");
+    }
+
+    @Test
     void lowersUserProvidedTransformOperator() {
         GraphDraftDslGenerator generator = new GraphDraftDslGenerator(
                 VisualCatalogTestSupport.catalogWithLibrary(

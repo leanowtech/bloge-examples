@@ -560,6 +560,8 @@ gate 都以这个 schema 为准；Context JSON 只作为一次运行或调试的
 - `inputs` 的 key 必须对应 input schema 字段。
 - `config` 必须满足 `configSchema`。
   resource-gateway 示例已经把该规则落成服务端 gate：缺必填 config、类型不匹配、enum 不匹配、`additionalProperties=false` 下的未知 config 字段都会阻断 validate/compile/run。
+  结构化 config expression 不按普通 object 字面量校验；如果表达式是纯 `ctx.*` 或 `node.output.*` 引用，服务端必须校验引用 schema 与目标 config 字段 schema 是否兼容。
+  codegen/preview 必须把结构化 config expression 还原为普通 BLOGE DSL 表达式，而不是输出 `{kind, expr}` 载体对象。
 
 ### 7.4 DraftEdge
 
@@ -1257,6 +1259,7 @@ flowchart TD
 - constant 值不满足 target schema。
 - 类型不兼容且没有 adapter。
 - 纯引用 expression 的 source schema 与 target schema 不兼容。
+- 纯引用 config expression 的 source schema 与目标 `configSchema` 不兼容。
 - `array<T>` 到 `array<U>` 时 item schema 不兼容。
 - node config 不满足 operator `configSchema`。
 - graph output selection 不满足 output port schema。

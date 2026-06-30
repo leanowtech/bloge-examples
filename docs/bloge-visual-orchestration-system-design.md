@@ -969,7 +969,7 @@ resource-gateway 已有 rate limiting、cache、circuit breaker，可以作为�
 | `/compose/run` 只注册 `httpResource` | 无法执行通用算子 | 使用完整 OperatorRegistry 或可配置 registry |
 | diagnostics 只展示 compiler 信息 | 缺少 schema/权限/策略错误 | 增加 visual validation report |
 
-当前 `resource-gateway-examples` 已经把 `configSchema` 的第一层落成代码：用户导入 operator library 时会校验 config schema 本身，canvas inspector 会根据简单 config 字段渲染编辑控件，服务端 `GraphDraftValidator` 会在 validate/compile/run 前阻断缺必填 config、类型不匹配、enum 不匹配和禁止额外字段场景。它还区分正式校验与连接预检：正式 draft 阻断 data edge / semantic dependency 不一致，连接预检则允许尚未写入 binding 的 preview edge 先通过 schema 与 DAG gate。config 中的表达式引用已经参与引用存在性校验、DAG cycle gate 和拓扑排序。复杂嵌套 config 的专业化控件仍属于后续增强，但服务端契约已经先行兜底。
+当前 `resource-gateway-examples` 已经把 `configSchema` 的第一层落成代码：用户导入 operator library 时会校验 config schema 本身，canvas inspector 会根据简单 config 字段渲染编辑控件，并允许把 config 字段从 literal 切换为 source-backed expression。服务端 `GraphDraftValidator` 会在 validate/compile/run 前阻断缺必填 config、类型不匹配、enum 不匹配和禁止额外字段场景。结构化 config expression（例如 `{ kind: "expression", expr: "ctx.threshold" }`）不会被当成普通 object 误杀；如果它是纯 `ctx.*` 或 `node.output.*` 引用，服务端会把引用 schema 与目标 `configSchema` 做兼容性校验，DSL preview/codegen 也会把该结构降回普通 BLOGE DSL 表达式。它还区分正式校验与连接预检：正式 draft 阻断 data edge / semantic dependency 不一致，连接预检则允许尚未写入 binding 的 preview edge 先通过 schema 与 DAG gate。config 中的表达式引用已经参与引用存在性校验、DAG cycle gate 和拓扑排序。复杂表达式类型推断、复杂嵌套 config 的专业化控件仍属于后续增强，但服务端契约已经先行兜底。
 
 当前 `resource-gateway-examples` 也已经把第一层 operator policy gate 落成代码：
 用户库可以声明 `policy.tenants`、`policy.namespaces`、`policy.environments`；

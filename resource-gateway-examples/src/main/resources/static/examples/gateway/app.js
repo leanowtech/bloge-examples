@@ -1,5 +1,6 @@
 const COMPOSER_GRAPH = '__composer';
 const CONTEXT_SOURCE_ID = '__ctx';
+const CONFIG_MANUAL_EXPRESSION = '__manual_config_expression';
 
 const DEFAULT_COMPOSER_DSL = `graph customLoanPolicy {
   decision_table loanPolicy(
@@ -362,6 +363,7 @@ async function loadVisualOperatorCatalog() {
         outputPorts,
         inputSchema: primaryInput.schema,
         outputSchema: primaryOutput.schema,
+        configSchema: operator.configSchema,
         policy: operator.policy,
         lowering: operator.lowering
       };
@@ -1827,10 +1829,28 @@ function renderSelectedOperatorEditor() {
     });
   }
 
-  for (const input of target.querySelectorAll('[data-config-field]')) {
+  for (const input of target.querySelectorAll('[data-config-field]:not([data-config-source]):not([data-config-expression])')) {
     const eventName = input.type === 'checkbox' || input.tagName === 'SELECT' ? 'change' : 'input';
     input.addEventListener(eventName, () => {
       setConfigValueFromInput(node, input);
+      updateConfigFieldStatus(node, input);
+      syncComposerFromBuilder({ render: false });
+      renderDiagram();
+    });
+  }
+
+  for (const select of target.querySelectorAll('[data-config-source]')) {
+    select.addEventListener('change', () => {
+      setConfigSourceFromSelect(node, select);
+      syncComposerFromBuilder({ render: false });
+      renderSelectedOperatorEditor();
+      renderDiagram();
+    });
+  }
+
+  for (const input of target.querySelectorAll('[data-config-expression]')) {
+    input.addEventListener('input', () => {
+      setConfigExpressionFromInput(node, input);
       updateConfigFieldStatus(node, input);
       syncComposerFromBuilder({ render: false });
       renderDiagram();
@@ -2092,6 +2112,59 @@ function renderConfigRow(node, field) {
 
 function renderConfigControl(node, field) {
   const value = node.config?.[field.path];
+  const expressionMode = isConfigExpressionValue(value);
+  const expression = expressionMode ? configExpressionForField(value) : '';
+  const sourceSelect = renderConfigSourceSelect(node, field, expression, expressionMode);
+  if (expressionMode) {
+    return `
+      ${sourceSelect}
+      <input
+        data-config-expression
+        data-config-field="${escapeHtml(field.path)}"
+        value="${escapeHtml(expression)}"
+        placeholder="ctx.${escapeHtml(field.path || 'value')}">
+    `;
+  }
+  return `
+    ${sourceSelect}
+    ${renderLiteralConfigControl(node, field, value)}
+  `;
+}
+
+function renderConfigSourceSelect(node, field, expression, expressionMode) {
+  const target = configTargetForField(node, field);
+  const selectedSource = expressionMode ? connectionSourceFromExpression(expression) : null;
+  const selectedValue = selectedSource ? bindingSourceValue(selectedSource) : '';
+  const candidates = sourceCandidatesForTarget(target);
+  const hasSelectedCandidate = selectedValue
+    && candidates.some((candidate) => bindingSourceValue(candidate.source) === selectedValue);
+  const staleOption = selectedValue && !hasSelectedCandidate
+    ? `<option value="${escapeHtml(selectedValue)}" selected disabled>${escapeHtml(endpointLabel(selectedSource))} (unavailable)</option>`
+    : '';
+  const options = [
+    `<option value="" ${expressionMode ? '' : 'selected'}>Literal value</option>`,
+    `<option value="${CONFIG_MANUAL_EXPRESSION}" ${expressionMode && !selectedValue ? 'selected' : ''}>Manual expression</option>`,
+    staleOption,
+    ...candidates.map((candidate) => {
+      const value = bindingSourceValue(candidate.source);
+      const selected = value === selectedValue ? ' selected' : '';
+      const disabled = candidate.compatibility.ok ? '' : ' disabled';
+      const type = candidate.source.type ? ` · ${candidate.source.type}` : '';
+      const suffix = candidate.compatibility.ok ? '' : ` · ${candidate.compatibility.message}`;
+      return `<option value="${escapeHtml(value)}"${selected}${disabled}>${escapeHtml(endpointLabel(candidate.source) + type + suffix)}</option>`;
+    })
+  ].join('');
+  return `
+    <select
+      data-config-source
+      data-config-field="${escapeHtml(field.path)}"
+      aria-label="${escapeHtml(readableName(field.path))} config source">
+      ${options}
+    </select>
+  `;
+}
+
+function renderLiteralConfigControl(node, field, value) {
   const type = rawSchemaType(field.schema);
   const attr = `data-config-field="${escapeHtml(field.path)}"`;
   const values = Array.isArray(field.schema?.values) ? field.schema.values : [];
@@ -2125,6 +2198,26 @@ function renderConfigControl(node, field) {
   }
   const rendered = typeof value === 'object' && value !== null ? JSON.stringify(value) : (value ?? '');
   return `<input ${attr} value="${escapeHtml(rendered)}">`;
+}
+
+function isConfigExpressionValue(value) {
+  return value && typeof value === 'object' && !Array.isArray(value) && value.kind === 'expression';
+}
+
+function configExpressionForField(value) {
+  return isConfigExpressionValue(value) ? String(value.expr || '') : '';
+}
+
+function configTargetForField(node, field) {
+  return {
+    nodeId: node.id,
+    port: 'config',
+    path: field.path,
+    key: field.path,
+    required: field.required,
+    type: schemaType(field.schema),
+    schema: field.schema
+  };
 }
 
 function unknownConfigRows(node, spec) {
@@ -2165,6 +2258,53 @@ function setConfigValueFromInput(node, input) {
     return;
   }
   node.config[field.path] = parseConfigInputValue(input, field.schema);
+}
+
+function setConfigSourceFromSelect(node, select) {
+  const spec = specForNode(node);
+  const field = configFieldDescriptors(spec.configSchema)
+    .find((item) => item.path === select.dataset.configField);
+  if (!field) {
+    return;
+  }
+  node.config = node.config || {};
+  if (select.value === '') {
+    if (field.required) {
+      node.config[field.path] = '';
+    } else {
+      delete node.config[field.path];
+    }
+    return;
+  }
+  if (select.value === CONFIG_MANUAL_EXPRESSION) {
+    node.config[field.path] = {
+      kind: 'expression',
+      expr: configExpressionForField(node.config[field.path])
+    };
+    return;
+  }
+  const source = sourceFromBindingValue(select.value);
+  if (!source) {
+    return;
+  }
+  node.config[field.path] = {
+    kind: 'expression',
+    expr: expressionForConnectionSource(source)
+  };
+}
+
+function setConfigExpressionFromInput(node, input) {
+  const spec = specForNode(node);
+  const field = configFieldDescriptors(spec.configSchema)
+    .find((item) => item.path === input.dataset.configField);
+  if (!field) {
+    return;
+  }
+  node.config = node.config || {};
+  node.config[field.path] = {
+    kind: 'expression',
+    expr: input.value
+  };
 }
 
 function updateConfigFieldStatus(node, input) {
@@ -2219,10 +2359,32 @@ function configStatusForField(node, field) {
       ? { level: 'error', message: 'Required config is missing.' }
       : { level: 'info', message: 'Optional config is empty.' };
   }
+  if (isConfigExpressionValue(value)) {
+    return configExpressionStatusForField(node, field, configExpressionForField(value));
+  }
   if (!configValueMatchesSchema(value, field.schema)) {
     return { level: 'error', message: `Expected ${schemaType(field.schema) || 'schema-compatible'} value.` };
   }
   return { level: 'success', message: 'Config matches configSchema.' };
+}
+
+function configExpressionStatusForField(node, field, expression) {
+  const value = String(expression || '').trim();
+  if (!value) {
+    return field.required
+      ? { level: 'error', message: 'Required config expression is empty.' }
+      : { level: 'info', message: 'Optional config expression is empty.' };
+  }
+  const source = connectionSourceFromExpression(value);
+  if (!source) {
+    return { level: 'info', message: 'Manual expression; server validation checks referenced paths.' };
+  }
+  const target = configTargetForField(node, field);
+  const compatibility = connectionCompatibility(source, target);
+  if (!compatibility.ok) {
+    return { level: 'error', message: compatibility.message };
+  }
+  return { level: 'success', message: `Config expression bound to ${endpointLabel(source)}.` };
 }
 
 function configValueMatchesSchema(value, schema) {
@@ -2855,7 +3017,8 @@ function nodeToDsl(node, builder) {
     const paramBody = Object.entries(params)
       .map(([name, expression]) => `${name}: ${expression || 'null'}`)
       .join(', ');
-    return `  node ${node.id} : httpResource {\n    input {\n      resourceId = ${quote(node.resourceId)}\n      params = { ${paramBody} }\n    }\n    timeout = 3s\n    retry = { attempts: 1, backoff: 200ms }\n  }`;
+    const executionConfig = commonExecutionConfigToDsl(node.config || {});
+    return `  node ${node.id} : httpResource {\n    input {\n      resourceId = ${quote(node.resourceId)}\n      params = { ${paramBody} }\n    }${executionConfig ? `\n${executionConfig}` : ''}\n  }`;
   }
   if (node.type === 'decisionTable') {
     const rules = node.rules.map((rule) => {
@@ -3219,6 +3382,19 @@ function builderNodeToDraftNode(node, builder) {
     config: { assignments },
     position: { x: node.x, y: node.y }
   };
+}
+
+function commonExecutionConfigToDsl(config = {}) {
+  const lines = [];
+  const timeout = expressionFromConfig(config.timeout);
+  if (timeout) {
+    lines.push(`    timeout = ${timeout}`);
+  }
+  const retryAttempts = expressionFromConfig(config.retryAttempts);
+  if (retryAttempts) {
+    lines.push(`    retry = { attempts: ${retryAttempts}, backoff: 200ms }`);
+  }
+  return lines.join('\n');
 }
 
 function bindingFromExpression(expression, options = {}) {

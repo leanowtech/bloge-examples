@@ -116,6 +116,13 @@ input types. Operator `configSchema` is
 also enforced: the browser inspector renders simple config controls for schema
 fields, and the server blocks missing required config, type mismatches, enum
 mismatches, and undeclared config fields when `additionalProperties=false`.
+The inspector can switch a config field from a literal value to a source-backed
+expression using the same compatible `ctx.*` and upstream output picker used by
+input bindings. Structured config expressions such as `{ "kind": "expression",
+"expr": "ctx.threshold" }` are allowed without pretending to be literals; pure
+`ctx.*` or `node.output.*` references are checked against the target
+`configSchema` type when it can be proven, and the DSL preview/codegen lowers
+those structured expressions back to plain BLOGE DSL expressions.
 Raw secret material is rejected from imported operator libraries and saved graph
 drafts; authoring artifacts may store only references such as `secretRef`.
 Graph input bindings are schema-aware too: the composer exposes a dedicated
@@ -765,7 +772,7 @@ Isolated component tests, some with lightweight Spring slices or mocks.
 | `DatabaseResourceRegistryTest` | 11 | CRUD, H2 persistence, in-memory cache |
 | `ResourceDescriptorBootstrapTest` | 7 | Seeding, refresh behavior, idempotency |
 | `GatewayDslCompilationTest` | 7 | DSL parsing, graph loading |
-| Visual authoring suite | 122 | Visual operator projection, imported libraries, catalog policy filtering, draft/publication persistence and history, revision audit metadata, revision-guarded patching, typed connection/edge validation including object required fields, enum value domains, config expression references, data edge/semantic dependency consistency, graph input schema gates, secret blocking, DSL lowering and dependency ordering, runtime smoke path |
+| Visual authoring suite | 125 | Visual operator projection, imported libraries, catalog policy filtering, draft/publication persistence and history, revision audit metadata, revision-guarded patching, typed connection/edge validation including object required fields, enum value domains, config expression references and configSchema type gates, data edge/semantic dependency consistency, graph input schema gates, secret blocking, DSL lowering and dependency ordering, runtime smoke path |
 
 ### Layer 3 — Orchestration tests
 

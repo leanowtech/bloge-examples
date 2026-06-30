@@ -109,7 +109,7 @@ public class GraphDraftDslGenerator {
                 .append(targetInputName(key, binding)).append(" = ")
                 .append(bindingToExpression(binding, nodesById)).append("\n"));
         block.append("    }\n");
-        appendCommonExecutionConfig(block, node.config());
+        appendCommonExecutionConfig(block, node.config(), nodesById);
         block.append("  }");
         return block.toString();
     }
@@ -146,7 +146,7 @@ public class GraphDraftDslGenerator {
                 .append("      resourceId = ").append(quote(resourceId)).append("\n")
                 .append("      params = ").append(renderObjectBindings(node.inputs(), nodesById)).append("\n")
                 .append("    }\n");
-        appendCommonExecutionConfig(block, node.config());
+        appendCommonExecutionConfig(block, node.config(), nodesById);
         block.append("  }");
         return block.toString();
     }
@@ -169,7 +169,7 @@ public class GraphDraftDslGenerator {
                 .append("      resourceId = ").append(resourceId).append("\n")
                 .append("      params = ").append(renderObjectBindings(params, nodesById)).append("\n")
                 .append("    }\n");
-        appendCommonExecutionConfig(block, node.config());
+        appendCommonExecutionConfig(block, node.config(), nodesById);
         block.append("  }");
         return block.toString();
     }
@@ -265,14 +265,18 @@ public class GraphDraftDslGenerator {
         return "    rule (" + conditions + ") -> " + renderedOutput;
     }
 
-    private static void appendCommonExecutionConfig(StringBuilder block, Map<String, Object> config) {
+    private static void appendCommonExecutionConfig(StringBuilder block,
+                                                    Map<String, Object> config,
+                                                    Map<String, GraphDraft.DraftNode> nodesById) {
         Object timeout = config.get("timeout");
         if (timeout != null && !String.valueOf(timeout).isBlank()) {
-            block.append("    timeout = ").append(timeout).append("\n");
+            block.append("    timeout = ").append(expressionFromObject(timeout, nodesById)).append("\n");
         }
         Object retryAttempts = config.get("retryAttempts");
         if (retryAttempts != null) {
-            block.append("    retry = { attempts: ").append(retryAttempts).append(", backoff: 200ms }\n");
+            block.append("    retry = { attempts: ")
+                    .append(expressionFromObject(retryAttempts, nodesById))
+                    .append(", backoff: 200ms }\n");
         }
     }
 

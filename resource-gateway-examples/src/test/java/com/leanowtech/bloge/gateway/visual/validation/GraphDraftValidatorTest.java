@@ -1003,6 +1003,48 @@ class GraphDraftValidatorTest {
     }
 
     @Test
+    void acceptsStructuredConfigExpressionWhenPureContextReferenceMatchesConfigSchema() {
+        GraphDraftValidator validator = new GraphDraftValidator(
+                VisualCatalogTestSupport.catalogWithLibrary(
+                        VisualCatalogTestSupport.configurablePolicyLibrary()));
+        GraphDraft draft = configurablePolicyDraft(Map.of(
+                "threshold", Map.of("kind", "expression", "expr", "ctx.threshold"),
+                "mode", "strict"
+        ), graphInputSchema(
+                Map.of("threshold", Map.of("type", "integer")),
+                List.of("threshold")
+        ));
+
+        VisualValidationResult result = validator.validate(draft);
+
+        assertThat(result.valid()).isTrue();
+    }
+
+    @Test
+    void rejectsStructuredConfigExpressionWhenPureContextReferenceTypeDoesNotMatchConfigSchema() {
+        GraphDraftValidator validator = new GraphDraftValidator(
+                VisualCatalogTestSupport.catalogWithLibrary(
+                        VisualCatalogTestSupport.configurablePolicyLibrary()));
+        GraphDraft draft = configurablePolicyDraft(Map.of(
+                "threshold", Map.of("kind", "expression", "expr", "ctx.threshold"),
+                "mode", "strict"
+        ), graphInputSchema(
+                Map.of("threshold", Map.of("type", "string")),
+                List.of("threshold")
+        ));
+
+        VisualValidationResult result = validator.validate(draft);
+
+        assertThat(result.valid()).isFalse();
+        assertThat(result.diagnostics())
+                .anySatisfy(diagnostic -> {
+                    assertThat(diagnostic.code()).isEqualTo("visual.config.typeMismatch");
+                    assertThat(diagnostic.target()).isEqualTo("/nodes/0/config/threshold/expr");
+                    assertThat(diagnostic.message()).contains("ctx.threshold").contains("string").contains("integer");
+                });
+    }
+
+    @Test
     void rejectsNodeConfigWhenRequiredConfigIsMissing() {
         GraphDraftValidator validator = new GraphDraftValidator(
                 VisualCatalogTestSupport.catalogWithLibrary(
@@ -1633,6 +1675,10 @@ class GraphDraftValidatorTest {
     }
 
     private static GraphDraft configurablePolicyDraft(Map<String, Object> config) {
+        return configurablePolicyDraft(config, null);
+    }
+
+    private static GraphDraft configurablePolicyDraft(Map<String, Object> config, SchemaEnvelope inputSchema) {
         return new GraphDraft(
                 "",
                 "",
@@ -1642,7 +1688,7 @@ class GraphDraftValidatorTest {
                 "",
                 "",
                 "",
-                null,
+                inputSchema,
                 List.of(new GraphDraft.DraftNode(
                         "policy",
                         "risk:configurablePolicy",
