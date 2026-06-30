@@ -247,6 +247,35 @@ class OperatorLibraryValidatorTest {
     }
 
     @Test
+    void rejectsInvalidObjectSchemaStructure() {
+        OperatorLibrary library = libraryWith(operator(
+                "risk:badObjectSchema",
+                new OperatorDefinition.Ports(
+                        List.of(),
+                        List.of(new OperatorDefinition.Port("output",
+                                new SchemaEnvelope("json-schema", "2020-12", Map.of(
+                                        "type", "object",
+                                        "properties", "score",
+                                        "additionalProperties", "false"
+                                )),
+                                true,
+                                "Bad object schema."))
+                ),
+                "native"
+        ));
+
+        VisualValidationResult result = validator.validate(library);
+
+        assertThat(result.valid()).isFalse();
+        assertThat(result.diagnostics())
+                .extracting("code")
+                .contains(
+                        "visual.schema.propertiesInvalid",
+                        "visual.schema.additionalPropertiesInvalid"
+                );
+    }
+
+    @Test
     void rejectsInvalidConfigSchemaDetails() {
         OperatorLibrary library = libraryWith(new OperatorDefinition(
                 "bloge.visualOperator.v1",

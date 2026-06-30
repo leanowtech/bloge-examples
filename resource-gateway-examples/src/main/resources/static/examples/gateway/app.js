@@ -4151,7 +4151,8 @@ function validateSchemaStructure(schema, path, diagnostics) {
     return;
   }
   if (kind === 'object') {
-    const properties = schemaObjectProperties(schema);
+    const properties = validatedSchemaObjectProperties(schema, path, diagnostics);
+    validateSchemaAdditionalProperties(schema, path, diagnostics);
     for (const required of validatedSchemaRequiredNames(schema, path, diagnostics)) {
       if (!Object.prototype.hasOwnProperty.call(properties, required)) {
         diagnostics.push(graphInputSchemaDiagnostic(
@@ -4241,6 +4242,38 @@ function validatedSchemaRequiredNames(schema, path, diagnostics) {
     names.push(item);
   });
   return names;
+}
+
+function validatedSchemaObjectProperties(schema, path, diagnostics) {
+  const properties = schema?.properties;
+  if (properties === undefined) {
+    return {};
+  }
+  if (!properties || typeof properties !== 'object' || Array.isArray(properties)) {
+    diagnostics.push(graphInputSchemaDiagnostic(
+      'visual.schema.propertiesInvalid',
+      'Object schema properties must be an object whose values are schemas.',
+      `${path}/properties`
+    ));
+    return {};
+  }
+  return properties;
+}
+
+function validateSchemaAdditionalProperties(schema, path, diagnostics) {
+  const additional = schema?.additionalProperties;
+  if (additional === undefined || typeof additional === 'boolean') {
+    return;
+  }
+  if (additional && typeof additional === 'object' && !Array.isArray(additional)) {
+    validateSchemaStructure(additional, `${path}/additionalProperties`, diagnostics);
+    return;
+  }
+  diagnostics.push(graphInputSchemaDiagnostic(
+    'visual.schema.additionalPropertiesInvalid',
+    'Object schema additionalProperties must be a boolean or schema object.',
+    `${path}/additionalProperties`
+  ));
 }
 
 function schemaObjectProperties(schema) {

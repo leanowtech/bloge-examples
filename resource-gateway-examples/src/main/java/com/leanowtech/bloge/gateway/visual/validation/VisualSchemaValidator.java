@@ -62,7 +62,8 @@ public final class VisualSchemaValidator {
             return;
         }
         if ("object".equals(kind)) {
-            Map<String, Object> properties = objectProperties(schema);
+            Map<String, Object> properties = objectProperties(schema, path, diagnostics);
+            validateAdditionalProperties(schema, path, diagnostics);
             List<String> requiredNames = requiredNames(schema, path, diagnostics);
             for (String required : requiredNames) {
                 if (!properties.containsKey(required)) {
@@ -114,14 +115,40 @@ public final class VisualSchemaValidator {
         return raw == null ? "" : String.valueOf(raw);
     }
 
-    private static Map<String, Object> objectProperties(Map<String, Object> schema) {
+    @SuppressWarnings("unchecked")
+    private static Map<String, Object> objectProperties(Map<String, Object> schema,
+                                                        String path,
+                                                        List<VisualDiagnostic> diagnostics) {
         Object raw = schema.get("properties");
+        if (raw == null) {
+            return Map.of();
+        }
         if (!(raw instanceof Map<?, ?> rawMap)) {
+            diagnostics.add(VisualDiagnostic.error("visual.schema.propertiesInvalid",
+                    "Object schema properties must be an object whose values are schemas.",
+                    path + "/properties"));
             return Map.of();
         }
         Map<String, Object> properties = new LinkedHashMap<>();
         rawMap.forEach((key, value) -> properties.put(String.valueOf(key), value));
         return properties;
+    }
+
+    @SuppressWarnings("unchecked")
+    private static void validateAdditionalProperties(Map<String, Object> schema,
+                                                     String path,
+                                                     List<VisualDiagnostic> diagnostics) {
+        Object additional = schema.get("additionalProperties");
+        if (additional == null || additional instanceof Boolean) {
+            return;
+        }
+        if (additional instanceof Map<?, ?> additionalSchema) {
+            validateSchema((Map<String, Object>) additionalSchema, path + "/additionalProperties", diagnostics);
+            return;
+        }
+        diagnostics.add(VisualDiagnostic.error("visual.schema.additionalPropertiesInvalid",
+                "Object schema additionalProperties must be a boolean or schema object.",
+                path + "/additionalProperties"));
     }
 
     private static List<String> requiredNames(Map<String, Object> schema,
