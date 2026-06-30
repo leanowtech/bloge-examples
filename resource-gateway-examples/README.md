@@ -196,7 +196,7 @@ Showcase metadata APIs:
 | `PATCH` | `/api/visual/drafts/{draftId}` | Apply an `expectedRevision` JSON patch and reject stale edits with `409 CONFLICT` |
 | `DELETE` | `/api/visual/drafts/{draftId}` | Delete a stored visual graph draft |
 | `POST` | `/api/visual/drafts/validate` | Validate a visual graph draft against operator schemas, typed port edges, and DAG constraints |
-| `POST` | `/api/visual/drafts/compile` | Validate a visual graph draft, then lower it to BLOGE DSL |
+| `POST` | `/api/visual/drafts/compile` | Validate a visual graph draft, lower it to BLOGE DSL, then compile the DSL |
 | `POST` | `/api/visual/connections/check` | Check a proposed source-to-target canvas connection against the same schema and DAG rules used by draft validation |
 | `POST` | `/api/visual/drafts/run` | Validate, compile, and execute a transient visual graph draft |
 | `POST` | `/api/visual/drafts/{draftId}/run` | Execute a stored visual graph draft with submitted context |
@@ -349,7 +349,11 @@ for example `node policy : "risk:legacyPolicy"`. Native input lowering also
 groups `targetPort`/nested `targetPath` bindings into object literals, so
 schema-shaped inputs such as `applicant.score` compile as
 `applicant = { score: ctx.score }` instead of illegal dotted input-field
-assignments.
+assignments. Browser connection hints mirror the server's stricter schema rules
+for object required-field proof and enum value-domain subsets, while the server
+validator remains the publish/run authority. Draft compile and publish calls run
+the generated DSL through the BLOGE compiler before returning success, so a user
+library with a missing runtime native operator cannot produce a published artifact.
 
 Minimal import example:
 
@@ -784,7 +788,7 @@ Isolated component tests, some with lightweight Spring slices or mocks.
 | `DatabaseResourceRegistryTest` | 11 | CRUD, H2 persistence, in-memory cache |
 | `ResourceDescriptorBootstrapTest` | 7 | Seeding, refresh behavior, idempotency |
 | `GatewayDslCompilationTest` | 7 | DSL parsing, graph loading |
-| Visual authoring suite | 138 | Visual operator projection, imported libraries, catalog policy filtering, import-time lowering gates, draft/publication persistence and history, revision audit metadata, revision-guarded patching, typed connection/edge validation including binding kind allow-list, duplicate target input ownership, object required fields, enum value domains, config expression references and configSchema type gates, data edge/semantic dependency consistency, graph input schema gates, secret blocking, DSL lowering and dependency ordering, runtime smoke path |
+| Visual authoring suite | 140 | Visual operator projection, imported libraries, catalog policy filtering, import-time lowering gates, draft/publication persistence and history, revision audit metadata, revision-guarded patching, typed connection/edge validation including binding kind allow-list, duplicate target input ownership, object required fields, enum value domains, config expression references and configSchema type gates, data edge/semantic dependency consistency, graph input schema gates, secret blocking, DSL lowering, compiler gating, dependency ordering, runtime smoke path |
 
 ### Layer 3 — Orchestration tests
 

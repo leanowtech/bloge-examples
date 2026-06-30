@@ -1,6 +1,8 @@
 package com.leanowtech.bloge.gateway.visual.api;
 
 import com.leanowtech.bloge.gateway.visual.catalog.DefaultVisualOperatorCatalog;
+import com.leanowtech.bloge.gateway.visual.catalog.OperatorDefinition;
+import com.leanowtech.bloge.gateway.visual.catalog.OperatorLibrary;
 import com.leanowtech.bloge.gateway.visual.catalog.VisualCatalogTestSupport;
 import com.leanowtech.bloge.gateway.visual.codegen.DslGenerationResult;
 import com.leanowtech.bloge.gateway.visual.codegen.GraphDraftDslGenerator;
@@ -9,9 +11,12 @@ import com.leanowtech.bloge.gateway.visual.draft.GraphDraftPatchRequest;
 import com.leanowtech.bloge.gateway.visual.draft.GraphDraftPatchResult;
 import com.leanowtech.bloge.gateway.visual.draft.GraphDraftPatchService;
 import com.leanowtech.bloge.gateway.visual.draft.InMemoryGraphDraftRepository;
+import com.leanowtech.bloge.gateway.example.DynamicGatewayComposerService;
+import com.leanowtech.bloge.gateway.operator.HttpResourceOperator;
 import com.leanowtech.bloge.gateway.visual.publication.InMemoryVisualGraphPublicationRepository;
 import com.leanowtech.bloge.gateway.visual.publication.VisualGraphPublicationResult;
 import com.leanowtech.bloge.gateway.visual.model.SchemaEnvelope;
+import com.leanowtech.bloge.gateway.visual.runtime.VisualGraphRunService;
 import com.leanowtech.bloge.gateway.visual.validation.GraphDraftValidator;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -65,6 +70,24 @@ class VisualGraphDraftControllerTest {
         assertThat(result.generated()).isTrue();
         assertThat(result.diagnostics()).isEmpty();
         assertThat(result.dsl()).contains("transform eligibility");
+    }
+
+    @Test
+    void compileRejectsGeneratedDslWhenRuntimeOperatorIsMissing() {
+        VisualGraphDraftController controller = controllerWithCatalog(
+                VisualCatalogTestSupport.catalogWithLibrary(nativePolicyLibrary()),
+                new InMemoryGraphDraftRepository());
+        GraphDraft draft = nativePolicyDraft();
+
+        DslGenerationResult result = controller.compile(draft);
+
+        assertThat(result.generated()).isFalse();
+        assertThat(result.dsl()).contains("node policy : riskMissingRuntime");
+        assertThat(result.diagnostics())
+                .anySatisfy(diagnostic -> {
+                    assertThat(diagnostic.code()).isEqualTo("bloge.dsl");
+                    assertThat(diagnostic.message()).contains("riskMissingRuntime");
+                });
     }
 
     @Test
@@ -264,6 +287,30 @@ class VisualGraphDraftControllerTest {
         assertThat(publications.all()).isEmpty();
     }
 
+    @Test
+    void publishRejectsGeneratedDslWhenRuntimeOperatorIsMissing() {
+        DefaultVisualOperatorCatalog catalog = VisualCatalogTestSupport.catalogWithLibrary(nativePolicyLibrary());
+        InMemoryVisualGraphPublicationRepository publications = new InMemoryVisualGraphPublicationRepository();
+        VisualGraphDraftController controller = controllerWithCatalog(
+                catalog,
+                new InMemoryGraphDraftRepository(),
+                publications
+        );
+        GraphDraft stored = controller.create(nativePolicyDraft());
+
+        ResponseEntity<VisualGraphPublicationResult> response = controller.publish(stored.draftId());
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+        assertThat(response.getBody()).isNotNull();
+        assertThat(response.getBody().published()).isFalse();
+        assertThat(response.getBody().diagnostics())
+                .anySatisfy(diagnostic -> {
+                    assertThat(diagnostic.code()).isEqualTo("bloge.dsl");
+                    assertThat(diagnostic.message()).contains("riskMissingRuntime");
+                });
+        assertThat(publications.all()).isEmpty();
+    }
+
     private static VisualGraphDraftController controllerWithEligibilityLibrary() {
         DefaultVisualOperatorCatalog catalog = VisualCatalogTestSupport.catalogWithLibrary(
                 VisualCatalogTestSupport.eligibilityLibrary("integer"));
@@ -280,13 +327,31 @@ class VisualGraphDraftControllerTest {
                                                                     InMemoryVisualGraphPublicationRepository publications) {
         return new VisualGraphDraftController(
                 repository == null ? new InMemoryGraphDraftRepository() : repository,
-                new GraphDraftValidator(catalog),
-                new GraphDraftDslGenerator(catalog),
-                null,
+                validator(catalog),
+                runner(catalog),
                 catalog,
                 publications,
                 new GraphDraftPatchService(new ObjectMapper())
         );
+    }
+
+    private static GraphDraftValidator validator(DefaultVisualOperatorCatalog catalog) {
+        return new GraphDraftValidator(catalog);
+    }
+
+    private static GraphDraftDslGenerator generator(DefaultVisualOperatorCatalog catalog) {
+        return new GraphDraftDslGenerator(catalog);
+    }
+
+    private static VisualGraphRunService runner(DefaultVisualOperatorCatalog catalog) {
+        GraphDraftValidator validator = validator(catalog);
+        GraphDraftDslGenerator generator = generator(catalog);
+        return new VisualGraphRunService(validator, generator,
+                new DynamicGatewayComposerService(httpResourceOperatorStub()));
+    }
+
+    private static HttpResourceOperator httpResourceOperatorStub() {
+        return new HttpResourceOperator(null, null, null, null, null, null);
     }
 
     private static GraphDraft eligibilityDraft(SchemaEnvelope inputSchema) {
@@ -319,5 +384,70 @@ class VisualGraphDraftControllerTest {
 
     private static SchemaEnvelope graphInputSchema(Map<String, Object> properties) {
         return SchemaEnvelope.object(properties, properties.keySet().stream().toList());
+    }
+
+    private static GraphDraft nativePolicyDraft() {
+        return new GraphDraft(
+                "",
+                "",
+                0,
+                "nativeCompileGate",
+                "",
+                "",
+                "",
+                "",
+                SchemaEnvelope.object(Map.of(
+                        "applicantId", Map.of("type", "string")
+                ), List.of("applicantId")),
+                List.of(new GraphDraft.DraftNode(
+                        "policy",
+                        "risk:nativePolicy",
+                        "",
+                        Map.of("applicantId", GraphDraft.Binding.contextPath("applicantId")),
+                        Map.of(),
+                        null
+                )),
+                List.of(),
+                Map.of(),
+                new GraphDraft.OutputSelection("policy", "")
+        );
+    }
+
+    private static OperatorLibrary nativePolicyLibrary() {
+        OperatorDefinition operator = new OperatorDefinition(
+                "bloge.visualOperator.v1",
+                "risk:nativePolicy",
+                "1.0.0",
+                new OperatorDefinition.Display("Native policy", "Requires a runtime native operator.",
+                        List.of("risk", "native")),
+                new OperatorDefinition.Source("user-library", "", "", "", false),
+                new OperatorDefinition.Ports(
+                        List.of(new OperatorDefinition.Port("inputs",
+                                SchemaEnvelope.object(Map.of(
+                                        "applicantId", Map.of("type", "string")
+                                ), List.of("applicantId")),
+                                true,
+                                "Native inputs.")),
+                        List.of(new OperatorDefinition.Port("output",
+                                SchemaEnvelope.object(Map.of(
+                                        "decision", Map.of("type", "string")
+                                ), List.of()),
+                                true,
+                                "Native output."))
+                ),
+                SchemaEnvelope.opaque(),
+                OperatorDefinition.Capabilities.pure(),
+                new OperatorDefinition.Lowering("native", "riskMissingRuntime", Map.of()),
+                List.of()
+        );
+        return new OperatorLibrary(
+                "bloge.visualOperatorLibrary.v1",
+                "risk-native-policy",
+                "Risk native operators",
+                "1.0.0",
+                "risk-team",
+                "ACTIVE",
+                List.of(operator)
+        );
     }
 }

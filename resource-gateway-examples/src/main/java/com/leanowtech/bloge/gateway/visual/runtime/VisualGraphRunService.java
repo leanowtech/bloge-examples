@@ -43,6 +43,28 @@ public class VisualGraphRunService {
     }
 
     /**
+     * Validates, lowers, and compiles a visual graph draft without executing it.
+     *
+     * @param draft graph draft
+     * @return generated DSL plus lowering/compiler diagnostics
+     */
+    public DslGenerationResult compile(GraphDraft draft) {
+        VisualValidationResult validation = validator.validate(draft);
+        if (!validation.valid()) {
+            return new DslGenerationResult(false, "", validation.diagnostics());
+        }
+        DslGenerationResult generated = generator.generate(draft);
+        if (!generated.generated()) {
+            return generated;
+        }
+        List<VisualDiagnostic> diagnostics = new ArrayList<>(generated.diagnostics());
+        diagnostics.addAll(dynamicRunner.compileDiagnostics(generated.dsl()).stream()
+                .map(VisualGraphRunService::fromCompilerDiagnostic)
+                .toList());
+        return new DslGenerationResult(true, generated.dsl(), diagnostics);
+    }
+
+    /**
      * Runs a visual graph draft.
      *
      * @param draft graph draft

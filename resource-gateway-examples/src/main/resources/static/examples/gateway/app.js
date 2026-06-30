@@ -4300,7 +4300,76 @@ function schemasCompatible(sourceSchema, targetSchema) {
   if (sourceType === 'array' && targetType === 'array') {
     return !sourceSchema?.items || !targetSchema?.items || schemasCompatible(sourceSchema.items, targetSchema.items);
   }
+  if (sourceType === 'object' && targetType === 'object') {
+    return objectSchemasCompatible(sourceSchema, targetSchema);
+  }
+  const targetEnumValues = schemaEnumValues(targetSchema);
+  if (targetEnumValues.length) {
+    const sourceEnumValues = schemaEnumValues(sourceSchema);
+    return Boolean(sourceEnumValues.length) && sourceEnumValues.every((value) =>
+      targetEnumValues.some((targetValue) => Object.is(targetValue, value))
+    );
+  }
+  if (sourceType === 'enum') {
+    const sourceEnumValues = schemaEnumValues(sourceSchema);
+    return !sourceEnumValues.length || sourceEnumValues.every((value) => schemaValueMatchesType(value, targetType));
+  }
   return sourceType === targetType || (numericType(sourceType) && numericType(targetType));
+}
+
+function objectSchemasCompatible(sourceSchema, targetSchema) {
+  const sourceProperties = schemaObjectProperties(sourceSchema);
+  const targetProperties = schemaObjectProperties(targetSchema);
+  const sourceRequired = new Set(schemaRequiredNames(sourceSchema));
+  for (const required of schemaRequiredNames(targetSchema)) {
+    const sourceProperty = sourceProperties[required];
+    const targetProperty = targetProperties[required];
+    if (!sourceRequired.has(required)
+      || !sourceProperty
+      || !targetProperty
+      || !schemasCompatible(sourceProperty, targetProperty)) {
+      return false;
+    }
+  }
+  return true;
+}
+
+function schemaEnumValues(schema) {
+  if (Array.isArray(schema?.enum)) {
+    return [...new Set(schema.enum)];
+  }
+  if (rawSchemaType(schema) === 'enum' && Array.isArray(schema?.values)) {
+    return [...new Set(schema.values)];
+  }
+  return [];
+}
+
+function schemaValueMatchesType(value, type) {
+  if (!type || type === 'any' || type === 'opaque') {
+    return true;
+  }
+  if (type === 'integer') {
+    return typeof value === 'number' && Number.isInteger(value);
+  }
+  if (type === 'number' || type === 'decimal') {
+    return typeof value === 'number';
+  }
+  if (type === 'string') {
+    return typeof value === 'string';
+  }
+  if (type === 'boolean') {
+    return typeof value === 'boolean';
+  }
+  if (type === 'object') {
+    return value !== null && typeof value === 'object' && !Array.isArray(value);
+  }
+  if (type === 'array') {
+    return Array.isArray(value);
+  }
+  if (type === 'null') {
+    return value === null;
+  }
+  return true;
 }
 
 function rawSchemaType(schema) {

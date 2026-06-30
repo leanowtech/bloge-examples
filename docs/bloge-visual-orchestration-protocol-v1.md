@@ -597,6 +597,7 @@ gate 都以这个 schema 为准；Context JSON 只作为一次运行或调试的
 - 正式 draft 中，`data` edge 必须有对应的语义依赖，例如 `nodePath` binding 或可解析的 config expression 引用；`nodePath` binding 也必须有对应的 `data` edge，防止画布显示的数据线和实际编译输入分叉。
 - object schema 按结构证明校验：target required 字段必须在 source schema 中显式声明为 required，并递归满足类型兼容。
 - enum schema 按值域集合校验：source enum values 必须是 target enum values 的子集；普通 `string` 不能直接连到 enum input，必须先经过显式 transform。
+- 浏览器 connection hint/source picker 应镜像上述 object/enum 关键规则，减少拖拽后才被服务端拒绝的体验断层；发布、运行和编译前仍以服务端 validator 为权威。
 - `control` edge 不传递字段，只影响执行顺序。
 - `conditional` edge 必须有 condition。
 - `fallback` edge 必须声明触发条件，如 `onError`、`onTimeout`、`onEmpty`。
@@ -1051,7 +1052,12 @@ values 等都会产生 blocking diagnostic。
 POST /api/visual/drafts/{draftId}/compile
 ```
 
-编译必须先执行 visual validation。只要存在 blocking diagnostic，响应必须返回 `compiled/generated=false`、空 DSL，并保留 validation diagnostics；不得生成看似可用但违反 schema/policy gate 的 DSL。
+编译必须先执行 visual validation。只要存在 blocking diagnostic，响应必须返回
+`compiled/generated=false`、空 DSL，并保留 validation diagnostics；不得生成看似
+可用但违反 schema/policy gate 的 DSL。validation 和 lowering 通过后，服务端
+必须把生成的 DSL 交给 BLOGE compiler；若 compiler 返回 error，响应仍必须
+`compiled/generated=false`，但可以返回生成的 DSL 和 compiler diagnostics，便于
+画布定位 lowering 与 runtime registry 问题。
 
 响应：
 
@@ -1138,8 +1144,9 @@ drop 连线时调用它作为最终写入 binding 的 gate。
 POST /api/visual/drafts/{draftId}/publish
 ```
 
-发布必须先执行 visual validation 和 DSL generation。存在 blocking diagnostic 时
-响应必须返回 `published=false`，不得创建 artifact。发布成功后 artifact 必须不可变，
+发布必须先执行 visual validation、DSL generation 和 BLOGE compiler gate。存在
+blocking diagnostic 或 compiler error 时，响应必须返回 `published=false`，不得创建
+artifact。发布成功后 artifact 必须不可变，
 并至少冻结：
 
 - draft snapshot。

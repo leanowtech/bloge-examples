@@ -1,7 +1,6 @@
 package com.leanowtech.bloge.gateway.visual.api;
 
 import com.leanowtech.bloge.gateway.visual.codegen.DslGenerationResult;
-import com.leanowtech.bloge.gateway.visual.codegen.GraphDraftDslGenerator;
 import com.leanowtech.bloge.gateway.visual.catalog.OperatorDefinition;
 import com.leanowtech.bloge.gateway.visual.catalog.VisualOperatorCatalog;
 import com.leanowtech.bloge.gateway.visual.diagnostic.VisualDiagnostic;
@@ -48,7 +47,6 @@ public class VisualGraphDraftController {
 
     private final GraphDraftRepository repository;
     private final GraphDraftValidator validator;
-    private final GraphDraftDslGenerator generator;
     private final VisualGraphRunService runner;
     private final VisualOperatorCatalog catalog;
     private final VisualGraphPublicationRepository publicationRepository;
@@ -57,19 +55,16 @@ public class VisualGraphDraftController {
     /**
      * @param repository draft repository
      * @param validator draft validator
-     * @param generator DSL generator
      * @param runner draft runner
      */
     public VisualGraphDraftController(GraphDraftRepository repository,
                                       GraphDraftValidator validator,
-                                      GraphDraftDslGenerator generator,
                                       VisualGraphRunService runner,
                                       VisualOperatorCatalog catalog,
                                       VisualGraphPublicationRepository publicationRepository,
                                       GraphDraftPatchService patchService) {
         this.repository = repository;
         this.validator = validator;
-        this.generator = generator;
         this.runner = runner;
         this.catalog = catalog;
         this.publicationRepository = publicationRepository;
@@ -222,11 +217,7 @@ public class VisualGraphDraftController {
      */
     @PostMapping("/compile")
     public DslGenerationResult compile(@RequestBody GraphDraft draft) {
-        VisualValidationResult validation = validator.validate(draft);
-        if (!validation.valid()) {
-            return new DslGenerationResult(false, "", validation.diagnostics());
-        }
-        return generator.generate(draft);
+        return runner.compile(draft);
     }
 
     /**
@@ -278,7 +269,7 @@ public class VisualGraphDraftController {
             return ResponseEntity.badRequest()
                     .body(VisualGraphPublicationResult.rejected(validation.diagnostics()));
         }
-        DslGenerationResult generation = generator.generate(draft);
+        DslGenerationResult generation = runner.compile(draft);
         if (!generation.generated()) {
             return ResponseEntity.badRequest()
                     .body(VisualGraphPublicationResult.rejected(generation.diagnostics()));

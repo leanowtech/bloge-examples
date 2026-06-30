@@ -135,6 +135,28 @@ public class DynamicGatewayComposerService {
         );
     }
 
+    /**
+     * Compiles submitted DSL without executing it.
+     *
+     * @param dsl submitted DSL
+     * @return compiler diagnostics
+     */
+    public List<DynamicGraphRunResponse.Diagnostic> compileDiagnostics(String dsl) {
+        if (dsl == null || dsl.isBlank()) {
+            return List.of(diagnostic("ERROR", "DSL source must not be blank."));
+        }
+        if (dsl.length() > MAX_DSL_CHARS) {
+            return List.of(diagnostic("ERROR", "DSL source exceeds %d characters.".formatted(MAX_DSL_CHARS)));
+        }
+        CompilationResult compilation = graphLoader.loadWithDiagnostics(dsl);
+        List<DynamicGraphRunResponse.Diagnostic> diagnostics = new ArrayList<>(
+                diagnostics(compilation.diagnostics()));
+        if (compilation.graph() == null && diagnostics.stream().noneMatch(DynamicGatewayComposerService::error)) {
+            diagnostics.add(diagnostic("ERROR", "Compilation failed."));
+        }
+        return diagnostics;
+    }
+
     private static OperatorRegistry dynamicRegistry(Operator<Object, ?> httpResourceOperator) {
         DefaultOperatorRegistry registry = new DefaultOperatorRegistry();
         registry.registerRaw("httpResource", httpResourceOperator);
@@ -213,6 +235,14 @@ public class DynamicGatewayComposerService {
                 null,
                 null
         );
+    }
+
+    private static DynamicGraphRunResponse.Diagnostic diagnostic(String level, String message) {
+        return new DynamicGraphRunResponse.Diagnostic(level, message, "", "", -1, -1);
+    }
+
+    private static boolean error(DynamicGraphRunResponse.Diagnostic diagnostic) {
+        return "ERROR".equalsIgnoreCase(diagnostic.level());
     }
 
     private static ExampleVisualLayout layoutFor(Graph graph) {

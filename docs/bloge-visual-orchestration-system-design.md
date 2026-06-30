@@ -537,6 +537,9 @@ target enum values 的子集，普通 `string` 不能直接接入 enum input。�
 引用；`nodePath` binding 必须有可见 data edge，防止画布连线和 DSL 输入语义分叉。
 未知 binding kind 会在 `GraphDraftValidator` 被阻断，不能落到 codegen 的 literal fallback
 绕过 target schema gate。
+浏览器侧的 connection hint 和 source picker 也要复用这些关键规则，至少覆盖
+object required 字段证明、array item 递归兼容、enum 值域子集和普通 `string`
+不能隐式接入 enum，减少画布交互与服务端裁决之间的断层。
 同一节点内多个 binding 写入同一解析后输入目标，或 root/path 前缀重叠，
 会以 `visual.input.duplicateTarget` 阻断；不同 input port 上同名字段仍然合法，
 例如 `customer.id` 和 `order.id`。
@@ -794,6 +797,9 @@ MVP 可用内存或 H2，正式方向应使用 graph-engine version store 或独
   不能让画布展示一份不可编译的“近似 DSL”。
 - 保持稳定排序，减少 diff 噪音。
 - 将 compiler diagnostics 映射回 draft 节点。
+- `/compile` 与 `/publish` 不能停在 codegen 成功，必须把生成 DSL 交给 BLOGE
+  compiler；只有 compiler 无 blocking error 时才允许返回 compiled/generated
+  success 或创建 immutable publication。
 
 ### 14.5 runtime
 
