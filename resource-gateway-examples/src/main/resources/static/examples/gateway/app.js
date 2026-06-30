@@ -2052,7 +2052,7 @@ async function previewOpenApiResourceContract() {
     resourceId: current.resourceId.trim(),
     operationId: current.operationId?.trim() || null,
     path: current.path?.trim() || null,
-    method: current.method || null,
+    method: current.path?.trim() ? current.method || null : null,
     status: current.status || null,
     openApi
   };
