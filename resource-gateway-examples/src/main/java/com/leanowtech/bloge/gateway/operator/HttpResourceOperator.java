@@ -117,15 +117,17 @@ public class HttpResourceOperator implements Operator<Object, HttpResourceOutput
 
         Map<String, String> pathValues = evaluatePathExpressions(mapping, exprContext);
         Map<String, String> queryParams = evaluateQueryExpressions(mapping, exprContext);
+        Map<String, String> dynamicHeaders = evaluateHeaderExpressions(mapping, exprContext);
         Object body = evaluateBodyExpression(mapping, exprContext);
 
         // 3. Render URL with path variables and append query parameters
         String url = renderer.render(descriptor.urlTemplate(), pathValues);
         url = appendQueryParams(url, queryParams);
 
-        // 4. Merge headers: descriptor defaults + per-call overrides
+        // 4. Merge headers: descriptor defaults + dynamic expressions + per-call overrides
         Map<String, String> headers = mergeHeaders(
                 descriptor.defaultHeaders(),
+                dynamicHeaders,
                 input.headerOverrides(),
                 ctx.graphContext().tenantId(),
                 ctx.graphContext().namespace()
@@ -305,6 +307,17 @@ public class HttpResourceOperator implements Operator<Object, HttpResourceOutput
         return result;
     }
 
+    private Map<String, String> evaluateHeaderExpressions(ParameterMapping mapping, Map<String, Object> context) {
+        Map<String, String> result = new LinkedHashMap<>();
+        for (var entry : mapping.headerExpressions().entrySet()) {
+            Object value = evaluator.evaluate(entry.getValue(), context);
+            if (value != null) {
+                result.put(entry.getKey(), value.toString());
+            }
+        }
+        return result;
+    }
+
     private Object evaluateBodyExpression(ParameterMapping mapping, Map<String, Object> context) {
         if (mapping.bodyExpression() == null || mapping.bodyExpression().isBlank()) {
             return null;
@@ -343,10 +356,14 @@ public class HttpResourceOperator implements Operator<Object, HttpResourceOutput
     }
 
     private static Map<String, String> mergeHeaders(Map<String, String> defaults,
+                                                    Map<String, String> dynamicHeaders,
                                                     Map<String, String> overrides,
                                                     String tenantId,
                                                     String namespace) {
         Map<String, String> merged = new HashMap<>(defaults);
+        if (!dynamicHeaders.isEmpty()) {
+            merged.putAll(dynamicHeaders);
+        }
         if (!overrides.isEmpty()) {
             merged.putAll(overrides);
         }

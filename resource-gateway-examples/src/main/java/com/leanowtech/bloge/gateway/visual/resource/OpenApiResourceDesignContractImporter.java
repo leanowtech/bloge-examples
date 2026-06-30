@@ -736,12 +736,15 @@ public class OpenApiResourceDesignContractImporter {
                                                     List<VisualDiagnostic> diagnostics) {
         Map<String, String> pathExpressions = new LinkedHashMap<>();
         Map<String, String> queryExpressions = new LinkedHashMap<>();
+        Map<String, String> headerExpressions = new LinkedHashMap<>();
         for (OpenApiParameter parameter : descriptorParameters(openApi, selected)) {
             if ("path".equals(parameter.location())) {
-                putParameterExpression(pathExpressions, parameter, diagnostics);
+                putParameterExpression(pathExpressions, parameter);
             } else if ("query".equals(parameter.location())) {
-                putParameterExpression(queryExpressions, parameter, diagnostics);
-            } else if ("header".equals(parameter.location()) || "cookie".equals(parameter.location())) {
+                putParameterExpression(queryExpressions, parameter);
+            } else if ("header".equals(parameter.location())) {
+                putParameterExpression(headerExpressions, parameter);
+            } else if ("cookie".equals(parameter.location())) {
                 diagnostics.add(VisualDiagnostic.warning(
                         "visual.resourceContract.openapi.descriptorParameterLocationUnsupported",
                         "OpenAPI %s parameter '%s' is present in the contract schema but cannot be mapped by ResourceDescriptor; review descriptorSuggestion before saving."
@@ -764,23 +767,16 @@ public class OpenApiResourceDesignContractImporter {
                 headers,
                 null,
                 Duration.ofSeconds(30),
-                new ParameterMapping(pathExpressions, queryExpressions, hasBody ? "ctx.params.body" : null),
+                new ParameterMapping(pathExpressions, queryExpressions, headerExpressions,
+                        hasBody ? "ctx.params.body" : null),
                 new ResponseProtocol.HttpStatus(),
                 null
         );
     }
 
     private void putParameterExpression(Map<String, String> expressions,
-                                        OpenApiParameter parameter,
-                                        List<VisualDiagnostic> diagnostics) {
-        if (!expressionFieldName(parameter.name())) {
-            diagnostics.add(VisualDiagnostic.warning("visual.resourceContract.openapi.descriptorParameterUnsupported",
-                    "OpenAPI parameter '%s' is present in the contract schema but cannot be mapped by ResourceDescriptor because it is not a BLOGE field identifier; review descriptorSuggestion before saving."
-                            .formatted(parameter.name()),
-                    parameter.target()));
-            return;
-        }
-        expressions.put(parameter.name(), "ctx.params." + parameter.name());
+                                        OpenApiParameter parameter) {
+        expressions.put(parameter.name(), parameterExpression(parameter.name()));
     }
 
     private List<OpenApiParameter> descriptorParameters(Map<String, Object> openApi,
@@ -939,6 +935,13 @@ public class OpenApiResourceDesignContractImporter {
         return value == null ? "" : String.valueOf(value).trim();
     }
 
+    private static String parameterExpression(String name) {
+        if (expressionFieldName(name)) {
+            return "ctx.params." + name;
+        }
+        return "ctx.params[\"" + escapeExpressionString(name) + "\"]";
+    }
+
     private static boolean expressionFieldName(String value) {
         if (value == null || value.isBlank()) {
             return false;
@@ -954,6 +957,10 @@ public class OpenApiResourceDesignContractImporter {
             }
         }
         return true;
+    }
+
+    private static String escapeExpressionString(String value) {
+        return value.replace("\\", "\\\\").replace("\"", "\\\"");
     }
 
     private static Map<String, Object> objectMap(Map<?, ?> map) {

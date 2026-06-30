@@ -65,6 +65,38 @@ class ResourceRegistryAdminControllerTest {
     }
 
     @Test
+    void createDescriptorWithHeaderExpressions_roundTrips() throws Exception {
+        var descriptor = new ResourceDescriptor(
+                "test.headers-api",
+                "http://example.com/api/{id}",
+                "GET",
+                Map.of("Accept", "application/json"),
+                null,
+                Duration.ofSeconds(5),
+                new ParameterMapping(
+                        Map.of("id", "ctx.params.id"),
+                        Map.of(),
+                        Map.of("X-Request-Id", "ctx.params[\"X-Request-Id\"]"),
+                        null
+                ),
+                new ResponseProtocol.HttpStatus(),
+                null
+        );
+
+        mockMvc.perform(post("/admin/resources")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(descriptor)))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$['parameterMapping']['headerExpressions']['X-Request-Id']")
+                        .value("ctx.params[\"X-Request-Id\"]"));
+
+        mockMvc.perform(get("/admin/resources/test.headers-api"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$['parameterMapping']['headerExpressions']['X-Request-Id']")
+                        .value("ctx.params[\"X-Request-Id\"]"));
+    }
+
+    @Test
     void getOne_afterCreate() throws Exception {
         var descriptor = simpleDescriptor("svc-get", "http://example.com/api/get", "GET");
         mockMvc.perform(post("/admin/resources")

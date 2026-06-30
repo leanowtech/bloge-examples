@@ -82,6 +82,8 @@ class OpenApiResourceDesignContractImporterTest {
                 .containsEntry("orderId", "ctx.params.orderId");
         assertThat(descriptor.parameterMapping().queryExpressions())
                 .containsEntry("expand", "ctx.params.expand");
+        assertThat(descriptor.parameterMapping().headerExpressions())
+                .containsEntry("X-Request-Id", "ctx.params[\"X-Request-Id\"]");
         assertThat(descriptor.parameterMapping().bodyExpression()).isEqualTo("ctx.params.body");
     }
 
@@ -295,6 +297,11 @@ class OpenApiResourceDesignContractImporterTest {
                                                 Map.of(
                                                         "name", "expand",
                                                         "in", "query",
+                                                        "schema", Map.of("type", "string")
+                                                ),
+                                                Map.of(
+                                                        "name", "X-Request-Id",
+                                                        "in", "header",
                                                         "schema", Map.of("type", "string")
                                                 )
                                         ),

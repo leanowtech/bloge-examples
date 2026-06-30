@@ -104,6 +104,60 @@ class HttpResourceOperatorTest {
         assertThat(headers).containsEntry("X-Namespace", "ns-1");
     }
 
+    @Test
+    @DisplayName("descriptor header expressions are evaluated before request execution")
+    void dynamicHeaderExpressions() throws Exception {
+        registry.put(new ResourceDescriptor(
+                "hdr.dynamic", "https://api.example.com/test", "GET",
+                Map.of("Accept", "application/json", "X-Request-Id", "default-request"), null,
+                Duration.ofSeconds(5),
+                new ParameterMapping(
+                        Map.of(),
+                        Map.of(),
+                        Map.of("X-Request-Id", "ctx.params[\"X-Request-Id\"]",
+                                "X-User-Segment", "ctx.params.segment"),
+                        null
+                ),
+                new ResponseProtocol.HttpStatus(), null
+        ));
+        httpStub.setResponse(new HttpResponseOutput(200, Map.of(), "{}", Duration.ofMillis(10)));
+
+        operator.execute(new HttpResourceInput("hdr.dynamic",
+                Map.of("X-Request-Id", "req-42", "segment", "gold")), operatorContext());
+
+        Map<String, String> headers = httpStub.lastHeaders();
+        assertThat(headers)
+                .containsEntry("Accept", "application/json")
+                .containsEntry("X-Request-Id", "req-42")
+                .containsEntry("X-User-Segment", "gold")
+                .containsEntry("X-Tenant-Id", "tenant-A")
+                .containsEntry("X-Namespace", "ns-1");
+    }
+
+    @Test
+    @DisplayName("per-call header overrides take precedence over descriptor header expressions")
+    void dynamicHeaderExpressionsRespectOverrides() throws Exception {
+        registry.put(new ResourceDescriptor(
+                "hdr.override", "https://api.example.com/test", "GET",
+                Map.of(), null, Duration.ofSeconds(5),
+                new ParameterMapping(
+                        Map.of(),
+                        Map.of(),
+                        Map.of("X-Request-Id", "ctx.params.requestId"),
+                        null
+                ),
+                new ResponseProtocol.HttpStatus(), null
+        ));
+        httpStub.setResponse(new HttpResponseOutput(200, Map.of(), "{}", Duration.ofMillis(10)));
+
+        operator.execute(new HttpResourceInput("hdr.override",
+                Map.of("requestId", "descriptor-value"),
+                Map.of("X-Request-Id", "override-value"),
+                null), operatorContext());
+
+        assertThat(httpStub.lastHeaders()).containsEntry("X-Request-Id", "override-value");
+    }
+
     // ── Timeout default vs override ─────────────────────────────────────
 
     @Test

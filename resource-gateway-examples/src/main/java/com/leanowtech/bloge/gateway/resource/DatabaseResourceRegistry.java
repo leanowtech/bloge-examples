@@ -194,6 +194,9 @@ public class DatabaseResourceRegistry implements WritableResourceRegistry {
         for (var entry : mapping.queryExpressions().entrySet()) {
             evaluator.precompile(entry.getValue());
         }
+        for (var entry : mapping.headerExpressions().entrySet()) {
+            evaluator.precompile(entry.getValue());
+        }
         if (mapping.bodyExpression() != null && !mapping.bodyExpression().isBlank()) {
             evaluator.precompile(mapping.bodyExpression());
         }

@@ -559,11 +559,12 @@ JSON response schema into `responseSchema`, rewrites local
 unsupported non-string OpenAPI formats with warnings, and also returns a
 reviewable `descriptorSuggestion` for the runtime `ResourceDescriptor`: OpenAPI
 servers plus path are projected into `urlTemplate`, path/query parameters become
-`ctx.params.*` mappings, JSON request bodies become `ctx.params.body`, and
-standard JSON headers plus HTTP-status response handling are filled in. Header
-and cookie parameters remain in the design contract but are reported as
-descriptor-suggestion warnings because the runtime descriptor does not own those
-dynamic mappings. The endpoint then runs the same registry-aware validation
+`ctx.params.*` mappings, header parameters become dynamic `headerExpressions`
+(with bracket access such as `ctx.params["X-Request-Id"]` for non-identifier
+header names), JSON request bodies become `ctx.params.body`, and standard JSON
+headers plus HTTP-status response handling are filled in. Cookie parameters
+remain in the design contract but are reported as descriptor-suggestion warnings
+because the runtime descriptor does not own cookie assembly. The endpoint then runs the same registry-aware validation
 preflight as `/validate`. It never mutates the contract or descriptor registries;
 authors still save the returned drafts through `PUT /admin/resource-design-contracts/{resourceId}`
 and `/admin/resources` after reviewing diagnostics.
@@ -1030,7 +1031,10 @@ curl -X POST http://localhost:8080/admin/resources \
       "pathExpressions": {
         "resourceId": "ctx.params.resourceId"
       },
-      "queryExpressions": {}
+      "queryExpressions": {},
+      "headerExpressions": {
+        "X-Request-Id": "ctx.params[\"X-Request-Id\"]"
+      }
     },
     "responseProtocol": {
       "type": "httpStatus"
@@ -1051,7 +1055,8 @@ curl -X POST http://localhost:8080/api/gateway/resources/execute \
   -d '{
     "resourceId": "gateway.self.getResource",
     "params": {
-      "resourceId": "user-service.getProfile"
+      "resourceId": "user-service.getProfile",
+      "X-Request-Id": "readme-req-1"
     },
     "headerOverrides": {
       "Accept": "application/json"
@@ -1078,7 +1083,8 @@ curl -X PUT http://localhost:8080/admin/resources/gateway.self.getResource \
       "pathExpressions": {
         "resourceId": "ctx.params.resourceId"
       },
-      "queryExpressions": {}
+      "queryExpressions": {},
+      "headerExpressions": {}
     },
     "responseProtocol": {
       "type": "httpStatus"
@@ -1133,7 +1139,7 @@ curl -X POST http://localhost:8080/api/gateway/resources/execute \
 
 ## Test strategy
 
-The test suite is organised into four layers (58 test report classes, 617 executed
+The test suite is organised into four layers (58 test report classes, 621 executed
 tests, including nested JUnit suites):
 
 ### Layer 1 — Unit tests
@@ -1150,12 +1156,12 @@ Isolated component tests, some with lightweight Spring slices or mocks.
 
 | Class | Tests | Scope |
 |-------|-------|-------|
-| `HttpResourceOperatorTest` | 11 | Descriptor resolution, parameter mapping, URL rendering, DSL map-input normalization |
+| `HttpResourceOperatorTest` | 13 | Descriptor resolution, parameter mapping, dynamic header mapping, URL rendering, DSL map-input normalization |
 | `ResponseValidatorTest` | 22 | All five `ResponseProtocol` variants |
 | `ResponseCacheInterceptorTest` | 4 | Cache hit/miss, TTL expiry |
 | `TenantRateLimiterInterceptorTest` | 3 | Token bucket, quota enforcement |
 | `CircuitBreakerInterceptorTest` | 5 | State transitions, cool-down |
-| `DatabaseResourceRegistryTest` | 11 | CRUD, H2 persistence, in-memory cache |
+| `DatabaseResourceRegistryTest` | 12 | CRUD, H2 persistence, expression validation, in-memory cache |
 | `ResourceDescriptorBootstrapTest` | 7 | Seeding, refresh behavior, idempotency |
 | `GatewayDslCompilationTest` | 7 | DSL parsing, graph loading |
 | Gateway example API suite | 15 | Dynamic composer service/controller, visual runtime context gates, scenario catalog, example graph endpoints |
@@ -1185,7 +1191,7 @@ standalone MockMvc coverage for the admin CRUD API.
 
 | Class | Tests | Scope |
 |-------|-------|-------|
-| `ResourceRegistryAdminControllerTest` | 8 | Admin CRUD via MockMvc |
+| `ResourceRegistryAdminControllerTest` | 9 | Admin CRUD and descriptor JSON round-trip via MockMvc |
 | `ResourceGatewayApplicationTest` | 3 | Spring Boot startup + built-in demo-upstream smoke coverage |
 | `ResourceExecuteIntegrationTest` | 8 | Unified execute endpoint -> `resourceDispatch` -> `HttpResourceOperator` -> WireMock |
 | `GatewayIntegrationTest` | 6 | Controller -> graph -> `HttpResourceOperator` -> WireMock end-to-end execution |

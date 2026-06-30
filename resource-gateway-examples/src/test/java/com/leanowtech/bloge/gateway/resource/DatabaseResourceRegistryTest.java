@@ -2,6 +2,7 @@ package com.leanowtech.bloge.gateway.resource;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
+import com.leanowtech.bloge.gateway.exception.ResourceDescriptorException;
 import com.leanowtech.bloge.gateway.exception.ResourceNotFoundException;
 import com.leanowtech.bloge.gateway.expression.BlgeExpressionEvaluator;
 import org.junit.jupiter.api.BeforeEach;
@@ -150,6 +151,26 @@ class DatabaseResourceRegistryTest {
                 null
         ));
         assertThat(registry.resolve("blge.api").responseProtocol()).isInstanceOf(ResponseProtocol.BlgeExpression.class);
+    }
+
+    @Test
+    void register_rejectsInvalidHeaderExpression() {
+        var descriptor = new ResourceDescriptor(
+                "bad-header.api",
+                "http://x.com/header",
+                "GET",
+                Map.of(),
+                null,
+                Duration.ofSeconds(5),
+                new ParameterMapping(Map.of(), Map.of(), Map.of("X-Request-Id", "==== garbage @@"), null),
+                new ResponseProtocol.HttpStatus(),
+                null
+        );
+
+        assertThatThrownBy(() -> registry.register(descriptor))
+                .isInstanceOf(ResourceDescriptorException.class)
+                .hasMessageContaining("==== garbage @@");
+        assertThat(registry.contains("bad-header.api")).isFalse();
     }
 
     private static ResourceDescriptor simpleDescriptor(String id, String url, String method) {
