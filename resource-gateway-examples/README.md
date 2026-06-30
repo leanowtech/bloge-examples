@@ -567,7 +567,7 @@ The browser Operator Libraries panel calls
 the validate endpoint directly, so authors can inspect an inline structured
 diagnostic list before storing a library. That validation is registry-aware:
 it reports cross-library `operatorRef` ownership conflicts and replacement
-impact against stored drafts before an import or replace request mutates storage.
+or disablement impact against stored drafts before an import or replace request mutates storage.
 It also emits non-blocking fingerprint drift warnings when a same-`operatorRef`
 replacement changes schema- or executable-relevant metadata used by stored
 draft snapshots, so authors can review and resave affected drafts before
@@ -585,10 +585,10 @@ same `Force` setting, and same warning diagnostics before it writes the library.
 | Method | Path | Description | Status |
 |--------|------|-------------|--------|
 | `GET` | `/admin/visual-operator-libraries` | List imported operator libraries | 200 |
-| `POST` | `/admin/visual-operator-libraries/validate` | Validate an operator library without storing it; use `force=true` to suppress stored-draft removal impact diagnostics; same-ref fingerprint drift is reported as a warning | 200 |
-| `POST` | `/admin/visual-operator-libraries` | Import or re-import an operator library; rejects removal of stored-draft operator refs unless `force=true` | 201 / 400 / 409 |
+| `POST` | `/admin/visual-operator-libraries/validate` | Validate an operator library without storing it; use `force=true` to suppress stored-draft removal/disablement impact diagnostics; same-ref fingerprint drift is reported as a warning | 200 |
+| `POST` | `/admin/visual-operator-libraries` | Import or re-import an operator library; rejects removal or disablement of stored-draft operator refs unless `force=true` | 201 / 400 / 409 |
 | `GET` | `/admin/visual-operator-libraries/{libraryId}` | Get one imported library | 200 / 404 |
-| `PUT` | `/admin/visual-operator-libraries/{libraryId}` | Replace an imported library; rejects removal of stored-draft operator refs unless `force=true` | 200 / 400 / 409 |
+| `PUT` | `/admin/visual-operator-libraries/{libraryId}` | Replace an imported library; rejects removal or disablement of stored-draft operator refs unless `force=true` | 200 / 400 / 409 |
 | `DELETE` | `/admin/visual-operator-libraries/{libraryId}` | Delete an imported library; rejects stored-draft references unless `force=true` | 204 / 409 |
 
 Create and update run the same validator before storage. The validator accepts
@@ -639,8 +639,9 @@ available only for existing nodes; use `DISABLED` when operators must be removed
 from all executable authoring paths. User operator library changes are
 impact-aware: by default the admin API rejects deletion, replacement, or
 re-import with `409 CONFLICT` when the operation would remove an `operatorRef`
-still used by any stored draft, and `force=true` is required for an explicit
-destructive removal.
+still used by any stored draft or make its library non-catalog-visible by
+setting it to `DISABLED`, and `force=true` is required for an explicit
+destructive change.
 Browser DSL preview and server codegen keep
 namespace-safe executable refs intact by quoting native
 operator refs that cannot be written as bare BLOGE `IDENT(.IDENT)*` references,

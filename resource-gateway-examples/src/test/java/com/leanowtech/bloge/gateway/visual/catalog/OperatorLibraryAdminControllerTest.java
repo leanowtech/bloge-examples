@@ -465,6 +465,25 @@ class OperatorLibraryAdminControllerTest {
     }
 
     @Test
+    void updateRejectsDisablingLibraryReferencedByStoredDraft() throws Exception {
+        OperatorLibrary original = VisualCatalogTestSupport.eligibilityLibrary("integer");
+        OperatorLibrary disabled = eligibilityLibraryWithStatus(OperatorLibrary.STATUS_DISABLED);
+        registry.upsert(original);
+        drafts.save(draftUsingOperator("risk:eligibility"));
+
+        mockMvc.perform(put("/admin/visual-operator-libraries/risk-policy")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(disabled)))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.valid").value(false))
+                .andExpect(jsonPath("$.diagnostics[0].code").value("visual.library.inUse"))
+                .andExpect(jsonPath("$.diagnostics[0].message").value(
+                        "Operator library 'risk-policy' cannot be replaced without force=true because draft 'draft-1@1' node 'eligibility' still uses operatorRef 'risk:eligibility'."));
+
+        assertThat(registry.find("risk-policy")).contains(original);
+    }
+
+    @Test
     void createRejectsReimportRemovingOperatorRefReferencedByStoredDraft() throws Exception {
         OperatorLibrary original = VisualCatalogTestSupport.multiOutputEligibilityLibrary("integer");
         OperatorLibrary replacement = libraryWithScoreFactsOnly();
@@ -491,6 +510,24 @@ class OperatorLibraryAdminControllerTest {
         mockMvc.perform(post("/admin/visual-operator-libraries/validate")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(replacement)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.valid").value(false))
+                .andExpect(jsonPath("$.diagnostics[0].code").value("visual.library.inUse"))
+                .andExpect(jsonPath("$.diagnostics[0].target").value("/drafts/draft-1/nodes/0/operatorRef"));
+
+        assertThat(registry.find("risk-policy")).contains(original);
+    }
+
+    @Test
+    void validateReportsDisablingLibraryReferencedByStoredDraft() throws Exception {
+        OperatorLibrary original = VisualCatalogTestSupport.eligibilityLibrary("integer");
+        OperatorLibrary disabled = eligibilityLibraryWithStatus(OperatorLibrary.STATUS_DISABLED);
+        registry.upsert(original);
+        drafts.save(draftUsingOperator("risk:eligibility"));
+
+        mockMvc.perform(post("/admin/visual-operator-libraries/validate")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(disabled)))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.valid").value(false))
                 .andExpect(jsonPath("$.diagnostics[0].code").value("visual.library.inUse"))
@@ -581,6 +618,22 @@ class OperatorLibraryAdminControllerTest {
         assertThat(registry.find("risk-policy")).contains(replacement);
     }
 
+    @Test
+    void updateForceBypassesDisabledLibraryReferenceGuard() throws Exception {
+        OperatorLibrary disabled = eligibilityLibraryWithStatus(OperatorLibrary.STATUS_DISABLED);
+        registry.upsert(VisualCatalogTestSupport.eligibilityLibrary("integer"));
+        drafts.save(draftUsingOperator("risk:eligibility"));
+
+        mockMvc.perform(put("/admin/visual-operator-libraries/risk-policy")
+                        .param("force", "true")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(disabled)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("DISABLED"));
+
+        assertThat(registry.find("risk-policy")).contains(disabled);
+    }
+
     private static OperatorLibrary invalidArrayLibrary() {
         OperatorDefinition operator = new OperatorDefinition(
                 "bloge.visualOperator.v1",
@@ -628,6 +681,18 @@ class OperatorLibraryAdminControllerTest {
 
     private static GraphDraft draftUsingOperator(String operatorRef, String fingerprint) {
         return draftUsingOperator(operatorRef, Map.of("eligibility", fingerprint));
+    }
+
+    private static OperatorLibrary eligibilityLibraryWithStatus(String status) {
+        return new OperatorLibrary(
+                "bloge.visualOperatorLibrary.v1",
+                "risk-policy",
+                "Risk policy operators",
+                "1.0.0",
+                "risk-team",
+                status,
+                List.of(VisualCatalogTestSupport.eligibilityOperator("integer"))
+        );
     }
 
     private static GraphDraft draftUsingOperator(String operatorRef, Map<String, String> fingerprints) {

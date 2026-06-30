@@ -223,9 +223,11 @@ public class OperatorLibraryAdminController {
         if (existing.isEmpty()) {
             return List.of();
         }
-        Set<String> replacementRefs = replacement.operators().stream()
-                .map(OperatorDefinition::operatorRef)
-                .collect(java.util.stream.Collectors.toCollection(LinkedHashSet::new));
+        Set<String> replacementRefs = replacement.visibleInCatalog(true)
+                ? replacement.operators().stream()
+                        .map(OperatorDefinition::operatorRef)
+                        .collect(java.util.stream.Collectors.toCollection(LinkedHashSet::new))
+                : Set.of();
         Set<String> removedRefs = existing.get().operators().stream()
                 .map(OperatorDefinition::operatorRef)
                 .filter(operatorRef -> !replacementRefs.contains(operatorRef))
