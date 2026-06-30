@@ -77,7 +77,10 @@ class VisualConnectionCheckServiceTest {
         assertThat(result.diagnostics())
                 .anySatisfy(diagnostic -> {
                     assertThat(diagnostic.code()).isEqualTo("visual.edge.typeMismatch");
-                    assertThat(diagnostic.message()).contains("string").contains("integer");
+                    assertThat(diagnostic.message())
+                            .contains("string")
+                            .contains("integer")
+                            .contains("source type string cannot feed target type integer");
                 });
     }
 

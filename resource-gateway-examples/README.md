@@ -90,7 +90,12 @@ selected operator's properties, bind every schema-declared input field from a
 schema-checked source picker or a manual expression, connect output handles to
 input handles under schema type constraints, confirm dropped connections and
 input/config source-picker selections through the server-side visual connection API before
-mutating the draft, validate
+mutating the draft, search the operator palette by label, operator ref,
+description, source kind/resource id, or tag and filter it by operator type/tag for
+larger imported catalogs, inspect each palette card's input/output port and
+schema-field summary before dragging, inspect the selected node's contract
+coverage summary for input/output ports, required binding coverage, and config
+field counts, validate
 user-provided operator library JSON before importing it into the catalog, opt
 into `force=true` for explicit destructive operator-library replacement or
 deletion after inspecting impact diagnostics,
@@ -130,7 +135,11 @@ and edges compare item schemas, so `array<string>` cannot be wired into an input
 that requires `array<integer>`. Enum value domains are checked too: an output
 constrained to `LOW|HIGH` cannot feed an input constrained to `APPROVE|REJECT`,
 and an unconstrained string cannot feed an enum input without an explicit
-transform. Literal `constant` bindings and `objectTemplate` fields are checked
+transform. Schema mismatch diagnostics explain the failing path and reason,
+such as an incompatible array `items` schema, an enum domain that is not a
+subset of the target domain, a missing required object field, or a required field
+that the source object declares but does not guarantee. Literal `constant`
+bindings and `objectTemplate` fields are checked
 against their target schema too, so fixed values cannot bypass required nested
 input types; an `objectTemplate` for `applicant` must recursively provide
 `applicant.score` before it satisfies that required nested input. Unsupported
@@ -497,7 +506,8 @@ fail later. Operator library validation applies the same DSL-safe field-name
 gate to native input/config schemas and transform assignment targets, returning
 `visual.operator.lowering.dslField.invalid` before an unsafe library enters the
 catalog. Browser connection hints mirror the server's stricter schema rules
-for object required-field proof and enum value-domain subsets, while the server
+for object required-field proof and enum value-domain subsets, and local hints
+include the same kind of failure reason the server returns while the server
 validator remains the publish/run authority. Draft compile and publish calls run
 the generated DSL through the BLOGE compiler before returning success, so a user
 library with a missing runtime native operator cannot produce a published artifact.

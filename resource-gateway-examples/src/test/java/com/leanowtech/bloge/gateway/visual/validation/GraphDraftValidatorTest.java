@@ -1328,7 +1328,11 @@ class GraphDraftValidatorTest {
         assertThat(result.diagnostics())
                 .anySatisfy(diagnostic -> {
                     assertThat(diagnostic.code()).isEqualTo("visual.binding.typeMismatch");
-                    assertThat(diagnostic.message()).contains("array<string>").contains("array<integer>");
+                    assertThat(diagnostic.message())
+                            .contains("array<string>")
+                            .contains("array<integer>")
+                            .contains("at 'items'")
+                            .contains("source type string cannot feed target type integer");
                 });
     }
 
@@ -1349,7 +1353,11 @@ class GraphDraftValidatorTest {
         assertThat(result.diagnostics())
                 .anySatisfy(diagnostic -> {
                     assertThat(diagnostic.code()).isEqualTo("visual.edge.typeMismatch");
-                    assertThat(diagnostic.message()).contains("array<string>").contains("array<integer>");
+                    assertThat(diagnostic.message())
+                            .contains("array<string>")
+                            .contains("array<integer>")
+                            .contains("at 'items'")
+                            .contains("source type string cannot feed target type integer");
                 });
     }
 
@@ -1384,7 +1392,9 @@ class GraphDraftValidatorTest {
                 .contains("visual.binding.typeMismatch", "visual.edge.typeMismatch");
         assertThat(result.diagnostics())
                 .anySatisfy(diagnostic -> assertThat(diagnostic.message())
-                        .contains("enum<LOW|HIGH>").contains("enum<APPROVE|REJECT>"));
+                        .contains("enum<LOW|HIGH>")
+                        .contains("enum<APPROVE|REJECT>")
+                        .contains("source enum value(s) [LOW, HIGH] are outside target enum [APPROVE, REJECT]"));
     }
 
     @Test
@@ -1402,6 +1412,9 @@ class GraphDraftValidatorTest {
         assertThat(result.diagnostics())
                 .extracting("code")
                 .contains("visual.binding.typeMismatch", "visual.edge.typeMismatch");
+        assertThat(result.diagnostics())
+                .anySatisfy(diagnostic -> assertThat(diagnostic.message())
+                        .contains("target enum [APPROVE, REJECT] requires a finite source enum domain"));
     }
 
     @Test
@@ -1437,6 +1450,10 @@ class GraphDraftValidatorTest {
         assertThat(result.diagnostics())
                 .extracting("code")
                 .contains("visual.binding.typeMismatch", "visual.edge.typeMismatch");
+        assertThat(result.diagnostics())
+                .anySatisfy(diagnostic -> assertThat(diagnostic.message())
+                        .contains("at 'tier'")
+                        .contains("source object does not declare required field 'tier'"));
     }
 
     @Test
@@ -1456,6 +1473,10 @@ class GraphDraftValidatorTest {
         assertThat(result.diagnostics())
                 .extracting("code")
                 .contains("visual.binding.typeMismatch", "visual.edge.typeMismatch");
+        assertThat(result.diagnostics())
+                .anySatisfy(diagnostic -> assertThat(diagnostic.message())
+                        .contains("at 'tier'")
+                        .contains("source object does not guarantee required field 'tier'"));
     }
 
     @Test
@@ -1475,6 +1496,10 @@ class GraphDraftValidatorTest {
         assertThat(result.diagnostics())
                 .extracting("code")
                 .contains("visual.binding.typeMismatch", "visual.edge.typeMismatch");
+        assertThat(result.diagnostics())
+                .anySatisfy(diagnostic -> assertThat(diagnostic.message())
+                        .contains("at 'score'")
+                        .contains("source type string cannot feed target type integer"));
     }
 
     @Test

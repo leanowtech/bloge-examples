@@ -289,6 +289,9 @@ const state = {
   libraryForce: false,
   libraryMessage: null,
   libraryImportConfirmationKey: '',
+  paletteSearch: '',
+  paletteKind: '',
+  paletteTag: '',
   draggingOperatorType: null,
   paletteDrag: null,
   nodeDrag: null,
@@ -400,6 +403,9 @@ function rememberCatalogOperator(operator, options = {}) {
       inputSchema: primaryInput.schema,
       outputSchema: primaryOutput.schema,
       configSchema: operator.configSchema,
+      description: operator.display?.description || '',
+      tags: Array.isArray(operator.display?.tags) ? operator.display.tags.map(String) : [],
+      sourceKind: operator.source?.kind || '',
       policy: operator.policy,
       lowering: operator.lowering,
       paletteVisible: options.paletteVisible !== false,
@@ -429,6 +435,9 @@ function rememberCatalogOperator(operator, options = {}) {
     inputSchema: primaryInput.schema,
     outputSchema: primaryOutput.schema,
     configSchema: operator.configSchema,
+    description: operator.display?.description || '',
+    tags: Array.isArray(operator.display?.tags) ? operator.display.tags.map(String) : [],
+    sourceKind: operator.source?.kind || '',
     policy: operator.policy,
     lowering: operator.lowering,
     paletteVisible: options.paletteVisible !== false,
@@ -686,6 +695,12 @@ function renderInputForm() {
       </div>
       <div class="builder-panel">
         <div class="panel-title">Operator Palette</div>
+        <div class="palette-controls">
+          <input id="operator-palette-search" type="search" value="${escapeHtml(state.paletteSearch)}" aria-label="Search operators">
+          <select id="operator-palette-kind" aria-label="Filter operators by type"></select>
+          <select id="operator-palette-tag" aria-label="Filter operators by tag"></select>
+        </div>
+        <div id="operator-palette-summary" class="palette-summary"></div>
         <div id="operator-palette" class="operator-palette"></div>
         <div id="connection-status" class="connection-status" hidden></div>
       </div>
@@ -1151,8 +1166,12 @@ function resetComposer() {
 function renderOperatorPalette() {
   const target = $('operator-palette');
   if (!target) return;
-  target.innerHTML = Object.entries(OPERATOR_TYPES)
-    .filter(([, spec]) => spec.paletteVisible !== false)
+  const entries = Object.entries(OPERATOR_TYPES)
+    .filter(([, spec]) => spec.paletteVisible !== false);
+  renderOperatorPaletteFilters(entries);
+  const filteredEntries = entries.filter(([type, spec]) => operatorMatchesPaletteFilter(type, spec));
+  renderOperatorPaletteSummary(filteredEntries.length, entries.length);
+  target.innerHTML = filteredEntries
     .map(([type, spec]) => `
     <button
       class="operator-card ${escapeHtml(spec.kind)}"
@@ -1161,8 +1180,10 @@ function renderOperatorPalette() {
       data-testid="operator-${escapeHtml(type)}">
       <strong>${escapeHtml(spec.label)}</strong>
       <span>${escapeHtml(spec.kind)}</span>
+      <small>${escapeHtml(operatorPaletteContractSummary(spec))}</small>
+      ${operatorPaletteTagBadges(spec)}
     </button>
-  `).join('');
+  `).join('') || '<div class="palette-empty">No matching operators.</div>';
   for (const button of target.querySelectorAll('[data-operator-type]')) {
     button.addEventListener('pointerdown', (event) => startPaletteDrag(event, button));
     button.addEventListener('dragstart', (event) => {
@@ -1180,6 +1201,118 @@ function renderOperatorPalette() {
       state.draggingOperatorType = null;
     });
   }
+}
+
+function renderOperatorPaletteFilters(entries) {
+  const search = $('operator-palette-search');
+  if (search) {
+    search.value = state.paletteSearch || '';
+    search.oninput = (event) => {
+      state.paletteSearch = event.target.value;
+      renderOperatorPalette();
+    };
+  }
+
+  const kinds = [...new Set(entries.map(([, spec]) => spec.kind).filter(Boolean))].sort();
+  const kindSelect = $('operator-palette-kind');
+  if (kindSelect) {
+    const selected = kinds.includes(state.paletteKind) ? state.paletteKind : '';
+    state.paletteKind = selected;
+    kindSelect.innerHTML = ['<option value="">All types</option>']
+      .concat(kinds.map((kind) => `<option value="${escapeHtml(kind)}">${escapeHtml(kind)}</option>`))
+      .join('');
+    kindSelect.value = selected;
+    kindSelect.onchange = (event) => {
+      state.paletteKind = event.target.value;
+      renderOperatorPalette();
+    };
+  }
+
+  const tags = [...new Set(entries.flatMap(([, spec]) => spec.tags || []).filter(Boolean))].sort();
+  const tagSelect = $('operator-palette-tag');
+  if (tagSelect) {
+    const selected = tags.includes(state.paletteTag) ? state.paletteTag : '';
+    state.paletteTag = selected;
+    tagSelect.innerHTML = ['<option value="">All tags</option>']
+      .concat(tags.map((tag) => `<option value="${escapeHtml(tag)}">${escapeHtml(tag)}</option>`))
+      .join('');
+    tagSelect.value = selected;
+    tagSelect.onchange = (event) => {
+      state.paletteTag = event.target.value;
+      renderOperatorPalette();
+    };
+  }
+}
+
+function renderOperatorPaletteSummary(visible, total) {
+  const target = $('operator-palette-summary');
+  if (!target) return;
+  const filters = [
+    state.paletteSearch ? `search "${state.paletteSearch.trim()}"` : '',
+    state.paletteKind ? `type ${state.paletteKind}` : '',
+    state.paletteTag ? `tag ${state.paletteTag}` : ''
+  ].filter(Boolean);
+  target.textContent = filters.length
+    ? `${visible} of ${total} operators match ${filters.join(', ')}.`
+    : `${total} operators available.`;
+}
+
+function operatorMatchesPaletteFilter(type, spec) {
+  if (state.paletteKind && spec.kind !== state.paletteKind) {
+    return false;
+  }
+  const tags = spec.tags || [];
+  if (state.paletteTag && !tags.includes(state.paletteTag)) {
+    return false;
+  }
+  const query = String(state.paletteSearch || '').trim().toLowerCase();
+  if (!query) {
+    return true;
+  }
+  return [
+    type,
+    spec.label,
+    spec.kind,
+    spec.operatorRef,
+    spec.visualOperatorRef,
+    spec.resourceId,
+    spec.description,
+    spec.sourceKind,
+    ...operatorPaletteSearchValues(spec),
+    ...tags
+  ]
+    .filter(Boolean)
+    .some((value) => String(value).toLowerCase().includes(query));
+}
+
+function operatorPaletteContractSummary(spec) {
+  const inputs = inputPortsForSpec(spec);
+  const outputs = outputPortsForSpec(spec);
+  const inputFields = inputs.flatMap((port) => schemaFieldDescriptors(port.schema)).length;
+  const outputFields = outputs.flatMap((port) => schemaFieldDescriptors(port.schema)).length;
+  return `In ${inputs.length}/${inputFields} fields · Out ${outputs.length}/${outputFields} fields`;
+}
+
+function operatorPaletteTagBadges(spec) {
+  const tags = (spec.tags || []).slice(0, 3);
+  if (!tags.length) {
+    return '';
+  }
+  return `<div class="operator-card-tags">${tags.map((tag) =>
+    `<em>${escapeHtml(tag)}</em>`).join('')}</div>`;
+}
+
+function operatorPaletteSearchValues(spec) {
+  return [
+    ...inputPortsForSpec(spec).flatMap((port) => [
+      port.name,
+      ...schemaFieldDescriptors(port.schema).map((field) => field.path)
+    ]),
+    ...outputPortsForSpec(spec).flatMap((port) => [
+      port.name,
+      ...schemaFieldDescriptors(port.schema).map((field) => field.path)
+    ])
+  ];
 }
 
 function renderConnectionStatus() {
@@ -2472,6 +2605,7 @@ function operatorEditorBody(node) {
         ${textField('Node', node.id, '', true)}
         ${textField('Resource ID', node.resourceId, 'resourceId')}
       </div>
+      ${renderOperatorContractPanel(node)}
       ${renderConfigPanel(node)}
       ${renderInputBindingsPanel(node)}
     `;
@@ -2486,6 +2620,7 @@ function operatorEditorBody(node) {
         ${textField('Node', node.id, '', true)}
         ${textField('Operator', spec.visualOperatorRef || node.paletteType, '', true)}
       </div>
+      ${renderOperatorContractPanel(node)}
       ${renderConfigPanel(node)}
       ${renderInputBindingsPanel(node)}
     `;
@@ -2506,6 +2641,7 @@ function operatorEditorBody(node) {
       <div class="operator-fields">
         ${textField('Node', node.id, '', true)}
       </div>
+      ${renderOperatorContractPanel(node)}
       ${renderInputBindingsPanel(node)}
       <div class="rule-editor">
         <div class="rule-editor-title">
@@ -2535,6 +2671,66 @@ function operatorEditorBody(node) {
     <div class="operator-fields">
       ${textField('Node', node.id, '', true)}
       ${textField('Policy Node', node.policyNode || firstDecisionTableId(), 'policyNode')}
+    </div>
+    ${renderOperatorContractPanel(node)}
+  `;
+}
+
+function renderOperatorContractPanel(node) {
+  const spec = specForNode(node);
+  if (spec.unavailable) {
+    return '';
+  }
+  const targets = targetHandlesForNode(node);
+  const configFields = configFieldDescriptors(spec.configSchema);
+  const requiredTargets = targets.filter((target) => target.required);
+  const statuses = targets.map((target) => {
+    const expression = expressionForTargetInput(node, target);
+    return {
+      target,
+      expression,
+      status: bindingStatusForTarget(node, target, expression)
+    };
+  });
+  const bound = statuses.filter((item) => String(item.expression || '').trim()).length;
+  const requiredValid = statuses.filter((item) => item.target.required && item.status.level === 'success').length;
+  const errors = statuses.filter((item) => item.status.level === 'error').length;
+  return `
+    <div class="contract-panel">
+      <div class="binding-panel-title">
+        <span>Contract</span>
+        <small>${bound}/${targets.length} inputs bound · ${requiredValid}/${requiredTargets.length} required valid · ${errors} issues</small>
+      </div>
+      <div class="contract-port-groups">
+        ${renderContractPortGroup('Inputs', inputPortsForSpec(spec))}
+        ${renderContractPortGroup('Outputs', outputPortsForSpec(spec))}
+      </div>
+      ${configFields.length ? `
+        <div class="contract-config-summary">
+          <strong>Config</strong>
+          <span>${configFields.length} fields · ${configFields.filter((field) => field.required).length} required</span>
+        </div>
+      ` : ''}
+    </div>
+  `;
+}
+
+function renderContractPortGroup(label, ports) {
+  const rows = ports.map((port) => {
+    const fields = schemaFieldDescriptors(port.schema);
+    const required = fields.filter((field) => field.required).length;
+    const rootType = schemaType(port.schema?.schema) || 'any';
+    return `
+      <div class="contract-port-row">
+        <strong>${escapeHtml(port.name)}</strong>
+        <span>${escapeHtml(rootType)} · ${fields.length} fields · ${required} required</span>
+      </div>
+    `;
+  }).join('');
+  return `
+    <div class="contract-port-group">
+      <div class="contract-port-title">${escapeHtml(label)}</div>
+      ${rows || '<div class="contract-port-row empty"><span>None</span></div>'}
     </div>
   `;
 }
@@ -5229,53 +5425,101 @@ function connectionCompatibility(source, target) {
   }
   const sourceType = schemaType(sourceSchema);
   const targetType = schemaType(targetSchema);
-  if (!schemasCompatible(sourceSchema, targetSchema)) {
-    return { ok: false, message: `Type mismatch: ${sourceType} cannot feed ${targetType}.` };
+  const compatibilityIssue = schemaCompatibilityIssue(sourceSchema, targetSchema);
+  if (compatibilityIssue) {
+    return {
+      ok: false,
+      message: `Type mismatch: ${sourceType} cannot feed ${targetType}. Reason: ${compatibilityIssue}.`
+    };
   }
   return { ok: true, message: '' };
 }
 
 function schemasCompatible(sourceSchema, targetSchema) {
+  return !schemaCompatibilityIssue(sourceSchema, targetSchema);
+}
+
+function schemaCompatibilityIssue(sourceSchema, targetSchema, path = '') {
   const sourceType = rawSchemaType(sourceSchema);
   const targetType = rawSchemaType(targetSchema);
   if (!sourceType || !targetType || sourceType === 'any' || targetType === 'any' || sourceType === 'opaque' || targetType === 'opaque') {
-    return true;
+    return '';
   }
   if (sourceType === 'array' && targetType === 'array') {
-    return !sourceSchema?.items || !targetSchema?.items || schemasCompatible(sourceSchema.items, targetSchema.items);
+    return !sourceSchema?.items || !targetSchema?.items
+      ? ''
+      : schemaCompatibilityIssue(sourceSchema.items, targetSchema.items, appendCompatibilityPath(path, 'items'));
   }
   if (sourceType === 'object' && targetType === 'object') {
-    return objectSchemasCompatible(sourceSchema, targetSchema);
+    return objectSchemaCompatibilityIssue(sourceSchema, targetSchema, path);
   }
   const targetEnumValues = schemaEnumValues(targetSchema);
   if (targetEnumValues.length) {
     const sourceEnumValues = schemaEnumValues(sourceSchema);
-    return Boolean(sourceEnumValues.length) && sourceEnumValues.every((value) =>
-      targetEnumValues.some((targetValue) => Object.is(targetValue, value))
+    if (!sourceEnumValues.length) {
+      return reasonAt(path, `target enum ${valueDomainLabel(targetEnumValues)} requires a finite source enum domain, but source is ${schemaType(sourceSchema)}`);
+    }
+    const outside = sourceEnumValues.filter((value) =>
+      !targetEnumValues.some((targetValue) => Object.is(targetValue, value))
     );
+    return outside.length
+      ? reasonAt(path, `source enum value(s) ${valueDomainLabel(outside)} are outside target enum ${valueDomainLabel(targetEnumValues)}`)
+      : '';
   }
   if (sourceType === 'enum') {
     const sourceEnumValues = schemaEnumValues(sourceSchema);
-    return !sourceEnumValues.length || sourceEnumValues.every((value) => schemaValueMatchesType(value, targetType));
+    if (!sourceEnumValues.length) {
+      return '';
+    }
+    const incompatible = sourceEnumValues.filter((value) => !schemaValueMatchesType(value, targetType));
+    return incompatible.length
+      ? reasonAt(path, `source enum value(s) ${valueDomainLabel(incompatible)} do not match target type ${targetType}`)
+      : '';
   }
-  return sourceType === targetType || (numericType(sourceType) && numericType(targetType));
+  return sourceType === targetType || (numericType(sourceType) && numericType(targetType))
+    ? ''
+    : reasonAt(path, `source type ${schemaType(sourceSchema)} cannot feed target type ${schemaType(targetSchema)}`);
 }
 
 function objectSchemasCompatible(sourceSchema, targetSchema) {
+  return !objectSchemaCompatibilityIssue(sourceSchema, targetSchema);
+}
+
+function objectSchemaCompatibilityIssue(sourceSchema, targetSchema, path = '') {
   const sourceProperties = schemaObjectProperties(sourceSchema);
   const targetProperties = schemaObjectProperties(targetSchema);
   const sourceRequired = new Set(schemaRequiredNames(sourceSchema));
   for (const required of schemaRequiredNames(targetSchema)) {
+    const childPath = appendCompatibilityPath(path, required);
     const sourceProperty = sourceProperties[required];
     const targetProperty = targetProperties[required];
-    if (!sourceRequired.has(required)
-      || !sourceProperty
-      || !targetProperty
-      || !schemasCompatible(sourceProperty, targetProperty)) {
-      return false;
+    if (!sourceProperty) {
+      return reasonAt(childPath, `source object does not declare required field '${required}'`);
+    }
+    if (!targetProperty) {
+      return reasonAt(childPath, `target schema requires undeclared field '${required}'`);
+    }
+    if (!sourceRequired.has(required)) {
+      return reasonAt(childPath, `source object does not guarantee required field '${required}'`);
+    }
+    const nested = schemaCompatibilityIssue(sourceProperty, targetProperty, childPath);
+    if (nested) {
+      return nested;
     }
   }
-  return true;
+  return '';
+}
+
+function appendCompatibilityPath(path, segment) {
+  return path ? `${path}.${segment}` : segment;
+}
+
+function reasonAt(path, reason) {
+  return path ? `at '${path}': ${reason}` : reason;
+}
+
+function valueDomainLabel(values) {
+  return `[${values.map(String).join(', ')}]`;
 }
 
 function schemaEnumValues(schema) {

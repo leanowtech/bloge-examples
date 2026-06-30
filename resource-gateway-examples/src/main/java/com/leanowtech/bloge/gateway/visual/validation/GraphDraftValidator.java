@@ -459,9 +459,13 @@ public class GraphDraftValidator {
                                                     String targetPath,
                                                     List<VisualDiagnostic> diagnostics) {
         if (sourceSchema != null && targetSchema != null && !schemasCompatible(sourceSchema, targetSchema)) {
+            String reason = schemaCompatibilityIssue(sourceSchema, targetSchema)
+                    .map(GraphDraftValidator::compatibilityReason)
+                    .orElse("");
             diagnostics.add(VisualDiagnostic.error("visual.config.typeMismatch",
                     "Cannot assign config expression '%s' %s to config %s."
-                            .formatted(label, schemaTypeLabel(sourceSchema), schemaTypeLabel(targetSchema)),
+                            .formatted(label, schemaTypeLabel(sourceSchema), schemaTypeLabel(targetSchema))
+                            + reason,
                     targetPath));
         }
     }
@@ -579,11 +583,13 @@ public class GraphDraftValidator {
                     targetPath));
             return;
         }
-        if (!schemasCompatible(sourceProperty, targetProperty)) {
+        Optional<String> compatibilityIssue = schemaCompatibilityIssue(sourceProperty, targetProperty);
+        if (compatibilityIssue.isPresent()) {
             diagnostics.add(VisualDiagnostic.error("visual.binding.typeMismatch",
                     "Cannot bind %s output '%s.%s' to %s input '%s.%s'."
                             .formatted(schemaTypeLabel(sourceProperty), sourcePort.get().name(), binding.path(),
-                                    schemaTypeLabel(targetProperty), targetPort.get().name(), inputName),
+                                    schemaTypeLabel(targetProperty), targetPort.get().name(), inputName)
+                            + compatibilityReason(compatibilityIssue.get()),
                     targetPath));
         }
     }
@@ -620,11 +626,13 @@ public class GraphDraftValidator {
                     targetPath));
             return;
         }
-        if (!schemasCompatible(sourceProperty, targetProperty)) {
+        Optional<String> compatibilityIssue = schemaCompatibilityIssue(sourceProperty, targetProperty);
+        if (compatibilityIssue.isPresent()) {
             diagnostics.add(VisualDiagnostic.error("visual.binding.typeMismatch",
                     "Cannot bind graph input %s 'ctx.%s' to %s input '%s.%s'."
                             .formatted(schemaTypeLabel(sourceProperty), binding.path(),
-                                    schemaTypeLabel(targetProperty), targetPort.get().name(), inputName),
+                                    schemaTypeLabel(targetProperty), targetPort.get().name(), inputName)
+                            + compatibilityReason(compatibilityIssue.get()),
                     targetPath));
         }
     }
@@ -696,11 +704,15 @@ public class GraphDraftValidator {
         ExpressionReference pureReference = resolvePureExpressionReference(expression, inputSchema,
                 nodesById, operatorsByNodeId, targetPath, diagnostics);
         if (pureReference.matched()) {
-            if (pureReference.schema() != null && !schemasCompatible(pureReference.schema(), targetProperty)) {
+            Optional<String> compatibilityIssue = pureReference.schema() == null
+                    ? Optional.empty()
+                    : schemaCompatibilityIssue(pureReference.schema(), targetProperty);
+            if (compatibilityIssue.isPresent()) {
                 diagnostics.add(VisualDiagnostic.error("visual.binding.typeMismatch",
                         "Cannot bind expression '%s' %s to %s input '%s.%s'."
                                 .formatted(pureReference.label(), schemaTypeLabel(pureReference.schema()),
-                                        schemaTypeLabel(targetProperty), targetPort.get().name(), inputName),
+                                        schemaTypeLabel(targetProperty), targetPort.get().name(), inputName)
+                                + compatibilityReason(compatibilityIssue.get()),
                         targetPath));
             }
             return;
@@ -960,52 +972,124 @@ public class GraphDraftValidator {
     }
 
     private static boolean schemasCompatible(Map<String, Object> sourceSchema, Map<String, Object> targetSchema) {
+        return schemaCompatibilityIssue(sourceSchema, targetSchema).isEmpty();
+    }
+
+    private static Optional<String> schemaCompatibilityIssue(Map<String, Object> sourceSchema,
+                                                             Map<String, Object> targetSchema) {
+        return schemaCompatibilityIssue(sourceSchema, targetSchema, "");
+    }
+
+    private static Optional<String> schemaCompatibilityIssue(Map<String, Object> sourceSchema,
+                                                             Map<String, Object> targetSchema,
+                                                             String path) {
         String sourceType = schemaType(sourceSchema);
         String targetType = schemaType(targetSchema);
         if (sourceType.isBlank() || targetType.isBlank()
                 || "any".equals(sourceType) || "any".equals(targetType)
                 || "opaque".equals(sourceType) || "opaque".equals(targetType)) {
-            return true;
+            return Optional.empty();
         }
         if ("array".equals(sourceType) && "array".equals(targetType)) {
             Map<String, Object> sourceItems = objectProperty(sourceSchema.get("items"));
             Map<String, Object> targetItems = objectProperty(targetSchema.get("items"));
-            return sourceItems == null || targetItems == null || schemasCompatible(sourceItems, targetItems);
+            return sourceItems == null || targetItems == null
+                    ? Optional.empty()
+                    : schemaCompatibilityIssue(sourceItems, targetItems, appendCompatibilityPath(path, "items"));
         }
         if ("object".equals(sourceType) && "object".equals(targetType)) {
-            return objectSchemasCompatible(sourceSchema, targetSchema);
+            return objectSchemaCompatibilityIssue(sourceSchema, targetSchema, path);
         }
         List<Object> targetEnumValues = enumValues(targetSchema);
         if (!targetEnumValues.isEmpty()) {
             List<Object> sourceEnumValues = enumValues(sourceSchema);
-            return !sourceEnumValues.isEmpty() && targetEnumValues.containsAll(sourceEnumValues);
+            if (sourceEnumValues.isEmpty()) {
+                return Optional.of(reasonAt(path,
+                        "target enum %s requires a finite source enum domain, but source is %s"
+                                .formatted(valueDomainLabel(targetEnumValues), schemaTypeLabel(sourceSchema))));
+            }
+            List<Object> outside = sourceEnumValues.stream()
+                    .filter(value -> !targetEnumValues.contains(value))
+                    .toList();
+            if (!outside.isEmpty()) {
+                return Optional.of(reasonAt(path,
+                        "source enum value(s) %s are outside target enum %s"
+                                .formatted(valueDomainLabel(outside), valueDomainLabel(targetEnumValues))));
+            }
+            return Optional.empty();
         }
         if ("enum".equals(sourceType)) {
             List<Object> sourceEnumValues = enumValues(sourceSchema);
-            return sourceEnumValues.isEmpty()
-                    || sourceEnumValues.stream().allMatch(value -> configValueMatchesType(value, targetType));
+            if (sourceEnumValues.isEmpty()) {
+                return Optional.empty();
+            }
+            List<Object> incompatible = sourceEnumValues.stream()
+                    .filter(value -> !configValueMatchesType(value, targetType))
+                    .toList();
+            if (!incompatible.isEmpty()) {
+                return Optional.of(reasonAt(path,
+                        "source enum value(s) %s do not match target type %s"
+                                .formatted(valueDomainLabel(incompatible), targetType)));
+            }
+            return Optional.empty();
         }
         if (sourceType.equals(targetType)) {
-            return true;
+            return Optional.empty();
         }
-        return numeric(sourceType) && numeric(targetType);
+        return numeric(sourceType) && numeric(targetType)
+                ? Optional.empty()
+                : Optional.of(reasonAt(path,
+                "source type %s cannot feed target type %s"
+                        .formatted(schemaTypeLabel(sourceSchema), schemaTypeLabel(targetSchema))));
     }
 
-    private static boolean objectSchemasCompatible(Map<String, Object> sourceSchema,
-                                                   Map<String, Object> targetSchema) {
+    private static Optional<String> objectSchemaCompatibilityIssue(Map<String, Object> sourceSchema,
+                                                                   Map<String, Object> targetSchema,
+                                                                   String path) {
         Map<String, Object> sourceProperties = propertiesOf(sourceSchema);
         Map<String, Object> targetProperties = propertiesOf(targetSchema);
         Set<String> sourceRequired = new HashSet<>(requiredNamesOf(sourceSchema));
         for (String required : requiredNamesOf(targetSchema)) {
+            String childPath = appendCompatibilityPath(path, required);
             Map<String, Object> sourceProperty = objectProperty(sourceProperties.get(required));
             Map<String, Object> targetProperty = objectProperty(targetProperties.get(required));
-            if (!sourceRequired.contains(required)
-                    || sourceProperty == null || targetProperty == null
-                    || !schemasCompatible(sourceProperty, targetProperty)) {
-                return false;
+            if (sourceProperty == null) {
+                return Optional.of(reasonAt(childPath,
+                        "source object does not declare required field '%s'".formatted(required)));
+            }
+            if (targetProperty == null) {
+                return Optional.of(reasonAt(childPath,
+                        "target schema requires undeclared field '%s'".formatted(required)));
+            }
+            if (!sourceRequired.contains(required)) {
+                return Optional.of(reasonAt(childPath,
+                        "source object does not guarantee required field '%s'".formatted(required)));
+            }
+            Optional<String> nested = schemaCompatibilityIssue(sourceProperty, targetProperty, childPath);
+            if (nested.isPresent()) {
+                return nested;
             }
         }
-        return true;
+        return Optional.empty();
+    }
+
+    private static String appendCompatibilityPath(String path, String segment) {
+        if (path == null || path.isBlank()) {
+            return segment;
+        }
+        return path + "." + segment;
+    }
+
+    private static String reasonAt(String path, String reason) {
+        return path == null || path.isBlank() ? reason : "at '%s': %s".formatted(path, reason);
+    }
+
+    private static String compatibilityReason(String reason) {
+        return reason == null || reason.isBlank() ? "" : " Reason: " + reason + ".";
+    }
+
+    private static String valueDomainLabel(List<Object> values) {
+        return values.stream().map(String::valueOf).toList().toString();
     }
 
     private static List<Object> enumValues(Map<String, Object> schema) {
@@ -1081,11 +1165,13 @@ public class GraphDraftValidator {
                         edgePath + "/target/path"));
                 continue;
             }
-            if (!schemasCompatible(sourceProperty, targetProperty)) {
+            Optional<String> compatibilityIssue = schemaCompatibilityIssue(sourceProperty, targetProperty);
+            if (compatibilityIssue.isPresent()) {
                 diagnostics.add(VisualDiagnostic.error("visual.edge.typeMismatch",
                         "Cannot connect %s output '%s' to %s input '%s'."
                                 .formatted(schemaTypeLabel(sourceProperty), edge.source().path(),
-                                        schemaTypeLabel(targetProperty), edge.target().path()),
+                                        schemaTypeLabel(targetProperty), edge.target().path())
+                                + compatibilityReason(compatibilityIssue.get()),
                         edgePath));
             }
         }
