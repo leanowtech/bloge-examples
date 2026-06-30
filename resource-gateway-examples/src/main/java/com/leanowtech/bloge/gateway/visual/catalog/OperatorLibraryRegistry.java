@@ -39,11 +39,11 @@ public interface OperatorLibraryRegistry {
 
     /**
      * @param includeDeprecated include deprecated libraries
-     * @return all operators contributed by active libraries
+     * @return all operators contributed by catalog-visible libraries
      */
     default List<OperatorDefinition> operators(boolean includeDeprecated) {
         return all().stream()
-                .filter(library -> includeDeprecated || !"DEPRECATED".equalsIgnoreCase(library.status()))
+                .filter(library -> library.visibleInCatalog(includeDeprecated))
                 .flatMap(library -> library.operators().stream())
                 .toList();
     }

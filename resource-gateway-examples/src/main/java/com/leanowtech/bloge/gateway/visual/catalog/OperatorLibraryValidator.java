@@ -63,6 +63,12 @@ public class OperatorLibraryValidator {
                     "Operator library must declare a libraryId.",
                     "/libraryId"));
         }
+        if (!OperatorLibrary.isSupportedStatus(library.status())) {
+            diagnostics.add(VisualDiagnostic.error("visual.library.status.unsupported",
+                    "Operator library status '%s' must be one of ACTIVE, DEPRECATED, or DISABLED."
+                            .formatted(library.status()),
+                    "/status"));
+        }
         Set<String> operatorRefs = new LinkedHashSet<>();
         for (int i = 0; i < library.operators().size(); i++) {
             OperatorDefinition operator = library.operators().get(i);

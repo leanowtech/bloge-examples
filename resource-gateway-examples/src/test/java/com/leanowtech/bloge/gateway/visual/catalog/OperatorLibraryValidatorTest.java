@@ -26,6 +26,27 @@ class OperatorLibraryValidatorTest {
     }
 
     @Test
+    void acceptsSupportedLibraryLifecycleStatuses() {
+        VisualValidationResult deprecated = validator.validate(libraryWithStatus("deprecated-policy", "deprecated"));
+        VisualValidationResult disabled = validator.validate(libraryWithStatus("disabled-policy", "DISABLED"));
+
+        assertThat(deprecated.valid()).isTrue();
+        assertThat(disabled.valid()).isTrue();
+    }
+
+    @Test
+    void rejectsUnsupportedLibraryLifecycleStatus() {
+        VisualValidationResult result = validator.validate(libraryWithStatus("archived-policy", "ARCHIVED"));
+
+        assertThat(result.valid()).isFalse();
+        assertThat(result.diagnostics())
+                .anySatisfy(diagnostic -> {
+                    assertThat(diagnostic.code()).isEqualTo("visual.library.status.unsupported");
+                    assertThat(diagnostic.target()).isEqualTo("/status");
+                });
+    }
+
+    @Test
     void acceptsTransformLoweringWithPortQualifiedTemplateReferences() {
         VisualValidationResult result = validator.validate(VisualCatalogTestSupport.duplicateInputPathLibrary());
 
@@ -627,6 +648,18 @@ class OperatorLibraryValidatorTest {
                         SchemaEnvelope.object(outputProperties, outputRequired),
                         true,
                         "Output."))
+        );
+    }
+
+    private static OperatorLibrary libraryWithStatus(String libraryId, String status) {
+        return new OperatorLibrary(
+                "bloge.visualOperatorLibrary.v1",
+                libraryId,
+                libraryId,
+                "1.0.0",
+                "risk-team",
+                status,
+                List.of(VisualCatalogTestSupport.eligibilityOperator("integer"))
         );
     }
 

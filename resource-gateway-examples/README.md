@@ -131,7 +131,11 @@ schema gate before the draft mutates. Structured config expressions such as `{ "
 those structured expressions back to plain BLOGE DSL expressions.
 Imported operator libraries must use namespace-safe `operatorRef` values and
 single-token input/output port names, so palette keys, canvas endpoints, and DSL
-paths share one address model.
+paths share one address model. Library lifecycle status is explicit:
+`ACTIVE` libraries enter the authoring catalog, `DEPRECATED` libraries are hidden
+unless `/api/visual/operators?includeDeprecated=true` is used, and `DISABLED`
+libraries remain stored for audit/admin workflows but never enter the public
+canvas catalog.
 Raw secret material is rejected from imported operator libraries and saved graph
 drafts; authoring artifacts may store only references such as `secretRef`.
 Graph input bindings are schema-aware too: the composer exposes a dedicated
@@ -343,7 +347,8 @@ persisted contract that an author has already customized.
 
 User-provided visual operator libraries are imported through a separate admin API.
 Imported operators join the same `/api/visual/operators` catalog as built-ins and
-resource-backed virtual operators. The browser Operator Libraries panel calls
+resource-backed virtual operators when their library status is catalog-visible.
+The browser Operator Libraries panel calls
 the validate endpoint directly, so authors can inspect an inline structured
 diagnostic list before storing a library.
 
@@ -357,7 +362,7 @@ diagnostic list before storing a library.
 | `DELETE` | `/admin/visual-operator-libraries/{libraryId}` | Delete an imported library | 204 |
 
 Create and update run the same validator before storage. The validator rejects
-blank `libraryId`, blank or duplicate `operatorRef`, `operatorRef` values already
+unsupported lifecycle status values, blank `libraryId`, blank or duplicate `operatorRef`, `operatorRef` values already
 owned by another stored library, system-reserved refs such as `httpResource`,
 `bloge:decisionTable`, `bloge:transform`, and the `resource:` namespace, empty
 libraries, duplicate port names, unsupported lowering modes, native lowering
@@ -792,7 +797,7 @@ curl -X POST http://localhost:8080/api/gateway/resources/execute \
 
 ## Test strategy
 
-The test suite is organised into four layers (40 top-level test classes, 313 executed
+The test suite is organised into four layers (40 top-level test classes, 316 executed
 tests, including nested JUnit suites):
 
 ### Layer 1 — Unit tests
@@ -818,7 +823,7 @@ Isolated component tests, some with lightweight Spring slices or mocks.
 | `ResourceDescriptorBootstrapTest` | 7 | Seeding, refresh behavior, idempotency |
 | `GatewayDslCompilationTest` | 7 | DSL parsing, graph loading |
 | Gateway example API suite | 13 | Dynamic composer service/controller, scenario catalog, example graph endpoints |
-| Visual authoring suite | 172 | Visual operator projection, resource design contract persistence and gates, imported libraries, catalog token gates and policy filtering, cross-library operatorRef ownership, system-reserved operatorRef gates, import-time lowering gates, draft/publication persistence and history, revision audit metadata, revision-guarded patching, operator fingerprint drift preservation and execution snapshot coverage gates, typed connection/edge validation including binding kind allow-list, input/config source-picker server preflight, duplicate target input ownership, object required fields, object schema structure gates, required-array schema gates, nested objectTemplate required fields, enum value-domain and shape gates, config expression references and configSchema type gates, data edge/semantic dependency consistency, graph input schema gates, secret blocking, DSL lowering, compiler gating, dependency ordering, runtime smoke path |
+| Visual authoring suite | 175 | Visual operator projection, resource design contract persistence and gates, imported libraries, catalog lifecycle gates, catalog token gates and policy filtering, cross-library operatorRef ownership, system-reserved operatorRef gates, import-time lowering gates, draft/publication persistence and history, revision audit metadata, revision-guarded patching, operator fingerprint drift preservation and execution snapshot coverage gates, typed connection/edge validation including binding kind allow-list, input/config source-picker server preflight, duplicate target input ownership, object required fields, object schema structure gates, required-array schema gates, nested objectTemplate required fields, enum value-domain and shape gates, config expression references and configSchema type gates, data edge/semantic dependency consistency, graph input schema gates, secret blocking, DSL lowering, compiler gating, dependency ordering, runtime smoke path |
 
 ### Layer 3 — Orchestration tests
 
