@@ -155,6 +155,57 @@ class GraphDraftDslGeneratorTest {
     }
 
     @Test
+    void lowersWhitespacePaddedUserTransformTemplates() {
+        GraphDraftDslGenerator generator = new GraphDraftDslGenerator(
+                VisualCatalogTestSupport.catalogWithLibrary(
+                        customerOrderMergeLibraryWithTemplates(
+                                "{{ input.customer.id }}",
+                                "{{ order.id }}")));
+        Map<String, GraphDraft.Binding> inputs = new LinkedHashMap<>();
+        inputs.put("customer", new GraphDraft.Binding(
+                "contextPath",
+                null,
+                "customer",
+                "",
+                "",
+                "customer",
+                "",
+                "",
+                Map.of()
+        ));
+        inputs.put("order.id", GraphDraft.Binding.contextPath("orderId", "order", "id"));
+        GraphDraft draft = new GraphDraft(
+                "",
+                "",
+                0,
+                "spacedTransformTemplates",
+                "",
+                "",
+                "",
+                "",
+                null,
+                List.of(new GraphDraft.DraftNode(
+                        "merge",
+                        "risk:customerOrderMerge",
+                        "",
+                        inputs,
+                        Map.of(),
+                        null
+                )),
+                List.of(),
+                Map.of(),
+                new GraphDraft.OutputSelection("merge", "")
+        );
+
+        DslGenerationResult result = generator.generate(draft);
+
+        assertThat(result.generated()).isTrue();
+        assertThat(result.dsl()).contains("customerId = ctx.customer.id");
+        assertThat(result.dsl()).contains("orderId = ctx.orderId");
+        assertThat(result.dsl()).doesNotContain("{{");
+    }
+
+    @Test
     void lowersNodePathBindingFromNamedOutputPort() {
         GraphDraftDslGenerator generator = new GraphDraftDslGenerator(
                 VisualCatalogTestSupport.catalogWithLibrary(
@@ -434,6 +485,56 @@ class GraphDraftDslGeneratorTest {
                 .as("compiler diagnostics: %s%nDSL:%n%s", compilation.diagnostics(), result.dsl())
                 .isNotNull();
         assertThat(graph.nodes()).isNotEmpty();
+    }
+
+    @Test
+    void lowersWhitespacePaddedBranchSelectorTemplates() {
+        GraphDraftDslGenerator generator = new GraphDraftDslGenerator(
+                VisualCatalogTestSupport.catalogWithLibrary(routeLibraryWithExpression("{{ input.value }}")));
+        GraphDraft draft = new GraphDraft(
+                "",
+                "",
+                0,
+                "spacedBranchTemplate",
+                "",
+                "",
+                "",
+                "",
+                SchemaEnvelope.object(Map.of(
+                        "productType", Map.of("type", "string")
+                ), List.of("productType")),
+                List.of(
+                        new GraphDraft.DraftNode(
+                                "physicalFacts",
+                                "risk:scoreFacts",
+                                "",
+                                Map.of(),
+                                Map.of(),
+                                null
+                        ),
+                        new GraphDraft.DraftNode(
+                                "routeByType",
+                                "risk:typeRoute",
+                                "",
+                                Map.of("value", GraphDraft.Binding.contextPath("productType")),
+                                Map.of(),
+                                null
+                        )
+                ),
+                List.of(new GraphDraft.DraftEdge("route-physical", "route",
+                        new GraphDraft.Endpoint("routeByType", "", ""),
+                        new GraphDraft.Endpoint("physicalFacts", "", ""),
+                        "physical")),
+                Map.of(),
+                new GraphDraft.OutputSelection("physicalFacts", "")
+        );
+
+        DslGenerationResult result = generator.generate(draft);
+
+        assertThat(result.generated()).isTrue();
+        assertThat(result.dsl()).contains("value = ctx.productType");
+        assertThat(result.dsl()).contains("\"physical\" -> physicalFacts");
+        assertThat(result.dsl()).doesNotContain("{{");
     }
 
     @Test
@@ -1092,6 +1193,58 @@ class GraphDraftDslGeneratorTest {
                 "risk-team",
                 "ACTIVE",
                 List.of(operator)
+        );
+    }
+
+    private static OperatorLibrary customerOrderMergeLibraryWithTemplates(String customerTemplate,
+                                                                          String orderTemplate) {
+        OperatorDefinition base = VisualCatalogTestSupport.customerOrderMergeOperator();
+        OperatorDefinition operator = operatorWithLowering(base,
+                new OperatorDefinition.Lowering("transform", "transform", Map.of(
+                        "assignments", Map.of(
+                                "customerId", customerTemplate,
+                                "orderId", orderTemplate
+                        )
+                )));
+        return new OperatorLibrary(
+                "bloge.visualOperatorLibrary.v1",
+                "risk-duplicate-inputs",
+                "Duplicate input path operators",
+                "1.0.0",
+                "risk-team",
+                "ACTIVE",
+                List.of(operator)
+        );
+    }
+
+    private static OperatorLibrary routeLibraryWithExpression(String expression) {
+        OperatorDefinition operator = operatorWithLowering(VisualCatalogTestSupport.typeRouteOperator(),
+                new OperatorDefinition.Lowering("branch", "branch", Map.of("expression", expression)));
+        return new OperatorLibrary(
+                "bloge.visualOperatorLibrary.v1",
+                "risk-routes",
+                "Risk route operators",
+                "1.0.0",
+                "risk-team",
+                "ACTIVE",
+                List.of(operator, VisualCatalogTestSupport.scoreFactsOperator())
+        );
+    }
+
+    private static OperatorDefinition operatorWithLowering(OperatorDefinition operator,
+                                                           OperatorDefinition.Lowering lowering) {
+        return new OperatorDefinition(
+                operator.schemaVersion(),
+                operator.operatorRef(),
+                operator.operatorVersion(),
+                operator.display(),
+                operator.source(),
+                operator.ports(),
+                operator.configSchema(),
+                operator.capabilities(),
+                operator.policy(),
+                lowering,
+                operator.diagnostics()
         );
     }
 

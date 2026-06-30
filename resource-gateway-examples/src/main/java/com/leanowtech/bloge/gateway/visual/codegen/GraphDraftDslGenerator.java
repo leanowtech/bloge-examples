@@ -40,6 +40,8 @@ public class GraphDraftDslGenerator {
     private static final Pattern DSL_IDENTIFIER = Pattern.compile(DSL_IDENTIFIER_PATTERN);
     private static final Pattern UNQUOTED_DSL_OPERATOR_REF = Pattern.compile(
             DSL_IDENTIFIER_PATTERN + "(?:\\." + DSL_IDENTIFIER_PATTERN + ")*");
+    private static final Pattern TEMPLATE_REFERENCE = Pattern.compile("\\{\\{\\s*((?:input\\.)?"
+            + DSL_IDENTIFIER_PATTERN + "(?:\\." + DSL_IDENTIFIER_PATTERN + ")*)\\s*}}");
 
     private final VisualOperatorCatalog catalog;
 
@@ -638,30 +640,39 @@ public class GraphDraftDslGenerator {
     }
 
     private static String renderTemplateExpression(String template, Map<String, String> inputExpressions) {
-        String expression = template;
-        for (Map.Entry<String, String> entry : inputExpressions.entrySet()) {
-            if (!entry.getKey().isBlank()) {
-                expression = replaceTemplateDescendants(expression, "input." + entry.getKey(), entry.getValue());
-                expression = replaceTemplateDescendants(expression, entry.getKey(), entry.getValue());
-            }
-            expression = expression
-                    .replace("{{input." + entry.getKey() + "}}", entry.getValue())
-                    .replace("{{" + entry.getKey() + "}}", entry.getValue());
-        }
-        return expression;
-    }
-
-    private static String replaceTemplateDescendants(String expression, String prefix, String value) {
-        Pattern pattern = Pattern.compile("\\{\\{" + Pattern.quote(prefix)
-                + "\\.(" + DSL_IDENTIFIER_PATTERN + "(?:\\." + DSL_IDENTIFIER_PATTERN + ")*)}}");
-        java.util.regex.Matcher matcher = pattern.matcher(expression);
+        java.util.regex.Matcher matcher = TEMPLATE_REFERENCE.matcher(template);
         StringBuilder result = new StringBuilder();
         while (matcher.find()) {
-            matcher.appendReplacement(result, java.util.regex.Matcher.quoteReplacement(
-                    pathExpression(value, matcher.group(1))));
+            String reference = matcher.group(1);
+            String inputPath = reference.startsWith("input.") ? reference.substring("input.".length()) : reference;
+            Optional<String> replacement = templateReplacement(inputPath, inputExpressions);
+            if (replacement.isPresent()) {
+                matcher.appendReplacement(result, java.util.regex.Matcher.quoteReplacement(replacement.get()));
+            }
         }
         matcher.appendTail(result);
         return result.toString();
+    }
+
+    private static Optional<String> templateReplacement(String inputPath, Map<String, String> inputExpressions) {
+        String exact = inputExpressions.get(inputPath);
+        if (exact != null) {
+            return Optional.of(exact);
+        }
+        String bestPrefix = "";
+        for (String candidate : inputExpressions.keySet()) {
+            if (candidate.isBlank() || !inputPath.startsWith(candidate + ".")) {
+                continue;
+            }
+            if (candidate.length() > bestPrefix.length()) {
+                bestPrefix = candidate;
+            }
+        }
+        if (bestPrefix.isBlank()) {
+            return Optional.empty();
+        }
+        return Optional.of(pathExpression(inputExpressions.get(bestPrefix),
+                inputPath.substring(bestPrefix.length() + 1)));
     }
 
     private static void addInputExpressionAliases(Map<String, String> inputExpressions,
