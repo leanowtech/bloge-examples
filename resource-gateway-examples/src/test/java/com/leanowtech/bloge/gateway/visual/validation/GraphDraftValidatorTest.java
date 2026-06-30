@@ -2474,6 +2474,71 @@ class GraphDraftValidatorTest {
     }
 
     @Test
+    void acceptsObjectBindingWhenUnevaluatedPropertySchemasAreCompatible() {
+        GraphDraftValidator validator = new GraphDraftValidator(
+                VisualCatalogTestSupport.catalogWithLibrary(
+                        objectCompatibilityLibraryWithApplicantSchemas(
+                                applicantSchemaWithUnevaluatedProperties(applicantProperties("integer", false),
+                                        List.of("score", "tier"), Map.of("type", "string")),
+                                applicantSchemaWithUnevaluatedProperties(applicantProperties("integer", false),
+                                        List.of("score", "tier"), Map.of("type", "string")))));
+        GraphDraft draft = objectCompatibilityDraft();
+
+        VisualValidationResult result = validator.validate(draft);
+
+        assertThat(result.valid()).isTrue();
+    }
+
+    @Test
+    void rejectsObjectBindingWhenSourceAllowsUnconstrainedUnevaluatedProperties() {
+        GraphDraftValidator validator = new GraphDraftValidator(
+                VisualCatalogTestSupport.catalogWithLibrary(
+                        objectCompatibilityLibraryWithApplicantSchemas(
+                                applicantSchemaWithoutResidualProperties(applicantProperties("integer", false),
+                                        List.of("score", "tier")),
+                                applicantSchemaWithUnevaluatedProperties(applicantProperties("integer", false),
+                                        List.of("score", "tier"), Map.of("type", "string")))));
+        GraphDraft draft = objectCompatibilityDraft();
+
+        VisualValidationResult result = validator.validate(draft);
+
+        assertThat(result.valid()).isFalse();
+        assertThat(result.diagnostics())
+                .extracting("code")
+                .contains("visual.binding.typeMismatch", "visual.edge.typeMismatch");
+        assertThat(result.diagnostics())
+                .anySatisfy(diagnostic -> assertThat(diagnostic.message())
+                        .contains("source object allows unconstrained additional fields")
+                        .contains("unevaluatedProperties"));
+    }
+
+    @Test
+    void rejectsConstantBindingWhenObjectUnevaluatedPropertyViolatesTargetSchema() {
+        GraphDraftValidator validator = new GraphDraftValidator(
+                VisualCatalogTestSupport.catalogWithLibrary(
+                        objectCompatibilityLibraryWithApplicantSchemas(
+                                applicantSchemaWithUnevaluatedProperties(applicantProperties("integer", false),
+                                        List.of("score", "tier"), Map.of("type", "string")),
+                                applicantSchemaWithUnevaluatedProperties(applicantProperties("integer", false),
+                                        List.of("score", "tier"), Map.of("type", "string")))));
+        GraphDraft draft = applicantConstantDraft(GraphDraft.Binding.constant(Map.of(
+                "score", 720,
+                "tier", "gold",
+                "segment", 7
+        )));
+
+        VisualValidationResult result = validator.validate(draft);
+
+        assertThat(result.valid()).isFalse();
+        assertThat(result.diagnostics())
+                .anySatisfy(diagnostic -> {
+                    assertThat(diagnostic.code()).isEqualTo("visual.binding.typeMismatch");
+                    assertThat(diagnostic.message()).contains("applicant").contains("object");
+                    assertThat(diagnostic.target()).isEqualTo("/nodes/0/inputs/applicant");
+                });
+    }
+
+    @Test
     void rejectsObjectBindingWhenSourceMissesTargetRequiredField() {
         GraphDraftValidator validator = new GraphDraftValidator(
                 VisualCatalogTestSupport.catalogWithLibrary(
@@ -3064,6 +3129,25 @@ class GraphDraftValidatorTest {
                 .anySatisfy(diagnostic -> {
                     assertThat(diagnostic.code()).isEqualTo("visual.config.unknown");
                     assertThat(diagnostic.target()).contains("shadowMode");
+                });
+    }
+
+    @Test
+    void rejectsNodeConfigWhenObjectUnevaluatedPropertiesAreForbidden() {
+        GraphDraftValidator validator = new GraphDraftValidator(
+                VisualCatalogTestSupport.catalogWithLibrary(objectUnevaluatedPropertiesConfigurablePolicyLibrary()));
+        GraphDraft draft = configurablePolicyDraft(Map.of(
+                "threshold", 700,
+                "routing", Map.of("mode", "auto", "shadow", "yes")
+        ));
+
+        VisualValidationResult result = validator.validate(draft);
+
+        assertThat(result.valid()).isFalse();
+        assertThat(result.diagnostics())
+                .anySatisfy(diagnostic -> {
+                    assertThat(diagnostic.code()).isEqualTo("visual.config.unknown");
+                    assertThat(diagnostic.target()).contains("routing").contains("shadow");
                 });
     }
 
@@ -3748,6 +3832,31 @@ class GraphDraftValidatorTest {
         );
     }
 
+    private static GraphDraft applicantConstantDraft(GraphDraft.Binding applicantBinding) {
+        return new GraphDraft(
+                "",
+                "",
+                0,
+                "applicantConstant",
+                "",
+                "",
+                "",
+                "",
+                null,
+                List.of(new GraphDraft.DraftNode(
+                        "applicantConsumer",
+                        "risk:applicantObjectConsumer",
+                        "",
+                        Map.of("applicant", applicantBinding),
+                        Map.of(),
+                        null
+                )),
+                List.of(),
+                Map.of(),
+                new GraphDraft.OutputSelection("applicantConsumer", "")
+        );
+    }
+
     private static GraphDraft enumCompatibilityDraft() {
         return new GraphDraft(
                 "",
@@ -3959,6 +4068,23 @@ class GraphDraftValidatorTest {
         schema.put("properties", properties);
         schema.put("required", required);
         schema.put("additionalProperties", additionalProperties);
+        return schema;
+    }
+
+    private static Map<String, Object> applicantSchemaWithoutResidualProperties(Map<String, Object> properties,
+                                                                                List<String> required) {
+        Map<String, Object> schema = new LinkedHashMap<>();
+        schema.put("type", "object");
+        schema.put("properties", properties);
+        schema.put("required", required);
+        return schema;
+    }
+
+    private static Map<String, Object> applicantSchemaWithUnevaluatedProperties(Map<String, Object> properties,
+                                                                                List<String> required,
+                                                                                Object unevaluatedProperties) {
+        Map<String, Object> schema = applicantSchemaWithoutResidualProperties(properties, required);
+        schema.put("unevaluatedProperties", unevaluatedProperties);
         return schema;
     }
 
@@ -4690,6 +4816,51 @@ class GraphDraftValidatorTest {
                 "type", "object",
                 "additionalProperties", false,
                 "patternProperties", Map.of("^route\\.", Map.of("type", "integer"))
+        ));
+
+        OperatorDefinition operator = new OperatorDefinition(
+                "bloge.visualOperator.v1",
+                "risk:configurablePolicy",
+                "1.0.0",
+                new OperatorDefinition.Display("Configurable policy",
+                        "Evaluates policy behavior controlled by configSchema.",
+                        List.of("risk", "config")),
+                new OperatorDefinition.Source("user-library", "", "", "", true),
+                new OperatorDefinition.Ports(
+                        List.of(),
+                        List.of(new OperatorDefinition.Port("output",
+                                SchemaEnvelope.object(outputProperties, List.of()),
+                                true,
+                                "Policy output."))
+                ),
+                SchemaEnvelope.object(configProperties, List.of("threshold", "routing")),
+                OperatorDefinition.Capabilities.pure(),
+                new OperatorDefinition.Lowering("transform", "transform", Map.of(
+                        "assignments", Map.of("accepted", "true")
+                )),
+                List.of()
+        );
+        return new OperatorLibrary(
+                "bloge.visualOperatorLibrary.v1",
+                "risk-configurable-policy",
+                "Configurable policy operators",
+                "1.0.0",
+                "risk-team",
+                "ACTIVE",
+                List.of(operator)
+        );
+    }
+
+    private static OperatorLibrary objectUnevaluatedPropertiesConfigurablePolicyLibrary() {
+        Map<String, Object> outputProperties = new LinkedHashMap<>();
+        outputProperties.put("accepted", Map.of("type", "boolean"));
+
+        Map<String, Object> configProperties = new LinkedHashMap<>();
+        configProperties.put("threshold", Map.of("type", "integer"));
+        configProperties.put("routing", Map.of(
+                "type", "object",
+                "properties", Map.of("mode", Map.of("type", "string")),
+                "unevaluatedProperties", false
         ));
 
         OperatorDefinition operator = new OperatorDefinition(

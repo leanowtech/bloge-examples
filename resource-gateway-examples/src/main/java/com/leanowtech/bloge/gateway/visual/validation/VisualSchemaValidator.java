@@ -55,7 +55,6 @@ public final class VisualSchemaValidator {
             "else"
     );
     private static final Set<String> UNSUPPORTED_CONSTRAINT_KEYWORDS = Set.of(
-            "unevaluatedProperties",
             "unevaluatedItems"
     );
     private static final Set<String> SUPPORTED_STRING_FORMATS = Set.of(
@@ -142,6 +141,7 @@ public final class VisualSchemaValidator {
 	        validateObjectPropertyNames(schema, kind, path, diagnostics);
 	        validateObjectDependentRequired(schema, kind, path, diagnostics);
 	        validateObjectDependentSchemas(schema, kind, path, diagnostics);
+	        validateUnevaluatedProperties(schema, kind, path, diagnostics);
 	        validateDefaultValue(schema, kind, path, diagnostics);
         if ("object".equals(kind)) {
             Map<String, Object> properties = objectProperties(schema, path, diagnostics);
@@ -279,7 +279,7 @@ public final class VisualSchemaValidator {
                             path + "/" + required));
                 }
             }
-            Object additional = schema.get("additionalProperties");
+            Object residual = residualPropertiesPolicy(schema);
             for (Map.Entry<String, Object> entry : object.entrySet()) {
                 Object property = properties.get(entry.getKey());
                 List<Map<String, Object>> patternProperties = matchingPatternPropertySchemas(schema, entry.getKey());
@@ -293,13 +293,13 @@ public final class VisualSchemaValidator {
                 }
                 if (property instanceof Map<?, ?> || !patternProperties.isEmpty()) {
                     continue;
-                } else if (Boolean.FALSE.equals(additional)) {
+                } else if (Boolean.FALSE.equals(residual)) {
                     diagnostics.add(VisualDiagnostic.error("visual.schema.defaultUnknownProperty",
                             "Schema default contains undeclared property '%s'.".formatted(entry.getKey()),
                             path + "/" + entry.getKey()));
-                } else if (additional instanceof Map<?, ?> additionalSchema) {
-                    validateDefaultValue((Map<String, Object>) additionalSchema,
-                            schemaKind((Map<String, Object>) additionalSchema),
+                } else if (residual instanceof Map<?, ?> residualSchema) {
+                    validateDefaultValue((Map<String, Object>) residualSchema,
+                            schemaKind((Map<String, Object>) residualSchema),
                             path + "/" + entry.getKey(), diagnostics, entry.getValue());
                 }
             }
@@ -380,15 +380,15 @@ public final class VisualSchemaValidator {
 	        }
 		        if (stringKind(kind) && !stringValueMatchesPattern(value, schema)) {
 		            diagnostics.add(VisualDiagnostic.error("visual.schema.defaultConstraintMismatch",
-		                    "Schema default must satisfy string pattern constraint.",
-		                    path));
-		        }
+	                    "Schema default must satisfy string pattern constraint.",
+	                    path));
+	        }
 	        if (stringKind(kind) && !stringValueMatchesFormat(value, schema)) {
 	            diagnostics.add(VisualDiagnostic.error("visual.schema.defaultConstraintMismatch",
 	                    "Schema default must satisfy string format constraint.",
 	                    path));
 	        }
-		    }
+	    }
 
     private static Map<String, Object> propertiesWithoutDiagnostics(Map<String, Object> schema) {
         Object raw = schema.get("properties");
@@ -473,6 +473,32 @@ public final class VisualSchemaValidator {
         diagnostics.add(VisualDiagnostic.error("visual.schema.additionalPropertiesInvalid",
                 "Object schema additionalProperties must be a boolean or schema object.",
                 path + "/additionalProperties"));
+    }
+
+    @SuppressWarnings("unchecked")
+    private static void validateUnevaluatedProperties(Map<String, Object> schema,
+                                                      String kind,
+                                                      String path,
+                                                      List<VisualDiagnostic> diagnostics) {
+        if (!schema.containsKey("unevaluatedProperties")) {
+            return;
+        }
+        if (!objectKind(kind)) {
+            diagnostics.add(VisualDiagnostic.error("visual.schema.unevaluatedPropertiesConstraintTypeMismatch",
+                    "Object unevaluatedProperties constraints require schema type/kind object.",
+                    path));
+        }
+        Object unevaluated = schema.get("unevaluatedProperties");
+        if (unevaluated instanceof Boolean) {
+            return;
+        }
+        if (unevaluated instanceof Map<?, ?> unevaluatedSchema) {
+            validateSchema((Map<String, Object>) unevaluatedSchema, path + "/unevaluatedProperties", diagnostics);
+            return;
+        }
+        diagnostics.add(VisualDiagnostic.error("visual.schema.unevaluatedPropertiesInvalid",
+                "Object schema unevaluatedProperties must be a boolean or schema object.",
+                path + "/unevaluatedProperties"));
     }
 
     @SuppressWarnings("unchecked")
@@ -766,11 +792,11 @@ public final class VisualSchemaValidator {
 	                    path + "/const"));
 	        }
 		        if (stringKind(kind) && constValueMatchesKind(constValue, kind)
-		                && !stringValueMatchesPattern(constValue, schema)) {
+	                && !stringValueMatchesPattern(constValue, schema)) {
 		            diagnostics.add(VisualDiagnostic.error("visual.schema.constConstraintMismatch",
-		                    "Const value must satisfy string pattern constraint.",
-		                    path + "/const"));
-		        }
+	                    "Const value must satisfy string pattern constraint.",
+	                    path + "/const"));
+	        }
 	        if (stringKind(kind) && constValueMatchesKind(constValue, kind)
 	                && !stringValueMatchesFormat(constValue, schema)) {
 	            diagnostics.add(VisualDiagnostic.error("visual.schema.constConstraintMismatch",
@@ -778,7 +804,7 @@ public final class VisualSchemaValidator {
 	                    path + "/const"));
 	        }
 		        if (arrayKind(kind) && constValueMatchesKind(constValue, kind)
-		                && !arrayValueMatchesSchema(constValue, schema)) {
+	                && !arrayValueMatchesSchema(constValue, schema)) {
 	            diagnostics.add(VisualDiagnostic.error("visual.schema.constConstraintMismatch",
 	                    "Const value must satisfy array schema constraints.",
 	                    path + "/const"));
@@ -789,7 +815,7 @@ public final class VisualSchemaValidator {
 	                    "Const value must satisfy object schema constraints.",
 	                    path + "/const"));
 	        }
-		    }
+	    }
 
 	    private static void validateNumericBounds(Map<String, Object> schema,
 	                                              String kind,
@@ -1017,9 +1043,9 @@ public final class VisualSchemaValidator {
 	    }
 
 		    private static void validateStringPattern(Map<String, Object> schema,
-		                                              String kind,
-		                                              String path,
-		                                              List<VisualDiagnostic> diagnostics) {
+	                                              String kind,
+	                                              String path,
+	                                              List<VisualDiagnostic> diagnostics) {
 	        if (!hasStringPattern(schema)) {
 	            return;
 	        }
@@ -1041,8 +1067,8 @@ public final class VisualSchemaValidator {
 	            diagnostics.add(VisualDiagnostic.error("visual.schema.patternConstraintInvalid",
 	                    "String pattern constraint must be a valid regular expression.",
 	                    path + "/pattern"));
-		        }
-		    }
+	        }
+	    }
 
 	    private static void validateStringFormat(Map<String, Object> schema,
 	                                             String kind,
@@ -1105,12 +1131,12 @@ public final class VisualSchemaValidator {
 
 		    private static boolean hasStringPattern(Map<String, Object> schema) {
 		        return schema.containsKey("pattern");
-		    }
+	    }
 
 		    private static boolean hasArrayItemBounds(Map<String, Object> schema) {
 		        return schema.containsKey("minItems")
-		                || schema.containsKey("maxItems");
-		    }
+	                || schema.containsKey("maxItems");
+	    }
 
 	    private static boolean hasArrayContains(Map<String, Object> schema) {
 	        return schema.containsKey("contains")
@@ -1203,10 +1229,10 @@ public final class VisualSchemaValidator {
 		    private static boolean stringValueMatchesPattern(Object value, Map<String, Object> schema) {
 		        if (!(value instanceof String string)) {
 		            return true;
-		        }
+	        }
 		        Pattern pattern = compiledStringPattern(schema);
 		        return pattern == null || pattern.matcher(string).find();
-		    }
+	    }
 
 	    private static boolean stringValueMatchesFormat(Object value, Map<String, Object> schema) {
 	        if (!(value instanceof String string)) {
@@ -1520,12 +1546,13 @@ public final class VisualSchemaValidator {
 	                || effective.containsKey("dependentRequired")
 	                || effective.containsKey("dependentSchemas")
 	                || effective.containsKey("minProperties")
-	                || effective.containsKey("maxProperties")
-	                || effective.containsKey("propertyNames")
-	                || effective.containsKey("patternProperties"))) {
-	            effective.put("type", "object");
-	        }
-	        return effective;
+                || effective.containsKey("maxProperties")
+                || effective.containsKey("propertyNames")
+                || effective.containsKey("patternProperties")
+                || effective.containsKey("unevaluatedProperties"))) {
+            effective.put("type", "object");
+        }
+        return effective;
 	    }
 
 	    private static boolean presentObjectProperty(Map<String, Object> value, String property) {
@@ -1613,7 +1640,7 @@ public final class VisualSchemaValidator {
 	            }
 	        }
 	        Map<String, Object> properties = propertiesWithoutDiagnostics(schema);
-	        Object additional = schema.get("additionalProperties");
+	        Object residual = residualPropertiesPolicy(schema);
 	        for (Map.Entry<String, Object> entry : object.entrySet()) {
 	            Object property = properties.get(entry.getKey());
 	            List<Map<String, Object>> patternSchemas = matchingPatternPropertySchemas(schema, entry.getKey());
@@ -1629,14 +1656,21 @@ public final class VisualSchemaValidator {
 	            }
 	            if (property instanceof Map<?, ?> || !patternSchemas.isEmpty()) {
 	                continue;
-	            } else if (Boolean.FALSE.equals(additional)) {
+	            } else if (Boolean.FALSE.equals(residual)) {
 	                return false;
-	            } else if (additional instanceof Map<?, ?> additionalSchema
-	                    && !valueMatchesSchema(entry.getValue(), (Map<String, Object>) additionalSchema)) {
+	            } else if (residual instanceof Map<?, ?> residualSchema
+	                    && !valueMatchesSchema(entry.getValue(), (Map<String, Object>) residualSchema)) {
 	                return false;
 	            }
 	        }
 	        return true;
+	    }
+
+	    private static Object residualPropertiesPolicy(Map<String, Object> schema) {
+		        if (schema.containsKey("additionalProperties")) {
+		            return schema.get("additionalProperties");
+	        }
+		        return schema.get("unevaluatedProperties");
 	    }
 
 	    private static boolean valueMatchesSchema(Object value, Map<String, Object> schema) {
@@ -1680,13 +1714,13 @@ public final class VisualSchemaValidator {
 		    private static Long arrayItemBoundary(Object value) {
 		        if (!(value instanceof Number number)) {
 		            return null;
-		        }
+	        }
 		        double numericValue = number.doubleValue();
 		        if (!Double.isFinite(numericValue) || Math.rint(numericValue) != numericValue || numericValue < 0) {
 		            return null;
-		        }
+	        }
 		        return (long) numericValue;
-		    }
+	    }
 
 	    private static Long objectPropertyBoundary(Object value) {
 	        if (!(value instanceof Number number)) {
@@ -1784,7 +1818,7 @@ public final class VisualSchemaValidator {
 
 		    private static boolean arrayKind(String kind) {
 		        return "array".equals(kind);
-		    }
+	    }
 
 	    private static boolean objectKind(String kind) {
 	        return "object".equals(kind);

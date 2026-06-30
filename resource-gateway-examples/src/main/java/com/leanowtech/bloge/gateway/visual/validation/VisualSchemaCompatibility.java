@@ -132,7 +132,7 @@ public final class VisualSchemaCompatibility {
 		            return patternIssue.isPresent()
 		                    ? patternIssue
 		                    : stringLengthCompatibilityIssue(sourceSchema, targetSchema, path);
-		        }
+	        }
 	        if (sourceType.equals(targetType)) {
 	            return Optional.empty();
 	        }
@@ -496,7 +496,8 @@ public final class VisualSchemaCompatibility {
             }
         }
 
-        Object targetAdditional = targetSchema.get("additionalProperties");
+        Object targetResidual = residualPropertiesPolicy(targetSchema);
+        String targetResidualKeyword = residualPropertiesKeyword(targetSchema);
         for (Map.Entry<String, Object> entry : sourceProperties.entrySet()) {
             String propertyName = entry.getKey();
             String childPath = appendCompatibilityPath(path, propertyName);
@@ -520,19 +521,20 @@ public final class VisualSchemaCompatibility {
             }
             if (targetProperty != null || !targetPatternSchemas.isEmpty()) {
                 continue;
-            } else if (Boolean.FALSE.equals(targetAdditional)) {
+            } else if (Boolean.FALSE.equals(targetResidual)) {
                 return Optional.of(reasonAt(childPath,
-                        "source object declares additional field '%s' but target additionalProperties=false"
-                                .formatted(propertyName)));
-            } else if (targetAdditional instanceof Map<?, ?> additionalSchema) {
-                Optional<String> nested = schemaCompatibilityIssue(sourceProperty, objectProperty(additionalSchema),
+                        "source object declares additional field '%s' but target %s=false"
+                                .formatted(propertyName, targetResidualKeyword)));
+            } else if (targetResidual instanceof Map<?, ?> residualSchema) {
+                Optional<String> nested = schemaCompatibilityIssue(sourceProperty, objectProperty(residualSchema),
                         childPath);
                 if (nested.isPresent()) {
                     return nested;
                 }
             }
         }
-	        Optional<String> additionalIssue = additionalPropertiesCompatibilityIssue(sourceSchema, targetAdditional, path);
+	        Optional<String> additionalIssue =
+	                residualPropertiesCompatibilityIssue(sourceSchema, targetResidual, targetResidualKeyword, path);
 	        if (additionalIssue.isPresent()) {
 	            return additionalIssue;
 	        }
@@ -557,29 +559,31 @@ public final class VisualSchemaCompatibility {
 	                : objectPropertyBoundsCompatibilityIssue(sourceSchema, targetSchema, path);
 	    }
 
-    private static Optional<String> additionalPropertiesCompatibilityIssue(Map<String, Object> sourceSchema,
-                                                                           Object targetAdditional,
-                                                                           String path) {
-        Object sourceAdditional = sourceSchema.get("additionalProperties");
-        if (Boolean.FALSE.equals(targetAdditional)) {
-            return Boolean.FALSE.equals(sourceAdditional)
+    private static Optional<String> residualPropertiesCompatibilityIssue(Map<String, Object> sourceSchema,
+                                                                         Object targetResidual,
+                                                                         String targetResidualKeyword,
+                                                                         String path) {
+        Object sourceResidual = residualPropertiesPolicy(sourceSchema);
+        if (Boolean.FALSE.equals(targetResidual)) {
+            return Boolean.FALSE.equals(sourceResidual)
                     ? Optional.empty()
                     : Optional.of(reasonAt(path,
-                    "source object allows undeclared additional fields but target additionalProperties=false"));
+                    "source object allows undeclared additional fields but target %s=false"
+                            .formatted(targetResidualKeyword)));
         }
-        if (targetAdditional instanceof Map<?, ?> targetAdditionalSchema) {
-            if (sourceAdditional == null || Boolean.TRUE.equals(sourceAdditional)) {
+        if (targetResidual instanceof Map<?, ?> targetResidualSchema) {
+            if (sourceResidual == null || Boolean.TRUE.equals(sourceResidual)) {
                 return Optional.of(reasonAt(path,
-                        "source object allows unconstrained additional fields but target additionalProperties requires %s"
-                                .formatted(schemaTypeLabel(objectProperty(targetAdditionalSchema)))));
+                        "source object allows unconstrained additional fields but target %s requires %s"
+                                .formatted(targetResidualKeyword, schemaTypeLabel(objectProperty(targetResidualSchema)))));
             }
-            if (sourceAdditional instanceof Map<?, ?> sourceAdditionalSchema) {
-                return schemaCompatibilityIssue(objectProperty(sourceAdditionalSchema),
-                        objectProperty(targetAdditionalSchema), appendCompatibilityPath(path, "additionalProperties"));
+            if (sourceResidual instanceof Map<?, ?> sourceResidualSchema) {
+                return schemaCompatibilityIssue(objectProperty(sourceResidualSchema),
+                        objectProperty(targetResidualSchema), appendCompatibilityPath(path, targetResidualKeyword));
             }
         }
-	        return Optional.empty();
-	    }
+        return Optional.empty();
+    }
 
 	    private static Optional<String> objectPatternPropertiesCompatibilityIssue(Map<String, Object> sourceSchema,
 	                                                                              Map<String, Object> targetSchema,
@@ -596,7 +600,7 @@ public final class VisualSchemaCompatibility {
 	        }
 	        Map<String, Object> sourcePatterns = patternPropertiesOf(sourceSchema);
 	        if ((sourcePatterns == null || sourcePatterns.isEmpty())
-	                && Boolean.FALSE.equals(sourceSchema.get("additionalProperties"))) {
+	                && Boolean.FALSE.equals(residualPropertiesPolicy(sourceSchema))) {
 	            return Optional.empty();
 	        }
 	        if (sourcePatterns != null && Objects.equals(sourcePatterns, targetPatterns)) {
@@ -620,7 +624,7 @@ public final class VisualSchemaCompatibility {
 	                        targetSchema))) {
 	            return Optional.empty();
 	        }
-	        if (Boolean.FALSE.equals(sourceSchema.get("additionalProperties"))
+	        if (Boolean.FALSE.equals(residualPropertiesPolicy(sourceSchema))
 	                && propertiesOf(sourceSchema).keySet().stream()
 	                .allMatch(name -> valueMatchesSchema(name, effectivePropertyNameSchema(targetPropertyNames)))) {
 	            return Optional.empty();
@@ -962,7 +966,7 @@ public final class VisualSchemaCompatibility {
 		    private static boolean stringValueMatchesPattern(Object value, Map<String, Object> schema) {
 		        if (!(value instanceof String string)) {
 		            return true;
-		        }
+	        }
 		        String rawPattern = stringPattern(schema);
 	        if (rawPattern == null) {
 	            return true;
@@ -971,7 +975,7 @@ public final class VisualSchemaCompatibility {
 	            return Pattern.compile(rawPattern).matcher(string).find();
 	        } catch (PatternSyntaxException ex) {
 	            return true;
-		        }
+	        }
 		    }
 
 	    private static boolean stringValueMatchesFormat(Object value, Map<String, Object> schema) {
@@ -986,7 +990,7 @@ public final class VisualSchemaCompatibility {
 		    private static boolean arrayValueMatchesSchema(Object value, Map<String, Object> schema) {
 		        if (!(value instanceof List<?> list) || !"array".equals(schemaType(schema))) {
 		            return true;
-		        }
+	        }
 	        if (!arrayValueMatchesItemBounds(list, schema)) {
 	            return false;
 	        }
@@ -1001,7 +1005,7 @@ public final class VisualSchemaCompatibility {
 		            if (itemSchema != null && !valueMatchesSchema(list.get(i), itemSchema)) {
 		                return false;
 		            }
-		        }
+	        }
 		        return true;
 		    }
 
@@ -1056,7 +1060,7 @@ public final class VisualSchemaCompatibility {
 	                return false;
 	            }
 	        }
-	        Object additional = schema.get("additionalProperties");
+	        Object residual = residualPropertiesPolicy(schema);
 	        for (Map.Entry<String, Object> entry : object.entrySet()) {
 	            Map<String, Object> property = objectProperty(properties.get(entry.getKey()));
 	            List<Map<String, Object>> patternSchemas = matchingPatternPropertySchemas(schema, entry.getKey());
@@ -1072,10 +1076,10 @@ public final class VisualSchemaCompatibility {
 	            }
 	            if (property != null || !patternSchemas.isEmpty()) {
 	                continue;
-	            } else if (Boolean.FALSE.equals(additional)) {
+	            } else if (Boolean.FALSE.equals(residual)) {
 	                return false;
-	            } else if (additional instanceof Map<?, ?> additionalSchema
-	                    && !valueMatchesSchema(entry.getValue(), (Map<String, Object>) additionalSchema)) {
+	            } else if (residual instanceof Map<?, ?> residualSchema
+	                    && !valueMatchesSchema(entry.getValue(), (Map<String, Object>) residualSchema)) {
 	                return false;
 	            }
 	        }
@@ -1303,11 +1307,11 @@ public final class VisualSchemaCompatibility {
 		    private static Long arrayItemBoundary(Object value) {
 		        if (!(value instanceof Number number)) {
 		            return null;
-		        }
+	        }
 		        double numericValue = number.doubleValue();
 		        if (!Double.isFinite(numericValue) || Math.rint(numericValue) != numericValue || numericValue < 0) {
 		            return null;
-		        }
+	        }
 		        return (long) numericValue;
 		    }
 
@@ -1455,7 +1459,8 @@ public final class VisualSchemaCompatibility {
 	                || effective.containsKey("minProperties")
 	                || effective.containsKey("maxProperties")
 	                || effective.containsKey("propertyNames")
-	                || effective.containsKey("patternProperties"))) {
+	                || effective.containsKey("patternProperties")
+	                || effective.containsKey("unevaluatedProperties"))) {
 	            effective.put("type", "object");
 	        }
 	        return effective;
@@ -1466,9 +1471,22 @@ public final class VisualSchemaCompatibility {
 	    }
 
 	    private static boolean sourceCannotContainProperty(Map<String, Object> sourceSchema, String property) {
-	        return Boolean.FALSE.equals(sourceSchema.get("additionalProperties"))
+	        return Boolean.FALSE.equals(residualPropertiesPolicy(sourceSchema))
 	                && !propertiesOf(sourceSchema).containsKey(property)
 	                && matchingPatternPropertySchemas(sourceSchema, property).isEmpty();
+	    }
+
+	    private static Object residualPropertiesPolicy(Map<String, Object> schema) {
+	        if (schema.containsKey("additionalProperties")) {
+	            return schema.get("additionalProperties");
+	        }
+	        return schema.get("unevaluatedProperties");
+	    }
+
+	    private static String residualPropertiesKeyword(Map<String, Object> schema) {
+	        return schema.containsKey("additionalProperties")
+	                ? "additionalProperties"
+	                : "unevaluatedProperties";
 	    }
 
 	    private static List<Map<String, Object>> matchingPatternPropertySchemas(Map<String, Object> schema,

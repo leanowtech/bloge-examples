@@ -533,6 +533,54 @@ class OperatorLibraryValidatorTest {
     }
 
     @Test
+    void rejectsInvalidObjectUnevaluatedPropertiesAcrossOperatorDefinitions() {
+        OperatorDefinition operator = new OperatorDefinition(
+                "bloge.visualOperator.v1",
+                "risk:badObjectUnevaluatedProperties",
+                "1.0.0",
+                new OperatorDefinition.Display("Bad unevaluated properties", "Test operator.", List.of("test")),
+                new OperatorDefinition.Source("user-library", "", "", "", true),
+                new OperatorDefinition.Ports(
+                        List.of(new OperatorDefinition.Port("payload",
+                                new SchemaEnvelope(SchemaEnvelope.JSON_SCHEMA, "2020-12", Map.of(
+                                        "type", "string",
+                                        "unevaluatedProperties", false
+                                )),
+                                true,
+                                "Input.")),
+                        List.of(new OperatorDefinition.Port("output",
+                                new SchemaEnvelope(SchemaEnvelope.JSON_SCHEMA, "2020-12", Map.of(
+                                        "type", "object",
+                                        "unevaluatedProperties", "nope"
+                                )),
+                                true,
+                                "Output."))
+                ),
+                SchemaEnvelope.object(Map.of(
+                        "routing", Map.of(
+                                "type", "object",
+                                "properties", Map.of("mode", Map.of("type", "string")),
+                                "unevaluatedProperties", false,
+                                "default", Map.of("mode", "auto", "shadow", "yes"))
+                ), List.of()),
+                OperatorDefinition.Capabilities.pure(),
+                new OperatorDefinition.Lowering("native", "riskBadObjectUnevaluatedProperties", Map.of()),
+                List.of()
+        );
+
+        VisualValidationResult result = validator.validate(libraryWith(operator));
+
+        assertThat(result.valid()).isFalse();
+        assertThat(result.diagnostics())
+                .extracting("code")
+                .contains(
+                        "visual.schema.unevaluatedPropertiesConstraintTypeMismatch",
+                        "visual.schema.unevaluatedPropertiesInvalid",
+                        "visual.schema.defaultUnknownProperty"
+                );
+    }
+
+    @Test
     void rejectsInvalidEnumSchemaShape() {
         OperatorLibrary library = libraryWith(operator(
                 "risk:badEnumSchema",
@@ -1677,6 +1725,55 @@ class OperatorLibraryValidatorTest {
     }
 
     @Test
+    void acceptsObjectUnevaluatedPropertiesAcrossOperatorDefinitions() {
+        OperatorDefinition operator = new OperatorDefinition(
+                "bloge.visualOperator.v1",
+                "risk:objectUnevaluatedPropertiesPolicy",
+                "1.0.0",
+                new OperatorDefinition.Display("Object unevaluated properties policy",
+                        "Test operator.", List.of("test")),
+                new OperatorDefinition.Source("user-library", "", "", "", true),
+                new OperatorDefinition.Ports(
+                        List.of(new OperatorDefinition.Port("payload",
+                                SchemaEnvelope.object(Map.of(
+                                        "filters", Map.of(
+                                                "type", "object",
+                                                "properties", Map.of("status", Map.of("type", "string")),
+                                                "patternProperties", Map.of(
+                                                        "^filter\\.[a-z]+$", Map.of("type", "string")),
+                                                "unevaluatedProperties", false)
+                                ), List.of("filters")),
+                                true,
+                                "Input.")),
+                        List.of(new OperatorDefinition.Port("output",
+                                SchemaEnvelope.object(Map.of(
+                                        "labels", Map.of(
+                                                "type", "object",
+                                                "properties", Map.of("status", Map.of("type", "string")),
+                                                "unevaluatedProperties", Map.of("type", "string"))
+                                ), List.of()),
+                                true,
+                                "Output."))
+                ),
+                SchemaEnvelope.object(Map.of(
+                        "routing", Map.of(
+                                "type", "object",
+                                "properties", Map.of("routeMode", Map.of("type", "string")),
+                                "unevaluatedProperties", Map.of("type", "string"),
+                                "default", Map.of("routeMode", "auto", "tenant", "gold"))
+                ), List.of("routing")),
+                OperatorDefinition.Capabilities.pure(),
+                new OperatorDefinition.Lowering("native", "riskObjectUnevaluatedPropertiesPolicy", Map.of()),
+                List.of()
+        );
+
+        VisualValidationResult result = validator.validate(libraryWith(operator));
+
+        assertThat(result.diagnostics()).isEmpty();
+        assertThat(result.valid()).isTrue();
+    }
+
+    @Test
     void acceptsObjectDependentRequiredAcrossOperatorDefinitions() {
         OperatorDefinition operator = new OperatorDefinition(
                 "bloge.visualOperator.v1",
@@ -2616,6 +2713,48 @@ class OperatorLibraryValidatorTest {
                                                 "properties", Map.of("score", Map.of("type", "integer")),
                                                 "required", List.of("score"),
                                                 "additionalProperties", false
+                                        )
+                                )),
+                                true,
+                                "Inputs.")),
+                        List.of(new OperatorDefinition.Port("output",
+                                SchemaEnvelope.object(Map.of("accepted", Map.of("type", "boolean")), List.of()),
+                                true,
+                                "Output."))
+                ),
+                SchemaEnvelope.opaque(),
+                OperatorDefinition.Capabilities.pure(),
+                new OperatorDefinition.Lowering("transform", "transform", Map.of(
+                        "assignments", Map.of("accepted", "{{input.customer.score}} >= 700")
+                )),
+                List.of()
+        );
+
+        VisualValidationResult result = validator.validate(libraryWith(operator));
+
+        assertThat(result.valid()).isTrue();
+        assertThat(result.diagnostics()).isEmpty();
+    }
+
+    @Test
+    void acceptsTransformTemplateReferencesThroughUnevaluatedPropertiesSchema() {
+        OperatorDefinition operator = new OperatorDefinition(
+                "bloge.visualOperator.v1",
+                "risk:dynamicUnevaluatedTemplateInput",
+                "1.0.0",
+                new OperatorDefinition.Display("Dynamic unevaluated template input",
+                        "Test operator.", List.of("test")),
+                new OperatorDefinition.Source("user-library", "", "", "", true),
+                new OperatorDefinition.Ports(
+                        List.of(new OperatorDefinition.Port("inputs",
+                                new SchemaEnvelope(SchemaEnvelope.JSON_SCHEMA, "2020-12", Map.of(
+                                        "type", "object",
+                                        "properties", Map.of(),
+                                        "unevaluatedProperties", Map.of(
+                                                "type", "object",
+                                                "properties", Map.of("score", Map.of("type", "integer")),
+                                                "required", List.of("score"),
+                                                "unevaluatedProperties", false
                                         )
                                 )),
                                 true,

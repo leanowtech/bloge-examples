@@ -624,14 +624,21 @@ public class OperatorLibraryValidator {
     }
 
     private static Map<String, Object> additionalPropertySchema(Map<String, Object> schema) {
-        Object additional = schema.get("additionalProperties");
-        if (Boolean.TRUE.equals(additional)) {
+        Object residual = residualPropertiesPolicy(schema);
+        if (Boolean.TRUE.equals(residual)) {
             return Map.of();
         }
-        if (additional instanceof Map<?, ?> additionalSchema) {
-            return objectProperty(additionalSchema);
+        if (residual instanceof Map<?, ?> residualSchema) {
+            return objectProperty(residualSchema);
         }
         return null;
+    }
+
+    private static Object residualPropertiesPolicy(Map<String, Object> schema) {
+        if (schema.containsKey("additionalProperties")) {
+            return schema.get("additionalProperties");
+        }
+        return schema.get("unevaluatedProperties");
     }
 
     private static Map<String, Object> patternPropertySchema(Map<String, Object> schema, String propertyName) {

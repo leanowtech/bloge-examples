@@ -322,6 +322,38 @@ class ResourceDesignContractValidatorTest {
     }
 
     @Test
+    void acceptsObjectUnevaluatedPropertiesInResourceContractSchemas() {
+        ResourceDesignContract contract = new ResourceDesignContract(
+                "contract:orders",
+                "order-service.listOrders",
+                "Order list",
+                "Lists orders.",
+                List.of("order"),
+                SchemaEnvelope.object(Map.of(
+                        "filters", Map.of(
+                                "type", "object",
+                                "properties", Map.of("status", Map.of("type", "string")),
+                                "patternProperties", Map.of(
+                                        "^filter\\.[a-z]+$", Map.of("type", "string")),
+                                "unevaluatedProperties", false)
+                ), List.of("filters")),
+                SchemaEnvelope.object(Map.of(
+                        "labels", Map.of(
+                                "type", "object",
+                                "properties", Map.of("status", Map.of("type", "string")),
+                                "unevaluatedProperties", Map.of("type", "string"))
+                ), List.of()),
+                Map.of(),
+                "ACTIVE"
+        );
+
+        VisualValidationResult result = validator.validate(contract);
+
+        assertThat(result.valid()).isTrue();
+        assertThat(result.diagnostics()).isEmpty();
+    }
+
+    @Test
     void acceptsObjectDependentRequiredInResourceContractSchemas() {
         ResourceDesignContract contract = new ResourceDesignContract(
                 "contract:orders",

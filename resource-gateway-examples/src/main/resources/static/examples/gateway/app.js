@@ -236,7 +236,6 @@ const SUPPORTED_SCHEMA_KINDS = new Set([
 const UNSUPPORTED_SCHEMA_REFERENCE_KEYWORDS = ['$ref', '$dynamicRef'];
 const UNSUPPORTED_SCHEMA_COMPOSITION_KEYWORDS = ['oneOf', 'anyOf', 'allOf', 'not', 'if', 'then', 'else'];
 const UNSUPPORTED_SCHEMA_CONSTRAINT_KEYWORDS = [
-  'unevaluatedProperties',
   'unevaluatedItems'
 ];
 const SUPPORTED_SCHEMA_STRING_FORMATS = new Set(['date', 'date-time', 'duration', 'email', 'uri', 'uuid']);
@@ -2935,19 +2934,26 @@ function unknownConfigPaths(value, schema, prefix) {
     return [];
   }
   const properties = schema?.properties || {};
-  const additional = schema?.additionalProperties;
-  const additionalSchema = additional && typeof additional === 'object' && !Array.isArray(additional)
-    ? additional
+  const residual = residualPropertiesPolicy(schema);
+  const residualSchema = residual && typeof residual === 'object' && !Array.isArray(residual)
+    ? residual
     : null;
   const paths = [];
   for (const [key, item] of Object.entries(value)) {
     const path = prefix ? `${prefix}.${key}` : key;
     if (Object.prototype.hasOwnProperty.call(properties, key)) {
       paths.push(...unknownConfigPaths(item, properties[key] || {}, path));
-    } else if (additional === false) {
+      continue;
+    }
+    const patternSchemas = matchingPatternPropertySchemas(schema, key);
+    if (patternSchemas.length) {
+      for (const patternSchema of patternSchemas) {
+        paths.push(...unknownConfigPaths(item, patternSchema, path));
+      }
+    } else if (residual === false) {
       paths.push(path);
-    } else if (additionalSchema) {
-      paths.push(...unknownConfigPaths(item, additionalSchema, path));
+    } else if (residualSchema) {
+      paths.push(...unknownConfigPaths(item, residualSchema, path));
     }
   }
   return paths;
@@ -4906,12 +4912,12 @@ function arrayIndexSegment(segment) {
 }
 
 function additionalPropertySchema(schema) {
-  const additional = schema?.additionalProperties;
-  if (additional === true) {
+  const residual = residualPropertiesPolicy(schema);
+  if (residual === true) {
     return {};
   }
-  return additional && typeof additional === 'object' && !Array.isArray(additional)
-    ? additional
+  return residual && typeof residual === 'object' && !Array.isArray(residual)
+    ? residual
     : null;
 }
 
@@ -5090,6 +5096,7 @@ function validateSchemaStructure(schema, path, diagnostics) {
   validateSchemaObjectPropertyNames(schema, kind, path, diagnostics);
   validateSchemaObjectDependentRequired(schema, kind, path, diagnostics);
   validateSchemaObjectDependentSchemas(schema, kind, path, diagnostics);
+  validateSchemaUnevaluatedProperties(schema, kind, path, diagnostics);
   if (kind === 'object') {
     const properties = validatedSchemaObjectProperties(schema, path, diagnostics);
     validateSchemaAdditionalProperties(schema, path, diagnostics);
@@ -5237,6 +5244,32 @@ function validateSchemaAdditionalProperties(schema, path, diagnostics) {
     'visual.schema.additionalPropertiesInvalid',
     'Object schema additionalProperties must be a boolean or schema object.',
     `${path}/additionalProperties`
+  ));
+}
+
+function validateSchemaUnevaluatedProperties(schema, kind, path, diagnostics) {
+  if (!Object.prototype.hasOwnProperty.call(schema || {}, 'unevaluatedProperties')) {
+    return;
+  }
+  if (kind !== 'object') {
+    diagnostics.push(graphInputSchemaDiagnostic(
+      'visual.schema.unevaluatedPropertiesConstraintTypeMismatch',
+      'Object unevaluatedProperties constraints require schema type/kind object.',
+      path
+    ));
+  }
+  const unevaluated = schema?.unevaluatedProperties;
+  if (typeof unevaluated === 'boolean') {
+    return;
+  }
+  if (unevaluated && typeof unevaluated === 'object' && !Array.isArray(unevaluated)) {
+    validateSchemaStructure(unevaluated, `${path}/unevaluatedProperties`, diagnostics);
+    return;
+  }
+  diagnostics.push(graphInputSchemaDiagnostic(
+    'visual.schema.unevaluatedPropertiesInvalid',
+    'Object schema unevaluatedProperties must be a boolean or schema object.',
+    `${path}/unevaluatedProperties`
   ));
 }
 
@@ -6629,7 +6662,8 @@ function objectSchemaCompatibilityIssue(sourceSchema, targetSchema, path = '') {
       return nested;
     }
   }
-  const targetAdditional = targetSchema?.additionalProperties;
+  const targetResidual = residualPropertiesPolicy(targetSchema);
+  const targetResidualKeyword = residualPropertiesKeyword(targetSchema);
   for (const [propertyName, sourceProperty] of Object.entries(sourceProperties)) {
     const childPath = appendCompatibilityPath(path, propertyName);
     const targetProperty = targetProperties[propertyName];
@@ -6648,25 +6682,25 @@ function objectSchemaCompatibilityIssue(sourceSchema, targetSchema, path = '') {
     }
     if (targetProperty || targetPatternSchemas.length) {
       continue;
-    } else if (targetAdditional === false) {
-      return reasonAt(childPath, `source object declares additional field '${propertyName}' but target additionalProperties=false`);
-    } else if (targetAdditional && typeof targetAdditional === 'object') {
-      const nested = schemaCompatibilityIssue(sourceProperty, targetAdditional, childPath);
+    } else if (targetResidual === false) {
+      return reasonAt(childPath, `source object declares additional field '${propertyName}' but target ${targetResidualKeyword}=false`);
+    } else if (targetResidual && typeof targetResidual === 'object' && !Array.isArray(targetResidual)) {
+      const nested = schemaCompatibilityIssue(sourceProperty, targetResidual, childPath);
       if (nested) {
         return nested;
       }
     }
   }
-  const sourceAdditional = sourceSchema?.additionalProperties;
-  if (targetAdditional === false && sourceAdditional !== false) {
-    return reasonAt(path, 'source object allows undeclared additional fields but target additionalProperties=false');
+  const sourceResidual = residualPropertiesPolicy(sourceSchema);
+  if (targetResidual === false && sourceResidual !== false) {
+    return reasonAt(path, `source object allows undeclared additional fields but target ${targetResidualKeyword}=false`);
   }
-  if (targetAdditional && typeof targetAdditional === 'object') {
-    if (sourceAdditional === undefined || sourceAdditional === true) {
-      return reasonAt(path, `source object allows unconstrained additional fields but target additionalProperties requires ${schemaType(targetAdditional)}`);
+  if (targetResidual && typeof targetResidual === 'object' && !Array.isArray(targetResidual)) {
+    if (sourceResidual === undefined || sourceResidual === true) {
+      return reasonAt(path, `source object allows unconstrained additional fields but target ${targetResidualKeyword} requires ${schemaType(targetResidual)}`);
     }
-    if (sourceAdditional && typeof sourceAdditional === 'object') {
-      const nested = schemaCompatibilityIssue(sourceAdditional, targetAdditional, appendCompatibilityPath(path, 'additionalProperties'));
+    if (sourceResidual && typeof sourceResidual === 'object' && !Array.isArray(sourceResidual)) {
+      const nested = schemaCompatibilityIssue(sourceResidual, targetResidual, appendCompatibilityPath(path, targetResidualKeyword));
       if (nested) {
         return nested;
       }
@@ -6691,7 +6725,7 @@ function objectPatternPropertiesCompatibilityIssue(sourceSchema, targetSchema, p
     return '';
   }
   const sourcePatterns = schemaPatternProperties(sourceSchema);
-  if ((!sourcePatterns || !Object.keys(sourcePatterns).length) && sourceSchema?.additionalProperties === false) {
+  if ((!sourcePatterns || !Object.keys(sourcePatterns).length) && residualPropertiesPolicy(sourceSchema) === false) {
     return '';
   }
   if (sourcePatterns && canonicalSchemaValueKey(sourcePatterns) === canonicalSchemaValueKey(targetPatterns)) {
@@ -6712,7 +6746,7 @@ function objectPropertyNamesCompatibilityIssue(sourceSchema, targetSchema, path 
     return '';
   }
   const targetEffective = effectivePropertyNameSchema(targetPropertyNames);
-  if (sourceSchema?.additionalProperties === false
+  if (residualPropertiesPolicy(sourceSchema) === false
       && Object.keys(schemaObjectProperties(sourceSchema)).every((name) => schemaValueMatchesSchema(name, targetEffective))) {
     return '';
   }
@@ -7198,7 +7232,7 @@ function objectValueMatchesSchema(value, schema) {
       return false;
     }
   }
-  const additional = schema?.additionalProperties;
+  const residual = residualPropertiesPolicy(schema);
   for (const [key, item] of Object.entries(value)) {
     const patternSchemas = matchingPatternPropertySchemas(schema, key);
     if (Object.prototype.hasOwnProperty.call(properties, key)) {
@@ -7213,10 +7247,10 @@ function objectValueMatchesSchema(value, schema) {
     }
     if (Object.prototype.hasOwnProperty.call(properties, key) || patternSchemas.length) {
       continue;
-    } else if (additional === false) {
+    } else if (residual === false) {
       return false;
-    } else if (additional && typeof additional === 'object' && !Array.isArray(additional)
-        && !schemaValueMatchesSchema(item, additional)) {
+    } else if (residual && typeof residual === 'object' && !Array.isArray(residual)
+        && !schemaValueMatchesSchema(item, residual)) {
       return false;
     }
   }
@@ -7331,7 +7365,8 @@ function effectiveDependentObjectSchema(schema) {
         || Object.prototype.hasOwnProperty.call(effective, 'minProperties')
         || Object.prototype.hasOwnProperty.call(effective, 'maxProperties')
         || Object.prototype.hasOwnProperty.call(effective, 'propertyNames')
-        || Object.prototype.hasOwnProperty.call(effective, 'patternProperties'))) {
+        || Object.prototype.hasOwnProperty.call(effective, 'patternProperties')
+        || Object.prototype.hasOwnProperty.call(effective, 'unevaluatedProperties'))) {
     effective.type = 'object';
   }
   return effective;
@@ -7342,9 +7377,22 @@ function presentObjectProperty(value, property) {
 }
 
 function sourceCannotContainProperty(sourceSchema, property) {
-  return sourceSchema?.additionalProperties === false
+  return residualPropertiesPolicy(sourceSchema) === false
     && !Object.prototype.hasOwnProperty.call(schemaObjectProperties(sourceSchema), property)
     && !matchingPatternPropertySchemas(sourceSchema, property).length;
+}
+
+function residualPropertiesPolicy(schema) {
+  if (Object.prototype.hasOwnProperty.call(schema || {}, 'additionalProperties')) {
+    return schema.additionalProperties;
+  }
+  return schema?.unevaluatedProperties;
+}
+
+function residualPropertiesKeyword(schema) {
+  return Object.prototype.hasOwnProperty.call(schema || {}, 'additionalProperties')
+    ? 'additionalProperties'
+    : 'unevaluatedProperties';
 }
 
 function schemaMinItems(schema) {

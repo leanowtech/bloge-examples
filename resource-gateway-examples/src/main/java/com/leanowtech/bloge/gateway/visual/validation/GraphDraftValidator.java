@@ -1205,12 +1205,12 @@ public class GraphDraftValidator {
     }
 
     private static Map<String, Object> additionalPropertySchema(Map<String, Object> schema) {
-        Object additional = schema.get("additionalProperties");
-        if (Boolean.TRUE.equals(additional)) {
+        Object residual = residualPropertiesPolicy(schema);
+        if (Boolean.TRUE.equals(residual)) {
             return Map.of();
         }
-        if (additional instanceof Map<?, ?> additionalSchema) {
-            return objectProperty(additionalSchema);
+        if (residual instanceof Map<?, ?> residualSchema) {
+            return objectProperty(residualSchema);
         }
         return null;
     }
@@ -1277,7 +1277,7 @@ public class GraphDraftValidator {
         }
 
         Map<String, Object> properties = propertiesOf(schema);
-        Object additional = schema.get("additionalProperties");
+        Object residual = residualPropertiesPolicy(schema);
         for (Map.Entry<String, Object> entry : object.entrySet()) {
             Map<String, Object> property = objectProperty(properties.get(entry.getKey()));
             List<Map<String, Object>> patternSchemas = matchingPatternPropertySchemas(schema, entry.getKey());
@@ -1293,10 +1293,10 @@ public class GraphDraftValidator {
             }
             if (property != null || !patternSchemas.isEmpty()) {
                 continue;
-            } else if (Boolean.FALSE.equals(additional)) {
+            } else if (Boolean.FALSE.equals(residual)) {
                 return false;
-            } else if (additional instanceof Map<?, ?> additionalSchema
-                    && !constantValueMatchesSchema(entry.getValue(), objectProperty(additionalSchema))) {
+            } else if (residual instanceof Map<?, ?> residualSchema
+                    && !constantValueMatchesSchema(entry.getValue(), objectProperty(residualSchema))) {
                 return false;
             }
         }
@@ -1720,7 +1720,7 @@ public class GraphDraftValidator {
                         path + "/fields/" + required));
             }
         }
-        Object additional = schema.get("additionalProperties");
+        Object residual = residualPropertiesPolicy(schema);
         for (Map.Entry<String, Object> entry : object.entrySet()) {
             Map<String, Object> property = objectProperty(properties.get(entry.getKey()));
             List<Map<String, Object>> patternSchemas = matchingPatternPropertySchemas(schema, entry.getKey());
@@ -1732,12 +1732,12 @@ public class GraphDraftValidator {
             }
             if (property != null || !patternSchemas.isEmpty()) {
                 continue;
-            } else if (Boolean.FALSE.equals(additional)) {
+            } else if (Boolean.FALSE.equals(residual)) {
                 diagnostics.add(VisualDiagnostic.error("visual.config.unknown",
                         "Config '%s' is not declared by configSchema.".formatted(entry.getKey()),
                         path + "/fields/" + entry.getKey()));
-            } else if (additional instanceof Map<?, ?> additionalSchema) {
-                validateConfigValue(entry.getValue(), objectProperty(additionalSchema),
+            } else if (residual instanceof Map<?, ?> residualSchema) {
+                validateConfigValue(entry.getValue(), objectProperty(residualSchema),
                         path + "/fields/" + entry.getKey(), diagnostics);
             }
         }
@@ -1793,7 +1793,7 @@ public class GraphDraftValidator {
                         path + "/" + required));
             }
         }
-        Object additional = schema.get("additionalProperties");
+        Object residual = residualPropertiesPolicy(schema);
         for (Map.Entry<String, Object> entry : object.entrySet()) {
             Map<String, Object> property = objectProperty(properties.get(entry.getKey()));
             List<Map<String, Object>> patternSchemas = matchingPatternPropertySchemas(schema, entry.getKey());
@@ -1805,12 +1805,12 @@ public class GraphDraftValidator {
             }
             if (property != null || !patternSchemas.isEmpty()) {
                 continue;
-            } else if (Boolean.FALSE.equals(additional)) {
+            } else if (Boolean.FALSE.equals(residual)) {
                 diagnostics.add(VisualDiagnostic.error("visual.config.unknown",
                         "Config '%s' is not declared by configSchema.".formatted(entry.getKey()),
                         path + "/" + entry.getKey()));
-            } else if (additional instanceof Map<?, ?> additionalSchema) {
-                validateConfigValue(entry.getValue(), objectProperty(additionalSchema),
+            } else if (residual instanceof Map<?, ?> residualSchema) {
+                validateConfigValue(entry.getValue(), objectProperty(residualSchema),
                         path + "/" + entry.getKey(), diagnostics);
             }
         }
@@ -2415,10 +2415,13 @@ public class GraphDraftValidator {
             if (property != null) {
                 return property;
             }
-            Object additional = schema.get("additionalProperties");
-            if (additional instanceof Map<?, ?> additionalSchema) {
-                Map<String, Object> additionalProperty = objectProperty(additionalSchema);
-                return additionalProperty == null ? Map.of() : additionalProperty;
+            Object residual = residualPropertiesPolicy(schema);
+            if (Boolean.TRUE.equals(residual)) {
+                return Map.of();
+            }
+            if (residual instanceof Map<?, ?> residualSchema) {
+                Map<String, Object> residualProperty = objectProperty(residualSchema);
+                return residualProperty == null ? Map.of() : residualProperty;
             }
         }
         if ("array".equals(type) && schema.get("items") instanceof Map<?, ?> items) {
@@ -2436,6 +2439,13 @@ public class GraphDraftValidator {
                 connection.targetNodeId(),
                 connection.targetPort(),
                 connection.targetPath());
+    }
+
+    private static Object residualPropertiesPolicy(Map<String, Object> schema) {
+        if (schema.containsKey("additionalProperties")) {
+            return schema.get("additionalProperties");
+        }
+        return schema.get("unevaluatedProperties");
     }
 
     private static void validateAcyclic(GraphDraft draft,
