@@ -132,6 +132,22 @@ class VisualGraphDraftControllerTest {
     }
 
     @Test
+    void createDoesNotSnapshotDeprecatedOperatorAsNewExecutableNode() {
+        DefaultVisualOperatorCatalog catalog = VisualCatalogTestSupport.catalogWithLibrary(
+                deprecatedNumericPassLibrary());
+        VisualGraphDraftController controller = controllerWithCatalog(catalog, new InMemoryGraphDraftRepository());
+
+        GraphDraft stored = controller.create(numericPassDraft());
+        DslGenerationResult result = controller.compile(stored);
+
+        assertThat(stored.operatorFingerprints()).doesNotContainKey("pass");
+        assertThat(result.generated()).isFalse();
+        assertThat(result.diagnostics())
+                .extracting("code")
+                .contains("visual.operator.fingerprintMissing");
+    }
+
+    @Test
     void createStoresRevisionMetadataSnapshot() {
         VisualGraphDraftController controller = controllerWithEligibilityLibrary();
 
@@ -472,6 +488,33 @@ class VisualGraphDraftControllerTest {
         );
     }
 
+    private static GraphDraft numericPassDraft() {
+        return new GraphDraft(
+                "",
+                "",
+                0,
+                "deprecatedGate",
+                "",
+                "",
+                "",
+                "",
+                SchemaEnvelope.object(Map.of(
+                        "value", Map.of("type", "integer")
+                ), List.of("value")),
+                List.of(new GraphDraft.DraftNode(
+                        "pass",
+                        "risk:numericPass",
+                        "",
+                        Map.of("value", GraphDraft.Binding.contextPath("value")),
+                        Map.of(),
+                        null
+                )),
+                List.of(),
+                Map.of(),
+                new GraphDraft.OutputSelection("pass", "")
+        );
+    }
+
     private static GraphDraft withFingerprints(GraphDraft draft, DefaultVisualOperatorCatalog catalog) {
         Map<String, String> fingerprints = new LinkedHashMap<>();
         for (GraphDraft.DraftNode node : draft.nodes()) {
@@ -516,6 +559,18 @@ class VisualGraphDraftControllerTest {
                 "risk-team",
                 "ACTIVE",
                 List.of(operator)
+        );
+    }
+
+    private static OperatorLibrary deprecatedNumericPassLibrary() {
+        return new OperatorLibrary(
+                "bloge.visualOperatorLibrary.v1",
+                "risk-numeric-pass",
+                "Numeric pass operators",
+                "1.0.0",
+                "risk-team",
+                "DEPRECATED",
+                List.of(VisualCatalogTestSupport.numericPassOperator())
         );
     }
 }

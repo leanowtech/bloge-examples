@@ -1,6 +1,7 @@
 package com.leanowtech.bloge.gateway.visual.api;
 
 import com.leanowtech.bloge.gateway.visual.codegen.DslGenerationResult;
+import com.leanowtech.bloge.gateway.visual.catalog.OperatorCatalogQuery;
 import com.leanowtech.bloge.gateway.visual.catalog.OperatorDefinition;
 import com.leanowtech.bloge.gateway.visual.catalog.VisualOperatorCatalog;
 import com.leanowtech.bloge.gateway.visual.diagnostic.VisualDiagnostic;
@@ -297,9 +298,20 @@ public class VisualGraphDraftController {
     }
 
     private Map<String, String> currentOperatorFingerprints(GraphDraft draft) {
+        Map<String, OperatorDefinition> activeOperators = new LinkedHashMap<>();
+        catalog.list(new OperatorCatalogQuery(
+                "",
+                List.of(),
+                false,
+                false,
+                draft.tenantId(),
+                draft.namespace(),
+                draft.environment()
+        )).forEach(operator -> activeOperators.put(operator.operatorRef(), operator));
+
         Map<String, String> fingerprints = new LinkedHashMap<>();
         for (GraphDraft.DraftNode node : draft.nodes()) {
-            catalog.find(node.operatorRef())
+            Optional.ofNullable(activeOperators.get(node.operatorRef()))
                     .map(OperatorDefinition::fingerprint)
                     .ifPresent(fingerprint -> fingerprints.put(node.id(), fingerprint));
         }
