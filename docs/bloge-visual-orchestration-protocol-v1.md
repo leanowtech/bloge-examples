@@ -7,15 +7,25 @@
 - [BLOGE 可视化编排设计包索引](./bloge-visual-orchestration-design-package.md)
 - [通用 BLOGE 可视化编排系统设计方案](./bloge-visual-orchestration-system-design.md)
 - [BLOGE 可视化编排系统关键决策记录](./bloge-visual-orchestration-decision-record.md)
+- [BLOGE 可视化编排实现状态审计](./bloge-visual-orchestration-implementation-status.md)
+
+> 实现注记：本文保留早期协议草案中的抽象名称，例如
+> `bloge.operatorCatalog.v1` 和 `bloge.graphDraft.v1`。当前
+> `resource-gateway-examples` 的 wire contract 已收敛为
+> `bloge.visualOperator.v1`、`bloge.visualOperatorLibrary.v1`、
+> `bloge.visualOperatorCatalog.v1`、`bloge.visualGraphDraft.v1` 和
+> `bloge.visualGraphPublication.v1`。继续实现时以代码和实现状态审计为准，
+> 不要把早期草案名误认为当前 API 字段。
 
 ## 1. 协议目标
 
 这份文档把“可视化编排画布”从产品愿景压成可实现合同。它定义四个核心协议：
 
-1. `bloge.operatorCatalog.v1`：用户、运行时或 resource gateway 暴露给画布的算子库定义。
-2. `bloge.graphDraft.v1`：画布编辑中的图草稿模型。
-3. `bloge.visualDiagnostic.v1`：校验、编译、策略和运行错误如何定位回画布。
-4. `bloge.resourceDesignContract.v1`：`ResourceDescriptor` 如何补足设计时 schema，投影成虚拟算子。
+1. `bloge.visualOperator.v1` / `bloge.visualOperatorLibrary.v1` / `bloge.visualOperatorCatalog.v1`：用户、运行时或 resource gateway 暴露给画布的算子定义、算子库和 catalog response。
+2. `bloge.visualGraphDraft.v1`：画布编辑中的图草稿模型。
+3. `VisualDiagnostic`：校验、编译、策略和运行错误如何定位回画布。
+4. `ResourceDesignContract`：`ResourceDescriptor` 如何补足设计时 schema，投影成虚拟算子。
+5. `bloge.visualGraphPublication.v1`：冻结 DSL、draft、operator snapshots、fingerprints、layout 和报告的不可变发布物。
 
 边界判断：
 

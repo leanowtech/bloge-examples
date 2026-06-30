@@ -8,6 +8,11 @@
 - [通用 BLOGE 可视化编排系统设计方案](./bloge-visual-orchestration-system-design.md)
 - [BLOGE 可视化编排协议草案 v1](./bloge-visual-orchestration-protocol-v1.md)
 - [BLOGE 可视化编排系统关键决策记录](./bloge-visual-orchestration-decision-record.md)
+- [BLOGE 可视化编排实现状态审计](./bloge-visual-orchestration-implementation-status.md)
+
+> 实现注记：本文是 2026-06-29 的 Phase 1 历史蓝图，用于解释落地顺序和设计意图。
+> `resource-gateway-examples` 已经完成其中大量切片；继续实现前请先读取实现状态审计，
+> 不要把本文中的“当前问题”或“新增”字样直接当作 2026-06-30 之后的待办清单。
 
 ## 1. Phase 1 目标
 

@@ -8,6 +8,7 @@
 - [通用 BLOGE 可视化编排系统设计方案](./bloge-visual-orchestration-system-design.md)
 - [BLOGE 可视化编排协议草案 v1](./bloge-visual-orchestration-protocol-v1.md)
 - [BLOGE 可视化编排 Phase 1 实现蓝图](./bloge-visual-orchestration-phase1-implementation-blueprint.md)
+- [BLOGE 可视化编排实现状态审计](./bloge-visual-orchestration-implementation-status.md)
 
 ## 1. 决策上下文
 
@@ -16,8 +17,9 @@
 当前已有事实：
 
 - resource-gateway 已有 `ResourceDescriptor`、`HttpResourceOperator`、`ResourceRegistry`、descriptor CRUD、动态 DSL compile/run composer。
+- resource-gateway 已经新增 visual authoring slice：用户算子库、resource design contract、operator catalog、GraphDraft、schema-aware connection check、DSL generation、run 和 immutable publication。
 - graph-engine 已有 `visualLayout.v1`、operator inventory、version metadata、diagnostics、diagram API 和版本控制面。
-- 当前 gateway composer 的 operator palette、节点属性和 DSL 生成仍写死在前端 JavaScript 中，不能承载用户提供的任意算子库。
+- 当前 gateway composer 已从 visual operator catalog 加载 palette，并能承载用户提供的 operator library；早期“前端写死”问题已经不是当前主要缺口。
 
 核心约束：
 

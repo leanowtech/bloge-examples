@@ -4,6 +4,8 @@
 日期：2026-06-29
 基线：`resource-gateway-examples`，参考 `graph-engine-examples` 的版本、布局、算子清单与诊断能力
 
+当前实现状态：[BLOGE 可视化编排实现状态审计](./bloge-visual-orchestration-implementation-status.md)
+
 设计包索引：[BLOGE 可视化编排设计包索引](./bloge-visual-orchestration-design-package.md)
 
 配套协议：[BLOGE 可视化编排协议草案 v1](./bloge-visual-orchestration-protocol-v1.md)
@@ -30,17 +32,18 @@ Phase 1 实现蓝图：[BLOGE 可视化编排 Phase 1 实现蓝图](./bloge-visu
 
 事实：
 
+- `resource-gateway-examples` 已经落地 visual authoring slice：`OperatorDefinition`、`OperatorLibrary`、`ResourceDesignContract`、`GraphDraft`、连接预检、DSL 生成、运行和 immutable publication。
 - `ResourceDescriptor` 已经描述外部 HTTP 资源的 URL、方法、Header、认证、超时、参数映射、响应协议和 payload 提取路径。
 - `HttpResourceOperator` 是通用资源算子，运行时根据 `resourceId` 解析 descriptor，再完成参数求值、请求构建、响应校验和 payload 提取。
 - `DatabaseResourceRegistry` 已经有 descriptor 持久化、热路径缓存和表达式预编译。
 - `/admin/resources` 已经提供资源描述符 CRUD。
-- `/api/gateway/examples/compose/run` 已经可以接收浏览器提交的 DSL，编译并运行图。
-- 静态页面 `Custom Composer` 已有拖拽雏形，但目前算子类型、贷款策略字段、DSL 生成规则都写死在前端 JS 中。
+- `/api/visual/operators`、`/admin/visual-operator-libraries`、`/api/visual/drafts`、`/api/visual/connections/check`、`/api/visual/publications` 已形成服务端权威 authoring API。
+- 静态页面 `Custom Composer` 已从 catalog API 加载动态 palette，并支持用户算子库、resource 虚拟算子、schema-aware 连接、草稿、发布和运行。
 
 推断：
 
 - resource-gateway 的正确演进方向不是增加更多 provider-specific operators，而是将 `ResourceDescriptor` 泛化为“算子描述符 / 连接器描述符 / 虚拟算子定义”。
-- 现有 composer 证明体验路径可行，但它不是目标架构，只是 MVP 原型。
+- 现有 composer 已经不只是 MVP 原型；它是当前通用画布的可运行 Phase 1 示例。下一阶段应补 run history、operator inventory projector、导入辅助和长期 graph-engine 对齐。
 
 ### 2.2 graph-engine 已有能力
 
@@ -111,15 +114,15 @@ Phase 1 实现蓝图：[BLOGE 可视化编排 Phase 1 实现蓝图](./bloge-visu
 | 实体 | 说明 | 是否已部分存在 |
 | --- | --- | --- |
 | Operator Provider | 算子来源，如 Java registry、用户上传 catalog、resource descriptor、远程连接器包 | 部分存在 |
-| Operator Definition | 一个可放入画布的算子定义，包括 schema、配置、能力、约束、视觉信息 | 部分存在 |
-| Virtual Operator | 由 descriptor 或模板派生的算子，例如 `loan-applicant-service.getProfile` | 需要新增 |
-| Port | 算子输入/输出端口，包含方向、schema、可连接规则 | 需要新增 |
+| Operator Definition | 一个可放入画布的算子定义，包括 schema、配置、能力、约束、视觉信息 | 已实现 |
+| Virtual Operator | 由 descriptor 或模板派生的算子，例如 `loan-applicant-service.getProfile` | 已实现 |
+| Port | 算子输入/输出端口，包含方向、schema、可连接规则 | 已实现 |
 | Schema Descriptor | BLOGE 内部 schema 表达，可导入/导出 JSON Schema | 部分存在 |
-| Graph Draft | 画布编辑中的图定义，未必可发布 | 需要新增 |
+| Graph Draft | 画布编辑中的图定义，未必可发布 | 已实现 |
 | Graph Version | 已编译、可发布、可回滚的图版本 | graph-engine 已存在 |
 | Visual Layout | 节点位置、尺寸、分组、视口、视觉注解 | 已存在 |
-| Binding | 下游输入如何从上游输出、上下文或常量中取得值 | 需要新增 |
-| Validation Report | 草稿、节点、边、表达式、schema 和运行时绑定的诊断集合 | 部分存在 |
+| Binding | 下游输入如何从上游输出、上下文或常量中取得值 | 已实现 |
+| Validation Report | 草稿、节点、边、表达式、schema 和运行时绑定的诊断集合 | 已实现 |
 | Execution Plan | 编译后可执行计划，包括节点拓扑、依赖、运行策略 | BLOGE 内部存在 |
 | Run / Instance | 一次执行或长运行实例 | 部分存在 |
 | Trace / Node State | 节点级运行状态、耗时、输入输出摘要、错误 | 部分存在 |
@@ -178,7 +181,7 @@ flowchart LR
 
 代价：
 
-- 需要新增 GraphDraft / Graph IR 模型，而不是只存一份布局 JSON。
+- 需要维护 GraphDraft / Graph IR 模型，而不是只存一份布局 JSON。当前 `resource-gateway-examples` 已经实现 `GraphDraft`，后续代价转为协议演进、兼容性和与 graph-engine 控制面的长期对齐。
 
 ### D2. 算子目录是一级资产，不是 Java 反射结果
 
@@ -993,16 +996,16 @@ resource-gateway 已有 rate limiting、cache、circuit breaker，可以作为�
 - 现有 `.bloge` 示例作为 seed graph。
 - 现有 `Custom Composer` 作为体验原型。
 
-### 19.2 改造
+### 19.2 改造状态
 
-| 当前实现 | 问题 | 改造方向 |
+| 原始问题 | 当前状态 | 后续方向 |
 | --- | --- | --- |
-| `OPERATOR_TYPES` 写死在 JS | 无法接收用户算子库 | 改为从 catalog API 加载 |
-| builder 节点字段写死贷款场景 | 不能通用 | 根据 input/config schema 动态生成表单 |
-| DSL 字符串由 JS 拼接 | 难以校验和扩展 | 服务端 GraphDraft -> DSL |
-| `ResourceDescriptor` 无精确 payload schema | 画布无法类型安全连接 | 增加或关联 payload schema |
-| `/compose/run` 只注册 `httpResource` | 无法执行通用算子 | 使用完整 OperatorRegistry 或可配置 registry |
-| diagnostics 只展示 compiler 信息 | 缺少 schema/权限/策略错误 | 增加 visual validation report |
+| `OPERATOR_TYPES` 写死在 JS，无法接收用户算子库 | 已缓解：browser composer 从 `/api/visual/operators` 加载 native、user-library、resource-backed operators，并动态注册 palette spec | 新能力仍必须先进入 `OperatorDefinition`，不能只补前端 |
+| builder 节点字段写死贷款场景，不能通用 | 已缓解：inspector 根据 input/config schema 渲染字段、source picker 和 config controls | 继续补复杂嵌套 config 的专业化控件和浏览器回归测试 |
+| DSL 字符串由 JS 拼接，难以校验和扩展 | 已缓解：GraphDraft -> DSL 在服务端生成，compile/run/publish 走服务端 validator/generator/compiler | 保留 DSL preview，但不让手写 DSL 成为画布语义源 |
+| `ResourceDescriptor` 无精确 payload schema，画布无法类型安全连接 | 已缓解：独立 `ResourceDesignContract` 补足 request/payload schema 并投影 resource virtual operator | 增加 OpenAPI/resource contract 导入辅助，降低手写 schema 成本 |
+| `/compose/run` 只注册 `httpResource`，无法执行通用算子 | 部分缓解：visual draft run 使用 GraphDraft DSL generator 和现有 dynamic runner；user-library transform/branch/native lowering 已可参与 | 补 Java OperatorRegistry projector 和更完整 runtime operator availability |
+| diagnostics 只展示 compiler 信息，缺少 schema/权限/策略错误 | 已缓解：`VisualDiagnostic` 覆盖 schema、policy、connection、fingerprint、compile/run diagnostics | 补 run history/node trace 持久化，让诊断可回放和审计 |
 
 当前 `resource-gateway-examples` 已经把 `configSchema` 的第一层落成代码：用户导入 operator library 时会校验 config schema 本身，canvas inspector 会根据简单 config 字段渲染编辑控件，并允许把 config 字段从 literal 切换为 source-backed expression。服务端 `GraphDraftValidator` 会在 validate/compile/run 前阻断缺必填 config、类型不匹配、enum 不匹配和禁止额外字段场景。结构化 config expression（例如 `{ kind: "expression", expr: "ctx.threshold" }`）不会被当成普通 object 误杀；如果它是纯 `ctx.*` 或 `node.output.*` 引用，服务端会把引用 schema 与目标 `configSchema` 做兼容性校验，DSL preview/codegen 也会把该结构降回普通 BLOGE DSL 表达式。它还区分正式校验与连接预检：正式 draft 阻断 data edge / semantic dependency 不一致，连接预检则允许尚未写入 binding 的 preview edge 先通过 schema 与 DAG gate。config 中的表达式引用已经参与引用存在性校验、DAG cycle gate 和拓扑排序。复杂表达式类型推断、复杂嵌套 config 的专业化控件仍属于后续增强，但服务端契约已经先行兜底。
 

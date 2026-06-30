@@ -13,20 +13,23 @@
 | [BLOGE 可视化编排协议草案 v1](./bloge-visual-orchestration-protocol-v1.md) | 协议合同：OperatorCatalog、GraphDraft、VisualDiagnostic、ResourceDesignContract、API、校验和存储 | 后端工程师、前端工程师、平台工程师 |
 | [BLOGE 可视化编排系统关键决策记录](./bloge-visual-orchestration-decision-record.md) | 决策理由：备选方案、拒绝理由、接受代价、失效条件和回看触发器 | 架构评审者、CTO/Tech Lead |
 | [BLOGE 可视化编排 Phase 1 实现蓝图](./bloge-visual-orchestration-phase1-implementation-blueprint.md) | 落地计划：包结构、DTO、controller、validator、DSL generator、前端迁移、测试和 DoD | 实施团队 |
+| [BLOGE 可视化编排实现状态审计](./bloge-visual-orchestration-implementation-status.md) | 当前代码事实：已落地能力、wire contract 命名、Phase 1 验收、剩余生产级缺口和下一步 | 所有人，尤其是继续实现前的工程师 |
 
 ## 2. 推荐阅读路径
 
 ### 2.1 快速判断方向是否成立
 
-1. 读主方案第 1-7 章，理解为什么这不是普通拖拽画布，而是可视化编排控制面。
-2. 读决策记录 ADR-001 到 ADR-008，确认核心取舍是否能接受。
-3. 读主方案第 20-23 章，确认路线图和下一步。
+1. 先读实现状态审计，确认当前代码已经做到哪里，以及早期协议名和当前实现名的差异。
+2. 读主方案第 1-7 章，理解为什么这不是普通拖拽画布，而是可视化编排控制面。
+3. 读决策记录 ADR-001 到 ADR-008，确认核心取舍是否能接受。
+4. 读主方案第 20-23 章，确认路线图和下一步。
 
 ### 2.2 准备进入实现
 
-1. 读协议草案第 2-9 章，理解四个核心协议和校验模型。
-2. 读协议草案第 10-14 章，理解 API、校验流水线、存储和最小闭环。
-3. 读 Phase 1 实现蓝图全篇，按 slice 拆任务。
+1. 读实现状态审计第 2-6 章，把下一步任务绑定到当前代码事实，而不是早期草案假设。
+2. 读协议草案第 2-9 章，理解四个核心协议和校验模型；遇到 wire contract 命名冲突时，以实现状态审计和代码为准。
+3. 读协议草案第 10-14 章，理解 API、校验流水线、存储和最小闭环。
+4. 读 Phase 1 实现蓝图全篇，按 slice 拆任务。
 
 ### 2.3 做架构评审
 
@@ -41,12 +44,12 @@
 | --- | --- | --- |
 | 以 `resource-gateway` 为基版 | 已覆盖 | 主方案第 2、7、19、20 章；Phase 1 蓝图第 1、3、6、10 章 |
 | 定义通用 BLOGE 可视化编排画布 | 已覆盖 | 主方案第 1、3、5、6、13 章；协议草案第 7、8、9 章 |
-| 接收用户提供的算子库定义 | 已覆盖 | 主方案第 8、12 章；协议草案第 5、10 章；决策记录 ADR-003 |
-| 支持 operator schema、input/output schema | 已覆盖 | 协议草案第 4、5、6、7 章；主方案第 8、10 章 |
-| 支持 schema 约束下拖拽和连线 | 已覆盖 | 主方案第 10、13 章；协议草案第 7、9、11 章；Phase 1 蓝图第 6、7、8 章 |
-| 支持自由编排业务逻辑 | 已覆盖，但明确分阶段 | 主方案第 11、13、16、20 章；Phase 1 蓝图第 9 章 |
-| 能吃下复杂业务编排场景 | 已覆盖 | 主方案第 16、18、20 章；决策记录 ADR-008、ADR-009、ADR-010 |
-| 形成详尽设计方案 | 已覆盖 | 四份设计文档合计覆盖架构、协议、决策、实现蓝图 |
+| 接收用户提供的算子库定义 | 设计和实现均已覆盖 | 主方案第 8、12 章；协议草案第 5、10 章；决策记录 ADR-003；实现状态审计第 2 章 |
+| 支持 operator schema、input/output schema | 设计和实现均已覆盖 | 协议草案第 4、5、6、7 章；主方案第 8、10 章；实现状态审计第 2 章 |
+| 支持 schema 约束下拖拽和连线 | 设计和实现均已覆盖 | 主方案第 10、13 章；协议草案第 7、9、11 章；Phase 1 蓝图第 6、7、8 章；实现状态审计第 2、4 章 |
+| 支持自由编排业务逻辑 | 已覆盖核心闭环，复杂能力分阶段 | 主方案第 11、13、16、20 章；Phase 1 蓝图第 9 章；实现状态审计第 5 章 |
+| 能吃下复杂业务编排场景 | 已覆盖架构方向，生产级能力仍分阶段补齐 | 主方案第 16、18、20 章；决策记录 ADR-008、ADR-009、ADR-010；实现状态审计第 5、6 章 |
+| 形成详尽设计方案 | 已覆盖，并新增实现状态审计防漂移 | 五份设计/状态文档合计覆盖架构、协议、决策、实现蓝图和当前代码事实 |
 
 ## 4. 当前核心结论
 
@@ -68,8 +71,8 @@
 6. **服务端校验是权威。**
    前端校验只改善体验，发布和运行前必须经过服务端 schema、policy、lowering 和 BLOGE compile。
 
-7. **Phase 1 先在 resource-gateway 内跑通闭环。**
-   长期再对齐或抽取到 graph-engine 控制面。
+7. **Phase 1 核心闭环已经在 resource-gateway 内落地。**
+   后续重点是 run history、OpenAPI/import 辅助、Java operator inventory projector、前端回归和长期 graph-engine 控制面对齐。
 
 ## 5. 当前待确认决策
 
@@ -78,7 +81,7 @@
 | 决策 | 当前推荐 | 影响 |
 | --- | --- | --- |
 | 第一批目标用户 | 开发者 + 解决方案架构师优先，业务运营后置 | 决定 DSL 暴露程度和表单抽象深度 |
-| Phase 1 是否保存草稿 | 保存轻量 GraphDraft，哪怕先用 in-memory | 不保存草稿会削弱诊断、版本和 UI 状态一致性 |
+| Phase 1 是否保存草稿 | 已决：保存 H2-backed GraphDraft、revision history 和 revision metadata | 不保存草稿会削弱诊断、版本和 UI 状态一致性 |
 | 用户算子库第一来源 | `ResourceDescriptor + ResourceDesignContract`，然后 JSON/YAML catalog | 最贴近 resource-gateway 基版 |
 | OpenAPI 导入是否进 Phase 1 | 不进核心闭环，可作为 schema 辅助工具 | 避免 OpenAPI 质量问题拖慢主线 |
 | `opaque` 输出是否允许发布 | 默认阻断类型安全发布，租户策略可放宽为 warning | 决定系统是否真正坚持 schema 约束 |
@@ -86,6 +89,8 @@
 | AI authoring 是否进 MVP | 不进核心 MVP | 先建立确定性合同和校验链 |
 
 ## 6. Phase 1 最小验收
+
+截至 2026-06-30，下面的最小闭环已由 `resource-gateway-examples` 代码实现。后续是否达到“完整生产级平台”应看实现状态审计第 5 章列出的剩余能力，而不是重复判断 Phase 1 是否存在。
 
 Phase 1 不以 UI 好看为验收，而以真实闭环为验收：
 
@@ -102,15 +107,12 @@ Phase 1 不以 UI 好看为验收，而以真实闭环为验收：
 
 ## 7. 推荐下一步
 
-如果进入代码实现，按 Phase 1 蓝图的顺序执行：
+如果继续代码实现，优先按实现状态审计第 6 章推进：
 
-1. `ResourceDesignContract` + registry + admin API。
-2. `OperatorDefinition` + `ResourceVirtualOperatorProjector`。
-3. `/api/visual/operators` + tests。
-4. `GraphDraft` + repository + validator。
-5. `GraphDraftDslGenerator`。
-6. Draft run service。
-7. 前端 palette 从 catalog 加载。
-8. 前端 editor/run 迁移到 draft API。
+1. Run history 和 node trace 存储。
+2. OpenAPI/resource contract 导入辅助。
+3. Java operator inventory projector。
+4. 前端回归验证。
+5. 协议文档命名与当前 wire contract 收敛。
 
-不要先改前端。前端现在最大的问题不是交互，而是缺服务端合同。
+不要把新的可拖拽能力只写进前端；任何新能力都必须先有 `OperatorDefinition`、schema gate、GraphDraft lowering 和服务端 diagnostics。
