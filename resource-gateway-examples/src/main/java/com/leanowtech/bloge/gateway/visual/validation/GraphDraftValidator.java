@@ -1227,6 +1227,9 @@ public class GraphDraftValidator {
 	        if (!objectValueMatchesPropertyBounds(object, schema)) {
 	            return false;
 	        }
+	        if (!objectValueMatchesPropertyNames(object, schema)) {
+	            return false;
+	        }
 
 	        for (String required : requiredNamesOf(schema)) {
             if (!object.containsKey(required) || object.get(required) == null) {
@@ -1274,6 +1277,35 @@ public class GraphDraftValidator {
 	        }
 	        Long maximum = objectPropertyBoundary(schema.get("maxProperties"));
 	        return maximum == null || size <= maximum;
+	    }
+
+	    private static boolean objectValueMatchesPropertyNames(Map<?, ?> value, Map<String, Object> schema) {
+	        Map<String, Object> propertyNameSchema = propertyNameSchema(schema);
+	        if (propertyNameSchema == null) {
+	            return true;
+	        }
+	        Map<String, Object> effectiveSchema = effectivePropertyNameSchema(propertyNameSchema);
+	        return value.keySet().stream()
+	                .map(String::valueOf)
+	                .allMatch(name -> constantValueMatchesSchema(name, effectiveSchema));
+	    }
+
+	    private static Map<String, Object> propertyNameSchema(Map<String, Object> schema) {
+	        Object raw = schema.get("propertyNames");
+	        if (!(raw instanceof Map<?, ?> rawMap)) {
+	            return null;
+	        }
+	        Map<String, Object> propertyNameSchema = new LinkedHashMap<>();
+	        rawMap.forEach((key, item) -> propertyNameSchema.put(String.valueOf(key), item));
+	        return propertyNameSchema;
+	    }
+
+	    private static Map<String, Object> effectivePropertyNameSchema(Map<String, Object> propertyNameSchema) {
+	        Map<String, Object> effective = new LinkedHashMap<>(propertyNameSchema);
+	        if (schemaType(effective).isBlank()) {
+	            effective.put("type", "string");
+	        }
+	        return effective;
 	    }
 
     private static void validateEdgeIdentity(GraphDraft draft, List<VisualDiagnostic> diagnostics) {
@@ -1462,6 +1494,12 @@ public class GraphDraftValidator {
 	                    path));
 	            return;
 	        }
+	        if (!objectValueMatchesPropertyNames(object, schema)) {
+	            diagnostics.add(VisualDiagnostic.error("visual.config.constraintMismatch",
+	                    "Config value at '%s' must satisfy object propertyNames constraint.".formatted(path),
+	                    path));
+	            return;
+	        }
 	        Map<String, Object> properties = propertiesOf(schema);
         for (String required : requiredNamesOf(schema)) {
             if (!object.containsKey(required) || object.get(required) == null) {
@@ -1501,6 +1539,12 @@ public class GraphDraftValidator {
 	        if (!objectValueMatchesPropertyBounds(object, schema)) {
 	            diagnostics.add(VisualDiagnostic.error("visual.config.constraintMismatch",
 	                    "Config value at '%s' must satisfy object property count constraints.".formatted(path),
+	                    path));
+	            return;
+	        }
+	        if (!objectValueMatchesPropertyNames(object, schema)) {
+	            diagnostics.add(VisualDiagnostic.error("visual.config.constraintMismatch",
+	                    "Config value at '%s' must satisfy object propertyNames constraint.".formatted(path),
 	                    path));
 	            return;
 	        }

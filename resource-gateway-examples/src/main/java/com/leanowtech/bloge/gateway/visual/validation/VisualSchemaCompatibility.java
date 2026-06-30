@@ -11,6 +11,7 @@ import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
@@ -386,8 +387,12 @@ public final class VisualSchemaCompatibility {
             }
         }
 	        Optional<String> additionalIssue = additionalPropertiesCompatibilityIssue(sourceSchema, targetAdditional, path);
-	        return additionalIssue.isPresent()
-	                ? additionalIssue
+	        if (additionalIssue.isPresent()) {
+	            return additionalIssue;
+	        }
+	        Optional<String> propertyNamesIssue = objectPropertyNamesCompatibilityIssue(sourceSchema, targetSchema, path);
+	        return propertyNamesIssue.isPresent()
+	                ? propertyNamesIssue
 	                : objectPropertyBoundsCompatibilityIssue(sourceSchema, targetSchema, path);
 	    }
 
@@ -413,6 +418,35 @@ public final class VisualSchemaCompatibility {
             }
         }
 	        return Optional.empty();
+	    }
+
+	    private static Optional<String> objectPropertyNamesCompatibilityIssue(Map<String, Object> sourceSchema,
+	                                                                          Map<String, Object> targetSchema,
+	                                                                          String path) {
+	        Map<String, Object> targetPropertyNames = propertyNameSchema(targetSchema);
+	        if (targetPropertyNames == null) {
+	            return Optional.empty();
+	        }
+	        List<Object> sourceValues = enumValues(sourceSchema);
+	        if (!sourceValues.isEmpty()
+	                && sourceValues.stream().allMatch(Map.class::isInstance)
+	                && sourceValues.stream().allMatch(value -> objectValueMatchesPropertyNames((Map<?, ?>) value,
+	                        targetSchema))) {
+	            return Optional.empty();
+	        }
+	        if (Boolean.FALSE.equals(sourceSchema.get("additionalProperties"))
+	                && propertiesOf(sourceSchema).keySet().stream()
+	                .allMatch(name -> valueMatchesSchema(name, effectivePropertyNameSchema(targetPropertyNames)))) {
+	            return Optional.empty();
+	        }
+	        Map<String, Object> sourcePropertyNames = propertyNameSchema(sourceSchema);
+	        if (sourcePropertyNames != null
+	                && Objects.equals(effectivePropertyNameSchema(sourcePropertyNames),
+	                effectivePropertyNameSchema(targetPropertyNames))) {
+	            return Optional.empty();
+	        }
+	        return Optional.of(reasonAt(path,
+	                "target requires propertyNames but source does not guarantee matching property names"));
 	    }
 
 	    private static Optional<String> objectPropertyBoundsCompatibilityIssue(Map<String, Object> sourceSchema,
@@ -715,6 +749,9 @@ public final class VisualSchemaCompatibility {
 	        if (!objectValueMatchesPropertyBounds(object, schema)) {
 	            return false;
 	        }
+	        if (!objectValueMatchesPropertyNames(object, schema)) {
+	            return false;
+	        }
 	        Map<String, Object> properties = propertiesOf(schema);
 	        for (String required : requiredNamesOf(schema)) {
 	            if (!object.containsKey(required) || object.get(required) == null) {
@@ -977,6 +1014,35 @@ public final class VisualSchemaCompatibility {
 	        }
 	        Long maximum = objectPropertyBoundary(schema.get("maxProperties"));
 	        return maximum == null || size <= maximum;
+	    }
+
+	    private static boolean objectValueMatchesPropertyNames(Map<?, ?> value, Map<String, Object> schema) {
+	        Map<String, Object> propertyNameSchema = propertyNameSchema(schema);
+	        if (propertyNameSchema == null) {
+	            return true;
+	        }
+	        Map<String, Object> effectiveSchema = effectivePropertyNameSchema(propertyNameSchema);
+	        return value.keySet().stream()
+	                .map(String::valueOf)
+	                .allMatch(name -> valueMatchesSchema(name, effectiveSchema));
+	    }
+
+	    private static Map<String, Object> propertyNameSchema(Map<String, Object> schema) {
+	        Object raw = schema.get("propertyNames");
+	        if (!(raw instanceof Map<?, ?> rawMap)) {
+	            return null;
+	        }
+	        Map<String, Object> propertyNameSchema = new LinkedHashMap<>();
+	        rawMap.forEach((key, item) -> propertyNameSchema.put(String.valueOf(key), item));
+	        return propertyNameSchema;
+	    }
+
+	    private static Map<String, Object> effectivePropertyNameSchema(Map<String, Object> propertyNameSchema) {
+	        Map<String, Object> effective = new LinkedHashMap<>(propertyNameSchema);
+	        if (schemaType(effective).isBlank()) {
+	            effective.put("type", "string");
+	        }
+	        return effective;
 	    }
 
 	    private static Long objectPropertyBoundary(Object value) {

@@ -60,7 +60,6 @@ public final class VisualSchemaValidator {
             "maxContains",
             "prefixItems",
             "patternProperties",
-            "propertyNames",
             "dependentRequired",
             "dependentSchemas",
             "unevaluatedProperties",
@@ -144,6 +143,7 @@ public final class VisualSchemaValidator {
 	        validateArrayItemBounds(schema, kind, path, diagnostics);
 	        validateArrayUniqueItems(schema, kind, path, diagnostics);
 	        validateObjectPropertyBounds(schema, kind, path, diagnostics);
+	        validateObjectPropertyNames(schema, kind, path, diagnostics);
 	        validateDefaultValue(schema, kind, path, diagnostics);
         if ("object".equals(kind)) {
             Map<String, Object> properties = objectProperties(schema, path, diagnostics);
@@ -251,6 +251,11 @@ public final class VisualSchemaValidator {
 	            if (!objectValueMatchesPropertyBounds(object, schema)) {
 	                diagnostics.add(VisualDiagnostic.error("visual.schema.defaultConstraintMismatch",
 	                        "Schema default must satisfy object property count constraints.",
+	                        path));
+	            }
+	            if (!objectValueMatchesPropertyNames(object, schema)) {
+	                diagnostics.add(VisualDiagnostic.error("visual.schema.defaultConstraintMismatch",
+	                        "Schema default must satisfy object propertyNames constraint.",
 	                        path));
 	            }
 	            Map<String, Object> properties = propertiesWithoutDiagnostics(schema);
@@ -427,6 +432,34 @@ public final class VisualSchemaValidator {
         diagnostics.add(VisualDiagnostic.error("visual.schema.additionalPropertiesInvalid",
                 "Object schema additionalProperties must be a boolean or schema object.",
                 path + "/additionalProperties"));
+    }
+
+    private static void validateObjectPropertyNames(Map<String, Object> schema,
+                                                    String kind,
+                                                    String path,
+                                                    List<VisualDiagnostic> diagnostics) {
+        if (!schema.containsKey("propertyNames")) {
+            return;
+        }
+        if (!objectKind(kind)) {
+            diagnostics.add(VisualDiagnostic.error("visual.schema.propertyNamesConstraintTypeMismatch",
+                    "Object propertyNames constraints require schema type/kind object.",
+                    path));
+        }
+        Map<String, Object> propertyNameSchema = propertyNameSchema(schema);
+        if (propertyNameSchema == null) {
+            diagnostics.add(VisualDiagnostic.error("visual.schema.propertyNamesConstraintInvalid",
+                    "Object propertyNames constraint must be a schema object.",
+                    path + "/propertyNames"));
+            return;
+        }
+        String propertyNameKind = schemaKind(propertyNameSchema);
+        if (!propertyNameKind.isBlank() && !stringKind(propertyNameKind)) {
+            diagnostics.add(VisualDiagnostic.error("visual.schema.propertyNamesConstraintTypeMismatch",
+                    "Object propertyNames constraint must use a string-compatible schema.",
+                    path + "/propertyNames"));
+        }
+        validateSchema(effectivePropertyNameSchema(propertyNameSchema), path + "/propertyNames", diagnostics);
     }
 
     private static void validateStandardEnum(Map<String, Object> schema,
@@ -1039,6 +1072,33 @@ public final class VisualSchemaValidator {
 	        return maximum == null || size <= maximum;
 	    }
 
+	    private static boolean objectValueMatchesPropertyNames(Map<String, Object> value, Map<String, Object> schema) {
+	        Map<String, Object> propertyNameSchema = propertyNameSchema(schema);
+	        if (propertyNameSchema == null) {
+	            return true;
+	        }
+	        Map<String, Object> effectiveSchema = effectivePropertyNameSchema(propertyNameSchema);
+	        return value.keySet().stream().allMatch(name -> valueMatchesSchema(name, effectiveSchema));
+	    }
+
+	    private static Map<String, Object> propertyNameSchema(Map<String, Object> schema) {
+	        Object raw = schema.get("propertyNames");
+	        if (!(raw instanceof Map<?, ?> rawMap)) {
+	            return null;
+	        }
+	        Map<String, Object> propertyNameSchema = new LinkedHashMap<>();
+	        rawMap.forEach((key, item) -> propertyNameSchema.put(String.valueOf(key), item));
+	        return propertyNameSchema;
+	    }
+
+	    private static Map<String, Object> effectivePropertyNameSchema(Map<String, Object> propertyNameSchema) {
+	        Map<String, Object> effective = new LinkedHashMap<>(propertyNameSchema);
+	        if (schemaKind(effective).isBlank()) {
+	            effective.put("type", "string");
+	        }
+	        return effective;
+	    }
+
 	    @SuppressWarnings("unchecked")
 	    private static boolean objectValueMatchesSchema(Object value, Map<String, Object> schema) {
 	        if (!(value instanceof Map<?, ?> rawMap) || !objectKind(schemaKind(schema))) {
@@ -1047,6 +1107,9 @@ public final class VisualSchemaValidator {
 	        Map<String, Object> object = new LinkedHashMap<>();
 	        rawMap.forEach((key, item) -> object.put(String.valueOf(key), item));
 	        if (!objectValueMatchesPropertyBounds(object, schema)) {
+	            return false;
+	        }
+	        if (!objectValueMatchesPropertyNames(object, schema)) {
 	            return false;
 	        }
 	        for (String required : requiredNamesWithoutDiagnostics(schema)) {

@@ -194,6 +194,36 @@ class ResourceDesignContractValidatorTest {
     }
 
     @Test
+    void acceptsObjectPropertyNamesInResourceContractSchemas() {
+        ResourceDesignContract contract = new ResourceDesignContract(
+                "contract:orders",
+                "order-service.listOrders",
+                "Order list",
+                "Lists orders.",
+                List.of("order"),
+                SchemaEnvelope.object(Map.of(
+                        "filters", Map.of(
+                                "type", "object",
+                                "additionalProperties", Map.of("type", "string"),
+                                "propertyNames", Map.of("pattern", "^filter\\.[a-z]+$"))
+                ), List.of("filters")),
+                SchemaEnvelope.object(Map.of(
+                        "facets", Map.of(
+                                "type", "object",
+                                "additionalProperties", Map.of("type", "integer"),
+                                "propertyNames", Map.of("type", "string", "enum", List.of("tier", "segment")))
+                ), List.of()),
+                Map.of(),
+                "ACTIVE"
+        );
+
+        VisualValidationResult result = validator.validate(contract);
+
+        assertThat(result.valid()).isTrue();
+        assertThat(result.diagnostics()).isEmpty();
+    }
+
+    @Test
     void rejectsObjectEnumAndConstValuesOutsideDeclaredShapeInResourceSchemas() {
         ResourceDesignContract contract = new ResourceDesignContract(
                 "contract:orders",

@@ -241,7 +241,6 @@ const UNSUPPORTED_SCHEMA_CONSTRAINT_KEYWORDS = [
   'maxContains',
   'prefixItems',
   'patternProperties',
-  'propertyNames',
   'dependentRequired',
   'dependentSchemas',
   'unevaluatedProperties',
@@ -5063,6 +5062,7 @@ function validateSchemaStructure(schema, path, diagnostics) {
   validateSchemaArrayItemBounds(schema, kind, path, diagnostics);
   validateSchemaArrayUniqueItems(schema, kind, path, diagnostics);
   validateSchemaObjectPropertyBounds(schema, kind, path, diagnostics);
+  validateSchemaObjectPropertyNames(schema, kind, path, diagnostics);
   if (kind === 'object') {
     const properties = validatedSchemaObjectProperties(schema, path, diagnostics);
     validateSchemaAdditionalProperties(schema, path, diagnostics);
@@ -5632,6 +5632,37 @@ function validateSchemaObjectPropertyBounds(schema, kind, path, diagnostics) {
   }
 }
 
+function validateSchemaObjectPropertyNames(schema, kind, path, diagnostics) {
+  if (!Object.prototype.hasOwnProperty.call(schema || {}, 'propertyNames')) {
+    return;
+  }
+  if (kind !== 'object') {
+    diagnostics.push(graphInputSchemaDiagnostic(
+      'visual.schema.propertyNamesConstraintTypeMismatch',
+      'Object propertyNames constraints require schema type/kind object.',
+      path
+    ));
+  }
+  const propertyNameSchema = schemaPropertyNameSchema(schema);
+  if (!propertyNameSchema) {
+    diagnostics.push(graphInputSchemaDiagnostic(
+      'visual.schema.propertyNamesConstraintInvalid',
+      'Object propertyNames constraint must be a schema object.',
+      `${path}/propertyNames`
+    ));
+    return;
+  }
+  const propertyNameKind = rawSchemaType(propertyNameSchema);
+  if (propertyNameKind && !stringType(propertyNameKind)) {
+    diagnostics.push(graphInputSchemaDiagnostic(
+      'visual.schema.propertyNamesConstraintTypeMismatch',
+      'Object propertyNames constraint must use a string-compatible schema.',
+      `${path}/propertyNames`
+    ));
+  }
+  validateSchemaStructure(effectivePropertyNameSchema(propertyNameSchema), `${path}/propertyNames`, diagnostics);
+}
+
 function validateSchemaEnumValues(values, path, diagnostics) {
   const seen = new Set();
   values.forEach((value, index) => {
@@ -5660,6 +5691,22 @@ function schemaObjectProperties(schema) {
   return properties && typeof properties === 'object' && !Array.isArray(properties)
     ? properties
     : {};
+}
+
+function schemaPropertyNameSchema(schema) {
+  const propertyNames = schema?.propertyNames;
+  return propertyNames && typeof propertyNames === 'object' && !Array.isArray(propertyNames)
+    ? propertyNames
+    : null;
+}
+
+function effectivePropertyNameSchema(propertyNameSchema) {
+  if (!propertyNameSchema) {
+    return null;
+  }
+  return rawSchemaType(propertyNameSchema)
+    ? propertyNameSchema
+    : { ...propertyNameSchema, type: 'string' };
 }
 
 function schemaRequiredNames(schema) {
@@ -6197,7 +6244,32 @@ function objectSchemaCompatibilityIssue(sourceSchema, targetSchema, path = '') {
       }
     }
   }
-  return objectPropertyBoundsCompatibilityIssue(sourceSchema, targetSchema, path);
+  return objectPropertyNamesCompatibilityIssue(sourceSchema, targetSchema, path)
+    || objectPropertyBoundsCompatibilityIssue(sourceSchema, targetSchema, path);
+}
+
+function objectPropertyNamesCompatibilityIssue(sourceSchema, targetSchema, path = '') {
+  const targetPropertyNames = schemaPropertyNameSchema(targetSchema);
+  if (!targetPropertyNames) {
+    return '';
+  }
+  const sourceValues = schemaEnumValues(sourceSchema);
+  if (sourceValues.length
+      && sourceValues.every((value) => value !== null && typeof value === 'object' && !Array.isArray(value))
+      && sourceValues.every((value) => objectValueMatchesPropertyNames(value, targetSchema))) {
+    return '';
+  }
+  const targetEffective = effectivePropertyNameSchema(targetPropertyNames);
+  if (sourceSchema?.additionalProperties === false
+      && Object.keys(schemaObjectProperties(sourceSchema)).every((name) => schemaValueMatchesSchema(name, targetEffective))) {
+    return '';
+  }
+  const sourcePropertyNames = schemaPropertyNameSchema(sourceSchema);
+  if (sourcePropertyNames
+      && canonicalSchemaValueKey(effectivePropertyNameSchema(sourcePropertyNames)) === canonicalSchemaValueKey(targetEffective)) {
+    return '';
+  }
+  return reasonAt(path, 'target requires propertyNames but source does not guarantee matching property names');
 }
 
 function objectPropertyBoundsCompatibilityIssue(sourceSchema, targetSchema, path = '') {
@@ -6270,6 +6342,18 @@ function schemaValuesEqual(left, right) {
 }
 
 function schemaValueKey(value) {
+  return JSON.stringify(value);
+}
+
+function canonicalSchemaValueKey(value) {
+  if (Array.isArray(value)) {
+    return `[${value.map(canonicalSchemaValueKey).join(',')}]`;
+  }
+  if (value && typeof value === 'object') {
+    return `{${Object.keys(value).sort()
+      .map((key) => `${JSON.stringify(key)}:${canonicalSchemaValueKey(value[key])}`)
+      .join(',')}}`;
+  }
   return JSON.stringify(value);
 }
 
@@ -6534,6 +6618,9 @@ function objectValueMatchesSchema(value, schema) {
   if (!objectValueMatchesPropertyBounds(value, schema)) {
     return false;
   }
+  if (!objectValueMatchesPropertyNames(value, schema)) {
+    return false;
+  }
   const properties = schemaObjectProperties(schema);
   for (const required of schemaRequiredNames(schema)) {
     if (!Object.prototype.hasOwnProperty.call(value, required) || value[required] === null) {
@@ -6567,6 +6654,18 @@ function objectValueMatchesPropertyBounds(value, schema) {
   }
   const maximum = explicitSchemaMaxProperties(schema);
   return maximum === null || size <= maximum;
+}
+
+function objectValueMatchesPropertyNames(value, schema) {
+  if (value === null || typeof value !== 'object' || Array.isArray(value)) {
+    return true;
+  }
+  const propertyNameSchema = schemaPropertyNameSchema(schema);
+  if (!propertyNameSchema) {
+    return true;
+  }
+  const effectiveSchema = effectivePropertyNameSchema(propertyNameSchema);
+  return Object.keys(value).every((name) => schemaValueMatchesSchema(name, effectiveSchema));
 }
 
 function schemaMinItems(schema) {
