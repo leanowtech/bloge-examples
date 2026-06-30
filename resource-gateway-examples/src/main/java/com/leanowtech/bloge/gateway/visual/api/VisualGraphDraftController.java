@@ -35,9 +35,10 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
+import java.util.ArrayList;
 import java.util.Collection;
-import java.util.List;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 
@@ -207,6 +208,11 @@ public class VisualGraphDraftController {
                             request.changeSummary(),
                             request.changedPaths()
                     ));
+            List<VisualDiagnostic> contractDiagnostics = draftContractDiagnostics(patched);
+            if (!contractDiagnostics.isEmpty()) {
+                return ResponseEntity.badRequest()
+                        .body(GraphDraftPatchResult.rejected(current.get(), contractDiagnostics));
+            }
             GraphDraft candidate = withExistingOrCurrentOperatorFingerprints(current.get(), patched);
             return repository.saveIfRevision(draftId, request.expectedRevision(), candidate)
                     .map(stored -> ResponseEntity.ok(GraphDraftPatchResult.patched(stored)))
@@ -438,13 +444,20 @@ public class VisualGraphDraftController {
         if (draft == null) {
             return List.of(VisualDiagnostic.error("visual.draft.missing", "Graph draft is required.", "/"));
         }
-        if (GraphDraft.SCHEMA_VERSION.equals(draft.schemaVersion())) {
-            return List.of();
+        List<VisualDiagnostic> diagnostics = new ArrayList<>();
+        if (!GraphDraft.SCHEMA_VERSION.equals(draft.schemaVersion())) {
+            diagnostics.add(VisualDiagnostic.error("visual.draft.schemaVersion.unsupported",
+                    "Graph draft schemaVersion '%s' is unsupported; visual authoring supports [%s]."
+                            .formatted(draft.schemaVersion(), GraphDraft.SCHEMA_VERSION),
+                    "/schemaVersion"));
         }
-        return List.of(VisualDiagnostic.error("visual.draft.schemaVersion.unsupported",
-                "Graph draft schemaVersion '%s' is unsupported; visual authoring supports [%s]."
-                        .formatted(draft.schemaVersion(), GraphDraft.SCHEMA_VERSION),
-                "/schemaVersion"));
+        if (!GraphDraft.isSupportedStatus(draft.status())) {
+            diagnostics.add(VisualDiagnostic.error("visual.draft.status.unsupported",
+                    "Graph draft status '%s' is unsupported; visual authoring supports [%s]."
+                            .formatted(draft.status(), GraphDraft.STATUS_DRAFT),
+                    "/status"));
+        }
+        return diagnostics;
     }
 
     private ResponseEntity<GraphDraftPatchResult> conflictResponse(String draftId,

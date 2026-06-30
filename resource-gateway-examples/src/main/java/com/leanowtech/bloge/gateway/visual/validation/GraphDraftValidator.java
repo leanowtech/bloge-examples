@@ -108,6 +108,12 @@ public class GraphDraftValidator {
                             .formatted(draft.schemaVersion(), SUPPORTED_DRAFT_SCHEMA_VERSIONS),
                     "/schemaVersion"));
         }
+        if (!GraphDraft.isSupportedStatus(draft.status())) {
+            diagnostics.add(VisualDiagnostic.error("visual.draft.status.unsupported",
+                    "Graph draft status '%s' is unsupported; visual authoring supports [%s]."
+                            .formatted(draft.status(), GraphDraft.STATUS_DRAFT),
+                    "/status"));
+        }
         if (draft.nodes().isEmpty()) {
             diagnostics.add(VisualDiagnostic.error("visual.graph.empty", "Graph must contain at least one node.", "/nodes"));
         }

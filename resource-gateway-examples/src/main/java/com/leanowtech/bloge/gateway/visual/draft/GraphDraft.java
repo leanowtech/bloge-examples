@@ -7,6 +7,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Set;
 
 /**
  * Editable visual graph draft submitted by the canvas.
@@ -45,6 +46,11 @@ public record GraphDraft(
         RevisionMetadata revisionMetadata
 ) {
     public static final String SCHEMA_VERSION = "bloge.visualGraphDraft.v1";
+    public static final String STATUS_DRAFT = "DRAFT";
+
+    private static final Set<String> SUPPORTED_STATUSES = Set.of(
+            STATUS_DRAFT
+    );
 
     /**
      * Creates a graph draft.
@@ -59,7 +65,7 @@ public record GraphDraft(
         tenantId = tenantId == null || tenantId.isBlank() ? "demo-tenant" : tenantId;
         namespace = namespace == null || namespace.isBlank() ? "local" : namespace;
         environment = environment == null || environment.isBlank() ? "local" : environment;
-        status = status == null || status.isBlank() ? "DRAFT" : status;
+        status = normalizeStatus(status);
         inputSchema = inputSchema == null ? SchemaEnvelope.opaque() : inputSchema;
         nodes = nodes == null ? List.of() : List.copyOf(nodes);
         edges = edges == null ? List.of() : List.copyOf(edges);
@@ -67,6 +73,14 @@ public record GraphDraft(
         output = output == null ? OutputSelection.empty() : output;
         operatorFingerprints = operatorFingerprints == null ? Map.of() : new LinkedHashMap<>(operatorFingerprints);
         revisionMetadata = revisionMetadata == null ? RevisionMetadata.empty() : revisionMetadata;
+    }
+
+    /**
+     * @param status raw lifecycle status
+     * @return true when the status is part of the supported draft lifecycle contract
+     */
+    public static boolean isSupportedStatus(String status) {
+        return SUPPORTED_STATUSES.contains(normalizeStatus(status));
     }
 
     /**
@@ -446,5 +460,11 @@ public record GraphDraft(
             return "_" + sanitized;
         }
         return sanitized;
+    }
+
+    private static String normalizeStatus(String value) {
+        return value == null || value.isBlank()
+                ? STATUS_DRAFT
+                : value.trim().toUpperCase(Locale.ROOT);
     }
 }

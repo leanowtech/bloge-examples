@@ -252,6 +252,34 @@ class VisualGraphDraftControllerTest {
     }
 
     @Test
+    void patchRejectsUnsupportedDraftStatusBeforeSaving() {
+        InMemoryGraphDraftRepository repository = new InMemoryGraphDraftRepository();
+        VisualGraphDraftController controller = controllerWithCatalog(eligibilityCatalog(), repository);
+        GraphDraft stored = controller.create(eligibilityDraft(graphInputSchema(
+                Map.of(
+                        "score", Map.of("type", "integer"),
+                        "amount", Map.of("type", "number")
+                )
+        )));
+
+        ResponseEntity<GraphDraftPatchResult> response = controller.patch(stored.draftId(),
+                new GraphDraftPatchRequest(stored.revision(), List.of(
+                        new GraphDraftPatchRequest.PatchOperation("replace", "/status", "locked")
+                )));
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+        assertThat(response.getBody()).isNotNull();
+        assertThat(response.getBody().patched()).isFalse();
+        assertThat(response.getBody().diagnostics())
+                .anySatisfy(diagnostic -> {
+                    assertThat(diagnostic.code()).isEqualTo("visual.draft.status.unsupported");
+                    assertThat(diagnostic.target()).isEqualTo("/status");
+                });
+        assertThat(repository.find(stored.draftId()).orElseThrow().status()).isEqualTo(GraphDraft.STATUS_DRAFT);
+        assertThat(repository.find(stored.draftId()).orElseThrow().revision()).isEqualTo(stored.revision());
+    }
+
+    @Test
     void patchStoredDraftCapturesRevisionMetadata() {
         VisualGraphDraftController controller = controllerWithEligibilityLibrary();
         GraphDraft stored = controller.create(eligibilityDraft(graphInputSchema(

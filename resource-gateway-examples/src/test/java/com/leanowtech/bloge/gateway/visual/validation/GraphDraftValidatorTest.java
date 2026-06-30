@@ -100,6 +100,50 @@ class GraphDraftValidatorTest {
     }
 
     @Test
+    void rejectsUnsupportedDraftStatus() {
+        GraphDraftValidator validator = new GraphDraftValidator(
+                VisualCatalogTestSupport.catalogWithLibrary(
+                        VisualCatalogTestSupport.eligibilityLibrary("integer")));
+        GraphDraft validDraft = contextEligibilityDraft(graphInputSchema(
+                Map.of(
+                        "score", Map.of("type", "integer"),
+                        "amount", Map.of("type", "number")
+                ),
+                List.of("score", "amount")
+        ), Map.of(
+                "score", GraphDraft.Binding.contextPath("score"),
+                "amount", GraphDraft.Binding.contextPath("amount")
+        ));
+        GraphDraft lockedDraft = new GraphDraft(
+                validDraft.schemaVersion(),
+                validDraft.draftId(),
+                validDraft.revision(),
+                validDraft.graphName(),
+                validDraft.tenantId(),
+                validDraft.namespace(),
+                validDraft.environment(),
+                "locked",
+                validDraft.inputSchema(),
+                validDraft.nodes(),
+                validDraft.edges(),
+                validDraft.visualLayout(),
+                validDraft.output(),
+                validDraft.operatorFingerprints(),
+                validDraft.revisionMetadata()
+        );
+
+        VisualValidationResult result = validator.validate(lockedDraft);
+
+        assertThat(result.valid()).isFalse();
+        assertThat(result.diagnostics())
+                .anySatisfy(diagnostic -> {
+                    assertThat(diagnostic.code()).isEqualTo("visual.draft.status.unsupported");
+                    assertThat(diagnostic.target()).isEqualTo("/status");
+                    assertThat(diagnostic.message()).contains("LOCKED");
+                });
+    }
+
+    @Test
     void rejectsGraphInputSchemaWithRequiredPathMissingFromProperties() {
         GraphDraftValidator validator = new GraphDraftValidator(
                 VisualCatalogTestSupport.catalogWithLibrary(
