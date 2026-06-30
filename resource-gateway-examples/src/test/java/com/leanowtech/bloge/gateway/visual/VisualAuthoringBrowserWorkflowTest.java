@@ -163,8 +163,28 @@ class VisualAuthoringBrowserWorkflowTest {
                 .containsEntry("output", true);
         assertThat(String.valueOf(publicationRun.get("runId"))).isNotBlank();
 
+        Map<String, Object> goldenCase = postMap("/api/visual/golden-cases", Map.of(
+                "publicationId", publicationId,
+                "name", "standard applicant",
+                "description", "Browser workflow regression fixture",
+                "outputNode", "",
+                "context", Map.of("applicantId", "standard", "amount", 100_000),
+                "expectedOutput", true
+        ));
+        assertThat(goldenCase)
+                .containsEntry("schemaVersion", "bloge.visualGraphGoldenCase.v1")
+                .containsEntry("publicationId", publicationId);
+        String goldenCaseId = String.valueOf(goldenCase.get("caseId"));
+        assertThat(goldenCaseId).isNotBlank();
+
+        Map<String, Object> goldenResult = postMap("/api/visual/golden-cases/" + goldenCaseId + "/run", Map.of());
+        assertThat(goldenResult).containsEntry("passed", true);
+        assertThat((Map<String, Object>) goldenResult.get("run"))
+                .containsEntry("success", true)
+                .containsEntry("output", true);
+
         Collection<?> runHistory = restTemplate.getForObject("/api/visual/runs", Collection.class);
-        assertThat(runHistory).hasSizeGreaterThanOrEqualTo(2);
+        assertThat(runHistory).hasSizeGreaterThanOrEqualTo(3);
 
         Collection<?> storedDraftRuns = restTemplate.getForObject(
                 "/api/visual/runs?sourceKind=stored_draft&draftId=" + storedDraft.draftId()
@@ -189,6 +209,16 @@ class VisualAuthoringBrowserWorkflowTest {
                     .containsEntry("sourceKind", "PUBLICATION")
                     .containsEntry("publicationId", publicationId);
         });
+
+        Map<String, Object> runStats = getMap("/api/visual/runs/stats?graphName=browserSmokePolicy&limit=10");
+        assertThat(runStats)
+                .containsEntry("schemaVersion", "bloge.visualGraphRunStats.v1")
+                .containsEntry("totalRuns", 3)
+                .containsEntry("successfulRuns", 3)
+                .containsEntry("failedRuns", 0);
+        assertThat((Map<String, Object>) runStats.get("bySourceKind"))
+                .containsEntry("STORED_DRAFT", 1)
+                .containsEntry("PUBLICATION", 2);
     }
 
     private void assertBrowserAssetsExposeVisualWorkflowEntrypoints() {
@@ -208,11 +238,16 @@ class VisualAuthoringBrowserWorkflowTest {
                 .contains("/api/visual/drafts/run")
                 .contains("/api/visual/publications")
                 .contains("/api/visual/runs")
+                .contains("/api/visual/runs/stats")
+                .contains("/api/visual/golden-cases")
                 .contains("/admin/visual-operator-libraries")
                 .contains("preview-resource-contract")
                 .contains("save-resource-contract")
                 .contains("save-resource-descriptor")
                 .contains("run-history-list")
+                .contains("run-history-stats")
+                .contains("save-golden-case")
+                .contains("run-golden-case")
                 .contains("/admin/resource-design-contracts/from-openapi")
                 .contains("/admin/resources")
                 .contains("/admin/resource-design-contracts/${encodeURIComponent(contract.resourceId)}");

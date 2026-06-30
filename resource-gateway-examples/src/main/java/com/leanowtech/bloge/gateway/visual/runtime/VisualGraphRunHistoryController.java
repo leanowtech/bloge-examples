@@ -40,6 +40,20 @@ public class VisualGraphRunHistoryController {
     }
 
     /**
+     * @return aggregate run-history stats for the same filter window as list
+     */
+    @GetMapping("/stats")
+    public VisualGraphRunStats stats(@RequestParam(required = false) String sourceKind,
+                                     @RequestParam(required = false) String draftId,
+                                     @RequestParam(required = false) String publicationId,
+                                     @RequestParam(required = false) String graphName,
+                                     @RequestParam(required = false) Boolean success,
+                                     @RequestParam(required = false) Integer limit) {
+        return VisualGraphRunStats.from(repository.query(new VisualGraphRunQuery(sourceKind, draftId, publicationId,
+                graphName, success, limit == null ? 0 : limit)));
+    }
+
+    /**
      * Gets one run history record.
      *
      * @param runId run id

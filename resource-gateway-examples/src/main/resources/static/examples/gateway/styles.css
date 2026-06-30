@@ -912,6 +912,40 @@ body.dragging-operator * {
   gap: 6px;
 }
 
+.run-history-stats {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 6px;
+}
+
+.run-history-stat {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+  padding: 7px 8px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--surface-subtle);
+}
+
+.run-history-stat span,
+.run-history-stat strong {
+  overflow-wrap: anywhere;
+}
+
+.run-history-stat span {
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.run-history-stat strong {
+  color: var(--text);
+  font-size: 13px;
+  line-height: 1.15;
+}
+
 .run-history-row {
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(96px, 0.55fr);

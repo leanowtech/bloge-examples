@@ -148,6 +148,8 @@ class VisualAuthoringBrowserDomTest {
         waitForText(wait, By.id("run-history-list"), "TRANSIENT_DRAFT");
         waitForText(wait, By.id("run-history-list"), "SUCCESS");
         waitForText(wait, By.id("run-history-list"), "customLoanPolicy");
+        waitForText(wait, By.id("run-history-stats"), "100%");
+        waitForText(wait, By.id("run-history-stats"), "P95");
 
         click(wait, By.id("publish-visual-draft"));
         waitForText(wait, By.id("visual-check-status"), "Published");
@@ -159,6 +161,15 @@ class VisualAuthoringBrowserDomTest {
         waitForText(wait, By.id("output"), "\"success\": true");
         waitForText(wait, By.id("output"), "\"output\": false");
         waitForText(wait, By.id("run-history-list"), "PUBLICATION");
+
+        click(wait, By.id("save-golden-case"));
+        waitForText(wait, By.id("publication-status"), "Saved golden");
+        waitForText(wait, By.id("golden-case-select"), "customLoanPolicy golden");
+
+        click(wait, By.id("run-golden-case"));
+        waitForText(wait, By.id("publication-status"), "passed");
+        waitForText(wait, By.id("output"), "\"goldenCaseRun\"");
+        waitForText(wait, By.id("output"), "\"passed\": true");
 
         selectByValue(wait, By.id("run-history-source"), "PUBLICATION");
         waitForText(wait, By.id("run-history-list"), "PUBLICATION");

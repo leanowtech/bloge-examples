@@ -327,6 +327,8 @@ const state = {
   publications: [],
   selectedPublicationId: '',
   publicationMessage: null,
+  goldenCases: [],
+  selectedGoldenCaseId: '',
   runHistory: [],
   runHistoryFilters: {
     sourceKind: '',
@@ -334,6 +336,7 @@ const state = {
     limit: '8'
   },
   runHistoryMessage: null,
+  runHistoryStats: null,
   visualCheck: {
     message: 'Not checked',
     level: 'info',
@@ -401,6 +404,7 @@ async function loadScenarios() {
   await loadOperatorLibraries({ render: false });
   await loadDraftList({ render: false });
   await loadPublicationList({ render: false });
+  await loadGoldenCases({ render: false });
   await loadRunHistory({ render: false });
   const response = await fetch('/api/gateway/examples/scenarios');
   state.customContextText = pretty(DEFAULT_COMPOSER_CONTEXT);
@@ -855,6 +859,11 @@ function renderInputForm() {
           <button id="run-publication" class="secondary compact" type="button">Run</button>
           <button id="reload-publications" class="secondary compact" type="button">Reload</button>
         </div>
+        <div class="draft-controls">
+          <select id="golden-case-select" aria-label="Golden regression cases"></select>
+          <button id="save-golden-case" class="secondary compact" type="button">Save Golden</button>
+          <button id="run-golden-case" class="secondary compact" type="button">Run Golden</button>
+        </div>
         <div id="publication-status" class="draft-status" hidden></div>
       </div>
       <div class="builder-panel">
@@ -866,6 +875,7 @@ function renderInputForm() {
           <button id="reload-run-history" class="secondary compact" type="button">Reload</button>
         </div>
         <div id="run-history-status" class="draft-status" hidden></div>
+        <div id="run-history-stats" class="run-history-stats"></div>
         <div id="run-history-list" class="run-history-list"></div>
       </div>
       <div id="selected-operator-editor" class="builder-panel"></div>
@@ -1734,6 +1744,7 @@ async function publishVisualDraft() {
     if (payload.published && publication.publicationId) {
       state.selectedPublicationId = publication.publicationId;
       await loadPublicationList({ render: false });
+      await loadGoldenCases({ render: false });
       renderPublicationControls();
       setPublicationMessage(`Published ${publication.publicationId}.`, 'success');
     }
@@ -2361,6 +2372,8 @@ function renderPublicationControls() {
   select.onchange = () => {
     state.selectedPublicationId = select.value;
     state.publicationMessage = null;
+    state.selectedGoldenCaseId = '';
+    loadGoldenCases();
     renderPublicationControls();
   };
 
@@ -2371,9 +2384,41 @@ function renderPublicationControls() {
     runButton.onclick = runSelectedPublication;
   }
   if (reloadButton) {
-    reloadButton.onclick = loadPublicationList;
+    reloadButton.onclick = async () => {
+      await loadPublicationList();
+      await loadGoldenCases();
+    };
   }
+  renderGoldenCaseControls();
   renderPublicationStatus();
+}
+
+function renderGoldenCaseControls() {
+  const select = $('golden-case-select');
+  const saveButton = $('save-golden-case');
+  const runButton = $('run-golden-case');
+  if (!select || !saveButton || !runButton) return;
+  const options = state.goldenCases.length
+    ? state.goldenCases.map((testCase) => {
+      const selected = testCase.caseId === state.selectedGoldenCaseId ? ' selected' : '';
+      return `<option value="${escapeHtml(testCase.caseId)}"${selected}>${escapeHtml(goldenCaseOptionLabel(testCase))}</option>`;
+    })
+    : ['<option value="">No golden cases</option>'];
+  select.innerHTML = options.join('');
+  select.disabled = !state.goldenCases.length;
+  select.onchange = () => {
+    state.selectedGoldenCaseId = select.value;
+  };
+  saveButton.disabled = !state.selectedPublicationId;
+  saveButton.onclick = saveGoldenCaseFromCurrentOutput;
+  runButton.disabled = !state.selectedGoldenCaseId;
+  runButton.onclick = runSelectedGoldenCase;
+}
+
+function goldenCaseOptionLabel(testCase) {
+  const name = testCase.name || 'Golden case';
+  const id = shortRunId(testCase.caseId || '');
+  return id ? `${name} · ${id}` : name;
 }
 
 function publicationOptionLabel(publication) {
@@ -2440,6 +2485,7 @@ function renderRunHistoryControls() {
   };
   reload.onclick = loadRunHistory;
   renderRunHistoryStatus();
+  renderRunHistoryStats();
   renderRunHistoryList();
 }
 
@@ -2450,6 +2496,32 @@ function renderRunHistoryStatus() {
   target.hidden = false;
   target.textContent = message;
   target.className = `draft-status ${state.runHistoryMessage?.level || 'info'}`;
+}
+
+function renderRunHistoryStats() {
+  const target = $('run-history-stats');
+  if (!target) return;
+  const stats = state.runHistoryStats;
+  if (!stats || !stats.totalRuns) {
+    target.innerHTML = '<div class="run-history-empty">No SLO samples</div>';
+    return;
+  }
+  const successRate = Math.round((Number(stats.successRate) || 0) * 100);
+  target.innerHTML = [
+    runHistoryStatHtml('Runs', stats.totalRuns),
+    runHistoryStatHtml('Success', `${successRate}%`),
+    runHistoryStatHtml('p95', `${stats.p95ElapsedMs || 0}ms`),
+    runHistoryStatHtml('Blocked', stats.blockedRuns || 0)
+  ].join('');
+}
+
+function runHistoryStatHtml(label, value) {
+  return `
+    <div class="run-history-stat">
+      <span>${escapeHtml(label)}</span>
+      <strong>${escapeHtml(value)}</strong>
+    </div>
+  `;
 }
 
 function renderRunHistoryList() {
@@ -2513,14 +2585,22 @@ async function openRunHistoryRecord(runId) {
 
 async function loadRunHistory(options = {}) {
   try {
-    const response = await fetch(runHistoryUrl());
-    if (!response.ok) {
-      throw new Error(`Run history failed with ${response.status}`);
+    const [historyResponse, statsResponse] = await Promise.all([
+      fetch(runHistoryUrl()),
+      fetch(runHistoryStatsUrl())
+    ]);
+    if (!historyResponse.ok) {
+      throw new Error(`Run history failed with ${historyResponse.status}`);
     }
-    state.runHistory = await response.json();
+    if (!statsResponse.ok) {
+      throw new Error(`Run history stats failed with ${statsResponse.status}`);
+    }
+    state.runHistory = await historyResponse.json();
+    state.runHistoryStats = await statsResponse.json();
     state.runHistoryMessage = null;
   } catch (error) {
     state.runHistory = [];
+    state.runHistoryStats = null;
     state.runHistoryMessage = { text: error.message, level: 'error' };
   }
   if (options.render !== false) {
@@ -2530,6 +2610,14 @@ async function loadRunHistory(options = {}) {
 }
 
 function runHistoryUrl() {
+  return runHistoryUrlFor('/api/visual/runs');
+}
+
+function runHistoryStatsUrl() {
+  return runHistoryUrlFor('/api/visual/runs/stats');
+}
+
+function runHistoryUrlFor(path) {
   const params = new URLSearchParams();
   const filters = state.runHistoryFilters || {};
   if (filters.sourceKind) {
@@ -2541,7 +2629,7 @@ function runHistoryUrl() {
   const limit = Number.parseInt(filters.limit || '8', 10);
   params.set('limit', Number.isFinite(limit) && limit > 0 ? String(Math.min(limit, 50)) : '8');
   const query = params.toString();
-  return query ? `/api/visual/runs?${query}` : '/api/visual/runs';
+  return query ? `${path}?${query}` : path;
 }
 
 async function loadPublicationList(options = {}) {
@@ -2568,9 +2656,125 @@ async function loadPublicationList(options = {}) {
   }
 }
 
+async function loadGoldenCases(options = {}) {
+  if (!state.selectedPublicationId) {
+    state.goldenCases = [];
+    state.selectedGoldenCaseId = '';
+    if (options.render !== false) {
+      renderGoldenCaseControls();
+    }
+    return state.goldenCases;
+  }
+  try {
+    const response = await fetch(`/api/visual/golden-cases?publicationId=${encodeURIComponent(state.selectedPublicationId)}`);
+    if (!response.ok) {
+      throw new Error(`Golden cases failed with ${response.status}`);
+    }
+    state.goldenCases = await response.json();
+    if (state.selectedGoldenCaseId
+        && !state.goldenCases.some((testCase) => testCase.caseId === state.selectedGoldenCaseId)) {
+      state.selectedGoldenCaseId = '';
+    }
+    if (!state.selectedGoldenCaseId && state.goldenCases.length) {
+      state.selectedGoldenCaseId = state.goldenCases[0].caseId;
+    }
+    if (options.render !== false) {
+      renderGoldenCaseControls();
+    }
+    return state.goldenCases;
+  } catch (error) {
+    state.goldenCases = [];
+    state.selectedGoldenCaseId = '';
+    setPublicationMessage(error.message, 'error');
+    if (options.render !== false) {
+      renderGoldenCaseControls();
+    }
+    return [];
+  }
+}
+
 function selectedPublication() {
   return state.publications.find((publication) =>
     publication.publicationId === state.selectedPublicationId) || null;
+}
+
+function selectedGoldenCase() {
+  return state.goldenCases.find((testCase) => testCase.caseId === state.selectedGoldenCaseId) || null;
+}
+
+async function saveGoldenCaseFromCurrentOutput() {
+  const publication = selectedPublication();
+  if (!publication) {
+    setPublicationMessage('Select a publication first.', 'error');
+    return;
+  }
+  let context;
+  try {
+    context = JSON.parse(state.customContextText || '{}');
+  } catch (error) {
+    setPublicationMessage('Context JSON is invalid.', 'error');
+    return;
+  }
+  if (!context || Array.isArray(context) || typeof context !== 'object') {
+    setPublicationMessage('Context JSON must be an object.', 'error');
+    return;
+  }
+  if (!state.lastPayload || !Object.prototype.hasOwnProperty.call(state.lastPayload, 'data')) {
+    setPublicationMessage('Run the publication before saving a golden case.', 'error');
+    return;
+  }
+  const graphName = publication.graphName || publication.draft?.graphName || 'visual graph';
+  const outputNode = state.lastPayload.composer?.outputNode || '';
+  try {
+    const response = await fetch('/api/visual/golden-cases', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        publicationId: publication.publicationId,
+        name: `${graphName} golden`,
+        description: 'Saved from the browser publication output.',
+        outputNode,
+        context,
+        expectedOutput: state.lastPayload.data
+      })
+    });
+    if (!response.ok) {
+      throw new Error(`Save golden case failed with ${response.status}`);
+    }
+    const payload = await response.json();
+    state.selectedGoldenCaseId = payload.caseId || '';
+    setPublicationMessage(`Saved golden ${shortRunId(state.selectedGoldenCaseId)}.`, 'success');
+    await loadGoldenCases();
+  } catch (error) {
+    setPublicationMessage(error.message, 'error');
+  }
+}
+
+async function runSelectedGoldenCase() {
+  const testCase = selectedGoldenCase();
+  if (!testCase) {
+    setPublicationMessage('Select a golden case first.', 'error');
+    return;
+  }
+  setPublicationMessage(`Running golden ${shortRunId(testCase.caseId)}...`, 'info');
+  try {
+    const response = await fetch(`/api/visual/golden-cases/${encodeURIComponent(testCase.caseId)}/run`, {
+      method: 'POST'
+    });
+    if (!response.ok) {
+      throw new Error(`Golden case run failed with ${response.status}`);
+    }
+    const payload = await response.json();
+    const passed = Boolean(payload.passed);
+    setPublicationMessage(
+      passed ? `Golden ${shortRunId(testCase.caseId)} passed.` : `Golden ${shortRunId(testCase.caseId)} failed.`,
+      passed ? 'success' : 'error'
+    );
+    $('output').textContent = pretty({ status: response.status, goldenCaseRun: payload });
+    await loadRunHistory();
+  } catch (error) {
+    setPublicationMessage(error.message, 'error');
+  }
 }
 
 async function runSelectedPublication() {

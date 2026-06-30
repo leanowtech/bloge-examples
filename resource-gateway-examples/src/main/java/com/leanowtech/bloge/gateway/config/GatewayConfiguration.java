@@ -24,6 +24,8 @@ import com.leanowtech.bloge.gateway.visual.catalog.DatabaseOperatorLibraryRegist
 import com.leanowtech.bloge.gateway.visual.catalog.OperatorLibraryRegistry;
 import com.leanowtech.bloge.gateway.visual.draft.DatabaseGraphDraftRepository;
 import com.leanowtech.bloge.gateway.visual.draft.GraphDraftRepository;
+import com.leanowtech.bloge.gateway.visual.golden.DatabaseVisualGraphGoldenCaseRepository;
+import com.leanowtech.bloge.gateway.visual.golden.VisualGraphGoldenCaseRepository;
 import com.leanowtech.bloge.gateway.visual.publication.DatabaseVisualGraphPublicationRepository;
 import com.leanowtech.bloge.gateway.visual.publication.VisualGraphPublicationRepository;
 import com.leanowtech.bloge.gateway.visual.resource.DatabaseResourceDesignContractRegistry;
@@ -275,6 +277,20 @@ public class GatewayConfiguration {
     public VisualGraphRunRepository visualGraphRunRepository(JdbcTemplate jdbc,
                                                              ObjectMapper objectMapper) {
         return new DatabaseVisualGraphRunRepository(jdbc, objectMapper);
+    }
+
+    /**
+     * Database-backed repository for visual graph golden regression cases.
+     *
+     * @param jdbc JDBC template for H2 access
+     * @param objectMapper Jackson mapper for case serialization
+     * @return visual graph golden case repository
+     */
+    @Bean
+    @ConditionalOnMissingBean
+    public VisualGraphGoldenCaseRepository visualGraphGoldenCaseRepository(JdbcTemplate jdbc,
+                                                                           ObjectMapper objectMapper) {
+        return new DatabaseVisualGraphGoldenCaseRepository(jdbc, objectMapper);
     }
 
     // ── Interceptors ────────────────────────────────────────────────────

@@ -684,12 +684,23 @@ assignment target 不在 output schema 中、template 引用不存在 input path
 
 | Method | Path | 说明 |
 | --- | --- | --- |
+| `GET` | `/api/visual/runs` | 当前已实现：按 source/draft/publication/graph/outcome/limit 查询运行历史 |
+| `GET` | `/api/visual/runs/stats` | 当前已实现：按同一过滤窗口聚合成功率、blocked/error 和 p50/p95/max latency |
 | `GET` | `/api/visual/runs/{runId}` | 获取运行结果 |
-| `GET` | `/api/visual/runs/{runId}/nodes` | 获取节点状态 |
-| `GET` | `/api/visual/runs/{runId}/events` | SSE 运行事件 |
-| `GET` | `/api/visual/runs/{runId}/trace` | 节点输入输出摘要、错误、耗时 |
+| `GET` | `/api/visual/runs/{runId}/nodes` | 后续方向：获取节点状态 |
+| `GET` | `/api/visual/runs/{runId}/events` | 后续方向：SSE 运行事件 |
+| `GET` | `/api/visual/runs/{runId}/trace` | 后续方向：节点输入输出摘要、错误、耗时 |
 
-### 12.4 与现有 API 的关系
+### 12.4 Golden Case API
+
+| Method | Path | 说明 |
+| --- | --- | --- |
+| `GET` | `/api/visual/golden-cases?publicationId=...` | 当前已实现：查询绑定某个 immutable publication 的 golden regression cases |
+| `GET` | `/api/visual/golden-cases/{caseId}` | 当前已实现：读取单个 golden case |
+| `POST` | `/api/visual/golden-cases` | 当前已实现：为已发布版本保存样例 context、outputNode 和期望输出 |
+| `POST` | `/api/visual/golden-cases/{caseId}/run` | 当前已实现：用 frozen publication DSL 执行 golden case，写入 run history，并返回 pass/fail diagnostics |
+
+### 12.5 与现有 API 的关系
 
 - `/admin/resources` 保留，用于管理底层 ResourceDescriptor。
 - 新增 `/api/visual/resource-operators` 将 descriptor 转成画布可用虚拟算子。
@@ -979,7 +990,7 @@ resource-gateway 已有 rate limiting、cache、circuit breaker，可以作为�
 1. **Schema Drift Detection**：运行时采样输出，与声明 schema 比较。
 2. **Operator Usage Index**：每个 operator 被哪些 graph version 使用。
 3. **Descriptor Impact Analysis**：更新 descriptor 前提示影响的图。
-4. **Golden Test Cases**：每个发布版本绑定样例输入和期望输出。
+4. **Golden Test Cases**：当前已支持每个发布版本绑定样例输入和期望输出，并用 frozen publication DSL 执行 exact-output 回归；后续可扩展批量矩阵、容忍式断言和 schema-level 断言。
 5. **Runtime Trace Replay**：失败执行可以在画布上重放。
 6. **Dead Node Detection**：提示不可达节点、永不命中分支、未使用输出。
 7. **Policy Audit**：记录谁发布、谁覆盖权限、谁修改 descriptor。
@@ -1077,7 +1088,7 @@ Phase 1 的工程拆分、包结构、API、测试和 Definition of Done 见
 - visual layout 随版本保存。
 - schema compatibility diff。
 - operator/descriptor impact analysis。
-- golden test cases。
+- golden test cases 基础版已落地，后续补批量矩阵和发布准入策略。
 
 验收：
 
