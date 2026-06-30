@@ -24,6 +24,7 @@ import org.junit.jupiter.api.Test;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 
+import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -167,6 +168,26 @@ class VisualGraphDraftControllerTest {
     }
 
     @Test
+    void createIgnoresSubmittedIdentityAndDoesNotOverwriteExistingDraft() {
+        InMemoryGraphDraftRepository repository = new InMemoryGraphDraftRepository();
+        VisualGraphDraftController controller = controllerWithCatalog(eligibilityCatalog(), repository);
+        GraphDraft first = controller.create(eligibilityDraft(graphInputSchema(
+                Map.of(
+                        "score", Map.of("type", "integer"),
+                        "amount", Map.of("type", "number")
+                )
+        )));
+        GraphDraft submittedWithExistingIdentity = renameDraft(first, "attemptedOverwrite");
+
+        GraphDraft second = controller.create(submittedWithExistingIdentity);
+
+        assertThat(second.draftId()).isNotBlank().isNotEqualTo(first.draftId());
+        assertThat(second.revision()).isEqualTo(1);
+        assertThat(repository.find(first.draftId()).orElseThrow().graphName()).isEqualTo(first.graphName());
+        assertThat(repository.find(second.draftId()).orElseThrow().graphName()).isEqualTo("attemptedOverwrite");
+    }
+
+    @Test
     void patchStoredDraftAppliesExpectedRevisionAndIncrementsRevision() {
         VisualGraphDraftController controller = controllerWithEligibilityLibrary();
         GraphDraft stored = controller.create(eligibilityDraft(graphInputSchema(
@@ -269,14 +290,164 @@ class VisualGraphDraftControllerTest {
         String initialFingerprint = initialCatalog.find("risk:eligibility").orElseThrow().fingerprint();
         String evolvedFingerprint = evolvedCatalog.find("risk:eligibility").orElseThrow().fingerprint();
 
-        GraphDraft updated = evolvedController.update(stored.draftId(), renameDraft(stored, "renamedPolicy"));
+        ResponseEntity<Object> response = evolvedController.update(stored.draftId(), renameDraft(stored, "renamedPolicy"));
 
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat(response.getBody()).isInstanceOf(GraphDraft.class);
+        GraphDraft updated = (GraphDraft) response.getBody();
         assertThat(updated.operatorFingerprints())
                 .containsEntry("eligibility", initialFingerprint)
                 .doesNotContainEntry("eligibility", evolvedFingerprint);
         assertThat(validator(evolvedCatalog).validate(updated).diagnostics())
                 .extracting("code")
                 .contains("visual.operator.fingerprintMismatch");
+    }
+
+    @Test
+    void updateKeepsExistingOperatorFingerprintSnapshotOverSubmittedRebase() {
+        DefaultVisualOperatorCatalog initialCatalog = VisualCatalogTestSupport.catalogWithLibrary(
+                VisualCatalogTestSupport.eligibilityLibrary("integer"));
+        DefaultVisualOperatorCatalog evolvedCatalog = VisualCatalogTestSupport.catalogWithLibrary(
+                VisualCatalogTestSupport.eligibilityLibrary("number"));
+        InMemoryGraphDraftRepository repository = new InMemoryGraphDraftRepository();
+        VisualGraphDraftController initialController = controllerWithCatalog(initialCatalog, repository);
+        VisualGraphDraftController evolvedController = controllerWithCatalog(evolvedCatalog, repository);
+        GraphDraft stored = initialController.create(eligibilityDraft(graphInputSchema(
+                Map.of(
+                        "score", Map.of("type", "integer"),
+                        "amount", Map.of("type", "number")
+                )
+        )));
+        String initialFingerprint = initialCatalog.find("risk:eligibility").orElseThrow().fingerprint();
+        String evolvedFingerprint = evolvedCatalog.find("risk:eligibility").orElseThrow().fingerprint();
+        GraphDraft rebased = renameDraft(stored.withOperatorFingerprints(Map.of(
+                "eligibility", evolvedFingerprint
+        )), "rebasedPolicy");
+
+        ResponseEntity<Object> response = evolvedController.update(stored.draftId(), rebased);
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+        GraphDraft updated = (GraphDraft) response.getBody();
+        assertThat(updated.operatorFingerprints())
+                .containsEntry("eligibility", initialFingerprint)
+                .doesNotContainEntry("eligibility", evolvedFingerprint);
+    }
+
+    @Test
+    void updateRejectsStaleRevisionAndKeepsCurrentDraft() {
+        VisualGraphDraftController controller = controllerWithEligibilityLibrary();
+        GraphDraft stored = controller.create(eligibilityDraft(graphInputSchema(
+                Map.of(
+                        "score", Map.of("type", "integer"),
+                        "amount", Map.of("type", "number")
+                )
+        )));
+        ResponseEntity<Object> freshResponse = controller.update(stored.draftId(), renameDraft(stored, "freshPolicy"));
+        assertThat(freshResponse.getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat(freshResponse.getBody()).isInstanceOf(GraphDraft.class);
+        GraphDraft fresh = (GraphDraft) freshResponse.getBody();
+
+        ResponseEntity<Object> staleResponse = controller.update(stored.draftId(), renameDraft(stored, "stalePolicy"));
+
+        assertThat(staleResponse.getStatusCode()).isEqualTo(HttpStatus.CONFLICT);
+        assertThat(staleResponse.getBody()).isInstanceOf(GraphDraftPatchResult.class);
+        GraphDraftPatchResult result = (GraphDraftPatchResult) staleResponse.getBody();
+        assertThat(result.patched()).isFalse();
+        assertThat(result.draft().revision()).isEqualTo(fresh.revision());
+        assertThat(result.draft().graphName()).isEqualTo("freshPolicy");
+        assertThat(result.diagnostics())
+                .extracting("code")
+                .contains("visual.draft.revisionConflict");
+        assertThat(controller.get(stored.draftId()).getBody().graphName()).isEqualTo("freshPolicy");
+    }
+
+    @Test
+    void patchRejectsOperatorFingerprintMutation() {
+        DefaultVisualOperatorCatalog catalog = VisualCatalogTestSupport.catalogWithLibrary(
+                VisualCatalogTestSupport.eligibilityLibrary("integer"));
+        VisualGraphDraftController controller = controllerWithCatalog(catalog, new InMemoryGraphDraftRepository());
+        GraphDraft stored = controller.create(eligibilityDraft(graphInputSchema(
+                Map.of(
+                        "score", Map.of("type", "integer"),
+                        "amount", Map.of("type", "number")
+                )
+        )));
+        String fingerprint = stored.operatorFingerprints().get("eligibility");
+
+        ResponseEntity<GraphDraftPatchResult> response = controller.patch(stored.draftId(),
+                new GraphDraftPatchRequest(stored.revision(), List.of(
+                        new GraphDraftPatchRequest.PatchOperation("replace",
+                                "/operatorFingerprints/eligibility", "manual-rebase")
+                )));
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+        assertThat(response.getBody()).isNotNull();
+        assertThat(response.getBody().patched()).isFalse();
+        assertThat(response.getBody().diagnostics())
+                .extracting("code")
+                .contains("visual.draft.patchPathForbidden");
+        assertThat(controller.get(stored.draftId()).getBody().operatorFingerprints())
+                .containsEntry("eligibility", fingerprint);
+    }
+
+    @Test
+    void patchRejectsMissingPatchOperationWithStructuredDiagnostic() {
+        VisualGraphDraftController controller = controllerWithEligibilityLibrary();
+        GraphDraft stored = controller.create(eligibilityDraft(graphInputSchema(
+                Map.of(
+                        "score", Map.of("type", "integer"),
+                        "amount", Map.of("type", "number")
+                )
+        )));
+
+        ResponseEntity<GraphDraftPatchResult> response = controller.patch(stored.draftId(),
+                new GraphDraftPatchRequest(stored.revision(), Collections.singletonList(null)));
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+        assertThat(response.getBody()).isNotNull();
+        assertThat(response.getBody().patched()).isFalse();
+        assertThat(response.getBody().diagnostics())
+                .extracting("code")
+                .containsExactly("visual.draft.patchOperationMissing");
+    }
+
+    @Test
+    void patchFillsFingerprintForNewNodeWithoutClientFingerprintPatch() {
+        DefaultVisualOperatorCatalog catalog = VisualCatalogTestSupport.catalogWithLibrary(
+                VisualCatalogTestSupport.eligibilityLibrary("integer"));
+        VisualGraphDraftController controller = controllerWithCatalog(catalog, new InMemoryGraphDraftRepository());
+        GraphDraft stored = controller.create(eligibilityDraft(graphInputSchema(
+                Map.of(
+                        "score", Map.of("type", "integer"),
+                        "amount", Map.of("type", "number")
+                )
+        )));
+        String fingerprint = catalog.find("risk:eligibility").orElseThrow().fingerprint();
+        GraphDraft.DraftNode newNode = new GraphDraft.DraftNode(
+                "eligibility2",
+                "risk:eligibility",
+                "",
+                Map.of(
+                        "score", GraphDraft.Binding.contextPath("score"),
+                        "amount", GraphDraft.Binding.contextPath("amount")
+                ),
+                Map.of(),
+                null
+        );
+
+        ResponseEntity<GraphDraftPatchResult> response = controller.patch(stored.draftId(),
+                new GraphDraftPatchRequest(stored.revision(), List.of(
+                        new GraphDraftPatchRequest.PatchOperation("add", "/nodes/-", newNode)
+                )));
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+        GraphDraft patched = response.getBody().draft();
+        assertThat(patched.nodes())
+                .extracting(GraphDraft.DraftNode::id)
+                .contains("eligibility", "eligibility2");
+        assertThat(patched.operatorFingerprints())
+                .containsEntry("eligibility", fingerprint)
+                .containsEntry("eligibility2", fingerprint);
     }
 
     @Test

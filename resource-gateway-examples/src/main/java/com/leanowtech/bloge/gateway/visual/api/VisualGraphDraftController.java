@@ -88,7 +88,13 @@ public class VisualGraphDraftController {
      */
     @PostMapping
     public GraphDraft create(@RequestBody GraphDraft draft) {
-        return repository.save(withCurrentOperatorFingerprints(draft));
+        return repository.save(withCurrentOperatorFingerprints(draft.withIdentity("", 0))
+                .withRevisionMetadata(GraphDraft.RevisionMetadata.patch(
+                        "visual-canvas",
+                        "api",
+                        "Saved draft.",
+                        List.of()
+                )));
     }
 
     /**
@@ -141,8 +147,25 @@ public class VisualGraphDraftController {
      * @return stored draft
      */
     @PutMapping("/{draftId}")
-    public GraphDraft update(@PathVariable String draftId, @RequestBody GraphDraft draft) {
-        return repository.save(withMissingCurrentOperatorFingerprints(draft.withIdentity(draftId, draft.revision())));
+    public ResponseEntity<Object> update(@PathVariable String draftId, @RequestBody GraphDraft draft) {
+        Optional<GraphDraft> current = repository.find(draftId);
+        if (current.isEmpty()) {
+            return ResponseEntity.notFound().build();
+        }
+        long expectedRevision = draft.revision();
+        if (expectedRevision != current.get().revision()) {
+            return updateConflictResponse(draftId, expectedRevision, current.get());
+        }
+        GraphDraft candidate = withExistingOrCurrentOperatorFingerprints(current.get(),
+                draft.withIdentity(draftId, expectedRevision).withRevisionMetadata(GraphDraft.RevisionMetadata.patch(
+                        "visual-canvas",
+                        "api",
+                        "Saved draft.",
+                        List.of()
+                )));
+        return repository.saveIfRevision(draftId, expectedRevision, candidate)
+                .<ResponseEntity<Object>>map(ResponseEntity::ok)
+                .orElseGet(() -> updateConflictResponse(draftId, expectedRevision, current.get()));
     }
 
     /**
@@ -176,7 +199,7 @@ public class VisualGraphDraftController {
                             request.changeSummary(),
                             request.changedPaths()
                     ));
-            GraphDraft candidate = withMissingCurrentOperatorFingerprints(patched);
+            GraphDraft candidate = withExistingOrCurrentOperatorFingerprints(current.get(), patched);
             return repository.saveIfRevision(draftId, request.expectedRevision(), candidate)
                     .map(stored -> ResponseEntity.ok(GraphDraftPatchResult.patched(stored)))
                     .orElseGet(() -> conflictResponse(draftId, request.expectedRevision(), current.get()));
@@ -268,6 +291,10 @@ public class VisualGraphDraftController {
         return draft.withOperatorFingerprints(fingerprintsWithMissingCurrentValues(draft));
     }
 
+    private GraphDraft withExistingOrCurrentOperatorFingerprints(GraphDraft current, GraphDraft draft) {
+        return draft.withOperatorFingerprints(fingerprintsWithExistingOrCurrentValues(current, draft));
+    }
+
     private ResponseEntity<VisualGraphPublicationResult> publishDraft(GraphDraft draft) {
         VisualValidationResult validation = validator.validate(draft);
         if (!validation.valid()) {
@@ -294,6 +321,21 @@ public class VisualGraphDraftController {
     private Map<String, String> fingerprintsWithMissingCurrentValues(GraphDraft draft) {
         Map<String, String> fingerprints = new LinkedHashMap<>(currentOperatorFingerprints(draft));
         fingerprints.putAll(draft.operatorFingerprints());
+        return fingerprints;
+    }
+
+    private Map<String, String> fingerprintsWithExistingOrCurrentValues(GraphDraft current, GraphDraft draft) {
+        Map<String, String> activeFingerprints = currentOperatorFingerprints(draft);
+        Map<String, String> fingerprints = new LinkedHashMap<>();
+        for (GraphDraft.DraftNode node : draft.nodes()) {
+            String existing = current.operatorFingerprints().get(node.id());
+            if (existing != null && !existing.isBlank()) {
+                fingerprints.put(node.id(), existing);
+                continue;
+            }
+            Optional.ofNullable(activeFingerprints.get(node.id()))
+                    .ifPresent(fingerprint -> fingerprints.put(node.id(), fingerprint));
+        }
         return fingerprints;
     }
 
@@ -330,6 +372,15 @@ public class VisualGraphDraftController {
     private ResponseEntity<GraphDraftPatchResult> conflictResponse(String draftId,
                                                                    long expectedRevision,
                                                                    GraphDraft fallback) {
+        GraphDraft current = repository.find(draftId).orElse(fallback);
+        return ResponseEntity.status(HttpStatus.CONFLICT)
+                .body(GraphDraftPatchResult.rejected(current, List.of(revisionConflictDiagnostic(
+                        expectedRevision, current.revision()))));
+    }
+
+    private ResponseEntity<Object> updateConflictResponse(String draftId,
+                                                          long expectedRevision,
+                                                          GraphDraft fallback) {
         GraphDraft current = repository.find(draftId).orElse(fallback);
         return ResponseEntity.status(HttpStatus.CONFLICT)
                 .body(GraphDraftPatchResult.rejected(current, List.of(revisionConflictDiagnostic(

@@ -1,5 +1,7 @@
 package com.leanowtech.bloge.gateway.visual.draft;
 
+import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
 
 /**
@@ -26,7 +28,7 @@ public record GraphDraftPatchRequest(
         actor = actor == null ? "" : actor;
         changeSource = changeSource == null ? "" : changeSource;
         changeSummary = changeSummary == null ? "" : changeSummary;
-        patch = patch == null ? List.of() : List.copyOf(patch);
+        patch = patch == null ? List.of() : Collections.unmodifiableList(new ArrayList<>(patch));
     }
 
     /**
@@ -41,6 +43,7 @@ public record GraphDraftPatchRequest(
      */
     public List<String> changedPaths() {
         return patch.stream()
+                .filter(operation -> operation != null)
                 .map(PatchOperation::path)
                 .map(path -> path == null || path.isBlank() ? "/" : path)
                 .distinct()

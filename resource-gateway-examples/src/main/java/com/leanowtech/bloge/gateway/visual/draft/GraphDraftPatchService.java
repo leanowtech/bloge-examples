@@ -9,13 +9,23 @@ import com.leanowtech.bloge.gateway.visual.diagnostic.VisualDiagnostic;
 
 import org.springframework.stereotype.Service;
 
+import java.util.ArrayList;
 import java.util.List;
+import java.util.Optional;
+import java.util.Set;
 
 /**
  * Applies a small RFC 6902 JSON Patch subset to graph drafts.
  */
 @Service
 public class GraphDraftPatchService {
+
+    private static final Set<String> SERVER_MANAGED_ROOTS = Set.of(
+            "draftId",
+            "revision",
+            "revisionMetadata",
+            "operatorFingerprints"
+    );
 
     private final ObjectMapper objectMapper;
 
@@ -72,10 +82,30 @@ public class GraphDraftPatchService {
             return List.of(VisualDiagnostic.error("visual.draft.patchEmpty",
                     "Patch must contain at least one operation.", "/patch"));
         }
-        return List.of();
+        List<VisualDiagnostic> diagnostics = new ArrayList<>();
+        for (int i = 0; i < request.patch().size(); i++) {
+            int operationIndex = i;
+            GraphDraftPatchRequest.PatchOperation operation = request.patch().get(i);
+            if (operation == null) {
+                diagnostics.add(VisualDiagnostic.error("visual.draft.patchOperationMissing",
+                        "Patch operation is required.",
+                        "/patch/" + operationIndex));
+                continue;
+            }
+            forbiddenServerManagedRoot(operation.path()).ifPresent(root -> diagnostics.add(VisualDiagnostic.error(
+                    "visual.draft.patchPathForbidden",
+                    "Patch path '%s' targets server-managed draft field '%s'."
+                            .formatted(operation.path().isBlank() ? "/" : operation.path(), root),
+                    "/patch/" + operationIndex + "/path"
+            )));
+        }
+        return diagnostics;
     }
 
     private JsonNode applyOperation(JsonNode working, GraphDraftPatchRequest.PatchOperation operation) {
+        if (operation == null) {
+            throw new IllegalArgumentException("Patch operation is required.");
+        }
         String op = operation.op().trim();
         return switch (op) {
             case "add" -> add(working, operation.path(), operation.value());
@@ -166,5 +196,18 @@ public class GraphDraftPatchService {
     }
 
     private record ParentPointer(JsonPointer parentPath, String segment) {
+    }
+
+    private static Optional<String> forbiddenServerManagedRoot(String path) {
+        if (path == null || path.isBlank()) {
+            return Optional.of("/");
+        }
+        if (!path.startsWith("/")) {
+            return Optional.empty();
+        }
+        int end = path.indexOf('/', 1);
+        String segment = end < 0 ? path.substring(1) : path.substring(1, end);
+        String root = segment.replace("~1", "/").replace("~0", "~");
+        return SERVER_MANAGED_ROOTS.contains(root) ? Optional.of(root) : Optional.empty();
     }
 }

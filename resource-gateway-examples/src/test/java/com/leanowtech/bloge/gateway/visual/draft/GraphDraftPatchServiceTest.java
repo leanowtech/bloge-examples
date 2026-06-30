@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 
 import org.junit.jupiter.api.Test;
 
+import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 
@@ -56,6 +57,33 @@ class GraphDraftPatchServiceTest {
                 List.of(new GraphDraftPatchRequest.PatchOperation("move", "/nodes/0", null)))))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("Unsupported patch operation");
+    }
+
+    @Test
+    void rejectsPatchToServerManagedDraftFields() {
+        GraphDraft draft = simpleDraft(List.of(), List.of());
+
+        List<?> diagnostics = service.validateRequest(draft, new GraphDraftPatchRequest(1, List.of(
+                new GraphDraftPatchRequest.PatchOperation("replace", "", Map.of()),
+                new GraphDraftPatchRequest.PatchOperation("replace", "/operatorFingerprints/eligibility", "fp"),
+                new GraphDraftPatchRequest.PatchOperation("replace", "/revisionMetadata/updatedBy", "mallory")
+        )));
+
+        assertThat(diagnostics)
+                .extracting("code")
+                .containsOnly("visual.draft.patchPathForbidden");
+    }
+
+    @Test
+    void rejectsMissingPatchOperation() {
+        GraphDraft draft = simpleDraft(List.of(), List.of());
+
+        List<?> diagnostics = service.validateRequest(draft, new GraphDraftPatchRequest(1,
+                Collections.singletonList(null)));
+
+        assertThat(diagnostics)
+                .extracting("code")
+                .containsExactly("visual.draft.patchOperationMissing");
     }
 
     private static GraphDraft simpleDraft(List<GraphDraft.DraftNode> nodes, List<GraphDraft.DraftEdge> edges) {

@@ -171,12 +171,24 @@ Each catalog operator exposes a server-computed fingerprint, and saved drafts
 store per-node `operatorFingerprints`; compile/run/publish require executable
 drafts to carry a fingerprint snapshot, and validation checks snapshots for
 coverage and drift so a draft authored against an older schema/lowering
-fingerprint is blocked before execution. Full `PUT` saves and revision-guarded
-`PATCH` updates preserve submitted/existing fingerprint snapshots and only fill
-missing entries for new nodes from the active catalog for the draft's current
-authoring scope, so routine metadata edits or full-form saves cannot silently
-rebase a draft onto a newer operator schema or turn a newly hand-injected
-deprecated/out-of-scope operator into an executable node.
+fingerprint is blocked before execution. Full `PUT` saves and field-level
+`PATCH` updates are both revision guarded; stale edits return `409 CONFLICT`
+with the current draft and `visual.draft.revisionConflict` diagnostics instead
+of overwriting newer canvas state. `POST` creates a new draft identity even when
+the request body carries a stale or existing `draftId`, so it cannot be used as
+an unguarded overwrite path. The browser loads the current server snapshot
+before patching when its local base revision is missing, stops instead of saving
+if that snapshot proves the draft changed on the server, and excludes
+service-managed identity, revision, audit, and fingerprint fields from
+field-level patch diffs. Existing node fingerprint snapshots are
+service-managed: PATCH rejects direct edits to identity, revision metadata, and
+`operatorFingerprints`, and both save paths preserve the repository snapshot for
+existing nodes while only filling missing entries for new nodes from the active
+catalog for the draft's current authoring scope. Malformed patch entries,
+including missing operations, return structured visual diagnostics instead of
+escaping as server errors. Routine metadata edits or full-form saves therefore
+cannot silently rebase a draft onto a newer operator schema or turn a newly
+hand-injected deprecated/out-of-scope operator into an executable node.
 Operator availability is also enforced by policy: imported operator definitions
 may declare allowed `tenants`, `namespaces`, and `environments`; the browser
 queries the active catalog with the current draft scope from the Authoring Scope
@@ -214,12 +226,12 @@ Showcase metadata APIs:
 | `POST` | `/api/gateway/examples/compose/run` | Compile and run submitted DSL with JSON context, returning diagnostics, output, layout, and decision-table metadata |
 | `GET` | `/api/visual/operators` | List native, imported, and resource-backed visual operator definitions; supports `tenantId`, `namespace`, and `environment` policy filtering |
 | `GET` | `/api/visual/drafts` | List stored visual graph drafts |
-| `POST` | `/api/visual/drafts` | Save a new visual graph draft with assigned id and revision |
+| `POST` | `/api/visual/drafts` | Save a new visual graph draft with server-assigned id/revision, ignoring submitted draft identity fields |
 | `GET` | `/api/visual/drafts/{draftId}` | Load a stored visual graph draft |
 | `GET` | `/api/visual/drafts/{draftId}/revisions` | List immutable draft revision snapshots, newest first |
 | `GET` | `/api/visual/drafts/{draftId}/revisions/{revision}` | Load one immutable draft revision snapshot |
-| `PUT` | `/api/visual/drafts/{draftId}` | Update a stored visual graph draft and increment revision |
-| `PATCH` | `/api/visual/drafts/{draftId}` | Apply an `expectedRevision` JSON patch and reject stale edits with `409 CONFLICT` |
+| `PUT` | `/api/visual/drafts/{draftId}` | Replace a stored visual graph draft when the submitted `revision` matches; stale full saves return `409 CONFLICT` with current draft diagnostics |
+| `PATCH` | `/api/visual/drafts/{draftId}` | Apply an `expectedRevision` JSON patch, reject stale edits with `409 CONFLICT`, and reject patches to service-managed identity/revision/fingerprint fields |
 | `DELETE` | `/api/visual/drafts/{draftId}` | Delete a stored visual graph draft |
 | `POST` | `/api/visual/drafts/validate` | Validate a visual graph draft against operator schemas, typed port edges, and DAG constraints |
 | `POST` | `/api/visual/drafts/compile` | Validate a visual graph draft, lower it to BLOGE DSL, then compile the DSL |
@@ -810,7 +822,7 @@ curl -X POST http://localhost:8080/api/gateway/resources/execute \
 
 ## Test strategy
 
-The test suite is organised into four layers (40 top-level test classes, 322 executed
+The test suite is organised into four layers (40 top-level test classes, 330 executed
 tests, including nested JUnit suites):
 
 ### Layer 1 — Unit tests
@@ -836,7 +848,7 @@ Isolated component tests, some with lightweight Spring slices or mocks.
 | `ResourceDescriptorBootstrapTest` | 7 | Seeding, refresh behavior, idempotency |
 | `GatewayDslCompilationTest` | 7 | DSL parsing, graph loading |
 | Gateway example API suite | 13 | Dynamic composer service/controller, scenario catalog, example graph endpoints |
-| Visual authoring suite | 181 | Visual operator projection, resource design contract persistence and gates, imported libraries, catalog lifecycle gates, deprecated operator draft resolution and active-scope fingerprinting, catalog token gates and policy filtering, cross-library operatorRef ownership, system-reserved operatorRef gates, import-time lowering gates, draft/publication persistence and history, revision audit metadata, full-save/PATCH fingerprint preservation, revision-guarded patching, operator fingerprint drift preservation and execution snapshot coverage gates, typed connection/edge validation including edge identity uniqueness and binding kind allow-list, input/config source-picker server preflight with duplicate-connection rejection, duplicate target input ownership, object required fields, object schema structure gates, required-array schema gates, nested objectTemplate required fields, enum value-domain and shape gates, config expression references and configSchema type gates, data edge/semantic dependency consistency, graph input schema gates, secret blocking, DSL lowering, compiler gating, dependency ordering, runtime smoke path |
+| Visual authoring suite | 189 | Visual operator projection, resource design contract persistence and gates, imported libraries, catalog lifecycle gates, deprecated operator draft resolution and active-scope fingerprinting, catalog token gates and policy filtering, cross-library operatorRef ownership, system-reserved operatorRef gates, import-time lowering gates, draft/publication persistence and history, revision audit metadata, full-save/PATCH fingerprint preservation, service-managed fingerprint snapshot gates, structured malformed patch diagnostics, server-assigned create identity, revision-guarded full-save and patch conflict handling, operator fingerprint drift preservation and execution snapshot coverage gates, typed connection/edge validation including edge identity uniqueness and binding kind allow-list, input/config source-picker server preflight with duplicate-connection rejection, duplicate target input ownership, object required fields, object schema structure gates, required-array schema gates, nested objectTemplate required fields, enum value-domain and shape gates, config expression references and configSchema type gates, data edge/semantic dependency consistency, graph input schema gates, secret blocking, DSL lowering, compiler gating, dependency ordering, runtime smoke path |
 
 ### Layer 3 — Orchestration tests
 

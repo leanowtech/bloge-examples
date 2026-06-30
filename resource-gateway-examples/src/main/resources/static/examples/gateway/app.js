@@ -1599,9 +1599,27 @@ async function loadDraftRevisions(options = {}) {
 async function saveCurrentDraft() {
   const draft = builderToVisualDraft(state.builder);
   const draftId = state.currentDraftId;
-  const baseDraft = draftId ? currentSavedDraftSnapshot(draftId) : null;
+  const expectedRevision = state.currentDraftRevision || 0;
+  let baseDraft = draftId ? currentSavedDraftSnapshot(draftId) : null;
   let response;
   if (draftId) {
+    if (!baseDraft) {
+      const current = await fetchCurrentDraftSnapshot();
+      if (!current) {
+        return null;
+      }
+      if (expectedRevision && Number(current.revision || 0) !== Number(expectedRevision)) {
+        state.currentDraftRevision = current.revision || 0;
+        state.savedDraftSnapshot = current;
+        await loadDraftList({ render: false });
+        renderDraftControls();
+        setDraftMessage(`Draft changed on server at @${state.currentDraftRevision}. Reload before saving.`, 'error');
+        return null;
+      }
+      state.currentDraftRevision = current.revision || state.currentDraftRevision;
+      state.savedDraftSnapshot = current;
+      baseDraft = current;
+    }
     const patch = draftPatchOperations(baseDraft, draft);
     if (!patch.length) {
       const current = baseDraft || draft;
@@ -1664,7 +1682,7 @@ function currentSavedDraftSnapshot(draftId = state.currentDraftId) {
 
 function draftPatchOperations(baseDraft, nextDraft) {
   if (!baseDraft) {
-    return [{ op: 'replace', path: '', value: nextDraft }];
+    throw new Error('Current draft snapshot is required before patching.');
   }
   return jsonPatchDiff(normalizeDraftForPatch(baseDraft), normalizeDraftForPatch(nextDraft), '');
 }
@@ -1680,12 +1698,14 @@ function normalizeDraftForPatch(draft) {
   if (!draft || typeof draft !== 'object') {
     return draft;
   }
-  const { revisionMetadata, ...patchableDraft } = draft;
-  return {
-    ...patchableDraft,
-    draftId: state.currentDraftId || draft.draftId || '',
-    revision: state.currentDraftRevision || draft.revision || 0
-  };
+  const {
+    draftId,
+    revision,
+    revisionMetadata,
+    operatorFingerprints,
+    ...patchableDraft
+  } = draft;
+  return patchableDraft;
 }
 
 function jsonPatchDiff(before, after, path) {
@@ -1805,6 +1825,16 @@ async function selectedDraftRevisionSnapshot() {
 }
 
 async function loadCurrentDraftSnapshot() {
+  const current = await fetchCurrentDraftSnapshot();
+  if (!current) {
+    return null;
+  }
+  state.currentDraftRevision = current.revision || state.currentDraftRevision;
+  state.savedDraftSnapshot = current;
+  return current;
+}
+
+async function fetchCurrentDraftSnapshot() {
   if (!state.currentDraftId) {
     return null;
   }
@@ -1813,10 +1843,7 @@ async function loadCurrentDraftSnapshot() {
     setDraftMessage(`Current draft load failed with ${response.status}`, 'error');
     return null;
   }
-  const current = await response.json();
-  state.currentDraftRevision = current.revision || state.currentDraftRevision;
-  state.savedDraftSnapshot = current;
-  return current;
+  return response.json();
 }
 
 async function deleteSelectedDraft() {
