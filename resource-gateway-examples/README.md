@@ -328,11 +328,12 @@ mismatches, undeclared object properties, and invalid array items.
 Each catalog operator exposes a server-computed fingerprint, and saved drafts
 store per-node `operatorFingerprints`; compile/run/publish require executable
 drafts to carry a fingerprint snapshot, and validation checks snapshots for
-coverage and drift so a draft authored against an older schema/lowering
-fingerprint is blocked before execution. Full `PUT` saves, field-level `PATCH`
-updates, guarded stored runs, guarded deletes, and guarded publish requests all
-use the draft revision observed by the caller; stale edits, runs, deletes, or
-publishes return `409 CONFLICT` with `visual.draft.revisionConflict`
+coverage, deleted-node leftovers, and drift so a draft authored against an
+older schema/lowering fingerprint or carrying stale node snapshots is blocked
+before execution. Full `PUT` saves, field-level `PATCH` updates, guarded stored
+runs, guarded deletes, and guarded publish requests all use the draft revision
+observed by the caller; stale edits, runs, deletes, or publishes return
+`409 CONFLICT` with `visual.draft.revisionConflict`
 diagnostics instead of overwriting newer canvas state, executing a newer graph
 than the caller saw, removing somebody else's newer draft revision, or
 publishing a draft revision the user did not see. Draft create and update accept

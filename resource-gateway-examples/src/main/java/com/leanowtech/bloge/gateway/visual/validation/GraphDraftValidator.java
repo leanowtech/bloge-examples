@@ -151,6 +151,7 @@ public class GraphDraftValidator {
             validateConfig(node, operator.get(), nodePath, diagnostics);
         }
 
+        validateOperatorFingerprintKeys(draft.operatorFingerprints(), nodeIds, diagnostics);
         validateNodePathBindings(draft, nodesById, operatorsByNodeId, diagnostics);
         validateConfigReferences(draft, nodesById, operatorsByNodeId, diagnostics);
         validateEdgeIdentity(draft, diagnostics);
@@ -187,6 +188,26 @@ public class GraphDraftValidator {
                 "Node '%s' was authored against operator '%s' fingerprint '%s', but the catalog now exposes '%s'."
                         .formatted(node.id(), operator.operatorRef(), expected, operator.fingerprint()),
                 nodePath + "/operatorRef"));
+    }
+
+    private static void validateOperatorFingerprintKeys(Map<String, String> operatorFingerprints,
+                                                        Set<String> nodeIds,
+                                                        List<VisualDiagnostic> diagnostics) {
+        if (operatorFingerprints.isEmpty()) {
+            return;
+        }
+        operatorFingerprints.keySet().stream()
+                .filter(nodeId -> !nodeIds.contains(nodeId))
+                .forEach(nodeId -> diagnostics.add(VisualDiagnostic.error(
+                        "visual.operator.fingerprintUnknownNode",
+                        "Operator fingerprint snapshot references node '%s', but no current draft node has that id."
+                                .formatted(nodeId),
+                        "/operatorFingerprints/" + jsonPointerSegment(nodeId)
+                )));
+    }
+
+    private static String jsonPointerSegment(String value) {
+        return String.valueOf(value).replace("~", "~0").replace("/", "~1");
     }
 
     private static void validateOperatorPolicy(GraphDraft draft,

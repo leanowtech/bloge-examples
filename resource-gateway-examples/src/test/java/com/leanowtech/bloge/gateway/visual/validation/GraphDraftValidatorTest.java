@@ -1219,6 +1219,36 @@ class GraphDraftValidatorTest {
     }
 
     @Test
+    void rejectsDraftWhenOperatorFingerprintSnapshotReferencesDeletedNode() {
+        var catalog = VisualCatalogTestSupport.catalogWithLibrary(
+                VisualCatalogTestSupport.eligibilityLibrary("integer"));
+        GraphDraftValidator validator = new GraphDraftValidator(catalog);
+        GraphDraft draft = contextEligibilityDraft(graphInputSchema(
+                Map.of(
+                        "score", Map.of("type", "integer"),
+                        "amount", Map.of("type", "number")
+                ),
+                List.of("score", "amount")
+        ), Map.of(
+                "score", GraphDraft.Binding.contextPath("score"),
+                "amount", GraphDraft.Binding.contextPath("amount")
+        )).withOperatorFingerprints(Map.of(
+                "eligibility", catalog.find("risk:eligibility").orElseThrow().fingerprint(),
+                "deletedNode", "sha256:deleted-definition"
+        ));
+
+        VisualValidationResult result = validator.validate(draft);
+
+        assertThat(result.valid()).isFalse();
+        assertThat(result.diagnostics())
+                .anySatisfy(diagnostic -> {
+                    assertThat(diagnostic.code()).isEqualTo("visual.operator.fingerprintUnknownNode");
+                    assertThat(diagnostic.message()).contains("deletedNode");
+                    assertThat(diagnostic.target()).isEqualTo("/operatorFingerprints/deletedNode");
+                });
+    }
+
+    @Test
     void acceptsConstantBindingWhenValueMatchesTargetSchema() {
         GraphDraftValidator validator = new GraphDraftValidator(
                 VisualCatalogTestSupport.catalogWithLibrary(
