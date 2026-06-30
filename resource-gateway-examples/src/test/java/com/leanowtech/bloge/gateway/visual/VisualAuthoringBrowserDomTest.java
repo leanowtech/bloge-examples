@@ -171,6 +171,17 @@ class VisualAuthoringBrowserDomTest {
         waitForText(wait, By.id("output"), "\"goldenCaseRun\"");
         waitForText(wait, By.id("output"), "\"passed\": true");
 
+        click(wait, By.id("run-golden-suite"));
+        waitForText(wait, By.id("publication-status"), "Golden suite passed");
+        waitForText(wait, By.id("output"), "\"goldenSuiteRun\"");
+        waitForText(wait, By.id("output"), "\"totalCases\": 1");
+
+        click(wait, By.id("certify-golden-suite"));
+        waitForText(wait, By.id("publication-status"), "Certified");
+        waitForText(wait, By.id("golden-certification-status"), "Certified");
+        waitForText(wait, By.id("output"), "\"goldenCertification\"");
+        waitForText(wait, By.id("output"), "\"certified\": true");
+
         selectByValue(wait, By.id("run-history-source"), "PUBLICATION");
         waitForText(wait, By.id("run-history-list"), "PUBLICATION");
         assertThat(textOf(By.id("run-history-list"))).doesNotContain("TRANSIENT_DRAFT");

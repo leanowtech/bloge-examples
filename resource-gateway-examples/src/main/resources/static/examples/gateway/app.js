@@ -329,6 +329,7 @@ const state = {
   publicationMessage: null,
   goldenCases: [],
   selectedGoldenCaseId: '',
+  goldenCertification: null,
   runHistory: [],
   runHistoryFilters: {
     sourceKind: '',
@@ -405,6 +406,7 @@ async function loadScenarios() {
   await loadDraftList({ render: false });
   await loadPublicationList({ render: false });
   await loadGoldenCases({ render: false });
+  await loadGoldenCertification({ render: false });
   await loadRunHistory({ render: false });
   const response = await fetch('/api/gateway/examples/scenarios');
   state.customContextText = pretty(DEFAULT_COMPOSER_CONTEXT);
@@ -863,7 +865,10 @@ function renderInputForm() {
           <select id="golden-case-select" aria-label="Golden regression cases"></select>
           <button id="save-golden-case" class="secondary compact" type="button">Save Golden</button>
           <button id="run-golden-case" class="secondary compact" type="button">Run Golden</button>
+          <button id="run-golden-suite" class="secondary compact" type="button">Run Suite</button>
+          <button id="certify-golden-suite" class="secondary compact" type="button">Certify</button>
         </div>
+        <div id="golden-certification-status" class="certification-status" hidden></div>
         <div id="publication-status" class="draft-status" hidden></div>
       </div>
       <div class="builder-panel">
@@ -2369,11 +2374,12 @@ function renderPublicationControls() {
     : ['<option value="">No publications</option>'];
   select.innerHTML = options.join('');
   select.disabled = !state.publications.length;
-  select.onchange = () => {
+  select.onchange = async () => {
     state.selectedPublicationId = select.value;
     state.publicationMessage = null;
     state.selectedGoldenCaseId = '';
-    loadGoldenCases();
+    await loadGoldenCases({ render: false });
+    await loadGoldenCertification({ render: false });
     renderPublicationControls();
   };
 
@@ -2385,11 +2391,14 @@ function renderPublicationControls() {
   }
   if (reloadButton) {
     reloadButton.onclick = async () => {
-      await loadPublicationList();
-      await loadGoldenCases();
+      await loadPublicationList({ render: false });
+      await loadGoldenCases({ render: false });
+      await loadGoldenCertification({ render: false });
+      renderPublicationControls();
     };
   }
   renderGoldenCaseControls();
+  renderGoldenCertificationStatus();
   renderPublicationStatus();
 }
 
@@ -2397,7 +2406,9 @@ function renderGoldenCaseControls() {
   const select = $('golden-case-select');
   const saveButton = $('save-golden-case');
   const runButton = $('run-golden-case');
-  if (!select || !saveButton || !runButton) return;
+  const suiteButton = $('run-golden-suite');
+  const certifyButton = $('certify-golden-suite');
+  if (!select || !saveButton || !runButton || !suiteButton || !certifyButton) return;
   const options = state.goldenCases.length
     ? state.goldenCases.map((testCase) => {
       const selected = testCase.caseId === state.selectedGoldenCaseId ? ' selected' : '';
@@ -2413,12 +2424,39 @@ function renderGoldenCaseControls() {
   saveButton.onclick = saveGoldenCaseFromCurrentOutput;
   runButton.disabled = !state.selectedGoldenCaseId;
   runButton.onclick = runSelectedGoldenCase;
+  suiteButton.disabled = !state.selectedPublicationId;
+  suiteButton.onclick = runPublicationGoldenSuite;
+  certifyButton.disabled = !state.selectedPublicationId;
+  certifyButton.onclick = certifyPublicationGoldenSuite;
 }
 
 function goldenCaseOptionLabel(testCase) {
   const name = testCase.name || 'Golden case';
   const id = shortRunId(testCase.caseId || '');
   return id ? `${name} · ${id}` : name;
+}
+
+function renderGoldenCertificationStatus() {
+  const target = $('golden-certification-status');
+  if (!target) return;
+  const certification = state.goldenCertification;
+  target.hidden = false;
+  if (!state.selectedPublicationId) {
+    target.textContent = 'No publication selected';
+    target.className = 'certification-status neutral';
+    return;
+  }
+  if (!certification) {
+    target.textContent = 'Not certified';
+    target.className = 'certification-status neutral';
+    return;
+  }
+  const passedCases = Number(certification.passedCases) || 0;
+  const totalCases = Number(certification.totalCases) || 0;
+  const label = certification.certified ? 'Certified' : 'Certification failed';
+  const time = certification.certifiedAt ? ` · ${new Date(certification.certifiedAt).toLocaleString()}` : '';
+  target.textContent = `${label} (${passedCases}/${totalCases})${time}`;
+  target.className = `certification-status ${certification.certified ? 'success' : 'error'}`;
 }
 
 function publicationOptionLabel(publication) {
@@ -2660,8 +2698,10 @@ async function loadGoldenCases(options = {}) {
   if (!state.selectedPublicationId) {
     state.goldenCases = [];
     state.selectedGoldenCaseId = '';
+    state.goldenCertification = null;
     if (options.render !== false) {
       renderGoldenCaseControls();
+      renderGoldenCertificationStatus();
     }
     return state.goldenCases;
   }
@@ -2691,6 +2731,36 @@ async function loadGoldenCases(options = {}) {
     }
     return [];
   }
+}
+
+async function loadGoldenCertification(options = {}) {
+  if (!state.selectedPublicationId) {
+    state.goldenCertification = null;
+    if (options.render !== false) {
+      renderGoldenCertificationStatus();
+    }
+    return null;
+  }
+  try {
+    const response = await fetch(
+      `/api/visual/golden-cases/publications/${encodeURIComponent(state.selectedPublicationId)}/certification`
+    );
+    if (response.status === 404) {
+      state.goldenCertification = null;
+    } else {
+      if (!response.ok) {
+        throw new Error(`Golden certification failed with ${response.status}`);
+      }
+      state.goldenCertification = await response.json();
+    }
+  } catch (error) {
+    state.goldenCertification = null;
+    setPublicationMessage(error.message, 'error');
+  }
+  if (options.render !== false) {
+    renderGoldenCertificationStatus();
+  }
+  return state.goldenCertification;
 }
 
 function selectedPublication() {
@@ -2771,6 +2841,71 @@ async function runSelectedGoldenCase() {
       passed ? 'success' : 'error'
     );
     $('output').textContent = pretty({ status: response.status, goldenCaseRun: payload });
+    await loadRunHistory();
+  } catch (error) {
+    setPublicationMessage(error.message, 'error');
+  }
+}
+
+async function runPublicationGoldenSuite() {
+  const publication = selectedPublication();
+  if (!publication) {
+    setPublicationMessage('Select a publication first.', 'error');
+    return;
+  }
+  setPublicationMessage(`Running golden suite for ${shortRunId(publication.publicationId)}...`, 'info');
+  try {
+    const response = await fetch(
+      `/api/visual/golden-cases/publications/${encodeURIComponent(publication.publicationId)}/run`,
+      { method: 'POST' }
+    );
+    if (!response.ok) {
+      throw new Error(`Golden suite run failed with ${response.status}`);
+    }
+    const payload = await response.json();
+    const passed = Boolean(payload.passed);
+    const passedCases = Number(payload.passedCases) || 0;
+    const totalCases = Number(payload.totalCases) || 0;
+    setPublicationMessage(
+      passed
+        ? `Golden suite passed (${passedCases}/${totalCases}).`
+        : `Golden suite failed (${passedCases}/${totalCases}).`,
+      passed ? 'success' : 'error'
+    );
+    $('output').textContent = pretty({ status: response.status, goldenSuiteRun: payload });
+    await loadRunHistory();
+  } catch (error) {
+    setPublicationMessage(error.message, 'error');
+  }
+}
+
+async function certifyPublicationGoldenSuite() {
+  const publication = selectedPublication();
+  if (!publication) {
+    setPublicationMessage('Select a publication first.', 'error');
+    return;
+  }
+  setPublicationMessage(`Certifying ${shortRunId(publication.publicationId)}...`, 'info');
+  try {
+    const response = await fetch(
+      `/api/visual/golden-cases/publications/${encodeURIComponent(publication.publicationId)}/certify`,
+      { method: 'POST' }
+    );
+    if (!response.ok) {
+      throw new Error(`Golden certification failed with ${response.status}`);
+    }
+    const payload = await response.json();
+    state.goldenCertification = payload;
+    const passedCases = Number(payload.passedCases) || 0;
+    const totalCases = Number(payload.totalCases) || 0;
+    setPublicationMessage(
+      payload.certified
+        ? `Certified (${passedCases}/${totalCases}).`
+        : `Certification failed (${passedCases}/${totalCases}).`,
+      payload.certified ? 'success' : 'error'
+    );
+    $('output').textContent = pretty({ status: response.status, goldenCertification: payload });
+    renderGoldenCertificationStatus();
     await loadRunHistory();
   } catch (error) {
     setPublicationMessage(error.message, 'error');

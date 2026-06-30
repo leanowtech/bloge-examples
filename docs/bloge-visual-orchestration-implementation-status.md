@@ -41,8 +41,8 @@ Operator Library / Resource Design Contract
 | Compile / Run | 已落地。运行前做 fingerprint、draft validation、runtime context validation，再生成 DSL 并调用现有 dynamic runner；Java operator 运行会在 gateway 边界做 typed input coercion。 | `visual/runtime/VisualGraphRunService.java`、`example/InputCoercingOperatorRegistry.java` |
 | Run history / node trace 摘要 | 已落地。transient draft、stored draft 和 publication run 会生成 `runId`，并持久化来源、revision、statusMap、diagnostics、errors、elapsedMs、DSL、context/output/results shape-only 摘要；API 已支持 source/draft/publication/graph/outcome/limit 查询、成功率/blocked/error/latency p50/p95 stats 聚合，浏览器 Run History 面板可查看最近运行、SLO 摘要并打开单条审计记录。 | `visual/runtime/VisualGraphRunRecord.java`、`VisualGraphRunStats.java`、`DatabaseVisualGraphRunRepository.java`、`VisualGraphRunHistoryController.java`、`static/examples/gateway/app.js` |
 | Immutable Publication | 已落地。发布物冻结 draft、operator snapshots、fingerprints、layout、DSL、validation report、generation report，并支持 H2 持久化和 publication run。 | `visual/publication/*` |
-| Golden regression cases | 已落地基础版。golden case 绑定不可变 publication，保存样例 context、outputNode 和期望输出；执行时复用 frozen publication DSL，写入 run history，并返回 exact-output mismatch diagnostics。浏览器 Publications 面板可从最近 publication run 输出保存 golden，并一键运行选中 case。 | `visual/golden/*`、`VisualGraphRunRecord.java`、`static/examples/gateway/app.js` |
-| Browser Composer | 已落地。静态页面已从 catalog 拉取 operator palette，支持算子库导入、草稿、修订、发布、schema-aware picker/connection、DSL preview/run、run history SLO 摘要和 publication golden case 保存/运行。 | `src/main/resources/static/examples/gateway/app.js`、`styles.css`、`index.html` |
+| Golden regression cases | 已落地基础版。golden case 绑定不可变 publication，保存样例 context、outputNode 和期望输出；执行时复用 frozen publication DSL，写入 run history，并返回 exact-output mismatch diagnostics。API 和浏览器均支持单 case run、publication 级 suite run 汇总，以及独立于 immutable publication 的最新 golden certification 状态。 | `visual/golden/*`、`VisualGraphRunRecord.java`、`static/examples/gateway/app.js` |
+| Browser Composer | 已落地。静态页面已从 catalog 拉取 operator palette，支持算子库导入、草稿、修订、发布、schema-aware picker/connection、DSL preview/run、run history SLO 摘要和 publication golden case 保存/单跑/suite run/certify。 | `src/main/resources/static/examples/gateway/app.js`、`styles.css`、`index.html` |
 
 ## 3. 协议命名现状
 
@@ -82,14 +82,14 @@ Operator Library / Resource Design Contract
 | Subgraph / remote worker / AI tool source kinds | 设计已预留，当前示例主要覆盖 resource、native、user-library transform/branch/native lowering。 | 后续阶段 |
 | 生产 IAM / RBAC / 权限后台 | 当前 policy 是 tenant/namespace/environment availability gate，不是完整权限系统。 | 平台化阶段 |
 | 多人实时协作 | 当前通过 revision guard 防止覆盖，但没有 presence、merge、operation log 或 CRDT/OT。 | 后续阶段 |
-| 前端自动化回归 | 已新增 browser-facing HTTP smoke 和 Selenium/Chrome DOM smoke，覆盖静态入口、catalog、连接预检、draft save/run/publish、draft revision preview/restore/delete、publication run、publication golden case save/run、run history query/filter/stats UI、Java operator palette、OpenAPI JSON/YAML contract/descriptor preview 与 save UI wiring、用户算子库导入、palette-to-canvas 拖拽、schema-aware connection 拖拽、schema-incompatible connection rejection、route/dependency/config 复杂连接拖拽、无输入端口用户算子的 UI schema 投影、graph output 选择、页面 warning diagnostics 渲染、server validation failure diagnostics 渲染和 publication run。更多失败场景和更多浏览器矩阵仍需补齐。 | 下一阶段 |
+| 前端自动化回归 | 已新增 browser-facing HTTP smoke 和 Selenium/Chrome DOM smoke，覆盖静态入口、catalog、连接预检、draft save/run/publish、draft revision preview/restore/delete、publication run、publication golden case save/run/suite run/certify、run history query/filter/stats UI、Java operator palette、OpenAPI JSON/YAML contract/descriptor preview 与 save UI wiring、用户算子库导入、palette-to-canvas 拖拽、schema-aware connection 拖拽、schema-incompatible connection rejection、route/dependency/config 复杂连接拖拽、无输入端口用户算子的 UI schema 投影、graph output 选择、页面 warning diagnostics 渲染、server validation failure diagnostics 渲染和 publication run。更多失败场景和更多浏览器矩阵仍需补齐。 | 下一阶段 |
 
 ## 6. 下一步优先级
 
 1. **真实浏览器交互回归**：在现有 browser-facing HTTP + Selenium DOM smoke 基础上，补更多失败场景和更多浏览器矩阵验证。
 2. **Java operator inventory 深化**：补 streaming/suspendable 画布交互、复杂泛型展示、注解扩展和 Java operator drift/兼容性策略。
 3. **OpenAPI 导入深化**：补更多 media type 策略、OAuth2/OpenID/mTLS 和更完整的 descriptor 自动化；仍必须走现有 `ResourceDesignContractValidator`，不能让未验证 schema 进入 catalog。
-4. **Run history / Golden 深化**：当前已经保存 shape-only run record，并补了查询过滤、浏览器最近运行列表、基础 SLO stats 和 publication 级 golden case；下一步可补 run replay、golden matrix/batch run、更细的节点级耗时/错误聚合。
+4. **Run history / Golden 深化**：当前已经保存 shape-only run record，并补了查询过滤、浏览器最近运行列表、基础 SLO stats、publication 级 golden case、suite run 和 latest certification；下一步可补 run replay、golden 断言模式、certification stale 检测/推广准入策略、更细的节点级耗时/错误聚合。
 5. **文档协议收敛**：把早期草案字段名逐步改成当前实现的 wire contract，并保留平台化抽象命名作为未来 ADR，而不是混在当前协议里。
 
 ## 7. 反熵控制

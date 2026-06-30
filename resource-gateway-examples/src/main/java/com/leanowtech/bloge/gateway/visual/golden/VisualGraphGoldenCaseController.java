@@ -34,6 +34,7 @@ public class VisualGraphGoldenCaseController {
     private final VisualGraphPublicationRepository publicationRepository;
     private final VisualGraphRunService runner;
     private final VisualGraphRunRepository runRepository;
+    private final VisualGraphGoldenCertificationRepository certificationRepository;
     private final ObjectMapper objectMapper;
 
     /**
@@ -41,17 +42,20 @@ public class VisualGraphGoldenCaseController {
      * @param publicationRepository publication repository
      * @param runner visual graph runner
      * @param runRepository run history repository
+     * @param certificationRepository golden certification repository
      * @param objectMapper JSON mapper
      */
     public VisualGraphGoldenCaseController(VisualGraphGoldenCaseRepository repository,
                                            VisualGraphPublicationRepository publicationRepository,
                                            VisualGraphRunService runner,
                                            VisualGraphRunRepository runRepository,
+                                           VisualGraphGoldenCertificationRepository certificationRepository,
                                            ObjectMapper objectMapper) {
         this.repository = repository;
         this.publicationRepository = publicationRepository;
         this.runner = runner;
         this.runRepository = runRepository;
+        this.certificationRepository = certificationRepository;
         this.objectMapper = objectMapper;
     }
 
@@ -107,14 +111,86 @@ public class VisualGraphGoldenCaseController {
                 .orElseGet(() -> ResponseEntity.notFound().build());
     }
 
-    private ResponseEntity<VisualGraphGoldenCaseRunResult> runCase(VisualGraphGoldenCase testCase) {
-        return publicationRepository.find(testCase.publicationId())
-                .map(publication -> ResponseEntity.ok(runAgainstPublication(testCase, publication)))
+    /**
+     * Runs all golden cases for one immutable publication.
+     *
+     * @param publicationId publication id
+     * @return suite run result
+     */
+    @PostMapping("/publications/{publicationId}/run")
+    public ResponseEntity<VisualGraphGoldenSuiteRunResult> runPublication(@PathVariable String publicationId) {
+        return publicationRepository.find(publicationId)
+                .map(publication -> ResponseEntity.ok(runSuite(publication)))
                 .orElseGet(() -> ResponseEntity.notFound().build());
     }
 
-    private VisualGraphGoldenCaseRunResult runAgainstPublication(VisualGraphGoldenCase testCase,
-                                                                 VisualGraphPublication publication) {
+    /**
+     * Reads the latest golden certification for one publication.
+     *
+     * @param publicationId publication id
+     * @return certification when present
+     */
+    @GetMapping("/publications/{publicationId}/certification")
+    public ResponseEntity<VisualGraphGoldenCertification> certification(@PathVariable String publicationId) {
+        if (publicationRepository.find(publicationId).isEmpty()) {
+            return ResponseEntity.notFound().build();
+        }
+        return certificationRepository.find(publicationId)
+                .map(ResponseEntity::ok)
+                .orElseGet(() -> ResponseEntity.notFound().build());
+    }
+
+    /**
+     * Runs the publication golden suite and stores the latest certification.
+     *
+     * @param publicationId publication id
+     * @return stored certification
+     */
+    @PostMapping("/publications/{publicationId}/certify")
+    public ResponseEntity<VisualGraphGoldenCertification> certify(@PathVariable String publicationId) {
+        return publicationRepository.find(publicationId)
+                .map(publication -> {
+                    VisualGraphGoldenSuiteRunResult suite = runSuite(publication);
+                    return ResponseEntity.ok(certificationRepository.save(
+                            VisualGraphGoldenCertification.from(suite)));
+                })
+                .orElseGet(() -> ResponseEntity.notFound().build());
+    }
+
+    private ResponseEntity<VisualGraphGoldenCaseRunResult> runCase(VisualGraphGoldenCase testCase) {
+        return publicationRepository.find(testCase.publicationId())
+                .map(publication -> ResponseEntity.ok(runSingleCase(testCase, publication)))
+                .orElseGet(() -> ResponseEntity.notFound().build());
+    }
+
+    private VisualGraphGoldenSuiteRunResult runSuite(VisualGraphPublication publication) {
+        List<VisualGraphGoldenCase> testCases = List.copyOf(repository.findByPublicationId(publication.publicationId()));
+        if (testCases.isEmpty()) {
+            return VisualGraphGoldenSuiteRunResult.from(publication.publicationId(), List.of(), List.of(
+                    VisualDiagnostic.error("visual.golden.noCases",
+                            "Publication '%s' has no golden cases.".formatted(publication.publicationId()),
+                            "/publicationId")
+            ));
+        }
+
+        List<VisualGraphGoldenCaseRunResult> results = testCases.stream()
+                .map(testCase -> runSingleCase(testCase, publication))
+                .toList();
+        int failedCases = (int) results.stream()
+                .filter(result -> !result.passed())
+                .count();
+        List<VisualDiagnostic> diagnostics = new ArrayList<>();
+        if (failedCases > 0) {
+            diagnostics.add(VisualDiagnostic.error("visual.golden.suiteFailed",
+                    "Golden suite for publication '%s' failed %d of %d case(s)."
+                            .formatted(publication.publicationId(), failedCases, results.size()),
+                    "/results"));
+        }
+        return VisualGraphGoldenSuiteRunResult.from(publication.publicationId(), results, diagnostics);
+    }
+
+    private VisualGraphGoldenCaseRunResult runSingleCase(VisualGraphGoldenCase testCase,
+                                                         VisualGraphPublication publication) {
         VisualGraphRunResponse response = runner.run(publication, testCase.context(), testCase.outputNode());
         VisualGraphRunRecord record = runRepository.create(VisualGraphRunRecord.publication(
                 publication, testCase.context(), response));

@@ -24,7 +24,9 @@ import com.leanowtech.bloge.gateway.visual.catalog.DatabaseOperatorLibraryRegist
 import com.leanowtech.bloge.gateway.visual.catalog.OperatorLibraryRegistry;
 import com.leanowtech.bloge.gateway.visual.draft.DatabaseGraphDraftRepository;
 import com.leanowtech.bloge.gateway.visual.draft.GraphDraftRepository;
+import com.leanowtech.bloge.gateway.visual.golden.DatabaseVisualGraphGoldenCertificationRepository;
 import com.leanowtech.bloge.gateway.visual.golden.DatabaseVisualGraphGoldenCaseRepository;
+import com.leanowtech.bloge.gateway.visual.golden.VisualGraphGoldenCertificationRepository;
 import com.leanowtech.bloge.gateway.visual.golden.VisualGraphGoldenCaseRepository;
 import com.leanowtech.bloge.gateway.visual.publication.DatabaseVisualGraphPublicationRepository;
 import com.leanowtech.bloge.gateway.visual.publication.VisualGraphPublicationRepository;
@@ -291,6 +293,21 @@ public class GatewayConfiguration {
     public VisualGraphGoldenCaseRepository visualGraphGoldenCaseRepository(JdbcTemplate jdbc,
                                                                            ObjectMapper objectMapper) {
         return new DatabaseVisualGraphGoldenCaseRepository(jdbc, objectMapper);
+    }
+
+    /**
+     * Database-backed repository for latest visual graph golden certifications.
+     *
+     * @param jdbc JDBC template for H2 access
+     * @param objectMapper Jackson mapper for certification serialization
+     * @return visual graph golden certification repository
+     */
+    @Bean
+    @ConditionalOnMissingBean
+    public VisualGraphGoldenCertificationRepository visualGraphGoldenCertificationRepository(
+            JdbcTemplate jdbc,
+            ObjectMapper objectMapper) {
+        return new DatabaseVisualGraphGoldenCertificationRepository(jdbc, objectMapper);
     }
 
     // ── Interceptors ────────────────────────────────────────────────────

@@ -847,7 +847,7 @@ body.dragging-operator * {
 
 .draft-controls {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto auto auto;
+  grid-template-columns: minmax(0, 1fr) auto auto auto auto;
   gap: 6px;
 }
 
@@ -886,6 +886,30 @@ body.dragging-operator * {
 }
 
 .draft-status.error {
+  border-color: #fca5a5;
+  background: var(--red-soft);
+  color: var(--red);
+}
+
+.certification-status {
+  min-height: 26px;
+  padding: 6px 8px;
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  background: var(--surface-subtle);
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 800;
+  overflow-wrap: anywhere;
+}
+
+.certification-status.success {
+  border-color: #86efac;
+  background: var(--green-soft);
+  color: var(--green);
+}
+
+.certification-status.error {
   border-color: #fca5a5;
   background: var(--red-soft);
   color: var(--red);
