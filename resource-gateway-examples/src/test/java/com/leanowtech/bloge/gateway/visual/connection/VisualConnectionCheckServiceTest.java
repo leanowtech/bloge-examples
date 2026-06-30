@@ -183,6 +183,33 @@ class VisualConnectionCheckServiceTest {
     }
 
     @Test
+    void rejectsWholeObjectConnectionWithSourceAdditionalFieldsForStrictTarget() {
+        VisualConnectionCheckService service = connectionService(VisualCatalogTestSupport
+                .catalogWithLibrary(VisualCatalogTestSupport.objectCompatibilityLibrary(
+                        applicantProperties("integer", true),
+                        List.of("score", "tier"),
+                        applicantProperties("integer", false),
+                        List.of("score", "tier"))));
+        GraphDraft draft = applicantObjectDraft();
+
+        VisualConnectionCheckResult result = service.check(new VisualConnectionCheckRequest(
+                draft,
+                new GraphDraft.Endpoint("applicantProducer", "output", "applicant"),
+                new GraphDraft.Endpoint("applicantConsumer", "inputs", "applicant"),
+                "data"
+        ));
+
+        assertThat(result.accepted()).isFalse();
+        assertThat(result.diagnostics())
+                .extracting("code")
+                .contains("visual.binding.typeMismatch", "visual.edge.typeMismatch");
+        assertThat(result.diagnostics())
+                .anySatisfy(diagnostic -> assertThat(diagnostic.message())
+                        .contains("source object declares additional field 'segment'")
+                        .contains("additionalProperties=false"));
+    }
+
+    @Test
     void rejectsNodeConnectionThatWouldOverlapExistingRootBinding() {
         VisualConnectionCheckService service = connectionService(VisualCatalogTestSupport
                 .catalogWithLibrary(VisualCatalogTestSupport.rootObjectPortLibrary()));
@@ -290,6 +317,31 @@ class VisualConnectionCheckServiceTest {
         assertThat(result.diagnostics())
                 .extracting("code")
                 .contains("visual.binding.typeMismatch");
+    }
+
+    @Test
+    void rejectsContextPickerBindingWhenAdditionalPropertiesSchemaTypeDoesNotMatch() {
+        VisualConnectionCheckService service = connectionService(VisualCatalogTestSupport
+                .catalogWithLoanApplicantResourceAndLibrary(VisualCatalogTestSupport.eligibilityLibrary("integer")));
+        GraphDraft draft = resourceEligibilityDraft(dynamicAdditionalGraphInputSchema(Map.of("type", "string")),
+                List.of());
+
+        VisualConnectionCheckResult result = service.check(new VisualConnectionCheckRequest(
+                draft,
+                new GraphDraft.Endpoint("__ctx", "ctx", "dynamicScore"),
+                new GraphDraft.Endpoint("eligibility", "inputs", "score"),
+                "data"
+        ));
+
+        assertThat(result.accepted()).isFalse();
+        assertThat(result.diagnostics())
+                .anySatisfy(diagnostic -> {
+                    assertThat(diagnostic.code()).isEqualTo("visual.binding.typeMismatch");
+                    assertThat(diagnostic.message())
+                            .contains("ctx.dynamicScore")
+                            .contains("string")
+                            .contains("integer");
+                });
     }
 
     @Test
@@ -404,6 +456,14 @@ class VisualConnectionCheckServiceTest {
         ), List.of());
     }
 
+    private static SchemaEnvelope dynamicAdditionalGraphInputSchema(Object additionalProperties) {
+        return new SchemaEnvelope(SchemaEnvelope.JSON_SCHEMA, "2020-12", Map.of(
+                "type", "object",
+                "properties", Map.of(),
+                "additionalProperties", additionalProperties
+        ));
+    }
+
     private static SchemaEnvelope customerOrderInputSchema() {
         return SchemaEnvelope.object(Map.of(
                 "customer", Map.of(
@@ -414,6 +474,16 @@ class VisualConnectionCheckServiceTest {
                 ),
                 "orderId", Map.of("type", "string")
         ), List.of("customer", "orderId"));
+    }
+
+    private static Map<String, Object> applicantProperties(String scoreType, boolean includeExtra) {
+        Map<String, Object> properties = new java.util.LinkedHashMap<>();
+        properties.put("score", Map.of("type", scoreType));
+        properties.put("tier", Map.of("type", "string"));
+        if (includeExtra) {
+            properties.put("segment", Map.of("type", "string"));
+        }
+        return properties;
     }
 
     private static GraphDraft resourceEligibilityDraft(List<GraphDraft.DraftEdge> edges) {
@@ -452,6 +522,41 @@ class VisualConnectionCheckServiceTest {
                 edges,
                 Map.of(),
                 new GraphDraft.OutputSelection("eligibility", "")
+        );
+    }
+
+    private static GraphDraft applicantObjectDraft() {
+        return new GraphDraft(
+                "",
+                "",
+                0,
+                "objectConnectionCheck",
+                "",
+                "",
+                "",
+                "",
+                null,
+                List.of(
+                        new GraphDraft.DraftNode(
+                                "applicantProducer",
+                                "risk:applicantObjectProducer",
+                                "",
+                                Map.of(),
+                                Map.of(),
+                                null
+                        ),
+                        new GraphDraft.DraftNode(
+                                "applicantConsumer",
+                                "risk:applicantObjectConsumer",
+                                "",
+                                Map.of(),
+                                Map.of(),
+                                null
+                        )
+                ),
+                List.of(),
+                Map.of(),
+                new GraphDraft.OutputSelection("applicantConsumer", "")
         );
     }
 

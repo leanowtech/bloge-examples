@@ -886,7 +886,10 @@ public class GraphDraftValidator {
             }
             current = objectProperty(properties.get(segment));
             if (current == null) {
-                return allowsAdditionalProperties(currentSchema) ? Map.of() : null;
+                current = additionalPropertySchema(currentSchema);
+                if (current == null) {
+                    return null;
+                }
             }
             currentSchema = current;
             properties = propertiesOf(currentSchema);
@@ -1080,6 +1083,61 @@ public class GraphDraftValidator {
                 return nested;
             }
         }
+        Object targetAdditional = targetSchema.get("additionalProperties");
+        for (Map.Entry<String, Object> entry : sourceProperties.entrySet()) {
+            String propertyName = entry.getKey();
+            String childPath = appendCompatibilityPath(path, propertyName);
+            Map<String, Object> sourceProperty = objectProperty(entry.getValue());
+            if (sourceProperty == null) {
+                continue;
+            }
+            Map<String, Object> targetProperty = objectProperty(targetProperties.get(propertyName));
+            if (targetProperty != null) {
+                Optional<String> nested = schemaCompatibilityIssue(sourceProperty, targetProperty, childPath);
+                if (nested.isPresent()) {
+                    return nested;
+                }
+            } else if (Boolean.FALSE.equals(targetAdditional)) {
+                return Optional.of(reasonAt(childPath,
+                        "source object declares additional field '%s' but target additionalProperties=false"
+                                .formatted(propertyName)));
+            } else if (targetAdditional instanceof Map<?, ?> additionalSchema) {
+                Optional<String> nested = schemaCompatibilityIssue(sourceProperty, objectProperty(additionalSchema),
+                        childPath);
+                if (nested.isPresent()) {
+                    return nested;
+                }
+            }
+        }
+        Optional<String> additionalPolicyIssue = additionalPropertiesCompatibilityIssue(sourceSchema, targetAdditional,
+                path);
+        if (additionalPolicyIssue.isPresent()) {
+            return additionalPolicyIssue;
+        }
+        return Optional.empty();
+    }
+
+    private static Optional<String> additionalPropertiesCompatibilityIssue(Map<String, Object> sourceSchema,
+                                                                           Object targetAdditional,
+                                                                           String path) {
+        Object sourceAdditional = sourceSchema.get("additionalProperties");
+        if (Boolean.FALSE.equals(targetAdditional)) {
+            return Boolean.FALSE.equals(sourceAdditional)
+                    ? Optional.empty()
+                    : Optional.of(reasonAt(path,
+                    "source object allows undeclared additional fields but target additionalProperties=false"));
+        }
+        if (targetAdditional instanceof Map<?, ?> targetAdditionalSchema) {
+            if (sourceAdditional == null || Boolean.TRUE.equals(sourceAdditional)) {
+                return Optional.of(reasonAt(path,
+                        "source object allows unconstrained additional fields but target additionalProperties requires %s"
+                                .formatted(schemaTypeLabel(objectProperty(targetAdditionalSchema)))));
+            }
+            if (sourceAdditional instanceof Map<?, ?> sourceAdditionalSchema) {
+                return schemaCompatibilityIssue(objectProperty(sourceAdditionalSchema),
+                        objectProperty(targetAdditionalSchema), appendCompatibilityPath(path, "additionalProperties"));
+            }
+        }
         return Optional.empty();
     }
 
@@ -1237,9 +1295,15 @@ public class GraphDraftValidator {
         return new OperatorDefinition.Port(name, SchemaEnvelope.opaque(), false, "Implicit opaque port.");
     }
 
-    private static boolean allowsAdditionalProperties(Map<String, Object> schema) {
+    private static Map<String, Object> additionalPropertySchema(Map<String, Object> schema) {
         Object additional = schema.get("additionalProperties");
-        return Boolean.TRUE.equals(additional) || additional instanceof Map<?, ?>;
+        if (Boolean.TRUE.equals(additional)) {
+            return Map.of();
+        }
+        if (additional instanceof Map<?, ?> additionalSchema) {
+            return objectProperty(additionalSchema);
+        }
+        return null;
     }
 
     private static boolean constantValueMatchesSchema(Object value, Map<String, Object> schema) {

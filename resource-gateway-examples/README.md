@@ -130,7 +130,10 @@ root/field overlaps such as binding the whole `customer` port and then binding
 `customer.id` separately.
 Object bindings and edges compare required nested fields, so an applicant object
 without required `tier` cannot feed an input requiring `applicant.tier`, even
-when `tier` exists only as an optional source field. Array bindings
+when `tier` exists only as an optional source field. Whole-object bindings also
+compare all overlapping declared fields, reject source-declared or dynamically
+allowed extra fields when the target object has `additionalProperties=false`,
+and honor schema-shaped `additionalProperties` on both sides. Array bindings
 and edges compare item schemas, so `array<string>` cannot be wired into an input
 that requires `array<integer>`. Enum value domains are checked too: an output
 constrained to `LOW|HIGH` cannot feed an input constrained to `APPROVE|REJECT`,

@@ -974,6 +974,47 @@ class OperatorLibraryValidatorTest {
     }
 
     @Test
+    void acceptsTransformTemplateReferencesThroughAdditionalPropertiesSchema() {
+        OperatorDefinition operator = new OperatorDefinition(
+                "bloge.visualOperator.v1",
+                "risk:dynamicTemplateInput",
+                "1.0.0",
+                new OperatorDefinition.Display("Dynamic template input", "Test operator.", List.of("test")),
+                new OperatorDefinition.Source("user-library", "", "", "", true),
+                new OperatorDefinition.Ports(
+                        List.of(new OperatorDefinition.Port("inputs",
+                                new SchemaEnvelope(SchemaEnvelope.JSON_SCHEMA, "2020-12", Map.of(
+                                        "type", "object",
+                                        "properties", Map.of(),
+                                        "additionalProperties", Map.of(
+                                                "type", "object",
+                                                "properties", Map.of("score", Map.of("type", "integer")),
+                                                "required", List.of("score"),
+                                                "additionalProperties", false
+                                        )
+                                )),
+                                true,
+                                "Inputs.")),
+                        List.of(new OperatorDefinition.Port("output",
+                                SchemaEnvelope.object(Map.of("accepted", Map.of("type", "boolean")), List.of()),
+                                true,
+                                "Output."))
+                ),
+                SchemaEnvelope.opaque(),
+                OperatorDefinition.Capabilities.pure(),
+                new OperatorDefinition.Lowering("transform", "transform", Map.of(
+                        "assignments", Map.of("accepted", "{{input.customer.score}} >= 700")
+                )),
+                List.of()
+        );
+
+        VisualValidationResult result = validator.validate(libraryWith(operator));
+
+        assertThat(result.valid()).isTrue();
+        assertThat(result.diagnostics()).isEmpty();
+    }
+
+    @Test
     void rejectsTransformLoweringWithUnsupportedOutputPortShape() {
         OperatorDefinition operator = new OperatorDefinition(
                 "bloge.visualOperator.v1",

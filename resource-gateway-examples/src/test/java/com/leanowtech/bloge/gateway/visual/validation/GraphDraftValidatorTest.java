@@ -659,6 +659,46 @@ class GraphDraftValidatorTest {
     }
 
     @Test
+    void acceptsContextPathBindingThroughTypedAdditionalPropertiesSchema() {
+        GraphDraftValidator validator = new GraphDraftValidator(
+                VisualCatalogTestSupport.catalogWithLibrary(
+                        VisualCatalogTestSupport.eligibilityLibrary("integer")));
+        GraphDraft draft = contextEligibilityDraft(dynamicAdditionalGraphInputSchema(Map.of("type", "integer")),
+                Map.of(
+                        "score", GraphDraft.Binding.contextPath("dynamicScore"),
+                        "amount", GraphDraft.Binding.constant(1000)
+                ));
+
+        VisualValidationResult result = validator.validate(draft);
+
+        assertThat(result.valid()).isTrue();
+    }
+
+    @Test
+    void rejectsContextPathBindingWhenAdditionalPropertiesSchemaTypeDoesNotMatch() {
+        GraphDraftValidator validator = new GraphDraftValidator(
+                VisualCatalogTestSupport.catalogWithLibrary(
+                        VisualCatalogTestSupport.eligibilityLibrary("integer")));
+        GraphDraft draft = contextEligibilityDraft(dynamicAdditionalGraphInputSchema(Map.of("type", "string")),
+                Map.of(
+                        "score", GraphDraft.Binding.contextPath("dynamicScore"),
+                        "amount", GraphDraft.Binding.constant(1000)
+                ));
+
+        VisualValidationResult result = validator.validate(draft);
+
+        assertThat(result.valid()).isFalse();
+        assertThat(result.diagnostics())
+                .anySatisfy(diagnostic -> {
+                    assertThat(diagnostic.code()).isEqualTo("visual.binding.typeMismatch");
+                    assertThat(diagnostic.message())
+                            .contains("ctx.dynamicScore")
+                            .contains("string")
+                            .contains("integer");
+                });
+    }
+
+    @Test
     void rejectsDraftWhenOperatorPolicyDoesNotAllowEnvironment() {
         GraphDraftValidator validator = new GraphDraftValidator(
                 VisualCatalogTestSupport.catalogWithLibrary(
@@ -1539,10 +1579,73 @@ class GraphDraftValidatorTest {
         GraphDraftValidator validator = new GraphDraftValidator(
                 VisualCatalogTestSupport.catalogWithLibrary(
                         VisualCatalogTestSupport.objectCompatibilityLibrary(
+                                applicantProperties("integer", false),
+                                List.of("score", "tier"),
+                                applicantProperties("integer", false),
+                                List.of("score", "tier"))));
+        GraphDraft draft = objectCompatibilityDraft();
+
+        VisualValidationResult result = validator.validate(draft);
+
+        assertThat(result.valid()).isTrue();
+    }
+
+    @Test
+    void rejectsObjectBindingWhenSourceDeclaresAdditionalFieldForStrictTarget() {
+        GraphDraftValidator validator = new GraphDraftValidator(
+                VisualCatalogTestSupport.catalogWithLibrary(
+                        VisualCatalogTestSupport.objectCompatibilityLibrary(
                                 applicantProperties("integer", true),
                                 List.of("score", "tier"),
                                 applicantProperties("integer", false),
                                 List.of("score", "tier"))));
+        GraphDraft draft = objectCompatibilityDraft();
+
+        VisualValidationResult result = validator.validate(draft);
+
+        assertThat(result.valid()).isFalse();
+        assertThat(result.diagnostics())
+                .extracting("code")
+                .contains("visual.binding.typeMismatch", "visual.edge.typeMismatch");
+        assertThat(result.diagnostics())
+                .anySatisfy(diagnostic -> assertThat(diagnostic.message())
+                        .contains("at 'segment'")
+                        .contains("source object declares additional field 'segment'")
+                        .contains("additionalProperties=false"));
+    }
+
+    @Test
+    void rejectsObjectBindingWhenSourceAllowsDynamicAdditionalFieldsForStrictTarget() {
+        GraphDraftValidator validator = new GraphDraftValidator(
+                VisualCatalogTestSupport.catalogWithLibrary(
+                        objectCompatibilityLibraryWithApplicantSchemas(
+                                applicantSchema(applicantProperties("integer", false),
+                                        List.of("score", "tier"), true),
+                                applicantSchema(applicantProperties("integer", false),
+                                        List.of("score", "tier"), false))));
+        GraphDraft draft = objectCompatibilityDraft();
+
+        VisualValidationResult result = validator.validate(draft);
+
+        assertThat(result.valid()).isFalse();
+        assertThat(result.diagnostics())
+                .extracting("code")
+                .contains("visual.binding.typeMismatch", "visual.edge.typeMismatch");
+        assertThat(result.diagnostics())
+                .anySatisfy(diagnostic -> assertThat(diagnostic.message())
+                        .contains("source object allows undeclared additional fields")
+                        .contains("additionalProperties=false"));
+    }
+
+    @Test
+    void acceptsObjectBindingWhenAdditionalPropertySchemasAreCompatible() {
+        GraphDraftValidator validator = new GraphDraftValidator(
+                VisualCatalogTestSupport.catalogWithLibrary(
+                        objectCompatibilityLibraryWithApplicantSchemas(
+                                applicantSchema(applicantProperties("integer", false),
+                                        List.of("score", "tier"), Map.of("type", "integer")),
+                                applicantSchema(applicantProperties("integer", false),
+                                        List.of("score", "tier"), Map.of("type", "number")))));
         GraphDraft draft = objectCompatibilityDraft();
 
         VisualValidationResult result = validator.validate(draft);
@@ -2192,6 +2295,14 @@ class GraphDraftValidatorTest {
         return SchemaEnvelope.object(properties, required);
     }
 
+    private static SchemaEnvelope dynamicAdditionalGraphInputSchema(Object additionalProperties) {
+        return new SchemaEnvelope(SchemaEnvelope.JSON_SCHEMA, "2020-12", Map.of(
+                "type", "object",
+                "properties", Map.of(),
+                "additionalProperties", additionalProperties
+        ));
+    }
+
     private static GraphDraft multiOutputEligibilityDraft(GraphDraft.Binding scoreBinding) {
         return new GraphDraft(
                 "",
@@ -2487,6 +2598,84 @@ class GraphDraftValidatorTest {
             properties.put("segment", Map.of("type", "string"));
         }
         return properties;
+    }
+
+    private static Map<String, Object> applicantSchema(Map<String, Object> properties,
+                                                       List<String> required,
+                                                       Object additionalProperties) {
+        Map<String, Object> schema = new LinkedHashMap<>();
+        schema.put("type", "object");
+        schema.put("properties", properties);
+        schema.put("required", required);
+        schema.put("additionalProperties", additionalProperties);
+        return schema;
+    }
+
+    private static OperatorLibrary objectCompatibilityLibraryWithApplicantSchemas(
+            Map<String, Object> sourceApplicantSchema,
+            Map<String, Object> targetApplicantSchema) {
+        Map<String, Object> sourceOutputProperties = new LinkedHashMap<>();
+        sourceOutputProperties.put("applicant", sourceApplicantSchema);
+        OperatorDefinition producer = new OperatorDefinition(
+                "bloge.visualOperator.v1",
+                "risk:applicantObjectProducer",
+                "1.0.0",
+                new OperatorDefinition.Display("Applicant object producer",
+                        "Produces applicant facts as a nested object.",
+                        List.of("risk", "object")),
+                new OperatorDefinition.Source("user-library", "", "", "", false),
+                new OperatorDefinition.Ports(
+                        List.of(),
+                        List.of(new OperatorDefinition.Port("output",
+                                SchemaEnvelope.object(sourceOutputProperties, List.of()),
+                                true,
+                                "Applicant object output."))
+                ),
+                SchemaEnvelope.opaque(),
+                OperatorDefinition.Capabilities.pure(),
+                new OperatorDefinition.Lowering("native", "riskApplicantObjectProducer", Map.of()),
+                List.of()
+        );
+
+        Map<String, Object> targetInputProperties = new LinkedHashMap<>();
+        targetInputProperties.put("applicant", targetApplicantSchema);
+        Map<String, Object> targetOutputProperties = new LinkedHashMap<>();
+        targetOutputProperties.put("accepted", Map.of("type", "boolean"));
+        OperatorDefinition consumer = new OperatorDefinition(
+                "bloge.visualOperator.v1",
+                "risk:applicantObjectConsumer",
+                "1.0.0",
+                new OperatorDefinition.Display("Applicant object consumer",
+                        "Consumes applicant facts as a nested object.",
+                        List.of("risk", "object")),
+                new OperatorDefinition.Source("user-library", "", "", "", true),
+                new OperatorDefinition.Ports(
+                        List.of(new OperatorDefinition.Port("inputs",
+                                SchemaEnvelope.object(targetInputProperties, List.of("applicant")),
+                                true,
+                                "Applicant object input.")),
+                        List.of(new OperatorDefinition.Port("output",
+                                SchemaEnvelope.object(targetOutputProperties, List.of()),
+                                true,
+                                "Consumer output."))
+                ),
+                SchemaEnvelope.opaque(),
+                OperatorDefinition.Capabilities.pure(),
+                new OperatorDefinition.Lowering("transform", "transform", Map.of(
+                        "assignments", Map.of("accepted", "true")
+                )),
+                List.of()
+        );
+
+        return new OperatorLibrary(
+                "bloge.visualOperatorLibrary.v1",
+                "risk-object-compatibility",
+                "Object compatibility operators",
+                "1.0.0",
+                "risk-team",
+                "ACTIVE",
+                List.of(producer, consumer)
+        );
     }
 
     private static GraphDraft configurablePolicyDraft(Map<String, Object> config) {

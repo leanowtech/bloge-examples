@@ -4894,16 +4894,26 @@ function schemaAtPath(schemaEnvelope, path) {
     if (!segment) continue;
     const properties = current.properties || {};
     if (!Object.prototype.hasOwnProperty.call(properties, segment)) {
-      return allowsAdditionalProperties(current) ? {} : null;
+      const additional = additionalPropertySchema(current);
+      if (!additional) {
+        return null;
+      }
+      current = additional;
+      continue;
     }
     current = properties[segment] || {};
   }
   return current;
 }
 
-function allowsAdditionalProperties(schema) {
-  return schema?.additionalProperties === true
-    || (schema?.additionalProperties && typeof schema.additionalProperties === 'object');
+function additionalPropertySchema(schema) {
+  const additional = schema?.additionalProperties;
+  if (additional === true) {
+    return {};
+  }
+  return additional && typeof additional === 'object' && !Array.isArray(additional)
+    ? additional
+    : null;
 }
 
 function currentGraphInputSchema(builder = state.builder) {
@@ -5507,6 +5517,39 @@ function objectSchemaCompatibilityIssue(sourceSchema, targetSchema, path = '') {
     const nested = schemaCompatibilityIssue(sourceProperty, targetProperty, childPath);
     if (nested) {
       return nested;
+    }
+  }
+  const targetAdditional = targetSchema?.additionalProperties;
+  for (const [propertyName, sourceProperty] of Object.entries(sourceProperties)) {
+    const childPath = appendCompatibilityPath(path, propertyName);
+    const targetProperty = targetProperties[propertyName];
+    if (targetProperty) {
+      const nested = schemaCompatibilityIssue(sourceProperty, targetProperty, childPath);
+      if (nested) {
+        return nested;
+      }
+    } else if (targetAdditional === false) {
+      return reasonAt(childPath, `source object declares additional field '${propertyName}' but target additionalProperties=false`);
+    } else if (targetAdditional && typeof targetAdditional === 'object') {
+      const nested = schemaCompatibilityIssue(sourceProperty, targetAdditional, childPath);
+      if (nested) {
+        return nested;
+      }
+    }
+  }
+  const sourceAdditional = sourceSchema?.additionalProperties;
+  if (targetAdditional === false && sourceAdditional !== false) {
+    return reasonAt(path, 'source object allows undeclared additional fields but target additionalProperties=false');
+  }
+  if (targetAdditional && typeof targetAdditional === 'object') {
+    if (sourceAdditional === undefined || sourceAdditional === true) {
+      return reasonAt(path, `source object allows unconstrained additional fields but target additionalProperties requires ${schemaType(targetAdditional)}`);
+    }
+    if (sourceAdditional && typeof sourceAdditional === 'object') {
+      const nested = schemaCompatibilityIssue(sourceAdditional, targetAdditional, appendCompatibilityPath(path, 'additionalProperties'));
+      if (nested) {
+        return nested;
+      }
     }
   }
   return '';

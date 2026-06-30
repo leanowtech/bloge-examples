@@ -438,7 +438,10 @@ public class OperatorLibraryValidator {
             }
             current = objectProperty(propertiesOf(currentSchema).get(segment));
             if (current == null) {
-                return allowsAdditionalProperties(currentSchema) ? Map.of() : null;
+                current = additionalPropertySchema(currentSchema);
+                if (current == null) {
+                    return null;
+                }
             }
             currentSchema = current;
         }
@@ -508,9 +511,15 @@ public class OperatorLibraryValidator {
         return copy;
     }
 
-    private static boolean allowsAdditionalProperties(Map<String, Object> schema) {
+    private static Map<String, Object> additionalPropertySchema(Map<String, Object> schema) {
         Object additional = schema.get("additionalProperties");
-        return Boolean.TRUE.equals(additional) || additional instanceof Map<?, ?>;
+        if (Boolean.TRUE.equals(additional)) {
+            return Map.of();
+        }
+        if (additional instanceof Map<?, ?> additionalSchema) {
+            return objectProperty(additionalSchema);
+        }
+        return null;
     }
 
     private static void validateDslSchemaPropertyNames(OperatorDefinition operator,
