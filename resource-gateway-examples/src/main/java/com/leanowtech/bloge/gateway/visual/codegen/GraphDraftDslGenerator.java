@@ -691,8 +691,8 @@ public class GraphDraftDslGenerator {
                                               String path,
                                               List<VisualDiagnostic> diagnostics) {
         return switch (binding.kind()) {
-            case "contextPath" -> pathExpression("ctx", binding.path());
-            case "nodePath" -> nodePathExpression(binding, nodesById);
+            case "contextPath" -> pathExpression("ctx", binding.path(), path + "/path", diagnostics);
+            case "nodePath" -> nodePathExpression(binding, nodesById, path, diagnostics);
             case "expression" -> binding.expr().isBlank() ? "{}" : binding.expr();
             case "objectTemplate" -> renderObjectBindings(binding.fields(), nodesById, path + "/fields",
                     diagnostics);
@@ -701,7 +701,9 @@ public class GraphDraftDslGenerator {
     }
 
     private static String nodePathExpression(GraphDraft.Binding binding,
-                                             Map<String, GraphDraft.DraftNode> nodesById) {
+                                             Map<String, GraphDraft.DraftNode> nodesById,
+                                             String path,
+                                             List<VisualDiagnostic> diagnostics) {
         GraphDraft.DraftNode source = nodesById.get(binding.nodeId());
         String base = binding.nodeId() + ".output";
         String sourcePort = binding.sourcePort();
@@ -711,7 +713,7 @@ public class GraphDraftDslGenerator {
         } else if (!sourcePort.isBlank() && !"output".equals(sourcePort)) {
             base += "." + sourcePort;
         }
-        return pathExpression(base, binding.path());
+        return pathExpression(base, binding.path(), path + "/path", diagnostics);
     }
 
     private static String pathExpression(String base, String path) {
@@ -720,6 +722,32 @@ public class GraphDraftDslGenerator {
         }
         String normalized = path.startsWith(".") ? path.substring(1) : path;
         return base + "." + normalized;
+    }
+
+    private static String pathExpression(String base,
+                                         String path,
+                                         String diagnosticPath,
+                                         List<VisualDiagnostic> diagnostics) {
+        validateDslPathSegments(path, diagnosticPath, diagnostics);
+        return pathExpression(base, path);
+    }
+
+    private static void validateDslPathSegments(String path,
+                                                String diagnosticPath,
+                                                List<VisualDiagnostic> diagnostics) {
+        if (path == null || path.isBlank()) {
+            return;
+        }
+        String normalized = path.startsWith(".") ? path.substring(1) : path;
+        for (String segment : normalized.split("\\.")) {
+            if (segment.isBlank() || isDslFieldName(segment)) {
+                continue;
+            }
+            diagnostics.add(VisualDiagnostic.error("visual.codegen.pathSegment.invalid",
+                    "Binding path segment '%s' in '%s' cannot be rendered as a BLOGE DSL path segment."
+                            .formatted(segment, path),
+                    diagnosticPath));
+        }
     }
 
     private static String expressionFromObject(Object raw,

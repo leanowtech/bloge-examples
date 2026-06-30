@@ -6,8 +6,10 @@ import com.leanowtech.bloge.gateway.ResourceGatewayApplication;
 import com.leanowtech.bloge.gateway.gateway.GatewayProperties;
 import com.leanowtech.bloge.gateway.gateway.ResourceDescriptorBootstrap;
 import com.leanowtech.bloge.gateway.resource.WritableResourceRegistry;
+import com.leanowtech.bloge.gateway.visual.catalog.OperatorDefinition;
 import com.leanowtech.bloge.gateway.visual.catalog.OperatorLibrary;
 import com.leanowtech.bloge.gateway.visual.catalog.VisualCatalogTestSupport;
+import com.leanowtech.bloge.gateway.visual.model.SchemaEnvelope;
 
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Assumptions;
@@ -33,6 +35,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
 import java.util.List;
+import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -383,6 +386,64 @@ class VisualAuthoringBrowserDomTest {
         assertThat(valueOf(By.id("draft-select"))).isEmpty();
     }
 
+    @Test
+    void composerHidesDslUnsafeSchemaPathFieldsInRealBrowser() throws JsonProcessingException {
+        driver = newChromeDriverOrSkip();
+        WebDriverWait wait = new WebDriverWait(driver, WAIT_TIMEOUT);
+        driver.get("http://localhost:" + port + "/examples/gateway");
+
+        waitForComposer(wait);
+        wait.until(ExpectedConditions.visibilityOfElementLocated(By.id("operator-palette")));
+
+        setControlValue(driver.findElement(By.id("graph-input-schema")), """
+                {
+                  "type": "object",
+                  "properties": {
+                    "customer-id": { "type": "integer" },
+                    "safeScore": { "type": "integer" }
+                  },
+                  "required": ["customer-id"]
+                }
+                """);
+        waitForText(wait, By.id("graph-input-schema-diagnostics"), "visual.inputSchema.dslField.invalid");
+
+        setControlValue(driver.findElement(By.id("graph-input-schema")), """
+                {
+                  "type": "object",
+                  "properties": {
+                    "safeScore": { "type": "integer" }
+                  },
+                  "additionalProperties": true
+                }
+                """);
+        waitForText(wait, By.id("graph-input-schema-status"), "Graph input schema is valid");
+        setControlValue(driver.findElement(By.id("composer-context")), """
+                {
+                  "safeScore": 720,
+                  "customer-id": 730
+                }
+                """);
+
+        importSampleOperatorLibrary(wait);
+        dragOperatorToCanvas(wait, "Eligibility", "risk:eligibility", "riskEligibility", 140, 120);
+        List<String> scoreSourceOptions = driver.findElements(By.cssSelector(
+                        "[data-binding-source][data-binding-path='score'] option"))
+                .stream()
+                .map(WebElement::getText)
+                .toList();
+        assertThat(scoreSourceOptions).anyMatch(option -> option.contains("ctx.safeScore"));
+        assertThat(scoreSourceOptions).noneMatch(option -> option.contains("ctx.customer-id"));
+
+        importOperatorLibrary(wait, unsafeOutputLibrary());
+        dragOperatorToCanvas(wait, "Unsafe facts", "risk:unsafeFacts", "riskUnsafeFacts", 140, 120);
+        wait.until(ExpectedConditions.visibilityOfElementLocated(
+                By.cssSelector("#diagram [data-node-id='riskUnsafeFacts'] [data-port-role='source'][data-path='safeId']")
+        ));
+        assertThat(driver.findElements(By.cssSelector(
+                "#diagram [data-node-id='riskUnsafeFacts'] [data-port-role='source'][data-path='customer-id']")))
+                .isEmpty();
+    }
+
     private WebDriver newChromeDriverOrSkip() {
         ChromeOptions options = new ChromeOptions();
         options.addArguments(
@@ -420,6 +481,41 @@ class VisualAuthoringBrowserDomTest {
         waitForAnyText(wait, By.id("library-status"),
                 "Imported " + library.libraryId(),
                 "Replaced " + library.libraryId());
+    }
+
+    private static OperatorLibrary unsafeOutputLibrary() {
+        OperatorDefinition operator = new OperatorDefinition(
+                "bloge.visualOperator.v1",
+                "risk:unsafeFacts",
+                "1.0.0",
+                new OperatorDefinition.Display("Unsafe facts",
+                        "Produces both DSL-safe and unsafe output field names.",
+                        List.of("risk", "facts")),
+                new OperatorDefinition.Source("user-library", "", "", "", true),
+                new OperatorDefinition.Ports(
+                        List.of(),
+                        List.of(new OperatorDefinition.Port("output",
+                                SchemaEnvelope.object(Map.of(
+                                        "safeId", Map.of("type", "string"),
+                                        "customer-id", Map.of("type", "string")
+                                ), List.of()),
+                                true,
+                                "Facts output."))
+                ),
+                SchemaEnvelope.opaque(),
+                OperatorDefinition.Capabilities.pure(),
+                new OperatorDefinition.Lowering("native", "riskUnsafeFacts", Map.of()),
+                List.of()
+        );
+        return new OperatorLibrary(
+                "bloge.visualOperatorLibrary.v1",
+                "risk-unsafe-output",
+                "Risk unsafe output operators",
+                "1.0.0",
+                "risk-team",
+                "ACTIVE",
+                List.of(operator)
+        );
     }
 
     private void dragOperatorToCanvas(WebDriverWait wait, String searchText, String operatorType,

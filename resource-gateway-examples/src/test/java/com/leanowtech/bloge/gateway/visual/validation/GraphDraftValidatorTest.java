@@ -187,6 +187,33 @@ class GraphDraftValidatorTest {
     }
 
     @Test
+    void rejectsGraphInputSchemaAndBindingsThatCannotRenderAsDslPathSegments() {
+        GraphDraftValidator validator = new GraphDraftValidator(
+                VisualCatalogTestSupport.catalogWithLibrary(
+                        VisualCatalogTestSupport.eligibilityLibrary("integer")));
+        SchemaEnvelope inputSchema = graphInputSchema(Map.of(
+                "customer-id", Map.of("type", "integer"),
+                "amount", Map.of("type", "number")
+        ), List.of("customer-id", "amount"));
+        GraphDraft draft = contextEligibilityDraft(inputSchema, Map.of(
+                "score", GraphDraft.Binding.contextPath("customer-id"),
+                "amount", GraphDraft.Binding.contextPath("amount")
+        ));
+
+        VisualValidationResult result = validator.validate(draft);
+
+        assertThat(result.valid()).isFalse();
+        assertThat(result.diagnostics())
+                .extracting("code", "target")
+                .contains(
+                        org.assertj.core.groups.Tuple.tuple("visual.inputSchema.dslField.invalid",
+                                "/inputSchema/schema/properties/customer-id"),
+                        org.assertj.core.groups.Tuple.tuple("visual.binding.pathSegment.invalid",
+                                "/nodes/0/inputs/score/path")
+                );
+    }
+
+    @Test
     void rejectsGraphInputSchemaWithRequiredPathMissingFromProperties() {
         GraphDraftValidator validator = new GraphDraftValidator(
                 VisualCatalogTestSupport.catalogWithLibrary(

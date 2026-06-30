@@ -26,6 +26,16 @@ const DEFAULT_COMPOSER_CONTEXT = {
   segment: 'existing'
 };
 
+const DSL_FIELD_IDENTIFIER = /^[A-Za-z_][A-Za-z0-9_]*$/;
+const RESERVED_DSL_FIELD_NAMES = new Set([
+  'graph', 'node', 'branch', 'decision_table', 'on', 'input', 'depends_on',
+  'timeout', 'retry', 'fallback', 'execution_mode', 'worker_topic', 'compensate',
+  'saga', 'true', 'false', 'schema', 'output', 'otherwise', 'when', 'transform',
+  'foreach', 'sequential', 'in', 'loop', 'parallel', 'until', 'carry', 'wait',
+  'after', 'await', 'event', 'where', 'mode', 'stream', 'streaming', 'buffer',
+  'let', 'import', 'as', 'script', 'exit', 'exhausted'
+]);
+
 const DEFAULT_COMPOSER_DECISION_TABLE = {
   title: 'LoanPolicy',
   hitPolicy: 'unique',
@@ -1298,7 +1308,8 @@ function connectionSourceFromExpression(expression, builder = state.builder) {
   return {
     nodeId: match[1],
     port: match[2] ? 'payload' : 'output',
-    path: match[3] || ''
+    path: match[3] || '',
+    dslPathSafe: isDslPathSafe(match[3] || '')
   };
 }
 
@@ -4729,11 +4740,15 @@ function schemaFieldDescriptors(schemaEnvelope) {
 }
 
 function schemaDefaultInputFields(schemaEnvelope) {
-  const fields = schemaFieldDescriptors(schemaEnvelope);
+  const fields = dslSafeSchemaFieldDescriptors(schemaEnvelope);
   const leafFields = fields.filter((field) => !hasSchemaProperties(field.schema));
   const preferred = leafFields.length ? leafFields : fields;
   const required = preferred.filter((field) => field.required);
   return required.length ? required : preferred;
+}
+
+function dslSafeSchemaFieldDescriptors(schemaEnvelope) {
+  return schemaFieldDescriptors(schemaEnvelope).filter((field) => field.dslPathSafe);
 }
 
 function schemaFieldsFromSchema(schema, prefix, parentRequired) {
@@ -4745,10 +4760,30 @@ function schemaFieldsFromSchema(schema, prefix, parentRequired) {
     const fieldRequired = parentRequired && required.has(name);
     const hasNestedRequired = Array.isArray(normalizedSchema.required) && normalizedSchema.required.length > 0;
     return [
-      { path, schema: normalizedSchema, required: fieldRequired && !hasNestedRequired },
+      {
+        path,
+        schema: normalizedSchema,
+        required: fieldRequired && !hasNestedRequired,
+        dslPathSafe: isDslPathSafe(path)
+      },
       ...schemaFieldsFromSchema(normalizedSchema, path, fieldRequired)
     ];
   });
+}
+
+function isDslPathSafe(path) {
+  if (!path) {
+    return true;
+  }
+  const normalized = String(path).startsWith('.') ? String(path).slice(1) : String(path);
+  return normalized.split('.')
+    .filter(Boolean)
+    .every((segment) => isDslFieldName(segment));
+}
+
+function isDslFieldName(value) {
+  const text = String(value || '');
+  return DSL_FIELD_IDENTIFIER.test(text) && !RESERVED_DSL_FIELD_NAMES.has(text);
 }
 
 function hasSchemaProperties(schema) {
@@ -5899,15 +5934,16 @@ function sourceHandlesForNode(node) {
       type: schemaType(port.schema?.schema),
       schema: port.schema?.schema || {}
     };
-    const fields = schemaFieldDescriptors(port.schema);
+    const fields = dslSafeSchemaFieldDescriptors(port.schema);
     return [
-      root,
+      { ...root, dslPathSafe: true },
       ...fields.map((field) => ({
         nodeId: node.id,
         port: portName,
         path: field.path,
         type: schemaType(field.schema),
-        schema: field.schema
+        schema: field.schema,
+        dslPathSafe: true
       }))
     ];
   });
@@ -5970,14 +6006,15 @@ function targetHandlesForNode(node) {
   if (node.type === 'httpResource') {
     return inputPortsForSpec(spec).flatMap((port) => {
       const portName = port.name || spec.inputPort || 'params';
-      const fields = schemaFieldDescriptors(port.schema);
+      const fields = dslSafeSchemaFieldDescriptors(port.schema);
       const targets = fields.length
         ? fields
         : Object.keys(resourceParamInputs(node, spec)).map((path) => ({
           path,
           schema: schemaAtPath(port.schema, path) || {},
-          required: requiredInputNamesForPort(port).includes(path)
-        }));
+          required: requiredInputNamesForPort(port).includes(path),
+          dslPathSafe: isDslPathSafe(path)
+        })).filter((field) => field.dslPathSafe);
       return targets.map((field) => ({
         nodeId: node.id,
         port: portName,
@@ -5985,7 +6022,8 @@ function targetHandlesForNode(node) {
         path: field.path,
         type: schemaType(field.schema),
         schema: field.schema,
-        required: field.required
+        required: field.required,
+        dslPathSafe: true
       }));
     });
   }
@@ -5998,14 +6036,15 @@ function targetHandlesForNode(node) {
   if (node.type === 'customOperator') {
     return inputPortsForSpec(spec).flatMap((port) => {
       const portName = port.name || spec.inputPort || 'inputs';
-      const fields = schemaFieldDescriptors(port.schema);
+      const fields = dslSafeSchemaFieldDescriptors(port.schema);
       const targets = fields.length
         ? fields
         : Object.keys(node.customInputs || {}).map((path) => ({
           path,
           schema: schemaAtPath(port.schema, path) || {},
-          required: requiredInputNamesForPort(port).includes(path)
-        }));
+          required: requiredInputNamesForPort(port).includes(path),
+          dslPathSafe: isDslPathSafe(path)
+        })).filter((field) => field.dslPathSafe);
       return [
         {
           nodeId: node.id,
@@ -6014,7 +6053,8 @@ function targetHandlesForNode(node) {
           path: '',
           type: schemaType(port.schema?.schema),
           schema: port.schema?.schema || {},
-          required: Boolean(port.required) && !targets.some((field) => field.required)
+          required: Boolean(port.required) && !targets.some((field) => field.required),
+          dslPathSafe: true
         },
         ...targets.map((field) => ({
           nodeId: node.id,
@@ -6023,7 +6063,8 @@ function targetHandlesForNode(node) {
           path: field.path,
           type: schemaType(field.schema),
           schema: field.schema,
-          required: field.required
+          required: field.required,
+          dslPathSafe: true
         }))
       ];
     });
@@ -6764,6 +6805,13 @@ function validateSchemaStructure(schema, path, diagnostics) {
       }
     }
     for (const [name, childSchema] of Object.entries(properties)) {
+      if (!isDslFieldName(name)) {
+        diagnostics.push(graphInputSchemaDiagnostic(
+          'visual.inputSchema.dslField.invalid',
+          `Graph inputSchema property '${name}' cannot be rendered as a BLOGE DSL path segment.`,
+          `${path}/properties/${name}`
+        ));
+      }
       if (!childSchema || typeof childSchema !== 'object' || Array.isArray(childSchema)) {
         diagnostics.push(graphInputSchemaDiagnostic(
           'visual.schema.propertyInvalid',
@@ -7867,7 +7915,7 @@ function contextSourceHandles(builder = state.builder) {
     ...dynamicContextFieldDescriptors(inputSchema)
   ]
     .filter((field) => {
-      if (!field.path || seen.has(field.path)) {
+      if (!field.path || !field.dslPathSafe || seen.has(field.path)) {
         return false;
       }
       seen.add(field.path);
@@ -7878,7 +7926,8 @@ function contextSourceHandles(builder = state.builder) {
       port: 'ctx',
       path: field.path,
       type: schemaType(field.schema),
-      schema: field.schema
+      schema: field.schema,
+      dslPathSafe: true
     }));
   return [
     {
@@ -7886,7 +7935,8 @@ function contextSourceHandles(builder = state.builder) {
       port: 'ctx',
       path: '',
       type: schemaType(inputSchema.schema),
-      schema: inputSchema.schema || {}
+      schema: inputSchema.schema || {},
+      dslPathSafe: true
     },
     ...fieldHandles
   ];
@@ -7917,7 +7967,7 @@ function collectDynamicContextFields(inputSchema, value, prefix, fields) {
     if (!schema) {
       continue;
     }
-    fields.push({ path, schema, required: false });
+    fields.push({ path, schema, required: false, dslPathSafe: isDslPathSafe(path) });
     collectDynamicContextFields(inputSchema, item, path, fields);
   }
 }
@@ -7929,7 +7979,8 @@ function contextSourceForPath(path, builder = state.builder) {
     port: 'ctx',
     path: path || '',
     type: schemaType(schema),
-    schema
+    schema,
+    dslPathSafe: isDslPathSafe(path || '')
   };
 }
 
@@ -8038,6 +8089,12 @@ function connectionCompatibility(source, target) {
       return { ok: false, message: 'Route targets require a route source handle.' };
     }
     return { ok: true, message: '' };
+  }
+  if (source.dslPathSafe === false) {
+    return { ok: false, message: `Source path '${source.path || source.port}' cannot be rendered as a BLOGE DSL path.` };
+  }
+  if (target.dslPathSafe === false) {
+    return { ok: false, message: `Target path '${target.path || target.port}' cannot be rendered as a BLOGE DSL path.` };
   }
   const sourceNode = state.builder.nodes.find((node) => node.id === source.nodeId);
   const targetNode = state.builder.nodes.find((node) => node.id === target.nodeId);

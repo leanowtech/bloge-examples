@@ -135,6 +135,7 @@ public class GraphDraftValidator {
         validateGraphIdentifier(draft.graphName(), diagnostics);
         diagnostics.addAll(VisualSecretGuard.detectDraftSecrets(draft));
         diagnostics.addAll(VisualSchemaValidator.validateEnvelope(draft.inputSchema(), "/inputSchema"));
+        validateGraphInputSchemaDslPathFields(draft.inputSchema(), diagnostics);
 
         Set<String> nodeIds = new HashSet<>();
         Map<String, GraphDraft.DraftNode> nodesById = new LinkedHashMap<>();
@@ -195,6 +196,41 @@ public class GraphDraftValidator {
         diagnostics.add(VisualDiagnostic.error("visual.node.id.invalid",
                 "Node id '%s' cannot be rendered as a BLOGE DSL identifier.".formatted(node.id()),
                 nodePath + "/id"));
+    }
+
+    private static void validateGraphInputSchemaDslPathFields(SchemaEnvelope schema,
+                                                              List<VisualDiagnostic> diagnostics) {
+        if (schema == null) {
+            return;
+        }
+        validateSchemaDslPathFields(schema.schema(), "/inputSchema/schema", diagnostics);
+    }
+
+    private static void validateSchemaDslPathFields(Map<String, Object> schema,
+                                                    String path,
+                                                    List<VisualDiagnostic> diagnostics) {
+        propertiesOf(schema).forEach((fieldName, rawProperty) -> {
+            String propertyPath = path + "/properties/" + fieldName;
+            if (!isDslFieldName(fieldName)) {
+                diagnostics.add(VisualDiagnostic.error("visual.inputSchema.dslField.invalid",
+                        "Graph inputSchema property '%s' cannot be rendered as a BLOGE DSL path segment."
+                                .formatted(fieldName),
+                        propertyPath));
+            }
+            Map<String, Object> property = objectProperty(rawProperty);
+            if (property != null) {
+                validateSchemaDslPathFields(property, propertyPath, diagnostics);
+            }
+        });
+
+        Map<String, Object> items = objectProperty(schema.get("items"));
+        if (items != null) {
+            validateSchemaDslPathFields(items, path + "/items", diagnostics);
+        }
+        List<Map<String, Object>> prefixItems = prefixItemsOf(schema);
+        for (int i = 0; i < prefixItems.size(); i++) {
+            validateSchemaDslPathFields(prefixItems.get(i), path + "/prefixItems/" + i, diagnostics);
+        }
     }
 
     private static void validateOperatorFingerprint(GraphDraft.DraftNode node,
@@ -723,6 +759,7 @@ public class GraphDraftValidator {
         }
 
         Map<String, Object> sourceProperty = propertyAtPath(sourcePort.get().schema(), binding.path());
+        validateDslPathSegments(binding.path(), targetPath + "/path", diagnostics);
         if (sourceProperty == null) {
             diagnostics.add(VisualDiagnostic.error("visual.binding.unknownOutputPath",
                     "Source node '%s' port '%s' output path does not exist: %s"
@@ -767,6 +804,7 @@ public class GraphDraftValidator {
                                                    String targetPath,
                                                    List<VisualDiagnostic> diagnostics) {
         Map<String, Object> sourceProperty = propertyAtPath(inputSchema, binding.path());
+        validateDslPathSegments(binding.path(), targetPath + "/path", diagnostics);
         if (sourceProperty == null) {
             diagnostics.add(VisualDiagnostic.error("visual.binding.unknownContextPath",
                     "Graph input path does not exist: ctx.%s".formatted(binding.path()),
@@ -2257,6 +2295,24 @@ public class GraphDraftValidator {
                         path + "/" + fieldName));
             }
         });
+    }
+
+    private static void validateDslPathSegments(String path,
+                                                String diagnosticPath,
+                                                List<VisualDiagnostic> diagnostics) {
+        if (path == null || path.isBlank()) {
+            return;
+        }
+        String normalized = path.startsWith(".") ? path.substring(1) : path;
+        for (String segment : normalized.split("\\.")) {
+            if (segment.isBlank() || isDslFieldName(segment)) {
+                continue;
+            }
+            diagnostics.add(VisualDiagnostic.error("visual.binding.pathSegment.invalid",
+                    "Binding path segment '%s' in '%s' cannot be rendered as a BLOGE DSL path segment."
+                            .formatted(segment, path),
+                    diagnosticPath));
+        }
     }
 
     private static void validateConfigObject(Object value,

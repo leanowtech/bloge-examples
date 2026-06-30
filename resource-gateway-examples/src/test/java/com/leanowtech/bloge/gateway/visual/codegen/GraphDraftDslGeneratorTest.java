@@ -159,6 +159,49 @@ class GraphDraftDslGeneratorTest {
     }
 
     @Test
+    void rejectsBindingPathsThatCannotRenderAsDslPathSegments() {
+        GraphDraftDslGenerator generator = new GraphDraftDslGenerator(
+                VisualCatalogTestSupport.catalogWithLibrary(
+                        VisualCatalogTestSupport.eligibilityLibrary("integer")));
+        GraphDraft draft = new GraphDraft(
+                "",
+                "",
+                0,
+                "eligibilityGraph",
+                "",
+                "",
+                "",
+                "",
+                null,
+                List.of(new GraphDraft.DraftNode(
+                        "eligibility",
+                        "risk:eligibility",
+                        "",
+                        Map.of(
+                                "score", GraphDraft.Binding.contextPath("customer-id"),
+                                "amount", GraphDraft.Binding.constant(1000)
+                        ),
+                        Map.of(),
+                        null
+                )),
+                List.of(),
+                Map.of(),
+                new GraphDraft.OutputSelection("eligibility", "")
+        );
+
+        DslGenerationResult result = generator.generate(draft);
+
+        assertThat(result.generated()).isFalse();
+        assertThat(result.diagnostics())
+                .filteredOn(diagnostic -> diagnostic.code().startsWith("visual.codegen."))
+                .extracting("code", "target")
+                .containsExactly(
+                        org.assertj.core.groups.Tuple.tuple("visual.codegen.pathSegment.invalid",
+                                "/nodes/eligibility/inputs/score/path")
+                );
+    }
+
+    @Test
     void lowersUserProvidedTransformOperator() {
         GraphDraftDslGenerator generator = new GraphDraftDslGenerator(
                 VisualCatalogTestSupport.catalogWithLibrary(
