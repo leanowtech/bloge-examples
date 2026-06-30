@@ -46,6 +46,9 @@ public class VisualConnectionCheckService {
 
         GraphDraft.DraftEdge edge = new GraphDraft.DraftEdge(PREVIEW_EDGE_ID, request.kind(),
                 request.source(), request.target());
+        if ("dependency".equals(edge.kind())) {
+            return checkDependencyEdge(request, edge);
+        }
         if (CONFIG_TARGET_PORT.equals(request.target().port())) {
             return checkConfigBinding(request, edge);
         }
@@ -88,6 +91,29 @@ public class VisualConnectionCheckService {
         List<VisualDiagnostic> diagnostics = validation.diagnostics().stream()
                 .filter(diagnostic -> relevantToConnection(diagnostic, previewIndex, bindingPath, operatorPath,
                         request, nodeIndexes))
+                .toList();
+        return new VisualConnectionCheckResult(diagnostics.stream().noneMatch(VisualDiagnostic::error),
+                edge, diagnostics);
+    }
+
+    private VisualConnectionCheckResult checkDependencyEdge(VisualConnectionCheckRequest request,
+                                                            GraphDraft.DraftEdge edge) {
+        if (hasSameConnection(request.draft(), edge)) {
+            return new VisualConnectionCheckResult(false, edge, List.of(
+                    VisualDiagnostic.error("visual.edge.duplicateConnection",
+                            "Connection '%s' is already represented by another edge."
+                                    .formatted(connectionLabel(edge)),
+                            "/edges/" + request.draft().edges().size())
+            ));
+        }
+
+        GraphDraft candidate = draftWithPreviewEdge(request.draft(), edge);
+        int previewIndex = candidate.edges().size() - 1;
+        Map<String, Integer> nodeIndexes = nodeIndexes(candidate);
+
+        VisualValidationResult validation = validator.validate(candidate);
+        List<VisualDiagnostic> diagnostics = validation.diagnostics().stream()
+                .filter(diagnostic -> relevantToDependencyEdge(diagnostic, previewIndex, request, nodeIndexes))
                 .toList();
         return new VisualConnectionCheckResult(diagnostics.stream().noneMatch(VisualDiagnostic::error),
                 edge, diagnostics);
@@ -414,6 +440,17 @@ public class VisualConnectionCheckService {
         String target = diagnostic.target();
         return targetAtOrBelow(target, configPath)
                 || targetAtOrBelow(target, operatorPath)
+                || endpointNodeDiagnostic(target, request.source().nodeId(), nodeIndexes)
+                || endpointNodeDiagnostic(target, request.target().nodeId(), nodeIndexes);
+    }
+
+    private static boolean relevantToDependencyEdge(VisualDiagnostic diagnostic,
+                                                    int previewIndex,
+                                                    VisualConnectionCheckRequest request,
+                                                    Map<String, Integer> nodeIndexes) {
+        String target = diagnostic.target();
+        return target.startsWith("/edges/" + previewIndex)
+                || "visual.edge.cycle".equals(diagnostic.code())
                 || endpointNodeDiagnostic(target, request.source().nodeId(), nodeIndexes)
                 || endpointNodeDiagnostic(target, request.target().nodeId(), nodeIndexes);
     }

@@ -860,6 +860,7 @@ function createDefaultBuilder() {
     inputSchema: defaultGraphInputSchema(),
     selectedId: 'loanPolicy',
     output: { nodeId: 'response', path: '' },
+    dependencyEdges: [],
     nodes: [
       {
         id: 'loanPolicy',
@@ -929,17 +930,34 @@ function builderEdges(builder = state.builder, options = {}) {
   const includeConfig = options.includeConfig === true;
   const add = (edge) => {
     if (!edge.source || !edge.target || edge.source === edge.target) return;
-    const key = [
-      edge.source,
-      edge.sourcePort || '',
-      edge.sourcePath || '',
-      edge.target,
-      edge.targetPort || '',
-      edge.targetPath || ''
-    ].join(':');
+    const kind = canonicalEdgeKind(edge.kind);
+    const key = kind === 'dependency'
+      ? [kind, edge.source, edge.target].join(':')
+      : [
+          kind,
+          edge.source,
+          edge.sourcePort || '',
+          edge.sourcePath || '',
+          edge.target,
+          edge.targetPort || '',
+          edge.targetPath || ''
+        ].join(':');
     if (edges.some((item) => item.key === key)) return;
-    edges.push({ key, label: '', ...edge });
+    edges.push({ key, label: '', ...edge, kind });
   };
+
+  for (const edge of builder.dependencyEdges || []) {
+    add({
+      kind: 'dependency',
+      source: edge.source,
+      target: edge.target,
+      sourcePort: edge.sourcePort || 'output',
+      sourcePath: edge.sourcePath || '',
+      targetPort: 'dependency',
+      targetPath: '',
+      label: edge.label || 'depends'
+    });
+  }
 
   const decisions = builder.nodes.filter((node) => node.type === 'decisionTable');
   const transforms = builder.nodes.filter((node) => node.type === 'transform');
@@ -1017,6 +1035,17 @@ function builderEdges(builder = state.builder, options = {}) {
     }
   }
   return edges.map(({ key, ...edge }) => edge);
+}
+
+function canonicalEdgeKind(kind) {
+  const value = String(kind || '').trim().toLowerCase();
+  if (!value || value === 'data') {
+    return 'data';
+  }
+  if (value === 'dependency' || value === 'dependson' || value === 'depends_on') {
+    return 'dependency';
+  }
+  return value;
 }
 
 function builderConfigBindings(node, builder = state.builder) {
@@ -3644,6 +3673,8 @@ function deleteSelectedBuilderNode() {
   const selected = selectedBuilderNode();
   if (!selected || state.builder.nodes.length <= 1) return;
   state.builder.nodes = state.builder.nodes.filter((node) => node.id !== selected.id);
+  state.builder.dependencyEdges = (state.builder.dependencyEdges || [])
+    .filter((edge) => edge.source !== selected.id && edge.target !== selected.id);
   state.builder.selectedId = orderedBuilderNodes()[0]?.id || null;
   state.selectedNodeId = state.builder.selectedId;
   if (selected.type === 'httpResource' && !state.builder.nodes.some((node) => node.type === 'httpResource')) {
@@ -3774,7 +3805,8 @@ function layoutFromBuilder(builder) {
     };
   });
   const edges = builderEdges(builder, { includeConfig: true }).map((edge) => ({
-    id: `${edge.source}:${edge.sourcePort || ''}.${edge.sourcePath || ''}->${edge.target}:${edge.targetPort || ''}.${edge.targetPath || ''}`,
+    id: `${edge.kind || 'data'}:${edge.source}:${edge.sourcePort || ''}.${edge.sourcePath || ''}->${edge.target}:${edge.targetPort || ''}.${edge.targetPath || ''}`,
+    kind: edge.kind || 'data',
     source: edge.source,
     target: edge.target,
     sourcePort: edge.sourcePort || '',
@@ -3840,13 +3872,14 @@ function builderToDsl(builder) {
 }
 
 function nodeToDsl(node, builder) {
+  const dependsOn = dependsOnDslLine(builder, node);
   if (node.type === 'httpResource') {
     const params = resourceParamInputs(node, specForNode(node));
     const paramBody = Object.entries(params)
       .map(([name, expression]) => `${name}: ${expression || 'null'}`)
       .join(', ');
     const executionConfig = commonExecutionConfigToDsl(node.config || {});
-    return `  node ${node.id} : httpResource {\n    input {\n      resourceId = ${quote(node.resourceId)}\n      params = { ${paramBody} }\n    }${executionConfig ? `\n${executionConfig}` : ''}\n  }`;
+    return `  node ${node.id} : httpResource {\n${dependsOn}    input {\n      resourceId = ${quote(node.resourceId)}\n      params = { ${paramBody} }\n    }${executionConfig ? `\n${executionConfig}` : ''}\n  }`;
   }
   if (node.type === 'decisionTable') {
     const rules = node.rules.map((rule) => {
@@ -3872,12 +3905,12 @@ function nodeToDsl(node, builder) {
     return `  transform ${node.id} {\n    applicant       = ${applicant}\n    requestedAmount = ${decisionNode.amountSource}\n    policy          = ${decisionNode.id}.output\n  }`;
   }
   if (node.type === 'customOperator') {
-    return customNodeToDsl(node);
+    return customNodeToDsl(node, builder);
   }
   return '';
 }
 
-function customNodeToDsl(node) {
+function customNodeToDsl(node, builder) {
   const spec = specForNode(node);
   const inputs = customInputTemplateValues(node);
   if (spec.lowering?.mode === 'transform' && spec.lowering?.parameters?.assignments) {
@@ -3896,7 +3929,28 @@ function customNodeToDsl(node) {
     `      ${key} = ${expression || 'null'}`
   ).join('\n');
   const executionConfig = commonExecutionConfigToDsl(node.config || {});
-  return `  node ${node.id} : ${renderOperatorRefForDsl(executable)} {\n    input {\n${inputLines}\n    }${executionConfig ? `\n${executionConfig}` : ''}\n  }`;
+  return `  node ${node.id} : ${renderOperatorRefForDsl(executable)} {\n${dependsOnDslLine(builder, node)}    input {\n${inputLines}\n    }${executionConfig ? `\n${executionConfig}` : ''}\n  }`;
+}
+
+function dependsOnDslLine(builder, node) {
+  if (!nodeSupportsDependencyTarget(node)) {
+    return '';
+  }
+  const dependencies = dependencySourcesForNode(builder, node.id);
+  return dependencies.length ? `    depends_on = [${dependencies.join(', ')}]\n` : '';
+}
+
+function dependencySourcesForNode(builder, nodeId) {
+  const seen = new Set();
+  const dependencies = [];
+  for (const edge of builder.dependencyEdges || []) {
+    if (edge.target !== nodeId || !edge.source || seen.has(edge.source)) {
+      continue;
+    }
+    seen.add(edge.source);
+    dependencies.push(edge.source);
+  }
+  return dependencies;
 }
 
 function customInputTemplateValues(node) {
@@ -4041,12 +4095,7 @@ function builderToVisualDraft(builder = state.builder) {
     status: 'DRAFT',
     inputSchema: currentGraphInputSchema(builder),
     nodes: builder.nodes.map((node) => builderNodeToDraftNode(node, builder)),
-    edges: builderEdges(builder, { includeFallback: false }).map((edge) => ({
-      id: `${edge.source}:${edge.sourcePort || ''}.${edge.sourcePath || ''}->${edge.target}:${edge.targetPort || ''}.${edge.targetPath || ''}`,
-      kind: 'data',
-      source: { nodeId: edge.source, port: edge.sourcePort || 'output', path: edge.sourcePath || '' },
-      target: { nodeId: edge.target, port: edge.targetPort || 'inputs', path: edge.targetPath || '' }
-    })),
+    edges: builderEdges(builder, { includeFallback: false }).map((edge) => visualDraftEdgeFromBuilderEdge(edge)),
     visualLayout: layout,
     output,
     operatorFingerprints: operatorFingerprintsForBuilder(builder)
@@ -4083,10 +4132,40 @@ function builderFromVisualDraft(draft) {
       path: draft.output?.path || ''
     },
     operatorFingerprints: { ...(draft.operatorFingerprints || {}) },
+    dependencyEdges: dependencyEdgesFromDraft(draft),
     nodes
   };
   ensureBuilderOutput(builder);
   return builder;
+}
+
+function visualDraftEdgeFromBuilderEdge(edge) {
+  const kind = canonicalEdgeKind(edge.kind);
+  return {
+    id: `${kind}:${edge.source}:${edge.sourcePort || ''}.${edge.sourcePath || ''}->${edge.target}:${edge.targetPort || ''}.${edge.targetPath || ''}`,
+    kind,
+    source: {
+      nodeId: edge.source,
+      port: kind === 'dependency' ? '' : (edge.sourcePort || 'output'),
+      path: kind === 'dependency' ? '' : (edge.sourcePath || '')
+    },
+    target: {
+      nodeId: edge.target,
+      port: kind === 'dependency' ? '' : (edge.targetPort || 'inputs'),
+      path: kind === 'dependency' ? '' : (edge.targetPath || '')
+    }
+  };
+}
+
+function dependencyEdgesFromDraft(draft) {
+  return (draft.edges || [])
+    .filter((edge) => canonicalEdgeKind(edge.kind) === 'dependency')
+    .map((edge) => ({
+      source: edge.source?.nodeId || '',
+      target: edge.target?.nodeId || '',
+      label: 'depends'
+    }))
+    .filter((edge) => edge.source && edge.target && edge.source !== edge.target);
 }
 
 function builderNodeFromDraftNode(node, draft, layoutNodes) {
@@ -4217,7 +4296,9 @@ function policyNodeFromDraft(node, draft) {
       return match[1];
     }
   }
-  const edge = (draft.edges || []).find((item) => item.target?.nodeId === node.id);
+  const edge = (draft.edges || []).find((item) =>
+    canonicalEdgeKind(item.kind) === 'data' && item.target?.nodeId === node.id
+  );
   return edge?.source?.nodeId || '';
 }
 
@@ -4459,7 +4540,7 @@ function renderDiagram() {
     const y2 = targetPoint.y;
     const mid = (x1 + x2) / 2;
     const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
-    path.setAttribute('class', `edge ${executed ? 'executed' : ''}`);
+    path.setAttribute('class', `edge ${edge.kind === 'dependency' ? 'dependency' : ''} ${executed ? 'executed' : ''}`);
     path.setAttribute('marker-end', 'url(#arrow)');
     path.setAttribute('d', `M ${x1} ${y1} C ${mid} ${y1}, ${mid} ${y2}, ${x2} ${y2}`);
     svg.appendChild(path);
@@ -4764,8 +4845,36 @@ function targetHandlesForNode(node) {
 function canvasTargetHandlesForNode(node) {
   return [
     ...targetHandlesForNode(node),
-    ...configTargetsForNode(node)
+    ...configTargetsForNode(node),
+    ...dependencyTargetsForNode(node)
   ];
+}
+
+function dependencyTargetsForNode(node) {
+  if (!nodeSupportsDependencyTarget(node)) {
+    return [];
+  }
+  return [{
+    nodeId: node.id,
+    port: 'dependency',
+    path: '',
+    kind: 'dependency',
+    type: 'dependency'
+  }];
+}
+
+function nodeSupportsDependencyTarget(node) {
+  if (!node) {
+    return false;
+  }
+  if (node.type === 'httpResource') {
+    return true;
+  }
+  if (node.type !== 'customOperator') {
+    return false;
+  }
+  const spec = specForNode(node);
+  return spec.lowering?.mode !== 'transform';
 }
 
 function schemaType(schema) {
@@ -6616,7 +6725,7 @@ function contextSourceForPath(path, builder = state.builder) {
 }
 
 function connectionAlreadyApplied(source, target, builder = state.builder) {
-  const key = connectionKey(source, target);
+  const key = connectionKey(source, target, target?.kind === 'dependency' ? 'dependency' : 'data');
   return Boolean(key) && builderEdges(builder, { includeFallback: false, includeConfig: true })
     .some((edge) => connectionKey(
       {
@@ -6628,15 +6737,25 @@ function connectionAlreadyApplied(source, target, builder = state.builder) {
         nodeId: edge.target,
         port: edge.targetPort || '',
         path: edge.targetPath || ''
-      }
+      },
+      edge.kind || 'data'
     ) === key);
 }
 
-function connectionKey(source, target) {
+function connectionKey(source, target, kind = 'data') {
   if (!source || !target || source.nodeId === CONTEXT_SOURCE_ID) {
     return '';
   }
+  const edgeKind = canonicalEdgeKind(kind);
+  if (edgeKind === 'dependency') {
+    return [
+      edgeKind,
+      source.nodeId,
+      target.nodeId
+    ].map((item) => String(item || '').trim()).join(':');
+  }
   return [
+    edgeKind,
     source.nodeId,
     source.port || '',
     source.path || '',
@@ -6655,6 +6774,11 @@ function connectionCompatibility(source, target) {
   }
   if (wouldCreateCycle(source.nodeId, target.nodeId)) {
     return { ok: false, message: 'This connection would create a cycle.' };
+  }
+  if (target.kind === 'dependency') {
+    return source.nodeId === CONTEXT_SOURCE_ID
+      ? { ok: false, message: 'Dependency edges must start from an operator node.' }
+      : { ok: true, message: '' };
   }
   const sourceNode = state.builder.nodes.find((node) => node.id === source.nodeId);
   const targetNode = state.builder.nodes.find((node) => node.id === target.nodeId);
@@ -8376,7 +8500,7 @@ async function checkVisualConnectionOnServer(source, target) {
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
       draft: builderToVisualDraft(state.builder),
-      kind: 'data',
+      kind: target.kind === 'dependency' ? 'dependency' : 'data',
       source: {
         nodeId: source.nodeId,
         port: source.port || '',
@@ -8428,6 +8552,14 @@ function connectionTargetAtPoint(event) {
 function applyConnection(source, target) {
   const node = state.builder.nodes.find((item) => item.id === target.nodeId);
   if (!node) return;
+  if (target.kind === 'dependency') {
+    addDependencyEdge(source, target);
+    state.builder.selectedId = node.id;
+    state.selectedNodeId = node.id;
+    syncComposerFromBuilder({ render: false });
+    renderInputForm();
+    return;
+  }
   const expression = expressionForConnectionSource(source);
   if (target.port === 'config') {
     node.config = node.config || {};
@@ -8458,6 +8590,30 @@ function applyConnection(source, target) {
   state.selectedNodeId = node.id;
   syncComposerFromBuilder({ render: false });
   renderInputForm();
+}
+
+function addDependencyEdge(source, target) {
+  state.builder.dependencyEdges = state.builder.dependencyEdges || [];
+  const edge = {
+    source: source.nodeId,
+    target: target.nodeId,
+    sourcePort: source.port || 'output',
+    sourcePath: source.path || '',
+    label: 'depends'
+  };
+  const key = connectionKey(
+    { nodeId: edge.source, port: edge.sourcePort, path: edge.sourcePath },
+    { nodeId: edge.target, port: 'dependency', path: '' },
+    'dependency'
+  );
+  const exists = state.builder.dependencyEdges.some((item) => connectionKey(
+    { nodeId: item.source, port: item.sourcePort || 'output', path: item.sourcePath || '' },
+    { nodeId: item.target, port: 'dependency', path: '' },
+    'dependency'
+  ) === key);
+  if (!exists) {
+    state.builder.dependencyEdges.push(edge);
+  }
 }
 
 function expressionForConnectionSource(source) {

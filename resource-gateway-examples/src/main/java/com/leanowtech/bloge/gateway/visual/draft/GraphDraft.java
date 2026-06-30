@@ -285,9 +285,25 @@ public record GraphDraft(
             id = id == null || id.isBlank()
                     ? (source == null ? "" : source.nodeId()) + "->" + (target == null ? "" : target.nodeId())
                     : id;
-            kind = kind == null || kind.isBlank() ? "data" : kind.trim().toLowerCase(Locale.ROOT);
+            kind = canonicalEdgeKind(kind);
             source = source == null ? Endpoint.empty() : source;
             target = target == null ? Endpoint.empty() : target;
+            if ("dependency".equals(kind)) {
+                source = new Endpoint(source.nodeId(), "", "");
+                target = new Endpoint(target.nodeId(), "", "");
+            }
+        }
+
+        private static String canonicalEdgeKind(String value) {
+            if (value == null || value.isBlank()) {
+                return "data";
+            }
+            String trimmed = value.trim();
+            return switch (trimmed.toLowerCase(Locale.ROOT)) {
+                case "data" -> "data";
+                case "dependency", "dependson", "depends_on" -> "dependency";
+                default -> trimmed;
+            };
         }
     }
 

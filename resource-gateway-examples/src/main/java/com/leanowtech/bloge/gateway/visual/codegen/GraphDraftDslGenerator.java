@@ -64,6 +64,7 @@ public class GraphDraftDslGenerator {
         }
 
         Map<String, GraphDraft.DraftNode> nodesById = nodesById(draft.nodes());
+        Map<String, List<String>> dependencyEdges = explicitDependencyEdges(draft);
         StringBuilder dsl = new StringBuilder();
         dsl.append("graph ").append(draft.graphName()).append(" {\n\n");
         for (GraphDraft.DraftNode node : orderedNodes(draft)) {
@@ -73,7 +74,8 @@ public class GraphDraftDslGenerator {
                         "Unknown operatorRef: " + node.operatorRef(), "/nodes/" + node.id()));
                 continue;
             }
-            String block = nodeToDsl(node, operator.get(), nodesById, diagnostics);
+            String block = nodeToDsl(node, operator.get(), nodesById,
+                    dependencyEdges.getOrDefault(node.id(), List.of()), diagnostics);
             if (!block.isBlank()) {
                 dsl.append(block).append("\n\n");
             }
@@ -86,22 +88,30 @@ public class GraphDraftDslGenerator {
     private String nodeToDsl(GraphDraft.DraftNode node,
                              OperatorDefinition operator,
                              Map<String, GraphDraft.DraftNode> nodesById,
+                             List<String> dependencyEdges,
                              List<VisualDiagnostic> diagnostics) {
         if ("resource-descriptor".equals(operator.source().kind())) {
-            return resourceNodeToDsl(node, operator, nodesById);
+            return resourceNodeToDsl(node, operator, nodesById, dependencyEdges);
         }
         if ("transform".equals(operator.lowering().mode())) {
+            rejectUnsupportedExplicitDependencies(node, operator, dependencyEdges, diagnostics);
             return loweredTransformToDsl(node, operator, nodesById);
         }
         if ("native".equals(operator.lowering().mode())
                 && !List.of("httpResource", "bloge:decisionTable", "bloge:transform")
                 .contains(operator.operatorRef())) {
-            return nativeOperatorNodeToDsl(node, operator, nodesById, diagnostics);
+            return nativeOperatorNodeToDsl(node, operator, nodesById, dependencyEdges, diagnostics);
         }
         return switch (operator.operatorRef()) {
-            case "httpResource" -> httpResourceNodeToDsl(node, nodesById);
-            case "bloge:decisionTable" -> decisionTableToDsl(node, nodesById);
-            case "bloge:transform" -> transformToDsl(node, nodesById);
+            case "httpResource" -> httpResourceNodeToDsl(node, nodesById, dependencyEdges);
+            case "bloge:decisionTable" -> {
+                rejectUnsupportedExplicitDependencies(node, operator, dependencyEdges, diagnostics);
+                yield decisionTableToDsl(node, nodesById);
+            }
+            case "bloge:transform" -> {
+                rejectUnsupportedExplicitDependencies(node, operator, dependencyEdges, diagnostics);
+                yield transformToDsl(node, nodesById);
+            }
             default -> {
                 diagnostics.add(VisualDiagnostic.error("visual.operator.unsupported",
                         "Operator '%s' cannot be lowered by this example generator.".formatted(operator.operatorRef()),
@@ -114,14 +124,16 @@ public class GraphDraftDslGenerator {
     private String nativeOperatorNodeToDsl(GraphDraft.DraftNode node,
                                            OperatorDefinition operator,
                                            Map<String, GraphDraft.DraftNode> nodesById,
+                                           List<String> dependencyEdges,
                                            List<VisualDiagnostic> diagnostics) {
         String executableOperatorRef = stringValue(operator.lowering().operatorRef()).isBlank()
                 ? operator.operatorRef()
                 : operator.lowering().operatorRef();
         StringBuilder block = new StringBuilder();
         block.append("  node ").append(node.id()).append(" : ").append(renderOperatorRef(executableOperatorRef))
-                .append(" {\n")
-                .append("    input {\n");
+                .append(" {\n");
+        appendDependsOn(block, dependencyEdges);
+        block.append("    input {\n");
         Map<String, String> inputAssignments = renderNativeInputAssignments(node, nodesById, diagnostics);
         inputAssignments.forEach((key, expression) -> block.append("      ").append(key).append(" = ")
                         .append(expression).append("\n"));
@@ -169,11 +181,13 @@ public class GraphDraftDslGenerator {
 
     private String resourceNodeToDsl(GraphDraft.DraftNode node,
                                      OperatorDefinition operator,
-                                     Map<String, GraphDraft.DraftNode> nodesById) {
+                                     Map<String, GraphDraft.DraftNode> nodesById,
+                                     List<String> dependencyEdges) {
         String resourceId = stringValue(operator.lowering().parameters().get("resourceId"));
         StringBuilder block = new StringBuilder();
-        block.append("  node ").append(node.id()).append(" : httpResource {\n")
-                .append("    input {\n")
+        block.append("  node ").append(node.id()).append(" : httpResource {\n");
+        appendDependsOn(block, dependencyEdges);
+        block.append("    input {\n")
                 .append("      resourceId = ").append(quote(resourceId)).append("\n")
                 .append("      params = ").append(renderObjectBindings(node.inputs(), nodesById)).append("\n")
                 .append("    }\n");
@@ -183,7 +197,8 @@ public class GraphDraftDslGenerator {
     }
 
     private String httpResourceNodeToDsl(GraphDraft.DraftNode node,
-                                         Map<String, GraphDraft.DraftNode> nodesById) {
+                                         Map<String, GraphDraft.DraftNode> nodesById,
+                                         List<String> dependencyEdges) {
         String resourceId = stringValue(node.config().get("resourceId"));
         if (resourceId.isBlank() && node.inputs().containsKey("resourceId")) {
             resourceId = bindingToExpression(node.inputs().get("resourceId"), nodesById);
@@ -195,14 +210,37 @@ public class GraphDraftDslGenerator {
             params = node.inputs().get("params").fields();
         }
         StringBuilder block = new StringBuilder();
-        block.append("  node ").append(node.id()).append(" : httpResource {\n")
-                .append("    input {\n")
+        block.append("  node ").append(node.id()).append(" : httpResource {\n");
+        appendDependsOn(block, dependencyEdges);
+        block.append("    input {\n")
                 .append("      resourceId = ").append(resourceId).append("\n")
                 .append("      params = ").append(renderObjectBindings(params, nodesById)).append("\n")
                 .append("    }\n");
         appendCommonExecutionConfig(block, node.config(), nodesById);
         block.append("  }");
         return block.toString();
+    }
+
+    private static void appendDependsOn(StringBuilder block, List<String> dependencies) {
+        if (dependencies.isEmpty()) {
+            return;
+        }
+        block.append("    depends_on = [")
+                .append(String.join(", ", dependencies))
+                .append("]\n");
+    }
+
+    private static void rejectUnsupportedExplicitDependencies(GraphDraft.DraftNode node,
+                                                             OperatorDefinition operator,
+                                                             List<String> dependencies,
+                                                             List<VisualDiagnostic> diagnostics) {
+        if (dependencies.isEmpty()) {
+            return;
+        }
+        diagnostics.add(VisualDiagnostic.error("visual.codegen.dependencyTargetUnsupported",
+                "Node '%s' using operator '%s' has explicit dependency edges, but this generated DSL block cannot declare depends_on."
+                        .formatted(node.id(), operator.operatorRef()),
+                "/nodes/" + node.id()));
     }
 
     private String decisionTableToDsl(GraphDraft.DraftNode node,
@@ -692,6 +730,23 @@ public class GraphDraftDslGenerator {
             return draft.nodes();
         }
         return ordered;
+    }
+
+    private static Map<String, List<String>> explicitDependencyEdges(GraphDraft draft) {
+        Map<String, List<String>> dependencies = new LinkedHashMap<>();
+        draft.nodes().forEach(node -> dependencies.put(node.id(), new ArrayList<>()));
+        draft.edges().forEach(edge -> {
+            if (!"dependency".equals(edge.kind()) || edge.source().nodeId().isBlank()
+                    || edge.target().nodeId().isBlank()) {
+                return;
+            }
+            dependencies.computeIfAbsent(edge.target().nodeId(), ignored -> new ArrayList<>());
+            List<String> targetDependencies = dependencies.get(edge.target().nodeId());
+            if (!targetDependencies.contains(edge.source().nodeId())) {
+                targetDependencies.add(edge.source().nodeId());
+            }
+        });
+        return dependencies;
     }
 
     @SuppressWarnings("unchecked")

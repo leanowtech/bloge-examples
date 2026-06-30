@@ -45,7 +45,7 @@ public class GraphDraftValidator {
     private static final Set<String> SUPPORTED_DRAFT_SCHEMA_VERSIONS = Set.of(
             GraphDraft.SCHEMA_VERSION
     );
-    private static final Set<String> SUPPORTED_EDGE_KINDS = Set.of("data");
+    private static final Set<String> SUPPORTED_EDGE_KINDS = Set.of("data", "dependency");
     private static final String IDENTIFIER_PATTERN = "[A-Za-z_][A-Za-z0-9_]*";
     private static final String PATH_PATTERN = IDENTIFIER_PATTERN + "(?:\\." + IDENTIFIER_PATTERN + ")*";
     private static final Pattern PURE_CONTEXT_REFERENCE = Pattern.compile("^ctx(?:\\.(" + PATH_PATTERN + "))?$");
@@ -1129,6 +1129,13 @@ public class GraphDraftValidator {
             if (sourceOperator == null || targetOperator == null) {
                 continue;
             }
+            if ("dependency".equals(edge.kind())) {
+                validateDependencyEdge(edge, targetOperator, edgePath, diagnostics);
+                continue;
+            }
+            if (!"data".equals(edge.kind())) {
+                continue;
+            }
             Optional<OperatorDefinition.Port> sourcePort = findPort(sourceOperator.ports().outputs(),
                     edge.source().port());
             Optional<OperatorDefinition.Port> targetPort = findPort(targetOperator.ports().inputs(),
@@ -1173,6 +1180,28 @@ public class GraphDraftValidator {
                         edgePath));
             }
         }
+    }
+
+    private static void validateDependencyEdge(GraphDraft.DraftEdge edge,
+                                               OperatorDefinition targetOperator,
+                                               String edgePath,
+                                               List<VisualDiagnostic> diagnostics) {
+        if (!supportsExplicitDependencyTarget(targetOperator)) {
+            diagnostics.add(VisualDiagnostic.error("visual.edge.dependencyTargetUnsupported",
+                    "Dependency edges can target operators lowered as BLOGE node blocks; operator '%s' lowers to a block that cannot declare depends_on."
+                            .formatted(targetOperator.operatorRef()),
+                    edgePath + "/target/nodeId"));
+        }
+    }
+
+    private static boolean supportsExplicitDependencyTarget(OperatorDefinition operator) {
+        if ("resource-descriptor".equals(operator.source().kind()) || "httpResource".equals(operator.operatorRef())) {
+            return true;
+        }
+        if (!"native".equals(operator.lowering().mode())) {
+            return false;
+        }
+        return !List.of("bloge:decisionTable", "bloge:transform").contains(operator.operatorRef());
     }
 
     private static Optional<OperatorDefinition.Port> findPort(List<OperatorDefinition.Port> ports, String name) {

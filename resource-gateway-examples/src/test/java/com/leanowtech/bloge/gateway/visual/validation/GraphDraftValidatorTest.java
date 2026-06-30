@@ -459,6 +459,93 @@ class GraphDraftValidatorTest {
     }
 
     @Test
+    void acceptsExplicitDependencyEdgeWithoutDataBinding() {
+        GraphDraftValidator validator = new GraphDraftValidator(
+                VisualCatalogTestSupport.catalogWithLibrary(
+                        VisualCatalogTestSupport.multiOutputEligibilityLibrary("integer")));
+        GraphDraft.DraftEdge edge = new GraphDraft.DraftEdge("prepare-before-publish", "dependsOn",
+                new GraphDraft.Endpoint("prepareFacts", "", ""),
+                new GraphDraft.Endpoint("publishFacts", "", ""));
+        GraphDraft draft = scoreFactsDependencyDraft(List.of(edge), "publishFacts");
+
+        VisualValidationResult result = validator.validate(draft);
+
+        assertThat(result.valid()).isTrue();
+        assertThat(edge.kind()).isEqualTo("dependency");
+    }
+
+    @Test
+    void rejectsDependencyEdgeTargetingNonNodeDslBlock() {
+        GraphDraftValidator validator = new GraphDraftValidator(
+                VisualCatalogTestSupport.catalogWithLibrary(
+                        VisualCatalogTestSupport.multiOutputEligibilityLibrary("integer")));
+        GraphDraft draft = new GraphDraft(
+                "",
+                "",
+                0,
+                "unsupportedDependencyTarget",
+                "",
+                "",
+                "",
+                "",
+                null,
+                List.of(
+                        new GraphDraft.DraftNode(
+                                "prepareFacts",
+                                "risk:scoreFacts",
+                                "",
+                                Map.of(),
+                                Map.of(),
+                                null
+                        ),
+                        new GraphDraft.DraftNode(
+                                "mapResult",
+                                "bloge:transform",
+                                "",
+                                Map.of(),
+                                Map.of("assignments", Map.of("result", "prepareFacts.output.facts")),
+                                null
+                        )
+                ),
+                List.of(new GraphDraft.DraftEdge("prepare-before-map", "dependency",
+                        new GraphDraft.Endpoint("prepareFacts", "", ""),
+                        new GraphDraft.Endpoint("mapResult", "", ""))),
+                Map.of(),
+                new GraphDraft.OutputSelection("mapResult", "")
+        );
+
+        VisualValidationResult result = validator.validate(draft);
+
+        assertThat(result.valid()).isFalse();
+        assertThat(result.diagnostics())
+                .anySatisfy(diagnostic -> {
+                    assertThat(diagnostic.code()).isEqualTo("visual.edge.dependencyTargetUnsupported");
+                    assertThat(diagnostic.target()).isEqualTo("/edges/0/target/nodeId");
+                });
+    }
+
+    @Test
+    void rejectsCyclesCreatedByDependencyEdges() {
+        GraphDraftValidator validator = new GraphDraftValidator(
+                VisualCatalogTestSupport.catalogWithLibrary(
+                        VisualCatalogTestSupport.multiOutputEligibilityLibrary("integer")));
+        GraphDraft draft = scoreFactsDependencyDraft(List.of(
+                new GraphDraft.DraftEdge("prepare-before-publish", "dependency",
+                        new GraphDraft.Endpoint("prepareFacts", "", ""),
+                        new GraphDraft.Endpoint("publishFacts", "", "")),
+                new GraphDraft.DraftEdge("publish-before-prepare", "dependency",
+                        new GraphDraft.Endpoint("publishFacts", "", ""),
+                        new GraphDraft.Endpoint("prepareFacts", "", ""))
+        ), "publishFacts");
+
+        VisualValidationResult result = validator.validate(draft);
+
+        assertThat(result.valid()).isFalse();
+        assertThat(result.diagnostics())
+                .anySatisfy(diagnostic -> assertThat(diagnostic.code()).isEqualTo("visual.edge.cycle"));
+    }
+
+    @Test
     void rejectsUnsupportedEdgeKind() {
         GraphDraftValidator validator = new GraphDraftValidator(
                 VisualCatalogTestSupport.catalogWithLoanApplicantResourceAndLibrary(
@@ -4030,6 +4117,41 @@ class GraphDraftValidatorTest {
                 List.of(),
                 Map.of(),
                 new GraphDraft.OutputSelection("scoreConsumer", "")
+        );
+    }
+
+    private static GraphDraft scoreFactsDependencyDraft(List<GraphDraft.DraftEdge> edges, String outputNodeId) {
+        return new GraphDraft(
+                "",
+                "",
+                0,
+                "scoreFactsDependency",
+                "",
+                "",
+                "",
+                "",
+                null,
+                List.of(
+                        new GraphDraft.DraftNode(
+                                "prepareFacts",
+                                "risk:scoreFacts",
+                                "",
+                                Map.of(),
+                                Map.of(),
+                                null
+                        ),
+                        new GraphDraft.DraftNode(
+                                "publishFacts",
+                                "risk:scoreFacts",
+                                "",
+                                Map.of(),
+                                Map.of(),
+                                null
+                        )
+                ),
+                edges,
+                Map.of(),
+                new GraphDraft.OutputSelection(outputNodeId, "")
         );
     }
 

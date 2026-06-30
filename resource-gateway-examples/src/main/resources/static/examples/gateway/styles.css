@@ -292,6 +292,11 @@ h2 {
   stroke-width: 3;
 }
 
+.edge.dependency {
+  stroke-dasharray: 8 6;
+  stroke-width: 1.8;
+}
+
 .edge.connection-preview {
   stroke: var(--blue);
   stroke-width: 2.5;

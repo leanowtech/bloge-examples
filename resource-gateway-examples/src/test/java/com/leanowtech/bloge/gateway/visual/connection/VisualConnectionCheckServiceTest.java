@@ -124,6 +124,45 @@ class VisualConnectionCheckServiceTest {
     }
 
     @Test
+    void acceptsDependencyEdgePreviewWithoutInputBinding() {
+        VisualConnectionCheckService service = connectionService(VisualCatalogTestSupport
+                .catalogWithLibrary(VisualCatalogTestSupport.multiOutputEligibilityLibrary("integer")));
+        GraphDraft draft = scoreFactsDependencyDraft(List.of());
+
+        VisualConnectionCheckResult result = service.check(new VisualConnectionCheckRequest(
+                draft,
+                new GraphDraft.Endpoint("prepareFacts", "", ""),
+                new GraphDraft.Endpoint("publishFacts", "dependency", ""),
+                "depends_on"
+        ));
+
+        assertThat(result.accepted()).isTrue();
+        assertThat(result.diagnostics()).isEmpty();
+        assertThat(result.edge().kind()).isEqualTo("dependency");
+    }
+
+    @Test
+    void rejectsDependencyEdgePreviewThatWouldCreateCycle() {
+        VisualConnectionCheckService service = connectionService(VisualCatalogTestSupport
+                .catalogWithLibrary(VisualCatalogTestSupport.multiOutputEligibilityLibrary("integer")));
+        GraphDraft draft = scoreFactsDependencyDraft(List.of(new GraphDraft.DraftEdge("publish-before-prepare",
+                "dependency",
+                new GraphDraft.Endpoint("publishFacts", "", ""),
+                new GraphDraft.Endpoint("prepareFacts", "", ""))));
+
+        VisualConnectionCheckResult result = service.check(new VisualConnectionCheckRequest(
+                draft,
+                new GraphDraft.Endpoint("prepareFacts", "", ""),
+                new GraphDraft.Endpoint("publishFacts", "dependency", ""),
+                "dependency"
+        ));
+
+        assertThat(result.accepted()).isFalse();
+        assertThat(result.diagnostics())
+                .anySatisfy(diagnostic -> assertThat(diagnostic.code()).isEqualTo("visual.edge.cycle"));
+    }
+
+    @Test
     void acceptsSchemaCompatibleContextPickerBinding() {
         VisualConnectionCheckService service = connectionService(VisualCatalogTestSupport
                 .catalogWithLoanApplicantResourceAndLibrary(VisualCatalogTestSupport.eligibilityLibrary("integer")));
@@ -746,6 +785,27 @@ class VisualConnectionCheckServiceTest {
                 edges,
                 Map.of(),
                 new GraphDraft.OutputSelection("passB", "")
+        );
+    }
+
+    private static GraphDraft scoreFactsDependencyDraft(List<GraphDraft.DraftEdge> edges) {
+        return new GraphDraft(
+                "",
+                "",
+                0,
+                "dependencyPreview",
+                "",
+                "",
+                "",
+                "",
+                null,
+                List.of(
+                        new GraphDraft.DraftNode("prepareFacts", "risk:scoreFacts", "", Map.of(), Map.of(), null),
+                        new GraphDraft.DraftNode("publishFacts", "risk:scoreFacts", "", Map.of(), Map.of(), null)
+                ),
+                edges,
+                Map.of(),
+                new GraphDraft.OutputSelection("publishFacts", "")
         );
     }
 }

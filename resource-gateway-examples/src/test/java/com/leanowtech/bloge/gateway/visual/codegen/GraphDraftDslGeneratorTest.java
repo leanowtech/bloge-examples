@@ -297,6 +297,62 @@ class GraphDraftDslGeneratorTest {
     }
 
     @Test
+    void lowersExplicitDependencyEdgesToDependsOnDsl() {
+        GraphDraftDslGenerator generator = new GraphDraftDslGenerator(
+                VisualCatalogTestSupport.catalogWithLibrary(
+                        VisualCatalogTestSupport.multiOutputEligibilityLibrary("integer")));
+        GraphDraft draft = new GraphDraft(
+                "",
+                "",
+                0,
+                "explicitDependencyOrder",
+                "",
+                "",
+                "",
+                "",
+                null,
+                List.of(
+                        new GraphDraft.DraftNode(
+                                "publishFacts",
+                                "risk:scoreFacts",
+                                "",
+                                Map.of(),
+                                Map.of(),
+                                null
+                        ),
+                        new GraphDraft.DraftNode(
+                                "prepareFacts",
+                                "risk:scoreFacts",
+                                "",
+                                Map.of(),
+                                Map.of(),
+                                null
+                        )
+                ),
+                List.of(new GraphDraft.DraftEdge("prepare-before-publish", "dependency",
+                        new GraphDraft.Endpoint("prepareFacts", "", ""),
+                        new GraphDraft.Endpoint("publishFacts", "", ""))),
+                Map.of(),
+                new GraphDraft.OutputSelection("publishFacts", "")
+        );
+
+        DslGenerationResult result = generator.generate(draft);
+
+        assertThat(result.generated()).isTrue();
+        assertThat(result.dsl().indexOf("node prepareFacts : riskScoreFacts"))
+                .isLessThan(result.dsl().indexOf("node publishFacts : riskScoreFacts"));
+        assertThat(result.dsl()).contains("depends_on = [prepareFacts]");
+
+        DefaultOperatorRegistry registry = new DefaultOperatorRegistry();
+        registry.registerRaw("riskScoreFacts", new StubOperator());
+        GraphLoader loader = new GraphLoader(registry);
+        loader.withCompilationMode(CompilationMode.LENIENT);
+        Graph graph = loader.loadWithDiagnostics(result.dsl()).graph();
+        assertThat(graph).isNotNull();
+        assertThat(graph.nodes()).isNotEmpty();
+    }
+
+    @Test
     void quotesNamespacedNativeOperatorRefSoGeneratedDslCompiles() {
         GraphDraftDslGenerator generator = new GraphDraftDslGenerator(
                 VisualCatalogTestSupport.catalogWithLibrary(nativePolicyLibrary("risk:legacyPolicy")));
