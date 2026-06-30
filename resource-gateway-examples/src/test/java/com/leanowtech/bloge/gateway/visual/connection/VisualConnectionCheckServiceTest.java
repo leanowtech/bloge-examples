@@ -124,6 +124,71 @@ class VisualConnectionCheckServiceTest {
     }
 
     @Test
+    void rejectsConnectionPreviewWhenDraftSchemaVersionIsUnsupported() {
+        VisualConnectionCheckService service = connectionService(VisualCatalogTestSupport
+                .catalogWithLoanApplicantResourceAndLibrary(VisualCatalogTestSupport.eligibilityLibrary("integer")));
+        GraphDraft base = resourceEligibilityDraft(graphInputSchema(), List.of());
+        GraphDraft draft = copyDraft(base, "bloge.visualGraphDraft.v2", base.status(), base.inputSchema());
+
+        VisualConnectionCheckResult result = service.check(new VisualConnectionCheckRequest(
+                draft,
+                new GraphDraft.Endpoint("fetchApplicant", "payload", "score"),
+                new GraphDraft.Endpoint("eligibility", "inputs", "score"),
+                "data"
+        ));
+
+        assertThat(result.accepted()).isFalse();
+        assertThat(result.diagnostics())
+                .anySatisfy(diagnostic -> {
+                    assertThat(diagnostic.code()).isEqualTo("visual.draft.schemaVersion.unsupported");
+                    assertThat(diagnostic.target()).isEqualTo("/schemaVersion");
+                });
+    }
+
+    @Test
+    void rejectsConnectionPreviewWhenDraftStatusIsUnsupported() {
+        VisualConnectionCheckService service = connectionService(VisualCatalogTestSupport
+                .catalogWithLoanApplicantResourceAndLibrary(VisualCatalogTestSupport.eligibilityLibrary("integer")));
+        GraphDraft base = resourceEligibilityDraft(graphInputSchema(), List.of());
+        GraphDraft draft = copyDraft(base, base.schemaVersion(), "LOCKED", base.inputSchema());
+
+        VisualConnectionCheckResult result = service.check(new VisualConnectionCheckRequest(
+                draft,
+                new GraphDraft.Endpoint("fetchApplicant", "payload", "score"),
+                new GraphDraft.Endpoint("eligibility", "inputs", "score"),
+                "data"
+        ));
+
+        assertThat(result.accepted()).isFalse();
+        assertThat(result.diagnostics())
+                .anySatisfy(diagnostic -> {
+                    assertThat(diagnostic.code()).isEqualTo("visual.draft.status.unsupported");
+                    assertThat(diagnostic.target()).isEqualTo("/status");
+                });
+    }
+
+    @Test
+    void rejectsContextPickerPreviewWhenGraphInputSchemaIsInvalid() {
+        VisualConnectionCheckService service = connectionService(VisualCatalogTestSupport
+                .catalogWithLoanApplicantResourceAndLibrary(VisualCatalogTestSupport.eligibilityLibrary("integer")));
+        GraphDraft draft = resourceEligibilityDraft(unsupportedCompositionGraphInputSchema(), List.of());
+
+        VisualConnectionCheckResult result = service.check(new VisualConnectionCheckRequest(
+                draft,
+                new GraphDraft.Endpoint("__ctx", "ctx", "score"),
+                new GraphDraft.Endpoint("eligibility", "inputs", "score"),
+                "data"
+        ));
+
+        assertThat(result.accepted()).isFalse();
+        assertThat(result.diagnostics())
+                .anySatisfy(diagnostic -> {
+                    assertThat(diagnostic.code()).isEqualTo("visual.schema.compositionUnsupported");
+                    assertThat(diagnostic.target()).isEqualTo("/inputSchema/schema/oneOf");
+                });
+    }
+
+    @Test
     void acceptsDependencyEdgePreviewWithoutInputBinding() {
         VisualConnectionCheckService service = connectionService(VisualCatalogTestSupport
                 .catalogWithLibrary(VisualCatalogTestSupport.multiOutputEligibilityLibrary("integer")));
@@ -545,6 +610,37 @@ class VisualConnectionCheckServiceTest {
                 "properties", Map.of(),
                 "additionalProperties", additionalProperties
         ));
+    }
+
+    private static SchemaEnvelope unsupportedCompositionGraphInputSchema() {
+        return new SchemaEnvelope(SchemaEnvelope.JSON_SCHEMA, "2020-12", Map.of(
+                "type", "object",
+                "properties", Map.of("score", Map.of("type", "integer")),
+                "oneOf", List.of(Map.of("required", List.of("score")))
+        ));
+    }
+
+    private static GraphDraft copyDraft(GraphDraft draft,
+                                        String schemaVersion,
+                                        String status,
+                                        SchemaEnvelope inputSchema) {
+        return new GraphDraft(
+                schemaVersion,
+                draft.draftId(),
+                draft.revision(),
+                draft.graphName(),
+                draft.tenantId(),
+                draft.namespace(),
+                draft.environment(),
+                status,
+                inputSchema,
+                draft.nodes(),
+                draft.edges(),
+                draft.visualLayout(),
+                draft.output(),
+                draft.operatorFingerprints(),
+                draft.revisionMetadata()
+        );
     }
 
     private static SchemaEnvelope customerOrderInputSchema() {

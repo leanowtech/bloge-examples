@@ -11,6 +11,7 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.function.Predicate;
 
 /**
  * Server-side schema gate for interactive canvas connections.
@@ -91,10 +92,9 @@ public class VisualConnectionCheckService {
         Map<String, Integer> nodeIndexes = nodeIndexes(candidate);
 
         VisualValidationResult validation = validator.validate(candidate);
-        List<VisualDiagnostic> diagnostics = validation.diagnostics().stream()
-                .filter(diagnostic -> relevantToConnection(diagnostic, previewIndex, bindingPath, operatorPath,
-                        request, nodeIndexes))
-                .toList();
+        List<VisualDiagnostic> diagnostics = preflightDiagnostics(validation,
+                diagnostic -> relevantToConnection(diagnostic, previewIndex, bindingPath, operatorPath,
+                        request, nodeIndexes));
         return new VisualConnectionCheckResult(diagnostics.stream().noneMatch(VisualDiagnostic::error),
                 edge, diagnostics);
     }
@@ -115,9 +115,8 @@ public class VisualConnectionCheckService {
         Map<String, Integer> nodeIndexes = nodeIndexes(candidate);
 
         VisualValidationResult validation = validator.validate(candidate);
-        List<VisualDiagnostic> diagnostics = validation.diagnostics().stream()
-                .filter(diagnostic -> relevantToDependencyEdge(diagnostic, previewIndex, request, nodeIndexes))
-                .toList();
+        List<VisualDiagnostic> diagnostics = preflightDiagnostics(validation,
+                diagnostic -> relevantToDependencyEdge(diagnostic, previewIndex, request, nodeIndexes));
         return new VisualConnectionCheckResult(diagnostics.stream().noneMatch(VisualDiagnostic::error),
                 edge, diagnostics);
     }
@@ -138,9 +137,8 @@ public class VisualConnectionCheckService {
         Map<String, Integer> nodeIndexes = nodeIndexes(candidate);
 
         VisualValidationResult validation = validator.validate(candidate);
-        List<VisualDiagnostic> diagnostics = validation.diagnostics().stream()
-                .filter(diagnostic -> relevantToDependencyEdge(diagnostic, previewIndex, request, nodeIndexes))
-                .toList();
+        List<VisualDiagnostic> diagnostics = preflightDiagnostics(validation,
+                diagnostic -> relevantToDependencyEdge(diagnostic, previewIndex, request, nodeIndexes));
         return new VisualConnectionCheckResult(diagnostics.stream().noneMatch(VisualDiagnostic::error),
                 edge, diagnostics);
     }
@@ -177,10 +175,9 @@ public class VisualConnectionCheckService {
         Map<String, Integer> nodeIndexes = nodeIndexes(candidate);
 
         VisualValidationResult validation = validator.validate(candidate);
-        List<VisualDiagnostic> diagnostics = validation.diagnostics().stream()
-                .filter(diagnostic -> relevantToConfigBinding(diagnostic, configPath, operatorPath,
-                        request, nodeIndexes))
-                .toList();
+        List<VisualDiagnostic> diagnostics = preflightDiagnostics(validation,
+                diagnostic -> relevantToConfigBinding(diagnostic, configPath, operatorPath,
+                        request, nodeIndexes));
         return new VisualConnectionCheckResult(diagnostics.stream().noneMatch(VisualDiagnostic::error),
                 edge, diagnostics);
     }
@@ -207,9 +204,8 @@ public class VisualConnectionCheckService {
         String operatorPath = "/nodes/" + targetIndex + "/operatorRef";
 
         VisualValidationResult validation = validator.validate(candidate);
-        List<VisualDiagnostic> diagnostics = validation.diagnostics().stream()
-                .filter(diagnostic -> relevantToContextBinding(diagnostic, bindingPath, operatorPath))
-                .toList();
+        List<VisualDiagnostic> diagnostics = preflightDiagnostics(validation,
+                diagnostic -> relevantToContextBinding(diagnostic, bindingPath, operatorPath));
         return new VisualConnectionCheckResult(diagnostics.stream().noneMatch(VisualDiagnostic::error),
                 edge, diagnostics);
     }
@@ -483,6 +479,23 @@ public class VisualConnectionCheckService {
                 || "visual.edge.cycle".equals(diagnostic.code())
                 || endpointNodeDiagnostic(target, request.source().nodeId(), nodeIndexes)
                 || endpointNodeDiagnostic(target, request.target().nodeId(), nodeIndexes);
+    }
+
+    private static List<VisualDiagnostic> preflightDiagnostics(VisualValidationResult validation,
+                                                               Predicate<VisualDiagnostic> relevant) {
+        return validation.diagnostics().stream()
+                .filter(diagnostic -> relevant.test(diagnostic) || globalBlockingDiagnostic(diagnostic))
+                .toList();
+    }
+
+    private static boolean globalBlockingDiagnostic(VisualDiagnostic diagnostic) {
+        if (!diagnostic.error()) {
+            return false;
+        }
+        String target = diagnostic.target();
+        return targetAtOrBelow(target, "/schemaVersion")
+                || targetAtOrBelow(target, "/status")
+                || targetAtOrBelow(target, "/inputSchema");
     }
 
     private static boolean targetAtOrBelow(String target, String path) {
