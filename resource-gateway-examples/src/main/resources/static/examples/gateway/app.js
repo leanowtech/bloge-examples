@@ -542,6 +542,22 @@ function inputKeyForPortPath(spec, portName, path) {
   return matchingPorts.length > 1 ? `${portName || spec?.inputPort || 'inputs'}.${path}` : path;
 }
 
+function customInputPathForKey(node, key) {
+  const paths = node.customInputPaths || {};
+  return Object.prototype.hasOwnProperty.call(paths, key) ? paths[key] : key;
+}
+
+function customInputPortForKey(node, spec, key) {
+  return node.customInputPorts?.[key] || inputPortForInputPath(spec, customInputPathForKey(node, key));
+}
+
+function bindingTargetPathForKey(key, binding) {
+  if (Object.prototype.hasOwnProperty.call(binding || {}, 'targetPath')) {
+    return binding.targetPath || '';
+  }
+  return binding?.targetPort === key ? '' : key;
+}
+
 function schemaForPort(spec, role, portName) {
   const ports = role === 'source' ? outputPortsForSpec(spec) : inputPortsForSpec(spec);
   return ports.find((port) => port.name === portName)?.schema
@@ -1003,9 +1019,8 @@ function builderInputBindings(node) {
     return Object.entries(node.customInputs || {}).map(([inputName, expression]) => ({
       inputName,
       expression,
-      targetPort: node.customInputPorts?.[inputName]
-        || inputPortForInputPath(spec, node.customInputPaths?.[inputName] || inputName),
-      targetPath: node.customInputPaths?.[inputName] || inputName,
+      targetPort: customInputPortForKey(node, spec, inputName),
+      targetPath: customInputPathForKey(node, inputName),
       label: inputName
     }));
   }
@@ -3668,7 +3683,7 @@ function customNodeToDsl(node) {
 function customInputTemplateValues(node) {
   const values = {};
   for (const [key, expression] of Object.entries(node.customInputs || {})) {
-    const targetPath = node.customInputPaths?.[key] || key;
+    const targetPath = customInputPathForKey(node, key);
     const targetPort = node.customInputPorts?.[key] || '';
     if (targetPath) {
       values[targetPath] = expression;
@@ -3696,8 +3711,8 @@ function customDslInputEntries(node) {
 
 function customDslInputPath(node, key) {
   const spec = specForNode(node);
-  const targetPath = node.customInputPaths?.[key] || key;
-  const targetPort = node.customInputPorts?.[key] || inputPortForInputPath(spec, targetPath);
+  const targetPath = customInputPathForKey(node, key);
+  const targetPort = customInputPortForKey(node, spec, key);
   if (!targetPort || targetPort === 'inputs' || targetPath === targetPort || targetPath.startsWith(`${targetPort}.`)) {
     return targetPath;
   }
@@ -3916,9 +3931,9 @@ function builderNodeFromDraftNode(node, draft, layoutNodes) {
       .map(([key, binding]) => [key, binding.targetPort || inputPortForInputPath(specForNode({
         type: 'customOperator',
         paletteType: node.operatorRef
-      }), binding.targetPath || key)])),
+      }), bindingTargetPathForKey(key, binding))])),
     customInputPaths: Object.fromEntries(Object.entries(node.inputs || {})
-      .map(([key, binding]) => [key, binding.targetPath || key]))
+      .map(([key, binding]) => [key, bindingTargetPathForKey(key, binding)]))
   };
 }
 
@@ -4046,9 +4061,8 @@ function builderNodeToDraftNode(node, builder) {
       label: labelForNode(node),
       inputs: Object.fromEntries(nonBlankInputEntries(node.customInputs || {})
               .map(([key, expression]) => [key, bindingFromExpression(expression, {
-                targetPort: node.customInputPorts?.[key]
-                  || inputPortForInputPath(specForNode(node), node.customInputPaths?.[key] || key),
-                targetPath: node.customInputPaths?.[key] || key,
+                targetPort: customInputPortForKey(node, specForNode(node), key),
+                targetPath: customInputPathForKey(node, key),
                 builder
               })])),
       config: { ...(node.config || {}) },
@@ -4502,7 +4516,7 @@ function targetHandlesForNode(node) {
         {
           nodeId: node.id,
           port: portName,
-          key: '',
+          key: inputKeyForPortPath(spec, portName, ''),
           path: '',
           type: schemaType(port.schema?.schema),
           schema: port.schema?.schema || {},

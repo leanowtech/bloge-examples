@@ -101,6 +101,118 @@ class VisualConnectionCheckServiceTest {
     }
 
     @Test
+    void acceptsContextRootPortPickerBinding() {
+        VisualConnectionCheckService service = connectionService(VisualCatalogTestSupport
+                .catalogWithLibrary(VisualCatalogTestSupport.duplicateInputPathLibrary()));
+        GraphDraft draft = customerOrderMergeDraft();
+
+        VisualConnectionCheckResult result = service.check(new VisualConnectionCheckRequest(
+                draft,
+                new GraphDraft.Endpoint("__ctx", "ctx", "customer"),
+                new GraphDraft.Endpoint("merge", "customer", ""),
+                "data"
+        ));
+
+        assertThat(result.accepted()).isTrue();
+        assertThat(result.diagnostics()).isEmpty();
+        assertThat(result.edge().target().port()).isEqualTo("customer");
+        assertThat(result.edge().target().path()).isEmpty();
+    }
+
+    @Test
+    void acceptsNodeOutputRootPortPickerBinding() {
+        VisualConnectionCheckService service = connectionService(VisualCatalogTestSupport
+                .catalogWithLibrary(VisualCatalogTestSupport.rootObjectPortLibrary()));
+        GraphDraft draft = customerFactsToMergeDraft();
+
+        VisualConnectionCheckResult result = service.check(new VisualConnectionCheckRequest(
+                draft,
+                new GraphDraft.Endpoint("customerFacts", "customer", ""),
+                new GraphDraft.Endpoint("merge", "customer", ""),
+                "data"
+        ));
+
+        assertThat(result.accepted()).isTrue();
+        assertThat(result.diagnostics()).isEmpty();
+        assertThat(result.edge().source().port()).isEqualTo("customer");
+        assertThat(result.edge().source().path()).isEmpty();
+        assertThat(result.edge().target().port()).isEqualTo("customer");
+        assertThat(result.edge().target().path()).isEmpty();
+    }
+
+    @Test
+    void rejectsNodeConnectionThatWouldOverlapExistingRootBinding() {
+        VisualConnectionCheckService service = connectionService(VisualCatalogTestSupport
+                .catalogWithLibrary(VisualCatalogTestSupport.rootObjectPortLibrary()));
+        GraphDraft draft = customerRootAlreadyBoundDraft();
+
+        VisualConnectionCheckResult result = service.check(new VisualConnectionCheckRequest(
+                draft,
+                new GraphDraft.Endpoint("customerFacts", "customer", "id"),
+                new GraphDraft.Endpoint("merge", "customer", "id"),
+                "data"
+        ));
+
+        assertThat(result.accepted()).isFalse();
+        assertThat(result.diagnostics())
+                .anySatisfy(diagnostic -> {
+                    assertThat(diagnostic.code()).isEqualTo("visual.input.duplicateTarget");
+                    assertThat(diagnostic.message()).contains("customer.id");
+                });
+    }
+
+    @Test
+    void acceptsNodeConnectionReplacingExistingSameTargetBinding() {
+        VisualConnectionCheckService service = connectionService(VisualCatalogTestSupport
+                .catalogWithLoanApplicantResourceAndLibrary(VisualCatalogTestSupport.eligibilityLibrary("integer")));
+        GraphDraft draft = new GraphDraft(
+                "",
+                "",
+                0,
+                "replaceConnectionCheck",
+                "",
+                "",
+                "",
+                "",
+                graphInputSchema(),
+                List.of(
+                        new GraphDraft.DraftNode(
+                                "fetchApplicant",
+                                "resource:" + VisualCatalogTestSupport.RESOURCE_ID,
+                                "",
+                                Map.of(),
+                                Map.of(),
+                                null
+                        ),
+                        new GraphDraft.DraftNode(
+                                "eligibility",
+                                "risk:eligibility",
+                                "",
+                                Map.of(
+                                        "score", GraphDraft.Binding.contextPath("score"),
+                                        "amount", GraphDraft.Binding.contextPath("score", "inputs", "amount")
+                                ),
+                                Map.of(),
+                                null
+                        )
+                ),
+                List.of(),
+                Map.of(),
+                new GraphDraft.OutputSelection("eligibility", "")
+        );
+
+        VisualConnectionCheckResult result = service.check(new VisualConnectionCheckRequest(
+                draft,
+                new GraphDraft.Endpoint("fetchApplicant", "payload", "score"),
+                new GraphDraft.Endpoint("eligibility", "inputs", "score"),
+                "data"
+        ));
+
+        assertThat(result.accepted()).isTrue();
+        assertThat(result.diagnostics()).isEmpty();
+    }
+
+    @Test
     void rejectsUnknownContextPickerPath() {
         VisualConnectionCheckService service = connectionService(VisualCatalogTestSupport
                 .catalogWithLoanApplicantResourceAndLibrary(VisualCatalogTestSupport.eligibilityLibrary("integer")));
@@ -250,6 +362,18 @@ class VisualConnectionCheckServiceTest {
         ), List.of());
     }
 
+    private static SchemaEnvelope customerOrderInputSchema() {
+        return SchemaEnvelope.object(Map.of(
+                "customer", Map.of(
+                        "type", "object",
+                        "properties", Map.of("id", Map.of("type", "string")),
+                        "required", List.of("id"),
+                        "additionalProperties", false
+                ),
+                "orderId", Map.of("type", "string")
+        ), List.of("customer", "orderId"));
+    }
+
     private static GraphDraft resourceEligibilityDraft(List<GraphDraft.DraftEdge> edges) {
         return resourceEligibilityDraft(null, edges);
     }
@@ -321,6 +445,104 @@ class VisualConnectionCheckServiceTest {
                 List.of(),
                 Map.of(),
                 new GraphDraft.OutputSelection("policy", "")
+        );
+    }
+
+    private static GraphDraft customerOrderMergeDraft() {
+        return new GraphDraft(
+                "",
+                "",
+                0,
+                "rootPortConnectionCheck",
+                "",
+                "",
+                "",
+                "",
+                customerOrderInputSchema(),
+                List.of(new GraphDraft.DraftNode(
+                        "merge",
+                        "risk:customerOrderMerge",
+                        "",
+                        Map.of("order.id", GraphDraft.Binding.contextPath("orderId", "order", "id")),
+                        Map.of(),
+                        null
+                )),
+                List.of(),
+                Map.of(),
+                new GraphDraft.OutputSelection("merge", "")
+        );
+    }
+
+    private static GraphDraft customerFactsToMergeDraft() {
+        return new GraphDraft(
+                "",
+                "",
+                0,
+                "nodeRootPortConnectionCheck",
+                "",
+                "",
+                "",
+                "",
+                customerOrderInputSchema(),
+                List.of(
+                        new GraphDraft.DraftNode(
+                                "customerFacts",
+                                "risk:customerFacts",
+                                "",
+                                Map.of(),
+                                Map.of(),
+                                null
+                        ),
+                        new GraphDraft.DraftNode(
+                                "merge",
+                                "risk:customerOrderMerge",
+                                "",
+                                Map.of("order.id", GraphDraft.Binding.contextPath("orderId", "order", "id")),
+                                Map.of(),
+                                null
+                        )
+                ),
+                List.of(),
+                Map.of(),
+                new GraphDraft.OutputSelection("merge", "")
+        );
+    }
+
+    private static GraphDraft customerRootAlreadyBoundDraft() {
+        return new GraphDraft(
+                "",
+                "",
+                0,
+                "rootOverlapConnectionCheck",
+                "",
+                "",
+                "",
+                "",
+                customerOrderInputSchema(),
+                List.of(
+                        new GraphDraft.DraftNode(
+                                "customerFacts",
+                                "risk:customerFacts",
+                                "",
+                                Map.of(),
+                                Map.of(),
+                                null
+                        ),
+                        new GraphDraft.DraftNode(
+                                "merge",
+                                "risk:customerOrderMerge",
+                                "",
+                                Map.of(
+                                        "customer", GraphDraft.Binding.contextPath("customer", "customer", ""),
+                                        "order.id", GraphDraft.Binding.contextPath("orderId", "order", "id")
+                                ),
+                                Map.of(),
+                                null
+                        )
+                ),
+                List.of(),
+                Map.of(),
+                new GraphDraft.OutputSelection("merge", "")
         );
     }
 

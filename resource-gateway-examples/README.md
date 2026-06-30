@@ -108,11 +108,21 @@ are expanded into field paths such as `applicant.score`, so imported operator
 libraries can expose realistic business payloads without flattening them first.
 The browser also exposes whole-port root handles for user operators and graph
 input `ctx`, allowing a compatible business object to be dragged as one binding
-while the server still proves the nested required fields and target types.
+while the server still proves the nested required fields and target types. For
+multi-port operators, root-port bindings use the port name as the stable draft
+input key while leaving `targetPath` empty, so dragging `customer` and `order`
+as whole objects does not collide in the saved draft. The same root-object
+contract works when the source is another operator's named output port, so a
+whole `customerFacts.customer` payload can feed a downstream `customer` input
+port without flattening or rebinding every field.
 Schema-declared config fields are canvas targets too: dragging an upstream
 output to a `configSchema` handle writes the same expression-backed config value
 as the inspector picker, runs the same server preflight, and keeps the visual
 dependency visible without persisting config edges as executable data edges.
+For normal data connections the server preflight simulates the post-drop binding
+state, replacing an existing edge for the same target endpoint while rejecting
+root/field overlaps such as binding the whole `customer` port and then binding
+`customer.id` separately.
 Object bindings and edges compare required nested fields, so an applicant object
 without required `tier` cannot feed an input requiring `applicant.tier`, even
 when `tier` exists only as an optional source field. Array bindings
@@ -459,8 +469,8 @@ schema-shaped inputs such as `applicant.score` compile as
 `applicant = { score: ctx.score }` instead of illegal dotted input-field
 assignments. Transform lowering also expands template references below a root
 port object binding, so `{{input.customer.id}}` can render as `ctx.customer.id`
-when the whole `customer` port is bound at once. Native operator `configSchema` values are also lowered as a
-business `config` input object while `timeout` and `retryAttempts` stay as
+when the whole `customer` port is bound at once. Native operator `configSchema`
+values are also lowered as a business `config` input object while `timeout` and `retryAttempts` stay as
 execution config; structured config expressions remain expressions inside that
 object. Because the current BLOGE object-literal grammar does not support quoted
 field names, native config keys must be DSL-safe field identifiers and codegen
@@ -910,7 +920,7 @@ Isolated component tests, some with lightweight Spring slices or mocks.
 | `ResourceDescriptorBootstrapTest` | 7 | Seeding, refresh behavior, idempotency |
 | `GatewayDslCompilationTest` | 7 | DSL parsing, graph loading |
 | Gateway example API suite | 13 | Dynamic composer service/controller, scenario catalog, example graph endpoints |
-| Visual authoring suite | 219 | Visual operator projection, resource design contract persistence and gates, resource-contract in-use delete protection, imported libraries, registry-aware and impact-aware library validation, catalog lifecycle gates, deprecated operator draft resolution and active-scope fingerprinting, catalog token gates and policy filtering, cross-library operatorRef ownership, operator-library in-use change protection and same-ref fingerprint drift/missing-snapshot preflight warnings, system-reserved operatorRef gates, import-time lowering gates including DSL-safe field-name gates, schema default value gates, draft/publication persistence and history, revision audit metadata, full-save/PATCH fingerprint preservation, service-managed fingerprint snapshot gates, structured malformed patch diagnostics, server-assigned create identity, revision-guarded full-save, patch, stored-run, delete, and publish conflict handling, operator fingerprint drift preservation and execution snapshot coverage gates, typed connection/edge validation including edge identity uniqueness and binding kind allow-list, input/config source-picker server preflight with duplicate-connection rejection and nested config paths, duplicate target input ownership, root-port object binding, object required fields, object schema structure gates, required-array schema gates, nested objectTemplate required fields, enum value-domain and shape gates, standard JSON Schema config enum gates, nested config expression references and configSchema type gates, native config input lowering and DSL field-key diagnostics, data edge/semantic dependency consistency, graph input schema gates, secret blocking, DSL lowering, compiler gating, dependency ordering, runtime smoke path |
+| Visual authoring suite | 227 | Visual operator projection, resource design contract persistence and gates, resource-contract in-use delete protection, imported libraries, registry-aware and impact-aware library validation, catalog lifecycle gates, deprecated operator draft resolution and active-scope fingerprinting, catalog token gates and policy filtering, cross-library operatorRef ownership, operator-library in-use change protection and same-ref fingerprint drift/missing-snapshot preflight warnings, system-reserved operatorRef gates, import-time lowering gates including DSL-safe field-name gates, schema default value gates, draft/publication persistence and history, revision audit metadata, full-save/PATCH fingerprint preservation, service-managed fingerprint snapshot gates, structured malformed patch diagnostics, server-assigned create identity, revision-guarded full-save, patch, stored-run, delete, and publish conflict handling, operator fingerprint drift preservation and execution snapshot coverage gates, typed connection/edge validation including edge identity uniqueness and binding kind allow-list, input/config/root-port source-picker server preflight with duplicate-connection rejection, post-drop binding simulation, and nested config paths, duplicate target input ownership, root-port object binding from context and upstream operator output, stable root-port input keys, object required fields, object schema structure gates, required-array schema gates, nested objectTemplate required fields, enum value-domain and shape gates, standard JSON Schema config enum gates, nested config expression references and configSchema type gates, native config input lowering and DSL field-key diagnostics, data edge/semantic dependency consistency, graph input schema gates, secret blocking, DSL lowering, compiler gating, dependency ordering, runtime smoke path |
 
 ### Layer 3 — Orchestration tests
 

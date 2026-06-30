@@ -601,6 +601,107 @@ class GraphDraftDslGeneratorTest {
     }
 
     @Test
+    void lowersRootPortBindingWhenStorageKeyIsPortName() {
+        GraphDraftDslGenerator generator = new GraphDraftDslGenerator(
+                VisualCatalogTestSupport.catalogWithLibrary(
+                        VisualCatalogTestSupport.duplicateInputPathLibrary()));
+        Map<String, GraphDraft.Binding> inputs = new LinkedHashMap<>();
+        inputs.put("customer", new GraphDraft.Binding(
+                "contextPath",
+                null,
+                "customer",
+                "",
+                "",
+                "customer",
+                "",
+                "",
+                Map.of()
+        ));
+        inputs.put("order.id", GraphDraft.Binding.contextPath("orderId", "order", "id"));
+        GraphDraft draft = new GraphDraft(
+                "",
+                "",
+                0,
+                "rootPortInput",
+                "",
+                "",
+                "",
+                "",
+                null,
+                List.of(new GraphDraft.DraftNode(
+                        "merge",
+                        "risk:customerOrderMerge",
+                        "",
+                        inputs,
+                        Map.of(),
+                        null
+                )),
+                List.of(),
+                Map.of(),
+                new GraphDraft.OutputSelection("merge", "")
+        );
+
+        DslGenerationResult result = generator.generate(draft);
+
+        assertThat(result.generated()).isTrue();
+        assertThat(result.dsl()).contains("customerId = ctx.customer.id");
+        assertThat(result.dsl()).contains("orderId = ctx.orderId");
+    }
+
+    @Test
+    void lowersRootPortBindingFromNamedNodeOutputPort() {
+        GraphDraftDslGenerator generator = new GraphDraftDslGenerator(
+                VisualCatalogTestSupport.catalogWithLibrary(
+                        VisualCatalogTestSupport.rootObjectPortLibrary()));
+        Map<String, GraphDraft.Binding> inputs = new LinkedHashMap<>();
+        inputs.put("customer", GraphDraft.Binding.nodePath(
+                "customerFacts",
+                "customer",
+                "",
+                "customer",
+                ""));
+        inputs.put("order.id", GraphDraft.Binding.contextPath("orderId", "order", "id"));
+        GraphDraft draft = new GraphDraft(
+                "",
+                "",
+                0,
+                "nodeRootPortInput",
+                "",
+                "",
+                "",
+                "",
+                null,
+                List.of(
+                        new GraphDraft.DraftNode(
+                                "customerFacts",
+                                "risk:customerFacts",
+                                "",
+                                Map.of(),
+                                Map.of(),
+                                null
+                        ),
+                        new GraphDraft.DraftNode(
+                                "merge",
+                                "risk:customerOrderMerge",
+                                "",
+                                inputs,
+                                Map.of(),
+                                null
+                        )
+                ),
+                List.of(),
+                Map.of(),
+                new GraphDraft.OutputSelection("merge", "")
+        );
+
+        DslGenerationResult result = generator.generate(draft);
+
+        assertThat(result.generated()).isTrue();
+        assertThat(result.dsl()).contains("customerId = customerFacts.output.customer.id");
+        assertThat(result.dsl()).contains("orderId = ctx.orderId");
+    }
+
+    @Test
     void lowersNestedInputTemplateAlias() {
         GraphDraftDslGenerator generator = new GraphDraftDslGenerator(
                 VisualCatalogTestSupport.catalogWithLibrary(

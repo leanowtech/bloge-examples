@@ -315,6 +315,44 @@ public final class VisualCatalogTestSupport {
         );
     }
 
+    public static OperatorDefinition customerFactsOperator() {
+        Map<String, Object> customerProperties = new LinkedHashMap<>();
+        customerProperties.put("id", Map.of("type", "string"));
+
+        return new OperatorDefinition(
+                "bloge.visualOperator.v1",
+                "risk:customerFacts",
+                "1.0.0",
+                new OperatorDefinition.Display("Customer facts",
+                        "Produces a customer object as a named root output port.",
+                        List.of("risk", "customer")),
+                new OperatorDefinition.Source("user-library", "", "", "", false),
+                new OperatorDefinition.Ports(
+                        List.of(),
+                        List.of(new OperatorDefinition.Port("customer",
+                                SchemaEnvelope.object(customerProperties, List.of("id")),
+                                true,
+                                "Customer facts."))
+                ),
+                SchemaEnvelope.opaque(),
+                OperatorDefinition.Capabilities.pure(),
+                new OperatorDefinition.Lowering("native", "riskCustomerFacts", Map.of()),
+                List.of()
+        );
+    }
+
+    public static OperatorLibrary rootObjectPortLibrary() {
+        return new OperatorLibrary(
+                "bloge.visualOperatorLibrary.v1",
+                "risk-root-object-ports",
+                "Root object port operators",
+                "1.0.0",
+                "risk-team",
+                "ACTIVE",
+                List.of(customerFactsOperator(), customerOrderMergeOperator())
+        );
+    }
+
     public static OperatorDefinition nestedApplicantEligibilityOperator() {
         Map<String, Object> applicantProperties = new LinkedHashMap<>();
         applicantProperties.put("score", Map.of("type", "integer"));

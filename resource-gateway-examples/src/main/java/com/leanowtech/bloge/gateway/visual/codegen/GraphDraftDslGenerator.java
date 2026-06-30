@@ -570,7 +570,13 @@ public class GraphDraftDslGenerator {
     }
 
     private static String targetInputName(String inputKey, GraphDraft.Binding binding) {
-        return binding.targetPath().isBlank() ? inputKey : binding.targetPath();
+        if (!binding.targetPath().isBlank()) {
+            return binding.targetPath();
+        }
+        if (!binding.targetPort().isBlank() && binding.targetPort().equals(inputKey)) {
+            return "";
+        }
+        return inputKey;
     }
 
     private static GraphDraft.Binding bindingFromMap(Map<?, ?> rawMap) {

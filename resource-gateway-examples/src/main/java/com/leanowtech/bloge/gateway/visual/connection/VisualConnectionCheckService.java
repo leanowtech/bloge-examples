@@ -53,13 +53,41 @@ public class VisualConnectionCheckService {
             return checkContextBinding(request, edge);
         }
 
-        GraphDraft candidate = draftWithPreviewEdge(request.draft(), edge);
+        if (hasSameConnection(request.draft(), edge)) {
+            return new VisualConnectionCheckResult(false, edge, List.of(
+                    VisualDiagnostic.error("visual.edge.duplicateConnection",
+                            "Connection '%s' is already represented by another edge."
+                                    .formatted(connectionLabel(edge)),
+                            "/edges/" + request.draft().edges().size())
+            ));
+        }
+
+        int targetIndex = targetNodeIndex(request.draft(), request.target().nodeId());
+        if (targetIndex < 0) {
+            return new VisualConnectionCheckResult(false, edge, List.of(
+                    VisualDiagnostic.error("visual.edge.unknownTarget",
+                            "Edge target node does not exist: " + request.target().nodeId(),
+                            "/target/nodeId")
+            ));
+        }
+        String inputKey = previewBindingKey(request.target());
+        GraphDraft.Binding binding = GraphDraft.Binding.nodePath(
+                request.source().nodeId(),
+                request.source().port(),
+                request.source().path(),
+                request.target().port(),
+                request.target().path()
+        );
+        GraphDraft candidate = draftWithPreviewBindingAndEdge(request.draft(), targetIndex, inputKey, binding, edge);
         int previewIndex = candidate.edges().size() - 1;
+        String bindingPath = "/nodes/" + targetIndex + "/inputs/" + inputKey;
+        String operatorPath = "/nodes/" + targetIndex + "/operatorRef";
         Map<String, Integer> nodeIndexes = nodeIndexes(candidate);
 
-        VisualValidationResult validation = validator.validateConnectionPreview(candidate);
+        VisualValidationResult validation = validator.validate(candidate);
         List<VisualDiagnostic> diagnostics = validation.diagnostics().stream()
-                .filter(diagnostic -> relevantToConnection(diagnostic, previewIndex, request, nodeIndexes))
+                .filter(diagnostic -> relevantToConnection(diagnostic, previewIndex, bindingPath, operatorPath,
+                        request, nodeIndexes))
                 .toList();
         return new VisualConnectionCheckResult(diagnostics.stream().noneMatch(VisualDiagnostic::error),
                 edge, diagnostics);
@@ -271,6 +299,66 @@ public class VisualConnectionCheckService {
         );
     }
 
+    private static GraphDraft draftWithPreviewBindingAndEdge(GraphDraft draft,
+                                                             int targetIndex,
+                                                             String inputKey,
+                                                             GraphDraft.Binding binding,
+                                                             GraphDraft.DraftEdge edge) {
+        GraphDraft withBinding = draftWithPreviewBinding(draft, targetIndex, inputKey, binding);
+        List<GraphDraft.DraftEdge> edges = new ArrayList<>();
+        for (GraphDraft.DraftEdge existing : withBinding.edges()) {
+            if (!sameTargetEndpoint(existing.target(), edge.target())) {
+                edges.add(existing);
+            }
+        }
+        edges.add(edge);
+        return new GraphDraft(
+                withBinding.schemaVersion(),
+                withBinding.draftId(),
+                withBinding.revision(),
+                withBinding.graphName(),
+                withBinding.tenantId(),
+                withBinding.namespace(),
+                withBinding.environment(),
+                withBinding.status(),
+                withBinding.inputSchema(),
+                withBinding.nodes(),
+                edges,
+                withBinding.visualLayout(),
+                withBinding.output(),
+                withBinding.operatorFingerprints()
+        );
+    }
+
+    private static boolean sameTargetEndpoint(GraphDraft.Endpoint left, GraphDraft.Endpoint right) {
+        return left.nodeId().equals(right.nodeId())
+                && left.port().equals(right.port())
+                && left.path().equals(right.path());
+    }
+
+    private static boolean hasSameConnection(GraphDraft draft, GraphDraft.DraftEdge edge) {
+        return draft.edges().stream()
+                .anyMatch(existing -> existing.kind().equals(edge.kind())
+                        && sameEndpoint(existing.source(), edge.source())
+                        && sameEndpoint(existing.target(), edge.target()));
+    }
+
+    private static boolean sameEndpoint(GraphDraft.Endpoint left, GraphDraft.Endpoint right) {
+        return left.nodeId().equals(right.nodeId())
+                && left.port().equals(right.port())
+                && left.path().equals(right.path());
+    }
+
+    private static String connectionLabel(GraphDraft.DraftEdge edge) {
+        return "%s.%s.%s -> %s.%s.%s".formatted(
+                edge.source().nodeId(),
+                edge.source().port(),
+                edge.source().path(),
+                edge.target().nodeId(),
+                edge.target().port(),
+                edge.target().path());
+    }
+
     private static Map<String, Integer> nodeIndexes(GraphDraft draft) {
         Map<String, Integer> indexes = new LinkedHashMap<>();
         for (int i = 0; i < draft.nodes().size(); i++) {
@@ -297,13 +385,17 @@ public class VisualConnectionCheckService {
 
     private static boolean relevantToConnection(VisualDiagnostic diagnostic,
                                                 int previewIndex,
+                                                String bindingPath,
+                                                String operatorPath,
                                                 VisualConnectionCheckRequest request,
                                                 Map<String, Integer> nodeIndexes) {
         String target = diagnostic.target();
         if (target.startsWith("/edges/" + previewIndex) || "visual.edge.cycle".equals(diagnostic.code())) {
             return true;
         }
-        return endpointNodeDiagnostic(target, request.source().nodeId(), nodeIndexes)
+        return targetAtOrBelow(target, bindingPath)
+                || targetAtOrBelow(target, operatorPath)
+                || endpointNodeDiagnostic(target, request.source().nodeId(), nodeIndexes)
                 || endpointNodeDiagnostic(target, request.target().nodeId(), nodeIndexes);
     }
 
