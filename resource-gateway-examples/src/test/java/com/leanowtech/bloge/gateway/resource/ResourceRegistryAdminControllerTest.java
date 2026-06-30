@@ -65,7 +65,7 @@ class ResourceRegistryAdminControllerTest {
     }
 
     @Test
-    void createDescriptorWithHeaderExpressions_roundTrips() throws Exception {
+    void createDescriptorWithHeaderAndCookieExpressions_roundTrips() throws Exception {
         var descriptor = new ResourceDescriptor(
                 "test.headers-api",
                 "http://example.com/api/{id}",
@@ -77,6 +77,7 @@ class ResourceRegistryAdminControllerTest {
                         Map.of("id", "ctx.params.id"),
                         Map.of(),
                         Map.of("X-Request-Id", "ctx.params[\"X-Request-Id\"]"),
+                        Map.of("SESSION", "ctx.params.sessionId"),
                         null
                 ),
                 new ResponseProtocol.HttpStatus(),
@@ -88,12 +89,16 @@ class ResourceRegistryAdminControllerTest {
                         .content(objectMapper.writeValueAsString(descriptor)))
                 .andExpect(status().isCreated())
                 .andExpect(jsonPath("$['parameterMapping']['headerExpressions']['X-Request-Id']")
-                        .value("ctx.params[\"X-Request-Id\"]"));
+                        .value("ctx.params[\"X-Request-Id\"]"))
+                .andExpect(jsonPath("$['parameterMapping']['cookieExpressions']['SESSION']")
+                        .value("ctx.params.sessionId"));
 
         mockMvc.perform(get("/admin/resources/test.headers-api"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$['parameterMapping']['headerExpressions']['X-Request-Id']")
-                        .value("ctx.params[\"X-Request-Id\"]"));
+                        .value("ctx.params[\"X-Request-Id\"]"))
+                .andExpect(jsonPath("$['parameterMapping']['cookieExpressions']['SESSION']")
+                        .value("ctx.params.sessionId"));
     }
 
     @Test

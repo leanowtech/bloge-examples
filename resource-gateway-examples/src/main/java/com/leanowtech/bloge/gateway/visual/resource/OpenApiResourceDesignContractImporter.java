@@ -10,6 +10,7 @@ import com.leanowtech.bloge.gateway.resource.ResponseProtocol;
 import com.leanowtech.bloge.gateway.visual.diagnostic.VisualDiagnostic;
 import com.leanowtech.bloge.gateway.visual.model.SchemaEnvelope;
 import com.leanowtech.bloge.gateway.visual.validation.VisualValidationResult;
+import com.leanowtech.bloge.operators.http.HttpRequestInput;
 
 import org.springframework.stereotype.Service;
 
@@ -52,6 +53,10 @@ public class OpenApiResourceDesignContractImporter {
             "allOf", "oneOf", "anyOf", "prefixItems"
     );
     private static final String FALLBACK_SERVER_URL = "https://api.example.com";
+    private static final String BEARER_TOKEN_PLACEHOLDER = "CHANGE_ME_BEARER_TOKEN";
+    private static final String BASIC_USERNAME_PLACEHOLDER = "CHANGE_ME_USERNAME";
+    private static final String BASIC_PASSWORD_PLACEHOLDER = "CHANGE_ME_PASSWORD";
+    private static final String API_KEY_PLACEHOLDER = "CHANGE_ME_API_KEY";
 
     /**
      * Projects one OpenAPI operation into a contract draft without storing it.
@@ -737,6 +742,7 @@ public class OpenApiResourceDesignContractImporter {
         Map<String, String> pathExpressions = new LinkedHashMap<>();
         Map<String, String> queryExpressions = new LinkedHashMap<>();
         Map<String, String> headerExpressions = new LinkedHashMap<>();
+        Map<String, String> cookieExpressions = new LinkedHashMap<>();
         for (OpenApiParameter parameter : descriptorParameters(openApi, selected)) {
             if ("path".equals(parameter.location())) {
                 putParameterExpression(pathExpressions, parameter);
@@ -745,11 +751,7 @@ public class OpenApiResourceDesignContractImporter {
             } else if ("header".equals(parameter.location())) {
                 putParameterExpression(headerExpressions, parameter);
             } else if ("cookie".equals(parameter.location())) {
-                diagnostics.add(VisualDiagnostic.warning(
-                        "visual.resourceContract.openapi.descriptorParameterLocationUnsupported",
-                        "OpenAPI %s parameter '%s' is present in the contract schema but cannot be mapped by ResourceDescriptor; review descriptorSuggestion before saving."
-                                .formatted(parameter.location(), parameter.name()),
-                        parameter.target()));
+                putParameterExpression(cookieExpressions, parameter);
             }
         }
 
@@ -765,9 +767,9 @@ public class OpenApiResourceDesignContractImporter {
                 joinUrl(serverUrl(openApi, selected, diagnostics), selected.path()),
                 selected.method(),
                 headers,
-                null,
+                authStrategySuggestion(openApi, selected, diagnostics),
                 Duration.ofSeconds(30),
-                new ParameterMapping(pathExpressions, queryExpressions, headerExpressions,
+                new ParameterMapping(pathExpressions, queryExpressions, headerExpressions, cookieExpressions,
                         hasBody ? "ctx.params.body" : null),
                 new ResponseProtocol.HttpStatus(),
                 null
@@ -823,6 +825,189 @@ public class OpenApiResourceDesignContractImporter {
         Optional<Map<String, Object>> requestBody = dereferenceObject(openApi, rawBody, new ArrayList<>(),
                 bodyTarget, "requestBody");
         return requestBody.flatMap(body -> jsonContent(body, bodyTarget, new ArrayList<>(), false)).isPresent();
+    }
+
+    private HttpRequestInput.HttpAuth authStrategySuggestion(Map<String, Object> openApi,
+                                                             SelectedOperation selected,
+                                                             List<VisualDiagnostic> diagnostics) {
+        SecurityRequirements security = selectedSecurityRequirements(openApi, selected);
+        if (security.rawSecurity() == null) {
+            return null;
+        }
+        if (!(security.rawSecurity() instanceof List<?> requirements)) {
+            diagnostics.add(VisualDiagnostic.warning("visual.resourceContract.openapi.securityInvalid",
+                    "OpenAPI security must be an array; descriptorSuggestion will not include authStrategy.",
+                    security.target()));
+            return null;
+        }
+        if (requirements.isEmpty()) {
+            return null;
+        }
+        for (int i = 0; i < requirements.size(); i++) {
+            String requirementTarget = security.target() + "/" + i;
+            Object rawRequirement = requirements.get(i);
+            if (!(rawRequirement instanceof Map<?, ?> requirementMap)) {
+                diagnostics.add(VisualDiagnostic.warning(
+                        "visual.resourceContract.openapi.securityRequirementInvalid",
+                        "OpenAPI security requirement must be an object; descriptorSuggestion skips it.",
+                        requirementTarget));
+                continue;
+            }
+            Map<String, Object> requirement = objectMap(requirementMap);
+            if (requirement.isEmpty()) {
+                diagnostics.add(VisualDiagnostic.warning("visual.resourceContract.openapi.securityOptional",
+                        "OpenAPI security allows an unauthenticated alternative; descriptorSuggestion keeps authStrategy empty.",
+                        requirementTarget));
+                return null;
+            }
+            if (requirement.size() > 1) {
+                diagnostics.add(VisualDiagnostic.warning(
+                        "visual.resourceContract.openapi.securityRequirementCombinationUnsupported",
+                        "OpenAPI security requirement combines multiple schemes; ResourceDescriptor supports one authStrategy.",
+                        requirementTarget));
+                continue;
+            }
+            String schemeName = requirement.keySet().iterator().next();
+            Optional<OpenApiSecurityScheme> scheme = securityScheme(openApi, schemeName,
+                    requirementTarget + "/" + pointerSegment(schemeName), diagnostics);
+            if (scheme.isEmpty()) {
+                continue;
+            }
+            Optional<HttpRequestInput.HttpAuth> auth = toAuthStrategy(scheme.get(), diagnostics);
+            if (auth.isPresent()) {
+                return auth.get();
+            }
+        }
+        return null;
+    }
+
+    private SecurityRequirements selectedSecurityRequirements(Map<String, Object> openApi,
+                                                              SelectedOperation selected) {
+        if (selected.operation().containsKey("security")) {
+            return new SecurityRequirements(
+                    selected.operation().get("security"),
+                    "/openApi/paths/" + pointerSegment(selected.path()) + "/" + selected.method() + "/security"
+            );
+        }
+        if (openApi.containsKey("security")) {
+            return new SecurityRequirements(openApi.get("security"), "/openApi/security");
+        }
+        return new SecurityRequirements(null, "");
+    }
+
+    private Optional<OpenApiSecurityScheme> securityScheme(Map<String, Object> openApi,
+                                                           String schemeName,
+                                                           String requirementTarget,
+                                                           List<VisualDiagnostic> diagnostics) {
+        Object rawComponents = openApi.get("components");
+        if (!(rawComponents instanceof Map<?, ?> rawComponentsMap)) {
+            diagnostics.add(VisualDiagnostic.warning(
+                    "visual.resourceContract.openapi.securitySchemeMissing",
+                    "OpenAPI security scheme '%s' is referenced but components.securitySchemes is missing."
+                            .formatted(schemeName),
+                    requirementTarget));
+            return Optional.empty();
+        }
+        Object rawSchemes = rawComponentsMap.get("securitySchemes");
+        if (!(rawSchemes instanceof Map<?, ?> rawSecuritySchemes)) {
+            diagnostics.add(VisualDiagnostic.warning(
+                    "visual.resourceContract.openapi.securitySchemeMissing",
+                    "OpenAPI security scheme '%s' is referenced but components.securitySchemes is missing."
+                            .formatted(schemeName),
+                    requirementTarget));
+            return Optional.empty();
+        }
+        Object rawScheme = rawSecuritySchemes.get(schemeName);
+        if (!(rawScheme instanceof Map<?, ?> rawSchemeMap)) {
+            diagnostics.add(VisualDiagnostic.warning(
+                    "visual.resourceContract.openapi.securitySchemeMissing",
+                    "OpenAPI security scheme '%s' could not be resolved.".formatted(schemeName),
+                    requirementTarget));
+            return Optional.empty();
+        }
+        String schemeTarget = "/openApi/components/securitySchemes/" + pointerSegment(schemeName);
+        Map<String, Object> scheme = objectMap(rawSchemeMap);
+        Object rawRef = scheme.get("$ref");
+        if (rawRef instanceof String ref) {
+            if (!ref.startsWith("#/")) {
+                diagnostics.add(VisualDiagnostic.warning(
+                        "visual.resourceContract.openapi.securitySchemeRefUnsupported",
+                        "OpenAPI security scheme reference '%s' must be a local JSON pointer.".formatted(ref),
+                        schemeTarget + "/$ref"));
+                return Optional.empty();
+            }
+            Object resolved = resolveJsonPointer(openApi, ref);
+            if (!(resolved instanceof Map<?, ?> resolvedMap)) {
+                diagnostics.add(VisualDiagnostic.warning(
+                        "visual.resourceContract.openapi.securitySchemeRefUnresolved",
+                        "OpenAPI security scheme reference '%s' could not be resolved.".formatted(ref),
+                        schemeTarget + "/$ref"));
+                return Optional.empty();
+            }
+            scheme = objectMap(resolvedMap);
+            schemeTarget = refTarget(ref);
+        }
+        return Optional.of(new OpenApiSecurityScheme(schemeName, scheme, schemeTarget));
+    }
+
+    private Optional<HttpRequestInput.HttpAuth> toAuthStrategy(OpenApiSecurityScheme scheme,
+                                                              List<VisualDiagnostic> diagnostics) {
+        String type = string(scheme.scheme().get("type")).toLowerCase(Locale.ROOT);
+        if ("http".equals(type)) {
+            return httpAuthStrategy(scheme, diagnostics);
+        }
+        if ("apikey".equals(type)) {
+            return apiKeyAuthStrategy(scheme, diagnostics);
+        }
+        diagnostics.add(VisualDiagnostic.warning("visual.resourceContract.openapi.securitySchemeUnsupported",
+                "OpenAPI security scheme '%s' has unsupported type '%s'; descriptorSuggestion leaves authStrategy empty."
+                        .formatted(scheme.name(), blank(type) ? "<blank>" : type),
+                scheme.target() + "/type"));
+        return Optional.empty();
+    }
+
+    private Optional<HttpRequestInput.HttpAuth> httpAuthStrategy(OpenApiSecurityScheme scheme,
+                                                                 List<VisualDiagnostic> diagnostics) {
+        String httpScheme = string(scheme.scheme().get("scheme")).toLowerCase(Locale.ROOT);
+        if ("bearer".equals(httpScheme)) {
+            warnAuthPlaceholder(scheme, diagnostics);
+            return Optional.of(new HttpRequestInput.BearerAuth(BEARER_TOKEN_PLACEHOLDER));
+        }
+        if ("basic".equals(httpScheme)) {
+            warnAuthPlaceholder(scheme, diagnostics);
+            return Optional.of(new HttpRequestInput.BasicAuth(
+                    BASIC_USERNAME_PLACEHOLDER,
+                    BASIC_PASSWORD_PLACEHOLDER
+            ));
+        }
+        diagnostics.add(VisualDiagnostic.warning("visual.resourceContract.openapi.securitySchemeUnsupported",
+                "OpenAPI HTTP security scheme '%s' is not supported by ResourceDescriptor authStrategy."
+                        .formatted(blank(httpScheme) ? "<blank>" : httpScheme),
+                scheme.target() + "/scheme"));
+        return Optional.empty();
+    }
+
+    private Optional<HttpRequestInput.HttpAuth> apiKeyAuthStrategy(OpenApiSecurityScheme scheme,
+                                                                   List<VisualDiagnostic> diagnostics) {
+        String location = string(scheme.scheme().get("in")).toLowerCase(Locale.ROOT);
+        String headerName = string(scheme.scheme().get("name"));
+        if ("header".equals(location) && !headerName.isBlank()) {
+            warnAuthPlaceholder(scheme, diagnostics);
+            return Optional.of(new HttpRequestInput.ApiKeyAuth(headerName, API_KEY_PLACEHOLDER));
+        }
+        diagnostics.add(VisualDiagnostic.warning("visual.resourceContract.openapi.securitySchemeUnsupported",
+                "OpenAPI apiKey security scheme '%s' uses location '%s'; ResourceDescriptor authStrategy supports header api keys."
+                        .formatted(scheme.name(), blank(location) ? "<blank>" : location),
+                scheme.target() + "/in"));
+        return Optional.empty();
+    }
+
+    private void warnAuthPlaceholder(OpenApiSecurityScheme scheme,
+                                     List<VisualDiagnostic> diagnostics) {
+        diagnostics.add(VisualDiagnostic.warning("visual.resourceContract.openapi.authPlaceholder",
+                "descriptorSuggestion authStrategy for OpenAPI security scheme '%s' uses placeholder credentials; replace them before saving the resource descriptor."
+                        .formatted(scheme.name()),
+                scheme.target()));
     }
 
     private String serverUrl(Map<String, Object> openApi,
@@ -994,6 +1179,13 @@ public class OpenApiResourceDesignContractImporter {
         return token.replace("~1", "/").replace("~0", "~");
     }
 
+    private static String refTarget(String ref) {
+        if (ref == null || !ref.startsWith("#/")) {
+            return "";
+        }
+        return "/openApi/" + ref.substring(2);
+    }
+
     private record SelectedOperation(
             String path,
             String method,
@@ -1013,5 +1205,11 @@ public class OpenApiResourceDesignContractImporter {
             String location,
             String target
     ) {
+    }
+
+    private record SecurityRequirements(Object rawSecurity, String target) {
+    }
+
+    private record OpenApiSecurityScheme(String name, Map<String, Object> scheme, String target) {
     }
 }

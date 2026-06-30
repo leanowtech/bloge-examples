@@ -20,7 +20,7 @@ import java.util.Map;
  * @param defaultHeaders   headers to include on every request (may be overridden per-call)
  * @param authStrategy     authentication strategy (Bearer, Basic, or API key), or {@code null}
  * @param defaultTimeout   default request timeout; may be overridden per-call
- * @param parameterMapping expressions mapping operator input to path/query/body parameters
+ * @param parameterMapping expressions mapping operator input to path/query/header/cookie/body parameters
  * @param responseProtocol how to determine success or failure from the HTTP response
  * @param payloadPath      dot-notation JSON path to extract the payload from the response body
  *                         (e.g. "data" or "result.items"); {@code null} means use the full body

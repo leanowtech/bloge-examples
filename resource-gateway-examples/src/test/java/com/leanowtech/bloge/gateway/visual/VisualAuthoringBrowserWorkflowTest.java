@@ -239,6 +239,13 @@ class VisualAuthoringBrowserWorkflowTest {
         assertThat(descriptor)
                 .containsEntry("resourceId", "loan-applicant-service.getProfile")
                 .containsEntry("urlTemplate", "https://api.example.test/api/loan-applicants/{applicantId}");
+        assertThat((Map<String, Object>) descriptor.get("authStrategy"))
+                .containsEntry("type", "apiKey")
+                .containsEntry("headerName", "X-Api-Key")
+                .containsEntry("key", "CHANGE_ME_API_KEY");
+        Map<String, Object> parameterMapping = (Map<String, Object>) descriptor.get("parameterMapping");
+        assertThat((Map<String, Object>) parameterMapping.get("cookieExpressions"))
+                .containsEntry("SESSION", "ctx.params.SESSION");
 
         Map<String, Object> saved = putMap(
                 "/admin/resource-design-contracts/loan-applicant-service.getProfile",
@@ -360,6 +367,8 @@ class VisualAuthoringBrowserWorkflowTest {
                   version: 1.0.0
                 servers:
                   - url: https://api.example.test
+                security:
+                  - ApiKeyAuth: []
                 paths:
                   /api/loan-applicants/{applicantId}:
                     get:
@@ -368,6 +377,10 @@ class VisualAuthoringBrowserWorkflowTest {
                         - name: applicantId
                           in: path
                           required: true
+                          schema:
+                            type: string
+                        - name: SESSION
+                          in: cookie
                           schema:
                             type: string
                       responses:
@@ -386,6 +399,12 @@ class VisualAuthoringBrowserWorkflowTest {
                                     type: number
                                 required:
                                   - score
+                components:
+                  securitySchemes:
+                    ApiKeyAuth:
+                      type: apiKey
+                      in: header
+                      name: X-Api-Key
                 """;
     }
 }

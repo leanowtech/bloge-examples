@@ -173,6 +173,27 @@ class DatabaseResourceRegistryTest {
         assertThat(registry.contains("bad-header.api")).isFalse();
     }
 
+    @Test
+    void register_rejectsInvalidCookieExpression() {
+        var descriptor = new ResourceDescriptor(
+                "bad-cookie.api",
+                "http://x.com/cookie",
+                "GET",
+                Map.of(),
+                null,
+                Duration.ofSeconds(5),
+                new ParameterMapping(Map.of(), Map.of(), Map.of(),
+                        Map.of("SESSION", "==== garbage @@"), null),
+                new ResponseProtocol.HttpStatus(),
+                null
+        );
+
+        assertThatThrownBy(() -> registry.register(descriptor))
+                .isInstanceOf(ResourceDescriptorException.class)
+                .hasMessageContaining("==== garbage @@");
+        assertThat(registry.contains("bad-cookie.api")).isFalse();
+    }
+
     private static ResourceDescriptor simpleDescriptor(String id, String url, String method) {
         return new ResourceDescriptor(id, url, method, Map.of(), null,
                 Duration.ofSeconds(5), ParameterMapping.empty(),

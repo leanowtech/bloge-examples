@@ -158,6 +158,59 @@ class HttpResourceOperatorTest {
         assertThat(httpStub.lastHeaders()).containsEntry("X-Request-Id", "override-value");
     }
 
+    @Test
+    @DisplayName("descriptor cookie expressions are assembled into a Cookie header")
+    void dynamicCookieExpressions() throws Exception {
+        registry.put(new ResourceDescriptor(
+                "cookie.dynamic", "https://api.example.com/test", "GET",
+                Map.of("Accept", "application/json"), null, Duration.ofSeconds(5),
+                new ParameterMapping(
+                        Map.of(),
+                        Map.of(),
+                        Map.of(),
+                        Map.of("SESSION", "ctx.params.sessionId",
+                                "tenant_pref", "ctx.tenantId"),
+                        null
+                ),
+                new ResponseProtocol.HttpStatus(), null
+        ));
+        httpStub.setResponse(new HttpResponseOutput(200, Map.of(), "{}", Duration.ofMillis(10)));
+
+        operator.execute(new HttpResourceInput("cookie.dynamic",
+                Map.of("sessionId", "abc 123")), operatorContext());
+
+        assertThat(httpStub.lastHeaders())
+                .containsEntry("Accept", "application/json")
+                .containsKey("Cookie");
+        assertThat(httpStub.lastHeaders().get("Cookie").split("; "))
+                .containsExactlyInAnyOrder("SESSION=abc%20123", "tenant_pref=tenant-A");
+    }
+
+    @Test
+    @DisplayName("per-call Cookie header override takes precedence over descriptor cookie expressions")
+    void dynamicCookieExpressionsRespectOverrides() throws Exception {
+        registry.put(new ResourceDescriptor(
+                "cookie.override", "https://api.example.com/test", "GET",
+                Map.of(), null, Duration.ofSeconds(5),
+                new ParameterMapping(
+                        Map.of(),
+                        Map.of(),
+                        Map.of(),
+                        Map.of("SESSION", "ctx.params.sessionId"),
+                        null
+                ),
+                new ResponseProtocol.HttpStatus(), null
+        ));
+        httpStub.setResponse(new HttpResponseOutput(200, Map.of(), "{}", Duration.ofMillis(10)));
+
+        operator.execute(new HttpResourceInput("cookie.override",
+                Map.of("sessionId", "descriptor-value"),
+                Map.of("Cookie", "SESSION=override-value"),
+                null), operatorContext());
+
+        assertThat(httpStub.lastHeaders()).containsEntry("Cookie", "SESSION=override-value");
+    }
+
     // ── Timeout default vs override ─────────────────────────────────────
 
     @Test

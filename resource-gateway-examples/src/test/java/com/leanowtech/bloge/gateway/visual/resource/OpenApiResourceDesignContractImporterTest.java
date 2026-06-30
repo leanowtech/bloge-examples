@@ -1,7 +1,9 @@
 package com.leanowtech.bloge.gateway.visual.resource;
 
 import com.leanowtech.bloge.gateway.resource.ResourceDescriptor;
+import com.leanowtech.bloge.operators.http.HttpRequestInput;
 
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
@@ -84,7 +86,101 @@ class OpenApiResourceDesignContractImporterTest {
                 .containsEntry("expand", "ctx.params.expand");
         assertThat(descriptor.parameterMapping().headerExpressions())
                 .containsEntry("X-Request-Id", "ctx.params[\"X-Request-Id\"]");
+        assertThat(descriptor.parameterMapping().cookieExpressions())
+                .containsEntry("SESSION", "ctx.params.SESSION");
         assertThat(descriptor.parameterMapping().bodyExpression()).isEqualTo("ctx.params.body");
+    }
+
+    @Test
+    void suggestsBearerAuthFromRootSecurityScheme() {
+        OpenApiResourceDesignContractImportResult result = importer.project(
+                request("order-service.listOrders", "listOrders", null, null,
+                        openApiWithSecurity(
+                                List.of(Map.of("BearerAuth", List.of())),
+                                null,
+                                Map.of("BearerAuth", Map.of(
+                                        "type", "http",
+                                        "scheme", "bearer",
+                                        "bearerFormat", "JWT"
+                                ))
+                        ))
+        );
+
+        assertThat(result.validation().valid()).isTrue();
+        assertThat(result.descriptorSuggestion().authStrategy())
+                .isEqualTo(new HttpRequestInput.BearerAuth("CHANGE_ME_BEARER_TOKEN"));
+        assertThat(result.validation().diagnostics())
+                .extracting("code")
+                .contains("visual.resourceContract.openapi.authPlaceholder");
+    }
+
+    @Test
+    void suggestsHeaderApiKeyAuthFromOperationSecurityScheme() {
+        OpenApiResourceDesignContractImportResult result = importer.project(
+                request("order-service.listOrders", "listOrders", null, null,
+                        openApiWithSecurity(
+                                null,
+                                List.of(Map.of("ApiKeyAuth", List.of())),
+                                Map.of("ApiKeyAuth", Map.of(
+                                        "type", "apiKey",
+                                        "in", "header",
+                                        "name", "X-Api-Key"
+                                ))
+                        ))
+        );
+
+        assertThat(result.validation().valid()).isTrue();
+        assertThat(result.descriptorSuggestion().authStrategy())
+                .isEqualTo(new HttpRequestInput.ApiKeyAuth("X-Api-Key", "CHANGE_ME_API_KEY"));
+        assertThat(result.validation().diagnostics())
+                .extracting("code")
+                .contains("visual.resourceContract.openapi.authPlaceholder");
+    }
+
+    @Test
+    void operationSecurityOverridesRootSecurityWhenSuggestingAuth() {
+        OpenApiResourceDesignContractImportResult result = importer.project(
+                request("order-service.listOrders", "listOrders", null, null,
+                        openApiWithSecurity(
+                                List.of(Map.of("BearerAuth", List.of())),
+                                List.of(Map.of("BasicAuth", List.of())),
+                                Map.of(
+                                        "BearerAuth", Map.of(
+                                                "type", "http",
+                                                "scheme", "bearer"
+                                        ),
+                                        "BasicAuth", Map.of(
+                                                "type", "http",
+                                                "scheme", "basic"
+                                        )
+                                )
+                        ))
+        );
+
+        assertThat(result.validation().valid()).isTrue();
+        assertThat(result.descriptorSuggestion().authStrategy())
+                .isEqualTo(new HttpRequestInput.BasicAuth("CHANGE_ME_USERNAME", "CHANGE_ME_PASSWORD"));
+    }
+
+    @Test
+    void warnsWhenOpenApiSecurityCannotBeMappedToDescriptorAuth() {
+        OpenApiResourceDesignContractImportResult result = importer.project(
+                request("order-service.listOrders", "listOrders", null, null,
+                        openApiWithSecurity(
+                                List.of(Map.of("OAuth", List.of("orders:read"))),
+                                null,
+                                Map.of("OAuth", Map.of(
+                                        "type", "oauth2",
+                                        "flows", Map.of()
+                                ))
+                        ))
+        );
+
+        assertThat(result.validation().valid()).isTrue();
+        assertThat(result.descriptorSuggestion().authStrategy()).isNull();
+        assertThat(result.validation().diagnostics())
+                .extracting("code")
+                .contains("visual.resourceContract.openapi.securitySchemeUnsupported");
     }
 
     @Test
@@ -303,6 +399,11 @@ class OpenApiResourceDesignContractImporterTest {
                                                         "name", "X-Request-Id",
                                                         "in", "header",
                                                         "schema", Map.of("type", "string")
+                                                ),
+                                                Map.of(
+                                                        "name", "SESSION",
+                                                        "in", "cookie",
+                                                        "schema", Map.of("type", "string")
                                                 )
                                         ),
                                         "requestBody", Map.of(
@@ -339,6 +440,54 @@ class OpenApiResourceDesignContractImporterTest {
                         )
                 )
         );
+    }
+
+    private static Map<String, Object> openApiWithSecurity(Object rootSecurity,
+                                                           Object operationSecurity,
+                                                           Map<String, Object> securitySchemes) {
+        Map<String, Object> operation = new LinkedHashMap<>();
+        operation.put("operationId", "listOrders");
+        operation.put("summary", "List orders");
+        operation.put("parameters", List.of(
+                Map.of(
+                        "name", "userId",
+                        "in", "query",
+                        "required", true,
+                        "schema", Map.of("type", "string")
+                )
+        ));
+        operation.put("responses", Map.of(
+                "200", Map.of(
+                        "description", "ok",
+                        "content", Map.of(
+                                "application/json", Map.of(
+                                        "schema", Map.of(
+                                                "type", "object",
+                                                "properties", Map.of(
+                                                        "items", Map.of(
+                                                                "type", "array",
+                                                                "items", Map.of("type", "string")
+                                                        )
+                                                ),
+                                                "required", List.of("items")
+                                        )
+                                )
+                        )
+                )
+        ));
+        if (operationSecurity != null) {
+            operation.put("security", operationSecurity);
+        }
+
+        Map<String, Object> openApi = new LinkedHashMap<>();
+        openApi.put("openapi", "3.1.0");
+        openApi.put("servers", List.of(Map.of("url", "https://api.example.test/v1")));
+        if (rootSecurity != null) {
+            openApi.put("security", rootSecurity);
+        }
+        openApi.put("paths", Map.of("/orders", Map.of("get", operation)));
+        openApi.put("components", Map.of("securitySchemes", securitySchemes));
+        return openApi;
     }
 
     private static String openApiOrderListYaml() {

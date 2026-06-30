@@ -88,10 +88,12 @@ class ResourceDesignContractAdminControllerTest {
 
         mockMvc.perform(post("/admin/resource-design-contracts/from-openapi")
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content(objectMapper.writeValueAsString(request)))
+                .content(objectMapper.writeValueAsString(request)))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.validation.valid").value(true))
-                .andExpect(jsonPath("$.validation.diagnostics").isEmpty())
+                .andExpect(jsonPath("$.validation.diagnostics[0].level").value("WARNING"))
+                .andExpect(jsonPath("$.validation.diagnostics[0].code")
+                        .value("visual.resourceContract.openapi.descriptorDiff"))
                 .andExpect(jsonPath("$.contract.resourceId").value("order-service.listOrders"))
                 .andExpect(jsonPath("$.contract.displayName").value("List orders"))
                 .andExpect(jsonPath("$.contract.requestSchema.schema.required[0]").value("userId"))
@@ -104,6 +106,52 @@ class ResourceDesignContractAdminControllerTest {
                         .value("ctx.params.userId"));
 
         assertThat(registry.all()).isEmpty();
+    }
+
+    @Test
+    void fromOpenApiWarnsWhenPreviewDiffersFromStoredContractAndDescriptor() throws Exception {
+        registry.upsert(new ResourceDesignContract(
+                "contract:orders",
+                "order-service.listOrders",
+                "Legacy orders",
+                "Old OpenAPI projection.",
+                List.of("legacy"),
+                SchemaEnvelope.object(Map.of(
+                        "legacyUserId", Map.of("type", "string")
+                ), List.of("legacyUserId")),
+                SchemaEnvelope.object(Map.of(
+                        "legacyItems", Map.of(
+                                "type", "array",
+                                "items", Map.of("type", "string")
+                        )
+                ), List.of()),
+                Map.of("legacy", Map.of("legacyUserId", "u1")),
+                ResourceDesignContract.STATUS_ACTIVE
+        ));
+        OpenApiResourceDesignContractImportRequest request = new OpenApiResourceDesignContractImportRequest(
+                "order-service.listOrders",
+                "listOrders",
+                null,
+                null,
+                null,
+                openApiOrderList()
+        );
+
+        mockMvc.perform(post("/admin/resource-design-contracts/from-openapi")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(request)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.validation.valid").value(true))
+                .andExpect(jsonPath("$.validation.diagnostics[*].code")
+                        .value(org.hamcrest.Matchers.hasItems(
+                                "visual.resourceContract.openapi.requestSchemaDiff",
+                                "visual.resourceContract.openapi.responseSchemaDiff",
+                                "visual.resourceContract.openapi.contractMetadataDiff",
+                                "visual.resourceContract.openapi.descriptorDiff"
+                        )))
+                .andExpect(jsonPath("$.contract.resourceId").value("order-service.listOrders"));
+
+        assertThat(registry.findByResourceId("order-service.listOrders")).isPresent();
     }
 
     @Test

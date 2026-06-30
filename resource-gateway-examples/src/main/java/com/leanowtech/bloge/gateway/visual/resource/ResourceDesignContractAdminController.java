@@ -26,6 +26,7 @@ import org.springframework.web.bind.annotation.RestController;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.List;
+import java.util.Objects;
 import java.util.Optional;
 
 /**
@@ -110,12 +111,80 @@ public class ResourceDesignContractAdminController {
         List<VisualDiagnostic> diagnostics = new ArrayList<>(importResult.validation().diagnostics());
         if (importResult.contract() != null) {
             diagnostics.addAll(validateAgainstRegistry(importResult.contract(), force).diagnostics());
+            diagnostics.addAll(openApiReplacementDiffDiagnostics(
+                    importResult.contract(),
+                    importResult.descriptorSuggestion()
+            ));
         }
         return new OpenApiResourceDesignContractImportResult(
                 importResult.contract(),
                 new VisualValidationResult(false, diagnostics),
                 importResult.descriptorSuggestion()
         );
+    }
+
+    private List<VisualDiagnostic> openApiReplacementDiffDiagnostics(ResourceDesignContract candidate,
+                                                                     ResourceDescriptor descriptorSuggestion) {
+        List<VisualDiagnostic> diagnostics = new ArrayList<>();
+        registry.findByResourceId(candidate.resourceId())
+                .ifPresent(existing -> addContractDiffDiagnostics(existing, candidate, diagnostics));
+        if (descriptorSuggestion != null && resourceRegistry.contains(descriptorSuggestion.resourceId())) {
+            addDescriptorDiffDiagnostics(resourceRegistry.resolve(descriptorSuggestion.resourceId()),
+                    descriptorSuggestion, diagnostics);
+        }
+        return diagnostics;
+    }
+
+    private void addContractDiffDiagnostics(ResourceDesignContract existing,
+                                            ResourceDesignContract candidate,
+                                            List<VisualDiagnostic> diagnostics) {
+        if (!Objects.equals(existing.requestSchema(), candidate.requestSchema())) {
+            diagnostics.add(VisualDiagnostic.warning("visual.resourceContract.openapi.requestSchemaDiff",
+                    "OpenAPI preview request schema differs from the stored resource contract; review existing drafts before saving.",
+                    "/contract/requestSchema"));
+        }
+        if (!Objects.equals(existing.responseSchema(), candidate.responseSchema())) {
+            diagnostics.add(VisualDiagnostic.warning("visual.resourceContract.openapi.responseSchemaDiff",
+                    "OpenAPI preview response schema differs from the stored resource contract; review downstream field bindings before saving.",
+                    "/contract/responseSchema"));
+        }
+        List<String> changed = new ArrayList<>();
+        addChanged(changed, "displayName", existing.displayName(), candidate.displayName());
+        addChanged(changed, "description", existing.description(), candidate.description());
+        addChanged(changed, "tags", existing.tags(), candidate.tags());
+        addChanged(changed, "examples", existing.examples(), candidate.examples());
+        addChanged(changed, "status", existing.status(), candidate.status());
+        if (!changed.isEmpty()) {
+            diagnostics.add(VisualDiagnostic.warning("visual.resourceContract.openapi.contractMetadataDiff",
+                    "OpenAPI preview changes stored resource contract metadata: " + String.join(", ", changed) + ".",
+                    "/contract"));
+        }
+    }
+
+    private void addDescriptorDiffDiagnostics(ResourceDescriptor existing,
+                                              ResourceDescriptor candidate,
+                                              List<VisualDiagnostic> diagnostics) {
+        List<String> changed = new ArrayList<>();
+        addChanged(changed, "urlTemplate", existing.urlTemplate(), candidate.urlTemplate());
+        addChanged(changed, "method", existing.method(), candidate.method());
+        addChanged(changed, "defaultHeaders", existing.defaultHeaders(), candidate.defaultHeaders());
+        addChanged(changed, "authStrategy", existing.authStrategy(), candidate.authStrategy());
+        addChanged(changed, "defaultTimeout", existing.defaultTimeout(), candidate.defaultTimeout());
+        addChanged(changed, "parameterMapping", existing.parameterMapping(), candidate.parameterMapping());
+        addChanged(changed, "responseProtocol", existing.responseProtocol(), candidate.responseProtocol());
+        addChanged(changed, "payloadPath", existing.payloadPath(), candidate.payloadPath());
+        if (!changed.isEmpty()) {
+            diagnostics.add(VisualDiagnostic.warning("visual.resourceContract.openapi.descriptorDiff",
+                    "OpenAPI descriptorSuggestion differs from the registered runtime descriptor: "
+                            + String.join(", ", changed) + ".",
+                    "/descriptorSuggestion"));
+        }
+    }
+
+    private static void addChanged(List<String> changed, String field, Object existing, Object candidate) {
+        if (!Objects.equals(existing, candidate)) {
+            changed.add(field);
+        }
     }
 
     /**

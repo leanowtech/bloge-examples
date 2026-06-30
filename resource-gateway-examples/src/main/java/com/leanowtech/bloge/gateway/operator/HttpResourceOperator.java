@@ -21,8 +21,10 @@ import com.leanowtech.bloge.spring.annotation.BlogeOperator;
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.StringJoiner;
@@ -117,7 +119,7 @@ public class HttpResourceOperator implements Operator<Object, HttpResourceOutput
 
         Map<String, String> pathValues = evaluatePathExpressions(mapping, exprContext);
         Map<String, String> queryParams = evaluateQueryExpressions(mapping, exprContext);
-        Map<String, String> dynamicHeaders = evaluateHeaderExpressions(mapping, exprContext);
+        Map<String, String> dynamicHeaders = dynamicHeaders(mapping, exprContext);
         Object body = evaluateBodyExpression(mapping, exprContext);
 
         // 3. Render URL with path variables and append query parameters
@@ -318,6 +320,30 @@ public class HttpResourceOperator implements Operator<Object, HttpResourceOutput
         return result;
     }
 
+    private Map<String, String> dynamicHeaders(ParameterMapping mapping, Map<String, Object> context) {
+        Map<String, String> headers = new LinkedHashMap<>();
+        String cookieHeader = evaluateCookieHeader(mapping, context);
+        if (!cookieHeader.isBlank()) {
+            headers.put("Cookie", cookieHeader);
+        }
+        headers.putAll(evaluateHeaderExpressions(mapping, context));
+        return headers;
+    }
+
+    private String evaluateCookieHeader(ParameterMapping mapping, Map<String, Object> context) {
+        if (mapping.cookieExpressions().isEmpty()) {
+            return "";
+        }
+        List<String> pairs = new ArrayList<>();
+        for (var entry : mapping.cookieExpressions().entrySet()) {
+            Object value = evaluator.evaluate(entry.getValue(), context);
+            if (value != null) {
+                pairs.add(entry.getKey() + "=" + encodeCookieValue(value.toString()));
+            }
+        }
+        return String.join("; ", pairs);
+    }
+
     private Object evaluateBodyExpression(ParameterMapping mapping, Map<String, Object> context) {
         if (mapping.bodyExpression() == null || mapping.bodyExpression().isBlank()) {
             return null;
@@ -338,6 +364,10 @@ public class HttpResourceOperator implements Operator<Object, HttpResourceOutput
         }
         String separator = url.contains("?") ? "&" : "?";
         return url + separator + joiner;
+    }
+
+    private static String encodeCookieValue(String value) {
+        return URLEncoder.encode(value, StandardCharsets.UTF_8).replace("+", "%20");
     }
 
     private Object extractPayload(HttpResponseOutput response, ResourceDescriptor descriptor) {

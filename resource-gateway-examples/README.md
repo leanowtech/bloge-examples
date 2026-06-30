@@ -561,10 +561,16 @@ reviewable `descriptorSuggestion` for the runtime `ResourceDescriptor`: OpenAPI
 servers plus path are projected into `urlTemplate`, path/query parameters become
 `ctx.params.*` mappings, header parameters become dynamic `headerExpressions`
 (with bracket access such as `ctx.params["X-Request-Id"]` for non-identifier
-header names), JSON request bodies become `ctx.params.body`, and standard JSON
-headers plus HTTP-status response handling are filled in. Cookie parameters
-remain in the design contract but are reported as descriptor-suggestion warnings
-because the runtime descriptor does not own cookie assembly. The endpoint then runs the same registry-aware validation
+header names), cookie parameters become dynamic `cookieExpressions`, JSON request
+bodies become `ctx.params.body`, common OpenAPI security schemes become
+review-only auth suggestions (`http` bearer/basic and header `apiKey`, using
+placeholder credentials), and standard JSON headers plus HTTP-status response
+handling are filled in. Advanced security schemes remain in the design contract
+but are reported as descriptor-suggestion warnings when they cannot be
+represented by the runtime descriptor. When the resource already has a stored
+design contract or registered runtime descriptor, the preview also returns
+review diagnostics for request/response schema drift, contract metadata drift,
+and descriptor field drift before authors save replacements. The endpoint then runs the same registry-aware validation
 preflight as `/validate`. It never mutates the contract or descriptor registries;
 authors still save the returned drafts through `PUT /admin/resource-design-contracts/{resourceId}`
 and `/admin/resources` after reviewing diagnostics.
@@ -1034,7 +1040,8 @@ curl -X POST http://localhost:8080/admin/resources \
       "queryExpressions": {},
       "headerExpressions": {
         "X-Request-Id": "ctx.params[\"X-Request-Id\"]"
-      }
+      },
+      "cookieExpressions": {}
     },
     "responseProtocol": {
       "type": "httpStatus"
@@ -1084,7 +1091,8 @@ curl -X PUT http://localhost:8080/admin/resources/gateway.self.getResource \
         "resourceId": "ctx.params.resourceId"
       },
       "queryExpressions": {},
-      "headerExpressions": {}
+      "headerExpressions": {},
+      "cookieExpressions": {}
     },
     "responseProtocol": {
       "type": "httpStatus"
@@ -1139,7 +1147,7 @@ curl -X POST http://localhost:8080/api/gateway/resources/execute \
 
 ## Test strategy
 
-The test suite is organised into four layers (58 test report classes, 621 executed
+The test suite is organised into four layers (58 test report classes, 629 executed
 tests, including nested JUnit suites):
 
 ### Layer 1 — Unit tests
@@ -1156,16 +1164,16 @@ Isolated component tests, some with lightweight Spring slices or mocks.
 
 | Class | Tests | Scope |
 |-------|-------|-------|
-| `HttpResourceOperatorTest` | 13 | Descriptor resolution, parameter mapping, dynamic header mapping, URL rendering, DSL map-input normalization |
+| `HttpResourceOperatorTest` | 15 | Descriptor resolution, parameter mapping, dynamic header/cookie mapping, URL rendering, DSL map-input normalization |
 | `ResponseValidatorTest` | 22 | All five `ResponseProtocol` variants |
 | `ResponseCacheInterceptorTest` | 4 | Cache hit/miss, TTL expiry |
 | `TenantRateLimiterInterceptorTest` | 3 | Token bucket, quota enforcement |
 | `CircuitBreakerInterceptorTest` | 5 | State transitions, cool-down |
-| `DatabaseResourceRegistryTest` | 12 | CRUD, H2 persistence, expression validation, in-memory cache |
+| `DatabaseResourceRegistryTest` | 13 | CRUD, H2 persistence, expression validation, in-memory cache |
 | `ResourceDescriptorBootstrapTest` | 7 | Seeding, refresh behavior, idempotency |
 | `GatewayDslCompilationTest` | 7 | DSL parsing, graph loading |
 | Gateway example API suite | 15 | Dynamic composer service/controller, visual runtime context gates, scenario catalog, example graph endpoints |
-| Visual authoring suite | 440 | Visual operator projection, resource design contract persistence and gates, resource-contract lifecycle/catalog gates, resource-contract in-use delete/disable protection, resource-contract fingerprint drift/missing-snapshot preflight warnings, imported libraries, registry-aware and impact-aware library validation, catalog lifecycle gates, deprecated operator draft resolution and active-scope fingerprinting, catalog token gates and policy filtering, policy wildcard scope gates, cross-library operatorRef ownership, operator-library in-use change protection and same-ref fingerprint drift/missing-snapshot preflight warnings, system-reserved operatorRef gates, import-time lowering/canonicalization gates including DSL-safe field-name gates, branch lowering gates, schema default value gates, nullable type-array gates, local `$defs` reference and safe object `allOf` normalization gates, transform assignment output-schema gates, unsupported schema envelope and JSON Schema keyword gates, const value-domain gates, enum/const array-object shape gates, numeric bound/`multipleOf`, string length, string pattern/format, array item-count, array `uniqueItems`, array `prefixItems`, array `contains`, object property-count, object `propertyNames`, object `patternProperties`, object `dependentRequired`, object `dependentSchemas`, and object `unevaluatedProperties` schema gates, built-in and virtual catalog schema-gate parity, draft/publication persistence and history, draft lifecycle status gates, revision audit metadata, full-save/PATCH fingerprint preservation, service-managed fingerprint snapshot gates, structured malformed patch diagnostics, server-assigned create identity, revision-guarded full-save, patch, stored-run, delete, and publish conflict handling, operator fingerprint drift preservation and execution snapshot coverage gates, typed connection/edge validation including nullable-source compatibility and local `$defs` references, edge identity uniqueness plus binding and edge kind allow-lists, binding and edge kind canonicalization, explicit dependency edge validation/preflight/DSL lowering, branch route edge validation/preflight/DSL lowering, selector-domain gates, and semantic route-condition duplicate gates, static literal expression gates, input/config/root-port source-picker server preflight with duplicate-connection rejection, post-drop binding simulation, draft-contract/input-schema blocker preservation, and nested config paths, duplicate target input ownership, root-port object binding from context and upstream operator output, stable root-port input keys, object required fields, object schema structure gates, required-array schema gates, nested input/config objectTemplate required fields and object-compatible targets, enum value-domain and shape gates, standard JSON Schema config enum gates, standard JSON Schema config const gates, numeric bound/`multipleOf`, string length, string pattern/format, array item-count, array `uniqueItems`, array `prefixItems`, array `contains`, object property-count, object `propertyNames`, object `patternProperties`, object `dependentRequired`, object `dependentSchemas`, and object `unevaluatedProperties` config gates, nested config expression references and configSchema type gates, native config input lowering and DSL field-key diagnostics, data edge/semantic dependency consistency, graph input schema gates, runtime context value diagnostics, secret blocking, DSL lowering, compiler gating, dependency ordering, runtime smoke path, browser-facing workflow smoke path including OpenAPI JSON/YAML contract/descriptor preview/save UI wiring, Selenium Chrome DOM smoke for OpenAPI contract/descriptor preview/save, user-library import, palette-to-canvas drag, schema-aware connection drag, schema-incompatible connection rejection without DSL pollution, route/dependency/config connection drag, no-input user-operator UI schema projection, server validation failure diagnostics rendering, run history query/filter UI, draft revision preview/restore/delete, draft save/run/publish, page warning diagnostics, and publication run |
+| Visual authoring suite | 445 | Visual operator projection, resource design contract persistence and gates, resource-contract lifecycle/catalog gates, resource-contract in-use delete/disable protection, resource-contract fingerprint drift/missing-snapshot preflight warnings, imported libraries, registry-aware and impact-aware library validation, catalog lifecycle gates, deprecated operator draft resolution and active-scope fingerprinting, catalog token gates and policy filtering, policy wildcard scope gates, cross-library operatorRef ownership, operator-library in-use change protection and same-ref fingerprint drift/missing-snapshot preflight warnings, system-reserved operatorRef gates, import-time lowering/canonicalization gates including DSL-safe field-name gates, branch lowering gates, schema default value gates, nullable type-array gates, local `$defs` reference and safe object `allOf` normalization gates, transform assignment output-schema gates, OpenAPI auth/security descriptor suggestions, descriptor/schema diff warnings, and unsupported-security diagnostics, unsupported schema envelope and JSON Schema keyword gates, const value-domain gates, enum/const array-object shape gates, numeric bound/`multipleOf`, string length, string pattern/format, array item-count, array `uniqueItems`, array `prefixItems`, array `contains`, object property-count, object `propertyNames`, object `patternProperties`, object `dependentRequired`, object `dependentSchemas`, and object `unevaluatedProperties` schema gates, built-in and virtual catalog schema-gate parity, draft/publication persistence and history, draft lifecycle status gates, revision audit metadata, full-save/PATCH fingerprint preservation, service-managed fingerprint snapshot gates, structured malformed patch diagnostics, server-assigned create identity, revision-guarded full-save, patch, stored-run, delete, and publish conflict handling, operator fingerprint drift preservation and execution snapshot coverage gates, typed connection/edge validation including nullable-source compatibility and local `$defs` references, edge identity uniqueness plus binding and edge kind allow-lists, binding and edge kind canonicalization, explicit dependency edge validation/preflight/DSL lowering, branch route edge validation/preflight/DSL lowering, selector-domain gates, and semantic route-condition duplicate gates, static literal expression gates, input/config/root-port source-picker server preflight with duplicate-connection rejection, post-drop binding simulation, draft-contract/input-schema blocker preservation, and nested config paths, duplicate target input ownership, root-port object binding from context and upstream operator output, stable root-port input keys, object required fields, object schema structure gates, required-array schema gates, nested input/config objectTemplate required fields and object-compatible targets, enum value-domain and shape gates, standard JSON Schema config enum gates, standard JSON Schema config const gates, numeric bound/`multipleOf`, string length, string pattern/format, array item-count, array `uniqueItems`, array `prefixItems`, array `contains`, object property-count, object `propertyNames`, object `patternProperties`, object `dependentRequired`, object `dependentSchemas`, and object `unevaluatedProperties` config gates, nested config expression references and configSchema type gates, native config input lowering and DSL field-key diagnostics, data edge/semantic dependency consistency, graph input schema gates, runtime context value diagnostics, secret blocking, DSL lowering, compiler gating, dependency ordering, runtime smoke path, browser-facing workflow smoke path including OpenAPI JSON/YAML contract/descriptor preview/save UI wiring, Selenium Chrome DOM smoke for OpenAPI contract/descriptor preview/save, user-library import, palette-to-canvas drag, schema-aware connection drag, schema-incompatible connection rejection without DSL pollution, route/dependency/config connection drag, no-input user-operator UI schema projection, server validation failure diagnostics rendering, run history query/filter UI, draft revision preview/restore/delete, draft save/run/publish, page warning diagnostics, and publication run |
 
 The Selenium DOM smoke uses local Chrome through Selenium Manager and is skipped
 with a JUnit assumption when Chrome/WebDriver cannot be started.
