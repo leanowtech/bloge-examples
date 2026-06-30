@@ -133,9 +133,12 @@ public class DatabaseGraphDraftRepository implements GraphDraftRepository {
     public GraphDraft save(GraphDraft draft) {
         VisualSecretGuard.requireNoDraftSecrets(draft);
         String draftId = draft.draftId().isBlank() ? UUID.randomUUID().toString() : draft.draftId();
-        long currentRevision = cache.getOrDefault(draftId, draft.withIdentity(draftId, 0)).revision();
+        GraphDraft current = cache.get(draftId);
+        long currentRevision = current == null ? 0 : current.revision();
         long nextRevision = Math.max(draft.revision(), currentRevision) + 1;
-        GraphDraft stored = draft.withIdentity(draftId, nextRevision);
+        GraphDraft stored = draft.withIdentity(draftId, nextRevision)
+                .withRevisionMetadata(draft.revisionMetadata().storedFrom(
+                        current == null ? null : current.revisionMetadata(), "Saved draft."));
         persist(stored);
         cache.put(draftId, stored);
         log.info("Saved visual graph draft: {}@{}", draftId, nextRevision);
@@ -145,7 +148,10 @@ public class DatabaseGraphDraftRepository implements GraphDraftRepository {
     @Override
     public Optional<GraphDraft> saveIfRevision(String draftId, long expectedRevision, GraphDraft draft) {
         VisualSecretGuard.requireNoDraftSecrets(draft);
-        GraphDraft stored = draft.withIdentity(draftId, expectedRevision + 1);
+        GraphDraft current = cache.get(draftId);
+        GraphDraft stored = draft.withIdentity(draftId, expectedRevision + 1)
+                .withRevisionMetadata(draft.revisionMetadata().storedFrom(
+                        current == null ? null : current.revisionMetadata(), "Patched draft."));
         int updated;
         String json;
         try {

@@ -738,6 +738,130 @@ class GraphDraftValidatorTest {
     }
 
     @Test
+    void acceptsEnumBindingWhenSourceValuesAreTargetSubset() {
+        GraphDraftValidator validator = new GraphDraftValidator(
+                VisualCatalogTestSupport.catalogWithLibrary(
+                        VisualCatalogTestSupport.enumCompatibilityLibrary(
+                                List.of("APPROVE"),
+                                List.of("APPROVE", "REJECT"))));
+        GraphDraft draft = enumCompatibilityDraft();
+
+        VisualValidationResult result = validator.validate(draft);
+
+        assertThat(result.valid()).isTrue();
+    }
+
+    @Test
+    void rejectsEnumBindingWhenSourceValuesAreOutsideTargetDomain() {
+        GraphDraftValidator validator = new GraphDraftValidator(
+                VisualCatalogTestSupport.catalogWithLibrary(
+                        VisualCatalogTestSupport.enumCompatibilityLibrary(
+                                List.of("LOW", "HIGH"),
+                                List.of("APPROVE", "REJECT"))));
+        GraphDraft draft = enumCompatibilityDraft();
+
+        VisualValidationResult result = validator.validate(draft);
+
+        assertThat(result.valid()).isFalse();
+        assertThat(result.diagnostics())
+                .extracting("code")
+                .contains("visual.binding.typeMismatch", "visual.edge.typeMismatch");
+        assertThat(result.diagnostics())
+                .anySatisfy(diagnostic -> assertThat(diagnostic.message())
+                        .contains("enum<LOW|HIGH>").contains("enum<APPROVE|REJECT>"));
+    }
+
+    @Test
+    void rejectsPlainStringBindingWhenTargetRequiresEnumDomain() {
+        GraphDraftValidator validator = new GraphDraftValidator(
+                VisualCatalogTestSupport.catalogWithLibrary(
+                        VisualCatalogTestSupport.enumCompatibilityLibrary(
+                                List.of(),
+                                List.of("APPROVE", "REJECT"))));
+        GraphDraft draft = enumCompatibilityDraft();
+
+        VisualValidationResult result = validator.validate(draft);
+
+        assertThat(result.valid()).isFalse();
+        assertThat(result.diagnostics())
+                .extracting("code")
+                .contains("visual.binding.typeMismatch", "visual.edge.typeMismatch");
+    }
+
+    @Test
+    void acceptsObjectBindingWhenTargetRequiredFieldsArePresent() {
+        GraphDraftValidator validator = new GraphDraftValidator(
+                VisualCatalogTestSupport.catalogWithLibrary(
+                        VisualCatalogTestSupport.objectCompatibilityLibrary(
+                                applicantProperties("integer", true),
+                                List.of("score", "tier"),
+                                applicantProperties("integer", false),
+                                List.of("score", "tier"))));
+        GraphDraft draft = objectCompatibilityDraft();
+
+        VisualValidationResult result = validator.validate(draft);
+
+        assertThat(result.valid()).isTrue();
+    }
+
+    @Test
+    void rejectsObjectBindingWhenSourceMissesTargetRequiredField() {
+        GraphDraftValidator validator = new GraphDraftValidator(
+                VisualCatalogTestSupport.catalogWithLibrary(
+                        VisualCatalogTestSupport.objectCompatibilityLibrary(
+                                Map.of("score", Map.of("type", "integer")),
+                                List.of("score"),
+                                applicantProperties("integer", false),
+                                List.of("score", "tier"))));
+        GraphDraft draft = objectCompatibilityDraft();
+
+        VisualValidationResult result = validator.validate(draft);
+
+        assertThat(result.valid()).isFalse();
+        assertThat(result.diagnostics())
+                .extracting("code")
+                .contains("visual.binding.typeMismatch", "visual.edge.typeMismatch");
+    }
+
+    @Test
+    void rejectsObjectBindingWhenSourceFieldIsOptionalButTargetRequiresIt() {
+        GraphDraftValidator validator = new GraphDraftValidator(
+                VisualCatalogTestSupport.catalogWithLibrary(
+                        VisualCatalogTestSupport.objectCompatibilityLibrary(
+                                applicantProperties("integer", false),
+                                List.of("score"),
+                                applicantProperties("integer", false),
+                                List.of("score", "tier"))));
+        GraphDraft draft = objectCompatibilityDraft();
+
+        VisualValidationResult result = validator.validate(draft);
+
+        assertThat(result.valid()).isFalse();
+        assertThat(result.diagnostics())
+                .extracting("code")
+                .contains("visual.binding.typeMismatch", "visual.edge.typeMismatch");
+    }
+
+    @Test
+    void rejectsObjectBindingWhenNestedRequiredFieldTypeDoesNotMatch() {
+        GraphDraftValidator validator = new GraphDraftValidator(
+                VisualCatalogTestSupport.catalogWithLibrary(
+                        VisualCatalogTestSupport.objectCompatibilityLibrary(
+                                applicantProperties("string", false),
+                                List.of("score", "tier"),
+                                applicantProperties("integer", false),
+                                List.of("score", "tier"))));
+        GraphDraft draft = objectCompatibilityDraft();
+
+        VisualValidationResult result = validator.validate(draft);
+
+        assertThat(result.valid()).isFalse();
+        assertThat(result.diagnostics())
+                .extracting("code")
+                .contains("visual.binding.typeMismatch", "visual.edge.typeMismatch");
+    }
+
+    @Test
     void acceptsNodeConfigWhenItMatchesConfigSchema() {
         GraphDraftValidator validator = new GraphDraftValidator(
                 VisualCatalogTestSupport.catalogWithLibrary(
@@ -1237,6 +1361,100 @@ class GraphDraftValidatorTest {
                 Map.of(),
                 new GraphDraft.OutputSelection("listConsumer", "")
         );
+    }
+
+    private static GraphDraft enumCompatibilityDraft() {
+        return new GraphDraft(
+                "",
+                "",
+                0,
+                "enumCompatibility",
+                "",
+                "",
+                "",
+                "",
+                null,
+                List.of(
+                        new GraphDraft.DraftNode(
+                                "decisionProducer",
+                                "risk:decisionProducer",
+                                "",
+                                Map.of(),
+                                Map.of(),
+                                null
+                        ),
+                        new GraphDraft.DraftNode(
+                                "decisionConsumer",
+                                "risk:decisionConsumer",
+                                "",
+                                Map.of("decision", GraphDraft.Binding.nodePath(
+                                        "decisionProducer",
+                                        "output",
+                                        "decision",
+                                        "inputs",
+                                        "decision")),
+                                Map.of(),
+                                null
+                        )
+                ),
+                List.of(new GraphDraft.DraftEdge("decision", "data",
+                        new GraphDraft.Endpoint("decisionProducer", "output", "decision"),
+                        new GraphDraft.Endpoint("decisionConsumer", "inputs", "decision"))),
+                Map.of(),
+                new GraphDraft.OutputSelection("decisionConsumer", "")
+        );
+    }
+
+    private static GraphDraft objectCompatibilityDraft() {
+        return new GraphDraft(
+                "",
+                "",
+                0,
+                "objectCompatibility",
+                "",
+                "",
+                "",
+                "",
+                null,
+                List.of(
+                        new GraphDraft.DraftNode(
+                                "applicantProducer",
+                                "risk:applicantObjectProducer",
+                                "",
+                                Map.of(),
+                                Map.of(),
+                                null
+                        ),
+                        new GraphDraft.DraftNode(
+                                "applicantConsumer",
+                                "risk:applicantObjectConsumer",
+                                "",
+                                Map.of("applicant", GraphDraft.Binding.nodePath(
+                                        "applicantProducer",
+                                        "output",
+                                        "applicant",
+                                        "inputs",
+                                        "applicant")),
+                                Map.of(),
+                                null
+                        )
+                ),
+                List.of(new GraphDraft.DraftEdge("applicant", "data",
+                        new GraphDraft.Endpoint("applicantProducer", "output", "applicant"),
+                        new GraphDraft.Endpoint("applicantConsumer", "inputs", "applicant"))),
+                Map.of(),
+                new GraphDraft.OutputSelection("applicantConsumer", "")
+        );
+    }
+
+    private static Map<String, Object> applicantProperties(String scoreType, boolean includeExtra) {
+        Map<String, Object> properties = new java.util.LinkedHashMap<>();
+        properties.put("score", Map.of("type", scoreType));
+        properties.put("tier", Map.of("type", "string"));
+        if (includeExtra) {
+            properties.put("segment", Map.of("type", "string"));
+        }
+        return properties;
     }
 
     private static GraphDraft configurablePolicyDraft(Map<String, Object> config) {

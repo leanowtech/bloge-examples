@@ -491,6 +491,15 @@ resource-gateway 示例已经实现第一层确定性 policy gate：
   },
   "operatorFingerprints": {
     "fetchApplicant": "sha256:..."
+  },
+  "revisionMetadata": {
+    "createdAt": "2026-06-30T00:00:00Z",
+    "createdBy": "visual-canvas",
+    "updatedAt": "2026-06-30T00:05:00Z",
+    "updatedBy": "alice@example.com",
+    "changeSource": "gateway-browser",
+    "changeSummary": "Added applicant fetch node",
+    "changedPaths": ["/nodes/-"]
   }
 }
 ```
@@ -583,6 +592,8 @@ gate 都以这个 schema 为准；Context JSON 只作为一次运行或调试的
 边规则：
 
 - `data` edge 必须通过 schema compatibility。
+- object schema 按结构证明校验：target required 字段必须在 source schema 中显式声明为 required，并递归满足类型兼容。
+- enum schema 按值域集合校验：source enum values 必须是 target enum values 的子集；普通 `string` 不能直接连到 enum input，必须先经过显式 transform。
 - `control` edge 不传递字段，只影响执行顺序。
 - `conditional` edge 必须有 condition。
 - `fallback` edge 必须声明触发条件，如 `onError`、`onTimeout`、`onEmpty`。
@@ -902,6 +913,9 @@ Content-Type: application/json
 ```json
 {
   "expectedRevision": 7,
+  "actor": "alice@example.com",
+  "changeSource": "gateway-browser",
+  "changeSummary": "Added applicant fetch node",
   "patch": [
     {
       "op": "add",
@@ -936,6 +950,9 @@ resource-gateway 示例支持 `add`、`replace`、`remove` 三类 JSON patch 操
 若没有可用本地快照，才降级使用 `path=""` 的 root `replace`。服务端会在
 repository 层执行 `expectedRevision` guarded update，避免 check/save 两步之间
 覆盖其他编辑。
+Patch 请求还可以携带 `actor`、`changeSource`、`changeSummary`。服务端会把它们
+固化到最新 `GraphDraft.revisionMetadata`，并从 patch path 生成 `changedPaths`；
+未传 actor 时 resource-gateway 示例使用 `visual-canvas` 作为默认作者。
 
 resource-gateway 示例还提供 revision history：
 
@@ -944,8 +961,9 @@ GET /api/visual/drafts/{draftId}/revisions
 GET /api/visual/drafts/{draftId}/revisions/{revision}
 ```
 
-每次保存成功后，当前 draft 写入 `visual_graph_drafts`，同时把该 revision
-快照写入 `visual_graph_draft_revisions`，用于审计、对比和回滚前预览。
+每次保存成功后，当前 draft 写入 `visual_graph_drafts`，同时把带有
+`revisionMetadata` 的 revision 快照写入 `visual_graph_draft_revisions`，用于审计、
+对比和回滚前预览。
 浏览器 Drafts 面板已接入该 API：可以加载 revision 列表、把历史快照预览到
 画布上，并通过 guarded patch 把选中 revision 恢复成新的最新 revision。
 
@@ -1313,6 +1331,9 @@ MVP 可以用 H2，但模型要按未来迁移设计。
 | `updated_by` | varchar | 更新人 |
 | `created_at` | timestamp | 创建时间 |
 | `updated_at` | timestamp | 更新时间 |
+| `change_source` | varchar | 最近一次 revision 来源 |
+| `change_summary` | varchar | 最近一次 revision 摘要 |
+| `changed_paths_json` | clob/jsonb | 最近一次 patch touched paths |
 
 索引：
 

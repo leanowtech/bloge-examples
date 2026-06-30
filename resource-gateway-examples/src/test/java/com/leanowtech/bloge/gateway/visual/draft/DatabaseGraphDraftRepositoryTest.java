@@ -71,6 +71,35 @@ class DatabaseGraphDraftRepositoryTest {
     }
 
     @Test
+    void revisionsPersistAuditMetadata() {
+        GraphDraft first = repository.save(simpleDraft("draft-1", 0)
+                .withRevisionMetadata(GraphDraft.RevisionMetadata.patch(
+                        "alice@example.com",
+                        "browser-create",
+                        "Initial canvas draft",
+                        List.of("/")
+                )));
+        GraphDraft second = repository.saveIfRevision("draft-1", first.revision(),
+                first.withRevisionMetadata(GraphDraft.RevisionMetadata.patch(
+                        "bob@example.com",
+                        "browser-save",
+                        "Tune policy node",
+                        List.of("/nodes/0/config/mode")
+                ))).orElseThrow();
+
+        DatabaseGraphDraftRepository reloaded = new DatabaseGraphDraftRepository(jdbc, objectMapper);
+        reloaded.init();
+
+        GraphDraft reloadedSecond = reloaded.findRevision("draft-1", second.revision()).orElseThrow();
+        assertThat(reloadedSecond.revisionMetadata().createdAt()).isEqualTo(first.revisionMetadata().createdAt());
+        assertThat(reloadedSecond.revisionMetadata().createdBy()).isEqualTo("alice@example.com");
+        assertThat(reloadedSecond.revisionMetadata().updatedBy()).isEqualTo("bob@example.com");
+        assertThat(reloadedSecond.revisionMetadata().changeSource()).isEqualTo("browser-save");
+        assertThat(reloadedSecond.revisionMetadata().changeSummary()).isEqualTo("Tune policy node");
+        assertThat(reloadedSecond.revisionMetadata().changedPaths()).containsExactly("/nodes/0/config/mode");
+    }
+
+    @Test
     void saveIfRevisionUpdatesOnlyMatchingRevision() {
         GraphDraft first = repository.save(simpleDraft("draft-1", 0));
 

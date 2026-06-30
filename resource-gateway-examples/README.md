@@ -92,8 +92,8 @@ input handles under schema type constraints, confirm dropped connections through
 the server-side visual connection API before mutating the draft, validate
 user-provided operator library JSON before importing it into the catalog,
 save/load/delete H2-backed graph drafts with
-revision-guarded field-level `PATCH` updates, validate and compile the draft through the
-server-side visual graph APIs, inspect the
+revision-guarded field-level `PATCH` updates and per-revision audit metadata,
+validate and compile the draft through the server-side visual graph APIs, inspect the
 generated BLOGE DSL, run it with JSON context, and see diagnostics, output, graph
 highlighting, and the decision-table matrix update together. Node-path bindings
 carry both source output port and target input port metadata, so multi-port user
@@ -103,10 +103,16 @@ the draft stores a stable key such as `customer.id` while `targetPort` and
 `targetPath` keep the actual schema location unambiguous. Nested object schemas
 are expanded into field paths such as `applicant.score`, so imported operator
 libraries can expose realistic business payloads without flattening them first.
-Array bindings and edges compare item schemas, so `array<string>` cannot be wired
-into an input that requires `array<integer>`. Literal `constant` bindings and
-`objectTemplate` fields are checked against their target schema too, so fixed
-values cannot bypass required nested input types. Operator `configSchema` is
+Object bindings and edges compare required nested fields, so an applicant object
+without required `tier` cannot feed an input requiring `applicant.tier`, even
+when `tier` exists only as an optional source field. Array bindings
+and edges compare item schemas, so `array<string>` cannot be wired into an input
+that requires `array<integer>`. Enum value domains are checked too: an output
+constrained to `LOW|HIGH` cannot feed an input constrained to `APPROVE|REJECT`,
+and an unconstrained string cannot feed an enum input without an explicit
+transform. Literal `constant` bindings and `objectTemplate` fields are checked
+against their target schema too, so fixed values cannot bypass required nested
+input types. Operator `configSchema` is
 also enforced: the browser inspector renders simple config controls for schema
 fields, and the server blocks missing required config, type mismatches, enum
 mismatches, and undeclared config fields when `additionalProperties=false`.
@@ -147,7 +153,9 @@ artifacts can be run directly from their frozen DSL, so execution no longer
 depends on whatever the current operator catalog exposes after publication.
 The Drafts panel can also load revision history, preview an old snapshot on the
 canvas, and restore it as a new latest revision through the same guarded patch
-path.
+path. Each stored revision carries `revisionMetadata` with created/updated
+actor, change source, change summary, and touched JSON pointer paths, giving the
+example a concrete audit anchor for collaborative authoring and rollback.
 The built-in `.bloge` scenarios remain available in the left rail and continue
 to execute the public gateway endpoints.
 
@@ -753,7 +761,7 @@ Isolated component tests, some with lightweight Spring slices or mocks.
 | `DatabaseResourceRegistryTest` | 11 | CRUD, H2 persistence, in-memory cache |
 | `ResourceDescriptorBootstrapTest` | 7 | Seeding, refresh behavior, idempotency |
 | `GatewayDslCompilationTest` | 7 | DSL parsing, graph loading |
-| `Visual*Test` | 102 | Visual operator projection, imported libraries, catalog policy filtering, draft/publication persistence and history, revision-guarded patching, typed connection/edge validation, graph input schema gates, secret blocking, DSL lowering, runtime smoke path |
+| Visual authoring suite | 116 | Visual operator projection, imported libraries, catalog policy filtering, draft/publication persistence and history, revision audit metadata, revision-guarded patching, typed connection/edge validation including object required fields and enum value domains, graph input schema gates, secret blocking, DSL lowering, runtime smoke path |
 
 ### Layer 3 — Orchestration tests
 

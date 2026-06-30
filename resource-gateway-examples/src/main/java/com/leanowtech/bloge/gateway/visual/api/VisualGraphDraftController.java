@@ -173,7 +173,13 @@ public class VisualGraphDraftController {
         }
         try {
             GraphDraft patched = patchService.apply(current.get(), request)
-                    .withIdentity(draftId, current.get().revision());
+                    .withIdentity(draftId, current.get().revision())
+                    .withRevisionMetadata(GraphDraft.RevisionMetadata.patch(
+                            request.actor(),
+                            request.changeSource(),
+                            request.changeSummary(),
+                            request.changedPaths()
+                    ));
             GraphDraft candidate = withCurrentOperatorFingerprints(patched);
             return repository.saveIfRevision(draftId, request.expectedRevision(), candidate)
                     .map(stored -> ResponseEntity.ok(GraphDraftPatchResult.patched(stored)))

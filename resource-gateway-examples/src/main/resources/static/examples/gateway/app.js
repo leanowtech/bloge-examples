@@ -1438,8 +1438,7 @@ function renderDraftRevisionControls() {
   const options = revisions.length
     ? revisions.map((draft) => {
       const selected = Number(draft.revision || 0) === Number(state.selectedDraftRevision || 0) ? ' selected' : '';
-      const nodeCount = Array.isArray(draft.nodes) ? draft.nodes.length : 0;
-      return `<option value="${escapeHtml(draft.revision || 0)}"${selected}>@${escapeHtml(draft.revision || 0)} · ${escapeHtml(nodeCount)} nodes</option>`;
+      return `<option value="${escapeHtml(draft.revision || 0)}"${selected}>${escapeHtml(revisionOptionLabel(draft))}</option>`;
     })
     : [`<option value="">${state.currentDraftId ? 'No history loaded' : 'Select a draft'}</option>`];
   select.innerHTML = options.join('');
@@ -1463,6 +1462,14 @@ function renderDraftRevisionControls() {
     restoreButton.disabled = !state.currentDraftId || !state.selectedDraftRevision;
     restoreButton.onclick = restoreSelectedDraftRevision;
   }
+}
+
+function revisionOptionLabel(draft) {
+  const nodeCount = Array.isArray(draft.nodes) ? draft.nodes.length : 0;
+  const metadata = draft.revisionMetadata || {};
+  const actor = metadata.updatedBy || metadata.createdBy || 'visual-canvas';
+  const summary = metadata.changeSummary || `${nodeCount} nodes`;
+  return `@${draft.revision || 0} · ${summary} · ${actor}`;
 }
 
 function renderDraftStatus() {
@@ -1554,6 +1561,9 @@ async function saveCurrentDraft() {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         expectedRevision: state.currentDraftRevision || 0,
+        actor: 'visual-canvas',
+        changeSource: 'gateway-browser',
+        changeSummary: draftPatchSummary(patch),
         patch
       })
     });
@@ -1606,12 +1616,20 @@ function draftPatchOperations(baseDraft, nextDraft) {
   return jsonPatchDiff(normalizeDraftForPatch(baseDraft), normalizeDraftForPatch(nextDraft), '');
 }
 
+function draftPatchSummary(patch) {
+  const paths = patch.map((operation) => operation.path || '/').filter(Boolean);
+  const preview = paths.slice(0, 3).join(', ');
+  const suffix = paths.length > 3 ? `, +${paths.length - 3} more` : '';
+  return `${patch.length} draft field change${patch.length === 1 ? '' : 's'}${preview ? `: ${preview}${suffix}` : ''}`;
+}
+
 function normalizeDraftForPatch(draft) {
   if (!draft || typeof draft !== 'object') {
     return draft;
   }
+  const { revisionMetadata, ...patchableDraft } = draft;
   return {
-    ...draft,
+    ...patchableDraft,
     draftId: state.currentDraftId || draft.draftId || '',
     revision: state.currentDraftRevision || draft.revision || 0
   };

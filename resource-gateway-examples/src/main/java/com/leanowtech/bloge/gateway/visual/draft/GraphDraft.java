@@ -2,6 +2,7 @@ package com.leanowtech.bloge.gateway.visual.draft;
 
 import com.leanowtech.bloge.gateway.visual.model.SchemaEnvelope;
 
+import java.time.Instant;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -23,6 +24,7 @@ import java.util.Map;
  * @param visualLayout opaque visual layout model
  * @param output selected graph output
  * @param operatorFingerprints operator fingerprint snapshot keyed by node id
+ * @param revisionMetadata audit metadata captured for this revision snapshot
  */
 public record GraphDraft(
         String schemaVersion,
@@ -38,7 +40,8 @@ public record GraphDraft(
         List<DraftEdge> edges,
         Map<String, Object> visualLayout,
         OutputSelection output,
-        Map<String, String> operatorFingerprints
+        Map<String, String> operatorFingerprints,
+        RevisionMetadata revisionMetadata
 ) {
     /**
      * Creates a graph draft.
@@ -60,6 +63,28 @@ public record GraphDraft(
         visualLayout = visualLayout == null ? Map.of() : new LinkedHashMap<>(visualLayout);
         output = output == null ? OutputSelection.empty() : output;
         operatorFingerprints = operatorFingerprints == null ? Map.of() : new LinkedHashMap<>(operatorFingerprints);
+        revisionMetadata = revisionMetadata == null ? RevisionMetadata.empty() : revisionMetadata;
+    }
+
+    /**
+     * Backward-compatible constructor for drafts created before revision audit metadata existed.
+     */
+    public GraphDraft(String schemaVersion,
+                      String draftId,
+                      long revision,
+                      String graphName,
+                      String tenantId,
+                      String namespace,
+                      String environment,
+                      String status,
+                      SchemaEnvelope inputSchema,
+                      List<DraftNode> nodes,
+                      List<DraftEdge> edges,
+                      Map<String, Object> visualLayout,
+                      OutputSelection output,
+                      Map<String, String> operatorFingerprints) {
+        this(schemaVersion, draftId, revision, graphName, tenantId, namespace, environment, status,
+                inputSchema, nodes, edges, visualLayout, output, operatorFingerprints, RevisionMetadata.empty());
     }
 
     /**
@@ -79,7 +104,7 @@ public record GraphDraft(
                       Map<String, Object> visualLayout,
                       OutputSelection output) {
         this(schemaVersion, draftId, revision, graphName, tenantId, namespace, environment, status,
-                inputSchema, nodes, edges, visualLayout, output, Map.of());
+                inputSchema, nodes, edges, visualLayout, output, Map.of(), RevisionMetadata.empty());
     }
 
     /**
@@ -91,7 +116,8 @@ public record GraphDraft(
      */
     public GraphDraft withIdentity(String newDraftId, long newRevision) {
         return new GraphDraft(schemaVersion, newDraftId, newRevision, graphName, tenantId, namespace,
-                environment, status, inputSchema, nodes, edges, visualLayout, output, operatorFingerprints);
+                environment, status, inputSchema, nodes, edges, visualLayout, output, operatorFingerprints,
+                revisionMetadata);
     }
 
     /**
@@ -102,7 +128,20 @@ public record GraphDraft(
      */
     public GraphDraft withOperatorFingerprints(Map<String, String> fingerprints) {
         return new GraphDraft(schemaVersion, draftId, revision, graphName, tenantId, namespace,
-                environment, status, inputSchema, nodes, edges, visualLayout, output, fingerprints);
+                environment, status, inputSchema, nodes, edges, visualLayout, output, fingerprints,
+                revisionMetadata);
+    }
+
+    /**
+     * Returns a copy with revision audit metadata.
+     *
+     * @param metadata revision metadata
+     * @return updated draft
+     */
+    public GraphDraft withRevisionMetadata(RevisionMetadata metadata) {
+        return new GraphDraft(schemaVersion, draftId, revision, graphName, tenantId, namespace,
+                environment, status, inputSchema, nodes, edges, visualLayout, output, operatorFingerprints,
+                metadata);
     }
 
     /**
@@ -282,6 +321,70 @@ public record GraphDraft(
 
         public static OutputSelection empty() {
             return new OutputSelection("", "");
+        }
+    }
+
+    /**
+     * Audit metadata captured with each stored draft revision.
+     *
+     * @param createdAt first stored revision timestamp
+     * @param createdBy first authoring actor
+     * @param updatedAt current revision timestamp
+     * @param updatedBy current revision actor
+     * @param changeSource source system or UI surface that produced this revision
+     * @param changeSummary human-readable change summary
+     * @param changedPaths JSON pointer paths touched by this revision when known
+     */
+    public record RevisionMetadata(
+            String createdAt,
+            String createdBy,
+            String updatedAt,
+            String updatedBy,
+            String changeSource,
+            String changeSummary,
+            List<String> changedPaths
+    ) {
+        /**
+         * Creates revision metadata.
+         */
+        public RevisionMetadata {
+            createdAt = createdAt == null ? "" : createdAt;
+            createdBy = createdBy == null ? "" : createdBy;
+            updatedAt = updatedAt == null ? "" : updatedAt;
+            updatedBy = updatedBy == null ? "" : updatedBy;
+            changeSource = changeSource == null ? "" : changeSource;
+            changeSummary = changeSummary == null ? "" : changeSummary;
+            changedPaths = changedPaths == null ? List.of() : changedPaths.stream()
+                    .filter(path -> path != null && !path.isBlank())
+                    .distinct()
+                    .toList();
+        }
+
+        public static RevisionMetadata empty() {
+            return new RevisionMetadata("", "", "", "", "", "", List.of());
+        }
+
+        public static RevisionMetadata patch(String actor,
+                                             String source,
+                                             String summary,
+                                             List<String> changedPaths) {
+            return new RevisionMetadata("", "", "", normalize(actor, "visual-canvas"),
+                    normalize(source, "patch"), normalize(summary, "Patched draft."), changedPaths);
+        }
+
+        public RevisionMetadata storedFrom(RevisionMetadata previous, String defaultSummary) {
+            String now = Instant.now().toString();
+            RevisionMetadata base = previous == null ? empty() : previous;
+            String actor = normalize(updatedBy, normalize(createdBy, "visual-canvas"));
+            String source = normalize(changeSource, "api");
+            String summary = normalize(changeSummary, defaultSummary);
+            String firstAt = normalize(base.createdAt, normalize(createdAt, now));
+            String firstBy = normalize(base.createdBy, normalize(createdBy, actor));
+            return new RevisionMetadata(firstAt, firstBy, now, actor, source, summary, changedPaths);
+        }
+
+        private static String normalize(String value, String fallback) {
+            return value == null || value.isBlank() ? fallback : value.trim();
         }
     }
 

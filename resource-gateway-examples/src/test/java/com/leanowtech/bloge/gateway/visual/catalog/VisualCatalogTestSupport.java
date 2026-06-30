@@ -451,6 +451,182 @@ public final class VisualCatalogTestSupport {
         );
     }
 
+    public static OperatorDefinition enumDecisionProducerOperator(List<String> values) {
+        Map<String, Object> decisionSchema = new LinkedHashMap<>();
+        decisionSchema.put("type", "string");
+        if (values != null && !values.isEmpty()) {
+            decisionSchema.put("enum", values);
+        }
+
+        Map<String, Object> outputProperties = new LinkedHashMap<>();
+        outputProperties.put("decision", decisionSchema);
+
+        return new OperatorDefinition(
+                "bloge.visualOperator.v1",
+                "risk:decisionProducer",
+                "1.0.0",
+                new OperatorDefinition.Display("Decision producer",
+                        "Produces a constrained business decision.",
+                        List.of("risk", "enum")),
+                new OperatorDefinition.Source("user-library", "", "", "", false),
+                new OperatorDefinition.Ports(
+                        List.of(),
+                        List.of(new OperatorDefinition.Port("output",
+                                SchemaEnvelope.object(outputProperties, List.of()),
+                                true,
+                                "Decision output."))
+                ),
+                SchemaEnvelope.opaque(),
+                OperatorDefinition.Capabilities.pure(),
+                new OperatorDefinition.Lowering("native", "riskDecisionProducer", Map.of()),
+                List.of()
+        );
+    }
+
+    public static OperatorDefinition enumDecisionConsumerOperator(List<String> acceptedValues) {
+        Map<String, Object> inputProperties = new LinkedHashMap<>();
+        inputProperties.put("decision", Map.of(
+                "type", "enum",
+                "values", acceptedValues
+        ));
+
+        Map<String, Object> outputProperties = new LinkedHashMap<>();
+        outputProperties.put("accepted", Map.of("type", "boolean"));
+
+        return new OperatorDefinition(
+                "bloge.visualOperator.v1",
+                "risk:decisionConsumer",
+                "1.0.0",
+                new OperatorDefinition.Display("Decision consumer",
+                        "Consumes a constrained business decision.",
+                        List.of("risk", "enum")),
+                new OperatorDefinition.Source("user-library", "", "", "", true),
+                new OperatorDefinition.Ports(
+                        List.of(new OperatorDefinition.Port("inputs",
+                                SchemaEnvelope.object(inputProperties, List.of("decision")),
+                                true,
+                                "Decision input.")),
+                        List.of(new OperatorDefinition.Port("output",
+                                SchemaEnvelope.object(outputProperties, List.of()),
+                                true,
+                                "Consumer output."))
+                ),
+                SchemaEnvelope.opaque(),
+                OperatorDefinition.Capabilities.pure(),
+                new OperatorDefinition.Lowering("transform", "transform", Map.of(
+                        "assignments", Map.of(
+                                "accepted", "true"
+                        )
+                )),
+                List.of()
+        );
+    }
+
+    public static OperatorLibrary enumCompatibilityLibrary(List<String> sourceValues,
+                                                           List<String> targetValues) {
+        return new OperatorLibrary(
+                "bloge.visualOperatorLibrary.v1",
+                "risk-enum-compatibility",
+                "Enum compatibility operators",
+                "1.0.0",
+                "risk-team",
+                "ACTIVE",
+                List.of(enumDecisionProducerOperator(sourceValues), enumDecisionConsumerOperator(targetValues))
+        );
+    }
+
+    public static OperatorDefinition applicantObjectProducerOperator(Map<String, Object> applicantProperties,
+                                                                     List<String> required) {
+        Map<String, Object> outputProperties = new LinkedHashMap<>();
+        outputProperties.put("applicant", Map.of(
+                "type", "object",
+                "properties", applicantProperties,
+                "required", required,
+                "additionalProperties", false
+        ));
+
+        return new OperatorDefinition(
+                "bloge.visualOperator.v1",
+                "risk:applicantObjectProducer",
+                "1.0.0",
+                new OperatorDefinition.Display("Applicant object producer",
+                        "Produces applicant facts as a nested object.",
+                        List.of("risk", "object")),
+                new OperatorDefinition.Source("user-library", "", "", "", false),
+                new OperatorDefinition.Ports(
+                        List.of(),
+                        List.of(new OperatorDefinition.Port("output",
+                                SchemaEnvelope.object(outputProperties, List.of()),
+                                true,
+                                "Applicant object output."))
+                ),
+                SchemaEnvelope.opaque(),
+                OperatorDefinition.Capabilities.pure(),
+                new OperatorDefinition.Lowering("native", "riskApplicantObjectProducer", Map.of()),
+                List.of()
+        );
+    }
+
+    public static OperatorDefinition applicantObjectConsumerOperator(Map<String, Object> applicantProperties,
+                                                                     List<String> required) {
+        Map<String, Object> inputProperties = new LinkedHashMap<>();
+        inputProperties.put("applicant", Map.of(
+                "type", "object",
+                "properties", applicantProperties,
+                "required", required,
+                "additionalProperties", false
+        ));
+
+        Map<String, Object> outputProperties = new LinkedHashMap<>();
+        outputProperties.put("accepted", Map.of("type", "boolean"));
+
+        return new OperatorDefinition(
+                "bloge.visualOperator.v1",
+                "risk:applicantObjectConsumer",
+                "1.0.0",
+                new OperatorDefinition.Display("Applicant object consumer",
+                        "Consumes applicant facts as a nested object.",
+                        List.of("risk", "object")),
+                new OperatorDefinition.Source("user-library", "", "", "", true),
+                new OperatorDefinition.Ports(
+                        List.of(new OperatorDefinition.Port("inputs",
+                                SchemaEnvelope.object(inputProperties, List.of("applicant")),
+                                true,
+                                "Applicant object input.")),
+                        List.of(new OperatorDefinition.Port("output",
+                                SchemaEnvelope.object(outputProperties, List.of()),
+                                true,
+                                "Consumer output."))
+                ),
+                SchemaEnvelope.opaque(),
+                OperatorDefinition.Capabilities.pure(),
+                new OperatorDefinition.Lowering("transform", "transform", Map.of(
+                        "assignments", Map.of(
+                                "accepted", "true"
+                        )
+                )),
+                List.of()
+        );
+    }
+
+    public static OperatorLibrary objectCompatibilityLibrary(Map<String, Object> sourceProperties,
+                                                             List<String> sourceRequired,
+                                                             Map<String, Object> targetProperties,
+                                                             List<String> targetRequired) {
+        return new OperatorLibrary(
+                "bloge.visualOperatorLibrary.v1",
+                "risk-object-compatibility",
+                "Object compatibility operators",
+                "1.0.0",
+                "risk-team",
+                "ACTIVE",
+                List.of(
+                        applicantObjectProducerOperator(sourceProperties, sourceRequired),
+                        applicantObjectConsumerOperator(targetProperties, targetRequired)
+                )
+        );
+    }
+
     public static OperatorDefinition configurablePolicyOperator() {
         Map<String, Object> outputProperties = new LinkedHashMap<>();
         outputProperties.put("accepted", Map.of("type", "boolean"));

@@ -519,15 +519,17 @@ schema path 工作，否则复杂业务 payload 会被迫扁平化。
 | `integer` | `integer` | 允许 | 精确匹配 |
 | `integer` | `decimal` | 允许 | 安全拓宽 |
 | `decimal` | `integer` | 警告/需 transform | 可能丢精度 |
-| `string` | `enum` | 警告/需校验 | 需要值域证明 |
+| `string` | `enum` | 禁止/需 transform | 没有来源值域证明，不能隐式接入枚举输入 |
 | `object` | `object` | 结构化检查 | required 字段必须满足 |
 | `array<T>` | `array<U>` | 检查 item 兼容 | foreach 场景重要 |
 | `object` | `string` | 禁止或需表达式 | 不能隐式转 JSON |
 | `unknown` | 任意 | 警告 | 可继续草稿，不可无条件发布 |
 
-resource-gateway 示例当前已在 binding 和 edge 校验中递归检查 `array.items`
-兼容性；缺失 `items` 的旧 resource schema 仍按未知元素类型降级，用户导入
-operator library 则由 catalog validator 阻断。
+resource-gateway 示例当前已在 binding 和 edge 校验中递归检查 object required
+字段、`array.items` 兼容性和 enum 值域集合：target object 的 required 字段必须
+能从 source schema 中证明为 required 且类型兼容，source enum values 必须是
+target enum values 的子集，普通 `string` 不能直接接入 enum input。缺失 `items` 的旧 resource
+schema 仍按未知元素类型降级，用户导入 operator library 则由 catalog validator 阻断。
 
 ### 10.3 required 字段规则
 
@@ -888,6 +890,13 @@ GraphDraft、OperatorDefinition、ResourceDescriptor、Run 都必须携带：
 - environment
 - owner
 - createdBy / updatedBy
+
+当前 `resource-gateway-examples` 已把 draft revision 审计元数据落成代码：
+`GraphDraft.revisionMetadata` 记录 `createdAt/createdBy/updatedAt/updatedBy`、
+`changeSource`、`changeSummary` 和 `changedPaths`。`PATCH /api/visual/drafts/{draftId}`
+可以携带 actor/source/summary，repository 在写入当前 draft 与 revision history 时固化
+这些字段；未接入真实身份系统前默认 actor 为 `visual-canvas`。这不是完整审批流，
+但已经把协作、回滚、事故追踪所需的最小审计锚点放进协议和持久化快照。
 
 ### 17.3 密钥处理
 

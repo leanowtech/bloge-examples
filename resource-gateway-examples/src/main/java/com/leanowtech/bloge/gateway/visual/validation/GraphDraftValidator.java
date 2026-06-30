@@ -243,7 +243,9 @@ public class GraphDraftValidator {
     }
 
     private static boolean satisfiesRequiredPath(String inputName, String requiredPath) {
-        return inputName.equals(requiredPath) || inputName.startsWith(requiredPath + ".");
+        return inputName.equals(requiredPath)
+                || inputName.startsWith(requiredPath + ".")
+                || requiredPath.startsWith(inputName + ".");
     }
 
     private static boolean bindingTargetsPort(OperatorDefinition operator,
@@ -721,6 +723,10 @@ public class GraphDraftValidator {
     }
 
     private static String schemaTypeLabel(Map<String, Object> schema) {
+        List<Object> enumValues = enumValues(schema);
+        if (!enumValues.isEmpty()) {
+            return "enum<" + String.join("|", enumValues.stream().map(String::valueOf).toList()) + ">";
+        }
         String type = schemaType(schema);
         if ("array".equals(type)) {
             Map<String, Object> items = objectProperty(schema.get("items"));
@@ -742,10 +748,51 @@ public class GraphDraftValidator {
             Map<String, Object> targetItems = objectProperty(targetSchema.get("items"));
             return sourceItems == null || targetItems == null || schemasCompatible(sourceItems, targetItems);
         }
+        if ("object".equals(sourceType) && "object".equals(targetType)) {
+            return objectSchemasCompatible(sourceSchema, targetSchema);
+        }
+        List<Object> targetEnumValues = enumValues(targetSchema);
+        if (!targetEnumValues.isEmpty()) {
+            List<Object> sourceEnumValues = enumValues(sourceSchema);
+            return !sourceEnumValues.isEmpty() && targetEnumValues.containsAll(sourceEnumValues);
+        }
+        if ("enum".equals(sourceType)) {
+            List<Object> sourceEnumValues = enumValues(sourceSchema);
+            return sourceEnumValues.isEmpty()
+                    || sourceEnumValues.stream().allMatch(value -> configValueMatchesType(value, targetType));
+        }
         if (sourceType.equals(targetType)) {
             return true;
         }
         return numeric(sourceType) && numeric(targetType);
+    }
+
+    private static boolean objectSchemasCompatible(Map<String, Object> sourceSchema,
+                                                   Map<String, Object> targetSchema) {
+        Map<String, Object> sourceProperties = propertiesOf(sourceSchema);
+        Map<String, Object> targetProperties = propertiesOf(targetSchema);
+        Set<String> sourceRequired = new HashSet<>(requiredNamesOf(sourceSchema));
+        for (String required : requiredNamesOf(targetSchema)) {
+            Map<String, Object> sourceProperty = objectProperty(sourceProperties.get(required));
+            Map<String, Object> targetProperty = objectProperty(targetProperties.get(required));
+            if (!sourceRequired.contains(required)
+                    || sourceProperty == null || targetProperty == null
+                    || !schemasCompatible(sourceProperty, targetProperty)) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    private static List<Object> enumValues(Map<String, Object> schema) {
+        Object rawEnum = schema.get("enum");
+        if (rawEnum instanceof List<?> values) {
+            return values.stream().map(Object.class::cast).distinct().toList();
+        }
+        if ("enum".equals(schemaType(schema)) && schema.get("values") instanceof List<?> values) {
+            return values.stream().map(Object.class::cast).distinct().toList();
+        }
+        return List.of();
     }
 
     private static boolean numeric(String type) {

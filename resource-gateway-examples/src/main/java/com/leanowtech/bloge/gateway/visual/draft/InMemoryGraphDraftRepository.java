@@ -46,9 +46,12 @@ public class InMemoryGraphDraftRepository implements GraphDraftRepository {
     public GraphDraft save(GraphDraft draft) {
         VisualSecretGuard.requireNoDraftSecrets(draft);
         String draftId = draft.draftId().isBlank() ? UUID.randomUUID().toString() : draft.draftId();
+        GraphDraft current = drafts.get(draftId);
         long nextRevision = Math.max(draft.revision(), drafts.getOrDefault(draftId,
                 draft.withIdentity(draftId, 0)).revision()) + 1;
-        GraphDraft stored = draft.withIdentity(draftId, nextRevision);
+        GraphDraft stored = draft.withIdentity(draftId, nextRevision)
+                .withRevisionMetadata(draft.revisionMetadata().storedFrom(
+                        current == null ? null : current.revisionMetadata(), "Saved draft."));
         drafts.put(draftId, stored);
         rememberRevision(stored);
         return stored;
@@ -61,7 +64,9 @@ public class InMemoryGraphDraftRepository implements GraphDraftRepository {
         if (current == null || current.revision() != expectedRevision) {
             return Optional.empty();
         }
-        GraphDraft stored = draft.withIdentity(draftId, expectedRevision + 1);
+        GraphDraft stored = draft.withIdentity(draftId, expectedRevision + 1)
+                .withRevisionMetadata(draft.revisionMetadata().storedFrom(
+                        current.revisionMetadata(), "Patched draft."));
         drafts.put(draftId, stored);
         rememberRevision(stored);
         return Optional.of(stored);

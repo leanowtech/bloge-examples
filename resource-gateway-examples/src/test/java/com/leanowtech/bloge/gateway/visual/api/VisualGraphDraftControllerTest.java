@@ -86,6 +86,25 @@ class VisualGraphDraftControllerTest {
     }
 
     @Test
+    void createStoresRevisionMetadataSnapshot() {
+        VisualGraphDraftController controller = controllerWithEligibilityLibrary();
+
+        GraphDraft stored = controller.create(eligibilityDraft(graphInputSchema(
+                Map.of(
+                        "score", Map.of("type", "integer"),
+                        "amount", Map.of("type", "number")
+                )
+        )));
+
+        assertThat(stored.revisionMetadata().createdAt()).isNotBlank();
+        assertThat(stored.revisionMetadata().updatedAt()).isNotBlank();
+        assertThat(stored.revisionMetadata().createdBy()).isEqualTo("visual-canvas");
+        assertThat(stored.revisionMetadata().updatedBy()).isEqualTo("visual-canvas");
+        assertThat(stored.revisionMetadata().changeSource()).isEqualTo("api");
+        assertThat(stored.revisionMetadata().changeSummary()).isEqualTo("Saved draft.");
+    }
+
+    @Test
     void patchStoredDraftAppliesExpectedRevisionAndIncrementsRevision() {
         VisualGraphDraftController controller = controllerWithEligibilityLibrary();
         GraphDraft stored = controller.create(eligibilityDraft(graphInputSchema(
@@ -105,6 +124,36 @@ class VisualGraphDraftControllerTest {
         assertThat(response.getBody().patched()).isTrue();
         assertThat(response.getBody().draft().graphName()).isEqualTo("patchedPolicy");
         assertThat(response.getBody().draft().revision()).isEqualTo(stored.revision() + 1);
+    }
+
+    @Test
+    void patchStoredDraftCapturesRevisionMetadata() {
+        VisualGraphDraftController controller = controllerWithEligibilityLibrary();
+        GraphDraft stored = controller.create(eligibilityDraft(graphInputSchema(
+                Map.of(
+                        "score", Map.of("type", "integer"),
+                        "amount", Map.of("type", "number")
+                )
+        )));
+
+        ResponseEntity<GraphDraftPatchResult> response = controller.patch(stored.draftId(),
+                new GraphDraftPatchRequest(
+                        stored.revision(),
+                        "alice@example.com",
+                        "browser-save",
+                        "Rename graph",
+                        List.of(new GraphDraftPatchRequest.PatchOperation("replace", "/graphName", "patchedPolicy"))
+                ));
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+        GraphDraft patched = response.getBody().draft();
+        assertThat(patched.revisionMetadata().createdAt()).isEqualTo(stored.revisionMetadata().createdAt());
+        assertThat(patched.revisionMetadata().createdBy()).isEqualTo(stored.revisionMetadata().createdBy());
+        assertThat(patched.revisionMetadata().updatedAt()).isNotBlank();
+        assertThat(patched.revisionMetadata().updatedBy()).isEqualTo("alice@example.com");
+        assertThat(patched.revisionMetadata().changeSource()).isEqualTo("browser-save");
+        assertThat(patched.revisionMetadata().changeSummary()).isEqualTo("Rename graph");
+        assertThat(patched.revisionMetadata().changedPaths()).containsExactly("/graphName");
     }
 
     @Test
