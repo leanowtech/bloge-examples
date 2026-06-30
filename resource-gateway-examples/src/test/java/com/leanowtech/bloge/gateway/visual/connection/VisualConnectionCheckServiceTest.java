@@ -597,6 +597,28 @@ class VisualConnectionCheckServiceTest {
     }
 
     @Test
+    void rejectsConfigSourcePickerExpressionWithDslUnsafeSourcePathSegment() {
+        VisualConnectionCheckService service = connectionService(VisualCatalogTestSupport
+                .catalogWithLoanApplicantResourceAndLibrary(VisualCatalogTestSupport.configurablePolicyLibrary()));
+        GraphDraft draft = resourceConfigDraft();
+
+        VisualConnectionCheckResult result = service.check(new VisualConnectionCheckRequest(
+                draft,
+                new GraphDraft.Endpoint("fetchApplicant", "payload", "score-id"),
+                new GraphDraft.Endpoint("policy", "config", "threshold"),
+                "data"
+        ));
+
+        assertThat(result.accepted()).isFalse();
+        assertThat(result.diagnostics())
+                .anySatisfy(diagnostic -> {
+                    assertThat(diagnostic.code()).isEqualTo("visual.expression.pathSegment.invalid");
+                    assertThat(diagnostic.target()).isEqualTo("/nodes/1/config/threshold/expr");
+                    assertThat(diagnostic.message()).contains("fetchApplicant.output.payload.score-id");
+                });
+    }
+
+    @Test
     void acceptsSchemaCompatibleNestedConfigSourcePickerExpression() {
         VisualConnectionCheckService service = connectionService(VisualCatalogTestSupport
                 .catalogWithLoanApplicantResourceAndLibrary(VisualCatalogTestSupport.nestedConfigPolicyLibrary()));

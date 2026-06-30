@@ -1652,6 +1652,32 @@ class GraphDraftValidatorTest {
     }
 
     @Test
+    void rejectsExpressionBindingWhenContextReferenceUsesDslUnsafePathSegment() {
+        GraphDraftValidator validator = new GraphDraftValidator(
+                VisualCatalogTestSupport.catalogWithLibrary(
+                        VisualCatalogTestSupport.eligibilityLibrary("integer")));
+        GraphDraft draft = contextEligibilityDraft(graphInputSchema(
+                Map.of(
+                        "customer", Map.of("type", "integer"),
+                        "amount", Map.of("type", "number")
+                ),
+                List.of("customer", "amount")
+        ), Map.of(
+                "score", GraphDraft.Binding.expression("ctx.customer-id"),
+                "amount", GraphDraft.Binding.contextPath("amount")
+        ));
+
+        VisualValidationResult result = validator.validate(draft);
+
+        assertThat(result.valid()).isFalse();
+        assertThat(result.diagnostics())
+                .anySatisfy(diagnostic -> {
+                    assertThat(diagnostic.code()).isEqualTo("visual.expression.pathSegment.invalid");
+                    assertThat(diagnostic.message()).contains("ctx.customer-id").contains("customer-id");
+                });
+    }
+
+    @Test
     void rejectsExpressionBindingWhenPureContextReferenceTypeDoesNotMatchTargetSchema() {
         GraphDraftValidator validator = new GraphDraftValidator(
                 VisualCatalogTestSupport.catalogWithLibrary(
@@ -1734,6 +1760,24 @@ class GraphDraftValidatorTest {
     }
 
     @Test
+    void rejectsExpressionBindingWhenNodeReferenceUsesDslUnsafePathSegment() {
+        GraphDraftValidator validator = new GraphDraftValidator(
+                VisualCatalogTestSupport.catalogWithLibrary(
+                        VisualCatalogTestSupport.multiOutputEligibilityLibrary("integer")));
+        GraphDraft draft = multiOutputEligibilityDraft(
+                GraphDraft.Binding.expression("scoreFacts.output.facts.score-id"));
+
+        VisualValidationResult result = validator.validate(draft);
+
+        assertThat(result.valid()).isFalse();
+        assertThat(result.diagnostics())
+                .anySatisfy(diagnostic -> {
+                    assertThat(diagnostic.code()).isEqualTo("visual.expression.pathSegment.invalid");
+                    assertThat(diagnostic.message()).contains("scoreFacts.output.facts.score-id").contains("score-id");
+                });
+    }
+
+    @Test
     void acceptsCompoundExpressionBindingWhenReferencesExist() {
         GraphDraftValidator validator = new GraphDraftValidator(
                 VisualCatalogTestSupport.catalogWithLibrary(
@@ -1746,6 +1790,27 @@ class GraphDraftValidatorTest {
                 List.of("score", "amount")
         ), Map.of(
                 "score", GraphDraft.Binding.expression("ctx.score + 1"),
+                "amount", GraphDraft.Binding.contextPath("amount")
+        ));
+
+        VisualValidationResult result = validator.validate(draft);
+
+        assertThat(result.valid()).isTrue();
+    }
+
+    @Test
+    void acceptsCompoundExpressionBindingWithCompactDecimalSubtraction() {
+        GraphDraftValidator validator = new GraphDraftValidator(
+                VisualCatalogTestSupport.catalogWithLibrary(
+                        VisualCatalogTestSupport.eligibilityLibrary("integer")));
+        GraphDraft draft = contextEligibilityDraft(graphInputSchema(
+                Map.of(
+                        "score", Map.of("type", "integer"),
+                        "amount", Map.of("type", "number")
+                ),
+                List.of("score", "amount")
+        ), Map.of(
+                "score", GraphDraft.Binding.expression("ctx.score-1.5"),
                 "amount", GraphDraft.Binding.contextPath("amount")
         ));
 

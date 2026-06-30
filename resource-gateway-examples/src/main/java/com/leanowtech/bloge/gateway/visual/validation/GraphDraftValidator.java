@@ -67,6 +67,10 @@ public class GraphDraftValidator {
     private static final Pattern NODE_REFERENCE = Pattern.compile(
             "(?<![A-Za-z0-9_.])(" + IDENTIFIER_PATTERN + ")\\.output(?:\\.(" + PATH_PATTERN + "))?"
                     + "(?![A-Za-z0-9_])");
+    private static final Pattern PATH_LIKE_CONTEXT_REFERENCE = Pattern.compile(
+            "(?<![A-Za-z0-9_.])ctx\\.([^\\s,;(){}\\[\\]+*/<>=!&|?]+)");
+    private static final Pattern PATH_LIKE_NODE_REFERENCE = Pattern.compile(
+            "(?<![A-Za-z0-9_.])(" + IDENTIFIER_PATTERN + ")\\.output\\.([^\\s,;(){}\\[\\]+*/<>=!&|?]+)");
     private static final Pattern BRANCH_SELECTOR_TEMPLATE = Pattern.compile("^\\{\\{\\s*((?:input\\.)?"
             + PATH_PATTERN + ")\\s*}}$");
     private static final Pattern INTEGER_LITERAL = Pattern.compile("[-+]?\\d+");
@@ -972,6 +976,7 @@ public class GraphDraftValidator {
                                                      List<VisualDiagnostic> diagnostics) {
         String searchable = withoutQuotedStrings(expression);
         Set<String> seenReferences = new HashSet<>();
+        validateExpressionPathSegments(searchable, targetPath, diagnostics);
 
         Matcher context = CONTEXT_REFERENCE.matcher(searchable);
         while (context.find()) {
@@ -989,6 +994,62 @@ public class GraphDraftValidator {
                 resolveNodeReference(nodeId, outputPath, nodesById, operatorsByNodeId, targetPath, diagnostics);
             }
         }
+    }
+
+    private static void validateExpressionPathSegments(String searchable,
+                                                       String targetPath,
+                                                       List<VisualDiagnostic> diagnostics) {
+        Set<String> seenInvalidReferences = new HashSet<>();
+        Matcher context = PATH_LIKE_CONTEXT_REFERENCE.matcher(searchable);
+        while (context.find()) {
+            validateExpressionPathSegments("ctx." + context.group(1), context.group(1), targetPath,
+                    seenInvalidReferences, diagnostics);
+        }
+
+        Matcher node = PATH_LIKE_NODE_REFERENCE.matcher(searchable);
+        while (node.find()) {
+            validateExpressionPathSegments(node.group(1) + ".output." + node.group(2), node.group(2), targetPath,
+                    seenInvalidReferences, diagnostics);
+        }
+    }
+
+    private static void validateExpressionPathSegments(String reference,
+                                                       String path,
+                                                       String targetPath,
+                                                       Set<String> seenInvalidReferences,
+                                                       List<VisualDiagnostic> diagnostics) {
+        String[] segments = path.split("\\.", -1);
+        for (int i = 0; i < segments.length; i++) {
+            String segment = segments[i];
+            boolean decimalTail = i + 1 < segments.length && INTEGER_LITERAL.matcher(segments[i + 1]).matches();
+            if (looksLikeNumericSubtraction(segment) && (i == segments.length - 1 || decimalTail)) {
+                if (decimalTail) {
+                    i++;
+                }
+                continue;
+            }
+            if (segment.isBlank() || isDslFieldName(segment)) {
+                continue;
+            }
+            String key = reference + ":" + segment;
+            if (!seenInvalidReferences.add(key)) {
+                continue;
+            }
+            diagnostics.add(VisualDiagnostic.error("visual.expression.pathSegment.invalid",
+                    "Expression reference '%s' contains path segment '%s' that cannot be rendered as a BLOGE DSL path segment."
+                            .formatted(reference, segment),
+                    targetPath));
+        }
+    }
+
+    private static boolean looksLikeNumericSubtraction(String segment) {
+        int minus = segment.indexOf('-');
+        if (minus <= 0 || minus == segment.length() - 1) {
+            return false;
+        }
+        String left = segment.substring(0, minus);
+        String right = segment.substring(minus + 1);
+        return isDslFieldName(left) && NUMBER_LITERAL.matcher(right).matches();
     }
 
     private static Map<String, Object> resolveContextReference(String path,

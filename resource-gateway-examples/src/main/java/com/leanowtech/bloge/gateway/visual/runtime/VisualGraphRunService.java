@@ -108,6 +108,11 @@ public class VisualGraphRunService {
         String selectedOutputNode = outputNode == null || outputNode.isBlank()
                 ? draft.output().nodeId()
                 : outputNode;
+        List<VisualDiagnostic> outputDiagnostics = validateOutputNodeOverride(draft, outputNode);
+        diagnostics.addAll(outputDiagnostics);
+        if (!outputDiagnostics.isEmpty()) {
+            return blocked(draft, true, diagnostics, List.of("Output node override validation failed."), generated.dsl());
+        }
 
         DynamicGraphRunResponse dynamic = dynamicRunner.run(new DynamicGraphRunRequest(
                 generated.dsl(),
@@ -180,6 +185,12 @@ public class VisualGraphRunService {
         String selectedOutputNode = outputNode == null || outputNode.isBlank()
                 ? (draft == null ? "" : draft.output().nodeId())
                 : outputNode;
+        List<VisualDiagnostic> outputDiagnostics = validateOutputNodeOverride(draft, outputNode);
+        diagnostics.addAll(outputDiagnostics);
+        if (!outputDiagnostics.isEmpty()) {
+            return blocked(draft, true, diagnostics, List.of("Output node override validation failed."),
+                    publication.dsl());
+        }
 
         DynamicGraphRunResponse dynamic = dynamicRunner.run(new DynamicGraphRunRequest(
                 publication.dsl(),
@@ -224,6 +235,20 @@ public class VisualGraphRunService {
                     "/nodes/" + i + "/operatorRef"));
         }
         return diagnostics;
+    }
+
+    private static List<VisualDiagnostic> validateOutputNodeOverride(GraphDraft draft, String outputNode) {
+        if (draft == null || outputNode == null || outputNode.isBlank()) {
+            return List.of();
+        }
+        boolean known = draft.nodes().stream()
+                .anyMatch(node -> node.id().equals(outputNode));
+        if (known) {
+            return List.of();
+        }
+        return List.of(VisualDiagnostic.error("visual.run.outputNode.unknown",
+                "Output node override does not exist in visual draft: " + outputNode,
+                "/outputNode"));
     }
 
     private static List<VisualDiagnostic> validateRuntimeContext(GraphDraft draft, Map<String, Object> context) {

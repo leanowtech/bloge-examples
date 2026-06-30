@@ -280,6 +280,56 @@ class VisualGraphRunServiceTest {
     }
 
     @Test
+    void rejectsUnknownDraftOutputNodeOverrideBeforeDynamicRun() {
+        VisualOperatorCatalog catalog = VisualCatalogTestSupport.catalogWithLibrary(
+                VisualCatalogTestSupport.eligibilityLibrary("integer"));
+        VisualGraphRunService service = new VisualGraphRunService(
+                new GraphDraftValidator(catalog),
+                new GraphDraftDslGenerator(catalog),
+                new DynamicGatewayComposerService(MockOperator.returning(null))
+        );
+        GraphDraft draft = withFingerprints(new GraphDraft(
+                "",
+                "",
+                0,
+                "eligibilityPolicy",
+                "",
+                "",
+                "",
+                "",
+                null,
+                List.of(new GraphDraft.DraftNode(
+                        "eligibility",
+                        "risk:eligibility",
+                        "",
+                        Map.of(
+                                "score", GraphDraft.Binding.contextPath("score"),
+                                "amount", GraphDraft.Binding.contextPath("amount")
+                        ),
+                        Map.of(),
+                        null
+                )),
+                List.of(),
+                Map.of(),
+                new GraphDraft.OutputSelection("eligibility", "")
+        ), catalog);
+
+        VisualGraphRunResponse response = service.run(draft, Map.of("score", 720, "amount", 250_000),
+                "missingOutput");
+
+        assertThat(response.validated()).isTrue();
+        assertThat(response.compiled()).isFalse();
+        assertThat(response.success()).isFalse();
+        assertThat(response.errors()).contains("Output node override validation failed.");
+        assertThat(response.diagnostics())
+                .anySatisfy(diagnostic -> {
+                    assertThat(diagnostic.code()).isEqualTo("visual.run.outputNode.unknown");
+                    assertThat(diagnostic.target()).isEqualTo("/outputNode");
+                    assertThat(diagnostic.message()).contains("missingOutput");
+                });
+    }
+
+    @Test
     void runsPublishedArtifactFromFrozenDslWithoutCurrentCatalog() {
         VisualGraphRunService service = new VisualGraphRunService(
                 null,
@@ -342,6 +392,30 @@ class VisualGraphRunServiceTest {
         assertThat(response.outputNode()).isEqualTo("response");
         assertThat(response.output()).isEqualTo(720);
         assertThat(response.generatedDsl()).isEqualTo(frozenDsl);
+    }
+
+    @Test
+    void rejectsUnknownPublishedOutputNodeOverrideBeforeDynamicRun() {
+        VisualGraphRunService service = new VisualGraphRunService(
+                null,
+                null,
+                new DynamicGatewayComposerService(MockOperator.returning(null))
+        );
+        VisualGraphPublication publication = publishedScoreGraph();
+
+        VisualGraphRunResponse response = service.run(publication, Map.of("score", 720), "missingOutput");
+
+        assertThat(response.validated()).isTrue();
+        assertThat(response.compiled()).isFalse();
+        assertThat(response.success()).isFalse();
+        assertThat(response.generatedDsl()).isEqualTo(publication.dsl());
+        assertThat(response.errors()).contains("Output node override validation failed.");
+        assertThat(response.diagnostics())
+                .anySatisfy(diagnostic -> {
+                    assertThat(diagnostic.code()).isEqualTo("visual.run.outputNode.unknown");
+                    assertThat(diagnostic.target()).isEqualTo("/outputNode");
+                    assertThat(diagnostic.message()).contains("missingOutput");
+                });
     }
 
     @Test
