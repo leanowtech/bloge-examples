@@ -311,7 +311,9 @@ public record OperatorDefinition(
             Map<String, Object> parameters
     ) {
         public Lowering {
-            mode = mode == null || mode.isBlank() ? "native" : mode;
+            mode = mode == null || mode.isBlank()
+                    ? "native"
+                    : mode.trim().toLowerCase(Locale.ROOT);
             operatorRef = operatorRef == null ? "" : operatorRef;
             parameters = parameters == null ? Map.of() : new LinkedHashMap<>(parameters);
         }

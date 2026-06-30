@@ -5,6 +5,7 @@ import com.leanowtech.bloge.gateway.visual.model.SchemaEnvelope;
 import java.time.Instant;
 import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 
 /**
@@ -205,7 +206,7 @@ public record GraphDraft(
          * Creates a binding.
          */
         public Binding {
-            kind = kind == null || kind.isBlank() ? "constant" : kind;
+            kind = canonicalBindingKind(kind);
             path = path == null ? "" : path;
             nodeId = nodeId == null ? "" : nodeId;
             sourcePort = sourcePort == null ? "" : sourcePort;
@@ -246,6 +247,21 @@ public record GraphDraft(
         public static Binding expression(String expr) {
             return new Binding("expression", null, "", "", "", "", "", expr, Map.of());
         }
+
+        private static String canonicalBindingKind(String value) {
+            if (value == null || value.isBlank()) {
+                return "constant";
+            }
+            String trimmed = value.trim();
+            return switch (trimmed.toLowerCase(Locale.ROOT)) {
+                case "constant" -> "constant";
+                case "contextpath" -> "contextPath";
+                case "nodepath" -> "nodePath";
+                case "expression" -> "expression";
+                case "objecttemplate" -> "objectTemplate";
+                default -> trimmed;
+            };
+        }
     }
 
     /**
@@ -269,7 +285,7 @@ public record GraphDraft(
             id = id == null || id.isBlank()
                     ? (source == null ? "" : source.nodeId()) + "->" + (target == null ? "" : target.nodeId())
                     : id;
-            kind = kind == null || kind.isBlank() ? "data" : kind;
+            kind = kind == null || kind.isBlank() ? "data" : kind.trim().toLowerCase(Locale.ROOT);
             source = source == null ? Endpoint.empty() : source;
             target = target == null ? Endpoint.empty() : target;
         }

@@ -30,6 +30,7 @@ public class GraphDraftValidator {
     private static final Set<String> SUPPORTED_DRAFT_SCHEMA_VERSIONS = Set.of(
             GraphDraft.SCHEMA_VERSION
     );
+    private static final Set<String> SUPPORTED_EDGE_KINDS = Set.of("data");
     private static final String IDENTIFIER_PATTERN = "[A-Za-z_][A-Za-z0-9_]*";
     private static final String PATH_PATTERN = IDENTIFIER_PATTERN + "(?:\\." + IDENTIFIER_PATTERN + ")*";
     private static final Pattern PURE_CONTEXT_REFERENCE = Pattern.compile("^ctx(?:\\.(" + PATH_PATTERN + "))?$");
@@ -1309,6 +1310,12 @@ public class GraphDraftValidator {
         for (int i = 0; i < draft.edges().size(); i++) {
             GraphDraft.DraftEdge edge = draft.edges().get(i);
             String edgePath = "/edges/" + i;
+            if (!SUPPORTED_EDGE_KINDS.contains(edge.kind())) {
+                diagnostics.add(VisualDiagnostic.error("visual.edge.kindUnsupported",
+                        "Edge kind '%s' is unsupported; visual authoring supports %s."
+                                .formatted(edge.kind(), SUPPORTED_EDGE_KINDS),
+                        edgePath + "/kind"));
+            }
             if (!edgeIds.add(edge.id())) {
                 diagnostics.add(VisualDiagnostic.error("visual.edge.duplicateId",
                         "Duplicate edge id: " + edge.id(), edgePath + "/id"));

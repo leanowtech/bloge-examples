@@ -144,6 +144,91 @@ class OperatorLibraryValidatorTest {
     }
 
     @Test
+    void acceptsCanonicalizedLoweringMode() {
+        OperatorDefinition base = VisualCatalogTestSupport.eligibilityOperator("integer");
+        OperatorDefinition operator = new OperatorDefinition(
+                base.schemaVersion(),
+                base.operatorRef(),
+                base.operatorVersion(),
+                base.display(),
+                base.source(),
+                base.ports(),
+                base.configSchema(),
+                base.capabilities(),
+                base.policy(),
+                new OperatorDefinition.Lowering(" Transform ", base.lowering().operatorRef(),
+                        base.lowering().parameters()),
+                base.diagnostics()
+        );
+
+        VisualValidationResult result = validator.validate(libraryWith(operator));
+
+        assertThat(result.valid()).isTrue();
+        assertThat(result.diagnostics()).isEmpty();
+        assertThat(operator.lowering().mode()).isEqualTo("transform");
+    }
+
+    @Test
+    void rejectsPolicyScopesThatMixWildcardAndConcreteValues() {
+        OperatorDefinition base = VisualCatalogTestSupport.eligibilityOperator("integer");
+        OperatorDefinition operator = new OperatorDefinition(
+                base.schemaVersion(),
+                base.operatorRef(),
+                base.operatorVersion(),
+                base.display(),
+                base.source(),
+                base.ports(),
+                base.configSchema(),
+                base.capabilities(),
+                new OperatorDefinition.Policy(
+                        List.of("*", "demo-tenant"),
+                        List.of("local"),
+                        List.of("*", "browser")),
+                base.lowering(),
+                base.diagnostics()
+        );
+
+        VisualValidationResult result = validator.validate(libraryWith(operator));
+
+        assertThat(result.valid()).isFalse();
+        assertThat(result.diagnostics())
+                .extracting("code")
+                .containsExactly(
+                        "visual.operator.policy.scopeWildcardMixed",
+                        "visual.operator.policy.scopeWildcardMixed"
+                );
+        assertThat(result.diagnostics())
+                .extracting("target")
+                .containsExactly(
+                        "/operators/0/policy/tenants",
+                        "/operators/0/policy/environments"
+                );
+    }
+
+    @Test
+    void acceptsWildcardOnlyPolicyScopes() {
+        OperatorDefinition base = VisualCatalogTestSupport.eligibilityOperator("integer");
+        OperatorDefinition operator = new OperatorDefinition(
+                base.schemaVersion(),
+                base.operatorRef(),
+                base.operatorVersion(),
+                base.display(),
+                base.source(),
+                base.ports(),
+                base.configSchema(),
+                base.capabilities(),
+                new OperatorDefinition.Policy(List.of("*"), List.of("*"), List.of("*")),
+                base.lowering(),
+                base.diagnostics()
+        );
+
+        VisualValidationResult result = validator.validate(libraryWith(operator));
+
+        assertThat(result.valid()).isTrue();
+        assertThat(result.diagnostics()).isEmpty();
+    }
+
+    @Test
     void rejectsUnsupportedLibraryLifecycleStatus() {
         VisualValidationResult result = validator.validate(libraryWithStatus("archived-policy", "ARCHIVED"));
 

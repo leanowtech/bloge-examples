@@ -85,6 +85,45 @@ class VisualConnectionCheckServiceTest {
     }
 
     @Test
+    void rejectsUnsupportedEdgeKindPreview() {
+        VisualConnectionCheckService service = connectionService(VisualCatalogTestSupport
+                .catalogWithLoanApplicantResourceAndLibrary(VisualCatalogTestSupport.eligibilityLibrary("integer")));
+        GraphDraft draft = resourceEligibilityDraft(List.of());
+
+        VisualConnectionCheckResult result = service.check(new VisualConnectionCheckRequest(
+                draft,
+                new GraphDraft.Endpoint("fetchApplicant", "payload", "score"),
+                new GraphDraft.Endpoint("eligibility", "inputs", "score"),
+                "control"
+        ));
+
+        assertThat(result.accepted()).isFalse();
+        assertThat(result.diagnostics())
+                .anySatisfy(diagnostic -> {
+                    assertThat(diagnostic.code()).isEqualTo("visual.edge.kindUnsupported");
+                    assertThat(diagnostic.target()).isEqualTo("/edges/0/kind");
+                });
+    }
+
+    @Test
+    void acceptsCanonicalizedEdgeKindPreview() {
+        VisualConnectionCheckService service = connectionService(VisualCatalogTestSupport
+                .catalogWithLoanApplicantResourceAndLibrary(VisualCatalogTestSupport.eligibilityLibrary("integer")));
+        GraphDraft draft = resourceEligibilityDraft(List.of());
+
+        VisualConnectionCheckResult result = service.check(new VisualConnectionCheckRequest(
+                draft,
+                new GraphDraft.Endpoint("fetchApplicant", "payload", "score"),
+                new GraphDraft.Endpoint("eligibility", "inputs", "score"),
+                " DATA "
+        ));
+
+        assertThat(result.accepted()).isTrue();
+        assertThat(result.diagnostics()).isEmpty();
+        assertThat(result.edge().kind()).isEqualTo("data");
+    }
+
+    @Test
     void acceptsSchemaCompatibleContextPickerBinding() {
         VisualConnectionCheckService service = connectionService(VisualCatalogTestSupport
                 .catalogWithLoanApplicantResourceAndLibrary(VisualCatalogTestSupport.eligibilityLibrary("integer")));

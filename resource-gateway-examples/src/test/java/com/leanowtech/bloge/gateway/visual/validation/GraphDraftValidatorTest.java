@@ -414,6 +414,48 @@ class GraphDraftValidatorTest {
     }
 
     @Test
+    void acceptsCanonicalizedEdgeKind() {
+        GraphDraftValidator validator = new GraphDraftValidator(
+                VisualCatalogTestSupport.catalogWithLoanApplicantResourceAndLibrary(
+                        VisualCatalogTestSupport.eligibilityLibrary("integer")));
+        GraphDraft.DraftEdge edge = new GraphDraft.DraftEdge("score", " DATA ",
+                new GraphDraft.Endpoint("fetchApplicant", "payload", "score"),
+                new GraphDraft.Endpoint("eligibility", "inputs", "score"));
+        GraphDraft draft = typedEligibilityDraft(
+                GraphDraft.Binding.nodePath("fetchApplicant", "score"),
+                edge);
+
+        VisualValidationResult result = validator.validate(draft);
+
+        assertThat(result.valid()).isTrue();
+        assertThat(edge.kind()).isEqualTo("data");
+    }
+
+    @Test
+    void rejectsUnsupportedEdgeKind() {
+        GraphDraftValidator validator = new GraphDraftValidator(
+                VisualCatalogTestSupport.catalogWithLoanApplicantResourceAndLibrary(
+                        VisualCatalogTestSupport.eligibilityLibrary("integer")));
+        GraphDraft draft = typedEligibilityDraft(
+                Map.of(
+                        "score", GraphDraft.Binding.contextPath("score"),
+                        "amount", GraphDraft.Binding.contextPath("amount")
+                ),
+                List.of(new GraphDraft.DraftEdge("control", "control",
+                        new GraphDraft.Endpoint("fetchApplicant", "payload", "score"),
+                        new GraphDraft.Endpoint("eligibility", "inputs", "score"))));
+
+        VisualValidationResult result = validator.validate(draft);
+
+        assertThat(result.valid()).isFalse();
+        assertThat(result.diagnostics())
+                .anySatisfy(diagnostic -> {
+                    assertThat(diagnostic.code()).isEqualTo("visual.edge.kindUnsupported");
+                    assertThat(diagnostic.target()).isEqualTo("/edges/0/kind");
+                });
+    }
+
+    @Test
     void rejectsDuplicateEdgeIds() {
         GraphDraftValidator validator = new GraphDraftValidator(
                 VisualCatalogTestSupport.catalogWithLoanApplicantResourceAndLibrary(
@@ -720,6 +762,38 @@ class GraphDraftValidatorTest {
         VisualValidationResult result = validator.validate(draft);
 
         assertThat(result.valid()).isTrue();
+    }
+
+    @Test
+    void acceptsCanonicalizedInputBindingKind() {
+        GraphDraftValidator validator = new GraphDraftValidator(
+                VisualCatalogTestSupport.catalogWithLibrary(
+                        VisualCatalogTestSupport.eligibilityLibrary("integer")));
+        GraphDraft.Binding amountBinding = new GraphDraft.Binding(
+                " ContextPath ",
+                null,
+                "amount",
+                "",
+                "",
+                "",
+                "",
+                "",
+                Map.of()
+        );
+        GraphDraft draft = contextEligibilityDraft(graphInputSchema(
+                Map.of(
+                        "amount", Map.of("type", "number")
+                ),
+                List.of("amount")
+        ), Map.of(
+                "score", GraphDraft.Binding.constant(720),
+                "amount", amountBinding
+        ));
+
+        VisualValidationResult result = validator.validate(draft);
+
+        assertThat(result.valid()).isTrue();
+        assertThat(amountBinding.kind()).isEqualTo("contextPath");
     }
 
     @Test

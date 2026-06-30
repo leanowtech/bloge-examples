@@ -159,6 +159,7 @@ public class OperatorLibraryValidator {
         diagnostics.addAll(VisualSchemaValidator.validateEnvelope(
                 operator.configSchema(), path + "/configSchema"));
         validateCapabilities(operator, path + "/capabilities", diagnostics);
+        validatePolicy(operator, path + "/policy", diagnostics);
         validateLowering(operator, path + "/lowering", diagnostics);
         diagnostics.addAll(VisualSecretGuard.detectOperatorSecrets(operator, path));
     }
@@ -179,6 +180,28 @@ public class OperatorLibraryValidator {
                             .formatted(operator.operatorRef(), capabilities.idempotency(),
                                     SUPPORTED_CAPABILITY_IDEMPOTENCY),
                     path + "/idempotency"));
+        }
+    }
+
+    private static void validatePolicy(OperatorDefinition operator,
+                                       String path,
+                                       List<VisualDiagnostic> diagnostics) {
+        validatePolicyScope(operator, "tenants", operator.policy().tenants(), path + "/tenants", diagnostics);
+        validatePolicyScope(operator, "namespaces", operator.policy().namespaces(), path + "/namespaces", diagnostics);
+        validatePolicyScope(operator, "environments", operator.policy().environments(), path + "/environments",
+                diagnostics);
+    }
+
+    private static void validatePolicyScope(OperatorDefinition operator,
+                                            String scopeName,
+                                            List<String> scope,
+                                            String path,
+                                            List<VisualDiagnostic> diagnostics) {
+        if (scope.size() > 1 && scope.contains("*")) {
+            diagnostics.add(VisualDiagnostic.error("visual.operator.policy.scopeWildcardMixed",
+                    "Operator '%s' policy.%s mixes wildcard '*' with concrete values; use either '*' or explicit values."
+                            .formatted(operator.operatorRef(), scopeName),
+                    path));
         }
     }
 

@@ -196,11 +196,15 @@ and unenforced constraint keywords such as `minimum`, `maximum`, `pattern`,
 are rejected instead of being silently ignored. Manual
 `expression` bindings are not blind escape hatches: server validation checks
 referenced `ctx.*` and `node.output.*` paths, and pure reference expressions are
-type-checked against the target input schema. Data edges must have unique ids
-and unique source/target connection signatures, match a real semantic dependency
-such as a node-path binding or config expression reference, and node-path
-bindings must be represented by a data edge in stored drafts, so the line shown
-on the canvas cannot silently diverge from what the DSL generator executes.
+type-checked against the target input schema. Binding kinds are trimmed and
+canonicalized to the supported draft tokens (`constant`, `contextPath`,
+`nodePath`, `expression`, and `objectTemplate`). Stored graph edges currently
+support only the `data` kind, with incoming edge kinds trimmed and canonicalized
+to lowercase; data edges must have unique ids and unique source/target
+connection signatures, match a real semantic dependency such as a node-path
+binding or config expression reference, and node-path bindings must be
+represented by a data edge in stored drafts, so the line shown on the canvas
+cannot silently diverge from what the DSL generator executes.
 The browser treats repeated attempts to draw an already-applied data connection
 as an idempotent no-op instead of sending noisy duplicate edits to the server.
 Expression references in node inputs and executable config also
@@ -482,11 +486,14 @@ array item schema, and `additionalProperties` policy so canvas-generated default
 node config cannot start invalid. The browser consumes both root object defaults
 and nested field-level defaults from `configSchema` when a node is dragged from
 the palette. Capability labels are trimmed and canonicalized to uppercase before
-validation, so semantically valid lower-case imports are stored on one contract.
+validation, and lowering modes are trimmed and canonicalized to lowercase, so
+semantically valid imports are stored on one contract.
 Invalid libraries return structured visual diagnostics instead of
 accepting a library that will fail later on the canvas.
 Operator `policy.tenants`, `policy.namespaces`, and `policy.environments` are stored with
-the library and enforced when scoped drafts use the operator. `DEPRECATED`
+the library and enforced when scoped drafts use the operator. A policy scope may
+be empty/unrestricted, a single `*`, or explicit values, but cannot mix `*` with
+concrete values in the same scope. `DEPRECATED`
 libraries stop appearing in the default palette but continue to resolve for
 stored draft validation/compile/run, and the browser keeps their schemas
 available only for existing nodes; use `DISABLED` when operators must be removed
@@ -630,8 +637,8 @@ Seven `.bloge` graphs live in `src/main/resources/bloge/gateway/`:
 | `DefaultVisualOperatorCatalog` | Combines native visual operators with `resource:<resourceId>` virtual operators |
 | `GraphDraft` | Editable canvas graph model: input schema, nodes, port-aware bindings, edges, layout, output selection, and operator fingerprint snapshots |
 | `DatabaseGraphDraftRepository` | H2-backed graph draft repository with revision assignment, immutable revision history, and expected-revision guarded updates |
-| `GraphDraftValidator` | Validates the `bloge.visualGraphDraft.v1` draft contract, operator references, operator fingerprint drift, operator scope policy, graph input `contextPath` bindings, binding kind allow-list, literal constants, expression references, required schema inputs, node config against `configSchema`, port-aware node bindings, typed port edges, edge identity/connection uniqueness, data edge/semantic dependency consistency, DAG shape, and output schema selection |
-| `VisualConnectionCheckService` | Reuses preview-mode draft validation to accept or reject one proposed canvas edge before the browser writes a binding |
+| `GraphDraftValidator` | Validates the `bloge.visualGraphDraft.v1` draft contract, operator references, operator fingerprint drift, operator scope policy, graph input `contextPath` bindings, binding kind and edge kind allow-lists, literal constants, expression references, required schema inputs, node config against `configSchema`, port-aware node bindings, typed port edges, edge identity/connection uniqueness, data edge/semantic dependency consistency, DAG shape, and output schema selection |
+| `VisualConnectionCheckService` | Reuses draft validation to accept or reject one proposed canvas edge before the browser writes a binding |
 | `GraphDraftDslGenerator` | Lowers visual drafts into executable BLOGE DSL |
 | `VisualGraphRunService` | Reuses the dynamic BLOGE runner to validate, compile, and execute visual drafts |
 | `VisualGraphPublication` | Immutable published visual graph artifact with DSL, draft, operator schema snapshots, fingerprints, layout, and validation reports |
@@ -958,7 +965,7 @@ Isolated component tests, some with lightweight Spring slices or mocks.
 | `ResourceDescriptorBootstrapTest` | 7 | Seeding, refresh behavior, idempotency |
 | `GatewayDslCompilationTest` | 7 | DSL parsing, graph loading |
 | Gateway example API suite | 13 | Dynamic composer service/controller, scenario catalog, example graph endpoints |
-| Visual authoring suite | 236 | Visual operator projection, resource design contract persistence and gates, resource-contract in-use delete protection, imported libraries, registry-aware and impact-aware library validation, catalog lifecycle gates, deprecated operator draft resolution and active-scope fingerprinting, catalog token gates and policy filtering, cross-library operatorRef ownership, operator-library in-use change protection and same-ref fingerprint drift/missing-snapshot preflight warnings, system-reserved operatorRef gates, import-time lowering gates including DSL-safe field-name gates, schema default value gates, unsupported schema envelope and JSON Schema keyword gates, built-in and virtual catalog schema-gate parity, draft/publication persistence and history, revision audit metadata, full-save/PATCH fingerprint preservation, service-managed fingerprint snapshot gates, structured malformed patch diagnostics, server-assigned create identity, revision-guarded full-save, patch, stored-run, delete, and publish conflict handling, operator fingerprint drift preservation and execution snapshot coverage gates, typed connection/edge validation including edge identity uniqueness and binding kind allow-list, input/config/root-port source-picker server preflight with duplicate-connection rejection, post-drop binding simulation, and nested config paths, duplicate target input ownership, root-port object binding from context and upstream operator output, stable root-port input keys, object required fields, object schema structure gates, required-array schema gates, nested input/config objectTemplate required fields and object-compatible targets, enum value-domain and shape gates, standard JSON Schema config enum gates, nested config expression references and configSchema type gates, native config input lowering and DSL field-key diagnostics, data edge/semantic dependency consistency, graph input schema gates, secret blocking, DSL lowering, compiler gating, dependency ordering, runtime smoke path |
+| Visual authoring suite | 254 | Visual operator projection, resource design contract persistence and gates, resource-contract in-use delete protection, imported libraries, registry-aware and impact-aware library validation, catalog lifecycle gates, deprecated operator draft resolution and active-scope fingerprinting, catalog token gates and policy filtering, policy wildcard scope gates, cross-library operatorRef ownership, operator-library in-use change protection and same-ref fingerprint drift/missing-snapshot preflight warnings, system-reserved operatorRef gates, import-time lowering/canonicalization gates including DSL-safe field-name gates, schema default value gates, unsupported schema envelope and JSON Schema keyword gates, built-in and virtual catalog schema-gate parity, draft/publication persistence and history, revision audit metadata, full-save/PATCH fingerprint preservation, service-managed fingerprint snapshot gates, structured malformed patch diagnostics, server-assigned create identity, revision-guarded full-save, patch, stored-run, delete, and publish conflict handling, operator fingerprint drift preservation and execution snapshot coverage gates, typed connection/edge validation including edge identity uniqueness plus binding and edge kind allow-lists, binding and edge kind canonicalization, input/config/root-port source-picker server preflight with duplicate-connection rejection, post-drop binding simulation, and nested config paths, duplicate target input ownership, root-port object binding from context and upstream operator output, stable root-port input keys, object required fields, object schema structure gates, required-array schema gates, nested input/config objectTemplate required fields and object-compatible targets, enum value-domain and shape gates, standard JSON Schema config enum gates, nested config expression references and configSchema type gates, native config input lowering and DSL field-key diagnostics, data edge/semantic dependency consistency, graph input schema gates, secret blocking, DSL lowering, compiler gating, dependency ordering, runtime smoke path |
 
 ### Layer 3 — Orchestration tests
 

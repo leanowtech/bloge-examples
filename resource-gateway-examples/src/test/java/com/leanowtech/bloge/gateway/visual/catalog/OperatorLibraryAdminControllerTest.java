@@ -222,6 +222,82 @@ class OperatorLibraryAdminControllerTest {
     }
 
     @Test
+    void createRejectsPolicyScopesThatMixWildcardAndConcreteValues() throws Exception {
+        OperatorDefinition base = VisualCatalogTestSupport.eligibilityOperator("integer");
+        OperatorDefinition operator = new OperatorDefinition(
+                base.schemaVersion(),
+                base.operatorRef(),
+                base.operatorVersion(),
+                base.display(),
+                base.source(),
+                base.ports(),
+                base.configSchema(),
+                base.capabilities(),
+                new OperatorDefinition.Policy(List.of("*", "demo-tenant"), List.of("local"), List.of("browser")),
+                base.lowering(),
+                base.diagnostics()
+        );
+        OperatorLibrary library = new OperatorLibrary(
+                "bloge.visualOperatorLibrary.v1",
+                "bad-policy-scope",
+                "Bad policy scope",
+                "1.0.0",
+                "risk-team",
+                "ACTIVE",
+                List.of(operator)
+        );
+
+        mockMvc.perform(post("/admin/visual-operator-libraries")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(library)))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.valid").value(false))
+                .andExpect(jsonPath("$.diagnostics[0].code")
+                        .value("visual.operator.policy.scopeWildcardMixed"))
+                .andExpect(jsonPath("$.diagnostics[0].target").value("/operators/0/policy/tenants"));
+
+        assertThat(registry.all()).isEmpty();
+    }
+
+    @Test
+    void createStoresCanonicalizedLoweringMode() throws Exception {
+        OperatorDefinition base = VisualCatalogTestSupport.eligibilityOperator("integer");
+        OperatorDefinition operator = new OperatorDefinition(
+                base.schemaVersion(),
+                base.operatorRef(),
+                base.operatorVersion(),
+                base.display(),
+                base.source(),
+                base.ports(),
+                base.configSchema(),
+                base.capabilities(),
+                base.policy(),
+                new OperatorDefinition.Lowering(" Transform ", base.lowering().operatorRef(),
+                        base.lowering().parameters()),
+                base.diagnostics()
+        );
+        OperatorLibrary library = new OperatorLibrary(
+                "bloge.visualOperatorLibrary.v1",
+                "canonical-lowering",
+                "Canonical lowering",
+                "1.0.0",
+                "risk-team",
+                "ACTIVE",
+                List.of(operator)
+        );
+
+        mockMvc.perform(post("/admin/visual-operator-libraries")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(library)))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.operators[0].lowering.mode").value("transform"));
+
+        assertThat(registry.find("canonical-lowering"))
+                .map(stored -> stored.operators().getFirst().lowering().mode())
+                .contains("transform");
+    }
+
+    @Test
     void createStoresValidLibrary() throws Exception {
         OperatorLibrary library = VisualCatalogTestSupport.eligibilityLibrary("integer");
 
