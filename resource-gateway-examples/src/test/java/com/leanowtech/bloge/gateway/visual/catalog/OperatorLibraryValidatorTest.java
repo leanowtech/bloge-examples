@@ -1917,6 +1917,106 @@ class OperatorLibraryValidatorTest {
     }
 
     @Test
+    void acceptsLocalDefinitionObjectAllOfAcrossOperatorDefinitions() {
+        OperatorDefinition operator = new OperatorDefinition(
+                "bloge.visualOperator.v1",
+                "risk:objectAllOfPolicy",
+                "1.0.0",
+                new OperatorDefinition.Display("Object allOf policy", "Test operator.", List.of("test")),
+                new OperatorDefinition.Source("user-library", "", "", "", true),
+                new OperatorDefinition.Ports(
+                        List.of(new OperatorDefinition.Port("payload",
+                                new SchemaEnvelope(SchemaEnvelope.JSON_SCHEMA, "2020-12", Map.of(
+                                        "type", "object",
+                                        "properties", Map.of(
+                                                "applicant", Map.of(
+                                                        "allOf", List.of(
+                                                                Map.of("$ref", "#/$defs/BaseApplicant"),
+                                                                Map.of(
+                                                                        "type", "object",
+                                                                        "properties", Map.of(
+                                                                                "segment", Map.of("type", "string")
+                                                                        ),
+                                                                        "required", List.of("segment"),
+                                                                        "additionalProperties", false)
+                                                        ))
+                                        ),
+                                        "required", List.of("applicant"),
+                                        "$defs", Map.of(
+                                                "BaseApplicant", Map.of(
+                                                        "type", "object",
+                                                        "properties", Map.of(
+                                                                "score", Map.of("type", "integer")
+                                                        ),
+                                                        "required", List.of("score"))
+                                        )
+                                )),
+                                true,
+                                "Input.")),
+                        List.of(new OperatorDefinition.Port("output",
+                                new SchemaEnvelope(SchemaEnvelope.JSON_SCHEMA, "2020-12", Map.of(
+                                        "type", "object",
+                                        "properties", Map.of(
+                                                "decision", Map.of(
+                                                        "allOf", List.of(
+                                                                Map.of("$ref", "#/$defs/BaseDecision"),
+                                                                Map.of(
+                                                                        "type", "object",
+                                                                        "properties", Map.of(
+                                                                                "reason", Map.of("type", List.of("string", "null"))
+                                                                        ),
+                                                                        "additionalProperties", false)
+                                                        ))
+                                        ),
+                                        "$defs", Map.of(
+                                                "BaseDecision", Map.of(
+                                                        "type", "object",
+                                                        "properties", Map.of(
+                                                                "accepted", Map.of("type", "boolean")
+                                                        ),
+                                                        "required", List.of("accepted"))
+                                        )
+                                )),
+                                true,
+                                "Output."))
+                ),
+                new SchemaEnvelope(SchemaEnvelope.JSON_SCHEMA, "2020-12", Map.of(
+                        "type", "object",
+                        "properties", Map.of(
+                                "limits", Map.of(
+                                        "allOf", List.of(
+                                                Map.of("$ref", "#/$defs/BaseLimits"),
+                                                Map.of(
+                                                        "type", "object",
+                                                        "properties", Map.of(
+                                                                "routeMode", Map.of("type", "string")
+                                                        ),
+                                                        "required", List.of("routeMode"),
+                                                        "additionalProperties", false)
+                                        ))
+                        ),
+                        "required", List.of("limits"),
+                        "$defs", Map.of(
+                                "BaseLimits", Map.of(
+                                        "type", "object",
+                                        "properties", Map.of(
+                                                "threshold", Map.of("type", "integer", "minimum", 300)
+                                        ),
+                                        "required", List.of("threshold"))
+                        )
+                )),
+                OperatorDefinition.Capabilities.pure(),
+                new OperatorDefinition.Lowering("native", "riskObjectAllOfPolicy", Map.of()),
+                List.of()
+        );
+
+        VisualValidationResult result = validator.validate(libraryWith(operator));
+
+        assertThat(result.valid()).as("diagnostics: %s", result.diagnostics()).isTrue();
+        assertThat(result.diagnostics()).isEmpty();
+    }
+
+    @Test
     void acceptsObjectDependentRequiredAcrossOperatorDefinitions() {
         OperatorDefinition operator = new OperatorDefinition(
                 "bloge.visualOperator.v1",

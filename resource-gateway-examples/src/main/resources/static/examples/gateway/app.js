@@ -250,6 +250,18 @@ const SCHEMA_REF_ANNOTATION_KEYS = new Set([
   'readOnly',
   'writeOnly'
 ]);
+const SCHEMA_ANNOTATION_KEYS = new Set([
+  '$comment',
+  'title',
+  'description',
+  'examples',
+  'deprecated',
+  'readOnly',
+  'writeOnly'
+]);
+const SCHEMA_DECLARATION_KEYS = new Set([
+  '$defs'
+]);
 
 const state = {
   scenarios: [],
@@ -5094,7 +5106,216 @@ function resolveLocalSchemaRefValue(value, root, stack) {
   for (const [key, item] of Object.entries(value)) {
     resolved[key] = resolveLocalSchemaRefValue(item, root, stack);
   }
-  return resolved;
+  return flattenObjectAllOf(resolved);
+}
+
+function flattenObjectAllOf(schema) {
+  if (!Array.isArray(schema?.allOf) || !schema.allOf.length) {
+    return schema;
+  }
+  const fragments = [];
+  for (const fragment of schema.allOf) {
+    if (!isPlainObject(fragment) || !objectCompositionSchema(fragment)) {
+      return schema;
+    }
+    if (Object.keys(fragment).some((key) => SCHEMA_DECLARATION_KEYS.has(key))) {
+      return schema;
+    }
+    fragments.push(fragment);
+  }
+
+  const sibling = { ...schema };
+  delete sibling.allOf;
+  if (Object.keys(sibling).some((key) => !SCHEMA_ANNOTATION_KEYS.has(key) && !SCHEMA_DECLARATION_KEYS.has(key))) {
+    if (!objectCompositionSchema(sibling)) {
+      return schema;
+    }
+    fragments.push(sibling);
+  }
+
+  const merged = { type: 'object' };
+  const properties = {};
+  const required = [];
+  const patternProperties = {};
+  const dependentRequired = {};
+  const dependentSchemas = {};
+  let additionalProperties;
+  let unevaluatedProperties;
+  let propertyNames;
+  let minProperties;
+  let maxProperties;
+
+  for (const fragment of fragments) {
+    if (!mergeObjectKeyword(properties, fragment, 'properties')
+      || !mergeObjectKeyword(patternProperties, fragment, 'patternProperties')
+      || !mergeObjectKeyword(dependentSchemas, fragment, 'dependentSchemas')
+      || !mergeDependentRequiredKeyword(dependentRequired, fragment)
+      || !mergeRequiredKeyword(required, fragment)) {
+      return schema;
+    }
+
+    additionalProperties = mergeResidualPolicy(additionalProperties, residualPolicy(fragment, 'additionalProperties'));
+    unevaluatedProperties = mergeResidualPolicy(unevaluatedProperties, residualPolicy(fragment, 'unevaluatedProperties'));
+    if (additionalProperties === UNSUPPORTED_ALL_OF_MERGE || unevaluatedProperties === UNSUPPORTED_ALL_OF_MERGE) {
+      return schema;
+    }
+
+    if (Object.prototype.hasOwnProperty.call(fragment, 'propertyNames')) {
+      if (!isPlainObject(fragment.propertyNames)) {
+        return schema;
+      }
+      if (propertyNames !== undefined && !schemaValuesEqual(propertyNames, fragment.propertyNames)) {
+        return schema;
+      }
+      propertyNames = deepCloneSchemaValue(fragment.propertyNames);
+    }
+    minProperties = maxOptionalNumber(minProperties, propertyBound(fragment, 'minProperties'));
+    maxProperties = minOptionalNumber(maxProperties, propertyBound(fragment, 'maxProperties'));
+    if (minProperties === UNSUPPORTED_ALL_OF_MERGE || maxProperties === UNSUPPORTED_ALL_OF_MERGE) {
+      return schema;
+    }
+  }
+
+  if (Object.keys(properties).length) merged.properties = properties;
+  if (required.length) merged.required = required;
+  if (Object.keys(patternProperties).length) merged.patternProperties = patternProperties;
+  if (Object.keys(dependentRequired).length) merged.dependentRequired = dependentRequired;
+  if (Object.keys(dependentSchemas).length) merged.dependentSchemas = dependentSchemas;
+  if (additionalProperties !== undefined) merged.additionalProperties = additionalProperties;
+  if (unevaluatedProperties !== undefined) merged.unevaluatedProperties = unevaluatedProperties;
+  if (propertyNames !== undefined) merged.propertyNames = propertyNames;
+  if (minProperties !== undefined) merged.minProperties = minProperties;
+  if (maxProperties !== undefined) merged.maxProperties = maxProperties;
+  for (const key of SCHEMA_ANNOTATION_KEYS) {
+    if (Object.prototype.hasOwnProperty.call(sibling, key)) {
+      merged[key] = deepCloneSchemaValue(sibling[key]);
+    }
+  }
+  for (const key of SCHEMA_DECLARATION_KEYS) {
+    if (Object.prototype.hasOwnProperty.call(sibling, key)) {
+      merged[key] = deepCloneSchemaValue(sibling[key]);
+    }
+  }
+  return merged;
+}
+
+function objectCompositionSchema(schema) {
+  return schema?.type === 'object'
+    || (schema?.type === undefined && ['properties', 'required', 'additionalProperties',
+      'unevaluatedProperties', 'patternProperties', 'propertyNames', 'dependentRequired',
+      'dependentSchemas', 'minProperties', 'maxProperties'].some((key) => Object.prototype.hasOwnProperty.call(schema, key)));
+}
+
+function mergeObjectMap(target, source) {
+  for (const [key, value] of Object.entries(source)) {
+    const copy = deepCloneSchemaValue(value);
+    if (Object.prototype.hasOwnProperty.call(target, key) && !schemaValuesEqual(target[key], copy)) {
+      return false;
+    }
+    target[key] = copy;
+  }
+  return true;
+}
+
+function mergeObjectKeyword(target, source, key) {
+  if (!Object.prototype.hasOwnProperty.call(source, key)) {
+    return true;
+  }
+  if (!isPlainObject(source[key])) {
+    return false;
+  }
+  return mergeObjectMap(target, source[key]);
+}
+
+function mergeDependentRequiredKeyword(target, source) {
+  if (!Object.prototype.hasOwnProperty.call(source, 'dependentRequired')) {
+    return true;
+  }
+  if (!isPlainObject(source.dependentRequired)) {
+    return false;
+  }
+  for (const [key, values] of Object.entries(source.dependentRequired)) {
+    if (!Array.isArray(target[key])) {
+      target[key] = [];
+    }
+    if (!mergeUniqueStrings(target[key], values)) {
+      return false;
+    }
+  }
+  return true;
+}
+
+function mergeRequiredKeyword(target, source) {
+  return !Object.prototype.hasOwnProperty.call(source, 'required')
+    || mergeUniqueStrings(target, source.required);
+}
+
+function mergeUniqueStrings(target, values) {
+  if (!Array.isArray(values)) {
+    return false;
+  }
+  const seen = new Set();
+  for (const value of values) {
+    if (typeof value !== 'string' || !value.trim() || seen.has(value)) {
+      return false;
+    }
+    seen.add(value);
+    if (!target.includes(value)) {
+      target.push(value);
+    }
+  }
+  return true;
+}
+
+const UNSUPPORTED_ALL_OF_MERGE = Symbol('unsupportedAllOfMerge');
+
+function residualPolicy(source, key) {
+  if (!Object.prototype.hasOwnProperty.call(source, key)) {
+    return undefined;
+  }
+  if (source[key] === true || source[key] === false) {
+    return source[key];
+  }
+  return UNSUPPORTED_ALL_OF_MERGE;
+}
+
+function mergeResidualPolicy(current, next) {
+  if (next === undefined || next === true) {
+    return current;
+  }
+  if (next === false) {
+    return false;
+  }
+  return UNSUPPORTED_ALL_OF_MERGE;
+}
+
+function propertyBound(source, key) {
+  if (!Object.prototype.hasOwnProperty.call(source, key)) {
+    return undefined;
+  }
+  return Number.isInteger(source[key]) && source[key] >= 0
+    ? source[key]
+    : UNSUPPORTED_ALL_OF_MERGE;
+}
+
+function maxOptionalNumber(current, next) {
+  if (next === undefined) {
+    return current;
+  }
+  if (next === UNSUPPORTED_ALL_OF_MERGE) {
+    return next;
+  }
+  return current === undefined ? next : Math.max(current, next);
+}
+
+function minOptionalNumber(current, next) {
+  if (next === undefined) {
+    return current;
+  }
+  if (next === UNSUPPORTED_ALL_OF_MERGE) {
+    return next;
+  }
+  return current === undefined ? next : Math.min(current, next);
 }
 
 function expandableLocalSchemaRef(schema) {

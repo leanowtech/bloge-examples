@@ -2310,6 +2310,18 @@ class GraphDraftValidatorTest {
     }
 
     @Test
+    void acceptsNodePathBindingThroughLocalDefinitionObjectAllOf() {
+        GraphDraftValidator validator = new GraphDraftValidator(
+                VisualCatalogTestSupport.catalogWithLibrary(
+                        scoreAllOfCompatibilityLibrary("integer", "integer")));
+        GraphDraft draft = numericBoundsCompatibilityDraft();
+
+        VisualValidationResult result = validator.validate(draft);
+
+        assertThat(result.valid()).isTrue();
+    }
+
+    @Test
     void rejectsNumericBindingWhenSourceLowerBoundIsWeakerThanTarget() {
         GraphDraftValidator validator = new GraphDraftValidator(
                 VisualCatalogTestSupport.catalogWithLibrary(
@@ -4153,6 +4165,69 @@ class GraphDraftValidatorTest {
         );
     }
 
+    private static OperatorLibrary scoreAllOfCompatibilityLibrary(Object sourceType, Object targetType) {
+        OperatorDefinition producer = new OperatorDefinition(
+                "bloge.visualOperator.v1",
+                "risk:scoreProducer",
+                "1.0.0",
+                new OperatorDefinition.Display("Score producer",
+                        "Produces composed risk score facts.",
+                        List.of("risk", "numeric")),
+                new OperatorDefinition.Source("user-library", "", "", "", false),
+                new OperatorDefinition.Ports(
+                        List.of(),
+                        List.of(new OperatorDefinition.Port("output",
+                                scoreAllOfEnvelope(sourceType),
+                                true,
+                                "Score output."))
+                ),
+                SchemaEnvelope.opaque(),
+                OperatorDefinition.Capabilities.pure(),
+                new OperatorDefinition.Lowering("native", "riskScoreProducer", Map.of()),
+                List.of()
+        );
+
+        Map<String, Object> consumerOutputProperties = new LinkedHashMap<>();
+        consumerOutputProperties.put("accepted", Map.of("type", "boolean"));
+        OperatorDefinition consumer = new OperatorDefinition(
+                "bloge.visualOperator.v1",
+                "risk:scoreConsumer",
+                "1.0.0",
+                new OperatorDefinition.Display("Score consumer",
+                        "Consumes composed risk score facts.",
+                        List.of("risk", "numeric")),
+                new OperatorDefinition.Source("user-library", "", "", "", true),
+                new OperatorDefinition.Ports(
+                        List.of(new OperatorDefinition.Port("inputs",
+                                scoreAllOfEnvelope(targetType),
+                                true,
+                                "Score input.")),
+                        List.of(new OperatorDefinition.Port("output",
+                                SchemaEnvelope.object(consumerOutputProperties, List.of()),
+                                true,
+                                "Consumer output."))
+                ),
+                SchemaEnvelope.opaque(),
+                OperatorDefinition.Capabilities.pure(),
+                new OperatorDefinition.Lowering("transform", "transform", Map.of(
+                        "assignments", Map.of(
+                                "accepted", "true"
+                        )
+                )),
+                List.of()
+        );
+
+        return new OperatorLibrary(
+                "bloge.visualOperatorLibrary.v1",
+                "risk-score-allof-compatibility",
+                "Score allOf compatibility operators",
+                "1.0.0",
+                "risk-team",
+                "ACTIVE",
+                List.of(producer, consumer)
+        );
+    }
+
     private static SchemaEnvelope scoreReferenceEnvelope(Object scoreType) {
         return new SchemaEnvelope(SchemaEnvelope.JSON_SCHEMA, "2020-12", Map.of(
                 "type", "object",
@@ -4162,6 +4237,28 @@ class GraphDraftValidatorTest {
                 "required", List.of("score"),
                 "$defs", Map.of(
                         "Score", Map.of("type", scoreType)
+                )
+        ));
+    }
+
+    private static SchemaEnvelope scoreAllOfEnvelope(Object scoreType) {
+        return new SchemaEnvelope(SchemaEnvelope.JSON_SCHEMA, "2020-12", Map.of(
+                "allOf", List.of(
+                        Map.of("$ref", "#/$defs/BaseScorePort"),
+                        Map.of(
+                                "type", "object",
+                                "properties", Map.of(
+                                        "score", Map.of("type", scoreType)
+                                ),
+                                "required", List.of("score"),
+                                "additionalProperties", false)
+                ),
+                "$defs", Map.of(
+                        "BaseScorePort", Map.of(
+                                "type", "object",
+                                "properties", Map.of(
+                                        "source", Map.of("type", "string")
+                                ))
                 )
         ));
     }

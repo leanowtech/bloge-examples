@@ -47,6 +47,40 @@ class SchemaEnvelopeTest {
     }
 
     @Test
+    void flattensLocalReferenceObjectAllOfSchemas() {
+        SchemaEnvelope envelope = new SchemaEnvelope(SchemaEnvelope.JSON_SCHEMA, "2020-12", Map.of(
+                "allOf", List.of(
+                        Map.of("$ref", "#/$defs/BaseApplicant"),
+                        Map.of(
+                                "type", "object",
+                                "properties", Map.of(
+                                        "segment", Map.of("type", "string")
+                                ),
+                                "required", List.of("segment"),
+                                "additionalProperties", false)
+                ),
+                "$defs", Map.of(
+                        "BaseApplicant", Map.of(
+                                "type", "object",
+                                "properties", Map.of(
+                                        "score", Map.of("type", "integer")
+                                ),
+                                "required", List.of("score"),
+                                "minProperties", 1)
+                )
+        ));
+
+        assertThat(envelope.schema()).doesNotContainKey("allOf");
+        assertThat(envelope.schema()).containsEntry("type", "object");
+        assertThat(property(envelope.schema(), "score")).containsEntry("type", "integer");
+        assertThat(property(envelope.schema(), "segment")).containsEntry("type", "string");
+        assertThat((List<Object>) envelope.schema().get("required")).containsExactly("score", "segment");
+        assertThat(envelope.schema())
+                .containsEntry("additionalProperties", false)
+                .containsEntry("minProperties", 1L);
+    }
+
+    @Test
     void preservesNullValuesInsideSchemaLists() {
         List<Object> values = new ArrayList<>();
         values.add("ACTIVE");
