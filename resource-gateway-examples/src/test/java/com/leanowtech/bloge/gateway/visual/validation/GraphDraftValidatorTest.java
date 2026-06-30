@@ -799,6 +799,31 @@ class GraphDraftValidatorTest {
     }
 
     @Test
+    void rejectsSemanticallyDuplicateQuotedRouteConditionsOnSameBranchNode() {
+        GraphDraftValidator validator = new GraphDraftValidator(
+                VisualCatalogTestSupport.catalogWithLibrary(VisualCatalogTestSupport.routeLibrary()));
+        GraphDraft draft = routeDraft(List.of(
+                new GraphDraft.DraftEdge("route-physical", "route",
+                        new GraphDraft.Endpoint("routeByType", "", ""),
+                        new GraphDraft.Endpoint("physicalFacts", "", ""),
+                        "physical"),
+                new GraphDraft.DraftEdge("route-physical-quoted", "route",
+                        new GraphDraft.Endpoint("routeByType", "", ""),
+                        new GraphDraft.Endpoint("genericFacts", "", ""),
+                        "\"physical\"")
+        ));
+
+        VisualValidationResult result = validator.validate(draft);
+
+        assertThat(result.valid()).isFalse();
+        assertThat(result.diagnostics())
+                .anySatisfy(diagnostic -> {
+                    assertThat(diagnostic.code()).isEqualTo("visual.edge.routeConditionDuplicate");
+                    assertThat(diagnostic.target()).isEqualTo("/edges/1/condition");
+                });
+    }
+
+    @Test
     void rejectsOutputSelectionOnControlOnlyBranchNode() {
         GraphDraftValidator validator = new GraphDraftValidator(
                 VisualCatalogTestSupport.catalogWithLibrary(VisualCatalogTestSupport.routeLibrary()));

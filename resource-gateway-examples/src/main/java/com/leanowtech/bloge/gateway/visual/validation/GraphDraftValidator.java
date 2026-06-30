@@ -1453,7 +1453,36 @@ public class GraphDraftValidator {
 
     private static String normalizedRouteCondition(String condition) {
         String trimmed = condition.trim();
-        return "otherwise".equalsIgnoreCase(trimmed) ? "otherwise" : trimmed;
+        if ("otherwise".equalsIgnoreCase(trimmed)) {
+            return "otherwise";
+        }
+        return routeConditionKey(routeConditionLiteral(trimmed));
+    }
+
+    private static String routeConditionKey(Object value) {
+        if (value == null) {
+            return "null";
+        }
+        if (value instanceof String string) {
+            return "string:" + string;
+        }
+        if (value instanceof Boolean bool) {
+            return "boolean:" + bool;
+        }
+        if (value instanceof Number number) {
+            return "number:" + numberLabel(number.doubleValue());
+        }
+        return value.getClass().getSimpleName() + ":" + value;
+    }
+
+    private static String numberLabel(double value) {
+        if (Double.isFinite(value)
+                && value >= Long.MIN_VALUE
+                && value <= Long.MAX_VALUE
+                && Math.rint(value) == value) {
+            return Long.toString((long) value);
+        }
+        return Double.toString(value);
     }
 
     private static Optional<OperatorDefinition.Port> findPort(List<OperatorDefinition.Port> ports, String name) {

@@ -272,6 +272,30 @@ class VisualConnectionCheckServiceTest {
     }
 
     @Test
+    void rejectsRouteEdgePreviewWithSemanticallyDuplicateQuotedCondition() {
+        VisualConnectionCheckService service = connectionService(VisualCatalogTestSupport
+                .catalogWithLibrary(VisualCatalogTestSupport.routeLibrary()));
+        GraphDraft draft = routePreviewDraft(List.of(new GraphDraft.DraftEdge("route-physical",
+                "route",
+                new GraphDraft.Endpoint("routeByType", "", ""),
+                new GraphDraft.Endpoint("genericFacts", "", ""),
+                "physical")));
+
+        VisualConnectionCheckResult result = service.check(new VisualConnectionCheckRequest(
+                draft,
+                new GraphDraft.Endpoint("routeByType", "route", ""),
+                new GraphDraft.Endpoint("physicalFacts", "route", ""),
+                "route",
+                "\"physical\""
+        ));
+
+        assertThat(result.accepted()).isFalse();
+        assertThat(result.diagnostics())
+                .anySatisfy(diagnostic -> assertThat(diagnostic.code())
+                        .isEqualTo("visual.edge.routeConditionDuplicate"));
+    }
+
+    @Test
     void rejectsRouteEdgePreviewWhenConditionDoesNotMatchSelectorSchema() {
         VisualConnectionCheckService service = connectionService(VisualCatalogTestSupport
                 .catalogWithLibrary(VisualCatalogTestSupport.routeLibrary()));
