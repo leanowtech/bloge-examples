@@ -206,7 +206,9 @@ and the source picker offers compatible `ctx.*` values from the active declared
 schema. Dynamic object maps are first-class in that picker: paths that flow
 through schema-shaped `additionalProperties` resolve to the additional-property
 schema, so ad hoc fields such as `ctx.attributes.region` can still be matched
-against typed operator inputs.
+against typed operator inputs. The picker also mines the current Context JSON
+sample for concrete dynamic keys that are accepted by the active graph input
+schema, so map-style payloads do not require users to hand-type every expression.
 The server validates the graph input schema with the same structural gate used
 for operator port/config schemas, including strict object `properties`,
 `additionalProperties`, `required`, enum value-domain, `const` shape checks,

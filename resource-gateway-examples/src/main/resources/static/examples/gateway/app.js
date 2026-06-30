@@ -5715,6 +5715,25 @@ function schemaFromValue(value) {
 
 function contextSourceHandles(builder = state.builder) {
   const inputSchema = currentGraphInputSchema(builder);
+  const seen = new Set();
+  const fieldHandles = [
+    ...schemaFieldDescriptors(inputSchema),
+    ...dynamicContextFieldDescriptors(inputSchema)
+  ]
+    .filter((field) => {
+      if (!field.path || seen.has(field.path)) {
+        return false;
+      }
+      seen.add(field.path);
+      return true;
+    })
+    .map((field) => ({
+      nodeId: CONTEXT_SOURCE_ID,
+      port: 'ctx',
+      path: field.path,
+      type: schemaType(field.schema),
+      schema: field.schema
+    }));
   return [
     {
       nodeId: CONTEXT_SOURCE_ID,
@@ -5723,14 +5742,38 @@ function contextSourceHandles(builder = state.builder) {
       type: schemaType(inputSchema.schema),
       schema: inputSchema.schema || {}
     },
-    ...schemaFieldDescriptors(inputSchema).map((field) => ({
-      nodeId: CONTEXT_SOURCE_ID,
-      port: 'ctx',
-      path: field.path,
-      type: schemaType(field.schema),
-      schema: field.schema
-    }))
+    ...fieldHandles
   ];
+}
+
+function dynamicContextFieldDescriptors(inputSchema) {
+  let context;
+  try {
+    context = JSON.parse(state.customContextText || '{}');
+  } catch {
+    return [];
+  }
+  if (!context || typeof context !== 'object' || Array.isArray(context)) {
+    return [];
+  }
+  const fields = [];
+  collectDynamicContextFields(inputSchema, context, '', fields);
+  return fields;
+}
+
+function collectDynamicContextFields(inputSchema, value, prefix, fields) {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    return;
+  }
+  for (const [key, item] of Object.entries(value)) {
+    const path = prefix ? `${prefix}.${key}` : key;
+    const schema = schemaAtPath(inputSchema, path);
+    if (!schema) {
+      continue;
+    }
+    fields.push({ path, schema, required: false });
+    collectDynamicContextFields(inputSchema, item, path, fields);
+  }
 }
 
 function contextSourceForPath(path, builder = state.builder) {
