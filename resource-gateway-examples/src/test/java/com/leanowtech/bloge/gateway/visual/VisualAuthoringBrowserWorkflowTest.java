@@ -21,6 +21,8 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.web.client.TestRestTemplate;
 import org.springframework.boot.test.web.server.LocalServerPort;
+import org.springframework.http.HttpEntity;
+import org.springframework.http.HttpMethod;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.HttpStatusCode;
 import org.springframework.http.ResponseEntity;
@@ -181,7 +183,11 @@ class VisualAuthoringBrowserWorkflowTest {
                 .contains("/api/visual/connections/check")
                 .contains("/api/visual/drafts/run")
                 .contains("/api/visual/publications")
-                .contains("/admin/visual-operator-libraries");
+                .contains("/admin/visual-operator-libraries")
+                .contains("preview-resource-contract")
+                .contains("save-resource-contract")
+                .contains("/admin/resource-design-contracts/from-openapi")
+                .contains("/admin/resource-design-contracts/${encodeURIComponent(contract.resourceId)}");
     }
 
     @SuppressWarnings("unchecked")
@@ -200,6 +206,12 @@ class VisualAuthoringBrowserWorkflowTest {
         assertThat(contract).containsEntry("resourceId", "loan-applicant-service.getProfile");
         assertThat((Map<String, Object>) contract.get("requestSchema")).isNotEmpty();
         assertThat((Map<String, Object>) contract.get("responseSchema")).isNotEmpty();
+
+        Map<String, Object> saved = putMap(
+                "/admin/resource-design-contracts/loan-applicant-service.getProfile",
+                contract
+        );
+        assertThat(saved).containsEntry("resourceId", "loan-applicant-service.getProfile");
     }
 
     private OperatorLibrary importEligibilityLibrary() {
@@ -290,6 +302,19 @@ class VisualAuthoringBrowserWorkflowTest {
     private Map<String, Object> postMap(String path, Object request, HttpStatusCode expectedStatus) {
         ResponseEntity<Map> response = restTemplate.postForEntity(path, request, Map.class);
         assertThat(response.getStatusCode()).isEqualTo(expectedStatus);
+        assertThat(response.getBody()).isNotNull();
+        return response.getBody();
+    }
+
+    @SuppressWarnings("unchecked")
+    private Map<String, Object> putMap(String path, Object request) {
+        ResponseEntity<Map> response = restTemplate.exchange(
+                path,
+                HttpMethod.PUT,
+                new HttpEntity<>(request),
+                Map.class
+        );
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatusCode.valueOf(200));
         assertThat(response.getBody()).isNotNull();
         return response.getBody();
     }

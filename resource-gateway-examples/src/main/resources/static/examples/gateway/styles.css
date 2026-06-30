@@ -940,10 +940,52 @@ body.dragging-operator * {
   color: var(--green);
 }
 
+.library-status.warning {
+  border-color: #f8d18d;
+  background: var(--amber-soft);
+  color: #8a5a13;
+}
+
 .library-status.error {
   border-color: #fca5a5;
   background: var(--red-soft);
   color: var(--red);
+}
+
+.resource-contract-controls {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.resource-contract-controls label {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.resource-contract-controls input,
+.resource-contract-controls select {
+  min-width: 0;
+  padding: 7px 8px;
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  background: var(--surface-subtle);
+  color: var(--text);
+}
+
+.resource-contract-actions {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 6px;
+}
+
+.resource-contract-editor {
+  min-height: 132px;
 }
 
 .schema-status {
@@ -1320,6 +1362,8 @@ body.dragging-operator * {
 .draft-controls select:focus,
 .draft-revision-controls select:focus,
 .library-controls select:focus,
+.resource-contract-controls input:focus,
+.resource-contract-controls select:focus,
 .library-editor:focus,
 .schema-editor:focus {
   outline: 2px solid rgba(23, 78, 166, 0.24);

@@ -214,6 +214,47 @@ const SAMPLE_OPERATOR_LIBRARY = {
   ]
 };
 
+const SAMPLE_OPENAPI_RESOURCE_CONTRACT = {
+  openapi: '3.0.3',
+  info: {
+    title: 'Loan Applicant API',
+    version: '1.0.0'
+  },
+  paths: {
+    '/api/loan-applicants/{applicantId}': {
+      get: {
+        operationId: 'getLoanApplicant',
+        parameters: [
+          {
+            name: 'applicantId',
+            in: 'path',
+            required: true,
+            schema: { type: 'string' }
+          }
+        ],
+        responses: {
+          200: {
+            description: 'Applicant facts',
+            content: {
+              'application/json': {
+                schema: {
+                  type: 'object',
+                  properties: {
+                    score: { type: 'integer' },
+                    segment: { type: 'string' },
+                    income: { type: 'number' }
+                  },
+                  required: ['score']
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+};
+
 const NODE_SIZE = { width: 184, height: 76 };
 const DRAG_START_THRESHOLD = 4;
 const SUPPORTED_SCHEMA_FORMAT = 'json-schema';
@@ -294,6 +335,7 @@ const state = {
   libraryForce: false,
   libraryMessage: null,
   libraryImportConfirmationKey: '',
+  resourceContractImport: createDefaultResourceContractImport(),
   paletteSearch: '',
   paletteKind: '',
   paletteTag: '',
@@ -328,6 +370,19 @@ function escapeHtml(value) {
     .replaceAll('>', '&gt;')
     .replaceAll('"', '&quot;')
     .replaceAll("'", '&#39;');
+}
+
+function createDefaultResourceContractImport() {
+  return {
+    resourceId: 'loan-applicant-service.getProfile',
+    operationId: 'getLoanApplicant',
+    path: '',
+    method: 'GET',
+    status: 'ACTIVE',
+    openApiText: pretty(SAMPLE_OPENAPI_RESOURCE_CONTRACT),
+    contractText: '',
+    message: null
+  };
 }
 
 async function loadScenarios() {
@@ -730,6 +785,40 @@ function renderInputForm() {
         <div id="library-diagnostics" class="visual-diagnostics"></div>
       </div>
       <div class="builder-panel">
+        <div class="panel-title">OpenAPI Resource Contract</div>
+        <div class="resource-contract-controls">
+          <label>
+            <span>Resource ID</span>
+            <input id="resource-contract-resource-id" value="${escapeHtml(state.resourceContractImport.resourceId)}">
+          </label>
+          <label>
+            <span>Operation ID</span>
+            <input id="resource-contract-operation-id" value="${escapeHtml(state.resourceContractImport.operationId)}">
+          </label>
+          <label>
+            <span>Path</span>
+            <input id="resource-contract-path" value="${escapeHtml(state.resourceContractImport.path)}">
+          </label>
+          <label>
+            <span>Method</span>
+            <select id="resource-contract-method" aria-label="OpenAPI method"></select>
+          </label>
+          <label>
+            <span>Status</span>
+            <select id="resource-contract-lifecycle" aria-label="Resource contract lifecycle"></select>
+          </label>
+        </div>
+        <textarea id="openapi-resource-json" class="library-editor resource-contract-editor" spellcheck="false"></textarea>
+        <div class="resource-contract-actions">
+          <button id="preview-resource-contract" class="secondary compact" type="button">Preview</button>
+          <button id="save-resource-contract" class="secondary compact" type="button">Save Contract</button>
+          <button id="reset-resource-contract" class="secondary compact" type="button">Sample</button>
+        </div>
+        <textarea id="resource-contract-json" class="library-editor resource-contract-editor" spellcheck="false"></textarea>
+        <div id="resource-contract-status-message" class="library-status" hidden></div>
+        <div id="resource-contract-diagnostics" class="visual-diagnostics"></div>
+      </div>
+      <div class="builder-panel">
         <div class="panel-title">Drafts</div>
         <div class="draft-controls">
           <select id="draft-select" aria-label="Stored graph drafts"></select>
@@ -791,6 +880,7 @@ function renderInputForm() {
     renderScopeStatus();
     renderConnectionStatus();
     renderOperatorLibraryControls();
+    renderResourceContractImportControls();
     renderDraftControls();
     renderPublicationControls();
     renderSelectedOperatorEditor();
@@ -1830,6 +1920,224 @@ function libraryForceQuery() {
 
 function libraryExists(libraryId) {
   return state.operatorLibraries.some((library) => library.libraryId === libraryId);
+}
+
+function renderResourceContractImportControls() {
+  const current = state.resourceContractImport || createDefaultResourceContractImport();
+  state.resourceContractImport = current;
+
+  const resourceId = $('resource-contract-resource-id');
+  const operationId = $('resource-contract-operation-id');
+  const path = $('resource-contract-path');
+  const method = $('resource-contract-method');
+  const lifecycle = $('resource-contract-lifecycle');
+  const openApiEditor = $('openapi-resource-json');
+  const contractEditor = $('resource-contract-json');
+  if (!resourceId || !operationId || !path || !method || !lifecycle || !openApiEditor || !contractEditor) {
+    return;
+  }
+
+  resourceId.value = current.resourceId || '';
+  operationId.value = current.operationId || '';
+  path.value = current.path || '';
+  method.innerHTML = ['GET', 'POST', 'PUT', 'PATCH', 'DELETE']
+    .map((value) => `<option value="${value}">${value}</option>`)
+    .join('');
+  method.value = current.method || 'GET';
+  lifecycle.innerHTML = ['ACTIVE', 'DEPRECATED', 'DISABLED']
+    .map((value) => `<option value="${value}">${value}</option>`)
+    .join('');
+  lifecycle.value = current.status || 'ACTIVE';
+  openApiEditor.value = current.openApiText || pretty(SAMPLE_OPENAPI_RESOURCE_CONTRACT);
+  contractEditor.value = current.contractText || '';
+
+  resourceId.oninput = () => {
+    current.resourceId = resourceId.value;
+  };
+  operationId.oninput = () => {
+    current.operationId = operationId.value;
+  };
+  path.oninput = () => {
+    current.path = path.value;
+  };
+  method.onchange = () => {
+    current.method = method.value;
+  };
+  lifecycle.onchange = () => {
+    current.status = lifecycle.value;
+  };
+  openApiEditor.oninput = () => {
+    current.openApiText = openApiEditor.value;
+  };
+  contractEditor.oninput = () => {
+    current.contractText = contractEditor.value;
+    const saveButton = $('save-resource-contract');
+    if (saveButton) {
+      saveButton.disabled = !current.contractText;
+    }
+  };
+
+  const previewButton = $('preview-resource-contract');
+  const saveButton = $('save-resource-contract');
+  const resetButton = $('reset-resource-contract');
+  if (previewButton) {
+    previewButton.onclick = previewOpenApiResourceContract;
+  }
+  if (saveButton) {
+    saveButton.disabled = !current.contractText;
+    saveButton.onclick = saveOpenApiResourceContract;
+  }
+  if (resetButton) {
+    resetButton.onclick = resetResourceContractImport;
+  }
+  renderResourceContractImportStatus();
+}
+
+function updateProjectedResourceContractText(text) {
+  const current = state.resourceContractImport || createDefaultResourceContractImport();
+  state.resourceContractImport = current;
+  current.contractText = text || '';
+  const contractEditor = $('resource-contract-json');
+  if (contractEditor) {
+    contractEditor.value = current.contractText;
+  }
+  const saveButton = $('save-resource-contract');
+  if (saveButton) {
+    saveButton.disabled = !current.contractText;
+  }
+}
+
+function renderResourceContractImportStatus() {
+  const target = $('resource-contract-status-message');
+  if (!target) return;
+  const current = state.resourceContractImport || createDefaultResourceContractImport();
+  const message = current.message?.text || 'Project one OpenAPI operation into a schema-aware resource operator contract.';
+  target.hidden = false;
+  target.textContent = message;
+  target.className = `library-status ${current.message?.level || 'info'}`;
+  renderDiagnosticList(
+    $('resource-contract-diagnostics'),
+    normalizeDiagnostics(current.message?.diagnostics)
+  );
+}
+
+function setResourceContractImportMessage(text, level = 'info', diagnostics = []) {
+  state.resourceContractImport.message = text
+    ? { text, level, diagnostics: normalizeDiagnostics(diagnostics) }
+    : null;
+  renderResourceContractImportStatus();
+}
+
+function resetResourceContractImport() {
+  state.resourceContractImport = createDefaultResourceContractImport();
+  renderResourceContractImportControls();
+}
+
+async function previewOpenApiResourceContract() {
+  const current = state.resourceContractImport;
+  let openApi;
+  try {
+    openApi = JSON.parse(current.openApiText || '{}');
+  } catch (error) {
+    setResourceContractImportMessage(`Invalid OpenAPI JSON: ${error.message}`, 'error');
+    return;
+  }
+  if (!current.resourceId?.trim()) {
+    setResourceContractImportMessage('resourceId is required.', 'error');
+    return;
+  }
+  updateProjectedResourceContractText('');
+  setResourceContractImportMessage('Projecting OpenAPI operation...', 'info');
+  const request = {
+    resourceId: current.resourceId.trim(),
+    operationId: current.operationId?.trim() || null,
+    path: current.path?.trim() || null,
+    method: current.method || null,
+    status: current.status || null,
+    openApi
+  };
+  try {
+    const response = await fetch('/admin/resource-design-contracts/from-openapi', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(request)
+    });
+    const payload = await response.json().catch(() => null);
+    const diagnostics = normalizeDiagnostics(payload?.validation?.diagnostics);
+    if (!response.ok) {
+      setResourceContractImportMessage(
+        validationResultMessage(payload?.validation?.valid, diagnostics, `OpenAPI preview failed with ${response.status}`),
+        'error',
+        diagnostics
+      );
+      return;
+    }
+    if (payload?.contract) {
+      updateProjectedResourceContractText(pretty(payload.contract));
+    }
+    const valid = payload?.validation?.valid !== false;
+    setResourceContractImportMessage(
+      valid && payload?.contract
+        ? `Projected contract ${payload.contract.resourceId}. Review and save to refresh the palette.`
+        : validationResultMessage(valid, diagnostics, 'OpenAPI projection completed.'),
+      visualCheckLevel(diagnostics, valid),
+      diagnostics
+    );
+    $('output').textContent = pretty({ status: response.status, openApiContract: payload });
+    renderResourceContractImportControls();
+  } catch (error) {
+    setResourceContractImportMessage(error.message, 'error');
+  }
+}
+
+async function saveOpenApiResourceContract() {
+  const current = state.resourceContractImport;
+  let contract;
+  try {
+    contract = JSON.parse(current.contractText || '{}');
+  } catch (error) {
+    setResourceContractImportMessage(`Invalid contract JSON: ${error.message}`, 'error');
+    return;
+  }
+  if (!contract.resourceId) {
+    setResourceContractImportMessage('Projected contract resourceId is required.', 'error');
+    return;
+  }
+  setResourceContractImportMessage('Saving resource contract...', 'info');
+  try {
+    const response = await fetch(`/admin/resource-design-contracts/${encodeURIComponent(contract.resourceId)}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(contract)
+    });
+    const text = await response.text();
+    let payload = null;
+    try {
+      payload = text ? JSON.parse(text) : null;
+    } catch {
+    }
+    if (!response.ok) {
+      const diagnostics = normalizeDiagnostics(payload?.diagnostics);
+      setResourceContractImportMessage(
+        validationResultMessage(payload?.valid, diagnostics, text || `Save failed with ${response.status}`),
+        'error',
+        diagnostics
+      );
+      return;
+    }
+    if (!payload) {
+      setResourceContractImportMessage('Save succeeded but no contract body was returned.', 'error');
+      return;
+    }
+    updateProjectedResourceContractText(pretty(payload));
+    await loadVisualOperatorCatalog();
+    renderOperatorPalette();
+    renderResourceContractImportControls();
+    setResourceContractImportMessage(`Saved ${payload.resourceId}; palette refreshed.`, 'success');
+    $('output').textContent = pretty({ status: response.status, resourceContract: payload });
+  } catch (error) {
+    setResourceContractImportMessage(error.message, 'error');
+  }
 }
 
 function renderDraftControls() {

@@ -81,11 +81,11 @@ Operator Library / Resource Design Contract
 | Subgraph / remote worker / AI tool source kinds | 设计已预留，当前示例主要覆盖 resource、native、user-library transform/branch/native lowering。 | 后续阶段 |
 | 生产 IAM / RBAC / 权限后台 | 当前 policy 是 tenant/namespace/environment availability gate，不是完整权限系统。 | 平台化阶段 |
 | 多人实时协作 | 当前通过 revision guard 防止覆盖，但没有 presence、merge、operation log 或 CRDT/OT。 | 后续阶段 |
-| 前端自动化回归 | 已新增 browser-facing HTTP smoke，覆盖静态入口、catalog、连接预检、draft save/run/publish、publication run、run history、Java operator palette 和 OpenAPI preview API；真实 DOM 拖拽仍主要依赖手动验证。 | 下一阶段 |
+| 前端自动化回归 | 已新增 browser-facing HTTP smoke，覆盖静态入口、catalog、连接预检、draft save/run/publish、publication run、run history、Java operator palette 和 OpenAPI preview/save UI wiring；真实 DOM 拖拽仍主要依赖手动验证。 | 下一阶段 |
 
 ## 6. 下一步优先级
 
-1. **真实浏览器交互回归**：在现有 browser-facing workflow smoke 基础上，补 DOM 级 catalog load、drag/drop connection preflight、draft save/publish/run、Java operator palette 和 OpenAPI preview UI wiring 验证。
+1. **真实浏览器交互回归**：在现有 browser-facing workflow smoke 基础上，补 DOM 级 catalog load、palette drag/drop、connection preflight、draft save/publish/run、Java operator palette 和 OpenAPI contract preview/save 验证。
 2. **Java operator inventory 深化**：补 streaming/suspendable 画布交互、复杂泛型展示、注解扩展和 Java operator drift/兼容性策略。
 3. **OpenAPI 导入深化**：补 YAML 输入、descriptor 生成建议、更多 media type 策略和 operation/schema diff；仍必须走现有 `ResourceDesignContractValidator`，不能让未验证 schema 进入 catalog。
 4. **Run history 深化**：当前已经保存 shape-only run record；下一步可补查询过滤、run replay、golden case 绑定和 SLO 统计。
