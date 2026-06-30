@@ -1002,6 +1002,41 @@ class GraphDraftValidatorTest {
     }
 
     @Test
+    void rejectsExpressionBindingWhenStaticLiteralTypeDoesNotMatchTargetSchema() {
+        GraphDraftValidator validator = new GraphDraftValidator(
+                VisualCatalogTestSupport.catalogWithLibrary(
+                        VisualCatalogTestSupport.eligibilityLibrary("integer")));
+        GraphDraft draft = contextEligibilityDraft(null, Map.of(
+                "score", GraphDraft.Binding.expression("\"high\""),
+                "amount", GraphDraft.Binding.constant(1000)
+        ));
+
+        VisualValidationResult result = validator.validate(draft);
+
+        assertThat(result.valid()).isFalse();
+        assertThat(result.diagnostics())
+                .anySatisfy(diagnostic -> {
+                    assertThat(diagnostic.code()).isEqualTo("visual.binding.typeMismatch");
+                    assertThat(diagnostic.message()).contains("\"high\"").contains("integer");
+                });
+    }
+
+    @Test
+    void acceptsExpressionBindingWhenStaticLiteralMatchesTargetSchema() {
+        GraphDraftValidator validator = new GraphDraftValidator(
+                VisualCatalogTestSupport.catalogWithLibrary(
+                        VisualCatalogTestSupport.eligibilityLibrary("integer")));
+        GraphDraft draft = contextEligibilityDraft(null, Map.of(
+                "score", GraphDraft.Binding.expression("701"),
+                "amount", GraphDraft.Binding.constant(1000)
+        ));
+
+        VisualValidationResult result = validator.validate(draft);
+
+        assertThat(result.valid()).isTrue();
+    }
+
+    @Test
     void rejectsExpressionBindingWhenNodeReferencePathDoesNotExist() {
         GraphDraftValidator validator = new GraphDraftValidator(
                 VisualCatalogTestSupport.catalogWithLoanApplicantResourceAndLibrary(
@@ -1778,6 +1813,42 @@ class GraphDraftValidatorTest {
                     assertThat(diagnostic.target()).isEqualTo("/nodes/0/config/threshold/expr");
                     assertThat(diagnostic.message()).contains("ctx.threshold").contains("string").contains("integer");
                 });
+    }
+
+    @Test
+    void rejectsStructuredConfigExpressionWhenStaticLiteralTypeDoesNotMatchConfigSchema() {
+        GraphDraftValidator validator = new GraphDraftValidator(
+                VisualCatalogTestSupport.catalogWithLibrary(
+                        VisualCatalogTestSupport.configurablePolicyLibrary()));
+        GraphDraft draft = configurablePolicyDraft(Map.of(
+                "threshold", Map.of("kind", "expression", "expr", "\"high\""),
+                "mode", "strict"
+        ));
+
+        VisualValidationResult result = validator.validate(draft);
+
+        assertThat(result.valid()).isFalse();
+        assertThat(result.diagnostics())
+                .anySatisfy(diagnostic -> {
+                    assertThat(diagnostic.code()).isEqualTo("visual.config.typeMismatch");
+                    assertThat(diagnostic.target()).isEqualTo("/nodes/0/config/threshold/expr");
+                    assertThat(diagnostic.message()).contains("\"high\"").contains("integer");
+                });
+    }
+
+    @Test
+    void acceptsStructuredConfigExpressionWhenStaticLiteralMatchesConfigSchema() {
+        GraphDraftValidator validator = new GraphDraftValidator(
+                VisualCatalogTestSupport.catalogWithLibrary(
+                        VisualCatalogTestSupport.configurablePolicyLibrary()));
+        GraphDraft draft = configurablePolicyDraft(Map.of(
+                "threshold", Map.of("kind", "expression", "expr", "700"),
+                "mode", "strict"
+        ));
+
+        VisualValidationResult result = validator.validate(draft);
+
+        assertThat(result.valid()).isTrue();
     }
 
     @Test

@@ -3109,6 +3109,16 @@ function configExpressionStatusForField(node, field, expression) {
   }
   const source = connectionSourceFromExpression(value);
   if (!source) {
+    const literalSchema = staticExpressionLiteralSchema(value);
+    if (literalSchema) {
+      const compatibilityIssue = schemaCompatibilityIssue(literalSchema, field.schema);
+      return compatibilityIssue
+        ? {
+          level: 'error',
+          message: `Type mismatch: ${schemaType(literalSchema)} cannot feed ${schemaType(field.schema)}. Reason: ${compatibilityIssue}.`
+        }
+        : { level: 'success', message: 'Literal expression matches configSchema.' };
+    }
     return { level: 'info', message: 'Manual expression; server validation checks referenced paths.' };
   }
   const target = configTargetForField(node, field);
@@ -4816,6 +4826,17 @@ function bindingStatusForTarget(node, target, expression) {
   }
   const source = connectionSourceFromExpression(value);
   if (!source) {
+    const literalSchema = staticExpressionLiteralSchema(value);
+    if (literalSchema) {
+      const targetSchema = target.schema || (target.type ? { type: target.type } : {});
+      const compatibilityIssue = schemaCompatibilityIssue(literalSchema, targetSchema);
+      return compatibilityIssue
+        ? {
+          level: 'error',
+          message: `Type mismatch: ${schemaType(literalSchema)} cannot feed ${schemaType(targetSchema)}. Reason: ${compatibilityIssue}.`
+        }
+        : { level: 'success', message: 'Literal expression matches target schema.' };
+    }
     return { level: 'info', message: 'Manual expression; schema can be checked after it targets a port.' };
   }
   if (source.nodeId === CONTEXT_SOURCE_ID) {
@@ -5449,6 +5470,82 @@ function connectionCompatibility(source, target) {
 
 function schemasCompatible(sourceSchema, targetSchema) {
   return !schemaCompatibilityIssue(sourceSchema, targetSchema);
+}
+
+function staticExpressionLiteralSchema(expression) {
+  const value = String(expression || '').trim();
+  if (!value) {
+    return null;
+  }
+  if (value === 'null') {
+    return literalEnumSchema(null);
+  }
+  if (value === 'true' || value === 'false') {
+    return literalEnumSchema(value === 'true');
+  }
+  const stringLiteral = parseStaticStringLiteral(value);
+  if (stringLiteral.matched) {
+    return literalEnumSchema(stringLiteral.value);
+  }
+  if (/^[-+]?\d+$/.test(value)) {
+    return literalEnumSchema(Number(value));
+  }
+  if (/^[-+]?(?:\d+\.\d*|\d*\.\d+|\d+[eE][-+]?\d+|\d+\.\d*[eE][-+]?\d+|\d*\.\d+[eE][-+]?\d+)$/.test(value)) {
+    return literalEnumSchema(Number(value));
+  }
+  return null;
+}
+
+function parseStaticStringLiteral(value) {
+  if (value.length < 2) {
+    return { matched: false, value: '' };
+  }
+  const quote = value[0];
+  if ((quote !== '"' && quote !== "'") || value[value.length - 1] !== quote) {
+    return { matched: false, value: '' };
+  }
+  if (quote === '"') {
+    try {
+      const parsed = JSON.parse(value);
+      return typeof parsed === 'string'
+        ? { matched: true, value: parsed }
+        : { matched: false, value: '' };
+    } catch {
+      return { matched: false, value: '' };
+    }
+  }
+  let result = '';
+  let escaped = false;
+  for (let i = 1; i < value.length - 1; i += 1) {
+    const char = value[i];
+    if (escaped) {
+      result += unescapedStaticChar(char);
+      escaped = false;
+    } else if (char === '\\') {
+      escaped = true;
+    } else if (char === quote) {
+      return { matched: false, value: '' };
+    } else {
+      result += char;
+    }
+  }
+  return escaped ? { matched: false, value: '' } : { matched: true, value: result };
+}
+
+function unescapedStaticChar(value) {
+  if (value === 'n') return '\n';
+  if (value === 'r') return '\r';
+  if (value === 't') return '\t';
+  if (value === 'b') return '\b';
+  if (value === 'f') return '\f';
+  return value;
+}
+
+function literalEnumSchema(value) {
+  return {
+    type: 'enum',
+    values: [value]
+  };
 }
 
 function schemaCompatibilityIssue(sourceSchema, targetSchema, path = '') {

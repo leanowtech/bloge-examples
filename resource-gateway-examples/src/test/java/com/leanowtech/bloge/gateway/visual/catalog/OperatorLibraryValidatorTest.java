@@ -974,6 +974,67 @@ class OperatorLibraryValidatorTest {
     }
 
     @Test
+    void rejectsTransformLoweringWhenStaticLiteralAssignmentTypeDoesNotMatchOutputSchema() {
+        OperatorDefinition operator = transformOperator(
+                "risk:literalOutputMismatch",
+                Map.of("score", Map.of("type", "integer")),
+                List.of("score"),
+                Map.of("accepted", Map.of("type", "boolean")),
+                List.of("accepted"),
+                Map.of("accepted", "\"yes\"")
+        );
+
+        VisualValidationResult result = validator.validate(libraryWith(operator));
+
+        assertThat(result.valid()).isFalse();
+        assertThat(result.diagnostics())
+                .anySatisfy(diagnostic -> {
+                    assertThat(diagnostic.code()).isEqualTo("visual.operator.lowering.assignmentTypeMismatch");
+                    assertThat(diagnostic.target()).isEqualTo("/operators/0/lowering/parameters/assignments/accepted");
+                    assertThat(diagnostic.message()).contains("\"yes\"").contains("boolean");
+                });
+    }
+
+    @Test
+    void rejectsTransformLoweringWhenPureTemplateAssignmentTypeDoesNotMatchOutputSchema() {
+        OperatorDefinition operator = transformOperator(
+                "risk:templateOutputMismatch",
+                Map.of("decision", Map.of("type", "string")),
+                List.of("decision"),
+                Map.of("accepted", Map.of("type", "boolean")),
+                List.of("accepted"),
+                Map.of("accepted", "{{input.decision}}")
+        );
+
+        VisualValidationResult result = validator.validate(libraryWith(operator));
+
+        assertThat(result.valid()).isFalse();
+        assertThat(result.diagnostics())
+                .anySatisfy(diagnostic -> {
+                    assertThat(diagnostic.code()).isEqualTo("visual.operator.lowering.assignmentTypeMismatch");
+                    assertThat(diagnostic.target()).isEqualTo("/operators/0/lowering/parameters/assignments/accepted");
+                    assertThat(diagnostic.message()).contains("input.decision").contains("string").contains("boolean");
+                });
+    }
+
+    @Test
+    void acceptsTransformLoweringWhenPureTemplateAssignmentMatchesOutputSchema() {
+        OperatorDefinition operator = transformOperator(
+                "risk:templateOutputMatch",
+                Map.of("accepted", Map.of("type", "boolean")),
+                List.of("accepted"),
+                Map.of("accepted", Map.of("type", "boolean")),
+                List.of("accepted"),
+                Map.of("accepted", "{{input.accepted}}")
+        );
+
+        VisualValidationResult result = validator.validate(libraryWith(operator));
+
+        assertThat(result.valid()).isTrue();
+        assertThat(result.diagnostics()).isEmpty();
+    }
+
+    @Test
     void acceptsTransformTemplateReferencesThroughAdditionalPropertiesSchema() {
         OperatorDefinition operator = new OperatorDefinition(
                 "bloge.visualOperator.v1",

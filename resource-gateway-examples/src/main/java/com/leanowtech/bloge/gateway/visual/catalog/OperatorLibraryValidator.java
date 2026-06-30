@@ -3,6 +3,7 @@ package com.leanowtech.bloge.gateway.visual.catalog;
 import com.leanowtech.bloge.gateway.visual.diagnostic.VisualDiagnostic;
 import com.leanowtech.bloge.gateway.visual.model.SchemaEnvelope;
 import com.leanowtech.bloge.gateway.visual.validation.VisualSecretGuard;
+import com.leanowtech.bloge.gateway.visual.validation.VisualSchemaCompatibility.StaticExpressionLiteral;
 import com.leanowtech.bloge.gateway.visual.validation.VisualSchemaValidator;
 import com.leanowtech.bloge.gateway.visual.validation.VisualValidationResult;
 
@@ -13,9 +14,15 @@ import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.Set;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
+
+import static com.leanowtech.bloge.gateway.visual.validation.VisualSchemaCompatibility.compatibilityReason;
+import static com.leanowtech.bloge.gateway.visual.validation.VisualSchemaCompatibility.schemaCompatibilityIssue;
+import static com.leanowtech.bloge.gateway.visual.validation.VisualSchemaCompatibility.schemaTypeLabel;
+import static com.leanowtech.bloge.gateway.visual.validation.VisualSchemaCompatibility.staticExpressionLiteral;
 
 /**
  * Validates user-provided operator libraries before they enter the visual catalog.
@@ -66,6 +73,8 @@ public class OperatorLibraryValidator {
             IDENTIFIER_PATTERN + "(?:\\." + IDENTIFIER_PATTERN + ")*");
     private static final Pattern TEMPLATE_REFERENCE = Pattern.compile("\\{\\{\\s*((?:input\\.)?"
             + IDENTIFIER_PATTERN + "(?:\\." + IDENTIFIER_PATTERN + ")*)\\s*}}");
+    private static final Pattern PURE_TEMPLATE_REFERENCE = Pattern.compile("^\\{\\{\\s*((?:input\\.)?"
+            + IDENTIFIER_PATTERN + "(?:\\." + IDENTIFIER_PATTERN + ")*)\\s*}}$");
     private static final Pattern TEMPLATE_TOKEN = Pattern.compile("\\{\\{([^}]*)}}");
 
     /**
@@ -317,37 +326,41 @@ public class OperatorLibraryValidator {
         Set<String> assignedTargets = new LinkedHashSet<>();
         assignments.forEach((target, rawExpression) -> {
             String assignmentPath = path + "/parameters/assignments/" + target;
-            validateTransformAssignmentTarget(operator, output, target, assignmentPath, diagnostics);
+            Map<String, Object> targetSchema = validateTransformAssignmentTarget(operator, output, target,
+                    assignmentPath, diagnostics);
             assignedTargets.add(target);
-            validateTransformAssignmentExpression(operator, rawExpression, assignmentPath, diagnostics);
+            validateTransformAssignmentExpression(operator, rawExpression, targetSchema, assignmentPath, diagnostics);
         });
         validateRequiredTransformOutputs(operator, output, assignedTargets, path + "/parameters/assignments",
                 diagnostics);
     }
 
-    private static void validateTransformAssignmentTarget(OperatorDefinition operator,
-                                                          OperatorDefinition.Port output,
-                                                          String target,
-                                                          String path,
-                                                          List<VisualDiagnostic> diagnostics) {
+    private static Map<String, Object> validateTransformAssignmentTarget(OperatorDefinition operator,
+                                                                         OperatorDefinition.Port output,
+                                                                         String target,
+                                                                         String path,
+                                                                         List<VisualDiagnostic> diagnostics) {
         if (!PATH_PATTERN.matcher(target).matches()) {
             diagnostics.add(VisualDiagnostic.error("visual.operator.lowering.assignmentTarget.invalid",
                     "Transform assignment target '%s' on operator '%s' must be a dotted identifier path."
                             .formatted(target, operator.operatorRef()),
                     path));
-            return;
+            return null;
         }
         validateDslPathSegments(operator, target, path, diagnostics);
-        if (propertyAtPath(output.schema(), target) == null) {
+        Map<String, Object> targetSchema = propertyAtPath(output.schema(), target);
+        if (targetSchema == null) {
             diagnostics.add(VisualDiagnostic.error("visual.operator.lowering.assignmentTarget.unknown",
                     "Transform assignment target '%s' is not declared by output schema on operator '%s'."
                             .formatted(target, operator.operatorRef()),
                     path));
         }
+        return targetSchema;
     }
 
     private static void validateTransformAssignmentExpression(OperatorDefinition operator,
                                                               Object rawExpression,
+                                                              Map<String, Object> targetSchema,
                                                               String path,
                                                               List<VisualDiagnostic> diagnostics) {
         if (!(rawExpression instanceof String expression) || expression.isBlank()) {
@@ -380,10 +393,57 @@ public class OperatorLibraryValidator {
                         path));
             }
         }
+        validateTransformAssignmentExpressionType(operator, expression, targetSchema, path, diagnostics);
     }
 
     private static Matcher templateReference(String token) {
         return TEMPLATE_REFERENCE.matcher("{{" + token + "}}");
+    }
+
+    private static void validateTransformAssignmentExpressionType(OperatorDefinition operator,
+                                                                  String expression,
+                                                                  Map<String, Object> targetSchema,
+                                                                  String path,
+                                                                  List<VisualDiagnostic> diagnostics) {
+        if (targetSchema == null) {
+            return;
+        }
+
+        Matcher template = PURE_TEMPLATE_REFERENCE.matcher(expression.trim());
+        if (template.matches()) {
+            String reference = template.group(1);
+            String inputPath = reference.startsWith("input.") ? reference.substring("input.".length()) : reference;
+            Map<String, Object> sourceSchema = inputPropertyAtPath(operator, inputPath);
+            if (sourceSchema == null) {
+                return;
+            }
+            addAssignmentTypeMismatch(operator, "input." + inputPath, sourceSchema, targetSchema, path, diagnostics);
+            return;
+        }
+
+        Optional<StaticExpressionLiteral> literal = staticExpressionLiteral(expression);
+        if (literal.isPresent()) {
+            addAssignmentTypeMismatch(operator, literal.get().label(), literal.get().schema(),
+                    targetSchema, path, diagnostics);
+        }
+    }
+
+    private static void addAssignmentTypeMismatch(OperatorDefinition operator,
+                                                  String sourceLabel,
+                                                  Map<String, Object> sourceSchema,
+                                                  Map<String, Object> targetSchema,
+                                                  String path,
+                                                  List<VisualDiagnostic> diagnostics) {
+        Optional<String> compatibilityIssue = schemaCompatibilityIssue(sourceSchema, targetSchema);
+        if (compatibilityIssue.isEmpty()) {
+            return;
+        }
+        diagnostics.add(VisualDiagnostic.error("visual.operator.lowering.assignmentTypeMismatch",
+                "Transform assignment '%s' on operator '%s' produces %s, but output schema requires %s."
+                        .formatted(sourceLabel, operator.operatorRef(), schemaTypeLabel(sourceSchema),
+                                schemaTypeLabel(targetSchema))
+                        + compatibilityReason(compatibilityIssue.get()),
+                path));
     }
 
     private static void validateRequiredTransformOutputs(OperatorDefinition operator,
@@ -403,21 +463,25 @@ public class OperatorLibraryValidator {
     }
 
     private static boolean inputPathExists(OperatorDefinition operator, String inputPath) {
+        return inputPropertyAtPath(operator, inputPath) != null;
+    }
+
+    private static Map<String, Object> inputPropertyAtPath(OperatorDefinition operator, String inputPath) {
         if (inputPath.isBlank()) {
-            return false;
+            return null;
         }
         String[] segments = inputPath.split("\\.", 2);
         String first = segments[0];
         String rest = segments.length == 2 ? segments[1] : "";
         for (OperatorDefinition.Port port : operator.ports().inputs()) {
-            if (port.name().equals(first) && !rest.isBlank() && propertyAtPath(port.schema(), rest) != null) {
-                return true;
+            if (port.name().equals(first)) {
+                return rest.isBlank() ? propertyAtPath(port.schema(), "") : propertyAtPath(port.schema(), rest);
             }
         }
         if (operator.ports().inputs().size() == 1) {
-            return propertyAtPath(operator.ports().inputs().getFirst().schema(), inputPath) != null;
+            return propertyAtPath(operator.ports().inputs().getFirst().schema(), inputPath);
         }
-        return false;
+        return null;
     }
 
     private static boolean satisfiesRequiredPath(String assignmentTarget, String requiredPath) {
