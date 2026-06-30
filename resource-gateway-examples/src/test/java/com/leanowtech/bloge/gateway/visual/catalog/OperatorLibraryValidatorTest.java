@@ -3015,6 +3015,57 @@ class OperatorLibraryValidatorTest {
     }
 
     @Test
+    void rejectsTransformLoweringWhenParentAssignmentDoesNotGuaranteeNestedRequiredOutput() {
+        Map<String, Object> decisionSchema = Map.of(
+                "type", "object",
+                "properties", Map.of("accepted", Map.of("type", "boolean")),
+                "required", List.of("accepted"),
+                "additionalProperties", false
+        );
+        OperatorDefinition operator = transformOperator(
+                "risk:weakParentAssignment",
+                Map.of("score", Map.of("type", "integer")),
+                List.of("score"),
+                Map.of("decision", decisionSchema),
+                List.of("decision"),
+                Map.of("decision", "{}")
+        );
+
+        VisualValidationResult result = validator.validate(libraryWith(operator));
+
+        assertThat(result.valid()).isFalse();
+        assertThat(result.diagnostics())
+                .anySatisfy(diagnostic -> {
+                    assertThat(diagnostic.code()).isEqualTo("visual.operator.lowering.assignmentTarget.required");
+                    assertThat(diagnostic.target())
+                            .isEqualTo("/operators/0/lowering/parameters/assignments/decision.accepted");
+                });
+    }
+
+    @Test
+    void acceptsTransformLoweringWhenParentTemplateGuaranteesNestedRequiredOutput() {
+        Map<String, Object> decisionSchema = Map.of(
+                "type", "object",
+                "properties", Map.of("accepted", Map.of("type", "boolean")),
+                "required", List.of("accepted"),
+                "additionalProperties", false
+        );
+        OperatorDefinition operator = transformOperator(
+                "risk:strongParentAssignment",
+                Map.of("decision", decisionSchema),
+                List.of("decision"),
+                Map.of("decision", decisionSchema),
+                List.of("decision"),
+                Map.of("decision", "{{input.decision}}")
+        );
+
+        VisualValidationResult result = validator.validate(libraryWith(operator));
+
+        assertThat(result.valid()).isTrue();
+        assertThat(result.diagnostics()).isEmpty();
+    }
+
+    @Test
     void acceptsTransformTemplateReferencesThroughAdditionalPropertiesSchema() {
         OperatorDefinition operator = new OperatorDefinition(
                 "bloge.visualOperator.v1",
