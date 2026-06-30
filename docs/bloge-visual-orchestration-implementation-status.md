@@ -37,6 +37,7 @@ Operator Library / Resource Design Contract
 | 连接预检 | 已落地。服务端模拟 preview edge/binding/config expression，返回与当前拖拽连接相关的结构化 diagnostics。 | `visual/connection/*` |
 | DSL 生成 | 已落地。支持 resource virtual operator、native user operator、transform lowering、branch lowering、dependency edges、named ports、root-object bindings、structured config expression。 | `visual/codegen/GraphDraftDslGenerator.java` |
 | Compile / Run | 已落地。运行前做 fingerprint、draft validation、runtime context validation，再生成 DSL 并调用现有 dynamic runner。 | `visual/runtime/VisualGraphRunService.java` |
+| Run history / node trace 摘要 | 已落地。transient draft、stored draft 和 publication run 会生成 `runId`，并持久化来源、revision、statusMap、diagnostics、errors、elapsedMs、DSL、context/output/results shape-only 摘要。 | `visual/runtime/VisualGraphRunRecord.java`、`DatabaseVisualGraphRunRepository.java`、`VisualGraphRunHistoryController.java` |
 | Immutable Publication | 已落地。发布物冻结 draft、operator snapshots、fingerprints、layout、DSL、validation report、generation report，并支持 H2 持久化和 publication run。 | `visual/publication/*` |
 | Browser Composer | 已落地。静态页面已从 catalog 拉取 operator palette，支持算子库导入、草稿、修订、发布、schema-aware picker/connection、DSL preview/run。 | `src/main/resources/static/examples/gateway/app.js`、`styles.css`、`index.html` |
 
@@ -72,7 +73,6 @@ Operator Library / Resource Design Contract
 
 | 缺口 | 影响 | 建议阶段 |
 | --- | --- | --- |
-| Run history / node trace 持久化 | 现在运行结果能返回给 UI，但不能作为长期审计、回放、SLO 和问题定位记录。 | 下一阶段 |
 | Durable / long-running graph authoring | 当前示例以 request-response 为主，不能覆盖长事务、人工审批、事件等待等编排。 | 平台化阶段 |
 | OpenAPI / AsyncAPI 导入 | 用户仍需手写 operator library 或 resource design contract，导入成本偏高。 | 下一阶段 |
 | Java OperatorRegistry 自动投影 | 当前 native 内建算子有限，尚未把任意 Java operator inventory 完整归一化为 visual operator。 | 下一阶段 |
@@ -83,10 +83,10 @@ Operator Library / Resource Design Contract
 
 ## 6. 下一步优先级
 
-1. **Run history 和 node trace 存储**：把一次 visual run 的 DSL、context 摘要、node status、diagnostics、elapsedMs、publication/draft source 固化，形成可审计闭环。
-2. **OpenAPI/resource contract 导入辅助**：降低用户补 schema 成本，但必须走现有 `ResourceDesignContractValidator`，不能让未验证 schema 进入 catalog。
-3. **Java operator inventory projector**：让现有 BLOGE Java operators 也能进入同一 visual catalog，而不是只依赖手写内建定义。
-4. **前端回归验证**：给 catalog load、drag/drop connection preflight、draft save/publish/run 建立浏览器级 smoke test。
+1. **OpenAPI/resource contract 导入辅助**：降低用户补 schema 成本，但必须走现有 `ResourceDesignContractValidator`，不能让未验证 schema 进入 catalog。
+2. **Java operator inventory projector**：让现有 BLOGE Java operators 也能进入同一 visual catalog，而不是只依赖手写内建定义。
+3. **前端回归验证**：给 catalog load、drag/drop connection preflight、draft save/publish/run 建立浏览器级 smoke test。
+4. **Run history 深化**：当前已经保存 shape-only run record；下一步可补查询过滤、run replay、golden case 绑定和 SLO 统计。
 5. **文档协议收敛**：把早期草案字段名逐步改成当前实现的 wire contract，并保留平台化抽象命名作为未来 ADR，而不是混在当前协议里。
 
 ## 7. 反熵控制

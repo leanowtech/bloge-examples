@@ -373,6 +373,12 @@ depends on whatever the current operator catalog exposes after publication. The
 browser's Publications panel lists these immutable artifacts, refreshes after a
 successful publish, and runs the selected artifact with the current Context JSON
 without rewriting the draft currently being edited on the canvas.
+Transient draft runs, stored draft runs, and publication runs also create
+H2-backed visual run history records. Run responses include a `runId`; the
+record captures the source kind, draft/publication identity, selected output,
+node status map, diagnostics, errors, elapsed time, generated/frozen DSL, and
+shape-only context/output/result summaries so the audit trail does not persist
+raw runtime payload values by default.
 The Drafts panel can also load revision history, preview an old snapshot on the
 canvas, and restore it as a new latest revision through the same guarded patch
 path. Each stored revision carries `revisionMetadata` with created/updated
@@ -413,6 +419,8 @@ Showcase metadata APIs:
 | `GET` | `/api/visual/publications` | List immutable visual graph publications |
 | `GET` | `/api/visual/publications/{publicationId}` | Load a published visual graph artifact |
 | `POST` | `/api/visual/publications/{publicationId}/run` | Execute a published artifact from its frozen DSL |
+| `GET` | `/api/visual/runs` | List visual graph run history records, newest first |
+| `GET` | `/api/visual/runs/{runId}` | Load one visual graph run history record |
 
 Visual run requests may pass `outputNode` to inspect a different node than the
 draft's saved output selection. In that case the response returns the override

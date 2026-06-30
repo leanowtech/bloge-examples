@@ -16,6 +16,8 @@ import com.leanowtech.bloge.gateway.visual.publication.VisualGraphPublicationRes
 import com.leanowtech.bloge.gateway.visual.publication.VisualGraphPublishRequest;
 import com.leanowtech.bloge.gateway.visual.runtime.VisualGraphRunRequest;
 import com.leanowtech.bloge.gateway.visual.runtime.VisualGraphRunResponse;
+import com.leanowtech.bloge.gateway.visual.runtime.VisualGraphRunRecord;
+import com.leanowtech.bloge.gateway.visual.runtime.VisualGraphRunRepository;
 import com.leanowtech.bloge.gateway.visual.runtime.VisualGraphRunService;
 import com.leanowtech.bloge.gateway.visual.runtime.VisualStoredDraftRunRequest;
 import com.leanowtech.bloge.gateway.visual.validation.GraphDraftValidator;
@@ -55,6 +57,7 @@ public class VisualGraphDraftController {
     private final VisualOperatorCatalog catalog;
     private final VisualGraphPublicationRepository publicationRepository;
     private final GraphDraftPatchService patchService;
+    private final VisualGraphRunRepository runRepository;
 
     /**
      * @param repository draft repository
@@ -66,13 +69,15 @@ public class VisualGraphDraftController {
                                       VisualGraphRunService runner,
                                       VisualOperatorCatalog catalog,
                                       VisualGraphPublicationRepository publicationRepository,
-                                      GraphDraftPatchService patchService) {
+                                      GraphDraftPatchService patchService,
+                                      VisualGraphRunRepository runRepository) {
         this.repository = repository;
         this.validator = validator;
         this.runner = runner;
         this.catalog = catalog;
         this.publicationRepository = publicationRepository;
         this.patchService = patchService;
+        this.runRepository = runRepository;
     }
 
     /**
@@ -273,7 +278,9 @@ public class VisualGraphDraftController {
      */
     @PostMapping("/run")
     public VisualGraphRunResponse runTransient(@RequestBody VisualGraphRunRequest request) {
-        return runner.run(request.draft(), request.context(), request.outputNode());
+        VisualGraphRunResponse response = runner.run(request.draft(), request.context(), request.outputNode());
+        return recordRun(VisualGraphRunRecord.transientDraft(request.draft(), request.context(), response),
+                response);
     }
 
     /**
@@ -287,10 +294,20 @@ public class VisualGraphDraftController {
     public ResponseEntity<VisualGraphRunResponse> runStored(@PathVariable String draftId,
                                                             @RequestBody VisualStoredDraftRunRequest request) {
         return repository.find(draftId)
-                .map(draft -> request.expectedRevision() > 0 && request.expectedRevision() != draft.revision()
-                        ? runConflictResponse(draftId, request.expectedRevision(), draft)
-                        : ResponseEntity.ok(runner.run(draft, request.context(), request.outputNode())))
+                .map(draft -> {
+                    if (request.expectedRevision() > 0 && request.expectedRevision() != draft.revision()) {
+                        return runConflictResponse(draftId, request.expectedRevision(), draft);
+                    }
+                    VisualGraphRunResponse response = runner.run(draft, request.context(), request.outputNode());
+                    return ResponseEntity.ok(recordRun(VisualGraphRunRecord.storedDraft(draft, request.context(),
+                            response), response));
+                })
                 .orElseGet(() -> ResponseEntity.notFound().build());
+    }
+
+    private VisualGraphRunResponse recordRun(VisualGraphRunRecord record, VisualGraphRunResponse response) {
+        VisualGraphRunRecord stored = runRepository.create(record);
+        return response.withRunId(stored.runId());
     }
 
     /**

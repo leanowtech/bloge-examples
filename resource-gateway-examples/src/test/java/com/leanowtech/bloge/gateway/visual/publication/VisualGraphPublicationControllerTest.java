@@ -4,7 +4,9 @@ import com.leanowtech.bloge.gateway.visual.catalog.OperatorDefinition;
 import com.leanowtech.bloge.gateway.visual.catalog.VisualCatalogTestSupport;
 import com.leanowtech.bloge.gateway.visual.codegen.DslGenerationResult;
 import com.leanowtech.bloge.gateway.visual.draft.GraphDraft;
+import com.leanowtech.bloge.gateway.visual.runtime.InMemoryVisualGraphRunRepository;
 import com.leanowtech.bloge.gateway.visual.runtime.VisualGraphRunResponse;
+import com.leanowtech.bloge.gateway.visual.runtime.VisualGraphRunRecord;
 import com.leanowtech.bloge.gateway.visual.runtime.VisualGraphRunService;
 import com.leanowtech.bloge.gateway.visual.runtime.VisualStoredDraftRunRequest;
 import com.leanowtech.bloge.gateway.visual.validation.VisualValidationResult;
@@ -27,7 +29,8 @@ class VisualGraphPublicationControllerTest {
     void listAndGetPublications() {
         InMemoryVisualGraphPublicationRepository repository = new InMemoryVisualGraphPublicationRepository();
         VisualGraphPublication stored = repository.create(publication());
-        VisualGraphPublicationController controller = new VisualGraphPublicationController(repository, runner());
+        VisualGraphPublicationController controller = new VisualGraphPublicationController(repository, runner(),
+                new InMemoryVisualGraphRunRepository());
 
         assertThat(controller.list()).containsExactly(stored);
         assertThat(controller.get(stored.publicationId()))
@@ -38,7 +41,8 @@ class VisualGraphPublicationControllerTest {
     @Test
     void getReturnsNotFoundForUnknownPublication() {
         VisualGraphPublicationController controller =
-                new VisualGraphPublicationController(new InMemoryVisualGraphPublicationRepository(), runner());
+                new VisualGraphPublicationController(new InMemoryVisualGraphPublicationRepository(), runner(),
+                        new InMemoryVisualGraphRunRepository());
 
         assertThat(controller.get("missing").getStatusCode()).isEqualTo(HttpStatus.NOT_FOUND);
     }
@@ -48,7 +52,8 @@ class VisualGraphPublicationControllerTest {
         InMemoryVisualGraphPublicationRepository repository = new InMemoryVisualGraphPublicationRepository();
         VisualGraphPublication stored = repository.create(publication());
         CapturingRunService runner = new CapturingRunService();
-        VisualGraphPublicationController controller = new VisualGraphPublicationController(repository, runner);
+        InMemoryVisualGraphRunRepository runs = new InMemoryVisualGraphRunRepository();
+        VisualGraphPublicationController controller = new VisualGraphPublicationController(repository, runner, runs);
 
         ResponseEntity<VisualGraphRunResponse> response = controller.run(stored.publicationId(),
                 new VisualStoredDraftRunRequest(Map.of("score", 720), "eligibility"));
@@ -56,9 +61,14 @@ class VisualGraphPublicationControllerTest {
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
         assertThat(response.getBody()).isNotNull();
         assertThat(response.getBody().success()).isTrue();
+        assertThat(response.getBody().runId()).isNotBlank();
         assertThat(runner.publication).isEqualTo(stored);
         assertThat(runner.context).containsEntry("score", 720);
         assertThat(runner.outputNode).isEqualTo("eligibility");
+        VisualGraphRunRecord record = runs.find(response.getBody().runId()).orElseThrow();
+        assertThat(record.sourceKind()).isEqualTo(VisualGraphRunRecord.SOURCE_PUBLICATION);
+        assertThat(record.publicationId()).isEqualTo(stored.publicationId());
+        assertThat(record.draftId()).isEqualTo(stored.draftId());
     }
 
     private static VisualGraphRunService runner() {

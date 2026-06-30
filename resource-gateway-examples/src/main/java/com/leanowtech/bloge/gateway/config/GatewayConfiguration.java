@@ -22,6 +22,8 @@ import com.leanowtech.bloge.gateway.visual.publication.DatabaseVisualGraphPublic
 import com.leanowtech.bloge.gateway.visual.publication.VisualGraphPublicationRepository;
 import com.leanowtech.bloge.gateway.visual.resource.DatabaseResourceDesignContractRegistry;
 import com.leanowtech.bloge.gateway.visual.resource.ResourceDesignContractRegistry;
+import com.leanowtech.bloge.gateway.visual.runtime.DatabaseVisualGraphRunRepository;
+import com.leanowtech.bloge.gateway.visual.runtime.VisualGraphRunRepository;
 import com.leanowtech.bloge.operators.http.HttpRequestInput;
 import com.leanowtech.bloge.operators.http.HttpRequestOperator;
 
@@ -211,6 +213,20 @@ public class GatewayConfiguration {
     public VisualGraphPublicationRepository visualGraphPublicationRepository(JdbcTemplate jdbc,
                                                                              ObjectMapper objectMapper) {
         return new DatabaseVisualGraphPublicationRepository(jdbc, objectMapper);
+    }
+
+    /**
+     * Database-backed repository for visual graph run history records.
+     *
+     * @param jdbc JDBC template for H2 access
+     * @param objectMapper Jackson mapper for run serialization
+     * @return visual graph run history repository
+     */
+    @Bean
+    @ConditionalOnMissingBean
+    public VisualGraphRunRepository visualGraphRunRepository(JdbcTemplate jdbc,
+                                                             ObjectMapper objectMapper) {
+        return new DatabaseVisualGraphRunRepository(jdbc, objectMapper);
     }
 
     // ── Interceptors ────────────────────────────────────────────────────

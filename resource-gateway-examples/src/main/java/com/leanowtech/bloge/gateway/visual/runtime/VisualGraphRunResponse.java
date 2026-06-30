@@ -25,6 +25,7 @@ import java.util.Map;
  * @param layout generated layout
  * @param decisionTable extracted decision table view
  * @param generatedDsl generated BLOGE DSL
+ * @param runId persisted run history id when the run was recorded
  */
 public record VisualGraphRunResponse(
         boolean validated,
@@ -40,7 +41,8 @@ public record VisualGraphRunResponse(
         List<String> errors,
         ExampleVisualLayout layout,
         GatewayDecisionTable decisionTable,
-        String generatedDsl
+        String generatedDsl,
+        String runId
 ) {
     /**
      * Creates a response.
@@ -53,5 +55,36 @@ public record VisualGraphRunResponse(
         diagnostics = diagnostics == null ? List.of() : List.copyOf(diagnostics);
         errors = errors == null ? List.of() : List.copyOf(errors);
         generatedDsl = generatedDsl == null ? "" : generatedDsl;
+        runId = runId == null ? "" : runId;
+    }
+
+    /**
+     * Backward-compatible constructor for callers that do not yet know a run history id.
+     */
+    public VisualGraphRunResponse(boolean validated,
+                                  boolean compiled,
+                                  boolean success,
+                                  String graphName,
+                                  String outputNode,
+                                  Object output,
+                                  Map<String, Object> results,
+                                  Map<String, String> statusMap,
+                                  long elapsedMs,
+                                  List<VisualDiagnostic> diagnostics,
+                                  List<String> errors,
+                                  ExampleVisualLayout layout,
+                                  GatewayDecisionTable decisionTable,
+                                  String generatedDsl) {
+        this(validated, compiled, success, graphName, outputNode, output, results, statusMap, elapsedMs,
+                diagnostics, errors, layout, decisionTable, generatedDsl, "");
+    }
+
+    /**
+     * @param newRunId persisted run history id
+     * @return copy with run id populated
+     */
+    public VisualGraphRunResponse withRunId(String newRunId) {
+        return new VisualGraphRunResponse(validated, compiled, success, graphName, outputNode, output,
+                results, statusMap, elapsedMs, diagnostics, errors, layout, decisionTable, generatedDsl, newRunId);
     }
 }

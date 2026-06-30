@@ -1,0 +1,31 @@
+package com.leanowtech.bloge.gateway.visual.runtime;
+
+import java.util.Collection;
+import java.util.Optional;
+
+/**
+ * Repository for persisted visual graph run history records.
+ */
+public interface VisualGraphRunRepository {
+
+    /**
+     * @return all run records, newest first
+     */
+    Collection<VisualGraphRunRecord> all();
+
+    /**
+     * Finds a run record.
+     *
+     * @param runId run id
+     * @return run record when present
+     */
+    Optional<VisualGraphRunRecord> find(String runId);
+
+    /**
+     * Creates a new immutable run record.
+     *
+     * @param record run record
+     * @return stored run record with assigned id
+     */
+    VisualGraphRunRecord create(VisualGraphRunRecord record);
+}

@@ -1,6 +1,8 @@
 package com.leanowtech.bloge.gateway.visual.publication;
 
 import com.leanowtech.bloge.gateway.visual.runtime.VisualGraphRunResponse;
+import com.leanowtech.bloge.gateway.visual.runtime.VisualGraphRunRecord;
+import com.leanowtech.bloge.gateway.visual.runtime.VisualGraphRunRepository;
 import com.leanowtech.bloge.gateway.visual.runtime.VisualGraphRunService;
 import com.leanowtech.bloge.gateway.visual.runtime.VisualStoredDraftRunRequest;
 
@@ -23,15 +25,18 @@ public class VisualGraphPublicationController {
 
     private final VisualGraphPublicationRepository repository;
     private final VisualGraphRunService runner;
+    private final VisualGraphRunRepository runRepository;
 
     /**
      * @param repository publication repository
      * @param runner publication runner
      */
     public VisualGraphPublicationController(VisualGraphPublicationRepository repository,
-                                            VisualGraphRunService runner) {
+                                            VisualGraphRunService runner,
+                                            VisualGraphRunRepository runRepository) {
         this.repository = repository;
         this.runner = runner;
+        this.runRepository = runRepository;
     }
 
     /**
@@ -66,7 +71,12 @@ public class VisualGraphPublicationController {
     public ResponseEntity<VisualGraphRunResponse> run(@PathVariable String publicationId,
                                                       @RequestBody VisualStoredDraftRunRequest request) {
         return repository.find(publicationId)
-                .map(publication -> ResponseEntity.ok(runner.run(publication, request.context(), request.outputNode())))
+                .map(publication -> {
+                    VisualGraphRunResponse response = runner.run(publication, request.context(), request.outputNode());
+                    VisualGraphRunRecord record = runRepository.create(VisualGraphRunRecord.publication(
+                            publication, request.context(), response));
+                    return ResponseEntity.ok(response.withRunId(record.runId()));
+                })
                 .orElseGet(() -> ResponseEntity.notFound().build());
     }
 }

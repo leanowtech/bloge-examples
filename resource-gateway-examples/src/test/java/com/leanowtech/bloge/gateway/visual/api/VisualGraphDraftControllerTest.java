@@ -17,7 +17,10 @@ import com.leanowtech.bloge.gateway.visual.publication.InMemoryVisualGraphPublic
 import com.leanowtech.bloge.gateway.visual.publication.VisualGraphPublicationResult;
 import com.leanowtech.bloge.gateway.visual.publication.VisualGraphPublishRequest;
 import com.leanowtech.bloge.gateway.visual.model.SchemaEnvelope;
+import com.leanowtech.bloge.gateway.visual.runtime.InMemoryVisualGraphRunRepository;
 import com.leanowtech.bloge.gateway.visual.runtime.VisualGraphRunResponse;
+import com.leanowtech.bloge.gateway.visual.runtime.VisualGraphRunRecord;
+import com.leanowtech.bloge.gateway.visual.runtime.VisualGraphRunRequest;
 import com.leanowtech.bloge.gateway.visual.runtime.VisualGraphRunService;
 import com.leanowtech.bloge.gateway.visual.runtime.VisualStoredDraftRunRequest;
 import com.leanowtech.bloge.gateway.visual.validation.GraphDraftValidator;
@@ -705,6 +708,62 @@ class VisualGraphDraftControllerTest {
     }
 
     @Test
+    void runTransientRecordsRunHistoryAndReturnsRunId() {
+        DefaultVisualOperatorCatalog catalog = eligibilityCatalog();
+        InMemoryVisualGraphRunRepository runs = new InMemoryVisualGraphRunRepository();
+        VisualGraphDraftController controller = controllerWithCatalog(catalog, new InMemoryGraphDraftRepository(),
+                new InMemoryVisualGraphPublicationRepository(), runs, new FixedRunService());
+        GraphDraft draft = eligibilityDraft(graphInputSchema(
+                Map.of(
+                        "score", Map.of("type", "integer"),
+                        "amount", Map.of("type", "number")
+                )
+        ));
+
+        VisualGraphRunResponse response = controller.runTransient(new VisualGraphRunRequest(
+                draft,
+                Map.of("score", 720, "amount", 100_000, "apiToken", "secret-token"),
+                "eligibility"
+        ));
+
+        assertThat(response.runId()).isNotBlank();
+        VisualGraphRunRecord record = runs.find(response.runId()).orElseThrow();
+        assertThat(record.sourceKind()).isEqualTo(VisualGraphRunRecord.SOURCE_TRANSIENT_DRAFT);
+        assertThat(record.graphName()).isEqualTo("compileGate");
+        assertThat(record.outputNode()).isEqualTo("eligibility");
+        assertThat(record.contextSummary()).containsKeys("amount", "apiToken", "score");
+        assertThat(record.toString()).doesNotContain("secret-token");
+    }
+
+    @Test
+    void runStoredDraftRecordsSourceRevision() {
+        DefaultVisualOperatorCatalog catalog = eligibilityCatalog();
+        InMemoryGraphDraftRepository drafts = new InMemoryGraphDraftRepository();
+        InMemoryVisualGraphRunRepository runs = new InMemoryVisualGraphRunRepository();
+        VisualGraphDraftController controller = controllerWithCatalog(catalog, drafts,
+                new InMemoryVisualGraphPublicationRepository(), runs, new FixedRunService());
+        GraphDraft stored = controller.create(eligibilityDraft(graphInputSchema(
+                Map.of(
+                        "score", Map.of("type", "integer"),
+                        "amount", Map.of("type", "number")
+                )
+        )));
+
+        ResponseEntity<VisualGraphRunResponse> response = controller.runStored(stored.draftId(),
+                new VisualStoredDraftRunRequest(Map.of("score", 720, "amount", 100_000), "eligibility",
+                        stored.revision()));
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat(response.getBody()).isNotNull();
+        assertThat(response.getBody().runId()).isNotBlank();
+        VisualGraphRunRecord record = runs.find(response.getBody().runId()).orElseThrow();
+        assertThat(record.sourceKind()).isEqualTo(VisualGraphRunRecord.SOURCE_STORED_DRAFT);
+        assertThat(record.draftId()).isEqualTo(stored.draftId());
+        assertThat(record.draftRevision()).isEqualTo(stored.revision());
+        assertThat(record.statusMap()).containsEntry("eligibility", "COMPLETED");
+    }
+
+    @Test
     void publishStoredDraftCreatesImmutablePublication() {
         DefaultVisualOperatorCatalog catalog = VisualCatalogTestSupport.catalogWithLibrary(
                 VisualCatalogTestSupport.eligibilityLibrary("integer"));
@@ -838,13 +897,23 @@ class VisualGraphDraftControllerTest {
     private static VisualGraphDraftController controllerWithCatalog(DefaultVisualOperatorCatalog catalog,
                                                                     InMemoryGraphDraftRepository repository,
                                                                     InMemoryVisualGraphPublicationRepository publications) {
+        return controllerWithCatalog(catalog, repository, publications, new InMemoryVisualGraphRunRepository(),
+                runner(catalog));
+    }
+
+    private static VisualGraphDraftController controllerWithCatalog(DefaultVisualOperatorCatalog catalog,
+                                                                    InMemoryGraphDraftRepository repository,
+                                                                    InMemoryVisualGraphPublicationRepository publications,
+                                                                    InMemoryVisualGraphRunRepository runs,
+                                                                    VisualGraphRunService runner) {
         return new VisualGraphDraftController(
                 repository == null ? new InMemoryGraphDraftRepository() : repository,
                 validator(catalog),
-                runner(catalog),
+                runner,
                 catalog,
                 publications,
-                new GraphDraftPatchService(new ObjectMapper())
+                new GraphDraftPatchService(new ObjectMapper()),
+                runs
         );
     }
 
@@ -865,6 +934,34 @@ class VisualGraphDraftControllerTest {
 
     private static HttpResourceOperator httpResourceOperatorStub() {
         return new HttpResourceOperator(null, null, null, null, null, null);
+    }
+
+    private static class FixedRunService extends VisualGraphRunService {
+        FixedRunService() {
+            super(null, null, null);
+        }
+
+        @Override
+        public VisualGraphRunResponse run(GraphDraft draft,
+                                          Map<String, Object> context,
+                                          String outputNode) {
+            return new VisualGraphRunResponse(
+                    true,
+                    true,
+                    true,
+                    draft.graphName(),
+                    outputNode,
+                    Map.of("eligible", true),
+                    Map.of("eligibility", Map.of("eligible", true)),
+                    Map.of("eligibility", "COMPLETED"),
+                    12,
+                    List.of(),
+                    List.of(),
+                    null,
+                    null,
+                    "graph %s {}".formatted(draft.graphName())
+            );
+        }
     }
 
     private static GraphDraft eligibilityDraft(SchemaEnvelope inputSchema) {
