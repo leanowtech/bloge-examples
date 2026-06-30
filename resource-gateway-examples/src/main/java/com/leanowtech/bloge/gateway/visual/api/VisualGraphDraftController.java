@@ -175,7 +175,7 @@ public class VisualGraphDraftController {
                             request.changeSummary(),
                             request.changedPaths()
                     ));
-            GraphDraft candidate = withCurrentOperatorFingerprints(patched);
+            GraphDraft candidate = withMissingCurrentOperatorFingerprints(patched);
             return repository.saveIfRevision(draftId, request.expectedRevision(), candidate)
                     .map(stored -> ResponseEntity.ok(GraphDraftPatchResult.patched(stored)))
                     .orElseGet(() -> conflictResponse(draftId, request.expectedRevision(), current.get()));
@@ -261,6 +261,10 @@ public class VisualGraphDraftController {
 
     private GraphDraft withCurrentOperatorFingerprints(GraphDraft draft) {
         return draft.withOperatorFingerprints(currentOperatorFingerprints(draft));
+    }
+
+    private GraphDraft withMissingCurrentOperatorFingerprints(GraphDraft draft) {
+        return draft.withOperatorFingerprints(fingerprintsWithMissingCurrentValues(draft));
     }
 
     private ResponseEntity<VisualGraphPublicationResult> publishDraft(GraphDraft draft) {

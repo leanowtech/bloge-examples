@@ -180,6 +180,39 @@ class VisualGraphDraftControllerTest {
     }
 
     @Test
+    void patchStoredDraftPreservesExistingOperatorFingerprintSnapshot() {
+        DefaultVisualOperatorCatalog initialCatalog = VisualCatalogTestSupport.catalogWithLibrary(
+                VisualCatalogTestSupport.eligibilityLibrary("integer"));
+        DefaultVisualOperatorCatalog evolvedCatalog = VisualCatalogTestSupport.catalogWithLibrary(
+                VisualCatalogTestSupport.eligibilityLibrary("number"));
+        InMemoryGraphDraftRepository repository = new InMemoryGraphDraftRepository();
+        VisualGraphDraftController initialController = controllerWithCatalog(initialCatalog, repository);
+        VisualGraphDraftController evolvedController = controllerWithCatalog(evolvedCatalog, repository);
+        GraphDraft stored = initialController.create(eligibilityDraft(graphInputSchema(
+                Map.of(
+                        "score", Map.of("type", "integer"),
+                        "amount", Map.of("type", "number")
+                )
+        )));
+        String initialFingerprint = initialCatalog.find("risk:eligibility").orElseThrow().fingerprint();
+        String evolvedFingerprint = evolvedCatalog.find("risk:eligibility").orElseThrow().fingerprint();
+
+        ResponseEntity<GraphDraftPatchResult> response = evolvedController.patch(stored.draftId(),
+                new GraphDraftPatchRequest(stored.revision(), List.of(
+                        new GraphDraftPatchRequest.PatchOperation("replace", "/graphName", "renamedPolicy")
+                )));
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+        GraphDraft patched = response.getBody().draft();
+        assertThat(patched.operatorFingerprints())
+                .containsEntry("eligibility", initialFingerprint)
+                .doesNotContainEntry("eligibility", evolvedFingerprint);
+        assertThat(validator(evolvedCatalog).validate(patched).diagnostics())
+                .extracting("code")
+                .contains("visual.operator.fingerprintMismatch");
+    }
+
+    @Test
     void patchStoredDraftRejectsStaleRevision() {
         VisualGraphDraftController controller = controllerWithEligibilityLibrary();
         GraphDraft stored = controller.create(eligibilityDraft(graphInputSchema(
