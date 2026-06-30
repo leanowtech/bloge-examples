@@ -539,6 +539,100 @@ class VisualAuthoringBrowserDomTest {
         assertThat(valueOf(By.id("composer-dsl"))).doesNotContain("{{");
     }
 
+    @Test
+    void composerBindsDynamicAdditionalPropertyContextFieldsInRealBrowser() throws JsonProcessingException {
+        driver = newChromeDriverOrSkip();
+        WebDriverWait wait = new WebDriverWait(driver, WAIT_TIMEOUT);
+        driver.get("http://localhost:" + port + "/examples/gateway");
+
+        waitForComposer(wait);
+        wait.until(ExpectedConditions.visibilityOfElementLocated(By.id("operator-palette")));
+        setControlValue(driver.findElement(By.id("graph-input-schema")), """
+                {
+                  "type": "object",
+                  "properties": {},
+                  "additionalProperties": { "type": "integer" }
+                }
+                """);
+        waitForText(wait, By.id("graph-input-schema-status"), "Graph input schema is valid");
+        setControlValue(driver.findElement(By.id("composer-context")), """
+                {
+                  "dynamicScore": 720,
+                  "dynamicAmount": 250000
+                }
+                """);
+
+        importSampleOperatorLibrary(wait);
+        dragOperatorToCanvas(wait, "Eligibility", "risk:eligibility", "riskEligibility", 140, 120);
+        selectByValue(wait,
+                By.cssSelector("[data-binding-source][data-binding-path='score']"),
+                bindingSourceValue("__ctx", "ctx", "dynamicScore"));
+        waitForText(wait, By.id("connection-status"), "Connected ctx.dynamicScore");
+        selectByValue(wait,
+                By.cssSelector("[data-binding-source][data-binding-path='amount']"),
+                bindingSourceValue("__ctx", "ctx", "dynamicAmount"));
+        waitForText(wait, By.id("connection-status"), "Connected ctx.dynamicAmount");
+
+        waitForValue(wait, By.id("composer-dsl"),
+                "eligible = ctx.dynamicScore >= 700 && ctx.dynamicAmount <= 300000");
+
+        click(wait, By.id("save-draft"));
+        waitForText(wait, By.id("draft-status"), "Saved");
+        click(wait, By.id("export-draft"));
+        wait.until(ignored -> valueOf(By.id("draft-bundle-json"))
+                .contains("\"schemaVersion\": \"bloge.visualGraphDraftExport.v1\""));
+        assertThat(valueOf(By.id("draft-bundle-json")))
+                .contains("\"path\": \"dynamicScore\"")
+                .contains("\"path\": \"dynamicAmount\"")
+                .contains("\"targetPath\": \"score\"")
+                .contains("\"targetPath\": \"amount\"");
+    }
+
+    @Test
+    void composerPreservesDuplicateInputPathPortsInRealBrowser() throws JsonProcessingException {
+        driver = newChromeDriverOrSkip();
+        WebDriverWait wait = new WebDriverWait(driver, WAIT_TIMEOUT);
+        driver.get("http://localhost:" + port + "/examples/gateway");
+
+        waitForComposer(wait);
+        wait.until(ExpectedConditions.visibilityOfElementLocated(By.id("operator-palette")));
+        setControlValue(
+                driver.findElement(By.id("graph-input-schema")),
+                OBJECT_MAPPER.writeValueAsString(customerOrderGraphInputSchema())
+        );
+        waitForText(wait, By.id("graph-input-schema-status"), "Graph input schema is valid");
+
+        importOperatorLibrary(wait, VisualCatalogTestSupport.duplicateInputPathLibrary());
+        dragOperatorToCanvas(wait, "Customer order merge", "risk:customerOrderMerge",
+                "riskCustomerOrderMerge", 140, 120);
+
+        selectByValue(wait,
+                By.cssSelector("[data-binding-source][data-binding-port='customer'][data-binding-path='id']"),
+                bindingSourceValue("__ctx", "ctx", "customer.id"));
+        waitForText(wait, By.id("connection-status"), "Connected ctx.customer.id");
+
+        selectByValue(wait,
+                By.cssSelector("[data-binding-source][data-binding-port='order'][data-binding-path='id']"),
+                bindingSourceValue("__ctx", "ctx", "orderId"));
+        waitForText(wait, By.id("connection-status"), "Connected ctx.orderId");
+
+        waitForValue(wait, By.id("composer-dsl"), "customerId = ctx.customer.id");
+        waitForValue(wait, By.id("composer-dsl"), "orderId = ctx.orderId");
+
+        click(wait, By.id("save-draft"));
+        waitForText(wait, By.id("draft-status"), "Saved");
+        click(wait, By.id("export-draft"));
+        wait.until(ignored -> valueOf(By.id("draft-bundle-json"))
+                .contains("\"schemaVersion\": \"bloge.visualGraphDraftExport.v1\""));
+        String bundle = valueOf(By.id("draft-bundle-json"));
+        assertThat(bundle)
+                .contains("\"customer.id\"")
+                .contains("\"order.id\"")
+                .contains("\"targetPort\": \"customer\"")
+                .contains("\"targetPort\": \"order\"")
+                .contains("\"targetPath\": \"id\"");
+    }
+
     private WebDriver newChromeDriverOrSkip() {
         ChromeOptions options = new ChromeOptions();
         options.addArguments(
@@ -618,6 +712,27 @@ class VisualAuthoringBrowserDomTest {
                 "ACTIVE",
                 List.of(operator)
         );
+    }
+
+    private static SchemaEnvelope customerOrderGraphInputSchema() {
+        return SchemaEnvelope.object(Map.of(
+                "customer", Map.of(
+                        "type", "object",
+                        "properties", Map.of("id", Map.of("type", "string")),
+                        "required", List.of("id"),
+                        "additionalProperties", false
+                ),
+                "orderId", Map.of("type", "string")
+        ), List.of("customer", "orderId"));
+    }
+
+    private String bindingSourceValue(String nodeId, String port, String path) {
+        return String.valueOf(((JavascriptExecutor) driver).executeScript(
+                "return encodeURIComponent(JSON.stringify({nodeId: arguments[0], port: arguments[1], path: arguments[2]}));",
+                nodeId,
+                port,
+                path
+        ));
     }
 
     private static OperatorLibrary unsafeOutputLibrary() {
