@@ -1773,6 +1773,76 @@ class GraphDraftValidatorTest {
     }
 
     @Test
+    void acceptsNodePathBindingWhenObjectPatternPropertiesFitTarget() {
+        GraphDraftValidator validator = new GraphDraftValidator(
+                VisualCatalogTestSupport.catalogWithLibrary(
+                        VisualCatalogTestSupport.objectPatternPropertiesCompatibilityLibrary(
+                                null,
+                                false,
+                                Map.of("^metric\\.", Map.of("type", "integer")),
+                                true)));
+        GraphDraft draft = objectCompatibilityDraft(
+                GraphDraft.Binding.nodePath("objectFacts", "output", "payload",
+                        "inputs", "payload"),
+                new GraphDraft.DraftEdge("payload", "data",
+                        new GraphDraft.Endpoint("objectFacts", "output", "payload"),
+                        new GraphDraft.Endpoint("objectConsumer", "inputs", "payload")));
+
+        VisualValidationResult result = validator.validate(draft);
+
+        assertThat(result.valid()).isTrue();
+    }
+
+    @Test
+    void rejectsNodePathBindingWhenObjectPatternPropertiesAreNotGuaranteed() {
+        GraphDraftValidator validator = new GraphDraftValidator(
+                VisualCatalogTestSupport.catalogWithLibrary(
+                        VisualCatalogTestSupport.objectPatternPropertiesCompatibilityLibrary(
+                                null,
+                                true,
+                                Map.of("^metric\\.", Map.of("type", "integer")),
+                                true)));
+        GraphDraft draft = objectCompatibilityDraft(
+                GraphDraft.Binding.nodePath("objectFacts", "output", "payload",
+                        "inputs", "payload"),
+                new GraphDraft.DraftEdge("payload", "data",
+                        new GraphDraft.Endpoint("objectFacts", "output", "payload"),
+                        new GraphDraft.Endpoint("objectConsumer", "inputs", "payload")));
+
+        VisualValidationResult result = validator.validate(draft);
+
+        assertThat(result.valid()).isFalse();
+        assertThat(result.diagnostics())
+                .extracting("code")
+                .contains("visual.binding.typeMismatch", "visual.edge.typeMismatch");
+        assertThat(result.diagnostics())
+                .anySatisfy(diagnostic -> assertThat(diagnostic.message())
+                        .contains("target requires patternProperties"));
+    }
+
+    @Test
+    void rejectsConstantBindingWhenObjectPatternPropertyValueViolatesTargetSchema() {
+        GraphDraftValidator validator = new GraphDraftValidator(
+                VisualCatalogTestSupport.catalogWithLibrary(
+                        VisualCatalogTestSupport.objectPatternPropertiesCompatibilityLibrary(
+                                null,
+                                true,
+                                Map.of("^metric\\.", Map.of("type", "integer")),
+                                true)));
+        GraphDraft draft = objectConstantDraft(GraphDraft.Binding.constant(Map.of("metric.score", "high")));
+
+        VisualValidationResult result = validator.validate(draft);
+
+        assertThat(result.valid()).isFalse();
+        assertThat(result.diagnostics())
+                .anySatisfy(diagnostic -> {
+                    assertThat(diagnostic.code()).isEqualTo("visual.binding.typeMismatch");
+                    assertThat(diagnostic.message()).contains("payload").contains("object");
+                    assertThat(diagnostic.target()).isEqualTo("/nodes/0/inputs/payload");
+                });
+    }
+
+    @Test
     void rejectsNodePathBindingWhenArrayItemTypesDoNotMatch() {
         GraphDraftValidator validator = new GraphDraftValidator(
                 VisualCatalogTestSupport.catalogWithLibrary(
@@ -2611,6 +2681,26 @@ class GraphDraftValidatorTest {
                 .anySatisfy(diagnostic -> {
                     assertThat(diagnostic.code()).isEqualTo("visual.config.constraintMismatch");
                     assertThat(diagnostic.message()).contains("routing").contains("propertyNames");
+                    assertThat(diagnostic.target()).isEqualTo("/nodes/0/config/routing");
+                });
+    }
+
+    @Test
+    void rejectsNodeConfigWhenObjectPatternPropertyValueViolatesConfigSchema() {
+        GraphDraftValidator validator = new GraphDraftValidator(
+                VisualCatalogTestSupport.catalogWithLibrary(objectPatternPropertiesConfigurablePolicyLibrary()));
+        GraphDraft draft = configurablePolicyDraft(Map.of(
+                "threshold", 700,
+                "routing", Map.of("route.timeout", "slow")
+        ));
+
+        VisualValidationResult result = validator.validate(draft);
+
+        assertThat(result.valid()).isFalse();
+        assertThat(result.diagnostics())
+                .anySatisfy(diagnostic -> {
+                    assertThat(diagnostic.code()).isEqualTo("visual.config.constraintMismatch");
+                    assertThat(diagnostic.message()).contains("routing").contains("patternProperties");
                     assertThat(diagnostic.target()).isEqualTo("/nodes/0/config/routing");
                 });
     }
@@ -4098,6 +4188,51 @@ class GraphDraftValidatorTest {
                 "type", "object",
                 "additionalProperties", Map.of("type", "string"),
                 "propertyNames", Map.of("pattern", "^route\\.[a-z]+$")
+        ));
+
+        OperatorDefinition operator = new OperatorDefinition(
+                "bloge.visualOperator.v1",
+                "risk:configurablePolicy",
+                "1.0.0",
+                new OperatorDefinition.Display("Configurable policy",
+                        "Evaluates policy behavior controlled by configSchema.",
+                        List.of("risk", "config")),
+                new OperatorDefinition.Source("user-library", "", "", "", true),
+                new OperatorDefinition.Ports(
+                        List.of(),
+                        List.of(new OperatorDefinition.Port("output",
+                                SchemaEnvelope.object(outputProperties, List.of()),
+                                true,
+                                "Policy output."))
+                ),
+                SchemaEnvelope.object(configProperties, List.of("threshold", "routing")),
+                OperatorDefinition.Capabilities.pure(),
+                new OperatorDefinition.Lowering("transform", "transform", Map.of(
+                        "assignments", Map.of("accepted", "true")
+                )),
+                List.of()
+        );
+        return new OperatorLibrary(
+                "bloge.visualOperatorLibrary.v1",
+                "risk-configurable-policy",
+                "Configurable policy operators",
+                "1.0.0",
+                "risk-team",
+                "ACTIVE",
+                List.of(operator)
+        );
+    }
+
+    private static OperatorLibrary objectPatternPropertiesConfigurablePolicyLibrary() {
+        Map<String, Object> outputProperties = new LinkedHashMap<>();
+        outputProperties.put("accepted", Map.of("type", "boolean"));
+
+        Map<String, Object> configProperties = new LinkedHashMap<>();
+        configProperties.put("threshold", Map.of("type", "integer"));
+        configProperties.put("routing", Map.of(
+                "type", "object",
+                "additionalProperties", false,
+                "patternProperties", Map.of("^route\\.", Map.of("type", "integer"))
         ));
 
         OperatorDefinition operator = new OperatorDefinition(

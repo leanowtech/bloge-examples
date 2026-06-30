@@ -1421,6 +1421,55 @@ class OperatorLibraryValidatorTest {
     }
 
     @Test
+    void acceptsObjectPatternPropertiesAcrossOperatorDefinitions() {
+        OperatorDefinition operator = new OperatorDefinition(
+                "bloge.visualOperator.v1",
+                "risk:objectPatternPropertiesPolicy",
+                "1.0.0",
+                new OperatorDefinition.Display("Object pattern properties policy", "Test operator.", List.of("test")),
+                new OperatorDefinition.Source("user-library", "", "", "", true),
+                new OperatorDefinition.Ports(
+                        List.of(new OperatorDefinition.Port("payload",
+                                SchemaEnvelope.object(Map.of(
+                                        "metrics", Map.of(
+                                                "type", "object",
+                                                "additionalProperties", false,
+                                                "patternProperties", Map.of(
+                                                        "^metric\\.[a-z]+$", Map.of("type", "integer")))
+                                ), List.of("metrics")),
+                                true,
+                                "Input.")),
+                        List.of(new OperatorDefinition.Port("output",
+                                SchemaEnvelope.object(Map.of(
+                                        "labels", Map.of(
+                                                "type", "object",
+                                                "additionalProperties", false,
+                                                "patternProperties", Map.of(
+                                                        "^label\\.[a-z]+$", Map.of("type", "string")))
+                                ), List.of()),
+                                true,
+                                "Output."))
+                ),
+                SchemaEnvelope.object(Map.of(
+                        "headers", Map.of(
+                                "type", "object",
+                                "additionalProperties", false,
+                                "patternProperties", Map.of(
+                                        "^X-[A-Za-z0-9-]+$", Map.of("type", "string")),
+                                "default", Map.of("X-Risk-Mode", "audit"))
+                ), List.of("headers")),
+                OperatorDefinition.Capabilities.pure(),
+                new OperatorDefinition.Lowering("native", "riskObjectPatternPropertiesPolicy", Map.of()),
+                List.of()
+        );
+
+        VisualValidationResult result = validator.validate(libraryWith(operator));
+
+        assertThat(result.diagnostics()).isEmpty();
+        assertThat(result.valid()).isTrue();
+    }
+
+    @Test
     void rejectsInvalidObjectPropertyBoundsAcrossOperatorDefinitions() {
         OperatorDefinition operator = new OperatorDefinition(
                 "bloge.visualOperator.v1",
@@ -1549,6 +1598,80 @@ class OperatorLibraryValidatorTest {
                 .contains(
                         "/operators/0/ports/inputs/0/schema/schema/properties/filters/propertyNames",
                         "/operators/0/ports/outputs/0/schema/schema/properties/facets/propertyNames",
+                        "/operators/0/ports/inputs/0/schema/schema/properties/labels/enum/0",
+                        "/operators/0/configSchema/schema/properties/routing/default",
+                        "/operators/0/configSchema/schema/properties/fixed/const"
+                );
+    }
+
+    @Test
+    void rejectsInvalidObjectPatternPropertiesAcrossOperatorDefinitions() {
+        OperatorDefinition operator = new OperatorDefinition(
+                "bloge.visualOperator.v1",
+                "risk:badObjectPatternPropertiesPolicy",
+                "1.0.0",
+                new OperatorDefinition.Display("Bad object pattern properties policy", "Test operator.", List.of("test")),
+                new OperatorDefinition.Source("user-library", "", "", "", true),
+                new OperatorDefinition.Ports(
+                        List.of(new OperatorDefinition.Port("payload",
+                                SchemaEnvelope.object(Map.of(
+                                        "metrics", Map.of(
+                                                "type", "object",
+                                                "patternProperties", Map.of("[", Map.of("type", "integer"))),
+                                        "labels", Map.of(
+                                                "type", "object",
+                                                "additionalProperties", false,
+                                                "patternProperties", Map.of(
+                                                        "^label\\.[a-z]+$", Map.of("type", "string")),
+                                                "enum", List.of(Map.of("label.status", 7)))
+                                ), List.of("metrics")),
+                                true,
+                                "Input.")),
+                        List.of(new OperatorDefinition.Port("output",
+                                SchemaEnvelope.object(Map.of(
+                                        "facets", Map.of(
+                                                "type", "object",
+                                                "patternProperties", Map.of("^facet\\.", "string"))
+                                ), List.of()),
+                                true,
+                                "Output."))
+                ),
+                SchemaEnvelope.object(Map.of(
+                        "routing", Map.of(
+                                "type", "object",
+                                "additionalProperties", false,
+                                "patternProperties", Map.of(
+                                        "^route\\.[a-z]+$", Map.of("type", "string")),
+                                "default", Map.of("route.mode", 7)),
+                        "fixed", Map.of(
+                                "type", "object",
+                                "additionalProperties", false,
+                                "patternProperties", Map.of(
+                                        "^fixed\\.[a-z]+$", Map.of("type", "string")),
+                                "const", Map.of("fixed.mode", 7))
+                ), List.of()),
+                OperatorDefinition.Capabilities.pure(),
+                new OperatorDefinition.Lowering("native", "riskBadObjectPatternPropertiesPolicy", Map.of()),
+                List.of()
+        );
+
+        VisualValidationResult result = validator.validate(libraryWith(operator));
+
+        assertThat(result.valid()).isFalse();
+        assertThat(result.diagnostics())
+                .extracting("code")
+                .contains(
+                        "visual.schema.patternPropertiesPatternInvalid",
+                        "visual.schema.patternPropertiesInvalid",
+                        "visual.schema.enumConstraintMismatch",
+                        "visual.schema.defaultConstraintMismatch",
+                        "visual.schema.constConstraintMismatch"
+                );
+        assertThat(result.diagnostics())
+                .extracting("target")
+                .contains(
+                        "/operators/0/ports/inputs/0/schema/schema/properties/metrics/patternProperties/[",
+                        "/operators/0/ports/outputs/0/schema/schema/properties/facets/patternProperties/^facet\\.",
                         "/operators/0/ports/inputs/0/schema/schema/properties/labels/enum/0",
                         "/operators/0/configSchema/schema/properties/routing/default",
                         "/operators/0/configSchema/schema/properties/fixed/const"

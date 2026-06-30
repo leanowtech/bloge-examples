@@ -18,6 +18,7 @@ import java.util.Optional;
 import java.util.Set;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
+import java.util.regex.PatternSyntaxException;
 
 import static com.leanowtech.bloge.gateway.visual.validation.VisualSchemaCompatibility.compatibilityReason;
 import static com.leanowtech.bloge.gateway.visual.validation.VisualSchemaCompatibility.schemaCompatibilityIssue;
@@ -502,6 +503,9 @@ public class OperatorLibraryValidator {
             }
             current = objectProperty(propertiesOf(currentSchema).get(segment));
             if (current == null) {
+                current = patternPropertySchema(currentSchema, segment);
+            }
+            if (current == null) {
                 current = additionalPropertySchema(currentSchema);
                 if (current == null) {
                     return null;
@@ -584,6 +588,37 @@ public class OperatorLibraryValidator {
             return objectProperty(additionalSchema);
         }
         return null;
+    }
+
+    private static Map<String, Object> patternPropertySchema(Map<String, Object> schema, String propertyName) {
+        List<Map<String, Object>> matches = matchingPatternPropertySchemas(schema, propertyName);
+        return matches.size() == 1 ? matches.getFirst() : null;
+    }
+
+    private static List<Map<String, Object>> matchingPatternPropertySchemas(Map<String, Object> schema,
+                                                                            String propertyName) {
+        Object raw = schema.get("patternProperties");
+        if (!(raw instanceof Map<?, ?> rawMap)) {
+            return List.of();
+        }
+        List<Map<String, Object>> matches = new ArrayList<>();
+        for (Map.Entry<?, ?> entry : rawMap.entrySet()) {
+            String pattern = String.valueOf(entry.getKey());
+            if (patternMatches(pattern, propertyName) && entry.getValue() instanceof Map<?, ?> nested) {
+                Map<String, Object> copy = new LinkedHashMap<>();
+                nested.forEach((key, item) -> copy.put(String.valueOf(key), item));
+                matches.add(copy);
+            }
+        }
+        return matches;
+    }
+
+    private static boolean patternMatches(String pattern, String value) {
+        try {
+            return Pattern.compile(pattern).matcher(value).find();
+        } catch (PatternSyntaxException ex) {
+            return false;
+        }
     }
 
     private static void validateDslSchemaPropertyNames(OperatorDefinition operator,

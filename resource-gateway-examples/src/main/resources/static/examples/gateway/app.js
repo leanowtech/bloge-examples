@@ -240,7 +240,6 @@ const UNSUPPORTED_SCHEMA_CONSTRAINT_KEYWORDS = [
   'minContains',
   'maxContains',
   'prefixItems',
-  'patternProperties',
   'dependentRequired',
   'dependentSchemas',
   'unevaluatedProperties',
@@ -4876,6 +4875,11 @@ function schemaAtPath(schemaEnvelope, path) {
     if (!segment) continue;
     const properties = current.properties || {};
     if (!Object.prototype.hasOwnProperty.call(properties, segment)) {
+      const pattern = patternPropertySchema(current, segment);
+      if (pattern) {
+        current = pattern;
+        continue;
+      }
       const additional = additionalPropertySchema(current);
       if (!additional) {
         return null;
@@ -4896,6 +4900,11 @@ function additionalPropertySchema(schema) {
   return additional && typeof additional === 'object' && !Array.isArray(additional)
     ? additional
     : null;
+}
+
+function patternPropertySchema(schema, propertyName) {
+  const matches = matchingPatternPropertySchemas(schema, propertyName);
+  return matches.length === 1 ? matches[0] : null;
 }
 
 function currentGraphInputSchema(builder = state.builder) {
@@ -5062,6 +5071,7 @@ function validateSchemaStructure(schema, path, diagnostics) {
   validateSchemaArrayItemBounds(schema, kind, path, diagnostics);
   validateSchemaArrayUniqueItems(schema, kind, path, diagnostics);
   validateSchemaObjectPropertyBounds(schema, kind, path, diagnostics);
+  validateSchemaObjectPatternProperties(schema, kind, path, diagnostics);
   validateSchemaObjectPropertyNames(schema, kind, path, diagnostics);
   if (kind === 'object') {
     const properties = validatedSchemaObjectProperties(schema, path, diagnostics);
@@ -5632,6 +5642,48 @@ function validateSchemaObjectPropertyBounds(schema, kind, path, diagnostics) {
   }
 }
 
+function validateSchemaObjectPatternProperties(schema, kind, path, diagnostics) {
+  if (!Object.prototype.hasOwnProperty.call(schema || {}, 'patternProperties')) {
+    return;
+  }
+  if (kind !== 'object') {
+    diagnostics.push(graphInputSchemaDiagnostic(
+      'visual.schema.patternPropertiesConstraintTypeMismatch',
+      'Object patternProperties constraints require schema type/kind object.',
+      path
+    ));
+  }
+  const patternProperties = schemaPatternProperties(schema);
+  if (!patternProperties) {
+    diagnostics.push(graphInputSchemaDiagnostic(
+      'visual.schema.patternPropertiesInvalid',
+      'Object schema patternProperties must be an object whose values are schemas.',
+      `${path}/patternProperties`
+    ));
+    return;
+  }
+  for (const [pattern, childSchema] of Object.entries(patternProperties)) {
+    try {
+      new RegExp(pattern);
+    } catch {
+      diagnostics.push(graphInputSchemaDiagnostic(
+        'visual.schema.patternPropertiesPatternInvalid',
+        `Object patternProperties key '${pattern}' must be a valid regular expression.`,
+        `${path}/patternProperties/${pattern}`
+      ));
+    }
+    if (!childSchema || typeof childSchema !== 'object' || Array.isArray(childSchema)) {
+      diagnostics.push(graphInputSchemaDiagnostic(
+        'visual.schema.patternPropertiesInvalid',
+        `Object patternProperties entry '${pattern}' must be a schema object.`,
+        `${path}/patternProperties/${pattern}`
+      ));
+      continue;
+    }
+    validateSchemaStructure(childSchema, `${path}/patternProperties/${pattern}`, diagnostics);
+  }
+}
+
 function validateSchemaObjectPropertyNames(schema, kind, path, diagnostics) {
   if (!Object.prototype.hasOwnProperty.call(schema || {}, 'propertyNames')) {
     return;
@@ -5691,6 +5743,35 @@ function schemaObjectProperties(schema) {
   return properties && typeof properties === 'object' && !Array.isArray(properties)
     ? properties
     : {};
+}
+
+function schemaPatternProperties(schema) {
+  const patternProperties = schema?.patternProperties;
+  return patternProperties && typeof patternProperties === 'object' && !Array.isArray(patternProperties)
+    ? patternProperties
+    : null;
+}
+
+function matchingPatternPropertySchemas(schema, propertyName) {
+  const patternProperties = schemaPatternProperties(schema);
+  if (!patternProperties) {
+    return [];
+  }
+  const matches = [];
+  for (const [pattern, childSchema] of Object.entries(patternProperties)) {
+    if (patternMatches(pattern, propertyName) && childSchema && typeof childSchema === 'object' && !Array.isArray(childSchema)) {
+      matches.push(childSchema);
+    }
+  }
+  return matches;
+}
+
+function patternMatches(pattern, value) {
+  try {
+    return new RegExp(pattern).test(value);
+  } catch {
+    return false;
+  }
 }
 
 function schemaPropertyNameSchema(schema) {
@@ -6215,11 +6296,21 @@ function objectSchemaCompatibilityIssue(sourceSchema, targetSchema, path = '') {
   for (const [propertyName, sourceProperty] of Object.entries(sourceProperties)) {
     const childPath = appendCompatibilityPath(path, propertyName);
     const targetProperty = targetProperties[propertyName];
+    const targetPatternSchemas = matchingPatternPropertySchemas(targetSchema, propertyName);
     if (targetProperty) {
       const nested = schemaCompatibilityIssue(sourceProperty, targetProperty, childPath);
       if (nested) {
         return nested;
       }
+    }
+    for (const targetPatternSchema of targetPatternSchemas) {
+      const nested = schemaCompatibilityIssue(sourceProperty, targetPatternSchema, childPath);
+      if (nested) {
+        return nested;
+      }
+    }
+    if (targetProperty || targetPatternSchemas.length) {
+      continue;
     } else if (targetAdditional === false) {
       return reasonAt(childPath, `source object declares additional field '${propertyName}' but target additionalProperties=false`);
     } else if (targetAdditional && typeof targetAdditional === 'object') {
@@ -6244,8 +6335,30 @@ function objectSchemaCompatibilityIssue(sourceSchema, targetSchema, path = '') {
       }
     }
   }
-  return objectPropertyNamesCompatibilityIssue(sourceSchema, targetSchema, path)
+  return objectPatternPropertiesCompatibilityIssue(sourceSchema, targetSchema, path)
+    || objectPropertyNamesCompatibilityIssue(sourceSchema, targetSchema, path)
     || objectPropertyBoundsCompatibilityIssue(sourceSchema, targetSchema, path);
+}
+
+function objectPatternPropertiesCompatibilityIssue(sourceSchema, targetSchema, path = '') {
+  const targetPatterns = schemaPatternProperties(targetSchema);
+  if (!targetPatterns || !Object.keys(targetPatterns).length) {
+    return '';
+  }
+  const sourceValues = schemaEnumValues(sourceSchema);
+  if (sourceValues.length
+      && sourceValues.every((value) => value !== null && typeof value === 'object' && !Array.isArray(value))
+      && sourceValues.every((value) => objectValueMatchesSchema(value, targetSchema))) {
+    return '';
+  }
+  const sourcePatterns = schemaPatternProperties(sourceSchema);
+  if ((!sourcePatterns || !Object.keys(sourcePatterns).length) && sourceSchema?.additionalProperties === false) {
+    return '';
+  }
+  if (sourcePatterns && canonicalSchemaValueKey(sourcePatterns) === canonicalSchemaValueKey(targetPatterns)) {
+    return '';
+  }
+  return reasonAt(path, 'target requires patternProperties but source does not guarantee matching dynamic fields');
 }
 
 function objectPropertyNamesCompatibilityIssue(sourceSchema, targetSchema, path = '') {
@@ -6621,6 +6734,9 @@ function objectValueMatchesSchema(value, schema) {
   if (!objectValueMatchesPropertyNames(value, schema)) {
     return false;
   }
+  if (!objectValueMatchesPatternProperties(value, schema)) {
+    return false;
+  }
   const properties = schemaObjectProperties(schema);
   for (const required of schemaRequiredNames(schema)) {
     if (!Object.prototype.hasOwnProperty.call(value, required) || value[required] === null) {
@@ -6629,10 +6745,19 @@ function objectValueMatchesSchema(value, schema) {
   }
   const additional = schema?.additionalProperties;
   for (const [key, item] of Object.entries(value)) {
+    const patternSchemas = matchingPatternPropertySchemas(schema, key);
     if (Object.prototype.hasOwnProperty.call(properties, key)) {
       if (!schemaValueMatchesSchema(item, properties[key])) {
         return false;
       }
+    }
+    for (const patternSchema of patternSchemas) {
+      if (!schemaValueMatchesSchema(item, patternSchema)) {
+        return false;
+      }
+    }
+    if (Object.prototype.hasOwnProperty.call(properties, key) || patternSchemas.length) {
+      continue;
     } else if (additional === false) {
       return false;
     } else if (additional && typeof additional === 'object' && !Array.isArray(additional)
@@ -6666,6 +6791,20 @@ function objectValueMatchesPropertyNames(value, schema) {
   }
   const effectiveSchema = effectivePropertyNameSchema(propertyNameSchema);
   return Object.keys(value).every((name) => schemaValueMatchesSchema(name, effectiveSchema));
+}
+
+function objectValueMatchesPatternProperties(value, schema) {
+  if (value === null || typeof value !== 'object' || Array.isArray(value)) {
+    return true;
+  }
+  for (const [key, item] of Object.entries(value)) {
+    for (const patternSchema of matchingPatternPropertySchemas(schema, key)) {
+      if (!schemaValueMatchesSchema(item, patternSchema)) {
+        return false;
+      }
+    }
+  }
+  return true;
 }
 
 function schemaMinItems(schema) {

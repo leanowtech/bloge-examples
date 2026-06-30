@@ -59,7 +59,6 @@ public final class VisualSchemaValidator {
             "minContains",
             "maxContains",
             "prefixItems",
-            "patternProperties",
             "dependentRequired",
             "dependentSchemas",
             "unevaluatedProperties",
@@ -143,6 +142,7 @@ public final class VisualSchemaValidator {
 	        validateArrayItemBounds(schema, kind, path, diagnostics);
 	        validateArrayUniqueItems(schema, kind, path, diagnostics);
 	        validateObjectPropertyBounds(schema, kind, path, diagnostics);
+	        validateObjectPatternProperties(schema, kind, path, diagnostics);
 	        validateObjectPropertyNames(schema, kind, path, diagnostics);
 	        validateDefaultValue(schema, kind, path, diagnostics);
         if ("object".equals(kind)) {
@@ -258,6 +258,11 @@ public final class VisualSchemaValidator {
 	                        "Schema default must satisfy object propertyNames constraint.",
 	                        path));
 	            }
+	            if (!objectValueMatchesPatternProperties(object, schema)) {
+	                diagnostics.add(VisualDiagnostic.error("visual.schema.defaultConstraintMismatch",
+	                        "Schema default must satisfy object patternProperties constraints.",
+	                        path));
+	            }
 	            Map<String, Object> properties = propertiesWithoutDiagnostics(schema);
             for (String required : requiredNamesWithoutDiagnostics(schema)) {
                 if (!object.containsKey(required) || object.get(required) == null) {
@@ -269,9 +274,17 @@ public final class VisualSchemaValidator {
             Object additional = schema.get("additionalProperties");
             for (Map.Entry<String, Object> entry : object.entrySet()) {
                 Object property = properties.get(entry.getKey());
+                List<Map<String, Object>> patternProperties = matchingPatternPropertySchemas(schema, entry.getKey());
                 if (property instanceof Map<?, ?> nested) {
                     validateDefaultValue((Map<String, Object>) nested, schemaKind((Map<String, Object>) nested),
                             path + "/" + entry.getKey(), diagnostics, entry.getValue());
+                }
+                for (Map<String, Object> patternProperty : patternProperties) {
+                    validateDefaultValue(patternProperty, schemaKind(patternProperty),
+                            path + "/" + entry.getKey(), diagnostics, entry.getValue());
+                }
+                if (property instanceof Map<?, ?> || !patternProperties.isEmpty()) {
+                    continue;
                 } else if (Boolean.FALSE.equals(additional)) {
                     diagnostics.add(VisualDiagnostic.error("visual.schema.defaultUnknownProperty",
                             "Schema default contains undeclared property '%s'.".formatted(entry.getKey()),
@@ -432,6 +445,45 @@ public final class VisualSchemaValidator {
         diagnostics.add(VisualDiagnostic.error("visual.schema.additionalPropertiesInvalid",
                 "Object schema additionalProperties must be a boolean or schema object.",
                 path + "/additionalProperties"));
+    }
+
+    @SuppressWarnings("unchecked")
+    private static void validateObjectPatternProperties(Map<String, Object> schema,
+                                                        String kind,
+                                                        String path,
+                                                        List<VisualDiagnostic> diagnostics) {
+        if (!schema.containsKey("patternProperties")) {
+            return;
+        }
+        if (!objectKind(kind)) {
+            diagnostics.add(VisualDiagnostic.error("visual.schema.patternPropertiesConstraintTypeMismatch",
+                    "Object patternProperties constraints require schema type/kind object.",
+                    path));
+        }
+        Map<String, Object> patternProperties = patternPropertiesOf(schema);
+        if (patternProperties == null) {
+            diagnostics.add(VisualDiagnostic.error("visual.schema.patternPropertiesInvalid",
+                    "Object schema patternProperties must be an object whose values are schemas.",
+                    path + "/patternProperties"));
+            return;
+        }
+        for (Map.Entry<String, Object> entry : patternProperties.entrySet()) {
+            String pattern = entry.getKey();
+            try {
+                Pattern.compile(pattern);
+            } catch (PatternSyntaxException ex) {
+                diagnostics.add(VisualDiagnostic.error("visual.schema.patternPropertiesPatternInvalid",
+                        "Object patternProperties key '%s' must be a valid regular expression.".formatted(pattern),
+                        path + "/patternProperties/" + pattern));
+            }
+            if (!(entry.getValue() instanceof Map<?, ?> nested)) {
+                diagnostics.add(VisualDiagnostic.error("visual.schema.patternPropertiesInvalid",
+                        "Object patternProperties entry '%s' must be a schema object.".formatted(pattern),
+                        path + "/patternProperties/" + pattern));
+                continue;
+            }
+            validateSchema((Map<String, Object>) nested, path + "/patternProperties/" + pattern, diagnostics);
+        }
     }
 
     private static void validateObjectPropertyNames(Map<String, Object> schema,
@@ -1081,6 +1133,53 @@ public final class VisualSchemaValidator {
 	        return value.keySet().stream().allMatch(name -> valueMatchesSchema(name, effectiveSchema));
 	    }
 
+	    private static boolean objectValueMatchesPatternProperties(Map<String, Object> value,
+	                                                               Map<String, Object> schema) {
+	        for (Map.Entry<String, Object> entry : value.entrySet()) {
+	            for (Map<String, Object> patternSchema : matchingPatternPropertySchemas(schema, entry.getKey())) {
+	                if (!valueMatchesSchema(entry.getValue(), patternSchema)) {
+	                    return false;
+	                }
+	            }
+	        }
+	        return true;
+	    }
+
+	    private static List<Map<String, Object>> matchingPatternPropertySchemas(Map<String, Object> schema,
+	                                                                            String propertyName) {
+	        Map<String, Object> patternProperties = patternPropertiesOf(schema);
+	        if (patternProperties == null || patternProperties.isEmpty()) {
+	            return List.of();
+	        }
+	        List<Map<String, Object>> matches = new ArrayList<>();
+	        for (Map.Entry<String, Object> entry : patternProperties.entrySet()) {
+	            if (patternMatches(entry.getKey(), propertyName) && entry.getValue() instanceof Map<?, ?> nested) {
+	                Map<String, Object> copy = new LinkedHashMap<>();
+	                nested.forEach((key, item) -> copy.put(String.valueOf(key), item));
+	                matches.add(copy);
+	            }
+	        }
+	        return matches;
+	    }
+
+	    private static Map<String, Object> patternPropertiesOf(Map<String, Object> schema) {
+	        Object raw = schema.get("patternProperties");
+	        if (!(raw instanceof Map<?, ?> rawMap)) {
+	            return null;
+	        }
+	        Map<String, Object> patternProperties = new LinkedHashMap<>();
+	        rawMap.forEach((key, item) -> patternProperties.put(String.valueOf(key), item));
+	        return patternProperties;
+	    }
+
+	    private static boolean patternMatches(String pattern, String value) {
+	        try {
+	            return Pattern.compile(pattern).matcher(value).find();
+	        } catch (PatternSyntaxException ex) {
+	            return false;
+	        }
+	    }
+
 	    private static Map<String, Object> propertyNameSchema(Map<String, Object> schema) {
 	        Object raw = schema.get("propertyNames");
 	        if (!(raw instanceof Map<?, ?> rawMap)) {
@@ -1112,6 +1211,9 @@ public final class VisualSchemaValidator {
 	        if (!objectValueMatchesPropertyNames(object, schema)) {
 	            return false;
 	        }
+	        if (!objectValueMatchesPatternProperties(object, schema)) {
+	            return false;
+	        }
 	        for (String required : requiredNamesWithoutDiagnostics(schema)) {
 	            if (!object.containsKey(required) || object.get(required) == null) {
 	                return false;
@@ -1121,10 +1223,19 @@ public final class VisualSchemaValidator {
 	        Object additional = schema.get("additionalProperties");
 	        for (Map.Entry<String, Object> entry : object.entrySet()) {
 	            Object property = properties.get(entry.getKey());
+	            List<Map<String, Object>> patternSchemas = matchingPatternPropertySchemas(schema, entry.getKey());
 	            if (property instanceof Map<?, ?> propertySchema) {
 	                if (!valueMatchesSchema(entry.getValue(), (Map<String, Object>) propertySchema)) {
 	                    return false;
 	                }
+	            }
+	            for (Map<String, Object> patternSchema : patternSchemas) {
+	                if (!valueMatchesSchema(entry.getValue(), patternSchema)) {
+	                    return false;
+	                }
+	            }
+	            if (property instanceof Map<?, ?> || !patternSchemas.isEmpty()) {
+	                continue;
 	            } else if (Boolean.FALSE.equals(additional)) {
 	                return false;
 	            } else if (additional instanceof Map<?, ?> additionalSchema

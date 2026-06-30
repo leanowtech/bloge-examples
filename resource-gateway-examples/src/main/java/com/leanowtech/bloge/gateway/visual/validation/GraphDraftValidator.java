@@ -930,6 +930,9 @@ public class GraphDraftValidator {
             }
             current = objectProperty(properties.get(segment));
             if (current == null) {
+                current = patternPropertySchema(currentSchema, segment);
+            }
+            if (current == null) {
                 current = additionalPropertySchema(currentSchema);
                 if (current == null) {
                     return null;
@@ -1190,6 +1193,11 @@ public class GraphDraftValidator {
         return null;
     }
 
+    private static Map<String, Object> patternPropertySchema(Map<String, Object> schema, String propertyName) {
+        List<Map<String, Object>> matches = matchingPatternPropertySchemas(schema, propertyName);
+        return matches.size() == 1 ? matches.getFirst() : null;
+    }
+
     private static boolean constantValueMatchesSchema(Object value, Map<String, Object> schema) {
         List<Object> domainValues = enumValues(schema);
         if (!domainValues.isEmpty() && !domainValues.contains(value)) {
@@ -1230,6 +1238,9 @@ public class GraphDraftValidator {
 	        if (!objectValueMatchesPropertyNames(object, schema)) {
 	            return false;
 	        }
+	        if (!objectValueMatchesPatternProperties(object, schema)) {
+	            return false;
+	        }
 
 	        for (String required : requiredNamesOf(schema)) {
             if (!object.containsKey(required) || object.get(required) == null) {
@@ -1241,10 +1252,19 @@ public class GraphDraftValidator {
         Object additional = schema.get("additionalProperties");
         for (Map.Entry<String, Object> entry : object.entrySet()) {
             Map<String, Object> property = objectProperty(properties.get(entry.getKey()));
+            List<Map<String, Object>> patternSchemas = matchingPatternPropertySchemas(schema, entry.getKey());
             if (property != null) {
                 if (!constantValueMatchesSchema(entry.getValue(), property)) {
                     return false;
                 }
+            }
+            for (Map<String, Object> patternSchema : patternSchemas) {
+                if (!constantValueMatchesSchema(entry.getValue(), patternSchema)) {
+                    return false;
+                }
+            }
+            if (property != null || !patternSchemas.isEmpty()) {
+                continue;
             } else if (Boolean.FALSE.equals(additional)) {
                 return false;
             } else if (additional instanceof Map<?, ?> additionalSchema
@@ -1288,6 +1308,53 @@ public class GraphDraftValidator {
 	        return value.keySet().stream()
 	                .map(String::valueOf)
 	                .allMatch(name -> constantValueMatchesSchema(name, effectiveSchema));
+	    }
+
+	    private static boolean objectValueMatchesPatternProperties(Map<?, ?> value, Map<String, Object> schema) {
+	        for (Map.Entry<?, ?> entry : value.entrySet()) {
+	            for (Map<String, Object> patternSchema : matchingPatternPropertySchemas(schema,
+	                    String.valueOf(entry.getKey()))) {
+	                if (!constantValueMatchesSchema(entry.getValue(), patternSchema)) {
+	                    return false;
+	                }
+	            }
+	        }
+	        return true;
+	    }
+
+	    private static List<Map<String, Object>> matchingPatternPropertySchemas(Map<String, Object> schema,
+	                                                                            String propertyName) {
+	        Map<String, Object> patternProperties = patternPropertiesOf(schema);
+	        if (patternProperties == null || patternProperties.isEmpty()) {
+	            return List.of();
+	        }
+	        List<Map<String, Object>> matches = new ArrayList<>();
+	        for (Map.Entry<String, Object> entry : patternProperties.entrySet()) {
+	            if (patternMatches(entry.getKey(), propertyName) && entry.getValue() instanceof Map<?, ?> nested) {
+	                Map<String, Object> copy = new LinkedHashMap<>();
+	                nested.forEach((key, item) -> copy.put(String.valueOf(key), item));
+	                matches.add(copy);
+	            }
+	        }
+	        return matches;
+	    }
+
+	    private static Map<String, Object> patternPropertiesOf(Map<String, Object> schema) {
+	        Object raw = schema.get("patternProperties");
+	        if (!(raw instanceof Map<?, ?> rawMap)) {
+	            return null;
+	        }
+	        Map<String, Object> patternProperties = new LinkedHashMap<>();
+	        rawMap.forEach((key, item) -> patternProperties.put(String.valueOf(key), item));
+	        return patternProperties;
+	    }
+
+	    private static boolean patternMatches(String pattern, String value) {
+	        try {
+	            return Pattern.compile(pattern).matcher(value).find();
+	        } catch (PatternSyntaxException ex) {
+	            return false;
+	        }
 	    }
 
 	    private static Map<String, Object> propertyNameSchema(Map<String, Object> schema) {
@@ -1500,6 +1567,12 @@ public class GraphDraftValidator {
 	                    path));
 	            return;
 	        }
+	        if (!objectValueMatchesPatternProperties(object, schema)) {
+	            diagnostics.add(VisualDiagnostic.error("visual.config.constraintMismatch",
+	                    "Config value at '%s' must satisfy object patternProperties constraints.".formatted(path),
+	                    path));
+	            return;
+	        }
 	        Map<String, Object> properties = propertiesOf(schema);
         for (String required : requiredNamesOf(schema)) {
             if (!object.containsKey(required) || object.get(required) == null) {
@@ -1511,8 +1584,15 @@ public class GraphDraftValidator {
         Object additional = schema.get("additionalProperties");
         for (Map.Entry<String, Object> entry : object.entrySet()) {
             Map<String, Object> property = objectProperty(properties.get(entry.getKey()));
+            List<Map<String, Object>> patternSchemas = matchingPatternPropertySchemas(schema, entry.getKey());
             if (property != null) {
                 validateConfigValue(entry.getValue(), property, path + "/fields/" + entry.getKey(), diagnostics);
+            }
+            for (Map<String, Object> patternSchema : patternSchemas) {
+                validateConfigValue(entry.getValue(), patternSchema, path + "/fields/" + entry.getKey(), diagnostics);
+            }
+            if (property != null || !patternSchemas.isEmpty()) {
+                continue;
             } else if (Boolean.FALSE.equals(additional)) {
                 diagnostics.add(VisualDiagnostic.error("visual.config.unknown",
                         "Config '%s' is not declared by configSchema.".formatted(entry.getKey()),
@@ -1548,6 +1628,12 @@ public class GraphDraftValidator {
 	                    path));
 	            return;
 	        }
+	        if (!objectValueMatchesPatternProperties(object, schema)) {
+	            diagnostics.add(VisualDiagnostic.error("visual.config.constraintMismatch",
+	                    "Config value at '%s' must satisfy object patternProperties constraints.".formatted(path),
+	                    path));
+	            return;
+	        }
 	        Map<String, Object> properties = propertiesOf(schema);
         for (String required : requiredNamesOf(schema)) {
             if (!object.containsKey(required) || object.get(required) == null) {
@@ -1559,8 +1645,15 @@ public class GraphDraftValidator {
         Object additional = schema.get("additionalProperties");
         for (Map.Entry<String, Object> entry : object.entrySet()) {
             Map<String, Object> property = objectProperty(properties.get(entry.getKey()));
+            List<Map<String, Object>> patternSchemas = matchingPatternPropertySchemas(schema, entry.getKey());
             if (property != null) {
                 validateConfigValue(entry.getValue(), property, path + "/" + entry.getKey(), diagnostics);
+            }
+            for (Map<String, Object> patternSchema : patternSchemas) {
+                validateConfigValue(entry.getValue(), patternSchema, path + "/" + entry.getKey(), diagnostics);
+            }
+            if (property != null || !patternSchemas.isEmpty()) {
+                continue;
             } else if (Boolean.FALSE.equals(additional)) {
                 diagnostics.add(VisualDiagnostic.error("visual.config.unknown",
                         "Config '%s' is not declared by configSchema.".formatted(entry.getKey()),
