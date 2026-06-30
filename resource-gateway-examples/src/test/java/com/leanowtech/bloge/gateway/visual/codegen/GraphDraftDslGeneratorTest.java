@@ -624,6 +624,53 @@ class GraphDraftDslGeneratorTest {
     }
 
     @Test
+    void rejectsObjectTemplateKeysThatCannotRenderAsDslObjectFields() {
+        GraphDraftDslGenerator generator = new GraphDraftDslGenerator(
+                VisualCatalogTestSupport.catalogWithLibrary(nativeDynamicObjectPolicyLibrary()));
+        GraphDraft draft = new GraphDraft(
+                "",
+                "",
+                0,
+                "nativeDynamicObjectInput",
+                "",
+                "",
+                "",
+                "",
+                null,
+                List.of(new GraphDraft.DraftNode(
+                        "policy",
+                        "risk:dynamicObjectPolicy",
+                        "",
+                        Map.of("payload", new GraphDraft.Binding(
+                                "objectTemplate",
+                                null,
+                                "",
+                                "",
+                                "",
+                                "payload",
+                                "",
+                                "",
+                                Map.of("mode", GraphDraft.Binding.expression("ctx.riskMode"))
+                        )),
+                        Map.of(),
+                        null
+                )),
+                List.of(),
+                Map.of(),
+                new GraphDraft.OutputSelection("policy", "")
+        );
+
+        DslGenerationResult result = generator.generate(draft);
+
+        assertThat(result.generated()).isFalse();
+        assertThat(result.diagnostics())
+                .anySatisfy(diagnostic -> {
+                    assertThat(diagnostic.code()).isEqualTo("visual.codegen.objectBindingKey.invalid");
+                    assertThat(diagnostic.target()).isEqualTo("/nodes/policy/inputs/payload/fields/mode");
+                });
+    }
+
+    @Test
     void lowersNativeOperatorConfigSchemaValuesAsConfigInputObject() {
         GraphDraftDslGenerator generator = new GraphDraftDslGenerator(
                 VisualCatalogTestSupport.catalogWithLibrary(nativeConfigurablePolicyLibrary()));
@@ -805,6 +852,58 @@ class GraphDraftDslGeneratorTest {
                     assertThat(diagnostic.code()).isEqualTo("visual.codegen.transformAssignmentKey.invalid");
                     assertThat(diagnostic.target()).isEqualTo("/nodes/mapResult/config/assignments/mode");
                 });
+    }
+
+    @Test
+    void rejectsDecisionTableKeysThatCannotRenderAsDslFields() {
+        GraphDraftDslGenerator generator = new GraphDraftDslGenerator(
+                VisualCatalogTestSupport.catalogWithLibrary(
+                        VisualCatalogTestSupport.eligibilityLibrary("integer")));
+        GraphDraft draft = new GraphDraft(
+                "",
+                "",
+                0,
+                "decisionTableKeywordOutput",
+                "",
+                "",
+                "",
+                "",
+                null,
+                List.of(new GraphDraft.DraftNode(
+                        "decision",
+                        "bloge:decisionTable",
+                        "",
+                        Map.of(),
+                        Map.of(
+                                "inputs", Map.of("mode", "score"),
+                                "rules", List.of(Map.of(
+                                        "conditions", "score: score >= 700",
+                                        "output", Map.of(
+                                                "customer-id", "C-1",
+                                                "otherwise", false,
+                                                "details", Map.of("risk-band", "low")
+                                        )
+                                ))
+                        ),
+                        null
+                )),
+                List.of(),
+                Map.of(),
+                new GraphDraft.OutputSelection("decision", "")
+        );
+
+        DslGenerationResult result = generator.generate(draft);
+
+        assertThat(result.generated()).isFalse();
+        assertThat(result.diagnostics())
+                .filteredOn(diagnostic -> diagnostic.code().startsWith("visual.codegen.decisionTable"))
+                .extracting("target")
+                .containsExactlyInAnyOrder(
+                        "/nodes/decision/config/inputs/mode",
+                        "/nodes/decision/config/rules/0/output/customer-id",
+                        "/nodes/decision/config/rules/0/output/otherwise",
+                        "/nodes/decision/config/rules/0/output/details/risk-band"
+                );
     }
 
     @Test
@@ -1227,6 +1326,44 @@ class GraphDraftDslGeneratorTest {
                 "bloge.visualOperatorLibrary.v1",
                 "risk-native-nested-policy",
                 "Risk native nested policy operators",
+                "1.0.0",
+                "risk-team",
+                "ACTIVE",
+                List.of(operator)
+        );
+    }
+
+    private static OperatorLibrary nativeDynamicObjectPolicyLibrary() {
+        Map<String, Object> payloadSchema = new LinkedHashMap<>();
+        payloadSchema.put("type", "object");
+        payloadSchema.put("additionalProperties", true);
+        OperatorDefinition operator = new OperatorDefinition(
+                "bloge.visualOperator.v1",
+                "risk:dynamicObjectPolicy",
+                "1.0.0",
+                new OperatorDefinition.Display("Dynamic object policy",
+                        "Accepts dynamic payload fields.",
+                        List.of("risk", "dynamic")),
+                new OperatorDefinition.Source("user-library", "", "", "", false),
+                new OperatorDefinition.Ports(
+                        List.of(new OperatorDefinition.Port("payload",
+                                new SchemaEnvelope(SchemaEnvelope.JSON_SCHEMA, "2020-12", payloadSchema),
+                                true,
+                                "Dynamic payload.")),
+                        List.of(new OperatorDefinition.Port("output",
+                                SchemaEnvelope.object(Map.of("decision", Map.of("type", "string")), List.of()),
+                                true,
+                                "Policy output."))
+                ),
+                SchemaEnvelope.opaque(),
+                OperatorDefinition.Capabilities.pure(),
+                new OperatorDefinition.Lowering("native", "riskDynamicObjectPolicy", Map.of()),
+                List.of()
+        );
+        return new OperatorLibrary(
+                "bloge.visualOperatorLibrary.v1",
+                "risk-dynamic-object-policy",
+                "Risk dynamic object policy operators",
                 "1.0.0",
                 "risk-team",
                 "ACTIVE",

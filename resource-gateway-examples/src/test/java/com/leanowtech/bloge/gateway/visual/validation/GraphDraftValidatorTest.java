@@ -1063,6 +1063,58 @@ class GraphDraftValidatorTest {
     }
 
     @Test
+    void rejectsDecisionTableKeysThatCannotRenderAsDslFields() {
+        GraphDraftValidator validator = new GraphDraftValidator(
+                VisualCatalogTestSupport.catalogWithLibrary(
+                        VisualCatalogTestSupport.eligibilityLibrary("integer")));
+        GraphDraft draft = new GraphDraft(
+                "",
+                "",
+                0,
+                "invalidDecisionTableKeys",
+                "",
+                "",
+                "",
+                "",
+                null,
+                List.of(new GraphDraft.DraftNode(
+                        "decision",
+                        "bloge:decisionTable",
+                        "",
+                        Map.of(),
+                        Map.of(
+                                "inputs", Map.of("mode", "score"),
+                                "rules", List.of(Map.of(
+                                        "conditions", "score: score >= 700",
+                                        "output", Map.of(
+                                                "customer-id", "C-1",
+                                                "otherwise", false,
+                                                "details", Map.of("risk-band", "low")
+                                        )
+                                ))
+                        ),
+                        null
+                )),
+                List.of(),
+                Map.of(),
+                new GraphDraft.OutputSelection("decision", "")
+        );
+
+        VisualValidationResult result = validator.validate(draft);
+
+        assertThat(result.valid()).isFalse();
+        assertThat(result.diagnostics())
+                .filteredOn(diagnostic -> diagnostic.code().startsWith("visual.decisionTable."))
+                .extracting("target")
+                .containsExactlyInAnyOrder(
+                        "/nodes/0/config/inputs/mode",
+                        "/nodes/0/config/rules/0/output/customer-id",
+                        "/nodes/0/config/rules/0/output/otherwise",
+                        "/nodes/0/config/rules/0/output/details/risk-band"
+                );
+    }
+
+    @Test
     void rejectsCycleCreatedByConfigExpressionReference() {
         GraphDraftValidator validator = new GraphDraftValidator(
                 VisualCatalogTestSupport.catalogWithLibrary(
@@ -1979,6 +2031,61 @@ class GraphDraftValidatorTest {
         VisualValidationResult result = validator.validate(draft);
 
         assertThat(result.valid()).isTrue();
+    }
+
+    @Test
+    void rejectsObjectTemplateFieldsThatCannotRenderAsDslObjectFields() {
+        GraphDraftValidator validator = new GraphDraftValidator(
+                VisualCatalogTestSupport.catalogWithLibrary(nativeDynamicObjectPolicyLibrary()));
+        GraphDraft draft = new GraphDraft(
+                "",
+                "",
+                0,
+                "dynamicPayloadPolicy",
+                "",
+                "",
+                "",
+                "",
+                graphInputSchema(Map.of(
+                        "riskMode", Map.of("type", "string"),
+                        "customerId", Map.of("type", "string")
+                ), List.of("riskMode", "customerId")),
+                List.of(new GraphDraft.DraftNode(
+                        "policy",
+                        "risk:dynamicObjectPolicy",
+                        "",
+                        Map.of("payload", new GraphDraft.Binding(
+                                "objectTemplate",
+                                null,
+                                "",
+                                "",
+                                "",
+                                "payload",
+                                "",
+                                "",
+                                Map.of(
+                                        "mode", GraphDraft.Binding.contextPath("riskMode"),
+                                        "customer-id", GraphDraft.Binding.contextPath("customerId")
+                                )
+                        )),
+                        Map.of(),
+                        null
+                )),
+                List.of(),
+                Map.of(),
+                new GraphDraft.OutputSelection("policy", "")
+        );
+
+        VisualValidationResult result = validator.validate(draft);
+
+        assertThat(result.valid()).isFalse();
+        assertThat(result.diagnostics())
+                .filteredOn(diagnostic -> "visual.binding.objectTemplateField.invalid".equals(diagnostic.code()))
+                .extracting("target")
+                .containsExactlyInAnyOrder(
+                        "/nodes/0/inputs/payload/fields/mode",
+                        "/nodes/0/inputs/payload/fields/customer-id"
+                );
     }
 
     @Test
@@ -5194,6 +5301,44 @@ class GraphDraftValidatorTest {
                 List.of(),
                 Map.of(),
                 new GraphDraft.OutputSelection("policy", "")
+        );
+    }
+
+    private static OperatorLibrary nativeDynamicObjectPolicyLibrary() {
+        Map<String, Object> payloadSchema = new LinkedHashMap<>();
+        payloadSchema.put("type", "object");
+        payloadSchema.put("additionalProperties", true);
+        OperatorDefinition operator = new OperatorDefinition(
+                "bloge.visualOperator.v1",
+                "risk:dynamicObjectPolicy",
+                "1.0.0",
+                new OperatorDefinition.Display("Dynamic object policy",
+                        "Accepts dynamic payload fields.",
+                        List.of("risk", "dynamic")),
+                new OperatorDefinition.Source("user-library", "", "", "", false),
+                new OperatorDefinition.Ports(
+                        List.of(new OperatorDefinition.Port("payload",
+                                new SchemaEnvelope(SchemaEnvelope.JSON_SCHEMA, "2020-12", payloadSchema),
+                                true,
+                                "Dynamic payload.")),
+                        List.of(new OperatorDefinition.Port("output",
+                                SchemaEnvelope.object(Map.of("decision", Map.of("type", "string")), List.of()),
+                                true,
+                                "Policy output."))
+                ),
+                SchemaEnvelope.opaque(),
+                OperatorDefinition.Capabilities.pure(),
+                new OperatorDefinition.Lowering("native", "riskDynamicObjectPolicy", Map.of()),
+                List.of()
+        );
+        return new OperatorLibrary(
+                "bloge.visualOperatorLibrary.v1",
+                "risk-dynamic-object-policy",
+                "Risk dynamic object policy operators",
+                "1.0.0",
+                "risk-team",
+                "ACTIVE",
+                List.of(operator)
         );
     }
 

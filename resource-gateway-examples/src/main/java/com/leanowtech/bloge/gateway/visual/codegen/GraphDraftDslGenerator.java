@@ -97,7 +97,7 @@ public class GraphDraftDslGenerator {
                              List<GraphDraft.DraftEdge> routeEdges,
                              List<VisualDiagnostic> diagnostics) {
         if ("resource-descriptor".equals(operator.source().kind())) {
-            return resourceNodeToDsl(node, operator, nodesById, dependencyEdges);
+            return resourceNodeToDsl(node, operator, nodesById, dependencyEdges, diagnostics);
         }
         if ("branch".equals(operator.lowering().mode())) {
             rejectUnsupportedExplicitDependencies(node, operator, dependencyEdges, diagnostics);
@@ -105,7 +105,7 @@ public class GraphDraftDslGenerator {
         }
         if ("transform".equals(operator.lowering().mode())) {
             rejectUnsupportedExplicitDependencies(node, operator, dependencyEdges, diagnostics);
-            return loweredTransformToDsl(node, operator, nodesById);
+            return loweredTransformToDsl(node, operator, nodesById, diagnostics);
         }
         if ("native".equals(operator.lowering().mode())
                 && !List.of("httpResource", "bloge:decisionTable", "bloge:transform")
@@ -113,10 +113,10 @@ public class GraphDraftDslGenerator {
             return nativeOperatorNodeToDsl(node, operator, nodesById, dependencyEdges, diagnostics);
         }
         return switch (operator.operatorRef()) {
-            case "httpResource" -> httpResourceNodeToDsl(node, nodesById, dependencyEdges);
+            case "httpResource" -> httpResourceNodeToDsl(node, nodesById, dependencyEdges, diagnostics);
             case "bloge:decisionTable" -> {
                 rejectUnsupportedExplicitDependencies(node, operator, dependencyEdges, diagnostics);
-                yield decisionTableToDsl(node, nodesById);
+                yield decisionTableToDsl(node, nodesById, diagnostics);
             }
             case "bloge:transform" -> {
                 rejectUnsupportedExplicitDependencies(node, operator, dependencyEdges, diagnostics);
@@ -167,21 +167,23 @@ public class GraphDraftDslGenerator {
             }
         }
         block.append("    }\n");
-        appendCommonExecutionConfig(block, node.config(), nodesById);
+        appendCommonExecutionConfig(block, node.config(), nodesById, "/nodes/" + node.id() + "/config",
+                diagnostics);
         block.append("  }");
         return block.toString();
     }
 
     private String loweredTransformToDsl(GraphDraft.DraftNode node,
                                          OperatorDefinition operator,
-                                         Map<String, GraphDraft.DraftNode> nodesById) {
+                                         Map<String, GraphDraft.DraftNode> nodesById,
+                                         List<VisualDiagnostic> diagnostics) {
         Map<String, String> inputExpressions = new LinkedHashMap<>();
         node.inputs().forEach((key, binding) -> addInputExpressionAliases(inputExpressions, key, binding,
-                bindingToExpression(binding, nodesById)));
+                bindingToExpression(binding, nodesById, "/nodes/" + node.id() + "/inputs/" + key, diagnostics)));
 
         Map<String, Object> assignments = objectMap(operator.lowering().parameters().get("assignments"));
         if (assignments.isEmpty()) {
-            return transformToDsl(node, nodesById, List.of());
+            return transformToDsl(node, nodesById, diagnostics);
         }
 
         StringBuilder block = new StringBuilder();
@@ -197,26 +199,33 @@ public class GraphDraftDslGenerator {
     private String resourceNodeToDsl(GraphDraft.DraftNode node,
                                      OperatorDefinition operator,
                                      Map<String, GraphDraft.DraftNode> nodesById,
-                                     List<String> dependencyEdges) {
+                                     List<String> dependencyEdges,
+                                     List<VisualDiagnostic> diagnostics) {
         String resourceId = stringValue(operator.lowering().parameters().get("resourceId"));
         StringBuilder block = new StringBuilder();
         block.append("  node ").append(node.id()).append(" : httpResource {\n");
         appendDependsOn(block, dependencyEdges);
         block.append("    input {\n")
                 .append("      resourceId = ").append(quote(resourceId)).append("\n")
-                .append("      params = ").append(renderObjectBindings(node.inputs(), nodesById)).append("\n")
+                .append("      params = ")
+                .append(renderObjectBindings(node.inputs(), nodesById,
+                        "/nodes/" + node.id() + "/inputs", diagnostics))
+                .append("\n")
                 .append("    }\n");
-        appendCommonExecutionConfig(block, node.config(), nodesById);
+        appendCommonExecutionConfig(block, node.config(), nodesById, "/nodes/" + node.id() + "/config",
+                diagnostics);
         block.append("  }");
         return block.toString();
     }
 
     private String httpResourceNodeToDsl(GraphDraft.DraftNode node,
                                          Map<String, GraphDraft.DraftNode> nodesById,
-                                         List<String> dependencyEdges) {
+                                         List<String> dependencyEdges,
+                                         List<VisualDiagnostic> diagnostics) {
         String resourceId = stringValue(node.config().get("resourceId"));
         if (resourceId.isBlank() && node.inputs().containsKey("resourceId")) {
-            resourceId = bindingToExpression(node.inputs().get("resourceId"), nodesById);
+            resourceId = bindingToExpression(node.inputs().get("resourceId"), nodesById,
+                    "/nodes/" + node.id() + "/inputs/resourceId", diagnostics);
         } else {
             resourceId = quote(resourceId);
         }
@@ -229,9 +238,13 @@ public class GraphDraftDslGenerator {
         appendDependsOn(block, dependencyEdges);
         block.append("    input {\n")
                 .append("      resourceId = ").append(resourceId).append("\n")
-                .append("      params = ").append(renderObjectBindings(params, nodesById)).append("\n")
+                .append("      params = ")
+                .append(renderObjectBindings(params, nodesById,
+                        "/nodes/" + node.id() + "/inputs/params/fields", diagnostics))
+                .append("\n")
                 .append("    }\n");
-        appendCommonExecutionConfig(block, node.config(), nodesById);
+        appendCommonExecutionConfig(block, node.config(), nodesById, "/nodes/" + node.id() + "/config",
+                diagnostics);
         block.append("  }");
         return block.toString();
     }
@@ -259,21 +272,32 @@ public class GraphDraftDslGenerator {
     }
 
     private String decisionTableToDsl(GraphDraft.DraftNode node,
-                                      Map<String, GraphDraft.DraftNode> nodesById) {
+                                      Map<String, GraphDraft.DraftNode> nodesById,
+                                      List<VisualDiagnostic> diagnostics) {
         Map<String, Object> inputConfig = objectMap(node.config().get("inputs"));
         Map<String, String> inputs = new LinkedHashMap<>();
         if (inputConfig.isEmpty()) {
             node.inputs().forEach((key, binding) -> inputs.put(targetInputName(key, binding),
-                    bindingToExpression(binding, nodesById)));
+                    bindingToExpression(binding, nodesById,
+                            "/nodes/" + node.id() + "/inputs/" + key, diagnostics)));
         } else {
-            inputConfig.forEach((key, value) -> inputs.put(key, expressionFromObject(value, nodesById)));
+            inputConfig.forEach((key, value) -> inputs.put(key, expressionFromObject(value, nodesById,
+                    "/nodes/" + node.id() + "/config/inputs/" + key, diagnostics)));
         }
         if (inputs.isEmpty()) {
             inputs.put("value", "ctx.value");
         }
 
         StringJoiner inputJoiner = new StringJoiner(",\n");
-        inputs.forEach((key, expression) -> inputJoiner.add("    " + key + " = " + expression));
+        inputs.forEach((key, expression) -> {
+            if (!isDslFieldName(key)) {
+                diagnostics.add(VisualDiagnostic.error("visual.codegen.decisionTableInputKey.invalid",
+                        "Decision table input key '%s' cannot be rendered as a BLOGE DSL field."
+                                .formatted(key),
+                        "/nodes/" + node.id() + "/config/inputs/" + key));
+            }
+            inputJoiner.add("    " + key + " = " + expression);
+        });
 
         String hitPolicy = stringValue(node.config().getOrDefault("hitPolicy", "unique"));
         String outputType = stringValue(node.config().getOrDefault("outputType",
@@ -290,8 +314,9 @@ public class GraphDraftDslGenerator {
         block.append("  decision_table ").append(node.id()).append("(\n")
                 .append(inputJoiner).append("\n")
                 .append("  ) hit=").append(hitPolicy).append(" -> ").append(outputType).append(" {\n");
-        for (Object rawRule : rules) {
-            block.append(ruleToDsl(rawRule)).append("\n");
+        for (int i = 0; i < rules.size(); i++) {
+            block.append(ruleToDsl(rules.get(i), "/nodes/" + node.id() + "/config/rules/" + i, diagnostics))
+                    .append("\n");
         }
         block.append("  }");
         return block.toString();
@@ -304,7 +329,8 @@ public class GraphDraftDslGenerator {
         Map<String, String> assignments = new LinkedHashMap<>();
         if (assignmentConfig.isEmpty()) {
             node.inputs().forEach((key, binding) -> assignments.put(targetInputName(key, binding),
-                    bindingToExpression(binding, nodesById)));
+                    bindingToExpression(binding, nodesById,
+                            "/nodes/" + node.id() + "/inputs/" + key, diagnostics)));
         } else {
             assignmentConfig.forEach((key, value) -> {
                 if (!isDslFieldName(key)) {
@@ -313,7 +339,8 @@ public class GraphDraftDslGenerator {
                                     .formatted(key),
                             "/nodes/" + node.id() + "/config/assignments/" + key));
                 }
-                assignments.put(key, expressionFromObject(value, nodesById));
+                assignments.put(key, expressionFromObject(value, nodesById,
+                        "/nodes/" + node.id() + "/config/assignments/" + key, diagnostics));
             });
         }
         if (assignments.isEmpty()) {
@@ -327,17 +354,17 @@ public class GraphDraftDslGenerator {
         return block.toString();
     }
 
-    private static String ruleToDsl(Object rawRule) {
+    private static String ruleToDsl(Object rawRule,
+                                    String path,
+                                    List<VisualDiagnostic> diagnostics) {
         Map<String, Object> rule = objectMap(rawRule);
         Map<String, Object> output = objectMap(rule.get("output"));
+        String outputPath = path + "/output";
         if (output.isEmpty()) {
-            output = new LinkedHashMap<>(rule);
-            output.remove("conditions");
-            output.remove("condition");
-            output.remove("otherwise");
-            output.remove("id");
+            output = decisionTableImplicitOutput(rule);
+            outputPath = path;
         }
-        String renderedOutput = renderLiteralMap(output);
+        String renderedOutput = renderDecisionTableOutput(output, outputPath, diagnostics);
         boolean otherwise = Boolean.TRUE.equals(rule.get("otherwise"));
         if (otherwise) {
             return "    otherwise -> " + renderedOutput;
@@ -358,17 +385,54 @@ public class GraphDraftDslGenerator {
         return "    rule (" + conditions + ") -> " + renderedOutput;
     }
 
+    private static Map<String, Object> decisionTableImplicitOutput(Map<String, Object> rule) {
+        Map<String, Object> output = new LinkedHashMap<>(rule);
+        output.remove("conditions");
+        output.remove("condition");
+        output.remove("otherwise");
+        output.remove("id");
+        return output;
+    }
+
+    private static String renderDecisionTableOutput(Map<?, ?> output,
+                                                    String path,
+                                                    List<VisualDiagnostic> diagnostics) {
+        if (output.isEmpty()) {
+            return "{}";
+        }
+        StringJoiner joiner = new StringJoiner(", ", "{ ", " }");
+        output.forEach((key, value) -> {
+            String name = String.valueOf(key);
+            if (!isDslFieldName(name)) {
+                diagnostics.add(VisualDiagnostic.error("visual.codegen.decisionTableOutputKey.invalid",
+                        "Decision table output key '%s' cannot be rendered as a BLOGE DSL object field."
+                                .formatted(name),
+                        path + "/" + name));
+            }
+            if (value instanceof Map<?, ?> nested) {
+                joiner.add(name + ": " + renderDecisionTableOutput(nested, path + "/" + name, diagnostics));
+            } else {
+                joiner.add(name + ": " + renderLiteral(value));
+            }
+        });
+        return joiner.toString();
+    }
+
     private static void appendCommonExecutionConfig(StringBuilder block,
                                                     Map<String, Object> config,
-                                                    Map<String, GraphDraft.DraftNode> nodesById) {
+                                                    Map<String, GraphDraft.DraftNode> nodesById,
+                                                    String path,
+                                                    List<VisualDiagnostic> diagnostics) {
         Object timeout = config.get("timeout");
         if (timeout != null && !String.valueOf(timeout).isBlank()) {
-            block.append("    timeout = ").append(expressionFromObject(timeout, nodesById)).append("\n");
+            block.append("    timeout = ")
+                    .append(expressionFromObject(timeout, nodesById, path + "/timeout", diagnostics))
+                    .append("\n");
         }
         Object retryAttempts = config.get("retryAttempts");
         if (retryAttempts != null) {
             block.append("    retry = { attempts: ")
-                    .append(expressionFromObject(retryAttempts, nodesById))
+                    .append(expressionFromObject(retryAttempts, nodesById, path + "/retryAttempts", diagnostics))
                     .append(", backoff: 200ms }\n");
         }
     }
@@ -385,7 +449,7 @@ public class GraphDraftDslGenerator {
         }
         Map<String, String> inputExpressions = new LinkedHashMap<>();
         node.inputs().forEach((key, binding) -> addInputExpressionAliases(inputExpressions, key, binding,
-                bindingToExpression(binding, nodesById)));
+                bindingToExpression(binding, nodesById, "/nodes/" + node.id() + "/inputs/" + key, diagnostics)));
         String selectorTemplate = stringValue(operator.lowering().parameters().get("expression"));
         String selector = renderTemplateExpression(selectorTemplate, inputExpressions);
         if (selector.isBlank() || selector.equals(selectorTemplate)) {
@@ -444,12 +508,22 @@ public class GraphDraftDslGenerator {
     }
 
     private static String renderObjectBindings(Map<String, GraphDraft.Binding> bindings,
-                                               Map<String, GraphDraft.DraftNode> nodesById) {
+                                               Map<String, GraphDraft.DraftNode> nodesById,
+                                               String path,
+                                               List<VisualDiagnostic> diagnostics) {
         if (bindings.isEmpty()) {
             return "{}";
         }
         StringJoiner joiner = new StringJoiner(", ", "{ ", " }");
-        bindings.forEach((key, binding) -> joiner.add(key + ": " + bindingToExpression(binding, nodesById)));
+        bindings.forEach((key, binding) -> {
+            if (!isDslFieldName(key)) {
+                diagnostics.add(VisualDiagnostic.error("visual.codegen.objectBindingKey.invalid",
+                        "Object binding key '%s' cannot be rendered as a BLOGE DSL object field."
+                                .formatted(key),
+                        path + "/" + key));
+            }
+            joiner.add(key + ": " + bindingToExpression(binding, nodesById, path + "/" + key, diagnostics));
+        });
         return joiner.toString();
     }
 
@@ -458,7 +532,8 @@ public class GraphDraftDslGenerator {
                                                                     List<VisualDiagnostic> diagnostics) {
         Map<String, Object> inputTree = new LinkedHashMap<>();
         node.inputs().forEach((key, binding) -> putNativeInput(inputTree, nativeInputPath(key, binding),
-                bindingToExpression(binding, nodesById), "/nodes/" + node.id() + "/inputs/" + key, diagnostics));
+                bindingToExpression(binding, nodesById, "/nodes/" + node.id() + "/inputs/" + key, diagnostics),
+                "/nodes/" + node.id() + "/inputs/" + key, diagnostics));
         Map<String, String> rendered = new LinkedHashMap<>();
         inputTree.forEach((key, value) -> {
             if (value instanceof Map<?, ?> nested) {
@@ -577,11 +652,11 @@ public class GraphDraftDslGenerator {
                                             String path,
                                             List<VisualDiagnostic> diagnostics) {
         if (raw instanceof GraphDraft.Binding binding) {
-            return bindingToExpression(binding, nodesById);
+            return bindingToExpression(binding, nodesById, path, diagnostics);
         }
         if (raw instanceof Map<?, ?> rawMap) {
             if (rawMap.containsKey("kind")) {
-                return bindingToExpression(bindingFromMap(rawMap), nodesById);
+                return bindingToExpression(bindingFromMap(rawMap), nodesById, path, diagnostics);
             }
             return renderConfigObjectLiteral(rawMap, nodesById, path, diagnostics);
         }
@@ -602,12 +677,15 @@ public class GraphDraftDslGenerator {
     }
 
     private static String bindingToExpression(GraphDraft.Binding binding,
-                                              Map<String, GraphDraft.DraftNode> nodesById) {
+                                              Map<String, GraphDraft.DraftNode> nodesById,
+                                              String path,
+                                              List<VisualDiagnostic> diagnostics) {
         return switch (binding.kind()) {
             case "contextPath" -> pathExpression("ctx", binding.path());
             case "nodePath" -> nodePathExpression(binding, nodesById);
             case "expression" -> binding.expr().isBlank() ? "{}" : binding.expr();
-            case "objectTemplate" -> renderObjectBindings(binding.fields(), nodesById);
+            case "objectTemplate" -> renderObjectBindings(binding.fields(), nodesById, path + "/fields",
+                    diagnostics);
             default -> renderLiteral(binding.value());
         };
     }
@@ -635,12 +713,14 @@ public class GraphDraftDslGenerator {
     }
 
     private static String expressionFromObject(Object raw,
-                                               Map<String, GraphDraft.DraftNode> nodesById) {
+                                               Map<String, GraphDraft.DraftNode> nodesById,
+                                               String path,
+                                               List<VisualDiagnostic> diagnostics) {
         if (raw instanceof GraphDraft.Binding binding) {
-            return bindingToExpression(binding, nodesById);
+            return bindingToExpression(binding, nodesById, path, diagnostics);
         }
         if (raw instanceof Map<?, ?> rawMap && rawMap.containsKey("kind")) {
-            return bindingToExpression(bindingFromMap(rawMap), nodesById);
+            return bindingToExpression(bindingFromMap(rawMap), nodesById, path, diagnostics);
         }
         if (raw instanceof String expression) {
             return expression;

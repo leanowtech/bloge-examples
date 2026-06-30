@@ -623,8 +623,10 @@ public class GraphDraftValidator {
                                         Map<String, GraphDraft.DraftNode> nodesById,
                                         Map<String, OperatorDefinition> operatorsByNodeId,
                                         String targetPath,
-        List<VisualDiagnostic> diagnostics) {
+                                        List<VisualDiagnostic> diagnostics) {
         if ("objectTemplate".equals(binding.kind())) {
+            validateObjectTemplateFieldNames(binding.fields(), targetPath + "/fields",
+                    "visual.binding.objectTemplateField.invalid", diagnostics);
             Optional<OperatorDefinition.Port> targetPort = resolveInputPort(targetOperator, binding.targetPort(),
                     inputName);
             if (targetPort.isEmpty()) {
@@ -1958,7 +1960,73 @@ public class GraphDraftValidator {
         if ("bloge:transform".equals(operator.operatorRef())) {
             validateTransformAssignmentKeys(node, nodePath, diagnostics);
         }
+        if ("bloge:decisionTable".equals(operator.operatorRef())) {
+            validateDecisionTableFieldKeys(node, nodePath, diagnostics);
+        }
         validateConfigValue(node.config(), operator.configSchema().schema(), nodePath + "/config", diagnostics);
+    }
+
+    private static void validateDecisionTableFieldKeys(GraphDraft.DraftNode node,
+                                                       String nodePath,
+                                                       List<VisualDiagnostic> diagnostics) {
+        objectMap(node.config().get("inputs")).keySet().forEach(key -> {
+            if (!isDslFieldName(key)) {
+                diagnostics.add(VisualDiagnostic.error("visual.decisionTable.inputKey.invalid",
+                        "Decision table input key '%s' cannot be rendered as a BLOGE DSL field."
+                                .formatted(key),
+                        nodePath + "/config/inputs/" + key));
+            }
+        });
+
+        Object rawRules = node.config().get("rules");
+        if (!(rawRules instanceof List<?> rules)) {
+            return;
+        }
+        for (int i = 0; i < rules.size(); i++) {
+            Map<String, Object> rule = objectMap(rules.get(i));
+            Map<String, Object> output = objectMap(rule.get("output"));
+            String outputPath = nodePath + "/config/rules/" + i + "/output";
+            if (output.isEmpty()) {
+                output = decisionTableImplicitOutput(rule);
+                outputPath = nodePath + "/config/rules/" + i;
+            }
+            validateDecisionTableOutputFieldKeys(output, outputPath, diagnostics);
+        }
+    }
+
+    private static void validateDecisionTableOutputFieldKeys(Map<?, ?> output,
+                                                             String path,
+                                                             List<VisualDiagnostic> diagnostics) {
+        output.forEach((key, value) -> {
+            String fieldName = String.valueOf(key);
+            if (!isDslFieldName(fieldName)) {
+                diagnostics.add(VisualDiagnostic.error("visual.decisionTable.outputKey.invalid",
+                        "Decision table output key '%s' cannot be rendered as a BLOGE DSL object field."
+                                .formatted(fieldName),
+                        path + "/" + fieldName));
+            }
+            if (value instanceof Map<?, ?> nested) {
+                validateDecisionTableOutputFieldKeys(nested, path + "/" + fieldName, diagnostics);
+            }
+        });
+    }
+
+    private static Map<String, Object> decisionTableImplicitOutput(Map<String, Object> rule) {
+        Map<String, Object> output = new LinkedHashMap<>(rule);
+        output.remove("conditions");
+        output.remove("condition");
+        output.remove("otherwise");
+        output.remove("id");
+        return output;
+    }
+
+    private static Map<String, Object> objectMap(Object value) {
+        if (!(value instanceof Map<?, ?> map)) {
+            return Map.of();
+        }
+        Map<String, Object> copy = new LinkedHashMap<>();
+        map.forEach((key, item) -> copy.put(String.valueOf(key), item));
+        return copy;
     }
 
     private static void validateTransformAssignmentKeys(GraphDraft.DraftNode node,
@@ -2006,6 +2074,8 @@ public class GraphDraftValidator {
                 return;
             }
             if ("objectTemplate".equals(kind) && map.get("fields") instanceof Map<?, ?> fields) {
+                validateObjectTemplateFieldNames(fields, path + "/fields",
+                        "visual.config.objectTemplateField.invalid", diagnostics);
                 validateConfigObjectTemplate(fields, schema, path, diagnostics);
                 return;
             }
@@ -2150,6 +2220,21 @@ public class GraphDraftValidator {
                         path + "/fields/" + entry.getKey(), diagnostics);
             }
         }
+    }
+
+    private static void validateObjectTemplateFieldNames(Map<?, ?> fields,
+                                                         String path,
+                                                         String code,
+                                                         List<VisualDiagnostic> diagnostics) {
+        fields.keySet().forEach(key -> {
+            String fieldName = String.valueOf(key);
+            if (!isDslFieldName(fieldName)) {
+                diagnostics.add(VisualDiagnostic.error(code,
+                        "Object template field '%s' cannot be rendered as a BLOGE DSL object field."
+                                .formatted(fieldName),
+                        path + "/" + fieldName));
+            }
+        });
     }
 
     private static void validateConfigObject(Object value,
