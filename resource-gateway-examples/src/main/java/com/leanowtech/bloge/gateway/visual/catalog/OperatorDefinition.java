@@ -11,6 +11,7 @@ import java.security.NoSuchAlgorithmException;
 import java.util.HexFormat;
 import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.TreeMap;
 
@@ -206,12 +207,18 @@ public record OperatorDefinition(
             boolean requiresSecrets
     ) {
         public Capabilities {
-            effect = effect == null || effect.isBlank() ? "PURE" : effect;
-            idempotency = idempotency == null || idempotency.isBlank() ? "UNKNOWN" : idempotency;
+            effect = normalizeLabel(effect, "PURE");
+            idempotency = normalizeLabel(idempotency, "UNKNOWN");
         }
 
         public static Capabilities pure() {
             return new Capabilities("PURE", "DETERMINISTIC", false, false);
+        }
+
+        private static String normalizeLabel(String value, String fallback) {
+            return value == null || value.isBlank()
+                    ? fallback
+                    : value.trim().toUpperCase(Locale.ROOT);
         }
     }
 

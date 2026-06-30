@@ -27,6 +27,9 @@ public class GraphDraftValidator {
 
     private static final ValidationOptions STRICT_VALIDATION = new ValidationOptions(true);
     private static final ValidationOptions CONNECTION_PREVIEW_VALIDATION = new ValidationOptions(false);
+    private static final Set<String> SUPPORTED_DRAFT_SCHEMA_VERSIONS = Set.of(
+            GraphDraft.SCHEMA_VERSION
+    );
     private static final String IDENTIFIER_PATTERN = "[A-Za-z_][A-Za-z0-9_]*";
     private static final String PATH_PATTERN = IDENTIFIER_PATTERN + "(?:\\." + IDENTIFIER_PATTERN + ")*";
     private static final Pattern PURE_CONTEXT_REFERENCE = Pattern.compile("^ctx(?:\\.(" + PATH_PATTERN + "))?$");
@@ -72,6 +75,12 @@ public class GraphDraftValidator {
         if (draft == null) {
             diagnostics.add(VisualDiagnostic.error("visual.draft.missing", "Graph draft is required.", "/"));
             return new VisualValidationResult(false, diagnostics);
+        }
+        if (!SUPPORTED_DRAFT_SCHEMA_VERSIONS.contains(draft.schemaVersion())) {
+            diagnostics.add(VisualDiagnostic.error("visual.draft.schemaVersion.unsupported",
+                    "Graph draft schemaVersion '%s' is unsupported; visual authoring supports %s."
+                            .formatted(draft.schemaVersion(), SUPPORTED_DRAFT_SCHEMA_VERSIONS),
+                    "/schemaVersion"));
         }
         if (draft.nodes().isEmpty()) {
             diagnostics.add(VisualDiagnostic.error("visual.graph.empty", "Graph must contain at least one node.", "/nodes"));

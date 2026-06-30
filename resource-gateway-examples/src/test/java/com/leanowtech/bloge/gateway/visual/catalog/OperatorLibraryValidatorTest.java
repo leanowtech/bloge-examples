@@ -27,12 +27,120 @@ class OperatorLibraryValidatorTest {
     }
 
     @Test
+    void rejectsUnsupportedLibrarySchemaVersion() {
+        OperatorLibrary library = new OperatorLibrary(
+                "bloge.visualOperatorLibrary.v2",
+                "future-risk",
+                "Future risk",
+                "1.0.0",
+                "team",
+                "ACTIVE",
+                List.of(VisualCatalogTestSupport.eligibilityOperator("integer"))
+        );
+
+        VisualValidationResult result = validator.validate(library);
+
+        assertThat(result.valid()).isFalse();
+        assertThat(result.diagnostics())
+                .anySatisfy(diagnostic -> {
+                    assertThat(diagnostic.code()).isEqualTo("visual.library.schemaVersion.unsupported");
+                    assertThat(diagnostic.target()).isEqualTo("/schemaVersion");
+                });
+    }
+
+    @Test
+    void rejectsUnsupportedOperatorSchemaVersion() {
+        OperatorDefinition base = VisualCatalogTestSupport.eligibilityOperator("integer");
+        OperatorDefinition futureOperator = new OperatorDefinition(
+                "bloge.visualOperator.v2",
+                base.operatorRef(),
+                base.operatorVersion(),
+                base.display(),
+                base.source(),
+                base.ports(),
+                base.configSchema(),
+                base.capabilities(),
+                base.policy(),
+                base.lowering(),
+                base.diagnostics()
+        );
+
+        VisualValidationResult result = validator.validate(libraryWith(futureOperator));
+
+        assertThat(result.valid()).isFalse();
+        assertThat(result.diagnostics())
+                .anySatisfy(diagnostic -> {
+                    assertThat(diagnostic.code()).isEqualTo("visual.operator.schemaVersion.unsupported");
+                    assertThat(diagnostic.target()).isEqualTo("/operators/0/schemaVersion");
+                });
+    }
+
+    @Test
     void acceptsSupportedLibraryLifecycleStatuses() {
         VisualValidationResult deprecated = validator.validate(libraryWithStatus("deprecated-policy", "deprecated"));
         VisualValidationResult disabled = validator.validate(libraryWithStatus("disabled-policy", "DISABLED"));
 
         assertThat(deprecated.valid()).isTrue();
         assertThat(disabled.valid()).isTrue();
+    }
+
+    @Test
+    void rejectsUnsupportedOperatorCapabilities() {
+        OperatorDefinition base = VisualCatalogTestSupport.eligibilityOperator("integer");
+        OperatorDefinition operator = new OperatorDefinition(
+                base.schemaVersion(),
+                base.operatorRef(),
+                base.operatorVersion(),
+                base.display(),
+                base.source(),
+                base.ports(),
+                base.configSchema(),
+                new OperatorDefinition.Capabilities("NETWORK_MAGIC", "MAYBE", false, false),
+                base.policy(),
+                base.lowering(),
+                base.diagnostics()
+        );
+
+        VisualValidationResult result = validator.validate(libraryWith(operator));
+
+        assertThat(result.valid()).isFalse();
+        assertThat(result.diagnostics())
+                .extracting("code")
+                .contains(
+                        "visual.operator.capability.effectUnsupported",
+                        "visual.operator.capability.idempotencyUnsupported"
+                );
+        assertThat(result.diagnostics())
+                .extracting("target")
+                .contains(
+                        "/operators/0/capabilities/effect",
+                        "/operators/0/capabilities/idempotency"
+                );
+    }
+
+    @Test
+    void acceptsCanonicalizedOperatorCapabilities() {
+        OperatorDefinition base = VisualCatalogTestSupport.eligibilityOperator("integer");
+        OperatorDefinition operator = new OperatorDefinition(
+                base.schemaVersion(),
+                base.operatorRef(),
+                base.operatorVersion(),
+                base.display(),
+                base.source(),
+                base.ports(),
+                base.configSchema(),
+                new OperatorDefinition.Capabilities(" read_external ", " idempotent ", false, false),
+                base.policy(),
+                base.lowering(),
+                base.diagnostics()
+        );
+
+        VisualValidationResult result = validator.validate(libraryWith(operator));
+
+        assertThat(result.valid()).isTrue();
+        assertThat(result.diagnostics()).isEmpty();
+        assertThat(operator.capabilities().effect()).isEqualTo("READ_EXTERNAL");
+        assertThat(operator.capabilities().idempotency()).isEqualTo("IDEMPOTENT");
     }
 
     @Test

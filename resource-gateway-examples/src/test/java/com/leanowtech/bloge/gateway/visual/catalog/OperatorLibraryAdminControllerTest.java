@@ -119,6 +119,109 @@ class OperatorLibraryAdminControllerTest {
     }
 
     @Test
+    void validateRejectsUnsupportedLibrarySchemaVersion() throws Exception {
+        OperatorLibrary library = new OperatorLibrary(
+                "bloge.visualOperatorLibrary.v2",
+                "future-risk",
+                "Future risk",
+                "1.0.0",
+                "risk-team",
+                "ACTIVE",
+                List.of(VisualCatalogTestSupport.eligibilityOperator("integer"))
+        );
+
+        mockMvc.perform(post("/admin/visual-operator-libraries/validate")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(library)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.valid").value(false))
+                .andExpect(jsonPath("$.diagnostics[0].code")
+                        .value("visual.library.schemaVersion.unsupported"))
+                .andExpect(jsonPath("$.diagnostics[0].target").value("/schemaVersion"));
+
+        assertThat(registry.all()).isEmpty();
+    }
+
+    @Test
+    void createRejectsUnsupportedOperatorSchemaVersion() throws Exception {
+        OperatorDefinition base = VisualCatalogTestSupport.eligibilityOperator("integer");
+        OperatorDefinition futureOperator = new OperatorDefinition(
+                "bloge.visualOperator.v2",
+                base.operatorRef(),
+                base.operatorVersion(),
+                base.display(),
+                base.source(),
+                base.ports(),
+                base.configSchema(),
+                base.capabilities(),
+                base.policy(),
+                base.lowering(),
+                base.diagnostics()
+        );
+        OperatorLibrary library = new OperatorLibrary(
+                "bloge.visualOperatorLibrary.v1",
+                "future-risk",
+                "Future risk",
+                "1.0.0",
+                "risk-team",
+                "ACTIVE",
+                List.of(futureOperator)
+        );
+
+        mockMvc.perform(post("/admin/visual-operator-libraries")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(library)))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.valid").value(false))
+                .andExpect(jsonPath("$.diagnostics[0].code")
+                        .value("visual.operator.schemaVersion.unsupported"))
+                .andExpect(jsonPath("$.diagnostics[0].target").value("/operators/0/schemaVersion"));
+
+        assertThat(registry.all()).isEmpty();
+    }
+
+    @Test
+    void createRejectsUnsupportedOperatorCapabilities() throws Exception {
+        OperatorDefinition base = VisualCatalogTestSupport.eligibilityOperator("integer");
+        OperatorDefinition operator = new OperatorDefinition(
+                base.schemaVersion(),
+                base.operatorRef(),
+                base.operatorVersion(),
+                base.display(),
+                base.source(),
+                base.ports(),
+                base.configSchema(),
+                new OperatorDefinition.Capabilities("NETWORK_MAGIC", "MAYBE", false, false),
+                base.policy(),
+                base.lowering(),
+                base.diagnostics()
+        );
+        OperatorLibrary library = new OperatorLibrary(
+                "bloge.visualOperatorLibrary.v1",
+                "bad-capabilities",
+                "Bad capabilities",
+                "1.0.0",
+                "risk-team",
+                "ACTIVE",
+                List.of(operator)
+        );
+
+        mockMvc.perform(post("/admin/visual-operator-libraries")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(library)))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.valid").value(false))
+                .andExpect(jsonPath("$.diagnostics[0].code")
+                        .value("visual.operator.capability.effectUnsupported"))
+                .andExpect(jsonPath("$.diagnostics[0].target").value("/operators/0/capabilities/effect"))
+                .andExpect(jsonPath("$.diagnostics[1].code")
+                        .value("visual.operator.capability.idempotencyUnsupported"))
+                .andExpect(jsonPath("$.diagnostics[1].target").value("/operators/0/capabilities/idempotency"));
+
+        assertThat(registry.all()).isEmpty();
+    }
+
+    @Test
     void createStoresValidLibrary() throws Exception {
         OperatorLibrary library = VisualCatalogTestSupport.eligibilityLibrary("integer");
 

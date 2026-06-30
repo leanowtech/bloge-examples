@@ -28,7 +28,25 @@ public class OperatorLibraryValidator {
             "bloge:decisionTable",
             "bloge:transform"
     );
+    private static final Set<String> SUPPORTED_LIBRARY_SCHEMA_VERSIONS = Set.of(
+            "bloge.visualOperatorLibrary.v1"
+    );
+    private static final Set<String> SUPPORTED_OPERATOR_SCHEMA_VERSIONS = Set.of(
+            "bloge.visualOperator.v1"
+    );
     private static final Set<String> SUPPORTED_LOWERING_MODES = Set.of("native", "transform");
+    private static final Set<String> SUPPORTED_CAPABILITY_EFFECTS = Set.of(
+            "PURE",
+            "EXTERNAL",
+            "READ_EXTERNAL",
+            "WRITE_EXTERNAL"
+    );
+    private static final Set<String> SUPPORTED_CAPABILITY_IDEMPOTENCY = Set.of(
+            "DETERMINISTIC",
+            "IDEMPOTENT",
+            "NON_IDEMPOTENT",
+            "UNKNOWN"
+    );
     private static final Set<String> EXECUTION_CONFIG_KEYS = Set.of("timeout", "retryAttempts");
     private static final Set<String> RESERVED_DSL_FIELD_NAMES = Set.of(
             "graph", "node", "branch", "decision_table", "on", "input", "depends_on",
@@ -67,6 +85,12 @@ public class OperatorLibraryValidator {
                     "Operator library must contain at least one operator.",
                     "/operators"));
         }
+        if (!SUPPORTED_LIBRARY_SCHEMA_VERSIONS.contains(library.schemaVersion())) {
+            diagnostics.add(VisualDiagnostic.error("visual.library.schemaVersion.unsupported",
+                    "Operator library schemaVersion '%s' is unsupported; visual authoring supports %s."
+                            .formatted(library.schemaVersion(), SUPPORTED_LIBRARY_SCHEMA_VERSIONS),
+                    "/schemaVersion"));
+        }
         if (library.libraryId().isBlank()) {
             diagnostics.add(VisualDiagnostic.error("visual.library.id.required",
                     "Operator library must declare a libraryId.",
@@ -82,6 +106,13 @@ public class OperatorLibraryValidator {
         for (int i = 0; i < library.operators().size(); i++) {
             OperatorDefinition operator = library.operators().get(i);
             String operatorPath = "/operators/" + i;
+            if (!SUPPORTED_OPERATOR_SCHEMA_VERSIONS.contains(operator.schemaVersion())) {
+                diagnostics.add(VisualDiagnostic.error("visual.operator.schemaVersion.unsupported",
+                        "Operator '%s' schemaVersion '%s' is unsupported; visual authoring supports %s."
+                                .formatted(operator.operatorRef(), operator.schemaVersion(),
+                                        SUPPORTED_OPERATOR_SCHEMA_VERSIONS),
+                        operatorPath + "/schemaVersion"));
+            }
             if (operator.operatorRef().isBlank()) {
                 diagnostics.add(VisualDiagnostic.error("visual.operator.ref.required",
                         "Operator must declare an operatorRef.",
@@ -127,8 +158,28 @@ public class OperatorLibraryValidator {
         validatePorts(operator, "outputs", operator.ports().outputs(), path + "/ports/outputs", diagnostics);
         diagnostics.addAll(VisualSchemaValidator.validateEnvelope(
                 operator.configSchema(), path + "/configSchema"));
+        validateCapabilities(operator, path + "/capabilities", diagnostics);
         validateLowering(operator, path + "/lowering", diagnostics);
         diagnostics.addAll(VisualSecretGuard.detectOperatorSecrets(operator, path));
+    }
+
+    private static void validateCapabilities(OperatorDefinition operator,
+                                             String path,
+                                             List<VisualDiagnostic> diagnostics) {
+        OperatorDefinition.Capabilities capabilities = operator.capabilities();
+        if (!SUPPORTED_CAPABILITY_EFFECTS.contains(capabilities.effect())) {
+            diagnostics.add(VisualDiagnostic.error("visual.operator.capability.effectUnsupported",
+                    "Operator '%s' declares unsupported capability effect '%s'; supported effects are %s."
+                            .formatted(operator.operatorRef(), capabilities.effect(), SUPPORTED_CAPABILITY_EFFECTS),
+                    path + "/effect"));
+        }
+        if (!SUPPORTED_CAPABILITY_IDEMPOTENCY.contains(capabilities.idempotency())) {
+            diagnostics.add(VisualDiagnostic.error("visual.operator.capability.idempotencyUnsupported",
+                    "Operator '%s' declares unsupported capability idempotency '%s'; supported idempotency values are %s."
+                            .formatted(operator.operatorRef(), capabilities.idempotency(),
+                                    SUPPORTED_CAPABILITY_IDEMPOTENCY),
+                    path + "/idempotency"));
+        }
     }
 
     private static void validatePorts(OperatorDefinition operator,

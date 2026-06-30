@@ -21,6 +21,7 @@ import java.util.Set;
 public class GraphDraftPatchService {
 
     private static final Set<String> SERVER_MANAGED_ROOTS = Set.of(
+            "schemaVersion",
             "draftId",
             "revision",
             "revisionMetadata",

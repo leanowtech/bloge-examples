@@ -90,6 +90,7 @@ public class VisualGraphDraftController {
      */
     @PostMapping
     public GraphDraft create(@RequestBody GraphDraft draft) {
+        requireSupportedDraftContract(draft);
         return repository.save(withCurrentOperatorFingerprints(draft.withIdentity("", 0))
                 .withRevisionMetadata(GraphDraft.RevisionMetadata.patch(
                         "visual-canvas",
@@ -157,6 +158,11 @@ public class VisualGraphDraftController {
         long expectedRevision = draft.revision();
         if (expectedRevision != current.get().revision()) {
             return updateConflictResponse(draftId, expectedRevision, current.get());
+        }
+        List<VisualDiagnostic> contractDiagnostics = draftContractDiagnostics(draft);
+        if (!contractDiagnostics.isEmpty()) {
+            return ResponseEntity.badRequest()
+                    .body(new VisualValidationResult(false, contractDiagnostics));
         }
         GraphDraft candidate = withExistingOrCurrentOperatorFingerprints(current.get(),
                 draft.withIdentity(draftId, expectedRevision).withRevisionMetadata(GraphDraft.RevisionMetadata.patch(
@@ -421,6 +427,26 @@ public class VisualGraphDraftController {
                 .toList();
     }
 
+    private static void requireSupportedDraftContract(GraphDraft draft) {
+        List<VisualDiagnostic> diagnostics = draftContractDiagnostics(draft);
+        if (!diagnostics.isEmpty()) {
+            throw new DraftContractException(diagnostics);
+        }
+    }
+
+    private static List<VisualDiagnostic> draftContractDiagnostics(GraphDraft draft) {
+        if (draft == null) {
+            return List.of(VisualDiagnostic.error("visual.draft.missing", "Graph draft is required.", "/"));
+        }
+        if (GraphDraft.SCHEMA_VERSION.equals(draft.schemaVersion())) {
+            return List.of();
+        }
+        return List.of(VisualDiagnostic.error("visual.draft.schemaVersion.unsupported",
+                "Graph draft schemaVersion '%s' is unsupported; visual authoring supports [%s]."
+                        .formatted(draft.schemaVersion(), GraphDraft.SCHEMA_VERSION),
+                "/schemaVersion"));
+    }
+
     private ResponseEntity<GraphDraftPatchResult> conflictResponse(String draftId,
                                                                    long expectedRevision,
                                                                    GraphDraft fallback) {
@@ -454,10 +480,32 @@ public class VisualGraphDraftController {
      * @param ex invalid draft payload
      * @return structured bad request response
      */
+    @ExceptionHandler(DraftContractException.class)
+    public ResponseEntity<VisualValidationResult> handleUnsupportedDraftContract(DraftContractException ex) {
+        return ResponseEntity.badRequest().body(new VisualValidationResult(false, ex.diagnostics()));
+    }
+
+    /**
+     * @param ex invalid draft payload
+     * @return structured bad request response
+     */
     @ExceptionHandler(IllegalArgumentException.class)
     public ResponseEntity<VisualValidationResult> handleBadRequest(IllegalArgumentException ex) {
         return ResponseEntity.badRequest().body(new VisualValidationResult(false, List.of(
                 VisualDiagnostic.error("visual.draft.invalid", ex.getMessage(), "/")
         )));
+    }
+
+    private static final class DraftContractException extends IllegalArgumentException {
+        private final List<VisualDiagnostic> diagnostics;
+
+        private DraftContractException(List<VisualDiagnostic> diagnostics) {
+            super(diagnostics.isEmpty() ? "Unsupported graph draft contract." : diagnostics.getFirst().message());
+            this.diagnostics = diagnostics;
+        }
+
+        private List<VisualDiagnostic> diagnostics() {
+            return diagnostics;
+        }
     }
 }

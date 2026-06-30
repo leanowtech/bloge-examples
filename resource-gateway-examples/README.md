@@ -218,13 +218,15 @@ use the draft revision observed by the caller; stale edits, runs, deletes, or
 publishes return `409 CONFLICT` with `visual.draft.revisionConflict`
 diagnostics instead of overwriting newer canvas state, executing a newer graph
 than the caller saw, removing somebody else's newer draft revision, or
-publishing a draft revision the user did not see. `POST` creates a new draft
-identity even when the request body carries a stale or existing `draftId`, so it
-cannot be used as an unguarded overwrite path. The browser loads the current
-server snapshot before patching when its local base revision is missing, stops
-instead of saving if that snapshot proves the draft changed on the server, and
-excludes service-managed identity, revision, audit, and fingerprint fields from
-field-level patch diffs. Browser Delete sends the current draft revision as a
+publishing a draft revision the user did not see. Draft create and update accept
+only the `bloge.visualGraphDraft.v1` graph-draft contract, and field-level
+patches treat `schemaVersion` as a service-managed root. `POST` creates a new
+draft identity even when the request body carries a stale or existing `draftId`,
+so it cannot be used as an unguarded overwrite path. The browser loads the
+current server snapshot before patching when its local base revision is missing,
+stops instead of saving if that snapshot proves the draft changed on the server,
+and excludes service-managed schema version, identity, revision, audit, and
+fingerprint fields from field-level patch diffs. Browser Delete sends the current draft revision as a
 query precondition, and Browser Publish first saves the current canvas through
 the same guarded path, then sends the saved revision as the publication
 precondition. Existing node fingerprint snapshots are
@@ -456,14 +458,18 @@ same `Force` setting, and same warning diagnostics before it writes the library.
 | `PUT` | `/admin/visual-operator-libraries/{libraryId}` | Replace an imported library; rejects removal of stored-draft operator refs unless `force=true` | 200 / 400 / 409 |
 | `DELETE` | `/admin/visual-operator-libraries/{libraryId}` | Delete an imported library; rejects stored-draft references unless `force=true` | 204 / 409 |
 
-Create and update run the same validator before storage. The validator rejects
-unsupported lifecycle status values, blank `libraryId`, blank or duplicate `operatorRef`, `operatorRef` values already
-owned by another stored library, system-reserved refs such as `httpResource`,
-`bloge:decisionTable`, `bloge:transform`, and the `resource:` namespace, empty
-libraries, duplicate port names, unsupported lowering modes, native lowering
-without a namespace-safe executable `operatorRef`, transform lowering without
-executable `assignments`, transform assignments that do not match output schema
-fields or declared input template references, unsupported schema kinds,
+Create and update run the same validator before storage. The validator accepts
+only the `bloge.visualOperatorLibrary.v1` library contract and
+`bloge.visualOperator.v1` operator contract before storage. It rejects
+unsupported lifecycle status values, unsupported capability `effect` or
+`idempotency` labels, blank `libraryId`, blank or duplicate `operatorRef`,
+`operatorRef` values already owned by another stored library, system-reserved
+refs such as `httpResource`, `bloge:decisionTable`, `bloge:transform`, and the
+`resource:` namespace, empty libraries, duplicate port names, unsupported
+lowering modes, native lowering without a namespace-safe executable
+`operatorRef`, transform lowering without executable `assignments`, transform
+assignments that do not match output schema fields or declared input template
+references, unsupported schema kinds,
 `required` fields not declared in `properties`, and array schemas without
 `items` across input, output, and config schemas. It also rejects unsupported
 schema envelope format/version, JSON Schema references,
@@ -475,7 +481,9 @@ also match their declared type/kind, enum domain, required object properties,
 array item schema, and `additionalProperties` policy so canvas-generated default
 node config cannot start invalid. The browser consumes both root object defaults
 and nested field-level defaults from `configSchema` when a node is dragged from
-the palette. Invalid libraries return structured visual diagnostics instead of
+the palette. Capability labels are trimmed and canonicalized to uppercase before
+validation, so semantically valid lower-case imports are stored on one contract.
+Invalid libraries return structured visual diagnostics instead of
 accepting a library that will fail later on the canvas.
 Operator `policy.tenants`, `policy.namespaces`, and `policy.environments` are stored with
 the library and enforced when scoped drafts use the operator. `DEPRECATED`
@@ -518,11 +526,13 @@ Minimal import example:
 curl -X POST http://localhost:8080/admin/visual-operator-libraries \
   -H 'Content-Type: application/json' \
   -d '{
+    "schemaVersion": "bloge.visualOperatorLibrary.v1",
     "libraryId": "risk-policy",
     "displayName": "Risk policy operators",
     "version": "1.0.0",
     "owner": "risk-team",
     "operators": [{
+      "schemaVersion": "bloge.visualOperator.v1",
       "operatorRef": "risk:eligibility",
       "display": {
         "name": "Eligibility",
@@ -620,7 +630,7 @@ Seven `.bloge` graphs live in `src/main/resources/bloge/gateway/`:
 | `DefaultVisualOperatorCatalog` | Combines native visual operators with `resource:<resourceId>` virtual operators |
 | `GraphDraft` | Editable canvas graph model: input schema, nodes, port-aware bindings, edges, layout, output selection, and operator fingerprint snapshots |
 | `DatabaseGraphDraftRepository` | H2-backed graph draft repository with revision assignment, immutable revision history, and expected-revision guarded updates |
-| `GraphDraftValidator` | Validates operator references, operator fingerprint drift, operator scope policy, graph input `contextPath` bindings, binding kind allow-list, literal constants, expression references, required schema inputs, node config against `configSchema`, port-aware node bindings, typed port edges, edge identity/connection uniqueness, data edge/semantic dependency consistency, DAG shape, and output schema selection |
+| `GraphDraftValidator` | Validates the `bloge.visualGraphDraft.v1` draft contract, operator references, operator fingerprint drift, operator scope policy, graph input `contextPath` bindings, binding kind allow-list, literal constants, expression references, required schema inputs, node config against `configSchema`, port-aware node bindings, typed port edges, edge identity/connection uniqueness, data edge/semantic dependency consistency, DAG shape, and output schema selection |
 | `VisualConnectionCheckService` | Reuses preview-mode draft validation to accept or reject one proposed canvas edge before the browser writes a binding |
 | `GraphDraftDslGenerator` | Lowers visual drafts into executable BLOGE DSL |
 | `VisualGraphRunService` | Reuses the dynamic BLOGE runner to validate, compile, and execute visual drafts |

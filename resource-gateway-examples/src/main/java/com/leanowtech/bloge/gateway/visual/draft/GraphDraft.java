@@ -43,12 +43,14 @@ public record GraphDraft(
         Map<String, String> operatorFingerprints,
         RevisionMetadata revisionMetadata
 ) {
+    public static final String SCHEMA_VERSION = "bloge.visualGraphDraft.v1";
+
     /**
      * Creates a graph draft.
      */
     public GraphDraft {
         schemaVersion = schemaVersion == null || schemaVersion.isBlank()
-                ? "bloge.visualGraphDraft.v1"
+                ? SCHEMA_VERSION
                 : schemaVersion;
         draftId = draftId == null ? "" : draftId;
         revision = Math.max(0, revision);

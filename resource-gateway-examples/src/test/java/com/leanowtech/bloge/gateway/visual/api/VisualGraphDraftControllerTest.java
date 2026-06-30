@@ -21,6 +21,7 @@ import com.leanowtech.bloge.gateway.visual.runtime.VisualGraphRunResponse;
 import com.leanowtech.bloge.gateway.visual.runtime.VisualGraphRunService;
 import com.leanowtech.bloge.gateway.visual.runtime.VisualStoredDraftRunRequest;
 import com.leanowtech.bloge.gateway.visual.validation.GraphDraftValidator;
+import com.leanowtech.bloge.gateway.visual.validation.VisualValidationResult;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.Test;
@@ -33,6 +34,7 @@ import java.util.List;
 import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 /**
  * Tests for visual graph draft APIs.
@@ -58,6 +60,26 @@ class VisualGraphDraftControllerTest {
                 .anySatisfy(diagnostic -> {
                     assertThat(diagnostic.code()).isEqualTo("visual.binding.typeMismatch");
                     assertThat(diagnostic.message()).contains("ctx.score").contains("string").contains("integer");
+                });
+    }
+
+    @Test
+    void validateRejectsUnsupportedDraftSchemaVersion() {
+        VisualGraphDraftController controller = controllerWithEligibilityLibrary();
+        GraphDraft draft = withSchemaVersion(eligibilityDraft(graphInputSchema(
+                Map.of(
+                        "score", Map.of("type", "integer"),
+                        "amount", Map.of("type", "number")
+                )
+        )), "bloge.visualGraphDraft.v2");
+
+        var result = controller.validate(draft);
+
+        assertThat(result.valid()).isFalse();
+        assertThat(result.diagnostics())
+                .anySatisfy(diagnostic -> {
+                    assertThat(diagnostic.code()).isEqualTo("visual.draft.schemaVersion.unsupported");
+                    assertThat(diagnostic.target()).isEqualTo("/schemaVersion");
                 });
     }
 
@@ -133,6 +155,23 @@ class VisualGraphDraftControllerTest {
 
         assertThat(stored.operatorFingerprints())
                 .containsEntry("eligibility", catalog.find("risk:eligibility").orElseThrow().fingerprint());
+    }
+
+    @Test
+    void createRejectsUnsupportedDraftSchemaVersionBeforeStorage() {
+        InMemoryGraphDraftRepository repository = new InMemoryGraphDraftRepository();
+        VisualGraphDraftController controller = controllerWithCatalog(eligibilityCatalog(), repository);
+        GraphDraft draft = withSchemaVersion(eligibilityDraft(graphInputSchema(
+                Map.of(
+                        "score", Map.of("type", "integer"),
+                        "amount", Map.of("type", "number")
+                )
+        )), "bloge.visualGraphDraft.v2");
+
+        assertThatThrownBy(() -> controller.create(draft))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("bloge.visualGraphDraft.v2");
+        assertThat(repository.all()).isEmpty();
     }
 
     @Test
@@ -337,6 +376,32 @@ class VisualGraphDraftControllerTest {
     }
 
     @Test
+    void updateRejectsUnsupportedDraftSchemaVersionAndKeepsCurrentDraft() {
+        VisualGraphDraftController controller = controllerWithEligibilityLibrary();
+        GraphDraft stored = controller.create(eligibilityDraft(graphInputSchema(
+                Map.of(
+                        "score", Map.of("type", "integer"),
+                        "amount", Map.of("type", "number")
+                )
+        )));
+        GraphDraft futureDraft = withSchemaVersion(renameDraft(stored, "futureContract"), "bloge.visualGraphDraft.v2");
+
+        ResponseEntity<Object> response = controller.update(stored.draftId(), futureDraft);
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+        assertThat(response.getBody()).isInstanceOf(VisualValidationResult.class);
+        var result = (VisualValidationResult) response.getBody();
+        assertThat(result.valid()).isFalse();
+        assertThat(result.diagnostics())
+                .anySatisfy(diagnostic -> {
+                    assertThat(diagnostic.code()).isEqualTo("visual.draft.schemaVersion.unsupported");
+                    assertThat(diagnostic.target()).isEqualTo("/schemaVersion");
+                });
+        assertThat(controller.get(stored.draftId()).getBody().schemaVersion()).isEqualTo(GraphDraft.SCHEMA_VERSION);
+        assertThat(controller.get(stored.draftId()).getBody().graphName()).isEqualTo(stored.graphName());
+    }
+
+    @Test
     void updateRejectsStaleRevisionAndKeepsCurrentDraft() {
         VisualGraphDraftController controller = controllerWithEligibilityLibrary();
         GraphDraft stored = controller.create(eligibilityDraft(graphInputSchema(
@@ -391,6 +456,31 @@ class VisualGraphDraftControllerTest {
                 .contains("visual.draft.patchPathForbidden");
         assertThat(controller.get(stored.draftId()).getBody().operatorFingerprints())
                 .containsEntry("eligibility", fingerprint);
+    }
+
+    @Test
+    void patchRejectsDraftSchemaVersionMutation() {
+        VisualGraphDraftController controller = controllerWithEligibilityLibrary();
+        GraphDraft stored = controller.create(eligibilityDraft(graphInputSchema(
+                Map.of(
+                        "score", Map.of("type", "integer"),
+                        "amount", Map.of("type", "number")
+                )
+        )));
+
+        ResponseEntity<GraphDraftPatchResult> response = controller.patch(stored.draftId(),
+                new GraphDraftPatchRequest(stored.revision(), List.of(
+                        new GraphDraftPatchRequest.PatchOperation("replace",
+                                "/schemaVersion", "bloge.visualGraphDraft.v2")
+                )));
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+        assertThat(response.getBody()).isNotNull();
+        assertThat(response.getBody().patched()).isFalse();
+        assertThat(response.getBody().diagnostics())
+                .extracting("code")
+                .contains("visual.draft.patchPathForbidden");
+        assertThat(controller.get(stored.draftId()).getBody().schemaVersion()).isEqualTo(GraphDraft.SCHEMA_VERSION);
     }
 
     @Test
@@ -814,6 +904,26 @@ class VisualGraphDraftControllerTest {
                 draft.draftId(),
                 draft.revision(),
                 graphName,
+                draft.tenantId(),
+                draft.namespace(),
+                draft.environment(),
+                draft.status(),
+                draft.inputSchema(),
+                draft.nodes(),
+                draft.edges(),
+                draft.visualLayout(),
+                draft.output(),
+                draft.operatorFingerprints(),
+                draft.revisionMetadata()
+        );
+    }
+
+    private static GraphDraft withSchemaVersion(GraphDraft draft, String schemaVersion) {
+        return new GraphDraft(
+                schemaVersion,
+                draft.draftId(),
+                draft.revision(),
+                draft.graphName(),
                 draft.tenantId(),
                 draft.namespace(),
                 draft.environment(),

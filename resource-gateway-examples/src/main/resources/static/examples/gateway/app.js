@@ -145,12 +145,14 @@ const OPERATOR_TYPES = {
 const CORE_OPERATOR_TYPES = new Set(Object.keys(OPERATOR_TYPES));
 
 const SAMPLE_OPERATOR_LIBRARY = {
+  schemaVersion: 'bloge.visualOperatorLibrary.v1',
   libraryId: 'risk-policy',
   displayName: 'Risk policy operators',
   version: '1.0.0',
   owner: 'risk-team',
   operators: [
     {
+      schemaVersion: 'bloge.visualOperator.v1',
       operatorRef: 'risk:eligibility',
       display: {
         name: 'Eligibility',

@@ -57,6 +57,49 @@ class GraphDraftValidatorTest {
     }
 
     @Test
+    void rejectsUnsupportedDraftSchemaVersion() {
+        GraphDraftValidator validator = new GraphDraftValidator(
+                VisualCatalogTestSupport.catalogWithLibrary(
+                        VisualCatalogTestSupport.eligibilityLibrary("integer")));
+        GraphDraft validDraft = contextEligibilityDraft(graphInputSchema(
+                Map.of(
+                        "score", Map.of("type", "integer"),
+                        "amount", Map.of("type", "number")
+                ),
+                List.of("score", "amount")
+        ), Map.of(
+                "score", GraphDraft.Binding.contextPath("score"),
+                "amount", GraphDraft.Binding.contextPath("amount")
+        ));
+        GraphDraft futureDraft = new GraphDraft(
+                "bloge.visualGraphDraft.v2",
+                validDraft.draftId(),
+                validDraft.revision(),
+                validDraft.graphName(),
+                validDraft.tenantId(),
+                validDraft.namespace(),
+                validDraft.environment(),
+                validDraft.status(),
+                validDraft.inputSchema(),
+                validDraft.nodes(),
+                validDraft.edges(),
+                validDraft.visualLayout(),
+                validDraft.output(),
+                validDraft.operatorFingerprints(),
+                validDraft.revisionMetadata()
+        );
+
+        VisualValidationResult result = validator.validate(futureDraft);
+
+        assertThat(result.valid()).isFalse();
+        assertThat(result.diagnostics())
+                .anySatisfy(diagnostic -> {
+                    assertThat(diagnostic.code()).isEqualTo("visual.draft.schemaVersion.unsupported");
+                    assertThat(diagnostic.target()).isEqualTo("/schemaVersion");
+                });
+    }
+
+    @Test
     void rejectsGraphInputSchemaWithRequiredPathMissingFromProperties() {
         GraphDraftValidator validator = new GraphDraftValidator(
                 VisualCatalogTestSupport.catalogWithLibrary(
