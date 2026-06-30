@@ -112,7 +112,9 @@ constrained to `LOW|HIGH` cannot feed an input constrained to `APPROVE|REJECT`,
 and an unconstrained string cannot feed an enum input without an explicit
 transform. Literal `constant` bindings and `objectTemplate` fields are checked
 against their target schema too, so fixed values cannot bypass required nested
-input types. Operator `configSchema` is
+input types. Unsupported input binding kinds are rejected before compile/run, so
+hand-edited drafts cannot fall through to DSL literal lowering and bypass the
+target schema gate. Operator `configSchema` is
 also enforced: the browser inspector renders simple config controls for schema
 fields, and the server blocks missing required config, type mismatches, enum
 mismatches, and undeclared config fields when `additionalProperties=false`.
@@ -332,10 +334,13 @@ diagnostic list before storing a library.
 
 Create and update run the same validator before storage. The validator rejects
 blank `libraryId`, blank or duplicate `operatorRef`, empty libraries, duplicate
-port names, unsupported lowering modes, unsupported schema kinds, `required`
-fields not declared in `properties`, and array schemas without `items` across
-input, output, and config schemas, returning structured visual diagnostics
-instead of accepting a library that will fail later on the canvas. Operator
+port names, unsupported lowering modes, native lowering without a namespace-safe
+executable `operatorRef`, transform lowering without executable `assignments`, transform
+assignments that do not match output schema fields or declared input template
+references, unsupported schema kinds, `required` fields not declared in
+`properties`, and array schemas without `items` across input, output, and config
+schemas, returning structured visual diagnostics instead of accepting a library
+that will fail later on the canvas. Operator
 `policy.tenants`, `policy.namespaces`, and `policy.environments` are stored with
 the library and enforced when scoped drafts use the operator.
 
@@ -445,7 +450,7 @@ Seven `.bloge` graphs live in `src/main/resources/bloge/gateway/`:
 | `DefaultVisualOperatorCatalog` | Combines native visual operators with `resource:<resourceId>` virtual operators |
 | `GraphDraft` | Editable canvas graph model: input schema, nodes, port-aware bindings, edges, layout, output selection, and operator fingerprint snapshots |
 | `DatabaseGraphDraftRepository` | H2-backed graph draft repository with revision assignment, immutable revision history, and expected-revision guarded updates |
-| `GraphDraftValidator` | Validates operator references, operator fingerprint drift, operator scope policy, graph input `contextPath` bindings, literal constants, expression references, required schema inputs, node config against `configSchema`, port-aware node bindings, typed port edges, data edge/semantic dependency consistency, DAG shape, and output schema selection |
+| `GraphDraftValidator` | Validates operator references, operator fingerprint drift, operator scope policy, graph input `contextPath` bindings, binding kind allow-list, literal constants, expression references, required schema inputs, node config against `configSchema`, port-aware node bindings, typed port edges, data edge/semantic dependency consistency, DAG shape, and output schema selection |
 | `VisualConnectionCheckService` | Reuses preview-mode draft validation to accept or reject one proposed canvas edge before the browser writes a binding |
 | `GraphDraftDslGenerator` | Lowers visual drafts into executable BLOGE DSL |
 | `VisualGraphRunService` | Reuses the dynamic BLOGE runner to validate, compile, and execute visual drafts |
@@ -772,7 +777,7 @@ Isolated component tests, some with lightweight Spring slices or mocks.
 | `DatabaseResourceRegistryTest` | 11 | CRUD, H2 persistence, in-memory cache |
 | `ResourceDescriptorBootstrapTest` | 7 | Seeding, refresh behavior, idempotency |
 | `GatewayDslCompilationTest` | 7 | DSL parsing, graph loading |
-| Visual authoring suite | 125 | Visual operator projection, imported libraries, catalog policy filtering, draft/publication persistence and history, revision audit metadata, revision-guarded patching, typed connection/edge validation including object required fields, enum value domains, config expression references and configSchema type gates, data edge/semantic dependency consistency, graph input schema gates, secret blocking, DSL lowering and dependency ordering, runtime smoke path |
+| Visual authoring suite | 133 | Visual operator projection, imported libraries, catalog policy filtering, import-time lowering gates, draft/publication persistence and history, revision audit metadata, revision-guarded patching, typed connection/edge validation including binding kind allow-list, object required fields, enum value domains, config expression references and configSchema type gates, data edge/semantic dependency consistency, graph input schema gates, secret blocking, DSL lowering and dependency ordering, runtime smoke path |
 
 ### Layer 3 — Orchestration tests
 

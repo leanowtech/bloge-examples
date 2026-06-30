@@ -424,6 +424,10 @@ public class GraphDraftValidator {
             return;
         }
         if (!"nodePath".equals(binding.kind())) {
+            diagnostics.add(VisualDiagnostic.error("visual.binding.kindUnsupported",
+                    "Binding kind '%s' is not supported. Use constant, contextPath, nodePath, expression, or objectTemplate."
+                            .formatted(binding.kind()),
+                    targetPath + "/kind"));
             return;
         }
 

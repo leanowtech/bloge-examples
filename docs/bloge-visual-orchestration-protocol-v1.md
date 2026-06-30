@@ -625,6 +625,9 @@ gate 都以这个 schema 为准；Context JSON 只作为一次运行或调试的
 | `objectTemplate` | `fields` | 每个字段递归校验 |
 | `secretRef` | `secretRef` | 权限和环境可用 |
 
+未声明在允许列表中的 binding kind 必须在 validate/compile/run/publish 前阻断；
+不能由 codegen fallback 成 literal，否则手写 draft 可以绕过 target schema gate。
+
 `GraphDraft.nodes[].inputs` 的 map key 是稳定 binding key，不再要求等于
 schema 字段名。常规单端口输入可以继续使用 `score` 这样的字段名；当多个
 input port 都声明同名字段时，画布应使用 `customer.id`、`order.id` 这样的
@@ -896,6 +899,10 @@ MVP 至少阻断：
 - 算子没有 output port。
 - 同方向重复 port name。
 - 不支持的 lowering mode。
+- native lowering 缺可执行 BLOGE `operatorRef`，或 `operatorRef` 不是命名空间安全的 executable token。
+- transform lowering 缺 `parameters.assignments`。
+- transform assignment target 不在 output schema 中，或漏掉 required output。
+- transform template 引用不存在的 input path。
 - 不支持的 schema `type` / `kind`。
 - `required` 中引用不存在的 `properties` 字段。
 - `array` schema 未声明 `items`。
@@ -1257,6 +1264,7 @@ flowchart TD
 - contextPath 在严格 graphInputSchema 中不存在。
 - expression 引用的 `ctx.*` 或 `node.output.*` path 不存在。
 - constant 值不满足 target schema。
+- binding kind 不在允许列表中。
 - 类型不兼容且没有 adapter。
 - 纯引用 expression 的 source schema 与 target schema 不兼容。
 - 纯引用 config expression 的 source schema 与目标 `configSchema` 不兼容。

@@ -531,6 +531,8 @@ resource-gateway 示例当前已在 binding 和 edge 校验中递归检查 objec
 target enum values 的子集，普通 `string` 不能直接接入 enum input。正式 draft
 还会校验 data edge 与语义依赖一致，包含 `nodePath` binding 和 config expression
 引用；`nodePath` binding 必须有可见 data edge，防止画布连线和 DSL 输入语义分叉。
+未知 binding kind 会在 `GraphDraftValidator` 被阻断，不能落到 codegen 的 literal fallback
+绕过 target schema gate。
 缺失 `items` 的旧 resource schema 仍按未知元素类型降级，用户导入 operator library 则由 catalog validator 阻断。
 
 ### 10.3 required 字段规则
@@ -635,6 +637,8 @@ resource-gateway 示例当前以 `/admin/visual-operator-libraries` 暴露用户
 `POST /admin/visual-operator-libraries/validate` 只返回 diagnostics 不落库；
 `POST/PUT /admin/visual-operator-libraries` 在写入前执行同一校验，阻断空库、
 重复端口、不支持 lowering mode、非法 schema kind、缺失 `items` 的 array、
+native lowering 缺可执行 BLOGE operatorRef、transform lowering 缺 assignments、
+assignment target 不在 output schema 中、template 引用不存在 input path、
 以及 `required` 引用不存在字段等硬错误。`OperatorDefinition.policy`
 当前已支持 `tenants`、`namespaces`、`environments`，`/api/visual/operators`
 可按 scope 过滤，`GraphDraftValidator` 在 validate/compile/run/publish 前

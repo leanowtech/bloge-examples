@@ -438,6 +438,42 @@ class GraphDraftValidatorTest {
     }
 
     @Test
+    void rejectsUnsupportedInputBindingKind() {
+        GraphDraftValidator validator = new GraphDraftValidator(
+                VisualCatalogTestSupport.catalogWithLibrary(
+                        VisualCatalogTestSupport.eligibilityLibrary("integer")));
+        GraphDraft draft = contextEligibilityDraft(graphInputSchema(
+                Map.of(
+                        "amount", Map.of("type", "number")
+                ),
+                List.of("amount")
+        ), Map.of(
+                "score", new GraphDraft.Binding(
+                        "templateLiteral",
+                        720,
+                        "",
+                        "",
+                        "",
+                        "",
+                        "",
+                        "",
+                        Map.of()
+                ),
+                "amount", GraphDraft.Binding.contextPath("amount")
+        ));
+
+        VisualValidationResult result = validator.validate(draft);
+
+        assertThat(result.valid()).isFalse();
+        assertThat(result.diagnostics())
+                .anySatisfy(diagnostic -> {
+                    assertThat(diagnostic.code()).isEqualTo("visual.binding.kindUnsupported");
+                    assertThat(diagnostic.target()).isEqualTo("/nodes/0/inputs/score/kind");
+                    assertThat(diagnostic.message()).contains("templateLiteral");
+                });
+    }
+
+    @Test
     void rejectsContextPathBindingWhenGraphInputPathDoesNotExist() {
         GraphDraftValidator validator = new GraphDraftValidator(
                 VisualCatalogTestSupport.catalogWithLibrary(

@@ -26,6 +26,14 @@ class OperatorLibraryValidatorTest {
     }
 
     @Test
+    void acceptsTransformLoweringWithPortQualifiedTemplateReferences() {
+        VisualValidationResult result = validator.validate(VisualCatalogTestSupport.duplicateInputPathLibrary());
+
+        assertThat(result.valid()).isTrue();
+        assertThat(result.diagnostics()).isEmpty();
+    }
+
+    @Test
     void rejectsEmptyLibrary() {
         OperatorLibrary library = new OperatorLibrary(
                 "bloge.visualOperatorLibrary.v1",
@@ -239,6 +247,155 @@ class OperatorLibraryValidatorTest {
     }
 
     @Test
+    void rejectsNativeLoweringWithoutExecutableOperatorRef() {
+        OperatorDefinition operator = new OperatorDefinition(
+                "bloge.visualOperator.v1",
+                "risk:nativeWithoutExecutableRef",
+                "1.0.0",
+                new OperatorDefinition.Display("Bad native", "Test operator.", List.of("test")),
+                new OperatorDefinition.Source("user-library", "", "", "", true),
+                outputOnlyPorts(Map.of("accepted", Map.of("type", "boolean")), List.of()),
+                SchemaEnvelope.opaque(),
+                OperatorDefinition.Capabilities.pure(),
+                new OperatorDefinition.Lowering("native", "", Map.of()),
+                List.of()
+        );
+
+        VisualValidationResult result = validator.validate(libraryWith(operator));
+
+        assertThat(result.valid()).isFalse();
+        assertThat(result.diagnostics())
+                .anySatisfy(diagnostic -> {
+                    assertThat(diagnostic.code()).isEqualTo("visual.operator.lowering.operatorRef.required");
+                    assertThat(diagnostic.target()).isEqualTo("/operators/0/lowering/operatorRef");
+                });
+    }
+
+    @Test
+    void rejectsNativeLoweringWithUnsafeExecutableOperatorRef() {
+        OperatorDefinition operator = new OperatorDefinition(
+                "bloge.visualOperator.v1",
+                "risk:nativeWithUnsafeExecutableRef",
+                "1.0.0",
+                new OperatorDefinition.Display("Bad native", "Test operator.", List.of("test")),
+                new OperatorDefinition.Source("user-library", "", "", "", true),
+                outputOnlyPorts(Map.of("accepted", Map.of("type", "boolean")), List.of()),
+                SchemaEnvelope.opaque(),
+                OperatorDefinition.Capabilities.pure(),
+                new OperatorDefinition.Lowering("native", "risk badExecutableRef", Map.of()),
+                List.of()
+        );
+
+        VisualValidationResult result = validator.validate(libraryWith(operator));
+
+        assertThat(result.valid()).isFalse();
+        assertThat(result.diagnostics())
+                .anySatisfy(diagnostic -> {
+                    assertThat(diagnostic.code()).isEqualTo("visual.operator.lowering.operatorRef.invalid");
+                    assertThat(diagnostic.target()).isEqualTo("/operators/0/lowering/operatorRef");
+                });
+    }
+
+    @Test
+    void rejectsTransformLoweringWithoutAssignments() {
+        OperatorDefinition operator = transformOperator(
+                "risk:missingAssignments",
+                Map.of("score", Map.of("type", "integer")),
+                List.of("score"),
+                Map.of("accepted", Map.of("type", "boolean")),
+                List.of("accepted"),
+                Map.of()
+        );
+
+        VisualValidationResult result = validator.validate(libraryWith(operator));
+
+        assertThat(result.valid()).isFalse();
+        assertThat(result.diagnostics())
+                .anySatisfy(diagnostic -> {
+                    assertThat(diagnostic.code()).isEqualTo("visual.operator.lowering.assignments.required");
+                    assertThat(diagnostic.target()).isEqualTo("/operators/0/lowering/parameters/assignments");
+                });
+    }
+
+    @Test
+    void rejectsTransformLoweringWhenAssignmentsDoNotMatchOutputSchema() {
+        OperatorDefinition operator = transformOperator(
+                "risk:unknownAssignmentTarget",
+                Map.of("score", Map.of("type", "integer")),
+                List.of("score"),
+                Map.of("accepted", Map.of("type", "boolean")),
+                List.of("accepted"),
+                Map.of("decision", "{{input.score}} >= 700")
+        );
+
+        VisualValidationResult result = validator.validate(libraryWith(operator));
+
+        assertThat(result.valid()).isFalse();
+        assertThat(result.diagnostics())
+                .extracting("code")
+                .contains(
+                        "visual.operator.lowering.assignmentTarget.unknown",
+                        "visual.operator.lowering.assignmentTarget.required"
+                );
+    }
+
+    @Test
+    void rejectsTransformLoweringWhenTemplateReferencesUnknownInput() {
+        OperatorDefinition operator = transformOperator(
+                "risk:unknownTemplateInput",
+                Map.of("score", Map.of("type", "integer")),
+                List.of("score"),
+                Map.of("accepted", Map.of("type", "boolean")),
+                List.of("accepted"),
+                Map.of("accepted", "{{input.missingScore}} >= 700")
+        );
+
+        VisualValidationResult result = validator.validate(libraryWith(operator));
+
+        assertThat(result.valid()).isFalse();
+        assertThat(result.diagnostics())
+                .anySatisfy(diagnostic -> {
+                    assertThat(diagnostic.code()).isEqualTo("visual.operator.lowering.template.unknownInput");
+                    assertThat(diagnostic.target()).isEqualTo("/operators/0/lowering/parameters/assignments/accepted");
+                });
+    }
+
+    @Test
+    void rejectsTransformLoweringWithUnsupportedOutputPortShape() {
+        OperatorDefinition operator = new OperatorDefinition(
+                "bloge.visualOperator.v1",
+                "risk:unsupportedTransformOutput",
+                "1.0.0",
+                new OperatorDefinition.Display("Bad transform", "Test operator.", List.of("test")),
+                new OperatorDefinition.Source("user-library", "", "", "", true),
+                new OperatorDefinition.Ports(
+                        List.of(new OperatorDefinition.Port("inputs",
+                                SchemaEnvelope.object(Map.of("score", Map.of("type", "integer")), List.of("score")),
+                                true,
+                                "Inputs.")),
+                        List.of(new OperatorDefinition.Port("result",
+                                SchemaEnvelope.object(Map.of("accepted", Map.of("type", "boolean")),
+                                        List.of("accepted")),
+                                true,
+                                "Result."))
+                ),
+                SchemaEnvelope.opaque(),
+                OperatorDefinition.Capabilities.pure(),
+                new OperatorDefinition.Lowering("transform", "transform", Map.of(
+                        "assignments", Map.of("accepted", "{{input.score}} >= 700")
+                )),
+                List.of()
+        );
+
+        VisualValidationResult result = validator.validate(libraryWith(operator));
+
+        assertThat(result.valid()).isFalse();
+        assertThat(result.diagnostics())
+                .anySatisfy(diagnostic -> assertThat(diagnostic.code())
+                        .isEqualTo("visual.operator.lowering.transformOutputUnsupported"));
+    }
+
+    @Test
     void rejectsRawSecretInLoweringParametersWithoutEchoingValue() {
         String rawSecret = "sk-testSecretToken123456";
         OperatorDefinition operator = operator(
@@ -263,6 +420,48 @@ class OperatorLibraryValidatorTest {
                     assertThat(diagnostic.message()).doesNotContain(rawSecret);
                     assertThat(diagnostic.target()).contains("lowering").contains("apiKey");
                 });
+    }
+
+    private static OperatorDefinition transformOperator(String operatorRef,
+                                                        Map<String, Object> inputProperties,
+                                                        List<String> inputRequired,
+                                                        Map<String, Object> outputProperties,
+                                                        List<String> outputRequired,
+                                                        Map<String, Object> assignments) {
+        return new OperatorDefinition(
+                "bloge.visualOperator.v1",
+                operatorRef,
+                "1.0.0",
+                new OperatorDefinition.Display(operatorRef, "Test operator.", List.of("test")),
+                new OperatorDefinition.Source("user-library", "", "", "", true),
+                new OperatorDefinition.Ports(
+                        List.of(new OperatorDefinition.Port("inputs",
+                                SchemaEnvelope.object(inputProperties, inputRequired),
+                                true,
+                                "Inputs.")),
+                        List.of(new OperatorDefinition.Port("output",
+                                SchemaEnvelope.object(outputProperties, outputRequired),
+                                true,
+                                "Output."))
+                ),
+                SchemaEnvelope.opaque(),
+                OperatorDefinition.Capabilities.pure(),
+                new OperatorDefinition.Lowering("transform", "transform", Map.of(
+                        "assignments", assignments
+                )),
+                List.of()
+        );
+    }
+
+    private static OperatorDefinition.Ports outputOnlyPorts(Map<String, Object> outputProperties,
+                                                            List<String> outputRequired) {
+        return new OperatorDefinition.Ports(
+                List.of(),
+                List.of(new OperatorDefinition.Port("output",
+                        SchemaEnvelope.object(outputProperties, outputRequired),
+                        true,
+                        "Output."))
+        );
     }
 
     private static OperatorLibrary libraryWith(OperatorDefinition operator) {
