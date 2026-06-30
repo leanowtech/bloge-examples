@@ -49,6 +49,10 @@ public class VisualGraphRunService {
      * @return generated DSL plus lowering/compiler diagnostics
      */
     public DslGenerationResult compile(GraphDraft draft) {
+        List<VisualDiagnostic> fingerprintDiagnostics = requireOperatorFingerprintSnapshot(draft);
+        if (!fingerprintDiagnostics.isEmpty()) {
+            return new DslGenerationResult(false, "", fingerprintDiagnostics);
+        }
         VisualValidationResult validation = validator.validate(draft);
         if (!validation.valid()) {
             return new DslGenerationResult(false, "", validation.diagnostics());
@@ -75,6 +79,11 @@ public class VisualGraphRunService {
     public VisualGraphRunResponse run(GraphDraft draft,
                                       Map<String, Object> context,
                                       String outputNode) {
+        List<VisualDiagnostic> fingerprintDiagnostics = requireOperatorFingerprintSnapshot(draft);
+        if (!fingerprintDiagnostics.isEmpty()) {
+            return blocked(draft, false, fingerprintDiagnostics,
+                    List.of("Operator fingerprint snapshot is required."), "");
+        }
         VisualValidationResult validation = validator.validate(draft);
         List<VisualDiagnostic> diagnostics = new ArrayList<>(validation.diagnostics());
         if (!validation.valid()) {
@@ -188,6 +197,21 @@ public class VisualGraphRunService {
                 dynamic.decisionTable(),
                 publication.dsl()
         );
+    }
+
+    private static List<VisualDiagnostic> requireOperatorFingerprintSnapshot(GraphDraft draft) {
+        if (draft == null || draft.nodes().isEmpty() || !draft.operatorFingerprints().isEmpty()) {
+            return List.of();
+        }
+        List<VisualDiagnostic> diagnostics = new ArrayList<>();
+        for (int i = 0; i < draft.nodes().size(); i++) {
+            GraphDraft.DraftNode node = draft.nodes().get(i);
+            diagnostics.add(VisualDiagnostic.error("visual.operator.fingerprintMissing",
+                    "Node '%s' using operator '%s' is missing an operator fingerprint snapshot."
+                            .formatted(node.id(), node.operatorRef()),
+                    "/nodes/" + i + "/operatorRef"));
+        }
+        return diagnostics;
     }
 
     private static boolean shouldExtractDraftOutputPath(GraphDraft draft, String actualOutputNode) {

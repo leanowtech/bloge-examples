@@ -14,6 +14,7 @@ import com.leanowtech.bloge.test.MockOperator;
 
 import org.junit.jupiter.api.Test;
 
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -33,7 +34,7 @@ class VisualGraphRunServiceTest {
                 new GraphDraftDslGenerator(catalog),
                 new DynamicGatewayComposerService(MockOperator.returning(null))
         );
-        GraphDraft draft = new GraphDraft(
+        GraphDraft draft = withFingerprints(new GraphDraft(
                 "",
                 "",
                 0,
@@ -54,7 +55,7 @@ class VisualGraphRunServiceTest {
                 List.of(),
                 Map.of(),
                 new GraphDraft.OutputSelection("response", "")
-        );
+        ), catalog);
 
         VisualGraphRunResponse response = service.run(draft, Map.of("score", 720), "");
 
@@ -74,7 +75,7 @@ class VisualGraphRunServiceTest {
                 new GraphDraftDslGenerator(catalog),
                 new DynamicGatewayComposerService(MockOperator.returning(null))
         );
-        GraphDraft draft = new GraphDraft(
+        GraphDraft draft = withFingerprints(new GraphDraft(
                 "",
                 "",
                 0,
@@ -98,7 +99,7 @@ class VisualGraphRunServiceTest {
                 List.of(),
                 Map.of(),
                 new GraphDraft.OutputSelection("eligibility", "")
-        );
+        ), catalog);
 
         VisualGraphRunResponse response = service.run(draft, Map.of("score", 720, "amount", 250_000), "");
 
@@ -118,7 +119,7 @@ class VisualGraphRunServiceTest {
                 new GraphDraftDslGenerator(catalog),
                 new DynamicGatewayComposerService(MockOperator.returning(null))
         );
-        GraphDraft draft = new GraphDraft(
+        GraphDraft draft = withFingerprints(new GraphDraft(
                 "",
                 "",
                 0,
@@ -155,7 +156,7 @@ class VisualGraphRunServiceTest {
                 List.of(),
                 Map.of(),
                 new GraphDraft.OutputSelection("eligibility", "eligible")
-        );
+        ), catalog);
 
         VisualGraphRunResponse defaultResponse = service.run(draft, Map.of("score", 720, "amount", 250_000), "");
         VisualGraphRunResponse overrideResponse = service.run(draft, Map.of("score", 720, "amount", 250_000), "summary");
@@ -258,5 +259,14 @@ class VisualGraphRunServiceTest {
                 return "bloge:transform".equals(operatorRef) ? Optional.of(transform) : Optional.empty();
             }
         };
+    }
+
+    private static GraphDraft withFingerprints(GraphDraft draft, VisualOperatorCatalog catalog) {
+        Map<String, String> fingerprints = new LinkedHashMap<>();
+        for (GraphDraft.DraftNode node : draft.nodes()) {
+            catalog.find(node.operatorRef())
+                    .ifPresent(operator -> fingerprints.put(node.id(), operator.fingerprint()));
+        }
+        return draft.withOperatorFingerprints(fingerprints);
     }
 }

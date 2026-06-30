@@ -24,6 +24,7 @@ import org.junit.jupiter.api.Test;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
@@ -36,13 +37,14 @@ class VisualGraphDraftControllerTest {
 
     @Test
     void compileBlocksInvalidDraftBeforeDslGeneration() {
-        VisualGraphDraftController controller = controllerWithEligibilityLibrary();
-        GraphDraft draft = eligibilityDraft(graphInputSchema(
+        DefaultVisualOperatorCatalog catalog = eligibilityCatalog();
+        VisualGraphDraftController controller = controllerWithCatalog(catalog, null);
+        GraphDraft draft = withFingerprints(eligibilityDraft(graphInputSchema(
                 Map.of(
                         "score", Map.of("type", "string"),
                         "amount", Map.of("type", "number")
                 )
-        ));
+        )), catalog);
 
         DslGenerationResult result = controller.compile(draft);
 
@@ -57,6 +59,24 @@ class VisualGraphDraftControllerTest {
 
     @Test
     void compileGeneratesDslAfterVisualValidationPasses() {
+        DefaultVisualOperatorCatalog catalog = eligibilityCatalog();
+        VisualGraphDraftController controller = controllerWithCatalog(catalog, null);
+        GraphDraft draft = withFingerprints(eligibilityDraft(graphInputSchema(
+                Map.of(
+                        "score", Map.of("type", "integer"),
+                        "amount", Map.of("type", "number")
+                )
+        )), catalog);
+
+        DslGenerationResult result = controller.compile(draft);
+
+        assertThat(result.generated()).isTrue();
+        assertThat(result.diagnostics()).isEmpty();
+        assertThat(result.dsl()).contains("transform eligibility");
+    }
+
+    @Test
+    void compileRejectsDraftWithoutOperatorFingerprints() {
         VisualGraphDraftController controller = controllerWithEligibilityLibrary();
         GraphDraft draft = eligibilityDraft(graphInputSchema(
                 Map.of(
@@ -67,17 +87,20 @@ class VisualGraphDraftControllerTest {
 
         DslGenerationResult result = controller.compile(draft);
 
-        assertThat(result.generated()).isTrue();
-        assertThat(result.diagnostics()).isEmpty();
-        assertThat(result.dsl()).contains("transform eligibility");
+        assertThat(result.generated()).isFalse();
+        assertThat(result.dsl()).isBlank();
+        assertThat(result.diagnostics())
+                .anySatisfy(diagnostic -> {
+                    assertThat(diagnostic.code()).isEqualTo("visual.operator.fingerprintMissing");
+                    assertThat(diagnostic.target()).isEqualTo("/nodes/0/operatorRef");
+                });
     }
 
     @Test
     void compileRejectsGeneratedDslWhenRuntimeOperatorIsMissing() {
-        VisualGraphDraftController controller = controllerWithCatalog(
-                VisualCatalogTestSupport.catalogWithLibrary(nativePolicyLibrary()),
-                new InMemoryGraphDraftRepository());
-        GraphDraft draft = nativePolicyDraft();
+        DefaultVisualOperatorCatalog catalog = VisualCatalogTestSupport.catalogWithLibrary(nativePolicyLibrary());
+        VisualGraphDraftController controller = controllerWithCatalog(catalog, new InMemoryGraphDraftRepository());
+        GraphDraft draft = withFingerprints(nativePolicyDraft(), catalog);
 
         DslGenerationResult result = controller.compile(draft);
 
@@ -345,9 +368,12 @@ class VisualGraphDraftControllerTest {
     }
 
     private static VisualGraphDraftController controllerWithEligibilityLibrary() {
-        DefaultVisualOperatorCatalog catalog = VisualCatalogTestSupport.catalogWithLibrary(
+        return controllerWithCatalog(eligibilityCatalog(), null);
+    }
+
+    private static DefaultVisualOperatorCatalog eligibilityCatalog() {
+        return VisualCatalogTestSupport.catalogWithLibrary(
                 VisualCatalogTestSupport.eligibilityLibrary("integer"));
-        return controllerWithCatalog(catalog, null);
     }
 
     private static VisualGraphDraftController controllerWithCatalog(DefaultVisualOperatorCatalog catalog,
@@ -444,6 +470,15 @@ class VisualGraphDraftControllerTest {
                 Map.of(),
                 new GraphDraft.OutputSelection("policy", "")
         );
+    }
+
+    private static GraphDraft withFingerprints(GraphDraft draft, DefaultVisualOperatorCatalog catalog) {
+        Map<String, String> fingerprints = new LinkedHashMap<>();
+        for (GraphDraft.DraftNode node : draft.nodes()) {
+            catalog.find(node.operatorRef())
+                    .ifPresent(operator -> fingerprints.put(node.id(), operator.fingerprint()));
+        }
+        return draft.withOperatorFingerprints(fingerprints);
     }
 
     private static OperatorLibrary nativePolicyLibrary() {
