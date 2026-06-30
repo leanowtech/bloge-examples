@@ -22,10 +22,26 @@ class VisualGraphRunHistoryControllerTest {
         VisualGraphRunRecord stored = repository.create(record());
         VisualGraphRunHistoryController controller = new VisualGraphRunHistoryController(repository);
 
-        assertThat(controller.list()).containsExactly(stored);
+        assertThat(controller.list(null, null, null, null, null, null)).containsExactly(stored);
         assertThat(controller.get(stored.runId()))
                 .extracting(response -> response.getBody())
                 .isEqualTo(stored);
+    }
+
+    @Test
+    void listFiltersRunRecords() {
+        InMemoryVisualGraphRunRepository repository = new InMemoryVisualGraphRunRepository();
+        VisualGraphRunRecord matching = repository.create(record("draft-1",
+                VisualGraphRunRecord.SOURCE_STORED_DRAFT, "", true));
+        repository.create(record("draft-2", VisualGraphRunRecord.SOURCE_STORED_DRAFT, "", false));
+        repository.create(record("draft-1", VisualGraphRunRecord.SOURCE_PUBLICATION, "publication-1", true));
+        VisualGraphRunHistoryController controller = new VisualGraphRunHistoryController(repository);
+
+        assertThat(controller.list("stored_draft", "draft-1", null, "visualPolicy", true, 1))
+                .containsExactly(matching);
+        assertThat(controller.list("PUBLICATION", null, "publication-1", null, true, null))
+                .extracting(VisualGraphRunRecord::publicationId)
+                .containsExactly("publication-1");
     }
 
     @Test
@@ -37,9 +53,16 @@ class VisualGraphRunHistoryControllerTest {
     }
 
     private static VisualGraphRunRecord record() {
+        return record("draft-1", VisualGraphRunRecord.SOURCE_STORED_DRAFT, "", true);
+    }
+
+    private static VisualGraphRunRecord record(String draftId,
+                                               String sourceKind,
+                                               String publicationId,
+                                               boolean success) {
         GraphDraft draft = new GraphDraft(
                 "",
-                "draft-1",
+                draftId,
                 1,
                 "visualPolicy",
                 "",
@@ -55,7 +78,7 @@ class VisualGraphRunHistoryControllerTest {
         VisualGraphRunResponse response = new VisualGraphRunResponse(
                 true,
                 true,
-                true,
+                success,
                 "visualPolicy",
                 "response",
                 Map.of("ok", true),
@@ -68,6 +91,13 @@ class VisualGraphRunHistoryControllerTest {
                 null,
                 "graph visualPolicy {}"
         );
+        if (VisualGraphRunRecord.SOURCE_PUBLICATION.equals(sourceKind)) {
+            return new VisualGraphRunRecord("", "", sourceKind, draftId, 1, publicationId,
+                    response.graphName(), "", "", "", response.outputNode(), null, response.validated(),
+                    response.compiled(), response.success(), response.elapsedMs(), response.statusMap(),
+                    response.diagnostics(), response.errors(), Map.of("score", Map.of("type", "integer")),
+                    Map.of("type", "object"), Map.of(), response.generatedDsl());
+        }
         return VisualGraphRunRecord.storedDraft(draft, Map.of("score", 720), response);
     }
 }

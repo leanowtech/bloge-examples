@@ -324,6 +324,13 @@ const state = {
   publications: [],
   selectedPublicationId: '',
   publicationMessage: null,
+  runHistory: [],
+  runHistoryFilters: {
+    sourceKind: '',
+    outcome: '',
+    limit: '8'
+  },
+  runHistoryMessage: null,
   visualCheck: {
     message: 'Not checked',
     level: 'info',
@@ -390,6 +397,7 @@ async function loadScenarios() {
   await loadOperatorLibraries({ render: false });
   await loadDraftList({ render: false });
   await loadPublicationList({ render: false });
+  await loadRunHistory({ render: false });
   const response = await fetch('/api/gateway/examples/scenarios');
   state.customContextText = pretty(DEFAULT_COMPOSER_CONTEXT);
   syncGraphInputSchemaTextFromBuilder({ render: false });
@@ -843,6 +851,17 @@ function renderInputForm() {
         </div>
         <div id="publication-status" class="draft-status" hidden></div>
       </div>
+      <div class="builder-panel">
+        <div class="panel-title">Run History</div>
+        <div class="run-history-controls">
+          <select id="run-history-source" aria-label="Filter run history by source"></select>
+          <select id="run-history-outcome" aria-label="Filter run history by outcome"></select>
+          <input id="run-history-limit" type="number" min="1" max="50" value="${escapeHtml(state.runHistoryFilters.limit)}" aria-label="Run history limit">
+          <button id="reload-run-history" class="secondary compact" type="button">Reload</button>
+        </div>
+        <div id="run-history-status" class="draft-status" hidden></div>
+        <div id="run-history-list" class="run-history-list"></div>
+      </div>
       <div id="selected-operator-editor" class="builder-panel"></div>
       <div id="graph-output-editor" class="builder-panel"></div>
       <div class="builder-panel">
@@ -883,6 +902,7 @@ function renderInputForm() {
     renderResourceContractImportControls();
     renderDraftControls();
     renderPublicationControls();
+    renderRunHistoryControls();
     renderSelectedOperatorEditor();
     renderGraphOutputEditor();
     renderVisualCheck();
@@ -2293,6 +2313,149 @@ function setPublicationMessage(text, level = 'info') {
   renderPublicationStatus();
 }
 
+function renderRunHistoryControls() {
+  const source = $('run-history-source');
+  const outcome = $('run-history-outcome');
+  const limit = $('run-history-limit');
+  const reload = $('reload-run-history');
+  if (!source || !outcome || !limit || !reload) {
+    return;
+  }
+
+  source.innerHTML = [
+    ['','All sources'],
+    ['TRANSIENT_DRAFT', 'Draft preview'],
+    ['STORED_DRAFT', 'Saved draft'],
+    ['PUBLICATION', 'Publication']
+  ].map(([value, label]) => `<option value="${escapeHtml(value)}">${escapeHtml(label)}</option>`).join('');
+  source.value = state.runHistoryFilters.sourceKind || '';
+  source.onchange = () => {
+    state.runHistoryFilters.sourceKind = source.value;
+    loadRunHistory();
+  };
+
+  outcome.innerHTML = [
+    ['', 'All outcomes'],
+    ['true', 'Success'],
+    ['false', 'Errors']
+  ].map(([value, label]) => `<option value="${escapeHtml(value)}">${escapeHtml(label)}</option>`).join('');
+  outcome.value = state.runHistoryFilters.outcome || '';
+  outcome.onchange = () => {
+    state.runHistoryFilters.outcome = outcome.value;
+    loadRunHistory();
+  };
+
+  limit.value = state.runHistoryFilters.limit || '8';
+  limit.onchange = () => {
+    state.runHistoryFilters.limit = limit.value || '8';
+    loadRunHistory();
+  };
+  reload.onclick = loadRunHistory;
+  renderRunHistoryStatus();
+  renderRunHistoryList();
+}
+
+function renderRunHistoryStatus() {
+  const target = $('run-history-status');
+  if (!target) return;
+  const message = state.runHistoryMessage?.text || `${state.runHistory.length} recent runs`;
+  target.hidden = false;
+  target.textContent = message;
+  target.className = `draft-status ${state.runHistoryMessage?.level || 'info'}`;
+}
+
+function renderRunHistoryList() {
+  const target = $('run-history-list');
+  if (!target) return;
+  if (!state.runHistory.length) {
+    target.innerHTML = '<div class="run-history-empty">No matching runs</div>';
+    return;
+  }
+  target.innerHTML = state.runHistory
+    .map((record) => runHistoryRowHtml(record))
+    .join('');
+  target.querySelectorAll('[data-run-history-id]').forEach((button) => {
+    button.addEventListener('click', () => openRunHistoryRecord(button.dataset.runHistoryId || ''));
+  });
+}
+
+function runHistoryRowHtml(record) {
+  const source = record.sourceKind || 'RUN';
+  const outcome = record.success ? 'success' : record.compiled ? 'error' : 'blocked';
+  const reference = record.publicationId
+    ? record.publicationId
+    : record.draftId
+    ? `${record.draftId}@${record.draftRevision || 0}`
+    : 'transient';
+  const diagnostics = Array.isArray(record.diagnostics) ? record.diagnostics.length : 0;
+  const errors = Array.isArray(record.errors) ? record.errors.length : 0;
+  return `
+    <button class="run-history-row ${escapeHtml(outcome)}" type="button" data-run-history-id="${escapeHtml(record.runId || '')}">
+      <span class="run-history-main">
+        <strong>${escapeHtml(record.graphName || 'unnamedGraph')}</strong>
+        <small>${escapeHtml(source)} · ${escapeHtml(reference)}</small>
+      </span>
+      <span class="run-history-meta">
+        <span>${escapeHtml(outcome)}</span>
+        <small>${escapeHtml(shortRunId(record.runId || ''))} · ${escapeHtml(record.elapsedMs || 0)}ms · ${diagnostics + errors} notes</small>
+      </span>
+    </button>
+  `;
+}
+
+function shortRunId(runId) {
+  return runId && runId.length > 8 ? runId.slice(0, 8) : runId;
+}
+
+async function openRunHistoryRecord(runId) {
+  if (!runId) return;
+  try {
+    const response = await fetch(`/api/visual/runs/${encodeURIComponent(runId)}`);
+    if (!response.ok) {
+      throw new Error(`Run ${runId} failed with ${response.status}`);
+    }
+    const payload = await response.json();
+    $('output').textContent = pretty({ runHistory: payload });
+    state.runHistoryMessage = { text: `Loaded ${shortRunId(runId)}.`, level: 'success' };
+  } catch (error) {
+    state.runHistoryMessage = { text: error.message, level: 'error' };
+  }
+  renderRunHistoryStatus();
+}
+
+async function loadRunHistory(options = {}) {
+  try {
+    const response = await fetch(runHistoryUrl());
+    if (!response.ok) {
+      throw new Error(`Run history failed with ${response.status}`);
+    }
+    state.runHistory = await response.json();
+    state.runHistoryMessage = null;
+  } catch (error) {
+    state.runHistory = [];
+    state.runHistoryMessage = { text: error.message, level: 'error' };
+  }
+  if (options.render !== false) {
+    renderRunHistoryControls();
+  }
+  return state.runHistory;
+}
+
+function runHistoryUrl() {
+  const params = new URLSearchParams();
+  const filters = state.runHistoryFilters || {};
+  if (filters.sourceKind) {
+    params.set('sourceKind', filters.sourceKind);
+  }
+  if (filters.outcome) {
+    params.set('success', filters.outcome);
+  }
+  const limit = Number.parseInt(filters.limit || '8', 10);
+  params.set('limit', Number.isFinite(limit) && limit > 0 ? String(Math.min(limit, 50)) : '8');
+  const query = params.toString();
+  return query ? `/api/visual/runs?${query}` : '/api/visual/runs';
+}
+
 async function loadPublicationList(options = {}) {
   try {
     const response = await fetch('/api/visual/publications');
@@ -2372,6 +2535,7 @@ async function runSelectedPublication() {
     highlightDecisionRow(state.lastPayload);
     renderDecisionSummary(state.lastPayload);
     renderDiagram();
+    await loadRunHistory();
   } catch (error) {
     setPublicationMessage(error.message, 'error');
     setVisualCheck(error.message, 'error');
@@ -9351,6 +9515,9 @@ async function runCustomGraph() {
   highlightDecisionRow(state.lastPayload);
   renderDecisionSummary(state.lastPayload);
   renderDiagram();
+  if (useVisualDraft) {
+    await loadRunHistory();
+  }
 }
 
 function composerOutputNode() {

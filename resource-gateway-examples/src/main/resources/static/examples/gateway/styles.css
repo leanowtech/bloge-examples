@@ -891,6 +891,97 @@ body.dragging-operator * {
   color: var(--red);
 }
 
+.run-history-controls {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 0.85fr) 70px auto;
+  gap: 6px;
+}
+
+.run-history-controls select,
+.run-history-controls input {
+  min-width: 0;
+  padding: 7px 8px;
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  background: var(--surface-subtle);
+  color: var(--text);
+}
+
+.run-history-list {
+  display: grid;
+  gap: 6px;
+}
+
+.run-history-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(96px, 0.55fr);
+  gap: 8px;
+  align-items: center;
+  min-height: 48px;
+  padding: 7px 8px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--surface-subtle);
+  color: var(--text);
+  text-align: left;
+  cursor: pointer;
+}
+
+.run-history-row.success {
+  border-left: 4px solid var(--green);
+}
+
+.run-history-row.error,
+.run-history-row.blocked {
+  border-left: 4px solid var(--red);
+}
+
+.run-history-main,
+.run-history-meta {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+
+.run-history-main strong,
+.run-history-main small,
+.run-history-meta span,
+.run-history-meta small {
+  overflow-wrap: anywhere;
+}
+
+.run-history-main strong {
+  font-size: 12px;
+}
+
+.run-history-main small,
+.run-history-meta small {
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 700;
+}
+
+.run-history-meta {
+  text-align: right;
+}
+
+.run-history-meta span {
+  font-size: 11px;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.run-history-empty {
+  min-height: 38px;
+  display: grid;
+  place-items: center;
+  border: 1px dashed var(--line);
+  border-radius: 6px;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 700;
+}
+
 .library-controls {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
@@ -1361,6 +1452,8 @@ body.dragging-operator * {
 .binding-row input:focus,
 .draft-controls select:focus,
 .draft-revision-controls select:focus,
+.run-history-controls input:focus,
+.run-history-controls select:focus,
 .library-controls select:focus,
 .resource-contract-controls input:focus,
 .resource-contract-controls select:focus,

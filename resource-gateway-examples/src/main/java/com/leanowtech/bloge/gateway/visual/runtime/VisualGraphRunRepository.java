@@ -14,6 +14,16 @@ public interface VisualGraphRunRepository {
     Collection<VisualGraphRunRecord> all();
 
     /**
+     * Queries run records.
+     *
+     * @param query run history query
+     * @return matching run records, newest first
+     */
+    default Collection<VisualGraphRunRecord> query(VisualGraphRunQuery query) {
+        return VisualGraphRunQuery.apply(all(), query);
+    }
+
+    /**
      * Finds a run record.
      *
      * @param runId run id

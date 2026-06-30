@@ -165,6 +165,30 @@ class VisualAuthoringBrowserWorkflowTest {
 
         Collection<?> runHistory = restTemplate.getForObject("/api/visual/runs", Collection.class);
         assertThat(runHistory).hasSizeGreaterThanOrEqualTo(2);
+
+        Collection<?> storedDraftRuns = restTemplate.getForObject(
+                "/api/visual/runs?sourceKind=stored_draft&draftId=" + storedDraft.draftId()
+                        + "&success=true&limit=1",
+                Collection.class
+        );
+        assertThat(storedDraftRuns).singleElement().satisfies(record -> {
+            Map<String, Object> runRecord = (Map<String, Object>) record;
+            assertThat(runRecord)
+                    .containsEntry("sourceKind", "STORED_DRAFT")
+                    .containsEntry("draftId", storedDraft.draftId())
+                    .containsEntry("success", true);
+        });
+
+        Collection<?> publicationRuns = restTemplate.getForObject(
+                "/api/visual/runs?sourceKind=PUBLICATION&publicationId=" + publicationId + "&limit=1",
+                Collection.class
+        );
+        assertThat(publicationRuns).singleElement().satisfies(record -> {
+            Map<String, Object> runRecord = (Map<String, Object>) record;
+            assertThat(runRecord)
+                    .containsEntry("sourceKind", "PUBLICATION")
+                    .containsEntry("publicationId", publicationId);
+        });
     }
 
     private void assertBrowserAssetsExposeVisualWorkflowEntrypoints() {
@@ -183,9 +207,11 @@ class VisualAuthoringBrowserWorkflowTest {
                 .contains("/api/visual/connections/check")
                 .contains("/api/visual/drafts/run")
                 .contains("/api/visual/publications")
+                .contains("/api/visual/runs")
                 .contains("/admin/visual-operator-libraries")
                 .contains("preview-resource-contract")
                 .contains("save-resource-contract")
+                .contains("run-history-list")
                 .contains("/admin/resource-design-contracts/from-openapi")
                 .contains("/admin/resource-design-contracts/${encodeURIComponent(contract.resourceId)}");
     }

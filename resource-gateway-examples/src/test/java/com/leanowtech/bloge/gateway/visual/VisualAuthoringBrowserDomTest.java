@@ -141,6 +141,9 @@ class VisualAuthoringBrowserDomTest {
         waitForText(wait, By.id("visual-diagnostics"), "visual.graph.unreachableNode");
         waitForText(wait, By.id("output"), "\"success\": true");
         waitForText(wait, By.id("output"), "\"output\": false");
+        waitForText(wait, By.id("run-history-list"), "TRANSIENT_DRAFT");
+        waitForText(wait, By.id("run-history-list"), "SUCCESS");
+        waitForText(wait, By.id("run-history-list"), "customLoanPolicy");
 
         click(wait, By.id("publish-visual-draft"));
         waitForText(wait, By.id("visual-check-status"), "Published");
@@ -151,6 +154,11 @@ class VisualAuthoringBrowserDomTest {
         waitForText(wait, By.id("output"), "\"publicationRun\"");
         waitForText(wait, By.id("output"), "\"success\": true");
         waitForText(wait, By.id("output"), "\"output\": false");
+        waitForText(wait, By.id("run-history-list"), "PUBLICATION");
+
+        selectByValue(wait, By.id("run-history-source"), "PUBLICATION");
+        waitForText(wait, By.id("run-history-list"), "PUBLICATION");
+        assertThat(textOf(By.id("run-history-list"))).doesNotContain("TRANSIENT_DRAFT");
     }
 
     @Test

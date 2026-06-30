@@ -61,6 +61,23 @@ class DatabaseVisualGraphRunRepositoryTest {
     }
 
     @Test
+    void queryFiltersRecordsByRunMetadata() {
+        VisualGraphRunRecord storedDraft = repository.create(record("run-stored", "draft-1",
+                VisualGraphRunRecord.SOURCE_STORED_DRAFT, "", true));
+        repository.create(record("run-failed", "draft-1", VisualGraphRunRecord.SOURCE_STORED_DRAFT, "",
+                false));
+        VisualGraphRunRecord publication = repository.create(record("run-publication", "draft-1",
+                VisualGraphRunRecord.SOURCE_PUBLICATION, "publication-1", true));
+
+        assertThat(repository.query(new VisualGraphRunQuery("stored_draft", "draft-1", "", "visualPolicy",
+                true, 10)))
+                .containsExactly(storedDraft);
+        assertThat(repository.query(new VisualGraphRunQuery("PUBLICATION", "", "publication-1", "",
+                true, 1)))
+                .containsExactly(publication);
+    }
+
+    @Test
     void createDoesNotOverwriteExistingRun() {
         repository.create(record("run-1"));
 
@@ -69,9 +86,17 @@ class DatabaseVisualGraphRunRepositoryTest {
     }
 
     private static VisualGraphRunRecord record(String runId) {
+        return record(runId, "draft-1", VisualGraphRunRecord.SOURCE_STORED_DRAFT, "", true);
+    }
+
+    private static VisualGraphRunRecord record(String runId,
+                                               String draftId,
+                                               String sourceKind,
+                                               String publicationId,
+                                               boolean success) {
         GraphDraft draft = new GraphDraft(
                 "",
-                "draft-1",
+                draftId,
                 7,
                 "visualPolicy",
                 "tenant-a",
@@ -87,7 +112,7 @@ class DatabaseVisualGraphRunRepositoryTest {
         VisualGraphRunResponse response = new VisualGraphRunResponse(
                 true,
                 true,
-                true,
+                success,
                 "visualPolicy",
                 "response",
                 Map.of("decision", "approved"),
@@ -100,9 +125,15 @@ class DatabaseVisualGraphRunRepositoryTest {
                 null,
                 "graph visualPolicy {}"
         );
-        return VisualGraphRunRecord.storedDraft(draft,
-                        Map.of("score", 720, "apiToken", "secret-token"),
-                        response)
-                .withIdentity(runId, null);
+        if (VisualGraphRunRecord.SOURCE_PUBLICATION.equals(sourceKind)) {
+            return new VisualGraphRunRecord("", runId, sourceKind, draft.draftId(), draft.revision(),
+                    publicationId, response.graphName(), draft.tenantId(), draft.namespace(), draft.environment(),
+                    response.outputNode(), null, response.validated(), response.compiled(), response.success(),
+                    response.elapsedMs(), response.statusMap(), response.diagnostics(), response.errors(),
+                    Map.of("score", Map.of("type", "integer")), Map.of("type", "object"), Map.of(),
+                    response.generatedDsl());
+        }
+        return VisualGraphRunRecord.storedDraft(draft, Map.of("score", 720, "apiToken", "secret-token"),
+                response).withIdentity(runId, null);
     }
 }
