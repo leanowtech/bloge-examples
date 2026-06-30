@@ -125,7 +125,14 @@ public class GraphDraftValidator {
             return;
         }
         String expected = operatorFingerprints.get(node.id());
-        if (expected == null || expected.isBlank() || expected.equals(operator.fingerprint())) {
+        if (expected == null || expected.isBlank()) {
+            diagnostics.add(VisualDiagnostic.error("visual.operator.fingerprintMissing",
+                    "Node '%s' using operator '%s' is missing an operator fingerprint snapshot."
+                            .formatted(node.id(), operator.operatorRef()),
+                    nodePath + "/operatorRef"));
+            return;
+        }
+        if (expected.equals(operator.fingerprint())) {
             return;
         }
         diagnostics.add(VisualDiagnostic.error("visual.operator.fingerprintMismatch",

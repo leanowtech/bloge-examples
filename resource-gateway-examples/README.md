@@ -152,7 +152,8 @@ not represented by a direct edge. Output selections are checked
 against the selected node's output port schema before compile/run as well, and
 the browser composer exposes the output node/path saved into `GraphDraft.output`.
 Each catalog operator exposes a server-computed fingerprint, and saved drafts
-store per-node `operatorFingerprints`; validation blocks compile/run when a
+store per-node `operatorFingerprints`; validation requires any non-empty
+fingerprint snapshot to cover every resolved node and blocks compile/run when a
 draft was authored against an older schema/lowering fingerprint than the catalog
 currently exposes.
 Operator availability is also enforced by policy: imported operator definitions
@@ -782,7 +783,7 @@ curl -X POST http://localhost:8080/api/gateway/resources/execute \
 
 ## Test strategy
 
-The test suite is organised into four layers (18 top-level test classes, 124 executed
+The test suite is organised into four layers (40 top-level test classes, 302 executed
 tests, including nested JUnit suites):
 
 ### Layer 1 — Unit tests
@@ -807,7 +808,8 @@ Isolated component tests, some with lightweight Spring slices or mocks.
 | `DatabaseResourceRegistryTest` | 11 | CRUD, H2 persistence, in-memory cache |
 | `ResourceDescriptorBootstrapTest` | 7 | Seeding, refresh behavior, idempotency |
 | `GatewayDslCompilationTest` | 7 | DSL parsing, graph loading |
-| Visual authoring suite | 160 | Visual operator projection, resource design contract persistence and gates, imported libraries, catalog policy filtering, cross-library operatorRef ownership, system-reserved operatorRef gates, import-time lowering gates, draft/publication persistence and history, revision audit metadata, revision-guarded patching, typed connection/edge validation including binding kind allow-list, source-picker server preflight, duplicate target input ownership, object required fields, nested objectTemplate required fields, enum value domains, config expression references and configSchema type gates, data edge/semantic dependency consistency, graph input schema gates, secret blocking, DSL lowering, compiler gating, dependency ordering, runtime smoke path |
+| Gateway example API suite | 13 | Dynamic composer service/controller, scenario catalog, example graph endpoints |
+| Visual authoring suite | 161 | Visual operator projection, resource design contract persistence and gates, imported libraries, catalog policy filtering, cross-library operatorRef ownership, system-reserved operatorRef gates, import-time lowering gates, draft/publication persistence and history, revision audit metadata, revision-guarded patching, operator fingerprint drift and snapshot coverage gates, typed connection/edge validation including binding kind allow-list, source-picker server preflight, duplicate target input ownership, object required fields, nested objectTemplate required fields, enum value domains, config expression references and configSchema type gates, data edge/semantic dependency consistency, graph input schema gates, secret blocking, DSL lowering, compiler gating, dependency ordering, runtime smoke path |
 
 ### Layer 3 — Orchestration tests
 
@@ -819,6 +821,7 @@ Per-graph tests that compile and execute each `.bloge` graph against mock operat
 | `ProductDetailGraphTest` | 3 | Conditional branching |
 | `EnrichOrderListGraphTest` | 1 | Foreach enrichment |
 | `CreditScoreGraphTest` | 2 | Provider degradation |
+| `LoanDecisionPolicyGraphTest` | 2 | Decision-table policy |
 | `AiEnrichedSearchGraphTest` | 2 | Streaming aggregation |
 
 ### Layer 4 — Integration tests
@@ -830,7 +833,7 @@ standalone MockMvc coverage for the admin CRUD API.
 | Class | Tests | Scope |
 |-------|-------|-------|
 | `ResourceRegistryAdminControllerTest` | 8 | Admin CRUD via MockMvc |
-| `ResourceGatewayApplicationTest` | 2 | Spring Boot startup + built-in demo-upstream smoke coverage |
+| `ResourceGatewayApplicationTest` | 3 | Spring Boot startup + built-in demo-upstream smoke coverage |
 | `ResourceExecuteIntegrationTest` | 8 | Unified execute endpoint -> `resourceDispatch` -> `HttpResourceOperator` -> WireMock |
 | `GatewayIntegrationTest` | 6 | Controller -> graph -> `HttpResourceOperator` -> WireMock end-to-end execution |
 
