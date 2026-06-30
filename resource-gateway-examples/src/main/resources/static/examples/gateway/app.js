@@ -561,6 +561,9 @@ function inputPortsForSpec(spec) {
 }
 
 function outputPortsForSpec(spec) {
+  if (spec?.lowering?.mode === 'branch') {
+    return [];
+  }
   if (Array.isArray(spec?.outputPorts) && spec.outputPorts.length) {
     return spec.outputPorts;
   }
@@ -861,6 +864,7 @@ function createDefaultBuilder() {
     selectedId: 'loanPolicy',
     output: { nodeId: 'response', path: '' },
     dependencyEdges: [],
+    routeEdges: [],
     nodes: [
       {
         id: 'loanPolicy',
@@ -933,6 +937,8 @@ function builderEdges(builder = state.builder, options = {}) {
     const kind = canonicalEdgeKind(edge.kind);
     const key = kind === 'dependency'
       ? [kind, edge.source, edge.target].join(':')
+      : (kind === 'route'
+        ? [kind, edge.source, edge.target, edge.condition || 'otherwise'].join(':')
       : [
           kind,
           edge.source,
@@ -941,7 +947,7 @@ function builderEdges(builder = state.builder, options = {}) {
           edge.target,
           edge.targetPort || '',
           edge.targetPath || ''
-        ].join(':');
+        ].join(':'));
     if (edges.some((item) => item.key === key)) return;
     edges.push({ key, label: '', ...edge, kind });
   };
@@ -956,6 +962,20 @@ function builderEdges(builder = state.builder, options = {}) {
       targetPort: 'dependency',
       targetPath: '',
       label: edge.label || 'depends'
+    });
+  }
+
+  for (const edge of builder.routeEdges || []) {
+    add({
+      kind: 'route',
+      source: edge.source,
+      target: edge.target,
+      sourcePort: 'route',
+      sourcePath: '',
+      targetPort: 'route',
+      targetPath: '',
+      condition: edge.condition || 'otherwise',
+      label: edge.condition || 'otherwise'
     });
   }
 
@@ -1044,6 +1064,9 @@ function canonicalEdgeKind(kind) {
   }
   if (value === 'dependency' || value === 'dependson' || value === 'depends_on') {
     return 'dependency';
+  }
+  if (value === 'route' || value === 'branch') {
+    return 'route';
   }
   return value;
 }
@@ -2581,7 +2604,9 @@ function renderGraphOutputEditor() {
   const selectedNode = state.builder.nodes.find((node) => node.id === output.nodeId);
   const pathOptions = selectedNode ? outputPathOptionsForNode(selectedNode) : [];
   const outputSummary = output.path ? `${output.nodeId}.${output.path}` : output.nodeId || 'No output';
-  const nodeOptions = orderedBuilderNodes().map((node) => {
+  const orderedOutputNodes = orderedBuilderNodes();
+  const selectableOutputNodes = orderedOutputNodes.filter((node) => outputPortsForSpec(specForNode(node)).length > 0);
+  const nodeOptions = (selectableOutputNodes.length ? selectableOutputNodes : orderedOutputNodes).map((node) => {
     const selected = node.id === output.nodeId ? ' selected' : '';
     return `<option value="${escapeHtml(node.id)}"${selected}>${escapeHtml(labelForNode(node))} (${escapeHtml(node.id)})</option>`;
   }).join('');
@@ -3675,6 +3700,8 @@ function deleteSelectedBuilderNode() {
   state.builder.nodes = state.builder.nodes.filter((node) => node.id !== selected.id);
   state.builder.dependencyEdges = (state.builder.dependencyEdges || [])
     .filter((edge) => edge.source !== selected.id && edge.target !== selected.id);
+  state.builder.routeEdges = (state.builder.routeEdges || [])
+    .filter((edge) => edge.source !== selected.id && edge.target !== selected.id);
   state.builder.selectedId = orderedBuilderNodes()[0]?.id || null;
   state.selectedNodeId = state.builder.selectedId;
   if (selected.type === 'httpResource' && !state.builder.nodes.some((node) => node.type === 'httpResource')) {
@@ -3744,14 +3771,18 @@ function firstDecisionTableId() {
 function defaultOutputNodeForBuilder(builder = state.builder) {
   const ordered = orderedBuilderNodes(builder);
   const lastTransform = [...ordered].reverse().find((node) => node.type === 'transform');
-  return (lastTransform || ordered[ordered.length - 1])?.id || 'response';
+  const lastSelectable = [...ordered].reverse().find((node) => outputPortsForSpec(specForNode(node)).length > 0);
+  return (lastTransform || lastSelectable || ordered[ordered.length - 1])?.id || 'response';
 }
 
 function ensureBuilderOutput(builder = state.builder) {
   const fallbackNodeId = defaultOutputNodeForBuilder(builder);
   const requested = builder.output || {};
   const nodeExists = builder.nodes.some((node) => node.id === requested.nodeId);
-  const nodeId = nodeExists ? requested.nodeId : fallbackNodeId;
+  const requestedNode = builder.nodes.find((node) => node.id === requested.nodeId);
+  const nodeId = nodeExists && outputPortsForSpec(specForNode(requestedNode)).length > 0
+    ? requested.nodeId
+    : fallbackNodeId;
   const node = builder.nodes.find((item) => item.id === nodeId);
   const pathOptions = outputPathOptionsForNode(node);
   const requestedPath = String(requested.path || '');
@@ -3805,7 +3836,7 @@ function layoutFromBuilder(builder) {
     };
   });
   const edges = builderEdges(builder, { includeConfig: true }).map((edge) => ({
-    id: `${edge.kind || 'data'}:${edge.source}:${edge.sourcePort || ''}.${edge.sourcePath || ''}->${edge.target}:${edge.targetPort || ''}.${edge.targetPath || ''}`,
+    id: `${edge.kind || 'data'}:${edge.source}:${edge.sourcePort || ''}.${edge.sourcePath || ''}->${edge.target}:${edge.targetPort || ''}.${edge.targetPath || ''}${edge.kind === 'route' ? `:${edge.condition || 'otherwise'}` : ''}`,
     kind: edge.kind || 'data',
     source: edge.source,
     target: edge.target,
@@ -3813,6 +3844,7 @@ function layoutFromBuilder(builder) {
     sourcePath: edge.sourcePath || '',
     targetPort: edge.targetPort || '',
     targetPath: edge.targetPath || '',
+    condition: edge.condition || '',
     label: edge.label
   }));
   return {
@@ -3913,6 +3945,13 @@ function nodeToDsl(node, builder) {
 function customNodeToDsl(node, builder) {
   const spec = specForNode(node);
   const inputs = customInputTemplateValues(node);
+  if (spec.lowering?.mode === 'branch') {
+    const selector = renderTemplateExpression(String(spec.lowering?.parameters?.expression || ''), inputs) || 'null';
+    const routes = routeEdgesForNode(builder, node.id)
+      .map((edge) => `    ${renderRouteConditionForDsl(edge.condition)} -> ${edge.target}`)
+      .join('\n');
+    return `  transform ${node.id} {\n    value = ${selector}\n  }\n\n  branch on ${node.id}.output.value {\n${routes}\n  }`;
+  }
   if (spec.lowering?.mode === 'transform' && spec.lowering?.parameters?.assignments) {
     const assignments = Object.entries(spec.lowering.parameters.assignments).map(([key, template]) =>
       `    ${key} = ${renderTemplateExpression(String(template), inputs)}`
@@ -3951,6 +3990,29 @@ function dependencySourcesForNode(builder, nodeId) {
     dependencies.push(edge.source);
   }
   return dependencies;
+}
+
+function routeEdgesForNode(builder, nodeId) {
+  return (builder.routeEdges || [])
+    .filter((edge) => edge.source === nodeId && edge.target)
+    .map((edge) => ({
+      ...edge,
+      condition: edge.condition || 'otherwise'
+    }));
+}
+
+function renderRouteConditionForDsl(condition) {
+  const value = String(condition || '').trim();
+  if (!value || value.toLowerCase() === 'otherwise') {
+    return 'otherwise';
+  }
+  if (value === 'true' || value === 'false' || value === 'null' || /^[-+]?(?:\d+|\d+\.\d*|\d*\.\d+)(?:[eE][-+]?\d+)?$/.test(value)) {
+    return value;
+  }
+  if ((value.startsWith('"') && value.endsWith('"')) || (value.startsWith("'") && value.endsWith("'"))) {
+    return value;
+  }
+  return quote(value);
 }
 
 function customInputTemplateValues(node) {
@@ -4133,6 +4195,7 @@ function builderFromVisualDraft(draft) {
     },
     operatorFingerprints: { ...(draft.operatorFingerprints || {}) },
     dependencyEdges: dependencyEdgesFromDraft(draft),
+    routeEdges: routeEdgesFromDraft(draft),
     nodes
   };
   ensureBuilderOutput(builder);
@@ -4141,19 +4204,21 @@ function builderFromVisualDraft(draft) {
 
 function visualDraftEdgeFromBuilderEdge(edge) {
   const kind = canonicalEdgeKind(edge.kind);
+  const controlEdge = kind === 'dependency' || kind === 'route';
   return {
-    id: `${kind}:${edge.source}:${edge.sourcePort || ''}.${edge.sourcePath || ''}->${edge.target}:${edge.targetPort || ''}.${edge.targetPath || ''}`,
+    id: `${kind}:${edge.source}:${edge.sourcePort || ''}.${edge.sourcePath || ''}->${edge.target}:${edge.targetPort || ''}.${edge.targetPath || ''}${kind === 'route' ? `:${edge.condition || 'otherwise'}` : ''}`,
     kind,
     source: {
       nodeId: edge.source,
-      port: kind === 'dependency' ? '' : (edge.sourcePort || 'output'),
-      path: kind === 'dependency' ? '' : (edge.sourcePath || '')
+      port: controlEdge ? '' : (edge.sourcePort || 'output'),
+      path: controlEdge ? '' : (edge.sourcePath || '')
     },
     target: {
       nodeId: edge.target,
-      port: kind === 'dependency' ? '' : (edge.targetPort || 'inputs'),
-      path: kind === 'dependency' ? '' : (edge.targetPath || '')
-    }
+      port: controlEdge ? '' : (edge.targetPort || 'inputs'),
+      path: controlEdge ? '' : (edge.targetPath || '')
+    },
+    condition: kind === 'route' ? (edge.condition || 'otherwise') : ''
   };
 }
 
@@ -4164,6 +4229,18 @@ function dependencyEdgesFromDraft(draft) {
       source: edge.source?.nodeId || '',
       target: edge.target?.nodeId || '',
       label: 'depends'
+    }))
+    .filter((edge) => edge.source && edge.target && edge.source !== edge.target);
+}
+
+function routeEdgesFromDraft(draft) {
+  return (draft.edges || [])
+    .filter((edge) => canonicalEdgeKind(edge.kind) === 'route')
+    .map((edge) => ({
+      source: edge.source?.nodeId || '',
+      target: edge.target?.nodeId || '',
+      condition: edge.condition || 'otherwise',
+      label: edge.condition || 'otherwise'
     }))
     .filter((edge) => edge.source && edge.target && edge.source !== edge.target);
 }
@@ -4540,7 +4617,7 @@ function renderDiagram() {
     const y2 = targetPoint.y;
     const mid = (x1 + x2) / 2;
     const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
-    path.setAttribute('class', `edge ${edge.kind === 'dependency' ? 'dependency' : ''} ${executed ? 'executed' : ''}`);
+    path.setAttribute('class', `edge ${edge.kind === 'dependency' ? 'dependency' : ''} ${edge.kind === 'route' ? 'route' : ''} ${executed ? 'executed' : ''}`);
     path.setAttribute('marker-end', 'url(#arrow)');
     path.setAttribute('d', `M ${x1} ${y1} C ${mid} ${y1}, ${mid} ${y2}, ${x2} ${y2}`);
     svg.appendChild(path);
@@ -4688,6 +4765,15 @@ function portPoint(visualNode, index, total, role) {
 
 function sourceHandlesForNode(node) {
   const spec = specForNode(node);
+  if (spec.lowering?.mode === 'branch') {
+    return [{
+      nodeId: node.id,
+      port: 'route',
+      path: '',
+      kind: 'route',
+      type: 'route'
+    }];
+  }
   if (node.type === 'decisionTable') {
     return ['decision', 'rate', 'maxTerm', 'reviewLane', 'ruleId'].map((path) => ({
       nodeId: node.id,
@@ -4846,8 +4932,23 @@ function canvasTargetHandlesForNode(node) {
   return [
     ...targetHandlesForNode(node),
     ...configTargetsForNode(node),
-    ...dependencyTargetsForNode(node)
+    ...dependencyTargetsForNode(node),
+    ...routeTargetsForNode(node)
   ];
+}
+
+function routeTargetsForNode(node) {
+  if (!node) {
+    return [];
+  }
+  return [{
+    nodeId: node.id,
+    port: 'route',
+    path: '',
+    kind: 'route',
+    type: 'route',
+    condition: 'otherwise'
+  }];
 }
 
 function dependencyTargetsForNode(node) {
@@ -6725,7 +6826,7 @@ function contextSourceForPath(path, builder = state.builder) {
 }
 
 function connectionAlreadyApplied(source, target, builder = state.builder) {
-  const key = connectionKey(source, target, target?.kind === 'dependency' ? 'dependency' : 'data');
+  const key = connectionKey(source, target, target?.kind === 'dependency' ? 'dependency' : (target?.kind === 'route' ? 'route' : 'data'));
   return Boolean(key) && builderEdges(builder, { includeFallback: false, includeConfig: true })
     .some((edge) => connectionKey(
       {
@@ -6754,6 +6855,14 @@ function connectionKey(source, target, kind = 'data') {
       target.nodeId
     ].map((item) => String(item || '').trim()).join(':');
   }
+  if (edgeKind === 'route') {
+    return [
+      edgeKind,
+      source.nodeId,
+      target.nodeId,
+      target.condition || 'otherwise'
+    ].map((item) => String(item || '').trim()).join(':');
+  }
   return [
     edgeKind,
     source.nodeId,
@@ -6779,6 +6888,15 @@ function connectionCompatibility(source, target) {
     return source.nodeId === CONTEXT_SOURCE_ID
       ? { ok: false, message: 'Dependency edges must start from an operator node.' }
       : { ok: true, message: '' };
+  }
+  if (target.kind === 'route') {
+    if (source.nodeId === CONTEXT_SOURCE_ID) {
+      return { ok: false, message: 'Route edges must start from a branch operator node.' };
+    }
+    if (source.kind !== 'route') {
+      return { ok: false, message: 'Route targets require a route source handle.' };
+    }
+    return { ok: true, message: '' };
   }
   const sourceNode = state.builder.nodes.find((node) => node.id === source.nodeId);
   const targetNode = state.builder.nodes.find((node) => node.id === target.nodeId);
@@ -8456,10 +8574,18 @@ function finishConnectionDrag(event) {
   const drag = state.connectionDrag;
   if (!drag || event.pointerId !== drag.pointerId) return;
   event.preventDefault();
-  const target = connectionTargetAtPoint(event);
+  let target = connectionTargetAtPoint(event);
   state.connectionDrag = null;
   document.body.classList.remove('connecting-edge');
   if (target) {
+    if (target.kind === 'route') {
+      const condition = routeConditionForConnection(target);
+      if (condition === null) {
+        renderDiagram();
+        return;
+      }
+      target = { ...target, condition };
+    }
     const compatibility = connectionCompatibility(drag.source, target);
     if (compatibility.ok) {
       if (connectionAlreadyApplied(drag.source, target)) {
@@ -8495,12 +8621,16 @@ function finishConnectionDrag(event) {
 }
 
 async function checkVisualConnectionOnServer(source, target) {
+  const kind = target.kind === 'dependency'
+    ? 'dependency'
+    : (target.kind === 'route' ? 'route' : 'data');
   const response = await fetch('/api/visual/connections/check', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
       draft: builderToVisualDraft(state.builder),
-      kind: target.kind === 'dependency' ? 'dependency' : 'data',
+      kind,
+      condition: kind === 'route' ? (target.condition || 'otherwise') : '',
       source: {
         nodeId: source.nodeId,
         port: source.port || '',
@@ -8554,6 +8684,14 @@ function applyConnection(source, target) {
   if (!node) return;
   if (target.kind === 'dependency') {
     addDependencyEdge(source, target);
+    state.builder.selectedId = node.id;
+    state.selectedNodeId = node.id;
+    syncComposerFromBuilder({ render: false });
+    renderInputForm();
+    return;
+  }
+  if (target.kind === 'route') {
+    addRouteEdge(source, target);
     state.builder.selectedId = node.id;
     state.selectedNodeId = node.id;
     syncComposerFromBuilder({ render: false });
@@ -8614,6 +8752,39 @@ function addDependencyEdge(source, target) {
   if (!exists) {
     state.builder.dependencyEdges.push(edge);
   }
+}
+
+function addRouteEdge(source, target) {
+  state.builder.routeEdges = state.builder.routeEdges || [];
+  const edge = {
+    source: source.nodeId,
+    target: target.nodeId,
+    condition: target.condition || 'otherwise',
+    label: target.condition || 'otherwise'
+  };
+  const key = connectionKey(
+    { nodeId: edge.source, port: 'route', path: '' },
+    { nodeId: edge.target, port: 'route', path: '', condition: edge.condition },
+    'route'
+  );
+  const exists = state.builder.routeEdges.some((item) => connectionKey(
+    { nodeId: item.source, port: 'route', path: '' },
+    { nodeId: item.target, port: 'route', path: '', condition: item.condition || 'otherwise' },
+    'route'
+  ) === key);
+  if (!exists) {
+    state.builder.routeEdges.push(edge);
+  }
+}
+
+function routeConditionForConnection(target) {
+  const current = target.condition || 'otherwise';
+  const value = window.prompt('Route condition', current);
+  if (value === null) {
+    return null;
+  }
+  const trimmed = value.trim();
+  return trimmed || 'otherwise';
 }
 
 function expressionForConnectionSource(source) {

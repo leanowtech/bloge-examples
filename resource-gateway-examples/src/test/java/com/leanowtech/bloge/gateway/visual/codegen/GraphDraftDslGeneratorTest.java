@@ -347,8 +347,91 @@ class GraphDraftDslGeneratorTest {
         registry.registerRaw("riskScoreFacts", new StubOperator());
         GraphLoader loader = new GraphLoader(registry);
         loader.withCompilationMode(CompilationMode.LENIENT);
-        Graph graph = loader.loadWithDiagnostics(result.dsl()).graph();
-        assertThat(graph).isNotNull();
+        var compilation = loader.loadWithDiagnostics(result.dsl());
+        Graph graph = compilation.graph();
+        assertThat(graph)
+                .as("compiler diagnostics: %s%nDSL:%n%s", compilation.diagnostics(), result.dsl())
+                .isNotNull();
+        assertThat(graph.nodes()).isNotEmpty();
+    }
+
+    @Test
+    void lowersBranchRouteEdgesToBranchDsl() {
+        GraphDraftDslGenerator generator = new GraphDraftDslGenerator(
+                VisualCatalogTestSupport.catalogWithLibrary(VisualCatalogTestSupport.routeLibrary()));
+        GraphDraft draft = new GraphDraft(
+                "",
+                "",
+                0,
+                "visualBranchRoute",
+                "",
+                "",
+                "",
+                "",
+                SchemaEnvelope.object(Map.of(
+                        "productType", Map.of("type", "string")
+                ), List.of("productType")),
+                List.of(
+                        new GraphDraft.DraftNode(
+                                "physicalFacts",
+                                "risk:scoreFacts",
+                                "",
+                                Map.of(),
+                                Map.of(),
+                                null
+                        ),
+                        new GraphDraft.DraftNode(
+                                "routeByType",
+                                "risk:typeRoute",
+                                "",
+                                Map.of("value", GraphDraft.Binding.contextPath("productType")),
+                                Map.of(),
+                                null
+                        ),
+                        new GraphDraft.DraftNode(
+                                "genericFacts",
+                                "risk:scoreFacts",
+                                "",
+                                Map.of(),
+                                Map.of(),
+                                null
+                        )
+                ),
+                List.of(
+                        new GraphDraft.DraftEdge("route-physical", "route",
+                                new GraphDraft.Endpoint("routeByType", "", ""),
+                                new GraphDraft.Endpoint("physicalFacts", "", ""),
+                                "physical"),
+                        new GraphDraft.DraftEdge("route-generic", "route",
+                                new GraphDraft.Endpoint("routeByType", "", ""),
+                                new GraphDraft.Endpoint("genericFacts", "", ""),
+                                "otherwise")
+                ),
+                Map.of(),
+                new GraphDraft.OutputSelection("physicalFacts", "")
+        );
+
+        DslGenerationResult result = generator.generate(draft);
+
+        assertThat(result.generated()).isTrue();
+        assertThat(result.dsl().indexOf("branch on routeByType.output.value"))
+                .isLessThan(result.dsl().indexOf("node physicalFacts : riskScoreFacts"));
+        assertThat(result.dsl())
+                .contains("transform routeByType")
+                .contains("value = ctx.productType")
+                .contains("branch on routeByType.output.value {")
+                .contains("\"physical\" -> physicalFacts")
+                .contains("otherwise -> genericFacts");
+
+        DefaultOperatorRegistry registry = new DefaultOperatorRegistry();
+        registry.registerRaw("riskScoreFacts", new StubOperator());
+        GraphLoader loader = new GraphLoader(registry);
+        loader.withCompilationMode(CompilationMode.LENIENT);
+        var compilation = loader.loadWithDiagnostics(result.dsl());
+        Graph graph = compilation.graph();
+        assertThat(graph)
+                .as("compiler diagnostics: %s%nDSL:%n%s", compilation.diagnostics(), result.dsl())
+                .isNotNull();
         assertThat(graph.nodes()).isNotEmpty();
     }
 

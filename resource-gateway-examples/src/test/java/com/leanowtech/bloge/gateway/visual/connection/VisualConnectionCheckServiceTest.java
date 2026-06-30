@@ -163,6 +163,50 @@ class VisualConnectionCheckServiceTest {
     }
 
     @Test
+    void acceptsRouteEdgePreviewWithoutInputBinding() {
+        VisualConnectionCheckService service = connectionService(VisualCatalogTestSupport
+                .catalogWithLibrary(VisualCatalogTestSupport.routeLibrary()));
+        GraphDraft draft = routePreviewDraft(List.of());
+
+        VisualConnectionCheckResult result = service.check(new VisualConnectionCheckRequest(
+                draft,
+                new GraphDraft.Endpoint("routeByType", "route", ""),
+                new GraphDraft.Endpoint("physicalFacts", "route", ""),
+                "branch",
+                "physical"
+        ));
+
+        assertThat(result.accepted()).isTrue();
+        assertThat(result.diagnostics()).isEmpty();
+        assertThat(result.edge().kind()).isEqualTo("route");
+        assertThat(result.edge().condition()).isEqualTo("physical");
+    }
+
+    @Test
+    void rejectsRouteEdgePreviewWithDuplicateCondition() {
+        VisualConnectionCheckService service = connectionService(VisualCatalogTestSupport
+                .catalogWithLibrary(VisualCatalogTestSupport.routeLibrary()));
+        GraphDraft draft = routePreviewDraft(List.of(new GraphDraft.DraftEdge("route-physical",
+                "route",
+                new GraphDraft.Endpoint("routeByType", "", ""),
+                new GraphDraft.Endpoint("genericFacts", "", ""),
+                "physical")));
+
+        VisualConnectionCheckResult result = service.check(new VisualConnectionCheckRequest(
+                draft,
+                new GraphDraft.Endpoint("routeByType", "route", ""),
+                new GraphDraft.Endpoint("physicalFacts", "route", ""),
+                "route",
+                "physical"
+        ));
+
+        assertThat(result.accepted()).isFalse();
+        assertThat(result.diagnostics())
+                .anySatisfy(diagnostic -> assertThat(diagnostic.code())
+                        .isEqualTo("visual.edge.routeConditionDuplicate"));
+    }
+
+    @Test
     void acceptsSchemaCompatibleContextPickerBinding() {
         VisualConnectionCheckService service = connectionService(VisualCatalogTestSupport
                 .catalogWithLoanApplicantResourceAndLibrary(VisualCatalogTestSupport.eligibilityLibrary("integer")));
@@ -806,6 +850,37 @@ class VisualConnectionCheckServiceTest {
                 edges,
                 Map.of(),
                 new GraphDraft.OutputSelection("publishFacts", "")
+        );
+    }
+
+    private static GraphDraft routePreviewDraft(List<GraphDraft.DraftEdge> edges) {
+        return new GraphDraft(
+                "",
+                "",
+                0,
+                "routePreview",
+                "",
+                "",
+                "",
+                "",
+                SchemaEnvelope.object(Map.of(
+                        "productType", Map.of("type", "string")
+                ), List.of("productType")),
+                List.of(
+                        new GraphDraft.DraftNode(
+                                "routeByType",
+                                "risk:typeRoute",
+                                "",
+                                Map.of("value", GraphDraft.Binding.contextPath("productType")),
+                                Map.of(),
+                                null
+                        ),
+                        new GraphDraft.DraftNode("physicalFacts", "risk:scoreFacts", "", Map.of(), Map.of(), null),
+                        new GraphDraft.DraftNode("genericFacts", "risk:scoreFacts", "", Map.of(), Map.of(), null)
+                ),
+                edges,
+                Map.of(),
+                new GraphDraft.OutputSelection("physicalFacts", "")
         );
     }
 }

@@ -546,6 +546,66 @@ class GraphDraftValidatorTest {
     }
 
     @Test
+    void acceptsRouteEdgesFromBranchLoweredOperator() {
+        GraphDraftValidator validator = new GraphDraftValidator(
+                VisualCatalogTestSupport.catalogWithLibrary(VisualCatalogTestSupport.routeLibrary()));
+        GraphDraft.DraftEdge edge = new GraphDraft.DraftEdge("route-physical", "branch",
+                new GraphDraft.Endpoint("routeByType", "route", ""),
+                new GraphDraft.Endpoint("physicalFacts", "route", ""),
+                "physical");
+        GraphDraft draft = routeDraft(List.of(edge));
+
+        VisualValidationResult result = validator.validate(draft);
+
+        assertThat(result.valid()).isTrue();
+        assertThat(edge.kind()).isEqualTo("route");
+        assertThat(edge.source().port()).isEmpty();
+        assertThat(edge.condition()).isEqualTo("physical");
+    }
+
+    @Test
+    void rejectsRouteEdgesFromNonBranchOperator() {
+        GraphDraftValidator validator = new GraphDraftValidator(
+                VisualCatalogTestSupport.catalogWithLibrary(VisualCatalogTestSupport.routeLibrary()));
+        GraphDraft draft = routeDraft(List.of(new GraphDraft.DraftEdge("bad-route", "route",
+                new GraphDraft.Endpoint("physicalFacts", "route", ""),
+                new GraphDraft.Endpoint("genericFacts", "route", ""),
+                "otherwise")));
+
+        VisualValidationResult result = validator.validate(draft);
+
+        assertThat(result.valid()).isFalse();
+        assertThat(result.diagnostics())
+                .anySatisfy(diagnostic -> {
+                    assertThat(diagnostic.code()).isEqualTo("visual.edge.routeSourceUnsupported");
+                    assertThat(diagnostic.target()).isEqualTo("/edges/0/source/nodeId");
+                });
+    }
+
+    @Test
+    void rejectsDuplicateRouteConditionsOnSameBranchNode() {
+        GraphDraftValidator validator = new GraphDraftValidator(
+                VisualCatalogTestSupport.catalogWithLibrary(VisualCatalogTestSupport.routeLibrary()));
+        GraphDraft draft = routeDraft(List.of(
+                new GraphDraft.DraftEdge("route-physical", "route",
+                        new GraphDraft.Endpoint("routeByType", "", ""),
+                        new GraphDraft.Endpoint("physicalFacts", "", ""),
+                        "physical"),
+                new GraphDraft.DraftEdge("route-physical-again", "route",
+                        new GraphDraft.Endpoint("routeByType", "", ""),
+                        new GraphDraft.Endpoint("genericFacts", "", ""),
+                        "physical")
+        ));
+
+        VisualValidationResult result = validator.validate(draft);
+
+        assertThat(result.valid()).isFalse();
+        assertThat(result.diagnostics())
+                .anySatisfy(diagnostic -> assertThat(diagnostic.code())
+                        .isEqualTo("visual.edge.routeConditionDuplicate"));
+    }
+
+    @Test
     void rejectsUnsupportedEdgeKind() {
         GraphDraftValidator validator = new GraphDraftValidator(
                 VisualCatalogTestSupport.catalogWithLoanApplicantResourceAndLibrary(
@@ -4152,6 +4212,51 @@ class GraphDraftValidatorTest {
                 edges,
                 Map.of(),
                 new GraphDraft.OutputSelection(outputNodeId, "")
+        );
+    }
+
+    private static GraphDraft routeDraft(List<GraphDraft.DraftEdge> edges) {
+        return new GraphDraft(
+                "",
+                "",
+                0,
+                "typeRoute",
+                "",
+                "",
+                "",
+                "",
+                SchemaEnvelope.object(Map.of(
+                        "productType", Map.of("type", "string")
+                ), List.of("productType")),
+                List.of(
+                        new GraphDraft.DraftNode(
+                                "routeByType",
+                                "risk:typeRoute",
+                                "",
+                                Map.of("value", GraphDraft.Binding.contextPath("productType")),
+                                Map.of(),
+                                null
+                        ),
+                        new GraphDraft.DraftNode(
+                                "physicalFacts",
+                                "risk:scoreFacts",
+                                "",
+                                Map.of(),
+                                Map.of(),
+                                null
+                        ),
+                        new GraphDraft.DraftNode(
+                                "genericFacts",
+                                "risk:scoreFacts",
+                                "",
+                                Map.of(),
+                                Map.of(),
+                                null
+                        )
+                ),
+                edges,
+                Map.of(),
+                new GraphDraft.OutputSelection("physicalFacts", "")
         );
     }
 

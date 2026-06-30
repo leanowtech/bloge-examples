@@ -169,6 +169,82 @@ class OperatorLibraryValidatorTest {
     }
 
     @Test
+    void acceptsBranchLoweringWithoutOutputPorts() {
+        VisualValidationResult result = validator.validate(VisualCatalogTestSupport.routeLibrary());
+
+        assertThat(result.valid()).isTrue();
+        assertThat(result.diagnostics()).isEmpty();
+        assertThat(VisualCatalogTestSupport.typeRouteOperator().lowering().mode()).isEqualTo("branch");
+    }
+
+    @Test
+    void rejectsBranchLoweringWithOutputPorts() {
+        OperatorDefinition base = VisualCatalogTestSupport.typeRouteOperator();
+        OperatorDefinition operator = new OperatorDefinition(
+                base.schemaVersion(),
+                base.operatorRef(),
+                base.operatorVersion(),
+                base.display(),
+                base.source(),
+                new OperatorDefinition.Ports(
+                        base.ports().inputs(),
+                        List.of(new OperatorDefinition.Port("output",
+                                SchemaEnvelope.object(Map.of("value", Map.of("type", "string")), List.of()),
+                                true,
+                                "Invalid branch output."))
+                ),
+                base.configSchema(),
+                base.capabilities(),
+                base.policy(),
+                base.lowering(),
+                base.diagnostics()
+        );
+
+        VisualValidationResult result = validator.validate(libraryWith(operator));
+
+        assertThat(result.valid()).isFalse();
+        assertThat(result.diagnostics())
+                .anySatisfy(diagnostic -> assertThat(diagnostic.code())
+                        .isEqualTo("visual.operator.lowering.branchOutputUnsupported"));
+    }
+
+    @Test
+    void rejectsBranchLoweringWithNonScalarSelector() {
+        OperatorDefinition base = VisualCatalogTestSupport.typeRouteOperator();
+        OperatorDefinition operator = new OperatorDefinition(
+                base.schemaVersion(),
+                base.operatorRef(),
+                base.operatorVersion(),
+                base.display(),
+                base.source(),
+                new OperatorDefinition.Ports(
+                        List.of(new OperatorDefinition.Port("inputs",
+                                SchemaEnvelope.object(Map.of(
+                                        "value", Map.of(
+                                                "type", "object",
+                                                "properties", Map.of("kind", Map.of("type", "string"))
+                                        )
+                                ), List.of("value")),
+                                true,
+                                "Invalid route selector input.")),
+                        List.of()
+                ),
+                base.configSchema(),
+                base.capabilities(),
+                base.policy(),
+                base.lowering(),
+                base.diagnostics()
+        );
+
+        VisualValidationResult result = validator.validate(libraryWith(operator));
+
+        assertThat(result.valid()).isFalse();
+        assertThat(result.diagnostics())
+                .anySatisfy(diagnostic -> assertThat(diagnostic.code())
+                        .isEqualTo("visual.operator.lowering.branchExpression.nonScalar"));
+    }
+
+    @Test
     void rejectsPolicyScopesThatMixWildcardAndConcreteValues() {
         OperatorDefinition base = VisualCatalogTestSupport.eligibilityOperator("integer");
         OperatorDefinition operator = new OperatorDefinition(

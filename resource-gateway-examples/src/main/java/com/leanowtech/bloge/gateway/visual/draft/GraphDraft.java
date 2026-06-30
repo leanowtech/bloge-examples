@@ -271,12 +271,14 @@ public record GraphDraft(
      * @param kind edge kind
      * @param source source endpoint
      * @param target target endpoint
+     * @param condition route condition for control-flow edges
      */
     public record DraftEdge(
             String id,
             String kind,
             Endpoint source,
-            Endpoint target
+            Endpoint target,
+            String condition
     ) {
         /**
          * Creates an edge.
@@ -288,10 +290,18 @@ public record GraphDraft(
             kind = canonicalEdgeKind(kind);
             source = source == null ? Endpoint.empty() : source;
             target = target == null ? Endpoint.empty() : target;
-            if ("dependency".equals(kind)) {
+            condition = condition == null ? "" : condition.trim();
+            if ("dependency".equals(kind) || "route".equals(kind)) {
                 source = new Endpoint(source.nodeId(), "", "");
                 target = new Endpoint(target.nodeId(), "", "");
             }
+        }
+
+        /**
+         * Backward-compatible constructor for drafts created before route edge conditions existed.
+         */
+        public DraftEdge(String id, String kind, Endpoint source, Endpoint target) {
+            this(id, kind, source, target, "");
         }
 
         private static String canonicalEdgeKind(String value) {
@@ -302,6 +312,7 @@ public record GraphDraft(
             return switch (trimmed.toLowerCase(Locale.ROOT)) {
                 case "data" -> "data";
                 case "dependency", "dependson", "depends_on" -> "dependency";
+                case "route", "branch" -> "route";
                 default -> trimmed;
             };
         }

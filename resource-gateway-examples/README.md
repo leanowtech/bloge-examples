@@ -132,6 +132,16 @@ BLOGE `depends_on = [...]` on generated `node { ... }` blocks. Dependency edges
 are intentionally not exposed for transform or decision-table blocks because
 those DSL forms cannot declare `depends_on`; data references remain the way to
 sequence those blocks.
+User-provided branch operators can also participate in the same canvas contract:
+an imported operator with `lowering.mode = "branch"` exposes schema-checked
+selector inputs and route source handles, while route edges carry explicit case
+conditions such as `"physical"`, `true`, or `otherwise`. Route edges are stored
+as control-flow edges, participate in the DAG cycle gate, and lower to BLOGE
+`branch on ... { condition -> target }`. Because BLOGE branch selectors must be
+node-output path expressions, the generator first materializes the branch
+operator's selector as a small `transform <branchNode> { value = ... }`, then
+branches on `<branchNode>.output.value`; this lets graph-input or upstream
+bindings stay schema-aware without emitting invalid `branch on ctx.*` DSL.
 For normal data connections the server preflight simulates the post-drop binding
 state, replacing an existing edge for the same target endpoint while rejecting
 root/field overlaps such as binding the whole `customer` port and then binding
@@ -280,13 +290,15 @@ schemas and checked against the target input or config schema, so hand-written
 literal expressions cannot bypass the same enum/type gate as constants. Binding kinds are trimmed and
 canonicalized to the supported draft tokens (`constant`, `contextPath`,
 `nodePath`, `expression`, and `objectTemplate`). Stored graph edges support
-`data` and `dependency` kinds, with incoming edge kinds trimmed and canonicalized;
+`data`, `dependency`, and `route` kinds, with incoming edge kinds trimmed and canonicalized;
 data edges must have unique ids and unique source/target connection signatures,
 match a real semantic dependency such as a node-path binding or config
 expression reference, and node-path bindings must be represented by a data edge
 in stored drafts, so the line shown on the canvas cannot silently diverge from
 what the DSL generator executes. Dependency edges are unique by source/target
-node pair and are compiled as execution ordering only.
+node pair and are compiled as execution ordering only. Route edges are unique by
+source/target/condition, must start from a branch-lowered operator, require a
+non-empty condition, and compile as control-flow routing only.
 The browser treats repeated attempts to draw an already-applied data connection
 as an idempotent no-op instead of sending noisy duplicate edits to the server.
 Expression references in node inputs and executable config also
@@ -562,7 +574,9 @@ unsupported lifecycle status values, unsupported capability `effect` or
 refs such as `httpResource`, `bloge:decisionTable`, `bloge:transform`, and the
 `resource:` namespace, empty libraries, duplicate port names, unsupported
 lowering modes, native lowering without a namespace-safe executable
-`operatorRef`, transform lowering without executable `assignments`, transform
+`operatorRef`, transform lowering without executable `assignments`, branch
+lowering with data output ports, missing branch selector expressions, or branch
+selector templates that do not resolve to scalar declared inputs, transform
 assignments that do not match output schema fields or declared input template
 references, assignment expressions that are statically known to violate the
 declared output schema, unsupported schema kinds, multi-concrete type arrays,
@@ -619,7 +633,12 @@ returns `visual.codegen.configKey.invalid` instead of emitting DSL that will
 fail later. Operator library validation applies the same DSL-safe field-name
 gate to native input/config schemas and transform assignment targets, returning
 `visual.operator.lowering.dslField.invalid` before an unsafe library enters the
-catalog. Browser connection hints mirror the server's stricter schema rules
+catalog. Branch lowering consumes `lowering.parameters.expression` as a template over the
+operator's declared inputs, materializes that selector through a generated
+`transform`, and renders `route` edges as branch cases. This keeps imported
+branch operators declarative while honoring the BLOGE compiler requirement that
+branch conditions read from node outputs.
+Browser connection hints mirror the server's stricter schema rules
 for object required-field proof and enum value-domain subsets, and local hints
 include the same kind of failure reason the server returns while the server
 validator remains the publish/run authority. Draft compile and publish calls run
@@ -736,7 +755,7 @@ Seven `.bloge` graphs live in `src/main/resources/bloge/gateway/`:
 | `DefaultVisualOperatorCatalog` | Combines native visual operators with `resource:<resourceId>` virtual operators |
 | `GraphDraft` | Editable canvas graph model: input schema, nodes, port-aware bindings, edges, layout, output selection, and operator fingerprint snapshots |
 | `DatabaseGraphDraftRepository` | H2-backed graph draft repository with revision assignment, immutable revision history, and expected-revision guarded updates |
-| `GraphDraftValidator` | Validates the `bloge.visualGraphDraft.v1` draft contract, operator references, operator fingerprint drift, operator scope policy, graph input `contextPath` bindings, binding kind and edge kind allow-lists, literal constants, expression references, required schema inputs, node config against `configSchema`, port-aware node bindings, typed data edges, explicit dependency edges, edge identity/connection uniqueness, data edge/semantic dependency consistency, DAG shape, and output schema selection |
+| `GraphDraftValidator` | Validates the `bloge.visualGraphDraft.v1` draft contract, operator references, operator fingerprint drift, operator scope policy, graph input `contextPath` bindings, binding kind and edge kind allow-lists, literal constants, expression references, required schema inputs, node config against `configSchema`, port-aware node bindings, typed data edges, explicit dependency edges, branch route edges, edge identity/connection uniqueness, data edge/semantic dependency consistency, DAG shape, and output schema selection |
 | `VisualConnectionCheckService` | Reuses draft validation to accept or reject one proposed canvas edge before the browser writes a binding |
 | `GraphDraftDslGenerator` | Lowers visual drafts into executable BLOGE DSL |
 | `VisualGraphRunService` | Reuses the dynamic BLOGE runner to validate, compile, and execute visual drafts |
@@ -1064,7 +1083,7 @@ Isolated component tests, some with lightweight Spring slices or mocks.
 | `ResourceDescriptorBootstrapTest` | 7 | Seeding, refresh behavior, idempotency |
 | `GatewayDslCompilationTest` | 7 | DSL parsing, graph loading |
 | Gateway example API suite | 13 | Dynamic composer service/controller, scenario catalog, example graph endpoints |
-| Visual authoring suite | 399 | Visual operator projection, resource design contract persistence and gates, resource-contract in-use delete protection, imported libraries, registry-aware and impact-aware library validation, catalog lifecycle gates, deprecated operator draft resolution and active-scope fingerprinting, catalog token gates and policy filtering, policy wildcard scope gates, cross-library operatorRef ownership, operator-library in-use change protection and same-ref fingerprint drift/missing-snapshot preflight warnings, system-reserved operatorRef gates, import-time lowering/canonicalization gates including DSL-safe field-name gates, schema default value gates, nullable type-array gates, local `$defs` reference and safe object `allOf` normalization gates, transform assignment output-schema gates, unsupported schema envelope and JSON Schema keyword gates, const value-domain gates, enum/const array-object shape gates, numeric bound/`multipleOf`, string length, string pattern/format, array item-count, array `uniqueItems`, array `prefixItems`, array `contains`, object property-count, object `propertyNames`, object `patternProperties`, object `dependentRequired`, object `dependentSchemas`, and object `unevaluatedProperties` schema gates, built-in and virtual catalog schema-gate parity, draft/publication persistence and history, revision audit metadata, full-save/PATCH fingerprint preservation, service-managed fingerprint snapshot gates, structured malformed patch diagnostics, server-assigned create identity, revision-guarded full-save, patch, stored-run, delete, and publish conflict handling, operator fingerprint drift preservation and execution snapshot coverage gates, typed connection/edge validation including nullable-source compatibility and local `$defs` references, edge identity uniqueness plus binding and edge kind allow-lists, binding and edge kind canonicalization, explicit dependency edge validation/preflight/DSL lowering, static literal expression gates, input/config/root-port source-picker server preflight with duplicate-connection rejection, post-drop binding simulation, and nested config paths, duplicate target input ownership, root-port object binding from context and upstream operator output, stable root-port input keys, object required fields, object schema structure gates, required-array schema gates, nested input/config objectTemplate required fields and object-compatible targets, enum value-domain and shape gates, standard JSON Schema config enum gates, standard JSON Schema config const gates, numeric bound/`multipleOf`, string length, string pattern/format, array item-count, array `uniqueItems`, array `prefixItems`, array `contains`, object property-count, object `propertyNames`, object `patternProperties`, object `dependentRequired`, object `dependentSchemas`, and object `unevaluatedProperties` config gates, nested config expression references and configSchema type gates, native config input lowering and DSL field-key diagnostics, data edge/semantic dependency consistency, graph input schema gates, secret blocking, DSL lowering, compiler gating, dependency ordering, runtime smoke path |
+| Visual authoring suite | 408 | Visual operator projection, resource design contract persistence and gates, resource-contract in-use delete protection, imported libraries, registry-aware and impact-aware library validation, catalog lifecycle gates, deprecated operator draft resolution and active-scope fingerprinting, catalog token gates and policy filtering, policy wildcard scope gates, cross-library operatorRef ownership, operator-library in-use change protection and same-ref fingerprint drift/missing-snapshot preflight warnings, system-reserved operatorRef gates, import-time lowering/canonicalization gates including DSL-safe field-name gates, branch lowering gates, schema default value gates, nullable type-array gates, local `$defs` reference and safe object `allOf` normalization gates, transform assignment output-schema gates, unsupported schema envelope and JSON Schema keyword gates, const value-domain gates, enum/const array-object shape gates, numeric bound/`multipleOf`, string length, string pattern/format, array item-count, array `uniqueItems`, array `prefixItems`, array `contains`, object property-count, object `propertyNames`, object `patternProperties`, object `dependentRequired`, object `dependentSchemas`, and object `unevaluatedProperties` schema gates, built-in and virtual catalog schema-gate parity, draft/publication persistence and history, revision audit metadata, full-save/PATCH fingerprint preservation, service-managed fingerprint snapshot gates, structured malformed patch diagnostics, server-assigned create identity, revision-guarded full-save, patch, stored-run, delete, and publish conflict handling, operator fingerprint drift preservation and execution snapshot coverage gates, typed connection/edge validation including nullable-source compatibility and local `$defs` references, edge identity uniqueness plus binding and edge kind allow-lists, binding and edge kind canonicalization, explicit dependency edge validation/preflight/DSL lowering, branch route edge validation/preflight/DSL lowering, static literal expression gates, input/config/root-port source-picker server preflight with duplicate-connection rejection, post-drop binding simulation, and nested config paths, duplicate target input ownership, root-port object binding from context and upstream operator output, stable root-port input keys, object required fields, object schema structure gates, required-array schema gates, nested input/config objectTemplate required fields and object-compatible targets, enum value-domain and shape gates, standard JSON Schema config enum gates, standard JSON Schema config const gates, numeric bound/`multipleOf`, string length, string pattern/format, array item-count, array `uniqueItems`, array `prefixItems`, array `contains`, object property-count, object `propertyNames`, object `patternProperties`, object `dependentRequired`, object `dependentSchemas`, and object `unevaluatedProperties` config gates, nested config expression references and configSchema type gates, native config input lowering and DSL field-key diagnostics, data edge/semantic dependency consistency, graph input schema gates, secret blocking, DSL lowering, compiler gating, dependency ordering, runtime smoke path |
 
 ### Layer 3 — Orchestration tests
 

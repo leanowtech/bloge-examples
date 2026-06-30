@@ -65,6 +65,7 @@ public class GraphDraftDslGenerator {
 
         Map<String, GraphDraft.DraftNode> nodesById = nodesById(draft.nodes());
         Map<String, List<String>> dependencyEdges = explicitDependencyEdges(draft);
+        Map<String, List<GraphDraft.DraftEdge>> routeEdges = routeEdgesBySource(draft);
         StringBuilder dsl = new StringBuilder();
         dsl.append("graph ").append(draft.graphName()).append(" {\n\n");
         for (GraphDraft.DraftNode node : orderedNodes(draft)) {
@@ -75,7 +76,9 @@ public class GraphDraftDslGenerator {
                 continue;
             }
             String block = nodeToDsl(node, operator.get(), nodesById,
-                    dependencyEdges.getOrDefault(node.id(), List.of()), diagnostics);
+                    dependencyEdges.getOrDefault(node.id(), List.of()),
+                    routeEdges.getOrDefault(node.id(), List.of()),
+                    diagnostics);
             if (!block.isBlank()) {
                 dsl.append(block).append("\n\n");
             }
@@ -89,9 +92,14 @@ public class GraphDraftDslGenerator {
                              OperatorDefinition operator,
                              Map<String, GraphDraft.DraftNode> nodesById,
                              List<String> dependencyEdges,
+                             List<GraphDraft.DraftEdge> routeEdges,
                              List<VisualDiagnostic> diagnostics) {
         if ("resource-descriptor".equals(operator.source().kind())) {
             return resourceNodeToDsl(node, operator, nodesById, dependencyEdges);
+        }
+        if ("branch".equals(operator.lowering().mode())) {
+            rejectUnsupportedExplicitDependencies(node, operator, dependencyEdges, diagnostics);
+            return branchToDsl(node, operator, nodesById, routeEdges, diagnostics);
         }
         if ("transform".equals(operator.lowering().mode())) {
             rejectUnsupportedExplicitDependencies(node, operator, dependencyEdges, diagnostics);
@@ -347,6 +355,66 @@ public class GraphDraftDslGenerator {
                     .append(expressionFromObject(retryAttempts, nodesById))
                     .append(", backoff: 200ms }\n");
         }
+    }
+
+    private String branchToDsl(GraphDraft.DraftNode node,
+                               OperatorDefinition operator,
+                               Map<String, GraphDraft.DraftNode> nodesById,
+                               List<GraphDraft.DraftEdge> routeEdges,
+                               List<VisualDiagnostic> diagnostics) {
+        if (routeEdges.isEmpty()) {
+            diagnostics.add(VisualDiagnostic.error("visual.codegen.branch.routesRequired",
+                    "Branch node '%s' must have at least one route edge.".formatted(node.id()),
+                    "/nodes/" + node.id()));
+        }
+        Map<String, String> inputExpressions = new LinkedHashMap<>();
+        node.inputs().forEach((key, binding) -> addInputExpressionAliases(inputExpressions, key, binding,
+                bindingToExpression(binding, nodesById)));
+        String selectorTemplate = stringValue(operator.lowering().parameters().get("expression"));
+        String selector = renderTemplateExpression(selectorTemplate, inputExpressions);
+        if (selector.isBlank() || selector.equals(selectorTemplate)) {
+            diagnostics.add(VisualDiagnostic.error("visual.codegen.branch.expressionUnresolved",
+                    "Branch node '%s' selector expression could not be resolved from its input bindings."
+                            .formatted(node.id()),
+                    "/nodes/" + node.id() + "/inputs"));
+        }
+
+        StringBuilder block = new StringBuilder();
+        block.append("  transform ").append(node.id()).append(" {\n")
+                .append("    value = ").append(selector.isBlank() ? "null" : selector).append("\n")
+                .append("  }\n\n");
+        block.append("  branch on ").append(node.id()).append(".output.value {\n");
+        for (GraphDraft.DraftEdge edge : routeEdges) {
+            block.append("    ")
+                    .append(renderRouteCondition(edge.condition()))
+                    .append(" -> ")
+                    .append(edge.target().nodeId())
+                    .append("\n");
+        }
+        block.append("  }");
+        return block.toString();
+    }
+
+    private static String renderRouteCondition(String condition) {
+        String trimmed = condition == null ? "" : condition.trim();
+        if (trimmed.isBlank() || "otherwise".equalsIgnoreCase(trimmed)) {
+            return "otherwise";
+        }
+        if ("true".equals(trimmed) || "false".equals(trimmed) || "null".equals(trimmed)
+                || isNumberLiteral(trimmed) || isQuotedString(trimmed)) {
+            return trimmed;
+        }
+        return quote(trimmed);
+    }
+
+    private static boolean isNumberLiteral(String value) {
+        return value.matches("[-+]?(?:\\d+|\\d+\\.\\d*|\\d*\\.\\d+)(?:[eE][-+]?\\d+)?");
+    }
+
+    private static boolean isQuotedString(String value) {
+        return value.length() >= 2
+                && ((value.startsWith("\"") && value.endsWith("\""))
+                || (value.startsWith("'") && value.endsWith("'")));
     }
 
     private static Map<String, Object> businessConfig(Map<String, Object> config) {
@@ -747,6 +815,19 @@ public class GraphDraftDslGenerator {
             }
         });
         return dependencies;
+    }
+
+    private static Map<String, List<GraphDraft.DraftEdge>> routeEdgesBySource(GraphDraft draft) {
+        Map<String, List<GraphDraft.DraftEdge>> routes = new LinkedHashMap<>();
+        draft.nodes().forEach(node -> routes.put(node.id(), new ArrayList<>()));
+        draft.edges().forEach(edge -> {
+            if (!"route".equals(edge.kind()) || edge.source().nodeId().isBlank()
+                    || edge.target().nodeId().isBlank()) {
+                return;
+            }
+            routes.computeIfAbsent(edge.source().nodeId(), ignored -> new ArrayList<>()).add(edge);
+        });
+        return routes;
     }
 
     @SuppressWarnings("unchecked")

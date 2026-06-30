@@ -42,7 +42,7 @@ public class OperatorLibraryValidator {
     private static final Set<String> SUPPORTED_OPERATOR_SCHEMA_VERSIONS = Set.of(
             "bloge.visualOperator.v1"
     );
-    private static final Set<String> SUPPORTED_LOWERING_MODES = Set.of("native", "transform");
+    private static final Set<String> SUPPORTED_LOWERING_MODES = Set.of("native", "transform", "branch");
     private static final Set<String> SUPPORTED_CAPABILITY_EFFECTS = Set.of(
             "PURE",
             "EXTERNAL",
@@ -159,7 +159,7 @@ public class OperatorLibraryValidator {
     private static void validateOperator(OperatorDefinition operator,
                                          String path,
                                          List<VisualDiagnostic> diagnostics) {
-        if (operator.ports().outputs().isEmpty()) {
+        if (!"branch".equals(operator.lowering().mode()) && operator.ports().outputs().isEmpty()) {
             diagnostics.add(VisualDiagnostic.error("visual.operator.output.required",
                     "Operator '%s' must declare at least one output port.".formatted(operator.operatorRef()),
                     path + "/ports/outputs"));
@@ -255,6 +255,10 @@ public class OperatorLibraryValidator {
             validateNativeLowering(operator, path, diagnostics);
             return;
         }
+        if ("branch".equals(mode)) {
+            validateBranchLowering(operator, path, diagnostics);
+            return;
+        }
         validateTransformLowering(operator, path, diagnostics);
     }
 
@@ -334,6 +338,77 @@ public class OperatorLibraryValidator {
         });
         validateRequiredTransformOutputs(operator, output, assignedTargets, path + "/parameters/assignments",
                 diagnostics);
+    }
+
+    private static void validateBranchLowering(OperatorDefinition operator,
+                                               String path,
+                                               List<VisualDiagnostic> diagnostics) {
+        if (!operator.ports().outputs().isEmpty()) {
+            diagnostics.add(VisualDiagnostic.error("visual.operator.lowering.branchOutputUnsupported",
+                    "Branch-lowered operator '%s' must not declare output ports because it lowers to BLOGE branch routing."
+                            .formatted(operator.operatorRef()),
+                    path + "/mode"));
+        }
+        if (operator.ports().inputs().isEmpty()) {
+            diagnostics.add(VisualDiagnostic.error("visual.operator.lowering.branchInputRequired",
+                    "Branch-lowered operator '%s' must declare at least one input port used by lowering.parameters.expression."
+                            .formatted(operator.operatorRef()),
+                    operatorPath(path) + "/ports/inputs"));
+        }
+        Object rawExpression = operator.lowering().parameters().get("expression");
+        if (!(rawExpression instanceof String expression) || expression.isBlank()) {
+            diagnostics.add(VisualDiagnostic.error("visual.operator.lowering.branchExpression.required",
+                    "Branch-lowered operator '%s' must declare lowering.parameters.expression."
+                            .formatted(operator.operatorRef()),
+                    path + "/parameters/expression"));
+            return;
+        }
+        validateBranchExpression(operator, expression, path + "/parameters/expression", diagnostics);
+    }
+
+    private static void validateBranchExpression(OperatorDefinition operator,
+                                                 String expression,
+                                                 String path,
+                                                 List<VisualDiagnostic> diagnostics) {
+        Matcher tokenMatcher = TEMPLATE_TOKEN.matcher(expression);
+        while (tokenMatcher.find()) {
+            String token = tokenMatcher.group(1).trim();
+            if (!templateReference(token).matches()) {
+                diagnostics.add(VisualDiagnostic.error("visual.operator.lowering.branchTemplate.invalid",
+                        "Branch template token '{{%s}}' on operator '%s' must reference a declared input path."
+                                .formatted(token, operator.operatorRef()),
+                        path));
+            }
+        }
+
+        boolean sawReference = false;
+        Matcher referenceMatcher = TEMPLATE_REFERENCE.matcher(expression);
+        while (referenceMatcher.find()) {
+            sawReference = true;
+            String reference = referenceMatcher.group(1);
+            String inputPath = reference.startsWith("input.") ? reference.substring("input.".length()) : reference;
+            Map<String, Object> sourceSchema = inputPropertyAtPath(operator, inputPath);
+            if (sourceSchema == null) {
+                diagnostics.add(VisualDiagnostic.error("visual.operator.lowering.branchTemplate.unknownInput",
+                        "Branch template reference '{{%s}}' on operator '%s' does not match a declared input path."
+                                .formatted(reference, operator.operatorRef()),
+                        path));
+                continue;
+            }
+            String type = schemaKind(sourceSchema);
+            if ("object".equals(type) || "array".equals(type)) {
+                diagnostics.add(VisualDiagnostic.error("visual.operator.lowering.branchExpression.nonScalar",
+                        "Branch template reference '{{%s}}' on operator '%s' resolves to %s, but branch routing requires a scalar selector."
+                                .formatted(reference, operator.operatorRef(), schemaTypeLabel(sourceSchema)),
+                        path));
+            }
+        }
+        if (!sawReference) {
+            diagnostics.add(VisualDiagnostic.error("visual.operator.lowering.branchExpression.referenceRequired",
+                    "Branch-lowered operator '%s' expression must reference at least one declared input path."
+                            .formatted(operator.operatorRef()),
+                    path));
+        }
     }
 
     private static Map<String, Object> validateTransformAssignmentTarget(OperatorDefinition operator,

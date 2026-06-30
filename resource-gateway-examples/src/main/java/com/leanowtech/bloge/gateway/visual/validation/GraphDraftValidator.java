@@ -18,6 +18,7 @@ import java.time.OffsetDateTime;
 import java.time.format.DateTimeParseException;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
@@ -45,7 +46,7 @@ public class GraphDraftValidator {
     private static final Set<String> SUPPORTED_DRAFT_SCHEMA_VERSIONS = Set.of(
             GraphDraft.SCHEMA_VERSION
     );
-    private static final Set<String> SUPPORTED_EDGE_KINDS = Set.of("data", "dependency");
+    private static final Set<String> SUPPORTED_EDGE_KINDS = Set.of("data", "dependency", "route");
     private static final String IDENTIFIER_PATTERN = "[A-Za-z_][A-Za-z0-9_]*";
     private static final String PATH_PATTERN = IDENTIFIER_PATTERN + "(?:\\." + IDENTIFIER_PATTERN + ")*";
     private static final Pattern PURE_CONTEXT_REFERENCE = Pattern.compile("^ctx(?:\\.(" + PATH_PATTERN + "))?$");
@@ -212,6 +213,13 @@ public class GraphDraftValidator {
 
         OperatorDefinition operator = operatorsByNodeId.get(output.nodeId());
         if (operator == null) {
+            return;
+        }
+        if (operator.ports().outputs().isEmpty()) {
+            diagnostics.add(VisualDiagnostic.error("visual.output.unselectableNode",
+                    "Output node '%s' using operator '%s' does not expose output ports."
+                            .formatted(output.nodeId(), operator.operatorRef()),
+                    "/output/nodeId"));
             return;
         }
         OutputReference outputReference = outputReference(operator, output.path());
@@ -1109,6 +1117,7 @@ public class GraphDraftValidator {
                                       Map<String, GraphDraft.DraftNode> nodesById,
                                       Map<String, OperatorDefinition> operatorsByNodeId,
                                       List<VisualDiagnostic> diagnostics) {
+        Map<String, Set<String>> routeConditionsBySource = new LinkedHashMap<>();
         for (int i = 0; i < draft.edges().size(); i++) {
             GraphDraft.DraftEdge edge = draft.edges().get(i);
             String edgePath = "/edges/" + i;
@@ -1131,6 +1140,10 @@ public class GraphDraftValidator {
             }
             if ("dependency".equals(edge.kind())) {
                 validateDependencyEdge(edge, targetOperator, edgePath, diagnostics);
+                continue;
+            }
+            if ("route".equals(edge.kind())) {
+                validateRouteEdge(edge, sourceOperator, edgePath, routeConditionsBySource, diagnostics);
                 continue;
             }
             if (!"data".equals(edge.kind())) {
@@ -1202,6 +1215,57 @@ public class GraphDraftValidator {
             return false;
         }
         return !List.of("bloge:decisionTable", "bloge:transform").contains(operator.operatorRef());
+    }
+
+    private static void validateRouteEdge(GraphDraft.DraftEdge edge,
+                                          OperatorDefinition sourceOperator,
+                                          String edgePath,
+                                          Map<String, Set<String>> routeConditionsBySource,
+                                          List<VisualDiagnostic> diagnostics) {
+        if (!"branch".equals(sourceOperator.lowering().mode())) {
+            diagnostics.add(VisualDiagnostic.error("visual.edge.routeSourceUnsupported",
+                    "Route edges must start from a branch-lowered operator; operator '%s' lowers as '%s'."
+                            .formatted(sourceOperator.operatorRef(), sourceOperator.lowering().mode()),
+                    edgePath + "/source/nodeId"));
+            return;
+        }
+        String condition = edge.condition().trim();
+        if (condition.isBlank()) {
+            diagnostics.add(VisualDiagnostic.error("visual.edge.routeConditionRequired",
+                    "Route edge from branch node '%s' must declare a condition such as 'true', '\"physical\"', or 'otherwise'."
+                            .formatted(edge.source().nodeId()),
+                    edgePath + "/condition"));
+            return;
+        }
+        if (containsRouteControlSyntax(condition)) {
+            diagnostics.add(VisualDiagnostic.error("visual.edge.routeConditionInvalid",
+                    "Route edge condition '%s' contains unsupported branch control syntax."
+                            .formatted(condition),
+                    edgePath + "/condition"));
+            return;
+        }
+        String normalizedCondition = normalizedRouteCondition(condition);
+        Set<String> conditions = routeConditionsBySource.computeIfAbsent(edge.source().nodeId(),
+                ignored -> new LinkedHashSet<>());
+        if (!conditions.add(normalizedCondition)) {
+            diagnostics.add(VisualDiagnostic.error("visual.edge.routeConditionDuplicate",
+                    "Branch node '%s' declares duplicate route condition '%s'."
+                            .formatted(edge.source().nodeId(), condition),
+                    edgePath + "/condition"));
+        }
+    }
+
+    private static boolean containsRouteControlSyntax(String condition) {
+        return condition.contains("\n")
+                || condition.contains("\r")
+                || condition.contains("->")
+                || condition.contains("{")
+                || condition.contains("}");
+    }
+
+    private static String normalizedRouteCondition(String condition) {
+        String trimmed = condition.trim();
+        return "otherwise".equalsIgnoreCase(trimmed) ? "otherwise" : trimmed;
     }
 
     private static Optional<OperatorDefinition.Port> findPort(List<OperatorDefinition.Port> ports, String name) {
@@ -1592,7 +1656,8 @@ public class GraphDraftValidator {
             String sourcePath,
             String targetNodeId,
             String targetPort,
-            String targetPath
+            String targetPath,
+            String routeCondition
     ) {
 
         private static EdgeSignature from(GraphDraft.DraftEdge edge) {
@@ -1603,19 +1668,21 @@ public class GraphDraftValidator {
                     normalizePath(edge.source().path()),
                     normalizedEdgeValue(edge.target().nodeId()),
                     normalizedEdgeValue(edge.target().port()),
-                    normalizePath(edge.target().path())
+                    normalizePath(edge.target().path()),
+                    "route".equals(edge.kind()) ? normalizedRouteCondition(edge.condition()) : ""
             );
         }
 
         private String label() {
-            return "%s:%s.%s.%s -> %s.%s.%s".formatted(
+            return "%s:%s.%s.%s -> %s.%s.%s%s".formatted(
                     kind,
                     sourceNodeId,
                     sourcePort,
                     sourcePath,
                     targetNodeId,
                     targetPort,
-                    targetPath
+                    targetPath,
+                    routeCondition.isBlank() ? "" : " when " + routeCondition
             );
         }
     }

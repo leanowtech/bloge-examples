@@ -45,9 +45,12 @@ public class VisualConnectionCheckService {
         }
 
         GraphDraft.DraftEdge edge = new GraphDraft.DraftEdge(PREVIEW_EDGE_ID, request.kind(),
-                request.source(), request.target());
+                request.source(), request.target(), request.condition());
         if ("dependency".equals(edge.kind())) {
             return checkDependencyEdge(request, edge);
+        }
+        if ("route".equals(edge.kind())) {
+            return checkRouteEdge(request, edge);
         }
         if (CONFIG_TARGET_PORT.equals(request.target().port())) {
             return checkConfigBinding(request, edge);
@@ -98,6 +101,29 @@ public class VisualConnectionCheckService {
 
     private VisualConnectionCheckResult checkDependencyEdge(VisualConnectionCheckRequest request,
                                                             GraphDraft.DraftEdge edge) {
+        if (hasSameConnection(request.draft(), edge)) {
+            return new VisualConnectionCheckResult(false, edge, List.of(
+                    VisualDiagnostic.error("visual.edge.duplicateConnection",
+                            "Connection '%s' is already represented by another edge."
+                                    .formatted(connectionLabel(edge)),
+                            "/edges/" + request.draft().edges().size())
+            ));
+        }
+
+        GraphDraft candidate = draftWithPreviewEdge(request.draft(), edge);
+        int previewIndex = candidate.edges().size() - 1;
+        Map<String, Integer> nodeIndexes = nodeIndexes(candidate);
+
+        VisualValidationResult validation = validator.validate(candidate);
+        List<VisualDiagnostic> diagnostics = validation.diagnostics().stream()
+                .filter(diagnostic -> relevantToDependencyEdge(diagnostic, previewIndex, request, nodeIndexes))
+                .toList();
+        return new VisualConnectionCheckResult(diagnostics.stream().noneMatch(VisualDiagnostic::error),
+                edge, diagnostics);
+    }
+
+    private VisualConnectionCheckResult checkRouteEdge(VisualConnectionCheckRequest request,
+                                                       GraphDraft.DraftEdge edge) {
         if (hasSameConnection(request.draft(), edge)) {
             return new VisualConnectionCheckResult(false, edge, List.of(
                     VisualDiagnostic.error("visual.edge.duplicateConnection",
@@ -366,7 +392,8 @@ public class VisualConnectionCheckService {
         return draft.edges().stream()
                 .anyMatch(existing -> existing.kind().equals(edge.kind())
                         && sameEndpoint(existing.source(), edge.source())
-                        && sameEndpoint(existing.target(), edge.target()));
+                        && sameEndpoint(existing.target(), edge.target())
+                        && (!"route".equals(edge.kind()) || existing.condition().equals(edge.condition())));
     }
 
     private static boolean sameEndpoint(GraphDraft.Endpoint left, GraphDraft.Endpoint right) {
@@ -376,13 +403,16 @@ public class VisualConnectionCheckService {
     }
 
     private static String connectionLabel(GraphDraft.DraftEdge edge) {
-        return "%s.%s.%s -> %s.%s.%s".formatted(
+        return "%s.%s.%s -> %s.%s.%s%s".formatted(
                 edge.source().nodeId(),
                 edge.source().port(),
                 edge.source().path(),
                 edge.target().nodeId(),
                 edge.target().port(),
-                edge.target().path());
+                edge.target().path(),
+                "route".equals(edge.kind()) && !edge.condition().isBlank()
+                        ? " when " + edge.condition()
+                        : "");
     }
 
     private static Map<String, Integer> nodeIndexes(GraphDraft draft) {

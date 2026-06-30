@@ -214,6 +214,46 @@ public final class VisualCatalogTestSupport {
         );
     }
 
+    public static OperatorDefinition typeRouteOperator() {
+        Map<String, Object> inputProperties = new LinkedHashMap<>();
+        inputProperties.put("value", Map.of("type", "string"));
+
+        return new OperatorDefinition(
+                "bloge.visualOperator.v1",
+                "risk:typeRoute",
+                "1.0.0",
+                new OperatorDefinition.Display("Type route",
+                        "Routes graph execution by a scalar business type.",
+                        List.of("risk", "route")),
+                new OperatorDefinition.Source("user-library", "", "", "", true),
+                new OperatorDefinition.Ports(
+                        List.of(new OperatorDefinition.Port("inputs",
+                                SchemaEnvelope.object(inputProperties, List.of("value")),
+                                true,
+                                "Route selector input.")),
+                        List.of()
+                ),
+                SchemaEnvelope.opaque(),
+                OperatorDefinition.Capabilities.pure(),
+                new OperatorDefinition.Lowering("branch", "branch", Map.of(
+                        "expression", "{{input.value}}"
+                )),
+                List.of()
+        );
+    }
+
+    public static OperatorLibrary routeLibrary() {
+        return new OperatorLibrary(
+                "bloge.visualOperatorLibrary.v1",
+                "risk-routes",
+                "Risk route operators",
+                "1.0.0",
+                "risk-team",
+                "ACTIVE",
+                List.of(typeRouteOperator(), scoreFactsOperator())
+        );
+    }
+
     public static OperatorDefinition numericPassOperator() {
         Map<String, Object> valueProperties = new LinkedHashMap<>();
         valueProperties.put("value", Map.of("type", "integer"));

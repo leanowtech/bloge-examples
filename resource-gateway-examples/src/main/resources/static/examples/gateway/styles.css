@@ -297,6 +297,12 @@ h2 {
   stroke-width: 1.8;
 }
 
+.edge.route {
+  stroke: #b45309;
+  stroke-dasharray: 3 5;
+  stroke-width: 2;
+}
+
 .edge.connection-preview {
   stroke: var(--blue);
   stroke-width: 2.5;
