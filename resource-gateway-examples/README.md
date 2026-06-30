@@ -533,10 +533,20 @@ operator catalog:
 | `GET` | `/admin/resource-design-contracts` | List all visual resource contracts | 200 |
 | `GET` | `/admin/resource-design-contracts/{resourceId}` | Get one visual contract | 200 / 404 |
 | `POST` | `/admin/resource-design-contracts/validate` | Validate a visual resource contract without storing it; use `force=true` to suppress stored-draft disablement impact diagnostics; same-resource fingerprint drift is reported as a warning | 200 |
+| `POST` | `/admin/resource-design-contracts/from-openapi` | Project one OpenAPI operation into a visual resource contract draft without storing it; returns the draft plus the same structured validation diagnostics | 200 |
 | `PUT` | `/admin/resource-design-contracts/{resourceId}` | Create or replace a visual contract; rejects disablement of stored-draft `resource:<resourceId>` references unless `force=true` | 200 / 400 / 409 |
 | `DELETE` | `/admin/resource-design-contracts/{resourceId}` | Delete a visual contract; rejects stored-draft `resource:<resourceId>` references unless `force=true` | 204 / 409 |
 
 Validate and upsert run the same resource-contract validator before storage.
+The OpenAPI projection endpoint accepts a parsed OpenAPI 3 document plus either
+`operationId` or `path` and `method`. It projects path/query/header/cookie
+parameters and JSON request bodies into `requestSchema`, projects the first 2xx
+JSON response schema into `responseSchema`, rewrites local
+`#/components/schemas/*` references into the visual schema `$defs` form, drops
+unsupported non-string OpenAPI formats with warnings, and then runs the same
+registry-aware validation preflight as `/validate`. It never mutates the
+contract registry; authors still save the returned draft through `PUT` after
+reviewing diagnostics.
 The validator rejects unsupported request/response schema kinds, `required`
 fields not declared in `properties`, array schemas without `items`, enum schemas
 without values, unsupported schema envelope format/version, unsupported JSON

@@ -72,7 +72,7 @@
    前端校验只改善体验，发布和运行前必须经过服务端 schema、policy、lowering 和 BLOGE compile。
 
 7. **Phase 1 核心闭环已经在 resource-gateway 内落地。**
-   后续重点是 run history、OpenAPI/import 辅助、Java operator inventory projector、前端回归和长期 graph-engine 控制面对齐。
+   后续重点是 Java operator inventory projector、前端回归、OpenAPI 导入深化和长期 graph-engine 控制面对齐。
 
 ## 5. 当前待确认决策
 
@@ -83,7 +83,7 @@
 | 第一批目标用户 | 开发者 + 解决方案架构师优先，业务运营后置 | 决定 DSL 暴露程度和表单抽象深度 |
 | Phase 1 是否保存草稿 | 已决：保存 H2-backed GraphDraft、revision history 和 revision metadata | 不保存草稿会削弱诊断、版本和 UI 状态一致性 |
 | 用户算子库第一来源 | `ResourceDescriptor + ResourceDesignContract`，然后 JSON/YAML catalog | 最贴近 resource-gateway 基版 |
-| OpenAPI 导入是否进 Phase 1 | 不进核心闭环，可作为 schema 辅助工具 | 避免 OpenAPI 质量问题拖慢主线 |
+| OpenAPI 导入是否进 Phase 1 | 已作为 resource contract schema 辅助工具进入，不作为核心闭环前置条件 | 降低补 schema 成本，同时避免 OpenAPI 质量问题拖慢主线 |
 | `opaque` 输出是否允许发布 | 默认阻断类型安全发布，租户策略可放宽为 warning | 决定系统是否真正坚持 schema 约束 |
 | DSL 反向导入是否进 MVP | 不进 MVP | 先保证 GraphDraft -> DSL 稳定 |
 | AI authoring 是否进 MVP | 不进核心 MVP | 先建立确定性合同和校验链 |
@@ -109,10 +109,10 @@ Phase 1 不以 UI 好看为验收，而以真实闭环为验收：
 
 如果继续代码实现，优先按实现状态审计第 6 章推进：
 
-1. Run history 和 node trace 存储。
-2. OpenAPI/resource contract 导入辅助。
-3. Java operator inventory projector。
-4. 前端回归验证。
+1. Java operator inventory projector。
+2. 前端回归验证。
+3. OpenAPI/resource contract 导入深化。
+4. Run history 查询、重放和 SLO 统计深化。
 5. 协议文档命名与当前 wire contract 收敛。
 
 不要把新的可拖拽能力只写进前端；任何新能力都必须先有 `OperatorDefinition`、schema gate、GraphDraft lowering 和服务端 diagnostics。

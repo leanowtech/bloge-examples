@@ -1003,7 +1003,7 @@ resource-gateway 已有 rate limiting、cache、circuit breaker，可以作为�
 | `OPERATOR_TYPES` 写死在 JS，无法接收用户算子库 | 已缓解：browser composer 从 `/api/visual/operators` 加载 native、user-library、resource-backed operators，并动态注册 palette spec | 新能力仍必须先进入 `OperatorDefinition`，不能只补前端 |
 | builder 节点字段写死贷款场景，不能通用 | 已缓解：inspector 根据 input/config schema 渲染字段、source picker 和 config controls | 继续补复杂嵌套 config 的专业化控件和浏览器回归测试 |
 | DSL 字符串由 JS 拼接，难以校验和扩展 | 已缓解：GraphDraft -> DSL 在服务端生成，compile/run/publish 走服务端 validator/generator/compiler | 保留 DSL preview，但不让手写 DSL 成为画布语义源 |
-| `ResourceDescriptor` 无精确 payload schema，画布无法类型安全连接 | 已缓解：独立 `ResourceDesignContract` 补足 request/payload schema 并投影 resource virtual operator | 增加 OpenAPI/resource contract 导入辅助，降低手写 schema 成本 |
+| `ResourceDescriptor` 无精确 payload schema，画布无法类型安全连接 | 已缓解：独立 `ResourceDesignContract` 补足 request/payload schema 并投影 resource virtual operator；已提供 OpenAPI operation 到 contract 草案的 preview endpoint | 继续深化 descriptor 生成建议、schema diff 和更广义接口导入 |
 | `/compose/run` 只注册 `httpResource`，无法执行通用算子 | 部分缓解：visual draft run 使用 GraphDraft DSL generator 和现有 dynamic runner；user-library transform/branch/native lowering 已可参与 | 补 Java OperatorRegistry projector 和更完整 runtime operator availability |
 | diagnostics 只展示 compiler 信息，缺少 schema/权限/策略错误 | 已缓解：`VisualDiagnostic` 覆盖 schema、policy、connection、fingerprint、compile/run diagnostics | 补 run history/node trace 持久化，让诊断可回放和审计 |
 

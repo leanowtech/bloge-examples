@@ -456,6 +456,16 @@ enum 缺少 values 和 examples 中的原始 secret 都会返回 blocking
 H2-backed `ResourceDesignContractRegistry`，并且 bootstrap 只补齐缺失的内置
 contract，不覆盖已经持久化的用户修改。
 
+resource-gateway 示例还提供
+`POST /admin/resource-design-contracts/from-openapi` 作为 validate-only
+projection endpoint。请求传入 `resourceId`、OpenAPI document，以及
+`operationId` 或 `path + method` selector；响应返回生成的
+`ResourceDesignContract` 草案和 `VisualValidationResult`。该端点会把
+OpenAPI path/query/header/cookie parameters、JSON requestBody 和 2xx JSON
+response schema 投影为 visual schema，并把 local
+`#/components/schemas/*` 引用改写为 `$defs` 后再复用 resource-contract
+validation；它不直接写入 registry。
+
 ### 6.4 缺 schema 时的降级
 
 | 缺失项 | 允许出现在 palette | 允许连接 | 允许发布 | 诊断 |

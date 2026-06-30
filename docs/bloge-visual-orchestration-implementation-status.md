@@ -20,7 +20,7 @@ Operator Library / Resource Design Contract
         -> Immutable Publication
 ```
 
-现在最重要的判断不是“有没有画布雏形”，而是：这个示例已经具备通用画布的控制面骨架，但仍不是完整低代码平台。它可以严肃演示用户算子库、资源虚拟算子、schema 约束连线、草稿、发布和运行；还没有覆盖 durable 实例、完整 run history、OpenAPI 导入、远程 worker/subgraph marketplace、生产 IAM 后台和多人协作。
+现在最重要的判断不是“有没有画布雏形”，而是：这个示例已经具备通用画布的控制面骨架，但仍不是完整低代码平台。它可以严肃演示用户算子库、资源虚拟算子、OpenAPI 辅助生成 resource design contract、schema 约束连线、草稿、发布和运行；还没有覆盖 durable 实例、远程 worker/subgraph marketplace、生产 IAM 后台和多人协作。
 
 ## 2. 已落地能力
 
@@ -30,6 +30,7 @@ Operator Library / Resource Design Contract
 | 视觉算子定义 | 已落地。`OperatorDefinition` 统一表达 operatorRef、fingerprint、display、source、ports、configSchema、capabilities、policy、lowering 和 diagnostics。 | `visual/catalog/OperatorDefinition.java` |
 | Resource 虚拟算子 | 已落地。`ResourceDescriptor + ResourceDesignContract` 投影为 `resource:<resourceId>`，运行时 lowering 到 `httpResource`。 | `visual/catalog/ResourceVirtualOperatorProjector.java`、`DefaultVisualOperatorCatalog.java` |
 | Resource 设计合同 | 已落地。支持 H2 registry、bootstrap、admin API、schema/secret/lifecycle 校验、disable/delete impact guard、fingerprint drift warnings。 | `visual/resource/*` |
+| OpenAPI resource contract 导入辅助 | 已落地。`POST /admin/resource-design-contracts/from-openapi` 可从 OpenAPI operation 生成 `ResourceDesignContract` 草案，支持 operationId 或 path+method 定位、参数/requestBody/2xx JSON response schema 投影、local component `$ref` 到 `$defs` 改写，并复用 registry-aware validation；不会自动落库。 | `OpenApiResourceDesignContractImporter.java`、`ResourceDesignContractAdminController.java` |
 | Operator Catalog API | 已落地。支持 native、用户导入、resource-backed virtual operators；支持 search、tags、resourceOnly、includeDeprecated、tenant/namespace/environment policy filtering。 | `VisualOperatorCatalogController.java`、`DefaultVisualOperatorCatalog.java` |
 | GraphDraft | 已落地。支持 `bloge.visualGraphDraft.v1`、nodes、edges、inputSchema、visualLayout、output、operatorFingerprints、revisionMetadata。 | `visual/draft/GraphDraft.java` |
 | 草稿持久化与并发控制 | 已落地。H2 和 in-memory repository，revision history，`saveIfRevision`，controller 层 stale update/run/delete/publish guard，field-level JSON Patch。 | `GraphDraftRepository.java`、`DatabaseGraphDraftRepository.java`、`VisualGraphDraftController.java`、`GraphDraftPatchService.java` |
@@ -74,7 +75,7 @@ Operator Library / Resource Design Contract
 | 缺口 | 影响 | 建议阶段 |
 | --- | --- | --- |
 | Durable / long-running graph authoring | 当前示例以 request-response 为主，不能覆盖长事务、人工审批、事件等待等编排。 | 平台化阶段 |
-| OpenAPI / AsyncAPI 导入 | 用户仍需手写 operator library 或 resource design contract，导入成本偏高。 | 下一阶段 |
+| AsyncAPI / 更广义接口导入 | OpenAPI 到 resource contract 的第一层已落地；事件流、webhook、消息队列和完整 descriptor 生成仍未覆盖。 | 下一阶段 |
 | Java OperatorRegistry 自动投影 | 当前 native 内建算子有限，尚未把任意 Java operator inventory 完整归一化为 visual operator。 | 下一阶段 |
 | Subgraph / remote worker / AI tool source kinds | 设计已预留，当前示例主要覆盖 resource、native、user-library transform/branch/native lowering。 | 后续阶段 |
 | 生产 IAM / RBAC / 权限后台 | 当前 policy 是 tenant/namespace/environment availability gate，不是完整权限系统。 | 平台化阶段 |
@@ -83,9 +84,9 @@ Operator Library / Resource Design Contract
 
 ## 6. 下一步优先级
 
-1. **OpenAPI/resource contract 导入辅助**：降低用户补 schema 成本，但必须走现有 `ResourceDesignContractValidator`，不能让未验证 schema 进入 catalog。
-2. **Java operator inventory projector**：让现有 BLOGE Java operators 也能进入同一 visual catalog，而不是只依赖手写内建定义。
-3. **前端回归验证**：给 catalog load、drag/drop connection preflight、draft save/publish/run 建立浏览器级 smoke test。
+1. **Java operator inventory projector**：让现有 BLOGE Java operators 也能进入同一 visual catalog，而不是只依赖手写内建定义。
+2. **前端回归验证**：给 catalog load、drag/drop connection preflight、draft save/publish/run 和 OpenAPI contract preview 建立浏览器级 smoke test。
+3. **OpenAPI 导入深化**：补 YAML 输入、descriptor 生成建议、更多 media type 策略和 operation/schema diff；仍必须走现有 `ResourceDesignContractValidator`，不能让未验证 schema 进入 catalog。
 4. **Run history 深化**：当前已经保存 shape-only run record；下一步可补查询过滤、run replay、golden case 绑定和 SLO 统计。
 5. **文档协议收敛**：把早期草案字段名逐步改成当前实现的 wire contract，并保留平台化抽象命名作为未来 ADR，而不是混在当前协议里。
 

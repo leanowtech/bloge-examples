@@ -53,6 +53,7 @@ class ResourceDesignContractAdminControllerTest {
         ResourceDesignContractAdminController controller = new ResourceDesignContractAdminController(
                 registry,
                 new ResourceDesignContractValidator(),
+                new OpenApiResourceDesignContractImporter(),
                 drafts,
                 resourceRegistry(descriptor),
                 projector
@@ -70,6 +71,32 @@ class ResourceDesignContractAdminControllerTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.valid").value(false))
                 .andExpect(jsonPath("$.diagnostics[0].code").value("visual.schema.arrayItemsMissing"));
+
+        assertThat(registry.all()).isEmpty();
+    }
+
+    @Test
+    void fromOpenApiReturnsContractDraftWithoutStoring() throws Exception {
+        OpenApiResourceDesignContractImportRequest request = new OpenApiResourceDesignContractImportRequest(
+                "order-service.listOrders",
+                "listOrders",
+                null,
+                null,
+                null,
+                openApiOrderList()
+        );
+
+        mockMvc.perform(post("/admin/resource-design-contracts/from-openapi")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(request)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.validation.valid").value(true))
+                .andExpect(jsonPath("$.validation.diagnostics").isEmpty())
+                .andExpect(jsonPath("$.contract.resourceId").value("order-service.listOrders"))
+                .andExpect(jsonPath("$.contract.displayName").value("List orders"))
+                .andExpect(jsonPath("$.contract.requestSchema.schema.required[0]").value("userId"))
+                .andExpect(jsonPath("$.contract.responseSchema.schema.properties.items.items.properties.id.type")
+                        .value("string"));
 
         assertThat(registry.all()).isEmpty();
     }
@@ -407,6 +434,61 @@ class ResourceDesignContractAdminControllerTest {
                 ParameterMapping.empty(),
                 new ResponseProtocol.HttpStatus(),
                 "data"
+        );
+    }
+
+    private static Map<String, Object> openApiOrderList() {
+        return Map.of(
+                "openapi", "3.1.0",
+                "paths", Map.of(
+                        "/orders", Map.of(
+                                "get", Map.of(
+                                        "operationId", "listOrders",
+                                        "summary", "List orders",
+                                        "tags", List.of("order"),
+                                        "parameters", List.of(Map.of(
+                                                "name", "userId",
+                                                "in", "query",
+                                                "required", true,
+                                                "schema", Map.of("type", "string")
+                                        )),
+                                        "responses", Map.of(
+                                                "200", Map.of(
+                                                        "description", "ok",
+                                                        "content", Map.of(
+                                                                "application/json", Map.of(
+                                                                        "schema", Map.of(
+                                                                                "type", "object",
+                                                                                "properties", Map.of(
+                                                                                        "items", Map.of(
+                                                                                                "type", "array",
+                                                                                                "items", Map.of(
+                                                                                                        "$ref",
+                                                                                                        "#/components/schemas/Order"
+                                                                                                )
+                                                                                        )
+                                                                                ),
+                                                                                "required", List.of("items")
+                                                                        )
+                                                                )
+                                                        )
+                                                )
+                                        )
+                                )
+                        )
+                ),
+                "components", Map.of(
+                        "schemas", Map.of(
+                                "Order", Map.of(
+                                        "type", "object",
+                                        "properties", Map.of(
+                                                "id", Map.of("type", "string")
+                                        ),
+                                        "required", List.of("id"),
+                                        "additionalProperties", false
+                                )
+                        )
+                )
         );
     }
 

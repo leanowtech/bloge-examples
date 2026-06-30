@@ -37,6 +37,7 @@ public class ResourceDesignContractAdminController {
 
     private final ResourceDesignContractRegistry registry;
     private final ResourceDesignContractValidator validator;
+    private final OpenApiResourceDesignContractImporter openApiImporter;
     private final GraphDraftRepository draftRepository;
     private final ResourceRegistry resourceRegistry;
     private final ResourceVirtualOperatorProjector projector;
@@ -50,11 +51,13 @@ public class ResourceDesignContractAdminController {
      */
     public ResourceDesignContractAdminController(ResourceDesignContractRegistry registry,
                                                  ResourceDesignContractValidator validator,
+                                                 OpenApiResourceDesignContractImporter openApiImporter,
                                                  GraphDraftRepository draftRepository,
                                                  ResourceRegistry resourceRegistry,
                                                  ResourceVirtualOperatorProjector projector) {
         this.registry = registry;
         this.validator = validator;
+        this.openApiImporter = openApiImporter;
         this.draftRepository = draftRepository;
         this.resourceRegistry = resourceRegistry;
         this.projector = projector;
@@ -90,6 +93,28 @@ public class ResourceDesignContractAdminController {
     public VisualValidationResult validate(@RequestBody ResourceDesignContract contract,
                                            @RequestParam(defaultValue = "false") boolean force) {
         return validateAgainstRegistry(contract, force);
+    }
+
+    /**
+     * Projects one OpenAPI operation into a design contract draft without storing it.
+     *
+     * @param request OpenAPI import request
+     * @param force suppress stored-draft disablement impact diagnostics
+     * @return generated contract draft and structured validation diagnostics
+     */
+    @PostMapping("/from-openapi")
+    public OpenApiResourceDesignContractImportResult fromOpenApi(
+            @RequestBody OpenApiResourceDesignContractImportRequest request,
+            @RequestParam(defaultValue = "false") boolean force) {
+        OpenApiResourceDesignContractImportResult importResult = openApiImporter.project(request);
+        List<VisualDiagnostic> diagnostics = new ArrayList<>(importResult.validation().diagnostics());
+        if (importResult.contract() != null) {
+            diagnostics.addAll(validateAgainstRegistry(importResult.contract(), force).diagnostics());
+        }
+        return new OpenApiResourceDesignContractImportResult(
+                importResult.contract(),
+                new VisualValidationResult(false, diagnostics)
+        );
     }
 
     /**
