@@ -339,6 +339,54 @@ class OperatorLibraryAdminControllerTest {
     }
 
     @Test
+    void validateWarnsWhenReplacingUsedOperatorRefWithDifferentFingerprint() throws Exception {
+        OperatorLibrary original = VisualCatalogTestSupport.eligibilityLibrary("integer");
+        OperatorLibrary replacement = VisualCatalogTestSupport.eligibilityLibrary("string");
+        String originalFingerprint = original.operators().get(0).fingerprint();
+        String replacementFingerprint = replacement.operators().get(0).fingerprint();
+        registry.upsert(original);
+        drafts.save(draftUsingOperator("risk:eligibility", originalFingerprint));
+
+        mockMvc.perform(post("/admin/visual-operator-libraries/validate")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(replacement)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.valid").value(true))
+                .andExpect(jsonPath("$.diagnostics[0].level").value("WARNING"))
+                .andExpect(jsonPath("$.diagnostics[0].code").value("visual.library.operatorFingerprintDrift"))
+                .andExpect(jsonPath("$.diagnostics[0].message")
+                        .value(org.hamcrest.Matchers.containsString("saved fingerprint '" + originalFingerprint + "'")))
+                .andExpect(jsonPath("$.diagnostics[0].message")
+                        .value(org.hamcrest.Matchers.containsString("'" + replacementFingerprint + "'")))
+                .andExpect(jsonPath("$.diagnostics[0].target").value("/drafts/draft-1/nodes/0/operatorRef"));
+
+        assertThat(replacementFingerprint).isNotEqualTo(originalFingerprint);
+        assertThat(registry.find("risk-policy")).contains(original);
+    }
+
+    @Test
+    void validateWarnsWhenReplacingUsedOperatorRefWithoutSavedFingerprint() throws Exception {
+        OperatorLibrary original = VisualCatalogTestSupport.eligibilityLibrary("integer");
+        OperatorLibrary replacement = VisualCatalogTestSupport.eligibilityLibrary("string");
+        registry.upsert(original);
+        drafts.save(draftUsingOperatorWithoutFingerprint("risk:eligibility"));
+
+        mockMvc.perform(post("/admin/visual-operator-libraries/validate")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(replacement)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.valid").value(true))
+                .andExpect(jsonPath("$.diagnostics[0].level").value("WARNING"))
+                .andExpect(jsonPath("$.diagnostics[0].code").value("visual.library.operatorFingerprintSnapshotMissing"))
+                .andExpect(jsonPath("$.diagnostics[0].message")
+                        .value("Operator library 'risk-policy' changes operatorRef 'risk:eligibility' used by draft 'draft-1@1' node 'eligibility', but the draft has no saved operator fingerprint; review and resave the draft before execution."))
+                .andExpect(jsonPath("$.diagnostics[0].target").value("/drafts/draft-1/nodes/0/operatorRef"));
+
+        assertThat(replacement.operators().get(0).fingerprint()).isNotEqualTo(original.operators().get(0).fingerprint());
+        assertThat(registry.find("risk-policy")).contains(original);
+    }
+
+    @Test
     void updateForceBypassesRemovedOperatorRefGuard() throws Exception {
         OperatorLibrary replacement = libraryWithScoreFactsOnly();
         registry.upsert(VisualCatalogTestSupport.multiOutputEligibilityLibrary("integer"));
@@ -392,6 +440,18 @@ class OperatorLibraryAdminControllerTest {
     }
 
     private static GraphDraft draftUsingOperator(String operatorRef) {
+        return draftUsingOperator(operatorRef, "fingerprint");
+    }
+
+    private static GraphDraft draftUsingOperatorWithoutFingerprint(String operatorRef) {
+        return draftUsingOperator(operatorRef, Map.of());
+    }
+
+    private static GraphDraft draftUsingOperator(String operatorRef, String fingerprint) {
+        return draftUsingOperator(operatorRef, Map.of("eligibility", fingerprint));
+    }
+
+    private static GraphDraft draftUsingOperator(String operatorRef, Map<String, String> fingerprints) {
         return new GraphDraft(
                 "bloge.visualGraphDraft.v1",
                 "draft-1",
@@ -413,7 +473,7 @@ class OperatorLibraryAdminControllerTest {
                 List.of(),
                 Map.of(),
                 new GraphDraft.OutputSelection("eligibility", ""),
-                Map.of("eligibility", "fingerprint")
+                fingerprints
         );
     }
 

@@ -21,8 +21,10 @@ import org.springframework.web.bind.annotation.RestController;
 
 import java.util.ArrayList;
 import java.util.Collection;
+import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 
@@ -159,6 +161,7 @@ public class OperatorLibraryAdminController {
         VisualValidationResult structural = validator.validate(library);
         List<VisualDiagnostic> diagnostics = new ArrayList<>(structural.diagnostics());
         diagnostics.addAll(operatorRefOwnershipDiagnostics(library));
+        diagnostics.addAll(replacementFingerprintDriftDiagnostics(library));
         if (!force) {
             diagnostics.addAll(replacementImpactDiagnostics(library, "replaced without force=true"));
         }
@@ -228,6 +231,62 @@ public class OperatorLibraryAdminController {
                 .filter(operatorRef -> !replacementRefs.contains(operatorRef))
                 .collect(java.util.stream.Collectors.toCollection(LinkedHashSet::new));
         return storedDraftReferenceDiagnostics(replacement.libraryId(), removedRefs, action);
+    }
+
+    private List<VisualDiagnostic> replacementFingerprintDriftDiagnostics(OperatorLibrary replacement) {
+        if (replacement == null) {
+            return List.of();
+        }
+        Optional<OperatorLibrary> existing = registry.find(replacement.libraryId());
+        if (existing.isEmpty()) {
+            return List.of();
+        }
+
+        Map<String, OperatorDefinition> existingByRef = new LinkedHashMap<>();
+        for (OperatorDefinition operator : existing.get().operators()) {
+            existingByRef.putIfAbsent(operator.operatorRef(), operator);
+        }
+
+        Map<String, OperatorDefinition> changedByRef = new LinkedHashMap<>();
+        for (OperatorDefinition operator : replacement.operators()) {
+            OperatorDefinition previous = existingByRef.get(operator.operatorRef());
+            if (previous != null && !previous.fingerprint().equals(operator.fingerprint())) {
+                changedByRef.putIfAbsent(operator.operatorRef(), operator);
+            }
+        }
+        if (changedByRef.isEmpty()) {
+            return List.of();
+        }
+
+        List<VisualDiagnostic> diagnostics = new ArrayList<>();
+        for (GraphDraft draft : draftRepository.all()) {
+            for (int i = 0; i < draft.nodes().size(); i++) {
+                GraphDraft.DraftNode node = draft.nodes().get(i);
+                OperatorDefinition replacementOperator = changedByRef.get(node.operatorRef());
+                if (replacementOperator == null) {
+                    continue;
+                }
+                String savedFingerprint = draft.operatorFingerprints().get(node.id());
+                if (savedFingerprint == null || savedFingerprint.isBlank()) {
+                    diagnostics.add(VisualDiagnostic.warning("visual.library.operatorFingerprintSnapshotMissing",
+                            "Operator library '%s' changes operatorRef '%s' used by draft '%s@%d' node '%s', but the draft has no saved operator fingerprint; review and resave the draft before execution."
+                                    .formatted(replacement.libraryId(), node.operatorRef(), draft.draftId(),
+                                            draft.revision(), node.id()),
+                            "/drafts/%s/nodes/%d/operatorRef".formatted(draft.draftId(), i)));
+                    continue;
+                }
+                if (savedFingerprint.equals(replacementOperator.fingerprint())) {
+                    continue;
+                }
+                diagnostics.add(VisualDiagnostic.warning("visual.library.operatorFingerprintDrift",
+                        "Operator library '%s' changes operatorRef '%s' used by draft '%s@%d' node '%s' from saved fingerprint '%s' to '%s'; review and resave the draft before execution."
+                                .formatted(replacement.libraryId(), node.operatorRef(), draft.draftId(),
+                                        draft.revision(), node.id(), savedFingerprint,
+                                        replacementOperator.fingerprint()),
+                        "/drafts/%s/nodes/%d/operatorRef".formatted(draft.draftId(), i)));
+            }
+        }
+        return diagnostics;
     }
 
     private List<VisualDiagnostic> storedDraftReferenceDiagnostics(String libraryId,

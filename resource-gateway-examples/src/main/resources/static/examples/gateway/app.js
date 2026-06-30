@@ -257,6 +257,7 @@ const state = {
   libraryImportText: pretty(SAMPLE_OPERATOR_LIBRARY),
   libraryForce: false,
   libraryMessage: null,
+  libraryImportConfirmationKey: '',
   draggingOperatorType: null,
   paletteDrag: null,
   nodeDrag: null,
@@ -1133,10 +1134,12 @@ function renderOperatorLibraryControls() {
       state.libraryImportText = pretty(library);
     }
     state.libraryMessage = null;
+    state.libraryImportConfirmationKey = '';
     renderOperatorLibraryControls();
   };
   editor.oninput = () => {
     state.libraryImportText = editor.value;
+    state.libraryImportConfirmationKey = '';
   };
 
   const importButton = $('import-library');
@@ -1149,6 +1152,7 @@ function renderOperatorLibraryControls() {
     forceToggle.onchange = () => {
       state.libraryForce = forceToggle.checked;
       state.libraryMessage = null;
+      state.libraryImportConfirmationKey = '';
       renderLibraryStatus();
     };
   }
@@ -1261,6 +1265,10 @@ function visualCheckLevel(diagnostics, success = true) {
   return success ? 'success' : 'error';
 }
 
+function hasWarningDiagnostic(diagnostics) {
+  return diagnostics.some((diagnostic) => String(diagnostic.level || '').toUpperCase() === 'WARNING');
+}
+
 async function validateVisualDraft() {
   setVisualCheck('Validating...', 'info');
   try {
@@ -1355,6 +1363,7 @@ async function loadOperatorLibraries(options = {}) {
         && !state.operatorLibraries.some((library) => library.libraryId === state.selectedLibraryId)) {
       state.selectedLibraryId = '';
       state.libraryImportText = pretty(SAMPLE_OPERATOR_LIBRARY);
+      state.libraryImportConfirmationKey = '';
     }
     if (options.render !== false) {
       renderOperatorLibraryControls();
@@ -1380,22 +1389,48 @@ async function validateOperatorLibrary() {
     setLibraryMessage(`Invalid JSON: ${error.message}`, 'error');
     return;
   }
+  const { response, payload, diagnostics } = await validateOperatorLibraryPayload(library);
+  if (!response.ok) {
+    setLibraryMessage(`Validation failed with ${response.status}`, 'error');
+    return;
+  }
+  state.libraryImportConfirmationKey = payload?.valid !== false && hasWarningDiagnostic(diagnostics)
+    ? libraryImportConfirmationKey(library, diagnostics)
+    : '';
+  setLibraryMessage(
+    validationResultMessage(payload?.valid, diagnostics, 'Operator library is valid.'),
+    visualCheckLevel(diagnostics, payload?.valid !== false),
+    diagnostics
+  );
+}
+
+async function validateOperatorLibraryPayload(library) {
   const response = await fetch(`/admin/visual-operator-libraries/validate${libraryForceQuery()}`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(library)
   });
   const payload = await response.json().catch(() => null);
-  if (!response.ok) {
-    setLibraryMessage(`Validation failed with ${response.status}`, 'error');
-    return;
-  }
-  const diagnostics = normalizeDiagnostics(payload?.diagnostics);
-  setLibraryMessage(
-    validationResultMessage(payload?.valid, diagnostics, 'Operator library is valid.'),
-    visualCheckLevel(diagnostics, payload?.valid !== false),
-    diagnostics
-  );
+  return {
+    response,
+    payload,
+    diagnostics: normalizeDiagnostics(payload?.diagnostics)
+  };
+}
+
+function libraryImportConfirmationKey(library, diagnostics = []) {
+  return JSON.stringify({
+    force: Boolean(state.libraryForce),
+    library,
+    warnings: normalizeDiagnostics(diagnostics)
+      .filter((diagnostic) => String(diagnostic.level || '').toUpperCase() === 'WARNING')
+      .map((diagnostic) => ({
+        level: diagnostic.level || 'WARNING',
+        code: diagnostic.code || '',
+        message: diagnostic.message || '',
+        target: diagnostic.target || ''
+      }))
+  });
 }
 
 async function importOperatorLibrary() {
@@ -1409,6 +1444,34 @@ async function importOperatorLibrary() {
   if (!library.libraryId) {
     setLibraryMessage('libraryId is required.', 'error');
     return;
+  }
+  const validation = await validateOperatorLibraryPayload(library);
+  const confirmationKey = libraryImportConfirmationKey(library, validation.diagnostics);
+  if (!validation.response.ok || validation.payload?.valid === false) {
+    state.libraryImportConfirmationKey = '';
+    setLibraryMessage(
+      validationResultMessage(
+        validation.payload?.valid,
+        validation.diagnostics,
+        `Validation failed with ${validation.response.status}`
+      ),
+      'error',
+      validation.diagnostics
+    );
+    return;
+  }
+  if (hasWarningDiagnostic(validation.diagnostics)
+      && state.libraryImportConfirmationKey !== confirmationKey) {
+    state.libraryImportConfirmationKey = confirmationKey;
+    setLibraryMessage(
+      `${validationResultMessage(true, validation.diagnostics, 'Operator library is valid.')} Review warnings, then click Import again to continue.`,
+      'warning',
+      validation.diagnostics
+    );
+    return;
+  }
+  if (!hasWarningDiagnostic(validation.diagnostics)) {
+    state.libraryImportConfirmationKey = '';
   }
   const replacing = libraryExists(library.libraryId);
   const endpoint = replacing
@@ -1435,6 +1498,7 @@ async function importOperatorLibrary() {
     return;
   }
   const stored = JSON.parse(text);
+  state.libraryImportConfirmationKey = '';
   state.selectedLibraryId = stored.libraryId;
   state.libraryImportText = pretty(stored);
   await loadOperatorLibraries({ render: false });
@@ -1468,6 +1532,7 @@ async function deleteSelectedOperatorLibrary() {
   }
   state.selectedLibraryId = '';
   state.libraryImportText = pretty(SAMPLE_OPERATOR_LIBRARY);
+  state.libraryImportConfirmationKey = '';
   await loadOperatorLibraries({ render: false });
   await loadVisualOperatorCatalog();
   renderOperatorPalette();
@@ -2835,12 +2900,27 @@ function defaultCustomInputStateForOperator(spec) {
 
 function defaultConfigForOperator(spec) {
   const config = {};
+  const rootSchema = spec.configSchema?.schema || {};
+  if (rootSchema.default && typeof rootSchema.default === 'object' && !Array.isArray(rootSchema.default)) {
+    Object.assign(config, cloneJsonValue(rootSchema.default));
+  }
   for (const field of configFieldDescriptors(spec.configSchema)) {
-    if (Object.prototype.hasOwnProperty.call(field.schema || {}, 'default')) {
-      config[field.path] = field.schema.default;
+    if (!Object.prototype.hasOwnProperty.call(config, field.path)
+        && Object.prototype.hasOwnProperty.call(field.schema || {}, 'default')) {
+      config[field.path] = cloneJsonValue(field.schema.default);
     }
   }
   return config;
+}
+
+function cloneJsonValue(value) {
+  if (Array.isArray(value)) {
+    return value.map((item) => cloneJsonValue(item));
+  }
+  if (value && typeof value === 'object') {
+    return Object.fromEntries(Object.entries(value).map(([key, item]) => [key, cloneJsonValue(item)]));
+  }
+  return value;
 }
 
 function defaultResourceParamInputs(spec) {

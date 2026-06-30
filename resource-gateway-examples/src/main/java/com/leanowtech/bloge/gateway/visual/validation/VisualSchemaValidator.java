@@ -62,6 +62,7 @@ public final class VisualSchemaValidator {
             return;
         }
         validateStandardEnum(schema, kind, path, diagnostics);
+        validateDefaultValue(schema, kind, path, diagnostics);
         if ("object".equals(kind)) {
             Map<String, Object> properties = objectProperties(schema, path, diagnostics);
             validateAdditionalProperties(schema, path, diagnostics);
@@ -95,6 +96,124 @@ public final class VisualSchemaValidator {
         } else if ("enum".equals(kind)) {
             validateCustomEnumValues(schema, path, diagnostics);
         }
+    }
+
+    @SuppressWarnings("unchecked")
+    private static void validateDefaultValue(Map<String, Object> schema,
+                                             String kind,
+                                             String path,
+                                             List<VisualDiagnostic> diagnostics) {
+        if (!schema.containsKey("default") || "any".equals(kind) || "opaque".equals(kind)) {
+            return;
+        }
+        validateDefaultValue(schema, kind, path + "/default", diagnostics, schema.get("default"));
+    }
+
+    @SuppressWarnings("unchecked")
+    private static void validateDefaultValue(Map<String, Object> schema,
+                                             String kind,
+                                             String path,
+                                             List<VisualDiagnostic> diagnostics,
+                                             Object value) {
+        if (kind.isBlank() || "any".equals(kind) || "opaque".equals(kind)) {
+            return;
+        }
+        if ("object".equals(kind)) {
+            if (!(value instanceof Map<?, ?> rawMap)) {
+                diagnostics.add(VisualDiagnostic.error("visual.schema.defaultTypeMismatch",
+                        "Schema default must match type/kind '%s'.".formatted(kind),
+                        path));
+                return;
+            }
+            Map<String, Object> object = new LinkedHashMap<>();
+            rawMap.forEach((key, item) -> object.put(String.valueOf(key), item));
+            Map<String, Object> properties = propertiesWithoutDiagnostics(schema);
+            for (String required : requiredNamesWithoutDiagnostics(schema)) {
+                if (!object.containsKey(required) || object.get(required) == null) {
+                    diagnostics.add(VisualDiagnostic.error("visual.schema.defaultRequiredMissing",
+                            "Schema default is missing required property '%s'.".formatted(required),
+                            path + "/" + required));
+                }
+            }
+            Object additional = schema.get("additionalProperties");
+            for (Map.Entry<String, Object> entry : object.entrySet()) {
+                Object property = properties.get(entry.getKey());
+                if (property instanceof Map<?, ?> nested) {
+                    validateDefaultValue((Map<String, Object>) nested, schemaKind((Map<String, Object>) nested),
+                            path + "/" + entry.getKey(), diagnostics, entry.getValue());
+                } else if (Boolean.FALSE.equals(additional)) {
+                    diagnostics.add(VisualDiagnostic.error("visual.schema.defaultUnknownProperty",
+                            "Schema default contains undeclared property '%s'.".formatted(entry.getKey()),
+                            path + "/" + entry.getKey()));
+                } else if (additional instanceof Map<?, ?> additionalSchema) {
+                    validateDefaultValue((Map<String, Object>) additionalSchema,
+                            schemaKind((Map<String, Object>) additionalSchema),
+                            path + "/" + entry.getKey(), diagnostics, entry.getValue());
+                }
+            }
+            return;
+        }
+        if ("array".equals(kind)) {
+            if (!(value instanceof List<?> list)) {
+                diagnostics.add(VisualDiagnostic.error("visual.schema.defaultTypeMismatch",
+                        "Schema default must match type/kind '%s'.".formatted(kind),
+                        path));
+                return;
+            }
+            Object items = schema.get("items");
+            if (items instanceof Map<?, ?> itemSchema) {
+                Map<String, Object> itemSchemaMap = (Map<String, Object>) itemSchema;
+                for (int i = 0; i < list.size(); i++) {
+                    validateDefaultValue(itemSchemaMap, schemaKind(itemSchemaMap), path + "/" + i,
+                            diagnostics, list.get(i));
+                }
+            }
+            return;
+        }
+        if ("enum".equals(kind)) {
+            Object values = schema.get("values");
+            if (values instanceof List<?> list && !list.contains(value)) {
+                diagnostics.add(VisualDiagnostic.error("visual.schema.defaultEnumMismatch",
+                        "Schema default must be one of %s.".formatted(list),
+                        path));
+            }
+            return;
+        }
+        Object rawEnum = schema.get("enum");
+        if (rawEnum instanceof List<?> values && !values.contains(value)) {
+            diagnostics.add(VisualDiagnostic.error("visual.schema.defaultEnumMismatch",
+                    "Schema default must be one of %s.".formatted(values),
+                    path));
+        }
+        if (valueConstrainedKind(kind) && !enumValueMatchesKind(value, kind)) {
+            diagnostics.add(VisualDiagnostic.error("visual.schema.defaultTypeMismatch",
+                    "Schema default must match type/kind '%s'.".formatted(kind),
+                    path));
+        }
+    }
+
+    private static Map<String, Object> propertiesWithoutDiagnostics(Map<String, Object> schema) {
+        Object raw = schema.get("properties");
+        if (!(raw instanceof Map<?, ?> rawMap)) {
+            return Map.of();
+        }
+        Map<String, Object> properties = new LinkedHashMap<>();
+        rawMap.forEach((key, value) -> properties.put(String.valueOf(key), value));
+        return properties;
+    }
+
+    private static List<String> requiredNamesWithoutDiagnostics(Map<String, Object> schema) {
+        Object raw = schema.get("required");
+        if (!(raw instanceof List<?> list)) {
+            return List.of();
+        }
+        List<String> required = new ArrayList<>();
+        for (Object item : list) {
+            if (item instanceof String name && !name.isBlank()) {
+                required.add(name);
+            }
+        }
+        return required;
     }
 
     private static String schemaKind(Map<String, Object> schema) {

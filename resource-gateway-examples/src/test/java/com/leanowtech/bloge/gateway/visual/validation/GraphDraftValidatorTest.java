@@ -1,6 +1,7 @@
 package com.leanowtech.bloge.gateway.visual.validation;
 
 import com.leanowtech.bloge.gateway.visual.catalog.OperatorDefinition;
+import com.leanowtech.bloge.gateway.visual.catalog.OperatorLibrary;
 import com.leanowtech.bloge.gateway.visual.catalog.VisualCatalogTestSupport;
 import com.leanowtech.bloge.gateway.visual.draft.GraphDraft;
 import com.leanowtech.bloge.gateway.visual.model.SchemaEnvelope;
@@ -1398,6 +1399,26 @@ class GraphDraftValidatorTest {
     }
 
     @Test
+    void rejectsNodeConfigWhenStandardJsonSchemaEnumDoesNotMatchConfigSchema() {
+        GraphDraftValidator validator = new GraphDraftValidator(
+                VisualCatalogTestSupport.catalogWithLibrary(standardEnumConfigurablePolicyLibrary()));
+        GraphDraft draft = configurablePolicyDraft(Map.of(
+                "threshold", 700,
+                "mode", "experimental"
+        ));
+
+        VisualValidationResult result = validator.validate(draft);
+
+        assertThat(result.valid()).isFalse();
+        assertThat(result.diagnostics())
+                .anySatisfy(diagnostic -> {
+                    assertThat(diagnostic.code()).isEqualTo("visual.config.enumMismatch");
+                    assertThat(diagnostic.message()).contains("strict").contains("relaxed");
+                    assertThat(diagnostic.target()).isEqualTo("/nodes/0/config/mode");
+                });
+    }
+
+    @Test
     void rejectsNodeConfigWhenAdditionalPropertiesAreForbidden() {
         GraphDraftValidator validator = new GraphDraftValidator(
                 VisualCatalogTestSupport.catalogWithLibrary(
@@ -2023,6 +2044,47 @@ class GraphDraftValidatorTest {
                 List.of(),
                 Map.of(),
                 new GraphDraft.OutputSelection("policy", "")
+        );
+    }
+
+    private static OperatorLibrary standardEnumConfigurablePolicyLibrary() {
+        Map<String, Object> outputProperties = new LinkedHashMap<>();
+        outputProperties.put("accepted", Map.of("type", "boolean"));
+
+        Map<String, Object> configProperties = new LinkedHashMap<>();
+        configProperties.put("threshold", Map.of("type", "integer"));
+        configProperties.put("mode", Map.of("type", "string", "enum", List.of("strict", "relaxed")));
+
+        OperatorDefinition operator = new OperatorDefinition(
+                "bloge.visualOperator.v1",
+                "risk:configurablePolicy",
+                "1.0.0",
+                new OperatorDefinition.Display("Configurable policy",
+                        "Evaluates policy behavior controlled by configSchema.",
+                        List.of("risk", "config")),
+                new OperatorDefinition.Source("user-library", "", "", "", true),
+                new OperatorDefinition.Ports(
+                        List.of(),
+                        List.of(new OperatorDefinition.Port("output",
+                                SchemaEnvelope.object(outputProperties, List.of()),
+                                true,
+                                "Policy output."))
+                ),
+                SchemaEnvelope.object(configProperties, List.of("threshold", "mode")),
+                OperatorDefinition.Capabilities.pure(),
+                new OperatorDefinition.Lowering("transform", "transform", Map.of(
+                        "assignments", Map.of("accepted", "true")
+                )),
+                List.of()
+        );
+        return new OperatorLibrary(
+                "bloge.visualOperatorLibrary.v1",
+                "risk-configurable-policy",
+                "Configurable policy operators",
+                "1.0.0",
+                "risk-team",
+                "ACTIVE",
+                List.of(operator)
         );
     }
 

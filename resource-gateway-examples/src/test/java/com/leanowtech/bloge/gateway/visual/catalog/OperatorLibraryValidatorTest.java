@@ -408,6 +408,58 @@ class OperatorLibraryValidatorTest {
     }
 
     @Test
+    void rejectsConfigSchemaDefaultsThatDoNotMatchDeclaredSchema() {
+        OperatorLibrary library = libraryWith(new OperatorDefinition(
+                "bloge.visualOperator.v1",
+                "risk:badConfigDefaults",
+                "1.0.0",
+                new OperatorDefinition.Display("Bad config defaults", "Test operator.", List.of("test")),
+                new OperatorDefinition.Source("user-library", "", "", "", true),
+                new OperatorDefinition.Ports(
+                        List.of(),
+                        List.of(new OperatorDefinition.Port("output",
+                                SchemaEnvelope.object(Map.of("accepted", Map.of("type", "boolean")), List.of()),
+                                true,
+                                "Output."))
+                ),
+                new SchemaEnvelope("json-schema", "2020-12", Map.of(
+                        "type", "object",
+                        "required", List.of("threshold", "mode"),
+                        "additionalProperties", false,
+                        "properties", Map.of(
+                                "threshold", Map.of("type", "integer", "default", "high"),
+                                "mode", Map.of("type", "enum", "values", List.of("strict", "relaxed"),
+                                        "default", "experimental"),
+                                "nested", Map.of(
+                                        "type", "object",
+                                        "required", List.of("flag"),
+                                        "properties", Map.of("flag", Map.of("type", "boolean")),
+                                        "default", Map.of())
+                        ),
+                        "default", Map.of(
+                                "threshold", 700,
+                                "extra", true
+                        )
+                )),
+                OperatorDefinition.Capabilities.pure(),
+                new OperatorDefinition.Lowering("native", "risk:badConfigDefaults", Map.of()),
+                List.of()
+        ));
+
+        VisualValidationResult result = validator.validate(library);
+
+        assertThat(result.valid()).isFalse();
+        assertThat(result.diagnostics())
+                .extracting("code")
+                .contains(
+                        "visual.schema.defaultTypeMismatch",
+                        "visual.schema.defaultEnumMismatch",
+                        "visual.schema.defaultRequiredMissing",
+                        "visual.schema.defaultUnknownProperty"
+                );
+    }
+
+    @Test
     void rejectsDuplicatePortNamesAndUnsupportedLoweringMode() {
         OperatorLibrary library = libraryWith(operator(
                 "risk:badPorts",

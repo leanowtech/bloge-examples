@@ -1288,7 +1288,9 @@ public class GraphDraftValidator {
             diagnostics.add(VisualDiagnostic.error("visual.config.typeMismatch",
                     "Config value at '%s' must be %s.".formatted(path, schemaTypeLabel(schema)),
                     path));
+            return;
         }
+        validateConfigEnum(value, schema, path, diagnostics);
     }
 
     private static void validateConfigObjectTemplate(Map<?, ?> fields,
@@ -1391,8 +1393,8 @@ public class GraphDraftValidator {
                                            Map<String, Object> schema,
                                            String path,
                                            List<VisualDiagnostic> diagnostics) {
-        Object rawValues = schema.get("values");
-        if (!(rawValues instanceof List<?> values) || values.isEmpty()) {
+        List<Object> values = enumValues(schema);
+        if (values.isEmpty()) {
             return;
         }
         if (!values.contains(value)) {
