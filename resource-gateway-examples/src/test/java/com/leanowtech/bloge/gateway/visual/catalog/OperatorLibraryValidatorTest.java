@@ -1017,6 +1017,94 @@ class OperatorLibraryValidatorTest {
     }
 
     @Test
+    void acceptsStringFormatsAcrossOperatorDefinitions() {
+        OperatorDefinition operator = new OperatorDefinition(
+                "bloge.visualOperator.v1",
+                "risk:stringFormatPolicy",
+                "1.0.0",
+                new OperatorDefinition.Display("String format policy", "Test operator.", List.of("test")),
+                new OperatorDefinition.Source("user-library", "", "", "", true),
+                new OperatorDefinition.Ports(
+                        List.of(new OperatorDefinition.Port("payload",
+                                SchemaEnvelope.object(Map.of(
+                                        "customerEmail", Map.of("type", "string", "format", "email")
+                                ), List.of("customerEmail")),
+                                true,
+                                "Input.")),
+                        List.of(new OperatorDefinition.Port("output",
+                                SchemaEnvelope.object(Map.of(
+                                        "traceId", Map.of("type", "string", "format", "uuid")
+                                ), List.of()),
+                                true,
+                                "Output."))
+                ),
+                SchemaEnvelope.object(Map.of(
+                        "callbackUri", Map.of("type", "string", "format", "uri", "default", "https://callback.example.test/hook"),
+                        "ttl", Map.of("type", "duration", "format", "duration", "default", "PT30M")
+                ), List.of("callbackUri")),
+                OperatorDefinition.Capabilities.pure(),
+                new OperatorDefinition.Lowering("native", "riskStringFormatPolicy", Map.of()),
+                List.of()
+        );
+
+        VisualValidationResult result = validator.validate(libraryWith(operator));
+
+        assertThat(result.diagnostics()).isEmpty();
+        assertThat(result.valid()).isTrue();
+    }
+
+    @Test
+    void rejectsInvalidStringFormatsAcrossOperatorDefinitions() {
+        OperatorDefinition operator = new OperatorDefinition(
+                "bloge.visualOperator.v1",
+                "risk:badStringFormatPolicy",
+                "1.0.0",
+                new OperatorDefinition.Display("Bad string format policy", "Test operator.", List.of("test")),
+                new OperatorDefinition.Source("user-library", "", "", "", true),
+                new OperatorDefinition.Ports(
+                        List.of(new OperatorDefinition.Port("payload",
+                                SchemaEnvelope.object(Map.of(
+                                        "customerEmail", Map.of("type", "string", "format", 123)
+                                ), List.of("customerEmail")),
+                                true,
+                                "Input.")),
+                        List.of(new OperatorDefinition.Port("output",
+                                SchemaEnvelope.object(Map.of(
+                                        "traceId", Map.of("type", "integer", "format", "uuid")
+                                ), List.of()),
+                                true,
+                                "Output."))
+                ),
+                SchemaEnvelope.object(Map.of(
+                        "callbackUri", Map.of("type", "string", "format", "uri", "default", "not a uri"),
+                        "phone", Map.of("type", "string", "format", "phone")
+                ), List.of()),
+                OperatorDefinition.Capabilities.pure(),
+                new OperatorDefinition.Lowering("native", "riskBadStringFormatPolicy", Map.of()),
+                List.of()
+        );
+
+        VisualValidationResult result = validator.validate(libraryWith(operator));
+
+        assertThat(result.valid()).isFalse();
+        assertThat(result.diagnostics())
+                .extracting("code")
+                .contains(
+                        "visual.schema.formatConstraintInvalid",
+                        "visual.schema.formatConstraintTypeMismatch",
+                        "visual.schema.defaultConstraintMismatch"
+                );
+        assertThat(result.diagnostics())
+                .extracting("target")
+                .contains(
+                        "/operators/0/ports/inputs/0/schema/schema/properties/customerEmail/format",
+                        "/operators/0/ports/outputs/0/schema/schema/properties/traceId",
+                        "/operators/0/configSchema/schema/properties/callbackUri/default",
+                        "/operators/0/configSchema/schema/properties/phone/format"
+                );
+    }
+
+    @Test
     void acceptsArrayItemBoundsAcrossOperatorDefinitions() {
         OperatorDefinition operator = new OperatorDefinition(
                 "bloge.visualOperator.v1",
@@ -1227,6 +1315,125 @@ class OperatorLibraryValidatorTest {
                         "/operators/0/ports/inputs/0/schema/schema/properties/items/uniqueItems",
                         "/operators/0/ports/outputs/0/schema/schema/properties/segments",
                         "/operators/0/configSchema/schema/properties/channels/default"
+                );
+    }
+
+    @Test
+    void acceptsObjectPropertyBoundsAcrossOperatorDefinitions() {
+        OperatorDefinition operator = new OperatorDefinition(
+                "bloge.visualOperator.v1",
+                "risk:objectBoundsPolicy",
+                "1.0.0",
+                new OperatorDefinition.Display("Object bounds policy", "Test operator.", List.of("test")),
+                new OperatorDefinition.Source("user-library", "", "", "", true),
+                new OperatorDefinition.Ports(
+                        List.of(new OperatorDefinition.Port("payload",
+                                SchemaEnvelope.object(Map.of(
+                                        "filters", Map.of(
+                                                "type", "object",
+                                                "properties", Map.of(
+                                                        "status", Map.of("type", "string"),
+                                                        "region", Map.of("type", "string")
+                                                ),
+                                                "minProperties", 1,
+                                                "maxProperties", 2)
+                                ), List.of("filters")),
+                                true,
+                                "Input.")),
+                        List.of(new OperatorDefinition.Port("output",
+                                SchemaEnvelope.object(Map.of(
+                                        "summary", Map.of(
+                                                "type", "object",
+                                                "additionalProperties", Map.of("type", "string"),
+                                                "minProperties", 1,
+                                                "maxProperties", 4)
+                                ), List.of()),
+                                true,
+                                "Output."))
+                ),
+                SchemaEnvelope.object(Map.of(
+                        "routing", Map.of(
+                                "type", "object",
+                                "properties", Map.of(
+                                        "routeMode", Map.of("type", "string"),
+                                        "region", Map.of("type", "string")
+                                ),
+                                "minProperties", 1,
+                                "maxProperties", 2,
+                                "default", Map.of("routeMode", "auto"))
+                ), List.of("routing")),
+                OperatorDefinition.Capabilities.pure(),
+                new OperatorDefinition.Lowering("native", "riskObjectBoundsPolicy", Map.of()),
+                List.of()
+        );
+
+        VisualValidationResult result = validator.validate(libraryWith(operator));
+
+        assertThat(result.diagnostics()).isEmpty();
+        assertThat(result.valid()).isTrue();
+    }
+
+    @Test
+    void rejectsInvalidObjectPropertyBoundsAcrossOperatorDefinitions() {
+        OperatorDefinition operator = new OperatorDefinition(
+                "bloge.visualOperator.v1",
+                "risk:badObjectBoundsPolicy",
+                "1.0.0",
+                new OperatorDefinition.Display("Bad object bounds policy", "Test operator.", List.of("test")),
+                new OperatorDefinition.Source("user-library", "", "", "", true),
+                new OperatorDefinition.Ports(
+                        List.of(new OperatorDefinition.Port("payload",
+                                SchemaEnvelope.object(Map.of(
+                                        "filters", Map.of(
+                                                "type", "object",
+                                                "minProperties", 3,
+                                                "maxProperties", 1)
+                                ), List.of("filters")),
+                                true,
+                                "Input.")),
+                        List.of(new OperatorDefinition.Port("output",
+                                SchemaEnvelope.object(Map.of(
+                                        "summary", Map.of(
+                                                "type", "string",
+                                                "minProperties", 1)
+                                ), List.of()),
+                                true,
+                                "Output."))
+                ),
+                SchemaEnvelope.object(Map.of(
+                        "routing", Map.of(
+                                "type", "object",
+                                "minProperties", 2,
+                                "maxProperties", 3,
+                                "default", Map.of("routeMode", "auto")),
+                        "fixed", Map.of(
+                                "type", "object",
+                                "minProperties", 2,
+                                "const", Map.of("routeMode", "auto"))
+                ), List.of()),
+                OperatorDefinition.Capabilities.pure(),
+                new OperatorDefinition.Lowering("native", "riskBadObjectBoundsPolicy", Map.of()),
+                List.of()
+        );
+
+        VisualValidationResult result = validator.validate(libraryWith(operator));
+
+        assertThat(result.valid()).isFalse();
+        assertThat(result.diagnostics())
+                .extracting("code")
+                .contains(
+                        "visual.schema.objectPropertyBoundsInvalid",
+                        "visual.schema.objectPropertyConstraintTypeMismatch",
+                        "visual.schema.defaultConstraintMismatch",
+                        "visual.schema.constConstraintMismatch"
+                );
+        assertThat(result.diagnostics())
+                .extracting("target")
+                .contains(
+                        "/operators/0/ports/inputs/0/schema/schema/properties/filters",
+                        "/operators/0/ports/outputs/0/schema/schema/properties/summary",
+                        "/operators/0/configSchema/schema/properties/routing/default",
+                        "/operators/0/configSchema/schema/properties/fixed/const"
                 );
     }
 

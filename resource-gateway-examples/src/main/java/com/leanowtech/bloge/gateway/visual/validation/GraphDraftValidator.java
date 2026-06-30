@@ -10,6 +10,12 @@ import com.leanowtech.bloge.gateway.visual.validation.VisualSchemaCompatibility.
 
 import org.springframework.stereotype.Service;
 
+import java.net.URI;
+import java.net.URISyntaxException;
+import java.time.Duration;
+import java.time.LocalDate;
+import java.time.OffsetDateTime;
+import java.time.format.DateTimeParseException;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.HashSet;
@@ -17,6 +23,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
+import java.util.UUID;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import java.util.regex.PatternSyntaxException;
@@ -49,6 +56,15 @@ public class GraphDraftValidator {
     private static final Pattern NODE_REFERENCE = Pattern.compile(
             "(?<![A-Za-z0-9_.])(" + IDENTIFIER_PATTERN + ")\\.output(?:\\.(" + PATH_PATTERN + "))?"
                     + "(?![A-Za-z0-9_])");
+    private static final Set<String> SUPPORTED_STRING_FORMATS = Set.of(
+            "date",
+            "date-time",
+            "duration",
+            "email",
+            "uri",
+            "uuid"
+    );
+    private static final Pattern EMAIL_PATTERN = Pattern.compile("^[^@\\s]+@[^@\\s]+\\.[^@\\s]+$");
 
     private final VisualOperatorCatalog catalog;
 
@@ -1194,21 +1210,25 @@ public class GraphDraftValidator {
             Object rawValues = schema.get("values");
             return !(rawValues instanceof List<?> values) || values.isEmpty() || values.contains(value);
         }
-	        return configValueMatchesType(value, type)
-	                && numericValueMatchesBounds(value, schema)
-	                && numericValueMatchesMultipleOf(value, schema)
-	                && stringValueMatchesLengthBounds(value, schema)
-	                && stringValueMatchesPattern(value, schema);
-    }
+		return configValueMatchesType(value, type)
+		                && numericValueMatchesBounds(value, schema)
+		                && numericValueMatchesMultipleOf(value, schema)
+		                && stringValueMatchesLengthBounds(value, schema)
+		                && stringValueMatchesPattern(value, schema)
+		                && stringValueMatchesFormat(value, schema);
+	    }
 
     private static boolean constantObjectMatchesSchema(Object value, Map<String, Object> schema) {
         if (!(value instanceof Map<?, ?> rawMap)) {
             return false;
         }
-        Map<String, Object> object = new LinkedHashMap<>();
-        rawMap.forEach((key, item) -> object.put(String.valueOf(key), item));
+	        Map<String, Object> object = new LinkedHashMap<>();
+	        rawMap.forEach((key, item) -> object.put(String.valueOf(key), item));
+	        if (!objectValueMatchesPropertyBounds(object, schema)) {
+	            return false;
+	        }
 
-        for (String required : requiredNamesOf(schema)) {
+	        for (String required : requiredNamesOf(schema)) {
             if (!object.containsKey(required) || object.get(required) == null) {
                 return false;
             }
@@ -1232,18 +1252,28 @@ public class GraphDraftValidator {
         return true;
     }
 
-	    private static boolean constantArrayMatchesSchema(Object value, Map<String, Object> schema) {
-	        if (!(value instanceof List<?> list)) {
-	            return false;
-	        }
+		    private static boolean constantArrayMatchesSchema(Object value, Map<String, Object> schema) {
+		        if (!(value instanceof List<?> list)) {
+		            return false;
+		        }
 	        if (!arrayValueMatchesItemBounds(list, schema)) {
 	            return false;
 	        }
 	        if (!arrayValueMatchesUniqueItems(list, schema)) {
 	            return false;
 	        }
-	        Map<String, Object> items = objectProperty(schema.get("items"));
-	        return items == null || list.stream().allMatch(item -> constantValueMatchesSchema(item, items));
+		        Map<String, Object> items = objectProperty(schema.get("items"));
+		        return items == null || list.stream().allMatch(item -> constantValueMatchesSchema(item, items));
+		    }
+
+	    private static boolean objectValueMatchesPropertyBounds(Map<?, ?> value, Map<String, Object> schema) {
+	        long size = value.size();
+	        Long minimum = objectPropertyBoundary(schema.get("minProperties"));
+	        if (minimum != null && size < minimum) {
+	            return false;
+	        }
+	        Long maximum = objectPropertyBoundary(schema.get("maxProperties"));
+	        return maximum == null || size <= maximum;
 	    }
 
     private static void validateEdgeIdentity(GraphDraft draft, List<VisualDiagnostic> diagnostics) {
@@ -1392,15 +1422,22 @@ public class GraphDraftValidator {
 	                    path));
 	            return;
 	        }
-	        if (!stringValueMatchesPattern(value, schema)) {
+		        if (!stringValueMatchesPattern(value, schema)) {
+		            diagnostics.add(VisualDiagnostic.error("visual.config.constraintMismatch",
+		                    "Config value at '%s' must satisfy %s string pattern constraint."
+		                            .formatted(path, schemaTypeLabel(schema)),
+		                    path));
+		            return;
+		        }
+	        if (!stringValueMatchesFormat(value, schema)) {
 	            diagnostics.add(VisualDiagnostic.error("visual.config.constraintMismatch",
-	                    "Config value at '%s' must satisfy %s string pattern constraint."
+	                    "Config value at '%s' must satisfy %s string format constraint."
 	                            .formatted(path, schemaTypeLabel(schema)),
 	                    path));
 	            return;
 	        }
-	        validateConfigEnum(value, schema, path, diagnostics);
-	    }
+		        validateConfigEnum(value, schema, path, diagnostics);
+		    }
 
     private static void validateConfigObjectTemplate(Map<?, ?> fields,
                                                      Map<String, Object> schema,
@@ -1417,9 +1454,15 @@ public class GraphDraftValidator {
             return;
         }
 
-        Map<String, Object> object = new LinkedHashMap<>();
-        fields.forEach((key, item) -> object.put(String.valueOf(key), item));
-        Map<String, Object> properties = propertiesOf(schema);
+	        Map<String, Object> object = new LinkedHashMap<>();
+	        fields.forEach((key, item) -> object.put(String.valueOf(key), item));
+	        if (!objectValueMatchesPropertyBounds(object, schema)) {
+	            diagnostics.add(VisualDiagnostic.error("visual.config.constraintMismatch",
+	                    "Config value at '%s' must satisfy object property count constraints.".formatted(path),
+	                    path));
+	            return;
+	        }
+	        Map<String, Object> properties = propertiesOf(schema);
         for (String required : requiredNamesOf(schema)) {
             if (!object.containsKey(required) || object.get(required) == null) {
                 diagnostics.add(VisualDiagnostic.error("visual.config.required",
@@ -1453,9 +1496,15 @@ public class GraphDraftValidator {
                     path));
             return;
         }
-        Map<String, Object> object = new LinkedHashMap<>();
-        rawMap.forEach((key, item) -> object.put(String.valueOf(key), item));
-        Map<String, Object> properties = propertiesOf(schema);
+	        Map<String, Object> object = new LinkedHashMap<>();
+	        rawMap.forEach((key, item) -> object.put(String.valueOf(key), item));
+	        if (!objectValueMatchesPropertyBounds(object, schema)) {
+	            diagnostics.add(VisualDiagnostic.error("visual.config.constraintMismatch",
+	                    "Config value at '%s' must satisfy object property count constraints.".formatted(path),
+	                    path));
+	            return;
+	        }
+	        Map<String, Object> properties = propertiesOf(schema);
         for (String required : requiredNamesOf(schema)) {
             if (!object.containsKey(required) || object.get(required) == null) {
                 diagnostics.add(VisualDiagnostic.error("visual.config.required",
@@ -1583,11 +1632,11 @@ public class GraphDraftValidator {
 	        return maximum == null || length <= maximum;
 	    }
 
-	    private static boolean stringValueMatchesPattern(Object value, Map<String, Object> schema) {
-	        if (!(value instanceof String string)) {
-	            return true;
-	        }
-	        Object rawPattern = schema.get("pattern");
+		    private static boolean stringValueMatchesPattern(Object value, Map<String, Object> schema) {
+		        if (!(value instanceof String string)) {
+		            return true;
+		        }
+		        Object rawPattern = schema.get("pattern");
 	        if (!(rawPattern instanceof String pattern)) {
 	            return true;
 	        }
@@ -1595,10 +1644,47 @@ public class GraphDraftValidator {
 	            return Pattern.compile(pattern).matcher(string).find();
 	        } catch (PatternSyntaxException ex) {
 	            return true;
+		        }
+		    }
+
+	    private static boolean stringValueMatchesFormat(Object value, Map<String, Object> schema) {
+	        if (!(value instanceof String string)) {
+	            return true;
+	        }
+	        String format = stringFormat(schema);
+	        return format == null || stringMatchesFormat(string, format);
+	    }
+
+	    private static String stringFormat(Map<String, Object> schema) {
+	        Object rawFormat = schema.get("format");
+	        return rawFormat instanceof String format && SUPPORTED_STRING_FORMATS.contains(format) ? format : null;
+	    }
+
+	    private static boolean stringMatchesFormat(String value, String format) {
+	        try {
+	            switch (format) {
+	                case "date" -> LocalDate.parse(value);
+	                case "date-time" -> OffsetDateTime.parse(value);
+	                case "duration" -> Duration.parse(value);
+	                case "email" -> {
+	                    return EMAIL_PATTERN.matcher(value).matches();
+	                }
+	                case "uri" -> {
+	                    URI uri = new URI(value);
+	                    return uri.isAbsolute();
+	                }
+	                case "uuid" -> UUID.fromString(value);
+	                default -> {
+	                    return true;
+	                }
+	            }
+	            return true;
+	        } catch (DateTimeParseException | IllegalArgumentException | URISyntaxException ex) {
+	            return false;
 	        }
 	    }
 
-	    private static boolean arrayValueMatchesItemBounds(List<?> value, Map<String, Object> schema) {
+		    private static boolean arrayValueMatchesItemBounds(List<?> value, Map<String, Object> schema) {
 	        long size = value.size();
 	        Long minimum = arrayItemBoundary(schema.get("minItems"));
 	        if (minimum != null && size < minimum) {
@@ -1623,7 +1709,18 @@ public class GraphDraftValidator {
 	        return (long) numericValue;
 	    }
 
-	    private static Long arrayItemBoundary(Object value) {
+		    private static Long arrayItemBoundary(Object value) {
+		        if (!(value instanceof Number number)) {
+		            return null;
+		        }
+		        double numericValue = number.doubleValue();
+		        if (!Double.isFinite(numericValue) || Math.rint(numericValue) != numericValue || numericValue < 0) {
+		            return null;
+		        }
+		        return (long) numericValue;
+		    }
+
+	    private static Long objectPropertyBoundary(Object value) {
 	        if (!(value instanceof Number number)) {
 	            return null;
 	        }

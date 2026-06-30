@@ -1,5 +1,11 @@
 package com.leanowtech.bloge.gateway.visual.validation;
 
+import java.net.URI;
+import java.net.URISyntaxException;
+import java.time.Duration;
+import java.time.LocalDate;
+import java.time.OffsetDateTime;
+import java.time.format.DateTimeParseException;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
@@ -7,6 +13,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
+import java.util.UUID;
 import java.util.regex.Pattern;
 import java.util.regex.PatternSyntaxException;
 
@@ -18,6 +25,15 @@ public final class VisualSchemaCompatibility {
     private static final Pattern INTEGER_LITERAL = Pattern.compile("[-+]?\\d+");
     private static final Pattern NUMBER_LITERAL = Pattern.compile(
             "[-+]?(?:\\d+\\.\\d*|\\d*\\.\\d+|\\d+[eE][-+]?\\d+|\\d+\\.\\d*[eE][-+]?\\d+|\\d*\\.\\d+[eE][-+]?\\d+)");
+    private static final Set<String> SUPPORTED_STRING_FORMATS = Set.of(
+            "date",
+            "date-time",
+            "duration",
+            "email",
+            "uri",
+            "uuid"
+    );
+    private static final Pattern EMAIL_PATTERN = Pattern.compile("^[^@\\s]+@[^@\\s]+\\.[^@\\s]+$");
 
     private VisualSchemaCompatibility() {
     }
@@ -103,12 +119,16 @@ public final class VisualSchemaCompatibility {
 	                    ? boundsIssue
 	                    : numericMultipleOfCompatibilityIssue(sourceSchema, targetSchema, path);
 	        }
-	        if (stringLike(sourceType) && stringLike(targetType)) {
-	            Optional<String> patternIssue = stringPatternCompatibilityIssue(sourceSchema, targetSchema, path);
-	            return patternIssue.isPresent()
-	                    ? patternIssue
-	                    : stringLengthCompatibilityIssue(sourceSchema, targetSchema, path);
-	        }
+		        if (stringLike(sourceType) && stringLike(targetType)) {
+		            Optional<String> formatIssue = stringFormatCompatibilityIssue(sourceSchema, targetSchema, path);
+		            if (formatIssue.isPresent()) {
+		                return formatIssue;
+		            }
+		            Optional<String> patternIssue = stringPatternCompatibilityIssue(sourceSchema, targetSchema, path);
+		            return patternIssue.isPresent()
+		                    ? patternIssue
+		                    : stringLengthCompatibilityIssue(sourceSchema, targetSchema, path);
+		        }
 	        if (sourceType.equals(targetType)) {
 	            return Optional.empty();
 	        }
@@ -211,9 +231,9 @@ public final class VisualSchemaCompatibility {
 	        return Optional.empty();
 	    }
 
-	    private static Optional<String> stringPatternCompatibilityIssue(Map<String, Object> sourceSchema,
-	                                                                    Map<String, Object> targetSchema,
-	                                                                    String path) {
+		    private static Optional<String> stringPatternCompatibilityIssue(Map<String, Object> sourceSchema,
+		                                                                    Map<String, Object> targetSchema,
+		                                                                    String path) {
 	        if (!stringLike(schemaType(sourceSchema)) || !stringLike(schemaType(targetSchema))) {
 	            return Optional.empty();
 	        }
@@ -229,9 +249,32 @@ public final class VisualSchemaCompatibility {
 	            return Optional.of(reasonAt(path,
 	                    "target requires pattern '%s' but source has no pattern".formatted(targetPattern)));
 	        }
+		        return Optional.of(reasonAt(path,
+		                "source pattern '%s' cannot be proven compatible with target pattern '%s'"
+		                        .formatted(sourcePattern, targetPattern)));
+		    }
+
+	    private static Optional<String> stringFormatCompatibilityIssue(Map<String, Object> sourceSchema,
+	                                                                   Map<String, Object> targetSchema,
+	                                                                   String path) {
+	        if (!stringLike(schemaType(sourceSchema)) || !stringLike(schemaType(targetSchema))) {
+	            return Optional.empty();
+	        }
+	        String targetFormat = stringFormat(targetSchema);
+	        if (targetFormat == null) {
+	            return Optional.empty();
+	        }
+	        String sourceFormat = stringFormat(sourceSchema);
+	        if (targetFormat.equals(sourceFormat)) {
+	            return Optional.empty();
+	        }
+	        if (sourceFormat == null) {
+	            return Optional.of(reasonAt(path,
+	                    "target requires format '%s' but source has no format".formatted(targetFormat)));
+	        }
 	        return Optional.of(reasonAt(path,
-	                "source pattern '%s' cannot be proven compatible with target pattern '%s'"
-	                        .formatted(sourcePattern, targetPattern)));
+	                "source format '%s' cannot feed target format '%s'"
+	                        .formatted(sourceFormat, targetFormat)));
 	    }
 
 	    private static Optional<String> arrayItemBoundsCompatibilityIssue(Map<String, Object> sourceSchema,
@@ -342,8 +385,11 @@ public final class VisualSchemaCompatibility {
                 }
             }
         }
-        return additionalPropertiesCompatibilityIssue(sourceSchema, targetAdditional, path);
-    }
+	        Optional<String> additionalIssue = additionalPropertiesCompatibilityIssue(sourceSchema, targetAdditional, path);
+	        return additionalIssue.isPresent()
+	                ? additionalIssue
+	                : objectPropertyBoundsCompatibilityIssue(sourceSchema, targetSchema, path);
+	    }
 
     private static Optional<String> additionalPropertiesCompatibilityIssue(Map<String, Object> sourceSchema,
                                                                            Object targetAdditional,
@@ -366,8 +412,45 @@ public final class VisualSchemaCompatibility {
                         objectProperty(targetAdditionalSchema), appendCompatibilityPath(path, "additionalProperties"));
             }
         }
-        return Optional.empty();
-    }
+	        return Optional.empty();
+	    }
+
+	    private static Optional<String> objectPropertyBoundsCompatibilityIssue(Map<String, Object> sourceSchema,
+	                                                                           Map<String, Object> targetSchema,
+	                                                                           String path) {
+	        if (!"object".equals(schemaType(sourceSchema)) || !"object".equals(schemaType(targetSchema))) {
+	            return Optional.empty();
+	        }
+	        Long targetMinimum = objectMinProperties(targetSchema);
+	        if (targetMinimum != null) {
+	            Long sourceMinimum = objectMinProperties(sourceSchema);
+	            if (sourceMinimum == null) {
+	                return Optional.of(reasonAt(path,
+	                        "target requires property count >= %d but source has no minProperties"
+	                                .formatted(targetMinimum)));
+	            }
+	            if (sourceMinimum < targetMinimum) {
+	                return Optional.of(reasonAt(path,
+	                        "source minProperties %d is weaker than target minProperties %d"
+	                                .formatted(sourceMinimum, targetMinimum)));
+	            }
+	        }
+	        Long targetMaximum = objectMaxProperties(targetSchema);
+	        if (targetMaximum != null) {
+	            Long sourceMaximum = objectMaxProperties(sourceSchema);
+	            if (sourceMaximum == null) {
+	                return Optional.of(reasonAt(path,
+	                        "target requires property count <= %d but source has no maxProperties"
+	                                .formatted(targetMaximum)));
+	            }
+	            if (sourceMaximum > targetMaximum) {
+	                return Optional.of(reasonAt(path,
+	                        "source maxProperties %d is weaker than target maxProperties %d"
+	                                .formatted(sourceMaximum, targetMaximum)));
+	            }
+	        }
+	        return Optional.empty();
+	    }
 
     /**
      * @param schema schema
@@ -541,12 +624,14 @@ public final class VisualSchemaCompatibility {
         if (!values.isEmpty() && !values.contains(value)) {
             return false;
         }
-	        return numericValueMatchesBounds(value, schema)
-	                && numericValueMatchesMultipleOf(value, schema)
-	                && stringValueMatchesLengthBounds(value, schema)
-	                && stringValueMatchesPattern(value, schema)
-	                && arrayValueMatchesSchema(value, schema);
-	    }
+		        return numericValueMatchesBounds(value, schema)
+		                && numericValueMatchesMultipleOf(value, schema)
+		                && stringValueMatchesLengthBounds(value, schema)
+		                && stringValueMatchesPattern(value, schema)
+		                && stringValueMatchesFormat(value, schema)
+		                && arrayValueMatchesSchema(value, schema)
+		                && objectValueMatchesSchema(value, schema);
+		    }
 
 	    private static boolean numericValueMatchesBounds(Object value, Map<String, Object> schema) {
 	        if (!(value instanceof Number number)) {
@@ -582,11 +667,11 @@ public final class VisualSchemaCompatibility {
 	        return maximum == null || length <= maximum;
 	    }
 
-	    private static boolean stringValueMatchesPattern(Object value, Map<String, Object> schema) {
-	        if (!(value instanceof String string)) {
-	            return true;
-	        }
-	        String rawPattern = stringPattern(schema);
+		    private static boolean stringValueMatchesPattern(Object value, Map<String, Object> schema) {
+		        if (!(value instanceof String string)) {
+		            return true;
+		        }
+		        String rawPattern = stringPattern(schema);
 	        if (rawPattern == null) {
 	            return true;
 	        }
@@ -594,22 +679,63 @@ public final class VisualSchemaCompatibility {
 	            return Pattern.compile(rawPattern).matcher(string).find();
 	        } catch (PatternSyntaxException ex) {
 	            return true;
+		        }
+		    }
+
+	    private static boolean stringValueMatchesFormat(Object value, Map<String, Object> schema) {
+	        if (!(value instanceof String string)) {
+	            return true;
 	        }
+	        String format = stringFormat(schema);
+	        return format == null || stringMatchesFormat(string, format);
 	    }
 
 	    @SuppressWarnings("unchecked")
-	    private static boolean arrayValueMatchesSchema(Object value, Map<String, Object> schema) {
-	        if (!(value instanceof List<?> list) || !"array".equals(schemaType(schema))) {
-	            return true;
-	        }
+		    private static boolean arrayValueMatchesSchema(Object value, Map<String, Object> schema) {
+		        if (!(value instanceof List<?> list) || !"array".equals(schemaType(schema))) {
+		            return true;
+		        }
 	        if (!arrayValueMatchesItemBounds(list, schema)) {
 	            return false;
 	        }
 	        if (!arrayValueMatchesUniqueItems(list, schema)) {
 	            return false;
 	        }
-	        Map<String, Object> items = objectProperty(schema.get("items"));
-	        return items == null || list.stream().allMatch(item -> valueMatchesSchema(item, items));
+		        Map<String, Object> items = objectProperty(schema.get("items"));
+		        return items == null || list.stream().allMatch(item -> valueMatchesSchema(item, items));
+		    }
+
+	    @SuppressWarnings("unchecked")
+	    private static boolean objectValueMatchesSchema(Object value, Map<String, Object> schema) {
+	        if (!(value instanceof Map<?, ?> rawMap) || !"object".equals(schemaType(schema))) {
+	            return true;
+	        }
+	        Map<String, Object> object = new LinkedHashMap<>();
+	        rawMap.forEach((key, item) -> object.put(String.valueOf(key), item));
+	        if (!objectValueMatchesPropertyBounds(object, schema)) {
+	            return false;
+	        }
+	        Map<String, Object> properties = propertiesOf(schema);
+	        for (String required : requiredNamesOf(schema)) {
+	            if (!object.containsKey(required) || object.get(required) == null) {
+	                return false;
+	            }
+	        }
+	        Object additional = schema.get("additionalProperties");
+	        for (Map.Entry<String, Object> entry : object.entrySet()) {
+	            Map<String, Object> property = objectProperty(properties.get(entry.getKey()));
+	            if (property != null) {
+	                if (!valueMatchesSchema(entry.getValue(), property)) {
+	                    return false;
+	                }
+	            } else if (Boolean.FALSE.equals(additional)) {
+	                return false;
+	            } else if (additional instanceof Map<?, ?> additionalSchema
+	                    && !valueMatchesSchema(entry.getValue(), (Map<String, Object>) additionalSchema)) {
+	                return false;
+	            }
+	        }
+	        return true;
 	    }
 
     private static boolean isIntegerValue(Object value) {
@@ -709,9 +835,38 @@ public final class VisualSchemaCompatibility {
 	        return stringLengthBoundary(schema.get("maxLength"));
 	    }
 
-	    private static String stringPattern(Map<String, Object> schema) {
-	        Object rawPattern = schema.get("pattern");
-	        return rawPattern instanceof String pattern ? pattern : null;
+		    private static String stringPattern(Map<String, Object> schema) {
+		        Object rawPattern = schema.get("pattern");
+		        return rawPattern instanceof String pattern ? pattern : null;
+		    }
+
+	    private static String stringFormat(Map<String, Object> schema) {
+	        Object rawFormat = schema.get("format");
+	        return rawFormat instanceof String format && SUPPORTED_STRING_FORMATS.contains(format) ? format : null;
+	    }
+
+	    private static boolean stringMatchesFormat(String value, String format) {
+	        try {
+	            switch (format) {
+	                case "date" -> LocalDate.parse(value);
+	                case "date-time" -> OffsetDateTime.parse(value);
+	                case "duration" -> Duration.parse(value);
+	                case "email" -> {
+	                    return EMAIL_PATTERN.matcher(value).matches();
+	                }
+	                case "uri" -> {
+	                    URI uri = new URI(value);
+	                    return uri.isAbsolute();
+	                }
+	                case "uuid" -> UUID.fromString(value);
+	                default -> {
+	                    return true;
+	                }
+	            }
+	            return true;
+	        } catch (DateTimeParseException | IllegalArgumentException | URISyntaxException ex) {
+	            return false;
+	        }
 	    }
 
 	    private static Long stringLengthBoundary(Object value) {
@@ -765,15 +920,66 @@ public final class VisualSchemaCompatibility {
 	        return maximum == null || size <= maximum;
 	    }
 
-	    private static boolean arrayValueMatchesUniqueItems(List<?> value, Map<String, Object> schema) {
-	        return !Boolean.TRUE.equals(schema.get("uniqueItems")) || arrayItemsUnique(value);
-	    }
+		    private static boolean arrayValueMatchesUniqueItems(List<?> value, Map<String, Object> schema) {
+		        return !Boolean.TRUE.equals(schema.get("uniqueItems")) || arrayItemsUnique(value);
+		    }
 
 	    private static boolean arrayItemsUnique(List<?> value) {
 	        return new LinkedHashSet<>(value).size() == value.size();
 	    }
 
-	    private static Long arrayItemBoundary(Object value) {
+		    private static Long arrayItemBoundary(Object value) {
+		        if (!(value instanceof Number number)) {
+		            return null;
+		        }
+		        double numericValue = number.doubleValue();
+		        if (!Double.isFinite(numericValue) || Math.rint(numericValue) != numericValue || numericValue < 0) {
+		            return null;
+		        }
+		        return (long) numericValue;
+		    }
+
+	    private static Long objectMinProperties(Map<String, Object> schema) {
+	        Long explicit = objectPropertyBoundary(schema.get("minProperties"));
+	        if (explicit != null) {
+	            return explicit;
+	        }
+	        List<Object> values = enumValues(schema);
+	        if (!values.isEmpty() && values.stream().allMatch(Map.class::isInstance)) {
+	            return values.stream()
+	                    .map(value -> (long) ((Map<?, ?>) value).size())
+	                    .min(Long::compareTo)
+	                    .orElse(null);
+	        }
+	        return null;
+	    }
+
+	    private static Long objectMaxProperties(Map<String, Object> schema) {
+	        Long explicit = objectPropertyBoundary(schema.get("maxProperties"));
+	        if (explicit != null) {
+	            return explicit;
+	        }
+	        List<Object> values = enumValues(schema);
+	        if (!values.isEmpty() && values.stream().allMatch(Map.class::isInstance)) {
+	            return values.stream()
+	                    .map(value -> (long) ((Map<?, ?>) value).size())
+	                    .max(Long::compareTo)
+	                    .orElse(null);
+	        }
+	        return null;
+	    }
+
+	    private static boolean objectValueMatchesPropertyBounds(Map<?, ?> value, Map<String, Object> schema) {
+	        long size = value.size();
+	        Long minimum = objectPropertyBoundary(schema.get("minProperties"));
+	        if (minimum != null && size < minimum) {
+	            return false;
+	        }
+	        Long maximum = objectPropertyBoundary(schema.get("maxProperties"));
+	        return maximum == null || size <= maximum;
+	    }
+
+	    private static Long objectPropertyBoundary(Object value) {
 	        if (!(value instanceof Number number)) {
 	            return null;
 	        }

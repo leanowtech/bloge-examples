@@ -159,6 +159,41 @@ class ResourceDesignContractValidatorTest {
     }
 
     @Test
+    void acceptsObjectPropertyBoundsInResourceContractSchemas() {
+        ResourceDesignContract contract = new ResourceDesignContract(
+                "contract:orders",
+                "order-service.listOrders",
+                "Order list",
+                "Lists orders.",
+                List.of("order"),
+                SchemaEnvelope.object(Map.of(
+                        "filters", Map.of(
+                                "type", "object",
+                                "properties", Map.of(
+                                        "status", Map.of("type", "string"),
+                                        "region", Map.of("type", "string")
+                                ),
+                                "minProperties", 1,
+                                "maxProperties", 2)
+                ), List.of("filters")),
+                SchemaEnvelope.object(Map.of(
+                        "summary", Map.of(
+                                "type", "object",
+                                "additionalProperties", Map.of("type", "string"),
+                                "minProperties", 1,
+                                "maxProperties", 4)
+                ), List.of()),
+                Map.of(),
+                "ACTIVE"
+        );
+
+        VisualValidationResult result = validator.validate(contract);
+
+        assertThat(result.valid()).isTrue();
+        assertThat(result.diagnostics()).isEmpty();
+    }
+
+    @Test
     void acceptsStringPatternInResourceContractSchemas() {
         ResourceDesignContract contract = new ResourceDesignContract(
                 "contract:orders",
@@ -171,6 +206,30 @@ class ResourceDesignContractValidatorTest {
                 ), List.of("customerCode")),
                 SchemaEnvelope.object(Map.of(
                         "trackingCode", Map.of("type", "string", "pattern", "^TRK-[A-Z0-9]{8}$")
+                ), List.of()),
+                Map.of(),
+                "ACTIVE"
+        );
+
+        VisualValidationResult result = validator.validate(contract);
+
+        assertThat(result.valid()).isTrue();
+        assertThat(result.diagnostics()).isEmpty();
+    }
+
+    @Test
+    void acceptsStringFormatInResourceContractSchemas() {
+        ResourceDesignContract contract = new ResourceDesignContract(
+                "contract:orders",
+                "order-service.listOrders",
+                "Order list",
+                "Lists orders.",
+                List.of("order"),
+                SchemaEnvelope.object(Map.of(
+                        "customerEmail", Map.of("type", "string", "format", "email")
+                ), List.of("customerEmail")),
+                SchemaEnvelope.object(Map.of(
+                        "traceId", Map.of("type", "string", "format", "uuid")
                 ), List.of()),
                 Map.of(),
                 "ACTIVE"

@@ -524,6 +524,96 @@ public final class VisualCatalogTestSupport {
         );
     }
 
+    public static OperatorLibrary objectPropertyBoundsCompatibilityLibrary(int sourceMinProperties,
+                                                                           int sourceMaxProperties,
+                                                                           int targetMinProperties,
+                                                                           int targetMaxProperties) {
+        Map<String, Object> sourcePayloadSchema = new LinkedHashMap<>();
+        sourcePayloadSchema.put("type", "object");
+        sourcePayloadSchema.put("properties", Map.of(
+                "status", Map.of("type", "string"),
+                "region", Map.of("type", "string"),
+                "channel", Map.of("type", "string")
+        ));
+        sourcePayloadSchema.put("minProperties", sourceMinProperties);
+        sourcePayloadSchema.put("maxProperties", sourceMaxProperties);
+
+        Map<String, Object> targetPayloadSchema = new LinkedHashMap<>();
+        targetPayloadSchema.put("type", "object");
+        targetPayloadSchema.put("properties", Map.of(
+                "status", Map.of("type", "string"),
+                "region", Map.of("type", "string"),
+                "channel", Map.of("type", "string")
+        ));
+        targetPayloadSchema.put("minProperties", targetMinProperties);
+        targetPayloadSchema.put("maxProperties", targetMaxProperties);
+
+        Map<String, Object> sourceProperties = new LinkedHashMap<>();
+        sourceProperties.put("payload", sourcePayloadSchema);
+        OperatorDefinition producer = new OperatorDefinition(
+                "bloge.visualOperator.v1",
+                "risk:objectFacts",
+                "1.0.0",
+                new OperatorDefinition.Display("Object facts",
+                        "Produces object facts.",
+                        List.of("risk", "object")),
+                new OperatorDefinition.Source("user-library", "", "", "", false),
+                new OperatorDefinition.Ports(
+                        List.of(),
+                        List.of(new OperatorDefinition.Port("output",
+                                SchemaEnvelope.object(sourceProperties, List.of()),
+                                true,
+                                "Object facts."))
+                ),
+                SchemaEnvelope.opaque(),
+                OperatorDefinition.Capabilities.pure(),
+                new OperatorDefinition.Lowering("native", "riskObjectFacts", Map.of()),
+                List.of()
+        );
+
+        Map<String, Object> targetProperties = new LinkedHashMap<>();
+        targetProperties.put("payload", targetPayloadSchema);
+        Map<String, Object> outputProperties = new LinkedHashMap<>();
+        outputProperties.put("accepted", Map.of("type", "boolean"));
+        OperatorDefinition consumer = new OperatorDefinition(
+                "bloge.visualOperator.v1",
+                "risk:objectConsumer",
+                "1.0.0",
+                new OperatorDefinition.Display("Object consumer",
+                        "Consumes object facts.",
+                        List.of("risk", "object")),
+                new OperatorDefinition.Source("user-library", "", "", "", true),
+                new OperatorDefinition.Ports(
+                        List.of(new OperatorDefinition.Port("inputs",
+                                SchemaEnvelope.object(targetProperties, List.of("payload")),
+                                true,
+                                "Object inputs.")),
+                        List.of(new OperatorDefinition.Port("output",
+                                SchemaEnvelope.object(outputProperties, List.of()),
+                                true,
+                                "Consumer output."))
+                ),
+                SchemaEnvelope.opaque(),
+                OperatorDefinition.Capabilities.pure(),
+                new OperatorDefinition.Lowering("transform", "transform", Map.of(
+                        "assignments", Map.of(
+                                "accepted", "true"
+                        )
+                )),
+                List.of()
+        );
+
+        return new OperatorLibrary(
+                "bloge.visualOperatorLibrary.v1",
+                "risk-object-compatibility",
+                "Object compatibility operators",
+                "1.0.0",
+                "risk-team",
+                "ACTIVE",
+                List.of(producer, consumer)
+        );
+    }
+
     private static OperatorLibrary listCompatibilityLibrary(Map<String, Object> sourceArraySchema,
                                                             Map<String, Object> targetArraySchema) {
         Map<String, Object> sourceProperties = new LinkedHashMap<>();
@@ -1054,11 +1144,90 @@ public final class VisualCatalogTestSupport {
         );
     }
 
+    public static OperatorLibrary stringFormatCompatibilityLibrary(String sourceFormat,
+                                                                   String targetFormat) {
+        Map<String, Object> producerOutputProperties = new LinkedHashMap<>();
+        producerOutputProperties.put("customerId", customerIdFormatSchema(sourceFormat));
+
+        OperatorDefinition producer = new OperatorDefinition(
+                "bloge.visualOperator.v1",
+                "risk:customerIdProducer",
+                "1.0.0",
+                new OperatorDefinition.Display("Customer id producer",
+                        "Produces a formatted customer id.",
+                        List.of("risk", "string")),
+                new OperatorDefinition.Source("user-library", "", "", "", false),
+                new OperatorDefinition.Ports(
+                        List.of(),
+                        List.of(new OperatorDefinition.Port("output",
+                                SchemaEnvelope.object(producerOutputProperties, List.of()),
+                                true,
+                                "Customer id output."))
+                ),
+                SchemaEnvelope.opaque(),
+                OperatorDefinition.Capabilities.pure(),
+                new OperatorDefinition.Lowering("native", "riskCustomerIdProducer", Map.of()),
+                List.of()
+        );
+
+        Map<String, Object> consumerInputProperties = new LinkedHashMap<>();
+        consumerInputProperties.put("customerId", customerIdFormatSchema(targetFormat));
+        Map<String, Object> consumerOutputProperties = new LinkedHashMap<>();
+        consumerOutputProperties.put("accepted", Map.of("type", "boolean"));
+
+        OperatorDefinition consumer = new OperatorDefinition(
+                "bloge.visualOperator.v1",
+                "risk:customerIdConsumer",
+                "1.0.0",
+                new OperatorDefinition.Display("Customer id consumer",
+                        "Consumes a formatted customer id.",
+                        List.of("risk", "string")),
+                new OperatorDefinition.Source("user-library", "", "", "", true),
+                new OperatorDefinition.Ports(
+                        List.of(new OperatorDefinition.Port("inputs",
+                                SchemaEnvelope.object(consumerInputProperties, List.of("customerId")),
+                                true,
+                                "Customer id input.")),
+                        List.of(new OperatorDefinition.Port("output",
+                                SchemaEnvelope.object(consumerOutputProperties, List.of()),
+                                true,
+                                "Consumer output."))
+                ),
+                SchemaEnvelope.opaque(),
+                OperatorDefinition.Capabilities.pure(),
+                new OperatorDefinition.Lowering("transform", "transform", Map.of(
+                        "assignments", Map.of(
+                                "accepted", "true"
+                        )
+                )),
+                List.of()
+        );
+
+        return new OperatorLibrary(
+                "bloge.visualOperatorLibrary.v1",
+                "risk-string-format-compatibility",
+                "String format compatibility operators",
+                "1.0.0",
+                "risk-team",
+                "ACTIVE",
+                List.of(producer, consumer)
+        );
+    }
+
     private static Map<String, Object> customerIdPatternSchema(String pattern) {
         Map<String, Object> schema = new LinkedHashMap<>();
         schema.put("type", "string");
         if (pattern != null) {
             schema.put("pattern", pattern);
+        }
+        return schema;
+    }
+
+    private static Map<String, Object> customerIdFormatSchema(String format) {
+        Map<String, Object> schema = new LinkedHashMap<>();
+        schema.put("type", "string");
+        if (format != null) {
+            schema.put("format", format);
         }
         return schema;
     }

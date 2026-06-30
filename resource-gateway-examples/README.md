@@ -145,15 +145,18 @@ target's `minimum`/`maximum` or `exclusiveMinimum`/`exclusiveMaximum` range
 before the edge can be saved, and a source numeric `multipleOf` must be a
 compatible step for the target `multipleOf`. String length constraints are enforced the same
 way: a source `customerId` range must satisfy the target `minLength`/`maxLength`
-domain, and a source list must stay inside the target `minItems`/`maxItems`
+domain, a source list must stay inside the target `minItems`/`maxItems`
 range and guarantee `uniqueItems=true` when the target requires a duplicate-free
-array. String `pattern` constraints are supported conservatively: finite
-`enum`/`const` source values must match the target pattern, and non-finite string
-outputs must declare the same pattern before they can feed a patterned target.
+array, and a source object must stay inside the target
+`minProperties`/`maxProperties` range. String `pattern` and `format`
+constraints are supported conservatively: finite `enum`/`const` source values
+must match the target constraint, and non-finite string outputs must declare the
+same pattern or format before they can feed a constrained target. Supported
+formats are `email`, `uuid`, `uri`, `date`, `date-time`, and `duration`.
 Schema mismatch diagnostics explain the failing path and reason, such as an
 incompatible array `items` schema, an enum domain, numeric range or step, string
-length range, string pattern, array item-count range, or array uniqueness
-requirement that is not a subset of the target domain, a missing required object
+length range, string pattern or format, array item-count range, array uniqueness, or object
+property-count requirement that is not a subset of the target domain, a missing required object
 field, or a required field that the source object declares but does not
 guarantee. Literal `constant`
 bindings and `objectTemplate` fields are checked
@@ -166,8 +169,8 @@ target schema gate. Operator `configSchema` is
 also enforced: the browser inspector renders literal/source controls for schema
 leaf fields, including nested object paths such as `limits.threshold`, and the
 server blocks missing required config, type mismatches, enum/`const` mismatches,
-numeric bound/`multipleOf`, string length, string pattern, and array item-count
-or `uniqueItems` violations, and undeclared config fields when
+numeric bound/`multipleOf`, string length, string pattern/format, array item-count,
+`uniqueItems`, and object property-count violations, and undeclared config fields when
 `additionalProperties=false`. The inspector can
 switch a config field from a literal value to a source-backed expression using
 the same compatible `ctx.*` and upstream output picker used by input bindings,
@@ -204,8 +207,9 @@ schema.
 The server validates the graph input schema with the same structural gate used
 for operator port/config schemas, including strict object `properties`,
 `additionalProperties`, `required`, enum value-domain, `const` shape checks,
-numeric bound/`multipleOf` validation, string length validation, string pattern
-validation, array item-count validation, and `uniqueItems` validation, then
+numeric bound/`multipleOf` validation, string length validation, string
+pattern/format validation, array item-count validation, `uniqueItems` validation, and object
+property-count validation, then
 blocks unknown or type-incompatible `contextPath` bindings when the draft input
 schema is strict. The shared schema gate treats the currently supported
 `SchemaEnvelope` as an explicit authoring contract: `format` must be
@@ -507,9 +511,9 @@ currently enforce, so imported schemas cannot imply validation behavior that
 drag/drop hints, server validation, or DSL generation will ignore. Schema
 `default` values must
 also match their declared type/kind, enum/`const` domain, numeric bounds and
-`multipleOf` constraints, string length constraints, string pattern constraints,
-array item-count constraints, `uniqueItems` constraints, required object
-properties, array item schema, and `additionalProperties` policy so
+`multipleOf` constraints, string length constraints, string pattern/format constraints,
+array item-count constraints, `uniqueItems` constraints, object property-count
+constraints, required object properties, array item schema, and `additionalProperties` policy so
 canvas-generated default node config cannot start invalid. The browser consumes both root object defaults
 and nested field-level defaults from `configSchema` when a node is dragged from
 the palette. Capability labels are trimmed and canonicalized to uppercase before
@@ -992,7 +996,7 @@ Isolated component tests, some with lightweight Spring slices or mocks.
 | `ResourceDescriptorBootstrapTest` | 7 | Seeding, refresh behavior, idempotency |
 | `GatewayDslCompilationTest` | 7 | DSL parsing, graph loading |
 | Gateway example API suite | 13 | Dynamic composer service/controller, scenario catalog, example graph endpoints |
-| Visual authoring suite | 312 | Visual operator projection, resource design contract persistence and gates, resource-contract in-use delete protection, imported libraries, registry-aware and impact-aware library validation, catalog lifecycle gates, deprecated operator draft resolution and active-scope fingerprinting, catalog token gates and policy filtering, policy wildcard scope gates, cross-library operatorRef ownership, operator-library in-use change protection and same-ref fingerprint drift/missing-snapshot preflight warnings, system-reserved operatorRef gates, import-time lowering/canonicalization gates including DSL-safe field-name gates, schema default value gates, transform assignment output-schema gates, unsupported schema envelope and JSON Schema keyword gates, const value-domain gates, numeric bound/`multipleOf`, string length, string pattern, array item-count, and array `uniqueItems` schema gates, built-in and virtual catalog schema-gate parity, draft/publication persistence and history, revision audit metadata, full-save/PATCH fingerprint preservation, service-managed fingerprint snapshot gates, structured malformed patch diagnostics, server-assigned create identity, revision-guarded full-save, patch, stored-run, delete, and publish conflict handling, operator fingerprint drift preservation and execution snapshot coverage gates, typed connection/edge validation including edge identity uniqueness plus binding and edge kind allow-lists, binding and edge kind canonicalization, static literal expression gates, input/config/root-port source-picker server preflight with duplicate-connection rejection, post-drop binding simulation, and nested config paths, duplicate target input ownership, root-port object binding from context and upstream operator output, stable root-port input keys, object required fields, object schema structure gates, required-array schema gates, nested input/config objectTemplate required fields and object-compatible targets, enum value-domain and shape gates, standard JSON Schema config enum gates, standard JSON Schema config const gates, numeric bound/`multipleOf`, string length, string pattern, array item-count, and array `uniqueItems` config gates, nested config expression references and configSchema type gates, native config input lowering and DSL field-key diagnostics, data edge/semantic dependency consistency, graph input schema gates, secret blocking, DSL lowering, compiler gating, dependency ordering, runtime smoke path |
+| Visual authoring suite | 326 | Visual operator projection, resource design contract persistence and gates, resource-contract in-use delete protection, imported libraries, registry-aware and impact-aware library validation, catalog lifecycle gates, deprecated operator draft resolution and active-scope fingerprinting, catalog token gates and policy filtering, policy wildcard scope gates, cross-library operatorRef ownership, operator-library in-use change protection and same-ref fingerprint drift/missing-snapshot preflight warnings, system-reserved operatorRef gates, import-time lowering/canonicalization gates including DSL-safe field-name gates, schema default value gates, transform assignment output-schema gates, unsupported schema envelope and JSON Schema keyword gates, const value-domain gates, numeric bound/`multipleOf`, string length, string pattern/format, array item-count, array `uniqueItems`, and object property-count schema gates, built-in and virtual catalog schema-gate parity, draft/publication persistence and history, revision audit metadata, full-save/PATCH fingerprint preservation, service-managed fingerprint snapshot gates, structured malformed patch diagnostics, server-assigned create identity, revision-guarded full-save, patch, stored-run, delete, and publish conflict handling, operator fingerprint drift preservation and execution snapshot coverage gates, typed connection/edge validation including edge identity uniqueness plus binding and edge kind allow-lists, binding and edge kind canonicalization, static literal expression gates, input/config/root-port source-picker server preflight with duplicate-connection rejection, post-drop binding simulation, and nested config paths, duplicate target input ownership, root-port object binding from context and upstream operator output, stable root-port input keys, object required fields, object schema structure gates, required-array schema gates, nested input/config objectTemplate required fields and object-compatible targets, enum value-domain and shape gates, standard JSON Schema config enum gates, standard JSON Schema config const gates, numeric bound/`multipleOf`, string length, string pattern/format, array item-count, array `uniqueItems`, and object property-count config gates, nested config expression references and configSchema type gates, native config input lowering and DSL field-key diagnostics, data edge/semantic dependency consistency, graph input schema gates, secret blocking, DSL lowering, compiler gating, dependency ordering, runtime smoke path |
 
 ### Layer 3 — Orchestration tests
 

@@ -247,6 +247,7 @@ const UNSUPPORTED_SCHEMA_CONSTRAINT_KEYWORDS = [
   'unevaluatedProperties',
   'unevaluatedItems'
 ];
+const SUPPORTED_SCHEMA_STRING_FORMATS = new Set(['date', 'date-time', 'duration', 'email', 'uri', 'uuid']);
 
 const state = {
   scenarios: [],
@@ -3118,22 +3119,7 @@ function configExpressionStatusForField(node, field, expression) {
 }
 
 function configValueMatchesSchema(value, schema) {
-  const type = rawSchemaType(schema);
-  const values = schemaEnumValues(schema);
-  if (values.length) {
-    return values.some((item) => Object.is(item, value));
-  }
-  if (!type || type === 'any' || type === 'opaque') return true;
-  if (type === 'enum') {
-    return false;
-  }
-  if (type === 'boolean') return typeof value === 'boolean';
-  if (type === 'integer') return Number.isInteger(Number(value));
-  if (type === 'number' || type === 'decimal') return Number.isFinite(Number(value));
-  if (type === 'object') return value !== null && typeof value === 'object' && !Array.isArray(value);
-  if (type === 'array') return Array.isArray(value);
-  if (type === 'null') return value === null;
-  return typeof value === 'string';
+  return schemaValueMatchesSchema(value, schema);
 }
 
 function renderInputBindingsPanel(node) {
@@ -5085,8 +5071,10 @@ function validateSchemaStructure(schema, path, diagnostics) {
   validateSchemaNumericMultipleOf(schema, kind, path, diagnostics);
   validateSchemaStringLengthBounds(schema, kind, path, diagnostics);
   validateSchemaStringPattern(schema, kind, path, diagnostics);
+  validateSchemaStringFormat(schema, kind, path, diagnostics);
   validateSchemaArrayItemBounds(schema, kind, path, diagnostics);
   validateSchemaArrayUniqueItems(schema, kind, path, diagnostics);
+  validateSchemaObjectPropertyBounds(schema, kind, path, diagnostics);
   if (kind === 'object') {
     const properties = validatedSchemaObjectProperties(schema, path, diagnostics);
     validateSchemaAdditionalProperties(schema, path, diagnostics);
@@ -5290,6 +5278,13 @@ function validateSchemaEnum(schema, kind, path, diagnostics) {
         `${path}/enum/${index}`
       ));
     }
+    if (stringType(kind) && !stringValueMatchesFormat(value, schema)) {
+      diagnostics.push(graphInputSchemaDiagnostic(
+        'visual.schema.enumConstraintMismatch',
+        `Enum value at index ${index} must satisfy string format constraint.`,
+        `${path}/enum/${index}`
+      ));
+    }
     if (arrayType(kind) && Array.isArray(value) && !arrayValueMatchesItemBounds(value, schema)) {
       diagnostics.push(graphInputSchemaDiagnostic(
         'visual.schema.enumConstraintMismatch',
@@ -5301,6 +5296,17 @@ function validateSchemaEnum(schema, kind, path, diagnostics) {
       diagnostics.push(graphInputSchemaDiagnostic(
         'visual.schema.enumConstraintMismatch',
         `Enum value at index ${index} must satisfy array uniqueItems constraint.`,
+        `${path}/enum/${index}`
+      ));
+    }
+    if (kind === 'object'
+        && value !== null
+        && typeof value === 'object'
+        && !Array.isArray(value)
+        && !objectValueMatchesPropertyBounds(value, schema)) {
+      diagnostics.push(graphInputSchemaDiagnostic(
+        'visual.schema.enumConstraintMismatch',
+        `Enum value at index ${index} must satisfy object property count constraints.`,
         `${path}/enum/${index}`
       ));
     }
@@ -5379,6 +5385,14 @@ function validateSchemaConst(schema, kind, path, diagnostics) {
       `${path}/const`
     ));
   }
+  if (stringType(kind) && schemaValueMatchesType(constValue, kind)
+      && !stringValueMatchesFormat(constValue, schema)) {
+    diagnostics.push(graphInputSchemaDiagnostic(
+      'visual.schema.constConstraintMismatch',
+      'Const value must satisfy string format constraint.',
+      `${path}/const`
+    ));
+  }
   if (arrayType(kind) && schemaValueMatchesType(constValue, kind)
       && !arrayValueMatchesItemBounds(constValue, schema)) {
     diagnostics.push(graphInputSchemaDiagnostic(
@@ -5392,6 +5406,14 @@ function validateSchemaConst(schema, kind, path, diagnostics) {
     diagnostics.push(graphInputSchemaDiagnostic(
       'visual.schema.constConstraintMismatch',
       'Const value must satisfy array uniqueItems constraint.',
+      `${path}/const`
+    ));
+  }
+  if (kind === 'object' && schemaValueMatchesType(constValue, kind)
+      && !objectValueMatchesPropertyBounds(constValue, schema)) {
+    diagnostics.push(graphInputSchemaDiagnostic(
+      'visual.schema.constConstraintMismatch',
+      'Const value must satisfy object property count constraints.',
       `${path}/const`
     ));
   }
@@ -5524,6 +5546,26 @@ function validateSchemaStringPattern(schema, kind, path, diagnostics) {
   }
 }
 
+function validateSchemaStringFormat(schema, kind, path, diagnostics) {
+  if (!Object.prototype.hasOwnProperty.call(schema || {}, 'format')) {
+    return;
+  }
+  if (!stringType(kind)) {
+    diagnostics.push(graphInputSchemaDiagnostic(
+      'visual.schema.formatConstraintTypeMismatch',
+      'String format constraints require schema type/kind string, duration, or datetime.',
+      path
+    ));
+  }
+  if (typeof schema.format !== 'string' || !SUPPORTED_SCHEMA_STRING_FORMATS.has(schema.format)) {
+    diagnostics.push(graphInputSchemaDiagnostic(
+      'visual.schema.formatConstraintInvalid',
+      `String format constraint must be one of ${[...SUPPORTED_SCHEMA_STRING_FORMATS].join(', ')}.`,
+      `${path}/format`
+    ));
+  }
+}
+
 function validateSchemaArrayItemBounds(schema, kind, path, diagnostics) {
   if (!schemaHasArrayItemBounds(schema)) {
     return;
@@ -5578,6 +5620,44 @@ function validateSchemaArrayUniqueItems(schema, kind, path, diagnostics) {
       'visual.schema.uniqueItemsConstraintInvalid',
       'Array uniqueItems constraint must be a boolean.',
       `${path}/uniqueItems`
+    ));
+  }
+}
+
+function validateSchemaObjectPropertyBounds(schema, kind, path, diagnostics) {
+  if (!schemaHasObjectPropertyBounds(schema)) {
+    return;
+  }
+  const validObjectKind = kind === 'object';
+  if (!validObjectKind) {
+    diagnostics.push(graphInputSchemaDiagnostic(
+      'visual.schema.objectPropertyConstraintTypeMismatch',
+      'Object property count constraints require schema type/kind object.',
+      path
+    ));
+  }
+  for (const keyword of ['minProperties', 'maxProperties']) {
+    if (!Object.prototype.hasOwnProperty.call(schema || {}, keyword)) {
+      continue;
+    }
+    if (objectPropertyBoundaryValue(schema[keyword]) === null) {
+      diagnostics.push(graphInputSchemaDiagnostic(
+        'visual.schema.objectPropertyConstraintInvalid',
+        `Object property count constraint '${keyword}' must be a non-negative integer.`,
+        `${path}/${keyword}`
+      ));
+    }
+  }
+  if (!validObjectKind || !objectPropertyBoundariesValid(schema)) {
+    return;
+  }
+  const minimum = explicitSchemaMinProperties(schema);
+  const maximum = explicitSchemaMaxProperties(schema);
+  if (minimum !== null && maximum !== null && minimum > maximum) {
+    diagnostics.push(graphInputSchemaDiagnostic(
+      'visual.schema.objectPropertyBoundsInvalid',
+      `Object minProperties ${minimum} is greater than maxProperties ${maximum}.`,
+      path
     ));
   }
 }
@@ -5891,7 +5971,8 @@ function schemaCompatibilityIssue(sourceSchema, targetSchema, path = '') {
       || numericMultipleOfCompatibilityIssue(sourceSchema, targetSchema, path);
   }
   if (stringType(sourceType) && stringType(targetType)) {
-    return stringPatternCompatibilityIssue(sourceSchema, targetSchema, path)
+    return stringFormatCompatibilityIssue(sourceSchema, targetSchema, path)
+      || stringPatternCompatibilityIssue(sourceSchema, targetSchema, path)
       || stringLengthCompatibilityIssue(sourceSchema, targetSchema, path);
   }
   return sourceType === targetType
@@ -5987,6 +6068,24 @@ function stringPatternCompatibilityIssue(sourceSchema, targetSchema, path = '') 
     return reasonAt(path, `target requires pattern '${targetPattern}' but source has no pattern`);
   }
   return reasonAt(path, `source pattern '${sourcePattern}' cannot be proven compatible with target pattern '${targetPattern}'`);
+}
+
+function stringFormatCompatibilityIssue(sourceSchema, targetSchema, path = '') {
+  if (!stringType(rawSchemaType(sourceSchema)) || !stringType(rawSchemaType(targetSchema))) {
+    return '';
+  }
+  const targetFormat = schemaFormatValue(targetSchema);
+  if (targetFormat === null) {
+    return '';
+  }
+  const sourceFormat = schemaFormatValue(sourceSchema);
+  if (sourceFormat === targetFormat) {
+    return '';
+  }
+  if (sourceFormat === null) {
+    return reasonAt(path, `target requires format '${targetFormat}' but source has no format`);
+  }
+  return reasonAt(path, `source format '${sourceFormat}' cannot feed target format '${targetFormat}'`);
 }
 
 function arrayItemBoundsCompatibilityIssue(sourceSchema, targetSchema, path = '') {
@@ -6089,6 +6188,33 @@ function objectSchemaCompatibilityIssue(sourceSchema, targetSchema, path = '') {
       }
     }
   }
+  return objectPropertyBoundsCompatibilityIssue(sourceSchema, targetSchema, path);
+}
+
+function objectPropertyBoundsCompatibilityIssue(sourceSchema, targetSchema, path = '') {
+  if (rawSchemaType(sourceSchema) !== 'object' || rawSchemaType(targetSchema) !== 'object') {
+    return '';
+  }
+  const targetMinimum = schemaMinProperties(targetSchema);
+  if (targetMinimum !== null) {
+    const sourceMinimum = schemaMinProperties(sourceSchema);
+    if (sourceMinimum === null) {
+      return reasonAt(path, `target requires property count >= ${targetMinimum} but source has no minProperties`);
+    }
+    if (sourceMinimum < targetMinimum) {
+      return reasonAt(path, `source minProperties ${sourceMinimum} is weaker than target minProperties ${targetMinimum}`);
+    }
+  }
+  const targetMaximum = schemaMaxProperties(targetSchema);
+  if (targetMaximum !== null) {
+    const sourceMaximum = schemaMaxProperties(sourceSchema);
+    if (sourceMaximum === null) {
+      return reasonAt(path, `target requires property count <= ${targetMaximum} but source has no maxProperties`);
+    }
+    if (sourceMaximum > targetMaximum) {
+      return reasonAt(path, `source maxProperties ${sourceMaximum} is weaker than target maxProperties ${targetMaximum}`);
+    }
+  }
   return '';
 }
 
@@ -6151,7 +6277,9 @@ function schemaValueMatchesSchema(value, schema) {
     && numericValueMatchesMultipleOf(value, schema)
     && stringValueMatchesLengthBounds(value, schema)
     && stringValueMatchesPattern(value, schema)
-    && arrayValueMatchesSchema(value, schema);
+    && stringValueMatchesFormat(value, schema)
+    && arrayValueMatchesSchema(value, schema)
+    && objectValueMatchesSchema(value, schema);
 }
 
 function schemaValueMatchesType(value, type) {
@@ -6262,8 +6390,56 @@ function stringValueMatchesPattern(value, schema) {
   }
 }
 
+function stringValueMatchesFormat(value, schema) {
+  if (typeof value !== 'string') {
+    return true;
+  }
+  const format = schemaFormatValue(schema);
+  return format === null || stringMatchesFormat(value, format);
+}
+
 function schemaPatternValue(schema) {
   return typeof schema?.pattern === 'string' ? schema.pattern : null;
+}
+
+function schemaFormatValue(schema) {
+  return typeof schema?.format === 'string' && SUPPORTED_SCHEMA_STRING_FORMATS.has(schema.format)
+    ? schema.format
+    : null;
+}
+
+function stringMatchesFormat(value, format) {
+  if (format === 'email') {
+    return /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(value);
+  }
+  if (format === 'uuid') {
+    return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value);
+  }
+  if (format === 'uri') {
+    try {
+      const parsed = new URL(value);
+      return Boolean(parsed.protocol);
+    } catch {
+      return false;
+    }
+  }
+  if (format === 'date') {
+    const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value);
+    if (!match) {
+      return false;
+    }
+    const date = new Date(`${value}T00:00:00Z`);
+    return date.getUTCFullYear() === Number(match[1])
+      && date.getUTCMonth() + 1 === Number(match[2])
+      && date.getUTCDate() === Number(match[3]);
+  }
+  if (format === 'date-time') {
+    return /^\d{4}-\d{2}-\d{2}T.+(?:Z|[+-]\d{2}:\d{2})$/.test(value) && !Number.isNaN(Date.parse(value));
+  }
+  if (format === 'duration') {
+    return /^P(?=\d+D|T\d)(?:\d+D)?(?:T(?=\d)(?:\d+H)?(?:\d+M)?(?:\d+(?:\.\d+)?S)?)?$/.test(value);
+  }
+  return true;
 }
 
 function schemaMinLength(schema) {
@@ -6287,6 +6463,11 @@ function stringCodePointLength(value) {
 function schemaHasArrayItemBounds(schema) {
   return Object.prototype.hasOwnProperty.call(schema || {}, 'minItems')
     || Object.prototype.hasOwnProperty.call(schema || {}, 'maxItems');
+}
+
+function schemaHasObjectPropertyBounds(schema) {
+  return Object.prototype.hasOwnProperty.call(schema || {}, 'minProperties')
+    || Object.prototype.hasOwnProperty.call(schema || {}, 'maxProperties');
 }
 
 function arrayItemBoundariesValid(schema) {
@@ -6337,6 +6518,48 @@ function arrayItemsUnique(value) {
   return true;
 }
 
+function objectValueMatchesSchema(value, schema) {
+  if (value === null || typeof value !== 'object' || Array.isArray(value) || rawSchemaType(schema) !== 'object') {
+    return true;
+  }
+  if (!objectValueMatchesPropertyBounds(value, schema)) {
+    return false;
+  }
+  const properties = schemaObjectProperties(schema);
+  for (const required of schemaRequiredNames(schema)) {
+    if (!Object.prototype.hasOwnProperty.call(value, required) || value[required] === null) {
+      return false;
+    }
+  }
+  const additional = schema?.additionalProperties;
+  for (const [key, item] of Object.entries(value)) {
+    if (Object.prototype.hasOwnProperty.call(properties, key)) {
+      if (!schemaValueMatchesSchema(item, properties[key])) {
+        return false;
+      }
+    } else if (additional === false) {
+      return false;
+    } else if (additional && typeof additional === 'object' && !Array.isArray(additional)
+        && !schemaValueMatchesSchema(item, additional)) {
+      return false;
+    }
+  }
+  return true;
+}
+
+function objectValueMatchesPropertyBounds(value, schema) {
+  if (value === null || typeof value !== 'object' || Array.isArray(value)) {
+    return true;
+  }
+  const size = Object.keys(value).length;
+  const minimum = explicitSchemaMinProperties(schema);
+  if (minimum !== null && size < minimum) {
+    return false;
+  }
+  const maximum = explicitSchemaMaxProperties(schema);
+  return maximum === null || size <= maximum;
+}
+
 function schemaMinItems(schema) {
   const explicit = explicitSchemaMinItems(schema);
   if (explicit !== null) {
@@ -6367,6 +6590,49 @@ function explicitSchemaMinItems(schema) {
 
 function explicitSchemaMaxItems(schema) {
   return arrayItemBoundaryValue(schema?.maxItems);
+}
+
+function schemaMinProperties(schema) {
+  const explicit = explicitSchemaMinProperties(schema);
+  if (explicit !== null) {
+    return explicit;
+  }
+  const values = schemaEnumValues(schema);
+  if (values.length && values.every((value) => value !== null && typeof value === 'object' && !Array.isArray(value))) {
+    return Math.min(...values.map((value) => Object.keys(value).length));
+  }
+  return null;
+}
+
+function schemaMaxProperties(schema) {
+  const explicit = explicitSchemaMaxProperties(schema);
+  if (explicit !== null) {
+    return explicit;
+  }
+  const values = schemaEnumValues(schema);
+  if (values.length && values.every((value) => value !== null && typeof value === 'object' && !Array.isArray(value))) {
+    return Math.max(...values.map((value) => Object.keys(value).length));
+  }
+  return null;
+}
+
+function explicitSchemaMinProperties(schema) {
+  return objectPropertyBoundaryValue(schema?.minProperties);
+}
+
+function explicitSchemaMaxProperties(schema) {
+  return objectPropertyBoundaryValue(schema?.maxProperties);
+}
+
+function objectPropertyBoundariesValid(schema) {
+  return (!Object.prototype.hasOwnProperty.call(schema || {}, 'minProperties') || objectPropertyBoundaryValue(schema.minProperties) !== null)
+    && (!Object.prototype.hasOwnProperty.call(schema || {}, 'maxProperties') || objectPropertyBoundaryValue(schema.maxProperties) !== null);
+}
+
+function objectPropertyBoundaryValue(value) {
+  return typeof value === 'number' && Number.isFinite(value) && Number.isInteger(value) && value >= 0
+    ? value
+    : null;
 }
 
 function arrayItemBoundaryValue(value) {
