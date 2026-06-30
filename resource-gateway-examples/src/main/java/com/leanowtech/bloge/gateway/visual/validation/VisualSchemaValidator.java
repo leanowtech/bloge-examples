@@ -61,6 +61,7 @@ public final class VisualSchemaValidator {
                     path + "/type"));
             return;
         }
+        validateStandardEnum(schema, kind, path, diagnostics);
         if ("object".equals(kind)) {
             Map<String, Object> properties = objectProperties(schema, path, diagnostics);
             validateAdditionalProperties(schema, path, diagnostics);
@@ -92,12 +93,7 @@ public final class VisualSchemaValidator {
             }
             validateSchema((Map<String, Object>) nestedItems, path + "/items", diagnostics);
         } else if ("enum".equals(kind)) {
-            Object values = schema.get("values");
-            if (!(values instanceof List<?> list) || list.isEmpty()) {
-                diagnostics.add(VisualDiagnostic.error("visual.schema.enumValuesMissing",
-                        "Enum schema must declare non-empty values.",
-                        path + "/values"));
-            }
+            validateCustomEnumValues(schema, path, diagnostics);
         }
     }
 
@@ -115,7 +111,6 @@ public final class VisualSchemaValidator {
         return raw == null ? "" : String.valueOf(raw);
     }
 
-    @SuppressWarnings("unchecked")
     private static Map<String, Object> objectProperties(Map<String, Object> schema,
                                                         String path,
                                                         List<VisualDiagnostic> diagnostics) {
@@ -149,6 +144,88 @@ public final class VisualSchemaValidator {
         diagnostics.add(VisualDiagnostic.error("visual.schema.additionalPropertiesInvalid",
                 "Object schema additionalProperties must be a boolean or schema object.",
                 path + "/additionalProperties"));
+    }
+
+    private static void validateStandardEnum(Map<String, Object> schema,
+                                             String kind,
+                                             String path,
+                                             List<VisualDiagnostic> diagnostics) {
+        if (!schema.containsKey("enum")) {
+            return;
+        }
+        Object rawEnum = schema.get("enum");
+        if (!(rawEnum instanceof List<?> values) || values.isEmpty()) {
+            diagnostics.add(VisualDiagnostic.error("visual.schema.enumInvalid",
+                    "Schema enum must be a non-empty array.",
+                    path + "/enum"));
+            return;
+        }
+        validateEnumValues(values, path + "/enum", diagnostics);
+        if (valueConstrainedKind(kind)) {
+            for (int i = 0; i < values.size(); i++) {
+                if (!enumValueMatchesKind(values.get(i), kind)) {
+                    diagnostics.add(VisualDiagnostic.error("visual.schema.enumTypeMismatch",
+                            "Enum value at index %d must match schema type '%s'.".formatted(i, kind),
+                            path + "/enum/" + i));
+                }
+            }
+        }
+    }
+
+    private static void validateCustomEnumValues(Map<String, Object> schema,
+                                                 String path,
+                                                 List<VisualDiagnostic> diagnostics) {
+        Object values = schema.get("values");
+        if (!(values instanceof List<?> list) || list.isEmpty()) {
+            diagnostics.add(VisualDiagnostic.error("visual.schema.enumValuesMissing",
+                    "Enum schema must declare non-empty values.",
+                    path + "/values"));
+            return;
+        }
+        validateEnumValues(list, path + "/values", diagnostics);
+    }
+
+    private static void validateEnumValues(List<?> values,
+                                           String path,
+                                           List<VisualDiagnostic> diagnostics) {
+        Set<Object> seen = new LinkedHashSet<>();
+        for (int i = 0; i < values.size(); i++) {
+            Object value = values.get(i);
+            if (!seen.add(value)) {
+                diagnostics.add(VisualDiagnostic.error("visual.schema.enumDuplicate",
+                        "Enum value '%s' is duplicated.".formatted(value),
+                        path + "/" + i));
+            }
+        }
+    }
+
+    private static boolean valueConstrainedKind(String kind) {
+        return switch (kind) {
+            case "string", "duration", "datetime", "integer", "number", "decimal", "boolean", "null" -> true;
+            default -> false;
+        };
+    }
+
+    private static boolean enumValueMatchesKind(Object value, String kind) {
+        return switch (kind) {
+            case "string", "duration", "datetime" -> value instanceof String;
+            case "integer" -> isIntegerValue(value);
+            case "number", "decimal" -> value instanceof Number;
+            case "boolean" -> value instanceof Boolean;
+            case "null" -> value == null;
+            default -> true;
+        };
+    }
+
+    private static boolean isIntegerValue(Object value) {
+        if (value instanceof Byte || value instanceof Short || value instanceof Integer || value instanceof Long) {
+            return true;
+        }
+        if (value instanceof Number number) {
+            double doubleValue = number.doubleValue();
+            return Double.isFinite(doubleValue) && Math.rint(doubleValue) == doubleValue;
+        }
+        return false;
     }
 
     private static List<String> requiredNames(Map<String, Object> schema,

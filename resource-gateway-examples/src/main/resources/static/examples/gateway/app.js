@@ -4150,6 +4150,7 @@ function validateSchemaStructure(schema, path, diagnostics) {
     ));
     return;
   }
+  validateSchemaEnum(schema, kind, path, diagnostics);
   if (kind === 'object') {
     const properties = validatedSchemaObjectProperties(schema, path, diagnostics);
     validateSchemaAdditionalProperties(schema, path, diagnostics);
@@ -4185,13 +4186,7 @@ function validateSchemaStructure(schema, path, diagnostics) {
     }
     validateSchemaStructure(items, `${path}/items`, diagnostics);
   } else if (kind === 'enum') {
-    if (!Array.isArray(schema?.values) || !schema.values.length) {
-      diagnostics.push(graphInputSchemaDiagnostic(
-        'visual.schema.enumValuesMissing',
-        'Enum schema must declare non-empty values.',
-        `${path}/values`
-      ));
-    }
+    validateCustomSchemaEnumValues(schema, path, diagnostics);
   }
 }
 
@@ -4274,6 +4269,74 @@ function validateSchemaAdditionalProperties(schema, path, diagnostics) {
     'Object schema additionalProperties must be a boolean or schema object.',
     `${path}/additionalProperties`
   ));
+}
+
+function validateSchemaEnum(schema, kind, path, diagnostics) {
+  if (!Object.prototype.hasOwnProperty.call(schema || {}, 'enum')) {
+    return;
+  }
+  const values = schema.enum;
+  if (!Array.isArray(values) || !values.length) {
+    diagnostics.push(graphInputSchemaDiagnostic(
+      'visual.schema.enumInvalid',
+      'Schema enum must be a non-empty array.',
+      `${path}/enum`
+    ));
+    return;
+  }
+  validateSchemaEnumValues(values, `${path}/enum`, diagnostics);
+  if (!enumValueConstrainedKind(kind)) {
+    return;
+  }
+  values.forEach((value, index) => {
+    if (!enumValueMatchesKind(value, kind)) {
+      diagnostics.push(graphInputSchemaDiagnostic(
+        'visual.schema.enumTypeMismatch',
+        `Enum value at index ${index} must match schema type '${kind}'.`,
+        `${path}/enum/${index}`
+      ));
+    }
+  });
+}
+
+function validateCustomSchemaEnumValues(schema, path, diagnostics) {
+  const values = schema?.values;
+  if (!Array.isArray(values) || !values.length) {
+    diagnostics.push(graphInputSchemaDiagnostic(
+      'visual.schema.enumValuesMissing',
+      'Enum schema must declare non-empty values.',
+      `${path}/values`
+    ));
+    return;
+  }
+  validateSchemaEnumValues(values, `${path}/values`, diagnostics);
+}
+
+function validateSchemaEnumValues(values, path, diagnostics) {
+  const seen = new Set();
+  values.forEach((value, index) => {
+    const key = JSON.stringify(value);
+    if (seen.has(key)) {
+      diagnostics.push(graphInputSchemaDiagnostic(
+        'visual.schema.enumDuplicate',
+        `Enum value '${String(value)}' is duplicated.`,
+        `${path}/${index}`
+      ));
+      return;
+    }
+    seen.add(key);
+  });
+}
+
+function enumValueConstrainedKind(kind) {
+  return ['string', 'duration', 'datetime', 'integer', 'number', 'decimal', 'boolean', 'null'].includes(kind);
+}
+
+function enumValueMatchesKind(value, kind) {
+  if (kind === 'duration' || kind === 'datetime') {
+    return typeof value === 'string';
+  }
+  return schemaValueMatchesType(value, kind);
 }
 
 function schemaObjectProperties(schema) {

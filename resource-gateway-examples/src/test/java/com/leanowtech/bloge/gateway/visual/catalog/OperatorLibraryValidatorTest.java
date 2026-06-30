@@ -276,6 +276,39 @@ class OperatorLibraryValidatorTest {
     }
 
     @Test
+    void rejectsInvalidEnumSchemaShape() {
+        OperatorLibrary library = libraryWith(operator(
+                "risk:badEnumSchema",
+                new OperatorDefinition.Ports(
+                        List.of(),
+                        List.of(new OperatorDefinition.Port("output",
+                                new SchemaEnvelope("json-schema", "2020-12", Map.of(
+                                        "type", "object",
+                                        "properties", Map.of(
+                                                "decision", Map.of("type", "string", "enum", "APPROVE"),
+                                                "tier", Map.of("type", "string",
+                                                        "enum", List.of("LOW", 1, "LOW"))
+                                        )
+                                )),
+                                true,
+                                "Bad enum schema."))
+                ),
+                "native"
+        ));
+
+        VisualValidationResult result = validator.validate(library);
+
+        assertThat(result.valid()).isFalse();
+        assertThat(result.diagnostics())
+                .extracting("code")
+                .contains(
+                        "visual.schema.enumInvalid",
+                        "visual.schema.enumDuplicate",
+                        "visual.schema.enumTypeMismatch"
+                );
+    }
+
+    @Test
     void rejectsInvalidConfigSchemaDetails() {
         OperatorLibrary library = libraryWith(new OperatorDefinition(
                 "bloge.visualOperator.v1",
