@@ -3,6 +3,8 @@ package com.leanowtech.bloge.gateway.visual.catalog;
 import com.leanowtech.bloge.gateway.visual.diagnostic.VisualDiagnostic;
 import com.leanowtech.bloge.gateway.visual.draft.GraphDraft;
 import com.leanowtech.bloge.gateway.visual.draft.GraphDraftRepository;
+import com.leanowtech.bloge.gateway.visual.publication.VisualGraphPublication;
+import com.leanowtech.bloge.gateway.visual.publication.VisualGraphPublicationRepository;
 import com.leanowtech.bloge.gateway.visual.validation.VisualValidationResult;
 
 import org.springframework.http.HttpStatus;
@@ -38,18 +40,22 @@ public class OperatorLibraryAdminController {
     private final OperatorLibraryRegistry registry;
     private final OperatorLibraryValidator validator;
     private final GraphDraftRepository draftRepository;
+    private final VisualGraphPublicationRepository publicationRepository;
 
     /**
      * @param registry library registry
      * @param validator library validator
      * @param draftRepository stored visual graph draft repository
+     * @param publicationRepository immutable visual graph publication repository
      */
     public OperatorLibraryAdminController(OperatorLibraryRegistry registry,
                                           OperatorLibraryValidator validator,
-                                          GraphDraftRepository draftRepository) {
+                                          GraphDraftRepository draftRepository,
+                                          VisualGraphPublicationRepository publicationRepository) {
         this.registry = registry;
         this.validator = validator;
         this.draftRepository = draftRepository;
+        this.publicationRepository = publicationRepository;
     }
 
     /**
@@ -147,7 +153,9 @@ public class OperatorLibraryAdminController {
             Set<String> operatorRefs = library.get().operators().stream()
                     .map(OperatorDefinition::operatorRef)
                     .collect(java.util.stream.Collectors.toCollection(LinkedHashSet::new));
-            List<VisualDiagnostic> diagnostics = storedDraftReferenceDiagnostics(libraryId, operatorRefs, "deleted");
+            List<VisualDiagnostic> diagnostics = new ArrayList<>();
+            diagnostics.addAll(storedDraftReferenceDiagnostics(libraryId, operatorRefs, "deleted"));
+            diagnostics.addAll(publishedArtifactReferenceDiagnostics(libraryId, operatorRefs, "deleted"));
             if (!diagnostics.isEmpty()) {
                 return ResponseEntity.status(HttpStatus.CONFLICT)
                         .body(new VisualValidationResult(false, diagnostics));
@@ -162,6 +170,7 @@ public class OperatorLibraryAdminController {
         List<VisualDiagnostic> diagnostics = new ArrayList<>(structural.diagnostics());
         diagnostics.addAll(operatorRefOwnershipDiagnostics(library));
         diagnostics.addAll(replacementFingerprintDriftDiagnostics(library));
+        diagnostics.addAll(replacementPublicationRemovalDiagnostics(library));
         if (!force) {
             diagnostics.addAll(replacementImpactDiagnostics(library, "replaced without force=true"));
         }
@@ -288,6 +297,77 @@ public class OperatorLibraryAdminController {
                         "/drafts/%s/nodes/%d/operatorRef".formatted(draft.draftId(), i)));
             }
         }
+        for (VisualGraphPublication publication : publicationRepository.all()) {
+            GraphDraft draft = publication.draft();
+            if (draft == null) {
+                continue;
+            }
+            for (int i = 0; i < draft.nodes().size(); i++) {
+                GraphDraft.DraftNode node = draft.nodes().get(i);
+                OperatorDefinition replacementOperator = changedByRef.get(node.operatorRef());
+                if (replacementOperator == null) {
+                    continue;
+                }
+                String publishedFingerprint = publication.operatorFingerprints().get(node.id());
+                if (publishedFingerprint == null || publishedFingerprint.isBlank()) {
+                    diagnostics.add(VisualDiagnostic.warning("visual.library.publicationOperatorFingerprintSnapshotMissing",
+                            "Operator library '%s' changes operatorRef '%s' used by publication '%s' node '%s', but the publication has no frozen operator fingerprint; existing publication keeps its frozen DSL, but review before replaying or republishing."
+                                    .formatted(replacement.libraryId(), node.operatorRef(),
+                                            publication.publicationId(), node.id()),
+                            "/publications/%s/nodes/%d/operatorRef".formatted(publication.publicationId(), i)));
+                    continue;
+                }
+                if (publishedFingerprint.equals(replacementOperator.fingerprint())) {
+                    continue;
+                }
+                diagnostics.add(VisualDiagnostic.warning("visual.library.publicationOperatorFingerprintDrift",
+                        "Operator library '%s' changes operatorRef '%s' used by publication '%s' node '%s' from frozen fingerprint '%s' to '%s'; existing publication keeps its frozen DSL, but review before replaying, recertifying, or republishing."
+                                .formatted(replacement.libraryId(), node.operatorRef(), publication.publicationId(),
+                                        node.id(), publishedFingerprint, replacementOperator.fingerprint()),
+                        "/publications/%s/nodes/%d/operatorRef".formatted(publication.publicationId(), i)));
+            }
+        }
+        return diagnostics;
+    }
+
+    private List<VisualDiagnostic> replacementPublicationRemovalDiagnostics(OperatorLibrary replacement) {
+        if (replacement == null) {
+            return List.of();
+        }
+        Optional<OperatorLibrary> existing = registry.find(replacement.libraryId());
+        if (existing.isEmpty()) {
+            return List.of();
+        }
+        Set<String> replacementRefs = replacement.visibleInCatalog(true)
+                ? replacement.operators().stream()
+                        .map(OperatorDefinition::operatorRef)
+                        .collect(java.util.stream.Collectors.toCollection(LinkedHashSet::new))
+                : Set.of();
+        Set<String> removedRefs = existing.get().operators().stream()
+                .map(OperatorDefinition::operatorRef)
+                .filter(operatorRef -> !replacementRefs.contains(operatorRef))
+                .collect(java.util.stream.Collectors.toCollection(LinkedHashSet::new));
+        if (removedRefs.isEmpty()) {
+            return List.of();
+        }
+
+        List<VisualDiagnostic> diagnostics = new ArrayList<>();
+        for (VisualGraphPublication publication : publicationRepository.all()) {
+            GraphDraft draft = publication.draft();
+            if (draft == null) {
+                continue;
+            }
+            for (int i = 0; i < draft.nodes().size(); i++) {
+                GraphDraft.DraftNode node = draft.nodes().get(i);
+                if (removedRefs.contains(node.operatorRef())) {
+                    diagnostics.add(VisualDiagnostic.warning("visual.library.publicationOperatorRemoved",
+                            "Operator library '%s' removes operatorRef '%s' used by publication '%s' node '%s'; existing publication keeps its frozen DSL, but replay, recertification, or republishing should be reviewed."
+                                    .formatted(replacement.libraryId(), node.operatorRef(),
+                                            publication.publicationId(), node.id()),
+                            "/publications/%s/nodes/%d/operatorRef".formatted(publication.publicationId(), i)));
+                }
+            }
+        }
         return diagnostics;
     }
 
@@ -308,6 +388,33 @@ public class OperatorLibraryAdminController {
                                     .formatted(libraryId, action, draft.draftId(), draft.revision(),
                                             node.id(), node.operatorRef()),
                             "/drafts/%s/nodes/%d/operatorRef".formatted(draft.draftId(), i)));
+                }
+            }
+        }
+        return diagnostics;
+    }
+
+    private List<VisualDiagnostic> publishedArtifactReferenceDiagnostics(String libraryId,
+                                                                         Collection<String> operatorRefs,
+                                                                         String action) {
+        if (operatorRefs.isEmpty()) {
+            return List.of();
+        }
+
+        List<VisualDiagnostic> diagnostics = new ArrayList<>();
+        for (VisualGraphPublication publication : publicationRepository.all()) {
+            GraphDraft draft = publication.draft();
+            if (draft == null) {
+                continue;
+            }
+            for (int i = 0; i < draft.nodes().size(); i++) {
+                GraphDraft.DraftNode node = draft.nodes().get(i);
+                if (operatorRefs.contains(node.operatorRef())) {
+                    diagnostics.add(VisualDiagnostic.error("visual.library.publicationInUse",
+                            "Operator library '%s' cannot be %s without force=true because publication '%s' node '%s' was authored with operatorRef '%s'. Existing publication keeps its frozen DSL, but replay, recertification, or republishing should be reviewed."
+                                    .formatted(libraryId, action, publication.publicationId(), node.id(),
+                                            node.operatorRef()),
+                            "/publications/%s/nodes/%d/operatorRef".formatted(publication.publicationId(), i)));
                 }
             }
         }

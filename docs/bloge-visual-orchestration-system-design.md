@@ -667,6 +667,11 @@ assignment target 不在 output schema 中、template 引用不存在 input path
 当前已支持 `tenants`、`namespaces`、`environments`，`/api/visual/operators`
 可按 scope 过滤，`GraphDraftValidator` 在 validate/compile/run/publish 前
 返回 `visual.operator.policyDenied` 阻断越权 operator 使用。
+同一 admin API 已具备 registry-aware impact preflight：删除、禁用或替换仍被 stored draft 引用的
+operatorRef 会被阻断，same-ref fingerprint drift 会作为 warning 暴露；对于 immutable publication，
+当前运行不依赖最新 catalog，因为 publication 持有 frozen DSL 和 operator snapshots，但 validate 会返回
+publication 级 warning，提示 replay、recertification 或 republish 前需要重新审计。直接删除 library 时，
+如果已有 published artifact 引用了该库内 operatorRef，服务端要求 `force=true` 才允许删除。
 
 ### 12.2 Draft API
 

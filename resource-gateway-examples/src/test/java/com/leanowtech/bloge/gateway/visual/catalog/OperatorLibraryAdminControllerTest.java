@@ -5,6 +5,8 @@ import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 import com.leanowtech.bloge.gateway.visual.draft.GraphDraft;
 import com.leanowtech.bloge.gateway.visual.draft.InMemoryGraphDraftRepository;
 import com.leanowtech.bloge.gateway.visual.model.SchemaEnvelope;
+import com.leanowtech.bloge.gateway.visual.publication.InMemoryVisualGraphPublicationRepository;
+import com.leanowtech.bloge.gateway.visual.publication.VisualGraphPublication;
 
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -31,6 +33,7 @@ class OperatorLibraryAdminControllerTest {
 
     private InMemoryOperatorLibraryRegistry registry;
     private InMemoryGraphDraftRepository drafts;
+    private InMemoryVisualGraphPublicationRepository publications;
     private MockMvc mockMvc;
     private ObjectMapper objectMapper;
 
@@ -38,11 +41,13 @@ class OperatorLibraryAdminControllerTest {
     void setUp() {
         registry = new InMemoryOperatorLibraryRegistry();
         drafts = new InMemoryGraphDraftRepository();
+        publications = new InMemoryVisualGraphPublicationRepository();
         objectMapper = new ObjectMapper().registerModule(new JavaTimeModule());
         OperatorLibraryAdminController controller = new OperatorLibraryAdminController(
                 registry,
                 new OperatorLibraryValidator(),
-                drafts
+                drafts,
+                publications
         );
         mockMvc = MockMvcBuilders.standaloneSetup(controller).build();
     }
@@ -446,6 +451,38 @@ class OperatorLibraryAdminControllerTest {
     }
 
     @Test
+    void deleteRejectsLibraryReferencedByPublishedArtifactWithoutForce() throws Exception {
+        OperatorLibrary library = VisualCatalogTestSupport.eligibilityLibrary("integer");
+        registry.upsert(library);
+        publications.create(publicationUsingOperator("risk:eligibility", "published-fingerprint"));
+
+        mockMvc.perform(delete("/admin/visual-operator-libraries/risk-policy"))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.valid").value(false))
+                .andExpect(jsonPath("$.diagnostics[0].level").value("ERROR"))
+                .andExpect(jsonPath("$.diagnostics[0].code").value("visual.library.publicationInUse"))
+                .andExpect(jsonPath("$.diagnostics[0].message").value(
+                        "Operator library 'risk-policy' cannot be deleted without force=true because publication 'publication-1' node 'eligibility' was authored with operatorRef 'risk:eligibility'. Existing publication keeps its frozen DSL, but replay, recertification, or republishing should be reviewed."))
+                .andExpect(jsonPath("$.diagnostics[0].target")
+                        .value("/publications/publication-1/nodes/0/operatorRef"));
+
+        assertThat(registry.find("risk-policy")).contains(library);
+    }
+
+    @Test
+    void deleteForceBypassesPublishedArtifactReferenceGuard() throws Exception {
+        OperatorLibrary library = VisualCatalogTestSupport.eligibilityLibrary("integer");
+        registry.upsert(library);
+        publications.create(publicationUsingOperator("risk:eligibility", "published-fingerprint"));
+
+        mockMvc.perform(delete("/admin/visual-operator-libraries/risk-policy")
+                        .param("force", "true"))
+                .andExpect(status().isNoContent());
+
+        assertThat(registry.find("risk-policy")).isEmpty();
+    }
+
+    @Test
     void updateRejectsRemovingOperatorRefReferencedByStoredDraft() throws Exception {
         OperatorLibrary original = VisualCatalogTestSupport.multiOutputEligibilityLibrary("integer");
         OperatorLibrary replacement = libraryWithScoreFactsOnly();
@@ -603,6 +640,57 @@ class OperatorLibraryAdminControllerTest {
     }
 
     @Test
+    void validateWarnsWhenReplacingPublishedOperatorRefWithDifferentFingerprint() throws Exception {
+        OperatorLibrary original = VisualCatalogTestSupport.eligibilityLibrary("integer");
+        OperatorLibrary replacement = VisualCatalogTestSupport.eligibilityLibrary("string");
+        String originalFingerprint = original.operators().getFirst().fingerprint();
+        String replacementFingerprint = replacement.operators().getFirst().fingerprint();
+        registry.upsert(original);
+        publications.create(publicationUsingOperator("risk:eligibility", originalFingerprint));
+
+        mockMvc.perform(post("/admin/visual-operator-libraries/validate")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(replacement)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.valid").value(true))
+                .andExpect(jsonPath("$.diagnostics[0].level").value("WARNING"))
+                .andExpect(jsonPath("$.diagnostics[0].code")
+                        .value("visual.library.publicationOperatorFingerprintDrift"))
+                .andExpect(jsonPath("$.diagnostics[0].message")
+                        .value(org.hamcrest.Matchers.containsString("publication 'publication-1'")))
+                .andExpect(jsonPath("$.diagnostics[0].message")
+                        .value(org.hamcrest.Matchers.containsString("frozen DSL")))
+                .andExpect(jsonPath("$.diagnostics[0].target")
+                        .value("/publications/publication-1/nodes/0/operatorRef"));
+
+        assertThat(replacementFingerprint).isNotEqualTo(originalFingerprint);
+        assertThat(registry.find("risk-policy")).contains(original);
+    }
+
+    @Test
+    void validateWarnsWhenReplacingLibraryRemovesOperatorRefUsedByPublication() throws Exception {
+        OperatorLibrary original = VisualCatalogTestSupport.multiOutputEligibilityLibrary("integer");
+        OperatorLibrary replacement = libraryWithScoreFactsOnly();
+        registry.upsert(original);
+        publications.create(publicationUsingOperator("risk:eligibility", "published-fingerprint"));
+
+        mockMvc.perform(post("/admin/visual-operator-libraries/validate")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(replacement)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.valid").value(true))
+                .andExpect(jsonPath("$.diagnostics[0].level").value("WARNING"))
+                .andExpect(jsonPath("$.diagnostics[0].code")
+                        .value("visual.library.publicationOperatorRemoved"))
+                .andExpect(jsonPath("$.diagnostics[0].message")
+                        .value("Operator library 'risk-policy' removes operatorRef 'risk:eligibility' used by publication 'publication-1' node 'eligibility'; existing publication keeps its frozen DSL, but replay, recertification, or republishing should be reviewed."))
+                .andExpect(jsonPath("$.diagnostics[0].target")
+                        .value("/publications/publication-1/nodes/0/operatorRef"));
+
+        assertThat(registry.find("risk-policy")).contains(original);
+    }
+
+    @Test
     void updateForceBypassesRemovedOperatorRefGuard() throws Exception {
         OperatorLibrary replacement = libraryWithScoreFactsOnly();
         registry.upsert(VisualCatalogTestSupport.multiOutputEligibilityLibrary("integer"));
@@ -681,6 +769,28 @@ class OperatorLibraryAdminControllerTest {
 
     private static GraphDraft draftUsingOperator(String operatorRef, String fingerprint) {
         return draftUsingOperator(operatorRef, Map.of("eligibility", fingerprint));
+    }
+
+    private static VisualGraphPublication publicationUsingOperator(String operatorRef, String fingerprint) {
+        GraphDraft draft = draftUsingOperator(operatorRef, Map.of("eligibility", fingerprint));
+        return new VisualGraphPublication(
+                "bloge.visualGraphPublication.v1",
+                "publication-1",
+                draft.draftId(),
+                draft.revision(),
+                draft.graphName(),
+                draft.tenantId(),
+                draft.namespace(),
+                draft.environment(),
+                null,
+                draft,
+                List.of(),
+                Map.of("eligibility", fingerprint),
+                Map.of(),
+                "graph libraryImpact {}",
+                null,
+                null
+        );
     }
 
     private static OperatorLibrary eligibilityLibraryWithStatus(String status) {
