@@ -185,6 +185,40 @@ class VisualAuthoringBrowserDomTest {
                 .contains("ctx.score >= 700");
     }
 
+    @Test
+    void composerRendersServerValidationDiagnosticsInRealBrowser() {
+        driver = newChromeDriverOrSkip();
+        WebDriverWait wait = new WebDriverWait(driver, WAIT_TIMEOUT);
+        driver.get("http://localhost:" + port + "/examples/gateway");
+
+        waitForComposer(wait);
+        wait.until(ExpectedConditions.visibilityOfElementLocated(By.id("operator-palette")));
+
+        importSampleOperatorLibrary(wait);
+
+        WebElement search = wait.until(ExpectedConditions.elementToBeClickable(By.id("operator-palette-search")));
+        search.clear();
+        search.sendKeys("Eligibility");
+        WebElement eligibility = wait.until(ExpectedConditions.elementToBeClickable(
+                By.cssSelector("[data-operator-type='risk:eligibility']")
+        ));
+        WebElement diagram = wait.until(ExpectedConditions.visibilityOfElementLocated(By.id("diagram")));
+        dragOperatorToCanvas(eligibility, diagram, 140, 120);
+        wait.until(ExpectedConditions.visibilityOfElementLocated(
+                By.cssSelector("#diagram [data-node-id='riskEligibility']")
+        ));
+
+        click(wait, By.cssSelector("[data-clear-binding][data-binding-path='score']"));
+        click(wait, By.cssSelector("[data-clear-binding][data-binding-path='amount']"));
+
+        click(wait, By.id("validate-visual-draft"));
+        waitForText(wait, By.id("visual-check-status"), "Visual graph has errors.");
+        waitForText(wait, By.id("visual-diagnostics"), "visual.input.required");
+        waitForText(wait, By.id("visual-diagnostics"), "score");
+        waitForText(wait, By.id("visual-diagnostics"), "amount");
+        waitForText(wait, By.id("output"), "\"valid\": false");
+    }
+
     private WebDriver newChromeDriverOrSkip() {
         ChromeOptions options = new ChromeOptions();
         options.addArguments(
