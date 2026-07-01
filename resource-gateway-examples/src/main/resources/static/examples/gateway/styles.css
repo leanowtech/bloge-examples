@@ -1109,6 +1109,69 @@ body.dragging-operator * {
   grid-template-columns: 1fr;
 }
 
+.node-diagnostics-panel {
+  display: grid;
+  gap: 8px;
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px solid var(--line);
+}
+
+.node-diagnostics-panel.error .binding-panel-title small {
+  color: var(--red);
+}
+
+.node-diagnostics-panel.warning .binding-panel-title small {
+  color: #8a5a13;
+}
+
+.node-diagnostics-list {
+  display: grid;
+  gap: 5px;
+}
+
+.node-diagnostic-row {
+  display: grid;
+  grid-template-columns: minmax(0, 0.72fr) minmax(0, 1.28fr);
+  gap: 8px;
+  align-items: baseline;
+  padding: 6px 7px;
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  background: var(--surface-subtle);
+  font-size: 11px;
+}
+
+.node-diagnostic-row strong {
+  color: var(--text);
+  overflow-wrap: anywhere;
+}
+
+.node-diagnostic-row span {
+  color: var(--muted);
+  font-weight: 700;
+  overflow-wrap: anywhere;
+}
+
+.node-diagnostic-row.error {
+  border-color: #fca5a5;
+  background: var(--red-soft);
+}
+
+.node-diagnostic-row.warning {
+  border-color: #f8d18d;
+  background: var(--amber-soft);
+}
+
+.node-diagnostic-row.success {
+  border-color: #86efac;
+  background: var(--green-soft);
+}
+
+.node-diagnostic-row.clean {
+  border-color: rgba(148, 163, 184, 0.34);
+}
+
 .node-connectability-panel {
   display: grid;
   gap: 8px;
@@ -2256,6 +2319,13 @@ body.dragging-operator * {
 
 .operator-editor-heading strong {
   font-size: 13px;
+}
+
+.operator-editor-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 6px;
 }
 
 .operator-fields {

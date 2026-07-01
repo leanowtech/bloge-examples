@@ -110,6 +110,35 @@ class VisualAuthoringAppJsTest {
                 .contains("payload?.impact");
     }
 
+    @Test
+    void surfacesSelectedNodeDiagnosticsInInspector() throws Exception {
+        String source = appJsSource();
+
+        assertThat(source)
+                .contains("function renderSelectedNodeDiagnosticsPanel(node)")
+                .contains("function selectedNodeDiagnosticsSummary(diagnostics, traceNode)")
+                .contains("function renderSelectedNodeTraceRow(traceNode)")
+                .contains("${renderSelectedNodeDiagnosticsPanel(node)}")
+                .contains("node-diagnostics-panel")
+                .contains("node-diagnostic-row");
+    }
+
+    @Test
+    void supportsSelectedNodeDuplicationInInspector() throws Exception {
+        String source = appJsSource();
+
+        assertThat(source)
+                .contains("id=\"duplicate-operator\"")
+                .contains("function duplicateSelectedBuilderNode()")
+                .contains("function duplicateBuilderNode(node)")
+                .contains("recordBuilderHistory(`Duplicate ${selected.id}`)")
+                .contains("setConnectionMessage(`Duplicated ${selected.id} as ${duplicate.id}.`, 'success')")
+                .contains("key === 'd' && !event.shiftKey")
+                .contains("duplicateSelectedBuilderNode();")
+                .contains("key === 'delete' || key === 'backspace'")
+                .contains("deleteSelectedBuilderNode();");
+    }
+
     private static String appJsSource() throws IOException {
         return new ClassPathResource("static/examples/gateway/app.js")
                 .getContentAsString(StandardCharsets.UTF_8);
@@ -274,6 +303,7 @@ class VisualAuthoringAppJsTest {
                   'defaultCustomInputStateForOperator',
                   'defaultResourceParamInputs',
                   'resourceParamInputs',
+                  'cloneJsonValue',
                   'inputUnionBranchForTarget',
                   'inputUnionBranchesForPort',
                   'inputUnionBranchesForTarget',
@@ -349,6 +379,10 @@ class VisualAuthoringAppJsTest {
                   'connectionLocalMismatchIsAdvisory',
                   'orderedBuilderNodes',
                   'selectedBuilderNode',
+                  'nonOverlappingNodePosition',
+                  'rectanglesOverlap',
+                  'clampNodePosition',
+                  'uniqueNodeId',
                   'defaultOutputNodeForBuilder',
                   'defaultOutputPathForNode',
                   'ensureBuilderOutput',
@@ -362,6 +396,7 @@ class VisualAuthoringAppJsTest {
                   'outputReferenceFromSelectionPath',
                   'renderNodeConnectabilityPanel',
                   'renderNodeConnectabilityRow',
+                  'nodeConnectabilityDisplayTargets',
                   'renderNodeConnectabilityTarget',
                   'connectNodeConnectabilityFromButton',
                   'nodeConnectabilitySourceFromButton',
@@ -376,6 +411,7 @@ class VisualAuthoringAppJsTest {
                   'nodeConnectabilitySourceLevel',
                   'nodeConnectabilityTargetLevel',
                   'nodeConnectabilityTargetLabel',
+                  'nodeConnectabilityTargetTitle',
                   'recordBuilderHistory',
                   'clearBuilderHistory',
                   'undoBuilderEdit',
@@ -396,6 +432,8 @@ class VisualAuthoringAppJsTest {
                   'nodeImpactActionKey',
                   'clearNodeImpactRelationsFromButton',
                   'clearNodeImpactRelationsForNode',
+                  'duplicateSelectedBuilderNode',
+                  'duplicateBuilderNode',
                   'deleteSelectedBuilderNode',
                   'removeBuilderReferencesToNode',
                   'expressionReferencesNode',
@@ -438,6 +476,11 @@ class VisualAuthoringAppJsTest {
                   'normalizeDiagnosticNodeTarget',
                   'jsonPointerUnescape',
                   'canvasNodeIssueText',
+                  'renderSelectedNodeDiagnosticsPanel',
+                  'selectedNodeDiagnosticsLevel',
+                  'selectedNodeDiagnosticsSummary',
+                  'renderSelectedNodeDiagnosticRow',
+                  'renderSelectedNodeTraceRow',
                   'runTraceForCanvasNode',
                   'runTraceLevel',
                   'runTraceStatusLabel',
@@ -468,6 +511,7 @@ class VisualAuthoringAppJsTest {
 
                 context.BUILDER_HISTORY_LIMIT = 50;
                 context.CONTEXT_SOURCE_ID = '__ctx';
+                context.NODE_SIZE = { width: 170, height: 74 };
                 context.elements = {};
                 context.$ = (id) => context.elements[id] || null;
                 context.syncGraphInputSchemaTextFromBuilder = () => {};
@@ -1312,6 +1356,66 @@ class VisualAuthoringAppJsTest {
                 const riskTraceStatus = context.runTraceStatusLabel(riskTraceNode);
                 const riskTraceBadge = context.nodeTraceBadgeText(riskTraceNode);
                 const riskTraceIssueText = context.canvasNodeIssueText(context.diagnosticsForCanvasNode('riskNode'), riskTraceNode);
+                const riskSelectedDiagnosticsLevel = context.selectedNodeDiagnosticsLevel(
+                  context.diagnosticsForCanvasNode('riskNode'),
+                  riskTraceNode
+                );
+                const riskSelectedDiagnosticsSummary = context.selectedNodeDiagnosticsSummary(
+                  context.diagnosticsForCanvasNode('riskNode'),
+                  riskTraceNode
+                );
+                const riskSelectedDiagnosticsPanel = context.renderSelectedNodeDiagnosticsPanel(
+                  context.state.builder.nodes.find((node) => node.id === 'riskNode')
+                );
+                const riskSelectedDiagnosticsLeak = riskSelectedDiagnosticsPanel.includes('Policy warning.');
+                const originalBuilderBeforeDuplicateProbe = context.state.builder;
+                const originalSelectedBeforeDuplicateProbe = context.state.selectedNodeId;
+                const originalTraceBeforeDuplicateProbe = context.state.activeRunTrace;
+                const duplicateProbeBuilder = JSON.parse(JSON.stringify(context.state.builder));
+                duplicateProbeBuilder.selectedId = 'riskNode';
+                const duplicateProbeRiskNode = duplicateProbeBuilder.nodes.find((node) => node.id === 'riskNode');
+                duplicateProbeRiskNode.x = 140;
+                duplicateProbeRiskNode.y = 210;
+                duplicateProbeRiskNode.customInputPorts = { score: 'inputs' };
+                duplicateProbeRiskNode.customInputPaths = { score: 'score' };
+                duplicateProbeRiskNode.config.nested = { flags: { review: true } };
+                context.state.builder = duplicateProbeBuilder;
+                context.state.selectedNodeId = 'riskNode';
+                context.state.builderHistoryUndo = [];
+                context.state.builderHistoryRedo = [];
+                context.state.activeRunTrace = originalTraceBeforeDuplicateProbe;
+                let duplicateSyncCount = 0;
+                let duplicateInputRenders = 0;
+                let duplicateEditorRenders = 0;
+                let duplicateDiagramRenders = 0;
+                let duplicateMessage = '';
+                context.syncComposerFromBuilder = () => { duplicateSyncCount += 1; };
+                context.renderInputForm = () => { duplicateInputRenders += 1; };
+                context.renderSelectedOperatorEditor = () => { duplicateEditorRenders += 1; };
+                context.renderDiagram = () => { duplicateDiagramRenders += 1; };
+                context.setConnectionMessage = (text) => { duplicateMessage = text; };
+                const duplicatedNode = context.duplicateSelectedBuilderNode();
+                duplicatedNode.config.nested.flags.review = false;
+                const duplicateSourceNode = context.state.builder.nodes.find((node) => node.id === 'riskNode');
+                const duplicateNodeId = duplicatedNode.id;
+                const duplicateNodeCount = context.state.builder.nodes.length;
+                const duplicateSelectedId = context.state.builder.selectedId;
+                const duplicateCopiedInput = duplicatedNode.customInputs.score;
+                const duplicateCopiedConfigExpr = duplicatedNode.config.threshold.expr;
+                const duplicateSourceNestedFlag = duplicateSourceNode.config.nested.flags.review;
+                const duplicateOutputNode = context.state.builder.output.nodeId;
+                const duplicateFingerprint = context.state.builder.operatorFingerprints[duplicatedNode.id] || '';
+                const duplicateHistoryAction = context.state.builderHistoryUndo[0].action;
+                const duplicateUndoNodeCount = JSON.parse(context.state.builderHistoryUndo[0].snapshot).nodes.length;
+                const duplicateTraceCleared = context.state.activeRunTrace === null;
+                const duplicateRenderCounts = `${duplicateSyncCount}|${duplicateInputRenders}|${duplicateEditorRenders}|${duplicateDiagramRenders}`;
+                const duplicateEdgesToCopy = [
+                  ...(context.state.builder.dependencyEdges || []),
+                  ...(context.state.builder.routeEdges || [])
+                ].filter((edge) => edge.source === duplicateNodeId || edge.target === duplicateNodeId).length;
+                context.state.builder = originalBuilderBeforeDuplicateProbe;
+                context.state.selectedNodeId = originalSelectedBeforeDuplicateProbe;
+                context.state.activeRunTrace = originalTraceBeforeDuplicateProbe;
                 const auditTraceSummaryLabel = context.nodeTraceSummaryLabel(context.runTraceForCanvasNode('auditNode'));
                 const traceCoverage = context.runTraceCanvasCoverage(context.state.activeRunTrace, context.state.builder, context.state.layout);
                 const traceCoverageText = context.runTraceCoverageText(traceCoverage);
@@ -1827,6 +1931,25 @@ class VisualAuthoringAppJsTest {
                   ['run trace status label', riskTraceStatus, 'COMPLETED'],
                   ['run trace badge', riskTraceBadge, 'ERR 1'],
                   ['run trace issue text', riskTraceIssueText, '1 issue · COMPLETED · 2 trace'],
+                  ['selected diagnostics level', riskSelectedDiagnosticsLevel, 'error'],
+                  ['selected diagnostics summary', riskSelectedDiagnosticsSummary, '1 validation issue · COMPLETED · 2 trace diagnostics'],
+                  ['selected diagnostics panel has code', String(riskSelectedDiagnosticsPanel.includes('visual.input.required')), 'true'],
+                  ['selected diagnostics panel has trace', String(riskSelectedDiagnosticsPanel.includes('risk:eligibility')), 'true'],
+                  ['selected diagnostics panel isolates node', riskSelectedDiagnosticsLeak, false],
+                  ['duplicate node id', duplicateNodeId, 'riskNode2'],
+                  ['duplicate node count', duplicateNodeCount, 4],
+                  ['duplicate selected id', duplicateSelectedId, 'riskNode2'],
+                  ['duplicate copied input', duplicateCopiedInput, 'ctx.score'],
+                  ['duplicate copied config expression', duplicateCopiedConfigExpr, 'policy.output.score'],
+                  ['duplicate config deep copied', duplicateSourceNestedFlag, true],
+                  ['duplicate output unchanged', duplicateOutputNode, 'riskNode'],
+                  ['duplicate fingerprint snapshot omitted', duplicateFingerprint, ''],
+                  ['duplicate history action', duplicateHistoryAction, 'Duplicate riskNode'],
+                  ['duplicate undo node count', duplicateUndoNodeCount, 3],
+                  ['duplicate trace cleared', duplicateTraceCleared, true],
+                  ['duplicate render counts', duplicateRenderCounts, '1|1|1|1'],
+                  ['duplicate message', duplicateMessage, 'Duplicated riskNode as riskNode2.'],
+                  ['duplicate edges omitted', duplicateEdgesToCopy, 0],
                   ['run trace summary label', auditTraceSummaryLabel, 'COMPLETED · risk:audit · 9ms · selected output · 1 diagnostic'],
                   ['run trace coverage matched', traceCoverage.matchedNodeCount, 3],
                   ['run trace coverage total', traceCoverage.traceNodeCount, 4],
@@ -1913,8 +2036,13 @@ class VisualAuthoringAppJsTest {
                   ['connectability eligible summary', context.nodeConnectabilitySourceSummary(eligibleConnectability), '2 connectable · 3 blocked'],
                   ['connectability score level', context.nodeConnectabilitySourceLevel(scoreConnectability), 'success'],
                   ['connectability root first target label', context.nodeConnectabilityTargetLabel(rootConnectability.compatibleTargets[0]), 'Audit (auditNode) · data -> inputs.risk · wired'],
+                  ['connectability root display targets', context.nodeConnectabilityDisplayTargets(rootConnectability).length, 4],
+                  ['connectability root blocked preview count', context.nodeConnectabilityDisplayTargets(rootConnectability).filter((entry) => !entry.compatibility.ok).length, 2],
+                  ['connectability blocked target title', context.nodeConnectabilityTargetTitle(rootConnectability.blockedTargets[0]), 'Audit (auditNode) · data -> inputs.score · blocked · Type mismatch: object cannot feed integer.'],
                   ['connectability panel includes score chip', String(connectabilityPanel.includes('riskNode.payload.score')), 'true'],
                   ['connectability panel includes blocked chip', String(connectabilityPanel.includes('blocked')), 'true'],
+                  ['connectability panel includes blocked reason', String(connectabilityPanel.includes('Type mismatch: object cannot feed integer.')), 'true'],
+                  ['connectability panel includes aria label', String(connectabilityPanel.includes('aria-label=')), 'true'],
                   ['connectability panel includes connect action', String(connectabilityPanel.includes('data-connectability-action="connect"')), 'true'],
                   ['connectability quick source', context.endpointLabel(quickConnectSource), 'riskNode.payload.score'],
                   ['connectability quick target', context.endpointLabel(quickConnectTarget), 'auditNode.inputs.score'],

@@ -1874,6 +1874,83 @@ function canvasNodeIssueText(diagnostics, traceNode) {
   return parts.join(' · ') || 'clean';
 }
 
+function renderSelectedNodeDiagnosticsPanel(node) {
+  const diagnostics = diagnosticsForCanvasNode(node?.id || '');
+  const traceNode = runTraceForCanvasNode(node?.id || '');
+  if (!diagnostics.length && !traceNode) {
+    return '';
+  }
+  const level = selectedNodeDiagnosticsLevel(diagnostics, traceNode);
+  return `
+    <div class="node-diagnostics-panel ${escapeHtml(level)}">
+      <div class="binding-panel-title">
+        <span>Diagnostics</span>
+        <small>${escapeHtml(selectedNodeDiagnosticsSummary(diagnostics, traceNode))}</small>
+      </div>
+      <div class="node-diagnostics-list">
+        ${diagnostics.length
+          ? diagnostics.map((diagnostic) => renderSelectedNodeDiagnosticRow(diagnostic)).join('')
+          : '<div class="node-diagnostic-row clean"><strong>Validation</strong><span>No validation issues for this node.</span></div>'}
+        ${traceNode ? renderSelectedNodeTraceRow(traceNode) : ''}
+      </div>
+    </div>
+  `;
+}
+
+function selectedNodeDiagnosticsLevel(diagnostics, traceNode) {
+  if (diagnostics.some((diagnostic) => String(diagnostic.level || '').toUpperCase() === 'ERROR')
+      || (Number(traceNode?.errorCount) || 0) > 0) {
+    return 'error';
+  }
+  if (diagnostics.some((diagnostic) => String(diagnostic.level || '').toUpperCase() === 'WARNING')
+      || (Number(traceNode?.diagnosticCount) || 0) > 0) {
+    return 'warning';
+  }
+  return traceNode ? runTraceLevel(traceNode) : 'clean';
+}
+
+function selectedNodeDiagnosticsSummary(diagnostics, traceNode) {
+  const parts = [];
+  if (diagnostics.length) {
+    parts.push(`${diagnostics.length} validation issue${diagnostics.length === 1 ? '' : 's'}`);
+  }
+  if (traceNode) {
+    const traceIssues = Number(traceNode.diagnosticCount) || 0;
+    parts.push(traceIssues
+      ? `${runTraceStatusLabel(traceNode)} · ${traceIssues} trace diagnostic${traceIssues === 1 ? '' : 's'}`
+      : runTraceStatusLabel(traceNode));
+  }
+  return parts.join(' · ') || 'clean';
+}
+
+function renderSelectedNodeDiagnosticRow(diagnostic) {
+  const level = String(diagnostic.level || 'INFO').toLowerCase();
+  const target = diagnostic.target ? ` · ${diagnostic.target}` : '';
+  const location = diagnostic.line >= 0 ? ` · ${diagnostic.line}:${diagnostic.column}` : '';
+  return `
+    <div class="node-diagnostic-row ${escapeHtml(level)}">
+      <strong>${escapeHtml(diagnostic.code || diagnostic.level || 'visual.info')}</strong>
+      <span>${escapeHtml((diagnostic.message || '') + target + location)}</span>
+    </div>
+  `;
+}
+
+function renderSelectedNodeTraceRow(traceNode) {
+  const traceIssues = Number(traceNode.diagnosticCount) || 0;
+  const traceErrors = Number(traceNode.errorCount) || 0;
+  const operator = traceNode.operatorRef ? ` · ${traceNode.operatorRef}` : '';
+  const timing = traceNode.timingKnown && traceNode.elapsedMs !== undefined ? ` · ${traceNode.elapsedMs}ms` : '';
+  const selected = traceNode.outputSelected ? ' · selected output' : '';
+  const issue = traceIssues ? ` · ${traceIssues} diagnostic${traceIssues === 1 ? '' : 's'}` : '';
+  const error = traceErrors ? ` · ${traceErrors} error${traceErrors === 1 ? '' : 's'}` : '';
+  return `
+    <div class="node-diagnostic-row trace ${escapeHtml(runTraceLevel(traceNode))}">
+      <strong>Trace</strong>
+      <span>${escapeHtml(`${runTraceStatusLabel(traceNode)}${operator}${timing}${selected}${issue}${error}`)}</span>
+    </div>
+  `;
+}
+
 function runTraceForCanvasNode(nodeId) {
   const nodes = Array.isArray(state.activeRunTrace?.nodes) ? state.activeRunTrace.nodes : [];
   return nodes.find((node) => node.nodeId === nodeId) || null;
@@ -5227,10 +5304,19 @@ function renderSelectedOperatorEditor() {
         <div class="panel-title">Selected Operator</div>
         <strong>${escapeHtml(specForNode(node).label || node.type)}</strong>
       </div>
-      <button id="delete-operator" class="secondary compact danger" type="button">Delete</button>
+      <div class="operator-editor-actions">
+        <button id="duplicate-operator" class="secondary compact" type="button">Duplicate</button>
+        <button id="delete-operator" class="secondary compact danger" type="button">Delete</button>
+      </div>
     </div>
+    ${renderSelectedNodeDiagnosticsPanel(node)}
     ${operatorEditorBody(node)}
   `;
+
+  const duplicateButton = $('duplicate-operator');
+  if (duplicateButton) {
+    duplicateButton.addEventListener('click', duplicateSelectedBuilderNode);
+  }
 
   const deleteButton = $('delete-operator');
   if (deleteButton) {
@@ -5803,9 +5889,7 @@ function renderNodeConnectabilityPanel(node) {
 }
 
 function renderNodeConnectabilityRow(sourceSummary) {
-  const targets = sourceSummary.compatibleTargets.length
-    ? sourceSummary.compatibleTargets
-    : sourceSummary.blockedTargets.slice(0, 2);
+  const targets = nodeConnectabilityDisplayTargets(sourceSummary);
   const targetRows = targets.length
     ? targets.map((entry) => renderNodeConnectabilityTarget(sourceSummary.source, entry)).join('')
     : '<span class="node-connectability-chip info">No canvas targets</span>';
@@ -5818,14 +5902,26 @@ function renderNodeConnectabilityRow(sourceSummary) {
   `;
 }
 
+function nodeConnectabilityDisplayTargets(sourceSummary) {
+  const compatible = sourceSummary.compatibleTargets || [];
+  const blocked = sourceSummary.blockedTargets || [];
+  if (!compatible.length) {
+    return blocked.slice(0, 2);
+  }
+  return [...compatible, ...blocked.slice(0, 2)];
+}
+
 function renderNodeConnectabilityTarget(source, entry) {
   const label = nodeConnectabilityTargetLabel(entry);
+  const title = nodeConnectabilityTargetTitle(entry);
   const level = nodeConnectabilityTargetLevel(entry);
   if (entry.compatibility.ok && !entry.alreadyConnected) {
     return `
       <button
         type="button"
         class="node-connectability-chip ${escapeHtml(level)} actionable"
+        title="${escapeHtml(title)}"
+        aria-label="${escapeHtml(title)}"
         data-connectability-action="connect"
         data-connect-source-node="${escapeHtml(source.nodeId || '')}"
         data-connect-source-port="${escapeHtml(source.port || '')}"
@@ -5838,7 +5934,7 @@ function renderNodeConnectabilityTarget(source, entry) {
       >${escapeHtml(label)}</button>
     `;
   }
-  return `<span class="node-connectability-chip ${escapeHtml(level)}">${escapeHtml(label)}</span>`;
+  return `<span class="node-connectability-chip ${escapeHtml(level)}" title="${escapeHtml(title)}" aria-label="${escapeHtml(title)}">${escapeHtml(label)}</span>`;
 }
 
 function connectNodeConnectabilityFromButton(button) {
@@ -6069,6 +6165,12 @@ function nodeConnectabilityTargetLabel(entry) {
     : 'blocked';
   const targetPath = nodeImpactPortPath(entry.target.port || '', entry.target.path || '');
   return `${entry.targetLabel} · ${readableEdgeKind(entry.kind)} -> ${targetPath} · ${status}`;
+}
+
+function nodeConnectabilityTargetTitle(entry) {
+  const label = nodeConnectabilityTargetLabel(entry);
+  const message = String(entry.compatibility?.message || '').trim();
+  return !entry.compatibility?.ok && message ? `${label} · ${message}` : label;
 }
 
 function renderNodeImpactPanel(node) {
@@ -8568,6 +8670,33 @@ function uniqueNodeId(baseId) {
     index++;
   }
   return `${baseId}${index}`;
+}
+
+function duplicateSelectedBuilderNode() {
+  const selected = selectedBuilderNode();
+  if (!selected) return null;
+  recordBuilderHistory(`Duplicate ${selected.id}`);
+  const duplicate = duplicateBuilderNode(selected);
+  state.builder.nodes.push(duplicate);
+  state.builder.selectedId = duplicate.id;
+  state.selectedNodeId = duplicate.id;
+  syncComposerFromBuilder();
+  setConnectionMessage(`Duplicated ${selected.id} as ${duplicate.id}.`, 'success');
+  renderInputForm();
+  renderSelectedOperatorEditor();
+  renderDiagram();
+  return duplicate;
+}
+
+function duplicateBuilderNode(node) {
+  const copy = cloneJsonValue(node);
+  const x = Number.isFinite(Number(node.x)) ? Number(node.x) : 80;
+  const y = Number.isFinite(Number(node.y)) ? Number(node.y) : 210;
+  const position = nonOverlappingNodePosition(x + 28, y + NODE_SIZE.height + 24);
+  copy.id = uniqueNodeId(node.id || specForNode(node).baseId || 'node');
+  copy.x = position.x;
+  copy.y = position.y;
+  return copy;
 }
 
 function deleteSelectedBuilderNode() {
@@ -14862,6 +14991,11 @@ function installBuilderHistoryShortcuts() {
     }
     const key = String(event.key || '').toLowerCase();
     const command = event.metaKey || event.ctrlKey;
+    if ((key === 'delete' || key === 'backspace') && !command && !event.altKey) {
+      event.preventDefault();
+      deleteSelectedBuilderNode();
+      return;
+    }
     if (!command || event.altKey) {
       return;
     }
@@ -14874,6 +15008,9 @@ function installBuilderHistoryShortcuts() {
     } else if (key === 'y') {
       event.preventDefault();
       redoBuilderEdit();
+    } else if (key === 'd' && !event.shiftKey) {
+      event.preventDefault();
+      duplicateSelectedBuilderNode();
     }
   });
 }
