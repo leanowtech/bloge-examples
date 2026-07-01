@@ -549,6 +549,33 @@ class OperatorLibraryValidatorTest {
     }
 
     @Test
+    void rejectsSuspendableJavaSourceKindInImportedLibrary() {
+        OperatorDefinition base = VisualCatalogTestSupport.eligibilityOperator("integer");
+        OperatorDefinition operator = new OperatorDefinition(
+                base.schemaVersion(),
+                base.operatorRef(),
+                base.operatorVersion(),
+                base.display(),
+                new OperatorDefinition.Source("java-suspendable-operator", "", "", "", false),
+                base.ports(),
+                base.configSchema(),
+                base.capabilities(),
+                base.policy(),
+                base.lowering(),
+                base.diagnostics()
+        );
+
+        VisualValidationResult result = validator.validate(libraryWith(operator));
+
+        assertThat(result.valid()).isFalse();
+        assertThat(result.diagnostics())
+                .anySatisfy(diagnostic -> {
+                    assertThat(diagnostic.code()).isEqualTo("visual.operator.source.kind.reserved");
+                    assertThat(diagnostic.target()).isEqualTo("/operators/0/source/kind");
+                });
+    }
+
+    @Test
     void rejectsUnsupportedImportedSourceKind() {
         OperatorDefinition base = VisualCatalogTestSupport.eligibilityOperator("integer");
         OperatorDefinition operator = new OperatorDefinition(

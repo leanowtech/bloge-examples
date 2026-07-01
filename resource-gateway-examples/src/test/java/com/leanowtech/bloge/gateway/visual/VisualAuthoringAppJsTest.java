@@ -222,6 +222,8 @@ class VisualAuthoringAppJsTest {
                   'operatorLibraryFieldLabel',
                   'schemaDynamicSurfaceCount',
                   'operatorDiagnosticsForSpec',
+                  'operatorPaletteCapabilityBadges',
+                  'operatorPaletteCapabilityLabels',
                   'operatorPaletteDiagnosticBadges',
                   'operatorMatchesPaletteFilter',
                   'paletteSearchTokens',
@@ -669,6 +671,23 @@ class VisualAuthoringAppJsTest {
                   }
                 };
                 const paletteSchemaSearchValues = context.operatorPaletteSearchValues(paletteSearchSpec);
+                const suspendablePaletteSpec = {
+                  kind: 'custom',
+                  label: 'Await Approval',
+                  operatorRef: 'awaitApproval',
+                  sourceKind: 'java-suspendable-operator',
+                  tags: ['java'],
+                  capabilities: {
+                    effect: 'WRITE_EXTERNAL',
+                    streaming: false,
+                    requiresSecrets: true
+                  },
+                  inputPorts: [],
+                  outputPorts: [],
+                  configSchema: { schema: { type: 'object', properties: {} } }
+                };
+                const suspendableCapabilityLabels = context.operatorPaletteCapabilityLabels(suspendablePaletteSpec).join('|');
+                const suspendableCapabilityBadges = context.operatorPaletteCapabilityBadges(suspendablePaletteSpec);
                 const libraryProfile = context.operatorLibraryProfile({
                   libraryId: 'risk-profile',
                   version: '2.1.0',
@@ -820,6 +839,8 @@ class VisualAuthoringAppJsTest {
                 const paletteMultiTokenMatch = context.operatorMatchesPaletteFilter('risk:eligibility', paletteSearchSpec);
                 context.state.paletteSearch = 'risk inputs.customer.id missingField';
                 const paletteMultiTokenMiss = context.operatorMatchesPaletteFilter('risk:eligibility', paletteSearchSpec);
+                context.state.paletteSearch = 'suspendable write-external secret';
+                const paletteCapabilitySearchMatch = context.operatorMatchesPaletteFilter('awaitApproval', suspendablePaletteSpec);
                 context.state.paletteSearch = '';
                 context.contextSourceHandles = () => [
                   { nodeId: '__ctx', path: 'name', type: 'string' },
@@ -1125,6 +1146,9 @@ class VisualAuthoringAppJsTest {
                   ['palette search tokens', normalizedPaletteTokens, 'risk|score'],
                   ['palette multi-token match', String(paletteMultiTokenMatch), 'true'],
                   ['palette multi-token miss', String(paletteMultiTokenMiss), 'false'],
+                  ['palette capability labels', suspendableCapabilityLabels, 'suspendable|requires secret|write-external'],
+                  ['palette capability badges', String(suspendableCapabilityBadges.includes('suspendable') && suspendableCapabilityBadges.includes('requires secret')), 'true'],
+                  ['palette capability search match', String(paletteCapabilitySearchMatch), 'true'],
                   ['library profile operator count', libraryProfile.operatorCount, 2],
                   ['library profile input count', libraryProfile.inputPortCount, 1],
                   ['library profile output count', libraryProfile.outputPortCount, 1],

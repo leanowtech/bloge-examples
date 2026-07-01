@@ -75,7 +75,8 @@ public class OperatorLibraryValidator {
             "resource-descriptor",
             "visual-publication",
             "java-operator",
-            "java-streaming-operator"
+            "java-streaming-operator",
+            "java-suspendable-operator"
     );
     private static final Set<String> SUPPORTED_IMPORTED_SOURCE_KINDS = Set.of(
             "user-library"

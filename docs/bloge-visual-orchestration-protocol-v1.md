@@ -287,7 +287,7 @@ MVP schema kind：
 | `operatorVersion` | 否 | 用户导入 catalog 时必须建议填写 |
 | `fingerprint` | 发布时是 | 可由服务端计算 |
 | `display` | 是 | 画布展示所需 |
-| `source.kind` | 是 | `java-operator`、`resource-descriptor`、`subgraph`、`remote-worker`、`ai-tool`、`user-defined` |
+| `source.kind` | 是 | 当前实现支持 `java-operator`、`java-streaming-operator`、`java-suspendable-operator`、`resource-descriptor`、`visual-publication`、`user-library`；平台化草案继续预留 `subgraph`、`remote-worker`、`ai-tool` |
 | `ports.inputs` | 是 | 至少一个输入端口，常规算子为 `input` |
 | `ports.outputs` | 是 | 至少一个输出端口，常规算子为 `output` |
 | `configSchema` | 否 | timeout/retry/fallback 之外的算子配置；导入时必须校验 schema 结构，draft 校验时必须约束 `node.config` |
@@ -301,7 +301,11 @@ MVP schema kind：
 | kind | 是否可直接执行 | lowering 要求 | 备注 |
 | --- | --- | --- | --- |
 | `java-operator` | 是 | 可省略 | `operatorRef` 直接对应 runtime registry |
+| `java-streaming-operator` | 是 | 可省略 | `operatorRef` 对应 runtime streaming operator；catalog 标记 streaming capability |
+| `java-suspendable-operator` | 是 | 可省略 | `operatorRef` 对应 runtime suspendable operator；当前画布先暴露 source kind/tag，完整 suspend/resume authoring 属后续阶段 |
 | `resource-descriptor` | 否 | 必填 | lower 到 `httpResource` |
+| `visual-publication` | 否 | 必填 | lower 到 frozen visual publication executor |
+| `user-library` | 取决于 lowering | 必填 | 用户导入算子库使用的唯一可写 source kind；系统 source kind 不能由用户库伪造 |
 | `subgraph` | 否 | 必填 | lower 到 subgraph 调用或 inline graph |
 | `remote-worker` | 视 runtime 而定 | 通常必填 | durable 场景更合适 |
 | `ai-tool` | 视 runtime 而定 | 通常必填 | 必须有 structured output schema |

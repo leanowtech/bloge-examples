@@ -1789,6 +1789,7 @@ function renderOperatorPalette() {
       <span>${escapeHtml(spec.kind)}</span>
       <small>${escapeHtml(operatorPaletteContractSummary(spec))}</small>
       ${operatorPaletteTagBadges(spec)}
+      ${operatorPaletteCapabilityBadges(spec)}
       ${operatorPaletteDiagnosticBadges(spec)}
     </button>
   `).join('') || '<div class="palette-empty">No matching operators.</div>';
@@ -1887,6 +1888,7 @@ function operatorMatchesPaletteFilter(type, spec) {
     spec.description,
     spec.sourceKind,
     ...operatorPaletteSearchValues(spec),
+    ...operatorPaletteCapabilityLabels(spec),
     ...tags
   ]
     .filter(Boolean)
@@ -1917,6 +1919,35 @@ function operatorPaletteTagBadges(spec) {
   }
   return `<div class="operator-card-tags">${tags.map((tag) =>
     `<em>${escapeHtml(tag)}</em>`).join('')}</div>`;
+}
+
+function operatorPaletteCapabilityBadges(spec) {
+  const labels = operatorPaletteCapabilityLabels(spec).slice(0, 4);
+  if (!labels.length) {
+    return '';
+  }
+  return `<div class="operator-card-tags operator-card-capabilities">${labels.map((label) =>
+    `<em>${escapeHtml(label)}</em>`).join('')}</div>`;
+}
+
+function operatorPaletteCapabilityLabels(spec) {
+  const labels = [];
+  const sourceKind = String(spec?.sourceKind || '').trim().toLowerCase();
+  const capabilities = spec?.capabilities || {};
+  if (sourceKind === 'java-streaming-operator' || capabilities.streaming === true) {
+    labels.push('streaming');
+  }
+  if (sourceKind === 'java-suspendable-operator') {
+    labels.push('suspendable');
+  }
+  if (capabilities.requiresSecrets === true) {
+    labels.push('requires secret');
+  }
+  const effect = String(capabilities.effect || '').trim().toUpperCase();
+  if (effect && effect !== 'PURE') {
+    labels.push(effect.toLowerCase().replaceAll('_', '-'));
+  }
+  return [...new Set(labels)];
 }
 
 function operatorPaletteDiagnosticBadges(spec) {

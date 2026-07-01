@@ -88,9 +88,10 @@ dragged as schema-aware business operators and lowered back to `httpResource` at
 runtime. The palette can filter large catalogs by operator kind, tag, schema
 field names, port-qualified field names, config field names, and field types.
 Java operators registered in the Spring `OperatorRegistry` also enter
-the same catalog from BLOGE metadata and run through a typed-input adapter, so a
-visual DSL map can execute Java DTO/record operators without forcing authors to
-rewrite them as `Map<String,Object>` operators. Published visual graphs enter
+the same catalog from BLOGE metadata, with streaming and suspendable operators
+marked as distinct Java source kinds, and run through a typed-input adapter, so
+a visual DSL map can execute Java DTO/record operators without forcing authors
+to rewrite them as `Map<String,Object>` operators. Published visual graphs enter
 the same palette as `publication:<publicationId>` subgraph operators: their
 frozen graph input schema becomes the node input port, their saved output
 selection becomes the node output port, named output paths such as
@@ -114,7 +115,7 @@ dependency, or route relations from that impact view, search the operator palett
 queries across label, operator ref, description, source kind/resource id, tag,
 input/output/config schema fields, port-qualified field names, or field types and filter it by operator type/tag for
 larger imported catalogs, inspect each palette card's input/output port and
-schema-field summary before dragging, inspect the selected node's contract
+schema-field summary plus streaming/suspendable/secret/effect capability badges before dragging, inspect the selected node's contract
 coverage summary for input/output ports, required binding coverage, and config
 field counts, inspect the selected node's output connectability across data,
 config, dependency, and route targets with ready/already-wired/blocked schema

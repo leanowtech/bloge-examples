@@ -4,7 +4,9 @@ import com.leanowtech.bloge.core.operator.Idempotency;
 import com.leanowtech.bloge.core.operator.Operator;
 import com.leanowtech.bloge.core.operator.OperatorContext;
 import com.leanowtech.bloge.core.operator.OperatorMeta;
+import com.leanowtech.bloge.core.operator.OperatorResult;
 import com.leanowtech.bloge.core.operator.SideEffectType;
+import com.leanowtech.bloge.core.operator.SuspendableOperator;
 import com.leanowtech.bloge.core.schema.OpaqueSchema;
 import com.leanowtech.bloge.core.schema.SchemaAware;
 import com.leanowtech.bloge.core.schema.SchemaDescriptor;
@@ -77,6 +79,29 @@ class JavaOperatorInventoryProjectorTest {
     }
 
     @Test
+    void projectsSuspendableJavaOperatorAsExplicitCatalogSourceKind() {
+        DefaultOperatorRegistry registry = new DefaultOperatorRegistry();
+        registry.registerRaw("awaitApproval", new AwaitApprovalOperator());
+
+        OperatorDefinition operator = new JavaOperatorInventoryProjector(registry).project().getFirst();
+
+        assertThat(operator.operatorRef()).isEqualTo("awaitApproval");
+        assertThat(operator.source().kind()).isEqualTo("java-suspendable-operator");
+        assertThat(operator.display().tags()).contains("java", "suspendable", "human-task");
+        assertThat(operator.capabilities().streaming()).isFalse();
+        assertThat(operator.capabilities().effect()).isEqualTo("WRITE_EXTERNAL");
+        assertThat(operator.capabilities().idempotency()).isEqualTo("NON_IDEMPOTENT");
+        assertThat(operator.lowering().mode()).isEqualTo("native");
+        assertThat(operator.lowering().operatorRef()).isEqualTo("awaitApproval");
+        assertThat(operator.ports().outputs().getFirst().description())
+                .startsWith("Java suspendable output type:");
+        assertThat(VisualSchemaValidator.validateEnvelope(
+                operator.ports().outputs().getFirst().schema(), "/output"))
+                .filteredOn(VisualDiagnostic::error)
+                .isEmpty();
+    }
+
+    @Test
     void skipsReservedBuiltInOperatorRefsAlreadyDeclaredByVisualCatalog() {
         DefaultOperatorRegistry registry = new DefaultOperatorRegistry();
         registry.register("httpResource", new QuotePriceOperator());
@@ -88,6 +113,12 @@ class JavaOperatorInventoryProjectorTest {
     }
 
     private record QuoteResponse(String sku, double price, String currency) {
+    }
+
+    private record ApprovalRequest(String applicationId) {
+    }
+
+    private record ApprovalResponse(String decision) {
     }
 
     @OperatorMeta(
@@ -127,6 +158,28 @@ class JavaOperatorInventoryProjectorTest {
         @Override
         public SchemaDescriptor outputSchema() {
             return new UnionSchema(List.of(new TypedSchema(String.class), new TypedSchema(Integer.class)), "");
+        }
+    }
+
+    @OperatorMeta(
+            tags = {"human-task"},
+            description = "Suspends while waiting for manual approval."
+    )
+    private static final class AwaitApprovalOperator
+            implements SuspendableOperator<ApprovalRequest, ApprovalResponse> {
+        @Override
+        public OperatorResult<ApprovalResponse> execute(ApprovalRequest input, OperatorContext ctx) {
+            return OperatorResult.suspend("await-approval");
+        }
+
+        @Override
+        public Idempotency idempotency() {
+            return Idempotency.NOT_IDEMPOTENT;
+        }
+
+        @Override
+        public SideEffectType sideEffectType() {
+            return SideEffectType.WRITE;
         }
     }
 }

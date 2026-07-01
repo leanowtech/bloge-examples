@@ -4,6 +4,7 @@ import com.leanowtech.bloge.core.operator.Idempotency;
 import com.leanowtech.bloge.core.operator.Operator;
 import com.leanowtech.bloge.core.operator.SideEffectType;
 import com.leanowtech.bloge.core.operator.StreamingOperator;
+import com.leanowtech.bloge.core.operator.SuspendableOperator;
 import com.leanowtech.bloge.core.schema.CollectionSchema;
 import com.leanowtech.bloge.core.schema.FieldDescriptor;
 import com.leanowtech.bloge.core.schema.MapSchema;
@@ -122,12 +123,14 @@ public class JavaOperatorInventoryProjector {
         diagnostics.addAll(input.diagnostics());
         diagnostics.addAll(output.diagnostics());
         boolean streaming = operator instanceof StreamingOperator<?, ?> || metadata.outputSchema() instanceof StreamSchema;
+        boolean suspendable = operator instanceof SuspendableOperator<?, ?>;
         return new OperatorDefinition(
                 "bloge.visualOperator.v1",
                 name,
                 "1.0.0",
-                new OperatorDefinition.Display(displayName(name), details.description(), tags(details, streaming)),
-                new OperatorDefinition.Source(streaming ? "java-streaming-operator" : "java-operator",
+                new OperatorDefinition.Display(displayName(name), details.description(),
+                        tags(details, streaming, suspendable)),
+                new OperatorDefinition.Source(javaSourceKind(streaming, suspendable),
                         "", "", "", false),
                 new OperatorDefinition.Ports(
                         List.of(new OperatorDefinition.Port("input",
@@ -137,7 +140,7 @@ public class JavaOperatorInventoryProjector {
                         List.of(new OperatorDefinition.Port("output",
                                 new SchemaEnvelope(SchemaEnvelope.JSON_SCHEMA, "2020-12", output.schema()),
                                 true,
-                                outputDescription(metadata, streaming)))
+                                outputDescription(metadata, streaming, suspendable)))
                 ),
                 SchemaEnvelope.opaque(),
                 capabilities(operator, streaming),
@@ -165,6 +168,9 @@ public class JavaOperatorInventoryProjector {
         if (operator instanceof StreamingOperator<?, ?> streaming) {
             return streaming.sideEffectType();
         }
+        if (operator instanceof SuspendableOperator<?, ?> suspendable) {
+            return suspendable.sideEffectType();
+        }
         return SideEffectType.MIXED;
     }
 
@@ -174,6 +180,9 @@ public class JavaOperatorInventoryProjector {
         }
         if (operator instanceof StreamingOperator<?, ?> streaming) {
             return streaming.idempotency();
+        }
+        if (operator instanceof SuspendableOperator<?, ?> suspendable) {
+            return suspendable.idempotency();
         }
         return Idempotency.UNKNOWN;
     }
@@ -194,11 +203,21 @@ public class JavaOperatorInventoryProjector {
         };
     }
 
-    private static List<String> tags(OperatorAnnotationDetails details, boolean streaming) {
+    private static String javaSourceKind(boolean streaming, boolean suspendable) {
+        if (streaming) {
+            return "java-streaming-operator";
+        }
+        return suspendable ? "java-suspendable-operator" : "java-operator";
+    }
+
+    private static List<String> tags(OperatorAnnotationDetails details, boolean streaming, boolean suspendable) {
         LinkedHashSet<String> tags = new LinkedHashSet<>();
         tags.add("java");
         if (streaming) {
             tags.add("streaming");
+        }
+        if (suspendable) {
+            tags.add("suspendable");
         }
         tags.addAll(details.tags());
         return List.copyOf(tags);
@@ -209,9 +228,11 @@ public class JavaOperatorInventoryProjector {
         return input == null ? "Java operator input." : "Java input type: " + input.getName();
     }
 
-    private static String outputDescription(OperatorMetadata metadata, boolean streaming) {
+    private static String outputDescription(OperatorMetadata metadata, boolean streaming, boolean suspendable) {
         Class<?> output = metadata.outputClass();
-        String prefix = streaming ? "Java streaming output chunk type: " : "Java output type: ";
+        String prefix = streaming
+                ? "Java streaming output chunk type: "
+                : (suspendable ? "Java suspendable output type: " : "Java output type: ");
         return output == null ? "Java operator output." : prefix + output.getName();
     }
 

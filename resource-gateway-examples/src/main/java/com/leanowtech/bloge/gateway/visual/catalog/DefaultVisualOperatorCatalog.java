@@ -234,7 +234,9 @@ public class DefaultVisualOperatorCatalog implements VisualOperatorCatalog {
         if ("visual-publication".equals(kind)) {
             return "visual publication operator";
         }
-        if ("java-operator".equals(kind) || "java-streaming-operator".equals(kind)) {
+        if ("java-operator".equals(kind)
+                || "java-streaming-operator".equals(kind)
+                || "java-suspendable-operator".equals(kind)) {
             return "runtime Java operator";
         }
         if ("user-library".equals(kind)) {
