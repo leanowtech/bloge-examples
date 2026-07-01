@@ -553,11 +553,18 @@ public class VisualConnectionCheckService {
     }
 
     private static Map<String, Object> additionalPropertySchema(Map<String, Object> schema) {
-        Object additional = schema.get("additionalProperties");
-        if (Boolean.TRUE.equals(additional)) {
+        Object residual = residualPropertiesPolicy(schema);
+        if (Boolean.TRUE.equals(residual)) {
             return Map.of();
         }
-        return objectSchema(additional);
+        return objectSchema(residual);
+    }
+
+    private static Object residualPropertiesPolicy(Map<String, Object> schema) {
+        if (schema.containsKey("additionalProperties")) {
+            return schema.get("additionalProperties");
+        }
+        return schema.get("unevaluatedProperties");
     }
 
     private static Map<String, Object> propertiesOf(Map<String, Object> schema) {

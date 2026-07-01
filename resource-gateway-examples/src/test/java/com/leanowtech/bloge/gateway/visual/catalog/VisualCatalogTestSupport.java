@@ -355,6 +355,56 @@ public final class VisualCatalogTestSupport {
         );
     }
 
+    public static OperatorLibrary dynamicUnevaluatedDuplicateInputLibrary() {
+        SchemaEnvelope dynamicIntegerPort = new SchemaEnvelope(SchemaEnvelope.JSON_SCHEMA, "2020-12", Map.of(
+                "type", "object",
+                "properties", Map.of(),
+                "unevaluatedProperties", Map.of("type", "integer")
+        ));
+        OperatorDefinition operator = new OperatorDefinition(
+                "bloge.visualOperator.v1",
+                "risk:dynamicMapMerge",
+                "1.0.0",
+                new OperatorDefinition.Display("Dynamic map merge",
+                        "Consumes duplicate dynamic field names through separate input ports.",
+                        List.of("risk", "map")),
+                new OperatorDefinition.Source("user-library", "", "", "", true),
+                new OperatorDefinition.Ports(
+                        List.of(
+                                new OperatorDefinition.Port("primary", dynamicIntegerPort, true,
+                                        "Primary dynamic facts."),
+                                new OperatorDefinition.Port("secondary", dynamicIntegerPort, true,
+                                        "Secondary dynamic facts.")
+                        ),
+                        List.of(new OperatorDefinition.Port("output",
+                                SchemaEnvelope.object(Map.of(
+                                        "primaryScore", Map.of("type", "integer"),
+                                        "secondaryScore", Map.of("type", "integer")
+                                ), List.of()),
+                                true,
+                                "Merged dynamic scores."))
+                ),
+                SchemaEnvelope.opaque(),
+                OperatorDefinition.Capabilities.pure(),
+                new OperatorDefinition.Lowering("transform", "transform", Map.of(
+                        "assignments", Map.of(
+                                "primaryScore", "{{input.primary.dynamicScore}}",
+                                "secondaryScore", "{{input.secondary.dynamicScore}}"
+                        )
+                )),
+                List.of()
+        );
+        return new OperatorLibrary(
+                "bloge.visualOperatorLibrary.v1",
+                "risk-dynamic-map-merge",
+                "Dynamic map merge operators",
+                "1.0.0",
+                "risk-team",
+                "ACTIVE",
+                List.of(operator)
+        );
+    }
+
     public static OperatorDefinition customerFactsOperator() {
         Map<String, Object> customerProperties = new LinkedHashMap<>();
         customerProperties.put("id", Map.of("type", "string"));

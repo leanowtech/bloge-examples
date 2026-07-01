@@ -3619,6 +3619,12 @@ function renderSelectedOperatorEditor() {
     });
   }
 
+  for (const button of target.querySelectorAll('[data-add-dynamic-input]')) {
+    button.addEventListener('click', () => {
+      addDynamicInputBinding(node, button);
+    });
+  }
+
   for (const input of target.querySelectorAll('[data-config-field]:not([data-config-source]):not([data-config-expression])')) {
     const eventName = input.type === 'checkbox' || input.tagName === 'SELECT' ? 'change' : 'input';
     input.addEventListener(eventName, () => {
@@ -4371,8 +4377,19 @@ function configValueMatchesSchema(value, schema) {
 
 function renderInputBindingsPanel(node) {
   const targets = targetHandlesForNode(node);
+  const dynamicInputControls = renderDynamicInputBindingControls(node);
   if (!targets.length) {
-    return '';
+    return dynamicInputControls
+      ? `
+        <div class="binding-panel">
+          <div class="binding-panel-title">
+            <span>Input Bindings</span>
+            <small>schema checked</small>
+          </div>
+          ${dynamicInputControls}
+        </div>
+      `
+      : '';
   }
   return `
     <div class="binding-panel">
@@ -4381,8 +4398,87 @@ function renderInputBindingsPanel(node) {
         <small>schema checked</small>
       </div>
       ${targets.map((target) => renderInputBindingRow(node, target)).join('')}
+      ${dynamicInputControls}
     </div>
   `;
+}
+
+function renderDynamicInputBindingControls(node) {
+  if (node.type !== 'customOperator') {
+    return '';
+  }
+  const spec = specForNode(node);
+  const ports = inputPortsForSpec(spec).filter((port) => schemaAllowsDynamicInputPath(port.schema));
+  if (!ports.length) {
+    return '';
+  }
+  const options = ports.map((port) =>
+    `<option value="${escapeHtml(port.name)}">${escapeHtml(port.name)}</option>`
+  ).join('');
+  return `
+    <div class="operator-fields" data-dynamic-input-authoring>
+      <label>
+        <span>Port</span>
+        <select data-dynamic-input-port aria-label="Dynamic input port">${options}</select>
+      </label>
+      <label>
+        <span>Input path</span>
+        <input data-dynamic-input-path aria-label="Dynamic input path">
+      </label>
+      <button class="secondary compact" type="button" data-add-dynamic-input>Add</button>
+    </div>
+  `;
+}
+
+function schemaAllowsDynamicInputPath(schemaEnvelope) {
+  const schema = schemaEnvelope?.schema || {};
+  const type = rawSchemaType(schema);
+  const objectLike = type === 'object'
+    || schema.properties
+    || Object.prototype.hasOwnProperty.call(schema, 'additionalProperties')
+    || Object.prototype.hasOwnProperty.call(schema, 'unevaluatedProperties')
+    || schema.patternProperties;
+  if (!objectLike) {
+    return false;
+  }
+  const residual = residualPropertiesPolicy(schema);
+  if (residual === true || (residual && typeof residual === 'object' && !Array.isArray(residual))) {
+    return true;
+  }
+  const patterns = schemaPatternProperties(schema);
+  return Boolean(patterns && Object.keys(patterns).length);
+}
+
+function addDynamicInputBinding(node, button) {
+  const container = button.closest('[data-dynamic-input-authoring]');
+  if (!container) {
+    return;
+  }
+  const portName = container.querySelector('[data-dynamic-input-port]')?.value || '';
+  const path = String(container.querySelector('[data-dynamic-input-path]')?.value || '').trim();
+  if (!path || !isDslPathSafe(path)) {
+    setConnectionMessage('Input path must be a DSL-safe field path.', 'error');
+    return;
+  }
+  const spec = specForNode(node);
+  const portSchema = schemaForPort(spec, 'target', portName);
+  if (!schemaAtPath(portSchema, path)) {
+    setConnectionMessage('Input path is not accepted by the target schema.', 'error');
+    return;
+  }
+  const key = inputKeyForPortPath(spec, portName, path);
+  node.customInputs = node.customInputs || {};
+  node.customInputPorts = node.customInputPorts || {};
+  node.customInputPaths = node.customInputPaths || {};
+  if (!Object.prototype.hasOwnProperty.call(node.customInputs, key)) {
+    node.customInputs[key] = '';
+  }
+  node.customInputPorts[key] = portName;
+  node.customInputPaths[key] = path;
+  setConnectionMessage(`Added ${node.id}.${portName}.${path}.`, 'success');
+  syncComposerFromBuilder({ render: false });
+  renderSelectedOperatorEditor();
+  renderDiagram();
 }
 
 function renderInputBindingRow(node, target) {
@@ -6182,12 +6278,18 @@ function targetHandlesForNode(node) {
       const fields = dslSafeSchemaFieldDescriptors(port.schema);
       const targets = fields.length
         ? fields
-        : Object.keys(node.customInputs || {}).map((path) => ({
-          path,
-          schema: schemaAtPath(port.schema, path) || {},
-          required: requiredInputNamesForPort(port).includes(path),
-          dslPathSafe: isDslPathSafe(path)
-        })).filter((field) => field.dslPathSafe);
+        : Object.keys(node.customInputs || {})
+          .filter((key) => customInputPortForKey(node, spec, key) === portName)
+          .map((key) => {
+            const path = customInputPathForKey(node, key);
+            return {
+              key,
+              path,
+              schema: schemaAtPath(port.schema, path) || {},
+              required: requiredInputNamesForPort(port).includes(path),
+              dslPathSafe: isDslPathSafe(path)
+            };
+          }).filter((field) => field.dslPathSafe && schemaAtPath(port.schema, field.path));
       return [
         {
           nodeId: node.id,
@@ -6202,7 +6304,7 @@ function targetHandlesForNode(node) {
         ...targets.map((field) => ({
           nodeId: node.id,
           port: portName,
-          key: inputKeyForPortPath(spec, portName, field.path),
+          key: field.key || inputKeyForPortPath(spec, portName, field.path),
           path: field.path,
           type: schemaType(field.schema),
           schema: field.schema,

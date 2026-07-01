@@ -756,6 +756,64 @@ class VisualAuthoringBrowserDomTest {
                 .contains("\"targetPath\": \"id\"");
     }
 
+    @Test
+    void composerAddsAndExportsDuplicateDynamicUnevaluatedInputPathsInRealBrowser()
+            throws JsonProcessingException {
+        driver = newChromeDriverOrSkip();
+        WebDriverWait wait = new WebDriverWait(driver, WAIT_TIMEOUT);
+        driver.get("http://localhost:" + port + "/examples/gateway");
+
+        waitForComposer(wait);
+        wait.until(ExpectedConditions.visibilityOfElementLocated(By.id("operator-palette")));
+        setControlValue(driver.findElement(By.id("graph-input-schema")), """
+                {
+                  "type": "object",
+                  "properties": {},
+                  "unevaluatedProperties": { "type": "integer" }
+                }
+                """);
+        waitForText(wait, By.id("graph-input-schema-status"), "Graph input schema is valid");
+        setControlValue(driver.findElement(By.id("composer-context")), """
+                {
+                  "dynamicScore": 720
+                }
+                """);
+
+        importOperatorLibrary(wait, VisualCatalogTestSupport.dynamicUnevaluatedDuplicateInputLibrary());
+        dragOperatorToCanvas(wait, "Dynamic map merge", "risk:dynamicMapMerge",
+                "riskDynamicMapMerge", 140, 120);
+
+        addDynamicInputBinding(wait, "primary", "dynamicScore");
+        addDynamicInputBinding(wait, "secondary", "dynamicScore");
+
+        selectByValue(wait,
+                By.cssSelector("[data-binding-source][data-binding-port='primary'][data-binding-path='dynamicScore']"),
+                bindingSourceValue("__ctx", "ctx", "dynamicScore"));
+        waitForText(wait, By.id("connection-status"),
+                "Connected ctx.dynamicScore -> riskDynamicMapMerge.primary.dynamicScore");
+        selectByValue(wait,
+                By.cssSelector("[data-binding-source][data-binding-port='secondary'][data-binding-path='dynamicScore']"),
+                bindingSourceValue("__ctx", "ctx", "dynamicScore"));
+        waitForText(wait, By.id("connection-status"),
+                "Connected ctx.dynamicScore -> riskDynamicMapMerge.secondary.dynamicScore");
+
+        waitForValue(wait, By.id("composer-dsl"), "primaryScore = ctx.dynamicScore");
+        waitForValue(wait, By.id("composer-dsl"), "secondaryScore = ctx.dynamicScore");
+
+        click(wait, By.id("save-draft"));
+        waitForText(wait, By.id("draft-status"), "Saved");
+        click(wait, By.id("export-draft"));
+        wait.until(ignored -> valueOf(By.id("draft-bundle-json"))
+                .contains("\"schemaVersion\": \"bloge.visualGraphDraftExport.v1\""));
+        String bundle = valueOf(By.id("draft-bundle-json"));
+        assertThat(bundle)
+                .contains("\"primary.dynamicScore\"")
+                .contains("\"secondary.dynamicScore\"")
+                .contains("\"targetPort\": \"primary\"")
+                .contains("\"targetPort\": \"secondary\"")
+                .contains("\"targetPath\": \"dynamicScore\"");
+    }
+
     private WebDriver newChromeDriverOrSkip() {
         ChromeOptions options = new ChromeOptions();
         options.addArguments(
@@ -856,6 +914,16 @@ class VisualAuthoringBrowserDomTest {
                 port,
                 path
         ));
+    }
+
+    private void addDynamicInputBinding(WebDriverWait wait, String port, String path) {
+        selectByValue(wait, By.cssSelector("[data-dynamic-input-port]"), port);
+        setControlValue(wait.until(ExpectedConditions.elementToBeClickable(
+                By.cssSelector("[data-dynamic-input-path]"))), path);
+        click(wait, By.cssSelector("[data-add-dynamic-input]"));
+        wait.until(ExpectedConditions.visibilityOfElementLocated(By.cssSelector(
+                "[data-binding-source][data-binding-port='" + port + "'][data-binding-path='" + path + "']"
+        )));
     }
 
     private static OperatorLibrary unsafeOutputLibrary() {

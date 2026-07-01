@@ -557,6 +557,43 @@ class VisualConnectionCheckServiceTest {
     }
 
     @Test
+    void acceptsContextPickerBindingThroughUnevaluatedPropertiesSchema() {
+        VisualConnectionCheckService service = connectionService(VisualCatalogTestSupport
+                .catalogWithLoanApplicantResourceAndLibrary(VisualCatalogTestSupport.eligibilityLibrary("integer")));
+        GraphDraft draft = resourceEligibilityDraft(dynamicUnevaluatedGraphInputSchema(Map.of("type", "integer")),
+                List.of());
+
+        VisualConnectionCheckResult result = service.check(new VisualConnectionCheckRequest(
+                draft,
+                new GraphDraft.Endpoint("__ctx", "ctx", "dynamicScore"),
+                new GraphDraft.Endpoint("eligibility", "inputs", "score"),
+                "data"
+        ));
+
+        assertThat(result.accepted()).as("diagnostics: %s", result.diagnostics()).isTrue();
+        assertThat(result.diagnostics()).isEmpty();
+        assertThat(result.bindingKey()).isEqualTo("score");
+    }
+
+    @Test
+    void returnsPortQualifiedBindingKeyForDuplicateUnevaluatedInputPathPorts() {
+        VisualConnectionCheckService service = connectionService(VisualCatalogTestSupport
+                .catalogWithLibrary(VisualCatalogTestSupport.dynamicUnevaluatedDuplicateInputLibrary()));
+        GraphDraft draft = dynamicUnevaluatedDuplicateInputDraft();
+
+        VisualConnectionCheckResult result = service.check(new VisualConnectionCheckRequest(
+                draft,
+                new GraphDraft.Endpoint("__ctx", "ctx", "dynamicScore"),
+                new GraphDraft.Endpoint("merge", "primary", "dynamicScore"),
+                "data"
+        ));
+
+        assertThat(result.accepted()).as("diagnostics: %s", result.diagnostics()).isTrue();
+        assertThat(result.diagnostics()).isEmpty();
+        assertThat(result.bindingKey()).isEqualTo("primary.dynamicScore");
+    }
+
+    @Test
     void rejectsContextPickerBindingWhenDynamicPropertyNameViolatesGraphInputSchema() {
         VisualConnectionCheckService service = connectionService(VisualCatalogTestSupport
                 .catalogWithLoanApplicantResourceAndLibrary(VisualCatalogTestSupport.eligibilityLibrary("integer")));
@@ -718,6 +755,14 @@ class VisualConnectionCheckServiceTest {
                 "type", "object",
                 "properties", Map.of(),
                 "additionalProperties", additionalProperties
+        ));
+    }
+
+    private static SchemaEnvelope dynamicUnevaluatedGraphInputSchema(Object unevaluatedProperties) {
+        return new SchemaEnvelope(SchemaEnvelope.JSON_SCHEMA, "2020-12", Map.of(
+                "type", "object",
+                "properties", Map.of(),
+                "unevaluatedProperties", unevaluatedProperties
         ));
     }
 
@@ -890,6 +935,31 @@ class VisualConnectionCheckServiceTest {
                 List.of(),
                 Map.of(),
                 new GraphDraft.OutputSelection("policy", "")
+        );
+    }
+
+    private static GraphDraft dynamicUnevaluatedDuplicateInputDraft() {
+        return new GraphDraft(
+                "",
+                "",
+                0,
+                "dynamicMapMerge",
+                "",
+                "",
+                "",
+                "",
+                dynamicUnevaluatedGraphInputSchema(Map.of("type", "integer")),
+                List.of(new GraphDraft.DraftNode(
+                        "merge",
+                        "risk:dynamicMapMerge",
+                        "",
+                        Map.of(),
+                        Map.of(),
+                        null
+                )),
+                List.of(),
+                Map.of(),
+                new GraphDraft.OutputSelection("merge", "")
         );
     }
 
