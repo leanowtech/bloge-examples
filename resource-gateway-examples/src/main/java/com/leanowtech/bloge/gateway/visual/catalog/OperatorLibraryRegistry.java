@@ -2,6 +2,7 @@ package com.leanowtech.bloge.gateway.visual.catalog;
 
 import java.util.Collection;
 import java.util.List;
+import java.util.Objects;
 import java.util.Optional;
 
 /**
@@ -45,7 +46,14 @@ public interface OperatorLibraryRegistry {
         return all().stream()
                 .filter(library -> library.visibleInCatalog(includeDeprecated))
                 .flatMap(library -> library.operators().stream())
+                .filter(Objects::nonNull)
+                .filter(OperatorLibraryRegistry::hasConcretePorts)
                 .toList();
+    }
+
+    private static boolean hasConcretePorts(OperatorDefinition operator) {
+        return operator.ports().inputs().stream().allMatch(Objects::nonNull)
+                && operator.ports().outputs().stream().allMatch(Objects::nonNull);
     }
 
     /**

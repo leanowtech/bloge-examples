@@ -84,6 +84,128 @@ class DefaultVisualOperatorCatalogTest {
     }
 
     @Test
+    void skipsNullOperatorsFromStoredLibraryDefinitions() {
+        InMemoryOperatorLibraryRegistry libraries = new InMemoryOperatorLibraryRegistry();
+        libraries.upsert(new OperatorLibrary(
+                "bloge.visualOperatorLibrary.v1",
+                "risk-policy",
+                "Risk policy operators",
+                "1.0.0",
+                "risk-team",
+                "ACTIVE",
+                java.util.Arrays.asList(null, VisualCatalogTestSupport.eligibilityOperator("integer"))
+        ));
+        DefaultVisualOperatorCatalog catalog = new DefaultVisualOperatorCatalog(
+                VisualCatalogTestSupport.emptyResourceRegistry(),
+                new InMemoryResourceDesignContractRegistry(),
+                new ResourceVirtualOperatorProjector(),
+                libraries
+        );
+
+        assertThat(catalog.list(OperatorCatalogQuery.all()))
+                .extracting(OperatorDefinition::operatorRef)
+                .contains("risk:eligibility");
+        assertThat(catalog.diagnostics(OperatorCatalogQuery.all()))
+                .anySatisfy(diagnostic -> {
+                    assertThat(diagnostic.level()).isEqualTo("WARNING");
+                    assertThat(diagnostic.code()).isEqualTo("visual.catalog.operatorHiddenMalformed");
+                    assertThat(diagnostic.target()).isEqualTo("/libraries/risk-policy/operators/0");
+                });
+    }
+
+    @Test
+    void skipsOperatorsWithNullPortsFromStoredLibraryDefinitions() {
+        OperatorDefinition base = VisualCatalogTestSupport.eligibilityOperator("integer");
+        OperatorDefinition malformed = new OperatorDefinition(
+                base.schemaVersion(),
+                "risk:malformedPorts",
+                base.operatorVersion(),
+                base.display(),
+                base.source(),
+                new OperatorDefinition.Ports(base.ports().inputs(),
+                        java.util.Arrays.asList(null, base.ports().outputs().getFirst())),
+                base.configSchema(),
+                base.capabilities(),
+                base.policy(),
+                base.lowering(),
+                base.diagnostics()
+        );
+        InMemoryOperatorLibraryRegistry libraries = new InMemoryOperatorLibraryRegistry();
+        libraries.upsert(new OperatorLibrary(
+                "bloge.visualOperatorLibrary.v1",
+                "risk-policy",
+                "Risk policy operators",
+                "1.0.0",
+                "risk-team",
+                "ACTIVE",
+                List.of(malformed)
+        ));
+        DefaultVisualOperatorCatalog catalog = new DefaultVisualOperatorCatalog(
+                VisualCatalogTestSupport.emptyResourceRegistry(),
+                new InMemoryResourceDesignContractRegistry(),
+                new ResourceVirtualOperatorProjector(),
+                libraries
+        );
+
+        assertThat(catalog.list(OperatorCatalogQuery.all()))
+                .extracting(OperatorDefinition::operatorRef)
+                .doesNotContain("risk:malformedPorts");
+        assertThat(catalog.diagnostics(OperatorCatalogQuery.all()))
+                .anySatisfy(diagnostic -> {
+                    assertThat(diagnostic.level()).isEqualTo("WARNING");
+                    assertThat(diagnostic.code()).isEqualTo("visual.catalog.operatorHiddenMalformed");
+                    assertThat(diagnostic.message()).isEqualTo(
+                            "Operator 'risk:malformedPorts' from library 'risk-policy' has a null outputs port hidden from the visual catalog.");
+                    assertThat(diagnostic.target()).isEqualTo("/libraries/risk-policy/operators/0/ports/outputs/0");
+                });
+    }
+
+    @Test
+    void hiddenMalformedOperatorDiagnosticsRespectCatalogQueryScope() {
+        OperatorDefinition base = VisualCatalogTestSupport.eligibilityOperator("integer",
+                new OperatorDefinition.Policy(List.of("tenant-a"), List.of("local"), List.of("browser")));
+        OperatorDefinition malformed = new OperatorDefinition(
+                base.schemaVersion(),
+                "risk:scopedMalformedPorts",
+                base.operatorVersion(),
+                base.display(),
+                base.source(),
+                new OperatorDefinition.Ports(base.ports().inputs(),
+                        java.util.Arrays.asList(null, base.ports().outputs().getFirst())),
+                base.configSchema(),
+                base.capabilities(),
+                base.policy(),
+                base.lowering(),
+                base.diagnostics()
+        );
+        InMemoryOperatorLibraryRegistry libraries = new InMemoryOperatorLibraryRegistry();
+        libraries.upsert(new OperatorLibrary(
+                "bloge.visualOperatorLibrary.v1",
+                "risk-policy",
+                "Risk policy operators",
+                "1.0.0",
+                "risk-team",
+                "ACTIVE",
+                List.of(malformed)
+        ));
+        DefaultVisualOperatorCatalog catalog = new DefaultVisualOperatorCatalog(
+                VisualCatalogTestSupport.emptyResourceRegistry(),
+                new InMemoryResourceDesignContractRegistry(),
+                new ResourceVirtualOperatorProjector(),
+                libraries
+        );
+
+        assertThat(catalog.diagnostics(new OperatorCatalogQuery("", List.of(), false, false,
+                "tenant-b", "local", "browser"))).isEmpty();
+        assertThat(catalog.diagnostics(new OperatorCatalogQuery("unrelated", List.of(), false, false,
+                "tenant-a", "local", "browser"))).isEmpty();
+        assertThat(catalog.diagnostics(new OperatorCatalogQuery("", List.of("risk"), false, false,
+                "tenant-a", "local", "browser")))
+                .extracting(VisualDiagnostic::code)
+                .containsExactly("visual.catalog.operatorHiddenMalformed");
+    }
+
+    @Test
     void includesJavaOperatorsFromRuntimeRegistry() {
         DefaultOperatorRegistry registry = new DefaultOperatorRegistry();
         registry.register("normalizeText", new NormalizeTextOperator());

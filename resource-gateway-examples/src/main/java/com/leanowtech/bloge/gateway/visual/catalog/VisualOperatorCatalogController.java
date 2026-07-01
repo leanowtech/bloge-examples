@@ -43,11 +43,12 @@ public class VisualOperatorCatalogController {
                                         @RequestParam(defaultValue = "") String tenantId,
                                         @RequestParam(defaultValue = "") String namespace,
                                         @RequestParam(defaultValue = "") String environment) {
+        OperatorCatalogQuery query = new OperatorCatalogQuery(search, tags, resourceOnly, includeDeprecated,
+                tenantId, namespace, environment);
         return new OperatorCatalogResponse(
                 "bloge.visualOperatorCatalog.v1",
-                catalog.list(new OperatorCatalogQuery(search, tags, resourceOnly, includeDeprecated,
-                        tenantId, namespace, environment)),
-                List.of()
+                catalog.list(query),
+                catalog.diagnostics(query)
         );
     }
 }

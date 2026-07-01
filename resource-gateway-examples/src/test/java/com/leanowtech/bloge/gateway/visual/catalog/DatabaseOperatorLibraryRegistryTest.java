@@ -59,6 +59,30 @@ class DatabaseOperatorLibraryRegistryTest {
     }
 
     @Test
+    void operatorsSkipNullEntriesFromPersistedLibrary() {
+        registry.upsert(libraryWithNullEntry("risk-policy", VisualCatalogTestSupport.eligibilityOperator("integer")));
+
+        DatabaseOperatorLibraryRegistry reloaded = new DatabaseOperatorLibraryRegistry(jdbc, objectMapper);
+        reloaded.init();
+
+        assertThat(reloaded.operators(false))
+                .extracting(OperatorDefinition::operatorRef)
+                .containsExactly("risk:eligibility");
+    }
+
+    @Test
+    void operatorsSkipEntriesWithNullPortsFromPersistedLibrary() {
+        registry.upsert(libraryWithNullPortEntry());
+
+        DatabaseOperatorLibraryRegistry reloaded = new DatabaseOperatorLibraryRegistry(jdbc, objectMapper);
+        reloaded.init();
+
+        assertThat(reloaded.operators(false))
+                .extracting(OperatorDefinition::operatorRef)
+                .doesNotContain("risk:malformedPorts");
+    }
+
+    @Test
     void duplicateOperatorRefAcrossLibrariesIsRejected() {
         registry.upsert(VisualCatalogTestSupport.eligibilityLibrary("integer"));
         OperatorLibrary duplicate = new OperatorLibrary(
@@ -77,11 +101,63 @@ class DatabaseOperatorLibraryRegistryTest {
     }
 
     @Test
+    void duplicateCheckIgnoresNullOperatorEntries() {
+        registry.upsert(libraryWithNullEntry("risk-policy", VisualCatalogTestSupport.eligibilityOperator("integer")));
+        OperatorLibrary numeric = libraryWithNullEntry("numeric-policy",
+                VisualCatalogTestSupport.numericPassOperator());
+
+        registry.upsert(numeric);
+
+        assertThat(registry.operators(false))
+                .extracting(OperatorDefinition::operatorRef)
+                .containsExactly("risk:numericPass", "risk:eligibility");
+    }
+
+    @Test
     void deleteRemovesLibrary() {
         registry.upsert(VisualCatalogTestSupport.eligibilityLibrary("integer"));
 
         registry.delete("risk-policy");
 
         assertThat(registry.find("risk-policy")).isEmpty();
+    }
+
+    private static OperatorLibrary libraryWithNullEntry(String libraryId, OperatorDefinition operator) {
+        return new OperatorLibrary(
+                "bloge.visualOperatorLibrary.v1",
+                libraryId,
+                libraryId,
+                "1.0.0",
+                "risk-team",
+                "ACTIVE",
+                java.util.Arrays.asList(null, operator)
+        );
+    }
+
+    private static OperatorLibrary libraryWithNullPortEntry() {
+        OperatorDefinition base = VisualCatalogTestSupport.eligibilityOperator("integer");
+        OperatorDefinition malformed = new OperatorDefinition(
+                base.schemaVersion(),
+                "risk:malformedPorts",
+                base.operatorVersion(),
+                base.display(),
+                base.source(),
+                new OperatorDefinition.Ports(java.util.Arrays.asList(null, base.ports().inputs().getFirst()),
+                        base.ports().outputs()),
+                base.configSchema(),
+                base.capabilities(),
+                base.policy(),
+                base.lowering(),
+                base.diagnostics()
+        );
+        return new OperatorLibrary(
+                "bloge.visualOperatorLibrary.v1",
+                "malformed-ports",
+                "Malformed ports",
+                "1.0.0",
+                "risk-team",
+                "ACTIVE",
+                java.util.List.of(malformed)
+        );
     }
 }

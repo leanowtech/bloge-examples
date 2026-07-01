@@ -441,7 +441,15 @@ async function loadVisualOperatorCatalog() {
     }
     const payload = await response.json();
     const operators = Array.isArray(payload.operators) ? payload.operators : [];
+    const diagnostics = normalizeDiagnostics(payload.diagnostics);
     state.visualOperators = operators;
+    if (diagnostics.length) {
+      setVisualCheck(
+        'Catalog loaded with diagnostics.',
+        visualCheckLevel(diagnostics, true),
+        diagnostics
+      );
+    }
     const activeOperatorRefs = new Set();
     for (const operator of operators) {
       const operatorRef = rememberCatalogOperator(operator);

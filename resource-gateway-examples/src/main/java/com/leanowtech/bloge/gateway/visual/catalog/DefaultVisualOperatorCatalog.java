@@ -114,6 +114,38 @@ public class DefaultVisualOperatorCatalog implements VisualOperatorCatalog {
     }
 
     @Override
+    public List<VisualDiagnostic> diagnostics(OperatorCatalogQuery query) {
+        OperatorCatalogQuery effectiveQuery = query == null ? OperatorCatalogQuery.all() : query;
+        if (effectiveQuery.resourceOnly()) {
+            return List.of();
+        }
+        List<VisualDiagnostic> diagnostics = new ArrayList<>();
+        for (OperatorLibrary library : libraryRegistry.all()) {
+            if (!library.visibleInCatalog(effectiveQuery.includeDeprecated())) {
+                continue;
+            }
+            for (int i = 0; i < library.operators().size(); i++) {
+                OperatorDefinition operator = library.operators().get(i);
+                if (operator == null) {
+                    if (!queryCanMatchNullOperator(effectiveQuery)) {
+                        continue;
+                    }
+                    diagnostics.add(VisualDiagnostic.warning("visual.catalog.operatorHiddenMalformed",
+                            "Operator library '%s' contains a null operator entry hidden from the visual catalog."
+                                    .formatted(library.libraryId()),
+                            "/libraries/%s/operators/%d".formatted(library.libraryId(), i)));
+                    continue;
+                }
+                if (!matches(operator, effectiveQuery)) {
+                    continue;
+                }
+                hiddenMalformedPortDiagnostic(library, operator, i).ifPresent(diagnostics::add);
+            }
+        }
+        return List.copyOf(diagnostics);
+    }
+
+    @Override
     public Optional<OperatorDefinition> find(String operatorRef) {
         if (operatorRef == null || operatorRef.isBlank()) {
             return Optional.empty();
@@ -121,6 +153,40 @@ public class DefaultVisualOperatorCatalog implements VisualOperatorCatalog {
         return list(new OperatorCatalogQuery("", List.of(), false, true)).stream()
                 .filter(operator -> operator.operatorRef().equals(operatorRef))
                 .findFirst();
+    }
+
+    private static boolean queryCanMatchNullOperator(OperatorCatalogQuery query) {
+        return query.search().isBlank() && query.tags().isEmpty();
+    }
+
+    private static Optional<VisualDiagnostic> hiddenMalformedPortDiagnostic(OperatorLibrary library,
+                                                                            OperatorDefinition operator,
+                                                                            int operatorIndex) {
+        for (int i = 0; i < operator.ports().inputs().size(); i++) {
+            if (operator.ports().inputs().get(i) == null) {
+                return Optional.of(hiddenMalformedPortDiagnostic(library, operator, operatorIndex,
+                        "inputs", i));
+            }
+        }
+        for (int i = 0; i < operator.ports().outputs().size(); i++) {
+            if (operator.ports().outputs().get(i) == null) {
+                return Optional.of(hiddenMalformedPortDiagnostic(library, operator, operatorIndex,
+                        "outputs", i));
+            }
+        }
+        return Optional.empty();
+    }
+
+    private static VisualDiagnostic hiddenMalformedPortDiagnostic(OperatorLibrary library,
+                                                                  OperatorDefinition operator,
+                                                                  int operatorIndex,
+                                                                  String direction,
+                                                                  int portIndex) {
+        return VisualDiagnostic.warning("visual.catalog.operatorHiddenMalformed",
+                "Operator '%s' from library '%s' has a null %s port hidden from the visual catalog."
+                        .formatted(operator.operatorRef(), library.libraryId(), direction),
+                "/libraries/%s/operators/%d/ports/%s/%d".formatted(library.libraryId(), operatorIndex,
+                        direction, portIndex));
     }
 
     private static List<OperatorDefinition> uniqueByOperatorRef(List<OperatorDefinition> operators) {

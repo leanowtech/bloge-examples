@@ -178,6 +178,7 @@ public class OperatorLibraryAdminController {
         Optional<OperatorLibrary> library = registry.find(libraryId);
         if (!force && library.isPresent()) {
             Set<String> operatorRefs = library.get().operators().stream()
+                    .filter(java.util.Objects::nonNull)
                     .map(OperatorDefinition::operatorRef)
                     .collect(java.util.stream.Collectors.toCollection(LinkedHashSet::new));
             List<VisualDiagnostic> diagnostics = new ArrayList<>();
@@ -298,6 +299,7 @@ public class OperatorLibraryAdminController {
                         .collect(java.util.stream.Collectors.toCollection(LinkedHashSet::new))
                 : Set.of();
         Set<String> removedRefs = existing.get().operators().stream()
+                .filter(java.util.Objects::nonNull)
                 .map(OperatorDefinition::operatorRef)
                 .filter(operatorRef -> !replacementRefs.contains(operatorRef))
                 .collect(java.util.stream.Collectors.toCollection(LinkedHashSet::new));
@@ -315,6 +317,9 @@ public class OperatorLibraryAdminController {
 
         Map<String, OperatorDefinition> existingByRef = new LinkedHashMap<>();
         for (OperatorDefinition operator : existing.get().operators()) {
+            if (operator == null) {
+                continue;
+            }
             existingByRef.putIfAbsent(operator.operatorRef(), operator);
         }
 
@@ -408,6 +413,7 @@ public class OperatorLibraryAdminController {
                         .collect(java.util.stream.Collectors.toCollection(LinkedHashSet::new))
                 : Set.of();
         Set<String> removedRefs = existing.get().operators().stream()
+                .filter(java.util.Objects::nonNull)
                 .map(OperatorDefinition::operatorRef)
                 .filter(operatorRef -> !replacementRefs.contains(operatorRef))
                 .collect(java.util.stream.Collectors.toCollection(LinkedHashSet::new));

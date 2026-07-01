@@ -1,5 +1,7 @@
 package com.leanowtech.bloge.gateway.visual.catalog;
 
+import com.leanowtech.bloge.gateway.visual.diagnostic.VisualDiagnostic;
+
 import java.util.List;
 import java.util.Optional;
 
@@ -15,6 +17,16 @@ public interface VisualOperatorCatalog {
      * @return matching operators
      */
     List<OperatorDefinition> list(OperatorCatalogQuery query);
+
+    /**
+     * Finds non-blocking diagnostics for a catalog query.
+     *
+     * @param query query options
+     * @return catalog diagnostics
+     */
+    default List<VisualDiagnostic> diagnostics(OperatorCatalogQuery query) {
+        return List.of();
+    }
 
     /**
      * Finds one operator by reference.

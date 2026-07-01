@@ -879,6 +879,67 @@ class OperatorLibraryAdminControllerTest {
     }
 
     @Test
+    void deleteSkipsNullOperatorsInStoredLibraryImpactAnalysis() throws Exception {
+        OperatorLibrary library = new OperatorLibrary(
+                "bloge.visualOperatorLibrary.v1",
+                "risk-policy",
+                "Risk policy operators",
+                "1.0.0",
+                "risk-team",
+                "ACTIVE",
+                java.util.Arrays.asList(null, VisualCatalogTestSupport.eligibilityOperator("integer"))
+        );
+        registry.upsert(library);
+        drafts.save(draftUsingOperator("risk:eligibility"));
+
+        mockMvc.perform(delete("/admin/visual-operator-libraries/risk-policy"))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.valid").value(false))
+                .andExpect(jsonPath("$.diagnostics[0].code").value("visual.library.inUse"))
+                .andExpect(jsonPath("$.diagnostics[0].target").value("/drafts/draft-1/nodes/0/operatorRef"));
+
+        assertThat(registry.find("risk-policy")).contains(library);
+    }
+
+    @Test
+    void deleteStillProtectsDraftReferencesWhenStoredOperatorHasNullPorts() throws Exception {
+        OperatorDefinition base = VisualCatalogTestSupport.eligibilityOperator("integer");
+        OperatorDefinition malformed = new OperatorDefinition(
+                base.schemaVersion(),
+                base.operatorRef(),
+                base.operatorVersion(),
+                base.display(),
+                base.source(),
+                new OperatorDefinition.Ports(base.ports().inputs(),
+                        java.util.Arrays.asList(null, base.ports().outputs().getFirst())),
+                base.configSchema(),
+                base.capabilities(),
+                base.policy(),
+                base.lowering(),
+                base.diagnostics()
+        );
+        OperatorLibrary library = new OperatorLibrary(
+                "bloge.visualOperatorLibrary.v1",
+                "risk-policy",
+                "Risk policy operators",
+                "1.0.0",
+                "risk-team",
+                "ACTIVE",
+                List.of(malformed)
+        );
+        registry.upsert(library);
+        drafts.save(draftUsingOperator("risk:eligibility"));
+
+        mockMvc.perform(delete("/admin/visual-operator-libraries/risk-policy"))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.valid").value(false))
+                .andExpect(jsonPath("$.diagnostics[0].code").value("visual.library.inUse"))
+                .andExpect(jsonPath("$.diagnostics[0].target").value("/drafts/draft-1/nodes/0/operatorRef"));
+
+        assertThat(registry.find("risk-policy")).contains(library);
+    }
+
+    @Test
     void updateRejectsRemovingOperatorRefReferencedByStoredDraft() throws Exception {
         OperatorLibrary original = VisualCatalogTestSupport.multiOutputEligibilityLibrary("integer");
         OperatorLibrary replacement = libraryWithScoreFactsOnly();
