@@ -1174,7 +1174,7 @@ class VisualAuthoringAppJsTest {
                   nodes: [
                     { nodeId: 'policy', status: 'COMPLETED', diagnosticCount: 0, errorCount: 0, operatorRef: 'bloge:decisionTable' },
                     { nodeId: 'riskNode', status: 'COMPLETED', diagnosticCount: 2, errorCount: 1, operatorRef: 'risk:eligibility' },
-                    { nodeId: 'auditNode', status: 'COMPLETED', diagnosticCount: 1, errorCount: 0, operatorRef: 'risk:audit', outputSelected: true },
+                    { nodeId: 'auditNode', status: 'COMPLETED', elapsedMs: 9, timingKnown: true, diagnosticCount: 1, errorCount: 0, operatorRef: 'risk:audit', outputSelected: true },
                     { nodeId: 'removedNode', status: 'COMPLETED', diagnosticCount: 0, errorCount: 0, operatorRef: 'risk:removed' }
                   ]
                 };
@@ -1562,7 +1562,7 @@ class VisualAuthoringAppJsTest {
                   ['run trace status label', riskTraceStatus, 'COMPLETED'],
                   ['run trace badge', riskTraceBadge, 'ERR 1'],
                   ['run trace issue text', riskTraceIssueText, '1 issue · COMPLETED · 2 trace'],
-                  ['run trace summary label', auditTraceSummaryLabel, 'COMPLETED · risk:audit · selected output · 1 diagnostic'],
+                  ['run trace summary label', auditTraceSummaryLabel, 'COMPLETED · risk:audit · 9ms · selected output · 1 diagnostic'],
                   ['run trace coverage matched', traceCoverage.matchedNodeCount, 3],
                   ['run trace coverage total', traceCoverage.traceNodeCount, 4],
                   ['run trace coverage missing', traceCoverage.unmatchedNodeIds.join('|'), 'removedNode'],

@@ -303,7 +303,13 @@ class VisualAuthoringBrowserWorkflowTest {
         assertThat(nodeStats)
                 .containsEntry("schemaVersion", "bloge.visualGraphRunNodeStats.v1")
                 .containsEntry("totalRuns", 5);
-        assertThat((Collection<?>) nodeStats.get("nodes")).isNotEmpty();
+        Collection<?> nodeStatsRows = (Collection<?>) nodeStats.get("nodes");
+        assertThat(nodeStatsRows).isNotEmpty();
+        assertThat(nodeStatsRows).anySatisfy(row -> {
+            Map<String, Object> node = (Map<String, Object>) row;
+            assertThat(((Number) node.get("timingKnownRuns")).intValue()).isGreaterThan(0);
+            assertThat(node).containsKey("p95NodeElapsedMs");
+        });
     }
 
     private void assertBrowserAssetsExposeVisualWorkflowEntrypoints() {

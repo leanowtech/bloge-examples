@@ -45,6 +45,7 @@ class DatabaseVisualGraphRunRepositoryTest {
 
         assertThat(stored.runId()).isNotBlank();
         assertThat(stored.createdAt()).isNotNull();
+        assertThat(stored.nodeElapsedMs()).containsEntry("response", 7L);
         assertThat(repository.find(stored.runId())).contains(stored);
         assertThat(stored.contextSummary().toString()).doesNotContain("secret-token");
     }
@@ -92,6 +93,7 @@ class DatabaseVisualGraphRunRepositoryTest {
 
         VisualGraphRunRecord record = objectMapper.readValue(legacyJson, VisualGraphRunRecord.class);
 
+        assertThat(record.nodeElapsedMs()).isEmpty();
         assertThat(record.nodeSnapshots()).isEmpty();
         assertThat(record.generatedDsl()).contains("graph visualPolicy");
     }
@@ -155,6 +157,7 @@ class DatabaseVisualGraphRunRepositoryTest {
                 Map.of("response", Map.of("decision", "approved")),
                 Map.of("response", "COMPLETED"),
                 19,
+                Map.of("response", 7L),
                 List.of(),
                 List.of(),
                 null,
@@ -165,9 +168,9 @@ class DatabaseVisualGraphRunRepositoryTest {
             return new VisualGraphRunRecord("", runId, sourceKind, draft.draftId(), draft.revision(),
                     publicationId, response.graphName(), draft.tenantId(), draft.namespace(), draft.environment(),
                     response.outputNode(), null, response.validated(), response.compiled(), response.success(),
-                    response.elapsedMs(), response.statusMap(), response.diagnostics(), response.errors(),
-                    Map.of("score", Map.of("type", "integer")), Map.of("type", "object"), Map.of(),
-                    response.generatedDsl());
+                    response.elapsedMs(), response.nodeElapsedMs(), response.statusMap(), response.diagnostics(),
+                    response.errors(), Map.of("score", Map.of("type", "integer")), Map.of("type", "object"),
+                    Map.of(), response.generatedDsl());
         }
         return VisualGraphRunRecord.storedDraft(draft, Map.of("score", 720, "apiToken", "secret-token"),
                 response).withIdentity(runId, null);

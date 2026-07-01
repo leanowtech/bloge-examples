@@ -3839,10 +3839,14 @@ function renderRunHistoryNodeStats() {
       const issueDelta = ((Number(b.errorCount) || 0) * 100 + (Number(b.diagnosticCount) || 0))
         - ((Number(a.errorCount) || 0) * 100 + (Number(a.diagnosticCount) || 0));
       if (issueDelta) return issueDelta;
-      return (Number(b.p95ObservedElapsedMs) || 0) - (Number(a.p95ObservedElapsedMs) || 0);
+      return nodeP95ForDisplay(b) - nodeP95ForDisplay(a);
     })
     .slice(0, 3);
   target.innerHTML = ranked.map((node) => runHistoryNodeStatHtml(node)).join('');
+}
+
+function nodeP95ForDisplay(node) {
+  return Number(node?.p95NodeElapsedMs) || Number(node?.p95ObservedElapsedMs) || 0;
 }
 
 function runHistoryNodeStatHtml(node) {
@@ -3851,11 +3855,13 @@ function runHistoryNodeStatHtml(node) {
   const level = errors ? 'error' : diagnostics ? 'warning' : 'clean';
   const name = node.label || node.nodeId || 'node';
   const operator = node.operatorRef ? ` · ${node.operatorRef}` : '';
-  const p95 = Number(node.p95ObservedElapsedMs) || 0;
+  const timingKnown = Number(node.timingKnownRuns) || 0;
+  const p95 = nodeP95ForDisplay(node);
+  const latencyLabel = timingKnown ? 'node p95' : 'observed p95';
   return `
     <div class="run-history-node-stat ${escapeHtml(level)}">
       <span>${escapeHtml(name)}${escapeHtml(operator)}</span>
-      <small>${escapeHtml(node.runCount || 0)} runs · ${escapeHtml(errors)} err · ${escapeHtml(diagnostics)} diag · p95 ${escapeHtml(p95)}ms</small>
+      <small>${escapeHtml(node.runCount || 0)} runs · ${escapeHtml(errors)} err · ${escapeHtml(diagnostics)} diag · ${escapeHtml(latencyLabel)} ${escapeHtml(p95)}ms</small>
     </div>
   `;
 }
@@ -8957,6 +8963,9 @@ function nodeTraceSummaryLabel(traceNode) {
   const parts = [runTraceStatusLabel(traceNode)];
   if (traceNode?.operatorRef) {
     parts.push(traceNode.operatorRef);
+  }
+  if (traceNode?.timingKnown) {
+    parts.push(`${Number(traceNode.elapsedMs) || 0}ms`);
   }
   if (traceNode?.outputSelected) {
     parts.push('selected output');

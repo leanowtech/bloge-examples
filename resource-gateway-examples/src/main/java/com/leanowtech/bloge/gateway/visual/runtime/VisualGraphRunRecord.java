@@ -33,6 +33,7 @@ import java.util.TreeSet;
  * @param compiled whether BLOGE compilation passed
  * @param success whether execution succeeded
  * @param elapsedMs execution elapsed milliseconds
+ * @param nodeElapsedMs per-node execution elapsed milliseconds
  * @param statusMap node execution statuses
  * @param diagnostics validation, lowering, compiler, or runtime diagnostics
  * @param errors blocking or runtime errors
@@ -59,6 +60,7 @@ public record VisualGraphRunRecord(
         boolean compiled,
         boolean success,
         long elapsedMs,
+        Map<String, Long> nodeElapsedMs,
         Map<String, String> statusMap,
         List<VisualDiagnostic> diagnostics,
         List<String> errors,
@@ -94,6 +96,7 @@ public record VisualGraphRunRecord(
         outputNode = outputNode == null ? "" : outputNode;
         createdAt = createdAt == null ? Instant.now() : createdAt;
         elapsedMs = Math.max(0, elapsedMs);
+        nodeElapsedMs = nodeElapsedMs == null ? Map.of() : new LinkedHashMap<>(nodeElapsedMs);
         statusMap = statusMap == null ? Map.of() : new LinkedHashMap<>(statusMap);
         diagnostics = diagnostics == null ? List.of() : List.copyOf(diagnostics);
         errors = errors == null ? List.of() : List.copyOf(errors);
@@ -105,7 +108,7 @@ public record VisualGraphRunRecord(
     }
 
     /**
-     * Backward-compatible constructor for run records created before node snapshots existed.
+     * Backward-compatible constructor for run records created before node timings and snapshots existed.
      */
     public VisualGraphRunRecord(String schemaVersion,
                                 String runId,
@@ -131,8 +134,42 @@ public record VisualGraphRunRecord(
                                 Map<String, Object> resultsSummary,
                                 String generatedDsl) {
         this(schemaVersion, runId, sourceKind, draftId, draftRevision, publicationId, graphName, tenantId,
-                namespace, environment, outputNode, createdAt, validated, compiled, success, elapsedMs, statusMap,
-                diagnostics, errors, contextSummary, outputSummary, resultsSummary, Map.of(), generatedDsl);
+                namespace, environment, outputNode, createdAt, validated, compiled, success, elapsedMs, Map.of(),
+                statusMap, diagnostics, errors, contextSummary, outputSummary, resultsSummary, Map.of(),
+                generatedDsl);
+    }
+
+    /**
+     * Backward-compatible constructor for records created before node snapshots existed.
+     */
+    public VisualGraphRunRecord(String schemaVersion,
+                                String runId,
+                                String sourceKind,
+                                String draftId,
+                                long draftRevision,
+                                String publicationId,
+                                String graphName,
+                                String tenantId,
+                                String namespace,
+                                String environment,
+                                String outputNode,
+                                Instant createdAt,
+                                boolean validated,
+                                boolean compiled,
+                                boolean success,
+                                long elapsedMs,
+                                Map<String, Long> nodeElapsedMs,
+                                Map<String, String> statusMap,
+                                List<VisualDiagnostic> diagnostics,
+                                List<String> errors,
+                                Map<String, Object> contextSummary,
+                                Map<String, Object> outputSummary,
+                                Map<String, Object> resultsSummary,
+                                String generatedDsl) {
+        this(schemaVersion, runId, sourceKind, draftId, draftRevision, publicationId, graphName, tenantId,
+                namespace, environment, outputNode, createdAt, validated, compiled, success, elapsedMs,
+                nodeElapsedMs, statusMap, diagnostics, errors, contextSummary, outputSummary, resultsSummary,
+                Map.of(), generatedDsl);
     }
 
     /**
@@ -170,7 +207,7 @@ public record VisualGraphRunRecord(
     public VisualGraphRunRecord withIdentity(String newRunId, Instant newCreatedAt) {
         return new VisualGraphRunRecord(schemaVersion, newRunId, sourceKind, draftId, draftRevision,
                 publicationId, graphName, tenantId, namespace, environment, outputNode, newCreatedAt,
-                validated, compiled, success, elapsedMs, statusMap, diagnostics, errors, contextSummary,
+                validated, compiled, success, elapsedMs, nodeElapsedMs, statusMap, diagnostics, errors, contextSummary,
                 outputSummary, resultsSummary, nodeSnapshots, generatedDsl);
     }
 
@@ -200,6 +237,7 @@ public record VisualGraphRunRecord(
                 safeResponse.compiled(),
                 safeResponse.success(),
                 safeResponse.elapsedMs(),
+                safeResponse.nodeElapsedMs(),
                 safeResponse.statusMap(),
                 safeResponse.diagnostics(),
                 safeResponse.errors(),

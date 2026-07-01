@@ -79,6 +79,7 @@ class VisualGraphRunServiceTest {
         assertThat(response.success()).isTrue();
         assertThat(response.generatedDsl()).contains("transform response");
         assertThat(response.output()).isEqualTo(Map.of("score", 720));
+        assertThat(response.nodeElapsedMs()).containsKey("response");
     }
 
     @Test

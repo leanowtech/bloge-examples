@@ -15,9 +15,9 @@ import java.util.Set;
 /**
  * Node-level aggregate health view for a filtered visual graph run-history window.
  *
- * <p>The elapsed values are observed whole-run latencies for runs where the node
- * appeared in the persisted trace material. They are not per-operator execution
- * timings until the runtime starts recording node-level duration events.
+ * <p>Node elapsed values come from the runtime's per-node execution timings when
+ * present. Observed elapsed values remain whole-run latencies for records where
+ * the node appeared, which is useful for legacy records and slow-run correlation.
  *
  * @param schemaVersion node stats schema version
  * @param totalRuns total matching run records used for the aggregation
@@ -158,12 +158,15 @@ public record VisualGraphRunNodeStats(
         private int failedRuns;
         private int statusKnownRuns;
         private int resultKnownRuns;
+        private int timingKnownRuns;
         private int outputSelectedRuns;
         private int diagnosticCount;
         private int errorCount;
+        private long maxNodeElapsedMs;
         private long maxObservedElapsedMs;
         private Instant firstSeenAt;
         private Instant latestSeenAt;
+        private final List<Long> nodeElapsedMs = new ArrayList<>();
         private final List<Long> observedElapsedMs = new ArrayList<>();
         private final Map<String, Integer> statusCounts = new LinkedHashMap<>();
 
@@ -187,6 +190,13 @@ public record VisualGraphRunNodeStats(
             }
             if (run.resultsSummary().containsKey(currentNodeId)) {
                 resultKnownRuns++;
+            }
+            Long nodeElapsed = run.nodeElapsedMs().get(currentNodeId);
+            if (nodeElapsed != null) {
+                timingKnownRuns++;
+                long safeElapsed = Math.max(0, nodeElapsed);
+                nodeElapsedMs.add(safeElapsed);
+                maxNodeElapsedMs = Math.max(maxNodeElapsedMs, safeElapsed);
             }
             if (currentNodeId.equals(run.outputNode())) {
                 outputSelectedRuns++;
@@ -224,9 +234,13 @@ public record VisualGraphRunNodeStats(
                     failedRuns,
                     statusKnownRuns,
                     resultKnownRuns,
+                    timingKnownRuns,
                     outputSelectedRuns,
                     diagnosticCount,
                     errorCount,
+                    percentile(nodeElapsedMs, 0.50D),
+                    percentile(nodeElapsedMs, 0.95D),
+                    maxNodeElapsedMs,
                     percentile(observedElapsedMs, 0.50D),
                     percentile(observedElapsedMs, 0.95D),
                     maxObservedElapsedMs,
@@ -249,9 +263,13 @@ public record VisualGraphRunNodeStats(
      * @param failedRuns matching node records from failed or blocked runs
      * @param statusKnownRuns records where the node had an execution status
      * @param resultKnownRuns records where the node had a result summary
+     * @param timingKnownRuns records where the node had per-node execution timing
      * @param outputSelectedRuns records where the node supplied selected output
      * @param diagnosticCount diagnostics attributed to this node
      * @param errorCount error diagnostics attributed to this node
+     * @param p50NodeElapsedMs nearest-rank p50 per-node execution latency
+     * @param p95NodeElapsedMs nearest-rank p95 per-node execution latency
+     * @param maxNodeElapsedMs maximum per-node execution latency
      * @param p50ObservedElapsedMs nearest-rank p50 whole-run latency for runs containing the node
      * @param p95ObservedElapsedMs nearest-rank p95 whole-run latency for runs containing the node
      * @param maxObservedElapsedMs maximum whole-run latency for runs containing the node
@@ -269,9 +287,13 @@ public record VisualGraphRunNodeStats(
             int failedRuns,
             int statusKnownRuns,
             int resultKnownRuns,
+            int timingKnownRuns,
             int outputSelectedRuns,
             int diagnosticCount,
             int errorCount,
+            long p50NodeElapsedMs,
+            long p95NodeElapsedMs,
+            long maxNodeElapsedMs,
             long p50ObservedElapsedMs,
             long p95ObservedElapsedMs,
             long maxObservedElapsedMs,
@@ -292,9 +314,13 @@ public record VisualGraphRunNodeStats(
             failedRuns = Math.max(0, failedRuns);
             statusKnownRuns = Math.max(0, statusKnownRuns);
             resultKnownRuns = Math.max(0, resultKnownRuns);
+            timingKnownRuns = Math.max(0, timingKnownRuns);
             outputSelectedRuns = Math.max(0, outputSelectedRuns);
             diagnosticCount = Math.max(0, diagnosticCount);
             errorCount = Math.max(0, errorCount);
+            p50NodeElapsedMs = Math.max(0, p50NodeElapsedMs);
+            p95NodeElapsedMs = Math.max(0, p95NodeElapsedMs);
+            maxNodeElapsedMs = Math.max(0, maxNodeElapsedMs);
             p50ObservedElapsedMs = Math.max(0, p50ObservedElapsedMs);
             p95ObservedElapsedMs = Math.max(0, p95ObservedElapsedMs);
             maxObservedElapsedMs = Math.max(0, maxObservedElapsedMs);

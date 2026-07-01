@@ -23,6 +23,7 @@ import com.leanowtech.bloge.gateway.operator.HttpResourceOperator;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -146,6 +147,7 @@ public class DynamicGatewayComposerService {
                 result.results().getResults(),
                 statuses(result),
                 result.elapsed().toMillis(),
+                nodeElapsedMs(result.nodeTimings()),
                 diagnostics,
                 errors(result),
                 layout,
@@ -236,6 +238,19 @@ public class DynamicGatewayComposerService {
         Map<String, String> statuses = new LinkedHashMap<>();
         result.statusMap().forEach((node, status) -> statuses.put(node, status.name()));
         return statuses;
+    }
+
+    private static Map<String, Long> nodeElapsedMs(Map<String, Duration> nodeTimings) {
+        if (nodeTimings == null || nodeTimings.isEmpty()) {
+            return Map.of();
+        }
+        Map<String, Long> timings = new LinkedHashMap<>();
+        nodeTimings.forEach((node, duration) -> {
+            if (node != null && duration != null) {
+                timings.put(node, Math.max(0, duration.toMillis()));
+            }
+        });
+        return timings;
     }
 
     private static DynamicGraphRunResponse compilationFailure(String message) {

@@ -20,6 +20,7 @@ import java.util.Map;
  * @param results raw node results
  * @param statusMap node execution statuses
  * @param elapsedMs execution time in milliseconds
+ * @param nodeElapsedMs per-node execution time in milliseconds
  * @param diagnostics validation and compilation diagnostics
  * @param errors execution or blocking errors
  * @param layout generated layout
@@ -37,6 +38,7 @@ public record VisualGraphRunResponse(
         Map<String, Object> results,
         Map<String, String> statusMap,
         long elapsedMs,
+        Map<String, Long> nodeElapsedMs,
         List<VisualDiagnostic> diagnostics,
         List<String> errors,
         ExampleVisualLayout layout,
@@ -52,6 +54,7 @@ public record VisualGraphRunResponse(
         outputNode = outputNode == null ? "" : outputNode;
         results = results == null ? Map.of() : new LinkedHashMap<>(results);
         statusMap = statusMap == null ? Map.of() : new LinkedHashMap<>(statusMap);
+        nodeElapsedMs = nodeElapsedMs == null ? Map.of() : new LinkedHashMap<>(nodeElapsedMs);
         diagnostics = diagnostics == null ? List.of() : List.copyOf(diagnostics);
         errors = errors == null ? List.of() : List.copyOf(errors);
         generatedDsl = generatedDsl == null ? "" : generatedDsl;
@@ -76,7 +79,29 @@ public record VisualGraphRunResponse(
                                   GatewayDecisionTable decisionTable,
                                   String generatedDsl) {
         this(validated, compiled, success, graphName, outputNode, output, results, statusMap, elapsedMs,
-                diagnostics, errors, layout, decisionTable, generatedDsl, "");
+                Map.of(), diagnostics, errors, layout, decisionTable, generatedDsl, "");
+    }
+
+    /**
+     * Backward-compatible constructor for callers that know node timings but do not yet know a run history id.
+     */
+    public VisualGraphRunResponse(boolean validated,
+                                  boolean compiled,
+                                  boolean success,
+                                  String graphName,
+                                  String outputNode,
+                                  Object output,
+                                  Map<String, Object> results,
+                                  Map<String, String> statusMap,
+                                  long elapsedMs,
+                                  Map<String, Long> nodeElapsedMs,
+                                  List<VisualDiagnostic> diagnostics,
+                                  List<String> errors,
+                                  ExampleVisualLayout layout,
+                                  GatewayDecisionTable decisionTable,
+                                  String generatedDsl) {
+        this(validated, compiled, success, graphName, outputNode, output, results, statusMap, elapsedMs,
+                nodeElapsedMs, diagnostics, errors, layout, decisionTable, generatedDsl, "");
     }
 
     /**
@@ -85,6 +110,7 @@ public record VisualGraphRunResponse(
      */
     public VisualGraphRunResponse withRunId(String newRunId) {
         return new VisualGraphRunResponse(validated, compiled, success, graphName, outputNode, output,
-                results, statusMap, elapsedMs, diagnostics, errors, layout, decisionTable, generatedDsl, newRunId);
+                results, statusMap, elapsedMs, nodeElapsedMs, diagnostics, errors, layout, decisionTable,
+                generatedDsl, newRunId);
     }
 }

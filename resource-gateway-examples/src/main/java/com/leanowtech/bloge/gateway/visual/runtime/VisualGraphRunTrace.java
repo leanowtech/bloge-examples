@@ -115,6 +115,8 @@ public record VisualGraphRunTrace(
                 snapshot == null ? "" : snapshot.operatorRef(),
                 snapshot == null ? "" : snapshot.label(),
                 record.statusMap().getOrDefault(nodeId, ""),
+                record.nodeElapsedMs().getOrDefault(nodeId, 0L),
+                record.nodeElapsedMs().containsKey(nodeId),
                 nodeId.equals(record.outputNode()),
                 resultSummaryFor(record.resultsSummary(), nodeId),
                 record.statusMap().containsKey(nodeId),
@@ -177,6 +179,8 @@ public record VisualGraphRunTrace(
      * @param operatorRef operator reference used by the node
      * @param label display label
      * @param status node execution status
+     * @param elapsedMs node execution elapsed milliseconds
+     * @param timingKnown whether the run recorded node execution timing
      * @param outputSelected whether this node supplied selected graph output
      * @param resultSummary shape-only result summary
      * @param statusKnown whether the run recorded a status for this node
@@ -191,6 +195,8 @@ public record VisualGraphRunTrace(
             String operatorRef,
             String label,
             String status,
+            long elapsedMs,
+            boolean timingKnown,
             boolean outputSelected,
             Map<String, Object> resultSummary,
             boolean statusKnown,
@@ -208,6 +214,7 @@ public record VisualGraphRunTrace(
             operatorRef = operatorRef == null ? "" : operatorRef;
             label = label == null ? "" : label;
             status = status == null ? "" : status;
+            elapsedMs = Math.max(0, elapsedMs);
             resultSummary = resultSummary == null ? Map.of() : new LinkedHashMap<>(resultSummary);
             diagnostics = diagnostics == null ? List.of() : List.copyOf(diagnostics);
             diagnosticCount = Math.max(0, diagnosticCount);

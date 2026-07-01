@@ -78,6 +78,7 @@ class VisualGraphRunHistoryControllerTest {
         InMemoryVisualGraphRunRepository repository = new InMemoryVisualGraphRunRepository();
         repository.create(traceRecord(true, 25,
                 Map.of("loanPolicy", "COMPLETED", "response", "COMPLETED"),
+                Map.of("loanPolicy", 12L, "response", 4L),
                 List.of(
                         VisualDiagnostic.warning("bloge.dsl", "Policy expression uses a legacy form.",
                                 "/nodes/loanPolicy/expression"),
@@ -86,6 +87,7 @@ class VisualGraphRunHistoryControllerTest {
                 )));
         repository.create(traceRecord(false, 75,
                 Map.of("loanPolicy", "FAILED", "response", "SKIPPED"),
+                Map.of("loanPolicy", 66L, "response", 1L),
                 List.of(VisualDiagnostic.error("visual.runtime.nodeFailed",
                         "Loan policy failed.", "/draft/nodes/0/runtime"))));
         repository.create(record("draft-2", VisualGraphRunRecord.SOURCE_PUBLICATION, "publication-1",
@@ -112,9 +114,13 @@ class VisualGraphRunHistoryControllerTest {
         assertThat(loanPolicy.failedRuns()).isEqualTo(1);
         assertThat(loanPolicy.statusKnownRuns()).isEqualTo(2);
         assertThat(loanPolicy.resultKnownRuns()).isEqualTo(2);
+        assertThat(loanPolicy.timingKnownRuns()).isEqualTo(2);
         assertThat(loanPolicy.outputSelectedRuns()).isZero();
         assertThat(loanPolicy.diagnosticCount()).isEqualTo(2);
         assertThat(loanPolicy.errorCount()).isEqualTo(1);
+        assertThat(loanPolicy.p50NodeElapsedMs()).isEqualTo(12);
+        assertThat(loanPolicy.p95NodeElapsedMs()).isEqualTo(66);
+        assertThat(loanPolicy.maxNodeElapsedMs()).isEqualTo(66);
         assertThat(loanPolicy.p50ObservedElapsedMs()).isEqualTo(25);
         assertThat(loanPolicy.p95ObservedElapsedMs()).isEqualTo(75);
         assertThat(loanPolicy.maxObservedElapsedMs()).isEqualTo(75);
@@ -129,6 +135,8 @@ class VisualGraphRunHistoryControllerTest {
                 .findFirst()
                 .orElseThrow();
         assertThat(response.nodeIndex()).isEqualTo(1);
+        assertThat(response.timingKnownRuns()).isEqualTo(2);
+        assertThat(response.p95NodeElapsedMs()).isEqualTo(4);
         assertThat(response.outputSelectedRuns()).isEqualTo(2);
         assertThat(response.diagnosticCount()).isEqualTo(1);
         assertThat(response.errorCount()).isEqualTo(1);
@@ -163,6 +171,8 @@ class VisualGraphRunHistoryControllerTest {
         assertThat(decisionTrace.operatorRef()).isEqualTo("risk:loanPolicy");
         assertThat(decisionTrace.label()).isEqualTo("Loan Policy");
         assertThat(decisionTrace.status()).isEqualTo("COMPLETED");
+        assertThat(decisionTrace.elapsedMs()).isEqualTo(12);
+        assertThat(decisionTrace.timingKnown()).isTrue();
         assertThat(decisionTrace.outputSelected()).isFalse();
         assertThat(decisionTrace.statusKnown()).isTrue();
         assertThat(decisionTrace.resultKnown()).isTrue();
@@ -177,6 +187,8 @@ class VisualGraphRunHistoryControllerTest {
                 .orElseThrow();
         assertThat(responseTrace.nodeIndex()).isEqualTo(1);
         assertThat(responseTrace.operatorRef()).isEqualTo("transform:response");
+        assertThat(responseTrace.elapsedMs()).isEqualTo(4);
+        assertThat(responseTrace.timingKnown()).isTrue();
         assertThat(responseTrace.outputSelected()).isTrue();
         assertThat(responseTrace.diagnosticCount()).isEqualTo(1);
         assertThat(responseTrace.errorCount()).isEqualTo(1);
@@ -248,6 +260,7 @@ class VisualGraphRunHistoryControllerTest {
     private static VisualGraphRunRecord traceRecord() {
         return traceRecord(true, 25,
                 Map.of("loanPolicy", "COMPLETED", "response", "COMPLETED"),
+                Map.of("loanPolicy", 12L, "response", 4L),
                 List.of(
                         VisualDiagnostic.warning("bloge.dsl", "Policy expression uses a legacy form.",
                                 "/nodes/loanPolicy/expression"),
@@ -259,6 +272,7 @@ class VisualGraphRunHistoryControllerTest {
     private static VisualGraphRunRecord traceRecord(boolean success,
                                                     long elapsedMs,
                                                     Map<String, String> statusMap,
+                                                    Map<String, Long> nodeElapsedMs,
                                                     List<VisualDiagnostic> diagnostics) {
         GraphDraft draft = new GraphDraft(
                 "",
@@ -293,6 +307,7 @@ class VisualGraphRunHistoryControllerTest {
                 ),
                 statusMap,
                 elapsedMs,
+                nodeElapsedMs,
                 diagnostics,
                 diagnostics.stream().filter(VisualDiagnostic::error)
                         .map(VisualDiagnostic::message)

@@ -15,6 +15,7 @@ import java.util.Map;
  * @param results raw node outputs keyed by node id
  * @param statusMap node execution status keyed by node id
  * @param elapsedMs execution time in milliseconds
+ * @param nodeElapsedMs per-node execution time in milliseconds
  * @param diagnostics compiler diagnostics
  * @param errors execution error messages
  * @param layout generated visual layout for the submitted graph
@@ -29,6 +30,7 @@ public record DynamicGraphRunResponse(
         Map<String, Object> results,
         Map<String, String> statusMap,
         long elapsedMs,
+        Map<String, Long> nodeElapsedMs,
         List<Diagnostic> diagnostics,
         List<String> errors,
         ExampleVisualLayout layout,
@@ -42,8 +44,28 @@ public record DynamicGraphRunResponse(
         outputNode = outputNode == null ? "" : outputNode;
         results = results == null ? Map.of() : new LinkedHashMap<>(results);
         statusMap = statusMap == null ? Map.of() : new LinkedHashMap<>(statusMap);
+        nodeElapsedMs = nodeElapsedMs == null ? Map.of() : new LinkedHashMap<>(nodeElapsedMs);
         diagnostics = diagnostics == null ? List.of() : List.copyOf(diagnostics);
         errors = errors == null ? List.of() : List.copyOf(errors);
+    }
+
+    /**
+     * Backward-compatible constructor for callers that do not expose per-node timings.
+     */
+    public DynamicGraphRunResponse(boolean compiled,
+                                   boolean success,
+                                   String graphName,
+                                   String outputNode,
+                                   Object output,
+                                   Map<String, Object> results,
+                                   Map<String, String> statusMap,
+                                   long elapsedMs,
+                                   List<Diagnostic> diagnostics,
+                                   List<String> errors,
+                                   ExampleVisualLayout layout,
+                                   GatewayDecisionTable decisionTable) {
+        this(compiled, success, graphName, outputNode, output, results, statusMap, elapsedMs, Map.of(),
+                diagnostics, errors, layout, decisionTable);
     }
 
     /**

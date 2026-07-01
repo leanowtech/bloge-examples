@@ -507,7 +507,8 @@ Transient draft runs, stored draft runs, and publication runs also create
 H2-backed visual run history records. Run responses include a `runId`; the
 record captures the source kind, draft/publication identity, selected output,
 node status map, diagnostics, errors, elapsed time, generated/frozen DSL, and
-shape-only context/output/result summaries plus draft node snapshots so the
+per-node runtime timings when available, shape-only context/output/result
+summaries plus draft node snapshots so the
 audit trail does not persist raw runtime payload values by default. The browser
 Run History panel refreshes after visual draft and publication runs, supports
 source/outcome/limit filters, shows a compact SLO summary for the same filter
@@ -521,11 +522,11 @@ and `limit` query parameters for browser and automation use;
 `/api/visual/runs/stats` reuses the same filters to aggregate total runs,
 success rate, blocked/error counts, and p50/p95 latency;
 `/api/visual/runs/node-stats` aggregates per-node run count, status distribution,
-diagnostic/error attribution, selected-output count, and observed whole-run
-latency for runs where the node appeared; `/api/visual/runs/{runId}/trace`
-returns node status, operator metadata, selected-output markers, per-node
-diagnostic attribution, and result-shape summaries without storing raw runtime
-payloads.
+diagnostic/error attribution, selected-output count, runtime per-node latency,
+and observed whole-run latency for legacy/correlation; `/api/visual/runs/{runId}/trace`
+returns node status, operator metadata, per-node elapsed time when known,
+selected-output markers, per-node diagnostic attribution, and result-shape
+summaries without storing raw runtime payloads.
 Published visual graph artifacts can also carry golden regression cases. A
 golden case stores the publication id, sample context, selected output node, and
 expected output. Golden case saves are contract-gated before they enter the
@@ -622,9 +623,9 @@ Showcase metadata APIs:
 | `GET` | `/api/visual/golden-cases/publications/{publicationId}/certification/status` | Load promotion-readiness status, including stale certification diagnostics |
 | `GET` | `/api/visual/runs` | List visual graph run history records, newest first; supports `sourceKind`, `draftId`, `publicationId`, `graphName`, `success`, and `limit` filters |
 | `GET` | `/api/visual/runs/stats` | Aggregate run-history health for the same filters, including success rate, blocked/error counts, and p50/p95/max latency |
-| `GET` | `/api/visual/runs/node-stats` | Aggregate node-level run-history health for the same filters, including status counts, diagnostic/error attribution, selected-output counts, and observed whole-run latency |
+| `GET` | `/api/visual/runs/node-stats` | Aggregate node-level run-history health for the same filters, including status counts, diagnostic/error attribution, selected-output counts, runtime per-node latency, and observed whole-run latency for legacy/correlation |
 | `GET` | `/api/visual/runs/{runId}` | Load one visual graph run history record |
-| `GET` | `/api/visual/runs/{runId}/trace` | Load one shape-only replay trace with node statuses, operator metadata, selected output marker, per-node diagnostics, result summaries, errors, and generated/frozen DSL |
+| `GET` | `/api/visual/runs/{runId}/trace` | Load one shape-only replay trace with node statuses, operator metadata, per-node elapsed time when known, selected output marker, per-node diagnostics, result summaries, errors, and generated/frozen DSL |
 
 Visual run requests may pass `outputNode` to inspect a different node than the
 draft's saved output selection. In that case the response returns the override
