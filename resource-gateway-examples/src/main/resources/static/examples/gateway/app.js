@@ -3767,13 +3767,11 @@ function renderSelectedOperatorEditor() {
           return;
         }
         const compatibility = connectionCompatibility(source, configTarget);
-        if (!compatibility.ok) {
-          setConnectionMessage(compatibility.message, 'error');
-          renderSelectedOperatorEditor();
-          return;
-        }
         select.disabled = true;
-        setConnectionMessage('Checking config source with server...', 'info');
+        setConnectionMessage(connectionServerPreflightMessage(
+          compatibility,
+          'Checking config source with server...'
+        ), 'info');
         try {
           const serverCheck = await checkVisualConnectionOnServer(source, configTarget);
           if (!serverCheck.accepted) {
@@ -3814,11 +3812,6 @@ function renderSelectedOperatorEditor() {
       const bindingTarget = bindingTargetFromElement(select);
       if (!source || !bindingTarget) return;
       const compatibility = connectionCompatibility(source, bindingTarget);
-      if (!compatibility.ok) {
-        setConnectionMessage(compatibility.message, 'error');
-        renderSelectedOperatorEditor();
-        return;
-      }
       if (connectionAlreadyApplied(source, bindingTarget)) {
         setConnectionMessage('Connection already exists.', 'info');
         renderSelectedOperatorEditor();
@@ -3826,7 +3819,10 @@ function renderSelectedOperatorEditor() {
         return;
       }
       select.disabled = true;
-      setConnectionMessage('Checking connection with server...', 'info');
+      setConnectionMessage(connectionServerPreflightMessage(
+        compatibility,
+        'Checking connection with server...'
+      ), 'info');
       try {
         const serverCheck = await checkVisualConnectionOnServer(source, bindingTarget);
         if (serverCheck.accepted) {
@@ -4228,10 +4224,9 @@ function renderConfigSourceSelect(node, field, expression, expressionMode) {
     ...candidates.map((candidate) => {
       const value = bindingSourceValue(candidate.source);
       const selected = value === selectedValue ? ' selected' : '';
-      const disabled = candidate.compatibility.ok ? '' : ' disabled';
       const type = candidate.source.type ? ` · ${candidate.source.type}` : '';
       const suffix = candidate.compatibility.ok ? '' : ` · ${candidate.compatibility.message}`;
-      return `<option value="${escapeHtml(value)}"${selected}${disabled}>${escapeHtml(endpointLabel(candidate.source) + type + suffix)}</option>`;
+      return `<option value="${escapeHtml(value)}"${selected}>${escapeHtml(endpointLabel(candidate.source) + type + suffix)}</option>`;
     })
   ].join('');
   return `
@@ -4592,7 +4587,7 @@ function configExpressionStatusForField(node, field, expression) {
   const target = configTargetForField(node, field);
   const compatibility = connectionCompatibility(source, target);
   if (!compatibility.ok) {
-    return { level: 'error', message: compatibility.message };
+    return connectionLocalHeuristicStatus(compatibility);
   }
   return { level: 'success', message: `Config expression bound to ${endpointLabel(source)}.` };
 }
@@ -4724,10 +4719,9 @@ function renderInputBindingRow(node, target) {
     ...candidates.map((candidate) => {
       const value = bindingSourceValue(candidate.source);
       const selected = value === selectedValue ? ' selected' : '';
-      const disabled = candidate.compatibility.ok ? '' : ' disabled';
       const type = candidate.source.type ? ` · ${candidate.source.type}` : '';
       const suffix = candidate.compatibility.ok ? '' : ` · ${candidate.compatibility.message}`;
-      return `<option value="${escapeHtml(value)}"${selected}${disabled}>${escapeHtml(endpointLabel(candidate.source) + type + suffix)}</option>`;
+      return `<option value="${escapeHtml(value)}"${selected}>${escapeHtml(endpointLabel(candidate.source) + type + suffix)}</option>`;
     })
   ].join('');
   const type = target.type
@@ -7023,7 +7017,7 @@ function bindingStatusForTarget(node, target, expression) {
   if (source.nodeId === CONTEXT_SOURCE_ID) {
     const compatibility = connectionCompatibility(source, target);
     if (!compatibility.ok) {
-      return { level: 'error', message: compatibility.message };
+      return connectionLocalHeuristicStatus(compatibility);
     }
     return { level: 'success', message: `Bound to ${endpointLabel(source)}.` };
   }
@@ -7039,7 +7033,7 @@ function bindingStatusForTarget(node, target, expression) {
   }
   const compatibility = connectionCompatibility(sourceHandle, target);
   if (!compatibility.ok) {
-    return { level: 'error', message: compatibility.message };
+    return connectionLocalHeuristicStatus(compatibility);
   }
   return { level: 'success', message: `Bound to ${endpointLabel(sourceHandle)}.` };
 }
@@ -10633,36 +10627,35 @@ function finishConnectionDrag(event) {
       target = { ...target, condition };
     }
     const compatibility = connectionCompatibility(drag.source, target);
-    if (compatibility.ok) {
-      if (connectionAlreadyApplied(drag.source, target)) {
-        setConnectionMessage('Connection already exists.', 'info');
-        renderDiagram();
-        return;
-      }
-      setConnectionMessage('Checking connection with server...', 'info');
+    if (connectionAlreadyApplied(drag.source, target)) {
+      setConnectionMessage('Connection already exists.', 'info');
       renderDiagram();
-      checkVisualConnectionOnServer(drag.source, target)
-        .then((serverCheck) => {
-          if (serverCheck.accepted) {
-            const checkedTarget = targetWithServerBindingKey(target, serverCheck);
-            applyConnection(drag.source, checkedTarget);
-            setConnectionMessage(
-              `Connected ${endpointLabel(drag.source)} -> ${endpointLabel(checkedTarget)}.`,
-              'success'
-            );
-          } else {
-            setConnectionMessage(serverCheck.message, 'error');
-          }
-          renderDiagram();
-        })
-        .catch((error) => {
-          setConnectionMessage(error.message, 'error');
-          renderDiagram();
-        });
       return;
-    } else {
-      setConnectionMessage(compatibility.message, 'error');
     }
+    setConnectionMessage(connectionServerPreflightMessage(
+      compatibility,
+      'Checking connection with server...'
+    ), 'info');
+    renderDiagram();
+    checkVisualConnectionOnServer(drag.source, target)
+      .then((serverCheck) => {
+        if (serverCheck.accepted) {
+          const checkedTarget = targetWithServerBindingKey(target, serverCheck);
+          applyConnection(drag.source, checkedTarget);
+          setConnectionMessage(
+            `Connected ${endpointLabel(drag.source)} -> ${endpointLabel(checkedTarget)}.`,
+            'success'
+          );
+        } else {
+          setConnectionMessage(serverCheck.message, 'error');
+        }
+        renderDiagram();
+      })
+      .catch((error) => {
+        setConnectionMessage(error.message, 'error');
+        renderDiagram();
+      });
+    return;
   }
   renderDiagram();
 }
@@ -10716,6 +10709,32 @@ function targetWithServerBindingKey(target, serverCheck) {
     return target;
   }
   return { ...target, key: serverCheck.bindingKey };
+}
+
+function connectionServerPreflightMessage(compatibility, fallbackMessage) {
+  if (compatibility?.ok) {
+    return fallbackMessage || 'Checking connection with server...';
+  }
+  const localMessage = compatibility?.message || 'Local compatibility check could not prove this connection.';
+  return `${localMessage} Asking server for final decision...`;
+}
+
+function connectionLocalHeuristicStatus(compatibility) {
+  const localMessage = compatibility?.message || 'Local compatibility check could not prove this connection.';
+  if (!connectionLocalMismatchIsAdvisory(localMessage)) {
+    return {
+      level: 'error',
+      message: localMessage
+    };
+  }
+  return {
+    level: 'info',
+    message: `Local schema hint: ${localMessage} Server validation is authoritative.`
+  };
+}
+
+function connectionLocalMismatchIsAdvisory(message) {
+  return String(message || '').startsWith('Type mismatch:');
 }
 
 function connectionTargetAtPoint(event) {

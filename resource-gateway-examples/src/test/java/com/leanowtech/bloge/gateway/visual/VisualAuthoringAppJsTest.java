@@ -41,6 +41,20 @@ class VisualAuthoringAppJsTest {
         }
     }
 
+    @Test
+    void keepsServerPreflightAuthoritativeForLocallyRejectedConnections() throws Exception {
+        String source = appJsSource();
+
+        assertThat(source)
+                .contains("connectionServerPreflightMessage(")
+                .contains("Asking server for final decision...")
+                .contains("Server validation is authoritative.");
+        assertThat(source)
+                .doesNotContain("if (!compatibility.ok) {\n        setConnectionMessage(compatibility.message, 'error');")
+                .doesNotContain("if (!compatibility.ok) {\n          setConnectionMessage(compatibility.message, 'error');")
+                .doesNotContain("const disabled = candidate.compatibility.ok ? '' : ' disabled';");
+    }
+
     private static String appJsSource() throws IOException {
         return new ClassPathResource("static/examples/gateway/app.js")
                 .getContentAsString(StandardCharsets.UTF_8);
@@ -186,7 +200,10 @@ class VisualAuthoringAppJsTest {
                   'operatorPaletteSearchValues',
                   'renderOperatorDiagnosticsPanel',
                   'bindingCandidateSummary',
-                  'bindingCandidateSummaryLevel'
+                  'bindingCandidateSummaryLevel',
+                  'connectionServerPreflightMessage',
+                  'connectionLocalHeuristicStatus',
+                  'connectionLocalMismatchIsAdvisory'
                 ]) {
                   vm.runInContext(functionSource(name), context);
                 }
@@ -445,6 +462,22 @@ class VisualAuthoringAppJsTest {
                 ]);
                 const emptyCandidateSummary = context.bindingCandidateSummary([]);
                 const emptyCandidateLevel = context.bindingCandidateSummaryLevel([]);
+                const localOkPreflightMessage = context.connectionServerPreflightMessage(
+                  { ok: true, message: '' },
+                  'Checking connection with server...'
+                );
+                const localMismatchPreflightMessage = context.connectionServerPreflightMessage(
+                  { ok: false, message: 'Type mismatch: string cannot feed integer.' },
+                  'Checking connection with server...'
+                );
+                const localMismatchStatus = context.connectionLocalHeuristicStatus({
+                  ok: false,
+                  message: 'Type mismatch: string cannot feed integer.'
+                });
+                const localCycleStatus = context.connectionLocalHeuristicStatus({
+                  ok: false,
+                  message: 'This connection would create a cycle.'
+                });
 
                 const checks = [
                   ['schema path suffix', context.dslReferenceSuffixForSchemaPath('items.0.score'), '.items[0].score'],
@@ -494,6 +527,14 @@ class VisualAuthoringAppJsTest {
                   ['blocked binding candidate level', blockedCandidateLevel, 'error'],
                   ['empty binding candidate summary', emptyCandidateSummary, '0 compatible sources.'],
                   ['empty binding candidate level', emptyCandidateLevel, 'info'],
+                  ['local ok preflight message', localOkPreflightMessage, 'Checking connection with server...'],
+                  ['local mismatch preflight message', localMismatchPreflightMessage, 'Type mismatch: string cannot feed integer. Asking server for final decision...'],
+                  ['local mismatch advisory helper', String(context.connectionLocalMismatchIsAdvisory('Type mismatch: string cannot feed integer.')), 'true'],
+                  ['local cycle advisory helper', String(context.connectionLocalMismatchIsAdvisory('This connection would create a cycle.')), 'false'],
+                  ['local mismatch status level', localMismatchStatus.level, 'info'],
+                  ['local mismatch status message', localMismatchStatus.message, 'Local schema hint: Type mismatch: string cannot feed integer. Server validation is authoritative.'],
+                  ['local cycle status level', localCycleStatus.level, 'error'],
+                  ['local cycle status message', localCycleStatus.message, 'This connection would create a cycle.'],
                   ['dynamic schema DSL targets', dynamicSchemaDslTargets, [
                     '/inputSchema/schema/properties/dynamicAdditional/additionalProperties/properties/bad-field',
                     '/inputSchema/schema/properties/dynamicResidual/unevaluatedProperties/properties/bad-residual-field',
