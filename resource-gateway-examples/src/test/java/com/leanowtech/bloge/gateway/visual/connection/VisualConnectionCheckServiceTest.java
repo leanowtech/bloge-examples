@@ -778,6 +778,28 @@ class VisualConnectionCheckServiceTest {
     }
 
     @Test
+    void rejectsNativeConfigInputPreviewWhenNodeAlreadyLowersBusinessConfigSchemaValues() {
+        VisualConnectionCheckService service = connectionService(VisualCatalogTestSupport
+                .catalogWithLibrary(VisualCatalogTestSupport.nativeConfigCollisionLibrary()));
+        GraphDraft draft = nativeConfigCollisionPreviewDraft();
+
+        VisualConnectionCheckResult result = service.check(new VisualConnectionCheckRequest(
+                draft,
+                new GraphDraft.Endpoint("configFacts", "output", "threshold"),
+                new GraphDraft.Endpoint("policy", "inputs", "config"),
+                "data"
+        ));
+
+        assertThat(result.accepted()).isFalse();
+        assertThat(result.bindingKey()).isEqualTo("config");
+        assertThat(result.diagnostics())
+                .anySatisfy(diagnostic -> {
+                    assertThat(diagnostic.code()).isEqualTo("visual.input.configConflict");
+                    assertThat(diagnostic.target()).isEqualTo("/nodes/1/inputs/config");
+                });
+    }
+
+    @Test
     void acceptsRootArraySourcePickerConfigExpression() {
         VisualConnectionCheckService service = connectionService(VisualCatalogTestSupport
                 .catalogWithLibrary(rootArrayConfigLibrary()));
@@ -1121,6 +1143,41 @@ class VisualConnectionCheckServiceTest {
                                 "",
                                 Map.of(),
                                 Map.of("mode", "strict"),
+                                null
+                        )
+                ),
+                List.of(),
+                Map.of(),
+                new GraphDraft.OutputSelection("policy", "")
+        );
+    }
+
+    private static GraphDraft nativeConfigCollisionPreviewDraft() {
+        return new GraphDraft(
+                "",
+                "",
+                0,
+                "nativeConfigCollisionPreview",
+                "",
+                "",
+                "",
+                "",
+                null,
+                List.of(
+                        new GraphDraft.DraftNode(
+                                "configFacts",
+                                "risk:configFacts",
+                                "",
+                                Map.of(),
+                                Map.of(),
+                                null
+                        ),
+                        new GraphDraft.DraftNode(
+                                "policy",
+                                "risk:nativeConfigPolicy",
+                                "",
+                                Map.of(),
+                                Map.of("limit", 700),
                                 null
                         )
                 ),

@@ -1071,6 +1071,11 @@ output selection，或 whole-output graph selection 暴露出不可渲染为 BLO
 segment 的 output port，服务端
 必须返回 blocking diagnostic，不能把该草稿交给 DSL generator。
 
+native operator 的业务 `configSchema` 会 lower 成 BLOGE input block 的根
+`config` 对象；如果同一个节点又绑定了普通 input schema 路径并且该路径 lower 到根
+`config`，draft 校验和连接预检必须返回 blocking diagnostic，不能把这个冲突留给
+DSL generator 或编译器兜底。
+
 响应：
 
 ```json

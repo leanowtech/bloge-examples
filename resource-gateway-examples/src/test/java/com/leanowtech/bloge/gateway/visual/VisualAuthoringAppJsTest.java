@@ -206,6 +206,11 @@ class VisualAuthoringAppJsTest {
                   'autoBindRequiredInputsFromButton',
                   'applyRequiredInputAutoBindPlan',
                   'sourceHandlesForNode',
+                  'targetHandlesForNode',
+                  'nativeOperatorLowersConfigInput',
+                  'usesNativeNodeBlock',
+                  'nativeInputPathForTarget',
+                  'usesNativeConfigInputField',
                   'outputPathOptionsForNode',
                   'outputSelectionPathForHandle',
                   'isConfigExpressionValue',
@@ -257,6 +262,7 @@ class VisualAuthoringAppJsTest {
                   'canonicalEdgeKind',
                   'builderConfigBindings',
                   'builderInputBindings',
+                  'customBusinessConfig',
                   'graphOutputContractSummary',
                   'graphOutputSelectedSchema',
                   'outputReferenceFromSelectionPath',
@@ -418,6 +424,41 @@ class VisualAuthoringAppJsTest {
                           }
                         }
                       }]
+                    };
+                  }
+                  if (node.id === 'nativeConfigPolicy') {
+                    return {
+                      label: 'Native config policy',
+                      inputPort: 'inputs',
+                      outputPort: 'output',
+                      sourceKind: 'user-library',
+                      lowering: { mode: 'native', operatorRef: 'riskNativeConfigPolicy' },
+                      ports: [{
+                        name: 'inputs',
+                        required: true,
+                        schema: {
+                          schema: {
+                            type: 'object',
+                            properties: {
+                              config: { type: 'integer' },
+                              score: { type: 'integer' }
+                            },
+                            required: ['config', 'score']
+                          }
+                        }
+                      }],
+                      outputPorts: [{
+                        name: 'output',
+                        schema: { schema: { type: 'object', properties: { accepted: { type: 'boolean' } } } }
+                      }],
+                      configSchema: {
+                        schema: {
+                          type: 'object',
+                          properties: {
+                            limit: { type: 'integer' }
+                          }
+                        }
+                      }
                     };
                   }
                   if (node.id === 'auditNode') {
@@ -914,6 +955,24 @@ class VisualAuthoringAppJsTest {
                   output: { nodeId: 'mixedOutputNode', path: '' }
                 };
                 const mixedOutputNormalizedPath = context.ensureBuilderOutput(mixedOutputBuilder).path;
+                const nativeConfigPolicyNode = {
+                  id: 'nativeConfigPolicy',
+                  type: 'customOperator',
+                  config: { limit: 700 }
+                };
+                const nativeConfigPolicyTargets = context.targetHandlesForNode(nativeConfigPolicyNode);
+                const nativeConfigInputHidden = nativeConfigPolicyTargets
+                  .some((target) => target.port === 'inputs' && target.path === 'config');
+                const nativeScoreInputVisible = nativeConfigPolicyTargets
+                  .some((target) => target.port === 'inputs' && target.path === 'score');
+                const nativeExecutionOnlyTargets = context.targetHandlesForNode({
+                  id: 'nativeConfigPolicy',
+                  type: 'customOperator',
+                  config: { timeout: '2s' }
+                });
+                const nativeExecutionOnlyConfigVisible = nativeExecutionOnlyTargets
+                  .some((target) => target.port === 'inputs' && target.path === 'config');
+                const nativeRootConfigInputPath = context.nativeInputPathForTarget('config', '');
                 context.contextSourceHandles = () => [
                   { nodeId: '__ctx', path: 'name', type: 'string' },
                   { nodeId: '__ctx', path: 'score', type: 'integer' }
@@ -1190,6 +1249,10 @@ class VisualAuthoringAppJsTest {
                   ['mixed unsafe output hides full output option', mixedOutputOptions, 'facts'],
                   ['mixed unsafe output default path', mixedOutputDefaultPath, 'facts'],
                   ['mixed unsafe output normalized path', mixedOutputNormalizedPath, 'facts'],
+                  ['native config input hidden with business config', nativeConfigInputHidden, false],
+                  ['native score input visible with business config', nativeScoreInputVisible, true],
+                  ['native config input visible with execution config only', nativeExecutionOnlyConfigVisible, true],
+                  ['native root config port path', nativeRootConfigInputPath, 'config'],
                   ['context binding kind', contextBinding.kind, 'contextPath'],
                   ['context binding path', contextBinding.path, 'scores.0.value'],
                   ['output binding kind', outputBinding.kind, 'nodePath'],

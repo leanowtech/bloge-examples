@@ -2095,6 +2095,63 @@ public final class VisualCatalogTestSupport {
         );
     }
 
+    public static OperatorLibrary nativeConfigCollisionLibrary() {
+        OperatorDefinition facts = new OperatorDefinition(
+                "bloge.visualOperator.v1",
+                "risk:configFacts",
+                "1.0.0",
+                new OperatorDefinition.Display("Config facts",
+                        "Produces a scalar value that can be wired into an operator input.",
+                        List.of("risk", "config")),
+                new OperatorDefinition.Source("user-library", "", "", "", true),
+                new OperatorDefinition.Ports(
+                        List.of(),
+                        List.of(new OperatorDefinition.Port("output",
+                                SchemaEnvelope.object(Map.of("threshold", Map.of("type", "integer")),
+                                        List.of("threshold")),
+                                true,
+                                "Config facts output."))
+                ),
+                SchemaEnvelope.opaque(),
+                OperatorDefinition.Capabilities.pure(),
+                new OperatorDefinition.Lowering("native", "riskConfigFacts", Map.of()),
+                List.of()
+        );
+        OperatorDefinition policy = new OperatorDefinition(
+                "bloge.visualOperator.v1",
+                "risk:nativeConfigPolicy",
+                "1.0.0",
+                new OperatorDefinition.Display("Native config policy",
+                        "Native operator with a config input and business configSchema.",
+                        List.of("risk", "config")),
+                new OperatorDefinition.Source("user-library", "", "", "", true),
+                new OperatorDefinition.Ports(
+                        List.of(new OperatorDefinition.Port("inputs",
+                                SchemaEnvelope.object(Map.of("config", Map.of("type", "integer")),
+                                        List.of("config")),
+                                true,
+                                "Input property that lowers to the native config field.")),
+                        List.of(new OperatorDefinition.Port("output",
+                                SchemaEnvelope.object(Map.of("accepted", Map.of("type", "boolean")), List.of()),
+                                true,
+                                "Policy output."))
+                ),
+                SchemaEnvelope.object(Map.of("limit", Map.of("type", "integer")), List.of("limit")),
+                OperatorDefinition.Capabilities.pure(),
+                new OperatorDefinition.Lowering("native", "riskNativeConfigPolicy", Map.of()),
+                List.of()
+        );
+        return new OperatorLibrary(
+                "bloge.visualOperatorLibrary.v1",
+                "risk-native-config-collision",
+                "Native config collision operators",
+                "1.0.0",
+                "risk-team",
+                "ACTIVE",
+                List.of(facts, policy)
+        );
+    }
+
     public static OperatorLibrary nestedConfigPolicyLibrary() {
         Map<String, Object> outputProperties = new LinkedHashMap<>();
         outputProperties.put("accepted", Map.of("type", "boolean"));

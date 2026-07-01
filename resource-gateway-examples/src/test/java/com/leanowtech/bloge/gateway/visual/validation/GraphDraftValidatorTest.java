@@ -3730,6 +3730,31 @@ class GraphDraftValidatorTest {
     }
 
     @Test
+    void rejectsNativeConfigInputWhenNodeAlsoLowersBusinessConfigSchemaValues() {
+        GraphDraftValidator validator = new GraphDraftValidator(
+                VisualCatalogTestSupport.catalogWithLibrary(
+                        VisualCatalogTestSupport.nativeConfigCollisionLibrary()));
+        GraphDraft draft = nativeConfigCollisionDraft(List.of(new GraphDraft.DraftEdge(
+                "threshold-to-config",
+                "data",
+                new GraphDraft.Endpoint("configFacts", "output", "threshold"),
+                new GraphDraft.Endpoint("policy", "inputs", "config")
+        )));
+
+        VisualValidationResult result = validator.validate(draft);
+
+        assertThat(result.valid()).isFalse();
+        assertThat(result.diagnostics())
+                .anySatisfy(diagnostic -> {
+                    assertThat(diagnostic.code()).isEqualTo("visual.input.configConflict");
+                    assertThat(diagnostic.target()).isEqualTo("/nodes/1/inputs/config");
+                    assertThat(diagnostic.message())
+                            .contains("input path 'config'")
+                            .contains("BLOGE input field 'config'");
+                });
+    }
+
+    @Test
     void rejectsServiceManagedConfigForPublicationBackedOperators() {
         GraphDraftValidator validator = new GraphDraftValidator(
                 VisualCatalogTestSupport.catalogWithLibrary(publicationPolicyLibrary()));
@@ -6250,6 +6275,42 @@ class GraphDraftValidatorTest {
                         null
                 )),
                 List.of(),
+                Map.of(),
+                new GraphDraft.OutputSelection("policy", "")
+        );
+    }
+
+    private static GraphDraft nativeConfigCollisionDraft(List<GraphDraft.DraftEdge> edges) {
+        return new GraphDraft(
+                "",
+                "",
+                0,
+                "nativeConfigCollision",
+                "",
+                "",
+                "",
+                "",
+                null,
+                List.of(
+                        new GraphDraft.DraftNode(
+                                "configFacts",
+                                "risk:configFacts",
+                                "",
+                                Map.of(),
+                                Map.of(),
+                                null
+                        ),
+                        new GraphDraft.DraftNode(
+                                "policy",
+                                "risk:nativeConfigPolicy",
+                                "",
+                                Map.of("config", GraphDraft.Binding.nodePath(
+                                        "configFacts", "output", "threshold", "inputs", "config")),
+                                Map.of("limit", 700),
+                                null
+                        )
+                ),
+                edges,
                 Map.of(),
                 new GraphDraft.OutputSelection("policy", "")
         );

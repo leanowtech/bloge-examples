@@ -47,6 +47,7 @@ public class GraphDraftValidator {
             GraphDraft.SCHEMA_VERSION
     );
     private static final Set<String> SUPPORTED_EDGE_KINDS = Set.of("data", "dependency", "route");
+    private static final Set<String> EXECUTION_CONFIG_KEYS = Set.of("timeout", "retryAttempts");
     private static final Set<String> SERVICE_MANAGED_PUBLICATION_CONFIG_KEYS = Set.of("publicationId", "outputNode");
     private static final Set<String> RESERVED_DSL_FIELD_NAMES = Set.of(
             "graph", "node", "branch", "decision_table", "on", "input", "depends_on",
@@ -2214,7 +2215,55 @@ public class GraphDraftValidator {
         if ("bloge:decisionTable".equals(operator.operatorRef())) {
             validateDecisionTableFieldKeys(node, nodePath, diagnostics);
         }
+        validateNativeConfigInputConflict(node, operator, nodePath, diagnostics);
         validateConfigValue(node.config(), operator.configSchema().schema(), nodePath + "/config", diagnostics);
+    }
+
+    private static void validateNativeConfigInputConflict(GraphDraft.DraftNode node,
+                                                          OperatorDefinition operator,
+                                                          String nodePath,
+                                                          List<VisualDiagnostic> diagnostics) {
+        if (!usesNativeNodeBlock(operator) || !nativeOperatorLowersConfigInput(node, operator)) {
+            return;
+        }
+        for (Map.Entry<String, GraphDraft.Binding> input : node.inputs().entrySet()) {
+            String inputPath = nativeInputPath(input.getKey(), input.getValue());
+            if (!usesNativeConfigInputField(inputPath)) {
+                continue;
+            }
+            diagnostics.add(VisualDiagnostic.error("visual.input.configConflict",
+                    "Native operator node '%s' cannot lower input path '%s' and configSchema values because both render to BLOGE input field 'config'."
+                            .formatted(node.id(), inputPath),
+                    nodePath + "/inputs/" + input.getKey()));
+        }
+    }
+
+    private static boolean usesNativeNodeBlock(OperatorDefinition operator) {
+        return "native".equals(operator.lowering().mode())
+                && !"resource-descriptor".equals(operator.source().kind())
+                && !List.of("httpResource", "bloge:decisionTable", "bloge:transform")
+                .contains(operator.operatorRef());
+    }
+
+    private static boolean nativeOperatorLowersConfigInput(GraphDraft.DraftNode node, OperatorDefinition operator) {
+        if ("visual-publication".equals(operator.source().kind())) {
+            return true;
+        }
+        return node.config().keySet().stream()
+                .anyMatch(key -> !EXECUTION_CONFIG_KEYS.contains(key));
+    }
+
+    private static String nativeInputPath(String inputKey, GraphDraft.Binding binding) {
+        String inputName = targetInputName(inputKey, binding);
+        if (binding.targetPort().isBlank() || "inputs".equals(binding.targetPort())
+                || inputName.equals(binding.targetPort()) || inputName.startsWith(binding.targetPort() + ".")) {
+            return inputName;
+        }
+        return inputName.isBlank() ? binding.targetPort() : binding.targetPort() + "." + inputName;
+    }
+
+    private static boolean usesNativeConfigInputField(String inputPath) {
+        return "config".equals(inputPath) || inputPath.startsWith("config.");
     }
 
     private static void validateDecisionTableFieldKeys(GraphDraft.DraftNode node,

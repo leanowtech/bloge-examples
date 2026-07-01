@@ -8441,6 +8441,7 @@ function targetHandlesForNode(node) {
   if (node.type === 'customOperator') {
     return inputPortsForSpec(spec).flatMap((port) => {
       const portName = port.name || spec.inputPort || 'inputs';
+      const configInputConflict = nativeOperatorLowersConfigInput(node, spec);
       const seenPaths = new Set();
       const targets = [
         ...dslSafeSchemaFieldDescriptors(port.schema),
@@ -8473,7 +8474,8 @@ function targetHandlesForNode(node) {
           required: field.required,
           dslPathSafe: true
         }))
-      ];
+      ].filter((target) => !configInputConflict
+        || !usesNativeConfigInputField(nativeInputPathForTarget(target.port, target.path)));
     });
   }
   return [{
@@ -8482,6 +8484,33 @@ function targetHandlesForNode(node) {
     path: 'input',
     type: ''
   }];
+}
+
+function nativeOperatorLowersConfigInput(node, spec = specForNode(node)) {
+  if (!node || node.type !== 'customOperator' || !usesNativeNodeBlock(spec)) {
+    return false;
+  }
+  if (spec.sourceKind === 'visual-publication') {
+    return true;
+  }
+  return Object.keys(customBusinessConfig(node.config || {})).length > 0;
+}
+
+function usesNativeNodeBlock(spec) {
+  return String(spec?.lowering?.mode || 'native').trim().toLowerCase() === 'native';
+}
+
+function nativeInputPathForTarget(targetPort, targetPath) {
+  const inputPath = String(targetPath || '');
+  const port = String(targetPort || '');
+  if (!port || port === 'inputs' || inputPath === port || inputPath.startsWith(`${port}.`)) {
+    return inputPath;
+  }
+  return inputPath ? `${port}.${inputPath}` : port;
+}
+
+function usesNativeConfigInputField(inputPath) {
+  return inputPath === 'config' || String(inputPath || '').startsWith('config.');
 }
 
 function dynamicInputFieldDescriptors(node, spec, portName, portSchema) {
