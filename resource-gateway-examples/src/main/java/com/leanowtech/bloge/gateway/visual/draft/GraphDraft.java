@@ -204,6 +204,8 @@ public record GraphDraft(
      * @param targetPath target input path for this binding
      * @param expr raw BLOGE expression
      * @param fields nested fields for objectTemplate bindings
+     * @param targetUnionBranch explicit target oneOf/anyOf branch selected by the author
+     * @param targetUnionBranches explicit nested target oneOf/anyOf branches keyed by target path
      */
     public record Binding(
             String kind,
@@ -214,7 +216,9 @@ public record GraphDraft(
             String targetPort,
             String targetPath,
             String expr,
-            Map<String, Binding> fields
+            Map<String, Binding> fields,
+            UnionBranchSelection targetUnionBranch,
+            Map<String, UnionBranchSelection> targetUnionBranches
     ) {
         /**
          * Creates a binding.
@@ -228,6 +232,41 @@ public record GraphDraft(
             targetPath = targetPath == null ? "" : targetPath;
             expr = expr == null ? "" : expr;
             fields = fields == null ? Map.of() : new LinkedHashMap<>(fields);
+            targetUnionBranch = targetUnionBranch == null ? UnionBranchSelection.empty() : targetUnionBranch;
+            targetUnionBranches = normalizeUnionBranchSelections(targetUnionBranches);
+        }
+
+        /**
+         * Backward-compatible constructor for bindings created before nested union branch selection existed.
+         */
+        public Binding(String kind,
+                       Object value,
+                       String path,
+                       String nodeId,
+                       String sourcePort,
+                       String targetPort,
+                       String targetPath,
+                       String expr,
+                       Map<String, Binding> fields,
+                       UnionBranchSelection targetUnionBranch) {
+            this(kind, value, path, nodeId, sourcePort, targetPort, targetPath, expr, fields,
+                    targetUnionBranch, Map.of());
+        }
+
+        /**
+         * Backward-compatible constructor for bindings created before explicit union branch selection existed.
+         */
+        public Binding(String kind,
+                       Object value,
+                       String path,
+                       String nodeId,
+                       String sourcePort,
+                       String targetPort,
+                       String targetPath,
+                       String expr,
+                       Map<String, Binding> fields) {
+            this(kind, value, path, nodeId, sourcePort, targetPort, targetPath, expr, fields,
+                    UnionBranchSelection.empty(), Map.of());
         }
 
         public static Binding constant(Object value) {
@@ -275,6 +314,45 @@ public record GraphDraft(
                 case "objecttemplate" -> "objectTemplate";
                 default -> trimmed;
             };
+        }
+    }
+
+    private static Map<String, UnionBranchSelection> normalizeUnionBranchSelections(
+            Map<String, UnionBranchSelection> selections) {
+        if (selections == null || selections.isEmpty()) {
+            return Map.of();
+        }
+        Map<String, UnionBranchSelection> normalized = new LinkedHashMap<>();
+        selections.forEach((path, selection) -> {
+            UnionBranchSelection value = selection == null ? UnionBranchSelection.empty() : selection;
+            if (value.selected()) {
+                normalized.put(path == null ? "" : path.trim(), value);
+            }
+        });
+        return normalized;
+    }
+
+    /**
+     * Explicit oneOf/anyOf branch selected for a binding target.
+     *
+     * @param keyword JSON Schema union keyword, oneOf or anyOf
+     * @param index zero-based union branch index
+     */
+    public record UnionBranchSelection(String keyword, int index) {
+        /**
+         * Creates a union branch selection.
+         */
+        public UnionBranchSelection {
+            keyword = keyword == null ? "" : keyword.trim();
+            index = Math.max(-1, index);
+        }
+
+        public static UnionBranchSelection empty() {
+            return new UnionBranchSelection("", -1);
+        }
+
+        public boolean selected() {
+            return !keyword.isBlank() || index >= 0;
         }
     }
 

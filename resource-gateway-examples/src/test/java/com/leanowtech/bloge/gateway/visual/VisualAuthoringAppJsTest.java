@@ -150,6 +150,7 @@ class VisualAuthoringAppJsTest {
                 }
 
                 const context = vm.createContext({ console });
+                context.SUPPORTED_SCHEMA_UNION_KEYWORDS = ['oneOf', 'anyOf'];
                 for (const name of [
                   'escapeHtml',
                   'arrayIndexSegment',
@@ -166,6 +167,11 @@ class VisualAuthoringAppJsTest {
                   'sourceFromOutputExpressionParts',
                   'connectionSourceFromExpression',
                   'bindingFromExpression',
+                  'normalizedUnionBranchSelection',
+                  'normalizedUnionBranchSelections',
+                  'schemaUnionBranches',
+                  'selectedUnionBranchSchema',
+                  'targetSchemaForUnionSelection',
                   'endpointLabel',
                   'configPathSegments',
                   'hasConfigPath',
@@ -204,6 +210,7 @@ class VisualAuthoringAppJsTest {
                   'arraySchemaFieldDescriptors',
                   'isSchemaPathDslSafe',
                   'childSchemaForPathSegment',
+                  'schemaAtPath',
                   'dynamicInputFieldDescriptors',
                   'dynamicOutputFieldDescriptors',
                   'customInputPathForKey',
@@ -221,6 +228,11 @@ class VisualAuthoringAppJsTest {
                   'defaultCustomInputStateForOperator',
                   'defaultResourceParamInputs',
                   'resourceParamInputs',
+                  'inputUnionBranchForTarget',
+                  'inputUnionBranchesForPort',
+                  'inputUnionBranchesForTarget',
+                  'targetWithSelectedUnionBranch',
+                  'setInputUnionBranchForTarget',
                   'expressionForTargetInput',
                   'setExpressionForTargetInput',
                   'renderRequiredInputAutoBindButton',
@@ -607,6 +619,50 @@ class VisualAuthoringAppJsTest {
                   'unknown.output.items[0].score',
                   { builder: { nodes: [] } }
                 );
+                const unionTargetBinding = context.bindingFromExpression(
+                  'unknown.output.items[0].score',
+                  {
+                    builder: { nodes: [] },
+                    targetPort: 'inputs',
+                    targetPath: 'decision',
+                    targetUnionBranch: { keyword: 'oneOf', index: 1 }
+                  }
+                );
+                const nestedUnionTargetBinding = context.bindingFromExpression(
+                  'unknown.output.items[0].score',
+                  {
+                    builder: { nodes: [] },
+                    targetPort: 'inputs',
+                    targetPath: 'payload.score',
+                    targetUnionBranches: { payload: { keyword: 'oneOf', index: 0 } }
+                  }
+                );
+                const nestedUnionTargetSchema = {
+                  schema: {
+                    type: 'object',
+                    properties: {
+                      payload: {
+                        oneOf: [
+                          {
+                            type: 'object',
+                            properties: { score: { type: 'integer' } },
+                            required: ['score']
+                          },
+                          {
+                            type: 'object',
+                            properties: { decision: { type: 'string' } },
+                            required: ['decision']
+                          }
+                        ]
+                      }
+                    }
+                  }
+                };
+                const nestedUnionBranchSelections = { payload: { keyword: 'oneOf', index: 0 } };
+                const nestedUnionFieldPaths = context.schemaFieldDescriptors(
+                  nestedUnionTargetSchema,
+                  nestedUnionBranchSelections
+                ).map((field) => field.path).join('|');
                 const unsafeContextExpression = context.bindingFromExpression(
                   'ctx.customer-id',
                   { builder: { nodes: [] } }
@@ -1367,6 +1423,11 @@ class VisualAuthoringAppJsTest {
                   ['context binding path', contextBinding.path, 'scores.0.value'],
                   ['output binding kind', outputBinding.kind, 'nodePath'],
                   ['output binding path', outputBinding.path, 'items.0.score'],
+                  ['union binding branch keyword', unionTargetBinding.targetUnionBranch.keyword, 'oneOf'],
+                  ['union binding branch index', unionTargetBinding.targetUnionBranch.index, 1],
+                  ['nested union binding branch keyword', nestedUnionTargetBinding.targetUnionBranches.payload.keyword, 'oneOf'],
+                  ['nested union binding branch index', nestedUnionTargetBinding.targetUnionBranches.payload.index, 0],
+                  ['nested union field paths', nestedUnionFieldPaths, 'payload|payload.score'],
                   ['unsafe context expression kind', unsafeContextExpression.kind, 'expression'],
                   ['config array container', configArrayBeforeDelete, true],
                   ['config array value', configValueBeforeDelete, 'ctx.score'],
@@ -1670,6 +1731,13 @@ class VisualAuthoringAppJsTest {
                   'schemaUnionDescriptors',
                   'schemaUnionDescriptorLabel',
                   'schemaUnionBranches',
+                  'schemaUnionBranchOptions',
+                  'normalizedUnionBranchSelection',
+                  'unionBranchSelectionValue',
+                  'unionBranchSelectionFromValue',
+                  'selectedUnionBranchSchema',
+                  'schemaCompatibilityIssueForTargetUnionSelection',
+                  'targetSchemaForUnionSelection',
                   'schemaWithoutUnions',
                   'schemaObjectProperties',
                   'schemaItemsSchema',
@@ -1794,6 +1862,21 @@ class VisualAuthoringAppJsTest {
                   { type: 'integer' },
                   { oneOf: [{ type: 'integer' }, { type: 'number' }] }
                 );
+                const selectedBranchIssue = context.schemaCompatibilityIssueForTargetUnionSelection(
+                  { type: 'integer' },
+                  { oneOf: [{ type: 'integer' }, { type: 'number' }] },
+                  { keyword: 'oneOf', index: 0 }
+                );
+                const wrongBranchIssue = context.schemaCompatibilityIssueForTargetUnionSelection(
+                  { type: 'integer' },
+                  { oneOf: [{ type: 'string' }, { type: 'integer' }] },
+                  { keyword: 'oneOf', index: 0 }
+                );
+                const branchOptions = context.schemaUnionBranchOptions({
+                  oneOf: [{ type: 'integer' }, { type: 'string' }]
+                }).map((option) => option.label).join('|');
+                const branchValue = context.unionBranchSelectionValue({ keyword: 'oneOf', index: 1 });
+                const parsedBranch = context.unionBranchSelectionFromValue(branchValue);
                 const nestedUnionSummary = context.schemaUnionSummary({
                   schema: {
                     type: 'object',
@@ -1862,7 +1945,13 @@ class VisualAuthoringAppJsTest {
                   ['union library html config branch', String(unionLibraryProfileHtml.includes('config union (root) oneOf&lt;object|null&gt;')), 'true'],
                   ['source union issue', sourceUnionIssue, 'source oneOf branch 1 cannot feed target: source type string cannot feed target type integer'],
                   ['target anyOf compatible', targetAnyOfIssue, ''],
-                  ['target oneOf ambiguous', targetOneOfIssue, 'target oneOf is ambiguous because source is compatible with 2 compatible branches']
+                  ['target oneOf ambiguous', targetOneOfIssue, 'target oneOf is ambiguous because source is compatible with 2 compatible branches'],
+                  ['selected branch compatible', selectedBranchIssue, ''],
+                  ['wrong selected branch issue', wrongBranchIssue, 'source type integer cannot feed target type string'],
+                  ['branch option labels', branchOptions, 'oneOf[0] integer|oneOf[1] string'],
+                  ['branch selection value', branchValue, 'oneOf:1'],
+                  ['branch selection parse keyword', parsedBranch.keyword, 'oneOf'],
+                  ['branch selection parse index', parsedBranch.index, 1]
                 ];
 
                 for (const [label, actual, expected] of checks) {

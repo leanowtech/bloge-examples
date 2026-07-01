@@ -1978,6 +1978,18 @@ body.dragging-operator * {
   color: var(--text);
 }
 
+.binding-union-branch {
+  display: grid;
+  gap: 4px;
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 800;
+}
+
+.binding-union-branch span {
+  text-transform: uppercase;
+}
+
 .library-controls .config-checkbox {
   grid-column: 1 / -1;
   min-height: 28px;

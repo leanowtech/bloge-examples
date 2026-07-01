@@ -88,13 +88,13 @@ public class VisualConnectionCheckService {
             ));
         }
         String inputKey = previewBindingKey(request.draft(), request.target());
-        GraphDraft.Binding binding = GraphDraft.Binding.nodePath(
+        GraphDraft.Binding binding = withTargetUnionBranch(request, GraphDraft.Binding.nodePath(
                 request.source().nodeId(),
                 request.source().port(),
                 request.source().path(),
                 request.target().port(),
                 request.target().path()
-        );
+        ));
         GraphDraft candidate = draftWithPreviewBindingAndEdge(request.draft(), targetIndex, inputKey, binding, edge);
         int previewIndex = candidate.edges().size() - 1;
         String bindingPath = "/nodes/" + targetIndex + "/inputs/" + inputKey;
@@ -204,11 +204,11 @@ public class VisualConnectionCheckService {
         }
 
         String inputKey = previewBindingKey(request.draft(), request.target());
-        GraphDraft.Binding binding = GraphDraft.Binding.contextPath(
+        GraphDraft.Binding binding = withTargetUnionBranch(request, GraphDraft.Binding.contextPath(
                 request.source().path(),
                 request.target().port(),
                 request.target().path()
-        );
+        ));
         GraphDraft candidate = draftWithPreviewBinding(request.draft(), targetIndex, inputKey, binding);
         String bindingPath = "/nodes/" + targetIndex + "/inputs/" + inputKey;
         String operatorPath = "/nodes/" + targetIndex + "/operatorRef";
@@ -238,6 +238,30 @@ public class VisualConnectionCheckService {
                 draft.visualLayout(),
                 draft.output(),
                 draft.operatorFingerprints()
+        );
+    }
+
+    private static GraphDraft.Binding withTargetUnionBranch(VisualConnectionCheckRequest request,
+                                                            GraphDraft.Binding binding) {
+        GraphDraft.UnionBranchSelection selection = request.targetUnionBranch();
+        Map<String, GraphDraft.UnionBranchSelection> nestedSelections = new LinkedHashMap<>(
+                binding.targetUnionBranches());
+        nestedSelections.putAll(request.targetUnionBranches());
+        if ((selection == null || !selection.selected()) && nestedSelections.isEmpty()) {
+            return binding;
+        }
+        return new GraphDraft.Binding(
+                binding.kind(),
+                binding.value(),
+                binding.path(),
+                binding.nodeId(),
+                binding.sourcePort(),
+                binding.targetPort(),
+                binding.targetPath(),
+                binding.expr(),
+                binding.fields(),
+                selection != null && selection.selected() ? selection : binding.targetUnionBranch(),
+                nestedSelections
         );
     }
 

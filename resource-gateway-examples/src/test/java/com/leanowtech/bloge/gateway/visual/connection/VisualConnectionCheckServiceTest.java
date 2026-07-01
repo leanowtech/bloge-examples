@@ -40,6 +40,47 @@ class VisualConnectionCheckServiceTest {
     }
 
     @Test
+    void acceptsConnectionPreviewWithExplicitTargetUnionBranchSelection() {
+        VisualConnectionCheckService service = connectionService(VisualCatalogTestSupport
+                .catalogWithLibrary(unionBranchSelectionLibrary()));
+        GraphDraft draft = unionBranchSelectionDraft();
+
+        VisualConnectionCheckResult result = service.check(new VisualConnectionCheckRequest(
+                draft,
+                new GraphDraft.Endpoint("integerProducer", "output", "value"),
+                new GraphDraft.Endpoint("unionConsumer", "inputs", "value"),
+                "data",
+                "",
+                new GraphDraft.UnionBranchSelection("oneOf", 0)
+        ));
+
+        assertThat(result.accepted()).isTrue();
+        assertThat(result.bindingKey()).isEqualTo("value");
+        assertThat(result.diagnostics()).isEmpty();
+    }
+
+    @Test
+    void acceptsConnectionPreviewWithNestedTargetUnionBranchSelection() {
+        VisualConnectionCheckService service = connectionService(VisualCatalogTestSupport
+                .catalogWithLibrary(nestedUnionBranchSelectionLibrary()));
+        GraphDraft draft = nestedUnionBranchSelectionDraft();
+
+        VisualConnectionCheckResult result = service.check(new VisualConnectionCheckRequest(
+                draft,
+                new GraphDraft.Endpoint("integerProducer", "output", "value"),
+                new GraphDraft.Endpoint("unionConsumer", "inputs", "payload.score"),
+                "data",
+                "",
+                GraphDraft.UnionBranchSelection.empty(),
+                Map.of("payload", new GraphDraft.UnionBranchSelection("oneOf", 0))
+        ));
+
+        assertThat(result.accepted()).isTrue();
+        assertThat(result.bindingKey()).isEqualTo("payload.score");
+        assertThat(result.diagnostics()).isEmpty();
+    }
+
+    @Test
     void acceptsConnectionPreviewThatReplacesExistingInputBinding() {
         VisualConnectionCheckService service = connectionService(VisualCatalogTestSupport
                 .catalogWithLoanApplicantResourceAndLibrary(VisualCatalogTestSupport.eligibilityLibrary("integer")));
@@ -942,6 +983,198 @@ class VisualConnectionCheckServiceTest {
 
     private static VisualConnectionCheckService connectionService(DefaultVisualOperatorCatalog catalog) {
         return new VisualConnectionCheckService(new GraphDraftValidator(catalog), catalog);
+    }
+
+    private static OperatorLibrary unionBranchSelectionLibrary() {
+        OperatorDefinition producer = new OperatorDefinition(
+                "bloge.visualOperator.v1",
+                "risk:integerProducer",
+                "1.0.0",
+                new OperatorDefinition.Display("Integer producer", "Produces an integer value.",
+                        List.of("test")),
+                new OperatorDefinition.Source("user-library", "", "", "", true),
+                new OperatorDefinition.Ports(
+                        List.of(),
+                        List.of(new OperatorDefinition.Port("output",
+                                SchemaEnvelope.object(Map.of("value", Map.of("type", "integer")), List.of()),
+                                true,
+                                "Integer output."))
+                ),
+                SchemaEnvelope.opaque(),
+                OperatorDefinition.Capabilities.pure(),
+                new OperatorDefinition.Lowering("native", "integerProducer", Map.of()),
+                List.of()
+        );
+        OperatorDefinition consumer = new OperatorDefinition(
+                "bloge.visualOperator.v1",
+                "risk:unionConsumer",
+                "1.0.0",
+                new OperatorDefinition.Display("Union consumer", "Consumes a selected union branch.",
+                        List.of("test")),
+                new OperatorDefinition.Source("user-library", "", "", "", true),
+                new OperatorDefinition.Ports(
+                        List.of(new OperatorDefinition.Port("inputs",
+                                SchemaEnvelope.object(Map.of("value", Map.of("oneOf", List.of(
+                                        Map.of("type", "integer"),
+                                        Map.of("type", "number")
+                                ))), List.of("value")),
+                                true,
+                                "Union input.")),
+                        List.of(new OperatorDefinition.Port("output",
+                                SchemaEnvelope.object(Map.of("accepted", Map.of("type", "boolean")), List.of()),
+                                true,
+                                "Consumer output."))
+                ),
+                SchemaEnvelope.opaque(),
+                OperatorDefinition.Capabilities.pure(),
+                new OperatorDefinition.Lowering("native", "unionConsumer", Map.of()),
+                List.of()
+        );
+        return new OperatorLibrary(
+                "bloge.visualOperatorLibrary.v1",
+                "union-branch-selection",
+                "Union branch selection",
+                "1.0.0",
+                "risk-team",
+                "ACTIVE",
+                List.of(producer, consumer)
+        );
+    }
+
+    private static GraphDraft unionBranchSelectionDraft() {
+        return new GraphDraft(
+                "",
+                "",
+                0,
+                "unionBranchSelection",
+                "",
+                "",
+                "",
+                "",
+                null,
+                List.of(
+                        new GraphDraft.DraftNode(
+                                "integerProducer",
+                                "risk:integerProducer",
+                                "",
+                                Map.of(),
+                                Map.of(),
+                                null
+                        ),
+                        new GraphDraft.DraftNode(
+                                "unionConsumer",
+                                "risk:unionConsumer",
+                                "",
+                                Map.of(),
+                                Map.of(),
+                                null
+                        )
+                ),
+                List.of(),
+                Map.of(),
+                new GraphDraft.OutputSelection("unionConsumer", "")
+        );
+    }
+
+    private static OperatorLibrary nestedUnionBranchSelectionLibrary() {
+        OperatorDefinition producer = new OperatorDefinition(
+                "bloge.visualOperator.v1",
+                "risk:integerProducer",
+                "1.0.0",
+                new OperatorDefinition.Display("Integer producer", "Produces an integer value.",
+                        List.of("test")),
+                new OperatorDefinition.Source("user-library", "", "", "", true),
+                new OperatorDefinition.Ports(
+                        List.of(),
+                        List.of(new OperatorDefinition.Port("output",
+                                SchemaEnvelope.object(Map.of("value", Map.of("type", "integer")), List.of()),
+                                true,
+                                "Integer output."))
+                ),
+                SchemaEnvelope.opaque(),
+                OperatorDefinition.Capabilities.pure(),
+                new OperatorDefinition.Lowering("native", "integerProducer", Map.of()),
+                List.of()
+        );
+        OperatorDefinition consumer = new OperatorDefinition(
+                "bloge.visualOperator.v1",
+                "risk:nestedUnionConsumer",
+                "1.0.0",
+                new OperatorDefinition.Display("Nested union consumer", "Consumes a branch child path.",
+                        List.of("test")),
+                new OperatorDefinition.Source("user-library", "", "", "", true),
+                new OperatorDefinition.Ports(
+                        List.of(new OperatorDefinition.Port("inputs",
+                                SchemaEnvelope.object(Map.of("payload", Map.of("oneOf", List.of(
+                                        Map.of(
+                                                "type", "object",
+                                                "properties", Map.of("score", Map.of("type", "integer")),
+                                                "required", List.of("score"),
+                                                "additionalProperties", false
+                                        ),
+                                        Map.of(
+                                                "type", "object",
+                                                "properties", Map.of("decision", Map.of("type", "string")),
+                                                "required", List.of("decision"),
+                                                "additionalProperties", false
+                                        )
+                                ))), List.of("payload")),
+                                true,
+                                "Nested union input.")),
+                        List.of(new OperatorDefinition.Port("output",
+                                SchemaEnvelope.object(Map.of("accepted", Map.of("type", "boolean")), List.of()),
+                                true,
+                                "Consumer output."))
+                ),
+                SchemaEnvelope.opaque(),
+                OperatorDefinition.Capabilities.pure(),
+                new OperatorDefinition.Lowering("native", "nestedUnionConsumer", Map.of()),
+                List.of()
+        );
+        return new OperatorLibrary(
+                "bloge.visualOperatorLibrary.v1",
+                "nested-union-branch-selection",
+                "Nested union branch selection",
+                "1.0.0",
+                "risk-team",
+                "ACTIVE",
+                List.of(producer, consumer)
+        );
+    }
+
+    private static GraphDraft nestedUnionBranchSelectionDraft() {
+        return new GraphDraft(
+                "",
+                "",
+                0,
+                "nestedUnionBranchSelection",
+                "",
+                "",
+                "",
+                "",
+                null,
+                List.of(
+                        new GraphDraft.DraftNode(
+                                "integerProducer",
+                                "risk:integerProducer",
+                                "",
+                                Map.of(),
+                                Map.of(),
+                                null
+                        ),
+                        new GraphDraft.DraftNode(
+                                "unionConsumer",
+                                "risk:nestedUnionConsumer",
+                                "",
+                                Map.of(),
+                                Map.of(),
+                                null
+                        )
+                ),
+                List.of(),
+                Map.of(),
+                new GraphDraft.OutputSelection("unionConsumer", "")
+        );
     }
 
     private static SchemaEnvelope graphInputSchema() {

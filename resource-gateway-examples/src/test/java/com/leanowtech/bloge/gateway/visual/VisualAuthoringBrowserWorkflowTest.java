@@ -329,6 +329,8 @@ class VisualAuthoringBrowserWorkflowTest {
                 .contains("/certification/status")
                 .contains("SUPPORTED_SCHEMA_UNION_KEYWORDS")
                 .contains("schema-union-summary")
+                .contains("targetUnionBranch")
+                .contains("binding-union-branch")
                 .contains("target oneOf is ambiguous")
                 .contains("/admin/visual-operator-libraries")
                 .contains("preview-resource-contract")

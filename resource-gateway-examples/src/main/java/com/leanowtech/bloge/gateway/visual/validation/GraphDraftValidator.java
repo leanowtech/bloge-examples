@@ -34,6 +34,7 @@ import static com.leanowtech.bloge.gateway.visual.validation.VisualSchemaCompati
 import static com.leanowtech.bloge.gateway.visual.validation.VisualSchemaCompatibility.schemaTypeLabel;
 import static com.leanowtech.bloge.gateway.visual.validation.VisualSchemaCompatibility.schemasCompatible;
 import static com.leanowtech.bloge.gateway.visual.validation.VisualSchemaCompatibility.staticExpressionLiteral;
+import static com.leanowtech.bloge.gateway.visual.validation.VisualSchemaCompatibility.valueMatchesSchema;
 
 /**
  * Schema-aware validator for visual graph drafts.
@@ -483,7 +484,8 @@ public class GraphDraftValidator {
             if (properties.isEmpty()) {
                 continue;
             }
-            if (propertyAtPath(targetPort.get().schema(), inputName) == null) {
+            if (targetPropertyAtPath(targetPort.get(), inputName, input.getValue(),
+                    nodePath + "/inputs/" + input.getKey(), diagnostics) == null) {
                 diagnostics.add(VisualDiagnostic.warning("visual.input.unknown",
                         "Input '%s' is not declared by operator '%s' port '%s'."
                                 .formatted(inputName, operator.operatorRef(), targetPort.get().name()),
@@ -752,7 +754,8 @@ public class GraphDraftValidator {
                         targetPath));
                 return;
             }
-            Map<String, Object> targetProperty = propertyAtPath(targetPort.get().schema(), inputName);
+            Map<String, Object> targetProperty = targetPropertyAtPath(targetPort.get(), inputName, binding,
+                    targetPath, diagnostics);
             if (targetProperty == null) {
                 diagnostics.add(VisualDiagnostic.error("visual.binding.unknownTargetPath",
                         "Target port '%s' does not accept path '%s'."
@@ -760,14 +763,16 @@ public class GraphDraftValidator {
                         targetPath));
                 return;
             }
-            String targetType = schemaType(targetProperty);
+            Map<String, Object> effectiveTargetProperty = selectedTargetUnionBranchSchema(binding, targetProperty,
+                    targetPath, diagnostics).orElse(targetProperty);
+            String targetType = schemaType(effectiveTargetProperty);
             if (!targetType.isBlank()
                     && !"object".equals(targetType)
                     && !"any".equals(targetType)
                     && !"opaque".equals(targetType)) {
                 diagnostics.add(VisualDiagnostic.error("visual.binding.typeMismatch",
                         "Object template for input '%s.%s' must target object-compatible schema, but target is %s."
-                                .formatted(targetPort.get().name(), inputName, schemaTypeLabel(targetProperty)),
+                                .formatted(targetPort.get().name(), inputName, schemaTypeLabel(effectiveTargetProperty)),
                         targetPath));
                 return;
             }
@@ -838,7 +843,8 @@ public class GraphDraftValidator {
             return;
         }
 
-        Map<String, Object> targetProperty = propertyAtPath(targetPort.get().schema(), inputName);
+        Map<String, Object> targetProperty = targetPropertyAtPath(targetPort.get(), inputName, binding,
+                targetPath, diagnostics);
         if (targetProperty == null) {
             diagnostics.add(VisualDiagnostic.error("visual.binding.unknownTargetPath",
                     "Target port '%s' does not accept path '%s'."
@@ -846,7 +852,8 @@ public class GraphDraftValidator {
                     targetPath));
             return;
         }
-        Optional<String> compatibilityIssue = schemaCompatibilityIssue(sourceProperty, targetProperty);
+        Optional<String> compatibilityIssue = schemaCompatibilityIssueForBindingTarget(binding, sourceProperty,
+                targetProperty, targetPath, diagnostics);
         if (compatibilityIssue.isPresent()) {
             diagnostics.add(VisualDiagnostic.error("visual.binding.typeMismatch",
                     "Cannot bind %s output '%s.%s' to %s input '%s.%s'."
@@ -882,7 +889,8 @@ public class GraphDraftValidator {
             return;
         }
 
-        Map<String, Object> targetProperty = propertyAtPath(targetPort.get().schema(), inputName);
+        Map<String, Object> targetProperty = targetPropertyAtPath(targetPort.get(), inputName, binding,
+                targetPath, diagnostics);
         if (targetProperty == null) {
             diagnostics.add(VisualDiagnostic.error("visual.binding.unknownTargetPath",
                     "Target port '%s' does not accept path '%s'."
@@ -890,7 +898,8 @@ public class GraphDraftValidator {
                     targetPath));
             return;
         }
-        Optional<String> compatibilityIssue = schemaCompatibilityIssue(sourceProperty, targetProperty);
+        Optional<String> compatibilityIssue = schemaCompatibilityIssueForBindingTarget(binding, sourceProperty,
+                targetProperty, targetPath, diagnostics);
         if (compatibilityIssue.isPresent()) {
             diagnostics.add(VisualDiagnostic.error("visual.binding.typeMismatch",
                     "Cannot bind graph input %s 'ctx.%s' to %s input '%s.%s'."
@@ -916,7 +925,8 @@ public class GraphDraftValidator {
             return;
         }
 
-        Map<String, Object> targetProperty = propertyAtPath(targetPort.get().schema(), inputName);
+        Map<String, Object> targetProperty = targetPropertyAtPath(targetPort.get(), inputName, binding,
+                targetPath, diagnostics);
         if (targetProperty == null) {
             diagnostics.add(VisualDiagnostic.error("visual.binding.unknownTargetPath",
                     "Target port '%s' does not accept path '%s'."
@@ -925,7 +935,8 @@ public class GraphDraftValidator {
             return;
         }
 
-        if (!constantValueMatchesSchema(binding.value(), targetProperty)) {
+        if (!constantValueMatchesBindingTargetSchema(binding.value(), binding, targetProperty, targetPath,
+                diagnostics)) {
             diagnostics.add(VisualDiagnostic.error("visual.binding.typeMismatch",
                     "Constant value for input '%s.%s' must be %s."
                             .formatted(targetPort.get().name(), inputName, schemaTypeLabel(targetProperty)),
@@ -956,7 +967,8 @@ public class GraphDraftValidator {
             return;
         }
 
-        Map<String, Object> targetProperty = propertyAtPath(targetPort.get().schema(), inputName);
+        Map<String, Object> targetProperty = targetPropertyAtPath(targetPort.get(), inputName, binding,
+                targetPath, diagnostics);
         if (targetProperty == null) {
             diagnostics.add(VisualDiagnostic.error("visual.binding.unknownTargetPath",
                     "Target port '%s' does not accept path '%s'."
@@ -970,7 +982,8 @@ public class GraphDraftValidator {
         if (pureReference.matched()) {
             Optional<String> compatibilityIssue = pureReference.schema() == null
                     ? Optional.empty()
-                    : schemaCompatibilityIssue(pureReference.schema(), targetProperty);
+                    : schemaCompatibilityIssueForBindingTarget(binding, pureReference.schema(), targetProperty,
+                    targetPath, diagnostics);
             if (compatibilityIssue.isPresent()) {
                 diagnostics.add(VisualDiagnostic.error("visual.binding.typeMismatch",
                         "Cannot bind expression '%s' %s to %s input '%s.%s'."
@@ -984,7 +997,8 @@ public class GraphDraftValidator {
 
         Optional<StaticExpressionLiteral> literal = staticExpressionLiteral(expression);
         if (literal.isPresent()) {
-            Optional<String> compatibilityIssue = schemaCompatibilityIssue(literal.get().schema(), targetProperty);
+            Optional<String> compatibilityIssue = schemaCompatibilityIssueForBindingTarget(binding,
+                    literal.get().schema(), targetProperty, targetPath, diagnostics);
             if (compatibilityIssue.isPresent()) {
                 diagnostics.add(VisualDiagnostic.error("visual.binding.typeMismatch",
                         "Cannot bind expression '%s' %s to %s input '%s.%s'."
@@ -997,6 +1011,88 @@ public class GraphDraftValidator {
         }
 
         validateExpressionReferences(expression, inputSchema, nodesById, operatorsByNodeId, targetPath, diagnostics);
+    }
+
+    private static Optional<String> schemaCompatibilityIssueForBindingTarget(GraphDraft.Binding binding,
+                                                                             Map<String, Object> sourceSchema,
+                                                                             Map<String, Object> targetSchema,
+                                                                             String targetPath,
+                                                                             List<VisualDiagnostic> diagnostics) {
+        Optional<Map<String, Object>> selectedBranch = selectedTargetUnionBranchSchema(binding, targetSchema,
+                targetPath, diagnostics);
+        if (selectedBranch.isEmpty()) {
+            return schemaCompatibilityIssue(sourceSchema, targetSchema);
+        }
+        Map<String, Object> baseTarget = schemaWithoutUnions(targetSchema);
+        if (!baseTarget.isEmpty()) {
+            Optional<String> baseIssue = schemaCompatibilityIssue(sourceSchema, baseTarget);
+            if (baseIssue.isPresent()) {
+                return Optional.of("target union base constraints are not compatible: " + baseIssue.get());
+            }
+        }
+        return schemaCompatibilityIssue(sourceSchema, selectedBranch.get());
+    }
+
+    private static Map<String, Object> targetPropertyAtPath(OperatorDefinition.Port targetPort,
+                                                            String inputName,
+                                                            GraphDraft.Binding binding,
+                                                            String targetPath,
+                                                            List<VisualDiagnostic> diagnostics) {
+        return propertyAtPath(targetPort.schema(), inputName, binding.targetUnionBranches(), targetPath,
+                diagnostics);
+    }
+
+    private static boolean constantValueMatchesBindingTargetSchema(Object value,
+                                                                   GraphDraft.Binding binding,
+                                                                   Map<String, Object> targetSchema,
+                                                                   String targetPath,
+                                                                   List<VisualDiagnostic> diagnostics) {
+        Optional<Map<String, Object>> selectedBranch = selectedTargetUnionBranchSchema(binding, targetSchema,
+                targetPath, diagnostics);
+        if (selectedBranch.isEmpty()) {
+            return valueMatchesSchema(value, targetSchema);
+        }
+        Map<String, Object> baseTarget = schemaWithoutUnions(targetSchema);
+        return valueMatchesSchema(value, baseTarget) && valueMatchesSchema(value, selectedBranch.get());
+    }
+
+    private static Optional<Map<String, Object>> selectedTargetUnionBranchSchema(GraphDraft.Binding binding,
+                                                                                Map<String, Object> targetSchema,
+                                                                                String targetPath,
+                                                                                List<VisualDiagnostic> diagnostics) {
+        return selectedUnionBranchSchema(targetSchema, binding.targetUnionBranch(),
+                targetPath + "/targetUnionBranch", diagnostics);
+    }
+
+    private static Optional<Map<String, Object>> selectedUnionBranchSchema(Map<String, Object> targetSchema,
+                                                                          GraphDraft.UnionBranchSelection selection,
+                                                                          String diagnosticPath,
+                                                                          List<VisualDiagnostic> diagnostics) {
+        if (selection == null || !selection.selected()) {
+            return Optional.empty();
+        }
+        String keyword = selection.keyword();
+        if (!"oneOf".equals(keyword) && !"anyOf".equals(keyword)) {
+            diagnostics.add(VisualDiagnostic.error("visual.binding.targetUnionBranch.invalid",
+                    "Binding targetUnionBranch keyword must be oneOf or anyOf.",
+                    diagnosticPath + "/keyword"));
+            return Optional.empty();
+        }
+        List<Map<String, Object>> branches = unionBranches(targetSchema, keyword);
+        if (branches.isEmpty()) {
+            diagnostics.add(VisualDiagnostic.error("visual.binding.targetUnionBranch.invalid",
+                    "Binding target does not declare a %s union branch at this path.".formatted(keyword),
+                    diagnosticPath));
+            return Optional.empty();
+        }
+        if (selection.index() < 0 || selection.index() >= branches.size()) {
+            diagnostics.add(VisualDiagnostic.error("visual.binding.targetUnionBranch.invalid",
+                    "Binding targetUnionBranch index %d is outside %s branch range 0..%d."
+                            .formatted(selection.index(), keyword, branches.size() - 1),
+                    diagnosticPath + "/index"));
+            return Optional.empty();
+        }
+        return Optional.of(branches.get(selection.index()));
     }
 
     private static ExpressionReference resolvePureExpressionReference(String expression,
@@ -1250,20 +1346,33 @@ public class GraphDraftValidator {
     }
 
     private static Map<String, Object> propertyAtPath(SchemaEnvelope schema, String path) {
+        return propertyAtPath(schema, path, Map.of(), null, List.of());
+    }
+
+    private static Map<String, Object> propertyAtPath(SchemaEnvelope schema,
+                                                      String path,
+                                                      Map<String, GraphDraft.UnionBranchSelection> branchSelections,
+                                                      String targetPath,
+                                                      List<VisualDiagnostic> diagnostics) {
         if (path == null || path.isBlank()) {
             Map<String, Object> root = new LinkedHashMap<>(schema.schema());
             if (!root.containsKey("type") && !root.containsKey("kind")) {
                 root.put("type", "object");
             }
-            return root;
+            return selectedUnionBranchSchemaAtPath(root, "", branchSelections, targetPath, diagnostics)
+                    .orElse(root);
         }
         Map<String, Object> currentSchema = schema.schema();
         Map<String, Object> properties = propertiesOf(currentSchema);
         Map<String, Object> current = null;
+        String currentPath = "";
         for (String segment : path.split("\\.")) {
             if (segment.isBlank()) {
                 continue;
             }
+            currentSchema = selectedUnionBranchSchemaAtPath(currentSchema, currentPath, branchSelections,
+                    targetPath, diagnostics).orElse(currentSchema);
+            properties = propertiesOf(currentSchema);
             if ("array".equals(schemaType(currentSchema))) {
                 Integer index = arrayIndexSegment(segment);
                 if (index == null) {
@@ -1275,6 +1384,7 @@ public class GraphDraftValidator {
                 }
                 currentSchema = current;
                 properties = propertiesOf(currentSchema);
+                currentPath = appendPath(currentPath, segment);
                 continue;
             }
             current = objectProperty(properties.get(segment));
@@ -1292,8 +1402,26 @@ public class GraphDraftValidator {
             }
             currentSchema = current;
             properties = propertiesOf(currentSchema);
+            currentPath = appendPath(currentPath, segment);
         }
-        return current;
+        return selectedUnionBranchSchemaAtPath(current, currentPath, branchSelections, targetPath, diagnostics)
+                .orElse(current);
+    }
+
+    private static Optional<Map<String, Object>> selectedUnionBranchSchemaAtPath(
+            Map<String, Object> schema,
+            String path,
+            Map<String, GraphDraft.UnionBranchSelection> branchSelections,
+            String targetPath,
+            List<VisualDiagnostic> diagnostics) {
+        if (schema == null || branchSelections == null || branchSelections.isEmpty()) {
+            return Optional.empty();
+        }
+        GraphDraft.UnionBranchSelection selection = branchSelections.get(path == null ? "" : path);
+        String diagnosticPath = targetPath == null
+                ? "/targetUnionBranches/" + (path == null ? "" : path)
+                : targetPath + "/targetUnionBranches/" + (path == null ? "" : path);
+        return selectedUnionBranchSchema(schema, selection, diagnosticPath, diagnostics);
     }
 
     private static Integer arrayIndexSegment(String segment) {
@@ -1363,6 +1491,36 @@ public class GraphDraftValidator {
         Map<String, Object> copy = new LinkedHashMap<>();
         map.forEach((key, item) -> copy.put(String.valueOf(key), item));
         return copy;
+    }
+
+    private static List<Map<String, Object>> unionBranches(Map<String, Object> schema, String keyword) {
+        Object raw = schema.get(keyword);
+        if (!(raw instanceof List<?> branches)) {
+            return List.of();
+        }
+        List<Map<String, Object>> schemas = new ArrayList<>();
+        for (Object branch : branches) {
+            Map<String, Object> branchSchema = objectProperty(branch);
+            if (branchSchema != null) {
+                schemas.add(branchSchema);
+            }
+        }
+        return schemas;
+    }
+
+    private static Map<String, Object> schemaWithoutUnions(Map<String, Object> schema) {
+        Map<String, Object> base = new LinkedHashMap<>(schema);
+        base.remove("oneOf");
+        base.remove("anyOf");
+        base.remove("$comment");
+        base.remove("title");
+        base.remove("description");
+        base.remove("examples");
+        base.remove("deprecated");
+        base.remove("readOnly");
+        base.remove("writeOnly");
+        base.remove("$defs");
+        return base;
     }
 
     private static String schemaType(Map<String, Object> property) {
@@ -1515,7 +1673,11 @@ public class GraphDraftValidator {
             }
             validateEdgeDslPathSegments(targetPort.get().schema(), edge.target().path(), edgePath + "/target/path",
                     diagnostics);
-            Map<String, Object> targetProperty = propertyAtPath(targetPort.get().schema(), edge.target().path());
+            Optional<GraphDraft.Binding> edgeBinding = bindingForDataEdge(targetNode, edge);
+            Map<String, Object> targetProperty = edgeBinding
+                    .map(binding -> targetPropertyAtPath(targetPort.get(), edge.target().path(), binding,
+                            edgePath, diagnostics))
+                    .orElseGet(() -> propertyAtPath(targetPort.get().schema(), edge.target().path()));
             if (targetProperty == null) {
                 diagnostics.add(VisualDiagnostic.error("visual.edge.unknownTargetPath",
                         "Target port '%s' does not accept path '%s'."
@@ -1523,7 +1685,10 @@ public class GraphDraftValidator {
                         edgePath + "/target/path"));
                 continue;
             }
-            Optional<String> compatibilityIssue = schemaCompatibilityIssue(sourceProperty, targetProperty);
+            Optional<String> compatibilityIssue = edgeBinding.isPresent()
+                    ? schemaCompatibilityIssueForBindingTarget(edgeBinding.get(), sourceProperty, targetProperty,
+                    edgePath, diagnostics)
+                    : schemaCompatibilityIssue(sourceProperty, targetProperty);
             if (compatibilityIssue.isPresent()) {
                 diagnostics.add(VisualDiagnostic.error("visual.edge.typeMismatch",
                         "Cannot connect %s output '%s' to %s input '%s'."
@@ -1533,6 +1698,35 @@ public class GraphDraftValidator {
                         edgePath));
             }
         }
+    }
+
+    private static Optional<GraphDraft.Binding> bindingForDataEdge(GraphDraft.DraftNode targetNode,
+                                                                   GraphDraft.DraftEdge edge) {
+        return targetNode.inputs().entrySet().stream()
+                .filter(entry -> dataEdgeMatchesBinding(edge, entry.getKey(), entry.getValue()))
+                .map(Map.Entry::getValue)
+                .findFirst();
+    }
+
+    private static boolean dataEdgeMatchesBinding(GraphDraft.DraftEdge edge,
+                                                  String inputKey,
+                                                  GraphDraft.Binding binding) {
+        if (!"nodePath".equals(binding.kind())) {
+            return false;
+        }
+        if (!binding.nodeId().equals(edge.source().nodeId())) {
+            return false;
+        }
+        if (!binding.sourcePort().isBlank() && !binding.sourcePort().equals(edge.source().port())) {
+            return false;
+        }
+        if (!normalizePath(binding.path()).equals(normalizePath(edge.source().path()))) {
+            return false;
+        }
+        if (!binding.targetPort().isBlank() && !binding.targetPort().equals(edge.target().port())) {
+            return false;
+        }
+        return normalizePath(targetInputName(inputKey, binding)).equals(normalizePath(edge.target().path()));
     }
 
     private static void validateDependencyEdge(GraphDraft.DraftEdge edge,
@@ -3125,7 +3319,7 @@ public class GraphDraftValidator {
         }
         if ("expression".equals(binding.kind())) {
             collectExpressionConnections(binding.expr(), targetNode, targetOperator, binding.targetPort(), inputName,
-                    nodesById, operatorsByNodeId, semanticConnections);
+                    binding.targetUnionBranches(), nodesById, operatorsByNodeId, semanticConnections);
             return;
         }
         if (!"nodePath".equals(binding.kind())) {
@@ -3165,7 +3359,7 @@ public class GraphDraftValidator {
         if (value instanceof String expression) {
             if (looksLikeReferenceExpression(expression)) {
                 collectExpressionConnections(expression, targetNode, targetOperator, "", configTargetPath(configPath),
-                        nodesById, operatorsByNodeId, connections);
+                        Map.of(), nodesById, operatorsByNodeId, connections);
             }
             return;
         }
@@ -3173,8 +3367,8 @@ public class GraphDraftValidator {
             if ("expression".equals(map.get("kind"))) {
                 Object expression = map.get("expr");
                 collectExpressionConnections(expression == null ? "" : String.valueOf(expression),
-                        targetNode, targetOperator, "", configTargetPath(configPath), nodesById, operatorsByNodeId,
-                        connections);
+                        targetNode, targetOperator, "", configTargetPath(configPath), Map.of(), nodesById,
+                        operatorsByNodeId, connections);
                 return;
             }
             if ("objectTemplate".equals(map.get("kind")) && map.get("fields") instanceof Map<?, ?> fields) {
@@ -3199,6 +3393,7 @@ public class GraphDraftValidator {
                                                      OperatorDefinition targetOperator,
                                                      String targetPortName,
                                                      String targetPath,
+                                                     Map<String, GraphDraft.UnionBranchSelection> branchSelections,
                                                      Map<String, GraphDraft.DraftNode> nodesById,
                                                      Map<String, OperatorDefinition> operatorsByNodeId,
                                                      Set<CanvasConnection> connections) {
@@ -3206,7 +3401,9 @@ public class GraphDraftValidator {
             return;
         }
         Optional<OperatorDefinition.Port> targetPort = resolveInputPort(targetOperator, targetPortName, targetPath);
-        if (targetPort.isEmpty() || propertyAtPath(targetPort.get().schema(), targetPath) == null) {
+        if (targetPort.isEmpty()
+                || propertyAtPath(targetPort.get().schema(), targetPath, branchSelections, null,
+                new ArrayList<>()) == null) {
             return;
         }
 
@@ -3263,9 +3460,14 @@ public class GraphDraftValidator {
                 edge.source().port());
         Optional<OperatorDefinition.Port> targetPort = findPort(targetOperator.ports().inputs(),
                 edge.target().port());
+        Optional<GraphDraft.Binding> edgeBinding = bindingForDataEdge(nodesById.get(edge.target().nodeId()), edge);
+        Map<String, GraphDraft.UnionBranchSelection> targetBranchSelections = edgeBinding
+                .map(GraphDraft.Binding::targetUnionBranches)
+                .orElse(Map.of());
         if (sourcePort.isEmpty() || targetPort.isEmpty()
                 || propertyAtPath(sourcePort.get().schema(), edge.source().path()) == null
-                || propertyAtPath(targetPort.get().schema(), edge.target().path()) == null) {
+                || propertyAtPath(targetPort.get().schema(), edge.target().path(), targetBranchSelections, null,
+                new ArrayList<>()) == null) {
             return Optional.empty();
         }
         return Optional.of(new CanvasConnection(
@@ -3296,7 +3498,8 @@ public class GraphDraftValidator {
                 inputName);
         if (sourcePort.isEmpty() || targetPort.isEmpty()
                 || propertyAtPath(sourcePort.get().schema(), binding.path()) == null
-                || propertyAtPath(targetPort.get().schema(), inputName) == null) {
+                || propertyAtPath(targetPort.get().schema(), inputName, binding.targetUnionBranches(), null,
+                new ArrayList<>()) == null) {
             return Optional.empty();
         }
         return Optional.of(new CanvasConnection(

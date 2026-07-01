@@ -718,6 +718,92 @@ function customInputPortForKey(node, spec, key) {
   return node.customInputPorts?.[key] || inputPortForInputPath(spec, customInputPathForKey(node, key));
 }
 
+function inputUnionBranchForTarget(node, target) {
+  const spec = specForNode(node);
+  const key = target.key || inputKeyForPortPath(spec, target.port || spec.inputPort || 'inputs', target.path || '');
+  if (node.type === 'httpResource') {
+    return normalizedUnionBranchSelection(node.paramInputUnionBranches?.[key]);
+  }
+  if (node.type === 'customOperator') {
+    return normalizedUnionBranchSelection(node.customInputUnionBranches?.[key]);
+  }
+  return null;
+}
+
+function inputUnionBranchesForPort(node, spec, portName) {
+  const property = node.type === 'httpResource'
+    ? 'paramInputUnionBranches'
+    : (node.type === 'customOperator' ? 'customInputUnionBranches' : '');
+  if (!property) {
+    return {};
+  }
+  const selections = {};
+  Object.entries(node[property] || {}).forEach(([key, value]) => {
+    const selection = normalizedUnionBranchSelection(value);
+    if (!selection) {
+      return;
+    }
+    const path = node.type === 'customOperator' ? customInputPathForKey(node, key) : key;
+    const resolvedPort = node.type === 'customOperator' ? customInputPortForKey(node, spec, key) : portName;
+    if (!path || (resolvedPort && portName && resolvedPort !== portName)) {
+      return;
+    }
+    selections[path] = selection;
+  });
+  return selections;
+}
+
+function inputUnionBranchesForTarget(node, target) {
+  const spec = specForNode(node);
+  const path = String(target.path || '');
+  const segments = path.split('.').filter(Boolean);
+  if (segments.length <= 1) {
+    return {};
+  }
+  const branchSelections = inputUnionBranchesForPort(node, spec, target.port || spec.inputPort || 'inputs');
+  const selected = {};
+  for (let i = 1; i < segments.length; i += 1) {
+    const branchPath = segments.slice(0, i).join('.');
+    const selection = normalizedUnionBranchSelection(branchSelections[branchPath]);
+    if (selection) {
+      selected[branchPath] = selection;
+    }
+  }
+  return selected;
+}
+
+function targetWithSelectedUnionBranch(node, target) {
+  const selection = inputUnionBranchForTarget(node, target);
+  const targetUnionBranches = inputUnionBranchesForTarget(node, target);
+  const enriched = selection ? { ...target, targetUnionBranch: selection } : { ...target };
+  return Object.keys(targetUnionBranches).length
+    ? { ...enriched, targetUnionBranches }
+    : enriched;
+}
+
+function setInputUnionBranchForTarget(node, target, selection) {
+  const key = target.key || target.path || '';
+  if (!key) {
+    return;
+  }
+  const normalized = normalizedUnionBranchSelection(selection);
+  const property = node.type === 'httpResource'
+    ? 'paramInputUnionBranches'
+    : (node.type === 'customOperator' ? 'customInputUnionBranches' : '');
+  if (!property) {
+    return;
+  }
+  node[property] = node[property] || {};
+  if (normalized) {
+    node[property][key] = normalized;
+  } else {
+    delete node[property][key];
+    if (!Object.keys(node[property]).length) {
+      delete node[property];
+    }
+  }
+}
+
 function outputKeyForPortPath(spec, portName, path) {
   if (!path) {
     return portName || spec?.outputPort || 'output';
@@ -1693,10 +1779,12 @@ function canvasSearchEntries(builder = state.builder, layout = state.layout) {
       ...Object.values(node.customInputs || {}),
       ...Object.keys(node.customInputPaths || {}),
       ...Object.values(node.customInputPaths || {}),
+      JSON.stringify(node.customInputUnionBranches || {}),
       ...Object.keys(node.customOutputPaths || {}),
       ...Object.values(node.customOutputPaths || {}),
       ...Object.keys(node.paramInputs || {}),
       ...Object.values(node.paramInputs || {}),
+      JSON.stringify(node.paramInputUnionBranches || {}),
       ...Object.keys(node.config || {}),
       JSON.stringify(node.config || {}),
       JSON.stringify(node.rules || [])
@@ -4884,6 +4972,18 @@ function renderSelectedOperatorEditor() {
     });
   }
 
+  for (const select of target.querySelectorAll('[data-binding-union-branch]')) {
+    select.addEventListener('change', () => {
+      const bindingTarget = bindingTargetFromElement(select);
+      if (!bindingTarget) return;
+      recordBuilderHistory(`Select union branch ${node.id}.${bindingTarget.key || bindingTarget.path || bindingTarget.port}`);
+      setInputUnionBranchForTarget(node, bindingTarget, unionBranchSelectionFromValue(select.value));
+      syncComposerFromBuilder({ render: false });
+      renderSelectedOperatorEditor();
+      renderDiagram();
+    });
+  }
+
   for (const input of target.querySelectorAll('[data-binding-expression]')) {
     input.addEventListener('input', () => {
       const bindingTarget = bindingTargetFromElement(input);
@@ -4903,11 +5003,12 @@ function renderSelectedOperatorEditor() {
     button.addEventListener('click', () => {
       const bindingTarget = bindingTargetFromElement(button);
       if (!bindingTarget) return;
-      if (!expressionForTargetInput(node, bindingTarget)) {
+      if (!expressionForTargetInput(node, bindingTarget) && !inputUnionBranchForTarget(node, bindingTarget)) {
         return;
       }
       recordBuilderHistory(`Clear binding ${node.id}.${bindingTarget.key || bindingTarget.path || bindingTarget.port}`);
       setExpressionForTargetInput(node, bindingTarget, '');
+      setInputUnionBranchForTarget(node, bindingTarget, null);
       syncComposerFromBuilder({ render: false });
       renderSelectedOperatorEditor();
       renderDiagram();
@@ -6566,11 +6667,12 @@ function addDynamicInputBinding(node, button) {
   const path = String(container.querySelector('[data-dynamic-input-path]')?.value || '').trim();
   const spec = specForNode(node);
   const portSchema = schemaForPort(spec, 'target', portName);
+  const branchSelections = inputUnionBranchesForPort(node, spec, portName);
   if (!path || !isSchemaPathDslSafe(portSchema, path)) {
     setConnectionMessage('Input path must be a DSL-safe field path.', 'error');
     return;
   }
-  if (!schemaAtPath(portSchema, path)) {
+  if (!schemaAtPath(portSchema, path, branchSelections)) {
     setConnectionMessage('Input path is not accepted by the target schema.', 'error');
     return;
   }
@@ -6597,11 +6699,12 @@ function addDynamicInputBinding(node, button) {
 }
 
 function renderInputBindingRow(node, target) {
-  const expression = expressionForTargetInput(node, target);
-  const status = bindingStatusForTarget(node, target, expression);
+  const selectedTarget = targetWithSelectedUnionBranch(node, target);
+  const expression = expressionForTargetInput(node, selectedTarget);
+  const status = bindingStatusForTarget(node, selectedTarget, expression);
   const selectedSource = connectionSourceFromExpression(expression);
   const selectedValue = selectedSource ? bindingSourceValue(selectedSource) : '';
-  const candidates = sourceCandidatesForTarget(target);
+  const candidates = sourceCandidatesForTarget(selectedTarget);
   const hasSelectedCandidate = selectedValue
     && candidates.some((candidate) => bindingSourceValue(candidate.source) === selectedValue);
   const staleOption = selectedValue && !hasSelectedCandidate
@@ -6642,6 +6745,7 @@ function renderInputBindingRow(node, target) {
         aria-label="${escapeHtml(readableName(label))} source">
         ${options}
       </select>
+      ${renderInputUnionBranchSelect(node, target)}
       <input
         data-binding-expression
         data-binding-key="${escapeHtml(target.key || target.path || '')}"
@@ -6654,6 +6758,31 @@ function renderInputBindingRow(node, target) {
       </div>
       <div class="binding-status">${escapeHtml(status.message)}</div>
     </div>
+  `;
+}
+
+function renderInputUnionBranchSelect(node, target) {
+  const options = schemaUnionBranchOptions(target.schema || {});
+  if (!options.length) {
+    return '';
+  }
+  const selectedValue = unionBranchSelectionValue(inputUnionBranchForTarget(node, target));
+  return `
+    <label class="binding-union-branch">
+      <span>Union branch</span>
+      <select
+        data-binding-union-branch
+        data-binding-key="${escapeHtml(target.key || target.path || '')}"
+        data-binding-port="${escapeHtml(target.port)}"
+        data-binding-path="${escapeHtml(target.path || '')}">
+        <option value="" ${selectedValue ? '' : 'selected'}>Auto</option>
+        ${options.map((option) => {
+          const value = unionBranchSelectionValue(option);
+          const selected = value === selectedValue ? ' selected' : '';
+          return `<option value="${escapeHtml(value)}"${selected}>${escapeHtml(option.label)}</option>`;
+        }).join('')}
+      </select>
+    </label>
   `;
 }
 
@@ -6716,9 +6845,10 @@ function bindingTargetFromElement(element) {
   const port = element.dataset.bindingPort || '';
   const path = element.dataset.bindingPath || '';
   const key = element.dataset.bindingKey || '';
-  return targetHandlesForNode(node).find((target) =>
-    target.port === port && (target.path || '') === path && (!key || (target.key || target.path || '') === key)
+  const target = targetHandlesForNode(node).find((item) =>
+    item.port === port && (item.path || '') === path && (!key || (item.key || item.path || '') === key)
   ) || null;
+  return target ? targetWithSelectedUnionBranch(node, target) : null;
 }
 
 function addDecisionRule(node) {
@@ -7088,6 +7218,9 @@ function expressionForTargetInput(node, target) {
 function setExpressionForTargetInput(node, target, expression) {
   if (node.type === 'httpResource') {
     setResourceParamExpression(node, target.path || defaultParamNameForOperator(specForNode(node)), expression);
+    if (target.targetUnionBranch) {
+      setInputUnionBranchForTarget(node, target, target.targetUnionBranch);
+    }
   } else if (node.type === 'decisionTable') {
     if (target.path === 'amount') {
       node.amountSource = expression;
@@ -7102,6 +7235,9 @@ function setExpressionForTargetInput(node, target, expression) {
     node.customInputPorts[key] = target.port || inputPortForInputPath(specForNode(node), target.path);
     node.customInputPaths = node.customInputPaths || {};
     node.customInputPaths[key] = target.path;
+    if (target.targetUnionBranch) {
+      setInputUnionBranchForTarget(node, target, target.targetUnionBranch);
+    }
   } else if (node.type === 'transform') {
     const source = connectionSourceFromExpression(expression);
     if (!String(expression || '').trim()) {
@@ -7133,8 +7269,8 @@ function schemaProperties(schemaEnvelope) {
   return schemaEnvelope?.schema?.properties || {};
 }
 
-function schemaFieldDescriptors(schemaEnvelope) {
-  return schemaFieldsFromSchema(schemaEnvelope?.schema || {}, '', true);
+function schemaFieldDescriptors(schemaEnvelope, branchSelections = {}) {
+  return schemaFieldsFromSchema(schemaEnvelope?.schema || {}, '', true, true, branchSelections);
 }
 
 function schemaDefaultInputFields(schemaEnvelope) {
@@ -7145,19 +7281,21 @@ function schemaDefaultInputFields(schemaEnvelope) {
   return required.length ? required : preferred;
 }
 
-function dslSafeSchemaFieldDescriptors(schemaEnvelope) {
-  return schemaFieldDescriptors(schemaEnvelope).filter((field) => field.dslPathSafe);
+function dslSafeSchemaFieldDescriptors(schemaEnvelope, branchSelections = {}) {
+  return schemaFieldDescriptors(schemaEnvelope, branchSelections).filter((field) => field.dslPathSafe);
 }
 
-function schemaFieldsFromSchema(schema, prefix, parentRequired, prefixDslPathSafe = true) {
-  const normalizedSchema = schema && typeof schema === 'object' && !Array.isArray(schema) ? schema : {};
+function schemaFieldsFromSchema(schema, prefix, parentRequired, prefixDslPathSafe = true, branchSelections = {}) {
+  const rawSchema = schema && typeof schema === 'object' && !Array.isArray(schema) ? schema : {};
+  const normalizedSchema = targetSchemaForUnionSelection(rawSchema, branchSelections[prefix || '']);
   const properties = normalizedSchema.properties || {};
   const required = new Set(Array.isArray(normalizedSchema.required) ? normalizedSchema.required.map(String) : []);
   const propertyFields = Object.entries(properties).flatMap(([name, childSchema]) => {
     const path = prefix ? `${prefix}.${name}` : name;
-    const normalizedChildSchema = childSchema && typeof childSchema === 'object' && !Array.isArray(childSchema)
+    const rawChildSchema = childSchema && typeof childSchema === 'object' && !Array.isArray(childSchema)
       ? childSchema
       : {};
+    const normalizedChildSchema = targetSchemaForUnionSelection(rawChildSchema, branchSelections[path]);
     const fieldRequired = parentRequired && required.has(name);
     const fieldDslPathSafe = prefixDslPathSafe && isDslFieldName(name);
     const hasNestedRequired = Array.isArray(normalizedChildSchema.required)
@@ -7165,11 +7303,11 @@ function schemaFieldsFromSchema(schema, prefix, parentRequired, prefixDslPathSaf
     return [
       {
         path,
-        schema: normalizedChildSchema,
+        schema: rawChildSchema,
         required: fieldRequired && !hasNestedRequired,
         dslPathSafe: fieldDslPathSafe
       },
-      ...schemaFieldsFromSchema(normalizedChildSchema, path, fieldRequired, fieldDslPathSafe)
+      ...schemaFieldsFromSchema(normalizedChildSchema, path, fieldRequired, fieldDslPathSafe, branchSelections)
     ];
   });
   if (rawSchemaType(normalizedSchema) !== 'array') {
@@ -7177,11 +7315,11 @@ function schemaFieldsFromSchema(schema, prefix, parentRequired, prefixDslPathSaf
   }
   return [
     ...propertyFields,
-    ...arraySchemaFieldDescriptors(normalizedSchema, prefix, prefixDslPathSafe)
+    ...arraySchemaFieldDescriptors(normalizedSchema, prefix, prefixDslPathSafe, branchSelections)
   ];
 }
 
-function arraySchemaFieldDescriptors(schema, prefix, prefixDslPathSafe) {
+function arraySchemaFieldDescriptors(schema, prefix, prefixDslPathSafe, branchSelections = {}) {
   const itemDescriptors = [];
   const prefixItems = Array.isArray(schema?.prefixItems) ? schema.prefixItems : [];
   prefixItems.forEach((itemSchema, index) => {
@@ -7207,7 +7345,7 @@ function arraySchemaFieldDescriptors(schema, prefix, prefixDslPathSafe) {
         required: false,
         dslPathSafe: prefixDslPathSafe
       },
-      ...schemaFieldsFromSchema(item.schema, path, false, prefixDslPathSafe)
+      ...schemaFieldsFromSchema(item.schema, path, false, prefixDslPathSafe, branchSelections)
     ];
   });
 }
@@ -7321,8 +7459,8 @@ function hasSchemaProperties(schema) {
   return Boolean(schema?.properties && Object.keys(schema.properties).length);
 }
 
-function schemaDeclaresPath(schemaEnvelope, path) {
-  return schemaAtPath(schemaEnvelope, path) !== null;
+function schemaDeclaresPath(schemaEnvelope, path, branchSelections = {}) {
+  return schemaAtPath(schemaEnvelope, path, branchSelections) !== null;
 }
 
 function nonOverlappingNodePosition(x, y) {
@@ -8119,6 +8257,7 @@ function builderNodeFromDraftNode(node, draft, layoutNodes) {
       paramName: inputName,
       applicantExpr: paramInputs[inputName] || contextExpressionForPath(inputName),
       paramInputs,
+      paramInputUnionBranches: unionBranchesFromDraftBindings(node.inputs || {}, spec),
       config: { ...(node.config || {}) }
     };
   }
@@ -8146,6 +8285,10 @@ function builderNodeFromDraftNode(node, draft, layoutNodes) {
       policyNodeCleared: policyCleared
     };
   }
+  const customSpec = specForNode({
+    type: 'customOperator',
+    paletteType: node.operatorRef
+  });
   return {
     ...base,
     type: 'customOperator',
@@ -8154,13 +8297,34 @@ function builderNodeFromDraftNode(node, draft, layoutNodes) {
     customInputs: Object.fromEntries(Object.entries(node.inputs || {})
       .map(([key, binding]) => [key, expressionFromBinding(binding, draft)])),
     customInputPorts: Object.fromEntries(Object.entries(node.inputs || {})
-      .map(([key, binding]) => [key, binding.targetPort || inputPortForInputPath(specForNode({
-        type: 'customOperator',
-        paletteType: node.operatorRef
-      }), bindingTargetPathForKey(key, binding))])),
+      .map(([key, binding]) => [key, binding.targetPort || inputPortForInputPath(customSpec,
+        bindingTargetPathForKey(key, binding))])),
     customInputPaths: Object.fromEntries(Object.entries(node.inputs || {})
-      .map(([key, binding]) => [key, bindingTargetPathForKey(key, binding)]))
+      .map(([key, binding]) => [key, bindingTargetPathForKey(key, binding)])),
+    customInputUnionBranches: unionBranchesFromDraftBindings(node.inputs || {}, customSpec)
   };
+}
+
+function unionBranchesFromDraftBindings(inputs, spec) {
+  const selections = {};
+  Object.entries(inputs || {}).forEach(([key, binding]) => {
+    const targetPath = bindingTargetPathForKey(key, binding);
+    const targetPort = binding?.targetPort || inputPortForInputPath(spec, targetPath);
+    const targetKey = inputKeyForPortPath(spec, targetPort, targetPath);
+    const targetUnionBranch = normalizedUnionBranchSelection(binding?.targetUnionBranch);
+    if (targetUnionBranch) {
+      selections[targetKey || key] = targetUnionBranch;
+    }
+    Object.entries(binding?.targetUnionBranches || {}).forEach(([path, selection]) => {
+      const normalized = normalizedUnionBranchSelection(selection);
+      if (!normalized) {
+        return;
+      }
+      const branchKey = inputKeyForPortPath(spec, targetPort, path);
+      selections[branchKey || path] = normalized;
+    });
+  });
+  return selections;
 }
 
 function expressionFromConfig(value, draft) {
@@ -8247,6 +8411,13 @@ function builderNodeToDraftNode(node, builder) {
       inputs: Object.fromEntries(nonBlankInputEntries(paramInputs)
         .map(([key, expression]) => [key, bindingFromExpression(expression, {
           targetPort: specForNode(node).inputPort || 'params',
+          targetPath: key,
+          targetUnionBranch: inputUnionBranchForTarget(node, { key, path: key }),
+          targetUnionBranches: inputUnionBranchesForTarget(node, {
+            key,
+            port: specForNode(node).inputPort || 'params',
+            path: key
+          }),
           builder
         })])),
       config: { timeout: '3s', retryAttempts: 1, ...(node.config || {}) },
@@ -8291,6 +8462,16 @@ function builderNodeToDraftNode(node, builder) {
               .map(([key, expression]) => [key, bindingFromExpression(expression, {
                 targetPort: customInputPortForKey(node, specForNode(node), key),
                 targetPath: customInputPathForKey(node, key),
+                targetUnionBranch: inputUnionBranchForTarget(node, {
+                  key,
+                  port: customInputPortForKey(node, specForNode(node), key),
+                  path: customInputPathForKey(node, key)
+                }),
+                targetUnionBranches: inputUnionBranchesForTarget(node, {
+                  key,
+                  port: customInputPortForKey(node, specForNode(node), key),
+                  path: customInputPathForKey(node, key)
+                }),
                 builder
               })])),
       config: { ...(node.config || {}) },
@@ -8346,6 +8527,14 @@ function bindingFromExpression(expression, options = {}) {
     }
     if (options.targetPath) {
       metadata.targetPath = options.targetPath;
+    }
+    const targetUnionBranch = normalizedUnionBranchSelection(options.targetUnionBranch);
+    if (targetUnionBranch) {
+      metadata.targetUnionBranch = targetUnionBranch;
+    }
+    const targetUnionBranches = normalizedUnionBranchSelections(options.targetUnionBranches);
+    if (Object.keys(targetUnionBranches).length) {
+      metadata.targetUnionBranches = targetUnionBranches;
     }
     return Object.keys(metadata).length ? { ...binding, ...metadata } : binding;
   };
@@ -8822,12 +9011,13 @@ function targetHandlesForNode(node) {
   if (node.type === 'httpResource') {
     return inputPortsForSpec(spec).flatMap((port) => {
       const portName = port.name || spec.inputPort || 'params';
-      const fields = dslSafeSchemaFieldDescriptors(port.schema);
+      const branchSelections = inputUnionBranchesForPort(node, spec, portName);
+      const fields = dslSafeSchemaFieldDescriptors(port.schema, branchSelections);
       const targets = fields.length
         ? fields
         : Object.keys(resourceParamInputs(node, spec)).map((path) => ({
           path,
-          schema: schemaAtPath(port.schema, path) || {},
+          schema: schemaAtPath(port.schema, path, branchSelections) || {},
           required: requiredInputNamesForPort(port).includes(path),
           dslPathSafe: isDslPathSafe(path)
         })).filter((field) => field.dslPathSafe);
@@ -8854,9 +9044,10 @@ function targetHandlesForNode(node) {
       const portName = port.name || spec.inputPort || 'inputs';
       const configInputConflict = nativeOperatorLowersConfigInput(node, spec);
       const seenPaths = new Set();
+      const branchSelections = inputUnionBranchesForPort(node, spec, portName);
       const targets = [
-        ...dslSafeSchemaFieldDescriptors(port.schema),
-        ...dynamicInputFieldDescriptors(node, spec, portName, port.schema)
+        ...dslSafeSchemaFieldDescriptors(port.schema, branchSelections),
+        ...dynamicInputFieldDescriptors(node, spec, portName, port.schema, branchSelections)
       ].filter((field) => {
         if (seenPaths.has(field.path)) {
           return false;
@@ -8924,7 +9115,7 @@ function usesNativeConfigInputField(inputPath) {
   return inputPath === 'config' || String(inputPath || '').startsWith('config.');
 }
 
-function dynamicInputFieldDescriptors(node, spec, portName, portSchema) {
+function dynamicInputFieldDescriptors(node, spec, portName, portSchema, branchSelections = {}) {
   if (node.type !== 'customOperator') {
     return [];
   }
@@ -8935,12 +9126,13 @@ function dynamicInputFieldDescriptors(node, spec, portName, portSchema) {
       return {
         key,
         path,
-        schema: schemaAtPath(portSchema, path) || {},
+        schema: schemaAtPath(portSchema, path, branchSelections) || {},
         required: requiredInputNamesForPort({ schema: portSchema }).includes(path),
         dslPathSafe: isSchemaPathDslSafe(portSchema, path)
       };
     })
-    .filter((field) => field.path && field.dslPathSafe && schemaAtPath(portSchema, field.path));
+    .filter((field) => field.path && field.dslPathSafe
+      && schemaAtPath(portSchema, field.path, branchSelections));
 }
 
 function canvasTargetHandlesForNode(node) {
@@ -9059,11 +9251,16 @@ function bindingStatusForTarget(node, target, expression) {
     const literalSchema = staticExpressionLiteralSchema(value);
     if (literalSchema) {
       const targetSchema = target.schema || (target.type ? { type: target.type } : {});
-      const compatibilityIssue = schemaCompatibilityIssue(literalSchema, targetSchema);
+      const effectiveTargetSchema = targetSchemaForUnionSelection(targetSchema, target.targetUnionBranch);
+      const compatibilityIssue = schemaCompatibilityIssueForTargetUnionSelection(
+        literalSchema,
+        targetSchema,
+        target.targetUnionBranch
+      );
       return compatibilityIssue
         ? {
           level: 'error',
-          message: `Type mismatch: ${schemaType(literalSchema)} cannot feed ${schemaType(targetSchema)}. Reason: ${compatibilityIssue}.`
+          message: `Type mismatch: ${schemaType(literalSchema)} cannot feed ${schemaType(effectiveTargetSchema)}. Reason: ${compatibilityIssue}.`
         }
         : { level: 'success', message: 'Literal expression matches target schema.' };
     }
@@ -9136,13 +9333,16 @@ function endpointLabel(endpoint) {
   ].filter(Boolean).join('.');
 }
 
-function schemaAtPath(schemaEnvelope, path) {
+function schemaAtPath(schemaEnvelope, path, branchSelections = {}) {
   if (!path) {
-    return schemaEnvelope?.schema || { type: 'object' };
+    const rootSchema = schemaEnvelope?.schema || { type: 'object' };
+    return targetSchemaForUnionSelection(rootSchema, branchSelections['']);
   }
   let current = schemaEnvelope?.schema || {};
+  let currentPath = '';
   for (const segment of String(path).split('.')) {
     if (!segment) continue;
+    current = targetSchemaForUnionSelection(current, branchSelections[currentPath]);
     if (rawSchemaType(current) === 'array') {
       const index = arrayIndexSegment(segment);
       if (index === null) {
@@ -9153,6 +9353,7 @@ function schemaAtPath(schemaEnvelope, path) {
         return null;
       }
       current = itemSchema;
+      currentPath = currentPath ? `${currentPath}.${segment}` : segment;
       continue;
     }
     const properties = current.properties || {};
@@ -9163,6 +9364,7 @@ function schemaAtPath(schemaEnvelope, path) {
       const pattern = patternPropertySchema(current, segment);
       if (pattern) {
         current = pattern;
+        currentPath = currentPath ? `${currentPath}.${segment}` : segment;
         continue;
       }
       const additional = additionalPropertySchema(current);
@@ -9170,11 +9372,13 @@ function schemaAtPath(schemaEnvelope, path) {
         return null;
       }
       current = additional;
+      currentPath = currentPath ? `${currentPath}.${segment}` : segment;
       continue;
     }
     current = properties[segment] || {};
+    currentPath = currentPath ? `${currentPath}.${segment}` : segment;
   }
-  return current;
+  return targetSchemaForUnionSelection(current, branchSelections[currentPath]);
 }
 
 function arrayIndexSegment(segment) {
@@ -11051,9 +11255,14 @@ function connectionCompatibility(source, target) {
   if (targetSchema === null && targetNode?.type !== 'transform') {
     return { ok: false, message: `Target path '${target.path}' is not accepted.` };
   }
+  const effectiveTargetSchema = targetSchemaForUnionSelection(targetSchema, target.targetUnionBranch);
   const sourceType = schemaType(sourceSchema);
-  const targetType = schemaType(targetSchema);
-  const compatibilityIssue = schemaCompatibilityIssue(sourceSchema, targetSchema);
+  const targetType = schemaType(effectiveTargetSchema);
+  const compatibilityIssue = schemaCompatibilityIssueForTargetUnionSelection(
+    sourceSchema,
+    targetSchema,
+    target.targetUnionBranch
+  );
   if (compatibilityIssue) {
     return {
       ok: false,
@@ -11972,6 +12181,68 @@ function schemaUnionBranches(schema, keyword) {
   return Array.isArray(branches)
     ? branches.filter((branch) => branch && typeof branch === 'object' && !Array.isArray(branch))
     : [];
+}
+
+function schemaUnionBranchOptions(schema) {
+  return SUPPORTED_SCHEMA_UNION_KEYWORDS.flatMap((keyword) =>
+    schemaUnionBranches(schema, keyword).map((branch, index) => ({
+      keyword,
+      index,
+      schema: branch,
+      label: `${keyword}[${index}] ${schemaType(branch) || 'unknown'}`
+    })));
+}
+
+function normalizedUnionBranchSelection(value) {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    return null;
+  }
+  const keyword = String(value.keyword || '').trim();
+  const index = Number(value.index);
+  if (!SUPPORTED_SCHEMA_UNION_KEYWORDS.includes(keyword) || !Number.isInteger(index) || index < 0) {
+    return null;
+  }
+  return { keyword, index };
+}
+
+function normalizedUnionBranchSelections(value) {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    return {};
+  }
+  return Object.fromEntries(Object.entries(value)
+    .map(([path, selection]) => [String(path || '').trim(), normalizedUnionBranchSelection(selection)])
+    .filter(([, selection]) => Boolean(selection)));
+}
+
+function unionBranchSelectionValue(selection) {
+  const normalized = normalizedUnionBranchSelection(selection);
+  return normalized ? `${normalized.keyword}:${normalized.index}` : '';
+}
+
+function unionBranchSelectionFromValue(value) {
+  const [keyword, rawIndex] = String(value || '').split(':');
+  return normalizedUnionBranchSelection({ keyword, index: Number(rawIndex) });
+}
+
+function selectedUnionBranchSchema(schema, selection) {
+  const normalized = normalizedUnionBranchSelection(selection);
+  if (!normalized) {
+    return null;
+  }
+  return schemaUnionBranches(schema, normalized.keyword)[normalized.index] || null;
+}
+
+function schemaCompatibilityIssueForTargetUnionSelection(sourceSchema, targetSchema, selection, path = '') {
+  const selectedBranch = selectedUnionBranchSchema(targetSchema, selection);
+  if (!selectedBranch) {
+    return schemaCompatibilityIssue(sourceSchema, targetSchema, path);
+  }
+  const baseIssue = unionBaseCompatibilityIssue(sourceSchema, targetSchema, path);
+  return baseIssue || schemaCompatibilityIssue(sourceSchema, selectedBranch, path);
+}
+
+function targetSchemaForUnionSelection(targetSchema, selection) {
+  return selectedUnionBranchSchema(targetSchema, selection) || targetSchema;
 }
 
 function schemaWithoutUnions(schema) {
@@ -12954,7 +13225,9 @@ async function checkVisualConnectionOnServer(source, target) {
         nodeId: target.nodeId,
         port: target.port || '',
         path: target.path || ''
-      }
+      },
+      targetUnionBranch: normalizedUnionBranchSelection(target.targetUnionBranch),
+      targetUnionBranches: normalizedUnionBranchSelections(target.targetUnionBranches)
     })
   });
   if (!response.ok) {
@@ -13056,6 +13329,9 @@ function applyConnection(source, target) {
     });
   } else if (node.type === 'httpResource') {
     setResourceParamExpression(node, target.path || defaultParamNameForOperator(specForNode(node)), expression);
+    if (target.targetUnionBranch) {
+      setInputUnionBranchForTarget(node, target, target.targetUnionBranch);
+    }
   } else if (node.type === 'decisionTable') {
     if (target.path === 'amount') {
       node.amountSource = expression;
@@ -13070,6 +13346,9 @@ function applyConnection(source, target) {
     node.customInputPorts[key] = target.port || inputPortForInputPath(specForNode(node), target.path);
     node.customInputPaths = node.customInputPaths || {};
     node.customInputPaths[key] = target.path;
+    if (target.targetUnionBranch) {
+      setInputUnionBranchForTarget(node, target, target.targetUnionBranch);
+    }
   } else if (node.type === 'transform') {
     node.policyNode = source.nodeId;
     delete node.policyNodeCleared;
