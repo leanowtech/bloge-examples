@@ -55,6 +55,12 @@ public class OperatorLibraryValidator {
             "NON_IDEMPOTENT",
             "UNKNOWN"
     );
+    private static final Set<String> RESERVED_SOURCE_KINDS = Set.of(
+            "resource-descriptor",
+            "visual-publication",
+            "java-operator",
+            "java-streaming-operator"
+    );
     private static final Set<String> EXECUTION_CONFIG_KEYS = Set.of("timeout", "retryAttempts");
     private static final Set<String> RESERVED_DSL_FIELD_NAMES = Set.of(
             "graph", "node", "branch", "decision_table", "on", "input", "depends_on",
@@ -72,6 +78,10 @@ public class OperatorLibraryValidator {
             + "(?:\\." + TEMPLATE_PATH_SEGMENT_PATTERN + ")*";
     private static final Pattern VISUAL_OPERATOR_REF = Pattern.compile(
             IDENTIFIER_PATTERN + "(?:(?::|\\.|-)" + IDENTIFIER_PATTERN + ")*");
+    private static final Pattern VISUAL_LIBRARY_ID = Pattern.compile(
+            IDENTIFIER_PATTERN + "(?:(?::|\\.|-)" + IDENTIFIER_PATTERN + ")*");
+    private static final Pattern VERSION_TOKEN = Pattern.compile(
+            "\\d+\\.\\d+\\.\\d+(?:-[0-9A-Za-z.-]+)?(?:\\+[0-9A-Za-z.-]+)?");
     private static final Pattern PORT_NAME = Pattern.compile(IDENTIFIER_PATTERN);
     private static final Pattern EXECUTABLE_OPERATOR_REF = Pattern.compile(
             IDENTIFIER_PATTERN + "(?:(?::|\\.|-)" + IDENTIFIER_PATTERN + ")*");
@@ -111,6 +121,17 @@ public class OperatorLibraryValidator {
             diagnostics.add(VisualDiagnostic.error("visual.library.id.required",
                     "Operator library must declare a libraryId.",
                     "/libraryId"));
+        } else if (!VISUAL_LIBRARY_ID.matcher(library.libraryId()).matches()) {
+            diagnostics.add(VisualDiagnostic.error("visual.library.id.invalid",
+                    "Operator library id '%s' must be a namespace-safe token."
+                            .formatted(library.libraryId()),
+                    "/libraryId"));
+        }
+        if (!VERSION_TOKEN.matcher(library.version()).matches()) {
+            diagnostics.add(VisualDiagnostic.error("visual.library.version.invalid",
+                    "Operator library version '%s' must use semantic version form MAJOR.MINOR.PATCH."
+                            .formatted(library.version()),
+                    "/version"));
         }
         if (!OperatorLibrary.isSupportedStatus(library.status())) {
             diagnostics.add(VisualDiagnostic.error("visual.library.status.unsupported",
@@ -128,6 +149,12 @@ public class OperatorLibraryValidator {
                                 .formatted(operator.operatorRef(), operator.schemaVersion(),
                                         SUPPORTED_OPERATOR_SCHEMA_VERSIONS),
                         operatorPath + "/schemaVersion"));
+            }
+            if (!VERSION_TOKEN.matcher(operator.operatorVersion()).matches()) {
+                diagnostics.add(VisualDiagnostic.error("visual.operator.version.invalid",
+                        "Operator '%s' version '%s' must use semantic version form MAJOR.MINOR.PATCH."
+                                .formatted(operator.operatorRef(), operator.operatorVersion()),
+                        operatorPath + "/operatorVersion"));
             }
             if (operator.operatorRef().isBlank()) {
                 diagnostics.add(VisualDiagnostic.error("visual.operator.ref.required",
@@ -174,10 +201,22 @@ public class OperatorLibraryValidator {
         validatePorts(operator, "outputs", operator.ports().outputs(), path + "/ports/outputs", diagnostics);
         diagnostics.addAll(VisualSchemaValidator.validateEnvelope(
                 operator.configSchema(), path + "/configSchema"));
+        validateSource(operator, path + "/source", diagnostics);
         validateCapabilities(operator, path + "/capabilities", diagnostics);
         validatePolicy(operator, path + "/policy", diagnostics);
         validateLowering(operator, path + "/lowering", diagnostics);
         diagnostics.addAll(VisualSecretGuard.detectOperatorSecrets(operator, path));
+    }
+
+    private static void validateSource(OperatorDefinition operator,
+                                       String path,
+                                       List<VisualDiagnostic> diagnostics) {
+        if (RESERVED_SOURCE_KINDS.contains(operator.source().kind())) {
+            diagnostics.add(VisualDiagnostic.error("visual.operator.source.kind.reserved",
+                    "Operator '%s' cannot use system-managed source kind '%s' in an imported operator library."
+                            .formatted(operator.operatorRef(), operator.source().kind()),
+                    path + "/kind"));
+        }
     }
 
     private static void validateCapabilities(OperatorDefinition operator,

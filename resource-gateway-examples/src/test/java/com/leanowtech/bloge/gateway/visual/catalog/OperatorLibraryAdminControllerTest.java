@@ -82,6 +82,105 @@ class OperatorLibraryAdminControllerTest {
     }
 
     @Test
+    void createRejectsUnsafeLibraryId() throws Exception {
+        OperatorLibrary invalid = new OperatorLibrary(
+                "bloge.visualOperatorLibrary.v1",
+                "risk policy/2026",
+                "Invalid library id",
+                "1.0.0",
+                "risk-team",
+                "ACTIVE",
+                List.of(VisualCatalogTestSupport.eligibilityOperator("integer"))
+        );
+
+        mockMvc.perform(post("/admin/visual-operator-libraries")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(invalid)))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.valid").value(false))
+                .andExpect(jsonPath("$.diagnostics[0].code").value("visual.library.id.invalid"))
+                .andExpect(jsonPath("$.diagnostics[0].target").value("/libraryId"));
+
+        assertThat(registry.all()).isEmpty();
+    }
+
+    @Test
+    void createRejectsUnsafeLibraryAndOperatorVersions() throws Exception {
+        OperatorDefinition base = VisualCatalogTestSupport.eligibilityOperator("integer");
+        OperatorDefinition operator = new OperatorDefinition(
+                base.schemaVersion(),
+                base.operatorRef(),
+                "1.x",
+                base.display(),
+                base.source(),
+                base.ports(),
+                base.configSchema(),
+                base.capabilities(),
+                base.policy(),
+                base.lowering(),
+                base.diagnostics()
+        );
+        OperatorLibrary invalid = new OperatorLibrary(
+                "bloge.visualOperatorLibrary.v1",
+                "risk-policy",
+                "Invalid versions",
+                "2026 release",
+                "risk-team",
+                "ACTIVE",
+                List.of(operator)
+        );
+
+        mockMvc.perform(post("/admin/visual-operator-libraries")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(invalid)))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.valid").value(false))
+                .andExpect(jsonPath("$.diagnostics[0].code").value("visual.library.version.invalid"))
+                .andExpect(jsonPath("$.diagnostics[0].target").value("/version"))
+                .andExpect(jsonPath("$.diagnostics[1].code").value("visual.operator.version.invalid"))
+                .andExpect(jsonPath("$.diagnostics[1].target").value("/operators/0/operatorVersion"));
+
+        assertThat(registry.all()).isEmpty();
+    }
+
+    @Test
+    void createRejectsSystemManagedSourceKind() throws Exception {
+        OperatorDefinition base = VisualCatalogTestSupport.eligibilityOperator("integer");
+        OperatorDefinition operator = new OperatorDefinition(
+                base.schemaVersion(),
+                base.operatorRef(),
+                base.operatorVersion(),
+                base.display(),
+                new OperatorDefinition.Source("visual-publication", "", "", "", true),
+                base.ports(),
+                base.configSchema(),
+                base.capabilities(),
+                base.policy(),
+                base.lowering(),
+                base.diagnostics()
+        );
+        OperatorLibrary invalid = new OperatorLibrary(
+                "bloge.visualOperatorLibrary.v1",
+                "risk-policy",
+                "Reserved source kind",
+                "1.0.0",
+                "risk-team",
+                "ACTIVE",
+                List.of(operator)
+        );
+
+        mockMvc.perform(post("/admin/visual-operator-libraries")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(invalid)))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.valid").value(false))
+                .andExpect(jsonPath("$.diagnostics[0].code").value("visual.operator.source.kind.reserved"))
+                .andExpect(jsonPath("$.diagnostics[0].target").value("/operators/0/source/kind"));
+
+        assertThat(registry.all()).isEmpty();
+    }
+
+    @Test
     void createRejectsDuplicateOperatorRefsWithStructuredDiagnostics() throws Exception {
         String libraryJson = """
                 {

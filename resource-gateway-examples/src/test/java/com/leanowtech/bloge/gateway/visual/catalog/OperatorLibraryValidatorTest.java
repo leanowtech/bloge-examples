@@ -378,6 +378,98 @@ class OperatorLibraryValidatorTest {
     }
 
     @Test
+    void rejectsUnsafeLibraryId() {
+        OperatorLibrary library = new OperatorLibrary(
+                "bloge.visualOperatorLibrary.v1",
+                "risk policy/2026",
+                "Invalid library id",
+                "1.0.0",
+                "team",
+                "ACTIVE",
+                List.of(VisualCatalogTestSupport.eligibilityOperator("integer"))
+        );
+
+        VisualValidationResult result = validator.validate(library);
+
+        assertThat(result.valid()).isFalse();
+        assertThat(result.diagnostics())
+                .anySatisfy(diagnostic -> {
+                    assertThat(diagnostic.code()).isEqualTo("visual.library.id.invalid");
+                    assertThat(diagnostic.target()).isEqualTo("/libraryId");
+                });
+    }
+
+    @Test
+    void rejectsUnsafeLibraryAndOperatorVersions() {
+        OperatorDefinition base = VisualCatalogTestSupport.eligibilityOperator("integer");
+        OperatorDefinition operator = new OperatorDefinition(
+                base.schemaVersion(),
+                base.operatorRef(),
+                "1.x",
+                base.display(),
+                base.source(),
+                base.ports(),
+                base.configSchema(),
+                base.capabilities(),
+                base.policy(),
+                base.lowering(),
+                base.diagnostics()
+        );
+        OperatorLibrary library = new OperatorLibrary(
+                "bloge.visualOperatorLibrary.v1",
+                "risk-policy",
+                "Invalid versions",
+                "2026 release",
+                "team",
+                "ACTIVE",
+                List.of(operator)
+        );
+
+        VisualValidationResult result = validator.validate(library);
+
+        assertThat(result.valid()).isFalse();
+        assertThat(result.diagnostics())
+                .extracting("code")
+                .contains(
+                        "visual.library.version.invalid",
+                        "visual.operator.version.invalid"
+                );
+        assertThat(result.diagnostics())
+                .extracting("target")
+                .contains(
+                        "/version",
+                        "/operators/0/operatorVersion"
+                );
+    }
+
+    @Test
+    void rejectsSystemManagedSourceKindInImportedLibrary() {
+        OperatorDefinition base = VisualCatalogTestSupport.eligibilityOperator("integer");
+        OperatorDefinition operator = new OperatorDefinition(
+                base.schemaVersion(),
+                base.operatorRef(),
+                base.operatorVersion(),
+                base.display(),
+                new OperatorDefinition.Source("resource-descriptor", "", "", "", true),
+                base.ports(),
+                base.configSchema(),
+                base.capabilities(),
+                base.policy(),
+                base.lowering(),
+                base.diagnostics()
+        );
+
+        VisualValidationResult result = validator.validate(libraryWith(operator));
+
+        assertThat(result.valid()).isFalse();
+        assertThat(result.diagnostics())
+                .anySatisfy(diagnostic -> {
+                    assertThat(diagnostic.code()).isEqualTo("visual.operator.source.kind.reserved");
+                    assertThat(diagnostic.target()).isEqualTo("/operators/0/source/kind");
+                });
+    }
+
+    @Test
     void rejectsDuplicateOperatorRefsInOneLibrary() {
         OperatorDefinition first = operator(
                 "risk:eligibility",
