@@ -61,6 +61,14 @@ public final class VisualSchemaCompatibility {
     private static Optional<String> schemaCompatibilityIssue(Map<String, Object> sourceSchema,
                                                              Map<String, Object> targetSchema,
                                                              String path) {
+        Optional<String> sourceUnionIssue = sourceUnionCompatibilityIssue(sourceSchema, targetSchema, path);
+        if (sourceUnionIssue.isPresent()) {
+            return sourceUnionIssue;
+        }
+        Optional<String> targetUnionIssue = targetUnionCompatibilityIssue(sourceSchema, targetSchema, path);
+        if (targetUnionIssue.isPresent()) {
+            return targetUnionIssue;
+        }
         String sourceType = schemaType(sourceSchema);
         String targetType = schemaType(targetSchema);
         if (sourceType.isBlank() || targetType.isBlank()
@@ -150,6 +158,90 @@ public final class VisualSchemaCompatibility {
 	        return Optional.of(reasonAt(path,
 	                "source type %s cannot feed target type %s"
 	                        .formatted(schemaTypeLabel(sourceSchema), schemaTypeLabel(targetSchema))));
+    }
+
+    private static Optional<String> sourceUnionCompatibilityIssue(Map<String, Object> sourceSchema,
+                                                                  Map<String, Object> targetSchema,
+                                                                  String path) {
+        for (String keyword : List.of("oneOf", "anyOf")) {
+            List<Map<String, Object>> branches = unionBranches(sourceSchema, keyword);
+            if (branches.isEmpty()) {
+                continue;
+            }
+            for (int i = 0; i < branches.size(); i++) {
+                Optional<String> branchIssue = schemaCompatibilityIssue(branches.get(i), targetSchema, path);
+                if (branchIssue.isPresent()) {
+                    return Optional.of(reasonAt(path,
+                            "source %s branch %d cannot feed target: %s"
+                                    .formatted(keyword, i, branchIssue.get())));
+                }
+            }
+        }
+        return Optional.empty();
+    }
+
+    private static Optional<String> targetUnionCompatibilityIssue(Map<String, Object> sourceSchema,
+                                                                  Map<String, Object> targetSchema,
+                                                                  String path) {
+        List<Map<String, Object>> anyOfBranches = unionBranches(targetSchema, "anyOf");
+        List<Map<String, Object>> oneOfBranches = unionBranches(targetSchema, "oneOf");
+        if (anyOfBranches.isEmpty() && oneOfBranches.isEmpty()) {
+            return Optional.empty();
+        }
+
+        Optional<String> targetBaseIssue = unionBaseCompatibilityIssue(sourceSchema, targetSchema, path);
+        if (targetBaseIssue.isPresent()) {
+            return targetBaseIssue;
+        }
+
+        if (!anyOfBranches.isEmpty()) {
+            List<String> reasons = new ArrayList<>();
+            for (Map<String, Object> branch : anyOfBranches) {
+                Optional<String> branchIssue = schemaCompatibilityIssue(sourceSchema, branch, path);
+                if (branchIssue.isEmpty()) {
+                    return Optional.empty();
+                }
+                reasons.add(branchIssue.get());
+            }
+            return Optional.of(reasonAt(path,
+                    "target anyOf has no compatible branch: %s".formatted(String.join("; ", reasons))));
+        }
+
+        if (!oneOfBranches.isEmpty()) {
+            int compatible = 0;
+            List<String> reasons = new ArrayList<>();
+            for (Map<String, Object> branch : oneOfBranches) {
+                Optional<String> branchIssue = schemaCompatibilityIssue(sourceSchema, branch, path);
+                if (branchIssue.isEmpty()) {
+                    compatible++;
+                } else {
+                    reasons.add(branchIssue.get());
+                }
+            }
+            if (compatible == 1) {
+                return Optional.empty();
+            }
+            if (compatible == 0) {
+                return Optional.of(reasonAt(path,
+                        "target oneOf has no compatible branch: %s".formatted(String.join("; ", reasons))));
+            }
+            return Optional.of(reasonAt(path,
+                    "target oneOf is ambiguous because source is compatible with %d compatible branches"
+                            .formatted(compatible)));
+        }
+        return Optional.empty();
+    }
+
+    private static Optional<String> unionBaseCompatibilityIssue(Map<String, Object> sourceSchema,
+                                                                Map<String, Object> targetSchema,
+                                                                String path) {
+        Map<String, Object> base = schemaWithoutUnions(targetSchema);
+        if (base.isEmpty()) {
+            return Optional.empty();
+        }
+        Optional<String> baseIssue = schemaCompatibilityIssue(sourceSchema, base, path);
+        return baseIssue.map(reason -> reasonAt(path,
+                "target union base constraints are not compatible: " + reason));
     }
 
 	    private static Optional<String> numericBoundsCompatibilityIssue(Map<String, Object> sourceSchema,
@@ -764,6 +856,10 @@ public final class VisualSchemaCompatibility {
      * @return readable type label used by diagnostics
      */
     public static String schemaTypeLabel(Map<String, Object> schema) {
+        Optional<String> unionLabel = unionLabel(schema);
+        if (unionLabel.isPresent()) {
+            return unionLabel.get();
+        }
         List<Object> values = enumValues(schema);
         if (!values.isEmpty()) {
             return "enum<" + String.join("|", values.stream().map(String::valueOf).toList()) + ">";
@@ -943,8 +1039,71 @@ public final class VisualSchemaCompatibility {
 		                && stringValueMatchesPattern(value, schema)
 		                && stringValueMatchesFormat(value, schema)
 		                && arrayValueMatchesSchema(value, schema)
-		                && objectValueMatchesSchema(value, schema);
+		                && objectValueMatchesSchema(value, schema)
+                        && valueMatchesUnions(value, schema);
 		    }
+
+    private static boolean valueMatchesUnions(Object value, Map<String, Object> schema) {
+        List<Map<String, Object>> oneOfBranches = unionBranches(schema, "oneOf");
+        if (!oneOfBranches.isEmpty()) {
+            long matches = oneOfBranches.stream()
+                    .filter(branch -> valueMatchesSchema(value, branch))
+                    .count();
+            if (matches != 1) {
+                return false;
+            }
+        }
+        List<Map<String, Object>> anyOfBranches = unionBranches(schema, "anyOf");
+        if (!anyOfBranches.isEmpty()
+                && anyOfBranches.stream().noneMatch(branch -> valueMatchesSchema(value, branch))) {
+            return false;
+        }
+        return true;
+    }
+
+    @SuppressWarnings("unchecked")
+    private static List<Map<String, Object>> unionBranches(Map<String, Object> schema, String keyword) {
+        Object raw = schema.get(keyword);
+        if (!(raw instanceof List<?> branches)) {
+            return List.of();
+        }
+        List<Map<String, Object>> schemas = new ArrayList<>();
+        for (Object branch : branches) {
+            if (branch instanceof Map<?, ?> branchSchema) {
+                schemas.add((Map<String, Object>) branchSchema);
+            }
+        }
+        return schemas;
+    }
+
+    private static Map<String, Object> schemaWithoutUnions(Map<String, Object> schema) {
+        Map<String, Object> base = new LinkedHashMap<>(schema);
+        base.remove("oneOf");
+        base.remove("anyOf");
+        base.remove("$comment");
+        base.remove("title");
+        base.remove("description");
+        base.remove("examples");
+        base.remove("deprecated");
+        base.remove("readOnly");
+        base.remove("writeOnly");
+        base.remove("$defs");
+        return base;
+    }
+
+    private static Optional<String> unionLabel(Map<String, Object> schema) {
+        for (String keyword : List.of("oneOf", "anyOf")) {
+            List<Map<String, Object>> branches = unionBranches(schema, keyword);
+            if (!branches.isEmpty()) {
+                return Optional.of(keyword + "<"
+                        + String.join("|", branches.stream()
+                        .map(VisualSchemaCompatibility::schemaTypeLabel)
+                        .toList())
+                        + ">");
+            }
+        }
+        return Optional.empty();
+    }
 
 	    private static boolean numericValueMatchesBounds(Object value, Map<String, Object> schema) {
 	        if (!(value instanceof Number number)) {
@@ -1189,6 +1348,12 @@ public final class VisualSchemaCompatibility {
     }
 
     private static boolean schemaMayProduceNull(Map<String, Object> schema) {
+        for (String keyword : List.of("oneOf", "anyOf")) {
+            List<Map<String, Object>> branches = unionBranches(schema, keyword);
+            if (!branches.isEmpty()) {
+                return branches.stream().anyMatch(VisualSchemaCompatibility::schemaMayProduceNull);
+            }
+        }
         List<Object> values = enumValues(schema);
         return values.isEmpty() ? schemaAllowsNull(schema) : values.contains(null);
     }

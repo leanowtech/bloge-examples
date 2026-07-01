@@ -15,6 +15,7 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
 import java.util.regex.Pattern;
@@ -46,14 +47,13 @@ public final class VisualSchemaValidator {
             "$dynamicRef"
     );
     private static final Set<String> UNSUPPORTED_COMPOSITION_KEYWORDS = Set.of(
-            "oneOf",
-            "anyOf",
             "allOf",
             "not",
             "if",
             "then",
             "else"
     );
+    private static final Set<String> SUPPORTED_UNION_KEYWORDS = Set.of("oneOf", "anyOf");
     private static final Set<String> UNSUPPORTED_CONSTRAINT_KEYWORDS = Set.of(
             "unevaluatedItems"
     );
@@ -134,6 +134,16 @@ public final class VisualSchemaValidator {
                                                 String path,
                                                 List<VisualDiagnostic> diagnostics) {
         if (valueMatchesSchema(value, schema)) {
+            return;
+        }
+        Optional<String> unionMismatch = unionMismatch(value, schema);
+        if (unionMismatch.isPresent()) {
+            diagnostics.add(VisualDiagnostic.error(unionMismatch.get().startsWith("oneOf")
+                            ? "visual.context.oneOfMismatch"
+                            : "visual.context.anyOfMismatch",
+                    "Runtime value at '%s' does not satisfy schema union: %s."
+                            .formatted(path, unionMismatch.get()),
+                    path));
             return;
         }
         String kind = schemaKind(schema);
@@ -335,6 +345,7 @@ public final class VisualSchemaValidator {
                                        String path,
                                        List<VisualDiagnostic> diagnostics) {
         boolean hasUnsupportedKeyword = validateUnsupportedKeywords(schema, path, diagnostics);
+        boolean hasSupportedUnion = validateSupportedUnions(schema, path, diagnostics);
         boolean invalidTypeArray = validateTypeArray(schema, path, diagnostics);
         validateDefinitions(schema, path, diagnostics);
         String kind = schemaKind(schema);
@@ -342,7 +353,7 @@ public final class VisualSchemaValidator {
             return;
         }
         if (kind.isBlank()) {
-            if (!hasUnsupportedKeyword) {
+            if (!hasUnsupportedKeyword && !hasSupportedUnion) {
                 diagnostics.add(VisualDiagnostic.warning("visual.schema.opaque",
                         "Schema has no type/kind; it will be treated as opaque.",
                         path));
@@ -440,6 +451,47 @@ public final class VisualSchemaValidator {
             }
         }
         return unsupported;
+    }
+
+    @SuppressWarnings("unchecked")
+    private static boolean validateSupportedUnions(Map<String, Object> schema,
+                                                   String path,
+                                                   List<VisualDiagnostic> diagnostics) {
+        boolean present = false;
+        boolean hasOneOf = schema.containsKey("oneOf");
+        boolean hasAnyOf = schema.containsKey("anyOf");
+        if (hasOneOf && hasAnyOf) {
+            diagnostics.add(VisualDiagnostic.error("visual.schema.unionAmbiguous",
+                    "Schema cannot declare both oneOf and anyOf in the same schema object.",
+                    path));
+        }
+        for (String keyword : SUPPORTED_UNION_KEYWORDS) {
+            if (!schema.containsKey(keyword)) {
+                continue;
+            }
+            present = true;
+            Object raw = schema.get(keyword);
+            if (!(raw instanceof List<?> branches) || branches.isEmpty()) {
+                diagnostics.add(VisualDiagnostic.error("visual.schema.unionInvalid",
+                        "JSON Schema union keyword '%s' must be a non-empty array of schema objects."
+                                .formatted(keyword),
+                        path + "/" + keyword));
+                continue;
+            }
+            for (int i = 0; i < branches.size(); i++) {
+                Object branch = branches.get(i);
+                String branchPath = path + "/" + keyword + "/" + i;
+                if (!(branch instanceof Map<?, ?> branchSchema)) {
+                    diagnostics.add(VisualDiagnostic.error("visual.schema.unionInvalid",
+                            "JSON Schema union keyword '%s' branch %d must be a schema object."
+                                    .formatted(keyword, i),
+                            branchPath));
+                    continue;
+                }
+                validateSchema((Map<String, Object>) branchSchema, branchPath, diagnostics);
+            }
+        }
+        return present;
     }
 
     @SuppressWarnings("unchecked")
@@ -2034,8 +2086,52 @@ public final class VisualSchemaValidator {
 	                && stringValueMatchesPattern(value, schema)
 	                && stringValueMatchesFormat(value, schema)
 	                && arrayValueMatchesSchema(value, schema)
-	                && objectValueMatchesSchema(value, schema);
+	                && objectValueMatchesSchema(value, schema)
+                    && unionMismatch(value, schema).isEmpty();
 	    }
+
+    private static Optional<String> unionMismatch(Object value, Map<String, Object> schema) {
+        if (schema.containsKey("oneOf")) {
+            List<Map<String, Object>> branches = unionBranches(schema, "oneOf");
+            if (!branches.isEmpty()) {
+                long matches = branches.stream()
+                        .filter(branch -> valueMatchesSchema(value, branch))
+                        .count();
+                if (matches != 1) {
+                    return Optional.of(matches == 0
+                            ? "oneOf matched none"
+                            : "oneOf matched %d branches".formatted(matches));
+                }
+            }
+        }
+        if (schema.containsKey("anyOf")) {
+            List<Map<String, Object>> branches = unionBranches(schema, "anyOf");
+            if (!branches.isEmpty()) {
+                long matches = branches.stream()
+                        .filter(branch -> valueMatchesSchema(value, branch))
+                        .count();
+                if (matches < 1) {
+                    return Optional.of("anyOf matched none");
+                }
+            }
+        }
+        return Optional.empty();
+    }
+
+    @SuppressWarnings("unchecked")
+    private static List<Map<String, Object>> unionBranches(Map<String, Object> schema, String keyword) {
+        Object raw = schema.get(keyword);
+        if (!(raw instanceof List<?> branches)) {
+            return List.of();
+        }
+        List<Map<String, Object>> schemas = new ArrayList<>();
+        for (Object branch : branches) {
+            if (branch instanceof Map<?, ?> branchSchema) {
+                schemas.add((Map<String, Object>) branchSchema);
+            }
+        }
+        return schemas;
+    }
 
 	    private static Long stringLengthBoundary(Object value) {
 	        if (!(value instanceof Number number)) {

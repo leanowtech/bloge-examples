@@ -466,10 +466,7 @@ class GraphDraftValidatorTest {
                                 "score", Map.of("type", "integer"),
                                 "amount", Map.of("type", "number"),
                                 "customerCode", Map.of("type", "string", "pattern", "^[A-Z]+$"),
-                                "decision", Map.of("oneOf", List.of(
-                                        Map.of("type", "string"),
-                                        Map.of("type", "integer")
-                                )),
+                                "decision", Map.of("not", Map.of("type", "string")),
                                 "customer", Map.of("$ref", "#/$defs/Customer")
                         ),
                         "required", List.of("score", "amount"),
@@ -492,9 +489,45 @@ class GraphDraftValidatorTest {
         assertThat(result.diagnostics())
                 .extracting("target")
                 .contains(
-                        "/inputSchema/schema/properties/decision/oneOf",
+                        "/inputSchema/schema/properties/decision/not",
                         "/inputSchema/schema/properties/customer/$ref"
                 );
+    }
+
+    @Test
+    void acceptsGraphInputSchemaWithJsonSchemaUnions() {
+        GraphDraftValidator validator = new GraphDraftValidator(
+                VisualCatalogTestSupport.catalogWithLibrary(
+                        VisualCatalogTestSupport.eligibilityLibrary("integer")));
+        SchemaEnvelope inputSchema = new SchemaEnvelope(
+                SchemaEnvelope.JSON_SCHEMA,
+                "2020-12",
+                Map.of(
+                        "type", "object",
+                        "properties", Map.of(
+                                "score", Map.of("type", "integer"),
+                                "amount", Map.of("type", "number"),
+                                "decision", Map.of("oneOf", List.of(
+                                        Map.of("type", "string", "enum", List.of("APPROVE", "REJECT")),
+                                        Map.of("type", "integer", "minimum", 100)
+                                )),
+                                "riskSignal", Map.of("anyOf", List.of(
+                                        Map.of("type", "string", "pattern", "^RISK_"),
+                                        Map.of("type", "number", "minimum", 0)
+                                ))
+                        ),
+                        "required", List.of("score", "amount"),
+                        "additionalProperties", false
+                ));
+        GraphDraft draft = contextEligibilityDraft(inputSchema, Map.of(
+                "score", GraphDraft.Binding.contextPath("score"),
+                "amount", GraphDraft.Binding.contextPath("amount")
+        ));
+
+        VisualValidationResult result = validator.validate(draft);
+
+        assertThat(result.valid()).isTrue();
+        assertThat(result.diagnostics()).isEmpty();
     }
 
     @Test

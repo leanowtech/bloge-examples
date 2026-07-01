@@ -749,10 +749,7 @@ class ResourceDesignContractValidatorTest {
                 ), List.of()),
                 SchemaEnvelope.object(Map.of(
                         "customerCode", Map.of("type", "string", "pattern", "^[A-Z]+$"),
-                        "decision", Map.of("oneOf", List.of(
-                                Map.of("type", "string"),
-                                Map.of("type", "integer")
-                        ))
+                        "decision", Map.of("not", Map.of("type", "string"))
                 ), List.of()),
                 Map.of(),
                 "ACTIVE"
@@ -771,8 +768,38 @@ class ResourceDesignContractValidatorTest {
                 .extracting("target")
                 .contains(
                         "/requestSchema/schema/properties/userId/$ref",
-                        "/responseSchema/schema/properties/decision/oneOf"
+                        "/responseSchema/schema/properties/decision/not"
                 );
+    }
+
+    @Test
+    void acceptsJsonSchemaUnionsInResourceDesignContract() {
+        ResourceDesignContract contract = new ResourceDesignContract(
+                "contract:orders",
+                "order-service.listOrders",
+                "Order list",
+                "Lists orders.",
+                List.of("order"),
+                SchemaEnvelope.object(Map.of(
+                        "lookup", Map.of("oneOf", List.of(
+                                Map.of("type", "string", "minLength", 3),
+                                Map.of("type", "integer", "minimum", 1)
+                        ))
+                ), List.of("lookup")),
+                SchemaEnvelope.object(Map.of(
+                        "status", Map.of("anyOf", List.of(
+                                Map.of("type", "string", "enum", List.of("OPEN", "CLOSED")),
+                                Map.of("type", "null")
+                        ))
+                ), List.of("status")),
+                Map.of(),
+                "ACTIVE"
+        );
+
+        VisualValidationResult result = validator.validate(contract);
+
+        assertThat(result.valid()).isTrue();
+        assertThat(result.diagnostics()).isEmpty();
     }
 
     @Test

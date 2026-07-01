@@ -23,7 +23,7 @@ class OperatorLibraryValidatorTest {
     void acceptsValidLibrary() {
         VisualValidationResult result = validator.validate(VisualCatalogTestSupport.eligibilityLibrary("integer"));
 
-        assertThat(result.valid()).isTrue();
+        assertThat(result.valid()).as(result.diagnostics().toString()).isTrue();
         assertThat(result.diagnostics()).isEmpty();
     }
 
@@ -138,7 +138,7 @@ class OperatorLibraryValidatorTest {
 
         VisualValidationResult result = validator.validate(libraryWith(operator));
 
-        assertThat(result.valid()).isTrue();
+        assertThat(result.valid()).as(result.diagnostics().toString()).isTrue();
         assertThat(result.diagnostics()).isEmpty();
         assertThat(operator.capabilities().effect()).isEqualTo("READ_EXTERNAL");
         assertThat(operator.capabilities().idempotency()).isEqualTo("IDEMPOTENT");
@@ -2194,7 +2194,7 @@ class OperatorLibraryValidatorTest {
 
         VisualValidationResult result = validator.validate(libraryWith(operator));
 
-        assertThat(result.valid()).isTrue();
+        assertThat(result.valid()).as(result.diagnostics().toString()).isTrue();
         assertThat(result.diagnostics()).isEmpty();
     }
 
@@ -2875,10 +2875,7 @@ class OperatorLibraryValidatorTest {
                 new OperatorDefinition.Ports(
                         List.of(new OperatorDefinition.Port("input",
                                 SchemaEnvelope.object(Map.of(
-                                        "choice", Map.of("oneOf", List.of(
-                                                Map.of("type", "string"),
-                                                Map.of("type", "integer")
-                                        ))
+                                        "choice", Map.of("not", Map.of("type", "string"))
                                 ), List.of()),
                                 true,
                                 "Input.")),
@@ -2909,10 +2906,50 @@ class OperatorLibraryValidatorTest {
         assertThat(result.diagnostics())
                 .extracting("target")
 		                .contains(
-		                        "/operators/0/ports/inputs/0/schema/schema/properties/choice/oneOf",
+		                        "/operators/0/ports/inputs/0/schema/schema/properties/choice/not",
 		                        "/operators/0/ports/outputs/0/schema/schema/properties/customer/$ref"
 		                );
 		    }
+
+    @Test
+    void acceptsJsonSchemaUnionsAcrossOperatorSchemas() {
+        OperatorDefinition operator = new OperatorDefinition(
+                "bloge.visualOperator.v1",
+                "risk:unionSchemas",
+                "1.0.0",
+                new OperatorDefinition.Display("Union schemas", "Test operator.", List.of("test")),
+                new OperatorDefinition.Source("user-library", "", "", "", true),
+                new OperatorDefinition.Ports(
+                        List.of(new OperatorDefinition.Port("inputs",
+                                SchemaEnvelope.object(Map.of(
+                                        "decision", Map.of("oneOf", List.of(
+                                                Map.of("type", "string", "enum", List.of("APPROVE", "REJECT")),
+                                                Map.of("type", "integer", "minimum", 100)
+                                        ))
+                                ), List.of()),
+                                true,
+                                "Input.")),
+                        List.of(new OperatorDefinition.Port("output",
+                                SchemaEnvelope.object(Map.of(
+                                        "riskSignal", Map.of("anyOf", List.of(
+                                                Map.of("type", "string", "pattern", "^RISK_"),
+                                                Map.of("type", "number", "minimum", 0)
+                                        ))
+                                ), List.of()),
+                                true,
+                                "Output."))
+                ),
+                SchemaEnvelope.object(Map.of(), List.of()),
+                OperatorDefinition.Capabilities.pure(),
+                new OperatorDefinition.Lowering("native", "riskUnionSchemas", Map.of()),
+                List.of()
+        );
+
+        VisualValidationResult result = validator.validate(libraryWith(operator));
+
+        assertThat(result.valid()).as(result.diagnostics().toString()).isTrue();
+        assertThat(result.diagnostics()).isEmpty();
+    }
 
     @Test
     void rejectsUnsupportedSchemaEnvelopeAcrossOperatorSchemas() {

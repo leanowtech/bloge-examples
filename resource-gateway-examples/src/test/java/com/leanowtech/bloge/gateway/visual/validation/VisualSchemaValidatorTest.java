@@ -58,4 +58,97 @@ class VisualSchemaValidatorTest {
                     assertThat(diagnostic.target()).isEqualTo("/context/scores/1");
                 });
     }
+
+    @Test
+    void acceptsRuntimeValuesThatMatchOneOfOrAnyOfBranches() {
+        SchemaEnvelope schema = new SchemaEnvelope(SchemaEnvelope.JSON_SCHEMA, "2020-12", Map.of(
+                "type", "object",
+                "properties", Map.of(
+                        "decision", Map.of(
+                                "oneOf", List.of(
+                                        Map.of("type", "string", "enum", List.of("APPROVE", "REJECT")),
+                                        Map.of("type", "integer", "minimum", 100)
+                                )
+                        ),
+                        "riskSignal", Map.of(
+                                "anyOf", List.of(
+                                        Map.of("type", "string", "pattern", "^RISK_"),
+                                        Map.of("type", "number", "minimum", 0)
+                                )
+                        )
+                ),
+                "required", List.of("decision", "riskSignal"),
+                "additionalProperties", false
+        ));
+
+        assertThat(VisualSchemaValidator.validateValue(schema, Map.of(
+                "decision", 120,
+                "riskSignal", "RISK_HIGH"
+        ), "/context")).isEmpty();
+        assertThat(VisualSchemaValidator.validateValue(schema, Map.of(
+                "decision", "APPROVE",
+                "riskSignal", 0.35
+        ), "/context")).isEmpty();
+    }
+
+    @Test
+    void reportsRuntimeUnionBranchMismatches() {
+        SchemaEnvelope schema = new SchemaEnvelope(SchemaEnvelope.JSON_SCHEMA, "2020-12", Map.of(
+                "type", "object",
+                "properties", Map.of(
+                        "decision", Map.of(
+                                "oneOf", List.of(
+                                        Map.of("type", "integer"),
+                                        Map.of("type", "number")
+                                )
+                        ),
+                        "riskSignal", Map.of(
+                                "anyOf", List.of(
+                                        Map.of("type", "string", "pattern", "^RISK_"),
+                                        Map.of("type", "number", "minimum", 0)
+                                )
+                        )
+                ),
+                "required", List.of("decision", "riskSignal"),
+                "additionalProperties", false
+        ));
+
+        var diagnostics = VisualSchemaValidator.validateValue(schema, Map.of(
+                "decision", 42,
+                "riskSignal", true
+        ), "/context");
+
+        assertThat(diagnostics)
+                .anySatisfy(diagnostic -> {
+                    assertThat(diagnostic.code()).isEqualTo("visual.context.oneOfMismatch");
+                    assertThat(diagnostic.target()).isEqualTo("/context/decision");
+                    assertThat(diagnostic.message()).contains("matched 2");
+                })
+                .anySatisfy(diagnostic -> {
+                    assertThat(diagnostic.code()).isEqualTo("visual.context.anyOfMismatch");
+                    assertThat(diagnostic.target()).isEqualTo("/context/riskSignal");
+                    assertThat(diagnostic.message()).contains("matched none");
+                });
+    }
+
+    @Test
+    void rejectsInvalidUnionSchemaShapes() {
+        var diagnostics = VisualSchemaValidator.validateSchema(Map.of(
+                "type", "object",
+                "properties", Map.of(
+                        "decision", Map.of("oneOf", List.of()),
+                        "riskSignal", Map.of("anyOf", List.of("bad"))
+                )
+        ), "/schema");
+
+        assertThat(diagnostics)
+                .anySatisfy(diagnostic -> {
+                    assertThat(diagnostic.code()).isEqualTo("visual.schema.unionInvalid");
+                    assertThat(diagnostic.target()).isEqualTo("/schema/properties/decision/oneOf");
+                })
+                .anySatisfy(diagnostic -> {
+                    assertThat(diagnostic.code()).isEqualTo("visual.schema.unionInvalid");
+                    assertThat(diagnostic.target()).isEqualTo("/schema/properties/riskSignal/anyOf/0");
+                });
+    }
 }

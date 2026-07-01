@@ -532,6 +532,7 @@ schema 证明 `applicant.score` 存在，但 `objectTemplate` 不能只绑定
 | `string` | `enum` | 禁止/需 transform | 没有来源值域证明，不能隐式接入枚举输入 |
 | `object` | `object` | 结构化检查 | required 字段必须满足 |
 | `array<T>` | `array<U>` | 检查 item 兼容 | foreach 场景重要 |
+| `oneOf`/`anyOf` | 任意 | 保守检查 | source union 必须所有分支可赋值；target `anyOf` 至少一个分支可接；target `oneOf` 必须唯一分支可接 |
 | `object` | `string` | 禁止或需表达式 | 不能隐式转 JSON |
 | `unknown` | 任意 | 警告 | 可继续草稿，不可无条件发布 |
 
@@ -552,6 +553,10 @@ object required 字段证明、array item 递归兼容、enum 值域子集和普
 不能隐式接入 enum，减少画布交互与服务端裁决之间的断层。拖线落点和
 inspector source picker 写入 binding 前都必须调用服务端 connection preview
 gate，本地 hint 不能成为最终授权。
+当前服务端 schema gate 已支持 `oneOf` / `anyOf` 作为受限 visual union：
+运行时 value validation 中 `oneOf` 必须唯一命中，`anyOf` 至少命中一个；
+schema-to-schema 连接兼容采用保守策略，避免把无法证明唯一性的 union
+直接放入下游输入。
 同一节点内多个 binding 写入同一解析后输入目标，或 root/path 前缀重叠，
 会以 `visual.input.duplicateTarget` 阻断；不同 input port 上同名字段仍然合法，
 例如 `customer.id` 和 `order.id`。
@@ -569,7 +574,7 @@ admin upsert gate 阻断。
 - binding 不能引用不可达节点。
 - data edge 必须对应一个实际语义依赖；`nodePath` binding 必须对应画布上的 data edge。
 - binding 如果引用 optional 输出字段，需要下游声明 fallback、default 或 nullable。
-- 如果输入 schema 有 `oneOf` / union，需要 UI 显示分支选择，不能让用户凭感觉填字段。
+- 如果输入 schema 有 `oneOf` / union，服务端已能做保存/运行/连接层面的保守校验；专业 UI 仍需要显示分支选择，不能让用户凭感觉填字段。
 
 ### 10.4 表达式校验
 
