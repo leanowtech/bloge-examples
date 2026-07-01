@@ -203,12 +203,38 @@ class VisualAuthoringAppJsTest {
                   'bindingCandidateSummaryLevel',
                   'connectionServerPreflightMessage',
                   'connectionLocalHeuristicStatus',
-                  'connectionLocalMismatchIsAdvisory'
+                  'connectionLocalMismatchIsAdvisory',
+                  'recordBuilderHistory',
+                  'clearBuilderHistory',
+                  'undoBuilderEdit',
+                  'redoBuilderEdit',
+                  'restoreBuilderHistorySnapshot',
+                  'renderBuilderHistoryControls',
+                  'serializeBuilderHistory',
+                  'deserializeBuilderHistory',
+                  'builderHistoryShortcutTargetIsEditable',
+                  'canvasSearchResults',
+                  'canvasSearchEntries',
+                  'diagnosticsForCanvasNode',
+                  'diagnosticTargetNodeId',
+                  'nodeIdFromDiagnosticPointer',
+                  'normalizeDiagnosticNodeTarget',
+                  'jsonPointerUnescape',
+                  'labelForNode',
+                  'readableName'
                 ]) {
                   vm.runInContext(functionSource(name), context);
                 }
 
+                context.BUILDER_HISTORY_LIMIT = 50;
                 context.CONTEXT_SOURCE_ID = '__ctx';
+                context.elements = {};
+                context.$ = (id) => context.elements[id] || null;
+                context.syncGraphInputSchemaTextFromBuilder = () => {};
+                context.syncComposerFromBuilder = () => {};
+                context.renderScenario = () => {
+                  context.renderCount = (context.renderCount || 0) + 1;
+                };
                 context.contextSourceForPath = (path) => ({ nodeId: '__ctx', path });
                 context.sourceHandlesForNode = () => [];
                 context.specForNode = () => ({ outputPort: 'payload' });
@@ -478,6 +504,72 @@ class VisualAuthoringAppJsTest {
                   ok: false,
                   message: 'This connection would create a cycle.'
                 });
+                context.state = {
+                  builder: {
+                    graphName: 'historyGraph',
+                    selectedId: 'policy',
+                    nodes: [
+                      { id: 'policy', type: 'decisionTable', x: 80, y: 210 },
+                      {
+                        id: 'riskNode',
+                        type: 'customOperator',
+                        paletteType: 'risk:eligibility',
+                        customInputs: { score: 'ctx.score' },
+                        config: { mode: 'strict' }
+                      }
+                    ]
+                  },
+                  builderHistoryUndo: [],
+                  builderHistoryRedo: [],
+                  builderHistoryMessage: null,
+                  previewingDraftRevision: 7,
+                  visualCheck: { message: 'Previously checked', level: 'success', diagnostics: [] },
+                  connectionMessage: { text: 'connected', level: 'success' },
+                  lastPayload: { output: true },
+                  layout: {
+                    nodes: [
+                      { id: 'policy', label: 'Loan Policy', operatorRef: 'bloge:decisionTable', kind: 'decision-table' },
+                      { id: 'riskNode', label: 'Eligibility', operatorRef: 'risk:eligibility', kind: 'custom' }
+                    ]
+                  }
+                };
+                context.recordBuilderHistory('Move policy');
+                context.state.builder.nodes[0].x = 260;
+                const historyUndoAfterRecord = context.state.builderHistoryUndo.length;
+                const historyRedoAfterRecord = context.state.builderHistoryRedo.length;
+                context.undoBuilderEdit();
+                const historyUndoRestoredX = context.state.builder.nodes[0].x;
+                const historyRedoAfterUndo = context.state.builderHistoryRedo.length;
+                const historyPreviewAfterUndo = context.state.previewingDraftRevision;
+                const historyVisualCheckAfterUndo = context.state.visualCheck.message;
+                const historyRenderCountAfterUndo = context.renderCount || 0;
+                context.redoBuilderEdit();
+                const historyRedoRestoredX = context.state.builder.nodes[0].x;
+                const historyUndoAfterRedo = context.state.builderHistoryUndo.length;
+                context.clearBuilderHistory('Loaded draft; local edit history cleared.');
+                const historyClearUndo = context.state.builderHistoryUndo.length;
+                const historyClearRedo = context.state.builderHistoryRedo.length;
+                const historyClearMessage = context.state.builderHistoryMessage.text;
+                const editableShortcutTarget = context.builderHistoryShortcutTargetIsEditable({
+                  closest: (selector) => selector.includes('input') ? {} : null
+                });
+                const canvasShortcutTarget = context.builderHistoryShortcutTargetIsEditable({
+                  closest: () => null
+                });
+                context.state.visualCheck = {
+                  diagnostics: [
+                    { level: 'ERROR', target: '/nodes/1/inputs/score', message: 'Risk node score failed.' },
+                    { level: 'WARNING', nodeId: 'policy', target: '/graphName', message: 'Policy warning.' }
+                  ]
+                };
+                const riskSearch = context.canvasSearchResults('eligibility strict', context.state.builder, context.state.layout)
+                  .map((entry) => entry.nodeId)
+                  .join('|');
+                const policyByPointer = context.diagnosticTargetNodeId({ target: '/nodes/0/config/rules/0' }, context.state.builder);
+                const riskByPointer = context.diagnosticTargetNodeId({ target: '/nodes/1/inputs/score' }, context.state.builder);
+                const policyByDirectNode = context.diagnosticTargetNodeId({ nodeId: 'policy', target: '/graphName' }, context.state.builder);
+                const riskDiagnosticCount = context.diagnosticsForCanvasNode('riskNode').length;
+                const unescapedPointerSegment = context.jsonPointerUnescape('node~1with~0marker');
 
                 const checks = [
                   ['schema path suffix', context.dslReferenceSuffixForSchemaPath('items.0.score'), '.items[0].score'],
@@ -535,6 +627,26 @@ class VisualAuthoringAppJsTest {
                   ['local mismatch status message', localMismatchStatus.message, 'Local schema hint: Type mismatch: string cannot feed integer. Server validation is authoritative.'],
                   ['local cycle status level', localCycleStatus.level, 'error'],
                   ['local cycle status message', localCycleStatus.message, 'This connection would create a cycle.'],
+                  ['history undo after record', historyUndoAfterRecord, 1],
+                  ['history redo after record', historyRedoAfterRecord, 0],
+                  ['history undo restored x', historyUndoRestoredX, 80],
+                  ['history redo after undo', historyRedoAfterUndo, 1],
+                  ['history preview reset after undo', historyPreviewAfterUndo, 0],
+                  ['history visual check reset after undo', historyVisualCheckAfterUndo, 'Not checked'],
+                  ['history render after undo', historyRenderCountAfterUndo, 1],
+                  ['history redo restored x', historyRedoRestoredX, 260],
+                  ['history undo after redo', historyUndoAfterRedo, 1],
+                  ['history clear undo', historyClearUndo, 0],
+                  ['history clear redo', historyClearRedo, 0],
+                  ['history clear message', historyClearMessage, 'Loaded draft; local edit history cleared.'],
+                  ['history shortcut editable target', editableShortcutTarget, true],
+                  ['history shortcut canvas target', canvasShortcutTarget, false],
+                  ['canvas search custom config hit', riskSearch, 'riskNode'],
+                  ['diagnostic node pointer index 0', policyByPointer, 'policy'],
+                  ['diagnostic node pointer index 1', riskByPointer, 'riskNode'],
+                  ['diagnostic direct node target', policyByDirectNode, 'policy'],
+                  ['diagnostic node count', riskDiagnosticCount, 1],
+                  ['json pointer unescape', unescapedPointerSegment, 'node/with~marker'],
                   ['dynamic schema DSL targets', dynamicSchemaDslTargets, [
                     '/inputSchema/schema/properties/dynamicAdditional/additionalProperties/properties/bad-field',
                     '/inputSchema/schema/properties/dynamicResidual/unevaluatedProperties/properties/bad-residual-field',

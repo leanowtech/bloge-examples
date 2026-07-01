@@ -270,6 +270,7 @@ const SAMPLE_OPENAPI_RESOURCE_CONTRACT = {
 
 const NODE_SIZE = { width: 184, height: 76 };
 const DRAG_START_THRESHOLD = 4;
+const BUILDER_HISTORY_LIMIT = 50;
 const SUPPORTED_SCHEMA_FORMAT = 'json-schema';
 const SUPPORTED_SCHEMA_VERSION = '2020-12';
 const SUPPORTED_SCHEMA_KINDS = new Set([
@@ -373,6 +374,11 @@ const state = {
   nodeDrag: null,
   connectionDrag: null,
   connectionMessage: null,
+  builderHistoryUndo: [],
+  builderHistoryRedo: [],
+  builderHistoryMessage: null,
+  canvasSearchQuery: '',
+  canvasFocusedNodeId: '',
   suppressPaletteClick: false,
   suppressNodeClick: false,
   customDsl: DEFAULT_COMPOSER_DSL,
@@ -601,12 +607,16 @@ function normalizedScopeValue(value, fallback) {
 async function applyBuilderScopeFromControls() {
   const next = scopeFromControls();
   const current = builderScope();
+  const changed = current.tenantId !== next.tenantId
+      || current.namespace !== next.namespace
+      || current.environment !== next.environment;
+  if (changed) {
+    recordBuilderHistory('Change authoring scope');
+  }
   state.builder.tenantId = next.tenantId;
   state.builder.namespace = next.namespace;
   state.builder.environment = next.environment;
-  if (current.tenantId !== next.tenantId
-      || current.namespace !== next.namespace
-      || current.environment !== next.environment) {
+  if (changed) {
     state.visualCheck = { message: 'Not checked', level: 'info', diagnostics: [] };
   }
   renderScopeStatus('Loading catalog...', 'info');
@@ -779,6 +789,7 @@ function renderScenario() {
   $('inspector').classList.toggle('composer-mode', isComposerSelected());
   renderInputForm();
   renderDecisionTable();
+  renderCanvasNavigator();
   renderDiagram();
   renderNodeDetails(state.layout?.nodes?.[0]);
   renderDecisionSummary(null);
@@ -968,8 +979,11 @@ function renderInputForm() {
         <textarea id="composer-context" class="context-editor" spellcheck="false"></textarea>
       </div>
       <div class="composer-actions">
+        <button id="undo-builder-edit" class="secondary compact" type="button">Undo</button>
+        <button id="redo-builder-edit" class="secondary compact" type="button">Redo</button>
         <button id="reset-composer" class="secondary compact" type="button">Reset</button>
       </div>
+      <div id="builder-history-status" class="draft-status" hidden></div>
     `;
     $('composer-dsl').value = state.customDsl;
     $('graph-input-schema').value = state.graphInputSchemaText;
@@ -985,6 +999,7 @@ function renderInputForm() {
     renderSelectedOperatorEditor();
     renderGraphOutputEditor();
     renderVisualCheck();
+    renderBuilderHistoryControls();
     $('composer-dsl').addEventListener('input', (event) => {
       state.customDsl = event.target.value;
     });
@@ -996,6 +1011,8 @@ function renderInputForm() {
       state.customContextText = event.target.value;
       renderSelectedOperatorEditor();
     });
+    $('undo-builder-edit').addEventListener('click', undoBuilderEdit);
+    $('redo-builder-edit').addEventListener('click', redoBuilderEdit);
     $('reset-composer').addEventListener('click', resetComposer);
     $('apply-scope').addEventListener('click', applyBuilderScopeFromControls);
     $('validate-visual-draft').addEventListener('click', validateVisualDraft);
@@ -1453,7 +1470,303 @@ function resetComposer() {
   state.layout = layoutFromBuilder(state.builder);
   state.selectedNodeId = state.builder.selectedId;
   state.lastPayload = null;
+  clearBuilderHistory('Started a fresh composer draft.');
   renderScenario();
+}
+
+function recordBuilderHistory(action = 'Edit graph') {
+  const snapshot = serializeBuilderHistory(state.builder);
+  const previous = state.builderHistoryUndo.at(-1);
+  if (previous?.snapshot === snapshot) {
+    return;
+  }
+  state.builderHistoryUndo.push({ action, snapshot });
+  if (state.builderHistoryUndo.length > BUILDER_HISTORY_LIMIT) {
+    state.builderHistoryUndo.shift();
+  }
+  state.builderHistoryRedo = [];
+  state.builderHistoryMessage = {
+    level: 'info',
+    text: `Undo available: ${action}.`
+  };
+  renderBuilderHistoryControls();
+}
+
+function clearBuilderHistory(message = '') {
+  state.builderHistoryUndo = [];
+  state.builderHistoryRedo = [];
+  state.builderHistoryMessage = message
+    ? { level: 'info', text: message }
+    : null;
+  renderBuilderHistoryControls();
+}
+
+function undoBuilderEdit() {
+  const previous = state.builderHistoryUndo.pop();
+  if (!previous) {
+    state.builderHistoryMessage = { level: 'info', text: 'Nothing to undo.' };
+    renderBuilderHistoryControls();
+    return;
+  }
+  state.builderHistoryRedo.push({
+    action: previous.action,
+    snapshot: serializeBuilderHistory(state.builder)
+  });
+  restoreBuilderHistorySnapshot(previous.snapshot, `Undid: ${previous.action}.`);
+}
+
+function redoBuilderEdit() {
+  const next = state.builderHistoryRedo.pop();
+  if (!next) {
+    state.builderHistoryMessage = { level: 'info', text: 'Nothing to redo.' };
+    renderBuilderHistoryControls();
+    return;
+  }
+  state.builderHistoryUndo.push({
+    action: next.action,
+    snapshot: serializeBuilderHistory(state.builder)
+  });
+  restoreBuilderHistorySnapshot(next.snapshot, `Redid: ${next.action}.`);
+}
+
+function restoreBuilderHistorySnapshot(snapshot, message) {
+  state.builder = deserializeBuilderHistory(snapshot);
+  if (!state.builder.nodes.some((node) => node.id === state.builder.selectedId)) {
+    state.builder.selectedId = state.builder.nodes[0]?.id || null;
+  }
+  state.selectedNodeId = state.builder.selectedId;
+  state.previewingDraftRevision = 0;
+  state.visualCheck = { message: 'Not checked', level: 'info', diagnostics: [] };
+  state.connectionMessage = null;
+  state.lastPayload = null;
+  syncGraphInputSchemaTextFromBuilder({ render: false });
+  syncComposerFromBuilder({ render: false });
+  state.builderHistoryMessage = { level: 'success', text: message };
+  renderScenario();
+}
+
+function renderBuilderHistoryControls() {
+  const undoButton = $('undo-builder-edit');
+  const redoButton = $('redo-builder-edit');
+  const status = $('builder-history-status');
+  if (undoButton) {
+    undoButton.disabled = !state.builderHistoryUndo.length;
+  }
+  if (redoButton) {
+    redoButton.disabled = !state.builderHistoryRedo.length;
+  }
+  if (!status) {
+    return;
+  }
+  const message = state.builderHistoryMessage;
+  status.hidden = !message;
+  status.textContent = message?.text || '';
+  status.className = `draft-status ${message?.level || 'info'}`;
+}
+
+function serializeBuilderHistory(builder) {
+  return JSON.stringify(builder || {});
+}
+
+function deserializeBuilderHistory(snapshot) {
+  try {
+    const parsed = JSON.parse(snapshot || '{}');
+    return parsed && typeof parsed === 'object' && Array.isArray(parsed.nodes)
+      ? parsed
+      : createDefaultBuilder();
+  } catch {
+    return createDefaultBuilder();
+  }
+}
+
+function renderCanvasNavigator() {
+  const container = $('canvas-navigator');
+  if (!container) return;
+  const nodes = state.layout?.nodes || [];
+  if (!nodes.length) {
+    container.hidden = true;
+    return;
+  }
+  if (state.canvasFocusedNodeId && !nodes.some((node) => node.id === state.canvasFocusedNodeId)) {
+    state.canvasFocusedNodeId = '';
+  }
+  container.hidden = false;
+  const input = $('canvas-search');
+  if (input && document.activeElement !== input) {
+    input.value = state.canvasSearchQuery || '';
+  }
+  if (input) {
+    input.oninput = (event) => {
+      state.canvasSearchQuery = event.target.value;
+      renderCanvasNavigator();
+      renderDiagram();
+    };
+  }
+  const results = canvasSearchResults(state.canvasSearchQuery, state.builder, state.layout);
+  const visible = results.slice(0, 12);
+  const summary = $('canvas-search-summary');
+  if (summary) {
+    const query = String(state.canvasSearchQuery || '').trim();
+    const suffix = results.length > visible.length ? ` · showing ${visible.length}` : '';
+    summary.textContent = query
+      ? `${results.length} of ${nodes.length} nodes${suffix}`
+      : `${nodes.length} nodes${suffix}`;
+  }
+  const resultList = $('canvas-search-results');
+  if (!resultList) return;
+  resultList.innerHTML = visible.map((entry) => {
+    const diagnostics = diagnosticsForCanvasNode(entry.nodeId);
+    const issueClass = diagnostics.some((diagnostic) => String(diagnostic.level || '').toUpperCase() === 'ERROR')
+      ? 'error'
+      : (diagnostics.length ? 'warning' : 'clean');
+    const issueText = diagnostics.length ? `${diagnostics.length} issue${diagnostics.length === 1 ? '' : 's'}` : 'clean';
+    const active = entry.nodeId === state.selectedNodeId || entry.nodeId === state.canvasFocusedNodeId ? ' active' : '';
+    return `
+      <button class="canvas-search-result${active}" type="button" data-canvas-node="${escapeHtml(entry.nodeId)}">
+        <strong>${escapeHtml(entry.label)}</strong>
+        <span>${escapeHtml(entry.meta)}</span>
+        <em class="${escapeHtml(issueClass)}">${escapeHtml(issueText)}</em>
+      </button>
+    `;
+  }).join('') || '<div class="canvas-search-empty">No nodes match.</div>';
+  for (const button of resultList.querySelectorAll('[data-canvas-node]')) {
+    button.addEventListener('click', () => focusCanvasNode(button.dataset.canvasNode));
+  }
+}
+
+function canvasSearchResults(query, builder = state.builder, layout = state.layout) {
+  const entries = canvasSearchEntries(builder, layout);
+  const tokens = String(query || '').trim().toLowerCase().split(/\s+/).filter(Boolean);
+  if (!tokens.length) {
+    return entries;
+  }
+  return entries.filter((entry) => tokens.every((token) => entry.haystack.includes(token)));
+}
+
+function canvasSearchEntries(builder = state.builder, layout = state.layout) {
+  const visualById = Object.fromEntries((layout?.nodes || []).map((node) => [node.id, node]));
+  const builderMatchesLayout = Array.isArray(builder?.nodes)
+    && builder.nodes.some((node) => Object.prototype.hasOwnProperty.call(visualById, node.id));
+  const builderNodes = builderMatchesLayout
+    ? builder.nodes
+    : (layout?.nodes || []).map((node) => ({ id: node.id, type: node.annotations?.type || node.kind }));
+  return builderNodes.map((node) => {
+    const visual = visualById[node.id] || {};
+    const spec = specForNode(node);
+    const label = visual.label || labelForNode(node) || readableName(node.id);
+    const operatorRef = visual.operatorRef || spec.visualOperatorRef || spec.operatorRef || node.paletteType || node.type || '';
+    const meta = [operatorRef, visual.kind || spec.kind || node.type].filter(Boolean).join(' · ');
+    const haystack = [
+      node.id,
+      label,
+      meta,
+      node.resourceId,
+      node.paletteType,
+      node.type,
+      ...Object.keys(node.customInputs || {}),
+      ...Object.values(node.customInputs || {}),
+      ...Object.keys(node.customInputPaths || {}),
+      ...Object.values(node.customInputPaths || {}),
+      ...Object.keys(node.customOutputPaths || {}),
+      ...Object.values(node.customOutputPaths || {}),
+      ...Object.keys(node.paramInputs || {}),
+      ...Object.values(node.paramInputs || {}),
+      ...Object.keys(node.config || {}),
+      JSON.stringify(node.config || {}),
+      JSON.stringify(node.rules || [])
+    ].filter(Boolean).join(' ').toLowerCase();
+    return {
+      nodeId: node.id,
+      label,
+      meta,
+      haystack
+    };
+  });
+}
+
+function focusCanvasNode(nodeId) {
+  if (!nodeId) return;
+  const visualNode = (state.layout?.nodes || []).find((node) => node.id === nodeId);
+  const builderNode = state.builder.nodes.find((node) => node.id === nodeId);
+  if (!visualNode && !builderNode) {
+    return;
+  }
+  state.canvasFocusedNodeId = nodeId;
+  state.selectedNodeId = nodeId;
+  if (isComposerSelected() && builderNode) {
+    state.builder.selectedId = nodeId;
+    renderSelectedOperatorEditor();
+    renderGraphOutputEditor();
+    renderNodeDetails(builderNode);
+  } else {
+    renderNodeDetails(visualNode || builderNode);
+  }
+  renderDiagram();
+  renderCanvasNavigator();
+  focusRenderedCanvasNode(nodeId);
+}
+
+function focusRenderedCanvasNode(nodeId) {
+  const svg = $('diagram');
+  if (!svg) return;
+  const group = [...svg.querySelectorAll('[data-node-id]')]
+    .find((element) => element.dataset.nodeId === nodeId);
+  if (group?.focus) {
+    group.focus({ preventScroll: true });
+  }
+}
+
+function diagnosticsForCanvasNode(nodeId) {
+  return normalizeDiagnostics(state.visualCheck?.diagnostics)
+    .filter((diagnostic) => diagnosticTargetNodeId(diagnostic) === nodeId);
+}
+
+function diagnosticTargetNodeId(diagnostic, builder = state.builder) {
+  const nodes = Array.isArray(builder?.nodes) ? builder.nodes : [];
+  const direct = normalizeDiagnosticNodeTarget(diagnostic?.nodeId || diagnostic?.node || diagnostic?.targetNodeId);
+  if (direct && nodes.some((node) => node.id === direct)) {
+    return direct;
+  }
+  const target = String(diagnostic?.target || '');
+  const pointerNode = nodeIdFromDiagnosticPointer(target, nodes, builder);
+  if (pointerNode) {
+    return pointerNode;
+  }
+  const haystack = target;
+  return [...nodes]
+    .sort((left, right) => String(right.id).length - String(left.id).length)
+    .find((node) => node.id && haystack.includes(node.id))?.id || '';
+}
+
+function nodeIdFromDiagnosticPointer(target, nodes, builder = state.builder) {
+  const segments = String(target || '').split('/').filter(Boolean).map(jsonPointerUnescape);
+  const nodesIndex = segments.indexOf('nodes');
+  if (nodesIndex >= 0 && segments.length > nodesIndex + 1) {
+    const value = normalizeDiagnosticNodeTarget(segments[nodesIndex + 1]);
+    const numeric = Number(value);
+    if (Number.isInteger(numeric) && numeric >= 0 && numeric < nodes.length) {
+      return nodes[numeric]?.id || '';
+    }
+    if (nodes.some((node) => node.id === value)) {
+      return value;
+    }
+  }
+  const edgesIndex = segments.indexOf('edges');
+  if (edgesIndex >= 0 && segments.length > edgesIndex + 1) {
+    const edgeIndex = Number(segments[edgesIndex + 1]);
+    const edges = builderEdges(builder, { includeFallback: false, includeConfig: true });
+    const edge = Number.isInteger(edgeIndex) ? edges[edgeIndex] : null;
+    return edge?.target || edge?.source || '';
+  }
+  return '';
+}
+
+function normalizeDiagnosticNodeTarget(value) {
+  return String(value || '').trim();
+}
+
+function jsonPointerUnescape(segment) {
+  return String(segment || '').replaceAll('~1', '/').replaceAll('~0', '~');
 }
 
 function renderOperatorPalette() {
@@ -1754,13 +2067,25 @@ function renderDiagnosticList(list, diagnostics) {
     const level = String(diagnostic.level || 'INFO').toLowerCase();
     const target = diagnostic.target ? ` · ${diagnostic.target}` : '';
     const location = diagnostic.line >= 0 ? ` · ${diagnostic.line}:${diagnostic.column}` : '';
+    const nodeId = diagnosticTargetNodeId(diagnostic);
+    const focus = nodeId
+      ? `<button class="diagnostic-focus" type="button" data-diagnostic-node="${escapeHtml(nodeId)}">Focus</button>`
+      : '';
     return `
       <div class="visual-diagnostic ${escapeHtml(level)}">
-        <strong>${escapeHtml(diagnostic.code || diagnostic.level || 'visual.info')}</strong>
+        <div class="visual-diagnostic-head">
+          <strong>${escapeHtml(diagnostic.code || diagnostic.level || 'visual.info')}</strong>
+          ${focus}
+        </div>
         <span>${escapeHtml((diagnostic.message || '') + target + location)}</span>
       </div>
     `;
   }).join('');
+  for (const button of list.querySelectorAll('[data-diagnostic-node]')) {
+    button.addEventListener('click', () => {
+      focusCanvasNode(button.dataset.diagnosticNode);
+    });
+  }
 }
 
 function setVisualCheck(message, level = 'info', diagnostics = []) {
@@ -1770,6 +2095,7 @@ function setVisualCheck(message, level = 'info', diagnostics = []) {
     diagnostics: normalizeDiagnostics(diagnostics)
   };
   renderVisualCheck();
+  renderCanvasNavigator();
 }
 
 function normalizeDiagnostics(diagnostics) {
@@ -3497,6 +3823,7 @@ async function loadSelectedDraft() {
   }
   const draft = await response.json();
   state.builder = builderFromVisualDraft(draft);
+  clearBuilderHistory('Loaded draft; local edit history cleared.');
   await loadVisualOperatorCatalog();
   state.currentDraftId = draft.draftId || '';
   state.currentDraftRevision = draft.revision || 0;
@@ -3547,6 +3874,7 @@ async function importDraftBundle() {
   const importedDraft = payload?.draft || payload;
   const diagnostics = normalizeDiagnostics(payload?.diagnostics);
   state.builder = builderFromVisualDraft(importedDraft);
+  clearBuilderHistory('Imported draft; local edit history cleared.');
   await loadVisualOperatorCatalog();
   state.currentDraftId = importedDraft.draftId || '';
   state.currentDraftRevision = importedDraft.revision || 0;
@@ -3576,6 +3904,7 @@ async function previewSelectedDraftRevision() {
   const current = await loadCurrentDraftSnapshot();
   if (!current) return;
   state.builder = builderFromVisualDraft(draft);
+  clearBuilderHistory('Previewing revision; local edit history cleared.');
   await loadVisualOperatorCatalog();
   state.currentDraftId = current.draftId || state.currentDraftId;
   state.currentDraftRevision = current.revision || state.currentDraftRevision;
@@ -3595,6 +3924,7 @@ async function restoreSelectedDraftRevision() {
   const current = await loadCurrentDraftSnapshot();
   if (!current) return;
   state.builder = builderFromVisualDraft(draft);
+  clearBuilderHistory('Restoring revision; local edit history cleared.');
   await loadVisualOperatorCatalog();
   state.currentDraftId = current.draftId || state.currentDraftId;
   state.currentDraftRevision = current.revision || state.currentDraftRevision;
@@ -3709,6 +4039,10 @@ function renderSelectedOperatorEditor() {
   for (const input of target.querySelectorAll('[data-node-field]')) {
     input.addEventListener('input', () => {
       const field = input.dataset.nodeField;
+      if (node[field] === input.value) {
+        return;
+      }
+      recordBuilderHistory(`Edit ${node.id}.${field}`);
       node[field] = input.value;
       if (field === 'policyNode') {
         if (input.value.trim()) {
@@ -3724,6 +4058,10 @@ function renderSelectedOperatorEditor() {
   for (const input of target.querySelectorAll('[data-custom-input]')) {
     input.addEventListener('input', () => {
       node.customInputs = node.customInputs || {};
+      if (node.customInputs[input.dataset.customInput] === input.value) {
+        return;
+      }
+      recordBuilderHistory(`Edit ${node.id}.${input.dataset.customInput}`);
       node.customInputs[input.dataset.customInput] = input.value;
       syncComposerFromBuilder();
     });
@@ -3744,6 +4082,7 @@ function renderSelectedOperatorEditor() {
   for (const input of target.querySelectorAll('[data-config-field]:not([data-config-source]):not([data-config-expression])')) {
     const eventName = input.type === 'checkbox' || input.tagName === 'SELECT' ? 'change' : 'input';
     input.addEventListener(eventName, () => {
+      recordBuilderHistory(`Edit config ${node.id}.${input.dataset.configField}`);
       setConfigValueFromInput(node, input);
       updateConfigFieldStatus(node, input);
       syncComposerFromBuilder({ render: false });
@@ -3790,6 +4129,7 @@ function renderSelectedOperatorEditor() {
           select.disabled = false;
         }
       }
+      recordBuilderHistory(`Bind config ${node.id}.${select.dataset.configField}`);
       setConfigSourceFromSelect(node, select);
       syncComposerFromBuilder({ render: false });
       renderSelectedOperatorEditor();
@@ -3799,6 +4139,7 @@ function renderSelectedOperatorEditor() {
 
   for (const input of target.querySelectorAll('[data-config-expression]')) {
     input.addEventListener('input', () => {
+      recordBuilderHistory(`Edit config expression ${node.id}.${input.dataset.configField}`);
       setConfigExpressionFromInput(node, input);
       updateConfigFieldStatus(node, input);
       syncComposerFromBuilder({ render: false });
@@ -3852,6 +4193,11 @@ function renderSelectedOperatorEditor() {
     input.addEventListener('input', () => {
       const bindingTarget = bindingTargetFromElement(input);
       if (!bindingTarget) return;
+      const previous = expressionForTargetInput(node, bindingTarget);
+      if (previous === input.value) {
+        return;
+      }
+      recordBuilderHistory(`Edit binding ${node.id}.${bindingTarget.key || bindingTarget.path || bindingTarget.port}`);
       setExpressionForTargetInput(node, bindingTarget, input.value);
       syncComposerFromBuilder({ render: false });
       renderDiagram();
@@ -3862,6 +4208,10 @@ function renderSelectedOperatorEditor() {
     button.addEventListener('click', () => {
       const bindingTarget = bindingTargetFromElement(button);
       if (!bindingTarget) return;
+      if (!expressionForTargetInput(node, bindingTarget)) {
+        return;
+      }
+      recordBuilderHistory(`Clear binding ${node.id}.${bindingTarget.key || bindingTarget.path || bindingTarget.port}`);
       setExpressionForTargetInput(node, bindingTarget, '');
       syncComposerFromBuilder({ render: false });
       renderSelectedOperatorEditor();
@@ -3874,7 +4224,12 @@ function renderSelectedOperatorEditor() {
       const rule = node.rules[Number(input.dataset.ruleIndex)];
       if (!rule) return;
       const field = input.dataset.ruleField;
-      rule[field] = input.type === 'number' ? Number(input.value) : input.value;
+      const nextValue = input.type === 'number' ? Number(input.value) : input.value;
+      if (rule[field] === nextValue) {
+        return;
+      }
+      recordBuilderHistory(`Edit rule ${rule.id}.${field}`);
+      rule[field] = nextValue;
       syncComposerFromBuilder();
     });
   }
@@ -3929,6 +4284,10 @@ function renderGraphOutputEditor() {
   const nodeSelect = $('graph-output-node');
   if (nodeSelect) {
     nodeSelect.addEventListener('change', () => {
+      if (state.builder.output?.nodeId === nodeSelect.value && !state.builder.output?.path) {
+        return;
+      }
+      recordBuilderHistory('Change graph output node');
       state.builder.output = { nodeId: nodeSelect.value, path: '' };
       syncComposerFromBuilder({ render: false });
       renderGraphOutputEditor();
@@ -3937,6 +4296,10 @@ function renderGraphOutputEditor() {
   const pathSelect = $('graph-output-path');
   if (pathSelect) {
     pathSelect.addEventListener('change', () => {
+      if (state.builder.output?.path === pathSelect.value) {
+        return;
+      }
+      recordBuilderHistory('Change graph output path');
       state.builder.output = {
         nodeId: output.nodeId,
         path: pathSelect.value
@@ -4552,6 +4915,13 @@ function addDynamicOutputPath(node, button) {
     return;
   }
   const key = outputKeyForPortPath(spec, portName, path);
+  const existingPort = node.customOutputPorts?.[key];
+  const existingPath = node.customOutputPaths?.[key];
+  if (existingPort === portName && existingPath === path) {
+    setConnectionMessage('Output path already exists.', 'info');
+    return;
+  }
+  recordBuilderHistory(`Add output source ${node.id}.${portName}.${path}`);
   node.customOutputPorts = node.customOutputPorts || {};
   node.customOutputPaths = node.customOutputPaths || {};
   node.customOutputPorts[key] = portName;
@@ -4688,6 +5058,13 @@ function addDynamicInputBinding(node, button) {
     return;
   }
   const key = inputKeyForPortPath(spec, portName, path);
+  const existingPort = node.customInputPorts?.[key];
+  const existingPath = node.customInputPaths?.[key];
+  if (existingPort === portName && existingPath === path) {
+    setConnectionMessage('Input path already exists.', 'info');
+    return;
+  }
+  recordBuilderHistory(`Add input target ${node.id}.${portName}.${path}`);
   node.customInputs = node.customInputs || {};
   node.customInputPorts = node.customInputPorts || {};
   node.customInputPaths = node.customInputPaths || {};
@@ -4806,6 +5183,7 @@ function bindingTargetFromElement(element) {
 }
 
 function addDecisionRule(node) {
+  recordBuilderHistory(`Add decision rule to ${node.id}`);
   const nextId = uniqueRuleId(node.rules);
   const insertAt = Math.max(0, node.rules.length - 1);
   node.rules.splice(insertAt, 0, {
@@ -4834,6 +5212,7 @@ function uniqueRuleId(rules) {
 function addBuilderNode(type, position = null) {
   const spec = OPERATOR_TYPES[type];
   if (!spec) return;
+  recordBuilderHistory(`Add ${spec.label || type}`);
   const isResource = spec.kind === 'resource';
   const ordered = orderedBuilderNodes();
   const last = ordered[ordered.length - 1];
@@ -5450,6 +5829,7 @@ function uniqueNodeId(baseId) {
 function deleteSelectedBuilderNode() {
   const selected = selectedBuilderNode();
   if (!selected || state.builder.nodes.length <= 1) return;
+  recordBuilderHistory(`Delete ${selected.id}`);
   state.builder.nodes = state.builder.nodes.filter((node) => node.id !== selected.id);
   state.builder.dependencyEdges = (state.builder.dependencyEdges || [])
     .filter((edge) => edge.source !== selected.id && edge.target !== selected.id);
@@ -6520,6 +6900,7 @@ function renderDiagram() {
   const executed = state.lastPayload && currentDecisionTable();
   const width = Math.max(760, ...nodes.map((node) => node.position.x + node.size.width + 80));
   const height = Math.max(520, ...nodes.map((node) => node.position.y + node.size.height + 80));
+  renderCanvasNavigator();
   svg.setAttribute('viewBox', `0 0 ${width} ${height}`);
   svg.setAttribute('preserveAspectRatio', 'xMinYMin meet');
   svg.innerHTML = `
@@ -6571,7 +6952,7 @@ function renderDiagram() {
   }
   for (const node of nodes) {
     const group = document.createElementNS('http://www.w3.org/2000/svg', 'g');
-    group.setAttribute('class', `node ${node.kind} ${state.selectedNodeId === node.id ? 'selected' : ''} ${executed ? 'executed' : ''}`);
+    group.setAttribute('class', `node ${node.kind} ${state.selectedNodeId === node.id ? 'selected' : ''} ${state.canvasFocusedNodeId === node.id ? 'focused' : ''} ${executed ? 'executed' : ''}`);
     group.setAttribute('data-node-id', node.id);
     group.setAttribute('tabindex', '0');
     group.setAttribute('role', 'button');
@@ -6585,6 +6966,7 @@ function renderDiagram() {
         state.suppressNodeClick = false;
         return;
       }
+      state.canvasFocusedNodeId = node.id;
       state.selectedNodeId = node.id;
       if (isComposerSelected()) {
         state.builder.selectedId = node.id;
@@ -7192,6 +7574,9 @@ function updateGraphInputSchemaFromText(text) {
   state.graphInputSchemaText = text;
   try {
     const schema = parseGraphInputSchemaText(text);
+    if (JSON.stringify(state.builder.inputSchema || null) !== JSON.stringify(schema)) {
+      recordBuilderHistory('Edit graph input schema');
+    }
     state.builder.inputSchema = schema;
     state.graphInputSchemaMessage = {
       level: 'success',
@@ -10756,6 +11141,7 @@ function connectionTargetAtPoint(event) {
 function applyConnection(source, target) {
   const node = state.builder.nodes.find((item) => item.id === target.nodeId);
   if (!node) return;
+  recordBuilderHistory(`Connect ${endpointLabel(source)} to ${endpointLabel(target)}`);
   if (target.kind === 'dependency') {
     addDependencyEdge(source, target);
     state.builder.selectedId = node.id;
@@ -10884,6 +11270,7 @@ function startNodeDrag(event, visualNode) {
     startY: event.clientY,
     offsetX: point.x - builderNode.x,
     offsetY: point.y - builderNode.y,
+    historyRecorded: false,
     active: false
   };
   state.builder.selectedId = builderNode.id;
@@ -10902,6 +11289,10 @@ function moveNodeDrag(event) {
   if (!drag || event.pointerId !== drag.pointerId) return;
   const moved = Math.hypot(event.clientX - drag.startX, event.clientY - drag.startY);
   if (!drag.active && moved < DRAG_START_THRESHOLD) return;
+  if (!drag.historyRecorded) {
+    recordBuilderHistory(`Move ${drag.nodeId}`);
+    drag.historyRecorded = true;
+  }
   drag.active = true;
   event.preventDefault();
   const svg = $('diagram');
@@ -11175,9 +11566,37 @@ function installComposerDragHandlers() {
   });
 }
 
+function installBuilderHistoryShortcuts() {
+  document.addEventListener('keydown', (event) => {
+    if (!isComposerSelected() || event.defaultPrevented || builderHistoryShortcutTargetIsEditable(event.target)) {
+      return;
+    }
+    const key = String(event.key || '').toLowerCase();
+    const command = event.metaKey || event.ctrlKey;
+    if (!command || event.altKey) {
+      return;
+    }
+    if (key === 'z' && event.shiftKey) {
+      event.preventDefault();
+      redoBuilderEdit();
+    } else if (key === 'z') {
+      event.preventDefault();
+      undoBuilderEdit();
+    } else if (key === 'y') {
+      event.preventDefault();
+      redoBuilderEdit();
+    }
+  });
+}
+
+function builderHistoryShortcutTargetIsEditable(target) {
+  return Boolean(target?.closest?.('input, textarea, select, [contenteditable="true"]'));
+}
+
 $('run-scenario').addEventListener('click', runScenario);
 $('load-resources').addEventListener('click', loadResources);
 installComposerDragHandlers();
+installBuilderHistoryShortcuts();
 
 loadScenarios().catch((error) => {
   $('output').textContent = pretty({ error: error.message });
