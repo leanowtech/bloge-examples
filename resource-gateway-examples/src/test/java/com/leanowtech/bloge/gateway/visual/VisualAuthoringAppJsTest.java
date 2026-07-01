@@ -356,6 +356,21 @@ class VisualAuthoringAppJsTest {
                   'renderNodeImpactSection',
                   'renderNodeImpactRow',
                   'renderNodeImpactClearButton',
+                  'operatorUsageRefForNode',
+                  'renderOperatorUsagePanel',
+                  'renderOperatorUsageContent',
+                  'renderOperatorUsageSection',
+                  'renderOperatorDraftUsageRow',
+                  'renderOperatorPublicationUsageRow',
+                  'renderOperatorUsageDiagnostics',
+                  'operatorUsageResponseLevel',
+                  'operatorUsageStatus',
+                  'operatorUsageStatusLevel',
+                  'operatorUsageFingerprintPair',
+                  'operatorUsageShortFingerprint',
+                  'operatorUsageSummaryForNode',
+                  'operatorUsagePrimaryStatus',
+                  'operatorUsageBadgeText',
                   'nodeImpactSummary',
                   'nodeImpactEdgeEntry',
                   'nodeImpactClearActionForEdge',
@@ -379,6 +394,7 @@ class VisualAuthoringAppJsTest {
                   'runTraceForCanvasNode',
                   'runTraceLevel',
                   'runTraceStatusLabel',
+                  'shortRunId',
                   'clearActiveRunTrace',
                   'runTraceCanvasCoverage',
                   'canvasNodeIds',
@@ -1070,6 +1086,46 @@ class VisualAuthoringAppJsTest {
                   previewingDraftRevision: 7,
                   visualCheck: { message: 'Previously checked', level: 'success', diagnostics: [] },
                   connectionMessage: { text: 'connected', level: 'success' },
+                  operatorUsageByRef: {
+                    'risk:eligibility': {
+                      schemaVersion: 'bloge.visualOperatorUsage.v1',
+                      operatorRef: 'risk:eligibility',
+                      currentFingerprint: 'current-fingerprint-123456',
+                      drafts: [{
+                        draftId: 'draft-risk',
+                        revision: 3,
+                        graphName: 'Eligibility Graph',
+                        tenantId: 'demo-tenant',
+                        namespace: 'local',
+                        environment: 'browser',
+                        nodeId: 'riskNode',
+                        nodeLabel: 'Eligibility',
+                        savedFingerprint: 'saved-fingerprint-123456',
+                        currentFingerprint: 'current-fingerprint-123456',
+                        fingerprintStatus: 'DRIFTED'
+                      }],
+                      publications: [{
+                        publicationId: 'publication-risk-0001',
+                        draftId: 'draft-risk',
+                        draftRevision: 3,
+                        graphName: 'Eligibility Graph',
+                        tenantId: 'demo-tenant',
+                        namespace: 'local',
+                        environment: 'browser',
+                        nodeId: 'riskNode',
+                        nodeLabel: 'Eligibility',
+                        frozenFingerprint: 'frozen-fingerprint-123456',
+                        currentFingerprint: 'current-fingerprint-123456',
+                        fingerprintStatus: 'DRIFTED',
+                        changedSurface: 'output schema changed'
+                      }],
+                      diagnostics: []
+                    }
+                  },
+                  operatorUsageMessagesByRef: {
+                    'risk:eligibility': { text: '1 draft usage · 1 publication usage', level: 'warning' }
+                  },
+                  operatorUsageLoadingRef: '',
                   lastPayload: { output: true },
                   selectedPublicationId: 'publication-1',
                   goldenAssertionMode: 'OUTPUT_MATCHES_SCHEMA',
@@ -1222,6 +1278,12 @@ class VisualAuthoringAppJsTest {
                   .map((entry) => entry.detail)
                   .join('|');
                 const riskImpactPanel = context.renderNodeImpactPanel(context.state.builder.nodes[1]);
+                const riskUsageRef = context.operatorUsageRefForNode(context.state.builder.nodes[1]);
+                const policyUsageRef = context.operatorUsageRefForNode(context.state.builder.nodes[0]);
+                const riskUsageLevel = context.operatorUsageResponseLevel(context.state.operatorUsageByRef['risk:eligibility']);
+                const riskUsagePrimaryStatus = context.operatorUsagePrimaryStatus(context.state.operatorUsageByRef['risk:eligibility']);
+                const riskUsageSummary = context.operatorUsageSummaryForNode(context.state.builder.nodes[1]);
+                const riskUsagePanel = context.renderOperatorUsagePanel(context.state.builder.nodes[1]);
                 const fullOutputContract = context.graphOutputContractSummary(
                   context.state.builder.nodes[1],
                   { nodeId: 'riskNode', path: '' }
@@ -1593,6 +1655,15 @@ class VisualAuthoringAppJsTest {
                   ['risk impact panel includes delete summary', String(riskImpactPanel.includes('Delete Impact')), 'true'],
                   ['risk impact panel includes focus button', String(riskImpactPanel.includes('data-impact-node="auditNode"')), 'true'],
                   ['risk impact panel includes clear button', String(riskImpactPanel.includes('data-clear-impact="input"')), 'true'],
+                  ['risk usage ref', riskUsageRef, 'risk:eligibility'],
+                  ['policy usage ref', policyUsageRef, 'bloge:decisionTable'],
+                  ['risk usage level', riskUsageLevel, 'warning'],
+                  ['risk usage primary status', riskUsagePrimaryStatus, 'DRIFTED'],
+                  ['risk usage summary label', riskUsageSummary.label, 'DRIFT'],
+                  ['risk usage summary title', riskUsageSummary.title, 'risk:eligibility: 1 draft · 1 publication · DRIFTED'],
+                  ['risk usage panel includes refresh action', String(riskUsagePanel.includes('data-operator-usage="risk:eligibility"')), 'true'],
+                  ['risk usage panel includes drift status', String(riskUsagePanel.includes('DRIFTED')), 'true'],
+                  ['risk usage panel includes changed surface', String(riskUsagePanel.includes('output schema changed')), 'true'],
                   ['full output contract type', fullOutputContract.type, 'object'],
                   ['full output contract fields', fullOutputContract.fieldCount, 4],
                   ['full output contract required', fullOutputContract.requiredCount, 2],

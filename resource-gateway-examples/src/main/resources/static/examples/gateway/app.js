@@ -359,6 +359,9 @@ const state = {
   runHistoryNodeStats: null,
   activeRunTrace: null,
   activeRunTraceId: '',
+  operatorUsageByRef: {},
+  operatorUsageMessagesByRef: {},
+  operatorUsageLoadingRef: '',
   visualCheck: {
     message: 'Not checked',
     level: 'info',
@@ -4960,6 +4963,12 @@ function renderSelectedOperatorEditor() {
     });
   }
 
+  for (const button of target.querySelectorAll('[data-operator-usage]')) {
+    button.addEventListener('click', () => {
+      loadOperatorUsage(button.dataset.operatorUsage);
+    });
+  }
+
   for (const input of target.querySelectorAll('[data-node-field]')) {
     input.addEventListener('input', () => {
       const field = input.dataset.nodeField;
@@ -5351,6 +5360,7 @@ function operatorEditorBody(node) {
       ${renderOperatorContractPanel(node)}
       ${renderNodeConnectabilityPanel(node)}
       ${renderNodeImpactPanel(node)}
+      ${renderOperatorUsagePanel(node)}
       ${renderConfigPanel(node)}
       ${renderInputBindingsPanel(node)}
     `;
@@ -5368,6 +5378,7 @@ function operatorEditorBody(node) {
       ${renderOperatorContractPanel(node)}
       ${renderNodeConnectabilityPanel(node)}
       ${renderNodeImpactPanel(node)}
+      ${renderOperatorUsagePanel(node)}
       ${renderDynamicOutputPathControls(node)}
       ${renderConfigPanel(node)}
       ${renderInputBindingsPanel(node)}
@@ -5392,6 +5403,7 @@ function operatorEditorBody(node) {
       ${renderOperatorContractPanel(node)}
       ${renderNodeConnectabilityPanel(node)}
       ${renderNodeImpactPanel(node)}
+      ${renderOperatorUsagePanel(node)}
       ${renderInputBindingsPanel(node)}
       <div class="rule-editor">
         <div class="rule-editor-title">
@@ -5425,6 +5437,7 @@ function operatorEditorBody(node) {
     ${renderOperatorContractPanel(node)}
     ${renderNodeConnectabilityPanel(node)}
     ${renderNodeImpactPanel(node)}
+    ${renderOperatorUsagePanel(node)}
   `;
 }
 
@@ -5823,6 +5836,266 @@ function renderNodeImpactClearButton(action) {
   `;
 }
 
+function operatorUsageRefForNode(node) {
+  if (!node) {
+    return '';
+  }
+  const spec = specForNode(node);
+  if (node.type === 'httpResource' && node.resourceId) {
+    return spec.visualOperatorRef
+      || (node.paletteType?.startsWith('resource:') ? node.paletteType : `resource:${node.resourceId}`);
+  }
+  if (node.type === 'decisionTable') {
+    return spec.visualOperatorRef || spec.operatorRef || 'bloge:decisionTable';
+  }
+  if (node.type === 'transform') {
+    return spec.visualOperatorRef || spec.operatorRef || 'bloge:transform';
+  }
+  return spec.visualOperatorRef || spec.operatorRef || node.paletteType || node.operatorRef || node.type || '';
+}
+
+async function loadOperatorUsage(operatorRef) {
+  if (!operatorRef) {
+    return;
+  }
+  state.operatorUsageLoadingRef = operatorRef;
+  state.operatorUsageMessagesByRef = {
+    ...(state.operatorUsageMessagesByRef || {}),
+    [operatorRef]: { text: 'Loading usage...', level: 'info' }
+  };
+  renderSelectedOperatorEditor();
+  try {
+    const response = await fetch(`/api/visual/operators/${encodeURIComponent(operatorRef)}/usage`);
+    const payload = await response.json().catch(() => null);
+    if (!response.ok || !payload) {
+      throw new Error(payload?.message || `Operator usage failed with ${response.status}.`);
+    }
+    state.operatorUsageByRef = {
+      ...(state.operatorUsageByRef || {}),
+      [operatorRef]: payload
+    };
+    const draftCount = Array.isArray(payload.drafts) ? payload.drafts.length : 0;
+    const publicationCount = Array.isArray(payload.publications) ? payload.publications.length : 0;
+    state.operatorUsageMessagesByRef = {
+      ...(state.operatorUsageMessagesByRef || {}),
+      [operatorRef]: {
+        text: `${draftCount} draft usage · ${publicationCount} publication usage`,
+        level: operatorUsageResponseLevel(payload)
+      }
+    };
+  } catch (error) {
+    state.operatorUsageMessagesByRef = {
+      ...(state.operatorUsageMessagesByRef || {}),
+      [operatorRef]: { text: error.message, level: 'error' }
+    };
+  } finally {
+    if (state.operatorUsageLoadingRef === operatorRef) {
+      state.operatorUsageLoadingRef = '';
+    }
+    renderSelectedOperatorEditor();
+    renderDiagram();
+  }
+}
+
+function renderOperatorUsagePanel(node) {
+  const operatorRef = operatorUsageRefForNode(node);
+  if (!operatorRef) {
+    return '';
+  }
+  const usage = (state.operatorUsageByRef || {})[operatorRef] || null;
+  const message = (state.operatorUsageMessagesByRef || {})[operatorRef] || null;
+  const loading = state.operatorUsageLoadingRef === operatorRef;
+  const draftCount = usage && Array.isArray(usage.drafts) ? usage.drafts.length : 0;
+  const publicationCount = usage && Array.isArray(usage.publications) ? usage.publications.length : 0;
+  const summary = usage
+    ? `${draftCount} draft · ${publicationCount} publication · ${operatorUsageShortFingerprint(usage.currentFingerprint)}`
+    : 'Not loaded';
+  return `
+    <div class="operator-usage-panel">
+      <div class="binding-panel-title">
+        <span>Usage</span>
+        <small>${escapeHtml(summary)}</small>
+      </div>
+      <div class="operator-usage-toolbar">
+        <code>${escapeHtml(operatorRef)}</code>
+        <button
+          type="button"
+          class="secondary compact"
+          data-operator-usage="${escapeHtml(operatorRef)}"
+          ${loading ? 'disabled' : ''}
+        >${loading ? 'Loading' : (usage ? 'Refresh' : 'Load')}</button>
+      </div>
+      ${message ? `<div class="operator-usage-message ${escapeHtml(message.level || 'info')}">${escapeHtml(message.text)}</div>` : ''}
+      ${usage ? renderOperatorUsageContent(usage) : '<div class="operator-usage-empty">No usage snapshot loaded.</div>'}
+    </div>
+  `;
+}
+
+function renderOperatorUsageContent(usage) {
+  const drafts = Array.isArray(usage?.drafts) ? usage.drafts : [];
+  const publications = Array.isArray(usage?.publications) ? usage.publications : [];
+  return `
+    ${renderOperatorUsageDiagnostics(usage?.diagnostics)}
+    ${renderOperatorUsageSection('Drafts', drafts, renderOperatorDraftUsageRow, 'No stored draft usage.')}
+    ${renderOperatorUsageSection('Publications', publications, renderOperatorPublicationUsageRow, 'No immutable publication usage.')}
+  `;
+}
+
+function renderOperatorUsageSection(title, entries, rowRenderer, emptyMessage) {
+  const rows = entries.map((entry) => rowRenderer(entry)).join('');
+  return `
+    <div class="operator-usage-section">
+      <div class="node-impact-title">${escapeHtml(title)}</div>
+      ${rows || `<div class="operator-usage-row empty"><span>${escapeHtml(emptyMessage)}</span></div>`}
+    </div>
+  `;
+}
+
+function renderOperatorDraftUsageRow(entry) {
+  const status = operatorUsageStatus(entry.fingerprintStatus);
+  const label = entry.nodeLabel || entry.nodeId || 'node';
+  const graph = entry.graphName || entry.draftId || 'draft';
+  const scope = [entry.tenantId, entry.namespace, entry.environment].filter(Boolean).join(' / ');
+  const draft = [entry.draftId, entry.revision ? `r${entry.revision}` : ''].filter(Boolean).join('@');
+  return `
+    <div class="operator-usage-row ${escapeHtml(operatorUsageStatusLevel(status))}">
+      <strong>${escapeHtml(label)}</strong>
+      <span>${escapeHtml([graph, draft, scope].filter(Boolean).join(' · '))}</span>
+      <em>${escapeHtml(status)} · ${escapeHtml(operatorUsageFingerprintPair(entry.savedFingerprint, entry.currentFingerprint, 'saved'))}</em>
+    </div>
+  `;
+}
+
+function renderOperatorPublicationUsageRow(entry) {
+  const status = operatorUsageStatus(entry.fingerprintStatus);
+  const label = entry.nodeLabel || entry.nodeId || 'node';
+  const graph = entry.graphName || entry.publicationId || 'publication';
+  const sourceDraft = [entry.draftId, entry.draftRevision ? `r${entry.draftRevision}` : ''].filter(Boolean).join('@');
+  const surface = entry.changedSurface ? ` · ${entry.changedSurface}` : '';
+  return `
+    <div class="operator-usage-row ${escapeHtml(operatorUsageStatusLevel(status))}">
+      <strong>${escapeHtml(label)}</strong>
+      <span>${escapeHtml([graph, shortRunId(entry.publicationId), sourceDraft].filter(Boolean).join(' · '))}</span>
+      <em>${escapeHtml(status)} · ${escapeHtml(operatorUsageFingerprintPair(entry.frozenFingerprint, entry.currentFingerprint, 'frozen'))}${escapeHtml(surface)}</em>
+    </div>
+  `;
+}
+
+function renderOperatorUsageDiagnostics(diagnostics = []) {
+  const rows = normalizeDiagnostics(diagnostics).slice(0, 4).map((diagnostic) => {
+    const level = String(diagnostic.level || 'INFO').toLowerCase();
+    const text = [diagnostic.code, diagnostic.message].filter(Boolean).join(': ');
+    return `<div class="operator-usage-diagnostic ${escapeHtml(level)}">${escapeHtml(text || 'diagnostic')}</div>`;
+  }).join('');
+  return rows ? `<div class="operator-usage-diagnostics">${rows}</div>` : '';
+}
+
+function operatorUsageResponseLevel(usage) {
+  const diagnostics = normalizeDiagnostics(usage?.diagnostics);
+  if (diagnostics.some((diagnostic) => String(diagnostic.level || '').toUpperCase() === 'ERROR')) {
+    return 'error';
+  }
+  const statuses = [
+    ...(Array.isArray(usage?.drafts) ? usage.drafts : []),
+    ...(Array.isArray(usage?.publications) ? usage.publications : [])
+  ].map((entry) => operatorUsageStatus(entry.fingerprintStatus));
+  if (statuses.includes('OPERATOR_MISSING')) {
+    return 'error';
+  }
+  if (statuses.some((status) => status === 'DRIFTED' || status === 'SNAPSHOT_MISSING')) {
+    return 'warning';
+  }
+  if (diagnostics.some((diagnostic) => String(diagnostic.level || '').toUpperCase() === 'WARNING')) {
+    return 'warning';
+  }
+  return 'success';
+}
+
+function operatorUsageStatus(status) {
+  return String(status || 'UNKNOWN').toUpperCase();
+}
+
+function operatorUsageStatusLevel(status) {
+  switch (operatorUsageStatus(status)) {
+    case 'CURRENT':
+      return 'success';
+    case 'DRIFTED':
+    case 'SNAPSHOT_MISSING':
+      return 'warning';
+    case 'OPERATOR_MISSING':
+      return 'error';
+    default:
+      return 'info';
+  }
+}
+
+function operatorUsageFingerprintPair(savedFingerprint, currentFingerprint, savedLabel) {
+  return `${savedLabel} ${operatorUsageShortFingerprint(savedFingerprint)} -> current ${operatorUsageShortFingerprint(currentFingerprint)}`;
+}
+
+function operatorUsageShortFingerprint(fingerprint) {
+  const value = String(fingerprint || '').trim();
+  return value ? value.slice(0, 12) : 'missing';
+}
+
+function operatorUsageSummaryForNode(node) {
+  const operatorRef = operatorUsageRefForNode(node);
+  const usage = operatorRef ? (state.operatorUsageByRef || {})[operatorRef] : null;
+  if (!usage) {
+    return null;
+  }
+  const status = operatorUsagePrimaryStatus(usage);
+  const level = operatorUsageResponseLevel(usage);
+  const draftCount = Array.isArray(usage.drafts) ? usage.drafts.length : 0;
+  const publicationCount = Array.isArray(usage.publications) ? usage.publications.length : 0;
+  return {
+    operatorRef,
+    status,
+    level,
+    label: operatorUsageBadgeText(status, level),
+    title: `${operatorRef}: ${draftCount} draft · ${publicationCount} publication · ${status}`
+  };
+}
+
+function operatorUsagePrimaryStatus(usage) {
+  const statuses = [
+    ...(Array.isArray(usage?.drafts) ? usage.drafts : []),
+    ...(Array.isArray(usage?.publications) ? usage.publications : [])
+  ].map((entry) => operatorUsageStatus(entry.fingerprintStatus));
+  if (statuses.includes('OPERATOR_MISSING')) {
+    return 'OPERATOR_MISSING';
+  }
+  if (statuses.includes('DRIFTED')) {
+    return 'DRIFTED';
+  }
+  if (statuses.includes('SNAPSHOT_MISSING')) {
+    return 'SNAPSHOT_MISSING';
+  }
+  if (statuses.length && statuses.every((status) => status === 'CURRENT')) {
+    return 'CURRENT';
+  }
+  const diagnostics = normalizeDiagnostics(usage?.diagnostics);
+  if (diagnostics.some((diagnostic) => String(diagnostic.level || '').toUpperCase() === 'WARNING')) {
+    return 'DIAGNOSTIC';
+  }
+  return statuses[0] || 'CURRENT';
+}
+
+function operatorUsageBadgeText(status, level = 'info') {
+  switch (operatorUsageStatus(status)) {
+    case 'CURRENT':
+      return 'OP OK';
+    case 'DRIFTED':
+      return 'DRIFT';
+    case 'SNAPSHOT_MISSING':
+      return 'SNAP';
+    case 'OPERATOR_MISSING':
+      return 'MISSING';
+    default:
+      return level === 'warning' ? 'REVIEW' : 'USAGE';
+  }
+}
+
 function nodeImpactSummary(nodeOrId, builder = state.builder) {
   const nodeId = typeof nodeOrId === 'string' ? nodeOrId : nodeOrId?.id;
   const node = (builder.nodes || []).find((item) => item.id === nodeId);
@@ -6156,6 +6429,7 @@ function renderUnavailableOperatorPanel(node, spec) {
     <div class="unavailable-inputs">
       ${inputRows}
     </div>
+    ${renderOperatorUsagePanel(node)}
   `;
 }
 
@@ -8930,14 +9204,17 @@ function renderDiagram() {
     }
   }
   for (const node of nodes) {
+    const builderNode = state.builder.nodes.find((item) => item.id === node.id);
     const traceNode = runTraceForCanvasNode(node.id);
     const traceClass = traceNode ? ` trace-${runTraceLevel(traceNode)}` : '';
+    const usageSummary = operatorUsageSummaryForNode(builderNode || node);
+    const usageClass = usageSummary ? ` usage-${usageSummary.level}` : '';
     const group = document.createElementNS('http://www.w3.org/2000/svg', 'g');
-    group.setAttribute('class', `node ${node.kind} ${state.selectedNodeId === node.id ? 'selected' : ''} ${state.canvasFocusedNodeId === node.id ? 'focused' : ''} ${executed ? 'executed' : ''}${traceClass}`);
+    group.setAttribute('class', `node ${node.kind} ${state.selectedNodeId === node.id ? 'selected' : ''} ${state.canvasFocusedNodeId === node.id ? 'focused' : ''} ${executed ? 'executed' : ''}${traceClass}${usageClass}`);
     group.setAttribute('data-node-id', node.id);
     group.setAttribute('tabindex', '0');
     group.setAttribute('role', 'button');
-    group.setAttribute('aria-label', `${node.label} node${traceNode ? `, ${nodeTraceSummaryLabel(traceNode)}` : ''}`);
+    group.setAttribute('aria-label', `${node.label} node${traceNode ? `, ${nodeTraceSummaryLabel(traceNode)}` : ''}${usageSummary ? `, ${usageSummary.title}` : ''}`);
     if (isComposerSelected()) {
       group.classList.add('draggable-node');
       group.addEventListener('pointerdown', (event) => startNodeDrag(event, node));
@@ -8959,6 +9236,7 @@ function renderDiagram() {
       renderDiagram();
     });
     const rect = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+    rect.setAttribute('class', 'node-frame');
     rect.setAttribute('x', String(node.position.x));
     rect.setAttribute('y', String(node.position.y));
     rect.setAttribute('width', String(node.size.width));
@@ -8979,11 +9257,41 @@ function renderDiagram() {
     if (traceNode) {
       renderNodeTraceBadge(group, node, traceNode);
     }
+    if (usageSummary) {
+      renderOperatorUsageBadge(group, node, usageSummary, Boolean(traceNode));
+    }
     if (isComposerSelected()) {
       renderPortHandles(group, node);
     }
     svg.appendChild(group);
   }
+}
+
+function renderOperatorUsageBadge(group, visualNode, usageSummary, belowTrace = false) {
+  const size = visualNode.size || NODE_SIZE;
+  const width = 68;
+  const height = 18;
+  const x = visualNode.position.x + size.width - width - 10;
+  const y = visualNode.position.y + (belowTrace ? 31 : 9);
+  const badge = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+  badge.setAttribute('class', `node-operator-usage-badge ${usageSummary.level || 'info'}`);
+  badge.setAttribute('x', String(x));
+  badge.setAttribute('y', String(y));
+  badge.setAttribute('width', String(width));
+  badge.setAttribute('height', String(height));
+  badge.setAttribute('rx', '4');
+  const title = document.createElementNS('http://www.w3.org/2000/svg', 'title');
+  title.textContent = usageSummary.title || usageSummary.operatorRef || 'operator usage';
+  badge.appendChild(title);
+  group.appendChild(badge);
+
+  const label = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+  label.setAttribute('class', `node-operator-usage-badge-text ${usageSummary.level || 'info'}`);
+  label.setAttribute('x', String(x + width / 2));
+  label.setAttribute('y', String(y + 13));
+  label.setAttribute('text-anchor', 'middle');
+  label.textContent = usageSummary.label || 'USAGE';
+  group.appendChild(label);
 }
 
 function renderNodeTraceBadge(group, visualNode, traceNode) {

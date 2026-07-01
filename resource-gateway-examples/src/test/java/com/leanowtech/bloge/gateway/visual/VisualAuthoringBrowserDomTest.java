@@ -180,6 +180,16 @@ class VisualAuthoringBrowserDomTest {
                 By.cssSelector("#operator-palette [data-operator-type='publication:" + publicationId + "']")
         ));
 
+        click(wait, By.cssSelector("#diagram [data-node-id='riskEligibility']"));
+        waitForText(wait, By.id("selected-operator-editor"), "Eligibility");
+        waitForText(wait, By.id("selected-operator-editor"), "Usage");
+        click(wait, By.cssSelector("#selected-operator-editor [data-operator-usage='risk:eligibility']"));
+        waitForText(wait, By.id("selected-operator-editor"), "draft usage");
+        waitForText(wait, By.id("selected-operator-editor"), "publication usage");
+        waitForText(wait, By.id("selected-operator-editor"), "Drafts");
+        waitForText(wait, By.id("selected-operator-editor"), "Publications");
+        waitForText(wait, By.id("selected-operator-editor"), "CURRENT");
+
         click(wait, By.id("run-publication"));
         waitForText(wait, By.id("publication-status"), "Ran");
         waitForText(wait, By.id("output"), "\"publicationRun\"");
