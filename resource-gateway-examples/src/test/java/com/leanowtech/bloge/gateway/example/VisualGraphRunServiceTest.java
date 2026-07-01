@@ -224,6 +224,111 @@ class VisualGraphRunServiceTest {
     }
 
     @Test
+    void ignoresUndeclaredSystemContextFieldsDuringRuntimeInputSchemaValidation() {
+        VisualOperatorCatalog catalog = VisualCatalogTestSupport.catalogWithLibrary(
+                VisualCatalogTestSupport.eligibilityLibrary("integer"));
+        VisualGraphRunService service = new VisualGraphRunService(
+                new GraphDraftValidator(catalog),
+                new GraphDraftDslGenerator(catalog),
+                new DynamicGatewayComposerService(MockOperator.returning(null))
+        );
+        GraphDraft draft = withFingerprints(new GraphDraft(
+                "",
+                "",
+                0,
+                "eligibilityPolicy",
+                "draft-tenant",
+                "draft-namespace",
+                "",
+                "",
+                eligibilityInputSchema(),
+                List.of(new GraphDraft.DraftNode(
+                        "eligibility",
+                        "risk:eligibility",
+                        "",
+                        Map.of(
+                                "score", GraphDraft.Binding.contextPath("score"),
+                                "amount", GraphDraft.Binding.contextPath("amount")
+                        ),
+                        Map.of(),
+                        null
+                )),
+                List.of(),
+                Map.of(),
+                new GraphDraft.OutputSelection("eligibility", "")
+        ), catalog);
+
+        VisualGraphRunResponse response = service.run(draft, Map.of(
+                "score", 720,
+                "amount", 250_000,
+                "tenantId", "caller-tenant",
+                "namespace", "caller-namespace",
+                "_blogeTraceId", "trace-1"
+        ), "");
+
+        assertThat(response.validated()).isTrue();
+        assertThat(response.compiled()).isTrue();
+        assertThat(response.errors()).isEmpty();
+        assertThat(response.success()).isTrue();
+        assertThat(response.output()).isEqualTo(Map.of("eligible", true, "ruleId", "ELIGIBILITY_V1"));
+        assertThat(response.diagnostics())
+                .noneSatisfy(diagnostic -> assertThat(diagnostic.target())
+                        .isIn("/context/tenantId", "/context/namespace", "/context/_blogeTraceId"));
+    }
+
+    @Test
+    void validatesSystemNamedContextFieldsWhenDeclaredByBusinessInputSchema() {
+        VisualOperatorCatalog catalog = VisualCatalogTestSupport.catalogWithLibrary(
+                VisualCatalogTestSupport.eligibilityLibrary("integer"));
+        VisualGraphRunService service = new VisualGraphRunService(
+                new GraphDraftValidator(catalog),
+                new GraphDraftDslGenerator(catalog),
+                new DynamicGatewayComposerService(MockOperator.returning(null))
+        );
+        GraphDraft draft = withFingerprints(new GraphDraft(
+                "",
+                "",
+                0,
+                "tenantAwareEligibilityPolicy",
+                "",
+                "",
+                "",
+                "",
+                tenantAwareEligibilityInputSchema(),
+                List.of(new GraphDraft.DraftNode(
+                        "eligibility",
+                        "risk:eligibility",
+                        "",
+                        Map.of(
+                                "score", GraphDraft.Binding.contextPath("score"),
+                                "amount", GraphDraft.Binding.contextPath("amount")
+                        ),
+                        Map.of(),
+                        null
+                )),
+                List.of(),
+                Map.of(),
+                new GraphDraft.OutputSelection("eligibility", "")
+        ), catalog);
+
+        VisualGraphRunResponse response = service.run(draft, Map.of(
+                "score", 720,
+                "amount", 250_000,
+                "tenantId", "caller-tenant"
+        ), "");
+
+        assertThat(response.validated()).isTrue();
+        assertThat(response.compiled()).isFalse();
+        assertThat(response.success()).isFalse();
+        assertThat(response.errors()).contains("Runtime context validation failed.");
+        assertThat(response.diagnostics())
+                .anySatisfy(diagnostic -> {
+                    assertThat(diagnostic.code()).isEqualTo("visual.context.typeMismatch");
+                    assertThat(diagnostic.target()).isEqualTo("/context/tenantId");
+                });
+    }
+
+    @Test
     void outputNodeOverrideDoesNotReuseDraftOutputPath() {
         VisualOperatorCatalog catalog = VisualCatalogTestSupport.catalogWithLibrary(
                 VisualCatalogTestSupport.eligibilityLibrary("integer"));
@@ -650,6 +755,14 @@ class VisualGraphRunServiceTest {
                 "score", Map.of("type", "integer"),
                 "amount", Map.of("type", "number")
         ), List.of("score", "amount"));
+    }
+
+    private static SchemaEnvelope tenantAwareEligibilityInputSchema() {
+        return SchemaEnvelope.object(Map.of(
+                "score", Map.of("type", "integer"),
+                "amount", Map.of("type", "number"),
+                "tenantId", Map.of("type", "integer")
+        ), List.of("score", "amount", "tenantId"));
     }
 
     private static GraphDraft withFingerprints(GraphDraft draft, VisualOperatorCatalog catalog) {

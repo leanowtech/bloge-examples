@@ -7,6 +7,7 @@ import com.leanowtech.bloge.gateway.visual.codegen.DslGenerationResult;
 import com.leanowtech.bloge.gateway.visual.codegen.GraphDraftDslGenerator;
 import com.leanowtech.bloge.gateway.visual.diagnostic.VisualDiagnostic;
 import com.leanowtech.bloge.gateway.visual.draft.GraphDraft;
+import com.leanowtech.bloge.gateway.visual.model.SchemaEnvelope;
 import com.leanowtech.bloge.gateway.visual.publication.VisualGraphPublication;
 import com.leanowtech.bloge.gateway.visual.validation.GraphDraftValidator;
 import com.leanowtech.bloge.gateway.visual.validation.VisualSchemaValidator;
@@ -19,12 +20,15 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 /**
  * Validates, lowers, compiles, and executes visual graph drafts.
  */
 @Service
 public class VisualGraphRunService {
+
+    private static final Set<String> SYSTEM_CONTEXT_FIELDS = Set.of("tenantId", "namespace");
 
     private final GraphDraftValidator validator;
     private final GraphDraftDslGenerator generator;
@@ -256,19 +260,24 @@ public class VisualGraphRunService {
             return List.of();
         }
         return VisualSchemaValidator.validateValue(draft.inputSchema(),
-                schemaVisibleContext(context),
+                schemaVisibleContext(draft.inputSchema(), context),
                 "/context");
     }
 
-    private static Map<String, Object> schemaVisibleContext(Map<String, Object> context) {
+    private static Map<String, Object> schemaVisibleContext(SchemaEnvelope inputSchema,
+                                                            Map<String, Object> context) {
         if (context == null || context.isEmpty()) {
             return Map.of();
         }
         Map<String, Object> visible = new LinkedHashMap<>();
         context.forEach((key, value) -> {
-            if (key != null && !key.startsWith("_bloge")) {
-                visible.put(key, value);
+            if (key == null || key.startsWith("_bloge")) {
+                return;
             }
+            if (SYSTEM_CONTEXT_FIELDS.contains(key) && !inputSchema.hasProperty(key)) {
+                return;
+            }
+            visible.put(key, value);
         });
         return visible;
     }
