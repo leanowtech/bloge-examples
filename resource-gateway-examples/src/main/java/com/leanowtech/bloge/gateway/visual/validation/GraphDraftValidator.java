@@ -79,6 +79,7 @@ public class GraphDraftValidator {
     private static final String TEMPLATE_PATH_PATTERN = TEMPLATE_PATH_SEGMENT_PATTERN
             + "(?:\\." + TEMPLATE_PATH_SEGMENT_PATTERN + ")*";
     private static final Pattern DSL_IDENTIFIER = Pattern.compile(IDENTIFIER_PATTERN);
+    private static final Pattern LAYOUT_GROUP_ID = Pattern.compile("[A-Za-z_][A-Za-z0-9_-]*");
     private static final Pattern EXPRESSION_PATH_SEGMENT = Pattern.compile(
             "(?:" + PATH_SEGMENT_PATTERN + "|" + ROOT_ARRAY_PATH_SEGMENT_PATTERN + ")");
     private static final Pattern BRACKET_INDEX = Pattern.compile("\\[(" + ARRAY_INDEX_PATTERN + ")]");
@@ -1553,17 +1554,19 @@ public class GraphDraftValidator {
                             .formatted(stringValue(rootId).trim(), draft.graphName()),
                     "/visualLayout/rootId"));
         }
-        Optional<Set<String>> layoutNodeIds = validateLayoutNodes(layout.get("nodes"), nodesById, diagnostics);
+        Set<String> layoutGroupIds = validateLayoutGroups(layout.get("groups"), nodesById.keySet(), diagnostics);
+        Optional<Set<String>> layoutNodeIds = validateLayoutNodes(layout.get("nodes"), nodesById, layoutGroupIds,
+                diagnostics);
         layoutNodeIds.ifPresent(ids -> validateLayoutCoversGraphNodes(draft.nodes(), ids, diagnostics));
         Optional<Set<LayoutEdgeKey>> layoutEdgeKeys = validateLayoutEdges(layout.get("edges"),
                 nodesById.keySet(), diagnostics);
         layoutEdgeKeys.ifPresent(keys -> validateLayoutCoversGraphEdges(draft.edges(), keys, diagnostics));
-        validateLayoutGroups(layout.get("groups"), nodesById.keySet(), diagnostics);
         validateLayoutViewport(layout.get("viewport"), diagnostics);
     }
 
     private static Optional<Set<String>> validateLayoutNodes(Object rawNodes,
                                                              Map<String, GraphDraft.DraftNode> nodesById,
+                                                             Set<String> layoutGroupIds,
                                                              List<VisualDiagnostic> diagnostics) {
         if (rawNodes == null) {
             return Optional.empty();
@@ -1604,6 +1607,7 @@ public class GraphDraftValidator {
             validateLayoutNumberObject(rawNode.get("size"), itemPath + "/size",
                     List.of(new LayoutNumberField("width", true), new LayoutNumberField("height", true)),
                     "visual.layout.node.sizeInvalid", diagnostics);
+            validateLayoutNodeGroup(rawNode.get("group"), layoutGroupIds, itemPath, diagnostics);
             Object annotations = rawNode.get("annotations");
             if (annotations != null && !(annotations instanceof Map<?, ?>)) {
                 diagnostics.add(VisualDiagnostic.error("visual.layout.node.annotationsInvalid",
@@ -1625,6 +1629,28 @@ public class GraphDraftValidator {
                     "Visual layout does not include graph node '%s'; the canvas may need to auto-place it."
                             .formatted(node.id()),
                     "/nodes/" + i + "/position"));
+        }
+    }
+
+    private static void validateLayoutNodeGroup(Object rawGroup,
+                                                Set<String> layoutGroupIds,
+                                                String itemPath,
+                                                List<VisualDiagnostic> diagnostics) {
+        if (rawGroup == null) {
+            return;
+        }
+        if (!(rawGroup instanceof String)) {
+            diagnostics.add(VisualDiagnostic.error("visual.layout.node.groupInvalid",
+                    "Visual layout node group must be a string.", itemPath + "/group"));
+            return;
+        }
+        String groupId = ((String) rawGroup).trim();
+        if (groupId.isBlank()) {
+            return;
+        }
+        if (!layoutGroupIds.contains(groupId)) {
+            diagnostics.add(VisualDiagnostic.error("visual.layout.node.unknownGroup",
+                    "Visual layout node references unknown group: " + groupId, itemPath + "/group"));
         }
     }
 
@@ -1762,25 +1788,35 @@ public class GraphDraftValidator {
                                                           String field,
                                                           String itemPath,
                                                           List<VisualDiagnostic> diagnostics) {
-        Object value = rawEdge.get(field);
+        validateLayoutOptionalStringField(rawEdge, field, itemPath, "visual.layout.edge.fieldInvalid", diagnostics);
+    }
+
+    private static void validateLayoutOptionalStringField(Map<?, ?> rawObject,
+                                                          String field,
+                                                          String itemPath,
+                                                          String code,
+                                                          List<VisualDiagnostic> diagnostics) {
+        Object value = rawObject.get(field);
         if (value != null && !(value instanceof String)) {
-            diagnostics.add(VisualDiagnostic.error("visual.layout.edge.fieldInvalid",
-                    "Visual layout edge field '%s' must be a string.".formatted(field),
+            diagnostics.add(VisualDiagnostic.error(code,
+                    "Visual layout field '%s' must be a string.".formatted(field),
                     itemPath + "/" + field));
         }
     }
 
-    private static void validateLayoutGroups(Object rawGroups,
-                                             Set<String> nodeIds,
-                                             List<VisualDiagnostic> diagnostics) {
+    private static Set<String> validateLayoutGroups(Object rawGroups,
+                                                    Set<String> nodeIds,
+                                                    List<VisualDiagnostic> diagnostics) {
         if (rawGroups == null) {
-            return;
+            return Set.of();
         }
         if (!(rawGroups instanceof List<?> groups)) {
             diagnostics.add(VisualDiagnostic.error("visual.layout.groups.invalid",
                     "Visual layout groups must be an array.", "/visualLayout/groups"));
-            return;
+            return Set.of();
         }
+        Set<String> groupIds = new LinkedHashSet<>();
+        Map<String, String> nodeGroupMembership = new LinkedHashMap<>();
         for (int i = 0; i < groups.size(); i++) {
             String itemPath = "/visualLayout/groups/" + i;
             if (!(groups.get(i) instanceof Map<?, ?> group)) {
@@ -1788,6 +1824,11 @@ public class GraphDraftValidator {
                         "Visual layout group must be an object.", itemPath));
                 continue;
             }
+            Optional<String> groupId = validateLayoutGroupId(group.get("id"), groupIds, itemPath, diagnostics);
+            validateLayoutOptionalStringField(group, "label", itemPath,
+                    "visual.layout.group.fieldInvalid", diagnostics);
+            validateLayoutOptionalStringField(group, "kind", itemPath,
+                    "visual.layout.group.fieldInvalid", diagnostics);
             Object rawNodeIds = group.get("nodeIds");
             if (rawNodeIds == null) {
                 continue;
@@ -1797,15 +1838,62 @@ public class GraphDraftValidator {
                         "Visual layout group nodeIds must be an array.", itemPath + "/nodeIds"));
                 continue;
             }
+            Set<String> seenGroupNodeIds = new LinkedHashSet<>();
             for (int j = 0; j < groupNodeIds.size(); j++) {
                 String nodeId = stringValue(groupNodeIds.get(j)).trim();
                 if (nodeId.isBlank() || !nodeIds.contains(nodeId)) {
                     diagnostics.add(VisualDiagnostic.error("visual.layout.group.unknownNode",
                             "Visual layout group references unknown graph node: " + nodeId,
                             itemPath + "/nodeIds/" + j));
+                    continue;
+                }
+                if (!seenGroupNodeIds.add(nodeId)) {
+                    diagnostics.add(VisualDiagnostic.error("visual.layout.group.duplicateNode",
+                            "Visual layout group contains duplicate node id: " + nodeId,
+                            itemPath + "/nodeIds/" + j));
+                    continue;
+                }
+                if (groupId.isPresent()) {
+                    String previousGroup = nodeGroupMembership.putIfAbsent(nodeId, groupId.get());
+                    if (previousGroup != null && !previousGroup.equals(groupId.get())) {
+                        diagnostics.add(VisualDiagnostic.error("visual.layout.group.duplicateMembership",
+                                "Visual layout node '%s' is assigned to both group '%s' and group '%s'."
+                                        .formatted(nodeId, previousGroup, groupId.get()),
+                                itemPath + "/nodeIds/" + j));
+                    }
                 }
             }
         }
+        return groupIds;
+    }
+
+    private static Optional<String> validateLayoutGroupId(Object rawId,
+                                                          Set<String> groupIds,
+                                                          String itemPath,
+                                                          List<VisualDiagnostic> diagnostics) {
+        if (rawId == null || stringValue(rawId).trim().isBlank()) {
+            diagnostics.add(VisualDiagnostic.error("visual.layout.group.idMissing",
+                    "Visual layout group id is required.", itemPath + "/id"));
+            return Optional.empty();
+        }
+        if (!(rawId instanceof String)) {
+            diagnostics.add(VisualDiagnostic.error("visual.layout.group.fieldInvalid",
+                    "Visual layout group id must be a string.", itemPath + "/id"));
+            return Optional.empty();
+        }
+        String groupId = ((String) rawId).trim();
+        if (!LAYOUT_GROUP_ID.matcher(groupId).matches()) {
+            diagnostics.add(VisualDiagnostic.error("visual.layout.group.idInvalid",
+                    "Visual layout group id '%s' must start with a letter or underscore and contain only letters, numbers, underscores, or hyphens."
+                            .formatted(groupId),
+                    itemPath + "/id"));
+            return Optional.empty();
+        }
+        if (!groupIds.add(groupId)) {
+            diagnostics.add(VisualDiagnostic.error("visual.layout.group.duplicateId",
+                    "Visual layout contains duplicate group id: " + groupId, itemPath + "/id"));
+        }
+        return Optional.of(groupId);
     }
 
     private static void validateLayoutViewport(Object rawViewport,

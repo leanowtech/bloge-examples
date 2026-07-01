@@ -38,7 +38,7 @@ Phase 1 实现蓝图：[BLOGE 可视化编排 Phase 1 实现蓝图](./bloge-visu
 - `DatabaseResourceRegistry` 已经有 descriptor 持久化、热路径缓存和表达式预编译。
 - `/admin/resources` 已经提供资源描述符 CRUD。
 - `/api/visual/operators`、`/admin/visual-operator-libraries`、`/api/visual/drafts`、`/api/visual/connections/check`、`/api/visual/publications` 已形成服务端权威 authoring API。
-- 静态页面 `Custom Composer` 已从 catalog API 加载动态 palette，并支持用户算子库、resource 虚拟算子、带 projection readiness 的 OpenAPI operation discovery 到 resource contract 预览、schema-aware 连接、visualLayout contract validation、Server Check 诊断按节点 label/id 聚合/过滤/聚焦/轮转、队列位置/过滤明细/隐藏节点提示，并在当前修复节点落在摘要折叠范围外时仍保留该节点预览，F8/Shift+F8 修复队列快捷导航和 Esc 清除过滤、selected-node diagnostics 归因、connectability blocked preview / reason 标签、已配置节点复制和 Cmd/Ctrl+D 快捷入口、Delete/Backspace 删除选中节点并复用 impact cleanup 路径、节点影响面 detach、草稿、发布和运行。
+- 静态页面 `Custom Composer` 已从 catalog API 加载动态 palette，并支持用户算子库、resource 虚拟算子、带 projection readiness 的 OpenAPI operation discovery 到 resource contract 预览、schema-aware 连接、visualLayout contract validation、visualLayout group band 渲染、Server Check 诊断按节点 label/id 聚合/过滤/聚焦/轮转、队列位置/过滤明细/隐藏节点提示，并在当前修复节点落在摘要折叠范围外时仍保留该节点预览，F8/Shift+F8 修复队列快捷导航和 Esc 清除过滤、selected-node diagnostics 归因、connectability blocked preview / reason 标签、已配置节点复制和 Cmd/Ctrl+D 快捷入口、Delete/Backspace 删除选中节点并复用 impact cleanup 路径、节点影响面 detach、草稿、发布和运行。
 
 推断：
 
@@ -51,6 +51,7 @@ Phase 1 实现蓝图：[BLOGE 可视化编排 Phase 1 实现蓝图](./bloge-visu
 
 - `graph-engine-examples` 已经有 `bloge.visualLayout.v1` 模型，用于保存节点位置、分组、标签和注解。
 - `visualLayout` 被明确定位为 presentation-only，BLOGE DSL 和编译元数据仍是节点、边、分支、schema、重试和运行语义的来源。
+- resource-gateway 的 Phase 1 已开始把 layout group 固化为表现层合同：服务端校验 group id、kind/label 类型、nodeIds、节点 `group` 归属和跨 group membership，浏览器只把它渲染成节点背后的阶段/泳道 band。
 - Graph Engine Server 已有 definitions、versions、deployments、instances、node states、diagram、operator inventory 等控制面概念。
 - `/api/v1/operators` 已有算子清单能力，包含 metadata、inputSchema、outputSchema 和 usage。
 - AI 模块已有 `OperatorCatalogBuilder`，能从 `OperatorRegistry` 构建 prompt-facing operator catalog。
@@ -58,7 +59,7 @@ Phase 1 实现蓝图：[BLOGE 可视化编排 Phase 1 实现蓝图](./bloge-visu
 推断：
 
 - 通用画布不应在 resource-gateway 中重造所有版本治理能力。resource-gateway 适合作为“可视化编排最小产品切片”，graph-engine 的版本、诊断、布局和 operator inventory 应该逐步被复用或抽取。
-- `visualLayout.v1` 可以继续作为视觉布局合同，但不能承载业务语义；服务端只校验 schemaVersion、rootId、节点 operatorRef、节点/边/分组引用、节点/边覆盖、edge kind / port-path metadata、几何值和 viewport 等表现层一致性。
+- `visualLayout.v1` 可以继续作为视觉布局合同，但不能承载业务语义；服务端只校验 schemaVersion、rootId、节点 operatorRef、节点/边/分组引用、分组 id/membership、节点/边覆盖、edge kind / port-path metadata、几何值和 viewport 等表现层一致性。
 
 ## 3. 设计目标
 
@@ -1102,7 +1103,7 @@ Phase 1 的工程拆分、包结构、API、测试和 Definition of Done 见
 
 - `bloge.operatorCatalog.v1` 草案。
 - `bloge.graphDraft.v1` 草案。
-- `bloge.visualLayout.v1` 在 gateway 和 graph-engine 中对齐。
+- `bloge.visualLayout.v1` 在 gateway 和 graph-engine 中对齐，且 group/id/membership 只作为表现层合同存在。
 - ResourceDescriptor 增加设计时 schema 的方案。
 - 诊断模型统一：severity、message、nodeId、edgeId、fieldPath、sourceRange、suggestion。
 

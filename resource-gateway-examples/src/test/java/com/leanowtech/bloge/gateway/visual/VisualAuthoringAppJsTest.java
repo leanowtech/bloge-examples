@@ -133,6 +133,26 @@ class VisualAuthoringAppJsTest {
     }
 
     @Test
+    void rendersVisualLayoutGroupsAsCanvasBands() throws Exception {
+        String source = appJsSource();
+        String styles = stylesCssSource();
+
+        assertThat(source)
+                .contains("function layoutGroupRegions(layout, nodes)")
+                .contains("function layoutGroupNodeIds(group, nodes)")
+                .contains("function layoutGroupKindClass(kind)")
+                .contains("function renderLayoutGroup(svg, group)")
+                .contains("const groupRegions = layoutGroupRegions(state.layout, nodes)")
+                .contains("renderLayoutGroup(svg, group);");
+        assertThat(styles)
+                .contains(".layout-group-frame")
+                .contains(".layout-group.branch .layout-group-frame")
+                .contains(".layout-group.degradation .layout-group-frame")
+                .contains(".layout-group-label")
+                .contains(".layout-group-meta");
+    }
+
+    @Test
     void supportsSelectedNodeDuplicationInInspector() throws Exception {
         String source = appJsSource();
 
@@ -183,6 +203,11 @@ class VisualAuthoringAppJsTest {
 
     private static String appJsSource() throws IOException {
         return new ClassPathResource("static/examples/gateway/app.js")
+                .getContentAsString(StandardCharsets.UTF_8);
+    }
+
+    private static String stylesCssSource() throws IOException {
+        return new ClassPathResource("static/examples/gateway/styles.css")
                 .getContentAsString(StandardCharsets.UTF_8);
     }
 
@@ -560,6 +585,9 @@ class VisualAuthoringAppJsTest {
                   'canvasNodeIds',
                   'runTraceCoverageText',
                   'runTraceSummary',
+                  'layoutGroupRegions',
+                  'layoutGroupNodeIds',
+                  'layoutGroupKindClass',
                   'nodeTraceBadgeText',
                   'nodeTraceSummaryLabel',
                   'goldenAssertionsFromControls',
@@ -1331,6 +1359,43 @@ class VisualAuthoringAppJsTest {
                   ok: false,
                   message: 'This connection would create a cycle.'
                 });
+                const layoutGroupNodes = [
+                  {
+                    id: 'primaryCreditProvider',
+                    position: { x: 80, y: 210 },
+                    size: { width: 170, height: 74 }
+                  },
+                  {
+                    id: 'secondaryCreditProvider',
+                    group: 'secondaryPath',
+                    position: { x: 360, y: 300 },
+                    size: { width: 170, height: 74 }
+                  },
+                  {
+                    id: 'assembleSecondary',
+                    group: 'secondaryPath',
+                    position: { x: 640, y: 300 },
+                    size: { width: 170, height: 74 }
+                  }
+                ];
+                const layoutGroup = {
+                  id: 'secondaryPath',
+                  label: 'Secondary <Path>',
+                  kind: 'Degradation Path!',
+                  nodeIds: ['secondaryCreditProvider']
+                };
+                const layoutGroupIds = context.layoutGroupNodeIds(layoutGroup, layoutGroupNodes).join('|');
+                const layoutGroupRegion = context.layoutGroupRegions({
+                  groups: [layoutGroup],
+                  nodes: layoutGroupNodes
+                }, layoutGroupNodes)[0];
+                const layoutGroupBounds = [
+                  layoutGroupRegion.x,
+                  layoutGroupRegion.y,
+                  layoutGroupRegion.width,
+                  layoutGroupRegion.height
+                ].join('|');
+                const layoutGroupKindClass = context.layoutGroupKindClass(layoutGroup.kind);
                 """, """
                 context.state = {
                   builder: {
@@ -2303,6 +2368,10 @@ class VisualAuthoringAppJsTest {
                   ['local mismatch status message', localMismatchStatus.message, 'Local schema hint: Type mismatch: string cannot feed integer. Server validation is authoritative.'],
                   ['local cycle status level', localCycleStatus.level, 'error'],
                   ['local cycle status message', localCycleStatus.message, 'This connection would create a cycle.'],
+                  ['layout group node ids', layoutGroupIds, 'secondaryCreditProvider|assembleSecondary'],
+                  ['layout group bounds', layoutGroupBounds, '336|258|498|140'],
+                  ['layout group label', layoutGroupRegion.label, 'Secondary <Path>'],
+                  ['layout group kind class', layoutGroupKindClass, 'degradation-path'],
                   ['history undo after record', historyUndoAfterRecord, 1],
                   ['history redo after record', historyRedoAfterRecord, 0],
                   ['history undo restored x', historyUndoRestoredX, 80],

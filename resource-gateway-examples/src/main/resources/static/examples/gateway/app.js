@@ -10439,14 +10439,111 @@ function replacePlaceholders(value, values) {
   return value;
 }
 
+function layoutGroupRegions(layout, nodes) {
+  const groups = Array.isArray(layout?.groups) ? layout.groups : [];
+  if (!groups.length || !Array.isArray(nodes) || !nodes.length) {
+    return [];
+  }
+  const byId = Object.fromEntries(nodes.map((node) => [node.id, node]));
+  return groups
+    .map((group) => {
+      const nodeIds = layoutGroupNodeIds(group, nodes);
+      const groupNodes = nodeIds.map((nodeId) => byId[nodeId]).filter(Boolean);
+      if (!groupNodes.length) {
+        return null;
+      }
+      const minX = Math.min(...groupNodes.map((node) => Number(node.position?.x) || 0));
+      const minY = Math.min(...groupNodes.map((node) => Number(node.position?.y) || 0));
+      const maxX = Math.max(...groupNodes.map((node) =>
+        (Number(node.position?.x) || 0) + (Number(node.size?.width) || NODE_SIZE.width)));
+      const maxY = Math.max(...groupNodes.map((node) =>
+        (Number(node.position?.y) || 0) + (Number(node.size?.height) || NODE_SIZE.height)));
+      return {
+        id: String(group?.id || '').trim(),
+        label: String(group?.label || group?.id || 'Group').trim(),
+        kind: String(group?.kind || 'group').trim() || 'group',
+        nodeCount: groupNodes.length,
+        x: minX - 24,
+        y: minY - 42,
+        width: maxX - minX + 48,
+        height: maxY - minY + 66
+      };
+    })
+    .filter(Boolean)
+    .sort((left, right) => (right.width * right.height) - (left.width * left.height));
+}
+
+function layoutGroupNodeIds(group, nodes) {
+  const groupId = String(group?.id || '').trim();
+  if (!groupId) {
+    return [];
+  }
+  const explicit = Array.isArray(group?.nodeIds)
+    ? group.nodeIds.map((nodeId) => String(nodeId || '').trim()).filter(Boolean)
+    : [];
+  const assigned = Array.isArray(nodes)
+    ? nodes
+      .filter((node) => String(node?.group || '').trim() === groupId)
+      .map((node) => String(node.id || '').trim())
+      .filter(Boolean)
+    : [];
+  const wanted = new Set([...explicit, ...assigned]);
+  return (nodes || [])
+    .map((node) => String(node.id || '').trim())
+    .filter((nodeId) => nodeId && wanted.has(nodeId));
+}
+
+function layoutGroupKindClass(kind) {
+  const normalized = String(kind || 'group').trim().toLowerCase()
+    .replace(/[^a-z0-9_-]+/g, '-')
+    .replace(/^-+|-+$/g, '');
+  return normalized || 'group';
+}
+
+function renderLayoutGroup(svg, group) {
+  const element = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+  element.setAttribute('class', `layout-group ${layoutGroupKindClass(group.kind)}`);
+  element.setAttribute('data-layout-group', group.id);
+  const frame = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+  frame.setAttribute('class', 'layout-group-frame');
+  frame.setAttribute('x', String(group.x));
+  frame.setAttribute('y', String(group.y));
+  frame.setAttribute('width', String(group.width));
+  frame.setAttribute('height', String(group.height));
+  frame.setAttribute('rx', '6');
+  element.appendChild(frame);
+  const label = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+  label.setAttribute('class', 'layout-group-label');
+  label.setAttribute('x', String(group.x + 12));
+  label.setAttribute('y', String(group.y + 22));
+  label.textContent = group.label;
+  element.appendChild(label);
+  const meta = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+  meta.setAttribute('class', 'layout-group-meta');
+  meta.setAttribute('x', String(group.x + 12));
+  meta.setAttribute('y', String(group.y + 38));
+  meta.textContent = `${group.kind} · ${group.nodeCount} node${group.nodeCount === 1 ? '' : 's'}`;
+  element.appendChild(meta);
+  svg.appendChild(element);
+}
+
 function renderDiagram() {
   const svg = $('diagram');
   configureComposerDropTarget(svg);
   const nodes = state.layout?.nodes || [];
   const edges = state.layout?.edges || [];
   const executed = state.lastPayload && currentDecisionTable();
-  const width = Math.max(760, ...nodes.map((node) => node.position.x + node.size.width + 80));
-  const height = Math.max(520, ...nodes.map((node) => node.position.y + node.size.height + 80));
+  const groupRegions = layoutGroupRegions(state.layout, nodes);
+  const width = Math.max(
+    760,
+    ...nodes.map((node) => node.position.x + node.size.width + 80),
+    ...groupRegions.map((group) => group.x + group.width + 40)
+  );
+  const height = Math.max(
+    520,
+    ...nodes.map((node) => node.position.y + node.size.height + 80),
+    ...groupRegions.map((group) => group.y + group.height + 40)
+  );
   renderCanvasNavigator();
   svg.setAttribute('viewBox', `0 0 ${width} ${height}`);
   svg.setAttribute('preserveAspectRatio', 'xMinYMin meet');
@@ -10458,6 +10555,9 @@ function renderDiagram() {
     </defs>
   `;
   const byId = Object.fromEntries(nodes.map((node) => [node.id, node]));
+  for (const group of groupRegions) {
+    renderLayoutGroup(svg, group);
+  }
   for (const edge of edges) {
     const source = byId[edge.source];
     const target = byId[edge.target];

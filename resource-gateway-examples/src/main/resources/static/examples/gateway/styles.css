@@ -422,6 +422,41 @@ h2 {
   stroke-dasharray: 7 5;
 }
 
+.layout-group-frame {
+  fill: #f2f6fb;
+  stroke: #8da2bb;
+  stroke-width: 1.2;
+  stroke-dasharray: 7 5;
+}
+
+.layout-group.branch .layout-group-frame,
+.layout-group.parallel .layout-group-frame,
+.layout-group.foreach .layout-group-frame {
+  fill: #e8f1ff;
+  stroke: #6f8aaa;
+}
+
+.layout-group.degradation .layout-group-frame,
+.layout-group.fallback .layout-group-frame {
+  fill: var(--amber-soft);
+  stroke: #c27803;
+}
+
+.layout-group-label {
+  fill: #24364d;
+  font-size: 12px;
+  font-weight: 800;
+  pointer-events: none;
+}
+
+.layout-group-meta {
+  fill: var(--muted);
+  font-size: 10px;
+  font-weight: 700;
+  pointer-events: none;
+  text-transform: uppercase;
+}
+
 .edge-label {
   fill: var(--muted);
   font-size: 11px;

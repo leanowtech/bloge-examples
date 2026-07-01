@@ -5284,11 +5284,14 @@ class GraphDraftValidatorTest {
                         "operatorRef", "risk:eligibility",
                         "position", Map.of("x", 120, "y", 240),
                         "size", Map.of("width", 180, "height", 96),
+                        "group", "main",
                         "annotations", Map.of("generated", true)
                 )),
                 "edges", List.of(),
                 "groups", List.of(Map.of(
                         "id", "main",
+                        "label", "Main stage",
+                        "kind", "phase",
                         "nodeIds", List.of("eligibility")
                 )),
                 "viewport", Map.of("x", 0, "y", 0, "zoom", 1)
@@ -5414,6 +5417,69 @@ class GraphDraftValidatorTest {
                                 "/visualLayout/rootId"),
                         org.assertj.core.groups.Tuple.tuple("visual.layout.node.operatorRefMismatch",
                                 "/visualLayout/nodes/0/operatorRef")
+                );
+    }
+
+    @Test
+    void rejectsMalformedVisualLayoutGroupsAndNodeMembership() {
+        GraphDraftValidator validator = new GraphDraftValidator(
+                VisualCatalogTestSupport.catalogWithLibrary(
+                        VisualCatalogTestSupport.eligibilityLibrary("integer")));
+        GraphDraft draft = draftWithVisualLayout(validContextEligibilityDraft(), Map.of(
+                "schemaVersion", "bloge.visualLayout.v1",
+                "nodes", List.of(Map.of(
+                        "id", "eligibility",
+                        "operatorRef", "risk:eligibility",
+                        "group", "ghost",
+                        "position", Map.of("x", 120, "y", 240)
+                )),
+                "groups", List.of(
+                        Map.of(
+                                "id", "main",
+                                "label", 7,
+                                "kind", List.of("phase"),
+                                "nodeIds", List.of("eligibility", "eligibility")
+                        ),
+                        Map.of(
+                                "id", "secondary",
+                                "nodeIds", List.of("eligibility")
+                        ),
+                        Map.of(
+                                "id", "main",
+                                "nodeIds", List.of()
+                        ),
+                        Map.of(
+                                "id", "bad group",
+                                "nodeIds", List.of()
+                        ),
+                        Map.of(
+                                "nodeIds", List.of("eligibility")
+                        )
+                )
+        ));
+
+        VisualValidationResult result = validator.validate(draft);
+
+        assertThat(result.valid()).isFalse();
+        assertThat(result.diagnostics())
+                .extracting("code", "target")
+                .contains(
+                        org.assertj.core.groups.Tuple.tuple("visual.layout.node.unknownGroup",
+                                "/visualLayout/nodes/0/group"),
+                        org.assertj.core.groups.Tuple.tuple("visual.layout.group.fieldInvalid",
+                                "/visualLayout/groups/0/label"),
+                        org.assertj.core.groups.Tuple.tuple("visual.layout.group.fieldInvalid",
+                                "/visualLayout/groups/0/kind"),
+                        org.assertj.core.groups.Tuple.tuple("visual.layout.group.duplicateNode",
+                                "/visualLayout/groups/0/nodeIds/1"),
+                        org.assertj.core.groups.Tuple.tuple("visual.layout.group.duplicateMembership",
+                                "/visualLayout/groups/1/nodeIds/0"),
+                        org.assertj.core.groups.Tuple.tuple("visual.layout.group.duplicateId",
+                                "/visualLayout/groups/2/id"),
+                        org.assertj.core.groups.Tuple.tuple("visual.layout.group.idInvalid",
+                                "/visualLayout/groups/3/id"),
+                        org.assertj.core.groups.Tuple.tuple("visual.layout.group.idMissing",
+                                "/visualLayout/groups/4/id")
                 );
     }
 
