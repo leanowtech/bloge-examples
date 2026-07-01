@@ -214,6 +214,57 @@ class GraphDraftValidatorTest {
     }
 
     @Test
+    void rejectsGraphInputSchemaDynamicObjectFieldsThatCannotRenderAsDslPathSegments() {
+        GraphDraftValidator validator = new GraphDraftValidator(
+                VisualCatalogTestSupport.catalogWithLibrary(
+                        VisualCatalogTestSupport.eligibilityLibrary("integer")));
+        Map<String, Object> properties = new LinkedHashMap<>();
+        properties.put("score", Map.of("type", "integer"));
+        properties.put("amount", Map.of("type", "number"));
+        properties.put("dynamicAdditional", Map.of(
+                "type", "object",
+                "additionalProperties", Map.of(
+                        "type", "object",
+                        "properties", Map.of("bad-field", Map.of("type", "string")),
+                        "additionalProperties", false)
+        ));
+        properties.put("patterned", Map.of(
+                "type", "object",
+                "patternProperties", Map.of("^item\\.[a-z]+$", Map.of(
+                        "type", "object",
+                        "properties", Map.of("bad-pattern-field", Map.of("type", "string")),
+                        "additionalProperties", false)),
+                "additionalProperties", false
+        ));
+        properties.put("dynamicResidual", Map.of(
+                "type", "object",
+                "unevaluatedProperties", Map.of(
+                        "type", "object",
+                        "properties", Map.of("bad-residual-field", Map.of("type", "string")),
+                        "unevaluatedProperties", false)
+        ));
+        SchemaEnvelope inputSchema = graphInputSchema(properties, List.of("score", "amount"));
+        GraphDraft draft = contextEligibilityDraft(inputSchema, Map.of(
+                "score", GraphDraft.Binding.contextPath("score"),
+                "amount", GraphDraft.Binding.contextPath("amount")
+        ));
+
+        VisualValidationResult result = validator.validate(draft);
+
+        assertThat(result.valid()).isFalse();
+        assertThat(result.diagnostics())
+                .filteredOn(diagnostic -> "visual.inputSchema.dslField.invalid".equals(diagnostic.code()))
+                .extracting("target")
+                .contains(
+                        "/inputSchema/schema/properties/dynamicAdditional"
+                                + "/additionalProperties/properties/bad-field",
+                        "/inputSchema/schema/properties/patterned"
+                                + "/patternProperties/^item\\.[a-z]+$/properties/bad-pattern-field",
+                        "/inputSchema/schema/properties/dynamicResidual"
+                                + "/unevaluatedProperties/properties/bad-residual-field");
+    }
+
+    @Test
     void rejectsGraphInputSchemaWithRequiredPathMissingFromProperties() {
         GraphDraftValidator validator = new GraphDraftValidator(
                 VisualCatalogTestSupport.catalogWithLibrary(

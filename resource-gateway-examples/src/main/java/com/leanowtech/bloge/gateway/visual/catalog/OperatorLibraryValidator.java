@@ -769,6 +769,16 @@ public class OperatorLibraryValidator {
                                                        List<VisualDiagnostic> diagnostics) {
         String kind = schemaKind(schema);
         if ("array".equals(kind)) {
+            Object prefixItems = schema.get("prefixItems");
+            if (prefixItems instanceof List<?> values) {
+                for (int i = 0; i < values.size(); i++) {
+                    Map<String, Object> itemSchema = objectProperty(values.get(i));
+                    if (itemSchema != null) {
+                        validateDslSchemaPropertyNames(operator, itemSchema, path + "/prefixItems/" + i,
+                                Set.of(), diagnostics);
+                    }
+                }
+            }
             Map<String, Object> items = objectProperty(schema.get("items"));
             if (items != null) {
                 validateDslSchemaPropertyNames(operator, items, path + "/items", Set.of(), diagnostics);
@@ -788,6 +798,28 @@ public class OperatorLibraryValidator {
                 validateDslSchemaPropertyNames(operator, childSchema, propertyPath, Set.of(), diagnostics);
             }
         });
+        Object patternProperties = schema.get("patternProperties");
+        if (patternProperties instanceof Map<?, ?> rawPatternProperties) {
+            rawPatternProperties.forEach((pattern, child) -> {
+                Map<String, Object> childSchema = objectProperty(child);
+                if (childSchema != null) {
+                    validateDslSchemaPropertyNames(operator, childSchema,
+                            path + "/patternProperties/" + pattern, Set.of(), diagnostics);
+                }
+            });
+        }
+        Object residual = residualPropertiesPolicy(schema);
+        if (residual instanceof Map<?, ?>) {
+            Map<String, Object> residualSchema = objectProperty(residual);
+            if (residualSchema != null) {
+                validateDslSchemaPropertyNames(operator, residualSchema,
+                        path + "/" + residualPropertiesKeyword(schema), Set.of(), diagnostics);
+            }
+        }
+    }
+
+    private static String residualPropertiesKeyword(Map<String, Object> schema) {
+        return schema.containsKey("additionalProperties") ? "additionalProperties" : "unevaluatedProperties";
     }
 
     private static void validateDslPathSegments(OperatorDefinition operator,

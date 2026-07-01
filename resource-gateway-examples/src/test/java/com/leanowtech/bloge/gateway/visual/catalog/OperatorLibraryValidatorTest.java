@@ -2832,6 +2832,110 @@ class OperatorLibraryValidatorTest {
     }
 
     @Test
+    void rejectsNativeLoweringWhenPrefixItemSchemaUsesUnsafeDslFieldName() {
+        OperatorDefinition operator = operator(
+                "risk:unsafePrefixItemField",
+                new OperatorDefinition.Ports(
+                        List.of(new OperatorDefinition.Port("inputs",
+                                SchemaEnvelope.object(Map.of(
+                                        "tuple", Map.of(
+                                                "type", "array",
+                                                "prefixItems", List.of(Map.of(
+                                                        "type", "object",
+                                                        "properties", Map.of(
+                                                                "bad-field", Map.of("type", "string")),
+                                                        "additionalProperties", false)),
+                                                "items", Map.of(
+                                                        "type", "object",
+                                                        "properties", Map.of(
+                                                                "safeField", Map.of("type", "string")),
+                                                        "additionalProperties", false))
+                                ), List.of("tuple")),
+                                true,
+                                "Inputs.")),
+                        List.of(new OperatorDefinition.Port("output",
+                                SchemaEnvelope.object(Map.of("accepted", Map.of("type", "boolean")), List.of()),
+                                true,
+                                "Output."))
+                ),
+                "native"
+        );
+
+        VisualValidationResult result = validator.validate(libraryWith(operator));
+
+        assertThat(result.valid()).isFalse();
+        assertThat(result.diagnostics())
+                .filteredOn(diagnostic -> "visual.operator.lowering.dslField.invalid".equals(diagnostic.code()))
+                .extracting("target")
+                .containsExactly(
+                        "/operators/0/ports/inputs/0/schema/schema/properties/tuple/prefixItems/0/properties/bad-field");
+    }
+
+    @Test
+    void rejectsNativeLoweringWhenDynamicObjectSchemasUseUnsafeDslFieldName() {
+        Map<String, Object> inputProperties = new LinkedHashMap<>();
+        inputProperties.put("dynamicAdditional", Map.of(
+                "type", "object",
+                "additionalProperties", Map.of(
+                        "type", "object",
+                        "properties", Map.of("bad-field", Map.of("type", "string")),
+                        "additionalProperties", false)
+        ));
+        inputProperties.put("patterned", Map.of(
+                "type", "object",
+                "patternProperties", Map.of("^item\\.[a-z]+$", Map.of(
+                        "type", "object",
+                        "properties", Map.of("bad-pattern-field", Map.of("type", "string")),
+                        "additionalProperties", false)),
+                "additionalProperties", false
+        ));
+        Map<String, Object> configProperties = Map.of(
+                "dynamicResidual", Map.of(
+                        "type", "object",
+                        "unevaluatedProperties", Map.of(
+                                "type", "object",
+                                "properties", Map.of("bad-residual-field", Map.of("type", "string")),
+                                "unevaluatedProperties", false)
+                ));
+        OperatorDefinition operator = new OperatorDefinition(
+                "bloge.visualOperator.v1",
+                "risk:unsafeDynamicObjectFields",
+                "1.0.0",
+                new OperatorDefinition.Display("Unsafe dynamic object fields",
+                        "Test operator.", List.of("test")),
+                new OperatorDefinition.Source("user-library", "", "", "", true),
+                new OperatorDefinition.Ports(
+                        List.of(new OperatorDefinition.Port("inputs",
+                                SchemaEnvelope.object(inputProperties, List.of()),
+                                true,
+                                "Inputs.")),
+                        List.of(new OperatorDefinition.Port("output",
+                                SchemaEnvelope.object(Map.of("accepted", Map.of("type", "boolean")), List.of()),
+                                true,
+                                "Output."))
+                ),
+                SchemaEnvelope.object(configProperties, List.of()),
+                OperatorDefinition.Capabilities.pure(),
+                new OperatorDefinition.Lowering("native", "risk:unsafeDynamicObjectFields", Map.of()),
+                List.of()
+        );
+
+        VisualValidationResult result = validator.validate(libraryWith(operator));
+
+        assertThat(result.valid()).isFalse();
+        assertThat(result.diagnostics())
+                .filteredOn(diagnostic -> "visual.operator.lowering.dslField.invalid".equals(diagnostic.code()))
+                .extracting("target")
+                .contains(
+                        "/operators/0/ports/inputs/0/schema/schema/properties/dynamicAdditional"
+                                + "/additionalProperties/properties/bad-field",
+                        "/operators/0/ports/inputs/0/schema/schema/properties/patterned"
+                                + "/patternProperties/^item\\.[a-z]+$/properties/bad-pattern-field",
+                        "/operators/0/configSchema/schema/properties/dynamicResidual"
+                                + "/unevaluatedProperties/properties/bad-residual-field");
+    }
+
+    @Test
     void rejectsNativeLoweringWhenConfigSchemaUsesReservedDslFieldName() {
         Map<String, Object> limits = new LinkedHashMap<>();
         limits.put("mode", Map.of("type", "string"));

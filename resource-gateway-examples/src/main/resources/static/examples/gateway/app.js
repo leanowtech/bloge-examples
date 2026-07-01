@@ -4256,10 +4256,29 @@ function unknownConfigRows(node, spec) {
 }
 
 function unknownConfigPaths(value, schema, prefix) {
+  const type = rawSchemaType(schema);
+  if (Array.isArray(value)) {
+    if (type && type !== 'array') {
+      return [];
+    }
+    const paths = [];
+    for (const [key, item] of Object.entries(value)) {
+      const index = arrayIndexSegment(key);
+      if (index === null) {
+        continue;
+      }
+      const itemSchema = arrayItemSchemaForIndex(schema, index);
+      if (!itemSchema) {
+        continue;
+      }
+      const path = prefix ? `${prefix}.${key}` : key;
+      paths.push(...unknownConfigPaths(item, itemSchema, path));
+    }
+    return paths;
+  }
   if (!isConfigContainerObject(value)) {
     return [];
   }
-  const type = rawSchemaType(schema);
   if (type && type !== 'object' && !schema?.properties) {
     return [];
   }

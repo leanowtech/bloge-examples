@@ -133,6 +133,7 @@ class VisualAuthoringAppJsTest {
                   'configValueAtPath',
                   'setConfigValueAtPath',
                   'deleteConfigValueAtPath',
+                  'unknownConfigPaths',
                   'isPlainObject',
                   'isConfigContainerObject',
                   'isConfigBindingObject',
@@ -144,6 +145,18 @@ class VisualAuthoringAppJsTest {
                   'emptyConfigContainerForNext',
                   'configContainerForNext',
                   'configContainerEmpty',
+                  'arrayItemSchemaForIndex',
+                  'schemaPrefixItems',
+                  'schemaItemsSchema',
+                  'rawSchemaType',
+                  'residualPropertiesPolicy',
+                  'matchingPatternPropertySchemas',
+                  'schemaPatternProperties',
+                  'patternMatches',
+                  'validateSchemaStructure',
+                  'validateSchemaAdditionalProperties',
+                  'validateSchemaUnevaluatedProperties',
+                  'validateSchemaObjectPatternProperties',
                   'defaultInputExpressionsForOperator',
                   'defaultCustomInputStateForOperator',
                   'defaultResourceParamInputs',
@@ -170,6 +183,42 @@ class VisualAuthoringAppJsTest {
                 context.inputKeyForPortPath = (_spec, port, path) => `${port}.${path}`;
                 context.expressionReferencesNode = (expression, nodeId) =>
                   String(expression || '').includes(`${nodeId}.output`);
+                context.SUPPORTED_SCHEMA_KINDS = new Set(['object', 'array', 'string', 'integer', 'number', 'boolean', 'null', 'any']);
+                context.graphInputSchemaDiagnostic = (code, message, target) => ({
+                  code,
+                  message,
+                  target: `/inputSchema/${target}`
+                });
+                context.isDslFieldName = (value) => /^[A-Za-z_][A-Za-z0-9_]*$/.test(String(value || ''))
+                  && !new Set(['graph', 'node', 'input', 'output', 'true', 'false']).has(String(value || ''));
+                context.validatedSchemaObjectProperties = (schema) => {
+                  const properties = schema?.properties;
+                  return properties && typeof properties === 'object' && !Array.isArray(properties) ? properties : {};
+                };
+                context.validatedSchemaRequiredNames = () => [];
+                for (const name of [
+                  'validateUnsupportedSchemaKeywords',
+                  'validateSchemaDefinitions',
+                  'validateSchemaEnum',
+                  'validateSchemaConst',
+                  'validateSchemaNumericBounds',
+                  'validateSchemaNumericMultipleOf',
+                  'validateSchemaStringLengthBounds',
+                  'validateSchemaStringPattern',
+                  'validateSchemaStringFormat',
+                  'validateSchemaArrayItemBounds',
+                  'validateSchemaArrayUniqueItems',
+                  'validateSchemaArrayPrefixItems',
+                  'validateSchemaArrayContains',
+                  'validateSchemaObjectPropertyBounds',
+                  'validateSchemaObjectPropertyNames',
+                  'validateSchemaObjectDependentRequired',
+                  'validateSchemaObjectDependentSchemas',
+                  'validateCustomSchemaEnumValues'
+                ]) {
+                  context[name] = () => {};
+                }
+                context.validateSchemaTypeArray = () => false;
 
                 const resolvedPortPath = context.sourceFromOutputExpressionParts(
                   { id: 'facts' },
@@ -230,6 +279,67 @@ class VisualAuthoringAppJsTest {
                   }
                 };
                 context.removeConfigReferencesToNode(configWithArrayReferences, 'deletedNode');
+                const unknownArrayConfigPaths = context.unknownConfigPaths(
+                  {
+                    rules: [
+                      { limit: 10, extra: true },
+                      { limit: 20 }
+                    ]
+                  },
+                  {
+                    type: 'object',
+                    properties: {
+                      rules: {
+                        type: 'array',
+                        items: {
+                          type: 'object',
+                          properties: { limit: { type: 'integer' } },
+                          additionalProperties: false
+                        }
+                      }
+                    },
+                    additionalProperties: false
+                  },
+                  ''
+                ).sort().join('|');
+                const dynamicSchemaDiagnostics = [];
+                context.validateSchemaStructure({
+                  type: 'object',
+                  properties: {
+                    dynamicAdditional: {
+                      type: 'object',
+                      additionalProperties: {
+                        type: 'object',
+                        properties: { 'bad-field': { type: 'string' } },
+                        additionalProperties: false
+                      }
+                    },
+                    patterned: {
+                      type: 'object',
+                      patternProperties: {
+                        '^item\\\\.[a-z]+$': {
+                          type: 'object',
+                          properties: { 'bad-pattern-field': { type: 'string' } },
+                          additionalProperties: false
+                        }
+                      },
+                      additionalProperties: false
+                    },
+                    dynamicResidual: {
+                      type: 'object',
+                      unevaluatedProperties: {
+                        type: 'object',
+                        properties: { 'bad-residual-field': { type: 'string' } },
+                        unevaluatedProperties: false
+                      }
+                    }
+                  }
+                }, 'schema', dynamicSchemaDiagnostics);
+                const dynamicSchemaDslTargets = dynamicSchemaDiagnostics
+                  .filter((diagnostic) => diagnostic.code === 'visual.inputSchema.dslField.invalid')
+                  .map((diagnostic) => diagnostic.target)
+                  .sort()
+                  .join('|');
 
                 const checks = [
                   ['schema path suffix', context.dslReferenceSuffixForSchemaPath('items.0.score'), '.items[0].score'],
@@ -265,7 +375,13 @@ class VisualAuthoringAppJsTest {
                   ['array config sibling expression retained', context.configValueAtPath(configWithArrayReferences, 'thresholds.1').expr, 'keptNode.output.score'],
                   ['array config scalar retained', context.configValueAtPath(configWithArrayReferences, 'thresholds.2'), 42],
                   ['nested array config deleted node reference removed', context.hasConfigPath(configWithArrayReferences, 'nested.values.0'), false],
-                  ['nested array config scalar retained', context.configValueAtPath(configWithArrayReferences, 'nested.values.1'), 'static']
+                  ['nested array config scalar retained', context.configValueAtPath(configWithArrayReferences, 'nested.values.1'), 'static'],
+                  ['unknown array item config path', unknownArrayConfigPaths, 'rules.0.extra'],
+                  ['dynamic schema DSL targets', dynamicSchemaDslTargets, [
+                    '/inputSchema/schema/properties/dynamicAdditional/additionalProperties/properties/bad-field',
+                    '/inputSchema/schema/properties/dynamicResidual/unevaluatedProperties/properties/bad-residual-field',
+                    '/inputSchema/schema/properties/patterned/patternProperties/^item\\\\.[a-z]+$/properties/bad-pattern-field'
+                  ].sort().join('|')]
                 ];
 
                 for (const [label, actual, expected] of checks) {

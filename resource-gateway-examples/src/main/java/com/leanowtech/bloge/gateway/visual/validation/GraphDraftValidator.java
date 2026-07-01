@@ -253,6 +253,28 @@ public class GraphDraftValidator {
         for (int i = 0; i < prefixItems.size(); i++) {
             validateSchemaDslPathFields(prefixItems.get(i), path + "/prefixItems/" + i, diagnostics);
         }
+        Map<String, Object> patternProperties = patternPropertiesOf(schema);
+        if (patternProperties != null) {
+            patternProperties.forEach((pattern, rawSchema) -> {
+                Map<String, Object> patternSchema = objectProperty(rawSchema);
+                if (patternSchema != null) {
+                    validateSchemaDslPathFields(patternSchema,
+                            path + "/patternProperties/" + pattern, diagnostics);
+                }
+            });
+        }
+        Object residual = residualPropertiesPolicy(schema);
+        if (residual instanceof Map<?, ?>) {
+            Map<String, Object> residualSchema = objectProperty(residual);
+            if (residualSchema != null) {
+                validateSchemaDslPathFields(residualSchema,
+                        path + "/" + residualPropertiesKeyword(schema), diagnostics);
+            }
+        }
+    }
+
+    private static String residualPropertiesKeyword(Map<String, Object> schema) {
+        return schema.containsKey("additionalProperties") ? "additionalProperties" : "unevaluatedProperties";
     }
 
     private static void validateOperatorFingerprint(GraphDraft.DraftNode node,
