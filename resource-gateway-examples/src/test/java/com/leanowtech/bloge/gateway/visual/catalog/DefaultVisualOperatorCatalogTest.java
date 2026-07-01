@@ -105,6 +105,38 @@ class DefaultVisualOperatorCatalogTest {
     }
 
     @Test
+    void hidesStoredLibraryOperatorWhenRuntimeJavaOperatorOwnsSameRef() {
+        DefaultOperatorRegistry registry = new DefaultOperatorRegistry();
+        registry.register("risk:eligibility", new NormalizeTextOperator());
+        InMemoryOperatorLibraryRegistry libraries = new InMemoryOperatorLibraryRegistry();
+        libraries.upsert(VisualCatalogTestSupport.eligibilityLibrary("integer"));
+        DefaultVisualOperatorCatalog catalog = new DefaultVisualOperatorCatalog(
+                VisualCatalogTestSupport.emptyResourceRegistry(),
+                new InMemoryResourceDesignContractRegistry(),
+                new ResourceVirtualOperatorProjector(),
+                libraries,
+                JavaOperatorInventoryProjector.forRegistry(registry)
+        );
+
+        List<OperatorDefinition> matches = catalog.list(OperatorCatalogQuery.all()).stream()
+                .filter(operator -> operator.operatorRef().equals("risk:eligibility"))
+                .toList();
+
+        assertThat(matches).hasSize(1);
+        assertThat(matches.getFirst().source().kind()).isEqualTo("java-operator");
+        assertThat(matches.getFirst().diagnostics())
+                .anySatisfy(diagnostic -> {
+                    assertThat(diagnostic.level()).isEqualTo("WARNING");
+                    assertThat(diagnostic.code()).isEqualTo("visual.catalog.operatorRefShadowed");
+                    assertThat(diagnostic.message()).isEqualTo(
+                            "OperatorRef 'risk:eligibility' from imported operator library is hidden because runtime Java operator already owns this catalog key.");
+                });
+        assertThat(catalog.find("risk:eligibility"))
+                .map(operator -> operator.source().kind())
+                .contains("java-operator");
+    }
+
+    @Test
     void includesPublishedVisualGraphsAsReusableSubgraphOperators() {
         InMemoryVisualGraphPublicationRepository publications = new InMemoryVisualGraphPublicationRepository();
         publications.create(publishedEligibilityGraph());

@@ -7,6 +7,7 @@ import com.leanowtech.bloge.gateway.visual.publication.VisualGraphPublication;
 import com.leanowtech.bloge.gateway.visual.publication.VisualGraphPublicationRepository;
 import com.leanowtech.bloge.gateway.visual.validation.VisualValidationResult;
 
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.http.converter.HttpMessageNotReadableException;
@@ -41,21 +42,35 @@ public class OperatorLibraryAdminController {
     private final OperatorLibraryValidator validator;
     private final GraphDraftRepository draftRepository;
     private final VisualGraphPublicationRepository publicationRepository;
+    private final JavaOperatorInventoryProjector javaOperatorProjector;
 
     /**
      * @param registry library registry
      * @param validator library validator
      * @param draftRepository stored visual graph draft repository
      * @param publicationRepository immutable visual graph publication repository
+     * @param javaOperatorProjector runtime Java operator projector
      */
+    @Autowired
     public OperatorLibraryAdminController(OperatorLibraryRegistry registry,
                                           OperatorLibraryValidator validator,
                                           GraphDraftRepository draftRepository,
-                                          VisualGraphPublicationRepository publicationRepository) {
+                                          VisualGraphPublicationRepository publicationRepository,
+                                          JavaOperatorInventoryProjector javaOperatorProjector) {
         this.registry = registry;
         this.validator = validator;
         this.draftRepository = draftRepository;
         this.publicationRepository = publicationRepository;
+        this.javaOperatorProjector = javaOperatorProjector == null
+                ? JavaOperatorInventoryProjector.empty()
+                : javaOperatorProjector;
+    }
+
+    OperatorLibraryAdminController(OperatorLibraryRegistry registry,
+                                   OperatorLibraryValidator validator,
+                                   GraphDraftRepository draftRepository,
+                                   VisualGraphPublicationRepository publicationRepository) {
+        this(registry, validator, draftRepository, publicationRepository, JavaOperatorInventoryProjector.empty());
     }
 
     /**
@@ -181,6 +196,7 @@ public class OperatorLibraryAdminController {
         VisualValidationResult structural = validator.validate(library);
         List<VisualDiagnostic> diagnostics = new ArrayList<>(structural.diagnostics());
         diagnostics.addAll(operatorRefOwnershipDiagnostics(library));
+        diagnostics.addAll(runtimeOperatorRefDiagnostics(library));
         diagnostics.addAll(replacementFingerprintDriftDiagnostics(library));
         diagnostics.addAll(replacementPublicationRemovalDiagnostics(library));
         if (!force) {
@@ -213,9 +229,33 @@ public class OperatorLibraryAdminController {
         return diagnostics;
     }
 
+    private List<VisualDiagnostic> runtimeOperatorRefDiagnostics(OperatorLibrary library) {
+        if (library == null || library.operators().isEmpty()) {
+            return List.of();
+        }
+        Set<String> runtimeOperatorRefs = javaOperatorProjector.project().stream()
+                .map(OperatorDefinition::operatorRef)
+                .collect(java.util.stream.Collectors.toCollection(LinkedHashSet::new));
+        if (runtimeOperatorRefs.isEmpty()) {
+            return List.of();
+        }
+        List<VisualDiagnostic> diagnostics = new ArrayList<>();
+        for (int i = 0; i < library.operators().size(); i++) {
+            OperatorDefinition operator = library.operators().get(i);
+            if (runtimeOperatorRefs.contains(operator.operatorRef())) {
+                diagnostics.add(VisualDiagnostic.error("visual.library.operatorRefRuntimeOwned",
+                        "operatorRef '%s' is already provided by the runtime Java operator inventory."
+                                .formatted(operator.operatorRef()),
+                        "/operators/%d/operatorRef".formatted(i)));
+            }
+        }
+        return diagnostics;
+    }
+
     private static HttpStatus validationFailureStatus(VisualValidationResult validation) {
         return validation.diagnostics().stream()
                 .anyMatch(diagnostic -> "visual.library.operatorRefOwned".equals(diagnostic.code())
+                        || "visual.library.operatorRefRuntimeOwned".equals(diagnostic.code())
                         || "visual.library.inUse".equals(diagnostic.code()))
                 ? HttpStatus.CONFLICT
                 : HttpStatus.BAD_REQUEST;

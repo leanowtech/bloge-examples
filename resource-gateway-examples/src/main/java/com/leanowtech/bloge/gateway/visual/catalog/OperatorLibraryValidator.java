@@ -2,6 +2,7 @@ package com.leanowtech.bloge.gateway.visual.catalog;
 
 import com.leanowtech.bloge.gateway.visual.diagnostic.VisualDiagnostic;
 import com.leanowtech.bloge.gateway.visual.model.SchemaEnvelope;
+import com.leanowtech.bloge.gateway.visual.runtime.VisualGraphPublicationOperator;
 import com.leanowtech.bloge.gateway.visual.validation.VisualSecretGuard;
 import com.leanowtech.bloge.gateway.visual.validation.VisualSchemaCompatibility.StaticExpressionLiteral;
 import com.leanowtech.bloge.gateway.visual.validation.VisualSchemaValidator;
@@ -34,7 +35,15 @@ public class OperatorLibraryValidator {
     private static final Set<String> RESERVED_OPERATOR_REFS = Set.of(
             "httpResource",
             "bloge:decisionTable",
-            "bloge:transform"
+            "bloge:transform",
+            VisualGraphPublicationOperator.NAME
+    );
+    private static final Set<String> RESERVED_OPERATOR_REF_PREFIXES = Set.of(
+            "resource:",
+            "publication:"
+    );
+    private static final Set<String> RESERVED_EXECUTABLE_OPERATOR_REFS = Set.of(
+            VisualGraphPublicationOperator.NAME
     );
     private static final Set<String> SUPPORTED_LIBRARY_SCHEMA_VERSIONS = Set.of(
             "bloge.visualOperatorLibrary.v1"
@@ -186,7 +195,8 @@ public class OperatorLibraryValidator {
     }
 
     private static boolean isReservedOperatorRef(String operatorRef) {
-        return RESERVED_OPERATOR_REFS.contains(operatorRef) || operatorRef.startsWith("resource:");
+        return RESERVED_OPERATOR_REFS.contains(operatorRef)
+                || RESERVED_OPERATOR_REF_PREFIXES.stream().anyMatch(operatorRef::startsWith);
     }
 
     private static void validateOperator(OperatorDefinition operator,
@@ -321,6 +331,12 @@ public class OperatorLibraryValidator {
         if (!EXECUTABLE_OPERATOR_REF.matcher(executableOperatorRef).matches()) {
             diagnostics.add(VisualDiagnostic.error("visual.operator.lowering.operatorRef.invalid",
                     "Native operator '%s' lowering.operatorRef '%s' must be a namespace-safe executable token."
+                            .formatted(operator.operatorRef(), executableOperatorRef),
+                    path + "/operatorRef"));
+        }
+        if (RESERVED_EXECUTABLE_OPERATOR_REFS.contains(executableOperatorRef)) {
+            diagnostics.add(VisualDiagnostic.error("visual.operator.lowering.operatorRef.reserved",
+                    "Native operator '%s' cannot lower directly to system-managed executable operator '%s'."
                             .formatted(operator.operatorRef(), executableOperatorRef),
                     path + "/operatorRef"));
         }

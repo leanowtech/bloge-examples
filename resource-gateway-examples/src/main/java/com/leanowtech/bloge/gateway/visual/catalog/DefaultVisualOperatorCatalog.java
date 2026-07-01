@@ -2,6 +2,7 @@ package com.leanowtech.bloge.gateway.visual.catalog;
 
 import com.leanowtech.bloge.gateway.resource.ResourceDescriptor;
 import com.leanowtech.bloge.gateway.resource.ResourceRegistry;
+import com.leanowtech.bloge.gateway.visual.diagnostic.VisualDiagnostic;
 import com.leanowtech.bloge.gateway.visual.model.SchemaEnvelope;
 import com.leanowtech.bloge.gateway.visual.publication.InMemoryVisualGraphPublicationRepository;
 import com.leanowtech.bloge.gateway.visual.publication.VisualGraphPublication;
@@ -106,7 +107,7 @@ public class DefaultVisualOperatorCatalog implements VisualOperatorCatalog {
             }
             operators.add(projector.project(descriptor, contract));
         }
-        return operators.stream()
+        return uniqueByOperatorRef(operators).stream()
                 .filter(operator -> matches(operator, effectiveQuery))
                 .sorted(Comparator.comparing(OperatorDefinition::operatorRef))
                 .toList();
@@ -120,6 +121,59 @@ public class DefaultVisualOperatorCatalog implements VisualOperatorCatalog {
         return list(new OperatorCatalogQuery("", List.of(), false, true)).stream()
                 .filter(operator -> operator.operatorRef().equals(operatorRef))
                 .findFirst();
+    }
+
+    private static List<OperatorDefinition> uniqueByOperatorRef(List<OperatorDefinition> operators) {
+        Map<String, OperatorDefinition> unique = new LinkedHashMap<>();
+        for (OperatorDefinition operator : operators) {
+            OperatorDefinition retained = unique.get(operator.operatorRef());
+            if (retained == null) {
+                unique.put(operator.operatorRef(), operator);
+                continue;
+            }
+            unique.put(operator.operatorRef(), withDiagnostic(retained, VisualDiagnostic.warning(
+                    "visual.catalog.operatorRefShadowed",
+                    "OperatorRef '%s' from %s is hidden because %s already owns this catalog key."
+                            .formatted(operator.operatorRef(), sourceLabel(operator), sourceLabel(retained)),
+                    "/operators/" + operator.operatorRef()
+            )));
+        }
+        return List.copyOf(unique.values());
+    }
+
+    private static OperatorDefinition withDiagnostic(OperatorDefinition operator, VisualDiagnostic diagnostic) {
+        List<VisualDiagnostic> diagnostics = new ArrayList<>(operator.diagnostics());
+        diagnostics.add(diagnostic);
+        return new OperatorDefinition(
+                operator.schemaVersion(),
+                operator.operatorRef(),
+                operator.operatorVersion(),
+                operator.display(),
+                operator.source(),
+                operator.ports(),
+                operator.configSchema(),
+                operator.capabilities(),
+                operator.policy(),
+                operator.lowering(),
+                diagnostics
+        );
+    }
+
+    private static String sourceLabel(OperatorDefinition operator) {
+        String kind = operator.source().kind();
+        if ("resource-descriptor".equals(kind)) {
+            return "resource descriptor '%s'".formatted(operator.source().resourceId());
+        }
+        if ("visual-publication".equals(kind)) {
+            return "visual publication operator";
+        }
+        if ("java-operator".equals(kind) || "java-streaming-operator".equals(kind)) {
+            return "runtime Java operator";
+        }
+        if ("user-library".equals(kind)) {
+            return "imported operator library";
+        }
+        return "source kind '%s'".formatted(kind);
     }
 
     private static boolean matches(OperatorDefinition operator, OperatorCatalogQuery query) {

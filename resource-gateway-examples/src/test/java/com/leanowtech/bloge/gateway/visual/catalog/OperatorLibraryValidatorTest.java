@@ -470,6 +470,33 @@ class OperatorLibraryValidatorTest {
     }
 
     @Test
+    void rejectsSystemManagedOperatorRefPrefixInImportedLibrary() {
+        OperatorDefinition base = VisualCatalogTestSupport.eligibilityOperator("integer");
+        OperatorDefinition operator = new OperatorDefinition(
+                base.schemaVersion(),
+                "publication:pub-eligibility",
+                base.operatorVersion(),
+                base.display(),
+                base.source(),
+                base.ports(),
+                base.configSchema(),
+                base.capabilities(),
+                base.policy(),
+                base.lowering(),
+                base.diagnostics()
+        );
+
+        VisualValidationResult result = validator.validate(libraryWith(operator));
+
+        assertThat(result.valid()).isFalse();
+        assertThat(result.diagnostics())
+                .anySatisfy(diagnostic -> {
+                    assertThat(diagnostic.code()).isEqualTo("visual.operator.ref.reserved");
+                    assertThat(diagnostic.target()).isEqualTo("/operators/0/operatorRef");
+                });
+    }
+
+    @Test
     void rejectsDuplicateOperatorRefsInOneLibrary() {
         OperatorDefinition first = operator(
                 "risk:eligibility",
@@ -2891,6 +2918,31 @@ class OperatorLibraryValidatorTest {
         assertThat(result.diagnostics())
                 .anySatisfy(diagnostic -> {
                     assertThat(diagnostic.code()).isEqualTo("visual.operator.lowering.operatorRef.invalid");
+                    assertThat(diagnostic.target()).isEqualTo("/operators/0/lowering/operatorRef");
+                });
+    }
+
+    @Test
+    void rejectsNativeLoweringToHiddenPublicationExecutor() {
+        OperatorDefinition operator = new OperatorDefinition(
+                "bloge.visualOperator.v1",
+                "risk:hiddenPublicationExecutor",
+                "1.0.0",
+                new OperatorDefinition.Display("Bad native", "Test operator.", List.of("test")),
+                new OperatorDefinition.Source("user-library", "", "", "", true),
+                outputOnlyPorts(Map.of("accepted", Map.of("type", "boolean")), List.of()),
+                SchemaEnvelope.opaque(),
+                OperatorDefinition.Capabilities.pure(),
+                new OperatorDefinition.Lowering("native", "visualPublication", Map.of()),
+                List.of()
+        );
+
+        VisualValidationResult result = validator.validate(libraryWith(operator));
+
+        assertThat(result.valid()).isFalse();
+        assertThat(result.diagnostics())
+                .anySatisfy(diagnostic -> {
+                    assertThat(diagnostic.code()).isEqualTo("visual.operator.lowering.operatorRef.reserved");
                     assertThat(diagnostic.target()).isEqualTo("/operators/0/lowering/operatorRef");
                 });
     }

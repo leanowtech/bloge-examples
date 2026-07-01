@@ -2,6 +2,9 @@ package com.leanowtech.bloge.gateway.visual.catalog;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
+import com.leanowtech.bloge.core.operator.Operator;
+import com.leanowtech.bloge.core.operator.OperatorContext;
+import com.leanowtech.bloge.core.spi.DefaultOperatorRegistry;
 import com.leanowtech.bloge.gateway.visual.draft.GraphDraft;
 import com.leanowtech.bloge.gateway.visual.draft.InMemoryGraphDraftRepository;
 import com.leanowtech.bloge.gateway.visual.model.SchemaEnvelope;
@@ -176,6 +179,81 @@ class OperatorLibraryAdminControllerTest {
                 .andExpect(jsonPath("$.valid").value(false))
                 .andExpect(jsonPath("$.diagnostics[0].code").value("visual.operator.source.kind.reserved"))
                 .andExpect(jsonPath("$.diagnostics[0].target").value("/operators/0/source/kind"));
+
+        assertThat(registry.all()).isEmpty();
+    }
+
+    @Test
+    void createRejectsSystemManagedOperatorRefPrefix() throws Exception {
+        OperatorDefinition base = VisualCatalogTestSupport.eligibilityOperator("integer");
+        OperatorDefinition operator = new OperatorDefinition(
+                base.schemaVersion(),
+                "publication:pub-eligibility",
+                base.operatorVersion(),
+                base.display(),
+                base.source(),
+                base.ports(),
+                base.configSchema(),
+                base.capabilities(),
+                base.policy(),
+                base.lowering(),
+                base.diagnostics()
+        );
+        OperatorLibrary invalid = new OperatorLibrary(
+                "bloge.visualOperatorLibrary.v1",
+                "risk-policy",
+                "Reserved operator ref",
+                "1.0.0",
+                "risk-team",
+                "ACTIVE",
+                List.of(operator)
+        );
+
+        mockMvc.perform(post("/admin/visual-operator-libraries")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(invalid)))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.valid").value(false))
+                .andExpect(jsonPath("$.diagnostics[0].code").value("visual.operator.ref.reserved"))
+                .andExpect(jsonPath("$.diagnostics[0].target").value("/operators/0/operatorRef"));
+
+        assertThat(registry.all()).isEmpty();
+    }
+
+    @Test
+    void createRejectsHiddenPublicationExecutorLowering() throws Exception {
+        OperatorDefinition base = VisualCatalogTestSupport.eligibilityOperator("integer");
+        OperatorDefinition operator = new OperatorDefinition(
+                base.schemaVersion(),
+                base.operatorRef(),
+                base.operatorVersion(),
+                base.display(),
+                base.source(),
+                base.ports(),
+                base.configSchema(),
+                base.capabilities(),
+                base.policy(),
+                new OperatorDefinition.Lowering("native", "visualPublication", Map.of()),
+                base.diagnostics()
+        );
+        OperatorLibrary invalid = new OperatorLibrary(
+                "bloge.visualOperatorLibrary.v1",
+                "risk-policy",
+                "Hidden executor lowering",
+                "1.0.0",
+                "risk-team",
+                "ACTIVE",
+                List.of(operator)
+        );
+
+        mockMvc.perform(post("/admin/visual-operator-libraries")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(invalid)))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.valid").value(false))
+                .andExpect(jsonPath("$.diagnostics[0].code")
+                        .value("visual.operator.lowering.operatorRef.reserved"))
+                .andExpect(jsonPath("$.diagnostics[0].target").value("/operators/0/lowering/operatorRef"));
 
         assertThat(registry.all()).isEmpty();
     }
@@ -442,6 +520,42 @@ class OperatorLibraryAdminControllerTest {
                 .andExpect(jsonPath("$.diagnostics[0].code").value("visual.library.operatorRefOwned"))
                 .andExpect(jsonPath("$.diagnostics[0].message").value("operatorRef 'risk:eligibility' already provided by library 'risk-policy'"))
                 .andExpect(jsonPath("$.diagnostics[0].target").value("/operators/0/operatorRef"));
+    }
+
+    @Test
+    void validateReportsOperatorRefAlreadyProvidedByRuntimeJavaInventory() throws Exception {
+        useRuntimeJavaOperator("runtimeScorePolicy");
+        OperatorLibrary library = libraryWithOperatorRef("runtime-collision", "runtimeScorePolicy");
+
+        mockMvc.perform(post("/admin/visual-operator-libraries/validate")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(library)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.valid").value(false))
+                .andExpect(jsonPath("$.diagnostics[0].code")
+                        .value("visual.library.operatorRefRuntimeOwned"))
+                .andExpect(jsonPath("$.diagnostics[0].message")
+                        .value("operatorRef 'runtimeScorePolicy' is already provided by the runtime Java operator inventory."))
+                .andExpect(jsonPath("$.diagnostics[0].target").value("/operators/0/operatorRef"));
+
+        assertThat(registry.find("runtime-collision")).isEmpty();
+    }
+
+    @Test
+    void createRejectsOperatorRefAlreadyProvidedByRuntimeJavaInventory() throws Exception {
+        useRuntimeJavaOperator("runtimeScorePolicy");
+        OperatorLibrary library = libraryWithOperatorRef("runtime-collision", "runtimeScorePolicy");
+
+        mockMvc.perform(post("/admin/visual-operator-libraries")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(library)))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.valid").value(false))
+                .andExpect(jsonPath("$.diagnostics[0].code")
+                        .value("visual.library.operatorRefRuntimeOwned"))
+                .andExpect(jsonPath("$.diagnostics[0].target").value("/operators/0/operatorRef"));
+
+        assertThat(registry.find("runtime-collision")).isEmpty();
     }
 
     @Test
@@ -975,5 +1089,51 @@ class OperatorLibraryAdminControllerTest {
                 "ACTIVE",
                 List.of(VisualCatalogTestSupport.scoreFactsOperator())
         );
+    }
+
+    private void useRuntimeJavaOperator(String operatorRef) {
+        DefaultOperatorRegistry runtimeOperators = new DefaultOperatorRegistry();
+        runtimeOperators.register(operatorRef, new EchoRuntimeOperator());
+        OperatorLibraryAdminController controller = new OperatorLibraryAdminController(
+                registry,
+                new OperatorLibraryValidator(),
+                drafts,
+                publications,
+                JavaOperatorInventoryProjector.forRegistry(runtimeOperators)
+        );
+        mockMvc = MockMvcBuilders.standaloneSetup(controller).build();
+    }
+
+    private static OperatorLibrary libraryWithOperatorRef(String libraryId, String operatorRef) {
+        OperatorDefinition base = VisualCatalogTestSupport.eligibilityOperator("integer");
+        OperatorDefinition operator = new OperatorDefinition(
+                base.schemaVersion(),
+                operatorRef,
+                base.operatorVersion(),
+                base.display(),
+                base.source(),
+                base.ports(),
+                base.configSchema(),
+                base.capabilities(),
+                base.policy(),
+                base.lowering(),
+                base.diagnostics()
+        );
+        return new OperatorLibrary(
+                "bloge.visualOperatorLibrary.v1",
+                libraryId,
+                "Runtime collision",
+                "1.0.0",
+                "risk-team",
+                "ACTIVE",
+                List.of(operator)
+        );
+    }
+
+    private static final class EchoRuntimeOperator implements Operator<Object, Object> {
+        @Override
+        public Object execute(Object input, OperatorContext ctx) {
+            return input;
+        }
     }
 }
