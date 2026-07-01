@@ -405,6 +405,68 @@ public final class VisualCatalogTestSupport {
         );
     }
 
+    public static OperatorLibrary dynamicUnevaluatedOutputLibrary() {
+        SchemaEnvelope dynamicIntegerPort = new SchemaEnvelope(SchemaEnvelope.JSON_SCHEMA, "2020-12", Map.of(
+                "type", "object",
+                "properties", Map.of(),
+                "unevaluatedProperties", Map.of("type", "integer")
+        ));
+        OperatorDefinition producer = new OperatorDefinition(
+                "bloge.visualOperator.v1",
+                "risk:dynamicFacts",
+                "1.0.0",
+                new OperatorDefinition.Display("Dynamic facts",
+                        "Produces map-style dynamic facts.",
+                        List.of("risk", "facts")),
+                new OperatorDefinition.Source("user-library", "", "", "", true),
+                new OperatorDefinition.Ports(
+                        List.of(),
+                        List.of(new OperatorDefinition.Port("facts", dynamicIntegerPort, true,
+                                "Dynamic fact map."))
+                ),
+                SchemaEnvelope.opaque(),
+                OperatorDefinition.Capabilities.pure(),
+                new OperatorDefinition.Lowering("native", "riskDynamicFacts", Map.of()),
+                List.of()
+        );
+        OperatorDefinition sink = new OperatorDefinition(
+                "bloge.visualOperator.v1",
+                "risk:scoreSink",
+                "1.0.0",
+                new OperatorDefinition.Display("Score sink",
+                        "Consumes a single score from dynamic facts.",
+                        List.of("risk", "facts")),
+                new OperatorDefinition.Source("user-library", "", "", "", true),
+                new OperatorDefinition.Ports(
+                        List.of(new OperatorDefinition.Port("inputs",
+                                SchemaEnvelope.object(Map.of("score", Map.of("type", "integer")), List.of("score")),
+                                true,
+                                "Score input.")),
+                        List.of(new OperatorDefinition.Port("output",
+                                SchemaEnvelope.object(Map.of("acceptedScore", Map.of("type", "integer")), List.of()),
+                                true,
+                                "Accepted score."))
+                ),
+                SchemaEnvelope.opaque(),
+                OperatorDefinition.Capabilities.pure(),
+                new OperatorDefinition.Lowering("transform", "transform", Map.of(
+                        "assignments", Map.of(
+                                "acceptedScore", "{{input.score}}"
+                        )
+                )),
+                List.of()
+        );
+        return new OperatorLibrary(
+                "bloge.visualOperatorLibrary.v1",
+                "risk-dynamic-facts",
+                "Dynamic fact operators",
+                "1.0.0",
+                "risk-team",
+                "ACTIVE",
+                List.of(producer, sink)
+        );
+    }
+
     public static OperatorDefinition customerFactsOperator() {
         Map<String, Object> customerProperties = new LinkedHashMap<>();
         customerProperties.put("id", Map.of("type", "string"));

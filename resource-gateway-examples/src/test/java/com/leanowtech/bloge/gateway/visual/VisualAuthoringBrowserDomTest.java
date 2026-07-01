@@ -814,6 +814,61 @@ class VisualAuthoringBrowserDomTest {
                 .contains("\"targetPath\": \"dynamicScore\"");
     }
 
+    @Test
+    void composerAddsBindsExportsAndRestoresDynamicUnevaluatedOutputPathInRealBrowser()
+            throws JsonProcessingException {
+        driver = newChromeDriverOrSkip();
+        WebDriverWait wait = new WebDriverWait(driver, WAIT_TIMEOUT);
+        driver.get("http://localhost:" + port + "/examples/gateway");
+
+        waitForComposer(wait);
+        wait.until(ExpectedConditions.visibilityOfElementLocated(By.id("operator-palette")));
+
+        importOperatorLibrary(wait, VisualCatalogTestSupport.dynamicUnevaluatedOutputLibrary());
+        dragOperatorToCanvas(wait, "Dynamic facts", "risk:dynamicFacts",
+                "riskDynamicFacts", 140, 120);
+        dragOperatorToCanvas(wait, "Score sink", "risk:scoreSink",
+                "riskScoreSink", 140, 120);
+
+        click(wait, By.cssSelector("#diagram [data-node-id='riskDynamicFacts']"));
+        waitForText(wait, By.id("selected-operator-editor"), "Dynamic facts");
+        addDynamicOutputPath(wait, "riskDynamicFacts", "facts", "dynamicScore");
+
+        click(wait, By.cssSelector("#diagram [data-node-id='riskScoreSink']"));
+        waitForText(wait, By.id("selected-operator-editor"), "Score sink");
+        selectByValue(wait,
+                By.cssSelector("[data-binding-source][data-binding-port='inputs'][data-binding-path='score']"),
+                bindingSourceValue("riskDynamicFacts", "facts", "dynamicScore"));
+        waitForText(wait, By.id("connection-status"),
+                "Connected riskDynamicFacts.facts.dynamicScore -> riskScoreSink.inputs.score");
+
+        waitForValue(wait, By.id("composer-dsl"),
+                "acceptedScore = riskDynamicFacts.output.facts.dynamicScore");
+
+        click(wait, By.id("save-draft"));
+        waitForText(wait, By.id("draft-status"), "Saved");
+        click(wait, By.id("export-draft"));
+        wait.until(ignored -> valueOf(By.id("draft-bundle-json"))
+                .contains("\"schemaVersion\": \"bloge.visualGraphDraftExport.v1\""));
+        String bundle = valueOf(By.id("draft-bundle-json"));
+        assertThat(bundle)
+                .contains("\"nodeId\": \"riskDynamicFacts\"")
+                .contains("\"sourcePort\": \"facts\"")
+                .contains("\"path\": \"dynamicScore\"")
+                .contains("\"targetPath\": \"score\"");
+
+        click(wait, By.id("import-draft"));
+        waitForText(wait, By.id("draft-status"), "Imported");
+        click(wait, By.cssSelector("#diagram [data-node-id='riskDynamicFacts']"));
+        wait.until(ExpectedConditions.visibilityOfElementLocated(By.cssSelector(
+                "#diagram [data-node-id='riskDynamicFacts'] [data-port-role='source'][data-port='facts'][data-path='dynamicScore']"
+        )));
+        click(wait, By.cssSelector("#diagram [data-node-id='riskScoreSink']"));
+        waitForValue(wait,
+                By.cssSelector("[data-binding-expression][data-binding-port='inputs'][data-binding-path='score']"),
+                "riskDynamicFacts.output.facts.dynamicScore");
+    }
+
     private WebDriver newChromeDriverOrSkip() {
         ChromeOptions options = new ChromeOptions();
         options.addArguments(
@@ -923,6 +978,17 @@ class VisualAuthoringBrowserDomTest {
         click(wait, By.cssSelector("[data-add-dynamic-input]"));
         wait.until(ExpectedConditions.visibilityOfElementLocated(By.cssSelector(
                 "[data-binding-source][data-binding-port='" + port + "'][data-binding-path='" + path + "']"
+        )));
+    }
+
+    private void addDynamicOutputPath(WebDriverWait wait, String nodeId, String port, String path) {
+        selectByValue(wait, By.cssSelector("[data-dynamic-output-port]"), port);
+        setControlValue(wait.until(ExpectedConditions.elementToBeClickable(
+                By.cssSelector("[data-dynamic-output-path]"))), path);
+        click(wait, By.cssSelector("[data-add-dynamic-output]"));
+        wait.until(ExpectedConditions.visibilityOfElementLocated(By.cssSelector(
+                "#diagram [data-node-id='" + nodeId + "'] [data-port-role='source'][data-port='"
+                        + port + "'][data-path='" + path + "']"
         )));
     }
 

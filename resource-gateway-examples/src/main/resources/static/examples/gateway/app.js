@@ -684,6 +684,27 @@ function customInputPortForKey(node, spec, key) {
   return node.customInputPorts?.[key] || inputPortForInputPath(spec, customInputPathForKey(node, key));
 }
 
+function outputKeyForPortPath(spec, portName, path) {
+  if (!path) {
+    return portName || spec?.outputPort || 'output';
+  }
+  const matchingPorts = outputPortsForSpec(spec).filter((port) => schemaDeclaresPath(port.schema, path));
+  return matchingPorts.length > 1 ? `${portName || spec?.outputPort || 'output'}.${path}` : path;
+}
+
+function customOutputPathForKey(node, key) {
+  const paths = node.customOutputPaths || {};
+  return Object.prototype.hasOwnProperty.call(paths, key) ? paths[key] : key;
+}
+
+function customOutputPortForKey(node, spec, key) {
+  const portName = node.customOutputPorts?.[key];
+  if (portName) {
+    return portName;
+  }
+  return outputPortsForSpec(spec)[0]?.name || spec?.outputPort || 'output';
+}
+
 function bindingTargetPathForKey(key, binding) {
   if (Object.prototype.hasOwnProperty.call(binding || {}, 'targetPath')) {
     return binding.targetPath || '';
@@ -1293,7 +1314,7 @@ function connectionSourceFromExpression(expression, builder = state.builder) {
   if (contextMatch) {
     return contextSourceForPath(contextMatch[1] || '', builder);
   }
-  const outputMatch = value.match(/^([A-Za-z_][A-Za-z0-9_]*)\.output(?:\..+)?$/);
+  const outputMatch = value.match(/^([A-Za-z_][A-Za-z0-9_]*)\.output(?:\.(.+))?$/);
   if (outputMatch) {
     const sourceNode = builder.nodes.find((node) => node.id === outputMatch[1]);
     if (sourceNode) {
@@ -1303,17 +1324,40 @@ function connectionSourceFromExpression(expression, builder = state.builder) {
       if (handle) {
         return { ...handle, path: handle.path || '' };
       }
+      return sourceFromOutputExpressionParts(sourceNode, outputMatch[2] || '');
+    }
+    return {
+      nodeId: outputMatch[1],
+      port: 'output',
+      path: outputMatch[2] || '',
+      dslPathSafe: isDslPathSafe(outputMatch[2] || '')
+    };
+  }
+  return null;
+}
+
+function sourceFromOutputExpressionParts(sourceNode, outputSuffix) {
+  const spec = specForNode(sourceNode);
+  const outputPorts = outputPortsForSpec(spec);
+  const primaryPort = outputPorts[0]?.name || spec.outputPort || 'output';
+  let port = primaryPort;
+  let path = String(outputSuffix || '');
+  if (path) {
+    const [first, ...rest] = path.split('.');
+    const namedPort = outputPorts.find((candidate) => candidate.name === first);
+    if (namedPort && (outputPorts.length > 1 || first !== 'output' || rest.length)) {
+      port = first;
+      path = rest.join('.');
     }
   }
-  const match = value.match(/^([A-Za-z_][A-Za-z0-9_]*)\.output(?:\.(payload))?(?:\.(.+))?$/);
-  if (!match) {
-    return null;
-  }
+  const schema = schemaAtPath(schemaForPort(spec, 'source', port), path);
   return {
-    nodeId: match[1],
-    port: match[2] ? 'payload' : 'output',
-    path: match[3] || '',
-    dslPathSafe: isDslPathSafe(match[3] || '')
+    nodeId: sourceNode.id,
+    port,
+    path,
+    type: schemaType(schema),
+    schema,
+    dslPathSafe: isDslPathSafe(path)
   };
 }
 
@@ -3625,6 +3669,12 @@ function renderSelectedOperatorEditor() {
     });
   }
 
+  for (const button of target.querySelectorAll('[data-add-dynamic-output]')) {
+    button.addEventListener('click', () => {
+      addDynamicOutputPath(node, button);
+    });
+  }
+
   for (const input of target.querySelectorAll('[data-config-field]:not([data-config-source]):not([data-config-expression])')) {
     const eventName = input.type === 'checkbox' || input.tagName === 'SELECT' ? 'change' : 'input';
     input.addEventListener(eventName, () => {
@@ -3858,6 +3908,7 @@ function operatorEditorBody(node) {
         ${textField('Operator', spec.visualOperatorRef || node.paletteType, '', true)}
       </div>
       ${renderOperatorContractPanel(node)}
+      ${renderDynamicOutputPathControls(node)}
       ${renderConfigPanel(node)}
       ${renderInputBindingsPanel(node)}
     `;
@@ -4340,6 +4391,68 @@ function configStatusForField(node, field) {
     return { level: 'error', message: `Expected ${schemaType(field.schema) || 'schema-compatible'} value.` };
   }
   return { level: 'success', message: 'Config matches configSchema.' };
+}
+
+function renderDynamicOutputPathControls(node) {
+  if (node.type !== 'customOperator') {
+    return '';
+  }
+  const spec = specForNode(node);
+  const ports = outputPortsForSpec(spec).filter((port) => schemaAllowsDynamicInputPath(port.schema));
+  if (!ports.length) {
+    return '';
+  }
+  const options = ports.map((port) =>
+    `<option value="${escapeHtml(port.name)}">${escapeHtml(port.name)}</option>`
+  ).join('');
+  return `
+    <div class="binding-panel">
+      <div class="binding-panel-title">
+        <span>Output Sources</span>
+        <small>schema checked</small>
+      </div>
+      <div class="operator-fields" data-dynamic-output-authoring>
+        <label>
+          <span>Port</span>
+          <select data-dynamic-output-port aria-label="Dynamic output port">${options}</select>
+        </label>
+        <label>
+          <span>Output path</span>
+          <input data-dynamic-output-path aria-label="Dynamic output path">
+        </label>
+        <button class="secondary compact" type="button" data-add-dynamic-output>Add</button>
+      </div>
+    </div>
+  `;
+}
+
+function addDynamicOutputPath(node, button) {
+  const container = button.closest('[data-dynamic-output-authoring]');
+  if (!container) {
+    return;
+  }
+  const portName = container.querySelector('[data-dynamic-output-port]')?.value || '';
+  const path = String(container.querySelector('[data-dynamic-output-path]')?.value || '').trim();
+  if (!path || !isDslPathSafe(path)) {
+    setConnectionMessage('Output path must be a DSL-safe field path.', 'error');
+    return;
+  }
+  const spec = specForNode(node);
+  const portSchema = schemaForPort(spec, 'source', portName);
+  if (!schemaAtPath(portSchema, path)) {
+    setConnectionMessage('Output path is not accepted by the source schema.', 'error');
+    return;
+  }
+  const key = outputKeyForPortPath(spec, portName, path);
+  node.customOutputPorts = node.customOutputPorts || {};
+  node.customOutputPaths = node.customOutputPaths || {};
+  node.customOutputPorts[key] = portName;
+  node.customOutputPaths[key] = path;
+  setConnectionMessage(`Added ${node.id}.${portName}.${path}.`, 'success');
+  syncComposerFromBuilder({ render: false });
+  renderSelectedOperatorEditor();
+  renderGraphOutputEditor();
+  renderDiagram();
 }
 
 function configExpressionStatusForField(node, field, expression) {
@@ -5572,8 +5685,94 @@ function builderFromVisualDraft(draft) {
     routeEdges: routeEdgesFromDraft(draft),
     nodes
   };
+  hydrateDynamicOutputPathsFromDraft(builder, draft);
   ensureBuilderOutput(builder);
   return builder;
+}
+
+function hydrateDynamicOutputPathsFromDraft(builder, draft) {
+  const outputNode = builder.nodes.find((node) => node.id === draft.output?.nodeId);
+  if (outputNode && draft.output?.path) {
+    const reference = outputReferenceFromSelectionPath(specForNode(outputNode), draft.output.path);
+    rememberDynamicOutputPath(builder, outputNode.id, reference.port, reference.path);
+  }
+  for (const node of draft.nodes || []) {
+    collectNodePathBindings(node.inputs, (binding) => {
+      rememberDynamicOutputPath(builder, binding.nodeId, binding.sourcePort || '', binding.path || '');
+    });
+    collectNodePathBindings(node.config, (binding) => {
+      rememberDynamicOutputPath(builder, binding.nodeId, binding.sourcePort || '', binding.path || '');
+    });
+  }
+  for (const edge of draft.edges || []) {
+    if (canonicalEdgeKind(edge.kind) !== 'data') {
+      continue;
+    }
+    rememberDynamicOutputPath(
+      builder,
+      edge.source?.nodeId || edge.source || '',
+      edge.source?.port || edge.sourcePort || '',
+      edge.source?.path || edge.sourcePath || ''
+    );
+  }
+}
+
+function collectNodePathBindings(value, consumer) {
+  if (!value || typeof value !== 'object') {
+    return;
+  }
+  if (Array.isArray(value)) {
+    value.forEach((item) => collectNodePathBindings(item, consumer));
+    return;
+  }
+  if (value.kind === 'nodePath' && value.nodeId) {
+    consumer(value);
+  }
+  for (const item of Object.values(value.fields || {})) {
+    collectNodePathBindings(item, consumer);
+  }
+  for (const [key, item] of Object.entries(value)) {
+    if (key === 'fields') {
+      continue;
+    }
+    collectNodePathBindings(item, consumer);
+  }
+}
+
+function outputReferenceFromSelectionPath(spec, selectionPath) {
+  const outputPorts = outputPortsForSpec(spec);
+  const primaryPort = outputPorts[0]?.name || spec.outputPort || 'output';
+  const value = String(selectionPath || '');
+  if (!value) {
+    return { port: primaryPort, path: '' };
+  }
+  const [first, ...rest] = value.split('.');
+  const namedPort = outputPorts.find((port) => port.name === first);
+  if (namedPort && (outputPorts.length > 1 || first !== 'output')) {
+    return { port: first, path: rest.join('.') };
+  }
+  return { port: primaryPort, path: value };
+}
+
+function rememberDynamicOutputPath(builder, nodeId, portName, path) {
+  const node = builder.nodes.find((item) => item.id === nodeId);
+  if (!node || node.type !== 'customOperator' || !path || !isDslPathSafe(path)) {
+    return;
+  }
+  const spec = specForNode(node);
+  const resolvedPort = portName || outputPortsForSpec(spec)[0]?.name || spec.outputPort || 'output';
+  const portSchema = schemaForPort(spec, 'source', resolvedPort);
+  if (!schemaAtPath(portSchema, path)) {
+    return;
+  }
+  if (dslSafeSchemaFieldDescriptors(portSchema).some((field) => field.path === path)) {
+    return;
+  }
+  const key = outputKeyForPortPath(spec, resolvedPort, path);
+  node.customOutputPorts = node.customOutputPorts || {};
+  node.customOutputPaths = node.customOutputPaths || {};
+  node.customOutputPorts[key] = resolvedPort;
+  node.customOutputPaths[key] = path;
 }
 
 function visualDraftEdgeFromBuilderEdge(edge) {
@@ -6173,7 +6372,17 @@ function sourceHandlesForNode(node) {
       type: schemaType(port.schema?.schema),
       schema: port.schema?.schema || {}
     };
-    const fields = dslSafeSchemaFieldDescriptors(port.schema);
+    const seenPaths = new Set();
+    const fields = [
+      ...dslSafeSchemaFieldDescriptors(port.schema),
+      ...dynamicOutputFieldDescriptors(node, spec, portName, port.schema)
+    ].filter((field) => {
+      if (seenPaths.has(field.path)) {
+        return false;
+      }
+      seenPaths.add(field.path);
+      return true;
+    });
     return [
       { ...root, dslPathSafe: true },
       ...fields.map((field) => ({
@@ -6186,6 +6395,23 @@ function sourceHandlesForNode(node) {
       }))
     ];
   });
+}
+
+function dynamicOutputFieldDescriptors(node, spec, portName, portSchema) {
+  if (node.type !== 'customOperator') {
+    return [];
+  }
+  return Object.keys(node.customOutputPaths || {})
+    .filter((key) => customOutputPortForKey(node, spec, key) === portName)
+    .map((key) => {
+      const path = customOutputPathForKey(node, key);
+      return {
+        path,
+        schema: schemaAtPath(portSchema, path) || {},
+        dslPathSafe: isDslPathSafe(path)
+      };
+    })
+    .filter((field) => field.path && field.dslPathSafe && schemaAtPath(portSchema, field.path));
 }
 
 function outputPathOptionsForNode(node) {
