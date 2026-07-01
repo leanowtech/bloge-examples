@@ -287,11 +287,8 @@ public class JavaOperatorInventoryProjector {
         if (schema instanceof ValidatedSchema validatedSchema) {
             return projectSchema(validatedSchema.expected(), target, diagnostics);
         }
-        if (schema instanceof UnionSchema) {
-            diagnostics.add(VisualDiagnostic.warning("visual.operator.javaSchema.unionOpaque",
-                    "Java operator schema union cannot be represented by the supported visual schema subset; using opaque schema.",
-                    target));
-            return SchemaEnvelope.opaque().schema();
+        if (schema instanceof UnionSchema unionSchema) {
+            return unionSchema(unionSchema, diagnostics, target);
         }
         diagnostics.add(VisualDiagnostic.warning("visual.operator.javaSchema.unsupported",
                 "Java operator schema '%s' cannot be represented by the supported visual schema subset; using opaque schema."
@@ -324,6 +321,16 @@ public class JavaOperatorInventoryProjector {
             }
         }
         return SchemaEnvelope.object(properties, required).schema();
+    }
+
+    private static Map<String, Object> unionSchema(UnionSchema schema,
+                                                   List<VisualDiagnostic> diagnostics,
+                                                   String target) {
+        List<Map<String, Object>> branches = new ArrayList<>();
+        for (int i = 0; i < schema.members().size(); i++) {
+            branches.add(projectSchema(schema.members().get(i), target + "/oneOf/" + i, diagnostics));
+        }
+        return Map.of("oneOf", branches);
     }
 
     private static Map<String, Object> mapSchema(MapSchema schema,

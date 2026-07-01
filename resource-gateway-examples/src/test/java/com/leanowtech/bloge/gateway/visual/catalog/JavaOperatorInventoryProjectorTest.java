@@ -14,6 +14,7 @@ import com.leanowtech.bloge.core.schema.TypedSchema;
 import com.leanowtech.bloge.core.schema.UnionSchema;
 import com.leanowtech.bloge.core.spi.DefaultOperatorRegistry;
 import com.leanowtech.bloge.gateway.visual.diagnostic.VisualDiagnostic;
+import com.leanowtech.bloge.gateway.visual.validation.VisualSchemaCompatibility;
 import com.leanowtech.bloge.gateway.visual.validation.VisualSchemaValidator;
 
 import org.junit.jupiter.api.Test;
@@ -61,21 +62,27 @@ class JavaOperatorInventoryProjectorTest {
     }
 
     @Test
-    void downgradesUnsupportedUnionSchemaWithWarning() {
+    void projectsUnionSchemaAsVisualOneOfSchema() {
         DefaultOperatorRegistry registry = new DefaultOperatorRegistry();
         registry.register("unionOutput", new UnionOutputOperator());
 
         OperatorDefinition operator = new JavaOperatorInventoryProjector(registry).project().getFirst();
 
-        assertThat(operator.ports().outputs().getFirst().schema().schema())
-                .containsEntry("additionalProperties", true);
-        assertThat(operator.diagnostics())
-                .anySatisfy(diagnostic -> assertThat(diagnostic.code())
-                        .isEqualTo("visual.operator.javaSchema.unionOpaque"));
+        Map<String, Object> schema = operator.ports().outputs().getFirst().schema().schema();
+        assertThat(schema.get("oneOf"))
+                .isEqualTo(List.of(
+                        Map.of("type", "string"),
+                        Map.of("type", "integer")
+                ));
+        assertThat(operator.diagnostics()).isEmpty();
         assertThat(VisualSchemaValidator.validateEnvelope(
                 operator.ports().outputs().getFirst().schema(), "/output"))
                 .filteredOn(VisualDiagnostic::error)
                 .isEmpty();
+        assertThat(VisualSchemaCompatibility.schemaCompatibilityIssue(schema, Map.of("type", "integer")))
+                .hasValueSatisfying(reason -> assertThat(reason)
+                        .contains("source oneOf branch 0")
+                        .contains("source type string cannot feed target type integer"));
     }
 
     @Test

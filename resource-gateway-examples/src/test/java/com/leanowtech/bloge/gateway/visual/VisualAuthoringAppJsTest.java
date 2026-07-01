@@ -113,7 +113,10 @@ class VisualAuthoringAppJsTest {
                 .contains("function openLibraryImpactDraft(draftId)")
                 .contains("function openLibraryImpactDraftTarget(draftId, nodeIndex = -1)")
                 .contains("Impact Review")
-                .contains("payload?.impact");
+                .contains("payload?.impact")
+                .contains("Review warnings, then click Import again to continue.")
+                .contains("libraryMutationQuery(hasWarningDiagnostic(validation.diagnostics))")
+                .contains("params.set('ackWarnings', 'true');");
     }
 
     @Test

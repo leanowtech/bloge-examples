@@ -200,6 +200,7 @@ public class OperatorLibraryAdminController {
         List<VisualDiagnostic> diagnostics = new ArrayList<>(structural.diagnostics());
         diagnostics.addAll(operatorRefOwnershipDiagnostics(library));
         diagnostics.addAll(runtimeOperatorRefDiagnostics(library));
+        diagnostics.addAll(unresolvedNativeLoweringDiagnostics(library));
         diagnostics.addAll(replacementFingerprintDriftDiagnostics(library));
         diagnostics.addAll(replacementPublicationRemovalDiagnostics(library));
         if (!force) {
@@ -258,6 +259,35 @@ public class OperatorLibraryAdminController {
                                 .formatted(operator.operatorRef()),
                         "/operators/%d/operatorRef".formatted(i)));
             }
+        }
+        return diagnostics;
+    }
+
+    private List<VisualDiagnostic> unresolvedNativeLoweringDiagnostics(OperatorLibrary library) {
+        if (library == null || library.operators().isEmpty()) {
+            return List.of();
+        }
+        Set<String> runtimeOperatorRefs = javaOperatorProjector.project().stream()
+                .map(OperatorDefinition::operatorRef)
+                .collect(java.util.stream.Collectors.toCollection(LinkedHashSet::new));
+        if (runtimeOperatorRefs.isEmpty()) {
+            return List.of();
+        }
+        List<VisualDiagnostic> diagnostics = new ArrayList<>();
+        for (int i = 0; i < library.operators().size(); i++) {
+            OperatorDefinition operator = library.operators().get(i);
+            if (operator == null || operator.lowering() == null
+                    || !"native".equals(operator.lowering().mode())) {
+                continue;
+            }
+            String executableOperatorRef = operator.lowering().operatorRef();
+            if (executableOperatorRef.isBlank() || runtimeOperatorRefs.contains(executableOperatorRef)) {
+                continue;
+            }
+            diagnostics.add(VisualDiagnostic.warning("visual.operator.lowering.operatorRefUnresolved",
+                    "Native operator '%s' lowers to executable operatorRef '%s', but that executable is not visible in the runtime Java operator inventory; acknowledge this warning only when an external executor will provide it."
+                            .formatted(operator.operatorRef(), executableOperatorRef),
+                    "/operators/%d/lowering/operatorRef".formatted(i)));
         }
         return diagnostics;
     }

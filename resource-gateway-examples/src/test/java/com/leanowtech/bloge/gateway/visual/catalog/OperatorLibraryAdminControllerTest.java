@@ -741,6 +741,81 @@ class OperatorLibraryAdminControllerTest {
     }
 
     @Test
+    void validateWarnsWhenNativeLoweringExecutableIsNotVisibleInRuntimeInventory() throws Exception {
+        useRuntimeJavaOperator("runtimeScorePolicy");
+        OperatorLibrary library = libraryWithNativeLowering("native-missing", "risk:visualScorePolicy",
+                "missingScorePolicy");
+
+        mockMvc.perform(post("/admin/visual-operator-libraries/validate")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(library)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.valid").value(true))
+                .andExpect(jsonPath("$.diagnostics[0].level").value("WARNING"))
+                .andExpect(jsonPath("$.diagnostics[0].code")
+                        .value("visual.operator.lowering.operatorRefUnresolved"))
+                .andExpect(jsonPath("$.diagnostics[0].message")
+                        .value("Native operator 'risk:visualScorePolicy' lowers to executable operatorRef 'missingScorePolicy', but that executable is not visible in the runtime Java operator inventory; acknowledge this warning only when an external executor will provide it."))
+                .andExpect(jsonPath("$.diagnostics[0].target").value("/operators/0/lowering/operatorRef"))
+                .andExpect(jsonPath("$.impact.warningCount").value(1))
+                .andExpect(jsonPath("$.impact.operatorRefs[0]").value("risk:visualScorePolicy"))
+                .andExpect(jsonPath("$.impact.codeCounts[0].code")
+                        .value("visual.operator.lowering.operatorRefUnresolved"))
+                .andExpect(jsonPath("$.impact.codeCounts[0].level").value("WARNING"));
+
+        assertThat(registry.find("native-missing")).isEmpty();
+    }
+
+    @Test
+    void createRequiresWarningAcknowledgementForUnresolvedNativeLoweringExecutable() throws Exception {
+        useRuntimeJavaOperator("runtimeScorePolicy");
+        OperatorLibrary library = libraryWithNativeLowering("native-missing", "risk:visualScorePolicy",
+                "missingScorePolicy");
+
+        mockMvc.perform(post("/admin/visual-operator-libraries")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(library)))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.valid").value(true))
+                .andExpect(jsonPath("$.diagnostics[0].code")
+                        .value("visual.operator.lowering.operatorRefUnresolved"))
+                .andExpect(jsonPath("$.impact.operatorRefs[0]").value("risk:visualScorePolicy"));
+
+        assertThat(registry.find("native-missing")).isEmpty();
+    }
+
+    @Test
+    void createStoresNativeLoweringExecutableWhenWarningsAcknowledged() throws Exception {
+        useRuntimeJavaOperator("runtimeScorePolicy");
+        OperatorLibrary library = libraryWithNativeLowering("native-missing", "risk:visualScorePolicy",
+                "missingScorePolicy");
+
+        mockMvc.perform(post("/admin/visual-operator-libraries")
+                        .param("ackWarnings", "true")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(library)))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.libraryId").value("native-missing"));
+
+        assertThat(registry.find("native-missing")).contains(library);
+    }
+
+    @Test
+    void createStoresNativeLoweringExecutableWhenRuntimeInventoryOwnsExecutableRef() throws Exception {
+        useRuntimeJavaOperator("runtimeScorePolicy");
+        OperatorLibrary library = libraryWithNativeLowering("native-runtime", "risk:visualScorePolicy",
+                "runtimeScorePolicy");
+
+        mockMvc.perform(post("/admin/visual-operator-libraries")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(library)))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.libraryId").value("native-runtime"));
+
+        assertThat(registry.find("native-runtime")).contains(library);
+    }
+
+    @Test
     void validateReportsOperatorRefAlreadyOwnedByAnotherLibrary() throws Exception {
         OperatorLibrary original = VisualCatalogTestSupport.eligibilityLibrary("integer");
         OperatorLibrary duplicate = new OperatorLibrary(
@@ -1392,6 +1467,34 @@ class OperatorLibraryAdminControllerTest {
                 "bloge.visualOperatorLibrary.v1",
                 libraryId,
                 "Runtime collision",
+                "1.0.0",
+                "risk-team",
+                "ACTIVE",
+                List.of(operator)
+        );
+    }
+
+    private static OperatorLibrary libraryWithNativeLowering(String libraryId,
+                                                             String operatorRef,
+                                                             String executableOperatorRef) {
+        OperatorDefinition base = VisualCatalogTestSupport.eligibilityOperator("integer");
+        OperatorDefinition operator = new OperatorDefinition(
+                base.schemaVersion(),
+                operatorRef,
+                base.operatorVersion(),
+                base.display(),
+                base.source(),
+                base.ports(),
+                base.configSchema(),
+                base.capabilities(),
+                base.policy(),
+                new OperatorDefinition.Lowering("native", executableOperatorRef, Map.of()),
+                base.diagnostics()
+        );
+        return new OperatorLibrary(
+                "bloge.visualOperatorLibrary.v1",
+                libraryId,
+                "Native lowering",
                 "1.0.0",
                 "risk-team",
                 "ACTIVE",
