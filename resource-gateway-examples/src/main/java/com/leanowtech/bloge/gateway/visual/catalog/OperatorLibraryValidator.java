@@ -226,6 +226,7 @@ public class OperatorLibraryValidator {
         }
         validatePorts(operator, "inputs", operator.ports().inputs(), path + "/ports/inputs", diagnostics);
         validatePorts(operator, "outputs", operator.ports().outputs(), path + "/ports/outputs", diagnostics);
+        validateOutputDslFieldNames(operator, path, diagnostics);
         diagnostics.addAll(VisualSchemaValidator.validateEnvelope(
                 operator.configSchema(), path + "/configSchema"));
         validateServerManagedDiagnostics(operator, path + "/diagnostics", diagnostics);
@@ -336,6 +337,29 @@ public class OperatorLibraryValidator {
             }
             diagnostics.addAll(VisualSchemaValidator.validateEnvelope(
                     port.schema(), path + "/" + i + "/schema"));
+        }
+    }
+
+    private static void validateOutputDslFieldNames(OperatorDefinition operator,
+                                                    String operatorPath,
+                                                    List<VisualDiagnostic> diagnostics) {
+        for (int i = 0; i < operator.ports().outputs().size(); i++) {
+            OperatorDefinition.Port port = operator.ports().outputs().get(i);
+            if (port == null) {
+                continue;
+            }
+            String portPath = operatorPath + "/ports/outputs/" + i;
+            if (!"output".equals(port.name()) && !isDslFieldName(port.name())) {
+                diagnostics.add(VisualDiagnostic.error("visual.operator.lowering.dslField.invalid",
+                        "Operator '%s' output port '%s' cannot be rendered as a BLOGE DSL output path segment."
+                                .formatted(operator.operatorRef(), port.name()),
+                        portPath + "/name"));
+            }
+            validateDslSchemaPropertyNames(operator,
+                    port.schema().schema(),
+                    portPath + "/schema/schema",
+                    Set.of(),
+                    diagnostics);
         }
     }
 

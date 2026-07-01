@@ -661,7 +661,8 @@ resource-gateway 示例当前以 `/admin/visual-operator-libraries` 暴露用户
 重复 `operatorRef`、跨已导入库冲突的 `operatorRef`、重复端口、
 覆盖内置算子的 `operatorRef`、占用 `resource:` 命名空间的用户算子、
 不支持 lowering mode、非法 schema kind、缺失 `items` 的 array、native
-lowering 缺可执行 BLOGE operatorRef、transform lowering 缺 assignments、
+lowering 缺可执行 BLOGE operatorRef、非默认 output port 或 schema path
+字段无法渲染为 BLOGE DSL path segment、transform lowering 缺 assignments、
 assignment target 不在 output schema 中、template 引用不存在 input path、
 以及 `required` 引用不存在字段等硬错误。`OperatorDefinition.policy`
 当前已支持 `tenants`、`namespaces`、`environments`，`/api/visual/operators`

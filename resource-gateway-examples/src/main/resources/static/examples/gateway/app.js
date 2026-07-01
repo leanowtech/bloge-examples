@@ -2225,13 +2225,13 @@ function operatorLibraryOperatorProfile(operator) {
   const outputPorts = Array.isArray(operator?.ports?.outputs) ? operator.ports.outputs.filter(Boolean) : [];
   const inputStats = inputPorts.map(operatorLibraryPortProfile)
     .reduce(addOperatorLibraryPortProfile, emptyOperatorLibraryPortProfile());
-  const outputStats = outputPorts.map(operatorLibraryPortProfile)
+  const outputStats = outputPorts.map((port) => operatorLibraryPortProfile(port, { output: true }))
     .reduce(addOperatorLibraryPortProfile, emptyOperatorLibraryPortProfile());
   const configFields = configFieldDescriptors(operator?.configSchema);
   const configUnsafe = configFields.filter((field) => !field.dslPathSafe).length;
   const effect = String(operator?.capabilities?.effect || 'PURE').trim().toUpperCase();
   const inputFields = operatorLibraryPortFields(inputPorts);
-  const outputFields = operatorLibraryPortFields(outputPorts);
+  const outputFields = operatorLibraryPortFields(outputPorts, { output: true });
   const configFieldProfiles = operatorLibraryConfigFields(configFields);
   return {
     label: operator?.display?.name || operator?.operatorRef || 'operator',
@@ -2271,27 +2271,30 @@ function addOperatorLibraryPortProfile(left, right) {
   };
 }
 
-function operatorLibraryPortProfile(port) {
+function operatorLibraryPortProfile(port, options = {}) {
   const fields = schemaFieldDescriptors(port?.schema);
   const requiredFields = fields.filter((field) => field.required);
   const requiredCount = requiredFields.length || (port?.required ? 1 : 0);
+  const portDslUnsafe = options.output === true && !operatorLibraryOutputPortDslPathSafe(port);
   return {
     fieldCount: fields.length || (port?.schema ? 1 : 0),
     requiredCount,
-    dslUnsafeCount: fields.filter((field) => !field.dslPathSafe).length,
+    dslUnsafeCount: fields.filter((field) => !field.dslPathSafe).length + (portDslUnsafe ? 1 : 0),
     dynamicSchemaCount: schemaDynamicSurfaceCount(port?.schema?.schema)
   };
 }
 
-function operatorLibraryPortFields(ports) {
+function operatorLibraryPortFields(ports, options = {}) {
   return ports.flatMap((port) => {
     const fields = schemaFieldDescriptors(port?.schema);
     const leaves = fields.filter((field) => !hasSchemaProperties(field.schema));
     const preferred = leaves.length ? leaves : fields;
+    const portDslPathSafe = options.output !== true || operatorLibraryOutputPortDslPathSafe(port);
     if (!preferred.length && port?.schema) {
-      return [operatorLibraryFieldProfile(port?.name || '', { path: '', required: Boolean(port?.required) })];
+      return [operatorLibraryFieldProfile(port?.name || '',
+        { path: '', required: Boolean(port?.required) }, portDslPathSafe)];
     }
-    return preferred.map((field) => operatorLibraryFieldProfile(port?.name || '', field));
+    return preferred.map((field) => operatorLibraryFieldProfile(port?.name || '', field, portDslPathSafe));
   });
 }
 
@@ -2299,12 +2302,17 @@ function operatorLibraryConfigFields(fields) {
   return fields.map((field) => operatorLibraryFieldProfile('', field));
 }
 
-function operatorLibraryFieldProfile(port, field) {
+function operatorLibraryOutputPortDslPathSafe(port) {
+  const name = String(port?.name || '');
+  return name === 'output' || isDslFieldName(name);
+}
+
+function operatorLibraryFieldProfile(port, field, portDslPathSafe = true) {
   return {
     port: String(port || ''),
     path: String(field?.path || ''),
     required: Boolean(field?.required),
-    dslPathSafe: field?.dslPathSafe !== false
+    dslPathSafe: field?.dslPathSafe !== false && portDslPathSafe !== false
   };
 }
 

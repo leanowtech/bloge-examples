@@ -973,6 +973,7 @@ MVP 至少阻断：
 - 同方向重复 port name。
 - 不支持的 lowering mode。
 - native lowering 缺可执行 BLOGE `operatorRef`，或 `operatorRef` 不是命名空间安全的 executable token。
+- 非默认 output port name 或 input/output/config schema path 字段无法渲染为 BLOGE DSL path segment。
 - transform lowering 缺 `parameters.assignments`。
 - transform assignment target 不在 output schema 中，或漏掉 required output。
 - transform template 引用不存在的 input path。

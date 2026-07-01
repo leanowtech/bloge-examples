@@ -26,7 +26,7 @@ Operator Library / Resource Design Contract
 
 | 能力域 | 当前状态 | 代码证据 |
 | --- | --- | --- |
-| 用户算子库导入 | 已落地。支持 `bloge.visualOperatorLibrary.v1`、生命周期、policy、schema/lowering 校验、H2 持久化、跨库 `operatorRef` 归属保护，以及面向 stored draft 和 immutable publication 的 replacement/delete impact preflight。 | `visual/catalog/OperatorLibrary.java`、`OperatorLibraryValidator.java`、`OperatorLibraryAdminController.java`、`DatabaseOperatorLibraryRegistry.java` |
+| 用户算子库导入 | 已落地。支持 `bloge.visualOperatorLibrary.v1`、生命周期、policy、schema/lowering/DSL 可寻址性校验、H2 持久化、跨库 `operatorRef` 归属保护，以及面向 stored draft 和 immutable publication 的 replacement/delete impact preflight。 | `visual/catalog/OperatorLibrary.java`、`OperatorLibraryValidator.java`、`OperatorLibraryAdminController.java`、`DatabaseOperatorLibraryRegistry.java` |
 | 视觉算子定义 | 已落地。`OperatorDefinition` 统一表达 operatorRef、fingerprint、display、source、ports、configSchema、capabilities、policy、lowering 和 diagnostics。 | `visual/catalog/OperatorDefinition.java` |
 | Resource 虚拟算子 | 已落地。`ResourceDescriptor + ResourceDesignContract` 投影为 `resource:<resourceId>`，运行时 lowering 到 `httpResource`。 | `visual/catalog/ResourceVirtualOperatorProjector.java`、`DefaultVisualOperatorCatalog.java` |
 | Java OperatorRegistry 投影 | 已落地基础版。Spring `OperatorRegistry` 中的 Java `Operator` / `StreamingOperator` / `SuspendableOperator` 可投影为 visual operator，复用 BLOGE schema metadata、注解描述、capabilities 和 native lowering；catalog 会区分普通、streaming、suspendable Java source kind，运行时把 DSL map 输入适配到 Java DTO/record，并支持 record 输出路径选择。 | `visual/catalog/JavaOperatorInventoryProjector.java`、`config/GatewayConfiguration.java`、`example/InputCoercingOperatorRegistry.java`、`example/DynamicGatewayComposerService.java` |

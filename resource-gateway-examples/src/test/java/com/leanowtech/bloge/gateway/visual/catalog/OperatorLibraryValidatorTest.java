@@ -3314,6 +3314,58 @@ class OperatorLibraryValidatorTest {
     }
 
     @Test
+    void rejectsImportedOperatorWhenOutputPortNameUsesReservedDslFieldName() {
+        OperatorDefinition operator = operator(
+                "risk:reservedOutputPort",
+                new OperatorDefinition.Ports(
+                        List.of(),
+                        List.of(new OperatorDefinition.Port("graph",
+                                SchemaEnvelope.object(Map.of("accepted", Map.of("type", "boolean")), List.of()),
+                                true,
+                                "Output."))
+                ),
+                "native"
+        );
+
+        VisualValidationResult result = validator.validate(libraryWith(operator));
+
+        assertThat(result.valid()).isFalse();
+        assertThat(result.diagnostics())
+                .anySatisfy(diagnostic -> {
+                    assertThat(diagnostic.code()).isEqualTo("visual.operator.lowering.dslField.invalid");
+                    assertThat(diagnostic.target()).isEqualTo("/operators/0/ports/outputs/0/name");
+                });
+    }
+
+    @Test
+    void rejectsImportedOperatorWhenOutputSchemaUsesUnsafeDslFieldName() {
+        OperatorDefinition operator = operator(
+                "risk:unsafeOutputField",
+                new OperatorDefinition.Ports(
+                        List.of(),
+                        List.of(new OperatorDefinition.Port("output",
+                                SchemaEnvelope.object(Map.of(
+                                        "accepted", Map.of("type", "boolean"),
+                                        "bad-field", Map.of("type", "string")
+                                ), List.of()),
+                                true,
+                                "Output."))
+                ),
+                "native"
+        );
+
+        VisualValidationResult result = validator.validate(libraryWith(operator));
+
+        assertThat(result.valid()).isFalse();
+        assertThat(result.diagnostics())
+                .anySatisfy(diagnostic -> {
+                    assertThat(diagnostic.code()).isEqualTo("visual.operator.lowering.dslField.invalid");
+                    assertThat(diagnostic.target())
+                            .isEqualTo("/operators/0/ports/outputs/0/schema/schema/properties/bad-field");
+                });
+    }
+
+    @Test
     void rejectsTransformLoweringWithoutAssignments() {
         OperatorDefinition operator = transformOperator(
                 "risk:missingAssignments",

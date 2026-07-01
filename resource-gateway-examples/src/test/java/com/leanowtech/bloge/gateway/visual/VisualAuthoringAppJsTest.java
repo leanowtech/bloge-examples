@@ -217,6 +217,7 @@ class VisualAuthoringAppJsTest {
                   'operatorLibraryPortProfile',
                   'operatorLibraryPortFields',
                   'operatorLibraryConfigFields',
+                  'operatorLibraryOutputPortDslPathSafe',
                   'operatorLibraryFieldProfile',
                   'operatorLibrarySchemaSummary',
                   'operatorLibraryFieldLabel',
@@ -722,7 +723,7 @@ class VisualAuthoringAppJsTest {
                           }
                         }],
                         outputs: [{
-                          name: 'payload',
+                          name: 'graph',
                           schema: {
                             schema: {
                               type: 'object',
@@ -1155,7 +1156,7 @@ class VisualAuthoringAppJsTest {
                   ['library profile required count', libraryProfile.requiredInputCount, 1],
                   ['library profile config fields', libraryProfile.configFieldCount, 1],
                   ['library profile output fields', libraryProfile.outputFieldCount, 2],
-                  ['library profile unsafe fields', libraryProfile.dslUnsafeFieldCount, 1],
+                  ['library profile unsafe fields', libraryProfile.dslUnsafeFieldCount, 2],
                   ['library profile dynamic schemas', libraryProfile.dynamicSchemaCount, 2],
                   ['library profile external operators', libraryProfile.externalOperatorCount, 1],
                   ['library profile secret operators', libraryProfile.secretOperatorCount, 1],
@@ -1166,7 +1167,7 @@ class VisualAuthoringAppJsTest {
                   ['library profile html escapes score', String(libraryProfileHtml.includes('Risk &lt;Score&gt;')), 'true'],
                   ['library profile html includes required input field', String(libraryProfileHtml.includes('inputs.customer.id*')), 'true'],
                   ['library profile html includes unsafe input field', String(libraryProfileHtml.includes('inputs.customer.bad-field !')), 'true'],
-                  ['library profile html includes output field', String(libraryProfileHtml.includes('payload.score*')), 'true'],
+                  ['library profile html includes output field', String(libraryProfileHtml.includes('graph.score* !')), 'true'],
                   ['library profile html includes config field', String(libraryProfileHtml.includes('config threshold')), 'true'],
                   ['library profile html includes dynamic flag', String(libraryProfileHtml.includes('2 dynamic schema surfaces')), 'true'],
                   ['library profile invalid json', String(Boolean(invalidLibraryProfile.parseError)), 'true'],
