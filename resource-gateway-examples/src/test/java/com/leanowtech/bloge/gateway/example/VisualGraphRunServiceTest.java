@@ -221,6 +221,56 @@ class VisualGraphRunServiceTest {
     }
 
     @Test
+    void runsContextArrayIndexBindingThroughGeneratedDsl() {
+        SchemaEnvelope inputSchema = SchemaEnvelope.object(Map.of(
+                "scores", Map.of(
+                        "type", "array",
+                        "items", Map.of("type", "integer"))
+        ), List.of("scores"));
+        VisualOperatorCatalog catalog = VisualCatalogTestSupport.catalogWithLibrary(
+                VisualCatalogTestSupport.eligibilityLibrary("integer"));
+        VisualGraphRunService service = new VisualGraphRunService(
+                new GraphDraftValidator(catalog),
+                new GraphDraftDslGenerator(catalog),
+                new DynamicGatewayComposerService(MockOperator.returning(null))
+        );
+        GraphDraft draft = withFingerprints(new GraphDraft(
+                "",
+                "",
+                0,
+                "arrayIndexBindingPolicy",
+                "",
+                "",
+                "",
+                "",
+                inputSchema,
+                List.of(new GraphDraft.DraftNode(
+                        "eligibility",
+                        "risk:eligibility",
+                        "",
+                        Map.of(
+                                "score", GraphDraft.Binding.contextPath("scores.0"),
+                                "amount", GraphDraft.Binding.constant(250_000)
+                        ),
+                        Map.of(),
+                        null
+                )),
+                List.of(),
+                Map.of(),
+                new GraphDraft.OutputSelection("eligibility", "")
+        ), catalog);
+
+        VisualGraphRunResponse response = service.run(draft, Map.of("scores", List.of(720, 610)), "");
+
+        assertThat(response.validated()).isTrue();
+        assertThat(response.compiled()).isTrue();
+        assertThat(response.errors()).isEmpty();
+        assertThat(response.success()).isTrue();
+        assertThat(response.generatedDsl()).contains("eligible = ctx.scores[0] >= 700");
+        assertThat(response.output()).isEqualTo(Map.of("eligible", true, "ruleId", "ELIGIBILITY_V1"));
+    }
+
+    @Test
     void rejectsDraftRunWhenContextViolatesInputSchema() {
         VisualOperatorCatalog catalog = VisualCatalogTestSupport.catalogWithLibrary(
                 VisualCatalogTestSupport.eligibilityLibrary("integer"));

@@ -721,7 +721,16 @@ public class GraphDraftDslGenerator {
             return base;
         }
         String normalized = path.startsWith(".") ? path.substring(1) : path;
-        return base + "." + normalized;
+        StringBuilder expression = new StringBuilder(base);
+        for (String segment : normalized.split("\\.")) {
+            Integer index = arrayIndexSegment(segment);
+            if (index != null) {
+                expression.append("[").append(index).append("]");
+            } else {
+                expression.append(".").append(segment);
+            }
+        }
+        return expression.toString();
     }
 
     private static String pathExpression(String base,
@@ -740,13 +749,22 @@ public class GraphDraftDslGenerator {
         }
         String normalized = path.startsWith(".") ? path.substring(1) : path;
         for (String segment : normalized.split("\\.")) {
-            if (segment.isBlank() || isDslFieldName(segment)) {
+            if (segment.isBlank() || isDslFieldName(segment) || arrayIndexSegment(segment) != null) {
                 continue;
             }
             diagnostics.add(VisualDiagnostic.error("visual.codegen.pathSegment.invalid",
                     "Binding path segment '%s' in '%s' cannot be rendered as a BLOGE DSL path segment."
                             .formatted(segment, path),
                     diagnosticPath));
+        }
+    }
+
+    private static Integer arrayIndexSegment(String segment) {
+        try {
+            int index = Integer.parseInt(segment);
+            return index < 0 ? null : index;
+        } catch (NumberFormatException ex) {
+            return null;
         }
     }
 

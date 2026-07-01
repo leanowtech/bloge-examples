@@ -202,6 +202,57 @@ class GraphDraftDslGeneratorTest {
     }
 
     @Test
+    void lowersArrayIndexBindingPathsToBracketDsl() {
+        GraphDraftDslGenerator generator = new GraphDraftDslGenerator(
+                VisualCatalogTestSupport.catalogWithLibrary(
+                        VisualCatalogTestSupport.eligibilityLibrary("integer")));
+        GraphDraft draft = new GraphDraft(
+                "",
+                "",
+                0,
+                "arrayIndexBindings",
+                "",
+                "",
+                "",
+                "",
+                null,
+                List.of(
+                        new GraphDraft.DraftNode(
+                                "response",
+                                "bloge:transform",
+                                "",
+                                Map.of("scores", GraphDraft.Binding.contextPath("scores")),
+                                Map.of(),
+                                null
+                        ),
+                        new GraphDraft.DraftNode(
+                                "eligibility",
+                                "risk:eligibility",
+                                "",
+                                Map.of(
+                                        "score", GraphDraft.Binding.nodePath("response", "output", "scores.0"),
+                                        "amount", GraphDraft.Binding.contextPath("amounts.1.value")
+                                ),
+                                Map.of(),
+                                null
+                        )
+                ),
+                List.of(),
+                Map.of(),
+                new GraphDraft.OutputSelection("eligibility", "")
+        );
+
+        DslGenerationResult result = generator.generate(draft);
+
+        assertThat(result.generated()).isTrue();
+        assertThat(result.dsl()).contains(
+                "eligible = response.output.scores[0] >= 700 && ctx.amounts[1].value <= 300000");
+        assertThat(result.diagnostics())
+                .filteredOn(diagnostic -> diagnostic.code().startsWith("visual.codegen."))
+                .isEmpty();
+    }
+
+    @Test
     void lowersUserProvidedTransformOperator() {
         GraphDraftDslGenerator generator = new GraphDraftDslGenerator(
                 VisualCatalogTestSupport.catalogWithLibrary(
