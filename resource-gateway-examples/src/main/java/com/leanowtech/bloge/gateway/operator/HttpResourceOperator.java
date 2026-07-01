@@ -28,6 +28,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.StringJoiner;
+import java.util.UUID;
 
 /**
  * Generic HTTP resource operator that resolves an API descriptor from the registry
@@ -51,6 +52,9 @@ import java.util.StringJoiner;
     tags = {"http", "resource", "gateway", "api"}
 )
 public class HttpResourceOperator implements Operator<Object, HttpResourceOutput>, SchemaAware {
+
+    private static final String MULTIPART_BOUNDARY_PREFIX = "----BLOGEFormBoundary";
+    private static final String CRLF = "\r\n";
 
     private final HttpRequestOperator httpRequestOperator;
     private final ResourceRegistry registry;
@@ -127,14 +131,18 @@ public class HttpResourceOperator implements Operator<Object, HttpResourceOutput
         url = appendQueryParams(url, queryParams);
 
         // 4. Merge headers: descriptor defaults + dynamic expressions + per-call overrides
-        Map<String, String> headers = mergeHeaders(
+        Map<String, String> headers = new LinkedHashMap<>(mergeHeaders(
                 descriptor.defaultHeaders(),
                 dynamicHeaders,
                 input.headerOverrides(),
                 ctx.graphContext().tenantId(),
                 ctx.graphContext().namespace()
-        );
-        body = encodeBodyForContentType(body, headerValue(headers, "Content-Type"));
+        ));
+        EncodedBody encodedBody = encodeBodyForContentType(body, headerValue(headers, "Content-Type"));
+        body = encodedBody.body();
+        if (!encodedBody.contentType().isBlank()) {
+            putHeader(headers, "Content-Type", encodedBody.contentType());
+        }
 
         // 5. Pick timeout
         Duration timeout = input.timeoutOverride() != null ? input.timeoutOverride() : descriptor.defaultTimeout();
@@ -371,14 +379,23 @@ public class HttpResourceOperator implements Operator<Object, HttpResourceOutput
         return URLEncoder.encode(value, StandardCharsets.UTF_8).replace("+", "%20");
     }
 
-    private static Object encodeBodyForContentType(Object body, String contentType) {
-        if (body == null || !formUrlEncodedContent(contentType) || body instanceof String) {
-            return body;
+    private static EncodedBody encodeBodyForContentType(Object body, String contentType) {
+        if (body == null || body instanceof String) {
+            return new EncodedBody(body, "");
         }
-        if (body instanceof Map<?, ?> formValues) {
-            return encodeFormUrlEncodedBody(formValues);
+        if (formUrlEncodedContent(contentType) && body instanceof Map<?, ?> formValues) {
+            return new EncodedBody(encodeFormUrlEncodedBody(formValues), "");
         }
-        return body;
+        if (multipartFormDataContent(contentType) && body instanceof Map<?, ?> formValues) {
+            String boundary = multipartBoundary(contentType);
+            if (boundary.isBlank()) {
+                boundary = newMultipartBoundary();
+                return new EncodedBody(encodeMultipartFormDataBody(formValues, boundary),
+                        appendMultipartBoundary(contentType, boundary));
+            }
+            return new EncodedBody(encodeMultipartFormDataBody(formValues, boundary), "");
+        }
+        return new EncodedBody(body, "");
     }
 
     private static boolean formUrlEncodedContent(String contentType) {
@@ -387,6 +404,14 @@ public class HttpResourceOperator implements Operator<Object, HttpResourceOutput
         }
         String mediaType = contentType.split(";", 2)[0].trim().toLowerCase(java.util.Locale.ROOT);
         return "application/x-www-form-urlencoded".equals(mediaType);
+    }
+
+    private static boolean multipartFormDataContent(String contentType) {
+        if (contentType == null) {
+            return false;
+        }
+        String mediaType = contentType.split(";", 2)[0].trim().toLowerCase(java.util.Locale.ROOT);
+        return "multipart/form-data".equals(mediaType);
     }
 
     private static String encodeFormUrlEncodedBody(Map<?, ?> formValues) {
@@ -415,6 +440,76 @@ public class HttpResourceOperator implements Operator<Object, HttpResourceOutput
                 + URLEncoder.encode(Objects.toString(value, ""), StandardCharsets.UTF_8));
     }
 
+    private static String encodeMultipartFormDataBody(Map<?, ?> formValues, String boundary) {
+        StringBuilder builder = new StringBuilder();
+        for (var entry : formValues.entrySet()) {
+            Object value = entry.getValue();
+            if (value == null) {
+                continue;
+            }
+            if (value instanceof Iterable<?> values && !(value instanceof CharSequence)) {
+                for (Object item : values) {
+                    if (item != null) {
+                        addMultipartPart(builder, boundary, entry.getKey(), item);
+                    }
+                }
+            } else {
+                addMultipartPart(builder, boundary, entry.getKey(), value);
+            }
+        }
+        builder.append("--").append(boundary).append("--").append(CRLF);
+        return builder.toString();
+    }
+
+    private static void addMultipartPart(StringBuilder builder, String boundary, Object key, Object value) {
+        builder.append("--").append(boundary).append(CRLF);
+        builder.append("Content-Disposition: form-data; name=\"")
+                .append(escapeMultipartName(Objects.toString(key, "")))
+                .append("\"")
+                .append(CRLF)
+                .append(CRLF);
+        builder.append(Objects.toString(value, "")).append(CRLF);
+    }
+
+    private static String escapeMultipartName(String value) {
+        return value.replace("\\", "\\\\")
+                .replace("\"", "\\\"")
+                .replace("\r", "")
+                .replace("\n", "");
+    }
+
+    private static String multipartBoundary(String contentType) {
+        if (contentType == null) {
+            return "";
+        }
+        for (String part : contentType.split(";")) {
+            String trimmed = part.trim();
+            int separator = trimmed.indexOf('=');
+            if (separator < 0) {
+                continue;
+            }
+            String name = trimmed.substring(0, separator).trim();
+            if (!"boundary".equalsIgnoreCase(name)) {
+                continue;
+            }
+            String value = trimmed.substring(separator + 1).trim();
+            if (value.length() >= 2 && value.startsWith("\"") && value.endsWith("\"")) {
+                return value.substring(1, value.length() - 1);
+            }
+            return value;
+        }
+        return "";
+    }
+
+    private static String appendMultipartBoundary(String contentType, String boundary) {
+        String base = contentType == null || contentType.isBlank() ? "multipart/form-data" : contentType.trim();
+        return base + "; boundary=" + boundary;
+    }
+
+    private static String newMultipartBoundary() {
+        return MULTIPART_BOUNDARY_PREFIX + UUID.randomUUID().toString().replace("-", "");
+    }
+
     private static String headerValue(Map<String, String> headers, String name) {
         for (var entry : headers.entrySet()) {
             if (entry.getKey().equalsIgnoreCase(name)) {
@@ -422,6 +517,20 @@ public class HttpResourceOperator implements Operator<Object, HttpResourceOutput
             }
         }
         return null;
+    }
+
+    private static void putHeader(Map<String, String> headers, String name, String value) {
+        String existing = null;
+        for (String key : headers.keySet()) {
+            if (key.equalsIgnoreCase(name)) {
+                existing = key;
+                break;
+            }
+        }
+        if (existing != null) {
+            headers.remove(existing);
+        }
+        headers.put(name, value);
     }
 
     private Object extractPayload(HttpResponseOutput response, ResourceDescriptor descriptor) {
@@ -454,5 +563,11 @@ public class HttpResourceOperator implements Operator<Object, HttpResourceOutput
         merged.put("X-Tenant-Id", tenantId);
         merged.put("X-Namespace", namespace);
         return Map.copyOf(merged);
+    }
+
+    private record EncodedBody(Object body, String contentType) {
+        private EncodedBody {
+            contentType = contentType == null ? "" : contentType;
+        }
     }
 }

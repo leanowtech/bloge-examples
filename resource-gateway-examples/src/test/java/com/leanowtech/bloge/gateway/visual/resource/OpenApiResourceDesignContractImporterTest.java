@@ -109,10 +109,12 @@ class OpenApiResourceDesignContractImporterTest {
         assertThat(result.validation().valid()).isTrue();
         assertThat(result.operations())
                 .extracting(OpenApiOperationSummary::projectionLevel)
-                .containsExactly("BLOCKED", "WARNING");
+                .containsExactly("READY", "BLOCKED", "WARNING");
         assertThat(result.operations().get(0).projectionMessage())
-                .contains("selected 2xx response");
+                .contains("Ready to project");
         assertThat(result.operations().get(1).projectionMessage())
+                .contains("selected 2xx response");
+        assertThat(result.operations().get(2).projectionMessage())
                 .contains("omit the body mapping");
     }
 
@@ -231,9 +233,68 @@ class OpenApiResourceDesignContractImporterTest {
     }
 
     @Test
-    void warnsAndOmitsRequestBodyWhenOpenApiRequestBodyMediaTypeIsUnsupported() {
+    void projectsMultipartRequestBodyIntoDescriptorHeadersAndBodyMapping() {
         OpenApiResourceDesignContractImportResult result = importer.project(
                 request("order-service.submitOrder", "submitOrder", null, null, openApiMultipartSubmitOrder())
+        );
+
+        assertThat(result.validation().valid()).isTrue();
+        assertThat(result.contract()).isNotNull();
+        assertThat(result.contract().requestSchema().properties())
+                .containsKeys("orderId", "body");
+        assertThat(result.contract().requestSchema().required()).contains("orderId", "body");
+        @SuppressWarnings("unchecked")
+        Map<String, Object> bodySchema =
+                (Map<String, Object>) result.contract().requestSchema().properties().get("body");
+        @SuppressWarnings("unchecked")
+        Map<String, Object> bodyProperties = (Map<String, Object>) bodySchema.get("properties");
+        assertThat(bodyProperties).containsKey("priority");
+        assertThat(result.descriptorSuggestion().defaultHeaders())
+                .containsEntry("Accept", "application/json")
+                .containsEntry("Content-Type", "multipart/form-data");
+        assertThat(result.descriptorSuggestion().parameterMapping().bodyExpression()).isEqualTo("ctx.params.body");
+        assertThat(result.validation().diagnostics())
+                .filteredOn(diagnostic -> "visual.resourceContract.openapi.requestBodyContentUnsupported"
+                        .equals(diagnostic.code()))
+                .isEmpty();
+    }
+
+    @Test
+    void warnsAndOmitsMultipartRequestBodyWhenSchemaContainsBinaryFile() {
+        OpenApiResourceDesignContractImportResult result = importer.project(
+                request("order-service.submitOrder", "submitOrder", null, null, openApiMultipartBinarySubmitOrder())
+        );
+
+        assertThat(result.validation().valid()).isTrue();
+        assertThat(result.contract()).isNotNull();
+        assertThat(result.contract().requestSchema().properties())
+                .containsKey("orderId")
+                .doesNotContainKey("body");
+        assertThat(result.descriptorSuggestion().defaultHeaders())
+                .containsEntry("Accept", "application/json")
+                .doesNotContainKey("Content-Type");
+        assertThat(result.descriptorSuggestion().parameterMapping().bodyExpression()).isNull();
+        assertThat(result.validation().diagnostics())
+                .filteredOn(diagnostic -> "visual.resourceContract.openapi.multipartBinaryUnsupported"
+                        .equals(diagnostic.code()))
+                .singleElement()
+                .satisfies(diagnostic -> {
+                    assertThat(diagnostic.message())
+                            .contains("binary/base64")
+                            .contains("file uploads");
+                    assertThat(diagnostic.target())
+                            .isEqualTo("/openApi/paths/~1orders~1{orderId}/post/requestBody/content/multipart~1form-data/schema");
+                });
+        assertThat(result.validation().diagnostics())
+                .filteredOn(diagnostic -> "visual.resourceContract.openapi.requestBodyContentUnsupported"
+                        .equals(diagnostic.code()))
+                .isEmpty();
+    }
+
+    @Test
+    void warnsAndOmitsRequestBodyWhenOpenApiRequestBodyMediaTypeIsUnsupported() {
+        OpenApiResourceDesignContractImportResult result = importer.project(
+                request("order-service.submitOrder", "submitOrder", null, null, openApiBinarySubmitOrder())
         );
 
         assertThat(result.validation().valid()).isTrue();
@@ -251,7 +312,7 @@ class OpenApiResourceDesignContractImporterTest {
                 .singleElement()
                 .satisfies(diagnostic -> {
                     assertThat(diagnostic.message())
-                            .contains("multipart/form-data")
+                            .contains("application/octet-stream")
                             .contains("body input will be omitted");
                     assertThat(diagnostic.target())
                             .isEqualTo("/openApi/paths/~1orders~1{orderId}/post/requestBody/content");
@@ -747,7 +808,36 @@ class OpenApiResourceDesignContractImporterTest {
         return openApiSubmitOrderWithRequestBodyMediaType("multipart/form-data");
     }
 
+    private static Map<String, Object> openApiMultipartBinarySubmitOrder() {
+        return openApiSubmitOrderWithRequestBodyMediaTypeAndSchema("multipart/form-data", Map.of(
+                "type", "object",
+                "properties", Map.of(
+                        "file", Map.of(
+                                "type", "string",
+                                "format", "binary"
+                        )
+                ),
+                "required", List.of("file")
+        ));
+    }
+
+    private static Map<String, Object> openApiBinarySubmitOrder() {
+        return openApiSubmitOrderWithRequestBodyMediaType("application/octet-stream");
+    }
+
     private static Map<String, Object> openApiSubmitOrderWithRequestBodyMediaType(String mediaType) {
+        return openApiSubmitOrderWithRequestBodyMediaTypeAndSchema(mediaType, Map.of(
+                "type", "object",
+                "properties", Map.of(
+                        "priority", Map.of("type", "string")
+                ),
+                "required", List.of("priority")
+        ));
+    }
+
+    private static Map<String, Object> openApiSubmitOrderWithRequestBodyMediaTypeAndSchema(
+            String mediaType,
+            Map<String, Object> bodySchema) {
         return Map.of(
                 "openapi", "3.1.0",
                 "servers", List.of(Map.of("url", "https://orders.example.test")),
@@ -767,13 +857,7 @@ class OpenApiResourceDesignContractImporterTest {
                                                 "required", true,
                                                 "content", Map.of(
                                                         mediaType, Map.of(
-                                                                "schema", Map.of(
-                                                                        "type", "object",
-                                                                        "properties", Map.of(
-                                                                                "priority", Map.of("type", "string")
-                                                                        ),
-                                                                        "required", List.of("priority")
-                                                                )
+                                                                "schema", bodySchema
                                                         )
                                                 )
                                         ),
@@ -901,6 +985,28 @@ class OpenApiResourceDesignContractImporterTest {
         return """
                 openapi: 3.1.0
                 paths:
+                  /forms:
+                    post:
+                      operationId: submitForm
+                      requestBody:
+                        required: true
+                        content:
+                          multipart/form-data:
+                            schema:
+                              type: object
+                              properties:
+                                note:
+                                  type: string
+                      responses:
+                        '200':
+                          description: ok
+                          content:
+                            application/json:
+                              schema:
+                                type: object
+                                properties:
+                                  id:
+                                    type: string
                   /health:
                     get:
                       operationId: healthText
@@ -923,6 +1029,7 @@ class OpenApiResourceDesignContractImporterTest {
                               properties:
                                 file:
                                   type: string
+                                  format: binary
                       responses:
                         '200':
                           description: ok

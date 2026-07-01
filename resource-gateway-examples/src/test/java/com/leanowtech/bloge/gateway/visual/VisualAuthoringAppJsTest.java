@@ -1491,6 +1491,16 @@ class VisualAuthoringAppJsTest {
                   { operationId: '', path: '', method: 'get' }
                 ]);
                 const openApiOperationLabel = context.openApiOperationLabel(normalizedOpenApiOperations[0]);
+                const openApiMultipartOperationLabel = context.openApiOperationLabel(context.normalizeOpenApiOperations([
+                  {
+                    operationId: 'uploadOrderNote',
+                    path: '/orders/{orderId}/notes',
+                    method: 'post',
+                    requestMediaTypes: ['multipart/form-data'],
+                    projectionLevel: 'READY',
+                    projectionMessage: 'Ready to project.'
+                  }
+                ])[0]);
                 const openApiOperationMatchById = context.openApiOperationMatchesCurrent(
                   normalizedOpenApiOperations[0],
                   { operationId: 'submitOrder', path: '', method: '' }
@@ -2190,6 +2200,7 @@ class VisualAuthoringAppJsTest {
                   ['visual diagnostic summary active filter', String(visualDiagnosticFilteredHtml.includes('filtered to Eligibility (riskNode)')), 'true'],
                   ['openapi operation normalize count', normalizedOpenApiOperations.length, 1],
                   ['openapi operation label', openApiOperationLabel, 'READY · POST /orders/{orderId} · submitOrder · application/json'],
+                  ['openapi multipart operation label', openApiMultipartOperationLabel, 'READY · POST /orders/{orderId}/notes · uploadOrderNote · multipart/form-data'],
                   ['openapi operation match by id', openApiOperationMatchById, true],
                   ['openapi operation match by path', openApiOperationMatchByPath, true],
                   ['openapi operation miss', openApiOperationMiss, false],

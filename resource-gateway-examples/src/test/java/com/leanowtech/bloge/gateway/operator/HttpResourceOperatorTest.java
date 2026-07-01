@@ -243,6 +243,48 @@ class HttpResourceOperatorTest {
         assertThat(httpStub.lastBody()).isEqualTo("priority=high&note=rush+order&tag=vip&tag=gift");
     }
 
+    @Test
+    @DisplayName("multipart/form-data body maps are encoded and boundary is added")
+    void multipartFormDataBodyMapsAreEncoded() throws Exception {
+        registry.put(new ResourceDescriptor(
+                "form.multipart", "https://api.example.com/forms", "POST",
+                Map.of(
+                        "Accept", "application/json",
+                        "Content-Type", "multipart/form-data"
+                ),
+                null, Duration.ofSeconds(5),
+                new ParameterMapping(
+                        Map.of(),
+                        Map.of(),
+                        Map.of(),
+                        Map.of(),
+                        "ctx.params.body"
+                ),
+                new ResponseProtocol.HttpStatus(), null
+        ));
+        httpStub.setResponse(new HttpResponseOutput(200, Map.of(), "{}", Duration.ofMillis(10)));
+
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("priority", "high");
+        body.put("note", "rush order");
+        body.put("tag", List.of("vip", "gift"));
+
+        operator.execute(new HttpResourceInput("form.multipart", Map.of("body", body)), operatorContext());
+
+        assertThat(httpStub.lastHeaders().get("Content-Type"))
+                .startsWith("multipart/form-data; boundary=");
+        String boundary = httpStub.lastHeaders().get("Content-Type").substring(
+                "multipart/form-data; boundary=".length());
+        assertThat(httpStub.lastBody()).isInstanceOf(String.class);
+        assertThat((String) httpStub.lastBody())
+                .contains("--" + boundary + "\r\n")
+                .contains("Content-Disposition: form-data; name=\"priority\"\r\n\r\nhigh\r\n")
+                .contains("Content-Disposition: form-data; name=\"note\"\r\n\r\nrush order\r\n")
+                .contains("Content-Disposition: form-data; name=\"tag\"\r\n\r\nvip\r\n")
+                .contains("Content-Disposition: form-data; name=\"tag\"\r\n\r\ngift\r\n")
+                .endsWith("--" + boundary + "--\r\n");
+    }
+
     // ── Timeout default vs override ─────────────────────────────────────
 
     @Test

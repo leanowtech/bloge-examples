@@ -176,7 +176,8 @@ public class OpenApiResourceDesignContractImporter {
                         List<String> requestMediaTypes = requestMediaTypes(openApi, selected);
                         List<String> responseMediaTypes = responseMediaTypes(openApi, selected);
                         OperationProjection projection = operationProjection(operationMap.containsKey("requestBody"),
-                                requestMediaTypes, responseJsonMediaType(openApi, selected).isPresent());
+                                requestBodyMediaType(openApi, selected).isPresent(),
+                                responseJsonMediaType(openApi, selected).isPresent());
                         operations.add(new OpenApiOperationSummary(
                                 string(operationMap.get("operationId")),
                                 selected.path(),
@@ -196,21 +197,17 @@ public class OpenApiResourceDesignContractImporter {
     }
 
     private OperationProjection operationProjection(boolean hasRequestBody,
-                                                    List<String> requestMediaTypes,
+                                                    boolean requestBodyProjectable,
                                                     boolean responseProjectable) {
         if (!responseProjectable) {
             return new OperationProjection("BLOCKED",
                     "Projection requires the selected 2xx response to declare JSON or JSON-compatible content.");
         }
-        if (hasRequestBody && requestMediaTypes.stream().noneMatch(this::supportedRequestMediaType)) {
+        if (hasRequestBody && !requestBodyProjectable) {
             return new OperationProjection("WARNING",
-                    "Request body media type is not projected yet; preview will omit the body mapping.");
+                    "Request body cannot be projected into a runnable descriptor yet; preview will omit the body mapping.");
         }
         return new OperationProjection("READY", "Ready to project into a resource contract.");
-    }
-
-    private boolean supportedRequestMediaType(String mediaType) {
-        return jsonCompatibleMediaType(mediaType) || formUrlEncodedMediaType(mediaType);
     }
 
     private static Map<String, Object> openApiDocument(OpenApiResourceDesignContractImportRequest request,
@@ -407,9 +404,13 @@ public class OpenApiResourceDesignContractImporter {
         if (requestBody.isEmpty()) {
             return;
         }
-        Optional<RequestBodyContent> bodyContent = requestBodyContent(requestBody.get(), bodyTarget, diagnostics);
+        int diagnosticCount = diagnostics.size();
+        Optional<RequestBodyContent> bodyContent = requestBodyContent(openApi, requestBody.get(), bodyTarget,
+                diagnostics);
         if (bodyContent.isEmpty()) {
-            warnUnsupportedRequestBodyContent(requestBody.get(), bodyTarget, diagnostics);
+            if (diagnostics.size() == diagnosticCount) {
+                warnUnsupportedRequestBodyContent(requestBody.get(), bodyTarget, diagnostics);
+            }
             return;
         }
         String schemaTarget = bodyTarget + "/content/" + pointerSegment(bodyContent.get().mediaType()) + "/schema";
@@ -526,14 +527,19 @@ public class OpenApiResourceDesignContractImporter {
                 });
     }
 
-    private Optional<RequestBodyContent> requestBodyContent(Map<String, Object> requestBody,
+    private Optional<RequestBodyContent> requestBodyContent(Map<String, Object> openApi,
+                                                            Map<String, Object> requestBody,
                                                             String target,
                                                             List<VisualDiagnostic> diagnostics) {
         Optional<JsonContent> json = jsonContent(requestBody, target, diagnostics, false);
         if (json.isPresent()) {
             return Optional.of(new RequestBodyContent(json.get().mediaType(), json.get().media()));
         }
-        return formUrlEncodedContent(requestBody)
+        Optional<FormUrlEncodedContent> formUrlEncoded = formUrlEncodedContent(requestBody);
+        if (formUrlEncoded.isPresent()) {
+            return formUrlEncoded.map(content -> new RequestBodyContent(content.mediaType(), content.media()));
+        }
+        return multipartFormDataContent(openApi, requestBody, target, diagnostics)
                 .map(content -> new RequestBodyContent(content.mediaType(), content.media()));
     }
 
@@ -550,6 +556,59 @@ public class OpenApiResourceDesignContractImporter {
         return Optional.empty();
     }
 
+    private Optional<MultipartFormDataContent> multipartFormDataContent(Map<String, Object> openApi,
+                                                                        Map<String, Object> holder,
+                                                                        String target,
+                                                                        List<VisualDiagnostic> diagnostics) {
+        Object rawContent = holder.get("content");
+        if (!(rawContent instanceof Map<?, ?> content)) {
+            return Optional.empty();
+        }
+        for (Map.Entry<String, Object> entry : objectMap(content).entrySet()) {
+            if (multipartFormDataMediaType(entry.getKey()) && entry.getValue() instanceof Map<?, ?> media) {
+                Map<String, Object> mediaMap = objectMap(media);
+                if (schemaContainsBinary(openApi, mediaMap.get("schema"))) {
+                    diagnostics.add(VisualDiagnostic.warning(
+                            "visual.resourceContract.openapi.multipartBinaryUnsupported",
+                            "OpenAPI multipart/form-data requestBody includes binary/base64 schema fields; descriptorSuggestion cannot encode file uploads, so body input will be omitted.",
+                            target + "/content/" + pointerSegment(entry.getKey()) + "/schema"));
+                    return Optional.empty();
+                }
+                return Optional.of(new MultipartFormDataContent(entry.getKey(), mediaMap));
+            }
+        }
+        return Optional.empty();
+    }
+
+    private boolean schemaContainsBinary(Map<String, Object> openApi, Object rawSchema) {
+        return schemaContainsBinary(openApi, rawSchema, new LinkedHashSet<>());
+    }
+
+    private boolean schemaContainsBinary(Map<String, Object> openApi, Object rawSchema, Set<String> visitedRefs) {
+        if (rawSchema instanceof Map<?, ?> schema) {
+            Object format = schema.get("format");
+            if (format instanceof String value
+                    && ("binary".equalsIgnoreCase(value) || "base64".equalsIgnoreCase(value))) {
+                return true;
+            }
+            Object ref = schema.get("$ref");
+            if (ref instanceof String refText && visitedRefs.add(refText)) {
+                Optional<String> componentName = componentSchemaRef(refText);
+                if (componentName.isPresent()
+                        && componentSchema(openApi, componentName.get())
+                        .map(component -> schemaContainsBinary(openApi, component, visitedRefs))
+                        .orElse(false)) {
+                    return true;
+                }
+            }
+            return schema.values().stream().anyMatch(value -> schemaContainsBinary(openApi, value, visitedRefs));
+        }
+        if (rawSchema instanceof List<?> values) {
+            return values.stream().anyMatch(value -> schemaContainsBinary(openApi, value, visitedRefs));
+        }
+        return false;
+    }
+
     private static boolean jsonCompatibleMediaType(String mediaType) {
         String normalized = string(mediaType).toLowerCase(Locale.ROOT);
         return normalized.endsWith("+json") || normalized.contains("/json");
@@ -558,6 +617,11 @@ public class OpenApiResourceDesignContractImporter {
     private static boolean formUrlEncodedMediaType(String mediaType) {
         String normalized = string(mediaType).split(";", 2)[0].trim().toLowerCase(Locale.ROOT);
         return "application/x-www-form-urlencoded".equals(normalized);
+    }
+
+    private static boolean multipartFormDataMediaType(String mediaType) {
+        String normalized = string(mediaType).split(";", 2)[0].trim().toLowerCase(Locale.ROOT);
+        return "multipart/form-data".equals(normalized);
     }
 
     private void warnUnsupportedRequestBodyContent(Map<String, Object> requestBody,
@@ -984,7 +1048,7 @@ public class OpenApiResourceDesignContractImporter {
                 + "/requestBody";
         Optional<Map<String, Object>> requestBody = dereferenceObject(openApi, rawBody, new ArrayList<>(),
                 bodyTarget, "requestBody");
-        return requestBody.flatMap(body -> requestBodyContent(body, bodyTarget, new ArrayList<>()))
+        return requestBody.flatMap(body -> requestBodyContent(openApi, body, bodyTarget, new ArrayList<>()))
                 .map(RequestBodyContent::mediaType);
     }
 
@@ -1509,6 +1573,9 @@ public class OpenApiResourceDesignContractImporter {
     }
 
     private record FormUrlEncodedContent(String mediaType, Map<String, Object> media) {
+    }
+
+    private record MultipartFormDataContent(String mediaType, Map<String, Object> media) {
     }
 
     private record OperationProjection(String level, String message) {
