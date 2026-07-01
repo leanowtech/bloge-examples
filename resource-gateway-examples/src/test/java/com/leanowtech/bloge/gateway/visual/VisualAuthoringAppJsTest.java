@@ -316,6 +316,17 @@ class VisualAuthoringAppJsTest {
                   'nodeIdFromDiagnosticPointer',
                   'normalizeDiagnosticNodeTarget',
                   'jsonPointerUnescape',
+                  'canvasNodeIssueText',
+                  'runTraceForCanvasNode',
+                  'runTraceLevel',
+                  'runTraceStatusLabel',
+                  'clearActiveRunTrace',
+                  'runTraceCanvasCoverage',
+                  'canvasNodeIds',
+                  'runTraceCoverageText',
+                  'runTraceSummary',
+                  'nodeTraceBadgeText',
+                  'nodeTraceSummaryLabel',
                   'goldenAssertionsFromControls',
                   'schemaFromValue',
                   'configFieldDescriptors',
@@ -1040,6 +1051,32 @@ class VisualAuthoringAppJsTest {
                 const policyByDirectNode = context.diagnosticTargetNodeId({ nodeId: 'policy', target: '/graphName' }, context.state.builder);
                 const riskDiagnosticCount = context.diagnosticsForCanvasNode('riskNode').length;
                 const unescapedPointerSegment = context.jsonPointerUnescape('node~1with~0marker');
+                context.state.activeRunTrace = {
+                  nodes: [
+                    { nodeId: 'policy', status: 'COMPLETED', diagnosticCount: 0, errorCount: 0, operatorRef: 'bloge:decisionTable' },
+                    { nodeId: 'riskNode', status: 'COMPLETED', diagnosticCount: 2, errorCount: 1, operatorRef: 'risk:eligibility' },
+                    { nodeId: 'auditNode', status: 'COMPLETED', diagnosticCount: 1, errorCount: 0, operatorRef: 'risk:audit', outputSelected: true },
+                    { nodeId: 'removedNode', status: 'COMPLETED', diagnosticCount: 0, errorCount: 0, operatorRef: 'risk:removed' }
+                  ]
+                };
+                const riskTraceNode = context.runTraceForCanvasNode('riskNode');
+                const riskTraceLevel = context.runTraceLevel(riskTraceNode);
+                const riskTraceStatus = context.runTraceStatusLabel(riskTraceNode);
+                const riskTraceBadge = context.nodeTraceBadgeText(riskTraceNode);
+                const riskTraceIssueText = context.canvasNodeIssueText(context.diagnosticsForCanvasNode('riskNode'), riskTraceNode);
+                const auditTraceSummaryLabel = context.nodeTraceSummaryLabel(context.runTraceForCanvasNode('auditNode'));
+                const traceCoverage = context.runTraceCanvasCoverage(context.state.activeRunTrace, context.state.builder, context.state.layout);
+                const traceCoverageText = context.runTraceCoverageText(traceCoverage);
+                context.clearActiveRunTrace();
+                const activeTraceCleared = context.runTraceForCanvasNode('riskNode') === null;
+                const traceSummary = context.runTraceSummary({
+                  outputNode: 'auditNode',
+                  nodes: [
+                    { nodeId: 'policy', diagnosticCount: 0, errorCount: 0 },
+                    { nodeId: 'riskNode', diagnosticCount: 2, errorCount: 1 },
+                    { nodeId: 'auditNode', diagnosticCount: 1, errorCount: 0, outputSelected: true }
+                  ]
+                });
                 const riskImpact = context.nodeImpactSummary('riskNode', context.state.builder);
                 const riskIncomingKinds = riskImpact.incoming
                   .map((entry) => `${entry.kind}:${entry.peerId}`)
@@ -1364,6 +1401,22 @@ class VisualAuthoringAppJsTest {
                   ['diagnostic direct node target', policyByDirectNode, 'policy'],
                   ['diagnostic node count', riskDiagnosticCount, 1],
                   ['json pointer unescape', unescapedPointerSegment, 'node/with~marker'],
+                  ['run trace node lookup', riskTraceNode.nodeId, 'riskNode'],
+                  ['run trace level', riskTraceLevel, 'error'],
+                  ['run trace status label', riskTraceStatus, 'COMPLETED'],
+                  ['run trace badge', riskTraceBadge, 'ERR 1'],
+                  ['run trace issue text', riskTraceIssueText, '1 issue · COMPLETED · 2 trace'],
+                  ['run trace summary label', auditTraceSummaryLabel, 'COMPLETED · risk:audit · selected output · 1 diagnostic'],
+                  ['run trace coverage matched', traceCoverage.matchedNodeCount, 3],
+                  ['run trace coverage total', traceCoverage.traceNodeCount, 4],
+                  ['run trace coverage missing', traceCoverage.unmatchedNodeIds.join('|'), 'removedNode'],
+                  ['run trace coverage selected matched', traceCoverage.selectedOutputMatched, true],
+                  ['run trace coverage text', traceCoverageText, 'trace 3/4 mapped, 1 missing'],
+                  ['active run trace cleared', activeTraceCleared, true],
+                  ['run trace node count', traceSummary.nodeCount, 3],
+                  ['run trace diagnostic count', traceSummary.diagnosticCount, 3],
+                  ['run trace error count', traceSummary.errorCount, 1],
+                  ['run trace selected output', traceSummary.selectedOutputNode, 'auditNode'],
                   ['risk impact incoming kinds', riskIncomingKinds, 'config:policy|dependency:policy'],
                   ['risk impact outgoing kinds', riskOutgoingKinds, 'data:auditNode:payload -> inputs.risk|dependency:auditNode:orders downstream execution|route:auditNode:routes on eligible'],
                   ['risk impact context input', riskContextInputs, 'ctx.score -> inputs.score'],

@@ -61,6 +61,42 @@ class DatabaseVisualGraphRunRepositoryTest {
     }
 
     @Test
+    void legacyRunJsonWithoutNodeSnapshotsDefaultsToEmptySnapshots() throws Exception {
+        String legacyJson = """
+                {
+                  "schemaVersion": "bloge.visualGraphRunRecord.v1",
+                  "runId": "legacy-run",
+                  "sourceKind": "STORED_DRAFT",
+                  "draftId": "draft-1",
+                  "draftRevision": 1,
+                  "publicationId": "",
+                  "graphName": "visualPolicy",
+                  "tenantId": "tenant-a",
+                  "namespace": "local",
+                  "environment": "prod",
+                  "outputNode": "response",
+                  "createdAt": "2026-07-01T00:00:00Z",
+                  "validated": true,
+                  "compiled": true,
+                  "success": true,
+                  "elapsedMs": 12,
+                  "statusMap": {"response": "COMPLETED"},
+                  "diagnostics": [],
+                  "errors": [],
+                  "contextSummary": {},
+                  "outputSummary": {"type": "object"},
+                  "resultsSummary": {},
+                  "generatedDsl": "graph visualPolicy {}"
+                }
+                """;
+
+        VisualGraphRunRecord record = objectMapper.readValue(legacyJson, VisualGraphRunRecord.class);
+
+        assertThat(record.nodeSnapshots()).isEmpty();
+        assertThat(record.generatedDsl()).contains("graph visualPolicy");
+    }
+
+    @Test
     void queryFiltersRecordsByRunMetadata() {
         VisualGraphRunRecord storedDraft = repository.create(record("run-stored", "draft-1",
                 VisualGraphRunRecord.SOURCE_STORED_DRAFT, "", true));

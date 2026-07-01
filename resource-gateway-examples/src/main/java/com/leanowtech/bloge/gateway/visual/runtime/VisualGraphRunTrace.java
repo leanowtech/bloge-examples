@@ -97,21 +97,33 @@ public record VisualGraphRunTrace(
         Set<String> nodeIds = new LinkedHashSet<>();
         nodeIds.addAll(record.statusMap().keySet());
         nodeIds.addAll(record.resultsSummary().keySet());
+        nodeIds.addAll(record.nodeSnapshots().keySet());
         if (!record.outputNode().isBlank()) {
             nodeIds.add(record.outputNode());
         }
         return nodeIds.stream()
-                .map(nodeId -> new NodeTrace(
-                        nodeId,
-                        record.statusMap().getOrDefault(nodeId, ""),
-                        nodeId.equals(record.outputNode()),
-                        resultSummaryFor(record.resultsSummary(), nodeId),
-                        record.statusMap().containsKey(nodeId),
-                        record.resultsSummary().containsKey(nodeId)))
+                .map(nodeId -> nodeTrace(record, nodeId))
                 .toList();
     }
 
-    @SuppressWarnings("unchecked")
+    private static NodeTrace nodeTrace(VisualGraphRunRecord record, String nodeId) {
+        VisualGraphRunRecord.NodeSnapshot snapshot = record.nodeSnapshots().get(nodeId);
+        List<VisualDiagnostic> diagnostics = diagnosticsForNode(record.diagnostics(), nodeId, snapshot);
+        return new NodeTrace(
+                nodeId,
+                snapshot == null ? -1 : snapshot.nodeIndex(),
+                snapshot == null ? "" : snapshot.operatorRef(),
+                snapshot == null ? "" : snapshot.label(),
+                record.statusMap().getOrDefault(nodeId, ""),
+                nodeId.equals(record.outputNode()),
+                resultSummaryFor(record.resultsSummary(), nodeId),
+                record.statusMap().containsKey(nodeId),
+                record.resultsSummary().containsKey(nodeId),
+                diagnostics,
+                diagnostics.size(),
+                (int) diagnostics.stream().filter(VisualDiagnostic::error).count());
+    }
+
     private static Map<String, Object> resultSummaryFor(Map<String, Object> resultsSummary, String nodeId) {
         Object raw = resultsSummary.get(nodeId);
         if (!(raw instanceof Map<?, ?> rawMap)) {
@@ -122,31 +134,84 @@ public record VisualGraphRunTrace(
         return summary;
     }
 
+    private static List<VisualDiagnostic> diagnosticsForNode(List<VisualDiagnostic> diagnostics,
+                                                             String nodeId,
+                                                             VisualGraphRunRecord.NodeSnapshot snapshot) {
+        if (diagnostics == null || diagnostics.isEmpty()) {
+            return List.of();
+        }
+        return diagnostics.stream()
+                .filter(diagnostic -> targetsNode(diagnostic, nodeId, snapshot))
+                .toList();
+    }
+
+    private static boolean targetsNode(VisualDiagnostic diagnostic,
+                                       String nodeId,
+                                       VisualGraphRunRecord.NodeSnapshot snapshot) {
+        if (diagnostic == null || diagnostic.target().isBlank()) {
+            return false;
+        }
+        String target = diagnostic.target();
+        if (!nodeId.isBlank()
+                && (matchesTargetPrefix(target, "/nodes/" + nodeId)
+                || matchesTargetPrefix(target, "/draft/nodes/" + nodeId))) {
+            return true;
+        }
+        if (snapshot == null || snapshot.nodeIndex() < 0) {
+            return false;
+        }
+        String index = String.valueOf(snapshot.nodeIndex());
+        return matchesTargetPrefix(target, "/nodes/" + index)
+                || matchesTargetPrefix(target, "/draft/nodes/" + index);
+    }
+
+    private static boolean matchesTargetPrefix(String target, String prefix) {
+        return target.equals(prefix) || target.startsWith(prefix + "/");
+    }
+
     /**
      * Node-level replay row.
      *
      * @param nodeId node id
+     * @param nodeIndex zero-based draft node index, or -1 when unavailable
+     * @param operatorRef operator reference used by the node
+     * @param label display label
      * @param status node execution status
      * @param outputSelected whether this node supplied selected graph output
      * @param resultSummary shape-only result summary
      * @param statusKnown whether the run recorded a status for this node
      * @param resultKnown whether the run recorded a result summary for this node
+     * @param diagnostics diagnostics targeting this node
+     * @param diagnosticCount number of diagnostics targeting this node
+     * @param errorCount number of error diagnostics targeting this node
      */
     public record NodeTrace(
             String nodeId,
+            int nodeIndex,
+            String operatorRef,
+            String label,
             String status,
             boolean outputSelected,
             Map<String, Object> resultSummary,
             boolean statusKnown,
-            boolean resultKnown
+            boolean resultKnown,
+            List<VisualDiagnostic> diagnostics,
+            int diagnosticCount,
+            int errorCount
     ) {
         /**
          * Creates a node trace row.
          */
         public NodeTrace {
             nodeId = nodeId == null ? "" : nodeId;
+            nodeIndex = Math.max(-1, nodeIndex);
+            operatorRef = operatorRef == null ? "" : operatorRef;
+            label = label == null ? "" : label;
             status = status == null ? "" : status;
             resultSummary = resultSummary == null ? Map.of() : new LinkedHashMap<>(resultSummary);
+            diagnostics = diagnostics == null ? List.of() : List.copyOf(diagnostics);
+            diagnosticCount = Math.max(0, diagnosticCount);
+            errorCount = Math.max(0, errorCount);
         }
     }
 }

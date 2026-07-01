@@ -1,5 +1,6 @@
 package com.leanowtech.bloge.gateway.visual.runtime;
 
+import com.leanowtech.bloge.gateway.visual.diagnostic.VisualDiagnostic;
 import com.leanowtech.bloge.gateway.visual.draft.GraphDraft;
 import com.leanowtech.bloge.gateway.visual.model.SchemaEnvelope;
 
@@ -94,16 +95,29 @@ class VisualGraphRunHistoryControllerTest {
                 .filter(node -> node.nodeId().equals("loanPolicy"))
                 .findFirst()
                 .orElseThrow();
+        assertThat(decisionTrace.nodeIndex()).isEqualTo(0);
+        assertThat(decisionTrace.operatorRef()).isEqualTo("risk:loanPolicy");
+        assertThat(decisionTrace.label()).isEqualTo("Loan Policy");
         assertThat(decisionTrace.status()).isEqualTo("COMPLETED");
         assertThat(decisionTrace.outputSelected()).isFalse();
         assertThat(decisionTrace.statusKnown()).isTrue();
         assertThat(decisionTrace.resultKnown()).isTrue();
         assertThat(decisionTrace.resultSummary()).containsEntry("type", "object");
-        assertThat(trace.nodes().stream()
+        assertThat(decisionTrace.diagnosticCount()).isEqualTo(1);
+        assertThat(decisionTrace.errorCount()).isZero();
+        assertThat(decisionTrace.diagnostics()).singleElement()
+                .satisfies(diagnostic -> assertThat(diagnostic.target()).isEqualTo("/nodes/loanPolicy/expression"));
+        VisualGraphRunTrace.NodeTrace responseTrace = trace.nodes().stream()
                 .filter(node -> node.nodeId().equals("response"))
                 .findFirst()
-                .orElseThrow()
-                .outputSelected()).isTrue();
+                .orElseThrow();
+        assertThat(responseTrace.nodeIndex()).isEqualTo(1);
+        assertThat(responseTrace.operatorRef()).isEqualTo("transform:response");
+        assertThat(responseTrace.outputSelected()).isTrue();
+        assertThat(responseTrace.diagnosticCount()).isEqualTo(1);
+        assertThat(responseTrace.errorCount()).isEqualTo(1);
+        assertThat(responseTrace.diagnostics()).singleElement()
+                .satisfies(diagnostic -> assertThat(diagnostic.target()).isEqualTo("/nodes/1/operatorRef"));
         assertThat(trace.generatedDsl()).contains("graph visualPolicy");
     }
 
@@ -178,7 +192,12 @@ class VisualGraphRunHistoryControllerTest {
                 "",
                 "",
                 SchemaEnvelope.opaque(),
-                List.of(),
+                List.of(
+                        new GraphDraft.DraftNode("loanPolicy", "risk:loanPolicy", "Loan Policy",
+                                Map.of(), Map.of(), null),
+                        new GraphDraft.DraftNode("response", "transform:response", "Response",
+                                Map.of(), Map.of(), null)
+                ),
                 List.of(),
                 Map.of(),
                 new GraphDraft.OutputSelection("response", "")
@@ -196,8 +215,13 @@ class VisualGraphRunHistoryControllerTest {
                 ),
                 Map.of("loanPolicy", "COMPLETED", "response", "COMPLETED"),
                 25,
-                List.of(),
-                List.of(),
+                List.of(
+                        VisualDiagnostic.warning("bloge.dsl", "Policy expression uses a legacy form.",
+                                "/nodes/loanPolicy/expression"),
+                        VisualDiagnostic.error("visual.operator.fingerprintMissing",
+                                "Response operator fingerprint is missing.", "/nodes/1/operatorRef")
+                ),
+                List.of("Response operator fingerprint is missing."),
                 null,
                 null,
                 "graph visualPolicy {}"

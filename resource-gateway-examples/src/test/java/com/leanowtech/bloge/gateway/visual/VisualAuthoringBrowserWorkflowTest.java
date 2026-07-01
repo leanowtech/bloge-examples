@@ -164,6 +164,22 @@ class VisualAuthoringBrowserWorkflowTest {
                 .containsEntry("success", true);
         assertThat((Map<String, Object>) storedRunRecord.get("outputSummary"))
                 .containsEntry("type", "boolean");
+        assertThat((Map<String, Object>) storedRunRecord.get("nodeSnapshots"))
+                .containsKeys("fetchApplicant", "eligibility");
+
+        Map<String, Object> storedRunTrace = getMap("/api/visual/runs/" + run.runId() + "/trace");
+        assertThat(storedRunTrace)
+                .containsEntry("schemaVersion", "bloge.visualGraphRunTrace.v1")
+                .containsEntry("runId", run.runId());
+        List<Map<String, Object>> traceNodes = (List<Map<String, Object>>) storedRunTrace.get("nodes");
+        assertThat(traceNodes).anySatisfy(node -> assertThat(node)
+                .containsEntry("nodeId", "fetchApplicant")
+                .containsEntry("operatorRef", "resource:loan-applicant-service.getProfile")
+                .containsEntry("diagnosticCount", 0));
+        assertThat(traceNodes).anySatisfy(node -> assertThat(node)
+                .containsEntry("nodeId", "eligibility")
+                .containsEntry("operatorRef", "risk:eligibility")
+                .containsEntry("outputSelected", true));
 
         Map<String, Object> publishResult = postMap(
                 "/api/visual/drafts/" + storedDraft.draftId() + "/publish",
@@ -321,6 +337,10 @@ class VisualAuthoringBrowserWorkflowTest {
                 .contains("run-history-list")
                 .contains("run-history-stats")
                 .contains("/api/visual/runs/${encodeURIComponent(runId)}/trace")
+                .contains("activeRunTrace")
+                .contains("runTraceCanvasCoverage")
+                .contains("runTraceCoverageText")
+                .contains("node-trace-badge")
                 .contains("save-golden-case")
                 .contains("golden-assertion-mode")
                 .contains("golden-assertion-value")

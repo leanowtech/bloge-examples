@@ -39,6 +39,7 @@ import java.util.TreeSet;
  * @param contextSummary shape-only summary of submitted context
  * @param outputSummary shape-only summary of selected output
  * @param resultsSummary shape-only summary of node results
+ * @param nodeSnapshots shape-only draft node metadata keyed by node id
  * @param generatedDsl generated or frozen DSL used for execution
  */
 public record VisualGraphRunRecord(
@@ -64,6 +65,7 @@ public record VisualGraphRunRecord(
         Map<String, Object> contextSummary,
         Map<String, Object> outputSummary,
         Map<String, Object> resultsSummary,
+        Map<String, NodeSnapshot> nodeSnapshots,
         String generatedDsl
 ) {
     public static final String SCHEMA_VERSION = "bloge.visualGraphRunRecord.v1";
@@ -98,7 +100,39 @@ public record VisualGraphRunRecord(
         contextSummary = contextSummary == null ? Map.of() : new LinkedHashMap<>(contextSummary);
         outputSummary = outputSummary == null ? Map.of() : new LinkedHashMap<>(outputSummary);
         resultsSummary = resultsSummary == null ? Map.of() : new LinkedHashMap<>(resultsSummary);
+        nodeSnapshots = nodeSnapshots == null ? Map.of() : new LinkedHashMap<>(nodeSnapshots);
         generatedDsl = generatedDsl == null ? "" : generatedDsl;
+    }
+
+    /**
+     * Backward-compatible constructor for run records created before node snapshots existed.
+     */
+    public VisualGraphRunRecord(String schemaVersion,
+                                String runId,
+                                String sourceKind,
+                                String draftId,
+                                long draftRevision,
+                                String publicationId,
+                                String graphName,
+                                String tenantId,
+                                String namespace,
+                                String environment,
+                                String outputNode,
+                                Instant createdAt,
+                                boolean validated,
+                                boolean compiled,
+                                boolean success,
+                                long elapsedMs,
+                                Map<String, String> statusMap,
+                                List<VisualDiagnostic> diagnostics,
+                                List<String> errors,
+                                Map<String, Object> contextSummary,
+                                Map<String, Object> outputSummary,
+                                Map<String, Object> resultsSummary,
+                                String generatedDsl) {
+        this(schemaVersion, runId, sourceKind, draftId, draftRevision, publicationId, graphName, tenantId,
+                namespace, environment, outputNode, createdAt, validated, compiled, success, elapsedMs, statusMap,
+                diagnostics, errors, contextSummary, outputSummary, resultsSummary, Map.of(), generatedDsl);
     }
 
     /**
@@ -137,7 +171,7 @@ public record VisualGraphRunRecord(
         return new VisualGraphRunRecord(schemaVersion, newRunId, sourceKind, draftId, draftRevision,
                 publicationId, graphName, tenantId, namespace, environment, outputNode, newCreatedAt,
                 validated, compiled, success, elapsedMs, statusMap, diagnostics, errors, contextSummary,
-                outputSummary, resultsSummary, generatedDsl);
+                outputSummary, resultsSummary, nodeSnapshots, generatedDsl);
     }
 
     private static VisualGraphRunRecord fromDraft(String sourceKind,
@@ -172,8 +206,21 @@ public record VisualGraphRunRecord(
                 summarizeMap(context),
                 summarizeRoot(safeResponse.output()),
                 summarizeMap(safeResponse.results()),
+                nodeSnapshots(draft),
                 safeResponse.generatedDsl()
         );
+    }
+
+    private static Map<String, NodeSnapshot> nodeSnapshots(GraphDraft draft) {
+        if (draft == null || draft.nodes().isEmpty()) {
+            return Map.of();
+        }
+        Map<String, NodeSnapshot> snapshots = new LinkedHashMap<>();
+        for (int i = 0; i < draft.nodes().size(); i++) {
+            GraphDraft.DraftNode node = draft.nodes().get(i);
+            snapshots.put(node.id(), new NodeSnapshot(node.id(), i, node.operatorRef(), node.label()));
+        }
+        return snapshots;
     }
 
     private static Map<String, Object> summarizeMap(Map<String, Object> values) {
@@ -284,5 +331,25 @@ public record VisualGraphRunRecord(
             }
         }
         return types.stream().toList();
+    }
+
+    /**
+     * Shape-only visual node metadata captured when a run record is created.
+     *
+     * @param nodeId node id
+     * @param nodeIndex zero-based draft node index
+     * @param operatorRef operator reference used by the node
+     * @param label display label
+     */
+    public record NodeSnapshot(String nodeId, int nodeIndex, String operatorRef, String label) {
+        /**
+         * Creates a node snapshot.
+         */
+        public NodeSnapshot {
+            nodeId = nodeId == null ? "" : nodeId;
+            nodeIndex = Math.max(-1, nodeIndex);
+            operatorRef = operatorRef == null ? "" : operatorRef;
+            label = label == null ? "" : label;
+        }
     }
 }

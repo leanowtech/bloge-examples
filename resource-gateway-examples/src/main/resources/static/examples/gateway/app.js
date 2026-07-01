@@ -354,6 +354,8 @@ const state = {
   },
   runHistoryMessage: null,
   runHistoryStats: null,
+  activeRunTrace: null,
+  activeRunTraceId: '',
   visualCheck: {
     message: 'Not checked',
     level: 'info',
@@ -1472,6 +1474,7 @@ function resetComposer() {
   state.previewingDraftRevision = 0;
   state.draftMessage = null;
   state.visualCheck = { message: 'Not checked', level: 'info', diagnostics: [] };
+  clearActiveRunTrace();
   state.customDsl = builderToDsl(state.builder);
   state.lastGeneratedVisualDsl = '';
   syncGraphInputSchemaTextFromBuilder({ render: false });
@@ -1490,6 +1493,7 @@ function recordBuilderHistory(action = 'Edit graph') {
   if (previous?.snapshot === snapshot) {
     return;
   }
+  clearActiveRunTrace();
   state.builderHistoryUndo.push({ action, snapshot });
   if (state.builderHistoryUndo.length > BUILDER_HISTORY_LIMIT) {
     state.builderHistoryUndo.shift();
@@ -1547,6 +1551,7 @@ function restoreBuilderHistorySnapshot(snapshot, message) {
   state.selectedNodeId = state.builder.selectedId;
   state.previewingDraftRevision = 0;
   state.visualCheck = { message: 'Not checked', level: 'info', diagnostics: [] };
+  clearActiveRunTrace();
   state.connectionMessage = null;
   state.lastPayload = null;
   syncGraphInputSchemaTextFromBuilder({ render: false });
@@ -1618,18 +1623,24 @@ function renderCanvasNavigator() {
   if (summary) {
     const query = String(state.canvasSearchQuery || '').trim();
     const suffix = results.length > visible.length ? ` · showing ${visible.length}` : '';
+    const traceSuffix = state.activeRunTrace
+      ? ` · ${runTraceCoverageText(runTraceCanvasCoverage(state.activeRunTrace, state.builder, state.layout))}`
+      : '';
     summary.textContent = query
-      ? `${results.length} of ${nodes.length} nodes${suffix}`
-      : `${nodes.length} nodes${suffix}`;
+      ? `${results.length} of ${nodes.length} nodes${suffix}${traceSuffix}`
+      : `${nodes.length} nodes${suffix}${traceSuffix}`;
   }
   const resultList = $('canvas-search-results');
   if (!resultList) return;
   resultList.innerHTML = visible.map((entry) => {
     const diagnostics = diagnosticsForCanvasNode(entry.nodeId);
+    const traceNode = runTraceForCanvasNode(entry.nodeId);
+    const traceIssues = Number(traceNode?.diagnosticCount) || 0;
     const issueClass = diagnostics.some((diagnostic) => String(diagnostic.level || '').toUpperCase() === 'ERROR')
+      || (Number(traceNode?.errorCount) || 0) > 0
       ? 'error'
-      : (diagnostics.length ? 'warning' : 'clean');
-    const issueText = diagnostics.length ? `${diagnostics.length} issue${diagnostics.length === 1 ? '' : 's'}` : 'clean';
+      : (diagnostics.length || traceIssues ? 'warning' : (traceNode ? runTraceLevel(traceNode) : 'clean'));
+    const issueText = canvasNodeIssueText(diagnostics, traceNode);
     const active = entry.nodeId === state.selectedNodeId || entry.nodeId === state.canvasFocusedNodeId ? ' active' : '';
     return `
       <button class="canvas-search-result${active}" type="button" data-canvas-node="${escapeHtml(entry.nodeId)}">
@@ -1729,6 +1740,101 @@ function focusRenderedCanvasNode(nodeId) {
 function diagnosticsForCanvasNode(nodeId) {
   return normalizeDiagnostics(state.visualCheck?.diagnostics)
     .filter((diagnostic) => diagnosticTargetNodeId(diagnostic) === nodeId);
+}
+
+function canvasNodeIssueText(diagnostics, traceNode) {
+  const parts = [];
+  if (diagnostics.length) {
+    parts.push(`${diagnostics.length} issue${diagnostics.length === 1 ? '' : 's'}`);
+  }
+  if (traceNode) {
+    const status = runTraceStatusLabel(traceNode);
+    const traceIssues = Number(traceNode.diagnosticCount) || 0;
+    parts.push(traceIssues ? `${status} · ${traceIssues} trace` : status);
+  }
+  return parts.join(' · ') || 'clean';
+}
+
+function runTraceForCanvasNode(nodeId) {
+  const nodes = Array.isArray(state.activeRunTrace?.nodes) ? state.activeRunTrace.nodes : [];
+  return nodes.find((node) => node.nodeId === nodeId) || null;
+}
+
+function runTraceLevel(traceNode) {
+  if (!traceNode) {
+    return 'clean';
+  }
+  if ((Number(traceNode.errorCount) || 0) > 0) {
+    return 'error';
+  }
+  if ((Number(traceNode.diagnosticCount) || 0) > 0) {
+    return 'warning';
+  }
+  const status = String(traceNode.status || '').toUpperCase();
+  if (status === 'COMPLETED' || status === 'SUCCESS' || status === 'SUCCEEDED') {
+    return 'success';
+  }
+  return status ? 'info' : 'clean';
+}
+
+function runTraceStatusLabel(traceNode) {
+  if (!traceNode) {
+    return 'clean';
+  }
+  const status = String(traceNode.status || '').trim() || (traceNode.outputSelected ? 'OUTPUT' : 'TRACE');
+  return status.length > 18 ? `${status.slice(0, 17)}...` : status;
+}
+
+function clearActiveRunTrace() {
+  state.activeRunTrace = null;
+  state.activeRunTraceId = '';
+}
+
+function runTraceCanvasCoverage(trace = state.activeRunTrace, builder = state.builder, layout = state.layout) {
+  const traceNodes = Array.isArray(trace?.nodes) ? trace.nodes : [];
+  const traceNodeIds = [...new Set(traceNodes
+    .map((node) => String(node?.nodeId || '').trim())
+    .filter(Boolean))];
+  const canvasIds = canvasNodeIds(builder, layout);
+  const matchedNodeIds = traceNodeIds.filter((nodeId) => canvasIds.has(nodeId));
+  const unmatchedNodeIds = traceNodeIds.filter((nodeId) => !canvasIds.has(nodeId));
+  const currentOnlyNodeIds = [...canvasIds].filter((nodeId) => !traceNodeIds.includes(nodeId));
+  const selectedOutputNode = traceNodes.find((node) => node?.outputSelected)?.nodeId || trace?.outputNode || '';
+  return {
+    traceNodeCount: traceNodeIds.length,
+    canvasNodeCount: canvasIds.size,
+    matchedNodeCount: matchedNodeIds.length,
+    matchedNodeIds,
+    unmatchedNodeIds,
+    currentOnlyNodeIds,
+    selectedOutputNode,
+    selectedOutputMatched: !selectedOutputNode || canvasIds.has(selectedOutputNode)
+  };
+}
+
+function canvasNodeIds(builder = state.builder, layout = state.layout) {
+  const ids = new Set();
+  if (Array.isArray(builder?.nodes)) {
+    builder.nodes.forEach((node) => {
+      if (node?.id) ids.add(String(node.id));
+    });
+  }
+  if (Array.isArray(layout?.nodes)) {
+    layout.nodes.forEach((node) => {
+      if (node?.id) ids.add(String(node.id));
+    });
+  }
+  return ids;
+}
+
+function runTraceCoverageText(coverage) {
+  if (!coverage || !coverage.traceNodeCount) {
+    return 'trace has no nodes';
+  }
+  const base = `trace ${coverage.matchedNodeCount}/${coverage.traceNodeCount} mapped`;
+  return coverage.unmatchedNodeIds?.length
+    ? `${base}, ${coverage.unmatchedNodeIds.length} missing`
+    : base;
 }
 
 function diagnosticTargetNodeId(diagnostic, builder = state.builder) {
@@ -3507,6 +3613,10 @@ function runHistoryRowHtml(record) {
     : 'transient';
   const diagnostics = Array.isArray(record.diagnostics) ? record.diagnostics.length : 0;
   const errors = Array.isArray(record.errors) ? record.errors.length : 0;
+  const nodeCount = record.nodeSnapshots && typeof record.nodeSnapshots === 'object'
+    ? Object.keys(record.nodeSnapshots).length
+    : 0;
+  const nodeNote = nodeCount ? `${nodeCount} nodes · ` : '';
   return `
     <button class="run-history-row ${escapeHtml(outcome)}" type="button" data-run-history-id="${escapeHtml(record.runId || '')}">
       <span class="run-history-main">
@@ -3515,7 +3625,7 @@ function runHistoryRowHtml(record) {
       </span>
       <span class="run-history-meta">
         <span>${escapeHtml(outcome)}</span>
-        <small>${escapeHtml(shortRunId(record.runId || ''))} · ${escapeHtml(record.elapsedMs || 0)}ms · ${diagnostics + errors} notes</small>
+        <small>${escapeHtml(shortRunId(record.runId || ''))} · ${escapeHtml(record.elapsedMs || 0)}ms · ${escapeHtml(nodeNote)}${diagnostics + errors} notes</small>
       </span>
     </button>
   `;
@@ -3542,12 +3652,39 @@ async function openRunHistoryRecord(runId) {
       recordResponse.json(),
       traceResponse.json()
     ]);
-    $('output').textContent = pretty({ runHistory: record, runTrace: trace });
-    state.runHistoryMessage = { text: `Loaded ${shortRunId(runId)}.`, level: 'success' };
+    state.activeRunTrace = trace;
+    state.activeRunTraceId = runId;
+    const traceSummary = runTraceSummary(trace);
+    const traceCoverage = runTraceCanvasCoverage(trace, state.builder, state.layout);
+    $('output').textContent = pretty({
+      runHistory: record,
+      runTrace: trace,
+      runTraceSummary: traceSummary,
+      runTraceCoverage: traceCoverage
+    });
+    state.runHistoryMessage = {
+      text: `Loaded ${shortRunId(runId)}: ${traceSummary.nodeCount} nodes, ${traceSummary.diagnosticCount} node diagnostics, ${runTraceCoverageText(traceCoverage)}.`,
+      level: traceCoverage.unmatchedNodeIds.length ? 'warning' : 'success'
+    };
   } catch (error) {
+    clearActiveRunTrace();
     state.runHistoryMessage = { text: error.message, level: 'error' };
   }
+  renderDiagram();
   renderRunHistoryStatus();
+}
+
+function runTraceSummary(trace) {
+  const nodes = Array.isArray(trace?.nodes) ? trace.nodes : [];
+  const diagnosticCount = nodes.reduce((total, node) => total + (Number(node.diagnosticCount) || 0), 0);
+  const errorCount = nodes.reduce((total, node) => total + (Number(node.errorCount) || 0), 0);
+  const selected = nodes.find((node) => node.outputSelected);
+  return {
+    nodeCount: nodes.length,
+    diagnosticCount,
+    errorCount,
+    selectedOutputNode: selected?.nodeId || trace?.outputNode || ''
+  };
 }
 
 async function loadRunHistory(options = {}) {
@@ -3935,6 +4072,7 @@ async function runSelectedPublication() {
 
   setPublicationMessage(`Running ${publication.publicationId}...`, 'info');
   setVisualCheck(`Running published ${publication.publicationId}...`, 'info');
+  clearActiveRunTrace();
   try {
     const response = await fetch(`/api/visual/publications/${encodeURIComponent(publication.publicationId)}/run`, {
       method: 'POST',
@@ -8179,12 +8317,14 @@ function renderDiagram() {
     }
   }
   for (const node of nodes) {
+    const traceNode = runTraceForCanvasNode(node.id);
+    const traceClass = traceNode ? ` trace-${runTraceLevel(traceNode)}` : '';
     const group = document.createElementNS('http://www.w3.org/2000/svg', 'g');
-    group.setAttribute('class', `node ${node.kind} ${state.selectedNodeId === node.id ? 'selected' : ''} ${state.canvasFocusedNodeId === node.id ? 'focused' : ''} ${executed ? 'executed' : ''}`);
+    group.setAttribute('class', `node ${node.kind} ${state.selectedNodeId === node.id ? 'selected' : ''} ${state.canvasFocusedNodeId === node.id ? 'focused' : ''} ${executed ? 'executed' : ''}${traceClass}`);
     group.setAttribute('data-node-id', node.id);
     group.setAttribute('tabindex', '0');
     group.setAttribute('role', 'button');
-    group.setAttribute('aria-label', `${node.label} node`);
+    group.setAttribute('aria-label', `${node.label} node${traceNode ? `, ${nodeTraceSummaryLabel(traceNode)}` : ''}`);
     if (isComposerSelected()) {
       group.classList.add('draggable-node');
       group.addEventListener('pointerdown', (event) => startNodeDrag(event, node));
@@ -8223,11 +8363,80 @@ function renderDiagram() {
     meta.setAttribute('y', String(node.position.y + 52));
     meta.textContent = node.operatorRef || node.kind;
     group.appendChild(meta);
+    if (traceNode) {
+      renderNodeTraceBadge(group, node, traceNode);
+    }
     if (isComposerSelected()) {
       renderPortHandles(group, node);
     }
     svg.appendChild(group);
   }
+}
+
+function renderNodeTraceBadge(group, visualNode, traceNode) {
+  const size = visualNode.size || NODE_SIZE;
+  const level = runTraceLevel(traceNode);
+  const width = 66;
+  const height = 18;
+  const x = visualNode.position.x + size.width - width - 10;
+  const y = visualNode.position.y + 9;
+  const badge = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+  badge.setAttribute('class', `node-trace-badge ${level}`);
+  badge.setAttribute('x', String(x));
+  badge.setAttribute('y', String(y));
+  badge.setAttribute('width', String(width));
+  badge.setAttribute('height', String(height));
+  badge.setAttribute('rx', '4');
+  const title = document.createElementNS('http://www.w3.org/2000/svg', 'title');
+  title.textContent = nodeTraceSummaryLabel(traceNode);
+  badge.appendChild(title);
+  group.appendChild(badge);
+
+  const label = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+  label.setAttribute('class', `node-trace-badge-text ${level}`);
+  label.setAttribute('x', String(x + width / 2));
+  label.setAttribute('y', String(y + 13));
+  label.setAttribute('text-anchor', 'middle');
+  label.textContent = nodeTraceBadgeText(traceNode);
+  group.appendChild(label);
+}
+
+function nodeTraceBadgeText(traceNode) {
+  const errors = Number(traceNode?.errorCount) || 0;
+  if (errors > 0) {
+    return `ERR ${errors}`;
+  }
+  const diagnostics = Number(traceNode?.diagnosticCount) || 0;
+  if (diagnostics > 0) {
+    return `WARN ${diagnostics}`;
+  }
+  if (traceNode?.outputSelected) {
+    return 'OUTPUT';
+  }
+  const status = String(traceNode?.status || '').trim().toUpperCase();
+  if (status === 'COMPLETED' || status === 'SUCCESS' || status === 'SUCCEEDED') {
+    return 'OK';
+  }
+  return status ? status.slice(0, 8) : 'TRACE';
+}
+
+function nodeTraceSummaryLabel(traceNode) {
+  const parts = [runTraceStatusLabel(traceNode)];
+  if (traceNode?.operatorRef) {
+    parts.push(traceNode.operatorRef);
+  }
+  if (traceNode?.outputSelected) {
+    parts.push('selected output');
+  }
+  const diagnostics = Number(traceNode?.diagnosticCount) || 0;
+  const errors = Number(traceNode?.errorCount) || 0;
+  if (diagnostics) {
+    parts.push(`${diagnostics} diagnostic${diagnostics === 1 ? '' : 's'}`);
+  }
+  if (errors) {
+    parts.push(`${errors} error${errors === 1 ? '' : 's'}`);
+  }
+  return parts.filter(Boolean).join(' · ');
 }
 
 function renderPortHandles(group, visualNode) {
@@ -12714,6 +12923,7 @@ async function runCustomGraph() {
   }
 
   $('output').textContent = pretty({ status: 'running', graph: 'customLoanPolicy' });
+  clearActiveRunTrace();
   const outputNode = composerOutputNode();
   const builderDsl = builderToDsl(state.builder);
   const useVisualDraft = state.customDsl === builderDsl || state.customDsl === state.lastGeneratedVisualDsl;

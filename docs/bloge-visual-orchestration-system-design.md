@@ -701,7 +701,7 @@ publication 级 warning，提示 replay、recertification 或 republish 前需�
 | `GET` | `/api/visual/runs/{runId}` | 当前已实现：获取 shape-only 运行记录 |
 | `GET` | `/api/visual/runs/{runId}/nodes` | 后续方向：获取节点状态 |
 | `GET` | `/api/visual/runs/{runId}/events` | 后续方向：SSE 运行事件 |
-| `GET` | `/api/visual/runs/{runId}/trace` | 当前已实现：获取节点 status、选中输出标记、result shape summary、diagnostics、errors 和 DSL 的 shape-only replay trace |
+| `GET` | `/api/visual/runs/{runId}/trace` | 当前已实现：获取节点 status、operator metadata、选中输出标记、result shape summary、按节点归属的 diagnostics、errors 和 DSL 的 shape-only replay trace |
 
 ### 12.4 Golden Case API
 
@@ -1007,7 +1007,7 @@ resource-gateway 已有 rate limiting、cache、circuit breaker，可以作为�
 2. **Operator Usage Index**：每个 operator 被哪些 graph version 使用。
 3. **Descriptor Impact Analysis**：更新 descriptor 前提示影响的图。
 4. **Golden Test Cases**：当前已支持每个发布版本绑定样例输入、期望输出、基础 value/path assertions 和 `OUTPUT_MATCHES_SCHEMA` schema assertions，并用 frozen publication DSL 执行 single-case 与 suite-level 回归；浏览器 Publications 面板已支持从最近一次 publication run 输出保存 exact-output case、单条 value/path assertion 或 output-schema assertion；latest certification 作为独立控制面状态保存，不反写 immutable publication；promotion-readiness status 通过 case-set fingerprint 识别 stale certification，并以 `promotionReady` 与 diagnostics 支撑推广准入。后续可扩展容忍式断言。
-5. **Runtime Trace Replay**：当前已支持从 run history 打开 shape-only trace，按节点查看 status、结果形状、选中输出、诊断和 DSL；后续可补更细的节点耗时、事件流和画布高亮重放。
+5. **Runtime Trace Replay**：当前已支持从 run history 打开 shape-only trace，按节点查看 status、operator metadata、结果形状、选中输出、诊断归属和 DSL，并在当前画布匹配节点上显示 replay badge；当历史 trace 节点已不在当前画布中时，浏览器会报告 replay coverage 和 missing nodes，避免误判为完整回放。后续可补更细的节点耗时、事件流和时间轴重放。
 6. **Dead Node Detection**：提示不可达节点、永不命中分支、未使用输出。
 7. **Policy Audit**：记录谁发布、谁覆盖权限、谁修改 descriptor。
 8. **Compatibility Gate**：operator schema 或 graph output schema 不兼容时阻断发布。

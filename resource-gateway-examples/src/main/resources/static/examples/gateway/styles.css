@@ -340,6 +340,14 @@ h2 {
   color: var(--green);
 }
 
+.canvas-search-result em.success {
+  color: var(--green);
+}
+
+.canvas-search-result em.info {
+  color: var(--blue);
+}
+
 .canvas-search-result em.warning {
   color: #b45309;
 }
@@ -476,6 +484,18 @@ h2 {
   filter: drop-shadow(0 8px 14px rgba(21, 128, 61, 0.20));
 }
 
+.node.trace-success rect {
+  stroke: var(--green);
+}
+
+.node.trace-warning rect {
+  stroke: var(--amber);
+}
+
+.node.trace-error rect {
+  stroke: var(--red);
+}
+
 .node-title {
   fill: var(--text);
   font-size: 13px;
@@ -485,6 +505,42 @@ h2 {
 .node-meta {
   fill: var(--muted);
   font-size: 11px;
+}
+
+.node .node-trace-badge {
+  stroke-width: 1;
+}
+
+.node .node-trace-badge.success {
+  fill: var(--green-soft);
+  stroke: var(--green);
+}
+
+.node .node-trace-badge.warning {
+  fill: var(--amber-soft);
+  stroke: var(--amber);
+}
+
+.node .node-trace-badge.error {
+  fill: var(--red-soft);
+  stroke: var(--red);
+}
+
+.node .node-trace-badge.info,
+.node .node-trace-badge.clean {
+  fill: #eef2ff;
+  stroke: var(--blue);
+}
+
+.node-trace-badge-text {
+  fill: var(--text);
+  font-size: 10px;
+  font-weight: 800;
+  pointer-events: none;
+}
+
+.node-trace-badge-text.error {
+  fill: var(--red);
 }
 
 .port-handle {
