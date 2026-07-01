@@ -17,6 +17,7 @@ public record VisualGraphGoldenAssertion(
      */
     public enum Mode {
         OUTPUT_EQUALS,
+        OUTPUT_MATCHES_SCHEMA,
         PATH_EQUALS,
         PATH_EXISTS,
         PATH_ABSENT

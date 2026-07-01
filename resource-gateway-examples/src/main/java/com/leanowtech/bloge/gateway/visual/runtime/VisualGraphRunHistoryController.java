@@ -65,4 +65,17 @@ public class VisualGraphRunHistoryController {
                 .map(ResponseEntity::ok)
                 .orElseGet(() -> ResponseEntity.notFound().build());
     }
+
+    /**
+     * Gets one shape-only run trace.
+     *
+     * @param runId run id
+     * @return run trace when present
+     */
+    @GetMapping("/{runId}/trace")
+    public ResponseEntity<VisualGraphRunTrace> trace(@PathVariable String runId) {
+        return repository.find(runId)
+                .map(record -> ResponseEntity.ok(VisualGraphRunTrace.from(record)))
+                .orElseGet(() -> ResponseEntity.notFound().build());
+    }
 }

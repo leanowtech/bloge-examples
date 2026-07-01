@@ -6,6 +6,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.SerializationFeature;
 import com.leanowtech.bloge.gateway.visual.diagnostic.VisualDiagnostic;
 import com.leanowtech.bloge.gateway.visual.draft.GraphDraft;
+import com.leanowtech.bloge.gateway.visual.model.SchemaEnvelope;
 import com.leanowtech.bloge.gateway.visual.publication.VisualGraphPublication;
 import com.leanowtech.bloge.gateway.visual.publication.VisualGraphPublicationRepository;
 import com.leanowtech.bloge.gateway.visual.runtime.VisualGraphRunResponse;
@@ -288,14 +289,16 @@ public class VisualGraphGoldenCaseController {
                                           List<VisualDiagnostic> diagnostics) {
         for (int i = 0; i < testCase.assertions().size(); i++) {
             VisualGraphGoldenAssertion assertion = testCase.assertions().get(i);
-            if (assertion.mode() == VisualGraphGoldenAssertion.Mode.OUTPUT_EQUALS
-                    || validJsonPointer(assertion.path())) {
-                continue;
+            String assertionPath = "/assertions/%d".formatted(i);
+            if (assertion.mode() == VisualGraphGoldenAssertion.Mode.OUTPUT_MATCHES_SCHEMA) {
+                assertionSchemaEnvelope(assertion.expectedValue(), assertionPath + "/expectedValue", diagnostics);
+            } else if (assertion.mode() != VisualGraphGoldenAssertion.Mode.OUTPUT_EQUALS
+                    && !validJsonPointer(assertion.path())) {
+                diagnostics.add(VisualDiagnostic.error("visual.golden.assertionInvalidPath",
+                        "Golden case '%s' assertion path '%s' is not a JSON Pointer."
+                                .formatted(testCase.caseId(), assertion.path()),
+                        assertionPath + "/path"));
             }
-            diagnostics.add(VisualDiagnostic.error("visual.golden.assertionInvalidPath",
-                    "Golden case '%s' assertion path '%s' is not a JSON Pointer."
-                            .formatted(testCase.caseId(), assertion.path()),
-                    "/assertions/%d/path".formatted(i)));
         }
     }
 
@@ -333,19 +336,23 @@ public class VisualGraphGoldenCaseController {
         for (int i = 0; i < testCase.assertions().size(); i++) {
             VisualGraphGoldenAssertion assertion = testCase.assertions().get(i);
             String target = "/assertions/%d".formatted(i);
-            diagnostics.addAll(assertionDiagnostics(testCase.caseId(), assertion, actualNode, target));
+            diagnostics.addAll(assertionDiagnostics(testCase.caseId(), assertion, actualOutput, actualNode, target));
         }
         return diagnostics;
     }
 
     private List<VisualDiagnostic> assertionDiagnostics(String caseId,
                                                         VisualGraphGoldenAssertion assertion,
-                                                        JsonNode actualOutput,
+                                                        Object actualOutput,
+                                                        JsonNode actualNode,
                                                         String target) {
         if (assertion.mode() == VisualGraphGoldenAssertion.Mode.OUTPUT_EQUALS) {
             return jsonEquals(assertion.expectedValue(), actualOutput)
                     ? List.of()
                     : List.of(assertionFailed(caseId, "output equals expected value", target + "/expectedValue"));
+        }
+        if (assertion.mode() == VisualGraphGoldenAssertion.Mode.OUTPUT_MATCHES_SCHEMA) {
+            return schemaAssertionDiagnostics(caseId, assertion, actualOutput, target + "/expectedValue");
         }
         if (!validJsonPointer(assertion.path())) {
             return List.of(VisualDiagnostic.error("visual.golden.assertionInvalidPath",
@@ -354,7 +361,7 @@ public class VisualGraphGoldenCaseController {
                     target + "/path"));
         }
 
-        JsonNode actualValue = actualOutput.at(assertion.path());
+        JsonNode actualValue = actualNode.at(assertion.path());
         return switch (assertion.mode()) {
             case PATH_EQUALS -> jsonEquals(assertion.expectedValue(), actualValue)
                     ? List.of()
@@ -371,8 +378,55 @@ public class VisualGraphGoldenCaseController {
                     : List.of(assertionFailed(caseId,
                             "path '%s' is absent".formatted(assertion.path()),
                             target + "/path"));
-            case OUTPUT_EQUALS -> List.of();
+            case OUTPUT_EQUALS, OUTPUT_MATCHES_SCHEMA -> List.of();
         };
+    }
+
+    private List<VisualDiagnostic> schemaAssertionDiagnostics(String caseId,
+                                                              VisualGraphGoldenAssertion assertion,
+                                                              Object actualOutput,
+                                                              String target) {
+        List<VisualDiagnostic> diagnostics = new ArrayList<>();
+        Optional<SchemaEnvelope> schema = assertionSchemaEnvelope(assertion.expectedValue(), target, diagnostics);
+        if (diagnostics.stream().anyMatch(VisualDiagnostic::error) || schema.isEmpty()) {
+            return diagnostics;
+        }
+        return VisualSchemaValidator.validateValue(schema.get(), actualOutput, target).stream()
+                .map(diagnostic -> VisualDiagnostic.error("visual.golden.schemaAssertionFailed",
+                        "Golden case '%s' output does not satisfy assertion schema."
+                                .formatted(caseId),
+                        diagnostic.target()))
+                .toList();
+    }
+
+    private Optional<SchemaEnvelope> assertionSchemaEnvelope(Object value,
+                                                            String target,
+                                                            List<VisualDiagnostic> diagnostics) {
+        if (!(value instanceof Map<?, ?> rawMap)) {
+            diagnostics.add(VisualDiagnostic.error("visual.golden.assertionSchemaInvalid",
+                    "Golden schema assertion expectedValue must be a JSON schema object or SchemaEnvelope.",
+                    target));
+            return Optional.empty();
+        }
+        try {
+            Map<String, Object> schemaMap = stringKeyMap(rawMap);
+            SchemaEnvelope envelope = schemaMap.get("schema") instanceof Map<?, ?>
+                    ? objectMapper.convertValue(schemaMap, SchemaEnvelope.class)
+                    : new SchemaEnvelope(SchemaEnvelope.JSON_SCHEMA, "2020-12", schemaMap);
+            diagnostics.addAll(VisualSchemaValidator.validateEnvelope(envelope, target));
+            return Optional.of(envelope);
+        } catch (IllegalArgumentException ex) {
+            diagnostics.add(VisualDiagnostic.error("visual.golden.assertionSchemaInvalid",
+                    "Golden schema assertion expectedValue could not be parsed as a visual schema.",
+                    target));
+            return Optional.empty();
+        }
+    }
+
+    private static Map<String, Object> stringKeyMap(Map<?, ?> rawMap) {
+        Map<String, Object> values = new LinkedHashMap<>();
+        rawMap.forEach((key, value) -> values.put(String.valueOf(key), value));
+        return values;
     }
 
     private VisualDiagnostic assertionFailed(String caseId, String expectation, String target) {

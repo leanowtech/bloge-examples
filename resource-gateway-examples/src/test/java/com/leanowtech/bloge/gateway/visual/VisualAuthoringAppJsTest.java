@@ -316,6 +316,8 @@ class VisualAuthoringAppJsTest {
                   'nodeIdFromDiagnosticPointer',
                   'normalizeDiagnosticNodeTarget',
                   'jsonPointerUnescape',
+                  'goldenAssertionsFromControls',
+                  'schemaFromValue',
                   'configFieldDescriptors',
                   'hasSchemaProperties',
                   'labelForNode',
@@ -926,6 +928,10 @@ class VisualAuthoringAppJsTest {
                   visualCheck: { message: 'Previously checked', level: 'success', diagnostics: [] },
                   connectionMessage: { text: 'connected', level: 'success' },
                   lastPayload: { output: true },
+                  selectedPublicationId: 'publication-1',
+                  goldenAssertionMode: 'OUTPUT_MATCHES_SCHEMA',
+                  goldenAssertionPath: '',
+                  goldenAssertionValueText: '',
                   layout: {
                     nodes: [
                       { id: 'policy', label: 'Loan Policy', operatorRef: 'bloge:decisionTable', kind: 'decision-table' },
@@ -1055,6 +1061,15 @@ class VisualAuthoringAppJsTest {
                   context.state.builder.nodes[1],
                   { nodeId: 'riskNode', path: 'facts.reason' }
                 );
+                const inferredSchemaAssertion = context.goldenAssertionsFromControls({
+                  approved: true,
+                  score: 720
+                })[0];
+                context.state.goldenAssertionValueText = '{"type":"object","properties":{"approved":{"type":"boolean"}},"required":["approved"],"additionalProperties":true}';
+                const explicitSchemaAssertion = context.goldenAssertionsFromControls({
+                  approved: true,
+                  score: 720
+                })[0];
                 context.sourceHandlesForNode = (node) => {
                   if (node.id !== 'riskNode') {
                     return [];
@@ -1363,6 +1378,11 @@ class VisualAuthoringAppJsTest {
                   ['nested output contract type', nestedOutputContract.type, 'string'],
                   ['nested output contract fields', nestedOutputContract.fieldCount, 0],
                   ['nested output contract source label', nestedOutputContract.sourceLabel, 'riskNode.payload.facts.reason'],
+                  ['golden schema assertion mode', inferredSchemaAssertion.mode, 'OUTPUT_MATCHES_SCHEMA'],
+                  ['golden schema assertion envelope', inferredSchemaAssertion.expectedValue.format, 'json-schema'],
+                  ['golden schema assertion inferred field', inferredSchemaAssertion.expectedValue.schema.properties.approved.type, 'boolean'],
+                  ['golden schema assertion inferred required', inferredSchemaAssertion.expectedValue.schema.required.join('|'), 'approved|score'],
+                  ['golden schema assertion explicit type', explicitSchemaAssertion.expectedValue.properties.approved.type, 'boolean'],
                   ['connectability source count', connectability.sourceCount, 3],
                   ['connectability available count', connectability.availableCount, 6],
                   ['connectability wired count', connectability.alreadyCount, 1],

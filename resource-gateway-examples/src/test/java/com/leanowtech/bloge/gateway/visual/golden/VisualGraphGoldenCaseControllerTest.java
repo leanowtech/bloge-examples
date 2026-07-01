@@ -162,6 +162,27 @@ class VisualGraphGoldenCaseControllerTest {
     }
 
     @Test
+    void saveRejectsGoldenCaseWhenSchemaAssertionExpectedValueIsNotSchemaObject() {
+        InMemoryVisualGraphPublicationRepository publications = new InMemoryVisualGraphPublicationRepository();
+        VisualGraphPublication publication = publications.create(publication());
+        VisualGraphGoldenCaseController controller = controller(publications, new CapturingRunService(Map.of()));
+        VisualGraphGoldenCase testCase = goldenCaseWithAssertions(publication.publicationId(),
+                List.of(assertion(VisualGraphGoldenAssertion.Mode.OUTPUT_MATCHES_SCHEMA, "", "boolean")));
+
+        ResponseEntity<?> response = controller.save(testCase);
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+        assertThat(response.getBody()).isInstanceOf(VisualValidationResult.class);
+        VisualValidationResult validation = (VisualValidationResult) response.getBody();
+        assertThat(validation.valid()).isFalse();
+        assertThat(validation.diagnostics())
+                .anySatisfy(diagnostic -> {
+                    assertThat(diagnostic.code()).isEqualTo("visual.golden.assertionSchemaInvalid");
+                    assertThat(diagnostic.target()).isEqualTo("/assertions/0/expectedValue");
+                });
+    }
+
+    @Test
     void runGoldenCaseRecordsRunAndPassesWhenOutputMatches() {
         InMemoryVisualGraphPublicationRepository publications = new InMemoryVisualGraphPublicationRepository();
         VisualGraphPublication publication = publications.create(publication());
@@ -203,6 +224,57 @@ class VisualGraphGoldenCaseControllerTest {
         assertThat(response.getBody()).isNotNull();
         assertThat(response.getBody().passed()).isTrue();
         assertThat(response.getBody().diagnostics()).isEmpty();
+    }
+
+    @Test
+    void runGoldenCasePassesWhenOutputMatchesSchemaAssertion() {
+        InMemoryVisualGraphPublicationRepository publications = new InMemoryVisualGraphPublicationRepository();
+        VisualGraphPublication publication = publications.create(publication());
+        VisualGraphGoldenCaseController controller = controller(publications,
+                new CapturingRunService(Map.of("approved", true, "decision", "APPROVED")));
+        VisualGraphGoldenCase stored = saveCase(controller, goldenCaseWithAssertions(publication.publicationId(),
+                List.of(schemaAssertion(Map.of(
+                        "type", "object",
+                        "properties", Map.of(
+                                "approved", Map.of("type", "boolean"),
+                                "decision", Map.of("type", "string")
+                        ),
+                        "required", List.of("approved"),
+                        "additionalProperties", true
+                )))));
+
+        ResponseEntity<VisualGraphGoldenCaseRunResult> response = controller.run(stored.caseId());
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat(response.getBody()).isNotNull();
+        assertThat(response.getBody().passed()).isTrue();
+        assertThat(response.getBody().diagnostics()).isEmpty();
+    }
+
+    @Test
+    void runGoldenCaseFailsWhenOutputViolatesSchemaAssertion() {
+        InMemoryVisualGraphPublicationRepository publications = new InMemoryVisualGraphPublicationRepository();
+        VisualGraphPublication publication = publications.create(publication());
+        VisualGraphGoldenCaseController controller = controller(publications,
+                new CapturingRunService(Map.of("approved", "yes")));
+        VisualGraphGoldenCase stored = saveCase(controller, goldenCaseWithAssertions(publication.publicationId(),
+                List.of(schemaAssertion(Map.of(
+                        "type", "object",
+                        "properties", Map.of("approved", Map.of("type", "boolean")),
+                        "required", List.of("approved"),
+                        "additionalProperties", false
+                )))));
+
+        ResponseEntity<VisualGraphGoldenCaseRunResult> response = controller.run(stored.caseId());
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat(response.getBody()).isNotNull();
+        assertThat(response.getBody().passed()).isFalse();
+        assertThat(response.getBody().diagnostics())
+                .extracting(VisualDiagnostic::code)
+                .containsExactly("visual.golden.schemaAssertionFailed");
+        assertThat(response.getBody().diagnostics().getFirst().target())
+                .isEqualTo("/assertions/0/expectedValue/approved");
     }
 
     @Test
@@ -588,6 +660,10 @@ class VisualGraphGoldenCaseControllerTest {
                                                        String path,
                                                        Object expectedValue) {
         return new VisualGraphGoldenAssertion(mode, path, expectedValue);
+    }
+
+    private static VisualGraphGoldenAssertion schemaAssertion(Object schema) {
+        return assertion(VisualGraphGoldenAssertion.Mode.OUTPUT_MATCHES_SCHEMA, "", schema);
     }
 
     private static VisualGraphPublication publication() {

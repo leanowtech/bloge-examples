@@ -3278,6 +3278,7 @@ function renderGoldenAssertionControls() {
   const modes = [
     ['EXACT_OUTPUT', 'Exact output'],
     ['OUTPUT_EQUALS', 'Output equals'],
+    ['OUTPUT_MATCHES_SCHEMA', 'Output matches schema'],
     ['PATH_EQUALS', 'Path equals'],
     ['PATH_EXISTS', 'Path exists'],
     ['PATH_ABSENT', 'Path absent']
@@ -3296,6 +3297,7 @@ function renderGoldenAssertionControls() {
     || state.goldenAssertionMode === 'PATH_EXISTS'
     || state.goldenAssertionMode === 'PATH_ABSENT';
   const valueMode = state.goldenAssertionMode === 'OUTPUT_EQUALS'
+    || state.goldenAssertionMode === 'OUTPUT_MATCHES_SCHEMA'
     || state.goldenAssertionMode === 'PATH_EQUALS';
   pathInput.value = state.goldenAssertionPath;
   pathInput.disabled = !state.selectedPublicationId || !pathMode;
@@ -3304,7 +3306,9 @@ function renderGoldenAssertionControls() {
   };
   valueInput.value = state.goldenAssertionValueText;
   valueInput.disabled = !state.selectedPublicationId || !valueMode;
-  valueInput.placeholder = valueMode ? 'Expected JSON value' : '';
+  valueInput.placeholder = state.goldenAssertionMode === 'OUTPUT_MATCHES_SCHEMA'
+    ? 'JSON schema, blank infers from last output'
+    : valueMode ? 'Expected JSON value' : '';
   valueInput.oninput = () => {
     state.goldenAssertionValueText = valueInput.value;
   };
@@ -3524,12 +3528,21 @@ function shortRunId(runId) {
 async function openRunHistoryRecord(runId) {
   if (!runId) return;
   try {
-    const response = await fetch(`/api/visual/runs/${encodeURIComponent(runId)}`);
-    if (!response.ok) {
-      throw new Error(`Run ${runId} failed with ${response.status}`);
+    const [recordResponse, traceResponse] = await Promise.all([
+      fetch(`/api/visual/runs/${encodeURIComponent(runId)}`),
+      fetch(`/api/visual/runs/${encodeURIComponent(runId)}/trace`)
+    ]);
+    if (!recordResponse.ok) {
+      throw new Error(`Run ${runId} failed with ${recordResponse.status}`);
     }
-    const payload = await response.json();
-    $('output').textContent = pretty({ runHistory: payload });
+    if (!traceResponse.ok) {
+      throw new Error(`Run trace ${runId} failed with ${traceResponse.status}`);
+    }
+    const [record, trace] = await Promise.all([
+      recordResponse.json(),
+      traceResponse.json()
+    ]);
+    $('output').textContent = pretty({ runHistory: record, runTrace: trace });
     state.runHistoryMessage = { text: `Loaded ${shortRunId(runId)}.`, level: 'success' };
   } catch (error) {
     state.runHistoryMessage = { text: error.message, level: 'error' };
@@ -3786,6 +3799,16 @@ function goldenAssertionsFromControls(actualOutput) {
   }
   if (mode === 'PATH_EXISTS' || mode === 'PATH_ABSENT') {
     return [{ mode, path: state.goldenAssertionPath || '', expectedValue: null }];
+  }
+  if (mode === 'OUTPUT_MATCHES_SCHEMA') {
+    const expectedValue = state.goldenAssertionValueText && state.goldenAssertionValueText.trim()
+      ? JSON.parse(state.goldenAssertionValueText)
+      : {
+          format: 'json-schema',
+          version: '2020-12',
+          schema: schemaFromValue(actualOutput)
+        };
+    return [{ mode, path: '', expectedValue }];
   }
   const expectedValue = state.goldenAssertionValueText && state.goldenAssertionValueText.trim()
     ? JSON.parse(state.goldenAssertionValueText)

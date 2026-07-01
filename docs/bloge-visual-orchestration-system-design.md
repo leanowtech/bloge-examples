@@ -698,10 +698,10 @@ publication 级 warning，提示 replay、recertification 或 republish 前需�
 | --- | --- | --- |
 | `GET` | `/api/visual/runs` | 当前已实现：按 source/draft/publication/graph/outcome/limit 查询运行历史 |
 | `GET` | `/api/visual/runs/stats` | 当前已实现：按同一过滤窗口聚合成功率、blocked/error 和 p50/p95/max latency |
-| `GET` | `/api/visual/runs/{runId}` | 获取运行结果 |
+| `GET` | `/api/visual/runs/{runId}` | 当前已实现：获取 shape-only 运行记录 |
 | `GET` | `/api/visual/runs/{runId}/nodes` | 后续方向：获取节点状态 |
 | `GET` | `/api/visual/runs/{runId}/events` | 后续方向：SSE 运行事件 |
-| `GET` | `/api/visual/runs/{runId}/trace` | 后续方向：节点输入输出摘要、错误、耗时 |
+| `GET` | `/api/visual/runs/{runId}/trace` | 当前已实现：获取节点 status、选中输出标记、result shape summary、diagnostics、errors 和 DSL 的 shape-only replay trace |
 
 ### 12.4 Golden Case API
 
@@ -709,8 +709,8 @@ publication 级 warning，提示 replay、recertification 或 republish 前需�
 | --- | --- | --- |
 | `GET` | `/api/visual/golden-cases?publicationId=...` | 当前已实现：查询绑定某个 immutable publication 的 golden regression cases |
 | `GET` | `/api/visual/golden-cases/{caseId}` | 当前已实现：读取单个 golden case |
-| `POST` | `/api/visual/golden-cases` | 当前已实现：为已发布版本保存样例 context、outputNode、期望输出和可选 output assertions |
-| `POST` | `/api/visual/golden-cases/{caseId}/run` | 当前已实现：用 frozen publication DSL 执行 golden case，写入 run history，并返回 exact-output 或 assertion diagnostics |
+| `POST` | `/api/visual/golden-cases` | 当前已实现：为已发布版本保存样例 context、outputNode、期望输出、可选 output assertions 和 output schema assertions |
+| `POST` | `/api/visual/golden-cases/{caseId}/run` | 当前已实现：用 frozen publication DSL 执行 golden case，写入 run history，并返回 exact-output、value assertion 或 schema assertion diagnostics |
 | `POST` | `/api/visual/golden-cases/publications/{publicationId}/run` | 当前已实现：执行某个 publication 绑定的全部 golden cases，汇总 total/passed/failed 并为每个 case 写入 run history |
 | `POST` | `/api/visual/golden-cases/publications/{publicationId}/certify` | 当前已实现：执行 suite，持久化该 publication 的最新 golden certification，并记录当次 case-set fingerprint |
 | `GET` | `/api/visual/golden-cases/publications/{publicationId}/certification` | 当前已实现：读取该 publication 最近一次 golden certification |
@@ -1006,8 +1006,8 @@ resource-gateway 已有 rate limiting、cache、circuit breaker，可以作为�
 1. **Schema Drift Detection**：运行时采样输出，与声明 schema 比较。
 2. **Operator Usage Index**：每个 operator 被哪些 graph version 使用。
 3. **Descriptor Impact Analysis**：更新 descriptor 前提示影响的图。
-4. **Golden Test Cases**：当前已支持每个发布版本绑定样例输入、期望输出和基础 output assertions，并用 frozen publication DSL 执行 single-case 与 suite-level 回归；浏览器 Publications 面板已支持从最近一次 publication run 输出保存 exact-output case 或单条 assertion；latest certification 作为独立控制面状态保存，不反写 immutable publication；promotion-readiness status 通过 case-set fingerprint 识别 stale certification，并以 `promotionReady` 与 diagnostics 支撑推广准入。后续可扩展容忍式断言和 schema-level 断言。
-5. **Runtime Trace Replay**：失败执行可以在画布上重放。
+4. **Golden Test Cases**：当前已支持每个发布版本绑定样例输入、期望输出、基础 value/path assertions 和 `OUTPUT_MATCHES_SCHEMA` schema assertions，并用 frozen publication DSL 执行 single-case 与 suite-level 回归；浏览器 Publications 面板已支持从最近一次 publication run 输出保存 exact-output case、单条 value/path assertion 或 output-schema assertion；latest certification 作为独立控制面状态保存，不反写 immutable publication；promotion-readiness status 通过 case-set fingerprint 识别 stale certification，并以 `promotionReady` 与 diagnostics 支撑推广准入。后续可扩展容忍式断言。
+5. **Runtime Trace Replay**：当前已支持从 run history 打开 shape-only trace，按节点查看 status、结果形状、选中输出、诊断和 DSL；后续可补更细的节点耗时、事件流和画布高亮重放。
 6. **Dead Node Detection**：提示不可达节点、永不命中分支、未使用输出。
 7. **Policy Audit**：记录谁发布、谁覆盖权限、谁修改 descriptor。
 8. **Compatibility Gate**：operator schema 或 graph output schema 不兼容时阻断发布。
@@ -1032,7 +1032,7 @@ resource-gateway 已有 rate limiting、cache、circuit breaker，可以作为�
 | DSL 字符串由 JS 拼接，难以校验和扩展 | 已缓解：GraphDraft -> DSL 在服务端生成，compile/run/publish 走服务端 validator/generator/compiler | 保留 DSL preview，但不让手写 DSL 成为画布语义源 |
 | `ResourceDescriptor` 无精确 payload schema，画布无法类型安全连接 | 已缓解：独立 `ResourceDesignContract` 补足 request/payload schema 并投影 resource virtual operator；已提供 OpenAPI operation 到 contract 草案的 preview endpoint | 继续深化 descriptor 生成建议、schema diff 和更广义接口导入 |
 | `/compose/run` 只注册 `httpResource`，无法执行通用算子 | 部分缓解：visual draft run 使用 GraphDraft DSL generator 和现有 dynamic runner；user-library transform/branch/native lowering 已可参与 | 补 Java OperatorRegistry projector 和更完整 runtime operator availability |
-| diagnostics 只展示 compiler 信息，缺少 schema/权限/策略错误 | 已缓解：`VisualDiagnostic` 覆盖 schema、policy、connection、fingerprint、compile/run diagnostics | 补 run history/node trace 持久化，让诊断可回放和审计 |
+| diagnostics 只展示 compiler 信息，缺少 schema/权限/策略错误 | 已缓解：`VisualDiagnostic` 覆盖 schema、policy、connection、fingerprint、compile/run diagnostics；run history 已保存 shape-only trace 并提供 `/api/visual/runs/{runId}/trace` | 继续补节点耗时、事件流和画布高亮重放 |
 
 当前 `resource-gateway-examples` 已经把 `configSchema` 的第一层落成代码：用户导入 operator library 时会校验 config schema 本身，canvas inspector 会根据简单 config 字段渲染编辑控件，并允许把 config 字段从 literal 切换为 source-backed expression。服务端 `GraphDraftValidator` 会在 validate/compile/run 前阻断缺必填 config、类型不匹配、enum 不匹配和禁止额外字段场景。结构化 config expression（例如 `{ kind: "expression", expr: "ctx.threshold" }`）不会被当成普通 object 误杀；如果它是纯 `ctx.*` 或 `node.output.*` 引用，服务端会把引用 schema 与目标 `configSchema` 做兼容性校验，DSL preview/codegen 也会把该结构降回普通 BLOGE DSL 表达式。native operator 的业务 `configSchema` 会 lower 成 BLOGE input block 的 `config` 对象，所以浏览器会在业务 config 存在时隐藏会 lower 到根 `config` 的普通 input target，服务端也会在 draft 校验和连接预检中阻断同一节点把普通 input schema 路径 lower 到根 `config` 的冲突。它还区分正式校验与连接预检：正式 draft 阻断 data edge / semantic dependency 不一致，连接预检则允许尚未写入 binding 的 preview edge 先通过 schema 与 DAG gate。config 中的表达式引用已经参与引用存在性校验、DAG cycle gate 和拓扑排序。复杂表达式类型推断、复杂嵌套 config 的专业化控件仍属于后续增强，但服务端契约已经先行兜底。
 
@@ -1104,7 +1104,7 @@ Phase 1 的工程拆分、包结构、API、测试和 Definition of Done 见
 - visual layout 随版本保存。
 - schema compatibility diff。
 - operator/descriptor impact analysis。
-- golden test cases 基础版、output assertion modes、publication suite run、latest certification 和 stale-aware promotion gate 已落地，后续补 schema-level / tolerance 断言。
+- golden test cases 基础版、output assertion modes、output schema assertion、publication suite run、latest certification 和 stale-aware promotion gate 已落地，后续补 tolerance 断言。
 
 验收：
 

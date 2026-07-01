@@ -73,11 +73,47 @@ class VisualGraphRunHistoryControllerTest {
     }
 
     @Test
+    void traceReturnsShapeOnlyNodeReplayView() {
+        InMemoryVisualGraphRunRepository repository = new InMemoryVisualGraphRunRepository();
+        VisualGraphRunRecord stored = repository.create(traceRecord());
+        VisualGraphRunHistoryController controller = new VisualGraphRunHistoryController(repository);
+
+        VisualGraphRunTrace trace = controller.trace(stored.runId()).getBody();
+
+        assertThat(trace).isNotNull();
+        assertThat(trace.schemaVersion()).isEqualTo(VisualGraphRunTrace.SCHEMA_VERSION);
+        assertThat(trace.runId()).isEqualTo(stored.runId());
+        assertThat(trace.graphName()).isEqualTo("visualPolicy");
+        assertThat(trace.outputNode()).isEqualTo("response");
+        assertThat(trace.contextSummary()).containsKey("score");
+        assertThat(trace.outputSummary()).containsEntry("type", "object");
+        assertThat(trace.nodes())
+                .extracting(VisualGraphRunTrace.NodeTrace::nodeId)
+                .containsExactlyInAnyOrder("loanPolicy", "response");
+        VisualGraphRunTrace.NodeTrace decisionTrace = trace.nodes().stream()
+                .filter(node -> node.nodeId().equals("loanPolicy"))
+                .findFirst()
+                .orElseThrow();
+        assertThat(decisionTrace.status()).isEqualTo("COMPLETED");
+        assertThat(decisionTrace.outputSelected()).isFalse();
+        assertThat(decisionTrace.statusKnown()).isTrue();
+        assertThat(decisionTrace.resultKnown()).isTrue();
+        assertThat(decisionTrace.resultSummary()).containsEntry("type", "object");
+        assertThat(trace.nodes().stream()
+                .filter(node -> node.nodeId().equals("response"))
+                .findFirst()
+                .orElseThrow()
+                .outputSelected()).isTrue();
+        assertThat(trace.generatedDsl()).contains("graph visualPolicy");
+    }
+
+    @Test
     void getReturnsNotFoundForUnknownRun() {
         VisualGraphRunHistoryController controller =
                 new VisualGraphRunHistoryController(new InMemoryVisualGraphRunRepository());
 
         assertThat(controller.get("missing").getStatusCode()).isEqualTo(HttpStatus.NOT_FOUND);
+        assertThat(controller.trace("missing").getStatusCode()).isEqualTo(HttpStatus.NOT_FOUND);
     }
 
     private static VisualGraphRunRecord record() {
@@ -128,6 +164,44 @@ class VisualGraphRunHistoryControllerTest {
                     response.diagnostics(), response.errors(), Map.of("score", Map.of("type", "integer")),
                     Map.of("type", "object"), Map.of(), response.generatedDsl());
         }
+        return VisualGraphRunRecord.storedDraft(draft, Map.of("score", 720), response);
+    }
+
+    private static VisualGraphRunRecord traceRecord() {
+        GraphDraft draft = new GraphDraft(
+                "",
+                "draft-1",
+                1,
+                "visualPolicy",
+                "",
+                "",
+                "",
+                "",
+                SchemaEnvelope.opaque(),
+                List.of(),
+                List.of(),
+                Map.of(),
+                new GraphDraft.OutputSelection("response", "")
+        );
+        VisualGraphRunResponse response = new VisualGraphRunResponse(
+                true,
+                true,
+                true,
+                "visualPolicy",
+                "response",
+                Map.of("approved", true),
+                Map.of(
+                        "loanPolicy", Map.of("decision", "approved", "rate", 3.5),
+                        "response", Map.of("approved", true, "policy", Map.of("decision", "approved"))
+                ),
+                Map.of("loanPolicy", "COMPLETED", "response", "COMPLETED"),
+                25,
+                List.of(),
+                List.of(),
+                null,
+                null,
+                "graph visualPolicy {}"
+        );
         return VisualGraphRunRecord.storedDraft(draft, Map.of("score", 720), response);
     }
 }
