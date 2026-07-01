@@ -4064,6 +4064,59 @@ class GraphDraftValidatorTest {
     }
 
     @Test
+    void acceptsConfigValueForSelectedUnionBranchChildPath() {
+        GraphDraftValidator validator = new GraphDraftValidator(
+                VisualCatalogTestSupport.catalogWithLibrary(configUnionPolicyLibrary()));
+        GraphDraft draft = configUnionPolicyDraft(
+                Map.of("payload", Map.of("score", 720)),
+                null,
+                Map.of("payload", Map.of("keyword", "oneOf", "index", 0))
+        );
+
+        VisualValidationResult result = validator.validate(draft);
+
+        assertThat(result.valid()).isTrue();
+        assertThat(result.diagnostics()).isEmpty();
+    }
+
+    @Test
+    void acceptsConfigExpressionForSelectedUnionBranchChildPath() {
+        GraphDraftValidator validator = new GraphDraftValidator(
+                VisualCatalogTestSupport.catalogWithLibrary(configUnionPolicyLibrary()));
+        GraphDraft draft = configUnionPolicyDraft(
+                Map.of("payload", Map.of("score", Map.of("kind", "expression", "expr", "ctx.score"))),
+                graphInputSchema(Map.of("score", Map.of("type", "integer")), List.of("score")),
+                Map.of("payload", Map.of("keyword", "oneOf", "index", 0))
+        );
+
+        VisualValidationResult result = validator.validate(draft);
+
+        assertThat(result.valid()).isTrue();
+        assertThat(result.diagnostics()).isEmpty();
+    }
+
+    @Test
+    void rejectsInvalidConfigUnionBranchSelection() {
+        GraphDraftValidator validator = new GraphDraftValidator(
+                VisualCatalogTestSupport.catalogWithLibrary(configUnionPolicyLibrary()));
+        GraphDraft draft = configUnionPolicyDraft(
+                Map.of("payload", Map.of("score", 720)),
+                null,
+                Map.of("payload", Map.of("keyword", "oneOf", "index", 9))
+        );
+
+        VisualValidationResult result = validator.validate(draft);
+
+        assertThat(result.valid()).isFalse();
+        assertThat(result.diagnostics())
+                .anySatisfy(diagnostic -> {
+                    assertThat(diagnostic.code()).isEqualTo("visual.config.unionBranch.invalid");
+                    assertThat(diagnostic.target())
+                            .isEqualTo("/nodes/0/config/payload/configUnionBranches/payload/index");
+                });
+    }
+
+    @Test
     void rejectsNestedConfigExpressionWhenNodeReferenceTypeDoesNotMatchConfigSchema() {
         GraphDraftValidator validator = new GraphDraftValidator(
                 VisualCatalogTestSupport.catalogWithLoanApplicantResourceAndLibrary(
@@ -6521,6 +6574,85 @@ class GraphDraftValidatorTest {
                 List.of(),
                 Map.of(),
                 new GraphDraft.OutputSelection("policy", "")
+        );
+    }
+
+    private static GraphDraft configUnionPolicyDraft(Map<String, Object> config,
+                                                     SchemaEnvelope inputSchema,
+                                                     Map<String, Object> configUnionBranches) {
+        return new GraphDraft(
+                "",
+                "",
+                0,
+                "configUnionPolicy",
+                "",
+                "",
+                "",
+                "",
+                inputSchema,
+                List.of(new GraphDraft.DraftNode(
+                        "policy",
+                        "risk:configUnionPolicy",
+                        "",
+                        Map.of(),
+                        config,
+                        null
+                )),
+                List.of(),
+                Map.of("nodes", List.of(Map.of(
+                        "id", "policy",
+                        "annotations", Map.of("configUnionBranches", configUnionBranches)
+                ))),
+                new GraphDraft.OutputSelection("policy", "")
+        );
+    }
+
+    private static OperatorLibrary configUnionPolicyLibrary() {
+        Map<String, Object> configProperties = new LinkedHashMap<>();
+        configProperties.put("payload", Map.of("oneOf", List.of(
+                Map.of(
+                        "type", "object",
+                        "properties", Map.of("score", Map.of("type", "integer")),
+                        "required", List.of("score"),
+                        "additionalProperties", false
+                ),
+                Map.of(
+                        "type", "object",
+                        "properties", Map.of("decision", Map.of("type", "string")),
+                        "required", List.of("decision"),
+                        "additionalProperties", false
+                )
+        )));
+        OperatorDefinition operator = new OperatorDefinition(
+                "bloge.visualOperator.v1",
+                "risk:configUnionPolicy",
+                "1.0.0",
+                new OperatorDefinition.Display("Config union policy",
+                        "Evaluates policy behavior controlled by union configSchema.",
+                        List.of("risk", "config")),
+                new OperatorDefinition.Source("user-library", "", "", "", true),
+                new OperatorDefinition.Ports(
+                        List.of(),
+                        List.of(new OperatorDefinition.Port("output",
+                                SchemaEnvelope.object(Map.of("accepted", Map.of("type", "boolean")), List.of()),
+                                true,
+                                "Policy output."))
+                ),
+                SchemaEnvelope.object(configProperties, List.of("payload")),
+                OperatorDefinition.Capabilities.pure(),
+                new OperatorDefinition.Lowering("transform", "transform", Map.of(
+                        "assignments", Map.of("accepted", "true")
+                )),
+                List.of()
+        );
+        return new OperatorLibrary(
+                "bloge.visualOperatorLibrary.v1",
+                "risk-config-union-policy",
+                "Risk config union policy operators",
+                "1.0.0",
+                "risk-team",
+                "ACTIVE",
+                List.of(operator)
         );
     }
 

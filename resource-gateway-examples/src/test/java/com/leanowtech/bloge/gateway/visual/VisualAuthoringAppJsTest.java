@@ -170,6 +170,13 @@ class VisualAuthoringAppJsTest {
                   'normalizedUnionBranchSelection',
                   'normalizedUnionBranchSelections',
                   'schemaUnionBranches',
+                  'schemaUnionBranchOptions',
+                  'schemaUnionLabel',
+                  'schemaType',
+                  'schemaEnumValues',
+                  'schemaAllowsNull',
+                  'unionBranchSelectionValue',
+                  'unionBranchSelectionFromValue',
                   'selectedUnionBranchSchema',
                   'targetSchemaForUnionSelection',
                   'endpointLabel',
@@ -223,6 +230,10 @@ class VisualAuthoringAppJsTest {
                   'allOutputPortsDslPathSafe',
                   'inputPortForInputPath',
                   'schemaDeclaresPath',
+                  'configUnionBranchForPath',
+                  'setConfigUnionBranchForPath',
+                  'configFieldDescriptors',
+                  'uniqueFieldsByPath',
                   'requiredInputNamesForPort',
                   'defaultInputExpressionsForOperator',
                   'defaultCustomInputStateForOperator',
@@ -646,12 +657,14 @@ class VisualAuthoringAppJsTest {
                           {
                             type: 'object',
                             properties: { score: { type: 'integer' } },
-                            required: ['score']
+                            required: ['score'],
+                            additionalProperties: false
                           },
                           {
                             type: 'object',
                             properties: { decision: { type: 'string' } },
-                            required: ['decision']
+                            required: ['decision'],
+                            additionalProperties: false
                           }
                         ]
                       }
@@ -663,6 +676,25 @@ class VisualAuthoringAppJsTest {
                   nestedUnionTargetSchema,
                   nestedUnionBranchSelections
                 ).map((field) => field.path).join('|');
+                const configUnionNode = {};
+                context.setConfigUnionBranchForPath(configUnionNode, 'payload', { keyword: 'oneOf', index: 0 });
+                const configUnionSelection = context.configUnionBranchForPath(configUnionNode, 'payload');
+                const configUnionFieldPaths = context.configFieldDescriptors(
+                  nestedUnionTargetSchema,
+                  configUnionNode.configUnionBranches
+                ).map((field) => field.path).join('|');
+                const configUnionAllowedUnknownPaths = context.unknownConfigPaths(
+                  { payload: { score: 720 } },
+                  nestedUnionTargetSchema.schema,
+                  '',
+                  configUnionNode.configUnionBranches
+                ).join('|');
+                const configUnionRejectedUnknownPaths = context.unknownConfigPaths(
+                  { payload: { decision: 'APPROVE' } },
+                  nestedUnionTargetSchema.schema,
+                  '',
+                  configUnionNode.configUnionBranches
+                ).join('|');
                 const unsafeContextExpression = context.bindingFromExpression(
                   'ctx.customer-id',
                   { builder: { nodes: [] } }
@@ -1428,6 +1460,11 @@ class VisualAuthoringAppJsTest {
                   ['nested union binding branch keyword', nestedUnionTargetBinding.targetUnionBranches.payload.keyword, 'oneOf'],
                   ['nested union binding branch index', nestedUnionTargetBinding.targetUnionBranches.payload.index, 0],
                   ['nested union field paths', nestedUnionFieldPaths, 'payload|payload.score'],
+                  ['config union branch keyword', configUnionSelection.keyword, 'oneOf'],
+                  ['config union branch index', configUnionSelection.index, 0],
+                  ['config union field paths', configUnionFieldPaths, 'payload|payload.score'],
+                  ['config union allowed unknown paths', configUnionAllowedUnknownPaths, ''],
+                  ['config union rejected unknown path', configUnionRejectedUnknownPaths, 'payload.decision'],
                   ['unsafe context expression kind', unsafeContextExpression.kind, 'expression'],
                   ['config array container', configArrayBeforeDelete, true],
                   ['config array value', configValueBeforeDelete, 'ctx.score'],

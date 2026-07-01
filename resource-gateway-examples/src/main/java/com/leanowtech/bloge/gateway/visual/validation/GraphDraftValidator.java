@@ -164,6 +164,8 @@ public class GraphDraftValidator {
         Set<String> nodeIds = new HashSet<>();
         Map<String, GraphDraft.DraftNode> nodesById = new LinkedHashMap<>();
         Map<String, OperatorDefinition> operatorsByNodeId = new LinkedHashMap<>();
+        Map<String, Map<String, GraphDraft.UnionBranchSelection>> configUnionBranchesByNode =
+                configUnionBranchesByNode(draft);
         for (int i = 0; i < draft.nodes().size(); i++) {
             GraphDraft.DraftNode node = draft.nodes().get(i);
             String nodePath = "/nodes/" + i;
@@ -185,12 +187,13 @@ public class GraphDraftValidator {
             validateDuplicateInputTargets(node, operator.get(), nodePath, diagnostics);
             validateRequiredInputs(node, operator.get(), nodePath, diagnostics);
             validateUnknownInputs(node, operator.get(), nodePath, diagnostics);
-            validateConfig(node, operator.get(), nodePath, diagnostics);
+            validateConfig(node, operator.get(), nodePath,
+                    configUnionBranchesByNode.getOrDefault(node.id(), Map.of()), diagnostics);
         }
 
         validateOperatorFingerprintKeys(draft.operatorFingerprints(), nodeIds, diagnostics);
         validateNodePathBindings(draft, nodesById, operatorsByNodeId, diagnostics);
-        validateConfigReferences(draft, nodesById, operatorsByNodeId, diagnostics);
+        validateConfigReferences(draft, nodesById, operatorsByNodeId, configUnionBranchesByNode, diagnostics);
         validateEdgeIdentity(draft, diagnostics);
         validateEdges(draft, nodesById, operatorsByNodeId, diagnostics);
         if (options.requireEdgeBindingConsistency()) {
@@ -630,6 +633,7 @@ public class GraphDraftValidator {
     private static void validateConfigReferences(GraphDraft draft,
                                                  Map<String, GraphDraft.DraftNode> nodesById,
                                                  Map<String, OperatorDefinition> operatorsByNodeId,
+                                                 Map<String, Map<String, GraphDraft.UnionBranchSelection>> configUnionBranchesByNode,
                                                  List<VisualDiagnostic> diagnostics) {
         for (int i = 0; i < draft.nodes().size(); i++) {
             GraphDraft.DraftNode node = draft.nodes().get(i);
@@ -637,8 +641,10 @@ public class GraphDraftValidator {
             if (operator == null) {
                 continue;
             }
+            Map<String, GraphDraft.UnionBranchSelection> branchSelections =
+                    configUnionBranchesByNode.getOrDefault(node.id(), Map.of());
             validateConfigReferenceValue(node.config(), operator.configSchema().schema(), draft.inputSchema(),
-                    nodesById, operatorsByNodeId, "/nodes/" + i + "/config", diagnostics);
+                    nodesById, operatorsByNodeId, "/nodes/" + i + "/config", "", branchSelections, diagnostics);
         }
     }
 
@@ -648,39 +654,46 @@ public class GraphDraftValidator {
                                                      Map<String, GraphDraft.DraftNode> nodesById,
                                                      Map<String, OperatorDefinition> operatorsByNodeId,
                                                      String targetPath,
+                                                     String schemaPath,
+                                                     Map<String, GraphDraft.UnionBranchSelection> branchSelections,
                                                      List<VisualDiagnostic> diagnostics) {
+        Map<String, Object> effectiveConfigSchema = selectedConfigUnionBranchSchemaAtPath(configSchema,
+                schemaPath, branchSelections, targetPath, diagnostics).orElse(configSchema);
         if (value instanceof String expression) {
             if (!looksLikeReferenceExpression(expression)) {
                 return;
             }
-            validateConfigExpressionValue(expression, configSchema, inputSchema, nodesById, operatorsByNodeId,
+            validateConfigExpressionValue(expression, effectiveConfigSchema, inputSchema, nodesById, operatorsByNodeId,
                     targetPath, diagnostics);
             return;
         }
         if (value instanceof Map<?, ?> map) {
             if ("expression".equals(map.get("kind"))) {
                 Object expression = map.get("expr");
-                validateConfigExpressionValue(expression == null ? "" : String.valueOf(expression), configSchema,
+                validateConfigExpressionValue(expression == null ? "" : String.valueOf(expression), effectiveConfigSchema,
                         inputSchema, nodesById, operatorsByNodeId, targetPath + "/expr", diagnostics);
                 return;
             }
             if ("objectTemplate".equals(map.get("kind")) && map.get("fields") instanceof Map<?, ?> fields) {
                 fields.forEach((key, item) -> validateConfigReferenceValue(item,
-                        configChildSchema(configSchema, String.valueOf(key)), inputSchema, nodesById,
-                        operatorsByNodeId, targetPath + "/fields/" + key, diagnostics));
+                        configChildSchema(effectiveConfigSchema, String.valueOf(key)), inputSchema, nodesById,
+                        operatorsByNodeId, targetPath + "/fields/" + key,
+                        appendPath(schemaPath, String.valueOf(key)), branchSelections, diagnostics));
                 return;
             }
             map.forEach((key, item) -> validateConfigReferenceValue(item,
-                    configChildSchema(configSchema, String.valueOf(key)), inputSchema, nodesById,
-                    operatorsByNodeId, targetPath + "/" + key, diagnostics));
+                    configChildSchema(effectiveConfigSchema, String.valueOf(key)), inputSchema, nodesById,
+                    operatorsByNodeId, targetPath + "/" + key,
+                    appendPath(schemaPath, String.valueOf(key)), branchSelections, diagnostics));
             return;
         }
         if (value instanceof List<?> list) {
-            Map<String, Object> items = objectProperty(configSchema.get("items"));
+            Map<String, Object> items = objectProperty(effectiveConfigSchema.get("items"));
             for (int i = 0; i < list.size(); i++) {
                 validateConfigReferenceValue(list.get(i), items == null ? Map.of() : items, inputSchema,
                         nodesById, operatorsByNodeId,
-                        targetPath + "/" + i, diagnostics);
+                        targetPath + "/" + i, appendPath(schemaPath, String.valueOf(i)),
+                        branchSelections, diagnostics);
             }
         }
     }
@@ -1422,6 +1435,115 @@ public class GraphDraftValidator {
                 ? "/targetUnionBranches/" + (path == null ? "" : path)
                 : targetPath + "/targetUnionBranches/" + (path == null ? "" : path);
         return selectedUnionBranchSchema(schema, selection, diagnosticPath, diagnostics);
+    }
+
+    private static Optional<Map<String, Object>> selectedConfigUnionBranchSchemaAtPath(
+            Map<String, Object> schema,
+            String path,
+            Map<String, GraphDraft.UnionBranchSelection> branchSelections,
+            String targetPath,
+            List<VisualDiagnostic> diagnostics) {
+        if (schema == null || branchSelections == null || branchSelections.isEmpty()) {
+            return Optional.empty();
+        }
+        String normalizedPath = path == null ? "" : path;
+        GraphDraft.UnionBranchSelection selection = branchSelections.get(normalizedPath);
+        if (selection == null || !selection.selected()) {
+            return Optional.empty();
+        }
+        String diagnosticPath = targetPath + "/configUnionBranches/" + normalizedPath;
+        String keyword = selection.keyword();
+        if (!"oneOf".equals(keyword) && !"anyOf".equals(keyword)) {
+            diagnostics.add(VisualDiagnostic.error("visual.config.unionBranch.invalid",
+                    "Config union branch keyword must be oneOf or anyOf.",
+                    diagnosticPath + "/keyword"));
+            return Optional.empty();
+        }
+        List<Map<String, Object>> branches = unionBranches(schema, keyword);
+        if (branches.isEmpty()) {
+            diagnostics.add(VisualDiagnostic.error("visual.config.unionBranch.invalid",
+                    "Config schema does not declare a %s union branch at this path.".formatted(keyword),
+                    diagnosticPath));
+            return Optional.empty();
+        }
+        if (selection.index() < 0 || selection.index() >= branches.size()) {
+            diagnostics.add(VisualDiagnostic.error("visual.config.unionBranch.invalid",
+                    "Config union branch index %d is outside %s branch range 0..%d."
+                            .formatted(selection.index(), keyword, branches.size() - 1),
+                    diagnosticPath + "/index"));
+            return Optional.empty();
+        }
+        return Optional.of(branches.get(selection.index()));
+    }
+
+    private static Map<String, Map<String, GraphDraft.UnionBranchSelection>> configUnionBranchesByNode(
+            GraphDraft draft) {
+        Object rawNodes = draft.visualLayout().get("nodes");
+        if (!(rawNodes instanceof List<?> layoutNodes)) {
+            return Map.of();
+        }
+        Map<String, Map<String, GraphDraft.UnionBranchSelection>> byNode = new LinkedHashMap<>();
+        for (Object item : layoutNodes) {
+            if (!(item instanceof Map<?, ?> rawNode)) {
+                continue;
+            }
+            String nodeId = stringValue(rawNode.get("id")).trim();
+            if (nodeId.isBlank()) {
+                continue;
+            }
+            Object rawAnnotations = rawNode.get("annotations");
+            if (!(rawAnnotations instanceof Map<?, ?> annotations)) {
+                continue;
+            }
+            Map<String, GraphDraft.UnionBranchSelection> selections =
+                    unionBranchSelectionMap(annotations.get("configUnionBranches"));
+            if (!selections.isEmpty()) {
+                byNode.put(nodeId, selections);
+            }
+        }
+        return byNode;
+    }
+
+    private static Map<String, GraphDraft.UnionBranchSelection> unionBranchSelectionMap(Object value) {
+        if (!(value instanceof Map<?, ?> map)) {
+            return Map.of();
+        }
+        Map<String, GraphDraft.UnionBranchSelection> selections = new LinkedHashMap<>();
+        map.forEach((key, item) -> {
+            GraphDraft.UnionBranchSelection selection = unionBranchSelection(item);
+            if (selection.selected()) {
+                selections.put(key == null ? "" : String.valueOf(key).trim(), selection);
+            }
+        });
+        return selections;
+    }
+
+    private static GraphDraft.UnionBranchSelection unionBranchSelection(Object value) {
+        if (value instanceof GraphDraft.UnionBranchSelection selection) {
+            return selection;
+        }
+        if (!(value instanceof Map<?, ?> map)) {
+            return GraphDraft.UnionBranchSelection.empty();
+        }
+        return new GraphDraft.UnionBranchSelection(
+                stringValue(map.get("keyword")),
+                integerValue(map.get("index"), -1)
+        );
+    }
+
+    private static String stringValue(Object value) {
+        return value == null ? "" : String.valueOf(value);
+    }
+
+    private static int integerValue(Object value, int fallback) {
+        if (value instanceof Number number) {
+            return number.intValue();
+        }
+        try {
+            return Integer.parseInt(stringValue(value));
+        } catch (NumberFormatException ex) {
+            return fallback;
+        }
     }
 
     private static Integer arrayIndexSegment(String segment) {
@@ -2399,6 +2521,7 @@ public class GraphDraftValidator {
     private static void validateConfig(GraphDraft.DraftNode node,
                                        OperatorDefinition operator,
                                        String nodePath,
+                                       Map<String, GraphDraft.UnionBranchSelection> branchSelections,
                                        List<VisualDiagnostic> diagnostics) {
         if ("visual-publication".equals(operator.source().kind())) {
             rejectServiceManagedPublicationConfig(node, nodePath, diagnostics);
@@ -2410,7 +2533,8 @@ public class GraphDraftValidator {
             validateDecisionTableFieldKeys(node, nodePath, diagnostics);
         }
         validateNativeConfigInputConflict(node, operator, nodePath, diagnostics);
-        validateConfigValue(node.config(), operator.configSchema().schema(), nodePath + "/config", diagnostics);
+        validateConfigValue(node.config(), operator.configSchema().schema(), nodePath + "/config",
+                branchSelections, "", diagnostics);
     }
 
     private static void validateNativeConfigInputConflict(GraphDraft.DraftNode node,
@@ -2557,11 +2681,16 @@ public class GraphDraftValidator {
     private static void validateConfigValue(Object value,
                                             Map<String, Object> schema,
                                             String path,
+                                            Map<String, GraphDraft.UnionBranchSelection> branchSelections,
+                                            String schemaPath,
                                             List<VisualDiagnostic> diagnostics) {
+        Map<String, Object> effectiveSchema = selectedConfigUnionBranchSchemaAtPath(schema, schemaPath,
+                branchSelections, path, diagnostics).orElse(schema);
         if (value instanceof Map<?, ?> map) {
             Object kind = map.get("kind");
             if ("constant".equals(kind)) {
-                validateConfigValue(map.get("value"), schema, path + "/value", diagnostics);
+                validateConfigValue(map.get("value"), effectiveSchema, path + "/value",
+                        branchSelections, schemaPath, diagnostics);
                 return;
             }
             if ("expression".equals(kind)) {
@@ -2570,77 +2699,88 @@ public class GraphDraftValidator {
             if ("objectTemplate".equals(kind) && map.get("fields") instanceof Map<?, ?> fields) {
                 validateObjectTemplateFieldNames(fields, path + "/fields",
                         "visual.config.objectTemplateField.invalid", diagnostics);
-                validateConfigObjectTemplate(fields, schema, path, diagnostics);
+                validateConfigObjectTemplate(fields, effectiveSchema, path, branchSelections, schemaPath,
+                        diagnostics);
                 return;
             }
         }
-        String type = schemaType(schema);
+        boolean hasSchemaUnion = !unionBranches(effectiveSchema, "oneOf").isEmpty()
+                || !unionBranches(effectiveSchema, "anyOf").isEmpty();
+        if (hasSchemaUnion && !valueMatchesSchema(value, effectiveSchema)) {
+            diagnostics.add(VisualDiagnostic.error("visual.config.typeMismatch",
+                    "Config value at '%s' must match the selected schema union.".formatted(path),
+                    path));
+            return;
+        }
+        String type = schemaType(effectiveSchema);
         if (type.isBlank() || "any".equals(type) || "opaque".equals(type)) {
             return;
         }
-        if (value == null && schemaAllowsNull(schema)) {
-            validateConfigEnum(value, schema, path, diagnostics);
+        if (value == null && schemaAllowsNull(effectiveSchema)) {
+            validateConfigEnum(value, effectiveSchema, path, diagnostics);
             return;
         }
         if ("object".equals(type)) {
-            validateConfigObject(value, schema, path, diagnostics);
+            validateConfigObject(value, effectiveSchema, path, branchSelections, schemaPath, diagnostics);
             return;
         }
         if ("array".equals(type)) {
-            validateConfigArray(value, schema, path, diagnostics);
+            validateConfigArray(value, effectiveSchema, path, branchSelections, schemaPath, diagnostics);
             return;
         }
         if ("enum".equals(type)) {
-            validateConfigEnum(value, schema, path, diagnostics);
+            validateConfigEnum(value, effectiveSchema, path, diagnostics);
             return;
         }
         if (!configValueMatchesType(value, type)) {
             diagnostics.add(VisualDiagnostic.error("visual.config.typeMismatch",
-                    "Config value at '%s' must be %s.".formatted(path, schemaTypeLabel(schema)),
+                    "Config value at '%s' must be %s.".formatted(path, schemaTypeLabel(effectiveSchema)),
                     path));
             return;
         }
-	        if (!numericValueMatchesBounds(value, schema)) {
+	        if (!numericValueMatchesBounds(value, effectiveSchema)) {
 	            diagnostics.add(VisualDiagnostic.error("visual.config.constraintMismatch",
 	                    "Config value at '%s' must satisfy %s numeric bounds."
-	                            .formatted(path, schemaTypeLabel(schema)),
+	                            .formatted(path, schemaTypeLabel(effectiveSchema)),
 	                    path));
 	            return;
 	        }
-	        if (!numericValueMatchesMultipleOf(value, schema)) {
+	        if (!numericValueMatchesMultipleOf(value, effectiveSchema)) {
 	            diagnostics.add(VisualDiagnostic.error("visual.config.constraintMismatch",
 	                    "Config value at '%s' must satisfy %s numeric multipleOf constraint."
-	                            .formatted(path, schemaTypeLabel(schema)),
+	                            .formatted(path, schemaTypeLabel(effectiveSchema)),
 	                    path));
 	            return;
 	        }
-	        if (!stringValueMatchesLengthBounds(value, schema)) {
+	        if (!stringValueMatchesLengthBounds(value, effectiveSchema)) {
 	            diagnostics.add(VisualDiagnostic.error("visual.config.constraintMismatch",
 	                    "Config value at '%s' must satisfy %s string length constraints."
-	                            .formatted(path, schemaTypeLabel(schema)),
+	                            .formatted(path, schemaTypeLabel(effectiveSchema)),
 	                    path));
 	            return;
 	        }
-		        if (!stringValueMatchesPattern(value, schema)) {
+		        if (!stringValueMatchesPattern(value, effectiveSchema)) {
 		            diagnostics.add(VisualDiagnostic.error("visual.config.constraintMismatch",
 		                    "Config value at '%s' must satisfy %s string pattern constraint."
-		                            .formatted(path, schemaTypeLabel(schema)),
+		                            .formatted(path, schemaTypeLabel(effectiveSchema)),
 		                    path));
 		            return;
 		        }
-	        if (!stringValueMatchesFormat(value, schema)) {
+	        if (!stringValueMatchesFormat(value, effectiveSchema)) {
 	            diagnostics.add(VisualDiagnostic.error("visual.config.constraintMismatch",
 	                    "Config value at '%s' must satisfy %s string format constraint."
-	                            .formatted(path, schemaTypeLabel(schema)),
+	                            .formatted(path, schemaTypeLabel(effectiveSchema)),
 	                    path));
 	            return;
 	        }
-		        validateConfigEnum(value, schema, path, diagnostics);
+		        validateConfigEnum(value, effectiveSchema, path, diagnostics);
 		    }
 
     private static void validateConfigObjectTemplate(Map<?, ?> fields,
                                                      Map<String, Object> schema,
                                                      String path,
+                                                     Map<String, GraphDraft.UnionBranchSelection> branchSelections,
+                                                     String schemaPath,
                                                      List<VisualDiagnostic> diagnostics) {
         String type = schemaType(schema);
         if (type.isBlank() || "any".equals(type) || "opaque".equals(type)) {
@@ -2697,11 +2837,14 @@ public class GraphDraftValidator {
         for (Map.Entry<String, Object> entry : object.entrySet()) {
             Map<String, Object> property = objectProperty(properties.get(entry.getKey()));
             List<Map<String, Object>> patternSchemas = matchingPatternPropertySchemas(schema, entry.getKey());
+            String childSchemaPath = appendPath(schemaPath, entry.getKey());
             if (property != null) {
-                validateConfigValue(entry.getValue(), property, path + "/fields/" + entry.getKey(), diagnostics);
+                validateConfigValue(entry.getValue(), property, path + "/fields/" + entry.getKey(),
+                        branchSelections, childSchemaPath, diagnostics);
             }
             for (Map<String, Object> patternSchema : patternSchemas) {
-                validateConfigValue(entry.getValue(), patternSchema, path + "/fields/" + entry.getKey(), diagnostics);
+                validateConfigValue(entry.getValue(), patternSchema, path + "/fields/" + entry.getKey(),
+                        branchSelections, childSchemaPath, diagnostics);
             }
             if (property != null || !patternSchemas.isEmpty()) {
                 continue;
@@ -2711,7 +2854,7 @@ public class GraphDraftValidator {
                         path + "/fields/" + entry.getKey()));
             } else if (residual instanceof Map<?, ?> residualSchema) {
                 validateConfigValue(entry.getValue(), objectProperty(residualSchema),
-                        path + "/fields/" + entry.getKey(), diagnostics);
+                        path + "/fields/" + entry.getKey(), branchSelections, childSchemaPath, diagnostics);
             }
         }
     }
@@ -2834,6 +2977,8 @@ public class GraphDraftValidator {
     private static void validateConfigObject(Object value,
                                              Map<String, Object> schema,
                                              String path,
+                                             Map<String, GraphDraft.UnionBranchSelection> branchSelections,
+                                             String schemaPath,
                                              List<VisualDiagnostic> diagnostics) {
         if (!(value instanceof Map<?, ?> rawMap)) {
             diagnostics.add(VisualDiagnostic.error("visual.config.typeMismatch",
@@ -2885,11 +3030,14 @@ public class GraphDraftValidator {
         for (Map.Entry<String, Object> entry : object.entrySet()) {
             Map<String, Object> property = objectProperty(properties.get(entry.getKey()));
             List<Map<String, Object>> patternSchemas = matchingPatternPropertySchemas(schema, entry.getKey());
+            String childSchemaPath = appendPath(schemaPath, entry.getKey());
             if (property != null) {
-                validateConfigValue(entry.getValue(), property, path + "/" + entry.getKey(), diagnostics);
+                validateConfigValue(entry.getValue(), property, path + "/" + entry.getKey(),
+                        branchSelections, childSchemaPath, diagnostics);
             }
             for (Map<String, Object> patternSchema : patternSchemas) {
-                validateConfigValue(entry.getValue(), patternSchema, path + "/" + entry.getKey(), diagnostics);
+                validateConfigValue(entry.getValue(), patternSchema, path + "/" + entry.getKey(),
+                        branchSelections, childSchemaPath, diagnostics);
             }
             if (property != null || !patternSchemas.isEmpty()) {
                 continue;
@@ -2899,7 +3047,7 @@ public class GraphDraftValidator {
                         path + "/" + entry.getKey()));
             } else if (residual instanceof Map<?, ?> residualSchema) {
                 validateConfigValue(entry.getValue(), objectProperty(residualSchema),
-                        path + "/" + entry.getKey(), diagnostics);
+                        path + "/" + entry.getKey(), branchSelections, childSchemaPath, diagnostics);
             }
         }
     }
@@ -2907,6 +3055,8 @@ public class GraphDraftValidator {
     private static void validateConfigArray(Object value,
                                             Map<String, Object> schema,
                                             String path,
+                                            Map<String, GraphDraft.UnionBranchSelection> branchSelections,
+                                            String schemaPath,
                                             List<VisualDiagnostic> diagnostics) {
 	        if (!(value instanceof List<?> list)) {
 	            diagnostics.add(VisualDiagnostic.error("visual.config.typeMismatch",
@@ -2938,7 +3088,8 @@ public class GraphDraftValidator {
         for (int i = 0; i < list.size(); i++) {
             Map<String, Object> itemSchema = arrayItemSchemaForIndex(schema, i);
             if (itemSchema != null) {
-                validateConfigValue(list.get(i), itemSchema, path + "/" + i, diagnostics);
+                validateConfigValue(list.get(i), itemSchema, path + "/" + i,
+                        branchSelections, appendPath(schemaPath, String.valueOf(i)), diagnostics);
             }
         }
     }

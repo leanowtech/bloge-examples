@@ -804,6 +804,24 @@ function setInputUnionBranchForTarget(node, target, selection) {
   }
 }
 
+function configUnionBranchForPath(node, path) {
+  return normalizedUnionBranchSelection(node.configUnionBranches?.[String(path || '')]);
+}
+
+function setConfigUnionBranchForPath(node, path, selection) {
+  const key = String(path || '');
+  const normalized = normalizedUnionBranchSelection(selection);
+  node.configUnionBranches = node.configUnionBranches || {};
+  if (normalized) {
+    node.configUnionBranches[key] = normalized;
+    return;
+  }
+  delete node.configUnionBranches[key];
+  if (!Object.keys(node.configUnionBranches).length) {
+    delete node.configUnionBranches;
+  }
+}
+
 function outputKeyForPortPath(spec, portName, path) {
   if (!path) {
     return portName || spec?.outputPort || 'output';
@@ -4862,7 +4880,7 @@ function renderSelectedOperatorEditor() {
     });
   }
 
-  for (const input of target.querySelectorAll('[data-config-field]:not([data-config-source]):not([data-config-expression])')) {
+  for (const input of target.querySelectorAll('[data-config-field]:not([data-config-source]):not([data-config-expression]):not([data-config-union-branch])')) {
     const eventName = input.type === 'checkbox' || input.tagName === 'SELECT' ? 'change' : 'input';
     input.addEventListener(eventName, () => {
       recordBuilderHistory(`Edit config ${node.id}.${input.dataset.configField}`);
@@ -4876,14 +4894,15 @@ function renderSelectedOperatorEditor() {
   for (const select of target.querySelectorAll('[data-config-source]')) {
     select.addEventListener('change', async () => {
       const spec = specForNode(node);
-      const field = configFieldDescriptors(spec.configSchema)
+      const field = configFieldDescriptors(spec.configSchema, node.configUnionBranches || {})
         .find((item) => item.path === select.dataset.configField);
       if (!field) {
         return;
       }
+      const effectiveField = effectiveConfigField(node, field);
       if (select.value && select.value !== CONFIG_MANUAL_EXPRESSION) {
         const source = sourceFromBindingValue(select.value);
-        const configTarget = configTargetForField(node, field);
+        const configTarget = configTargetForField(node, effectiveField);
         if (!source) {
           renderSelectedOperatorEditor();
           return;
@@ -4902,7 +4921,7 @@ function renderSelectedOperatorEditor() {
             renderDiagram();
             return;
           }
-          setConnectionMessage(`Config ${node.id}.${field.path} bound to ${endpointLabel(source)}.`, 'success');
+          setConnectionMessage(`Config ${node.id}.${effectiveField.path} bound to ${endpointLabel(source)}.`, 'success');
         } catch (error) {
           setConnectionMessage(error.message, 'error');
           renderSelectedOperatorEditor();
@@ -4926,6 +4945,17 @@ function renderSelectedOperatorEditor() {
       setConfigExpressionFromInput(node, input);
       updateConfigFieldStatus(node, input);
       syncComposerFromBuilder({ render: false });
+      renderDiagram();
+    });
+  }
+
+  for (const select of target.querySelectorAll('[data-config-union-branch]')) {
+    select.addEventListener('change', () => {
+      const path = select.dataset.configField || '';
+      recordBuilderHistory(`Select config union branch ${node.id}.${path || '(root)'}`);
+      setConfigUnionBranchForPath(node, path, unionBranchSelectionFromValue(select.value));
+      syncComposerFromBuilder({ render: false });
+      renderSelectedOperatorEditor();
       renderDiagram();
     });
   }
@@ -6012,9 +6042,11 @@ function textField(label, value, field, disabled = false) {
 
 function renderConfigPanel(node) {
   const spec = specForNode(node);
-  const fields = configFieldDescriptors(spec.configSchema);
+  const branchSelections = normalizedUnionBranchSelections(node.configUnionBranches);
+  const fields = configFieldDescriptors(spec.configSchema, branchSelections);
   const unknownRows = unknownConfigRows(node, spec);
-  if (!fields.length && !unknownRows.length) {
+  const rootUnionBranchSelect = renderConfigRootUnionBranchSelect(node, spec.configSchema?.schema || {});
+  if (!fields.length && !unknownRows.length && !rootUnionBranchSelect) {
     return '';
   }
   return `
@@ -6023,6 +6055,7 @@ function renderConfigPanel(node) {
         <span>Config</span>
         <small>configSchema checked</small>
       </div>
+      ${rootUnionBranchSelect}
       ${fields.map((field) => renderConfigRow(node, field)).join('')}
       ${unknownRows.join('')}
     </div>
@@ -6030,20 +6063,77 @@ function renderConfigPanel(node) {
 }
 
 function renderConfigRow(node, field) {
-  const status = configStatusForField(node, field);
+  const effectiveField = effectiveConfigField(node, field);
+  const status = configStatusForField(node, effectiveField);
   const required = field.required ? 'Required' : 'Optional';
   return `
     <div class="binding-row ${escapeHtml(status.level)}" data-config-row="${escapeHtml(field.path)}">
       <div class="binding-row-head">
         <div>
           <strong>${escapeHtml(readableName(field.path))}</strong>
-          <span>${escapeHtml(schemaType(field.schema) || 'any')} · ${escapeHtml(required)}</span>
+          <span>${escapeHtml(schemaType(effectiveField.schema) || 'any')} · ${escapeHtml(required)}</span>
         </div>
       </div>
-      ${renderConfigControl(node, field)}
+      ${renderConfigUnionBranchSelect(node, field)}
+      ${configFieldUsesNestedBranchFields(node, field) ? '' : renderConfigControl(node, effectiveField)}
       <div class="binding-status" data-config-status>${escapeHtml(status.message)}</div>
     </div>
   `;
+}
+
+function renderConfigRootUnionBranchSelect(node, schema) {
+  const select = renderConfigUnionBranchSelect(node, { path: '', schema, required: false });
+  if (!select) {
+    return '';
+  }
+  return `
+    <div class="binding-row info" data-config-row="">
+      <div class="binding-row-head">
+        <div>
+          <strong>Root</strong>
+          <span>union · config</span>
+        </div>
+      </div>
+      ${select}
+      <div class="binding-status">Select a config branch to expose branch fields.</div>
+    </div>
+  `;
+}
+
+function renderConfigUnionBranchSelect(node, field) {
+  const options = schemaUnionBranchOptions(field.schema || {});
+  if (!options.length) {
+    return '';
+  }
+  const selectedValue = unionBranchSelectionValue(configUnionBranchForPath(node, field.path || ''));
+  return `
+    <label class="binding-union-branch config-union-branch">
+      <span>Config branch</span>
+      <select
+        data-config-union-branch
+        data-config-field="${escapeHtml(field.path || '')}">
+        <option value="" ${selectedValue ? '' : 'selected'}>Auto</option>
+        ${options.map((option) => {
+          const value = unionBranchSelectionValue(option);
+          const selected = value === selectedValue ? ' selected' : '';
+          return `<option value="${escapeHtml(value)}"${selected}>${escapeHtml(option.label)}</option>`;
+        }).join('')}
+      </select>
+    </label>
+  `;
+}
+
+function configFieldUsesNestedBranchFields(node, field) {
+  const branchSchema = selectedUnionBranchSchema(field.schema, configUnionBranchForPath(node, field.path || ''));
+  return hasSchemaProperties(branchSchema);
+}
+
+function effectiveConfigField(node, field) {
+  const effectiveSchema = targetSchemaForUnionSelection(
+    field.schema,
+    configUnionBranchForPath(node, field.path || '')
+  );
+  return effectiveSchema === field.schema ? field : { ...field, schema: effectiveSchema };
 }
 
 function renderConfigControl(node, field) {
@@ -6155,12 +6245,14 @@ function configTargetForField(node, field) {
 
 function configTargetsForNode(node) {
   const spec = specForNode(node);
-  return configFieldDescriptors(spec.configSchema).map((field) => configTargetForField(node, field));
+  return configFieldDescriptors(spec.configSchema, node.configUnionBranches || {})
+    .filter((field) => !configFieldUsesNestedBranchFields(node, field))
+    .map((field) => configTargetForField(node, effectiveConfigField(node, field)));
 }
 
 function unknownConfigRows(node, spec) {
   const schema = spec.configSchema?.schema || {};
-  return unknownConfigPaths(node.config || {}, schema, '')
+  return unknownConfigPaths(node.config || {}, schema, '', node.configUnionBranches || {})
     .map((path) => `
       <div class="binding-row error">
         <div class="binding-row-head">
@@ -6174,8 +6266,9 @@ function unknownConfigRows(node, spec) {
     `);
 }
 
-function unknownConfigPaths(value, schema, prefix) {
-  const type = rawSchemaType(schema);
+function unknownConfigPaths(value, schema, prefix, branchSelections = {}) {
+  const effectiveSchema = targetSchemaForUnionSelection(schema, branchSelections[prefix || '']);
+  const type = rawSchemaType(effectiveSchema);
   if (Array.isArray(value)) {
     if (type && type !== 'array') {
       return [];
@@ -6186,23 +6279,23 @@ function unknownConfigPaths(value, schema, prefix) {
       if (index === null) {
         continue;
       }
-      const itemSchema = arrayItemSchemaForIndex(schema, index);
+      const itemSchema = arrayItemSchemaForIndex(effectiveSchema, index);
       if (!itemSchema) {
         continue;
       }
       const path = prefix ? `${prefix}.${key}` : key;
-      paths.push(...unknownConfigPaths(item, itemSchema, path));
+      paths.push(...unknownConfigPaths(item, itemSchema, path, branchSelections));
     }
     return paths;
   }
   if (!isConfigContainerObject(value)) {
     return [];
   }
-  if (type && type !== 'object' && !schema?.properties) {
+  if (type && type !== 'object' && !effectiveSchema?.properties) {
     return [];
   }
-  const properties = schema?.properties || {};
-  const residual = residualPropertiesPolicy(schema);
+  const properties = effectiveSchema?.properties || {};
+  const residual = residualPropertiesPolicy(effectiveSchema);
   const residualSchema = residual && typeof residual === 'object' && !Array.isArray(residual)
     ? residual
     : null;
@@ -6210,18 +6303,18 @@ function unknownConfigPaths(value, schema, prefix) {
   for (const [key, item] of Object.entries(value)) {
     const path = prefix ? `${prefix}.${key}` : key;
     if (Object.prototype.hasOwnProperty.call(properties, key)) {
-      paths.push(...unknownConfigPaths(item, properties[key] || {}, path));
+      paths.push(...unknownConfigPaths(item, properties[key] || {}, path, branchSelections));
       continue;
     }
-    const patternSchemas = matchingPatternPropertySchemas(schema, key);
+    const patternSchemas = matchingPatternPropertySchemas(effectiveSchema, key);
     if (patternSchemas.length) {
       for (const patternSchema of patternSchemas) {
-        paths.push(...unknownConfigPaths(item, patternSchema, path));
+        paths.push(...unknownConfigPaths(item, patternSchema, path, branchSelections));
       }
     } else if (residual === false) {
       paths.push(path);
     } else if (residualSchema) {
-      paths.push(...unknownConfigPaths(item, residualSchema, path));
+      paths.push(...unknownConfigPaths(item, residualSchema, path, branchSelections));
     }
   }
   return paths;
@@ -6229,43 +6322,45 @@ function unknownConfigPaths(value, schema, prefix) {
 
 function setConfigValueFromInput(node, input) {
   const spec = specForNode(node);
-  const field = configFieldDescriptors(spec.configSchema)
+  const field = configFieldDescriptors(spec.configSchema, node.configUnionBranches || {})
     .find((item) => item.path === input.dataset.configField);
   if (!field) {
     return;
   }
+  const effectiveField = effectiveConfigField(node, field);
   node.config = node.config || {};
   if (input.type !== 'checkbox' && input.value === '') {
-    if (field.required) {
-      setConfigValueAtPath(node.config, field.path, '');
+    if (effectiveField.required) {
+      setConfigValueAtPath(node.config, effectiveField.path, '');
     } else {
-      deleteConfigValueAtPath(node.config, field.path);
+      deleteConfigValueAtPath(node.config, effectiveField.path);
     }
     return;
   }
-  setConfigValueAtPath(node.config, field.path, parseConfigInputValue(input, field.schema));
+  setConfigValueAtPath(node.config, effectiveField.path, parseConfigInputValue(input, effectiveField.schema));
 }
 
 function setConfigSourceFromSelect(node, select) {
   const spec = specForNode(node);
-  const field = configFieldDescriptors(spec.configSchema)
+  const field = configFieldDescriptors(spec.configSchema, node.configUnionBranches || {})
     .find((item) => item.path === select.dataset.configField);
   if (!field) {
     return;
   }
+  const effectiveField = effectiveConfigField(node, field);
   node.config = node.config || {};
   if (select.value === '') {
-    if (field.required) {
-      setConfigValueAtPath(node.config, field.path, '');
+    if (effectiveField.required) {
+      setConfigValueAtPath(node.config, effectiveField.path, '');
     } else {
-      deleteConfigValueAtPath(node.config, field.path);
+      deleteConfigValueAtPath(node.config, effectiveField.path);
     }
     return;
   }
   if (select.value === CONFIG_MANUAL_EXPRESSION) {
-    setConfigValueAtPath(node.config, field.path, {
+    setConfigValueAtPath(node.config, effectiveField.path, {
       kind: 'expression',
-      expr: configExpressionForField(configValueAtPath(node.config, field.path))
+      expr: configExpressionForField(configValueAtPath(node.config, effectiveField.path))
     });
     return;
   }
@@ -6273,7 +6368,7 @@ function setConfigSourceFromSelect(node, select) {
   if (!source) {
     return;
   }
-  setConfigValueAtPath(node.config, field.path, {
+  setConfigValueAtPath(node.config, effectiveField.path, {
     kind: 'expression',
     expr: expressionForConnectionSource(source)
   });
@@ -6281,13 +6376,14 @@ function setConfigSourceFromSelect(node, select) {
 
 function setConfigExpressionFromInput(node, input) {
   const spec = specForNode(node);
-  const field = configFieldDescriptors(spec.configSchema)
+  const field = configFieldDescriptors(spec.configSchema, node.configUnionBranches || {})
     .find((item) => item.path === input.dataset.configField);
   if (!field) {
     return;
   }
+  const effectiveField = effectiveConfigField(node, field);
   node.config = node.config || {};
-  setConfigValueAtPath(node.config, field.path, {
+  setConfigValueAtPath(node.config, effectiveField.path, {
     kind: 'expression',
     expr: input.value
   });
@@ -6295,12 +6391,12 @@ function setConfigExpressionFromInput(node, input) {
 
 function updateConfigFieldStatus(node, input) {
   const spec = specForNode(node);
-  const field = configFieldDescriptors(spec.configSchema)
+  const field = configFieldDescriptors(spec.configSchema, node.configUnionBranches || {})
     .find((item) => item.path === input.dataset.configField);
   if (!field) {
     return;
   }
-  const status = configStatusForField(node, field);
+  const status = configStatusForField(node, effectiveConfigField(node, field));
   const row = input.closest('[data-config-row]');
   if (!row) {
     return;
@@ -7255,14 +7351,30 @@ function requiredInputNamesForPort(port) {
   return Array.isArray(required) ? required : [];
 }
 
-function configFieldDescriptors(configSchema) {
-  const fields = schemaFieldsFromSchema(configSchema?.schema || {}, '', true);
-  const leaves = fields.filter((field) => !hasSchemaProperties(field.schema));
-  return leaves.length ? leaves : fields;
+function configFieldDescriptors(configSchema, branchSelections = {}) {
+  const fields = schemaFieldsFromSchema(configSchema?.schema || {}, '', true, true, branchSelections);
+  const leaves = fields.filter((field) => {
+    const effectiveSchema = targetSchemaForUnionSelection(field.schema, branchSelections[field.path || '']);
+    return !hasSchemaProperties(effectiveSchema);
+  });
+  const preferred = leaves.length ? leaves : fields;
+  const unionFields = fields.filter((field) => schemaUnionBranchOptions(field.schema).length);
+  return uniqueFieldsByPath([...unionFields, ...preferred]);
 }
 
-function configDefaultFieldDescriptors(configSchema) {
-  return schemaFieldsFromSchema(configSchema?.schema || {}, '', true);
+function uniqueFieldsByPath(fields) {
+  const seen = new Set();
+  return fields.filter((field) => {
+    if (seen.has(field.path)) {
+      return false;
+    }
+    seen.add(field.path);
+    return true;
+  });
+}
+
+function configDefaultFieldDescriptors(configSchema, branchSelections = {}) {
+  return schemaFieldsFromSchema(configSchema?.schema || {}, '', true, true, branchSelections);
 }
 
 function schemaProperties(schemaEnvelope) {
@@ -7697,6 +7809,7 @@ function syncComposerFromBuilder(options = {}) {
 function layoutFromBuilder(builder) {
   const nodes = builder.nodes.map((node) => {
     const spec = specForNode(node);
+    const configUnionBranches = normalizedUnionBranchSelections(node.configUnionBranches);
     return {
       id: node.id,
       kind: spec.kind,
@@ -7707,7 +7820,8 @@ function layoutFromBuilder(builder) {
       group: null,
       annotations: {
         type: node.type,
-        generated: true
+        generated: true,
+        ...(Object.keys(configUnionBranches).length ? { configUnionBranches } : {})
       }
     };
   });
@@ -8233,10 +8347,12 @@ function routeEdgesFromDraft(draft) {
 function builderNodeFromDraftNode(node, draft, layoutNodes) {
   const layoutNode = layoutNodes[node.id] || {};
   const position = node.position || layoutNode.position || {};
+  const configUnionBranches = normalizedUnionBranchSelections(layoutNode.annotations?.configUnionBranches);
   const base = {
     id: node.id,
     x: Math.max(40, Math.round(position.x ?? 80)),
-    y: Math.max(80, Math.round(position.y ?? 210))
+    y: Math.max(80, Math.round(position.y ?? 210)),
+    ...(Object.keys(configUnionBranches).length ? { configUnionBranches } : {})
   };
   if (node.operatorRef?.startsWith('resource:') || node.operatorRef === 'httpResource') {
     const resourceId = node.operatorRef?.startsWith('resource:')
