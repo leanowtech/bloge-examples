@@ -8,6 +8,8 @@ import com.leanowtech.bloge.gateway.visual.model.SchemaEnvelope;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
+import java.util.ArrayList;
+import java.util.Collections;
 import java.util.HexFormat;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -56,7 +58,7 @@ public record OperatorDefinition(
                 : schemaVersion;
         operatorVersion = operatorVersion == null || operatorVersion.isBlank() ? "1.0.0" : operatorVersion;
         display = display == null ? new Display(operatorRef, "", List.of()) : display;
-        source = source == null ? Source.builtIn("bloge") : source;
+        source = source == null ? new Source("user-library", "", "", "", false) : source;
         ports = ports == null ? new Ports(List.of(), List.of()) : ports;
         configSchema = configSchema == null ? SchemaEnvelope.opaque() : configSchema;
         capabilities = capabilities == null ? Capabilities.pure() : capabilities;
@@ -152,7 +154,9 @@ public record OperatorDefinition(
             boolean virtual
     ) {
         public Source {
-            kind = kind == null || kind.isBlank() ? "built-in" : kind;
+            kind = kind == null || kind.isBlank()
+                    ? "built-in"
+                    : kind.trim().toLowerCase(Locale.ROOT);
             resourceId = resourceId == null ? "" : resourceId;
             method = method == null ? "" : method;
             urlTemplate = urlTemplate == null ? "" : urlTemplate;
@@ -171,8 +175,8 @@ public record OperatorDefinition(
      */
     public record Ports(List<Port> inputs, List<Port> outputs) {
         public Ports {
-            inputs = inputs == null ? List.of() : List.copyOf(inputs);
-            outputs = outputs == null ? List.of() : List.copyOf(outputs);
+            inputs = nullableElementsCopy(inputs);
+            outputs = nullableElementsCopy(outputs);
         }
     }
 
@@ -463,5 +467,12 @@ public record OperatorDefinition(
             }
         }
         return builder.append('"').toString();
+    }
+
+    private static <T> List<T> nullableElementsCopy(List<T> values) {
+        if (values == null || values.isEmpty()) {
+            return List.of();
+        }
+        return Collections.unmodifiableList(new ArrayList<>(values));
     }
 }

@@ -35,11 +35,19 @@ public final class VisualSecretGuard {
         scan(operator.configSchema().schema(), path + "/configSchema/schema", "", diagnostics);
         scan(operator.lowering().parameters(), path + "/lowering/parameters", "", diagnostics);
         for (int i = 0; i < operator.ports().inputs().size(); i++) {
-            scan(operator.ports().inputs().get(i).schema().schema(),
+            OperatorDefinition.Port port = operator.ports().inputs().get(i);
+            if (port == null) {
+                continue;
+            }
+            scan(port.schema().schema(),
                     path + "/ports/inputs/" + i + "/schema/schema", "", diagnostics);
         }
         for (int i = 0; i < operator.ports().outputs().size(); i++) {
-            scan(operator.ports().outputs().get(i).schema().schema(),
+            OperatorDefinition.Port port = operator.ports().outputs().get(i);
+            if (port == null) {
+                continue;
+            }
+            scan(port.schema().schema(),
                     path + "/ports/outputs/" + i + "/schema/schema", "", diagnostics);
         }
         return diagnostics;

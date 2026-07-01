@@ -1,5 +1,6 @@
 package com.leanowtech.bloge.gateway.visual.catalog;
 
+import com.leanowtech.bloge.gateway.visual.diagnostic.VisualDiagnostic;
 import com.leanowtech.bloge.gateway.visual.model.SchemaEnvelope;
 import com.leanowtech.bloge.gateway.visual.validation.VisualValidationResult;
 
@@ -345,6 +346,56 @@ class OperatorLibraryValidatorTest {
     }
 
     @Test
+    void rejectsNullOperatorEntryWithStructuredDiagnostic() {
+        List<OperatorDefinition> operators = new java.util.ArrayList<>();
+        operators.add(null);
+        OperatorLibrary library = new OperatorLibrary(
+                "bloge.visualOperatorLibrary.v1",
+                "null-operator",
+                "Null operator",
+                "1.0.0",
+                "team",
+                "ACTIVE",
+                operators
+        );
+
+        VisualValidationResult result = validator.validate(library);
+
+        assertThat(result.valid()).isFalse();
+        assertThat(result.diagnostics())
+                .anySatisfy(diagnostic -> {
+                    assertThat(diagnostic.code()).isEqualTo("visual.operator.missing");
+                    assertThat(diagnostic.target()).isEqualTo("/operators/0");
+                });
+    }
+
+    @Test
+    void rejectsNullPortEntryWithStructuredDiagnostic() {
+        List<OperatorDefinition.Port> inputs = new java.util.ArrayList<>();
+        inputs.add(null);
+        OperatorDefinition operator = operator(
+                "risk:nullPort",
+                new OperatorDefinition.Ports(
+                        inputs,
+                        List.of(new OperatorDefinition.Port("output",
+                                SchemaEnvelope.object(Map.of("accepted", Map.of("type", "boolean")), List.of()),
+                                true,
+                                "Output."))
+                ),
+                "native"
+        );
+
+        VisualValidationResult result = validator.validate(libraryWith(operator));
+
+        assertThat(result.valid()).isFalse();
+        assertThat(result.diagnostics())
+                .anySatisfy(diagnostic -> {
+                    assertThat(diagnostic.code()).isEqualTo("visual.operator.port.missing");
+                    assertThat(diagnostic.target()).isEqualTo("/operators/0/ports/inputs/0");
+                });
+    }
+
+    @Test
     void rejectsBlankLibraryIdAndOperatorRef() {
         OperatorLibrary library = new OperatorLibrary(
                 "bloge.visualOperatorLibrary.v1",
@@ -466,6 +517,90 @@ class OperatorLibraryValidatorTest {
                 .anySatisfy(diagnostic -> {
                     assertThat(diagnostic.code()).isEqualTo("visual.operator.source.kind.reserved");
                     assertThat(diagnostic.target()).isEqualTo("/operators/0/source/kind");
+                });
+    }
+
+    @Test
+    void rejectsCanonicalizedSystemManagedSourceKindInImportedLibrary() {
+        OperatorDefinition base = VisualCatalogTestSupport.eligibilityOperator("integer");
+        OperatorDefinition operator = new OperatorDefinition(
+                base.schemaVersion(),
+                base.operatorRef(),
+                base.operatorVersion(),
+                base.display(),
+                new OperatorDefinition.Source(" Java-Operator ", "", "", "", true),
+                base.ports(),
+                base.configSchema(),
+                base.capabilities(),
+                base.policy(),
+                base.lowering(),
+                base.diagnostics()
+        );
+
+        VisualValidationResult result = validator.validate(libraryWith(operator));
+
+        assertThat(operator.source().kind()).isEqualTo("java-operator");
+        assertThat(result.valid()).isFalse();
+        assertThat(result.diagnostics())
+                .anySatisfy(diagnostic -> {
+                    assertThat(diagnostic.code()).isEqualTo("visual.operator.source.kind.reserved");
+                    assertThat(diagnostic.target()).isEqualTo("/operators/0/source/kind");
+                });
+    }
+
+    @Test
+    void rejectsUnsupportedImportedSourceKind() {
+        OperatorDefinition base = VisualCatalogTestSupport.eligibilityOperator("integer");
+        OperatorDefinition operator = new OperatorDefinition(
+                base.schemaVersion(),
+                base.operatorRef(),
+                base.operatorVersion(),
+                base.display(),
+                new OperatorDefinition.Source("partner-catalog", "", "", "", true),
+                base.ports(),
+                base.configSchema(),
+                base.capabilities(),
+                base.policy(),
+                base.lowering(),
+                base.diagnostics()
+        );
+
+        VisualValidationResult result = validator.validate(libraryWith(operator));
+
+        assertThat(result.valid()).isFalse();
+        assertThat(result.diagnostics())
+                .anySatisfy(diagnostic -> {
+                    assertThat(diagnostic.code()).isEqualTo("visual.operator.source.kind.unsupported");
+                    assertThat(diagnostic.message()).contains("use 'user-library'");
+                    assertThat(diagnostic.target()).isEqualTo("/operators/0/source/kind");
+                });
+    }
+
+    @Test
+    void rejectsUserSuppliedOperatorDiagnosticsInImportedLibrary() {
+        OperatorDefinition base = VisualCatalogTestSupport.eligibilityOperator("integer");
+        OperatorDefinition operator = new OperatorDefinition(
+                base.schemaVersion(),
+                base.operatorRef(),
+                base.operatorVersion(),
+                base.display(),
+                base.source(),
+                base.ports(),
+                base.configSchema(),
+                base.capabilities(),
+                base.policy(),
+                base.lowering(),
+                List.of(VisualDiagnostic.warning("visual.operator.fake", "Forged warning.", "/operatorRef"))
+        );
+
+        VisualValidationResult result = validator.validate(libraryWith(operator));
+
+        assertThat(result.valid()).isFalse();
+        assertThat(result.diagnostics())
+                .anySatisfy(diagnostic -> {
+                    assertThat(diagnostic.code()).isEqualTo("visual.operator.diagnostics.managed");
+                    assertThat(diagnostic.message()).contains("cannot declare diagnostics");
+                    assertThat(diagnostic.target()).isEqualTo("/operators/0/diagnostics");
                 });
     }
 
@@ -2945,6 +3080,42 @@ class OperatorLibraryValidatorTest {
                     assertThat(diagnostic.code()).isEqualTo("visual.operator.lowering.operatorRef.reserved");
                     assertThat(diagnostic.target()).isEqualTo("/operators/0/lowering/operatorRef");
                 });
+    }
+
+    @Test
+    void rejectsNativeLoweringToSystemManagedExecutableRefs() {
+        List<String> reservedExecutableRefs = List.of(
+                "httpResource",
+                "bloge:decisionTable",
+                "bloge:transform",
+                "resource:loan-applicant-service.getProfile",
+                "publication:risk-policy-v1"
+        );
+
+        for (String executableRef : reservedExecutableRefs) {
+            OperatorDefinition operator = new OperatorDefinition(
+                    "bloge.visualOperator.v1",
+                    "risk:reservedExecutable" + reservedExecutableRefs.indexOf(executableRef),
+                    "1.0.0",
+                    new OperatorDefinition.Display("Bad native", "Test operator.", List.of("test")),
+                    new OperatorDefinition.Source("user-library", "", "", "", true),
+                    outputOnlyPorts(Map.of("accepted", Map.of("type", "boolean")), List.of()),
+                    SchemaEnvelope.opaque(),
+                    OperatorDefinition.Capabilities.pure(),
+                    new OperatorDefinition.Lowering("native", executableRef, Map.of()),
+                    List.of()
+            );
+
+            VisualValidationResult result = validator.validate(libraryWith(operator));
+
+            assertThat(result.valid()).isFalse();
+            assertThat(result.diagnostics())
+                    .anySatisfy(diagnostic -> {
+                        assertThat(diagnostic.code()).isEqualTo("visual.operator.lowering.operatorRef.reserved");
+                        assertThat(diagnostic.message()).contains(executableRef);
+                        assertThat(diagnostic.target()).isEqualTo("/operators/0/lowering/operatorRef");
+                    });
+        }
     }
 
     @Test

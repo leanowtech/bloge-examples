@@ -43,7 +43,14 @@ public class OperatorLibraryValidator {
             "publication:"
     );
     private static final Set<String> RESERVED_EXECUTABLE_OPERATOR_REFS = Set.of(
+            "httpResource",
+            "bloge:decisionTable",
+            "bloge:transform",
             VisualGraphPublicationOperator.NAME
+    );
+    private static final Set<String> RESERVED_EXECUTABLE_OPERATOR_REF_PREFIXES = Set.of(
+            "resource:",
+            "publication:"
     );
     private static final Set<String> SUPPORTED_LIBRARY_SCHEMA_VERSIONS = Set.of(
             "bloge.visualOperatorLibrary.v1"
@@ -69,6 +76,9 @@ public class OperatorLibraryValidator {
             "visual-publication",
             "java-operator",
             "java-streaming-operator"
+    );
+    private static final Set<String> SUPPORTED_IMPORTED_SOURCE_KINDS = Set.of(
+            "user-library"
     );
     private static final Set<String> EXECUTION_CONFIG_KEYS = Set.of("timeout", "retryAttempts");
     private static final Set<String> RESERVED_DSL_FIELD_NAMES = Set.of(
@@ -152,6 +162,12 @@ public class OperatorLibraryValidator {
         for (int i = 0; i < library.operators().size(); i++) {
             OperatorDefinition operator = library.operators().get(i);
             String operatorPath = "/operators/" + i;
+            if (operator == null) {
+                diagnostics.add(VisualDiagnostic.error("visual.operator.missing",
+                        "Operator library contains a null operator entry.",
+                        operatorPath));
+                continue;
+            }
             if (!SUPPORTED_OPERATOR_SCHEMA_VERSIONS.contains(operator.schemaVersion())) {
                 diagnostics.add(VisualDiagnostic.error("visual.operator.schemaVersion.unsupported",
                         "Operator '%s' schemaVersion '%s' is unsupported; visual authoring supports %s."
@@ -211,11 +227,24 @@ public class OperatorLibraryValidator {
         validatePorts(operator, "outputs", operator.ports().outputs(), path + "/ports/outputs", diagnostics);
         diagnostics.addAll(VisualSchemaValidator.validateEnvelope(
                 operator.configSchema(), path + "/configSchema"));
+        validateServerManagedDiagnostics(operator, path + "/diagnostics", diagnostics);
         validateSource(operator, path + "/source", diagnostics);
         validateCapabilities(operator, path + "/capabilities", diagnostics);
         validatePolicy(operator, path + "/policy", diagnostics);
         validateLowering(operator, path + "/lowering", diagnostics);
         diagnostics.addAll(VisualSecretGuard.detectOperatorSecrets(operator, path));
+    }
+
+    private static void validateServerManagedDiagnostics(OperatorDefinition operator,
+                                                         String path,
+                                                         List<VisualDiagnostic> diagnostics) {
+        if (operator.diagnostics().isEmpty()) {
+            return;
+        }
+        diagnostics.add(VisualDiagnostic.error("visual.operator.diagnostics.managed",
+                "Operator '%s' cannot declare diagnostics in an imported operator library; diagnostics are assigned by the visual catalog."
+                        .formatted(operator.operatorRef()),
+                path));
     }
 
     private static void validateSource(OperatorDefinition operator,
@@ -224,6 +253,13 @@ public class OperatorLibraryValidator {
         if (RESERVED_SOURCE_KINDS.contains(operator.source().kind())) {
             diagnostics.add(VisualDiagnostic.error("visual.operator.source.kind.reserved",
                     "Operator '%s' cannot use system-managed source kind '%s' in an imported operator library."
+                            .formatted(operator.operatorRef(), operator.source().kind()),
+                    path + "/kind"));
+            return;
+        }
+        if (!SUPPORTED_IMPORTED_SOURCE_KINDS.contains(operator.source().kind())) {
+            diagnostics.add(VisualDiagnostic.error("visual.operator.source.kind.unsupported",
+                    "Operator '%s' source kind '%s' is unsupported for imported operator libraries; use 'user-library'."
                             .formatted(operator.operatorRef(), operator.source().kind()),
                     path + "/kind"));
         }
@@ -278,6 +314,13 @@ public class OperatorLibraryValidator {
         Set<String> seen = new LinkedHashSet<>();
         for (int i = 0; i < ports.size(); i++) {
             OperatorDefinition.Port port = ports.get(i);
+            if (port == null) {
+                diagnostics.add(VisualDiagnostic.error("visual.operator.port.missing",
+                        "Operator '%s' declares a null %s port entry."
+                                .formatted(operator.operatorRef(), direction),
+                        path + "/" + i));
+                continue;
+            }
             if (!PORT_NAME.matcher(port.name()).matches()) {
                 diagnostics.add(VisualDiagnostic.error("visual.operator.port.name.invalid",
                         "Operator '%s' declares %s port '%s', but port names must be single identifier tokens."
@@ -334,7 +377,7 @@ public class OperatorLibraryValidator {
                             .formatted(operator.operatorRef(), executableOperatorRef),
                     path + "/operatorRef"));
         }
-        if (RESERVED_EXECUTABLE_OPERATOR_REFS.contains(executableOperatorRef)) {
+        if (isReservedExecutableOperatorRef(executableOperatorRef)) {
             diagnostics.add(VisualDiagnostic.error("visual.operator.lowering.operatorRef.reserved",
                     "Native operator '%s' cannot lower directly to system-managed executable operator '%s'."
                             .formatted(operator.operatorRef(), executableOperatorRef),
@@ -343,11 +386,19 @@ public class OperatorLibraryValidator {
         validateNativeDslFieldNames(operator, operatorPath(path), diagnostics);
     }
 
+    private static boolean isReservedExecutableOperatorRef(String executableOperatorRef) {
+        return RESERVED_EXECUTABLE_OPERATOR_REFS.contains(executableOperatorRef)
+                || RESERVED_EXECUTABLE_OPERATOR_REF_PREFIXES.stream().anyMatch(executableOperatorRef::startsWith);
+    }
+
     private static void validateNativeDslFieldNames(OperatorDefinition operator,
                                                     String operatorPath,
                                                     List<VisualDiagnostic> diagnostics) {
         for (int i = 0; i < operator.ports().inputs().size(); i++) {
             OperatorDefinition.Port port = operator.ports().inputs().get(i);
+            if (port == null) {
+                continue;
+            }
             if (!isDslFieldName(port.name())) {
                 diagnostics.add(VisualDiagnostic.error("visual.operator.lowering.dslField.invalid",
                         "Native operator '%s' input port '%s' cannot be rendered as a BLOGE DSL input field."
@@ -371,6 +422,7 @@ public class OperatorLibraryValidator {
                                                   String path,
                                                   List<VisualDiagnostic> diagnostics) {
         if (operator.ports().outputs().size() != 1
+                || operator.ports().outputs().getFirst() == null
                 || !"output".equals(operator.ports().outputs().getFirst().name())) {
             diagnostics.add(VisualDiagnostic.error("visual.operator.lowering.transformOutputUnsupported",
                     "Transform-lowered operator '%s' must declare exactly one output port named 'output'."
@@ -615,11 +667,14 @@ public class OperatorLibraryValidator {
         String first = segments[0];
         String rest = segments.length == 2 ? segments[1] : "";
         for (OperatorDefinition.Port port : operator.ports().inputs()) {
+            if (port == null) {
+                continue;
+            }
             if (port.name().equals(first)) {
                 return rest.isBlank() ? propertyAtPath(port.schema(), "") : propertyAtPath(port.schema(), rest);
             }
         }
-        if (operator.ports().inputs().size() == 1) {
+        if (operator.ports().inputs().size() == 1 && operator.ports().inputs().getFirst() != null) {
             return propertyAtPath(operator.ports().inputs().getFirst().schema(), inputPath);
         }
         return null;

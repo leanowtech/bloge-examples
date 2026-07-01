@@ -1,5 +1,7 @@
 package com.leanowtech.bloge.gateway.visual.catalog;
 
+import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
 import java.util.Locale;
 import java.util.Set;
@@ -46,7 +48,7 @@ public record OperatorLibrary(
         version = version == null || version.isBlank() ? "1.0.0" : version;
         owner = owner == null ? "" : owner;
         status = normalizeStatus(status);
-        operators = operators == null ? List.of() : List.copyOf(operators);
+        operators = nullableElementsCopy(operators);
     }
 
     /**
@@ -69,5 +71,12 @@ public record OperatorLibrary(
         return value == null || value.isBlank()
                 ? STATUS_ACTIVE
                 : value.trim().toUpperCase(Locale.ROOT);
+    }
+
+    private static <T> List<T> nullableElementsCopy(List<T> values) {
+        if (values == null || values.isEmpty()) {
+            return List.of();
+        }
+        return Collections.unmodifiableList(new ArrayList<>(values));
     }
 }

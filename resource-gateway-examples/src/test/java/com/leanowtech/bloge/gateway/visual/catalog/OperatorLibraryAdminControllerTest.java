@@ -5,6 +5,7 @@ import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 import com.leanowtech.bloge.core.operator.Operator;
 import com.leanowtech.bloge.core.operator.OperatorContext;
 import com.leanowtech.bloge.core.spi.DefaultOperatorRegistry;
+import com.leanowtech.bloge.gateway.visual.diagnostic.VisualDiagnostic;
 import com.leanowtech.bloge.gateway.visual.draft.GraphDraft;
 import com.leanowtech.bloge.gateway.visual.draft.InMemoryGraphDraftRepository;
 import com.leanowtech.bloge.gateway.visual.model.SchemaEnvelope;
@@ -80,6 +81,56 @@ class OperatorLibraryAdminControllerTest {
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.valid").value(false))
                 .andExpect(jsonPath("$.diagnostics[0].code").value("visual.schema.arrayItemsMissing"));
+
+        assertThat(registry.all()).isEmpty();
+    }
+
+    @Test
+    void createRejectsNullOperatorEntryWithStructuredDiagnostic() throws Exception {
+        String libraryJson = """
+                {
+                  "libraryId": "null-operator",
+                  "operators": [null]
+                }
+                """;
+
+        mockMvc.perform(post("/admin/visual-operator-libraries")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(libraryJson))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.valid").value(false))
+                .andExpect(jsonPath("$.diagnostics[0].code").value("visual.operator.missing"))
+                .andExpect(jsonPath("$.diagnostics[0].target").value("/operators/0"));
+
+        assertThat(registry.all()).isEmpty();
+    }
+
+    @Test
+    void createRejectsNullPortEntryWithStructuredDiagnostic() throws Exception {
+        String libraryJson = """
+                {
+                  "libraryId": "null-port",
+                  "operators": [{
+                    "operatorRef": "risk:nullPort",
+                    "ports": {
+                      "inputs": [null],
+                      "outputs": [{
+                        "name": "output",
+                        "schema": { "schema": { "type": "object" } },
+                        "required": true
+                      }]
+                    }
+                  }]
+                }
+                """;
+
+        mockMvc.perform(post("/admin/visual-operator-libraries")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(libraryJson))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.valid").value(false))
+                .andExpect(jsonPath("$.diagnostics[0].code").value("visual.operator.port.missing"))
+                .andExpect(jsonPath("$.diagnostics[0].target").value("/operators/0/ports/inputs/0"));
 
         assertThat(registry.all()).isEmpty();
     }
@@ -184,6 +235,105 @@ class OperatorLibraryAdminControllerTest {
     }
 
     @Test
+    void createRejectsCanonicalizedSystemManagedSourceKind() throws Exception {
+        String libraryJson = """
+                {
+                  "libraryId": "reserved-source-kind-variant",
+                  "operators": [{
+                    "operatorRef": "risk:javaSource",
+                    "source": { "kind": " Java-Operator " },
+                    "ports": {
+                      "outputs": [{
+                        "name": "output",
+                        "schema": { "schema": { "type": "object" } },
+                        "required": true
+                      }]
+                    }
+                  }]
+                }
+                """;
+
+        mockMvc.perform(post("/admin/visual-operator-libraries")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(libraryJson))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.valid").value(false))
+                .andExpect(jsonPath("$.diagnostics[0].code").value("visual.operator.source.kind.reserved"))
+                .andExpect(jsonPath("$.diagnostics[0].target").value("/operators/0/source/kind"));
+
+        assertThat(registry.all()).isEmpty();
+    }
+
+    @Test
+    void createRejectsUnsupportedImportedSourceKind() throws Exception {
+        String libraryJson = """
+                {
+                  "libraryId": "unsupported-source-kind",
+                  "operators": [{
+                    "operatorRef": "risk:partnerSource",
+                    "source": { "kind": "partner-catalog" },
+                    "ports": {
+                      "outputs": [{
+                        "name": "output",
+                        "schema": { "schema": { "type": "object" } },
+                        "required": true
+                      }]
+                    }
+                  }]
+                }
+                """;
+
+        mockMvc.perform(post("/admin/visual-operator-libraries")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(libraryJson))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.valid").value(false))
+                .andExpect(jsonPath("$.diagnostics[0].code")
+                        .value("visual.operator.source.kind.unsupported"))
+                .andExpect(jsonPath("$.diagnostics[0].target").value("/operators/0/source/kind"));
+
+        assertThat(registry.all()).isEmpty();
+    }
+
+    @Test
+    void createRejectsUserSuppliedOperatorDiagnostics() throws Exception {
+        OperatorDefinition base = VisualCatalogTestSupport.eligibilityOperator("integer");
+        OperatorDefinition operator = new OperatorDefinition(
+                base.schemaVersion(),
+                base.operatorRef(),
+                base.operatorVersion(),
+                base.display(),
+                base.source(),
+                base.ports(),
+                base.configSchema(),
+                base.capabilities(),
+                base.policy(),
+                base.lowering(),
+                List.of(VisualDiagnostic.warning("visual.operator.fake", "Forged warning.", "/operatorRef"))
+        );
+        OperatorLibrary invalid = new OperatorLibrary(
+                "bloge.visualOperatorLibrary.v1",
+                "risk-policy",
+                "Forged diagnostics",
+                "1.0.0",
+                "risk-team",
+                "ACTIVE",
+                List.of(operator)
+        );
+
+        mockMvc.perform(post("/admin/visual-operator-libraries")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(invalid)))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.valid").value(false))
+                .andExpect(jsonPath("$.diagnostics[0].code")
+                        .value("visual.operator.diagnostics.managed"))
+                .andExpect(jsonPath("$.diagnostics[0].target").value("/operators/0/diagnostics"));
+
+        assertThat(registry.all()).isEmpty();
+    }
+
+    @Test
     void createRejectsSystemManagedOperatorRefPrefix() throws Exception {
         OperatorDefinition base = VisualCatalogTestSupport.eligibilityOperator("integer");
         OperatorDefinition operator = new OperatorDefinition(
@@ -254,6 +404,38 @@ class OperatorLibraryAdminControllerTest {
                 .andExpect(jsonPath("$.diagnostics[0].code")
                         .value("visual.operator.lowering.operatorRef.reserved"))
                 .andExpect(jsonPath("$.diagnostics[0].target").value("/operators/0/lowering/operatorRef"));
+
+        assertThat(registry.all()).isEmpty();
+    }
+
+    @Test
+    void createRejectsSystemManagedExecutableLoweringTarget() throws Exception {
+        String libraryJson = """
+                {
+                  "libraryId": "reserved-lowering-target",
+                  "operators": [{
+                    "operatorRef": "risk:reservedLoweringTarget",
+                    "lowering": { "mode": "native", "operatorRef": "resource:loan-applicant-service.getProfile" },
+                    "ports": {
+                      "outputs": [{
+                        "name": "output",
+                        "schema": { "schema": { "type": "object" } },
+                        "required": true
+                      }]
+                    }
+                  }]
+                }
+                """;
+
+        mockMvc.perform(post("/admin/visual-operator-libraries")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(libraryJson))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.valid").value(false))
+                .andExpect(jsonPath("$.diagnostics[0].code")
+                        .value("visual.operator.lowering.operatorRef.reserved"))
+                .andExpect(jsonPath("$.diagnostics[0].target")
+                        .value("/operators/0/lowering/operatorRef"));
 
         assertThat(registry.all()).isEmpty();
     }
@@ -630,6 +812,7 @@ class OperatorLibraryAdminControllerTest {
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(libraryJson))
                 .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.operators[0].source.kind").value("user-library"))
                 .andExpect(jsonPath("$.operators[0].policy.tenants[0]").value("demo-tenant"))
                 .andExpect(jsonPath("$.operators[0].policy.namespaces[0]").value("local"))
                 .andExpect(jsonPath("$.operators[0].policy.environments[0]").value("browser"));

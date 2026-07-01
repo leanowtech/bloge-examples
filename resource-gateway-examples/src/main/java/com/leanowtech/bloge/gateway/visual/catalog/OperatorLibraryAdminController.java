@@ -212,9 +212,13 @@ public class OperatorLibraryAdminController {
         List<VisualDiagnostic> diagnostics = new ArrayList<>();
         for (int i = 0; i < library.operators().size(); i++) {
             OperatorDefinition operator = library.operators().get(i);
+            if (operator == null) {
+                continue;
+            }
             String owner = registry.all().stream()
                     .filter(existing -> !existing.libraryId().equals(library.libraryId()))
                     .flatMap(existing -> existing.operators().stream()
+                            .filter(java.util.Objects::nonNull)
                             .filter(existingOperator -> existingOperator.operatorRef().equals(operator.operatorRef()))
                             .map(existingOperator -> existing.libraryId()))
                     .findFirst()
@@ -242,6 +246,9 @@ public class OperatorLibraryAdminController {
         List<VisualDiagnostic> diagnostics = new ArrayList<>();
         for (int i = 0; i < library.operators().size(); i++) {
             OperatorDefinition operator = library.operators().get(i);
+            if (operator == null) {
+                continue;
+            }
             if (runtimeOperatorRefs.contains(operator.operatorRef())) {
                 diagnostics.add(VisualDiagnostic.error("visual.library.operatorRefRuntimeOwned",
                         "operatorRef '%s' is already provided by the runtime Java operator inventory."
@@ -286,6 +293,7 @@ public class OperatorLibraryAdminController {
         }
         Set<String> replacementRefs = replacement.visibleInCatalog(true)
                 ? replacement.operators().stream()
+                        .filter(java.util.Objects::nonNull)
                         .map(OperatorDefinition::operatorRef)
                         .collect(java.util.stream.Collectors.toCollection(LinkedHashSet::new))
                 : Set.of();
@@ -312,6 +320,9 @@ public class OperatorLibraryAdminController {
 
         Map<String, OperatorDefinition> changedByRef = new LinkedHashMap<>();
         for (OperatorDefinition operator : replacement.operators()) {
+            if (operator == null) {
+                continue;
+            }
             OperatorDefinition previous = existingByRef.get(operator.operatorRef());
             if (previous != null && !previous.fingerprint().equals(operator.fingerprint())) {
                 changedByRef.putIfAbsent(operator.operatorRef(), operator);
@@ -392,6 +403,7 @@ public class OperatorLibraryAdminController {
         }
         Set<String> replacementRefs = replacement.visibleInCatalog(true)
                 ? replacement.operators().stream()
+                        .filter(java.util.Objects::nonNull)
                         .map(OperatorDefinition::operatorRef)
                         .collect(java.util.stream.Collectors.toCollection(LinkedHashSet::new))
                 : Set.of();
