@@ -406,7 +406,7 @@ public class DefaultVisualOperatorCatalog implements VisualOperatorCatalog {
                                 "HTTP resource execution envelope."))
                 ),
                 SchemaEnvelope.opaque(),
-                new OperatorDefinition.Capabilities("EXTERNAL", "UNKNOWN", false, true),
+                new OperatorDefinition.Capabilities("EXTERNAL", "UNKNOWN", false, false, true),
                 new OperatorDefinition.Lowering("native", "httpResource", Map.of()),
                 List.of()
         );

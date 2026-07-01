@@ -143,7 +143,7 @@ public class JavaOperatorInventoryProjector {
                                 outputDescription(metadata, streaming, suspendable)))
                 ),
                 SchemaEnvelope.opaque(),
-                capabilities(operator, streaming),
+                capabilities(operator, streaming, suspendable),
                 OperatorDefinition.Policy.unrestricted(),
                 new OperatorDefinition.Lowering("native", name, Map.of(
                         "javaClass", operator == null ? "" : operator.getClass().getName()
@@ -152,11 +152,12 @@ public class JavaOperatorInventoryProjector {
         );
     }
 
-    private static OperatorDefinition.Capabilities capabilities(Object operator, boolean streaming) {
+    private static OperatorDefinition.Capabilities capabilities(Object operator, boolean streaming, boolean durable) {
         return new OperatorDefinition.Capabilities(
                 effect(sideEffect(operator)),
                 idempotency(idempotency(operator)),
                 streaming,
+                durable,
                 false
         );
     }

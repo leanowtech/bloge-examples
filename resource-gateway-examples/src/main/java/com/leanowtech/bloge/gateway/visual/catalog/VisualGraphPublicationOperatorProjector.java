@@ -78,6 +78,10 @@ public class VisualGraphPublicationOperatorProjector {
     private static OperatorDefinition.Capabilities publicationCapabilities(VisualGraphPublication publication) {
         boolean requiresSecrets = publication.operatorSnapshots().stream()
                 .anyMatch(operator -> operator.capabilities().requiresSecrets());
+        boolean streaming = publication.operatorSnapshots().stream()
+                .anyMatch(operator -> operator.capabilities().streaming());
+        boolean durable = publication.operatorSnapshots().stream()
+                .anyMatch(operator -> operator.capabilities().durable());
         boolean pure = publication.operatorSnapshots().stream()
                 .allMatch(operator -> "PURE".equals(operator.capabilities().effect()));
         boolean deterministic = publication.operatorSnapshots().stream()
@@ -86,7 +90,8 @@ public class VisualGraphPublicationOperatorProjector {
         return new OperatorDefinition.Capabilities(
                 pure ? "PURE" : "EXTERNAL",
                 deterministic ? "DETERMINISTIC" : "UNKNOWN",
-                false,
+                streaming,
+                durable,
                 requiresSecrets
         );
     }

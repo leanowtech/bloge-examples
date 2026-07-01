@@ -1065,7 +1065,11 @@ resource-gateway 已有 rate limiting、cache、circuit breaker，可以作为�
 当前 `resource-gateway-examples` 也已经把第一层 operator policy gate 落成代码：
 用户库可以声明 `policy.tenants`、`policy.namespaces`、`policy.environments`；
 浏览器使用当前 draft scope 拉取 catalog；服务端在 draft validate/compile/run/publish
-前再次阻断不匹配的 operator。完整 RBAC、secret 权限和 durable runtime 策略仍属于后续治理层增强。
+前再次阻断不匹配的 operator。它也已经把 streaming/durable runtime capability
+纳入 `OperatorDefinition` fingerprint，并在当前 request-response visual runtime 中阻断
+`streaming=true` 或 `durable=true` 的 operator；对 `NON_IDEMPOTENT` 外部副作用算子会给出
+production promotion 前需要 review/audit control 的 warning。完整 RBAC、secret 权限和真正的 durable
+runtime authoring/instance 管理仍属于后续治理层增强。
 
 ### 19.3 新增
 
@@ -1181,7 +1185,7 @@ Phase 1 的工程拆分、包结构、API、测试和 Definition of Done 见
 | ResourceDescriptor 无 payload schema | 高 | 虚拟算子输出不可连接 | descriptor 增加 payload schema 或采样推断后人工确认 |
 | 前端写死领域 | 中 | 无法通用 | Palette 和 editor 全部 catalog-driven |
 | 校验太慢 | 中 | 拖拽体验差 | 客户端快速校验 + 服务端增量校验 |
-| 权限后补 | 高 | 外部调用和密钥风险 | 第一层 operator scope policy 已服务端阻断；后续补 RBAC、secret 权限和 review gate |
+| 权限后补 | 高 | 外部调用和密钥风险 | 第一层 operator scope policy 与 request-response runtime capability gate 已服务端阻断；后续补 RBAC、secret 权限和 review gate |
 | 过早做全功能低代码 | 高 | 平台失控 | 先做 gateway MVP，限制节点类型 |
 
 ## 22. 待确认问题

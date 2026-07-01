@@ -330,6 +330,11 @@ class DefaultVisualOperatorCatalogTest {
         assertThat(operator.policy().tenants()).containsExactly("tenant-a");
         assertThat(operator.policy().namespaces()).containsExactly("risk");
         assertThat(operator.policy().environments()).containsExactly("prod");
+        assertThat(operator.capabilities().effect()).isEqualTo("EXTERNAL");
+        assertThat(operator.capabilities().idempotency()).isEqualTo("UNKNOWN");
+        assertThat(operator.capabilities().streaming()).isTrue();
+        assertThat(operator.capabilities().durable()).isTrue();
+        assertThat(operator.capabilities().requiresSecrets()).isTrue();
         assertThat(operator.lowering().mode()).isEqualTo("native");
         assertThat(operator.lowering().operatorRef()).isEqualTo(VisualGraphPublicationOperator.NAME);
         assertThat(operator.lowering().parameters()).containsEntry("publicationId", "pub-eligibility");
@@ -564,7 +569,20 @@ class DefaultVisualOperatorCatalogTest {
     }
 
     private static VisualGraphPublication publishedEligibilityGraph() {
-        OperatorDefinition eligibility = VisualCatalogTestSupport.eligibilityOperator("integer");
+        OperatorDefinition base = VisualCatalogTestSupport.eligibilityOperator("integer");
+        OperatorDefinition eligibility = new OperatorDefinition(
+                base.schemaVersion(),
+                base.operatorRef(),
+                base.operatorVersion(),
+                base.display(),
+                base.source(),
+                base.ports(),
+                base.configSchema(),
+                new OperatorDefinition.Capabilities("EXTERNAL", "UNKNOWN", true, true, true),
+                base.policy(),
+                base.lowering(),
+                base.diagnostics()
+        );
         GraphDraft draft = new GraphDraft(
                 "",
                 "draft-eligibility",

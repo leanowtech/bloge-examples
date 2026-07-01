@@ -202,12 +202,14 @@ public record OperatorDefinition(
      * @param effect pure/read/external effect label
      * @param idempotency idempotency label
      * @param streaming whether output can stream
+     * @param durable whether execution requires a durable/suspendable runtime
      * @param requiresSecrets whether execution may require secrets
      */
     public record Capabilities(
             String effect,
             String idempotency,
             boolean streaming,
+            boolean durable,
             boolean requiresSecrets
     ) {
         public Capabilities {
@@ -216,7 +218,7 @@ public record OperatorDefinition(
         }
 
         public static Capabilities pure() {
-            return new Capabilities("PURE", "DETERMINISTIC", false, false);
+            return new Capabilities("PURE", "DETERMINISTIC", false, false, false);
         }
 
         private static String normalizeLabel(String value, String fallback) {
@@ -396,6 +398,7 @@ public record OperatorDefinition(
             body.put("effect", capabilities.effect());
             body.put("idempotency", capabilities.idempotency());
             body.put("streaming", capabilities.streaming());
+            body.put("durable", capabilities.durable());
             body.put("requiresSecrets", capabilities.requiresSecrets());
             return canonicalize(body);
         }

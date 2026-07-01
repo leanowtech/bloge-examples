@@ -193,6 +193,8 @@ public class GraphDraftValidator {
             operatorsByNodeId.put(node.id(), operator.get());
             validateOperatorFingerprint(node, operator.get(), draft.operatorFingerprints(), nodePath, diagnostics);
             validateOperatorPolicy(draft, node, operator.get(), nodePath, diagnostics);
+            validateOperatorRuntimeCapabilities(node, operator.get(), nodePath, diagnostics);
+            validateOperatorGovernanceWarnings(node, operator.get(), nodePath, diagnostics);
             validateDuplicateInputTargets(node, operator.get(), nodePath, diagnostics);
             validateRequiredInputs(node, operator.get(), nodePath, diagnostics);
             validateUnknownInputs(node, operator.get(), nodePath, diagnostics);
@@ -351,6 +353,46 @@ public class GraphDraftValidator {
                 "Operator '%s' is not available for draft scope tenant='%s', namespace='%s', environment='%s': %s."
                         .formatted(operator.operatorRef(), draft.tenantId(), draft.namespace(), draft.environment(),
                                 String.join("; ", violations)),
+                nodePath + "/operatorRef"));
+    }
+
+    private static void validateOperatorRuntimeCapabilities(GraphDraft.DraftNode node,
+                                                            OperatorDefinition operator,
+                                                            String nodePath,
+                                                            List<VisualDiagnostic> diagnostics) {
+        OperatorDefinition.Capabilities capabilities = operator.capabilities();
+        if (capabilities.streaming()) {
+            diagnostics.add(VisualDiagnostic.error("visual.operator.runtime.streamingUnsupported",
+                    "Operator '%s' on node '%s' produces streaming output, but this visual authoring runtime supports request-response execution only."
+                            .formatted(operator.operatorRef(), node.id()),
+                    nodePath + "/operatorRef"));
+        }
+        if (capabilities.durable()) {
+            diagnostics.add(VisualDiagnostic.error("visual.operator.runtime.durableUnsupported",
+                    "Operator '%s' on node '%s' requires a durable/suspendable runtime, but this visual authoring runtime supports request-response execution only."
+                            .formatted(operator.operatorRef(), node.id()),
+                    nodePath + "/operatorRef"));
+        }
+    }
+
+    private static void validateOperatorGovernanceWarnings(GraphDraft.DraftNode node,
+                                                           OperatorDefinition operator,
+                                                           String nodePath,
+                                                           List<VisualDiagnostic> diagnostics) {
+        OperatorDefinition.Capabilities capabilities = operator.capabilities();
+        if (capabilities.requiresSecrets()) {
+            diagnostics.add(VisualDiagnostic.warning("visual.operator.governance.requiresSecrets",
+                    "Operator '%s' on node '%s' requires secret-backed execution; verify secretRef binding and access review before production promotion."
+                            .formatted(operator.operatorRef(), node.id()),
+                    nodePath + "/operatorRef"));
+        }
+        if (!"NON_IDEMPOTENT".equals(capabilities.idempotency())
+                || "PURE".equals(capabilities.effect())) {
+            return;
+        }
+        diagnostics.add(VisualDiagnostic.warning("visual.operator.governance.nonIdempotent",
+                "Operator '%s' on node '%s' declares non-idempotent side effects; add an explicit review or audit control before production promotion."
+                        .formatted(operator.operatorRef(), node.id()),
                 nodePath + "/operatorRef"));
     }
 

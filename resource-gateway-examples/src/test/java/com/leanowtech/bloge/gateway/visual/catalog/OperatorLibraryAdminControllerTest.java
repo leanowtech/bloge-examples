@@ -555,7 +555,7 @@ class OperatorLibraryAdminControllerTest {
                 base.source(),
                 base.ports(),
                 base.configSchema(),
-                new OperatorDefinition.Capabilities("NETWORK_MAGIC", "MAYBE", false, false),
+                new OperatorDefinition.Capabilities("NETWORK_MAGIC", "MAYBE", false, false, false),
                 base.policy(),
                 base.lowering(),
                 base.diagnostics()

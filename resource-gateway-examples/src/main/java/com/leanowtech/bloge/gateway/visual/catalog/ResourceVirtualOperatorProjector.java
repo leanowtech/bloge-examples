@@ -66,7 +66,7 @@ public class ResourceVirtualOperatorProjector {
                 ),
                 resourceConfigSchema(),
                 new OperatorDefinition.Capabilities(effectFor(descriptor.method()), idempotencyFor(descriptor.method()),
-                        false, descriptor.authStrategy() != null),
+                        false, false, descriptor.authStrategy() != null),
                 new OperatorDefinition.Lowering("resource-descriptor", "httpResource", loweringParameters),
                 diagnostics
         );

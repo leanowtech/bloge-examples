@@ -2274,6 +2274,9 @@ function operatorPaletteCapabilityLabels(spec) {
   if (sourceKind === 'java-streaming-operator' || capabilities.streaming === true) {
     labels.push('streaming');
   }
+  if (capabilities.durable === true) {
+    labels.push('durable');
+  }
   if (sourceKind === 'java-suspendable-operator') {
     labels.push('suspendable');
   }
@@ -2460,8 +2463,17 @@ function renderLibraryProfilePanel(profile) {
   if (profile.dynamicSchemaCount) {
     warningChips.push(`${profile.dynamicSchemaCount} dynamic schema surfaces`);
   }
+  if (profile.streamingOperatorCount) {
+    warningChips.push(`${profile.streamingOperatorCount} streaming operators`);
+  }
+  if (profile.durableOperatorCount) {
+    warningChips.push(`${profile.durableOperatorCount} durable operators`);
+  }
   if (profile.externalOperatorCount) {
     warningChips.push(`${profile.externalOperatorCount} external effects`);
+  }
+  if (profile.nonIdempotentOperatorCount) {
+    warningChips.push(`${profile.nonIdempotentOperatorCount} non-idempotent operators`);
   }
   if (profile.secretOperatorCount) {
     warningChips.push(`${profile.secretOperatorCount} secret-bound operators`);
@@ -2789,7 +2801,10 @@ function libraryProfileLevel(profile) {
   if (profile.dslUnsafeFieldCount || !profile.operatorCount) {
     return 'warning';
   }
-  if (profile.externalOperatorCount || profile.secretOperatorCount) {
+  if (profile.externalOperatorCount || profile.nonIdempotentOperatorCount || profile.secretOperatorCount) {
+    return 'info';
+  }
+  if (profile.streamingOperatorCount || profile.durableOperatorCount) {
     return 'info';
   }
   return 'success';
@@ -2819,7 +2834,10 @@ function operatorLibraryProfile(library) {
     accumulator.outputFieldCount += operator.outputFieldCount;
     accumulator.dslUnsafeFieldCount += operator.dslUnsafeFieldCount;
     accumulator.dynamicSchemaCount += operator.dynamicSchemaCount;
+    accumulator.streamingOperatorCount += operator.streaming ? 1 : 0;
+    accumulator.durableOperatorCount += operator.durable ? 1 : 0;
     accumulator.externalOperatorCount += operator.external ? 1 : 0;
+    accumulator.nonIdempotentOperatorCount += operator.nonIdempotent ? 1 : 0;
     accumulator.secretOperatorCount += operator.requiresSecrets ? 1 : 0;
     return accumulator;
   }, {
@@ -2830,7 +2848,10 @@ function operatorLibraryProfile(library) {
     outputFieldCount: 0,
     dslUnsafeFieldCount: 0,
     dynamicSchemaCount: 0,
+    streamingOperatorCount: 0,
+    durableOperatorCount: 0,
     externalOperatorCount: 0,
+    nonIdempotentOperatorCount: 0,
     secretOperatorCount: 0
   });
   return {
@@ -2859,6 +2880,12 @@ function operatorLibraryOperatorProfile(operator) {
   const inputUnionSummary = operatorLibraryPortUnionSummary(inputPorts);
   const outputUnionSummary = operatorLibraryPortUnionSummary(outputPorts);
   const configUnionSummary = schemaUnionSummary(operator?.configSchema);
+  const sourceKind = String(operator?.source?.kind || '').trim().toLowerCase();
+  const streaming = sourceKind === 'java-streaming-operator'
+    || Boolean(operator?.capabilities?.streaming);
+  const durable = sourceKind === 'java-suspendable-operator'
+    || Boolean(operator?.capabilities?.durable);
+  const idempotency = String(operator?.capabilities?.idempotency || '').trim().toUpperCase();
   return {
     label: operator?.display?.name || operator?.operatorRef || 'operator',
     operatorRef: String(operator?.operatorRef || ''),
@@ -2871,7 +2898,10 @@ function operatorLibraryOperatorProfile(operator) {
     dslUnsafeFieldCount: inputStats.dslUnsafeCount + outputStats.dslUnsafeCount + configUnsafe,
     dynamicSchemaCount: inputStats.dynamicSchemaCount + outputStats.dynamicSchemaCount
       + schemaDynamicSurfaceCount(operator?.configSchema?.schema),
+    streaming,
+    durable,
     external: effect !== 'PURE',
+    nonIdempotent: idempotency === 'NON_IDEMPOTENT',
     requiresSecrets: Boolean(operator?.capabilities?.requiresSecrets),
     inputFields,
     outputFields,

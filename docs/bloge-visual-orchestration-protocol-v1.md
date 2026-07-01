@@ -304,7 +304,7 @@ MVP schema kind：
 | --- | --- | --- | --- |
 | `java-operator` | 是 | 可省略 | `operatorRef` 直接对应 runtime registry |
 | `java-streaming-operator` | 是 | 可省略 | `operatorRef` 对应 runtime streaming operator；catalog 标记 streaming capability |
-| `java-suspendable-operator` | 是 | 可省略 | `operatorRef` 对应 runtime suspendable operator；当前画布先暴露 source kind/tag，完整 suspend/resume authoring 属后续阶段 |
+| `java-suspendable-operator` | 是 | 可省略 | `operatorRef` 对应 runtime suspendable operator；catalog 标记 `durable=true`，当前 request-response visual runtime 会在 draft validation 阶段阻断使用，完整 suspend/resume authoring 属后续阶段 |
 | `resource-descriptor` | 否 | 必填 | lower 到 `httpResource` |
 | `visual-publication` | 否 | 必填 | lower 到 frozen visual publication executor |
 | `user-library` | 取决于 lowering | 必填 | 用户导入算子库使用的唯一可写 source kind；系统 source kind 不能由用户库伪造 |

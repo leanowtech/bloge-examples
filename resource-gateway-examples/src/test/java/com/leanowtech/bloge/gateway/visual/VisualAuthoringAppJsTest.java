@@ -1131,6 +1131,7 @@ class VisualAuthoringAppJsTest {
                   capabilities: {
                     effect: 'WRITE_EXTERNAL',
                     streaming: false,
+                    durable: true,
                     requiresSecrets: true
                   },
                   inputPorts: [],
@@ -1193,11 +1194,17 @@ class VisualAuthoringAppJsTest {
                           patternProperties: { '^flag_[A-Za-z]+$': { type: 'boolean' } }
                         }
                       },
-                      capabilities: { effect: 'READ_EXTERNAL', requiresSecrets: true },
+                      capabilities: {
+                        effect: 'READ_EXTERNAL',
+                        idempotency: 'NON_IDEMPOTENT',
+                        streaming: true,
+                        requiresSecrets: true
+                      },
                       lowering: { mode: 'transform' }
                     },
                     {
                       operatorRef: 'risk:route',
+                      source: { kind: 'java-suspendable-operator' },
                       ports: {
                         inputs: [{
                           name: 'mode',
@@ -1354,7 +1361,7 @@ class VisualAuthoringAppJsTest {
                 const paletteMultiTokenMatch = context.operatorMatchesPaletteFilter('risk:eligibility', paletteSearchSpec);
                 context.state.paletteSearch = 'risk inputs.customer.id missingField';
                 const paletteMultiTokenMiss = context.operatorMatchesPaletteFilter('risk:eligibility', paletteSearchSpec);
-                context.state.paletteSearch = 'suspendable write-external secret';
+                context.state.paletteSearch = 'durable suspendable write-external secret';
                 const paletteCapabilitySearchMatch = context.operatorMatchesPaletteFilter('awaitApproval', suspendablePaletteSpec);
                 context.state.paletteSearch = '';
                 const unsafeOutputNode = { id: 'unsafeOutputNode', type: 'customOperator' };
@@ -2149,8 +2156,8 @@ class VisualAuthoringAppJsTest {
                   ['palette search tokens', normalizedPaletteTokens, 'risk|score'],
                   ['palette multi-token match', String(paletteMultiTokenMatch), 'true'],
                   ['palette multi-token miss', String(paletteMultiTokenMiss), 'false'],
-                  ['palette capability labels', suspendableCapabilityLabels, 'suspendable|requires secret|write-external'],
-                  ['palette capability badges', String(suspendableCapabilityBadges.includes('suspendable') && suspendableCapabilityBadges.includes('requires secret')), 'true'],
+                  ['palette capability labels', suspendableCapabilityLabels, 'durable|suspendable|requires secret|write-external'],
+                  ['palette capability badges', String(suspendableCapabilityBadges.includes('durable') && suspendableCapabilityBadges.includes('suspendable') && suspendableCapabilityBadges.includes('requires secret')), 'true'],
                   ['palette capability search match', String(paletteCapabilitySearchMatch), 'true'],
                   ['library profile operator count', libraryProfile.operatorCount, 2],
                   ['library profile input count', libraryProfile.inputPortCount, 2],
@@ -2160,13 +2167,19 @@ class VisualAuthoringAppJsTest {
                   ['library profile output fields', libraryProfile.outputFieldCount, 2],
                   ['library profile unsafe fields', libraryProfile.dslUnsafeFieldCount, 3],
                   ['library profile dynamic schemas', libraryProfile.dynamicSchemaCount, 2],
+                  ['library profile streaming operators', libraryProfile.streamingOperatorCount, 1],
+                  ['library profile durable operators', libraryProfile.durableOperatorCount, 1],
                   ['library profile external operators', libraryProfile.externalOperatorCount, 1],
+                  ['library profile non-idempotent operators', libraryProfile.nonIdempotentOperatorCount, 1],
                   ['library profile secret operators', libraryProfile.secretOperatorCount, 1],
                   ['library profile operator input field count', libraryProfile.operators[0].inputFields.length, 3],
                   ['library profile operator output field count', libraryProfile.operators[0].outputFields.length, 2],
                   ['library profile operator config field count', libraryProfile.operators[0].configFields.length, 1],
                   ['library profile level', context.libraryProfileLevel(libraryProfile), 'warning'],
                   ['library profile html escapes score', String(libraryProfileHtml.includes('Risk &lt;Score&gt;')), 'true'],
+                  ['library profile html streaming chip', String(libraryProfileHtml.includes('1 streaming operators')), 'true'],
+                  ['library profile html durable chip', String(libraryProfileHtml.includes('1 durable operators')), 'true'],
+                  ['library profile html non-idempotent chip', String(libraryProfileHtml.includes('1 non-idempotent operators')), 'true'],
                   ['library profile html includes required input field', String(libraryProfileHtml.includes('inputs.customer.id*')), 'true'],
                   ['library profile html includes unsafe input field', String(libraryProfileHtml.includes('inputs.customer.bad-field !')), 'true'],
                   ['library profile html includes unsafe input port', String(libraryProfileHtml.includes('mode.(root) !')), 'true'],

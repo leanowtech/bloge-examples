@@ -42,6 +42,7 @@ class JavaOperatorInventoryProjectorTest {
         assertThat(operator.display().tags()).contains("java", "pricing");
         assertThat(operator.capabilities().effect()).isEqualTo("READ_EXTERNAL");
         assertThat(operator.capabilities().idempotency()).isEqualTo("IDEMPOTENT");
+        assertThat(operator.capabilities().durable()).isFalse();
         assertThat(operator.lowering().mode()).isEqualTo("native");
         assertThat(operator.lowering().operatorRef()).isEqualTo("quotePrice");
         assertThat(operator.ports().inputs().getFirst().schema().properties())
@@ -96,6 +97,7 @@ class JavaOperatorInventoryProjectorTest {
         assertThat(operator.source().kind()).isEqualTo("java-suspendable-operator");
         assertThat(operator.display().tags()).contains("java", "suspendable", "human-task");
         assertThat(operator.capabilities().streaming()).isFalse();
+        assertThat(operator.capabilities().durable()).isTrue();
         assertThat(operator.capabilities().effect()).isEqualTo("WRITE_EXTERNAL");
         assertThat(operator.capabilities().idempotency()).isEqualTo("NON_IDEMPOTENT");
         assertThat(operator.lowering().mode()).isEqualTo("native");

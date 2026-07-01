@@ -1568,6 +1568,120 @@ class GraphDraftValidatorTest {
     }
 
     @Test
+    void rejectsDraftWhenOperatorStreamsInRequestResponseRuntime() {
+        GraphDraftValidator validator = new GraphDraftValidator(
+                VisualCatalogTestSupport.catalogWithLibrary(
+                        eligibilityLibraryWithCapabilities(new OperatorDefinition.Capabilities(
+                                "PURE", "DETERMINISTIC", true, false, false))));
+        GraphDraft draft = contextEligibilityDraft(graphInputSchema(
+                Map.of(
+                        "score", Map.of("type", "integer"),
+                        "amount", Map.of("type", "number")
+                ),
+                List.of("score", "amount")
+        ), Map.of(
+                "score", GraphDraft.Binding.contextPath("score"),
+                "amount", GraphDraft.Binding.contextPath("amount")
+        ));
+
+        VisualValidationResult result = validator.validate(draft);
+
+        assertThat(result.valid()).isFalse();
+        assertThat(result.diagnostics())
+                .anySatisfy(diagnostic -> {
+                    assertThat(diagnostic.code()).isEqualTo("visual.operator.runtime.streamingUnsupported");
+                    assertThat(diagnostic.message()).contains("request-response");
+                    assertThat(diagnostic.target()).isEqualTo("/nodes/0/operatorRef");
+                });
+    }
+
+    @Test
+    void rejectsDraftWhenOperatorRequiresDurableRuntime() {
+        GraphDraftValidator validator = new GraphDraftValidator(
+                VisualCatalogTestSupport.catalogWithLibrary(
+                        eligibilityLibraryWithCapabilities(new OperatorDefinition.Capabilities(
+                                "WRITE_EXTERNAL", "NON_IDEMPOTENT", false, true, false))));
+        GraphDraft draft = contextEligibilityDraft(graphInputSchema(
+                Map.of(
+                        "score", Map.of("type", "integer"),
+                        "amount", Map.of("type", "number")
+                ),
+                List.of("score", "amount")
+        ), Map.of(
+                "score", GraphDraft.Binding.contextPath("score"),
+                "amount", GraphDraft.Binding.contextPath("amount")
+        ));
+
+        VisualValidationResult result = validator.validate(draft);
+
+        assertThat(result.valid()).isFalse();
+        assertThat(result.diagnostics())
+                .anySatisfy(diagnostic -> {
+                    assertThat(diagnostic.code()).isEqualTo("visual.operator.runtime.durableUnsupported");
+                    assertThat(diagnostic.message()).contains("durable/suspendable").contains("request-response");
+                    assertThat(diagnostic.target()).isEqualTo("/nodes/0/operatorRef");
+                });
+    }
+
+    @Test
+    void warnsWhenOperatorDeclaresNonIdempotentSideEffects() {
+        GraphDraftValidator validator = new GraphDraftValidator(
+                VisualCatalogTestSupport.catalogWithLibrary(
+                        eligibilityLibraryWithCapabilities(new OperatorDefinition.Capabilities(
+                                "WRITE_EXTERNAL", "NON_IDEMPOTENT", false, false, false))));
+        GraphDraft draft = contextEligibilityDraft(graphInputSchema(
+                Map.of(
+                        "score", Map.of("type", "integer"),
+                        "amount", Map.of("type", "number")
+                ),
+                List.of("score", "amount")
+        ), Map.of(
+                "score", GraphDraft.Binding.contextPath("score"),
+                "amount", GraphDraft.Binding.contextPath("amount")
+        ));
+
+        VisualValidationResult result = validator.validate(draft);
+
+        assertThat(result.valid()).isTrue();
+        assertThat(result.diagnostics())
+                .anySatisfy(diagnostic -> {
+                    assertThat(diagnostic.level()).isEqualTo("WARNING");
+                    assertThat(diagnostic.code()).isEqualTo("visual.operator.governance.nonIdempotent");
+                    assertThat(diagnostic.message()).contains("non-idempotent").contains("review");
+                    assertThat(diagnostic.target()).isEqualTo("/nodes/0/operatorRef");
+                });
+    }
+
+    @Test
+    void warnsWhenOperatorRequiresSecretBackedExecution() {
+        GraphDraftValidator validator = new GraphDraftValidator(
+                VisualCatalogTestSupport.catalogWithLibrary(
+                        eligibilityLibraryWithCapabilities(new OperatorDefinition.Capabilities(
+                                "READ_EXTERNAL", "IDEMPOTENT", false, false, true))));
+        GraphDraft draft = contextEligibilityDraft(graphInputSchema(
+                Map.of(
+                        "score", Map.of("type", "integer"),
+                        "amount", Map.of("type", "number")
+                ),
+                List.of("score", "amount")
+        ), Map.of(
+                "score", GraphDraft.Binding.contextPath("score"),
+                "amount", GraphDraft.Binding.contextPath("amount")
+        ));
+
+        VisualValidationResult result = validator.validate(draft);
+
+        assertThat(result.valid()).isTrue();
+        assertThat(result.diagnostics())
+                .anySatisfy(diagnostic -> {
+                    assertThat(diagnostic.level()).isEqualTo("WARNING");
+                    assertThat(diagnostic.code()).isEqualTo("visual.operator.governance.requiresSecrets");
+                    assertThat(diagnostic.message()).contains("secretRef").contains("access review");
+                    assertThat(diagnostic.target()).isEqualTo("/nodes/0/operatorRef");
+                });
+    }
+
+    @Test
     void rejectsDraftWhenOperatorFingerprintSnapshotHasDrifted() {
         GraphDraftValidator validator = new GraphDraftValidator(
                 VisualCatalogTestSupport.catalogWithLibrary(
@@ -6313,6 +6427,33 @@ class GraphDraftValidatorTest {
 
     private static SchemaEnvelope selectorInputSchema(Map<String, Object> selectorSchema) {
         return SchemaEnvelope.object(Map.of("productType", selectorSchema), List.of("productType"));
+    }
+
+    private static OperatorLibrary eligibilityLibraryWithCapabilities(
+            OperatorDefinition.Capabilities capabilities) {
+        OperatorDefinition base = VisualCatalogTestSupport.eligibilityOperator("integer");
+        OperatorDefinition operator = new OperatorDefinition(
+                base.schemaVersion(),
+                base.operatorRef(),
+                base.operatorVersion(),
+                base.display(),
+                base.source(),
+                base.ports(),
+                base.configSchema(),
+                capabilities,
+                base.policy(),
+                base.lowering(),
+                base.diagnostics()
+        );
+        return new OperatorLibrary(
+                "bloge.visualOperatorLibrary.v1",
+                "risk-policy-runtime-capabilities",
+                "Risk policy runtime capability operators",
+                "1.0.0",
+                "risk-team",
+                "ACTIVE",
+                List.of(operator)
+        );
     }
 
     private static OperatorLibrary selectorRouteLibrary(Map<String, Object> selectorSchema) {
