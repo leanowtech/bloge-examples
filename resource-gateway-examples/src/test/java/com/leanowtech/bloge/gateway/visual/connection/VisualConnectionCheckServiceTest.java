@@ -594,6 +594,26 @@ class VisualConnectionCheckServiceTest {
     }
 
     @Test
+    void acceptsNodePickerBindingThroughDynamicOutputSchema() {
+        VisualConnectionCheckService service = connectionService(VisualCatalogTestSupport
+                .catalogWithLibrary(VisualCatalogTestSupport.dynamicUnevaluatedOutputLibrary()));
+        GraphDraft draft = dynamicOutputFactsDraft();
+
+        VisualConnectionCheckResult result = service.check(new VisualConnectionCheckRequest(
+                draft,
+                new GraphDraft.Endpoint("riskDynamicFacts", "facts", "dynamicScore"),
+                new GraphDraft.Endpoint("riskScoreSink", "inputs", "score"),
+                "data"
+        ));
+
+        assertThat(result.accepted()).as("diagnostics: %s", result.diagnostics()).isTrue();
+        assertThat(result.diagnostics()).isEmpty();
+        assertThat(result.bindingKey()).isEqualTo("score");
+        assertThat(result.edge().source().port()).isEqualTo("facts");
+        assertThat(result.edge().source().path()).isEqualTo("dynamicScore");
+    }
+
+    @Test
     void rejectsContextPickerBindingWhenDynamicPropertyNameViolatesGraphInputSchema() {
         VisualConnectionCheckService service = connectionService(VisualCatalogTestSupport
                 .catalogWithLoanApplicantResourceAndLibrary(VisualCatalogTestSupport.eligibilityLibrary("integer")));
@@ -960,6 +980,41 @@ class VisualConnectionCheckServiceTest {
                 List.of(),
                 Map.of(),
                 new GraphDraft.OutputSelection("merge", "")
+        );
+    }
+
+    private static GraphDraft dynamicOutputFactsDraft() {
+        return new GraphDraft(
+                "",
+                "",
+                0,
+                "dynamicOutputFacts",
+                "",
+                "",
+                "",
+                "",
+                null,
+                List.of(
+                        new GraphDraft.DraftNode(
+                                "riskDynamicFacts",
+                                "risk:dynamicFacts",
+                                "",
+                                Map.of(),
+                                Map.of(),
+                                null
+                        ),
+                        new GraphDraft.DraftNode(
+                                "riskScoreSink",
+                                "risk:scoreSink",
+                                "",
+                                Map.of(),
+                                Map.of(),
+                                null
+                        )
+                ),
+                List.of(),
+                Map.of(),
+                new GraphDraft.OutputSelection("riskScoreSink", "")
         );
     }
 

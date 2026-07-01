@@ -4058,6 +4058,60 @@ class GraphDraftValidatorTest {
     }
 
     @Test
+    void acceptsEdgeWhenSourcePathResolvesThroughDynamicOutputSchema() {
+        GraphDraftValidator validator = new GraphDraftValidator(
+                VisualCatalogTestSupport.catalogWithLibrary(
+                        VisualCatalogTestSupport.dynamicUnevaluatedOutputLibrary()));
+        GraphDraft draft = dynamicOutputFactsDraft(
+                Map.of("score", GraphDraft.Binding.nodePath(
+                        "riskDynamicFacts", "facts", "dynamicScore", "inputs", "score")),
+                List.of(new GraphDraft.DraftEdge("dynamic-score", "data",
+                        new GraphDraft.Endpoint("riskDynamicFacts", "facts", "dynamicScore"),
+                        new GraphDraft.Endpoint("riskScoreSink", "inputs", "score"))),
+                new GraphDraft.OutputSelection("riskScoreSink", "")
+        );
+
+        VisualValidationResult result = validator.validate(draft);
+
+        assertThat(result.valid()).as("diagnostics: %s", result.diagnostics()).isTrue();
+        assertThat(result.diagnostics()).noneMatch(diagnostic -> diagnostic.error());
+    }
+
+    @Test
+    void acceptsGraphOutputSelectionThroughDynamicOutputSchema() {
+        GraphDraftValidator validator = new GraphDraftValidator(
+                VisualCatalogTestSupport.catalogWithLibrary(
+                        VisualCatalogTestSupport.dynamicUnevaluatedOutputLibrary()));
+        GraphDraft draft = new GraphDraft(
+                "",
+                "",
+                0,
+                "dynamicFactsOutput",
+                "",
+                "",
+                "",
+                "",
+                null,
+                List.of(new GraphDraft.DraftNode(
+                        "riskDynamicFacts",
+                        "risk:dynamicFacts",
+                        "",
+                        Map.of(),
+                        Map.of(),
+                        null
+                )),
+                List.of(),
+                Map.of(),
+                new GraphDraft.OutputSelection("riskDynamicFacts", "facts.dynamicScore")
+        );
+
+        VisualValidationResult result = validator.validate(draft);
+
+        assertThat(result.valid()).as("diagnostics: %s", result.diagnostics()).isTrue();
+        assertThat(result.diagnostics()).noneMatch(diagnostic -> diagnostic.error());
+    }
+
+    @Test
     void rejectsEdgeWhenPortTypesDoNotMatch() {
         GraphDraftValidator validator = new GraphDraftValidator(
                 VisualCatalogTestSupport.catalogWithLoanApplicantResourceAndLibrary(
@@ -4415,6 +4469,43 @@ class GraphDraftValidatorTest {
                 "additionalProperties", additionalProperties,
                 "propertyNames", propertyNames
         ));
+    }
+
+    private static GraphDraft dynamicOutputFactsDraft(Map<String, GraphDraft.Binding> sinkInputs,
+                                                      List<GraphDraft.DraftEdge> edges,
+                                                      GraphDraft.OutputSelection output) {
+        return new GraphDraft(
+                "",
+                "",
+                0,
+                "dynamicOutputFacts",
+                "",
+                "",
+                "",
+                "",
+                null,
+                List.of(
+                        new GraphDraft.DraftNode(
+                                "riskDynamicFacts",
+                                "risk:dynamicFacts",
+                                "",
+                                Map.of(),
+                                Map.of(),
+                                null
+                        ),
+                        new GraphDraft.DraftNode(
+                                "riskScoreSink",
+                                "risk:scoreSink",
+                                "",
+                                sinkInputs,
+                                Map.of(),
+                                null
+                        )
+                ),
+                edges,
+                Map.of(),
+                output
+        );
     }
 
     private static GraphDraft multiOutputEligibilityDraft(GraphDraft.Binding scoreBinding) {

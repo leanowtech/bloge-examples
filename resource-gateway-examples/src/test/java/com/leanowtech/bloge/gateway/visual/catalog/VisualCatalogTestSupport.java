@@ -405,6 +405,53 @@ public final class VisualCatalogTestSupport {
         );
     }
 
+    public static OperatorLibrary mixedDeclaredDynamicInputLibrary() {
+        SchemaEnvelope mixedIntegerPort = new SchemaEnvelope(SchemaEnvelope.JSON_SCHEMA, "2020-12", Map.of(
+                "type", "object",
+                "properties", Map.of("fixedScore", Map.of("type", "integer")),
+                "required", List.of("fixedScore"),
+                "unevaluatedProperties", Map.of("type", "integer")
+        ));
+        OperatorDefinition operator = new OperatorDefinition(
+                "bloge.visualOperator.v1",
+                "risk:mixedDynamicScorer",
+                "1.0.0",
+                new OperatorDefinition.Display("Mixed dynamic scorer",
+                        "Consumes declared and dynamic score fields on one input port.",
+                        List.of("risk", "map")),
+                new OperatorDefinition.Source("user-library", "", "", "", true),
+                new OperatorDefinition.Ports(
+                        List.of(new OperatorDefinition.Port("facts", mixedIntegerPort, true,
+                                "Declared and dynamic facts.")),
+                        List.of(new OperatorDefinition.Port("output",
+                                SchemaEnvelope.object(Map.of(
+                                        "fixedScore", Map.of("type", "integer"),
+                                        "dynamicScore", Map.of("type", "integer")
+                                ), List.of()),
+                                true,
+                                "Selected scores."))
+                ),
+                SchemaEnvelope.opaque(),
+                OperatorDefinition.Capabilities.pure(),
+                new OperatorDefinition.Lowering("transform", "transform", Map.of(
+                        "assignments", Map.of(
+                                "fixedScore", "{{input.fixedScore}}",
+                                "dynamicScore", "{{input.dynamicScore}}"
+                        )
+                )),
+                List.of()
+        );
+        return new OperatorLibrary(
+                "bloge.visualOperatorLibrary.v1",
+                "risk-mixed-dynamic-scorer",
+                "Mixed dynamic scorer operators",
+                "1.0.0",
+                "risk-team",
+                "ACTIVE",
+                List.of(operator)
+        );
+    }
+
     public static OperatorLibrary dynamicUnevaluatedOutputLibrary() {
         SchemaEnvelope dynamicIntegerPort = new SchemaEnvelope(SchemaEnvelope.JSON_SCHEMA, "2020-12", Map.of(
                 "type", "object",

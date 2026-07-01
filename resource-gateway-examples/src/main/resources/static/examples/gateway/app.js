@@ -6501,21 +6501,17 @@ function targetHandlesForNode(node) {
   if (node.type === 'customOperator') {
     return inputPortsForSpec(spec).flatMap((port) => {
       const portName = port.name || spec.inputPort || 'inputs';
-      const fields = dslSafeSchemaFieldDescriptors(port.schema);
-      const targets = fields.length
-        ? fields
-        : Object.keys(node.customInputs || {})
-          .filter((key) => customInputPortForKey(node, spec, key) === portName)
-          .map((key) => {
-            const path = customInputPathForKey(node, key);
-            return {
-              key,
-              path,
-              schema: schemaAtPath(port.schema, path) || {},
-              required: requiredInputNamesForPort(port).includes(path),
-              dslPathSafe: isDslPathSafe(path)
-            };
-          }).filter((field) => field.dslPathSafe && schemaAtPath(port.schema, field.path));
+      const seenPaths = new Set();
+      const targets = [
+        ...dslSafeSchemaFieldDescriptors(port.schema),
+        ...dynamicInputFieldDescriptors(node, spec, portName, port.schema)
+      ].filter((field) => {
+        if (seenPaths.has(field.path)) {
+          return false;
+        }
+        seenPaths.add(field.path);
+        return true;
+      });
       return [
         {
           nodeId: node.id,
@@ -6546,6 +6542,25 @@ function targetHandlesForNode(node) {
     path: 'input',
     type: ''
   }];
+}
+
+function dynamicInputFieldDescriptors(node, spec, portName, portSchema) {
+  if (node.type !== 'customOperator') {
+    return [];
+  }
+  return Object.keys(node.customInputPaths || node.customInputs || {})
+    .filter((key) => customInputPortForKey(node, spec, key) === portName)
+    .map((key) => {
+      const path = customInputPathForKey(node, key);
+      return {
+        key,
+        path,
+        schema: schemaAtPath(portSchema, path) || {},
+        required: requiredInputNamesForPort({ schema: portSchema }).includes(path),
+        dslPathSafe: isDslPathSafe(path)
+      };
+    })
+    .filter((field) => field.path && field.dslPathSafe && schemaAtPath(portSchema, field.path));
 }
 
 function canvasTargetHandlesForNode(node) {

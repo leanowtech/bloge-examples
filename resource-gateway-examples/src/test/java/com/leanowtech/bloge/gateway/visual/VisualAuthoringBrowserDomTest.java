@@ -815,6 +815,63 @@ class VisualAuthoringBrowserDomTest {
     }
 
     @Test
+    void composerAddsDynamicInputPathAlongsideDeclaredSchemaFieldsInRealBrowser()
+            throws JsonProcessingException {
+        driver = newChromeDriverOrSkip();
+        WebDriverWait wait = new WebDriverWait(driver, WAIT_TIMEOUT);
+        driver.get("http://localhost:" + port + "/examples/gateway");
+
+        waitForComposer(wait);
+        wait.until(ExpectedConditions.visibilityOfElementLocated(By.id("operator-palette")));
+        setControlValue(driver.findElement(By.id("graph-input-schema")), """
+                {
+                  "type": "object",
+                  "properties": {
+                    "fixedScore": { "type": "integer" }
+                  },
+                  "required": ["fixedScore"],
+                  "unevaluatedProperties": { "type": "integer" }
+                }
+                """);
+        waitForText(wait, By.id("graph-input-schema-status"), "Graph input schema is valid");
+        setControlValue(driver.findElement(By.id("composer-context")), """
+                {
+                  "fixedScore": 700,
+                  "dynamicScore": 720
+                }
+                """);
+
+        importOperatorLibrary(wait, VisualCatalogTestSupport.mixedDeclaredDynamicInputLibrary());
+        dragOperatorToCanvas(wait, "Mixed dynamic scorer", "risk:mixedDynamicScorer",
+                "riskMixedDynamicScorer", 140, 120);
+        wait.until(ExpectedConditions.visibilityOfElementLocated(By.cssSelector(
+                "[data-binding-source][data-binding-port='facts'][data-binding-path='fixedScore']"
+        )));
+
+        addDynamicInputBinding(wait, "facts", "dynamicScore");
+        selectByValue(wait,
+                By.cssSelector("[data-binding-source][data-binding-port='facts'][data-binding-path='dynamicScore']"),
+                bindingSourceValue("__ctx", "ctx", "dynamicScore"));
+        waitForText(wait, By.id("connection-status"),
+                "Connected ctx.dynamicScore -> riskMixedDynamicScorer.facts.dynamicScore");
+
+        waitForValue(wait, By.id("composer-dsl"), "fixedScore = ctx.fixedScore");
+        waitForValue(wait, By.id("composer-dsl"), "dynamicScore = ctx.dynamicScore");
+
+        click(wait, By.id("save-draft"));
+        waitForText(wait, By.id("draft-status"), "Saved");
+        click(wait, By.id("export-draft"));
+        wait.until(ignored -> valueOf(By.id("draft-bundle-json"))
+                .contains("\"schemaVersion\": \"bloge.visualGraphDraftExport.v1\""));
+        String bundle = valueOf(By.id("draft-bundle-json"));
+        assertThat(bundle)
+                .contains("\"fixedScore\"")
+                .contains("\"dynamicScore\"")
+                .contains("\"targetPort\": \"facts\"")
+                .contains("\"targetPath\": \"dynamicScore\"");
+    }
+
+    @Test
     void composerAddsBindsExportsAndRestoresDynamicUnevaluatedOutputPathInRealBrowser()
             throws JsonProcessingException {
         driver = newChromeDriverOrSkip();
