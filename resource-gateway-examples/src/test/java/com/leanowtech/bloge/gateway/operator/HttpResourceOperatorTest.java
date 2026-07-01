@@ -19,6 +19,7 @@ import org.junit.jupiter.api.Test;
 
 import java.time.Duration;
 import java.util.Collection;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
@@ -209,6 +210,37 @@ class HttpResourceOperatorTest {
                 null), operatorContext());
 
         assertThat(httpStub.lastHeaders()).containsEntry("Cookie", "SESSION=override-value");
+    }
+
+    @Test
+    @DisplayName("application/x-www-form-urlencoded body maps are encoded before HTTP execution")
+    void formUrlEncodedBodyMapsAreEncoded() throws Exception {
+        registry.put(new ResourceDescriptor(
+                "form.submit", "https://api.example.com/forms", "POST",
+                Map.of(
+                        "Accept", "application/json",
+                        "Content-Type", "application/x-www-form-urlencoded; charset=UTF-8"
+                ),
+                null, Duration.ofSeconds(5),
+                new ParameterMapping(
+                        Map.of(),
+                        Map.of(),
+                        Map.of(),
+                        Map.of(),
+                        "ctx.params.body"
+                ),
+                new ResponseProtocol.HttpStatus(), null
+        ));
+        httpStub.setResponse(new HttpResponseOutput(200, Map.of(), "{}", Duration.ofMillis(10)));
+
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("priority", "high");
+        body.put("note", "rush order");
+        body.put("tag", List.of("vip", "gift"));
+
+        operator.execute(new HttpResourceInput("form.submit", Map.of("body", body)), operatorContext());
+
+        assertThat(httpStub.lastBody()).isEqualTo("priority=high&note=rush+order&tag=vip&tag=gift");
     }
 
     // ── Timeout default vs override ─────────────────────────────────────
@@ -428,6 +460,7 @@ class HttpResourceOperatorTest {
 
         String lastUrl() { return lastInput.url(); }
         Map<String, String> lastHeaders() { return lastInput.headers(); }
+        Object lastBody() { return lastInput.body(); }
         Duration lastTimeout() { return lastInput.timeout(); }
         HttpRequestInput.HttpAuth lastAuth() { return lastInput.auth(); }
     }

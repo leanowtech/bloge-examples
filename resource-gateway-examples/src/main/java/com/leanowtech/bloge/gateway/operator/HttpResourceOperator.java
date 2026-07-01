@@ -134,6 +134,7 @@ public class HttpResourceOperator implements Operator<Object, HttpResourceOutput
                 ctx.graphContext().tenantId(),
                 ctx.graphContext().namespace()
         );
+        body = encodeBodyForContentType(body, headerValue(headers, "Content-Type"));
 
         // 5. Pick timeout
         Duration timeout = input.timeoutOverride() != null ? input.timeoutOverride() : descriptor.defaultTimeout();
@@ -368,6 +369,59 @@ public class HttpResourceOperator implements Operator<Object, HttpResourceOutput
 
     private static String encodeCookieValue(String value) {
         return URLEncoder.encode(value, StandardCharsets.UTF_8).replace("+", "%20");
+    }
+
+    private static Object encodeBodyForContentType(Object body, String contentType) {
+        if (body == null || !formUrlEncodedContent(contentType) || body instanceof String) {
+            return body;
+        }
+        if (body instanceof Map<?, ?> formValues) {
+            return encodeFormUrlEncodedBody(formValues);
+        }
+        return body;
+    }
+
+    private static boolean formUrlEncodedContent(String contentType) {
+        if (contentType == null) {
+            return false;
+        }
+        String mediaType = contentType.split(";", 2)[0].trim().toLowerCase(java.util.Locale.ROOT);
+        return "application/x-www-form-urlencoded".equals(mediaType);
+    }
+
+    private static String encodeFormUrlEncodedBody(Map<?, ?> formValues) {
+        StringJoiner joiner = new StringJoiner("&");
+        for (var entry : formValues.entrySet()) {
+            Object value = entry.getValue();
+            if (value == null) {
+                continue;
+            }
+            if (value instanceof Iterable<?> values && !(value instanceof CharSequence)) {
+                for (Object item : values) {
+                    if (item != null) {
+                        addFormPair(joiner, entry.getKey(), item);
+                    }
+                }
+            } else {
+                addFormPair(joiner, entry.getKey(), value);
+            }
+        }
+        return joiner.toString();
+    }
+
+    private static void addFormPair(StringJoiner joiner, Object key, Object value) {
+        joiner.add(URLEncoder.encode(Objects.toString(key, ""), StandardCharsets.UTF_8)
+                + "="
+                + URLEncoder.encode(Objects.toString(value, ""), StandardCharsets.UTF_8));
+    }
+
+    private static String headerValue(Map<String, String> headers, String name) {
+        for (var entry : headers.entrySet()) {
+            if (entry.getKey().equalsIgnoreCase(name)) {
+                return entry.getValue();
+            }
+        }
+        return null;
     }
 
     private Object extractPayload(HttpResponseOutput response, ResourceDescriptor descriptor) {

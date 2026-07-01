@@ -309,16 +309,17 @@ public class OpenApiResourceDesignContractImporter {
         if (requestBody.isEmpty()) {
             return;
         }
-        Optional<JsonContent> jsonContent = jsonContent(requestBody.get(), bodyTarget, diagnostics, false);
-        if (jsonContent.isEmpty()) {
+        Optional<RequestBodyContent> bodyContent = requestBodyContent(requestBody.get(), bodyTarget, diagnostics);
+        if (bodyContent.isEmpty()) {
             warnUnsupportedRequestBodyContent(requestBody.get(), bodyTarget, diagnostics);
             return;
         }
-        String schemaTarget = bodyTarget + "/content/" + pointerSegment(jsonContent.get().mediaType()) + "/schema";
-        Object rawSchema = jsonContent.get().media().get("schema");
+        String schemaTarget = bodyTarget + "/content/" + pointerSegment(bodyContent.get().mediaType()) + "/schema";
+        Object rawSchema = bodyContent.get().media().get("schema");
         if (!(rawSchema instanceof Map<?, ?> schemaMap)) {
             diagnostics.add(VisualDiagnostic.warning("visual.resourceContract.openapi.requestBodySchemaMissing",
-                    "OpenAPI JSON requestBody has no schema; body input will be treated as opaque.",
+                    "OpenAPI requestBody media type '%s' has no schema; body input will be treated as opaque."
+                            .formatted(bodyContent.get().mediaType()),
                     schemaTarget));
             properties.put("body", SchemaEnvelope.opaque().schema());
         } else {
@@ -427,9 +428,38 @@ public class OpenApiResourceDesignContractImporter {
                 });
     }
 
+    private Optional<RequestBodyContent> requestBodyContent(Map<String, Object> requestBody,
+                                                            String target,
+                                                            List<VisualDiagnostic> diagnostics) {
+        Optional<JsonContent> json = jsonContent(requestBody, target, diagnostics, false);
+        if (json.isPresent()) {
+            return Optional.of(new RequestBodyContent(json.get().mediaType(), json.get().media()));
+        }
+        return formUrlEncodedContent(requestBody)
+                .map(content -> new RequestBodyContent(content.mediaType(), content.media()));
+    }
+
+    private Optional<FormUrlEncodedContent> formUrlEncodedContent(Map<String, Object> holder) {
+        Object rawContent = holder.get("content");
+        if (!(rawContent instanceof Map<?, ?> content)) {
+            return Optional.empty();
+        }
+        for (Map.Entry<String, Object> entry : objectMap(content).entrySet()) {
+            if (formUrlEncodedMediaType(entry.getKey()) && entry.getValue() instanceof Map<?, ?> media) {
+                return Optional.of(new FormUrlEncodedContent(entry.getKey(), objectMap(media)));
+            }
+        }
+        return Optional.empty();
+    }
+
     private static boolean jsonCompatibleMediaType(String mediaType) {
         String normalized = string(mediaType).toLowerCase(Locale.ROOT);
         return normalized.endsWith("+json") || normalized.contains("/json");
+    }
+
+    private static boolean formUrlEncodedMediaType(String mediaType) {
+        String normalized = string(mediaType).split(";", 2)[0].trim().toLowerCase(Locale.ROOT);
+        return "application/x-www-form-urlencoded".equals(normalized);
     }
 
     private void warnUnsupportedRequestBodyContent(Map<String, Object> requestBody,
@@ -785,7 +815,7 @@ public class OpenApiResourceDesignContractImporter {
             }
         }
 
-        Optional<String> requestMediaType = requestJsonMediaType(openApi, selected);
+        Optional<String> requestMediaType = requestBodyMediaType(openApi, selected);
         Optional<String> responseMediaType = responseJsonMediaType(openApi, selected);
         boolean hasBody = requestMediaType.isPresent();
         Map<String, String> headers = new LinkedHashMap<>();
@@ -847,7 +877,7 @@ public class OpenApiResourceDesignContractImporter {
         }
     }
 
-    private Optional<String> requestJsonMediaType(Map<String, Object> openApi, SelectedOperation selected) {
+    private Optional<String> requestBodyMediaType(Map<String, Object> openApi, SelectedOperation selected) {
         Object rawBody = selected.operation().get("requestBody");
         if (rawBody == null) {
             return Optional.empty();
@@ -856,8 +886,8 @@ public class OpenApiResourceDesignContractImporter {
                 + "/requestBody";
         Optional<Map<String, Object>> requestBody = dereferenceObject(openApi, rawBody, new ArrayList<>(),
                 bodyTarget, "requestBody");
-        return requestBody.flatMap(body -> jsonContent(body, bodyTarget, new ArrayList<>(), false))
-                .map(JsonContent::mediaType);
+        return requestBody.flatMap(body -> requestBodyContent(body, bodyTarget, new ArrayList<>()))
+                .map(RequestBodyContent::mediaType);
     }
 
     private Optional<String> responseJsonMediaType(Map<String, Object> openApi, SelectedOperation selected) {
@@ -1327,6 +1357,12 @@ public class OpenApiResourceDesignContractImporter {
     }
 
     private record JsonContent(String mediaType, Map<String, Object> media) {
+    }
+
+    private record RequestBodyContent(String mediaType, Map<String, Object> media) {
+    }
+
+    private record FormUrlEncodedContent(String mediaType, Map<String, Object> media) {
     }
 
     private record SecurityRequirements(Object rawSecurity, String target) {

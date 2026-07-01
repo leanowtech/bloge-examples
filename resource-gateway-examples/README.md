@@ -750,8 +750,9 @@ reviewable `descriptorSuggestion` for the runtime `ResourceDescriptor`: OpenAPI
 servers plus path are projected into `urlTemplate`, path/query parameters become
 `ctx.params.*` mappings, header parameters become dynamic `headerExpressions`
 (with bracket access such as `ctx.params["X-Request-Id"]` for non-identifier
-header names), cookie parameters become dynamic `cookieExpressions`, JSON request
-bodies become `ctx.params.body`, common OpenAPI security schemes become
+header names), cookie parameters become dynamic `cookieExpressions`, JSON and
+`application/x-www-form-urlencoded` request bodies become `ctx.params.body`,
+common OpenAPI security schemes become
 review-only auth suggestions (`http` bearer/basic and header `apiKey`, using
 placeholder credentials), while OAuth2, OpenID Connect, and mutualTLS schemes
 produce explicit descriptor-suggestion warnings instead of unsafe runtime auth
@@ -759,8 +760,10 @@ guesses. Standard JSON headers plus HTTP-status response handling are filled in;
 when an operation uses a JSON-compatible vendor media type such as
 `application/vnd.example+json`, the selected media type is preserved in
 `Accept` / `Content-Type` descriptor headers and reported as a review warning.
-Non-JSON request bodies such as `application/x-www-form-urlencoded`,
-`multipart/form-data`, or binary media types are not silently projected; the
+For `application/x-www-form-urlencoded`, the runtime descriptor keeps the form
+media type and `HttpResourceOperator` encodes body maps into standard form
+pairs before dispatch. Other non-JSON request bodies such as
+`multipart/form-data` or binary media types are not silently projected; the
 preview emits a warning and omits the body mapping until an explicit runtime
 encoding strategy is configured.
 Advanced security schemes remain in the design contract but are reported as

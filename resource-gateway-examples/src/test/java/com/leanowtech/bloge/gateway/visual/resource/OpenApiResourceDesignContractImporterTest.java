@@ -118,9 +118,35 @@ class OpenApiResourceDesignContractImporterTest {
     }
 
     @Test
-    void warnsAndOmitsRequestBodyWhenOpenApiRequestBodyMediaTypeIsUnsupported() {
+    void projectsFormUrlEncodedRequestBodyIntoDescriptorHeadersAndBodyMapping() {
         OpenApiResourceDesignContractImportResult result = importer.project(
                 request("order-service.submitOrder", "submitOrder", null, null, openApiFormUrlEncodedSubmitOrder())
+        );
+
+        assertThat(result.validation().valid()).isTrue();
+        assertThat(result.contract()).isNotNull();
+        assertThat(result.contract().requestSchema().properties()).containsKeys("orderId", "body");
+        assertThat(result.contract().requestSchema().required()).contains("orderId", "body");
+        @SuppressWarnings("unchecked")
+        Map<String, Object> bodySchema =
+                (Map<String, Object>) result.contract().requestSchema().properties().get("body");
+        @SuppressWarnings("unchecked")
+        Map<String, Object> bodyProperties = (Map<String, Object>) bodySchema.get("properties");
+        assertThat(bodyProperties).containsKey("priority");
+        assertThat(result.descriptorSuggestion().defaultHeaders())
+                .containsEntry("Accept", "application/json")
+                .containsEntry("Content-Type", "application/x-www-form-urlencoded");
+        assertThat(result.descriptorSuggestion().parameterMapping().bodyExpression()).isEqualTo("ctx.params.body");
+        assertThat(result.validation().diagnostics())
+                .filteredOn(diagnostic -> "visual.resourceContract.openapi.requestBodyContentUnsupported"
+                        .equals(diagnostic.code()))
+                .isEmpty();
+    }
+
+    @Test
+    void warnsAndOmitsRequestBodyWhenOpenApiRequestBodyMediaTypeIsUnsupported() {
+        OpenApiResourceDesignContractImportResult result = importer.project(
+                request("order-service.submitOrder", "submitOrder", null, null, openApiMultipartSubmitOrder())
         );
 
         assertThat(result.validation().valid()).isTrue();
@@ -138,7 +164,7 @@ class OpenApiResourceDesignContractImporterTest {
                 .singleElement()
                 .satisfies(diagnostic -> {
                     assertThat(diagnostic.message())
-                            .contains("application/x-www-form-urlencoded")
+                            .contains("multipart/form-data")
                             .contains("body input will be omitted");
                     assertThat(diagnostic.target())
                             .isEqualTo("/openApi/paths/~1orders~1{orderId}/post/requestBody/content");
@@ -627,6 +653,14 @@ class OpenApiResourceDesignContractImporterTest {
     }
 
     private static Map<String, Object> openApiFormUrlEncodedSubmitOrder() {
+        return openApiSubmitOrderWithRequestBodyMediaType("application/x-www-form-urlencoded");
+    }
+
+    private static Map<String, Object> openApiMultipartSubmitOrder() {
+        return openApiSubmitOrderWithRequestBodyMediaType("multipart/form-data");
+    }
+
+    private static Map<String, Object> openApiSubmitOrderWithRequestBodyMediaType(String mediaType) {
         return Map.of(
                 "openapi", "3.1.0",
                 "servers", List.of(Map.of("url", "https://orders.example.test")),
@@ -645,7 +679,7 @@ class OpenApiResourceDesignContractImporterTest {
                                         "requestBody", Map.of(
                                                 "required", true,
                                                 "content", Map.of(
-                                                        "application/x-www-form-urlencoded", Map.of(
+                                                        mediaType, Map.of(
                                                                 "schema", Map.of(
                                                                         "type", "object",
                                                                         "properties", Map.of(
