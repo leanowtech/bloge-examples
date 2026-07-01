@@ -30,13 +30,34 @@ class GraphDraftDependenciesTest {
     }
 
     @Test
+    void extractsRootArrayBracketPathNodeReferencesFromBindingsAndConfig() {
+        GraphDraft.DraftNode node = new GraphDraft.DraftNode(
+                "consumer",
+                "risk:consumer",
+                "",
+                Map.of("score", GraphDraft.Binding.expression("listFacts.output[0].score + 1")),
+                Map.of("threshold", Map.of(
+                        "kind", "expression",
+                        "expr", "policyConfig.output[0]"
+                )),
+                null
+        );
+
+        assertThat(GraphDraftDependencies.nodeDependencies(node))
+                .containsExactly("listFacts", "policyConfig");
+    }
+
+    @Test
     void ignoresMalformedBracketPathNodeReferences() {
         GraphDraft.DraftNode node = new GraphDraft.DraftNode(
                 "consumer",
                 "risk:consumer",
                 "",
                 Map.of("score", GraphDraft.Binding.expression("listFacts.output.items[bad].score")),
-                Map.of("threshold", "policyConfig.output.thresholds[+1]"),
+                Map.of(
+                        "threshold", "policyConfig.output.thresholds[+1]",
+                        "rootThreshold", "rootFacts.output[bad]"
+                ),
                 null
         );
 

@@ -16,8 +16,11 @@ public final class GraphDraftDependencies {
     private static final String ARRAY_INDEX_PATTERN = "\\d+";
     private static final String PATH_SEGMENT_PATTERN = IDENTIFIER_PATTERN + "(?:\\[" + ARRAY_INDEX_PATTERN + "\\])*";
     private static final String PATH_PATTERN = PATH_SEGMENT_PATTERN + "(?:\\." + PATH_SEGMENT_PATTERN + ")*";
+    private static final String ROOT_ARRAY_PATH_PATTERN = "(?:\\[" + ARRAY_INDEX_PATTERN + "])+"
+            + "(?:\\." + PATH_PATTERN + ")*";
     private static final Pattern NODE_REFERENCE = Pattern.compile(
-            "(?<![A-Za-z0-9_.])(" + IDENTIFIER_PATTERN + ")\\.output(?:\\.(" + PATH_PATTERN + "))?"
+            "(?<![A-Za-z0-9_.])(" + IDENTIFIER_PATTERN + ")\\.output"
+                    + "(?:(?:\\.(" + PATH_PATTERN + "))|(" + ROOT_ARRAY_PATH_PATTERN + "))?"
                     + "(?![A-Za-z0-9_.\\[])");
 
     private GraphDraftDependencies() {

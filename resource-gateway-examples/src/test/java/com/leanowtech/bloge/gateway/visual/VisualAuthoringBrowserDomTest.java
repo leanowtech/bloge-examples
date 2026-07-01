@@ -31,9 +31,11 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.web.server.LocalServerPort;
 
+import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
+import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
 
@@ -57,12 +59,17 @@ class VisualAuthoringBrowserDomTest {
     private static final Path MAC_CHROME_BINARY = Path.of(
             "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"
     );
+    private static final Path SELENIUM_CHROMEDRIVER_CACHE = Path.of(
+            System.getProperty("user.home"), ".cache", "selenium", "chromedriver"
+    );
 
     @Autowired
     private WritableResourceRegistry resourceRegistry;
 
     @LocalServerPort
     private int port;
+
+    private static String chromeWebDriverUnavailableReason;
 
     private WebDriver driver;
 
@@ -548,6 +555,19 @@ class VisualAuthoringBrowserDomTest {
                 .toList();
 
         assertThat(outputPathValues).contains("items", "items.0");
+
+        importSampleOperatorLibrary(wait);
+        dragOperatorToCanvas(wait, "Eligibility", "risk:eligibility", "riskEligibility", 140, 120);
+        dragConnection(
+                wait,
+                "#diagram [data-node-id='riskArrayFacts'] [data-port-role='source'][data-port='output'][data-path='items.0']",
+                "#diagram [data-node-id='riskEligibility'] [data-port-role='target'][data-port='inputs'][data-path='score']"
+        );
+        waitForText(wait, By.id("connection-status"),
+                "Connected riskArrayFacts.output.items.0 -> riskEligibility.inputs.score");
+        waitForValue(wait, By.id("composer-dsl"), "eligible = riskArrayFacts.output.items[0] >= 700");
+        assertThat(valueOf(By.id("composer-dsl")))
+                .doesNotContain("riskArrayFacts.output.items.0 >= 700");
     }
 
     @Test
@@ -954,20 +974,60 @@ class VisualAuthoringBrowserDomTest {
     }
 
     private WebDriver newChromeDriverOrSkip() {
+        if (chromeWebDriverUnavailableReason != null) {
+            Assumptions.abort(chromeWebDriverUnavailableReason);
+        }
         ChromeOptions options = new ChromeOptions();
         options.addArguments(
                 "--headless=new",
                 "--disable-gpu",
+                "--disable-dev-shm-usage",
                 "--no-sandbox",
+                "--remote-debugging-pipe",
                 "--window-size=1440,1100"
         );
         if (Files.isExecutable(MAC_CHROME_BINARY)) {
             options.setBinary(MAC_CHROME_BINARY.toString());
         }
+        Path chromeDriver = chromeDriverExecutableOrSkip();
+        System.setProperty("webdriver.chrome.driver", chromeDriver.toString());
         try {
             return new ChromeDriver(options);
         } catch (WebDriverException ex) {
-            Assumptions.abort("Chrome/WebDriver is unavailable: " + ex.getMessage());
+            chromeWebDriverUnavailableReason = "Chrome/WebDriver is unavailable: " + ex.getMessage();
+            Assumptions.abort(chromeWebDriverUnavailableReason);
+            return null;
+        }
+    }
+
+    private Path chromeDriverExecutableOrSkip() {
+        String configured = System.getProperty("webdriver.chrome.driver", "").trim();
+        if (!configured.isBlank()) {
+            Path path = Path.of(configured);
+            if (Files.isExecutable(path)) {
+                return path;
+            }
+            Assumptions.abort("Configured ChromeDriver is not executable: " + path);
+        }
+        Path cached = cachedChromeDriver();
+        if (cached != null) {
+            return cached;
+        }
+        Assumptions.abort("ChromeDriver executable is unavailable. Set -Dwebdriver.chrome.driver or pre-populate "
+                + SELENIUM_CHROMEDRIVER_CACHE);
+        return null;
+    }
+
+    private Path cachedChromeDriver() {
+        if (!Files.isDirectory(SELENIUM_CHROMEDRIVER_CACHE)) {
+            return null;
+        }
+        try (var paths = Files.find(SELENIUM_CHROMEDRIVER_CACHE, 4, (path, attrs) ->
+                attrs.isRegularFile()
+                        && "chromedriver".equals(path.getFileName().toString())
+                        && Files.isExecutable(path))) {
+            return paths.sorted(Comparator.reverseOrder()).findFirst().orElse(null);
+        } catch (IOException ex) {
             return null;
         }
     }

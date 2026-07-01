@@ -1310,12 +1310,20 @@ function builderInputBindings(node) {
 
 function connectionSourceFromExpression(expression, builder = state.builder) {
   const value = String(expression || '').trim();
-  const contextMatch = value.match(/^ctx(?:\.(.+))?$/);
-  if (contextMatch) {
-    return contextSourceForPath(contextMatch[1] || '', builder);
+  if (value === 'ctx') {
+    return contextSourceForPath('', builder);
   }
-  const outputMatch = value.match(/^([A-Za-z_][A-Za-z0-9_]*)\.output(?:\.(.+))?$/);
+  if (value.startsWith('ctx.') || value.startsWith('ctx[')) {
+    const rawPath = value.startsWith('ctx.') ? value.slice(4) : value.slice(3);
+    const schemaPath = schemaPathFromDslReferenceSuffix(rawPath);
+    if (schemaPath !== null) {
+      return contextSourceForPath(schemaPath, builder);
+    }
+  }
+  const outputMatch = value.match(/^([A-Za-z_][A-Za-z0-9_]*)\.output(?=$|[.\[])/);
   if (outputMatch) {
+    const outputSuffix = value.slice(outputMatch[0].length);
+    const rawOutputPath = outputSuffix.startsWith('.') ? outputSuffix.slice(1) : outputSuffix;
     const sourceNode = builder.nodes.find((node) => node.id === outputMatch[1]);
     if (sourceNode) {
       const handle = sourceHandlesForNode(sourceNode).find((candidate) =>
@@ -1324,13 +1332,14 @@ function connectionSourceFromExpression(expression, builder = state.builder) {
       if (handle) {
         return { ...handle, path: handle.path || '' };
       }
-      return sourceFromOutputExpressionParts(sourceNode, outputMatch[2] || '');
+      return sourceFromOutputExpressionParts(sourceNode, rawOutputPath);
     }
+    const path = schemaPathFromDslReferenceSuffix(rawOutputPath);
     return {
       nodeId: outputMatch[1],
       port: 'output',
-      path: outputMatch[2] || '',
-      dslPathSafe: isDslPathSafe(outputMatch[2] || '')
+      path: path || '',
+      dslPathSafe: path !== null
     };
   }
   return null;
@@ -1343,13 +1352,27 @@ function sourceFromOutputExpressionParts(sourceNode, outputSuffix) {
   let port = primaryPort;
   let path = String(outputSuffix || '');
   if (path) {
-    const [first, ...rest] = path.split('.');
-    const namedPort = outputPorts.find((candidate) => candidate.name === first);
-    if (namedPort && (outputPorts.length > 1 || first !== 'output' || rest.length)) {
-      port = first;
-      path = rest.join('.');
+    for (const candidate of outputPorts) {
+      const candidateName = candidate.name || spec.outputPort || 'output';
+      if (path === candidateName && (outputPorts.length > 1 || candidateName !== 'output')) {
+        port = candidateName;
+        path = '';
+        break;
+      }
+      if (path.startsWith(`${candidateName}.`)
+          && (outputPorts.length > 1 || candidateName !== 'output' || path.length > candidateName.length + 1)) {
+        port = candidateName;
+        path = path.slice(candidateName.length + 1);
+        break;
+      }
+      if (path.startsWith(`${candidateName}[`) && (outputPorts.length > 1 || candidateName !== 'output')) {
+        port = candidateName;
+        path = path.slice(candidateName.length);
+        break;
+      }
     }
   }
+  path = schemaPathFromDslReferenceSuffix(path) ?? path;
   const portSchema = schemaForPort(spec, 'source', port);
   const schema = schemaAtPath(portSchema, path);
   return {
@@ -5097,6 +5120,62 @@ function isDslPathSafe(path) {
     .every((segment) => isDslFieldName(segment));
 }
 
+function dslReferenceSuffixForSchemaPath(path) {
+  const segments = String(path || '').split('.').filter(Boolean);
+  return segments.map((segment) =>
+    arrayIndexSegment(segment) !== null ? `[${segment}]` : `.${segment}`
+  ).join('');
+}
+
+function schemaPathFromDslReferenceSuffix(path) {
+  const segments = schemaPathSegmentsFromDslReferenceSuffix(path);
+  return segments === null ? null : segments.join('.');
+}
+
+function schemaPathSegmentsFromDslReferenceSuffix(path) {
+  const value = String(path || '').trim();
+  if (!value) {
+    return [];
+  }
+  const segments = [];
+  let index = 0;
+  while (index < value.length) {
+    if (value[index] === '.') {
+      index += 1;
+      if (index >= value.length || value[index] === '.') {
+        return null;
+      }
+      continue;
+    }
+    if (value[index] === '[') {
+      const end = value.indexOf(']', index + 1);
+      if (end < 0) {
+        return null;
+      }
+      const segment = value.slice(index + 1, end);
+      if (arrayIndexSegment(segment) === null) {
+        return null;
+      }
+      segments.push(segment);
+      index = end + 1;
+      if (index < value.length && value[index] !== '.' && value[index] !== '[') {
+        return null;
+      }
+      continue;
+    }
+    const match = value.slice(index).match(/^[A-Za-z_][A-Za-z0-9_]*/);
+    if (!match) {
+      return null;
+    }
+    segments.push(match[0]);
+    index += match[0].length;
+    if (index < value.length && value[index] !== '.' && value[index] !== '[') {
+      return null;
+    }
+  }
+  return segments;
+}
+
 function isDslFieldName(value) {
   const text = String(value || '');
   return DSL_FIELD_IDENTIFIER.test(text) && !RESERVED_DSL_FIELD_NAMES.has(text);
@@ -5676,31 +5755,36 @@ function renderTemplateExpression(template, inputs) {
       expression = replaceTemplateDescendants(expression, `input.${name}`, value || 'null');
       expression = replaceTemplateDescendants(expression, name, value || 'null');
     }
-    expression = expression
-      .replaceAll(`{{input.${name}}}`, value || 'null')
-      .replaceAll(`{{${name}}}`, value || 'null');
+    expression = replaceTemplateReference(expression, `input.${name}`, value || 'null');
+    expression = replaceTemplateReference(expression, name, value || 'null');
   }
   return replaceUnresolvedTemplateReferences(expression);
 }
 
 function replaceUnresolvedTemplateReferences(expression) {
   return expression.replace(
-    /\{\{\s*(?:input\.)?[A-Za-z_][A-Za-z0-9_]*(?:\.[A-Za-z_][A-Za-z0-9_]*)*\s*\}\}/g,
+    /\{\{\s*(?:input\.)?[A-Za-z_][A-Za-z0-9_]*(?:\.(?:[A-Za-z_][A-Za-z0-9_]*|\d+))*\s*\}\}/g,
     'null'
   );
 }
 
 function replaceTemplateDescendants(expression, prefix, value) {
   const escaped = prefix.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-  const pattern = new RegExp(`\\{\\{${escaped}\\.([A-Za-z_][A-Za-z0-9_]*(?:\\.[A-Za-z_][A-Za-z0-9_]*)*)\\}\\}`, 'g');
+  const pathSegment = '(?:[A-Za-z_][A-Za-z0-9_]*|\\d+)';
+  const pattern = new RegExp(`\\{\\{\\s*${escaped}\\.(${pathSegment}(?:\\.${pathSegment})*)\\s*\\}\\}`, 'g');
   return expression.replace(pattern, (_, path) => expressionWithPath(value, path));
+}
+
+function replaceTemplateReference(expression, reference, value) {
+  const escaped = reference.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  return expression.replace(new RegExp(`\\{\\{\\s*${escaped}\\s*\\}\\}`, 'g'), value);
 }
 
 function expressionWithPath(expression, path) {
   if (!path) {
     return expression;
   }
-  return `${expression}.${path}`;
+  return `${expression}${dslReferenceSuffixForSchemaPath(path)}`;
 }
 
 function builderToVisualDraft(builder = state.builder) {
@@ -5978,13 +6062,13 @@ function expressionFromBinding(binding, draft) {
     return '';
   }
   if (binding.kind === 'contextPath') {
-    return `ctx.${binding.path || ''}`;
+    return binding.path ? `ctx${dslReferenceSuffixForSchemaPath(binding.path)}` : 'ctx';
   }
   if (binding.kind === 'nodePath') {
     const source = (draft.nodes || []).find((node) => node.id === binding.nodeId);
     const sourcePort = binding.sourcePort || (source?.operatorRef?.startsWith('resource:') ? 'payload' : 'output');
     const payloadSegment = sourcePort && sourcePort !== 'output' ? `.${sourcePort}` : '';
-    const pathSegment = binding.path ? `.${binding.path}` : '';
+    const pathSegment = dslReferenceSuffixForSchemaPath(binding.path);
     return `${binding.nodeId}.output${payloadSegment}${pathSegment}`;
   }
   if (binding.kind === 'expression') {
@@ -6152,9 +6236,6 @@ function bindingFromExpression(expression, options = {}) {
     }
     return Object.keys(metadata).length ? { ...binding, ...metadata } : binding;
   };
-  if (value.startsWith('ctx.')) {
-    return withTargetPort({ kind: 'contextPath', path: value.slice(4) });
-  }
   const source = connectionSourceFromExpression(value, options.builder || state.builder);
   if (source) {
     if (source.nodeId === CONTEXT_SOURCE_ID) {
@@ -10570,10 +10651,10 @@ function routeConditionForConnection(target) {
 
 function expressionForConnectionSource(source) {
   if (source.nodeId === CONTEXT_SOURCE_ID) {
-    return source.path ? `ctx.${source.path}` : 'ctx';
+    return source.path ? `ctx${dslReferenceSuffixForSchemaPath(source.path)}` : 'ctx';
   }
   const payloadSegment = source.port && source.port !== 'output' ? `.${source.port}` : '';
-  const pathSegment = source.path ? `.${source.path}` : '';
+  const pathSegment = dslReferenceSuffixForSchemaPath(source.path);
   return `${source.nodeId}.output${payloadSegment}${pathSegment}`;
 }
 

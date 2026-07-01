@@ -59,27 +59,36 @@ public class GraphDraftValidator {
     private static final String IDENTIFIER_PATTERN = "[A-Za-z_][A-Za-z0-9_]*";
     private static final String ARRAY_INDEX_PATTERN = "\\d+";
     private static final String PATH_SEGMENT_PATTERN = IDENTIFIER_PATTERN + "(?:\\[" + ARRAY_INDEX_PATTERN + "\\])*";
+    private static final String ROOT_ARRAY_PATH_SEGMENT_PATTERN = "(?:\\[" + ARRAY_INDEX_PATTERN + "])+";
     private static final String TEMPLATE_PATH_SEGMENT_PATTERN = "(?:" + IDENTIFIER_PATTERN + "|"
             + ARRAY_INDEX_PATTERN + ")";
     private static final String PATH_PATTERN = PATH_SEGMENT_PATTERN + "(?:\\." + PATH_SEGMENT_PATTERN + ")*";
+    private static final String ROOT_ARRAY_PATH_PATTERN = ROOT_ARRAY_PATH_SEGMENT_PATTERN
+            + "(?:\\." + PATH_PATTERN + ")*";
     private static final String TEMPLATE_PATH_PATTERN = TEMPLATE_PATH_SEGMENT_PATTERN
             + "(?:\\." + TEMPLATE_PATH_SEGMENT_PATTERN + ")*";
     private static final Pattern DSL_IDENTIFIER = Pattern.compile(IDENTIFIER_PATTERN);
-    private static final Pattern EXPRESSION_PATH_SEGMENT = Pattern.compile(PATH_SEGMENT_PATTERN);
+    private static final Pattern EXPRESSION_PATH_SEGMENT = Pattern.compile(
+            "(?:" + PATH_SEGMENT_PATTERN + "|" + ROOT_ARRAY_PATH_SEGMENT_PATTERN + ")");
     private static final Pattern BRACKET_INDEX = Pattern.compile("\\[(" + ARRAY_INDEX_PATTERN + ")]");
     private static final Pattern ARRAY_INDEX = Pattern.compile(ARRAY_INDEX_PATTERN);
-    private static final Pattern PURE_CONTEXT_REFERENCE = Pattern.compile("^ctx(?:\\.(" + PATH_PATTERN + "))?$");
+    private static final Pattern PURE_CONTEXT_REFERENCE = Pattern.compile(
+            "^ctx(?:(?:\\.(" + PATH_PATTERN + "))|(" + ROOT_ARRAY_PATH_PATTERN + "))?$");
     private static final Pattern PURE_NODE_REFERENCE = Pattern.compile(
-            "^(" + IDENTIFIER_PATTERN + ")\\.output(?:\\.(" + PATH_PATTERN + "))?$");
+            "^(" + IDENTIFIER_PATTERN + ")\\.output(?:(?:\\.(" + PATH_PATTERN + "))|("
+                    + ROOT_ARRAY_PATH_PATTERN + "))?$");
     private static final Pattern CONTEXT_REFERENCE = Pattern.compile(
-            "(?<![A-Za-z0-9_.])ctx(?:\\.(" + PATH_PATTERN + "))?(?![A-Za-z0-9_\\[])");
+            "(?<![A-Za-z0-9_.])ctx(?:(?:\\.(" + PATH_PATTERN + "))|("
+                    + ROOT_ARRAY_PATH_PATTERN + "))?(?![A-Za-z0-9_\\[])");
     private static final Pattern NODE_REFERENCE = Pattern.compile(
-            "(?<![A-Za-z0-9_.])(" + IDENTIFIER_PATTERN + ")\\.output(?:\\.(" + PATH_PATTERN + "))?"
+            "(?<![A-Za-z0-9_.])(" + IDENTIFIER_PATTERN + ")\\.output(?:(?:\\.(" + PATH_PATTERN + "))|("
+                    + ROOT_ARRAY_PATH_PATTERN + "))?"
                     + "(?![A-Za-z0-9_\\[])");
     private static final Pattern PATH_LIKE_CONTEXT_REFERENCE = Pattern.compile(
-            "(?<![A-Za-z0-9_.])ctx\\.([^\\s,;(){}+*/<>=!&|?]+)");
+            "(?<![A-Za-z0-9_.])ctx(?:\\.([^\\s,;(){}+*/<>=!&|?]+)|(\\[[^\\s,;(){}+*/<>=!&|?]+))");
     private static final Pattern PATH_LIKE_NODE_REFERENCE = Pattern.compile(
-            "(?<![A-Za-z0-9_.])(" + IDENTIFIER_PATTERN + ")\\.output\\.([^\\s,;(){}+*/<>=!&|?]+)");
+            "(?<![A-Za-z0-9_.])(" + IDENTIFIER_PATTERN + ")\\.output"
+                    + "(?:\\.([^\\s,;(){}+*/<>=!&|?]+)|(\\[[^\\s,;(){}+*/<>=!&|?]+))");
     private static final Pattern BRANCH_SELECTOR_TEMPLATE = Pattern.compile("^\\{\\{\\s*((?:input\\.)?"
             + TEMPLATE_PATH_PATTERN + ")\\s*}}$");
     private static final Pattern INTEGER_LITERAL = Pattern.compile("[-+]?\\d+");
@@ -960,21 +969,21 @@ public class GraphDraftValidator {
                                                                       List<VisualDiagnostic> diagnostics) {
         Matcher context = PURE_CONTEXT_REFERENCE.matcher(expression);
         if (context.matches()) {
-            String path = context.group(1) == null ? "" : context.group(1);
+            String path = matchedPath(context, 1, 2);
             String schemaPath = expressionPathToSchemaPath(path);
             return new ExpressionReference(true,
                     resolveContextReference(schemaPath, inputSchema, targetPath, diagnostics),
-                    path.isBlank() ? "ctx" : "ctx." + path);
+                    expressionReferenceLabel("ctx", path));
         }
 
         Matcher node = PURE_NODE_REFERENCE.matcher(expression);
         if (node.matches()) {
             String nodeId = node.group(1);
-            String outputPath = node.group(2) == null ? "" : node.group(2);
+            String outputPath = matchedPath(node, 2, 3);
             String schemaPath = expressionPathToSchemaPath(outputPath);
             return new ExpressionReference(true,
                     resolveNodeReference(nodeId, schemaPath, nodesById, operatorsByNodeId, targetPath, diagnostics),
-                    outputPath.isBlank() ? nodeId + ".output" : nodeId + ".output." + outputPath);
+                    expressionReferenceLabel(nodeId + ".output", outputPath));
         }
 
         return new ExpressionReference(false, null, "");
@@ -992,7 +1001,7 @@ public class GraphDraftValidator {
 
         Matcher context = CONTEXT_REFERENCE.matcher(searchable);
         while (context.find()) {
-            String path = context.group(1) == null ? "" : context.group(1);
+            String path = matchedPath(context, 1, 2);
             String schemaPath = expressionPathToSchemaPath(path);
             if (seenReferences.add("ctx:" + schemaPath)) {
                 resolveContextReference(schemaPath, inputSchema, targetPath, diagnostics);
@@ -1002,7 +1011,7 @@ public class GraphDraftValidator {
         Matcher node = NODE_REFERENCE.matcher(searchable);
         while (node.find()) {
             String nodeId = node.group(1);
-            String outputPath = node.group(2) == null ? "" : node.group(2);
+            String outputPath = matchedPath(node, 2, 3);
             String schemaPath = expressionPathToSchemaPath(outputPath);
             if (seenReferences.add("node:" + nodeId + ":" + schemaPath)) {
                 resolveNodeReference(nodeId, schemaPath, nodesById, operatorsByNodeId, targetPath, diagnostics);
@@ -1016,15 +1025,34 @@ public class GraphDraftValidator {
         Set<String> seenInvalidReferences = new HashSet<>();
         Matcher context = PATH_LIKE_CONTEXT_REFERENCE.matcher(searchable);
         while (context.find()) {
-            validateExpressionPathSegments("ctx." + context.group(1), context.group(1), targetPath,
+            String path = matchedPath(context, 1, 2);
+            validateExpressionPathSegments(expressionReferenceLabel("ctx", path), path, targetPath,
                     seenInvalidReferences, diagnostics);
         }
 
         Matcher node = PATH_LIKE_NODE_REFERENCE.matcher(searchable);
         while (node.find()) {
-            validateExpressionPathSegments(node.group(1) + ".output." + node.group(2), node.group(2), targetPath,
+            String path = matchedPath(node, 2, 3);
+            validateExpressionPathSegments(expressionReferenceLabel(node.group(1) + ".output", path), path,
+                    targetPath,
                     seenInvalidReferences, diagnostics);
         }
+    }
+
+    private static String matchedPath(Matcher matcher, int dottedGroup, int rootArrayGroup) {
+        String dotted = matcher.group(dottedGroup);
+        if (dotted != null) {
+            return dotted;
+        }
+        String rootArray = matcher.group(rootArrayGroup);
+        return rootArray == null ? "" : rootArray;
+    }
+
+    private static String expressionReferenceLabel(String base, String path) {
+        if (path == null || path.isBlank()) {
+            return base;
+        }
+        return path.startsWith("[") ? base + path : base + "." + path;
     }
 
     private static void validateExpressionPathSegments(String reference,
@@ -1084,7 +1112,9 @@ public class GraphDraftValidator {
                 segments.add(segment);
                 continue;
             }
-            segments.add(segment.substring(0, bracket));
+            if (bracket > 0) {
+                segments.add(segment.substring(0, bracket));
+            }
             Matcher matcher = BRACKET_INDEX.matcher(segment.substring(bracket));
             while (matcher.find()) {
                 segments.add(matcher.group(1));
@@ -3035,7 +3065,7 @@ public class GraphDraftValidator {
         Matcher matcher = NODE_REFERENCE.matcher(withoutQuotedStrings(expression));
         while (matcher.find()) {
             String nodeId = matcher.group(1);
-            String outputPath = matcher.group(2) == null ? "" : matcher.group(2);
+            String outputPath = matchedPath(matcher, 2, 3);
             String schemaPath = expressionPathToSchemaPath(outputPath);
             OperatorDefinition sourceOperator = operatorsByNodeId.get(nodeId);
             if (!nodesById.containsKey(nodeId) || sourceOperator == null) {

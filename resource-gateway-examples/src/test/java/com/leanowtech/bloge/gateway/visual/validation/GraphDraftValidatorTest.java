@@ -1780,6 +1780,25 @@ class GraphDraftValidatorTest {
     }
 
     @Test
+    void acceptsExpressionBindingWhenPureContextRootArrayIndexReferenceMatchesTargetSchema() {
+        GraphDraftValidator validator = new GraphDraftValidator(
+                VisualCatalogTestSupport.catalogWithLibrary(
+                        VisualCatalogTestSupport.eligibilityLibrary("integer")));
+        GraphDraft draft = contextEligibilityDraft(new SchemaEnvelope(
+                SchemaEnvelope.JSON_SCHEMA,
+                "2020-12",
+                Map.of("type", "array", "items", Map.of("type", "integer"))
+        ), Map.of(
+                "score", GraphDraft.Binding.expression("ctx[0]"),
+                "amount", GraphDraft.Binding.constant(1000)
+        ));
+
+        VisualValidationResult result = validator.validate(draft);
+
+        assertThat(result.valid()).isTrue();
+    }
+
+    @Test
     void rejectsExpressionBindingWhenStaticLiteralTypeDoesNotMatchTargetSchema() {
         GraphDraftValidator validator = new GraphDraftValidator(
                 VisualCatalogTestSupport.catalogWithLibrary(
@@ -1869,6 +1888,21 @@ class GraphDraftValidatorTest {
                     assertThat(diagnostic.code()).isEqualTo("visual.binding.unknownOutputPath");
                     assertThat(diagnostic.message()).contains("scoreFacts").contains("score.0");
                 });
+    }
+
+    @Test
+    void acceptsExpressionBindingWhenPureNodeRootArrayIndexReferenceMatchesTargetSchema() {
+        GraphDraftValidator validator = new GraphDraftValidator(
+                VisualCatalogTestSupport.catalogWithLibrary(rootArrayFactsLibrary()));
+        GraphDraft draft = rootArrayFactsEligibilityDraft(
+                GraphDraft.Binding.expression("rootFacts.output[0].score"),
+                new GraphDraft.DraftEdge("score", "data",
+                        new GraphDraft.Endpoint("rootFacts", "output", "0.score"),
+                        new GraphDraft.Endpoint("eligibility", "inputs", "score")));
+
+        VisualValidationResult result = validator.validate(draft);
+
+        assertThat(result.valid()).isTrue();
     }
 
     @Test
@@ -4533,6 +4567,84 @@ class GraphDraftValidatorTest {
     private static GraphDraft typedEligibilityDraft(GraphDraft.Binding scoreBinding,
                                                     GraphDraft.DraftEdge edge) {
         return typedEligibilityDraft(scoreBinding, List.of(edge));
+    }
+
+    private static OperatorLibrary rootArrayFactsLibrary() {
+        OperatorDefinition rootArrayFacts = new OperatorDefinition(
+                "bloge.visualOperator.v1",
+                "risk:rootArrayFacts",
+                "1.0.0",
+                new OperatorDefinition.Display("Root array facts",
+                        "Produces an array as the output port root.",
+                        List.of("risk", "array")),
+                new OperatorDefinition.Source("user-library", "", "", "", false),
+                new OperatorDefinition.Ports(
+                        List.of(),
+                        List.of(new OperatorDefinition.Port("output",
+                                new SchemaEnvelope(SchemaEnvelope.JSON_SCHEMA, "2020-12", Map.of(
+                                        "type", "array",
+                                        "items", Map.of(
+                                                "type", "object",
+                                                "properties", Map.of("score", Map.of("type", "integer")),
+                                                "required", List.of("score")
+                                        )
+                                )),
+                                true,
+                                "Root array facts."))
+                ),
+                SchemaEnvelope.opaque(),
+                OperatorDefinition.Capabilities.pure(),
+                new OperatorDefinition.Lowering("native", "riskRootArrayFacts", Map.of()),
+                List.of()
+        );
+        return new OperatorLibrary(
+                "bloge.visualOperatorLibrary.v1",
+                "risk-root-array",
+                "Risk root array operators",
+                "1.0.0",
+                "risk-team",
+                "ACTIVE",
+                List.of(rootArrayFacts, VisualCatalogTestSupport.eligibilityOperator("integer"))
+        );
+    }
+
+    private static GraphDraft rootArrayFactsEligibilityDraft(GraphDraft.Binding scoreBinding,
+                                                            GraphDraft.DraftEdge edge) {
+        return new GraphDraft(
+                "",
+                "",
+                0,
+                "rootArrayEligibility",
+                "",
+                "",
+                "",
+                "",
+                null,
+                List.of(
+                        new GraphDraft.DraftNode(
+                                "rootFacts",
+                                "risk:rootArrayFacts",
+                                "",
+                                Map.of(),
+                                Map.of(),
+                                null
+                        ),
+                        new GraphDraft.DraftNode(
+                                "eligibility",
+                                "risk:eligibility",
+                                "",
+                                Map.of(
+                                        "score", scoreBinding,
+                                        "amount", GraphDraft.Binding.constant(1000)
+                                ),
+                                Map.of(),
+                                null
+                        )
+                ),
+                List.of(edge),
+                Map.of(),
+                new GraphDraft.OutputSelection("eligibility", "")
+        );
     }
 
     private static GraphDraft typedEligibilityDraft(GraphDraft.Binding scoreBinding,
