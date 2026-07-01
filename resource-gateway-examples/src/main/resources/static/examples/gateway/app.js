@@ -4036,6 +4036,18 @@ function renderSelectedOperatorEditor() {
     deleteButton.addEventListener('click', deleteSelectedBuilderNode);
   }
 
+  for (const button of target.querySelectorAll('[data-clear-impact]')) {
+    button.addEventListener('click', () => {
+      clearNodeImpactRelationFromButton(button);
+    });
+  }
+
+  for (const button of target.querySelectorAll('[data-impact-node]')) {
+    button.addEventListener('click', () => {
+      focusCanvasNode(button.dataset.impactNode);
+    });
+  }
+
   for (const input of target.querySelectorAll('[data-node-field]')) {
     input.addEventListener('input', () => {
       const field = input.dataset.nodeField;
@@ -4279,6 +4291,7 @@ function renderGraphOutputEditor() {
       </label>
     </div>
     <div class="binding-status">Current: ${escapeHtml(outputSummary)}</div>
+    ${renderGraphOutputContractSummary(selectedNode, output)}
   `;
 
   const nodeSelect = $('graph-output-node');
@@ -4310,6 +4323,79 @@ function renderGraphOutputEditor() {
   }
 }
 
+function renderGraphOutputContractSummary(node, output) {
+  const summary = graphOutputContractSummary(node, output);
+  if (!summary.nodeId) {
+    return '';
+  }
+  return `
+    <div class="graph-output-contract">
+      <div class="binding-panel-title">
+        <span>Output Contract</span>
+        <small>${escapeHtml(summary.type)} · ${summary.fieldCount} fields</small>
+      </div>
+      <div class="graph-output-contract-row">
+        <strong>Source</strong>
+        <span>${escapeHtml(summary.sourceLabel)}</span>
+      </div>
+      <div class="graph-output-contract-row">
+        <strong>Schema</strong>
+        <span>${escapeHtml(summary.type)} · ${summary.fieldCount} fields · ${summary.requiredCount} required</span>
+      </div>
+      <div class="graph-output-contract-row">
+        <strong>Selection</strong>
+        <span>${escapeHtml(summary.selectionLabel)}</span>
+      </div>
+    </div>
+  `;
+}
+
+function graphOutputContractSummary(node, output = state.builder.output) {
+  if (!node) {
+    return {
+      nodeId: '',
+      type: '',
+      fieldCount: 0,
+      requiredCount: 0,
+      sourceLabel: '',
+      selectionLabel: ''
+    };
+  }
+  const spec = specForNode(node);
+  const selectedPath = output?.path || '';
+  const reference = outputReferenceFromSelectionPath(spec, selectedPath);
+  const outputPorts = outputPortsForSpec(spec);
+  const schema = graphOutputSelectedSchema(spec, reference, selectedPath);
+  const fields = schemaFieldDescriptors({ schema });
+  return {
+    nodeId: node.id,
+    type: schemaType(schema) || (outputPorts.length > 1 && !selectedPath ? 'object' : 'any'),
+    fieldCount: fields.length,
+    requiredCount: fields.filter((field) => field.required).length,
+    sourceLabel: `${node.id}.${nodeImpactPortPath(reference.port || 'output', reference.path || '')}`,
+    selectionLabel: selectedPath || (outputPorts.length > 1 ? 'whole multi-port output' : 'full output')
+  };
+}
+
+function graphOutputSelectedSchema(spec, reference, selectedPath) {
+  const outputPorts = outputPortsForSpec(spec);
+  if (!selectedPath && outputPorts.length > 1) {
+    return {
+      type: 'object',
+      properties: Object.fromEntries(outputPorts.map((port) => [
+        port.name || spec.outputPort || 'output',
+        port.schema?.schema || {}
+      ])),
+      required: outputPorts.filter((port) => port.required).map((port) => port.name || spec.outputPort || 'output')
+    };
+  }
+  const portSchema = schemaForPort(spec, 'source', reference.port);
+  if (!reference.path) {
+    return portSchema?.schema || {};
+  }
+  return schemaAtPath(portSchema, reference.path) || {};
+}
+
 function operatorEditorBody(node) {
   if (node.type === 'httpResource') {
     return `
@@ -4318,6 +4404,7 @@ function operatorEditorBody(node) {
         ${textField('Resource ID', node.resourceId, 'resourceId')}
       </div>
       ${renderOperatorContractPanel(node)}
+      ${renderNodeImpactPanel(node)}
       ${renderConfigPanel(node)}
       ${renderInputBindingsPanel(node)}
     `;
@@ -4333,6 +4420,7 @@ function operatorEditorBody(node) {
         ${textField('Operator', spec.visualOperatorRef || node.paletteType, '', true)}
       </div>
       ${renderOperatorContractPanel(node)}
+      ${renderNodeImpactPanel(node)}
       ${renderDynamicOutputPathControls(node)}
       ${renderConfigPanel(node)}
       ${renderInputBindingsPanel(node)}
@@ -4355,6 +4443,7 @@ function operatorEditorBody(node) {
         ${textField('Node', node.id, '', true)}
       </div>
       ${renderOperatorContractPanel(node)}
+      ${renderNodeImpactPanel(node)}
       ${renderInputBindingsPanel(node)}
       <div class="rule-editor">
         <div class="rule-editor-title">
@@ -4386,6 +4475,7 @@ function operatorEditorBody(node) {
       ${textField('Policy Node', node.policyNodeCleared ? '' : (node.policyNode || firstDecisionTableId()), 'policyNode')}
     </div>
     ${renderOperatorContractPanel(node)}
+    ${renderNodeImpactPanel(node)}
   `;
 }
 
@@ -4427,6 +4517,336 @@ function renderOperatorContractPanel(node) {
       ` : ''}
     </div>
   `;
+}
+
+function renderNodeImpactPanel(node) {
+  const impact = nodeImpactSummary(node, state.builder);
+  const contextRows = impact.contextInputs.map((entry) => ({
+    ...entry,
+    peerId: '',
+    peerLabel: 'Context',
+    focusable: false
+  }));
+  const upstreamRows = [...contextRows, ...impact.incoming];
+  const dataConsumers = impact.outgoing.filter((entry) => entry.kind === 'data' || entry.kind === 'config').length;
+  const controlConsumers = impact.outgoing.length - dataConsumers;
+  const outputWarning = impact.graphOutputAffected ? ' Graph output currently points here.' : '';
+  const deleteSummary = `${dataConsumers} downstream data/config binding(s) · ${controlConsumers} control edge(s).${outputWarning}`;
+  return `
+    <div class="node-impact-panel">
+      <div class="binding-panel-title">
+        <span>Impact</span>
+        <small>${impact.incoming.length + impact.contextInputs.length} upstream · ${impact.outgoing.length} downstream</small>
+      </div>
+      ${renderNodeImpactSection('Upstream', upstreamRows, 'No upstream data, context, route, or ordering inputs.')}
+      ${renderNodeImpactSection('Downstream', impact.outgoing, 'No downstream consumers or control edges.')}
+      <div class="node-impact-delete">
+        <strong>Delete Impact</strong>
+        <span>${escapeHtml(deleteSummary)}</span>
+      </div>
+    </div>
+  `;
+}
+
+function renderNodeImpactSection(title, entries, emptyMessage) {
+  const rows = entries.map((entry) => renderNodeImpactRow(entry)).join('');
+  return `
+    <div class="node-impact-section">
+      <div class="node-impact-title">${escapeHtml(title)}</div>
+      ${rows || `<div class="node-impact-row empty"><span>${escapeHtml(emptyMessage)}</span></div>`}
+    </div>
+  `;
+}
+
+function renderNodeImpactRow(entry) {
+  const kind = readableEdgeKind(entry.kind);
+  const focus = entry.focusable === false || !entry.peerId
+    ? `<strong>${escapeHtml(entry.peerLabel)}</strong>`
+    : `<button type="button" class="node-impact-link" data-impact-node="${escapeHtml(entry.peerId)}">${escapeHtml(entry.peerLabel)}</button>`;
+  const clear = entry.clearAction ? renderNodeImpactClearButton(entry.clearAction) : '<span></span>';
+  return `
+    <div class="node-impact-row ${escapeHtml(entry.kind || 'data')}">
+      ${focus}
+      <span>${escapeHtml(kind)} · ${escapeHtml(entry.detail || '')}</span>
+      ${clear}
+    </div>
+  `;
+}
+
+function renderNodeImpactClearButton(action) {
+  return `
+    <button
+      type="button"
+      class="secondary compact node-impact-clear"
+      data-clear-impact="${escapeHtml(action.kind)}"
+      data-impact-source="${escapeHtml(action.sourceNodeId || '')}"
+      data-impact-target="${escapeHtml(action.targetNodeId || '')}"
+      data-impact-target-port="${escapeHtml(action.targetPort || '')}"
+      data-impact-target-path="${escapeHtml(action.targetPath || '')}"
+      data-impact-input-key="${escapeHtml(action.inputKey || '')}"
+      data-impact-condition="${escapeHtml(action.condition || '')}"
+    >Clear</button>
+  `;
+}
+
+function nodeImpactSummary(nodeOrId, builder = state.builder) {
+  const nodeId = typeof nodeOrId === 'string' ? nodeOrId : nodeOrId?.id;
+  const node = (builder.nodes || []).find((item) => item.id === nodeId);
+  if (!node) {
+    return {
+      nodeId: '',
+      incoming: [],
+      outgoing: [],
+      contextInputs: [],
+      graphOutputAffected: false
+    };
+  }
+  const edges = builderEdges(builder, { includeFallback: false, includeConfig: true });
+  const incoming = edges
+    .filter((edge) => edge.target === nodeId)
+    .map((edge) => nodeImpactEdgeEntry(edge, 'incoming', builder));
+  const outgoing = edges
+    .filter((edge) => edge.source === nodeId)
+    .map((edge) => nodeImpactEdgeEntry(edge, 'outgoing', builder));
+  const contextInputs = [
+    ...contextImpactEntriesForBindings(builderInputBindings(node), builder, 'input', node.id),
+    ...contextImpactEntriesForBindings(builderConfigBindings(node, builder), builder, 'config', node.id)
+  ];
+  return {
+    nodeId,
+    incoming,
+    outgoing,
+    contextInputs,
+    graphOutputAffected: builder.output?.nodeId === nodeId
+  };
+}
+
+function nodeImpactEdgeEntry(edge, direction, builder = state.builder) {
+  const peerId = direction === 'incoming' ? edge.source : edge.target;
+  const peer = (builder.nodes || []).find((node) => node.id === peerId);
+  const kind = edge.targetPort === 'config' ? 'config' : canonicalEdgeKind(edge.kind);
+  return {
+    kind,
+    peerId,
+    peerLabel: peer ? `${labelForNode(peer)} (${peer.id})` : peerId,
+    detail: nodeImpactEdgeDetail(edge, direction),
+    focusable: Boolean(peer),
+    clearAction: direction === 'incoming' ? nodeImpactClearActionForEdge(edge, builder) : null
+  };
+}
+
+function nodeImpactClearActionForEdge(edge, builder = state.builder) {
+  const kind = edge.targetPort === 'config' ? 'config' : canonicalEdgeKind(edge.kind);
+  if (kind === 'dependency' || kind === 'route') {
+    return {
+      kind,
+      sourceNodeId: edge.source || '',
+      targetNodeId: edge.target || '',
+      condition: kind === 'route' ? (edge.condition || 'otherwise') : ''
+    };
+  }
+  const targetNode = (builder.nodes || []).find((node) => node.id === edge.target);
+  return {
+    kind: kind === 'config' ? 'config' : 'input',
+    sourceNodeId: edge.source || '',
+    targetNodeId: edge.target || '',
+    targetPort: edge.targetPort || '',
+    targetPath: edge.targetPath || '',
+    inputKey: targetNode ? inputKeyForNodeImpactTarget(targetNode, edge.targetPort || '', edge.targetPath || '') : ''
+  };
+}
+
+function nodeImpactEdgeDetail(edge, direction) {
+  if (canonicalEdgeKind(edge.kind) === 'dependency') {
+    return direction === 'incoming' ? 'must run after upstream node' : 'orders downstream execution';
+  }
+  if (canonicalEdgeKind(edge.kind) === 'route') {
+    const condition = edge.condition || edge.label || 'otherwise';
+    return direction === 'incoming' ? `route condition ${condition}` : `routes on ${condition}`;
+  }
+  const source = nodeImpactPortPath(edge.sourcePort || 'output', edge.sourcePath || '');
+  const target = nodeImpactPortPath(edge.targetPort || 'inputs', edge.targetPath || '');
+  return direction === 'incoming' ? `${source} -> ${target}` : `${source} -> ${target}`;
+}
+
+function nodeImpactPortPath(port, path) {
+  const cleanPort = String(port || '').trim();
+  const cleanPath = String(path || '').trim();
+  if (cleanPort && cleanPath) {
+    return `${cleanPort}.${cleanPath}`;
+  }
+  return cleanPort || cleanPath || 'root';
+}
+
+function contextImpactEntriesForBindings(bindings, builder = state.builder, kind = 'input', targetNodeId = '') {
+  return bindings
+    .map((binding) => {
+      const source = connectionSourceFromExpression(binding.expression, builder);
+      if (!source || source.nodeId !== CONTEXT_SOURCE_ID) {
+        return null;
+      }
+      return {
+        kind,
+        peerId: CONTEXT_SOURCE_ID,
+        peerLabel: 'Context',
+        detail: `${source.path ? `ctx.${source.path}` : 'ctx'} -> ${nodeImpactPortPath(binding.targetPort || kind, binding.targetPath || binding.inputName || '')}`,
+        focusable: false,
+        clearAction: {
+          kind,
+          sourceNodeId: CONTEXT_SOURCE_ID,
+          targetNodeId: binding.targetNodeId || targetNodeId,
+          targetPort: binding.targetPort || '',
+          targetPath: binding.targetPath || '',
+          inputKey: binding.inputName || ''
+        }
+      };
+    })
+    .filter(Boolean);
+}
+
+function readableEdgeKind(kind) {
+  const value = canonicalEdgeKind(kind);
+  if (value === 'dependency') {
+    return 'dependency';
+  }
+  if (value === 'route') {
+    return 'route';
+  }
+  if (value === 'config') {
+    return 'config';
+  }
+  if (value === 'input') {
+    return 'input';
+  }
+  return 'data';
+}
+
+function clearNodeImpactRelationFromButton(button) {
+  const action = {
+    kind: button.dataset.clearImpact || '',
+    sourceNodeId: button.dataset.impactSource || '',
+    targetNodeId: button.dataset.impactTarget || '',
+    targetPort: button.dataset.impactTargetPort || '',
+    targetPath: button.dataset.impactTargetPath || '',
+    inputKey: button.dataset.impactInputKey || '',
+    condition: button.dataset.impactCondition || ''
+  };
+  if (!nodeImpactRelationExists(action, state.builder)) {
+    renderSelectedOperatorEditor();
+    return;
+  }
+  recordBuilderHistory(`Clear impact ${nodeImpactActionLabel(action)}`);
+  if (!clearNodeImpactRelation(action, state.builder)) {
+    return;
+  }
+  syncComposerFromBuilder({ render: false });
+  renderSelectedOperatorEditor();
+  renderDiagram();
+}
+
+function nodeImpactRelationExists(action, builder = state.builder) {
+  const kind = canonicalImpactActionKind(action.kind);
+  const node = (builder.nodes || []).find((item) => item.id === action.targetNodeId);
+  if (kind === 'input') {
+    return Boolean(node && expressionForTargetInput(node, nodeImpactInputTarget(node, action)));
+  }
+  if (kind === 'config') {
+    return Boolean(node && isConfigExpressionValue(configValueAtPath(node.config || {}, action.targetPath)));
+  }
+  if (kind === 'dependency') {
+    return (builder.dependencyEdges || []).some((edge) =>
+      edge.source === action.sourceNodeId && edge.target === action.targetNodeId
+    );
+  }
+  if (kind === 'route') {
+    return (builder.routeEdges || []).some((edge) =>
+      edge.source === action.sourceNodeId
+        && edge.target === action.targetNodeId
+        && (edge.condition || 'otherwise') === (action.condition || 'otherwise')
+    );
+  }
+  return false;
+}
+
+function clearNodeImpactRelation(action, builder = state.builder) {
+  const kind = canonicalImpactActionKind(action.kind);
+  const node = (builder.nodes || []).find((item) => item.id === action.targetNodeId);
+  if (kind === 'input' && node) {
+    setExpressionForTargetInput(node, nodeImpactInputTarget(node, action), '');
+    return true;
+  }
+  if (kind === 'config' && node) {
+    clearNodeImpactConfigBinding(node, action.targetPath);
+    return true;
+  }
+  if (kind === 'dependency') {
+    const before = (builder.dependencyEdges || []).length;
+    builder.dependencyEdges = (builder.dependencyEdges || []).filter((edge) =>
+      !(edge.source === action.sourceNodeId && edge.target === action.targetNodeId)
+    );
+    return builder.dependencyEdges.length !== before;
+  }
+  if (kind === 'route') {
+    const before = (builder.routeEdges || []).length;
+    builder.routeEdges = (builder.routeEdges || []).filter((edge) =>
+      !(edge.source === action.sourceNodeId
+        && edge.target === action.targetNodeId
+        && (edge.condition || 'otherwise') === (action.condition || 'otherwise'))
+    );
+    return builder.routeEdges.length !== before;
+  }
+  return false;
+}
+
+function nodeImpactInputTarget(node, action) {
+  return {
+    nodeId: node.id,
+    port: action.targetPort || '',
+    path: action.targetPath || '',
+    key: action.inputKey || inputKeyForNodeImpactTarget(node, action.targetPort || '', action.targetPath || '')
+  };
+}
+
+function inputKeyForNodeImpactTarget(node, targetPort, targetPath) {
+  if (node.type !== 'customOperator') {
+    return targetPath || '';
+  }
+  const spec = specForNode(node);
+  const key = Object.keys(node.customInputs || {}).find((candidate) =>
+    customInputPortForKey(node, spec, candidate) === targetPort
+      && customInputPathForKey(node, candidate) === targetPath
+  );
+  return key || targetPath || '';
+}
+
+function clearNodeImpactConfigBinding(node, targetPath) {
+  node.config = node.config || {};
+  const field = configFieldDescriptors(specForNode(node).configSchema)
+    .find((item) => item.path === targetPath);
+  if (field?.required) {
+    setConfigValueAtPath(node.config, targetPath, '');
+  } else {
+    deleteConfigValueAtPath(node.config, targetPath);
+  }
+}
+
+function canonicalImpactActionKind(kind) {
+  const value = canonicalEdgeKind(kind);
+  if (value === 'dependency' || value === 'route') {
+    return value;
+  }
+  if (String(kind || '').trim().toLowerCase() === 'config') {
+    return 'config';
+  }
+  return 'input';
+}
+
+function nodeImpactActionLabel(action) {
+  const target = [action.targetNodeId, action.targetPort, action.targetPath].filter(Boolean).join('.');
+  if (action.kind === 'dependency' || action.kind === 'route') {
+    return `${action.kind}:${action.sourceNodeId}->${action.targetNodeId}`;
+  }
+  return `${action.kind}:${target}`;
 }
 
 function renderOperatorDiagnosticsPanel(spec) {

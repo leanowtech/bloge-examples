@@ -989,6 +989,123 @@ body.dragging-operator * {
   grid-template-columns: 1fr;
 }
 
+.node-impact-panel {
+  display: grid;
+  gap: 8px;
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px solid var(--line);
+}
+
+.node-impact-section {
+  display: grid;
+  gap: 4px;
+}
+
+.node-impact-title {
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.node-impact-row,
+.node-impact-delete {
+  display: grid;
+  grid-template-columns: minmax(0, 0.8fr) minmax(0, 1fr) auto;
+  gap: 8px;
+  align-items: center;
+  padding: 5px 0;
+  border-top: 1px solid rgba(148, 163, 184, 0.24);
+  font-size: 11px;
+}
+
+.node-impact-delete {
+  grid-template-columns: minmax(0, 0.85fr) minmax(0, 1.15fr);
+}
+
+.node-impact-row:first-of-type {
+  border-top: 0;
+}
+
+.node-impact-row strong,
+.node-impact-delete strong {
+  color: var(--text);
+  overflow-wrap: anywhere;
+}
+
+.node-impact-row span,
+.node-impact-delete span {
+  color: var(--muted);
+  font-weight: 700;
+  overflow-wrap: anywhere;
+}
+
+.node-impact-row.empty {
+  grid-template-columns: 1fr;
+}
+
+.node-impact-link {
+  justify-self: start;
+  width: auto;
+  min-width: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--blue);
+  font-size: 11px;
+  font-weight: 800;
+  text-align: left;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  overflow-wrap: anywhere;
+}
+
+.node-impact-link:hover,
+.node-impact-link:focus {
+  color: var(--blue-strong);
+}
+
+.node-impact-clear {
+  justify-self: end;
+  min-height: 26px;
+  padding: 4px 8px;
+  font-size: 11px;
+}
+
+.graph-output-contract {
+  display: grid;
+  gap: 6px;
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px solid var(--line);
+}
+
+.graph-output-contract-row {
+  display: grid;
+  grid-template-columns: minmax(0, 0.85fr) minmax(0, 1.15fr);
+  gap: 8px;
+  align-items: baseline;
+  padding: 4px 0;
+  border-top: 1px solid rgba(148, 163, 184, 0.24);
+  font-size: 11px;
+}
+
+.graph-output-contract-row:first-of-type {
+  border-top: 0;
+}
+
+.graph-output-contract-row strong {
+  color: var(--text);
+  overflow-wrap: anywhere;
+}
+
+.graph-output-contract-row span {
+  color: var(--muted);
+  font-weight: 700;
+  overflow-wrap: anywhere;
+}
+
 .draft-controls {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto auto auto auto;
@@ -1889,7 +2006,10 @@ body.dragging-operator * {
 
   .contract-port-groups,
   .contract-port-row,
-  .contract-config-summary {
+  .contract-config-summary,
+  .node-impact-row,
+  .node-impact-delete,
+  .graph-output-contract-row {
     grid-template-columns: 1fr;
   }
 

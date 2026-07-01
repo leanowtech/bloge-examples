@@ -165,7 +165,9 @@ class VisualAuthoringAppJsTest {
                   'schemaItemsSchema',
                   'rawSchemaType',
                   'residualPropertiesPolicy',
+                  'additionalPropertySchema',
                   'matchingPatternPropertySchemas',
+                  'patternPropertySchema',
                   'schemaPatternProperties',
                   'patternMatches',
                   'validateSchemaStructure',
@@ -191,6 +193,8 @@ class VisualAuthoringAppJsTest {
                   'defaultCustomInputStateForOperator',
                   'defaultResourceParamInputs',
                   'resourceParamInputs',
+                  'expressionForTargetInput',
+                  'setExpressionForTargetInput',
                   'isConfigExpressionValue',
                   'configExpressionForField',
                   'removeConfigReferencesToNode',
@@ -204,6 +208,14 @@ class VisualAuthoringAppJsTest {
                   'connectionServerPreflightMessage',
                   'connectionLocalHeuristicStatus',
                   'connectionLocalMismatchIsAdvisory',
+                  'orderedBuilderNodes',
+                  'builderEdges',
+                  'canonicalEdgeKind',
+                  'builderConfigBindings',
+                  'builderInputBindings',
+                  'graphOutputContractSummary',
+                  'graphOutputSelectedSchema',
+                  'outputReferenceFromSelectionPath',
                   'recordBuilderHistory',
                   'clearBuilderHistory',
                   'undoBuilderEdit',
@@ -215,11 +227,31 @@ class VisualAuthoringAppJsTest {
                   'builderHistoryShortcutTargetIsEditable',
                   'canvasSearchResults',
                   'canvasSearchEntries',
+                  'renderNodeImpactPanel',
+                  'renderNodeImpactSection',
+                  'renderNodeImpactRow',
+                  'renderNodeImpactClearButton',
+                  'nodeImpactSummary',
+                  'nodeImpactEdgeEntry',
+                  'nodeImpactClearActionForEdge',
+                  'nodeImpactEdgeDetail',
+                  'nodeImpactPortPath',
+                  'contextImpactEntriesForBindings',
+                  'readableEdgeKind',
+                  'nodeImpactRelationExists',
+                  'clearNodeImpactRelation',
+                  'nodeImpactInputTarget',
+                  'inputKeyForNodeImpactTarget',
+                  'clearNodeImpactConfigBinding',
+                  'canonicalImpactActionKind',
+                  'nodeImpactActionLabel',
                   'diagnosticsForCanvasNode',
                   'diagnosticTargetNodeId',
                   'nodeIdFromDiagnosticPointer',
                   'normalizeDiagnosticNodeTarget',
                   'jsonPointerUnescape',
+                  'configFieldDescriptors',
+                  'hasSchemaProperties',
                   'labelForNode',
                   'readableName'
                 ]) {
@@ -237,10 +269,85 @@ class VisualAuthoringAppJsTest {
                 };
                 context.contextSourceForPath = (path) => ({ nodeId: '__ctx', path });
                 context.sourceHandlesForNode = () => [];
-                context.specForNode = () => ({ outputPort: 'payload' });
-                context.outputPortsForSpec = () => [{ name: 'payload' }];
-                context.schemaForPort = () => ({ schema: { type: 'array' } });
-                context.schemaAtPath = (_schema, path) => ({ type: 'path', path });
+                context.specForNode = (node = {}) => {
+                  if (node.id === 'riskNode') {
+                    return {
+                      label: 'Eligibility',
+                      inputPort: 'inputs',
+                      outputPort: 'payload',
+                      outputPorts: [{
+                        name: 'payload',
+                        required: true,
+                        schema: {
+                          schema: {
+                            type: 'object',
+                            properties: {
+                              eligible: { type: 'boolean' },
+                              score: { type: 'integer' },
+                              facts: {
+                                type: 'object',
+                                properties: {
+                                  reason: { type: 'string' }
+                                },
+                                required: ['reason']
+                              }
+                            },
+                            required: ['eligible', 'score']
+                          }
+                        }
+                      }],
+                      ports: [{
+                        name: 'inputs',
+                        schema: { fields: [{ path: 'score' }] }
+                      }],
+                      configSchema: {
+                        schema: {
+                          type: 'object',
+                          properties: {
+                            mode: { type: 'string' },
+                            threshold: { type: 'integer' }
+                          }
+                        }
+                      }
+                    };
+                  }
+                  if (node.id === 'auditNode') {
+                    return {
+                      label: 'Audit',
+                      inputPort: 'inputs',
+                      outputPort: 'payload',
+                      outputPorts: [{ name: 'payload', schema: { schema: { type: 'object' } } }],
+                      ports: [{
+                        name: 'inputs',
+                        schema: { fields: [{ path: 'risk' }] }
+                      }]
+                    };
+                  }
+                  if (node.id === 'policy') {
+                    return { label: 'Decision Table', inputPort: 'inputs', outputPort: 'output' };
+                  }
+                  return { outputPort: 'payload' };
+                };
+                context.outputPortsForSpec = (spec) => spec?.outputPorts || [{ name: 'payload' }];
+                context.schemaForPort = (spec, role, portName) => {
+                  const ports = role === 'source' ? (spec?.outputPorts || []) : (spec?.ports || []);
+                  return ports.find((port) => port.name === portName)?.schema || { schema: { type: 'array' } };
+                };
+                context.schemaAtPath = (schemaEnvelope, path) => {
+                  let current = schemaEnvelope?.schema || schemaEnvelope || {};
+                  for (const segment of String(path || '').split('.').filter(Boolean)) {
+                    if (current.type === 'array') {
+                      current = current.items || {};
+                      continue;
+                    }
+                    if (current.properties && Object.prototype.hasOwnProperty.call(current.properties, segment)) {
+                      current = current.properties[segment] || {};
+                      continue;
+                    }
+                    return { type: 'path', path };
+                  }
+                  return current;
+                };
                 context.schemaType = (schema) => schema?.type || '';
                 context.isDslPathSafe = () => true;
                 context.actualIsSchemaPathDslSafe = context.isSchemaPathDslSafe;
@@ -515,9 +622,26 @@ class VisualAuthoringAppJsTest {
                         type: 'customOperator',
                         paletteType: 'risk:eligibility',
                         customInputs: { score: 'ctx.score' },
-                        config: { mode: 'strict' }
+                        config: {
+                          mode: 'strict',
+                          threshold: { kind: 'expression', expr: 'policy.output.score' }
+                        }
+                      },
+                      {
+                        id: 'auditNode',
+                        type: 'customOperator',
+                        paletteType: 'risk:audit',
+                        customInputs: { risk: 'riskNode.output.payload' }
                       }
-                    ]
+                    ],
+                    dependencyEdges: [
+                      { source: 'policy', target: 'riskNode', label: 'depends' },
+                      { source: 'riskNode', target: 'auditNode', label: 'depends' }
+                    ],
+                    routeEdges: [
+                      { source: 'riskNode', target: 'auditNode', condition: 'eligible' }
+                    ],
+                    output: { nodeId: 'riskNode', path: '' }
                   },
                   builderHistoryUndo: [],
                   builderHistoryRedo: [],
@@ -529,7 +653,8 @@ class VisualAuthoringAppJsTest {
                   layout: {
                     nodes: [
                       { id: 'policy', label: 'Loan Policy', operatorRef: 'bloge:decisionTable', kind: 'decision-table' },
-                      { id: 'riskNode', label: 'Eligibility', operatorRef: 'risk:eligibility', kind: 'custom' }
+                      { id: 'riskNode', label: 'Eligibility', operatorRef: 'risk:eligibility', kind: 'custom' },
+                      { id: 'auditNode', label: 'Audit', operatorRef: 'risk:audit', kind: 'custom' }
                     ]
                   }
                 };
@@ -570,6 +695,56 @@ class VisualAuthoringAppJsTest {
                 const policyByDirectNode = context.diagnosticTargetNodeId({ nodeId: 'policy', target: '/graphName' }, context.state.builder);
                 const riskDiagnosticCount = context.diagnosticsForCanvasNode('riskNode').length;
                 const unescapedPointerSegment = context.jsonPointerUnescape('node~1with~0marker');
+                const riskImpact = context.nodeImpactSummary('riskNode', context.state.builder);
+                const riskIncomingKinds = riskImpact.incoming
+                  .map((entry) => `${entry.kind}:${entry.peerId}`)
+                  .sort()
+                  .join('|');
+                const riskOutgoingKinds = riskImpact.outgoing
+                  .map((entry) => `${entry.kind}:${entry.peerId}:${entry.detail}`)
+                  .sort()
+                  .join('|');
+                const riskContextInputs = riskImpact.contextInputs
+                  .map((entry) => entry.detail)
+                  .join('|');
+                const riskImpactPanel = context.renderNodeImpactPanel(context.state.builder.nodes[1]);
+                const fullOutputContract = context.graphOutputContractSummary(
+                  context.state.builder.nodes[1],
+                  { nodeId: 'riskNode', path: '' }
+                );
+                const nestedOutputContract = context.graphOutputContractSummary(
+                  context.state.builder.nodes[1],
+                  { nodeId: 'riskNode', path: 'facts.reason' }
+                );
+                const clearInputBuilder = JSON.parse(JSON.stringify(context.state.builder));
+                const clearInputAction = context.nodeImpactSummary('riskNode', clearInputBuilder)
+                  .contextInputs.find((entry) => entry.kind === 'input').clearAction;
+                const clearInputExistsBefore = context.nodeImpactRelationExists(clearInputAction, clearInputBuilder);
+                context.clearNodeImpactRelation(clearInputAction, clearInputBuilder);
+                const clearInputValueAfter = clearInputBuilder.nodes.find((node) => node.id === 'riskNode').customInputs.score;
+                const clearInputExistsAfter = context.nodeImpactRelationExists(clearInputAction, clearInputBuilder);
+                const clearConfigBuilder = JSON.parse(JSON.stringify(context.state.builder));
+                const clearConfigAction = context.nodeImpactSummary('riskNode', clearConfigBuilder)
+                  .incoming.find((entry) => entry.kind === 'config').clearAction;
+                const clearConfigExistsBefore = context.nodeImpactRelationExists(clearConfigAction, clearConfigBuilder);
+                context.clearNodeImpactRelation(clearConfigAction, clearConfigBuilder);
+                const clearConfigExistsAfter = context.nodeImpactRelationExists(clearConfigAction, clearConfigBuilder);
+                const clearConfigPathAfter = context.hasConfigPath(
+                  clearConfigBuilder.nodes.find((node) => node.id === 'riskNode').config,
+                  'threshold'
+                );
+                const clearDependencyBuilder = JSON.parse(JSON.stringify(context.state.builder));
+                const clearDependencyAction = context.nodeImpactSummary('riskNode', clearDependencyBuilder)
+                  .incoming.find((entry) => entry.kind === 'dependency').clearAction;
+                context.clearNodeImpactRelation(clearDependencyAction, clearDependencyBuilder);
+                const clearDependencyAfter = clearDependencyBuilder.dependencyEdges
+                  .some((edge) => edge.source === 'policy' && edge.target === 'riskNode');
+                const clearRouteBuilder = JSON.parse(JSON.stringify(context.state.builder));
+                const clearRouteAction = context.nodeImpactSummary('auditNode', clearRouteBuilder)
+                  .incoming.find((entry) => entry.kind === 'route').clearAction;
+                context.clearNodeImpactRelation(clearRouteAction, clearRouteBuilder);
+                const clearRouteAfter = clearRouteBuilder.routeEdges
+                  .some((edge) => edge.source === 'riskNode' && edge.target === 'auditNode' && edge.condition === 'eligible');
 
                 const checks = [
                   ['schema path suffix', context.dslReferenceSuffixForSchemaPath('items.0.score'), '.items[0].score'],
@@ -647,6 +822,28 @@ class VisualAuthoringAppJsTest {
                   ['diagnostic direct node target', policyByDirectNode, 'policy'],
                   ['diagnostic node count', riskDiagnosticCount, 1],
                   ['json pointer unescape', unescapedPointerSegment, 'node/with~marker'],
+                  ['risk impact incoming kinds', riskIncomingKinds, 'config:policy|dependency:policy'],
+                  ['risk impact outgoing kinds', riskOutgoingKinds, 'data:auditNode:payload -> inputs.risk|dependency:auditNode:orders downstream execution|route:auditNode:routes on eligible'],
+                  ['risk impact context input', riskContextInputs, 'ctx.score -> inputs.score'],
+                  ['risk impact graph output affected', riskImpact.graphOutputAffected, true],
+                  ['risk impact panel includes delete summary', String(riskImpactPanel.includes('Delete Impact')), 'true'],
+                  ['risk impact panel includes focus button', String(riskImpactPanel.includes('data-impact-node="auditNode"')), 'true'],
+                  ['risk impact panel includes clear button', String(riskImpactPanel.includes('data-clear-impact="input"')), 'true'],
+                  ['full output contract type', fullOutputContract.type, 'object'],
+                  ['full output contract fields', fullOutputContract.fieldCount, 4],
+                  ['full output contract required', fullOutputContract.requiredCount, 2],
+                  ['full output contract source label', fullOutputContract.sourceLabel, 'riskNode.payload'],
+                  ['nested output contract type', nestedOutputContract.type, 'string'],
+                  ['nested output contract fields', nestedOutputContract.fieldCount, 0],
+                  ['nested output contract source label', nestedOutputContract.sourceLabel, 'riskNode.payload.facts.reason'],
+                  ['impact clear input existed before', clearInputExistsBefore, true],
+                  ['impact clear input value after', clearInputValueAfter, ''],
+                  ['impact clear input missing after', clearInputExistsAfter, false],
+                  ['impact clear config existed before', clearConfigExistsBefore, true],
+                  ['impact clear config relation missing after', clearConfigExistsAfter, false],
+                  ['impact clear config path removed', clearConfigPathAfter, false],
+                  ['impact clear dependency removed', clearDependencyAfter, false],
+                  ['impact clear route removed', clearRouteAfter, false],
                   ['dynamic schema DSL targets', dynamicSchemaDslTargets, [
                     '/inputSchema/schema/properties/dynamicAdditional/additionalProperties/properties/bad-field',
                     '/inputSchema/schema/properties/dynamicResidual/unevaluatedProperties/properties/bad-residual-field',
