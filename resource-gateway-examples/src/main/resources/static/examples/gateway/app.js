@@ -425,6 +425,7 @@ function createDefaultResourceContractImport() {
     path: '',
     method: 'GET',
     status: 'ACTIVE',
+    operations: [],
     openApiText: pretty(SAMPLE_OPENAPI_RESOURCE_CONTRACT),
     contractText: '',
     descriptorText: '',
@@ -999,6 +1000,10 @@ function renderInputForm() {
             <input id="resource-contract-operation-id" value="${escapeHtml(state.resourceContractImport.operationId)}">
           </label>
           <label>
+            <span>Operation</span>
+            <select id="resource-contract-operation-select" aria-label="Discovered OpenAPI operation"></select>
+          </label>
+          <label>
             <span>Path</span>
             <input id="resource-contract-path" value="${escapeHtml(state.resourceContractImport.path)}">
           </label>
@@ -1011,8 +1016,10 @@ function renderInputForm() {
             <select id="resource-contract-lifecycle" aria-label="Resource contract lifecycle"></select>
           </label>
         </div>
+        <div id="resource-operation-summary" class="resource-operation-summary" hidden></div>
         <textarea id="openapi-resource-json" class="library-editor resource-contract-editor" spellcheck="false"></textarea>
         <div class="resource-contract-actions">
+          <button id="discover-resource-operations" class="secondary compact" type="button">Discover</button>
           <button id="preview-resource-contract" class="secondary compact" type="button">Preview</button>
           <button id="save-resource-contract" class="secondary compact" type="button">Save Contract</button>
           <button id="save-resource-descriptor" class="secondary compact" type="button">Save Descriptor</button>
@@ -3654,27 +3661,190 @@ function libraryExists(libraryId) {
   return state.operatorLibraries.some((library) => library.libraryId === libraryId);
 }
 
+function normalizeOpenApiOperations(operations) {
+  return Array.isArray(operations)
+    ? operations.map((operation) => ({
+      operationId: String(operation?.operationId || '').trim(),
+      path: String(operation?.path || '').trim(),
+      method: String(operation?.method || '').trim().toUpperCase(),
+      summary: String(operation?.summary || '').trim(),
+      description: String(operation?.description || '').trim(),
+      tags: Array.isArray(operation?.tags)
+        ? operation.tags.map((tag) => String(tag || '').trim()).filter(Boolean)
+        : [],
+      hasRequestBody: Boolean(operation?.hasRequestBody),
+      requestMediaTypes: Array.isArray(operation?.requestMediaTypes)
+        ? operation.requestMediaTypes.map((mediaType) => String(mediaType || '').trim()).filter(Boolean)
+        : [],
+      responseMediaTypes: Array.isArray(operation?.responseMediaTypes)
+        ? operation.responseMediaTypes.map((mediaType) => String(mediaType || '').trim()).filter(Boolean)
+        : [],
+      projectionLevel: String(operation?.projectionLevel || 'READY').trim().toUpperCase(),
+      projectionMessage: String(operation?.projectionMessage || '').trim()
+    })).filter((operation) => operation.path && operation.method)
+    : [];
+}
+
+function openApiOperationLabel(operation) {
+  const methodPath = `${operation.method || 'GET'} ${operation.path || ''}`.trim();
+  const name = operation.operationId || operation.summary || '';
+  const level = operation.projectionLevel || 'READY';
+  const media = operation.requestMediaTypes?.length
+    ? ` · ${operation.requestMediaTypes.slice(0, 2).join(', ')}`
+    : '';
+  return [level, methodPath, name].filter(Boolean).join(' · ') + media;
+}
+
+function openApiOperationReadinessSummary(operations) {
+  const summary = { total: 0, ready: 0, warning: 0, blocked: 0 };
+  for (const operation of normalizeOpenApiOperations(operations)) {
+    summary.total += 1;
+    const level = operation.projectionLevel || 'READY';
+    if (level === 'BLOCKED') {
+      summary.blocked += 1;
+    } else if (level === 'WARNING') {
+      summary.warning += 1;
+    } else {
+      summary.ready += 1;
+    }
+  }
+  return summary;
+}
+
+function openApiOperationMatchesCurrent(operation, current) {
+  const method = String(current?.method || '').trim().toUpperCase();
+  const operationId = String(current?.operationId || '').trim();
+  const path = String(current?.path || '').trim();
+  if (operationId && operation.operationId) {
+    return operation.operationId === operationId;
+  }
+  return operation.path === path && operation.method === method;
+}
+
+function renderOpenApiOperationSelect(select, operations, current) {
+  if (!select) {
+    return;
+  }
+  const selectedIndex = operations.findIndex((operation) => openApiOperationMatchesCurrent(operation, current));
+  select.innerHTML = '<option value="">Operation</option>' + operations.map((operation, index) =>
+    `<option value="${index}">${escapeHtml(openApiOperationLabel(operation))}</option>`
+  ).join('');
+  select.value = selectedIndex >= 0 ? String(selectedIndex) : '';
+}
+
+function renderOpenApiOperationSummary(operations, current) {
+  const normalized = normalizeOpenApiOperations(operations);
+  if (!normalized.length) {
+    return '';
+  }
+  const counts = openApiOperationReadinessSummary(normalized);
+  const selected = normalized.find((operation) => openApiOperationMatchesCurrent(operation, current));
+  const stats = [
+    ['ready', counts.ready],
+    ['warning', counts.warning],
+    ['blocked', counts.blocked]
+  ].map(([level, count]) =>
+    `<span class="resource-operation-stat ${escapeHtml(level)}"><strong>${count}</strong> ${escapeHtml(level)}</span>`
+  ).join('');
+  const selectedHtml = selected
+    ? `
+      <div class="resource-operation-detail ${escapeHtml((selected.projectionLevel || 'READY').toLowerCase())}">
+        <strong>${escapeHtml(`Selected · ${selected.projectionLevel || 'READY'}`)}</strong>
+        <span>${escapeHtml(`${selected.method} ${selected.path}${selected.operationId ? ` · ${selected.operationId}` : ''}`)}</span>
+        <small>${escapeHtml(selected.projectionMessage || 'Ready to project into a resource contract.')}</small>
+      </div>
+    `
+    : `
+      <div class="resource-operation-detail">
+        <strong>${escapeHtml(`${counts.total} OpenAPI operation${counts.total === 1 ? '' : 's'}`)}</strong>
+      </div>
+    `;
+  return `
+    <div class="resource-operation-stats">${stats}</div>
+    ${selectedHtml}
+  `;
+}
+
+function renderOpenApiOperationSummaryPanel(target, operations, current) {
+  if (!target) {
+    return;
+  }
+  const html = renderOpenApiOperationSummary(operations, current);
+  target.hidden = !html;
+  target.innerHTML = html;
+}
+
+function openApiOperationStatusLevel(operation) {
+  const level = String(operation?.projectionLevel || 'READY').toUpperCase();
+  if (level === 'BLOCKED') {
+    return 'error';
+  }
+  if (level === 'WARNING') {
+    return 'warning';
+  }
+  return 'success';
+}
+
+function openApiOperationStatusMessage(operation) {
+  const level = String(operation?.projectionLevel || 'READY').toUpperCase();
+  const methodPath = `${operation?.method || 'GET'} ${operation?.path || ''}`.trim();
+  const name = operation?.operationId ? ` · ${operation.operationId}` : '';
+  const message = operation?.projectionMessage || 'Ready to project into a resource contract.';
+  return `${level} · ${methodPath}${name}: ${message}`;
+}
+
+function applyOpenApiOperationSelection(operation, options = {}) {
+  const current = state.resourceContractImport || createDefaultResourceContractImport();
+  state.resourceContractImport = current;
+  current.operationId = operation.operationId || '';
+  current.path = operation.path || '';
+  current.method = operation.method || 'GET';
+  const operationId = $('resource-contract-operation-id');
+  const path = $('resource-contract-path');
+  const method = $('resource-contract-method');
+  if (operationId) {
+    operationId.value = current.operationId;
+  }
+  if (path) {
+    path.value = current.path;
+  }
+  if (method) {
+    method.value = current.method;
+  }
+  if (options.message !== false) {
+    setResourceContractImportMessage(
+      openApiOperationStatusMessage(operation),
+      openApiOperationStatusLevel(operation)
+    );
+  }
+}
+
 function renderResourceContractImportControls() {
   const current = state.resourceContractImport || createDefaultResourceContractImport();
   state.resourceContractImport = current;
 
   const resourceId = $('resource-contract-resource-id');
   const operationId = $('resource-contract-operation-id');
+  const operationSelect = $('resource-contract-operation-select');
+  const operationSummary = $('resource-operation-summary');
   const path = $('resource-contract-path');
   const method = $('resource-contract-method');
   const lifecycle = $('resource-contract-lifecycle');
   const openApiEditor = $('openapi-resource-json');
   const contractEditor = $('resource-contract-json');
   const descriptorEditor = $('resource-descriptor-json');
-  if (!resourceId || !operationId || !path || !method || !lifecycle || !openApiEditor || !contractEditor
-      || !descriptorEditor) {
+  if (!resourceId || !operationId || !operationSelect || !path || !method || !lifecycle || !openApiEditor
+      || !contractEditor || !descriptorEditor) {
     return;
   }
 
+  const operations = normalizeOpenApiOperations(current.operations);
   resourceId.value = current.resourceId || '';
   operationId.value = current.operationId || '';
+  renderOpenApiOperationSelect(operationSelect, operations, current);
+  renderOpenApiOperationSummaryPanel(operationSummary, operations, current);
   path.value = current.path || '';
-  method.innerHTML = ['GET', 'POST', 'PUT', 'PATCH', 'DELETE']
+  method.innerHTML = ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS', 'HEAD', 'TRACE']
     .map((value) => `<option value="${value}">${value}</option>`)
     .join('');
   method.value = current.method || 'GET';
@@ -3692,6 +3862,13 @@ function renderResourceContractImportControls() {
   operationId.oninput = () => {
     current.operationId = operationId.value;
   };
+  operationSelect.onchange = () => {
+    const selected = operations[Number(operationSelect.value)];
+    if (selected) {
+      applyOpenApiOperationSelection(selected);
+      renderOpenApiOperationSummaryPanel(operationSummary, operations, current);
+    }
+  };
   path.oninput = () => {
     current.path = path.value;
   };
@@ -3703,6 +3880,7 @@ function renderResourceContractImportControls() {
   };
   openApiEditor.oninput = () => {
     current.openApiText = openApiEditor.value;
+    current.operations = [];
   };
   contractEditor.oninput = () => {
     current.contractText = contractEditor.value;
@@ -3721,9 +3899,13 @@ function renderResourceContractImportControls() {
   };
 
   const previewButton = $('preview-resource-contract');
+  const discoverButton = $('discover-resource-operations');
   const saveContractButton = $('save-resource-contract');
   const saveDescriptorButton = $('save-resource-descriptor');
   const resetButton = $('reset-resource-contract');
+  if (discoverButton) {
+    discoverButton.onclick = discoverOpenApiResourceOperations;
+  }
   if (previewButton) {
     previewButton.onclick = previewOpenApiResourceContract;
   }
@@ -3794,6 +3976,40 @@ function setResourceContractImportMessage(text, level = 'info', diagnostics = []
 function resetResourceContractImport() {
   state.resourceContractImport = createDefaultResourceContractImport();
   renderResourceContractImportControls();
+}
+
+async function discoverOpenApiResourceOperations() {
+  const current = state.resourceContractImport;
+  if (!current.openApiText?.trim()) {
+    setResourceContractImportMessage('OpenAPI JSON or YAML is required.', 'error');
+    return;
+  }
+  setResourceContractImportMessage('Discovering OpenAPI operations...', 'info');
+  try {
+    const response = await fetch('/admin/resource-design-contracts/from-openapi/operations', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ openApiText: current.openApiText })
+    });
+    const payload = await response.json().catch(() => null);
+    const diagnostics = normalizeDiagnostics(payload?.validation?.diagnostics);
+    const operations = normalizeOpenApiOperations(payload?.operations);
+    current.operations = operations;
+    if (operations.length === 1 && !current.operationId?.trim() && !current.path?.trim()) {
+      applyOpenApiOperationSelection(operations[0], { message: false });
+    }
+    renderResourceContractImportControls();
+    setResourceContractImportMessage(
+      operations.length
+        ? `Discovered ${operations.length} OpenAPI operation${operations.length === 1 ? '' : 's'}.`
+        : validationResultMessage(payload?.validation?.valid, diagnostics, `OpenAPI discovery failed with ${response.status}`),
+      visualCheckLevel(diagnostics, response.ok && payload?.validation?.valid !== false),
+      diagnostics
+    );
+    $('output').textContent = pretty({ status: response.status, openApiOperations: payload });
+  } catch (error) {
+    setResourceContractImportMessage(error.message, 'error');
+  }
 }
 
 async function previewOpenApiResourceContract() {

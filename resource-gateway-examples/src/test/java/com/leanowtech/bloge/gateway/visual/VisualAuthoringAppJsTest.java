@@ -84,6 +84,12 @@ class VisualAuthoringAppJsTest {
 
         assertThat(source)
                 .contains("async function validateResourceContractPayload(contract)")
+                .contains("async function discoverOpenApiResourceOperations()")
+                .contains("/admin/resource-design-contracts/from-openapi/operations")
+                .contains("id=\"resource-contract-operation-select\"")
+                .contains("id=\"resource-operation-summary\"")
+                .contains("function renderOpenApiOperationSummary(operations, current)")
+                .contains("function openApiOperationStatusMessage(operation)")
                 .contains("function resourceContractSaveConfirmationKey(contract, diagnostics = [])")
                 .contains("current.saveConfirmationKey !== confirmationKey")
                 .contains("Review warnings, then click Save contract again to continue.")
@@ -374,6 +380,15 @@ class VisualAuthoringAppJsTest {
                   'visualDiagnosticShortcutDirection',
                   'visualDiagnosticClearShortcut',
                   'visualDiagnosticNodeSummaryText',
+                  'normalizeOpenApiOperations',
+                  'openApiOperationLabel',
+                  'openApiOperationReadinessSummary',
+                  'openApiOperationMatchesCurrent',
+                  'renderOpenApiOperationSummary',
+                  'renderOpenApiOperationSummaryPanel',
+                  'openApiOperationStatusLevel',
+                  'openApiOperationStatusMessage',
+                  'applyOpenApiOperationSelection',
                   'renderLibraryProfilePanel',
                   'renderLibraryImpactPanel',
                   'libraryImpactSummaryFromPayload',
@@ -1460,6 +1475,81 @@ class VisualAuthoringAppJsTest {
                   context.state.visualCheck.diagnostics,
                   'riskNode'
                 );
+                const normalizedOpenApiOperations = context.normalizeOpenApiOperations([
+                  {
+                    operationId: 'submitOrder',
+                    path: '/orders/{orderId}',
+                    method: 'post',
+                    summary: 'Submit order',
+                    tags: ['order', ''],
+                    hasRequestBody: true,
+                    requestMediaTypes: ['application/json'],
+                    responseMediaTypes: ['application/json'],
+                    projectionLevel: 'ready',
+                    projectionMessage: 'Ready to project.'
+                  },
+                  { operationId: '', path: '', method: 'get' }
+                ]);
+                const openApiOperationLabel = context.openApiOperationLabel(normalizedOpenApiOperations[0]);
+                const openApiOperationMatchById = context.openApiOperationMatchesCurrent(
+                  normalizedOpenApiOperations[0],
+                  { operationId: 'submitOrder', path: '', method: '' }
+                );
+                const openApiOperationMatchByPath = context.openApiOperationMatchesCurrent(
+                  normalizedOpenApiOperations[0],
+                  { operationId: '', path: '/orders/{orderId}', method: 'POST' }
+                );
+                const openApiOperationMiss = context.openApiOperationMatchesCurrent(
+                  normalizedOpenApiOperations[0],
+                  { operationId: 'other', path: '/orders/{orderId}', method: 'POST' }
+                );
+                const openApiReadinessOperations = context.normalizeOpenApiOperations([
+                  {
+                    operationId: 'readyOrder',
+                    path: '/orders',
+                    method: 'get',
+                    projectionLevel: 'READY',
+                    projectionMessage: 'Ready to project.'
+                  },
+                  {
+                    operationId: 'uploadOrder',
+                    path: '/orders/upload',
+                    method: 'post',
+                    projectionLevel: 'WARNING',
+                    projectionMessage: 'Request body will be omitted.'
+                  },
+                  {
+                    operationId: 'healthText',
+                    path: '/health',
+                    method: 'get',
+                    projectionLevel: 'BLOCKED',
+                    projectionMessage: 'Selected 2xx response is not JSON.'
+                  }
+                ]);
+                const openApiReadinessSummary = context.openApiOperationReadinessSummary(openApiReadinessOperations);
+                const openApiReadinessSummaryText = [
+                  openApiReadinessSummary.total,
+                  openApiReadinessSummary.ready,
+                  openApiReadinessSummary.warning,
+                  openApiReadinessSummary.blocked
+                ].join('|');
+                const openApiSummaryHtml = context.renderOpenApiOperationSummary(
+                  openApiReadinessOperations,
+                  { operationId: 'healthText' }
+                );
+                const openApiEmptySummaryHtml = context.renderOpenApiOperationSummary([], {});
+                const openApiBlockedStatusLevel = context.openApiOperationStatusLevel(openApiReadinessOperations[2]);
+                const openApiBlockedStatusMessage = context.openApiOperationStatusMessage(openApiReadinessOperations[2]);
+                context.$ = () => null;
+                context.state.resourceContractImport = {};
+                context.applyOpenApiOperationSelection(normalizedOpenApiOperations[0]);
+                const openApiOperationApplied = [
+                  context.state.resourceContractImport.operationId,
+                  context.state.resourceContractImport.path,
+                  context.state.resourceContractImport.method
+                ].join('|');
+                const openApiOperationMessage = context.state.resourceContractImport.message.text;
+                const openApiOperationMessageLevel = context.state.resourceContractImport.message.level;
                 const riskSearch = context.canvasSearchResults('eligibility strict', context.state.builder, context.state.layout)
                   .map((entry) => entry.nodeId)
                   .join('|');
@@ -2088,6 +2178,20 @@ class VisualAuthoringAppJsTest {
                   ['visual diagnostic summary position chip', String(visualDiagnosticFilteredHtml.includes('1/2')), 'true'],
                   ['visual diagnostic summary global count', String(visualDiagnosticSummaryHtml.includes('1 global')), 'true'],
                   ['visual diagnostic summary active filter', String(visualDiagnosticFilteredHtml.includes('filtered to Eligibility (riskNode)')), 'true'],
+                  ['openapi operation normalize count', normalizedOpenApiOperations.length, 1],
+                  ['openapi operation label', openApiOperationLabel, 'READY · POST /orders/{orderId} · submitOrder · application/json'],
+                  ['openapi operation match by id', openApiOperationMatchById, true],
+                  ['openapi operation match by path', openApiOperationMatchByPath, true],
+                  ['openapi operation miss', openApiOperationMiss, false],
+                  ['openapi readiness summary counts', openApiReadinessSummaryText, '3|1|1|1'],
+                  ['openapi readiness summary selected detail', String(openApiSummaryHtml.includes('Selected · BLOCKED') && openApiSummaryHtml.includes('Selected 2xx response is not JSON.')), 'true'],
+                  ['openapi readiness summary stats', String(openApiSummaryHtml.includes('<strong>1</strong> ready') && openApiSummaryHtml.includes('<strong>1</strong> blocked')), 'true'],
+                  ['openapi readiness empty summary', openApiEmptySummaryHtml, ''],
+                  ['openapi blocked status level', openApiBlockedStatusLevel, 'error'],
+                  ['openapi blocked status message', openApiBlockedStatusMessage, 'BLOCKED · GET /health · healthText: Selected 2xx response is not JSON.'],
+                  ['openapi operation applied', openApiOperationApplied, 'submitOrder|/orders/{orderId}|POST'],
+                  ['openapi operation applied message', openApiOperationMessage, 'READY · POST /orders/{orderId} · submitOrder: Ready to project.'],
+                  ['openapi operation applied message level', openApiOperationMessageLevel, 'success'],
                   ['canvas search custom config hit', riskSearch, 'riskNode'],
                   ['diagnostic node pointer index 0', policyByPointer, 'policy'],
                   ['diagnostic node pointer index 1', riskByPointer, 'riskNode'],

@@ -54,6 +54,93 @@ class OpenApiResourceDesignContractImporterTest {
     }
 
     @Test
+    void discoversOperationsFromYamlTextBeforeProjection() {
+        OpenApiOperationDiscoveryResult result = importer.discoverOperations(
+                new OpenApiResourceDesignContractImportRequest(
+                        null,
+                        null,
+                        null,
+                        null,
+                        null,
+                        null,
+                        openApiDiscoveryYaml()
+                )
+        );
+
+        assertThat(result.validation().valid()).isTrue();
+        assertThat(result.operations())
+                .extracting(operation -> operation.method() + " " + operation.path())
+                .containsExactly("GET /orders", "POST /orders/{orderId}");
+        assertThat(result.operations().get(0))
+                .satisfies(operation -> {
+                    assertThat(operation.operationId()).isEqualTo("listOrders");
+                    assertThat(operation.summary()).isEqualTo("List orders");
+                    assertThat(operation.tags()).containsExactly("order");
+                    assertThat(operation.hasRequestBody()).isFalse();
+                    assertThat(operation.responseMediaTypes()).containsExactly("application/json");
+                    assertThat(operation.projectionLevel()).isEqualTo("READY");
+                });
+        assertThat(result.operations().get(1))
+                .satisfies(operation -> {
+                    assertThat(operation.operationId()).isEqualTo("submitOrder");
+                    assertThat(operation.hasRequestBody()).isTrue();
+                    assertThat(operation.requestMediaTypes())
+                            .containsExactly("application/x-www-form-urlencoded");
+                    assertThat(operation.responseMediaTypes())
+                            .containsExactly("application/json");
+                    assertThat(operation.projectionLevel()).isEqualTo("READY");
+                });
+    }
+
+    @Test
+    void discoversProjectionWarningsAndBlockers() {
+        OpenApiOperationDiscoveryResult result = importer.discoverOperations(
+                new OpenApiResourceDesignContractImportRequest(
+                        null,
+                        null,
+                        null,
+                        null,
+                        null,
+                        null,
+                        openApiProjectionReadinessYaml()
+                )
+        );
+
+        assertThat(result.validation().valid()).isTrue();
+        assertThat(result.operations())
+                .extracting(OpenApiOperationSummary::projectionLevel)
+                .containsExactly("BLOCKED", "WARNING");
+        assertThat(result.operations().get(0).projectionMessage())
+                .contains("selected 2xx response");
+        assertThat(result.operations().get(1).projectionMessage())
+                .contains("omit the body mapping");
+    }
+
+    @Test
+    void discoveryReadinessMatchesTheResponseChosenByProjection() {
+        OpenApiOperationDiscoveryResult result = importer.discoverOperations(
+                new OpenApiResourceDesignContractImportRequest(
+                        null,
+                        null,
+                        null,
+                        null,
+                        null,
+                        null,
+                        openApiFirstSuccessResponseIsNotJsonYaml()
+                )
+        );
+
+        assertThat(result.validation().valid()).isTrue();
+        assertThat(result.operations()).singleElement()
+                .satisfies(operation -> {
+                    assertThat(operation.responseMediaTypes())
+                            .containsExactly("application/json", "text/plain");
+                    assertThat(operation.projectionLevel()).isEqualTo("BLOCKED");
+                    assertThat(operation.projectionMessage()).contains("selected 2xx response");
+                });
+    }
+
+    @Test
     void rewritesTopLevelComponentRefIntoDefinitionsAcceptedByValidator() {
         OpenApiResourceDesignContractImportResult result = importer.project(
                 request("order-service.listOrders", "listOrders", null, null, openApiOrderList(true))
@@ -758,6 +845,121 @@ class OpenApiResourceDesignContractImporterTest {
         openApi.put("paths", Map.of("/orders", Map.of("get", operation)));
         openApi.put("components", Map.of("securitySchemes", securitySchemes));
         return openApi;
+    }
+
+    private static String openApiDiscoveryYaml() {
+        return """
+                openapi: 3.1.0
+                paths:
+                  /orders:
+                    get:
+                      operationId: listOrders
+                      summary: List orders
+                      tags:
+                        - order
+                      responses:
+                        '200':
+                          description: ok
+                          content:
+                            application/json:
+                              schema:
+                                type: object
+                                properties:
+                                  items:
+                                    type: array
+                                    items:
+                                      type: string
+                  /orders/{orderId}:
+                    post:
+                      operationId: submitOrder
+                      summary: Submit order
+                      tags:
+                        - order
+                      requestBody:
+                        required: true
+                        content:
+                          application/x-www-form-urlencoded:
+                            schema:
+                              type: object
+                              properties:
+                                priority:
+                                  type: string
+                      responses:
+                        '201':
+                          description: created
+                          content:
+                            application/json:
+                              schema:
+                                type: object
+                                properties:
+                                  id:
+                                    type: string
+                """;
+    }
+
+    private static String openApiProjectionReadinessYaml() {
+        return """
+                openapi: 3.1.0
+                paths:
+                  /health:
+                    get:
+                      operationId: healthText
+                      responses:
+                        '200':
+                          description: ok
+                          content:
+                            text/plain:
+                              schema:
+                                type: string
+                  /uploads:
+                    post:
+                      operationId: uploadDocument
+                      requestBody:
+                        required: true
+                        content:
+                          multipart/form-data:
+                            schema:
+                              type: object
+                              properties:
+                                file:
+                                  type: string
+                      responses:
+                        '200':
+                          description: ok
+                          content:
+                            application/json:
+                              schema:
+                                type: object
+                                properties:
+                                  id:
+                                    type: string
+                """;
+    }
+
+    private static String openApiFirstSuccessResponseIsNotJsonYaml() {
+        return """
+                openapi: 3.1.0
+                paths:
+                  /mixed-success:
+                    get:
+                      operationId: mixedSuccess
+                      responses:
+                        '200':
+                          description: plain text status
+                          content:
+                            text/plain:
+                              schema:
+                                type: string
+                        '201':
+                          description: json body
+                          content:
+                            application/json:
+                              schema:
+                                type: object
+                                properties:
+                                  id:
+                                    type: string
+                """;
     }
 
     private static String openApiOrderListYaml() {

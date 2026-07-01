@@ -109,6 +109,35 @@ class ResourceDesignContractAdminControllerTest {
     }
 
     @Test
+    void openApiOperationsDiscoversOperationsWithoutStoring() throws Exception {
+        OpenApiResourceDesignContractImportRequest request = new OpenApiResourceDesignContractImportRequest(
+                null,
+                null,
+                null,
+                null,
+                null,
+                openApiOrderList()
+        );
+
+        mockMvc.perform(post("/admin/resource-design-contracts/from-openapi/operations")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(request)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.validation.valid").value(true))
+                .andExpect(jsonPath("$.operations[0].operationId").value("listOrders"))
+                .andExpect(jsonPath("$.operations[0].path").value("/orders"))
+                .andExpect(jsonPath("$.operations[0].method").value("GET"))
+                .andExpect(jsonPath("$.operations[0].summary").value("List orders"))
+                .andExpect(jsonPath("$.operations[0].tags[0]").value("order"))
+                .andExpect(jsonPath("$.operations[0].hasRequestBody").value(false))
+                .andExpect(jsonPath("$.operations[0].responseMediaTypes[0]").value("application/json"))
+                .andExpect(jsonPath("$.operations[0].projectionLevel").value("READY"))
+                .andExpect(jsonPath("$.operations[0].projectionMessage").value("Ready to project into a resource contract."));
+
+        assertThat(registry.all()).isEmpty();
+    }
+
+    @Test
     void fromOpenApiWarnsWhenPreviewDiffersFromStoredContractAndDescriptor() throws Exception {
         registry.upsert(new ResourceDesignContract(
                 "contract:orders",

@@ -124,6 +124,18 @@ public class ResourceDesignContractAdminController {
         );
     }
 
+    /**
+     * Discovers OpenAPI operations before the user chooses one to project.
+     *
+     * @param request OpenAPI discovery request
+     * @return operation summaries and structured diagnostics
+     */
+    @PostMapping("/from-openapi/operations")
+    public OpenApiOperationDiscoveryResult openApiOperations(
+            @RequestBody OpenApiResourceDesignContractImportRequest request) {
+        return openApiImporter.discoverOperations(request);
+    }
+
     private List<VisualDiagnostic> openApiReplacementDiffDiagnostics(ResourceDesignContract candidate,
                                                                      ResourceDescriptor descriptorSuggestion) {
         List<VisualDiagnostic> diagnostics = new ArrayList<>();

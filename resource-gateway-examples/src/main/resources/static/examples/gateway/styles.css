@@ -2123,9 +2123,70 @@ body.dragging-operator * {
   color: var(--text);
 }
 
+.resource-operation-summary {
+  display: grid;
+  gap: 8px;
+  padding: 8px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--surface-subtle);
+}
+
+.resource-operation-stats {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.resource-operation-stat {
+  min-width: 0;
+  padding: 4px 7px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.resource-operation-stat.ready {
+  border-color: rgba(22, 163, 74, 0.35);
+  color: #166534;
+}
+
+.resource-operation-stat.warning {
+  border-color: rgba(217, 119, 6, 0.35);
+  color: #92400e;
+}
+
+.resource-operation-stat.blocked {
+  border-color: rgba(220, 38, 38, 0.35);
+  color: #991b1b;
+}
+
+.resource-operation-detail {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+
+.resource-operation-detail strong {
+  color: var(--text);
+  font-size: 12px;
+}
+
+.resource-operation-detail span,
+.resource-operation-detail small {
+  min-width: 0;
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+}
+
 .resource-contract-actions {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(104px, 1fr));
   gap: 6px;
 }
 

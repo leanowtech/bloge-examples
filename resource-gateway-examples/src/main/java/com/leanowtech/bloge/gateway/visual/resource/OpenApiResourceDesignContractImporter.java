@@ -37,9 +37,10 @@ public class OpenApiResourceDesignContractImporter {
     private static final TypeReference<Map<String, Object>> OPENAPI_MAP = new TypeReference<>() {
     };
 
-    private static final Set<String> HTTP_METHODS = Set.of(
+    private static final List<String> HTTP_METHOD_ORDER = List.of(
             "get", "put", "post", "delete", "options", "head", "patch", "trace"
     );
+    private static final Set<String> HTTP_METHODS = Set.copyOf(HTTP_METHOD_ORDER);
     private static final Set<String> SUPPORTED_STRING_FORMATS = Set.of(
             "date", "date-time", "duration", "email", "uri", "uuid"
     );
@@ -113,6 +114,103 @@ public class OpenApiResourceDesignContractImporter {
         ResourceDescriptor descriptorSuggestion = descriptorSuggestion(openApi, operation,
                 request.resourceId(), diagnostics);
         return result(contract, descriptorSuggestion, diagnostics);
+    }
+
+    /**
+     * Discovers importable operations in an OpenAPI document without projecting any contract.
+     *
+     * @param request import request containing {@code openApi} or {@code openApiText}
+     * @return operation summaries and parse/discovery diagnostics
+     */
+    public OpenApiOperationDiscoveryResult discoverOperations(OpenApiResourceDesignContractImportRequest request) {
+        List<VisualDiagnostic> diagnostics = new ArrayList<>();
+        if (request == null) {
+            diagnostics.add(VisualDiagnostic.error("visual.resourceContract.openapi.requestMissing",
+                    "OpenAPI discovery request is required.",
+                    "/"));
+            return operationResult(List.of(), diagnostics);
+        }
+        Map<String, Object> openApi = openApiDocument(request, diagnostics);
+        if (openApi.isEmpty() && !hasErrors(diagnostics)) {
+            diagnostics.add(VisualDiagnostic.error("visual.resourceContract.openapi.documentMissing",
+                    "OpenAPI document is required as openApi or openApiText.",
+                    blank(request.openApiText()) ? "/openApi" : "/openApiText"));
+        }
+        if (hasErrors(diagnostics)) {
+            return operationResult(List.of(), diagnostics);
+        }
+        Object rawPaths = openApi.get("paths");
+        if (!(rawPaths instanceof Map<?, ?> paths)) {
+            diagnostics.add(VisualDiagnostic.error("visual.resourceContract.openapi.pathsMissing",
+                    "OpenAPI document must declare a paths object.",
+                    "/openApi/paths"));
+            return operationResult(List.of(), diagnostics);
+        }
+        List<OpenApiOperationSummary> operations = openApiOperations(openApi, objectMap(paths));
+        if (operations.isEmpty()) {
+            diagnostics.add(VisualDiagnostic.error("visual.resourceContract.openapi.operationsMissing",
+                    "OpenAPI document does not declare any HTTP operations under paths.",
+                    "/openApi/paths"));
+        }
+        return operationResult(operations, diagnostics);
+    }
+
+    private List<OpenApiOperationSummary> openApiOperations(Map<String, Object> openApi,
+                                                            Map<String, Object> paths) {
+        List<OpenApiOperationSummary> operations = new ArrayList<>();
+        paths.entrySet().stream()
+                .sorted(Map.Entry.comparingByKey())
+                .forEach(pathEntry -> {
+                    if (!(pathEntry.getValue() instanceof Map<?, ?> pathItem)) {
+                        return;
+                    }
+                    Map<String, Object> pathItemMap = objectMap(pathItem);
+                    for (String method : HTTP_METHOD_ORDER) {
+                        Object rawOperation = pathItemMap.get(method);
+                        if (!(rawOperation instanceof Map<?, ?> operation)) {
+                            continue;
+                        }
+                        Map<String, Object> operationMap = objectMap(operation);
+                        SelectedOperation selected = new SelectedOperation(pathEntry.getKey(), method,
+                                pathItemMap, operationMap);
+                        List<String> requestMediaTypes = requestMediaTypes(openApi, selected);
+                        List<String> responseMediaTypes = responseMediaTypes(openApi, selected);
+                        OperationProjection projection = operationProjection(operationMap.containsKey("requestBody"),
+                                requestMediaTypes, responseJsonMediaType(openApi, selected).isPresent());
+                        operations.add(new OpenApiOperationSummary(
+                                string(operationMap.get("operationId")),
+                                selected.path(),
+                                selected.method().toUpperCase(Locale.ROOT),
+                                string(operationMap.get("summary")),
+                                string(operationMap.get("description")),
+                                tags(selected),
+                                operationMap.containsKey("requestBody"),
+                                requestMediaTypes,
+                                responseMediaTypes,
+                                projection.level(),
+                                projection.message()
+                        ));
+                    }
+                });
+        return List.copyOf(operations);
+    }
+
+    private OperationProjection operationProjection(boolean hasRequestBody,
+                                                    List<String> requestMediaTypes,
+                                                    boolean responseProjectable) {
+        if (!responseProjectable) {
+            return new OperationProjection("BLOCKED",
+                    "Projection requires the selected 2xx response to declare JSON or JSON-compatible content.");
+        }
+        if (hasRequestBody && requestMediaTypes.stream().noneMatch(this::supportedRequestMediaType)) {
+            return new OperationProjection("WARNING",
+                    "Request body media type is not projected yet; preview will omit the body mapping.");
+        }
+        return new OperationProjection("READY", "Ready to project into a resource contract.");
+    }
+
+    private boolean supportedRequestMediaType(String mediaType) {
+        return jsonCompatibleMediaType(mediaType) || formUrlEncodedMediaType(mediaType);
     }
 
     private static Map<String, Object> openApiDocument(OpenApiResourceDesignContractImportRequest request,
@@ -890,6 +988,18 @@ public class OpenApiResourceDesignContractImporter {
                 .map(RequestBodyContent::mediaType);
     }
 
+    private List<String> requestMediaTypes(Map<String, Object> openApi, SelectedOperation selected) {
+        Object rawBody = selected.operation().get("requestBody");
+        if (rawBody == null) {
+            return List.of();
+        }
+        String bodyTarget = "/openApi/paths/" + pointerSegment(selected.path()) + "/" + selected.method()
+                + "/requestBody";
+        Optional<Map<String, Object>> requestBody = dereferenceObject(openApi, rawBody, new ArrayList<>(),
+                bodyTarget, "requestBody");
+        return requestBody.map(this::contentMediaTypes).orElseGet(List::of);
+    }
+
     private Optional<String> responseJsonMediaType(Map<String, Object> openApi, SelectedOperation selected) {
         Object rawResponses = selected.operation().get("responses");
         String responsesTarget = "/openApi/paths/" + pointerSegment(selected.path()) + "/" + selected.method()
@@ -906,6 +1016,34 @@ public class OpenApiResourceDesignContractImporter {
                 new ArrayList<>(), responseTarget, "response");
         return response.flatMap(value -> jsonContent(value, responseTarget, new ArrayList<>(), true))
                 .map(JsonContent::mediaType);
+    }
+
+    private List<String> responseMediaTypes(Map<String, Object> openApi, SelectedOperation selected) {
+        Object rawResponses = selected.operation().get("responses");
+        String responsesTarget = "/openApi/paths/" + pointerSegment(selected.path()) + "/" + selected.method()
+                + "/responses";
+        if (!(rawResponses instanceof Map<?, ?> responses)) {
+            return List.of();
+        }
+        LinkedHashSet<String> mediaTypes = new LinkedHashSet<>();
+        objectMap(responses).entrySet().stream()
+                .filter(entry -> successStatus(entry.getKey()))
+                .sorted(Map.Entry.comparingByKey())
+                .forEach(entry -> {
+                    String responseTarget = responsesTarget + "/" + entry.getKey();
+                    Optional<Map<String, Object>> response = dereferenceObject(openApi, entry.getValue(),
+                            new ArrayList<>(), responseTarget, "response");
+                    response.ifPresent(value -> mediaTypes.addAll(contentMediaTypes(value)));
+                });
+        return mediaTypes.stream().sorted().toList();
+    }
+
+    private List<String> contentMediaTypes(Map<String, Object> holder) {
+        Object rawContent = holder.get("content");
+        if (!(rawContent instanceof Map<?, ?> content)) {
+            return List.of();
+        }
+        return objectMap(content).keySet().stream().sorted().toList();
     }
 
     private HttpRequestInput.HttpAuth authStrategySuggestion(Map<String, Object> openApi,
@@ -1257,6 +1395,14 @@ public class OpenApiResourceDesignContractImporter {
         );
     }
 
+    private OpenApiOperationDiscoveryResult operationResult(List<OpenApiOperationSummary> operations,
+                                                            List<VisualDiagnostic> diagnostics) {
+        return new OpenApiOperationDiscoveryResult(
+                operations,
+                new VisualValidationResult(false, diagnostics)
+        );
+    }
+
     private static boolean hasErrors(List<VisualDiagnostic> diagnostics) {
         return diagnostics.stream().anyMatch(VisualDiagnostic::error);
     }
@@ -1363,6 +1509,9 @@ public class OpenApiResourceDesignContractImporter {
     }
 
     private record FormUrlEncodedContent(String mediaType, Map<String, Object> media) {
+    }
+
+    private record OperationProjection(String level, String message) {
     }
 
     private record SecurityRequirements(Object rawSecurity, String target) {
