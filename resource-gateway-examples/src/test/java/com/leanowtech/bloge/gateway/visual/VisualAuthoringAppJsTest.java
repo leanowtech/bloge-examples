@@ -328,6 +328,11 @@ class VisualAuthoringAppJsTest {
                   'nodeTraceBadgeText',
                   'nodeTraceSummaryLabel',
                   'goldenAssertionsFromControls',
+                  'currentGoldenAssertionsFromControls',
+                  'cloneGoldenAssertion',
+                  'goldenAssertionExpectedSummary',
+                  'inferredApproximateAssertionValue',
+                  'valueAtJsonPointer',
                   'schemaFromValue',
                   'configFieldDescriptors',
                   'hasSchemaProperties',
@@ -1107,6 +1112,33 @@ class VisualAuthoringAppJsTest {
                   approved: true,
                   score: 720
                 })[0];
+                context.state.goldenAssertionMode = 'PATH_APPROX_EQUALS';
+                context.state.goldenAssertionPath = '/score';
+                context.state.goldenAssertionValueText = '';
+                const inferredApproxAssertion = context.goldenAssertionsFromControls({
+                  approved: true,
+                  score: 720.000002
+                })[0];
+                context.state.goldenAssertionValueText = '{"value":720,"relativeTolerance":0.01}';
+                const explicitApproxAssertion = context.goldenAssertionsFromControls({
+                  approved: true,
+                  score: 720.000002
+                })[0];
+                const approxPointerValue = context.valueAtJsonPointer({
+                  nested: {
+                    'score/value': 720
+                  }
+                }, '/nested/score~1value');
+                context.state.goldenAssertions = [inferredApproxAssertion, explicitSchemaAssertion];
+                const queuedAssertions = context.goldenAssertionsFromControls({
+                  approved: false,
+                  score: 1
+                });
+                queuedAssertions[0].expectedValue.value = 0;
+                const queuedFirstValueAfterClone = context.state.goldenAssertions[0].expectedValue.value;
+                const queuedAssertionModes = queuedAssertions.map((assertion) => assertion.mode).join('|');
+                const queuedAssertionSummary = context.goldenAssertionExpectedSummary(context.state.goldenAssertions[0]);
+                context.state.goldenAssertions = [];
                 context.sourceHandlesForNode = (node) => {
                   if (node.id !== 'riskNode') {
                     return [];
@@ -1436,6 +1468,16 @@ class VisualAuthoringAppJsTest {
                   ['golden schema assertion inferred field', inferredSchemaAssertion.expectedValue.schema.properties.approved.type, 'boolean'],
                   ['golden schema assertion inferred required', inferredSchemaAssertion.expectedValue.schema.required.join('|'), 'approved|score'],
                   ['golden schema assertion explicit type', explicitSchemaAssertion.expectedValue.properties.approved.type, 'boolean'],
+                  ['golden approx assertion mode', inferredApproxAssertion.mode, 'PATH_APPROX_EQUALS'],
+                  ['golden approx assertion path', inferredApproxAssertion.path, '/score'],
+                  ['golden approx assertion inferred value', inferredApproxAssertion.expectedValue.value, 720.000002],
+                  ['golden approx assertion inferred tolerance', inferredApproxAssertion.expectedValue.tolerance, 0.000001],
+                  ['golden approx assertion explicit relative tolerance', explicitApproxAssertion.expectedValue.relativeTolerance, 0.01],
+                  ['golden approx json pointer unescape', approxPointerValue, 720],
+                  ['golden queued assertion count', queuedAssertions.length, 2],
+                  ['golden queued assertion modes', queuedAssertionModes, 'PATH_APPROX_EQUALS|OUTPUT_MATCHES_SCHEMA'],
+                  ['golden queued assertion cloned', queuedFirstValueAfterClone, 720.000002],
+                  ['golden queued assertion summary', queuedAssertionSummary, '/score · {"value":720.000002,"tolerance":0.000001}'],
                   ['connectability source count', connectability.sourceCount, 3],
                   ['connectability available count', connectability.availableCount, 6],
                   ['connectability wired count', connectability.alreadyCount, 1],

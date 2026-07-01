@@ -709,8 +709,8 @@ publication 级 warning，提示 replay、recertification 或 republish 前需�
 | --- | --- | --- |
 | `GET` | `/api/visual/golden-cases?publicationId=...` | 当前已实现：查询绑定某个 immutable publication 的 golden regression cases |
 | `GET` | `/api/visual/golden-cases/{caseId}` | 当前已实现：读取单个 golden case |
-| `POST` | `/api/visual/golden-cases` | 当前已实现：为已发布版本保存样例 context、outputNode、期望输出、可选 output assertions 和 output schema assertions |
-| `POST` | `/api/visual/golden-cases/{caseId}/run` | 当前已实现：用 frozen publication DSL 执行 golden case，写入 run history，并返回 exact-output、value assertion 或 schema assertion diagnostics |
+| `POST` | `/api/visual/golden-cases` | 当前已实现：为已发布版本保存样例 context、outputNode、期望输出、可选 output assertions、numeric tolerance assertions 和 output schema assertions |
+| `POST` | `/api/visual/golden-cases/{caseId}/run` | 当前已实现：用 frozen publication DSL 执行 golden case，写入 run history，并返回 exact-output、value/tolerance assertion 或 schema assertion diagnostics |
 | `POST` | `/api/visual/golden-cases/publications/{publicationId}/run` | 当前已实现：执行某个 publication 绑定的全部 golden cases，汇总 total/passed/failed 并为每个 case 写入 run history |
 | `POST` | `/api/visual/golden-cases/publications/{publicationId}/certify` | 当前已实现：执行 suite，持久化该 publication 的最新 golden certification，并记录当次 case-set fingerprint |
 | `GET` | `/api/visual/golden-cases/publications/{publicationId}/certification` | 当前已实现：读取该 publication 最近一次 golden certification |
@@ -1006,7 +1006,7 @@ resource-gateway 已有 rate limiting、cache、circuit breaker，可以作为�
 1. **Schema Drift Detection**：运行时采样输出，与声明 schema 比较。
 2. **Operator Usage Index**：每个 operator 被哪些 graph version 使用。
 3. **Descriptor Impact Analysis**：更新 descriptor 前提示影响的图。
-4. **Golden Test Cases**：当前已支持每个发布版本绑定样例输入、期望输出、基础 value/path assertions 和 `OUTPUT_MATCHES_SCHEMA` schema assertions，并用 frozen publication DSL 执行 single-case 与 suite-level 回归；浏览器 Publications 面板已支持从最近一次 publication run 输出保存 exact-output case、单条 value/path assertion 或 output-schema assertion；latest certification 作为独立控制面状态保存，不反写 immutable publication；promotion-readiness status 通过 case-set fingerprint 识别 stale certification，并以 `promotionReady` 与 diagnostics 支撑推广准入。后续可扩展容忍式断言。
+4. **Golden Test Cases**：当前已支持每个发布版本绑定样例输入、期望输出、基础 value/path assertions、`PATH_APPROX_EQUALS` numeric tolerance assertions 和 `OUTPUT_MATCHES_SCHEMA` schema assertions，并用 frozen publication DSL 执行 single-case 与 suite-level 回归；浏览器 Publications 面板已支持从最近一次 publication run 输出保存 exact-output case，或用多断言队列保存 value/path assertion、numeric tolerance assertion 与 output-schema assertion 组合；latest certification 作为独立控制面状态保存，不反写 immutable publication；promotion-readiness status 通过 case-set fingerprint 识别 stale certification，并以 `promotionReady` 与 diagnostics 支撑推广准入。
 5. **Runtime Trace Replay**：当前已支持从 run history 打开 shape-only trace，按节点查看 status、operator metadata、结果形状、选中输出、诊断归属和 DSL，并在当前画布匹配节点上显示 replay badge；当历史 trace 节点已不在当前画布中时，浏览器会报告 replay coverage 和 missing nodes，避免误判为完整回放。后续可补更细的节点耗时、事件流和时间轴重放。
 6. **Dead Node Detection**：提示不可达节点、永不命中分支、未使用输出。
 7. **Policy Audit**：记录谁发布、谁覆盖权限、谁修改 descriptor。
@@ -1104,7 +1104,7 @@ Phase 1 的工程拆分、包结构、API、测试和 Definition of Done 见
 - visual layout 随版本保存。
 - schema compatibility diff。
 - operator/descriptor impact analysis。
-- golden test cases 基础版、output assertion modes、output schema assertion、publication suite run、latest certification 和 stale-aware promotion gate 已落地，后续补 tolerance 断言。
+- golden test cases 基础版、output assertion modes、numeric tolerance assertion、output schema assertion、publication suite run、latest certification 和 stale-aware promotion gate 已落地。
 
 验收：
 

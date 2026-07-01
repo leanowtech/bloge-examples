@@ -292,6 +292,14 @@ public class VisualGraphGoldenCaseController {
             String assertionPath = "/assertions/%d".formatted(i);
             if (assertion.mode() == VisualGraphGoldenAssertion.Mode.OUTPUT_MATCHES_SCHEMA) {
                 assertionSchemaEnvelope(assertion.expectedValue(), assertionPath + "/expectedValue", diagnostics);
+            } else if (assertion.mode() == VisualGraphGoldenAssertion.Mode.PATH_APPROX_EQUALS) {
+                if (!validJsonPointer(assertion.path())) {
+                    diagnostics.add(VisualDiagnostic.error("visual.golden.assertionInvalidPath",
+                            "Golden case '%s' assertion path '%s' is not a JSON Pointer."
+                                    .formatted(testCase.caseId(), assertion.path()),
+                            assertionPath + "/path"));
+                }
+                approximateExpectation(assertion.expectedValue(), assertionPath + "/expectedValue", diagnostics);
             } else if (assertion.mode() != VisualGraphGoldenAssertion.Mode.OUTPUT_EQUALS
                     && !validJsonPointer(assertion.path())) {
                 diagnostics.add(VisualDiagnostic.error("visual.golden.assertionInvalidPath",
@@ -368,6 +376,7 @@ public class VisualGraphGoldenCaseController {
                     : List.of(assertionFailed(caseId,
                             "path '%s' equals expected value".formatted(assertion.path()),
                             target + "/expectedValue"));
+            case PATH_APPROX_EQUALS -> approximateAssertionDiagnostics(caseId, assertion, actualValue, target);
             case PATH_EXISTS -> actualValue.isMissingNode()
                     ? List.of(assertionFailed(caseId,
                             "path '%s' exists".formatted(assertion.path()),
@@ -380,6 +389,107 @@ public class VisualGraphGoldenCaseController {
                             target + "/path"));
             case OUTPUT_EQUALS, OUTPUT_MATCHES_SCHEMA -> List.of();
         };
+    }
+
+    private List<VisualDiagnostic> approximateAssertionDiagnostics(String caseId,
+                                                                   VisualGraphGoldenAssertion assertion,
+                                                                   JsonNode actualValue,
+                                                                   String target) {
+        List<VisualDiagnostic> diagnostics = new ArrayList<>();
+        Optional<ApproximateExpectation> expectation = approximateExpectation(
+                assertion.expectedValue(), target + "/expectedValue", diagnostics);
+        if (diagnostics.stream().anyMatch(VisualDiagnostic::error) || expectation.isEmpty()) {
+            return diagnostics;
+        }
+        if (actualValue.isMissingNode()) {
+            return List.of(assertionFailed(caseId,
+                    "path '%s' exists and is numeric".formatted(assertion.path()),
+                    target + "/path"));
+        }
+        if (!actualValue.isNumber()) {
+            return List.of(assertionFailed(caseId,
+                    "path '%s' is numeric".formatted(assertion.path()),
+                    target + "/path"));
+        }
+        double actual = actualValue.doubleValue();
+        ApproximateExpectation expected = expectation.get();
+        double allowedDelta = expected.allowedDelta();
+        double actualDelta = Math.abs(actual - expected.value());
+        return actualDelta <= allowedDelta
+                ? List.of()
+                : List.of(assertionFailed(caseId,
+                        "path '%s' approximately equals %s within tolerance %s"
+                                .formatted(assertion.path(), expected.value(), allowedDelta),
+                        target + "/expectedValue"));
+    }
+
+    private Optional<ApproximateExpectation> approximateExpectation(Object value,
+                                                                   String target,
+                                                                   List<VisualDiagnostic> diagnostics) {
+        int initialErrors = (int) diagnostics.stream().filter(VisualDiagnostic::error).count();
+        if (!(value instanceof Map<?, ?> rawMap)) {
+            diagnostics.add(VisualDiagnostic.error("visual.golden.assertionToleranceInvalid",
+                    "Approximate assertion expectedValue must be an object with numeric value and tolerance fields.",
+                    target));
+            return Optional.empty();
+        }
+        Map<String, Object> expected = stringKeyMap(rawMap);
+        Optional<Double> expectedValue = finiteNumber(expected.get("value"));
+        if (expectedValue.isEmpty()) {
+            diagnostics.add(VisualDiagnostic.error("visual.golden.assertionToleranceInvalid",
+                    "Approximate assertion expectedValue.value must be a finite number.",
+                    target + "/value"));
+        }
+        double tolerance = optionalNonNegativeFiniteNumber(expected.get("tolerance"), "tolerance",
+                target + "/tolerance", diagnostics);
+        double relativeTolerance = optionalNonNegativeFiniteNumber(expected.get("relativeTolerance"),
+                "relativeTolerance", target + "/relativeTolerance", diagnostics);
+        if (tolerance <= 0.0 && relativeTolerance <= 0.0) {
+            diagnostics.add(VisualDiagnostic.error("visual.golden.assertionToleranceInvalid",
+                    "Approximate assertion must declare a positive tolerance or relativeTolerance.",
+                    target));
+        }
+        int finalErrors = (int) diagnostics.stream().filter(VisualDiagnostic::error).count();
+        if (finalErrors > initialErrors || expectedValue.isEmpty()) {
+            return Optional.empty();
+        }
+        return Optional.of(new ApproximateExpectation(expectedValue.get(), tolerance, relativeTolerance));
+    }
+
+    private static Optional<Double> finiteNumber(Object value) {
+        if (!(value instanceof Number number)) {
+            return Optional.empty();
+        }
+        double parsed = number.doubleValue();
+        return Double.isFinite(parsed) ? Optional.of(parsed) : Optional.empty();
+    }
+
+    private static double optionalNonNegativeFiniteNumber(Object value,
+                                                         String field,
+                                                         String target,
+                                                         List<VisualDiagnostic> diagnostics) {
+        if (value == null) {
+            return 0.0;
+        }
+        Optional<Double> parsed = finiteNumber(value);
+        if (parsed.isEmpty() || parsed.get() < 0.0) {
+            diagnostics.add(VisualDiagnostic.error("visual.golden.assertionToleranceInvalid",
+                    "Approximate assertion expectedValue.%s must be a non-negative finite number."
+                            .formatted(field),
+                    target));
+            return 0.0;
+        }
+        return parsed.get();
+    }
+
+    private record ApproximateExpectation(
+            double value,
+            double tolerance,
+            double relativeTolerance
+    ) {
+        double allowedDelta() {
+            return Math.max(tolerance, Math.abs(value) * relativeTolerance);
+        }
     }
 
     private List<VisualDiagnostic> schemaAssertionDiagnostics(String caseId,

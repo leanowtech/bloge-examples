@@ -183,6 +183,49 @@ class VisualGraphGoldenCaseControllerTest {
     }
 
     @Test
+    void saveRejectsGoldenCaseWhenApproximateAssertionExpectedValueIsInvalid() {
+        InMemoryVisualGraphPublicationRepository publications = new InMemoryVisualGraphPublicationRepository();
+        VisualGraphPublication publication = publications.create(publication());
+        VisualGraphGoldenCaseController controller = controller(publications, new CapturingRunService(Map.of()));
+        VisualGraphGoldenCase testCase = goldenCaseWithAssertions(publication.publicationId(),
+                List.of(assertion(VisualGraphGoldenAssertion.Mode.PATH_APPROX_EQUALS, "/score",
+                        Map.of("value", "720", "tolerance", 0.1))));
+
+        ResponseEntity<?> response = controller.save(testCase);
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+        assertThat(response.getBody()).isInstanceOf(VisualValidationResult.class);
+        VisualValidationResult validation = (VisualValidationResult) response.getBody();
+        assertThat(validation.valid()).isFalse();
+        assertThat(validation.diagnostics())
+                .anySatisfy(diagnostic -> {
+                    assertThat(diagnostic.code()).isEqualTo("visual.golden.assertionToleranceInvalid");
+                    assertThat(diagnostic.target()).isEqualTo("/assertions/0/expectedValue/value");
+                });
+    }
+
+    @Test
+    void saveRejectsGoldenCaseWhenApproximateAssertionHasNoPositiveTolerance() {
+        InMemoryVisualGraphPublicationRepository publications = new InMemoryVisualGraphPublicationRepository();
+        VisualGraphPublication publication = publications.create(publication());
+        VisualGraphGoldenCaseController controller = controller(publications, new CapturingRunService(Map.of()));
+        VisualGraphGoldenCase testCase = goldenCaseWithAssertions(publication.publicationId(),
+                List.of(approxAssertion("/score", 720, 0.0, 0.0)));
+
+        ResponseEntity<?> response = controller.save(testCase);
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+        assertThat(response.getBody()).isInstanceOf(VisualValidationResult.class);
+        VisualValidationResult validation = (VisualValidationResult) response.getBody();
+        assertThat(validation.valid()).isFalse();
+        assertThat(validation.diagnostics())
+                .anySatisfy(diagnostic -> {
+                    assertThat(diagnostic.code()).isEqualTo("visual.golden.assertionToleranceInvalid");
+                    assertThat(diagnostic.target()).isEqualTo("/assertions/0/expectedValue");
+                });
+    }
+
+    @Test
     void runGoldenCaseRecordsRunAndPassesWhenOutputMatches() {
         InMemoryVisualGraphPublicationRepository publications = new InMemoryVisualGraphPublicationRepository();
         VisualGraphPublication publication = publications.create(publication());
@@ -224,6 +267,82 @@ class VisualGraphGoldenCaseControllerTest {
         assertThat(response.getBody()).isNotNull();
         assertThat(response.getBody().passed()).isTrue();
         assertThat(response.getBody().diagnostics()).isEmpty();
+    }
+
+    @Test
+    void runGoldenCasePassesWhenApproximateAssertionIsWithinTolerance() {
+        InMemoryVisualGraphPublicationRepository publications = new InMemoryVisualGraphPublicationRepository();
+        VisualGraphPublication publication = publications.create(publication());
+        VisualGraphGoldenCaseController controller = controller(publications,
+                new CapturingRunService(Map.of("score", 720.04)));
+        VisualGraphGoldenCase stored = saveCase(controller, goldenCaseWithAssertions(publication.publicationId(),
+                List.of(approxAssertion("/score", 720.0, 0.1, 0.0))));
+
+        ResponseEntity<VisualGraphGoldenCaseRunResult> response = controller.run(stored.caseId());
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat(response.getBody()).isNotNull();
+        assertThat(response.getBody().passed()).isTrue();
+        assertThat(response.getBody().diagnostics()).isEmpty();
+    }
+
+    @Test
+    void runGoldenCasePassesWhenApproximateAssertionIsWithinRelativeTolerance() {
+        InMemoryVisualGraphPublicationRepository publications = new InMemoryVisualGraphPublicationRepository();
+        VisualGraphPublication publication = publications.create(publication());
+        VisualGraphGoldenCaseController controller = controller(publications,
+                new CapturingRunService(Map.of("score", 101.0)));
+        VisualGraphGoldenCase stored = saveCase(controller, goldenCaseWithAssertions(publication.publicationId(),
+                List.of(approxAssertion("/score", 100.0, 0.0, 0.02))));
+
+        ResponseEntity<VisualGraphGoldenCaseRunResult> response = controller.run(stored.caseId());
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat(response.getBody()).isNotNull();
+        assertThat(response.getBody().passed()).isTrue();
+        assertThat(response.getBody().diagnostics()).isEmpty();
+    }
+
+    @Test
+    void runGoldenCaseFailsWhenApproximateAssertionIsOutsideTolerance() {
+        InMemoryVisualGraphPublicationRepository publications = new InMemoryVisualGraphPublicationRepository();
+        VisualGraphPublication publication = publications.create(publication());
+        VisualGraphGoldenCaseController controller = controller(publications,
+                new CapturingRunService(Map.of("score", 720.5)));
+        VisualGraphGoldenCase stored = saveCase(controller, goldenCaseWithAssertions(publication.publicationId(),
+                List.of(approxAssertion("/score", 720.0, 0.1, 0.0))));
+
+        ResponseEntity<VisualGraphGoldenCaseRunResult> response = controller.run(stored.caseId());
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat(response.getBody()).isNotNull();
+        assertThat(response.getBody().passed()).isFalse();
+        assertThat(response.getBody().diagnostics())
+                .extracting(VisualDiagnostic::code)
+                .containsExactly("visual.golden.assertionFailed");
+        assertThat(response.getBody().diagnostics().getFirst().target())
+                .isEqualTo("/assertions/0/expectedValue");
+    }
+
+    @Test
+    void runGoldenCaseFailsWhenApproximateAssertionPathIsNotNumeric() {
+        InMemoryVisualGraphPublicationRepository publications = new InMemoryVisualGraphPublicationRepository();
+        VisualGraphPublication publication = publications.create(publication());
+        VisualGraphGoldenCaseController controller = controller(publications,
+                new CapturingRunService(Map.of("score", "720")));
+        VisualGraphGoldenCase stored = saveCase(controller, goldenCaseWithAssertions(publication.publicationId(),
+                List.of(approxAssertion("/score", 720.0, 0.1, 0.0))));
+
+        ResponseEntity<VisualGraphGoldenCaseRunResult> response = controller.run(stored.caseId());
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat(response.getBody()).isNotNull();
+        assertThat(response.getBody().passed()).isFalse();
+        assertThat(response.getBody().diagnostics())
+                .extracting(VisualDiagnostic::code)
+                .containsExactly("visual.golden.assertionFailed");
+        assertThat(response.getBody().diagnostics().getFirst().target())
+                .isEqualTo("/assertions/0/path");
     }
 
     @Test
@@ -664,6 +783,14 @@ class VisualGraphGoldenCaseControllerTest {
 
     private static VisualGraphGoldenAssertion schemaAssertion(Object schema) {
         return assertion(VisualGraphGoldenAssertion.Mode.OUTPUT_MATCHES_SCHEMA, "", schema);
+    }
+
+    private static VisualGraphGoldenAssertion approxAssertion(String path,
+                                                             double value,
+                                                             double tolerance,
+                                                             double relativeTolerance) {
+        return assertion(VisualGraphGoldenAssertion.Mode.PATH_APPROX_EQUALS, path,
+                Map.of("value", value, "tolerance", tolerance, "relativeTolerance", relativeTolerance));
     }
 
     private static VisualGraphPublication publication() {

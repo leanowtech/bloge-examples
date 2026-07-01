@@ -1304,6 +1304,45 @@ body.dragging-operator * {
   font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
 }
 
+.golden-assertion-list {
+  grid-column: 1 / -1;
+  display: grid;
+  gap: 6px;
+}
+
+.golden-assertion-empty,
+.golden-assertion-row {
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  background: var(--surface-subtle);
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.golden-assertion-empty {
+  padding: 7px 8px;
+}
+
+.golden-assertion-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 8px;
+}
+
+.golden-assertion-row strong,
+.golden-assertion-row small {
+  display: block;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.golden-assertion-row strong {
+  color: var(--text);
+  font-size: 12px;
+}
+
 .draft-bundle-editor {
   min-height: 88px;
 }

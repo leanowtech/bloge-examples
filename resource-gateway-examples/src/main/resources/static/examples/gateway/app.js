@@ -346,6 +346,7 @@ const state = {
   goldenAssertionMode: 'EXACT_OUTPUT',
   goldenAssertionPath: '',
   goldenAssertionValueText: '',
+  goldenAssertions: [],
   runHistory: [],
   runHistoryFilters: {
     sourceKind: '',
@@ -948,6 +949,9 @@ function renderInputForm() {
           <select id="golden-assertion-mode" aria-label="Golden assertion mode"></select>
           <input id="golden-assertion-path" type="text" placeholder="/approved" aria-label="Golden assertion JSON pointer">
           <textarea id="golden-assertion-value" spellcheck="false" aria-label="Golden assertion expected JSON"></textarea>
+          <button id="add-golden-assertion" class="secondary compact" type="button">Add Assertion</button>
+          <button id="clear-golden-assertions" class="secondary compact" type="button">Clear Assertions</button>
+          <div id="golden-assertion-list" class="golden-assertion-list"></div>
         </div>
         <div id="golden-certification-status" class="certification-status" hidden></div>
         <div id="publication-status" class="draft-status" hidden></div>
@@ -3320,6 +3324,7 @@ function renderPublicationControls() {
     state.selectedPublicationId = select.value;
     state.publicationMessage = null;
     state.selectedGoldenCaseId = '';
+    state.goldenAssertions = [];
     await loadGoldenCases({ render: false });
     await loadGoldenCertificationStatus({ render: false });
     renderPublicationControls();
@@ -3380,12 +3385,16 @@ function renderGoldenAssertionControls() {
   const modeSelect = $('golden-assertion-mode');
   const pathInput = $('golden-assertion-path');
   const valueInput = $('golden-assertion-value');
-  if (!modeSelect || !pathInput || !valueInput) return;
+  const addButton = $('add-golden-assertion');
+  const clearButton = $('clear-golden-assertions');
+  const listTarget = $('golden-assertion-list');
+  if (!modeSelect || !pathInput || !valueInput || !addButton || !clearButton || !listTarget) return;
   const modes = [
     ['EXACT_OUTPUT', 'Exact output'],
     ['OUTPUT_EQUALS', 'Output equals'],
     ['OUTPUT_MATCHES_SCHEMA', 'Output matches schema'],
     ['PATH_EQUALS', 'Path equals'],
+    ['PATH_APPROX_EQUALS', 'Path approx equals'],
     ['PATH_EXISTS', 'Path exists'],
     ['PATH_ABSENT', 'Path absent']
   ];
@@ -3400,10 +3409,12 @@ function renderGoldenAssertionControls() {
   };
 
   const pathMode = state.goldenAssertionMode === 'PATH_EQUALS'
+    || state.goldenAssertionMode === 'PATH_APPROX_EQUALS'
     || state.goldenAssertionMode === 'PATH_EXISTS'
     || state.goldenAssertionMode === 'PATH_ABSENT';
   const valueMode = state.goldenAssertionMode === 'OUTPUT_EQUALS'
     || state.goldenAssertionMode === 'OUTPUT_MATCHES_SCHEMA'
+    || state.goldenAssertionMode === 'PATH_APPROX_EQUALS'
     || state.goldenAssertionMode === 'PATH_EQUALS';
   pathInput.value = state.goldenAssertionPath;
   pathInput.disabled = !state.selectedPublicationId || !pathMode;
@@ -3414,10 +3425,104 @@ function renderGoldenAssertionControls() {
   valueInput.disabled = !state.selectedPublicationId || !valueMode;
   valueInput.placeholder = state.goldenAssertionMode === 'OUTPUT_MATCHES_SCHEMA'
     ? 'JSON schema, blank infers from last output'
+    : state.goldenAssertionMode === 'PATH_APPROX_EQUALS'
+    ? '{"value": 720, "tolerance": 0.01}'
     : valueMode ? 'Expected JSON value' : '';
   valueInput.oninput = () => {
     state.goldenAssertionValueText = valueInput.value;
   };
+  const queuedAssertions = Array.isArray(state.goldenAssertions) ? state.goldenAssertions : [];
+  addButton.disabled = !state.selectedPublicationId || state.goldenAssertionMode === 'EXACT_OUTPUT';
+  addButton.onclick = appendGoldenAssertionFromControls;
+  clearButton.disabled = !queuedAssertions.length;
+  clearButton.onclick = clearGoldenAssertions;
+  renderGoldenAssertionList(listTarget, queuedAssertions);
+}
+
+function renderGoldenAssertionList(target, assertions) {
+  const queued = Array.isArray(assertions) ? assertions : [];
+  if (!queued.length) {
+    target.innerHTML = '<div class="golden-assertion-empty">No queued assertions</div>';
+    return;
+  }
+  target.innerHTML = queued.map((assertion, index) => `
+    <div class="golden-assertion-row">
+      <span>
+        <strong>${escapeHtml(index + 1)}. ${escapeHtml(goldenAssertionModeLabel(assertion.mode))}</strong>
+        <small>${escapeHtml(goldenAssertionExpectedSummary(assertion))}</small>
+      </span>
+      <button class="secondary compact danger" type="button" data-remove-golden-assertion="${escapeHtml(index)}">Remove</button>
+    </div>
+  `).join('');
+  target.querySelectorAll('[data-remove-golden-assertion]').forEach((button) => {
+    button.addEventListener('click', () => removeGoldenAssertion(Number(button.dataset.removeGoldenAssertion)));
+  });
+}
+
+function goldenAssertionModeLabel(mode) {
+  switch (mode) {
+    case 'OUTPUT_EQUALS':
+      return 'Output equals';
+    case 'OUTPUT_MATCHES_SCHEMA':
+      return 'Output matches schema';
+    case 'PATH_EQUALS':
+      return 'Path equals';
+    case 'PATH_APPROX_EQUALS':
+      return 'Path approx equals';
+    case 'PATH_EXISTS':
+      return 'Path exists';
+    case 'PATH_ABSENT':
+      return 'Path absent';
+    default:
+      return mode || 'Assertion';
+  }
+}
+
+function goldenAssertionExpectedSummary(assertion) {
+  const path = assertion.path ? assertion.path : 'output';
+  if (assertion.expectedValue === null || assertion.expectedValue === undefined) {
+    return path;
+  }
+  const summary = JSON.stringify(assertion.expectedValue);
+  const compact = summary && summary.length > 96 ? `${summary.slice(0, 93)}...` : summary;
+  return `${path} · ${compact || ''}`;
+}
+
+function appendGoldenAssertionFromControls() {
+  if (!state.lastPayload || !Object.prototype.hasOwnProperty.call(state.lastPayload, 'data')) {
+    setPublicationMessage('Run the publication before adding assertions.', 'error');
+    return;
+  }
+  try {
+    const assertions = currentGoldenAssertionsFromControls(state.lastPayload.data);
+    if (!assertions.length) {
+      state.goldenAssertions = [];
+      setPublicationMessage('Using exact-output golden fallback.', 'info');
+    } else {
+      state.goldenAssertions = [
+        ...(Array.isArray(state.goldenAssertions) ? state.goldenAssertions : []),
+        ...assertions.map(cloneGoldenAssertion)
+      ];
+      setPublicationMessage(`Queued ${state.goldenAssertions.length} assertion(s).`, 'success');
+    }
+  } catch (error) {
+    setPublicationMessage(error.message, 'error');
+  }
+  renderGoldenAssertionControls();
+}
+
+function removeGoldenAssertion(index) {
+  const queued = Array.isArray(state.goldenAssertions) ? [...state.goldenAssertions] : [];
+  if (Number.isInteger(index) && index >= 0 && index < queued.length) {
+    queued.splice(index, 1);
+  }
+  state.goldenAssertions = queued;
+  renderGoldenAssertionControls();
+}
+
+function clearGoldenAssertions() {
+  state.goldenAssertions = [];
+  renderGoldenAssertionControls();
 }
 
 function goldenCaseOptionLabel(testCase) {
@@ -3916,6 +4021,7 @@ async function saveGoldenCaseFromCurrentOutput() {
     }
     const payload = await response.json();
     state.selectedGoldenCaseId = payload.caseId || '';
+    state.goldenAssertions = [];
     setPublicationMessage(`Saved golden ${shortRunId(state.selectedGoldenCaseId)}.`, 'success');
     await loadGoldenCases({ render: false });
     renderGoldenCaseControls();
@@ -3926,16 +4032,31 @@ async function saveGoldenCaseFromCurrentOutput() {
 }
 
 function goldenAssertionsFromControls(actualOutput) {
+  const queued = Array.isArray(state.goldenAssertions) ? state.goldenAssertions : [];
+  if (queued.length) {
+    return queued.map(cloneGoldenAssertion);
+  }
+  return currentGoldenAssertionsFromControls(actualOutput);
+}
+
+function currentGoldenAssertionsFromControls(actualOutput) {
   const mode = state.goldenAssertionMode || 'EXACT_OUTPUT';
   if (mode === 'EXACT_OUTPUT') {
     return [];
   }
-  if ((mode === 'PATH_EQUALS' || mode === 'PATH_EXISTS' || mode === 'PATH_ABSENT')
+  if ((mode === 'PATH_EQUALS' || mode === 'PATH_APPROX_EQUALS'
+      || mode === 'PATH_EXISTS' || mode === 'PATH_ABSENT')
       && (!state.goldenAssertionPath || !state.goldenAssertionPath.startsWith('/'))) {
     throw new Error('Golden assertion path must be a JSON Pointer starting with /.');
   }
   if (mode === 'PATH_EXISTS' || mode === 'PATH_ABSENT') {
     return [{ mode, path: state.goldenAssertionPath || '', expectedValue: null }];
+  }
+  if (mode === 'PATH_APPROX_EQUALS') {
+    const expectedValue = state.goldenAssertionValueText && state.goldenAssertionValueText.trim()
+      ? JSON.parse(state.goldenAssertionValueText)
+      : inferredApproximateAssertionValue(actualOutput, state.goldenAssertionPath);
+    return [{ mode, path: state.goldenAssertionPath || '', expectedValue }];
   }
   if (mode === 'OUTPUT_MATCHES_SCHEMA') {
     const expectedValue = state.goldenAssertionValueText && state.goldenAssertionValueText.trim()
@@ -3955,6 +4076,40 @@ function goldenAssertionsFromControls(actualOutput) {
     path: mode === 'PATH_EQUALS' ? state.goldenAssertionPath : '',
     expectedValue
   }];
+}
+
+function cloneGoldenAssertion(assertion) {
+  return assertion == null ? assertion : JSON.parse(JSON.stringify(assertion));
+}
+
+function inferredApproximateAssertionValue(actualOutput, path) {
+  const actualValue = valueAtJsonPointer(actualOutput, path);
+  if (typeof actualValue !== 'number' || !Number.isFinite(actualValue)) {
+    throw new Error('Golden approximate assertion needs a numeric JSON value or explicit expectedValue.');
+  }
+  return { value: actualValue, tolerance: 0.000001 };
+}
+
+function valueAtJsonPointer(value, pointer) {
+  if (!pointer) {
+    return value;
+  }
+  if (!String(pointer).startsWith('/')) {
+    return undefined;
+  }
+  return String(pointer)
+    .split('/')
+    .slice(1)
+    .reduce((current, rawSegment) => {
+      if (current === undefined || current === null) {
+        return undefined;
+      }
+      const segment = jsonPointerUnescape(rawSegment);
+      if (!Object.prototype.hasOwnProperty.call(Object(current), segment)) {
+        return undefined;
+      }
+      return current[segment];
+    }, value);
 }
 
 async function runSelectedGoldenCase() {

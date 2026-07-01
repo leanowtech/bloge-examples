@@ -5,7 +5,7 @@ package com.leanowtech.bloge.gateway.visual.golden;
  *
  * @param mode assertion mode
  * @param path JSON Pointer path for path-scoped assertions
- * @param expectedValue expected value for equality assertions
+ * @param expectedValue expected value for equality, schema, or approximate numeric assertions
  */
 public record VisualGraphGoldenAssertion(
         Mode mode,
@@ -19,6 +19,7 @@ public record VisualGraphGoldenAssertion(
         OUTPUT_EQUALS,
         OUTPUT_MATCHES_SCHEMA,
         PATH_EQUALS,
+        PATH_APPROX_EQUALS,
         PATH_EXISTS,
         PATH_ABSENT
     }
