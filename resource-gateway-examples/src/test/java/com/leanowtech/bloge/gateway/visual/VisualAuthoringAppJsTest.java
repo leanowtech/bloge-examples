@@ -187,6 +187,8 @@ class VisualAuthoringAppJsTest {
                   'customInputPortForKey',
                   'customOutputPathForKey',
                   'customOutputPortForKey',
+                  'inputPortsForSpec',
+                  'outputPortsForSpec',
                   'inputPortForInputPath',
                   'schemaDeclaresPath',
                   'requiredInputNamesForPort',
@@ -205,9 +207,24 @@ class VisualAuthoringAppJsTest {
                   'configExpressionForField',
                   'removeConfigReferencesToNode',
                   'normalizeDiagnostics',
+                  'renderLibraryProfilePanel',
+                  'libraryProfileLevel',
+                  'libraryProfileFromText',
+                  'operatorLibraryProfile',
+                  'operatorLibraryOperatorProfile',
+                  'emptyOperatorLibraryPortProfile',
+                  'addOperatorLibraryPortProfile',
+                  'operatorLibraryPortProfile',
+                  'operatorLibraryPortFields',
+                  'operatorLibraryConfigFields',
+                  'operatorLibraryFieldProfile',
+                  'operatorLibrarySchemaSummary',
+                  'operatorLibraryFieldLabel',
+                  'schemaDynamicSurfaceCount',
                   'operatorDiagnosticsForSpec',
                   'operatorPaletteDiagnosticBadges',
                   'operatorPaletteSearchValues',
+                  'operatorPaletteSchemaSearchValues',
                   'renderOperatorDiagnosticsPanel',
                   'bindingCandidateSummary',
                   'bindingCandidateSummaryLevel',
@@ -375,7 +392,7 @@ class VisualAuthoringAppJsTest {
                 context.isDslPathSafe = () => true;
                 context.actualIsSchemaPathDslSafe = context.isSchemaPathDslSafe;
                 context.isSchemaPathDslSafe = () => true;
-                context.inputPortsForSpec = (spec) => spec.ports || [];
+                context.inputPortsForSpec = (spec) => spec.inputPorts || spec.ports || [];
                 context.schemaDefaultInputFields = (schema) => schema?.fields || [];
                 context.inputKeyForPortPath = (_spec, port, path) => `${port}.${path}`;
                 context.expressionReferencesNode = (expression, nodeId) =>
@@ -602,6 +619,110 @@ class VisualAuthoringAppJsTest {
                   .join('|');
                 const operatorDiagnosticBadge = context.operatorPaletteDiagnosticBadges(operatorDiagnosticSpec);
                 const operatorDiagnosticPanel = context.renderOperatorDiagnosticsPanel(operatorDiagnosticSpec);
+                const paletteSchemaSearchValues = context.operatorPaletteSearchValues({
+                  inputPorts: [{
+                    name: 'inputs',
+                    schema: {
+                      schema: {
+                        type: 'object',
+                        properties: {
+                          customer: {
+                            type: 'object',
+                            properties: {
+                              id: { type: 'string' }
+                            }
+                          }
+                        }
+                      }
+                    }
+                  }],
+                  outputPorts: [{
+                    name: 'payload',
+                    schema: {
+                      schema: {
+                        type: 'object',
+                        properties: {
+                          score: { type: 'integer' }
+                        }
+                      }
+                    }
+                  }],
+                  configSchema: {
+                    schema: {
+                      type: 'object',
+                      properties: {
+                        threshold: { type: 'number' }
+                      }
+                    }
+                  }
+                });
+                const libraryProfile = context.operatorLibraryProfile({
+                  libraryId: 'risk-profile',
+                  version: '2.1.0',
+                  status: 'deprecated',
+                  operators: [
+                    {
+                      operatorRef: 'risk:score',
+                      display: { name: 'Risk <Score>' },
+                      ports: {
+                        inputs: [{
+                          name: 'inputs',
+                          required: true,
+                          schema: {
+                            schema: {
+                              type: 'object',
+                              properties: {
+                                customer: {
+                                  type: 'object',
+                                  properties: {
+                                    id: { type: 'string' },
+                                    'bad-field': { type: 'string' }
+                                  },
+                                  required: ['id']
+                                },
+                                facts: {
+                                  type: 'object',
+                                  additionalProperties: { type: 'integer' }
+                                }
+                              },
+                              required: ['customer']
+                            }
+                          }
+                        }],
+                        outputs: [{
+                          name: 'payload',
+                          schema: {
+                            schema: {
+                              type: 'object',
+                              properties: {
+                                score: { type: 'integer' },
+                                reason: { type: 'string' }
+                              },
+                              required: ['score']
+                            }
+                          }
+                        }]
+                      },
+                      configSchema: {
+                        schema: {
+                          type: 'object',
+                          properties: { threshold: { type: 'integer' } },
+                          patternProperties: { '^flag_[A-Za-z]+$': { type: 'boolean' } }
+                        }
+                      },
+                      capabilities: { effect: 'READ_EXTERNAL', requiresSecrets: true },
+                      lowering: { mode: 'transform' }
+                    },
+                    {
+                      operatorRef: 'risk:route',
+                      ports: { inputs: [], outputs: [] },
+                      capabilities: { effect: 'PURE', requiresSecrets: false },
+                      lowering: { mode: 'branch' }
+                    }
+                  ]
+                });
+                const libraryProfileHtml = context.renderLibraryProfilePanel(libraryProfile);
+                const invalidLibraryProfile = context.libraryProfileFromText('{broken');
                 const mixedCandidateSummary = context.bindingCandidateSummary([
                   { compatibility: { ok: true, message: '' } },
                   { compatibility: { ok: false, message: 'source type string cannot feed target type integer' } }
@@ -954,6 +1075,31 @@ class VisualAuthoringAppJsTest {
                   ['operator diagnostic search', operatorDiagnosticSearchValues, 'payload|visual.catalog.operatorRefShadowed|OperatorRef shadowed by runtime Java operator.|/operators/risk:eligibility'],
                   ['operator diagnostic badge warning', String(operatorDiagnosticBadge.includes('1 warning diagnostic')), 'true'],
                   ['operator diagnostic panel code', String(operatorDiagnosticPanel.includes('visual.catalog.operatorRefShadowed')), 'true'],
+                  ['palette schema search input field', String(paletteSchemaSearchValues.includes('inputs.customer.id')), 'true'],
+                  ['palette schema search output type', String(paletteSchemaSearchValues.includes('integer')), 'true'],
+                  ['palette schema search config field', String(paletteSchemaSearchValues.includes('config.threshold')), 'true'],
+                  ['palette schema search config type', String(paletteSchemaSearchValues.includes('number')), 'true'],
+                  ['library profile operator count', libraryProfile.operatorCount, 2],
+                  ['library profile input count', libraryProfile.inputPortCount, 1],
+                  ['library profile output count', libraryProfile.outputPortCount, 1],
+                  ['library profile required count', libraryProfile.requiredInputCount, 1],
+                  ['library profile config fields', libraryProfile.configFieldCount, 1],
+                  ['library profile output fields', libraryProfile.outputFieldCount, 2],
+                  ['library profile unsafe fields', libraryProfile.dslUnsafeFieldCount, 1],
+                  ['library profile dynamic schemas', libraryProfile.dynamicSchemaCount, 2],
+                  ['library profile external operators', libraryProfile.externalOperatorCount, 1],
+                  ['library profile secret operators', libraryProfile.secretOperatorCount, 1],
+                  ['library profile operator input field count', libraryProfile.operators[0].inputFields.length, 3],
+                  ['library profile operator output field count', libraryProfile.operators[0].outputFields.length, 2],
+                  ['library profile operator config field count', libraryProfile.operators[0].configFields.length, 1],
+                  ['library profile level', context.libraryProfileLevel(libraryProfile), 'warning'],
+                  ['library profile html escapes score', String(libraryProfileHtml.includes('Risk &lt;Score&gt;')), 'true'],
+                  ['library profile html includes required input field', String(libraryProfileHtml.includes('inputs.customer.id*')), 'true'],
+                  ['library profile html includes unsafe input field', String(libraryProfileHtml.includes('inputs.customer.bad-field !')), 'true'],
+                  ['library profile html includes output field', String(libraryProfileHtml.includes('payload.score*')), 'true'],
+                  ['library profile html includes config field', String(libraryProfileHtml.includes('config threshold')), 'true'],
+                  ['library profile html includes dynamic flag', String(libraryProfileHtml.includes('2 dynamic schema surfaces')), 'true'],
+                  ['library profile invalid json', String(Boolean(invalidLibraryProfile.parseError)), 'true'],
                   ['mixed binding candidate summary', mixedCandidateSummary, '1 compatible · 1 blocked · source type string cannot feed target type integer'],
                   ['mixed binding candidate level', mixedCandidateLevel, 'success'],
                   ['blocked binding candidate summary', blockedCandidateSummary, '0 compatible · 1 blocked · Target path is not accepted.'],

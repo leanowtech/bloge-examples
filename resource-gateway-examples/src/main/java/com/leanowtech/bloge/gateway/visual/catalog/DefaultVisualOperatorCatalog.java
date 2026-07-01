@@ -244,9 +244,7 @@ public class DefaultVisualOperatorCatalog implements VisualOperatorCatalog {
 
     private static boolean matches(OperatorDefinition operator, OperatorCatalogQuery query) {
         if (!query.search().isBlank()) {
-            String haystack = (operator.operatorRef() + " "
-                    + operator.display().name() + " "
-                    + operator.display().description()).toLowerCase(Locale.ROOT);
+            String haystack = operatorSearchText(operator).toLowerCase(Locale.ROOT);
             if (!haystack.contains(query.search().toLowerCase(Locale.ROOT))) {
                 return false;
             }
@@ -264,6 +262,115 @@ public class DefaultVisualOperatorCatalog implements VisualOperatorCatalog {
             return false;
         }
         return true;
+    }
+
+    private static String operatorSearchText(OperatorDefinition operator) {
+        List<String> values = new ArrayList<>();
+        addSearchValue(values, operator.operatorRef());
+        addSearchValue(values, operator.display().name());
+        addSearchValue(values, operator.display().description());
+        addSearchValue(values, operator.source().kind());
+        addSearchValue(values, operator.source().resourceId());
+        addSchemaSearchValues(values, "config", operator.configSchema());
+        for (OperatorDefinition.Port port : operator.ports().inputs()) {
+            addPortSearchValues(values, port);
+        }
+        for (OperatorDefinition.Port port : operator.ports().outputs()) {
+            addPortSearchValues(values, port);
+        }
+        return String.join(" ", values);
+    }
+
+    private static void addPortSearchValues(List<String> values, OperatorDefinition.Port port) {
+        if (port == null) {
+            return;
+        }
+        addSearchValue(values, port.name());
+        addSearchValue(values, port.description());
+        addSchemaSearchValues(values, port.name(), port.schema());
+    }
+
+    private static void addSchemaSearchValues(List<String> values, String qualifier, SchemaEnvelope envelope) {
+        if (envelope == null) {
+            return;
+        }
+        collectSchemaSearchValues(values, qualifier == null ? "" : qualifier, "", envelope.schema());
+    }
+
+    @SuppressWarnings("unchecked")
+    private static void collectSchemaSearchValues(List<String> values,
+                                                  String qualifier,
+                                                  String path,
+                                                  Object schema) {
+        if (!(schema instanceof Map<?, ?> rawMap)) {
+            return;
+        }
+        Map<String, Object> map = (Map<String, Object>) rawMap;
+        if (!path.isBlank()) {
+            addSearchValue(values, path);
+            if (!qualifier.isBlank()) {
+                addSearchValue(values, qualifier + "." + path);
+            }
+        }
+        addTypeSearchValues(values, map.get("type"));
+        addSearchValue(values, map.get("format"));
+        addSearchValue(values, map.get("const"));
+        Object enumValues = map.get("enum");
+        if (enumValues instanceof List<?> valuesList) {
+            valuesList.forEach(value -> addSearchValue(values, value));
+        }
+
+        Object properties = map.get("properties");
+        if (properties instanceof Map<?, ?> propertyMap) {
+            for (Map.Entry<?, ?> entry : propertyMap.entrySet()) {
+                String name = String.valueOf(entry.getKey());
+                String childPath = path.isBlank() ? name : path + "." + name;
+                addSearchValue(values, name);
+                collectSchemaSearchValues(values, qualifier, childPath, entry.getValue());
+            }
+        }
+
+        Object patternProperties = map.get("patternProperties");
+        if (patternProperties instanceof Map<?, ?> patternMap) {
+            for (Map.Entry<?, ?> entry : patternMap.entrySet()) {
+                String name = String.valueOf(entry.getKey());
+                String childPath = path.isBlank() ? name : path + "." + name;
+                addSearchValue(values, name);
+                collectSchemaSearchValues(values, qualifier, childPath, entry.getValue());
+            }
+        }
+
+        Object prefixItems = map.get("prefixItems");
+        if (prefixItems instanceof List<?> items) {
+            for (int i = 0; i < items.size(); i++) {
+                String childPath = path.isBlank() ? String.valueOf(i) : path + "." + i;
+                collectSchemaSearchValues(values, qualifier, childPath, items.get(i));
+            }
+        }
+
+        Object items = map.get("items");
+        if (items instanceof Map<?, ?>) {
+            String childPath = path.isBlank() ? "0" : path + ".0";
+            collectSchemaSearchValues(values, qualifier, childPath, items);
+        }
+    }
+
+    private static void addTypeSearchValues(List<String> values, Object type) {
+        if (type instanceof List<?> list) {
+            list.forEach(item -> addSearchValue(values, item));
+            return;
+        }
+        addSearchValue(values, type);
+    }
+
+    private static void addSearchValue(List<String> values, Object value) {
+        if (value == null) {
+            return;
+        }
+        String text = String.valueOf(value).trim();
+        if (!text.isBlank()) {
+            values.add(text);
+        }
     }
 
     private static List<OperatorDefinition> nativeOperators() {

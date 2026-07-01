@@ -1041,6 +1041,14 @@ class VisualAuthoringBrowserDomTest {
     private void importSampleOperatorLibrary(WebDriverWait wait) {
         click(wait, By.id("import-library"));
         waitForAnyText(wait, By.id("library-status"), "Imported risk-policy", "Replaced risk-policy");
+        waitForText(wait, By.id("library-profile"), "risk-policy");
+        waitForText(wait, By.id("library-profile"), "1 operators");
+        waitForText(wait, By.id("library-profile"), "1 inputs");
+        waitForText(wait, By.id("library-profile"), "1 outputs");
+        waitForText(wait, By.id("library-profile"), "1 required");
+        waitForText(wait, By.id("library-profile"), "0 config fields");
+        waitForText(wait, By.id("library-profile"), "2 output fields");
+        waitForText(wait, By.id("library-profile"), "Eligibility");
     }
 
     private void importOperatorLibrary(WebDriverWait wait, OperatorLibrary library) throws JsonProcessingException {

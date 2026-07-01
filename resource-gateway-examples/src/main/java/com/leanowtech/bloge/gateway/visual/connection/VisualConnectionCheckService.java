@@ -369,6 +369,8 @@ public class VisualConnectionCheckService {
         List<GraphDraft.DraftNode> nodes = new ArrayList<>(draft.nodes());
         GraphDraft.DraftNode target = nodes.get(targetIndex);
         Map<String, GraphDraft.Binding> inputs = new LinkedHashMap<>(target.inputs());
+        inputs.entrySet().removeIf(entry -> !entry.getKey().equals(inputKey)
+                && sameBindingTarget(entry.getKey(), entry.getValue(), inputKey, binding));
         inputs.put(inputKey, binding);
         nodes.set(targetIndex, new GraphDraft.DraftNode(
                 target.id(),
@@ -394,6 +396,22 @@ public class VisualConnectionCheckService {
                 draft.output(),
                 draft.operatorFingerprints()
         );
+    }
+
+    private static boolean sameBindingTarget(String leftKey,
+                                             GraphDraft.Binding left,
+                                             String rightKey,
+                                             GraphDraft.Binding right) {
+        return compatibleTargetPorts(left.targetPort(), right.targetPort())
+                && bindingTargetPath(leftKey, left).equals(bindingTargetPath(rightKey, right));
+    }
+
+    private static boolean compatibleTargetPorts(String left, String right) {
+        return left.equals(right) || left.isBlank() || right.isBlank();
+    }
+
+    private static String bindingTargetPath(String inputKey, GraphDraft.Binding binding) {
+        return binding.targetPath().isBlank() ? inputKey : binding.targetPath();
     }
 
     private static GraphDraft draftWithPreviewBindingAndEdge(GraphDraft draft,

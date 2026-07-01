@@ -857,6 +857,7 @@ function renderInputForm() {
           </label>
         </div>
         <textarea id="operator-library-json" class="library-editor" spellcheck="false"></textarea>
+        <div id="library-profile" class="library-profile"></div>
         <div id="library-status" class="library-status" hidden></div>
         <div id="library-diagnostics" class="visual-diagnostics"></div>
       </div>
@@ -1932,18 +1933,34 @@ function operatorPaletteDiagnosticBadges(spec) {
 
 function operatorPaletteSearchValues(spec) {
   return [
-    ...inputPortsForSpec(spec).flatMap((port) => [
-      port.name,
-      ...schemaFieldDescriptors(port.schema).map((field) => field.path)
-    ]),
-    ...outputPortsForSpec(spec).flatMap((port) => [
-      port.name,
-      ...schemaFieldDescriptors(port.schema).map((field) => field.path)
+    ...inputPortsForSpec(spec).flatMap(operatorPaletteSchemaSearchValues),
+    ...outputPortsForSpec(spec).flatMap(operatorPaletteSchemaSearchValues),
+    ...configFieldDescriptors(spec.configSchema).flatMap((field) => [
+      field.path,
+      field.path ? `config.${field.path}` : 'config',
+      schemaType(field.schema)
     ]),
     ...operatorDiagnosticsForSpec(spec).flatMap((diagnostic) => [
       diagnostic.code,
       diagnostic.message,
       diagnostic.target
+    ])
+  ];
+}
+
+function operatorPaletteSchemaSearchValues(port) {
+  const fields = schemaFieldDescriptors(port?.schema);
+  const rootType = schemaType(port?.schema?.schema);
+  if (!fields.length) {
+    return [port?.name, rootType];
+  }
+  return [
+    port?.name,
+    rootType,
+    ...fields.flatMap((field) => [
+      field.path,
+      port?.name && field.path ? `${port.name}.${field.path}` : field.path,
+      schemaType(field.schema)
     ])
   ];
 }
@@ -1994,6 +2011,7 @@ function renderOperatorLibraryControls() {
   editor.oninput = () => {
     state.libraryImportText = editor.value;
     state.libraryImportConfirmationKey = '';
+    renderLibraryProfile();
   };
 
   const importButton = $('import-library');
@@ -2024,6 +2042,7 @@ function renderOperatorLibraryControls() {
     deleteButton.onclick = deleteSelectedOperatorLibrary;
   }
   renderLibraryStatus();
+  renderLibraryProfile();
 }
 
 function renderLibraryStatus() {
@@ -2037,6 +2056,259 @@ function renderLibraryStatus() {
   target.textContent = message;
   target.className = `library-status ${state.libraryMessage?.level || 'info'}`;
   renderDiagnosticList($('library-diagnostics'), normalizeDiagnostics(state.libraryMessage?.diagnostics));
+}
+
+function renderLibraryProfile() {
+  const target = $('library-profile');
+  if (!target) return;
+  target.hidden = false;
+  target.innerHTML = renderLibraryProfilePanel(libraryProfileFromText(state.libraryImportText || '{}'));
+}
+
+function renderLibraryProfilePanel(profile) {
+  if (profile.parseError) {
+    return `
+      <div class="library-profile-head error">
+        <strong>Invalid JSON</strong>
+        <span>${escapeHtml(profile.parseError)}</span>
+      </div>
+    `;
+  }
+  const warningChips = [];
+  if (profile.dslUnsafeFieldCount) {
+    warningChips.push(`${profile.dslUnsafeFieldCount} DSL-unsafe fields`);
+  }
+  if (profile.dynamicSchemaCount) {
+    warningChips.push(`${profile.dynamicSchemaCount} dynamic schema surfaces`);
+  }
+  if (profile.externalOperatorCount) {
+    warningChips.push(`${profile.externalOperatorCount} external effects`);
+  }
+  if (profile.secretOperatorCount) {
+    warningChips.push(`${profile.secretOperatorCount} secret-bound operators`);
+  }
+  const warnings = warningChips.length
+    ? `<div class="library-profile-flags">${warningChips
+      .map((item) => `<span>${escapeHtml(item)}</span>`)
+      .join('')}</div>`
+    : '';
+  const rows = profile.operators.slice(0, 5).map((operator) => `
+    <div class="library-profile-row">
+      <strong>${escapeHtml(operator.label)}</strong>
+      <span>${escapeHtml(operator.loweringMode)} · ${operator.inputPortCount} in · ${operator.outputPortCount} out · ${operator.requiredInputCount} required</span>
+      <small>in ${escapeHtml(operatorLibrarySchemaSummary(operator.inputFields, 'no fields'))}</small>
+      <small>out ${escapeHtml(operatorLibrarySchemaSummary(operator.outputFields, 'no fields'))}</small>
+      <small>config ${escapeHtml(operatorLibrarySchemaSummary(operator.configFields, 'none'))}</small>
+    </div>
+  `).join('');
+  const remaining = profile.operators.length > 5
+    ? `<div class="library-profile-more">+${profile.operators.length - 5} more operators</div>`
+    : '';
+  return `
+    <div class="library-profile-head ${escapeHtml(libraryProfileLevel(profile))}">
+      <strong>${escapeHtml(profile.libraryId || 'Unidentified library')}</strong>
+      <span>${escapeHtml(profile.status)} · v${escapeHtml(profile.version || '')}</span>
+    </div>
+    <div class="library-profile-stats">
+      <span><strong>${profile.operatorCount}</strong> operators</span>
+      <span><strong>${profile.inputPortCount}</strong> inputs</span>
+      <span><strong>${profile.outputPortCount}</strong> outputs</span>
+      <span><strong>${profile.requiredInputCount}</strong> required</span>
+      <span><strong>${profile.configFieldCount}</strong> config fields</span>
+      <span><strong>${profile.outputFieldCount}</strong> output fields</span>
+    </div>
+    ${warnings}
+    <div class="library-profile-rows">${rows}${remaining}</div>
+  `;
+}
+
+function libraryProfileLevel(profile) {
+  if (profile.dslUnsafeFieldCount || !profile.operatorCount) {
+    return 'warning';
+  }
+  if (profile.externalOperatorCount || profile.secretOperatorCount) {
+    return 'info';
+  }
+  return 'success';
+}
+
+function libraryProfileFromText(text) {
+  try {
+    return operatorLibraryProfile(JSON.parse(text || '{}'));
+  } catch (error) {
+    return {
+      parseError: error.message,
+      operators: []
+    };
+  }
+}
+
+function operatorLibraryProfile(library) {
+  const operators = Array.isArray(library?.operators)
+    ? library.operators.filter((operator) => operator && typeof operator === 'object')
+    : [];
+  const operatorProfiles = operators.map(operatorLibraryOperatorProfile);
+  const totals = operatorProfiles.reduce((accumulator, operator) => {
+    accumulator.inputPortCount += operator.inputPortCount;
+    accumulator.outputPortCount += operator.outputPortCount;
+    accumulator.requiredInputCount += operator.requiredInputCount;
+    accumulator.configFieldCount += operator.configFieldCount;
+    accumulator.outputFieldCount += operator.outputFieldCount;
+    accumulator.dslUnsafeFieldCount += operator.dslUnsafeFieldCount;
+    accumulator.dynamicSchemaCount += operator.dynamicSchemaCount;
+    accumulator.externalOperatorCount += operator.external ? 1 : 0;
+    accumulator.secretOperatorCount += operator.requiresSecrets ? 1 : 0;
+    return accumulator;
+  }, {
+    inputPortCount: 0,
+    outputPortCount: 0,
+    requiredInputCount: 0,
+    configFieldCount: 0,
+    outputFieldCount: 0,
+    dslUnsafeFieldCount: 0,
+    dynamicSchemaCount: 0,
+    externalOperatorCount: 0,
+    secretOperatorCount: 0
+  });
+  return {
+    libraryId: String(library?.libraryId || ''),
+    version: String(library?.version || '1.0.0'),
+    status: String(library?.status || 'ACTIVE').toUpperCase(),
+    operatorCount: operatorProfiles.length,
+    operators: operatorProfiles,
+    ...totals
+  };
+}
+
+function operatorLibraryOperatorProfile(operator) {
+  const inputPorts = Array.isArray(operator?.ports?.inputs) ? operator.ports.inputs.filter(Boolean) : [];
+  const outputPorts = Array.isArray(operator?.ports?.outputs) ? operator.ports.outputs.filter(Boolean) : [];
+  const inputStats = inputPorts.map(operatorLibraryPortProfile)
+    .reduce(addOperatorLibraryPortProfile, emptyOperatorLibraryPortProfile());
+  const outputStats = outputPorts.map(operatorLibraryPortProfile)
+    .reduce(addOperatorLibraryPortProfile, emptyOperatorLibraryPortProfile());
+  const configFields = configFieldDescriptors(operator?.configSchema);
+  const configUnsafe = configFields.filter((field) => !field.dslPathSafe).length;
+  const effect = String(operator?.capabilities?.effect || 'PURE').trim().toUpperCase();
+  const inputFields = operatorLibraryPortFields(inputPorts);
+  const outputFields = operatorLibraryPortFields(outputPorts);
+  const configFieldProfiles = operatorLibraryConfigFields(configFields);
+  return {
+    label: operator?.display?.name || operator?.operatorRef || 'operator',
+    operatorRef: String(operator?.operatorRef || ''),
+    loweringMode: String(operator?.lowering?.mode || 'native').trim().toLowerCase(),
+    inputPortCount: inputPorts.length,
+    outputPortCount: outputPorts.length,
+    requiredInputCount: inputStats.requiredCount,
+    configFieldCount: configFields.length,
+    outputFieldCount: outputStats.fieldCount,
+    dslUnsafeFieldCount: inputStats.dslUnsafeCount + outputStats.dslUnsafeCount + configUnsafe,
+    dynamicSchemaCount: inputStats.dynamicSchemaCount + outputStats.dynamicSchemaCount
+      + schemaDynamicSurfaceCount(operator?.configSchema?.schema),
+    external: effect !== 'PURE',
+    requiresSecrets: Boolean(operator?.capabilities?.requiresSecrets),
+    inputFields,
+    outputFields,
+    configFields: configFieldProfiles
+  };
+}
+
+function emptyOperatorLibraryPortProfile() {
+  return {
+    fieldCount: 0,
+    requiredCount: 0,
+    dslUnsafeCount: 0,
+    dynamicSchemaCount: 0
+  };
+}
+
+function addOperatorLibraryPortProfile(left, right) {
+  return {
+    fieldCount: left.fieldCount + right.fieldCount,
+    requiredCount: left.requiredCount + right.requiredCount,
+    dslUnsafeCount: left.dslUnsafeCount + right.dslUnsafeCount,
+    dynamicSchemaCount: left.dynamicSchemaCount + right.dynamicSchemaCount
+  };
+}
+
+function operatorLibraryPortProfile(port) {
+  const fields = schemaFieldDescriptors(port?.schema);
+  const requiredFields = fields.filter((field) => field.required);
+  const requiredCount = requiredFields.length || (port?.required ? 1 : 0);
+  return {
+    fieldCount: fields.length || (port?.schema ? 1 : 0),
+    requiredCount,
+    dslUnsafeCount: fields.filter((field) => !field.dslPathSafe).length,
+    dynamicSchemaCount: schemaDynamicSurfaceCount(port?.schema?.schema)
+  };
+}
+
+function operatorLibraryPortFields(ports) {
+  return ports.flatMap((port) => {
+    const fields = schemaFieldDescriptors(port?.schema);
+    const leaves = fields.filter((field) => !hasSchemaProperties(field.schema));
+    const preferred = leaves.length ? leaves : fields;
+    if (!preferred.length && port?.schema) {
+      return [operatorLibraryFieldProfile(port?.name || '', { path: '', required: Boolean(port?.required) })];
+    }
+    return preferred.map((field) => operatorLibraryFieldProfile(port?.name || '', field));
+  });
+}
+
+function operatorLibraryConfigFields(fields) {
+  return fields.map((field) => operatorLibraryFieldProfile('', field));
+}
+
+function operatorLibraryFieldProfile(port, field) {
+  return {
+    port: String(port || ''),
+    path: String(field?.path || ''),
+    required: Boolean(field?.required),
+    dslPathSafe: field?.dslPathSafe !== false
+  };
+}
+
+function operatorLibrarySchemaSummary(fields, emptyText) {
+  const normalized = Array.isArray(fields) ? fields : [];
+  if (!normalized.length) {
+    return emptyText;
+  }
+  const visible = normalized.slice(0, 4).map(operatorLibraryFieldLabel);
+  const remaining = normalized.length - visible.length;
+  return remaining > 0 ? `${visible.join(', ')} +${remaining} more` : visible.join(', ');
+}
+
+function operatorLibraryFieldLabel(field) {
+  const path = field?.path || '(root)';
+  const prefix = field?.port ? `${field.port}.` : '';
+  const required = field?.required ? '*' : '';
+  const unsafe = field?.dslPathSafe === false ? ' !' : '';
+  return `${prefix}${path}${required}${unsafe}`;
+}
+
+function schemaDynamicSurfaceCount(schema) {
+  if (!schema || typeof schema !== 'object' || Array.isArray(schema)) {
+    return 0;
+  }
+  let count = 0;
+  const residual = residualPropertiesPolicy(schema);
+  if (residual && typeof residual === 'object') {
+    count += 1;
+  }
+  count += Object.keys(schemaPatternProperties(schema) || {}).length;
+  const properties = schema.properties && typeof schema.properties === 'object' && !Array.isArray(schema.properties)
+    ? Object.values(schema.properties)
+    : [];
+  for (const child of properties) {
+    count += schemaDynamicSurfaceCount(child);
+  }
+  for (const child of Array.isArray(schema.prefixItems) ? schema.prefixItems : []) {
+    count += schemaDynamicSurfaceCount(child);
+  }
+  if (schema.items && typeof schema.items === 'object' && !Array.isArray(schema.items)) {
+    count += schemaDynamicSurfaceCount(schema.items);
+  }
+  return count;
 }
 
 function setLibraryMessage(text, level = 'info', diagnostics = []) {

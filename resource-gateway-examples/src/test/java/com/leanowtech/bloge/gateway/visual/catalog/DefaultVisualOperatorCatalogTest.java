@@ -84,6 +84,46 @@ class DefaultVisualOperatorCatalogTest {
     }
 
     @Test
+    void catalogSearchMatchesSchemaFieldsAndTypes() {
+        OperatorDefinition base = VisualCatalogTestSupport.eligibilityOperator("integer");
+        OperatorDefinition configured = new OperatorDefinition(
+                base.schemaVersion(),
+                base.operatorRef(),
+                base.operatorVersion(),
+                base.display(),
+                base.source(),
+                base.ports(),
+                SchemaEnvelope.object(Map.of("threshold", Map.of("type", "number")), List.of()),
+                base.capabilities(),
+                base.policy(),
+                base.lowering(),
+                base.diagnostics()
+        );
+        DefaultVisualOperatorCatalog catalog = VisualCatalogTestSupport.catalogWithLibrary(new OperatorLibrary(
+                "bloge.visualOperatorLibrary.v1",
+                "risk-policy",
+                "Risk policy operators",
+                "1.0.0",
+                "risk-team",
+                "ACTIVE",
+                List.of(configured)
+        ));
+
+        assertThat(catalog.list(search("inputs.score")))
+                .extracting(OperatorDefinition::operatorRef)
+                .contains("risk:eligibility");
+        assertThat(catalog.list(search("output.eligible")))
+                .extracting(OperatorDefinition::operatorRef)
+                .contains("risk:eligibility");
+        assertThat(catalog.list(search("config.threshold")))
+                .extracting(OperatorDefinition::operatorRef)
+                .contains("risk:eligibility");
+        assertThat(catalog.list(search("integer")))
+                .extracting(OperatorDefinition::operatorRef)
+                .contains("risk:eligibility");
+    }
+
+    @Test
     void skipsNullOperatorsFromStoredLibraryDefinitions() {
         InMemoryOperatorLibraryRegistry libraries = new InMemoryOperatorLibraryRegistry();
         libraries.upsert(new OperatorLibrary(
@@ -256,6 +296,10 @@ class DefaultVisualOperatorCatalogTest {
         assertThat(catalog.find("risk:eligibility"))
                 .map(operator -> operator.source().kind())
                 .contains("java-operator");
+    }
+
+    private static OperatorCatalogQuery search(String value) {
+        return new OperatorCatalogQuery(value, List.of(), false, false);
     }
 
     @Test

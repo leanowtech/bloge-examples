@@ -40,6 +40,27 @@ class VisualConnectionCheckServiceTest {
     }
 
     @Test
+    void acceptsConnectionPreviewThatReplacesExistingInputBinding() {
+        VisualConnectionCheckService service = connectionService(VisualCatalogTestSupport
+                .catalogWithLoanApplicantResourceAndLibrary(VisualCatalogTestSupport.eligibilityLibrary("integer")));
+        GraphDraft draft = resourceEligibilityDraftWithEligibilityInputs(
+                Map.of("score", GraphDraft.Binding.contextPath("score", "inputs", "score")),
+                List.of()
+        );
+
+        VisualConnectionCheckResult result = service.check(new VisualConnectionCheckRequest(
+                draft,
+                new GraphDraft.Endpoint("fetchApplicant", "payload", "score"),
+                new GraphDraft.Endpoint("eligibility", "inputs", "score"),
+                "data"
+        ));
+
+        assertThat(result.accepted()).isTrue();
+        assertThat(result.bindingKey()).isEqualTo("score");
+        assertThat(result.diagnostics()).isEmpty();
+    }
+
+    @Test
     void rejectsDuplicateDataConnectionPreview() {
         VisualConnectionCheckService service = connectionService(VisualCatalogTestSupport
                 .catalogWithLoanApplicantResourceAndLibrary(VisualCatalogTestSupport.eligibilityLibrary("integer")));
@@ -966,6 +987,19 @@ class VisualConnectionCheckServiceTest {
     }
 
     private static GraphDraft resourceEligibilityDraft(SchemaEnvelope inputSchema, List<GraphDraft.DraftEdge> edges) {
+        return resourceEligibilityDraftWithEligibilityInputs(inputSchema, Map.of(), edges);
+    }
+
+    private static GraphDraft resourceEligibilityDraftWithEligibilityInputs(
+            Map<String, GraphDraft.Binding> eligibilityInputs,
+            List<GraphDraft.DraftEdge> edges) {
+        return resourceEligibilityDraftWithEligibilityInputs(graphInputSchema(), eligibilityInputs, edges);
+    }
+
+    private static GraphDraft resourceEligibilityDraftWithEligibilityInputs(
+            SchemaEnvelope inputSchema,
+            Map<String, GraphDraft.Binding> eligibilityInputs,
+            List<GraphDraft.DraftEdge> edges) {
         return new GraphDraft(
                 "",
                 "",
@@ -989,7 +1023,7 @@ class VisualConnectionCheckServiceTest {
                                 "eligibility",
                                 "risk:eligibility",
                                 "",
-                                Map.of(),
+                                eligibilityInputs,
                                 Map.of(),
                                 null
                         )
