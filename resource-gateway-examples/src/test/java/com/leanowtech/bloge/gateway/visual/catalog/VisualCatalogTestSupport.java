@@ -514,6 +514,74 @@ public final class VisualCatalogTestSupport {
         );
     }
 
+    public static OperatorLibrary unsafePathLibrary() {
+        Map<String, Object> sourceOutputProperties = new LinkedHashMap<>();
+        sourceOutputProperties.put("bad-field", Map.of("type", "integer"));
+        sourceOutputProperties.put("safeScore", Map.of("type", "integer"));
+
+        OperatorDefinition source = new OperatorDefinition(
+                "bloge.visualOperator.v1",
+                "risk:unsafeFacts",
+                "1.0.0",
+                new OperatorDefinition.Display("Unsafe facts",
+                        "Produces output paths used to verify DSL-safe draft path validation.",
+                        List.of("risk", "facts")),
+                new OperatorDefinition.Source("user-library", "", "", "", true),
+                new OperatorDefinition.Ports(
+                        List.of(),
+                        List.of(new OperatorDefinition.Port("facts",
+                                SchemaEnvelope.object(sourceOutputProperties, List.of()),
+                                true,
+                                "Unsafe path facts."))
+                ),
+                SchemaEnvelope.opaque(),
+                OperatorDefinition.Capabilities.pure(),
+                new OperatorDefinition.Lowering("native", "riskUnsafeFacts", Map.of()),
+                List.of()
+        );
+
+        Map<String, Object> sinkInputProperties = new LinkedHashMap<>();
+        sinkInputProperties.put("score", Map.of("type", "integer"));
+        sinkInputProperties.put("bad-target", Map.of("type", "integer"));
+
+        OperatorDefinition sink = new OperatorDefinition(
+                "bloge.visualOperator.v1",
+                "risk:scoreSink",
+                "1.0.0",
+                new OperatorDefinition.Display("Score sink",
+                        "Consumes score paths used to verify DSL-safe draft path validation.",
+                        List.of("risk", "facts")),
+                new OperatorDefinition.Source("user-library", "", "", "", true),
+                new OperatorDefinition.Ports(
+                        List.of(new OperatorDefinition.Port("inputs",
+                                SchemaEnvelope.object(sinkInputProperties, List.of()),
+                                true,
+                                "Score inputs.")),
+                        List.of(new OperatorDefinition.Port("output",
+                                SchemaEnvelope.object(Map.of("acceptedScore", Map.of("type", "integer")),
+                                        List.of()),
+                                true,
+                                "Accepted score."))
+                ),
+                SchemaEnvelope.opaque(),
+                OperatorDefinition.Capabilities.pure(),
+                new OperatorDefinition.Lowering("transform", "transform", Map.of(
+                        "assignments", Map.of("acceptedScore", "{{input.score}}")
+                )),
+                List.of()
+        );
+
+        return new OperatorLibrary(
+                "bloge.visualOperatorLibrary.v1",
+                "risk-unsafe-paths",
+                "Unsafe path operators",
+                "1.0.0",
+                "risk-team",
+                "ACTIVE",
+                List.of(source, sink)
+        );
+    }
+
     public static OperatorDefinition customerFactsOperator() {
         Map<String, Object> customerProperties = new LinkedHashMap<>();
         customerProperties.put("id", Map.of("type", "string"));

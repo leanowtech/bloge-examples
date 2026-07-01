@@ -380,6 +380,7 @@ public class GraphDraftValidator {
                     "/output/path"));
             return;
         }
+        validateOutputDslPathSegments(outputPort.get().schema(), outputReference.path(), "/output/path", diagnostics);
         if (propertyAtPath(outputPort.get().schema(), outputReference.path()) == null) {
             diagnostics.add(VisualDiagnostic.error("visual.output.unknownPath",
                     "Output node '%s' port '%s' does not expose path '%s'."
@@ -726,6 +727,7 @@ public class GraphDraftValidator {
                                         Map<String, OperatorDefinition> operatorsByNodeId,
                                         String targetPath,
                                         List<VisualDiagnostic> diagnostics) {
+        validateBindingTargetDslPathSegments(binding, inputName, targetOperator, targetPath, diagnostics);
         if ("objectTemplate".equals(binding.kind())) {
             validateObjectTemplateFieldNames(binding.fields(), targetPath + "/fields",
                     "visual.binding.objectTemplateField.invalid", diagnostics);
@@ -1483,6 +1485,8 @@ public class GraphDraftValidator {
                         edgePath + "/target/port"));
                 continue;
             }
+            validateEdgeDslPathSegments(sourcePort.get().schema(), edge.source().path(), edgePath + "/source/path",
+                    diagnostics);
             Map<String, Object> sourceProperty = propertyAtPath(sourcePort.get().schema(), edge.source().path());
             if (sourceProperty == null) {
                 diagnostics.add(VisualDiagnostic.error("visual.edge.unknownSourcePath",
@@ -1491,6 +1495,8 @@ public class GraphDraftValidator {
                         edgePath + "/source/path"));
                 continue;
             }
+            validateEdgeDslPathSegments(targetPort.get().schema(), edge.target().path(), edgePath + "/target/path",
+                    diagnostics);
             Map<String, Object> targetProperty = propertyAtPath(targetPort.get().schema(), edge.target().path());
             if (targetProperty == null) {
                 diagnostics.add(VisualDiagnostic.error("visual.edge.unknownTargetPath",
@@ -2469,6 +2475,43 @@ public class GraphDraftValidator {
                                                 String path,
                                                 String diagnosticPath,
                                                 List<VisualDiagnostic> diagnostics) {
+        validateDslPathSegments(schema, path, diagnosticPath, "visual.binding.pathSegment.invalid",
+                "Binding path segment", diagnostics);
+    }
+
+    private static void validateBindingTargetDslPathSegments(GraphDraft.Binding binding,
+                                                             String inputName,
+                                                             OperatorDefinition targetOperator,
+                                                             String diagnosticPath,
+                                                             List<VisualDiagnostic> diagnostics) {
+        Optional<OperatorDefinition.Port> targetPort = resolveInputPort(targetOperator, binding.targetPort(),
+                inputName);
+        targetPort.ifPresent(port -> validateDslPathSegments(port.schema(), inputName, diagnosticPath,
+                "visual.binding.targetPathSegment.invalid", "Binding target path segment", diagnostics));
+    }
+
+    private static void validateEdgeDslPathSegments(SchemaEnvelope schema,
+                                                    String path,
+                                                    String diagnosticPath,
+                                                    List<VisualDiagnostic> diagnostics) {
+        validateDslPathSegments(schema, path, diagnosticPath, "visual.edge.pathSegment.invalid",
+                "Edge path segment", diagnostics);
+    }
+
+    private static void validateOutputDslPathSegments(SchemaEnvelope schema,
+                                                      String path,
+                                                      String diagnosticPath,
+                                                      List<VisualDiagnostic> diagnostics) {
+        validateDslPathSegments(schema, path, diagnosticPath, "visual.output.pathSegment.invalid",
+                "Output path segment", diagnostics);
+    }
+
+    private static void validateDslPathSegments(SchemaEnvelope schema,
+                                                String path,
+                                                String diagnosticPath,
+                                                String code,
+                                                String label,
+                                                List<VisualDiagnostic> diagnostics) {
         if (path == null || path.isBlank()) {
             return;
         }
@@ -2490,9 +2533,9 @@ public class GraphDraftValidator {
                 currentSchema = childSchemaForSegment(currentSchema, segment);
                 continue;
             }
-            diagnostics.add(VisualDiagnostic.error("visual.binding.pathSegment.invalid",
-                    "Binding path segment '%s' in '%s' cannot be rendered as a BLOGE DSL path segment."
-                            .formatted(segment, path),
+            diagnostics.add(VisualDiagnostic.error(code,
+                    "%s '%s' in '%s' cannot be rendered as a BLOGE DSL path segment."
+                            .formatted(label, segment, path),
                     diagnosticPath));
         }
     }

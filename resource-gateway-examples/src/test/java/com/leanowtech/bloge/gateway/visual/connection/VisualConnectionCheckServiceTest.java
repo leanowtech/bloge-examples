@@ -87,6 +87,58 @@ class VisualConnectionCheckServiceTest {
     }
 
     @Test
+    void rejectsConnectionPreviewWhenSourcePathCannotRenderAsDslPathSegment() {
+        VisualConnectionCheckService service = connectionService(VisualCatalogTestSupport
+                .catalogWithLibrary(VisualCatalogTestSupport.unsafePathLibrary()));
+        GraphDraft draft = unsafePathDraft();
+
+        VisualConnectionCheckResult result = service.check(new VisualConnectionCheckRequest(
+                draft,
+                new GraphDraft.Endpoint("unsafeFacts", "facts", "bad-field"),
+                new GraphDraft.Endpoint("scoreSink", "inputs", "score"),
+                "data"
+        ));
+
+        assertThat(result.accepted()).isFalse();
+        assertThat(result.bindingKey()).isEqualTo("score");
+        assertThat(result.diagnostics())
+                .anySatisfy(diagnostic -> {
+                    assertThat(diagnostic.code()).isEqualTo("visual.binding.pathSegment.invalid");
+                    assertThat(diagnostic.target()).isEqualTo("/nodes/1/inputs/score/path");
+                })
+                .anySatisfy(diagnostic -> {
+                    assertThat(diagnostic.code()).isEqualTo("visual.edge.pathSegment.invalid");
+                    assertThat(diagnostic.target()).isEqualTo("/edges/0/source/path");
+                });
+    }
+
+    @Test
+    void rejectsConnectionPreviewWhenTargetPathCannotRenderAsDslPathSegment() {
+        VisualConnectionCheckService service = connectionService(VisualCatalogTestSupport
+                .catalogWithLibrary(VisualCatalogTestSupport.unsafePathLibrary()));
+        GraphDraft draft = unsafePathDraft();
+
+        VisualConnectionCheckResult result = service.check(new VisualConnectionCheckRequest(
+                draft,
+                new GraphDraft.Endpoint("unsafeFacts", "facts", "safeScore"),
+                new GraphDraft.Endpoint("scoreSink", "inputs", "bad-target"),
+                "data"
+        ));
+
+        assertThat(result.accepted()).isFalse();
+        assertThat(result.bindingKey()).isEqualTo("bad-target");
+        assertThat(result.diagnostics())
+                .anySatisfy(diagnostic -> {
+                    assertThat(diagnostic.code()).isEqualTo("visual.binding.targetPathSegment.invalid");
+                    assertThat(diagnostic.target()).isEqualTo("/nodes/1/inputs/bad-target");
+                })
+                .anySatisfy(diagnostic -> {
+                    assertThat(diagnostic.code()).isEqualTo("visual.edge.pathSegment.invalid");
+                    assertThat(diagnostic.target()).isEqualTo("/edges/0/target/path");
+                });
+    }
+
+    @Test
     void rejectsUnsupportedEdgeKindPreview() {
         VisualConnectionCheckService service = connectionService(VisualCatalogTestSupport
                 .catalogWithLoanApplicantResourceAndLibrary(VisualCatalogTestSupport.eligibilityLibrary("integer")));
@@ -1229,6 +1281,41 @@ class VisualConnectionCheckServiceTest {
                 List.of(),
                 Map.of(),
                 new GraphDraft.OutputSelection("riskScoreSink", "")
+        );
+    }
+
+    private static GraphDraft unsafePathDraft() {
+        return new GraphDraft(
+                "",
+                "",
+                0,
+                "unsafePathConnectionCheck",
+                "",
+                "",
+                "",
+                "",
+                null,
+                List.of(
+                        new GraphDraft.DraftNode(
+                                "unsafeFacts",
+                                "risk:unsafeFacts",
+                                "",
+                                Map.of(),
+                                Map.of(),
+                                null
+                        ),
+                        new GraphDraft.DraftNode(
+                                "scoreSink",
+                                "risk:scoreSink",
+                                "",
+                                Map.of(),
+                                Map.of(),
+                                null
+                        )
+                ),
+                List.of(),
+                Map.of(),
+                new GraphDraft.OutputSelection("scoreSink", "")
         );
     }
 

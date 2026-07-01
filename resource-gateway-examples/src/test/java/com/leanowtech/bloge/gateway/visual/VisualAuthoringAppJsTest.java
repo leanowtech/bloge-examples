@@ -157,6 +157,21 @@ class VisualAuthoringAppJsTest {
                   'validateSchemaAdditionalProperties',
                   'validateSchemaUnevaluatedProperties',
                   'validateSchemaObjectPatternProperties',
+                  'schemaFieldDescriptors',
+                  'dslSafeSchemaFieldDescriptors',
+                  'schemaFieldsFromSchema',
+                  'arraySchemaFieldDescriptors',
+                  'isSchemaPathDslSafe',
+                  'childSchemaForPathSegment',
+                  'dynamicInputFieldDescriptors',
+                  'dynamicOutputFieldDescriptors',
+                  'customInputPathForKey',
+                  'customInputPortForKey',
+                  'customOutputPathForKey',
+                  'customOutputPortForKey',
+                  'inputPortForInputPath',
+                  'schemaDeclaresPath',
+                  'requiredInputNamesForPort',
                   'defaultInputExpressionsForOperator',
                   'defaultCustomInputStateForOperator',
                   'defaultResourceParamInputs',
@@ -177,6 +192,7 @@ class VisualAuthoringAppJsTest {
                 context.schemaAtPath = (_schema, path) => ({ type: 'path', path });
                 context.schemaType = (schema) => schema?.type || '';
                 context.isDslPathSafe = () => true;
+                context.actualIsSchemaPathDslSafe = context.isSchemaPathDslSafe;
                 context.isSchemaPathDslSafe = () => true;
                 context.inputPortsForSpec = (spec) => spec.ports || [];
                 context.schemaDefaultInputFields = (schema) => schema?.fields || [];
@@ -340,6 +356,58 @@ class VisualAuthoringAppJsTest {
                   .map((diagnostic) => diagnostic.target)
                   .sort()
                   .join('|');
+                context.isSchemaPathDslSafe = context.actualIsSchemaPathDslSafe;
+                const unsafePathSchema = {
+                  schema: {
+                    type: 'object',
+                    properties: {
+                      safeScore: { type: 'integer' },
+                      'bad-field': { type: 'integer' },
+                      items: {
+                        type: 'array',
+                        items: {
+                          type: 'object',
+                          properties: {
+                            safeNested: { type: 'string' },
+                            'bad-nested': { type: 'string' }
+                          }
+                        }
+                      }
+                    }
+                  }
+                };
+                const dslSafeStaticPaths = context.dslSafeSchemaFieldDescriptors(unsafePathSchema)
+                  .map((field) => field.path)
+                  .sort()
+                  .join('|');
+                const dynamicInputPaths = context.dynamicInputFieldDescriptors({
+                  type: 'customOperator',
+                  customInputPorts: {
+                    safeScore: 'inputs',
+                    'bad-field': 'inputs'
+                  },
+                  customInputPaths: {
+                    safeScore: 'safeScore',
+                    'bad-field': 'bad-field'
+                  }
+                }, {}, 'inputs', unsafePathSchema)
+                  .map((field) => field.path)
+                  .sort()
+                  .join('|');
+                const dynamicOutputPaths = context.dynamicOutputFieldDescriptors({
+                  type: 'customOperator',
+                  customOutputPorts: {
+                    safeScore: 'facts',
+                    'bad-field': 'facts'
+                  },
+                  customOutputPaths: {
+                    safeScore: 'safeScore',
+                    'bad-field': 'bad-field'
+                  }
+                }, {}, 'facts', unsafePathSchema)
+                  .map((field) => field.path)
+                  .sort()
+                  .join('|');
 
                 const checks = [
                   ['schema path suffix', context.dslReferenceSuffixForSchemaPath('items.0.score'), '.items[0].score'],
@@ -377,6 +445,9 @@ class VisualAuthoringAppJsTest {
                   ['nested array config deleted node reference removed', context.hasConfigPath(configWithArrayReferences, 'nested.values.0'), false],
                   ['nested array config scalar retained', context.configValueAtPath(configWithArrayReferences, 'nested.values.1'), 'static'],
                   ['unknown array item config path', unknownArrayConfigPaths, 'rules.0.extra'],
+                  ['DSL-safe static schema paths', dslSafeStaticPaths, 'items|items.0|items.0.safeNested|safeScore'],
+                  ['DSL-safe dynamic input paths', dynamicInputPaths, 'safeScore'],
+                  ['DSL-safe dynamic output paths', dynamicOutputPaths, 'safeScore'],
                   ['dynamic schema DSL targets', dynamicSchemaDslTargets, [
                     '/inputSchema/schema/properties/dynamicAdditional/additionalProperties/properties/bad-field',
                     '/inputSchema/schema/properties/dynamicResidual/unevaluatedProperties/properties/bad-residual-field',

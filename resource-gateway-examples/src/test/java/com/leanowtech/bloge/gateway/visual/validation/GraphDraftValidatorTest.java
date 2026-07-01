@@ -4406,6 +4406,112 @@ class GraphDraftValidatorTest {
     }
 
     @Test
+    void rejectsNodePathBindingWhenSourcePathCannotRenderAsDslPathSegment() {
+        GraphDraftValidator validator = new GraphDraftValidator(
+                VisualCatalogTestSupport.catalogWithLibrary(VisualCatalogTestSupport.unsafePathLibrary()));
+        GraphDraft draft = unsafePathDraft(
+                Map.of("score", GraphDraft.Binding.nodePath("unsafeFacts", "facts", "bad-field",
+                        "inputs", "score")),
+                List.of(),
+                new GraphDraft.OutputSelection("scoreSink", "")
+        );
+
+        VisualValidationResult result = validator.validate(draft);
+
+        assertThat(result.valid()).isFalse();
+        assertThat(result.diagnostics())
+                .anySatisfy(diagnostic -> {
+                    assertThat(diagnostic.code()).isEqualTo("visual.binding.pathSegment.invalid");
+                    assertThat(diagnostic.target()).isEqualTo("/nodes/1/inputs/score/path");
+                });
+    }
+
+    @Test
+    void rejectsNodePathBindingWhenTargetPathCannotRenderAsDslPathSegment() {
+        GraphDraftValidator validator = new GraphDraftValidator(
+                VisualCatalogTestSupport.catalogWithLibrary(VisualCatalogTestSupport.unsafePathLibrary()));
+        GraphDraft draft = unsafePathDraft(
+                Map.of("bad-target", GraphDraft.Binding.nodePath("unsafeFacts", "facts", "safeScore",
+                        "inputs", "bad-target")),
+                List.of(),
+                new GraphDraft.OutputSelection("scoreSink", "")
+        );
+
+        VisualValidationResult result = validator.validate(draft);
+
+        assertThat(result.valid()).isFalse();
+        assertThat(result.diagnostics())
+                .anySatisfy(diagnostic -> {
+                    assertThat(diagnostic.code()).isEqualTo("visual.binding.targetPathSegment.invalid");
+                    assertThat(diagnostic.target()).isEqualTo("/nodes/1/inputs/bad-target");
+                });
+    }
+
+    @Test
+    void rejectsDataEdgeWhenEndpointPathCannotRenderAsDslPathSegment() {
+        GraphDraftValidator validator = new GraphDraftValidator(
+                VisualCatalogTestSupport.catalogWithLibrary(VisualCatalogTestSupport.unsafePathLibrary()));
+        GraphDraft draft = unsafePathDraft(
+                Map.of("score", GraphDraft.Binding.nodePath("unsafeFacts", "facts", "safeScore",
+                        "inputs", "score")),
+                List.of(new GraphDraft.DraftEdge("unsafe-edge", "data",
+                        new GraphDraft.Endpoint("unsafeFacts", "facts", "bad-field"),
+                        new GraphDraft.Endpoint("scoreSink", "inputs", "bad-target"))),
+                new GraphDraft.OutputSelection("scoreSink", "")
+        );
+
+        VisualValidationResult result = validator.validate(draft);
+
+        assertThat(result.valid()).isFalse();
+        assertThat(result.diagnostics())
+                .anySatisfy(diagnostic -> {
+                    assertThat(diagnostic.code()).isEqualTo("visual.edge.pathSegment.invalid");
+                    assertThat(diagnostic.target()).isEqualTo("/edges/0/source/path");
+                })
+                .anySatisfy(diagnostic -> {
+                    assertThat(diagnostic.code()).isEqualTo("visual.edge.pathSegment.invalid");
+                    assertThat(diagnostic.target()).isEqualTo("/edges/0/target/path");
+                });
+    }
+
+    @Test
+    void rejectsGraphOutputSelectionWhenPathCannotRenderAsDslPathSegment() {
+        GraphDraftValidator validator = new GraphDraftValidator(
+                VisualCatalogTestSupport.catalogWithLibrary(VisualCatalogTestSupport.unsafePathLibrary()));
+        GraphDraft draft = new GraphDraft(
+                "",
+                "",
+                0,
+                "unsafeOutputSelection",
+                "",
+                "",
+                "",
+                "",
+                null,
+                List.of(new GraphDraft.DraftNode(
+                        "unsafeFacts",
+                        "risk:unsafeFacts",
+                        "",
+                        Map.of(),
+                        Map.of(),
+                        null
+                )),
+                List.of(),
+                Map.of(),
+                new GraphDraft.OutputSelection("unsafeFacts", "facts.bad-field")
+        );
+
+        VisualValidationResult result = validator.validate(draft);
+
+        assertThat(result.valid()).isFalse();
+        assertThat(result.diagnostics())
+                .anySatisfy(diagnostic -> {
+                    assertThat(diagnostic.code()).isEqualTo("visual.output.pathSegment.invalid");
+                    assertThat(diagnostic.target()).isEqualTo("/output/path");
+                });
+    }
+
+    @Test
     void rejectsEdgeWhenPortTypesDoNotMatch() {
         GraphDraftValidator validator = new GraphDraftValidator(
                 VisualCatalogTestSupport.catalogWithLoanApplicantResourceAndLibrary(
@@ -4841,6 +4947,43 @@ class GraphDraftValidatorTest {
                 "additionalProperties", additionalProperties,
                 "propertyNames", propertyNames
         ));
+    }
+
+    private static GraphDraft unsafePathDraft(Map<String, GraphDraft.Binding> sinkInputs,
+                                              List<GraphDraft.DraftEdge> edges,
+                                              GraphDraft.OutputSelection output) {
+        return new GraphDraft(
+                "",
+                "",
+                0,
+                "unsafePathDraft",
+                "",
+                "",
+                "",
+                "",
+                null,
+                List.of(
+                        new GraphDraft.DraftNode(
+                                "unsafeFacts",
+                                "risk:unsafeFacts",
+                                "",
+                                Map.of(),
+                                Map.of(),
+                                null
+                        ),
+                        new GraphDraft.DraftNode(
+                                "scoreSink",
+                                "risk:scoreSink",
+                                "",
+                                sinkInputs,
+                                Map.of(),
+                                null
+                        )
+                ),
+                edges,
+                Map.of(),
+                output
+        );
     }
 
     private static GraphDraft dynamicOutputFactsDraft(Map<String, GraphDraft.Binding> sinkInputs,
