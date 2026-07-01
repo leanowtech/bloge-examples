@@ -93,15 +93,16 @@ public class OperatorLibraryAdminController {
     public ResponseEntity<?> create(@RequestBody OperatorLibrary library,
                                     @RequestParam(defaultValue = "false") boolean force,
                                     @RequestParam(defaultValue = "false") boolean ackWarnings) {
-        VisualValidationResult validation = validateAgainstRegistry(library, force);
+        OperatorLibraryValidationResult validation = validateAgainstRegistry(library, force);
         if (!validation.valid()) {
             return ResponseEntity.status(validationFailureStatus(validation)).body(validation);
         }
-        ResponseEntity<VisualValidationResult> warningGate = warningAcknowledgementResponse(validation, ackWarnings);
+        ResponseEntity<OperatorLibraryValidationResult> warningGate = warningAcknowledgementResponse(validation,
+                ackWarnings);
         if (warningGate != null) {
             return warningGate;
         }
-        ResponseEntity<VisualValidationResult> impact = replacementImpactResponse(library, force);
+        ResponseEntity<OperatorLibraryValidationResult> impact = replacementImpactResponse(library, force);
         if (impact != null) {
             return impact;
         }
@@ -116,8 +117,8 @@ public class OperatorLibraryAdminController {
      * @return structured validation diagnostics
      */
     @PostMapping("/validate")
-    public VisualValidationResult validate(@RequestBody OperatorLibrary library,
-                                           @RequestParam(defaultValue = "false") boolean force) {
+    public OperatorLibraryValidationResult validate(@RequestBody OperatorLibrary library,
+                                                    @RequestParam(defaultValue = "false") boolean force) {
         return validateAgainstRegistry(library, force);
     }
 
@@ -150,15 +151,16 @@ public class OperatorLibraryAdminController {
             throw new IllegalArgumentException("Path libraryId '%s' does not match body libraryId '%s'"
                     .formatted(libraryId, library.libraryId()));
         }
-        VisualValidationResult validation = validateAgainstRegistry(library, force);
+        OperatorLibraryValidationResult validation = validateAgainstRegistry(library, force);
         if (!validation.valid()) {
             return ResponseEntity.status(validationFailureStatus(validation)).body(validation);
         }
-        ResponseEntity<VisualValidationResult> warningGate = warningAcknowledgementResponse(validation, ackWarnings);
+        ResponseEntity<OperatorLibraryValidationResult> warningGate = warningAcknowledgementResponse(validation,
+                ackWarnings);
         if (warningGate != null) {
             return warningGate;
         }
-        ResponseEntity<VisualValidationResult> impact = replacementImpactResponse(library, force);
+        ResponseEntity<OperatorLibraryValidationResult> impact = replacementImpactResponse(library, force);
         if (impact != null) {
             return impact;
         }
@@ -186,14 +188,14 @@ public class OperatorLibraryAdminController {
             diagnostics.addAll(publishedArtifactReferenceDiagnostics(libraryId, operatorRefs, "deleted"));
             if (!diagnostics.isEmpty()) {
                 return ResponseEntity.status(HttpStatus.CONFLICT)
-                        .body(new VisualValidationResult(false, diagnostics));
+                        .body(validationResult(library.get(), diagnostics));
             }
         }
         registry.delete(libraryId);
         return ResponseEntity.noContent().build();
     }
 
-    private VisualValidationResult validateAgainstRegistry(OperatorLibrary library, boolean force) {
+    private OperatorLibraryValidationResult validateAgainstRegistry(OperatorLibrary library, boolean force) {
         VisualValidationResult structural = validator.validate(library);
         List<VisualDiagnostic> diagnostics = new ArrayList<>(structural.diagnostics());
         diagnostics.addAll(operatorRefOwnershipDiagnostics(library));
@@ -203,7 +205,7 @@ public class OperatorLibraryAdminController {
         if (!force) {
             diagnostics.addAll(replacementImpactDiagnostics(library, "replaced without force=true"));
         }
-        return new VisualValidationResult(false, diagnostics);
+        return validationResult(library, diagnostics);
     }
 
     private List<VisualDiagnostic> operatorRefOwnershipDiagnostics(OperatorLibrary library) {
@@ -260,7 +262,7 @@ public class OperatorLibraryAdminController {
         return diagnostics;
     }
 
-    private static HttpStatus validationFailureStatus(VisualValidationResult validation) {
+    private static HttpStatus validationFailureStatus(OperatorLibraryValidationResult validation) {
         return validation.diagnostics().stream()
                 .anyMatch(diagnostic -> "visual.library.operatorRefOwned".equals(diagnostic.code())
                         || "visual.library.operatorRefRuntimeOwned".equals(diagnostic.code())
@@ -269,8 +271,8 @@ public class OperatorLibraryAdminController {
                 : HttpStatus.BAD_REQUEST;
     }
 
-    private ResponseEntity<VisualValidationResult> replacementImpactResponse(OperatorLibrary replacement,
-                                                                             boolean force) {
+    private ResponseEntity<OperatorLibraryValidationResult> replacementImpactResponse(OperatorLibrary replacement,
+                                                                                      boolean force) {
         if (force) {
             return null;
         }
@@ -280,7 +282,7 @@ public class OperatorLibraryAdminController {
             return null;
         }
         return ResponseEntity.status(HttpStatus.CONFLICT)
-                .body(new VisualValidationResult(false, diagnostics));
+                .body(validationResult(replacement, diagnostics));
     }
 
     private List<VisualDiagnostic> replacementImpactDiagnostics(OperatorLibrary replacement,
@@ -498,8 +500,118 @@ public class OperatorLibraryAdminController {
         return diagnostics;
     }
 
-    private static ResponseEntity<VisualValidationResult> warningAcknowledgementResponse(
-            VisualValidationResult validation,
+    private OperatorLibraryValidationResult validationResult(OperatorLibrary library,
+                                                             List<VisualDiagnostic> diagnostics) {
+        if (diagnostics == null || diagnostics.isEmpty()) {
+            return new OperatorLibraryValidationResult(false, diagnostics, OperatorLibraryImpactReview.empty());
+        }
+        return new OperatorLibraryValidationResult(false, diagnostics,
+                OperatorLibraryImpactReview.fromDiagnostics(diagnostics, impactOperatorRefs(library, diagnostics)));
+    }
+
+    private Set<String> impactOperatorRefs(OperatorLibrary library, List<VisualDiagnostic> diagnostics) {
+        Set<String> operatorRefs = new LinkedHashSet<>();
+        operatorRefs.addAll(operatorRefsFromOperatorDiagnosticTargets(library, diagnostics));
+        operatorRefs.addAll(referencedReplacementOperatorRefs(library));
+        return operatorRefs;
+    }
+
+    private Set<String> operatorRefsFromOperatorDiagnosticTargets(OperatorLibrary library,
+                                                                  List<VisualDiagnostic> diagnostics) {
+        if (library == null || diagnostics.isEmpty()) {
+            return Set.of();
+        }
+        Set<String> operatorRefs = new LinkedHashSet<>();
+        for (VisualDiagnostic diagnostic : diagnostics) {
+            Integer index = operatorIndexFromTarget(diagnostic.target());
+            if (index == null || index < 0 || index >= library.operators().size()) {
+                continue;
+            }
+            OperatorDefinition operator = library.operators().get(index);
+            if (operator != null && !operator.operatorRef().isBlank()) {
+                operatorRefs.add(operator.operatorRef());
+            }
+        }
+        return operatorRefs;
+    }
+
+    private Set<String> referencedReplacementOperatorRefs(OperatorLibrary replacement) {
+        if (replacement == null) {
+            return Set.of();
+        }
+        Optional<OperatorLibrary> existing = registry.find(replacement.libraryId());
+        if (existing.isEmpty()) {
+            return Set.of();
+        }
+        Map<String, OperatorDefinition> existingByRef = new LinkedHashMap<>();
+        for (OperatorDefinition operator : existing.get().operators()) {
+            if (operator != null) {
+                existingByRef.putIfAbsent(operator.operatorRef(), operator);
+            }
+        }
+        Set<String> replacementRefs = replacement.visibleInCatalog(true)
+                ? replacement.operators().stream()
+                        .filter(java.util.Objects::nonNull)
+                        .map(OperatorDefinition::operatorRef)
+                        .collect(java.util.stream.Collectors.toCollection(LinkedHashSet::new))
+                : Set.of();
+        Set<String> affectedRefs = existingByRef.keySet().stream()
+                .filter(operatorRef -> !replacementRefs.contains(operatorRef))
+                .collect(java.util.stream.Collectors.toCollection(LinkedHashSet::new));
+        for (OperatorDefinition operator : replacement.operators()) {
+            if (operator == null) {
+                continue;
+            }
+            OperatorDefinition previous = existingByRef.get(operator.operatorRef());
+            if (previous != null && !previous.fingerprint().equals(operator.fingerprint())) {
+                affectedRefs.add(operator.operatorRef());
+            }
+        }
+        if (affectedRefs.isEmpty()) {
+            return Set.of();
+        }
+        Set<String> referencedRefs = new LinkedHashSet<>();
+        for (GraphDraft draft : draftRepository.all()) {
+            for (GraphDraft.DraftNode node : draft.nodes()) {
+                if (affectedRefs.contains(node.operatorRef())) {
+                    referencedRefs.add(node.operatorRef());
+                }
+            }
+        }
+        for (VisualGraphPublication publication : publicationRepository.all()) {
+            GraphDraft draft = publication.draft();
+            if (draft == null) {
+                continue;
+            }
+            for (GraphDraft.DraftNode node : draft.nodes()) {
+                if (affectedRefs.contains(node.operatorRef())) {
+                    referencedRefs.add(node.operatorRef());
+                }
+            }
+        }
+        return referencedRefs;
+    }
+
+    private static Integer operatorIndexFromTarget(String target) {
+        if (target == null || target.isBlank()) {
+            return null;
+        }
+        String[] segments = target.split("/");
+        for (int i = 0; i < segments.length - 1; i++) {
+            if (!"operators".equals(segments[i])) {
+                continue;
+            }
+            try {
+                return Integer.parseInt(segments[i + 1]);
+            } catch (NumberFormatException ignored) {
+                return null;
+            }
+        }
+        return null;
+    }
+
+    private static ResponseEntity<OperatorLibraryValidationResult> warningAcknowledgementResponse(
+            OperatorLibraryValidationResult validation,
             boolean ackWarnings) {
         if (ackWarnings || validation.diagnostics().stream()
                 .noneMatch(diagnostic -> "WARNING".equalsIgnoreCase(diagnostic.level()))) {

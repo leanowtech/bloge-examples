@@ -688,6 +688,13 @@ operatorRef 会被阻断，same-ref fingerprint drift 会作为 warning 暴露�
 当前运行不依赖最新 catalog，因为 publication 持有 frozen DSL 和 operator snapshots，但 validate 会返回
 publication 级 warning，提示 replay、recertification 或 republish 前需要重新审计。直接删除 library 时，
 如果已有 published artifact 引用了该库内 operatorRef，服务端要求 `force=true` 才允许删除。
+validate、warning-gated import/replace 和 delete conflict 响应会返回
+`bloge.visualOperatorLibraryImpact.v1`，按 error/warning、affected draft、
+affected draft node target、publication、operatorRef 和 diagnostic code 给出机器可消费的影响摘要。
+浏览器导入面板优先消费该合同，再展示 diagnostics 明细，让作者先判断
+替换影响面；affected draft 是可操作入口，可以直接加载对应草稿并聚焦受影响节点，
+进入 schema/fingerprint/binding 审阅，再决定是否二次确认 `ackWarnings=true`
+或启用 `force=true`。
 `/api/visual/operators/{operatorRef}/usage` 已把这种影响分析拆成可查询的
 `bloge.visualOperatorUsage.v1` 合同：draft usage 返回 saved fingerprint
 状态，publication usage 返回 frozen fingerprint 状态，并在 frozen snapshot

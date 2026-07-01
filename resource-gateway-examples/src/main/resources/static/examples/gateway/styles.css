@@ -1829,6 +1829,114 @@ body.dragging-operator * {
   color: var(--red);
 }
 
+.library-impact-panel {
+  display: grid;
+  gap: 7px;
+  padding: 8px;
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  background: #ffffff;
+  color: var(--text);
+  font-size: 12px;
+}
+
+.library-impact-panel[hidden] {
+  display: none;
+}
+
+.library-impact-panel.success {
+  border-color: #86efac;
+}
+
+.library-impact-panel.warning {
+  border-color: #f8d18d;
+}
+
+.library-impact-panel.error {
+  border-color: #fca5a5;
+}
+
+.library-impact-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  min-width: 0;
+}
+
+.library-impact-head strong {
+  color: var(--text);
+}
+
+.library-impact-head span,
+.library-impact-more {
+  min-width: 0;
+  color: var(--muted);
+  overflow-wrap: anywhere;
+}
+
+.library-impact-stats,
+.library-impact-codes,
+.library-impact-refs,
+.library-impact-ref-group div {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+}
+
+.library-impact-stats span,
+.library-impact-code,
+.library-impact-ref-group span,
+.library-impact-ref-group button,
+.library-impact-ref-group small {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+  padding: 4px 6px;
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  background: var(--surface-subtle);
+  color: var(--muted);
+}
+
+.library-impact-ref-group button {
+  cursor: pointer;
+  color: var(--accent);
+  font: inherit;
+  font-weight: 700;
+}
+
+.library-impact-ref-group button:hover,
+.library-impact-ref-group button:focus {
+  border-color: var(--accent);
+  background: #eef4ff;
+}
+
+.library-impact-stats strong,
+.library-impact-code strong,
+.library-impact-ref-group strong {
+  color: var(--text);
+}
+
+.library-impact-code.error {
+  border-color: #fca5a5;
+  background: var(--red-soft);
+  color: var(--red);
+}
+
+.library-impact-code.warning {
+  border-color: #f8d18d;
+  background: var(--amber-soft);
+  color: #8a5a13;
+}
+
+.library-impact-ref-group {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
 .library-profile {
   display: grid;
   gap: 6px;

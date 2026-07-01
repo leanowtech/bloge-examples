@@ -1007,7 +1007,14 @@ class OperatorLibraryAdminControllerTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.valid").value(false))
                 .andExpect(jsonPath("$.diagnostics[0].code").value("visual.library.inUse"))
-                .andExpect(jsonPath("$.diagnostics[0].target").value("/drafts/draft-1/nodes/0/operatorRef"));
+                .andExpect(jsonPath("$.diagnostics[0].target").value("/drafts/draft-1/nodes/0/operatorRef"))
+                .andExpect(jsonPath("$.impact.schemaVersion").value(OperatorLibraryImpactReview.SCHEMA_VERSION))
+                .andExpect(jsonPath("$.impact.errorCount").value(1))
+                .andExpect(jsonPath("$.impact.draftIds[0]").value("draft-1"))
+                .andExpect(jsonPath("$.impact.operatorRefs[0]").value("risk:eligibility"))
+                .andExpect(jsonPath("$.impact.draftTargets[0].draftId").value("draft-1"))
+                .andExpect(jsonPath("$.impact.draftTargets[0].nodeIndex").value(0))
+                .andExpect(jsonPath("$.impact.codeCounts[0].code").value("visual.library.inUse"));
 
         assertThat(registry.find("risk-policy")).contains(original);
     }
@@ -1043,7 +1050,9 @@ class OperatorLibraryAdminControllerTest {
                         .content(objectMapper.writeValueAsString(replacement)))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.valid").value(true))
-                .andExpect(jsonPath("$.diagnostics").isEmpty());
+                .andExpect(jsonPath("$.diagnostics").isEmpty())
+                .andExpect(jsonPath("$.impact.diagnosticCount").value(0))
+                .andExpect(jsonPath("$.impact.operatorRefs").isEmpty());
 
         assertThat(registry.find("risk-policy")).contains(original);
     }
@@ -1071,7 +1080,13 @@ class OperatorLibraryAdminControllerTest {
                 .andExpect(jsonPath("$.diagnostics[0].message")
                         .value(org.hamcrest.Matchers.containsString(
                                 "changed surface: input port 'inputs' schema changed")))
-                .andExpect(jsonPath("$.diagnostics[0].target").value("/drafts/draft-1/nodes/0/operatorRef"));
+                .andExpect(jsonPath("$.diagnostics[0].target").value("/drafts/draft-1/nodes/0/operatorRef"))
+                .andExpect(jsonPath("$.impact.warningCount").value(1))
+                .andExpect(jsonPath("$.impact.draftIds[0]").value("draft-1"))
+                .andExpect(jsonPath("$.impact.operatorRefs[0]").value("risk:eligibility"))
+                .andExpect(jsonPath("$.impact.draftTargets[0].draftId").value("draft-1"))
+                .andExpect(jsonPath("$.impact.draftTargets[0].nodeIndex").value(0))
+                .andExpect(jsonPath("$.impact.codeCounts[0].level").value("WARNING"));
 
         assertThat(replacementFingerprint).isNotEqualTo(originalFingerprint);
         assertThat(registry.find("risk-policy")).contains(original);
@@ -1159,7 +1174,11 @@ class OperatorLibraryAdminControllerTest {
                 .andExpect(jsonPath("$.diagnostics[0].message")
                         .value(org.hamcrest.Matchers.containsString("frozen DSL")))
                 .andExpect(jsonPath("$.diagnostics[0].target")
-                        .value("/publications/publication-1/nodes/0/operatorRef"));
+                        .value("/publications/publication-1/nodes/0/operatorRef"))
+                .andExpect(jsonPath("$.impact.publicationIds[0]").value("publication-1"))
+                .andExpect(jsonPath("$.impact.operatorRefs[0]").value("risk:eligibility"))
+                .andExpect(jsonPath("$.impact.codeCounts[0].code")
+                        .value("visual.library.publicationOperatorFingerprintDrift"));
 
         assertThat(replacementFingerprint).isNotEqualTo(originalFingerprint);
         assertThat(registry.find("risk-policy")).contains(original);
