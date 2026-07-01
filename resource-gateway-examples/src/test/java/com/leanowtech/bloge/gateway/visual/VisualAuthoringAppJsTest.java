@@ -42,6 +42,29 @@ class VisualAuthoringAppJsTest {
     }
 
     @Test
+    void supportsBrowserUnionSchemaHeuristics() throws Exception {
+        assumeNodeAvailable();
+
+        Path tempDir = Files.createTempDirectory("bloge-union-app-js-test");
+        Path appJs = tempDir.resolve("app.js");
+        Path probe = tempDir.resolve("probe.js");
+        try {
+            Files.writeString(appJs, appJsSource(), StandardCharsets.UTF_8);
+            Files.writeString(probe, unionSchemaProbe(), StandardCharsets.UTF_8);
+
+            ProcessResult result = runProcess(List.of("node", probe.toString(), appJs.toString()), tempDir, 10);
+
+            assertThat(result.finished()).as(result.output()).isTrue();
+            assertThat(result.exitCode()).as(result.output()).isZero();
+            assertThat(result.output()).contains("browser union schema probe passed");
+        } finally {
+            Files.deleteIfExists(probe);
+            Files.deleteIfExists(appJs);
+            Files.deleteIfExists(tempDir);
+        }
+    }
+
+    @Test
     void keepsServerPreflightAuthoritativeForLocallyRejectedConnections() throws Exception {
         String source = appJsSource();
 
@@ -90,7 +113,7 @@ class VisualAuthoringAppJsTest {
     }
 
     private static String bracketPathProbe() {
-        return """
+        return String.join("", """
                 const fs = require('fs');
                 const vm = require('vm');
                 const source = fs.readFileSync(process.argv[2], 'utf8');
@@ -538,8 +561,10 @@ class VisualAuthoringAppJsTest {
                   return properties && typeof properties === 'object' && !Array.isArray(properties) ? properties : {};
                 };
                 context.validatedSchemaRequiredNames = () => [];
+                context.operatorLibraryPortUnionSummary = context.schemaUnionSummary = () => '';
                 for (const name of [
                   'validateUnsupportedSchemaKeywords',
+                  'validateSupportedSchemaUnions',
                   'validateSchemaDefinitions',
                   'validateSchemaEnum',
                   'validateSchemaConst',
@@ -905,6 +930,7 @@ class VisualAuthoringAppJsTest {
                   ok: false,
                   message: 'This connection would create a cycle.'
                 });
+                """, """
                 context.state = {
                   builder: {
                     graphName: 'historyGraph',
@@ -1576,6 +1602,275 @@ class VisualAuthoringAppJsTest {
                   console.error(error);
                   process.exitCode = 1;
                 });
+                """);
+    }
+
+    private static String unionSchemaProbe() {
+        return """
+                const fs = require('fs');
+                const vm = require('vm');
+                const source = fs.readFileSync(process.argv[2], 'utf8');
+                new vm.Script(source, { filename: 'app.js' });
+
+                function functionSource(name) {
+                  const start = source.indexOf(`function ${name}(`);
+                  if (start < 0) throw new Error(`missing function ${name}`);
+                  const openParen = source.indexOf('(', start);
+                  let parenDepth = 0;
+                  let brace = -1;
+                  for (let i = openParen; i < source.length; i += 1) {
+                    const ch = source[i];
+                    if (ch === '(') parenDepth += 1;
+                    if (ch === ')') {
+                      parenDepth -= 1;
+                      if (parenDepth === 0) {
+                        brace = source.indexOf('{', i + 1);
+                        break;
+                      }
+                    }
+                  }
+                  if (brace < 0) throw new Error(`missing body for function ${name}`);
+                  let depth = 0;
+                  for (let i = brace; i < source.length; i += 1) {
+                    const ch = source[i];
+                    if (ch === '{') depth += 1;
+                    if (ch === '}') {
+                      depth -= 1;
+                      if (depth === 0) return source.slice(start, i + 1);
+                    }
+                  }
+                  throw new Error(`unterminated function ${name}`);
+                }
+
+                const context = vm.createContext({ console });
+                context.SUPPORTED_SCHEMA_FORMAT = 'json-schema';
+                context.SUPPORTED_SCHEMA_VERSION = '2020-12';
+                context.SUPPORTED_SCHEMA_KINDS = new Set([
+                  'object', 'array', 'string', 'integer', 'number', 'decimal',
+                  'boolean', 'duration', 'datetime', 'enum', 'any', 'opaque', 'null'
+                ]);
+                context.SUPPORTED_SCHEMA_UNION_KEYWORDS = ['oneOf', 'anyOf'];
+                context.UNSUPPORTED_SCHEMA_REFERENCE_KEYWORDS = ['$ref', '$dynamicRef'];
+                context.UNSUPPORTED_SCHEMA_COMPOSITION_KEYWORDS = ['allOf', 'not', 'if', 'then', 'else'];
+                context.UNSUPPORTED_SCHEMA_CONSTRAINT_KEYWORDS = ['unevaluatedItems'];
+
+                for (const name of [
+                  'escapeHtml',
+                  'isPlainObject',
+                  'validateSchemaEnvelope',
+                  'validateSchemaStructure',
+                  'validateSchemaTypeArray',
+                  'validateSchemaDefinitions',
+                  'validateUnsupportedSchemaKeywords',
+                  'validateSupportedSchemaUnions',
+                  'graphInputSchemaDiagnostic',
+                  'schemaType',
+                  'schemaUnionLabel',
+                  'schemaUnionSummary',
+                  'schemaUnionDescriptors',
+                  'schemaUnionDescriptorLabel',
+                  'schemaUnionBranches',
+                  'schemaWithoutUnions',
+                  'schemaObjectProperties',
+                  'schemaItemsSchema',
+                  'schemaPrefixItems',
+                  'schemaCompatibilityIssue',
+                  'sourceUnionCompatibilityIssue',
+                  'targetUnionCompatibilityIssue',
+                  'unionBaseCompatibilityIssue',
+                  'schemaValueMatchesSchema',
+                  'schemaValueMatchesUnions',
+                  'schemaValueMatchesType',
+                  'rawSchemaType',
+                  'nullableTypePrimary',
+                  'schemaMayProduceNull',
+                  'schemaAllowsNull',
+                  'schemaTypeForValue',
+                  'schemaEnumValues',
+                  'uniqueSchemaValues',
+                  'schemaValuesEqual',
+                  'schemaValueKey',
+                  'canonicalSchemaValueKey',
+                  'numericType',
+                  'stringType',
+                  'arrayType',
+                  'reasonAt',
+                  'appendCompatibilityPath',
+                  'valueDomainLabel',
+                  'renderContractPortGroup',
+                  'renderLibraryProfilePanel',
+                  'libraryProfileLevel',
+                  'operatorLibraryProfile',
+                  'operatorLibraryOperatorProfile',
+                  'emptyOperatorLibraryPortProfile',
+                  'addOperatorLibraryPortProfile',
+                  'operatorLibraryPortProfile',
+                  'operatorLibraryPortFields',
+                  'operatorLibraryConfigFields',
+                  'operatorLibraryPortUnionSummary',
+                  'operatorLibraryFieldProfile',
+                  'operatorLibrarySchemaSummary',
+                  'operatorLibraryFieldLabel'
+                ]) {
+                  vm.runInContext(functionSource(name), context);
+                }
+
+                for (const name of [
+                  'validateSchemaEnum',
+                  'validateSchemaConst',
+                  'validateSchemaNumericBounds',
+                  'validateSchemaNumericMultipleOf',
+                  'validateSchemaStringLengthBounds',
+                  'validateSchemaStringPattern',
+                  'validateSchemaStringFormat',
+                  'validateSchemaArrayItemBounds',
+                  'validateSchemaArrayUniqueItems',
+                  'validateSchemaArrayPrefixItems',
+                  'validateSchemaArrayContains',
+                  'validateSchemaObjectPropertyBounds',
+                  'validateSchemaObjectPatternProperties',
+                  'validateSchemaObjectPropertyNames',
+                  'validateSchemaObjectDependentRequired',
+                  'validateSchemaObjectDependentSchemas',
+                  'validateSchemaUnevaluatedProperties',
+                  'validateSchemaAdditionalProperties',
+                  'validateCustomSchemaEnumValues'
+                ]) {
+                  context[name] = () => {};
+                }
+                context.validatedSchemaObjectProperties = (schema) =>
+                  schema?.properties && typeof schema.properties === 'object' && !Array.isArray(schema.properties)
+                    ? schema.properties
+                    : {};
+                context.validatedSchemaRequiredNames = () => [];
+                context.numericBoundsCompatibilityIssue = () => '';
+                context.numericMultipleOfCompatibilityIssue = () => '';
+                context.stringFormatCompatibilityIssue = () => '';
+                context.stringPatternCompatibilityIssue = () => '';
+                context.stringLengthCompatibilityIssue = () => '';
+                context.arrayPrefixItemsCompatibilityIssue = () => '';
+                context.arrayItemsCompatibilityIssue = () => '';
+                context.arrayItemBoundsCompatibilityIssue = () => '';
+                context.arrayUniqueItemsCompatibilityIssue = () => '';
+                context.arrayContainsCompatibilityIssue = () => '';
+                context.objectSchemaCompatibilityIssue = () => '';
+                context.numericValueMatchesBounds = () => true;
+                context.numericValueMatchesMultipleOf = () => true;
+                context.stringValueMatchesLengthBounds = () => true;
+                context.stringValueMatchesPattern = () => true;
+                context.stringValueMatchesFormat = () => true;
+                context.arrayValueMatchesSchema = () => true;
+                context.objectValueMatchesSchema = () => true;
+                context.schemaFieldDescriptors = () => [];
+                context.configFieldDescriptors = () => [];
+                context.schemaDynamicSurfaceCount = () => 0;
+                context.operatorLibraryOutputPortDslPathSafe = () => true;
+
+                const validUnionDiagnostics = [];
+                context.validateSchemaStructure({
+                  oneOf: [{ type: 'integer' }, { type: 'string' }]
+                }, 'schema', validUnionDiagnostics);
+                const invalidUnionDiagnostics = [];
+                context.validateSchemaStructure({ anyOf: [] }, 'schema', invalidUnionDiagnostics);
+                const ambiguousUnionDiagnostics = [];
+                context.validateSchemaStructure({
+                  oneOf: [{ type: 'integer' }],
+                  anyOf: [{ type: 'string' }]
+                }, 'schema', ambiguousUnionDiagnostics);
+                const unsupportedCompositionDiagnostics = [];
+                context.validateSchemaStructure({
+                  allOf: [{ type: 'string' }]
+                }, 'schema', unsupportedCompositionDiagnostics);
+
+                const sourceUnionIssue = context.schemaCompatibilityIssue(
+                  { oneOf: [{ type: 'integer' }, { type: 'string' }] },
+                  { type: 'integer' }
+                );
+                const targetAnyOfIssue = context.schemaCompatibilityIssue(
+                  { type: 'string' },
+                  { anyOf: [{ type: 'integer' }, { type: 'string' }] }
+                );
+                const targetOneOfIssue = context.schemaCompatibilityIssue(
+                  { type: 'integer' },
+                  { oneOf: [{ type: 'integer' }, { type: 'number' }] }
+                );
+                const nestedUnionSummary = context.schemaUnionSummary({
+                  schema: {
+                    type: 'object',
+                    properties: {
+                      decision: { oneOf: [{ type: 'integer' }, { type: 'string' }] },
+                      events: {
+                        type: 'array',
+                        items: { anyOf: [{ type: 'boolean' }, { type: 'null' }] }
+                      }
+                    }
+                  }
+                });
+                const unionSchemaEnvelope = {
+                  schema: {
+                    type: 'object',
+                    properties: {
+                      decision: { oneOf: [{ type: 'integer' }, { type: 'string' }] },
+                      events: {
+                        type: 'array',
+                        items: { anyOf: [{ type: 'boolean' }, { type: 'null' }] }
+                      }
+                    }
+                  }
+                };
+                const unionContractHtml = context.renderContractPortGroup('Inputs', [{
+                  name: 'inputs',
+                  schema: unionSchemaEnvelope,
+                  required: true
+                }]);
+                const unionLibraryProfile = context.operatorLibraryProfile({
+                  libraryId: 'union-profile',
+                  version: '1.0.0',
+                  operators: [{
+                    operatorRef: 'risk:union',
+                    display: { name: 'Union Operator' },
+                    ports: {
+                      inputs: [{ name: 'inputs', schema: unionSchemaEnvelope, required: true }],
+                      outputs: []
+                    },
+                    configSchema: {
+                      schema: {
+                        oneOf: [{ type: 'object' }, { type: 'null' }]
+                      }
+                    }
+                  }]
+                });
+                const unionLibraryProfileHtml = context.renderLibraryProfilePanel(unionLibraryProfile);
+
+                const checks = [
+                  ['valid union diagnostics', validUnionDiagnostics.length, 0],
+                  ['invalid union code', invalidUnionDiagnostics.map((diagnostic) => diagnostic.code).join('|'), 'visual.schema.unionInvalid'],
+                  ['ambiguous union code', ambiguousUnionDiagnostics.some((diagnostic) => diagnostic.code === 'visual.schema.unionAmbiguous'), true],
+                  ['allOf remains unsupported', unsupportedCompositionDiagnostics.map((diagnostic) => diagnostic.code).join('|'), 'visual.schema.compositionUnsupported'],
+                  ['oneOf type label', context.schemaType({ oneOf: [{ type: 'integer' }, { type: 'string' }] }), 'oneOf<integer|string>'],
+                  ['nested anyOf type label', context.schemaType({ type: 'array', items: { anyOf: [{ type: 'boolean' }, { type: 'null' }] } }), 'array<anyOf<boolean|null>>'],
+                  ['oneOf exact value', context.schemaValueMatchesSchema('APPROVE', { oneOf: [{ type: 'string', enum: ['APPROVE'] }, { type: 'string', enum: ['REJECT'] }] }), true],
+                  ['oneOf missing value', context.schemaValueMatchesSchema('PENDING', { oneOf: [{ type: 'string', enum: ['APPROVE'] }, { type: 'string', enum: ['REJECT'] }] }), false],
+                  ['oneOf ambiguous numeric value', context.schemaValueMatchesSchema(3, { oneOf: [{ type: 'integer' }, { type: 'number' }] }), false],
+                  ['anyOf matching value', context.schemaValueMatchesSchema(3, { anyOf: [{ type: 'integer' }, { type: 'string' }] }), true],
+                  ['anyOf missing value', context.schemaValueMatchesSchema(false, { anyOf: [{ type: 'integer' }, { type: 'string' }] }), false],
+                  ['nested union summary', nestedUnionSummary, 'decision oneOf<integer|string>, events[] anyOf<boolean|null>'],
+                  ['union contract row html', String(unionContractHtml.includes('decision oneOf&lt;integer|string&gt;, events[] anyOf&lt;boolean|null&gt;')), 'true'],
+                  ['union library input summary', unionLibraryProfile.operators[0].inputUnionSummary, 'inputs.decision oneOf<integer|string>, inputs.events[] anyOf<boolean|null>'],
+                  ['union library config summary', unionLibraryProfile.operators[0].configUnionSummary, '(root) oneOf<object|null>'],
+                  ['union library html input branch', String(unionLibraryProfileHtml.includes('in union inputs.decision oneOf&lt;integer|string&gt;')), 'true'],
+                  ['union library html config branch', String(unionLibraryProfileHtml.includes('config union (root) oneOf&lt;object|null&gt;')), 'true'],
+                  ['source union issue', sourceUnionIssue, 'source oneOf branch 1 cannot feed target: source type string cannot feed target type integer'],
+                  ['target anyOf compatible', targetAnyOfIssue, ''],
+                  ['target oneOf ambiguous', targetOneOfIssue, 'target oneOf is ambiguous because source is compatible with 2 compatible branches']
+                ];
+
+                for (const [label, actual, expected] of checks) {
+                  if (actual !== expected) {
+                    throw new Error(`${label}: expected ${expected}, got ${actual}`);
+                  }
+                }
+                console.log('browser union schema probe passed');
                 """;
     }
 

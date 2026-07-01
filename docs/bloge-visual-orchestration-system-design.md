@@ -549,14 +549,16 @@ name 是否能作为 BLOGE DSL path segment，
 未知 binding kind 会在 `GraphDraftValidator` 被阻断，不能落到 codegen 的 literal fallback
 绕过 target schema gate。
 浏览器侧的 connection hint 和 source picker 也要复用这些关键规则，至少覆盖
-object required 字段证明、array item 递归兼容、enum 值域子集和普通 `string`
-不能隐式接入 enum，减少画布交互与服务端裁决之间的断层。拖线落点和
+object required 字段证明、array item 递归兼容、enum 值域子集、`oneOf`/`anyOf`
+union 的保守兼容提示，以及普通 `string` 不能隐式接入 enum，减少画布交互与服务端裁决之间的断层。拖线落点和
 inspector source picker 写入 binding 前都必须调用服务端 connection preview
 gate，本地 hint 不能成为最终授权。
-当前服务端 schema gate 已支持 `oneOf` / `anyOf` 作为受限 visual union：
+当前服务端 schema gate 和浏览器本地 hint 已支持 `oneOf` / `anyOf` 作为受限 visual union：
 运行时 value validation 中 `oneOf` 必须唯一命中，`anyOf` 至少命中一个；
 schema-to-schema 连接兼容采用保守策略，避免把无法证明唯一性的 union
-直接放入下游输入。
+直接放入下游输入。浏览器 contract panel 和 operator library profile 会展示
+union 分支摘要，帮助用户在拖线前看见端口约束；分支内字段仍不能被混成稳定
+handle，后续如果要支持分支字段绑定，需要显式分支选择 UX 和服务端语义一起收敛。
 同一节点内多个 binding 写入同一解析后输入目标，或 root/path 前缀重叠，
 会以 `visual.input.duplicateTarget` 阻断；不同 input port 上同名字段仍然合法，
 例如 `customer.id` 和 `order.id`。

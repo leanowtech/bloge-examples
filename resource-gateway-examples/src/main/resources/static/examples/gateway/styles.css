@@ -1041,6 +1041,15 @@ body.dragging-operator * {
   overflow-wrap: anywhere;
 }
 
+.contract-port-row .schema-union-summary,
+.library-profile-row .schema-union-summary {
+  grid-column: 1 / -1;
+  color: #0f766e;
+  font-weight: 800;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
 .contract-port-row.empty {
   grid-template-columns: 1fr;
 }

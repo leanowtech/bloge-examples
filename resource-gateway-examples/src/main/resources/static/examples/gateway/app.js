@@ -289,7 +289,8 @@ const SUPPORTED_SCHEMA_KINDS = new Set([
   'null'
 ]);
 const UNSUPPORTED_SCHEMA_REFERENCE_KEYWORDS = ['$ref', '$dynamicRef'];
-const UNSUPPORTED_SCHEMA_COMPOSITION_KEYWORDS = ['oneOf', 'anyOf', 'allOf', 'not', 'if', 'then', 'else'];
+const SUPPORTED_SCHEMA_UNION_KEYWORDS = ['oneOf', 'anyOf'];
+const UNSUPPORTED_SCHEMA_COMPOSITION_KEYWORDS = ['allOf', 'not', 'if', 'then', 'else'];
 const UNSUPPORTED_SCHEMA_CONSTRAINT_KEYWORDS = [
   'unevaluatedItems'
 ];
@@ -2258,6 +2259,9 @@ function renderLibraryProfilePanel(profile) {
       <small>in ${escapeHtml(operatorLibrarySchemaSummary(operator.inputFields, 'no fields'))}</small>
       <small>out ${escapeHtml(operatorLibrarySchemaSummary(operator.outputFields, 'no fields'))}</small>
       <small>config ${escapeHtml(operatorLibrarySchemaSummary(operator.configFields, 'none'))}</small>
+      ${operator.inputUnionSummary ? `<small class="schema-union-summary">in union ${escapeHtml(operator.inputUnionSummary)}</small>` : ''}
+      ${operator.outputUnionSummary ? `<small class="schema-union-summary">out union ${escapeHtml(operator.outputUnionSummary)}</small>` : ''}
+      ${operator.configUnionSummary ? `<small class="schema-union-summary">config union ${escapeHtml(operator.configUnionSummary)}</small>` : ''}
     </div>
   `).join('');
   const remaining = profile.operators.length > 5
@@ -2352,6 +2356,9 @@ function operatorLibraryOperatorProfile(operator) {
   const inputFields = operatorLibraryPortFields(inputPorts);
   const outputFields = operatorLibraryPortFields(outputPorts, { output: true });
   const configFieldProfiles = operatorLibraryConfigFields(configFields);
+  const inputUnionSummary = operatorLibraryPortUnionSummary(inputPorts);
+  const outputUnionSummary = operatorLibraryPortUnionSummary(outputPorts);
+  const configUnionSummary = schemaUnionSummary(operator?.configSchema);
   return {
     label: operator?.display?.name || operator?.operatorRef || 'operator',
     operatorRef: String(operator?.operatorRef || ''),
@@ -2368,7 +2375,10 @@ function operatorLibraryOperatorProfile(operator) {
     requiresSecrets: Boolean(operator?.capabilities?.requiresSecrets),
     inputFields,
     outputFields,
-    configFields: configFieldProfiles
+    configFields: configFieldProfiles,
+    inputUnionSummary,
+    outputUnionSummary,
+    configUnionSummary
   };
 }
 
@@ -2419,6 +2429,18 @@ function operatorLibraryPortFields(ports, options = {}) {
 
 function operatorLibraryConfigFields(fields) {
   return fields.map((field) => operatorLibraryFieldProfile('', field));
+}
+
+function operatorLibraryPortUnionSummary(ports) {
+  const summaries = (Array.isArray(ports) ? ports : []).flatMap((port) =>
+    schemaUnionDescriptors(port?.schema?.schema).map((descriptor) =>
+      schemaUnionDescriptorLabel(descriptor, port?.name || 'port')));
+  if (!summaries.length) {
+    return '';
+  }
+  const visible = summaries.slice(0, 3);
+  const remaining = summaries.length - visible.length;
+  return remaining > 0 ? `${visible.join(', ')} +${remaining} more` : visible.join(', ');
 }
 
 function operatorLibraryOutputPortDslPathSafe(port) {
@@ -5833,10 +5855,12 @@ function renderContractPortGroup(label, ports) {
     const fields = schemaFieldDescriptors(port.schema);
     const required = fields.filter((field) => field.required).length;
     const rootType = schemaType(port.schema?.schema) || 'any';
+    const unionSummary = schemaUnionSummary(port.schema);
     return `
       <div class="contract-port-row">
         <strong>${escapeHtml(port.name)}</strong>
         <span>${escapeHtml(rootType)} · ${fields.length} fields · ${required} required</span>
+        ${unionSummary ? `<small class="schema-union-summary">${escapeHtml(unionSummary)}</small>` : ''}
       </div>
     `;
   }).join('');
@@ -8970,6 +8994,10 @@ function nodeSupportsDependencyTarget(node) {
 }
 
 function schemaType(schema) {
+  const unionLabel = schemaUnionLabel(schema);
+  if (unionLabel) {
+    return unionLabel;
+  }
   const type = rawSchemaType(schema);
   const values = schemaEnumValues(schema);
   if (values.length) {
@@ -9629,6 +9657,7 @@ function validateSchemaEnvelope(schemaEnvelope, diagnostics) {
 
 function validateSchemaStructure(schema, path, diagnostics) {
   validateUnsupportedSchemaKeywords(schema, path, diagnostics);
+  validateSupportedSchemaUnions(schema, path, diagnostics);
   const invalidTypeArray = validateSchemaTypeArray(schema, path, diagnostics);
   validateSchemaDefinitions(schema, path, diagnostics);
   const kind = rawSchemaType(schema);
@@ -9832,6 +9861,44 @@ function validateUnsupportedSchemaKeywords(schema, path, diagnostics) {
         `${path}/${keyword}`
       ));
     }
+  }
+}
+
+function validateSupportedSchemaUnions(schema, path, diagnostics) {
+  const hasOneOf = Object.prototype.hasOwnProperty.call(schema || {}, 'oneOf');
+  const hasAnyOf = Object.prototype.hasOwnProperty.call(schema || {}, 'anyOf');
+  if (hasOneOf && hasAnyOf) {
+    diagnostics.push(graphInputSchemaDiagnostic(
+      'visual.schema.unionAmbiguous',
+      'Schema cannot declare both oneOf and anyOf in the same schema object.',
+      path
+    ));
+  }
+  for (const keyword of SUPPORTED_SCHEMA_UNION_KEYWORDS) {
+    if (!Object.prototype.hasOwnProperty.call(schema || {}, keyword)) {
+      continue;
+    }
+    const branches = schema?.[keyword];
+    if (!Array.isArray(branches) || !branches.length) {
+      diagnostics.push(graphInputSchemaDiagnostic(
+        'visual.schema.unionInvalid',
+        `JSON Schema union keyword '${keyword}' must be a non-empty array of schema objects.`,
+        `${path}/${keyword}`
+      ));
+      continue;
+    }
+    branches.forEach((branch, index) => {
+      const branchPath = `${path}/${keyword}/${index}`;
+      if (!branch || typeof branch !== 'object' || Array.isArray(branch)) {
+        diagnostics.push(graphInputSchemaDiagnostic(
+          'visual.schema.unionInvalid',
+          `JSON Schema union keyword '${keyword}' branch ${index} must be a schema object.`,
+          branchPath
+        ));
+        return;
+      }
+      validateSchemaStructure(branch, branchPath, diagnostics);
+    });
   }
 }
 
@@ -11077,6 +11144,14 @@ function literalEnumSchema(value) {
 }
 
 function schemaCompatibilityIssue(sourceSchema, targetSchema, path = '') {
+  const sourceUnionIssue = sourceUnionCompatibilityIssue(sourceSchema, targetSchema, path);
+  if (sourceUnionIssue) {
+    return sourceUnionIssue;
+  }
+  const targetUnionIssue = targetUnionCompatibilityIssue(sourceSchema, targetSchema, path);
+  if (targetUnionIssue) {
+    return targetUnionIssue;
+  }
   const sourceType = rawSchemaType(sourceSchema);
   const targetType = rawSchemaType(targetSchema);
   if (!sourceType || !targetType || sourceType === 'any' || targetType === 'any' || sourceType === 'opaque' || targetType === 'opaque') {
@@ -11132,6 +11207,74 @@ function schemaCompatibilityIssue(sourceSchema, targetSchema, path = '') {
   return sourceType === targetType
     ? ''
     : reasonAt(path, `source type ${schemaType(sourceSchema)} cannot feed target type ${schemaType(targetSchema)}`);
+}
+
+function sourceUnionCompatibilityIssue(sourceSchema, targetSchema, path = '') {
+  for (const keyword of SUPPORTED_SCHEMA_UNION_KEYWORDS) {
+    const branches = schemaUnionBranches(sourceSchema, keyword);
+    if (!branches.length) {
+      continue;
+    }
+    for (let index = 0; index < branches.length; index += 1) {
+      const branchIssue = schemaCompatibilityIssue(branches[index], targetSchema, path);
+      if (branchIssue) {
+        return reasonAt(path, `source ${keyword} branch ${index} cannot feed target: ${branchIssue}`);
+      }
+    }
+  }
+  return '';
+}
+
+function targetUnionCompatibilityIssue(sourceSchema, targetSchema, path = '') {
+  const anyOfBranches = schemaUnionBranches(targetSchema, 'anyOf');
+  const oneOfBranches = schemaUnionBranches(targetSchema, 'oneOf');
+  if (!anyOfBranches.length && !oneOfBranches.length) {
+    return '';
+  }
+  const baseIssue = unionBaseCompatibilityIssue(sourceSchema, targetSchema, path);
+  if (baseIssue) {
+    return baseIssue;
+  }
+  if (anyOfBranches.length) {
+    const reasons = [];
+    for (const branch of anyOfBranches) {
+      const branchIssue = schemaCompatibilityIssue(sourceSchema, branch, path);
+      if (!branchIssue) {
+        return '';
+      }
+      reasons.push(branchIssue);
+    }
+    return reasonAt(path, `target anyOf has no compatible branch: ${reasons.join('; ')}`);
+  }
+  if (oneOfBranches.length) {
+    let compatible = 0;
+    const reasons = [];
+    for (const branch of oneOfBranches) {
+      const branchIssue = schemaCompatibilityIssue(sourceSchema, branch, path);
+      if (branchIssue) {
+        reasons.push(branchIssue);
+      } else {
+        compatible += 1;
+      }
+    }
+    if (compatible === 1) {
+      return '';
+    }
+    if (compatible === 0) {
+      return reasonAt(path, `target oneOf has no compatible branch: ${reasons.join('; ')}`);
+    }
+    return reasonAt(path, `target oneOf is ambiguous because source is compatible with ${compatible} compatible branches`);
+  }
+  return '';
+}
+
+function unionBaseCompatibilityIssue(sourceSchema, targetSchema, path = '') {
+  const base = schemaWithoutUnions(targetSchema);
+  if (!Object.keys(base).length) {
+    return '';
+  }
+  const baseIssue = schemaCompatibilityIssue(sourceSchema, base, path);
+  return baseIssue ? reasonAt(path, `target union base constraints are not compatible: ${baseIssue}`) : '';
 }
 
 function numericBoundsCompatibilityIssue(sourceSchema, targetSchema, path = '') {
@@ -11660,7 +11803,8 @@ function schemaValueMatchesSchema(value, schema) {
   const type = rawSchemaType(schema);
   if (value === null && schemaAllowsNull(schema)) {
     const values = schemaEnumValues(schema);
-    return !values.length || values.some((allowed) => schemaValuesEqual(allowed, null));
+    return (!values.length || values.some((allowed) => schemaValuesEqual(allowed, null)))
+      && schemaValueMatchesUnions(value, schema);
   }
   if (!schemaValueMatchesType(value, type)) {
     return false;
@@ -11675,7 +11819,21 @@ function schemaValueMatchesSchema(value, schema) {
     && stringValueMatchesPattern(value, schema)
     && stringValueMatchesFormat(value, schema)
     && arrayValueMatchesSchema(value, schema)
-    && objectValueMatchesSchema(value, schema);
+    && objectValueMatchesSchema(value, schema)
+    && schemaValueMatchesUnions(value, schema);
+}
+
+function schemaValueMatchesUnions(value, schema) {
+  const oneOfBranches = schemaUnionBranches(schema, 'oneOf');
+  if (oneOfBranches.length) {
+    const matches = oneOfBranches.filter((branch) => schemaValueMatchesSchema(value, branch)).length;
+    if (matches !== 1) {
+      return false;
+    }
+  }
+  const anyOfBranches = schemaUnionBranches(schema, 'anyOf');
+  return !anyOfBranches.length
+    || anyOfBranches.some((branch) => schemaValueMatchesSchema(value, branch));
 }
 
 function schemaValueMatchesType(value, type) {
@@ -11737,6 +11895,10 @@ function nullableTypePrimary(types) {
 }
 
 function schemaMayProduceNull(schema) {
+  if (schemaUnionBranches(schema, 'oneOf').some(schemaMayProduceNull)
+      || schemaUnionBranches(schema, 'anyOf').some(schemaMayProduceNull)) {
+    return true;
+  }
   const values = schemaEnumValues(schema);
   return values.length
     ? values.some((value) => schemaValuesEqual(value, null))
@@ -11754,6 +11916,87 @@ function schemaAllowsNull(schema) {
   return declared === undefined
     && Object.prototype.hasOwnProperty.call(schema || {}, 'const')
     && schema.const === null;
+}
+
+function schemaUnionSummary(schemaEnvelope) {
+  const summaries = schemaUnionDescriptors(schemaEnvelope?.schema || schemaEnvelope || {})
+    .map((descriptor) => schemaUnionDescriptorLabel(descriptor));
+  if (!summaries.length) {
+    return '';
+  }
+  const visible = summaries.slice(0, 4);
+  const remaining = summaries.length - visible.length;
+  return remaining > 0 ? `${visible.join(', ')} +${remaining} more` : visible.join(', ');
+}
+
+function schemaUnionDescriptors(schema, path = '') {
+  if (!schema || typeof schema !== 'object' || Array.isArray(schema)) {
+    return [];
+  }
+  const current = [];
+  for (const keyword of SUPPORTED_SCHEMA_UNION_KEYWORDS) {
+    const branches = schemaUnionBranches(schema, keyword);
+    if (branches.length) {
+      current.push({
+        path,
+        keyword,
+        branchTypes: branches.map((branch) => schemaType(branch) || 'unknown')
+      });
+    }
+  }
+  const propertyDescriptors = Object.entries(schemaObjectProperties(schema)).flatMap(([name, child]) =>
+    schemaUnionDescriptors(child, path ? `${path}.${name}` : name));
+  const itemSchema = schemaItemsSchema(schema);
+  const itemDescriptors = itemSchema
+    ? schemaUnionDescriptors(itemSchema, path ? `${path}[]` : '[]')
+    : [];
+  const prefixItemDescriptors = schemaPrefixItems(schema).flatMap((item, index) =>
+    schemaUnionDescriptors(item, `${path || '[]'}[${index}]`));
+  return [
+    ...current,
+    ...propertyDescriptors,
+    ...itemDescriptors,
+    ...prefixItemDescriptors
+  ];
+}
+
+function schemaUnionDescriptorLabel(descriptor, rootLabel = '') {
+  const path = descriptor?.path || '(root)';
+  const prefix = rootLabel ? `${rootLabel}.` : '';
+  const branchLabel = (descriptor?.branchTypes || []).join('|') || 'unknown';
+  return `${prefix}${path} ${descriptor?.keyword || 'union'}<${branchLabel}>`;
+}
+
+function schemaUnionBranches(schema, keyword) {
+  const branches = schema?.[keyword];
+  return Array.isArray(branches)
+    ? branches.filter((branch) => branch && typeof branch === 'object' && !Array.isArray(branch))
+    : [];
+}
+
+function schemaWithoutUnions(schema) {
+  const base = { ...(schema || {}) };
+  delete base.oneOf;
+  delete base.anyOf;
+  delete base.$comment;
+  delete base.title;
+  delete base.description;
+  delete base.examples;
+  delete base.deprecated;
+  delete base.readOnly;
+  delete base.writeOnly;
+  delete base.$defs;
+  return base;
+}
+
+function schemaUnionLabel(schema) {
+  for (const keyword of SUPPORTED_SCHEMA_UNION_KEYWORDS) {
+    const branches = schemaUnionBranches(schema, keyword);
+    if (branches.length) {
+      return `${keyword}<${branches.map((branch) => schemaType(branch) || 'unknown').join('|')}>`;
+    }
+  }
+  return '';
 }
 
 function schemaTypeForValue(value) {
