@@ -311,6 +311,7 @@ public class OpenApiResourceDesignContractImporter {
         }
         Optional<JsonContent> jsonContent = jsonContent(requestBody.get(), bodyTarget, diagnostics, false);
         if (jsonContent.isEmpty()) {
+            warnUnsupportedRequestBodyContent(requestBody.get(), bodyTarget, diagnostics);
             return;
         }
         String schemaTarget = bodyTarget + "/content/" + pointerSegment(jsonContent.get().mediaType()) + "/schema";
@@ -429,6 +430,25 @@ public class OpenApiResourceDesignContractImporter {
     private static boolean jsonCompatibleMediaType(String mediaType) {
         String normalized = string(mediaType).toLowerCase(Locale.ROOT);
         return normalized.endsWith("+json") || normalized.contains("/json");
+    }
+
+    private void warnUnsupportedRequestBodyContent(Map<String, Object> requestBody,
+                                                   String target,
+                                                   List<VisualDiagnostic> diagnostics) {
+        Object rawContent = requestBody.get("content");
+        if (!(rawContent instanceof Map<?, ?> content) || content.isEmpty()) {
+            diagnostics.add(VisualDiagnostic.warning(
+                    "visual.resourceContract.openapi.requestBodyContentUnsupported",
+                    "OpenAPI requestBody does not declare content; body input will be omitted from the generated contract and descriptorSuggestion.",
+                    target + "/content"));
+            return;
+        }
+        List<String> mediaTypes = objectMap(content).keySet().stream().sorted().toList();
+        diagnostics.add(VisualDiagnostic.warning(
+                "visual.resourceContract.openapi.requestBodyContentUnsupported",
+                "OpenAPI requestBody declares unsupported media type(s) %s; body input will be omitted from the generated contract and descriptorSuggestion."
+                        .formatted(mediaTypes),
+                target + "/content"));
     }
 
     private Map<String, Object> visualSchema(Map<String, Object> openApi,

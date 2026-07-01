@@ -118,6 +118,34 @@ class OpenApiResourceDesignContractImporterTest {
     }
 
     @Test
+    void warnsAndOmitsRequestBodyWhenOpenApiRequestBodyMediaTypeIsUnsupported() {
+        OpenApiResourceDesignContractImportResult result = importer.project(
+                request("order-service.submitOrder", "submitOrder", null, null, openApiFormUrlEncodedSubmitOrder())
+        );
+
+        assertThat(result.validation().valid()).isTrue();
+        assertThat(result.contract()).isNotNull();
+        assertThat(result.contract().requestSchema().properties())
+                .containsKey("orderId")
+                .doesNotContainKey("body");
+        assertThat(result.descriptorSuggestion().defaultHeaders())
+                .containsEntry("Accept", "application/json")
+                .doesNotContainKey("Content-Type");
+        assertThat(result.descriptorSuggestion().parameterMapping().bodyExpression()).isNull();
+        assertThat(result.validation().diagnostics())
+                .filteredOn(diagnostic -> "visual.resourceContract.openapi.requestBodyContentUnsupported"
+                        .equals(diagnostic.code()))
+                .singleElement()
+                .satisfies(diagnostic -> {
+                    assertThat(diagnostic.message())
+                            .contains("application/x-www-form-urlencoded")
+                            .contains("body input will be omitted");
+                    assertThat(diagnostic.target())
+                            .isEqualTo("/openApi/paths/~1orders~1{orderId}/post/requestBody/content");
+                });
+    }
+
+    @Test
     void suggestsBearerAuthFromRootSecurityScheme() {
         OpenApiResourceDesignContractImportResult result = importer.project(
                 request("order-service.listOrders", "listOrders", null, null,
@@ -581,6 +609,58 @@ class OpenApiResourceDesignContractImporterTest {
                                                         "description", "ok",
                                                         "content", Map.of(
                                                                 "application/vnd.orders.result+json", Map.of(
+                                                                        "schema", Map.of(
+                                                                                "type", "object",
+                                                                                "properties", Map.of(
+                                                                                        "id", Map.of("type", "string")
+                                                                                ),
+                                                                                "required", List.of("id")
+                                                                        )
+                                                                )
+                                                        )
+                                                )
+                                        )
+                                )
+                        )
+                )
+        );
+    }
+
+    private static Map<String, Object> openApiFormUrlEncodedSubmitOrder() {
+        return Map.of(
+                "openapi", "3.1.0",
+                "servers", List.of(Map.of("url", "https://orders.example.test")),
+                "paths", Map.of(
+                        "/orders/{orderId}", Map.of(
+                                "post", Map.of(
+                                        "operationId", "submitOrder",
+                                        "parameters", List.of(
+                                                Map.of(
+                                                        "name", "orderId",
+                                                        "in", "path",
+                                                        "required", true,
+                                                        "schema", Map.of("type", "string")
+                                                )
+                                        ),
+                                        "requestBody", Map.of(
+                                                "required", true,
+                                                "content", Map.of(
+                                                        "application/x-www-form-urlencoded", Map.of(
+                                                                "schema", Map.of(
+                                                                        "type", "object",
+                                                                        "properties", Map.of(
+                                                                                "priority", Map.of("type", "string")
+                                                                        ),
+                                                                        "required", List.of("priority")
+                                                                )
+                                                        )
+                                                )
+                                        ),
+                                        "responses", Map.of(
+                                                "200", Map.of(
+                                                        "description", "ok",
+                                                        "content", Map.of(
+                                                                "application/json", Map.of(
                                                                         "schema", Map.of(
                                                                                 "type", "object",
                                                                                 "properties", Map.of(

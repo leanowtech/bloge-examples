@@ -759,6 +759,10 @@ guesses. Standard JSON headers plus HTTP-status response handling are filled in;
 when an operation uses a JSON-compatible vendor media type such as
 `application/vnd.example+json`, the selected media type is preserved in
 `Accept` / `Content-Type` descriptor headers and reported as a review warning.
+Non-JSON request bodies such as `application/x-www-form-urlencoded`,
+`multipart/form-data`, or binary media types are not silently projected; the
+preview emits a warning and omits the body mapping until an explicit runtime
+encoding strategy is configured.
 Advanced security schemes remain in the design contract but are reported as
 descriptor-suggestion warnings when they cannot be represented by the runtime
 descriptor. When the resource already has a stored
