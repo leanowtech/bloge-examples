@@ -1350,14 +1350,15 @@ function sourceFromOutputExpressionParts(sourceNode, outputSuffix) {
       path = rest.join('.');
     }
   }
-  const schema = schemaAtPath(schemaForPort(spec, 'source', port), path);
+  const portSchema = schemaForPort(spec, 'source', port);
+  const schema = schemaAtPath(portSchema, path);
   return {
     nodeId: sourceNode.id,
     port,
     path,
     type: schemaType(schema),
     schema,
-    dslPathSafe: isDslPathSafe(path)
+    dslPathSafe: isSchemaPathDslSafe(portSchema, path)
   };
 }
 
@@ -4433,12 +4434,12 @@ function addDynamicOutputPath(node, button) {
   }
   const portName = container.querySelector('[data-dynamic-output-port]')?.value || '';
   const path = String(container.querySelector('[data-dynamic-output-path]')?.value || '').trim();
-  if (!path || !isDslPathSafe(path)) {
+  const spec = specForNode(node);
+  const portSchema = schemaForPort(spec, 'source', portName);
+  if (!path || !isSchemaPathDslSafe(portSchema, path)) {
     setConnectionMessage('Output path must be a DSL-safe field path.', 'error');
     return;
   }
-  const spec = specForNode(node);
-  const portSchema = schemaForPort(spec, 'source', portName);
   if (!schemaAtPath(portSchema, path)) {
     setConnectionMessage('Output path is not accepted by the source schema.', 'error');
     return;
@@ -4569,12 +4570,12 @@ function addDynamicInputBinding(node, button) {
   }
   const portName = container.querySelector('[data-dynamic-input-port]')?.value || '';
   const path = String(container.querySelector('[data-dynamic-input-path]')?.value || '').trim();
-  if (!path || !isDslPathSafe(path)) {
+  const spec = specForNode(node);
+  const portSchema = schemaForPort(spec, 'target', portName);
+  if (!path || !isSchemaPathDslSafe(portSchema, path)) {
     setConnectionMessage('Input path must be a DSL-safe field path.', 'error');
     return;
   }
-  const spec = specForNode(node);
-  const portSchema = schemaForPort(spec, 'target', portName);
   if (!schemaAtPath(portSchema, path)) {
     setConnectionMessage('Input path is not accepted by the target schema.', 'error');
     return;
@@ -5023,22 +5024,65 @@ function dslSafeSchemaFieldDescriptors(schemaEnvelope) {
   return schemaFieldDescriptors(schemaEnvelope).filter((field) => field.dslPathSafe);
 }
 
-function schemaFieldsFromSchema(schema, prefix, parentRequired) {
-  const properties = schema?.properties || {};
-  const required = new Set(Array.isArray(schema?.required) ? schema.required.map(String) : []);
-  return Object.entries(properties).flatMap(([name, childSchema]) => {
+function schemaFieldsFromSchema(schema, prefix, parentRequired, prefixDslPathSafe = true) {
+  const normalizedSchema = schema && typeof schema === 'object' && !Array.isArray(schema) ? schema : {};
+  const properties = normalizedSchema.properties || {};
+  const required = new Set(Array.isArray(normalizedSchema.required) ? normalizedSchema.required.map(String) : []);
+  const propertyFields = Object.entries(properties).flatMap(([name, childSchema]) => {
     const path = prefix ? `${prefix}.${name}` : name;
-    const normalizedSchema = childSchema && typeof childSchema === 'object' ? childSchema : {};
+    const normalizedChildSchema = childSchema && typeof childSchema === 'object' && !Array.isArray(childSchema)
+      ? childSchema
+      : {};
     const fieldRequired = parentRequired && required.has(name);
-    const hasNestedRequired = Array.isArray(normalizedSchema.required) && normalizedSchema.required.length > 0;
+    const fieldDslPathSafe = prefixDslPathSafe && isDslFieldName(name);
+    const hasNestedRequired = Array.isArray(normalizedChildSchema.required)
+      && normalizedChildSchema.required.length > 0;
     return [
       {
         path,
-        schema: normalizedSchema,
+        schema: normalizedChildSchema,
         required: fieldRequired && !hasNestedRequired,
-        dslPathSafe: isDslPathSafe(path)
+        dslPathSafe: fieldDslPathSafe
       },
-      ...schemaFieldsFromSchema(normalizedSchema, path, fieldRequired)
+      ...schemaFieldsFromSchema(normalizedChildSchema, path, fieldRequired, fieldDslPathSafe)
+    ];
+  });
+  if (rawSchemaType(normalizedSchema) !== 'array') {
+    return propertyFields;
+  }
+  return [
+    ...propertyFields,
+    ...arraySchemaFieldDescriptors(normalizedSchema, prefix, prefixDslPathSafe)
+  ];
+}
+
+function arraySchemaFieldDescriptors(schema, prefix, prefixDslPathSafe) {
+  const itemDescriptors = [];
+  const prefixItems = Array.isArray(schema?.prefixItems) ? schema.prefixItems : [];
+  prefixItems.forEach((itemSchema, index) => {
+    if (itemSchema && typeof itemSchema === 'object' && !Array.isArray(itemSchema)) {
+      itemDescriptors.push({ index, schema: itemSchema });
+    }
+  });
+  const itemsSchema = schema?.items && typeof schema.items === 'object' && !Array.isArray(schema.items)
+    ? schema.items
+    : null;
+  if (itemsSchema) {
+    const nextUniformIndex = prefixItems.length;
+    if (!itemDescriptors.some((item) => item.index === nextUniformIndex)) {
+      itemDescriptors.push({ index: nextUniformIndex, schema: itemsSchema });
+    }
+  }
+  return itemDescriptors.flatMap((item) => {
+    const path = prefix ? `${prefix}.${item.index}` : String(item.index);
+    return [
+      {
+        path,
+        schema: item.schema,
+        required: false,
+        dslPathSafe: prefixDslPathSafe
+      },
+      ...schemaFieldsFromSchema(item.schema, path, false, prefixDslPathSafe)
     ];
   });
 }
@@ -5056,6 +5100,36 @@ function isDslPathSafe(path) {
 function isDslFieldName(value) {
   const text = String(value || '');
   return DSL_FIELD_IDENTIFIER.test(text) && !RESERVED_DSL_FIELD_NAMES.has(text);
+}
+
+function isSchemaPathDslSafe(schemaEnvelope, path) {
+  if (!path) {
+    return true;
+  }
+  let current = schemaEnvelope?.schema || {};
+  const normalized = String(path).startsWith('.') ? String(path).slice(1) : String(path);
+  for (const segment of normalized.split('.').filter(Boolean)) {
+    if (rawSchemaType(current) === 'array') {
+      const index = arrayIndexSegment(segment);
+      if (index !== null) {
+        current = arrayItemSchemaForIndex(current, index) || {};
+        continue;
+      }
+    }
+    if (!isDslFieldName(segment)) {
+      return false;
+    }
+    current = childSchemaForPathSegment(current, segment) || {};
+  }
+  return true;
+}
+
+function childSchemaForPathSegment(schema, segment) {
+  const properties = schema?.properties || {};
+  if (Object.prototype.hasOwnProperty.call(properties, segment)) {
+    return properties[segment] || {};
+  }
+  return patternPropertySchema(schema, segment) || additionalPropertySchema(schema);
 }
 
 function hasSchemaProperties(schema) {
@@ -5756,12 +5830,15 @@ function outputReferenceFromSelectionPath(spec, selectionPath) {
 
 function rememberDynamicOutputPath(builder, nodeId, portName, path) {
   const node = builder.nodes.find((item) => item.id === nodeId);
-  if (!node || node.type !== 'customOperator' || !path || !isDslPathSafe(path)) {
+  if (!node || node.type !== 'customOperator' || !path) {
     return;
   }
   const spec = specForNode(node);
   const resolvedPort = portName || outputPortsForSpec(spec)[0]?.name || spec.outputPort || 'output';
   const portSchema = schemaForPort(spec, 'source', resolvedPort);
+  if (!isSchemaPathDslSafe(portSchema, path)) {
+    return;
+  }
   if (!schemaAtPath(portSchema, path)) {
     return;
   }
@@ -6408,7 +6485,7 @@ function dynamicOutputFieldDescriptors(node, spec, portName, portSchema) {
       return {
         path,
         schema: schemaAtPath(portSchema, path) || {},
-        dslPathSafe: isDslPathSafe(path)
+        dslPathSafe: isSchemaPathDslSafe(portSchema, path)
       };
     })
     .filter((field) => field.path && field.dslPathSafe && schemaAtPath(portSchema, field.path));
@@ -6557,7 +6634,7 @@ function dynamicInputFieldDescriptors(node, spec, portName, portSchema) {
         path,
         schema: schemaAtPath(portSchema, path) || {},
         required: requiredInputNamesForPort({ schema: portSchema }).includes(path),
-        dslPathSafe: isDslPathSafe(path)
+        dslPathSafe: isSchemaPathDslSafe(portSchema, path)
       };
     })
     .filter((field) => field.path && field.dslPathSafe && schemaAtPath(portSchema, field.path));
@@ -8462,20 +8539,21 @@ function collectDynamicContextFields(inputSchema, value, prefix, fields) {
     if (!schema) {
       continue;
     }
-    fields.push({ path, schema, required: false, dslPathSafe: isDslPathSafe(path) });
+    fields.push({ path, schema, required: false, dslPathSafe: isSchemaPathDslSafe(inputSchema, path) });
     collectDynamicContextFields(inputSchema, item, path, fields);
   }
 }
 
 function contextSourceForPath(path, builder = state.builder) {
-  const schema = schemaAtPath(currentGraphInputSchema(builder), path);
+  const inputSchema = currentGraphInputSchema(builder);
+  const schema = schemaAtPath(inputSchema, path);
   return {
     nodeId: CONTEXT_SOURCE_ID,
     port: 'ctx',
     path: path || '',
     type: schemaType(schema),
     schema,
-    dslPathSafe: isDslPathSafe(path || '')
+    dslPathSafe: isSchemaPathDslSafe(inputSchema, path || '')
   };
 }
 

@@ -335,9 +335,23 @@ public class VisualGraphRunService {
                 current = map.get(segment);
                 continue;
             }
+            if (current instanceof List<?> list) {
+                Integer index = listIndexSegment(segment);
+                current = index == null || index >= list.size() ? null : list.get(index);
+                continue;
+            }
             current = recordAccessor(current, segment);
         }
         return current;
+    }
+
+    private static Integer listIndexSegment(String segment) {
+        try {
+            int index = Integer.parseInt(segment);
+            return index < 0 ? null : index;
+        } catch (NumberFormatException ex) {
+            return null;
+        }
     }
 
     private static Object recordAccessor(Object target, String accessor) {

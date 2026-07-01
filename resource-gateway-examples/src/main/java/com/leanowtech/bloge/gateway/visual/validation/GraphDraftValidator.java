@@ -763,7 +763,7 @@ public class GraphDraftValidator {
         }
 
         Map<String, Object> sourceProperty = propertyAtPath(sourcePort.get().schema(), binding.path());
-        validateDslPathSegments(binding.path(), targetPath + "/path", diagnostics);
+        validateDslPathSegments(sourcePort.get().schema(), binding.path(), targetPath + "/path", diagnostics);
         if (sourceProperty == null) {
             diagnostics.add(VisualDiagnostic.error("visual.binding.unknownOutputPath",
                     "Source node '%s' port '%s' output path does not exist: %s"
@@ -808,7 +808,7 @@ public class GraphDraftValidator {
                                                    String targetPath,
                                                    List<VisualDiagnostic> diagnostics) {
         Map<String, Object> sourceProperty = propertyAtPath(inputSchema, binding.path());
-        validateDslPathSegments(binding.path(), targetPath + "/path", diagnostics);
+        validateDslPathSegments(inputSchema, binding.path(), targetPath + "/path", diagnostics);
         if (sourceProperty == null) {
             diagnostics.add(VisualDiagnostic.error("visual.binding.unknownContextPath",
                     "Graph input path does not exist: ctx.%s".formatted(binding.path()),
@@ -2369,15 +2369,29 @@ public class GraphDraftValidator {
         });
     }
 
-    private static void validateDslPathSegments(String path,
+    private static void validateDslPathSegments(SchemaEnvelope schema,
+                                                String path,
                                                 String diagnosticPath,
                                                 List<VisualDiagnostic> diagnostics) {
         if (path == null || path.isBlank()) {
             return;
         }
         String normalized = path.startsWith(".") ? path.substring(1) : path;
+        Map<String, Object> currentSchema = schema == null ? Map.of() : schema.schema();
         for (String segment : normalized.split("\\.")) {
-            if (segment.isBlank() || isDslFieldName(segment)) {
+            if (segment.isBlank()) {
+                continue;
+            }
+            if ("array".equals(schemaType(currentSchema))) {
+                Integer index = arrayIndexSegment(segment);
+                if (index != null) {
+                    Map<String, Object> itemSchema = arrayItemSchemaForIndex(currentSchema, index);
+                    currentSchema = itemSchema == null ? Map.of() : itemSchema;
+                    continue;
+                }
+            }
+            if (isDslFieldName(segment)) {
+                currentSchema = childSchemaForSegment(currentSchema, segment);
                 continue;
             }
             diagnostics.add(VisualDiagnostic.error("visual.binding.pathSegment.invalid",
@@ -2385,6 +2399,20 @@ public class GraphDraftValidator {
                             .formatted(segment, path),
                     diagnosticPath));
         }
+    }
+
+    private static Map<String, Object> childSchemaForSegment(Map<String, Object> schema, String segment) {
+        Map<String, Object> properties = propertiesOf(schema);
+        Map<String, Object> child = objectProperty(properties.get(segment));
+        if (child != null) {
+            return child;
+        }
+        Map<String, Object> pattern = patternPropertySchema(schema, segment);
+        if (pattern != null) {
+            return pattern;
+        }
+        Map<String, Object> additional = additionalPropertySchema(schema);
+        return additional == null ? Map.of() : additional;
     }
 
     private static void validateConfigObject(Object value,

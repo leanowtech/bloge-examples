@@ -524,6 +524,33 @@ class VisualAuthoringBrowserDomTest {
     }
 
     @Test
+    void composerExposesSchemaArrayIndexOutputPathsInRealBrowser() throws JsonProcessingException {
+        driver = newChromeDriverOrSkip();
+        WebDriverWait wait = new WebDriverWait(driver, WAIT_TIMEOUT);
+        driver.get("http://localhost:" + port + "/examples/gateway");
+
+        waitForComposer(wait);
+        wait.until(ExpectedConditions.visibilityOfElementLocated(By.id("operator-palette")));
+
+        importOperatorLibrary(wait, arrayOutputLibrary());
+        dragOperatorToCanvas(wait, "Array facts", "risk:arrayFacts", "riskArrayFacts", 140, 120);
+        wait.until(ExpectedConditions.visibilityOfElementLocated(By.cssSelector(
+                "#diagram [data-node-id='riskArrayFacts'] [data-port-role='source'][data-port='output'][data-path='items.0']"
+        )));
+
+        selectByValue(wait, By.id("graph-output-node"), "riskArrayFacts");
+        wait.until(ExpectedConditions.presenceOfElementLocated(By.cssSelector(
+                "#graph-output-path option[value='items.0']"
+        )));
+        List<String> outputPathValues = driver.findElements(By.cssSelector("#graph-output-path option"))
+                .stream()
+                .map(option -> option.getAttribute("value"))
+                .toList();
+
+        assertThat(outputPathValues).contains("items", "items.0");
+    }
+
+    @Test
     void composerDefaultsUnboundOptionalLoweringTemplateInputsInRealBrowser() throws JsonProcessingException {
         driver = newChromeDriverOrSkip();
         WebDriverWait wait = new WebDriverWait(driver, WAIT_TIMEOUT);
@@ -1077,6 +1104,42 @@ class VisualAuthoringBrowserDomTest {
                 "bloge.visualOperatorLibrary.v1",
                 "risk-unsafe-output",
                 "Risk unsafe output operators",
+                "1.0.0",
+                "risk-team",
+                "ACTIVE",
+                List.of(operator)
+        );
+    }
+
+    private static OperatorLibrary arrayOutputLibrary() {
+        OperatorDefinition operator = new OperatorDefinition(
+                "bloge.visualOperator.v1",
+                "risk:arrayFacts",
+                "1.0.0",
+                new OperatorDefinition.Display("Array facts",
+                        "Produces array output facts.",
+                        List.of("risk", "array")),
+                new OperatorDefinition.Source("user-library", "", "", "", true),
+                new OperatorDefinition.Ports(
+                        List.of(),
+                        List.of(new OperatorDefinition.Port("output",
+                                SchemaEnvelope.object(Map.of(
+                                        "items", Map.of(
+                                                "type", "array",
+                                                "items", Map.of("type", "integer"))
+                                ), List.of()),
+                                true,
+                                "Array output."))
+                ),
+                SchemaEnvelope.opaque(),
+                OperatorDefinition.Capabilities.pure(),
+                new OperatorDefinition.Lowering("native", "riskArrayFacts", Map.of()),
+                List.of()
+        );
+        return new OperatorLibrary(
+                "bloge.visualOperatorLibrary.v1",
+                "risk-array-output",
+                "Risk array output operators",
                 "1.0.0",
                 "risk-team",
                 "ACTIVE",

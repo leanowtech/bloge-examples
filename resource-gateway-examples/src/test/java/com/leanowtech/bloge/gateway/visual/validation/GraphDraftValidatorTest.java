@@ -2322,6 +2322,100 @@ class GraphDraftValidatorTest {
     }
 
     @Test
+    void acceptsContextPathBindingWithArrayIndexSegment() {
+        GraphDraftValidator validator = new GraphDraftValidator(
+                VisualCatalogTestSupport.catalogWithLibrary(
+                        VisualCatalogTestSupport.numericBoundsCompatibilityLibrary(0, 1000, 0, 1000)));
+        SchemaEnvelope inputSchema = SchemaEnvelope.object(Map.of(
+                "scores", Map.of("type", "array", "items", Map.of(
+                        "type", "integer",
+                        "minimum", 0,
+                        "maximum", 1000))
+        ), List.of("scores"));
+        GraphDraft draft = new GraphDraft(
+                "",
+                "",
+                0,
+                "arrayContextBinding",
+                "",
+                "",
+                "",
+                "",
+                inputSchema,
+                List.of(new GraphDraft.DraftNode(
+                        "scoreConsumer",
+                        "risk:scoreConsumer",
+                        "",
+                        Map.of("score", GraphDraft.Binding.contextPath("scores.0")),
+                        Map.of(),
+                        null
+                )),
+                List.of(),
+                Map.of(),
+                new GraphDraft.OutputSelection("scoreConsumer", "")
+        );
+
+        VisualValidationResult result = validator.validate(draft);
+
+        assertThat(result.valid()).as(result.diagnostics().toString()).isTrue();
+        assertThat(result.diagnostics())
+                .noneSatisfy(diagnostic -> assertThat(diagnostic.code())
+                        .isEqualTo("visual.binding.pathSegment.invalid"));
+    }
+
+    @Test
+    void acceptsNodePathBindingWithArrayIndexSegment() {
+        GraphDraftValidator validator = new GraphDraftValidator(
+                VisualCatalogTestSupport.catalogWithLibrary(arrayItemScoreLibrary()));
+        GraphDraft draft = new GraphDraft(
+                "",
+                "",
+                0,
+                "arrayNodeBinding",
+                "",
+                "",
+                "",
+                "",
+                null,
+                List.of(
+                        new GraphDraft.DraftNode(
+                                "listFacts",
+                                "risk:listFacts",
+                                "",
+                                Map.of(),
+                                Map.of(),
+                                null
+                        ),
+                        new GraphDraft.DraftNode(
+                                "scoreConsumer",
+                                "risk:scoreConsumer",
+                                "",
+                                Map.of("score", GraphDraft.Binding.nodePath(
+                                        "listFacts",
+                                        "output",
+                                        "items.0",
+                                        "inputs",
+                                        "score")),
+                                Map.of(),
+                                null
+                        )
+                ),
+                List.of(new GraphDraft.DraftEdge("score", "data",
+                        new GraphDraft.Endpoint("listFacts", "output", "items.0"),
+                        new GraphDraft.Endpoint("scoreConsumer", "inputs", "score"))),
+                Map.of(),
+                new GraphDraft.OutputSelection("scoreConsumer", "")
+        );
+
+        VisualValidationResult result = validator.validate(draft);
+
+        assertThat(result.valid()).isTrue();
+        assertThat(result.diagnostics())
+                .noneSatisfy(diagnostic -> assertThat(diagnostic.code())
+                        .isEqualTo("visual.binding.pathSegment.invalid"));
+    }
+
+    @Test
     void acceptsNodePathBindingWhenArrayItemBoundsFitTargetBounds() {
         GraphDraftValidator validator = new GraphDraftValidator(
                 VisualCatalogTestSupport.catalogWithLibrary(
@@ -4733,6 +4827,44 @@ class GraphDraftValidatorTest {
                 List.of(),
                 Map.of(),
                 new GraphDraft.OutputSelection("listConsumer", "")
+        );
+    }
+
+    private static OperatorLibrary arrayItemScoreLibrary() {
+        OperatorDefinition scoreConsumer = new OperatorDefinition(
+                "bloge.visualOperator.v1",
+                "risk:scoreConsumer",
+                "1.0.0",
+                new OperatorDefinition.Display("Score consumer",
+                        "Consumes one score.",
+                        List.of("risk", "numeric")),
+                new OperatorDefinition.Source("user-library", "", "", "", true),
+                new OperatorDefinition.Ports(
+                        List.of(new OperatorDefinition.Port("inputs",
+                                SchemaEnvelope.object(Map.of("score", Map.of("type", "integer")),
+                                        List.of("score")),
+                                true,
+                                "Score input.")),
+                        List.of(new OperatorDefinition.Port("output",
+                                SchemaEnvelope.object(Map.of("accepted", Map.of("type", "boolean")), List.of()),
+                                true,
+                                "Consumer output."))
+                ),
+                SchemaEnvelope.opaque(),
+                OperatorDefinition.Capabilities.pure(),
+                new OperatorDefinition.Lowering("transform", "transform", Map.of(
+                        "assignments", Map.of("accepted", "true")
+                )),
+                List.of()
+        );
+        return new OperatorLibrary(
+                "bloge.visualOperatorLibrary.v1",
+                "risk-array-item-score",
+                "Array item score operators",
+                "1.0.0",
+                "risk-team",
+                "ACTIVE",
+                List.of(VisualCatalogTestSupport.listFactsOperator("integer"), scoreConsumer)
         );
     }
 

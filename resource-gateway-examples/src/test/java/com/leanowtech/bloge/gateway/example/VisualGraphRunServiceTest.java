@@ -176,6 +176,51 @@ class VisualGraphRunServiceTest {
     }
 
     @Test
+    void extractsArrayIndexFromSelectedOutputPath() {
+        SchemaEnvelope scoresSchema = SchemaEnvelope.object(Map.of(
+                "scores", Map.of(
+                        "type", "array",
+                        "items", Map.of("type", "integer"))
+        ), List.of("scores"));
+        VisualOperatorCatalog catalog = transformCatalogWithOutput(scoresSchema);
+        VisualGraphRunService service = new VisualGraphRunService(
+                new GraphDraftValidator(catalog),
+                new GraphDraftDslGenerator(catalog),
+                new DynamicGatewayComposerService(MockOperator.returning(null))
+        );
+        GraphDraft draft = withFingerprints(new GraphDraft(
+                "",
+                "",
+                0,
+                "arrayOutputPolicy",
+                "",
+                "",
+                "",
+                "",
+                scoresSchema,
+                List.of(new GraphDraft.DraftNode(
+                        "response",
+                        "bloge:transform",
+                        "",
+                        Map.of("scores", GraphDraft.Binding.contextPath("scores")),
+                        Map.of(),
+                        null
+                )),
+                List.of(),
+                Map.of(),
+                new GraphDraft.OutputSelection("response", "scores.1")
+        ), catalog);
+
+        VisualGraphRunResponse response = service.run(draft, Map.of("scores", List.of(610, 720)), "");
+
+        assertThat(response.validated()).isTrue();
+        assertThat(response.compiled()).isTrue();
+        assertThat(response.errors()).isEmpty();
+        assertThat(response.success()).isTrue();
+        assertThat(response.output()).isEqualTo(720);
+    }
+
+    @Test
     void rejectsDraftRunWhenContextViolatesInputSchema() {
         VisualOperatorCatalog catalog = VisualCatalogTestSupport.catalogWithLibrary(
                 VisualCatalogTestSupport.eligibilityLibrary("integer"));
@@ -745,6 +790,38 @@ class VisualGraphRunServiceTest {
 
             @Override
             public Optional<com.leanowtech.bloge.gateway.visual.catalog.OperatorDefinition> find(String operatorRef) {
+                return "bloge:transform".equals(operatorRef) ? Optional.of(transform) : Optional.empty();
+            }
+        };
+    }
+
+    private static VisualOperatorCatalog transformCatalogWithOutput(SchemaEnvelope outputSchema) {
+        return new VisualOperatorCatalog() {
+            private final OperatorDefinition transform = new OperatorDefinition(
+                    "bloge.visualOperator.v1",
+                    "bloge:transform",
+                    "1.0.0",
+                    new OperatorDefinition.Display("Transform", "Schema-aware transform.", List.of("logic")),
+                    OperatorDefinition.Source.builtIn("bloge-dsl"),
+                    new OperatorDefinition.Ports(
+                            List.of(new OperatorDefinition.Port("inputs", SchemaEnvelope.opaque(), false,
+                                    "Inputs.")),
+                            List.of(new OperatorDefinition.Port("output", outputSchema, true, "Output."))
+                    ),
+                    SchemaEnvelope.opaque(),
+                    OperatorDefinition.Capabilities.pure(),
+                    new OperatorDefinition.Lowering("dsl", "transform", Map.of()),
+                    List.of()
+            );
+
+            @Override
+            public List<OperatorDefinition> list(
+                    com.leanowtech.bloge.gateway.visual.catalog.OperatorCatalogQuery query) {
+                return List.of(transform);
+            }
+
+            @Override
+            public Optional<OperatorDefinition> find(String operatorRef) {
                 return "bloge:transform".equals(operatorRef) ? Optional.of(transform) : Optional.empty();
             }
         };
