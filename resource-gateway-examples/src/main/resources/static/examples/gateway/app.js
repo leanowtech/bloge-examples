@@ -683,6 +683,11 @@ function dslSafeOutputPortsForSpec(spec) {
   return outputPortsForSpec(spec).filter(outputPortDslPathSafe);
 }
 
+function allOutputPortsDslPathSafe(spec) {
+  const outputPorts = outputPortsForSpec(spec);
+  return outputPorts.length > 0 && outputPorts.every(outputPortDslPathSafe);
+}
+
 function inputPortForInputPath(spec, path) {
   const ports = inputPortsForSpec(spec);
   const matches = ports.filter((port) => schemaDeclaresPath(port.schema, path));
@@ -4602,16 +4607,16 @@ function renderGraphOutputEditor() {
   const pathOptions = selectedNode ? outputPathOptionsForNode(selectedNode) : [];
   const outputSummary = output.path ? `${output.nodeId}.${output.path}` : output.nodeId || 'No output';
   const orderedOutputNodes = orderedBuilderNodes();
-  const selectableOutputNodes = orderedOutputNodes.filter((node) => dslSafeOutputPortsForSpec(specForNode(node)).length > 0);
-  const nodeOptions = (selectableOutputNodes.length ? selectableOutputNodes : orderedOutputNodes).map((node) => {
+  const selectableOutputNodes = orderedOutputNodes.filter((node) => outputPathOptionsForNode(node).length > 0);
+  const nodeOptions = selectableOutputNodes.length ? selectableOutputNodes.map((node) => {
     const selected = node.id === output.nodeId ? ' selected' : '';
     return `<option value="${escapeHtml(node.id)}"${selected}>${escapeHtml(labelForNode(node))} (${escapeHtml(node.id)})</option>`;
-  }).join('');
-  const pathOptionMarkup = pathOptions.map((option) => {
+  }).join('') : '<option value="">No selectable output</option>';
+  const pathOptionMarkup = pathOptions.length ? pathOptions.map((option) => {
     const selected = option.value === output.path ? ' selected' : '';
     const type = option.type ? ` · ${option.type}` : '';
     return `<option value="${escapeHtml(option.value)}"${selected}>${escapeHtml(option.label + type)}</option>`;
-  }).join('');
+  }).join('') : '<option value="">No selectable path</option>';
 
   target.innerHTML = `
     <div class="operator-editor-heading">
@@ -4637,11 +4642,13 @@ function renderGraphOutputEditor() {
   const nodeSelect = $('graph-output-node');
   if (nodeSelect) {
     nodeSelect.addEventListener('change', () => {
-      if (state.builder.output?.nodeId === nodeSelect.value && !state.builder.output?.path) {
+      const nextNode = state.builder.nodes.find((node) => node.id === nodeSelect.value);
+      const nextPath = defaultOutputPathForNode(nextNode);
+      if (state.builder.output?.nodeId === nodeSelect.value && state.builder.output?.path === nextPath) {
         return;
       }
       recordBuilderHistory('Change graph output node');
-      state.builder.output = { nodeId: nodeSelect.value, path: '' };
+      state.builder.output = { nodeId: nodeSelect.value, path: nextPath };
       syncComposerFromBuilder({ render: false });
       renderGraphOutputEditor();
     });
@@ -7156,8 +7163,12 @@ function firstDecisionTableId() {
 function defaultOutputNodeForBuilder(builder = state.builder) {
   const ordered = orderedBuilderNodes(builder);
   const lastTransform = [...ordered].reverse().find((node) => node.type === 'transform');
-  const lastSelectable = [...ordered].reverse().find((node) => outputPortsForSpec(specForNode(node)).length > 0);
+  const lastSelectable = [...ordered].reverse().find((node) => outputPathOptionsForNode(node).length > 0);
   return (lastTransform || lastSelectable || ordered[ordered.length - 1])?.id || 'response';
+}
+
+function defaultOutputPathForNode(node) {
+  return outputPathOptionsForNode(node)[0]?.value || '';
 }
 
 function ensureBuilderOutput(builder = state.builder) {
@@ -7165,13 +7176,15 @@ function ensureBuilderOutput(builder = state.builder) {
   const requested = builder.output || {};
   const nodeExists = builder.nodes.some((node) => node.id === requested.nodeId);
   const requestedNode = builder.nodes.find((node) => node.id === requested.nodeId);
-  const nodeId = nodeExists && outputPortsForSpec(specForNode(requestedNode)).length > 0
+  const nodeId = nodeExists && outputPathOptionsForNode(requestedNode).length > 0
     ? requested.nodeId
     : fallbackNodeId;
   const node = builder.nodes.find((item) => item.id === nodeId);
   const pathOptions = outputPathOptionsForNode(node);
   const requestedPath = String(requested.path || '');
-  const path = pathOptions.some((option) => option.value === requestedPath) ? requestedPath : '';
+  const path = pathOptions.some((option) => option.value === requestedPath)
+    ? requestedPath
+    : defaultOutputPathForNode(node);
   builder.output = { nodeId, path };
   return builder.output;
 }
@@ -8339,17 +8352,21 @@ function outputPathOptionsForNode(node) {
     return [];
   }
   const spec = specForNode(node);
-  const outputPorts = dslSafeOutputPortsForSpec(spec);
-  if (!outputPorts.length) {
+  const outputPorts = outputPortsForSpec(spec);
+  const safeOutputPorts = dslSafeOutputPortsForSpec(spec);
+  if (!safeOutputPorts.length) {
     return [];
   }
-  const options = [{
-    value: '',
-    label: 'Full output',
-    type: outputPorts.length === 1 ? schemaType(outputPorts[0]?.schema?.schema) : ''
-  }];
+  const options = [];
+  if (allOutputPortsDslPathSafe(spec)) {
+    options.push({
+      value: '',
+      label: 'Full output',
+      type: outputPorts.length === 1 ? schemaType(outputPorts[0]?.schema?.schema) : ''
+    });
+  }
   if (outputPorts.length > 1) {
-    for (const port of outputPorts) {
+    for (const port of safeOutputPorts) {
       options.push({
         value: port.name || spec.outputPort || 'output',
         label: `${port.name || spec.outputPort || 'output'} port`,

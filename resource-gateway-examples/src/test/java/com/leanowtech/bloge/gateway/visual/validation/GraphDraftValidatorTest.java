@@ -4617,6 +4617,44 @@ class GraphDraftValidatorTest {
     }
 
     @Test
+    void rejectsFullGraphOutputSelectionWhenOutputPortCannotRenderAsDslPathSegment() {
+        GraphDraftValidator validator = new GraphDraftValidator(
+                VisualCatalogTestSupport.catalogWithLibrary(VisualCatalogTestSupport.unsafeOutputPortLibrary()));
+        GraphDraft draft = new GraphDraft(
+                "",
+                "",
+                0,
+                "unsafeWholeOutputPortSelection",
+                "",
+                "",
+                "",
+                "",
+                null,
+                List.of(new GraphDraft.DraftNode(
+                        "unsafePortFacts",
+                        "risk:unsafePortFacts",
+                        "",
+                        Map.of(),
+                        Map.of(),
+                        null
+                )),
+                List.of(),
+                Map.of(),
+                new GraphDraft.OutputSelection("unsafePortFacts", "")
+        );
+
+        VisualValidationResult result = validator.validate(draft);
+
+        assertThat(result.valid()).isFalse();
+        assertThat(result.diagnostics())
+                .anySatisfy(diagnostic -> {
+                    assertThat(diagnostic.code()).isEqualTo("visual.output.portSegment.invalid");
+                    assertThat(diagnostic.target()).isEqualTo("/output/path");
+                    assertThat(diagnostic.message()).contains("graph");
+                });
+    }
+
+    @Test
     void rejectsEdgeWhenPortTypesDoNotMatch() {
         GraphDraftValidator validator = new GraphDraftValidator(
                 VisualCatalogTestSupport.catalogWithLoanApplicantResourceAndLibrary(

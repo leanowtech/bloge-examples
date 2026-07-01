@@ -190,6 +190,7 @@ class VisualAuthoringAppJsTest {
                   'inputPortsForSpec',
                   'outputPortsForSpec',
                   'dslSafeOutputPortsForSpec',
+                  'allOutputPortsDslPathSafe',
                   'inputPortForInputPath',
                   'schemaDeclaresPath',
                   'requiredInputNamesForPort',
@@ -249,6 +250,9 @@ class VisualAuthoringAppJsTest {
                   'connectionLocalHeuristicStatus',
                   'connectionLocalMismatchIsAdvisory',
                   'orderedBuilderNodes',
+                  'defaultOutputNodeForBuilder',
+                  'defaultOutputPathForNode',
+                  'ensureBuilderOutput',
                   'builderEdges',
                   'canonicalEdgeKind',
                   'builderConfigBindings',
@@ -375,6 +379,35 @@ class VisualAuthoringAppJsTest {
                       outputPort: 'graph',
                       outputPorts: [{
                         name: 'graph',
+                        required: true,
+                        schema: {
+                          schema: {
+                            type: 'object',
+                            properties: {
+                              score: { type: 'integer' }
+                            }
+                          }
+                        }
+                      }]
+                    };
+                  }
+                  if (node.id === 'mixedOutputNode') {
+                    return {
+                      label: 'Mixed output',
+                      outputPort: 'facts',
+                      outputPorts: [{
+                        name: 'graph',
+                        required: true,
+                        schema: {
+                          schema: {
+                            type: 'object',
+                            properties: {
+                              hiddenScore: { type: 'integer' }
+                            }
+                          }
+                        }
+                      }, {
+                        name: 'facts',
                         required: true,
                         schema: {
                           schema: {
@@ -871,6 +904,16 @@ class VisualAuthoringAppJsTest {
                 const unsafeOutputNode = { id: 'unsafeOutputNode', type: 'customOperator' };
                 const unsafeOutputHandleCount = context.actualSourceHandlesForNode(unsafeOutputNode).length;
                 const unsafeOutputOptionCount = context.actualOutputPathOptionsForNode(unsafeOutputNode).length;
+                const mixedOutputNode = { id: 'mixedOutputNode', type: 'customOperator' };
+                const mixedOutputOptions = context.actualOutputPathOptionsForNode(mixedOutputNode)
+                  .map((option) => option.value)
+                  .join('|');
+                const mixedOutputDefaultPath = context.defaultOutputPathForNode(mixedOutputNode);
+                const mixedOutputBuilder = {
+                  nodes: [mixedOutputNode],
+                  output: { nodeId: 'mixedOutputNode', path: '' }
+                };
+                const mixedOutputNormalizedPath = context.ensureBuilderOutput(mixedOutputBuilder).path;
                 context.contextSourceHandles = () => [
                   { nodeId: '__ctx', path: 'name', type: 'string' },
                   { nodeId: '__ctx', path: 'score', type: 'integer' }
@@ -1144,6 +1187,9 @@ class VisualAuthoringAppJsTest {
                   ['unknown output parse safety', parsedUnknownOutput.dslPathSafe, true],
                   ['unsafe output port source handles filtered', unsafeOutputHandleCount, 0],
                   ['unsafe output port output options filtered', unsafeOutputOptionCount, 0],
+                  ['mixed unsafe output hides full output option', mixedOutputOptions, 'facts'],
+                  ['mixed unsafe output default path', mixedOutputDefaultPath, 'facts'],
+                  ['mixed unsafe output normalized path', mixedOutputNormalizedPath, 'facts'],
                   ['context binding kind', contextBinding.kind, 'contextPath'],
                   ['context binding path', contextBinding.path, 'scores.0.value'],
                   ['output binding kind', outputBinding.kind, 'nodePath'],

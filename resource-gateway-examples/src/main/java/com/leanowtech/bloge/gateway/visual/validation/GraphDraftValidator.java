@@ -369,6 +369,7 @@ public class GraphDraftValidator {
             return;
         }
         if (output.path().isBlank()) {
+            validateWholeOutputPortDslPathSegments(operator, diagnostics);
             return;
         }
         OutputReference outputReference = outputReference(operator, output.path());
@@ -388,6 +389,14 @@ public class GraphDraftValidator {
                     "Output node '%s' port '%s' does not expose path '%s'."
                             .formatted(output.nodeId(), outputPort.get().name(), outputReference.path()),
                     "/output/path"));
+        }
+    }
+
+    private static void validateWholeOutputPortDslPathSegments(OperatorDefinition operator,
+                                                               List<VisualDiagnostic> diagnostics) {
+        for (OperatorDefinition.Port port : operator.ports().outputs()) {
+            validateOutputPortDslPathSegment(port, "/output/path",
+                    "visual.output.portSegment.invalid", diagnostics);
         }
     }
 
