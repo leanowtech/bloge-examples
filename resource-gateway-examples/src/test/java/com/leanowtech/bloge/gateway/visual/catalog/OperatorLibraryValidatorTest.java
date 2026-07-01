@@ -3015,6 +3015,23 @@ class OperatorLibraryValidatorTest {
     }
 
     @Test
+    void acceptsTransformLoweringWhenPureTemplateArrayIndexMatchesOutputSchema() {
+        OperatorDefinition operator = transformOperator(
+                "risk:arrayTemplateOutputMatch",
+                Map.of("scores", Map.of("type", "array", "items", Map.of("type", "integer"))),
+                List.of("scores"),
+                Map.of("score", Map.of("type", "integer")),
+                List.of("score"),
+                Map.of("score", "{{input.scores.0}}")
+        );
+
+        VisualValidationResult result = validator.validate(libraryWith(operator));
+
+        assertThat(result.valid()).isTrue();
+        assertThat(result.diagnostics()).isEmpty();
+    }
+
+    @Test
     void rejectsTransformLoweringWhenParentAssignmentDoesNotGuaranteeNestedRequiredOutput() {
         Map<String, Object> decisionSchema = Map.of(
                 "type", "object",

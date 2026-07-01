@@ -57,22 +57,31 @@ public class GraphDraftValidator {
             "let", "import", "as", "script", "exit", "exhausted"
     );
     private static final String IDENTIFIER_PATTERN = "[A-Za-z_][A-Za-z0-9_]*";
-    private static final String PATH_PATTERN = IDENTIFIER_PATTERN + "(?:\\." + IDENTIFIER_PATTERN + ")*";
+    private static final String ARRAY_INDEX_PATTERN = "\\d+";
+    private static final String PATH_SEGMENT_PATTERN = IDENTIFIER_PATTERN + "(?:\\[" + ARRAY_INDEX_PATTERN + "\\])*";
+    private static final String TEMPLATE_PATH_SEGMENT_PATTERN = "(?:" + IDENTIFIER_PATTERN + "|"
+            + ARRAY_INDEX_PATTERN + ")";
+    private static final String PATH_PATTERN = PATH_SEGMENT_PATTERN + "(?:\\." + PATH_SEGMENT_PATTERN + ")*";
+    private static final String TEMPLATE_PATH_PATTERN = TEMPLATE_PATH_SEGMENT_PATTERN
+            + "(?:\\." + TEMPLATE_PATH_SEGMENT_PATTERN + ")*";
     private static final Pattern DSL_IDENTIFIER = Pattern.compile(IDENTIFIER_PATTERN);
+    private static final Pattern EXPRESSION_PATH_SEGMENT = Pattern.compile(PATH_SEGMENT_PATTERN);
+    private static final Pattern BRACKET_INDEX = Pattern.compile("\\[(" + ARRAY_INDEX_PATTERN + ")]");
+    private static final Pattern ARRAY_INDEX = Pattern.compile(ARRAY_INDEX_PATTERN);
     private static final Pattern PURE_CONTEXT_REFERENCE = Pattern.compile("^ctx(?:\\.(" + PATH_PATTERN + "))?$");
     private static final Pattern PURE_NODE_REFERENCE = Pattern.compile(
             "^(" + IDENTIFIER_PATTERN + ")\\.output(?:\\.(" + PATH_PATTERN + "))?$");
     private static final Pattern CONTEXT_REFERENCE = Pattern.compile(
-            "(?<![A-Za-z0-9_.])ctx(?:\\.(" + PATH_PATTERN + "))?(?![A-Za-z0-9_])");
+            "(?<![A-Za-z0-9_.])ctx(?:\\.(" + PATH_PATTERN + "))?(?![A-Za-z0-9_\\[])");
     private static final Pattern NODE_REFERENCE = Pattern.compile(
             "(?<![A-Za-z0-9_.])(" + IDENTIFIER_PATTERN + ")\\.output(?:\\.(" + PATH_PATTERN + "))?"
-                    + "(?![A-Za-z0-9_])");
+                    + "(?![A-Za-z0-9_\\[])");
     private static final Pattern PATH_LIKE_CONTEXT_REFERENCE = Pattern.compile(
-            "(?<![A-Za-z0-9_.])ctx\\.([^\\s,;(){}\\[\\]+*/<>=!&|?]+)");
+            "(?<![A-Za-z0-9_.])ctx\\.([^\\s,;(){}+*/<>=!&|?]+)");
     private static final Pattern PATH_LIKE_NODE_REFERENCE = Pattern.compile(
-            "(?<![A-Za-z0-9_.])(" + IDENTIFIER_PATTERN + ")\\.output\\.([^\\s,;(){}\\[\\]+*/<>=!&|?]+)");
+            "(?<![A-Za-z0-9_.])(" + IDENTIFIER_PATTERN + ")\\.output\\.([^\\s,;(){}+*/<>=!&|?]+)");
     private static final Pattern BRANCH_SELECTOR_TEMPLATE = Pattern.compile("^\\{\\{\\s*((?:input\\.)?"
-            + PATH_PATTERN + ")\\s*}}$");
+            + TEMPLATE_PATH_PATTERN + ")\\s*}}$");
     private static final Pattern INTEGER_LITERAL = Pattern.compile("[-+]?\\d+");
     private static final Pattern NUMBER_LITERAL = Pattern.compile(
             "[-+]?(?:\\d+|\\d+\\.\\d*|\\d*\\.\\d+)(?:[eE][-+]?\\d+)?");
@@ -952,7 +961,9 @@ public class GraphDraftValidator {
         Matcher context = PURE_CONTEXT_REFERENCE.matcher(expression);
         if (context.matches()) {
             String path = context.group(1) == null ? "" : context.group(1);
-            return new ExpressionReference(true, resolveContextReference(path, inputSchema, targetPath, diagnostics),
+            String schemaPath = expressionPathToSchemaPath(path);
+            return new ExpressionReference(true,
+                    resolveContextReference(schemaPath, inputSchema, targetPath, diagnostics),
                     path.isBlank() ? "ctx" : "ctx." + path);
         }
 
@@ -960,8 +971,9 @@ public class GraphDraftValidator {
         if (node.matches()) {
             String nodeId = node.group(1);
             String outputPath = node.group(2) == null ? "" : node.group(2);
+            String schemaPath = expressionPathToSchemaPath(outputPath);
             return new ExpressionReference(true,
-                    resolveNodeReference(nodeId, outputPath, nodesById, operatorsByNodeId, targetPath, diagnostics),
+                    resolveNodeReference(nodeId, schemaPath, nodesById, operatorsByNodeId, targetPath, diagnostics),
                     outputPath.isBlank() ? nodeId + ".output" : nodeId + ".output." + outputPath);
         }
 
@@ -981,8 +993,9 @@ public class GraphDraftValidator {
         Matcher context = CONTEXT_REFERENCE.matcher(searchable);
         while (context.find()) {
             String path = context.group(1) == null ? "" : context.group(1);
-            if (seenReferences.add("ctx:" + path)) {
-                resolveContextReference(path, inputSchema, targetPath, diagnostics);
+            String schemaPath = expressionPathToSchemaPath(path);
+            if (seenReferences.add("ctx:" + schemaPath)) {
+                resolveContextReference(schemaPath, inputSchema, targetPath, diagnostics);
             }
         }
 
@@ -990,8 +1003,9 @@ public class GraphDraftValidator {
         while (node.find()) {
             String nodeId = node.group(1);
             String outputPath = node.group(2) == null ? "" : node.group(2);
-            if (seenReferences.add("node:" + nodeId + ":" + outputPath)) {
-                resolveNodeReference(nodeId, outputPath, nodesById, operatorsByNodeId, targetPath, diagnostics);
+            String schemaPath = expressionPathToSchemaPath(outputPath);
+            if (seenReferences.add("node:" + nodeId + ":" + schemaPath)) {
+                resolveNodeReference(nodeId, schemaPath, nodesById, operatorsByNodeId, targetPath, diagnostics);
             }
         }
     }
@@ -1028,7 +1042,7 @@ public class GraphDraftValidator {
                 }
                 continue;
             }
-            if (segment.isBlank() || isDslFieldName(segment)) {
+            if (segment.isBlank() || isExpressionPathSegment(segment)) {
                 continue;
             }
             String key = reference + ":" + segment;
@@ -1050,6 +1064,33 @@ public class GraphDraftValidator {
         String left = segment.substring(0, minus);
         String right = segment.substring(minus + 1);
         return isDslFieldName(left) && NUMBER_LITERAL.matcher(right).matches();
+    }
+
+    private static boolean isExpressionPathSegment(String segment) {
+        return EXPRESSION_PATH_SEGMENT.matcher(segment).matches();
+    }
+
+    private static String expressionPathToSchemaPath(String path) {
+        if (path == null || path.isBlank()) {
+            return "";
+        }
+        List<String> segments = new ArrayList<>();
+        for (String segment : path.split("\\.")) {
+            if (segment.isBlank()) {
+                continue;
+            }
+            int bracket = segment.indexOf('[');
+            if (bracket < 0) {
+                segments.add(segment);
+                continue;
+            }
+            segments.add(segment.substring(0, bracket));
+            Matcher matcher = BRACKET_INDEX.matcher(segment.substring(bracket));
+            while (matcher.find()) {
+                segments.add(matcher.group(1));
+            }
+        }
+        return String.join(".", segments);
     }
 
     private static Map<String, Object> resolveContextReference(String path,
@@ -1186,6 +1227,9 @@ public class GraphDraftValidator {
     }
 
     private static Integer arrayIndexSegment(String segment) {
+        if (!ARRAY_INDEX.matcher(segment).matches()) {
+            return null;
+        }
         try {
             int index = Integer.parseInt(segment);
             return index < 0 ? null : index;
@@ -2901,6 +2945,11 @@ public class GraphDraftValidator {
             });
             return;
         }
+        if ("expression".equals(binding.kind())) {
+            collectExpressionConnections(binding.expr(), targetNode, targetOperator, binding.targetPort(), inputName,
+                    nodesById, operatorsByNodeId, semanticConnections);
+            return;
+        }
         if (!"nodePath".equals(binding.kind())) {
             return;
         }
@@ -2937,7 +2986,7 @@ public class GraphDraftValidator {
                                                           Set<CanvasConnection> connections) {
         if (value instanceof String expression) {
             if (looksLikeReferenceExpression(expression)) {
-                collectExpressionConnections(expression, targetNode, targetOperator, configTargetPath(configPath),
+                collectExpressionConnections(expression, targetNode, targetOperator, "", configTargetPath(configPath),
                         nodesById, operatorsByNodeId, connections);
             }
             return;
@@ -2946,7 +2995,7 @@ public class GraphDraftValidator {
             if ("expression".equals(map.get("kind"))) {
                 Object expression = map.get("expr");
                 collectExpressionConnections(expression == null ? "" : String.valueOf(expression),
-                        targetNode, targetOperator, configTargetPath(configPath), nodesById, operatorsByNodeId,
+                        targetNode, targetOperator, "", configTargetPath(configPath), nodesById, operatorsByNodeId,
                         connections);
                 return;
             }
@@ -2970,6 +3019,7 @@ public class GraphDraftValidator {
     private static void collectExpressionConnections(String expression,
                                                      GraphDraft.DraftNode targetNode,
                                                      OperatorDefinition targetOperator,
+                                                     String targetPortName,
                                                      String targetPath,
                                                      Map<String, GraphDraft.DraftNode> nodesById,
                                                      Map<String, OperatorDefinition> operatorsByNodeId,
@@ -2977,7 +3027,7 @@ public class GraphDraftValidator {
         if (expression == null || expression.isBlank() || targetPath.isBlank()) {
             return;
         }
-        Optional<OperatorDefinition.Port> targetPort = resolveInputPort(targetOperator, "", targetPath);
+        Optional<OperatorDefinition.Port> targetPort = resolveInputPort(targetOperator, targetPortName, targetPath);
         if (targetPort.isEmpty() || propertyAtPath(targetPort.get().schema(), targetPath) == null) {
             return;
         }
@@ -2986,11 +3036,12 @@ public class GraphDraftValidator {
         while (matcher.find()) {
             String nodeId = matcher.group(1);
             String outputPath = matcher.group(2) == null ? "" : matcher.group(2);
+            String schemaPath = expressionPathToSchemaPath(outputPath);
             OperatorDefinition sourceOperator = operatorsByNodeId.get(nodeId);
             if (!nodesById.containsKey(nodeId) || sourceOperator == null) {
                 continue;
             }
-            OutputReference outputReference = outputReference(sourceOperator, outputPath);
+            OutputReference outputReference = outputReference(sourceOperator, schemaPath);
             Optional<OperatorDefinition.Port> sourcePort = resolveOutputPort(sourceOperator, outputReference.port());
             if (sourcePort.isEmpty()
                     || propertyAtPath(sourcePort.get().schema(), outputReference.path()) == null) {

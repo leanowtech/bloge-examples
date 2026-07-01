@@ -22,6 +22,8 @@ import java.util.regex.PatternSyntaxException;
 @Component
 public class VisualGraphPublicationOperatorProjector {
 
+    private static final Pattern ARRAY_INDEX = Pattern.compile("\\d+");
+
     /**
      * @param publication immutable visual graph publication
      * @return operator definition that invokes the frozen publication DSL
@@ -196,6 +198,9 @@ public class VisualGraphPublicationOperatorProjector {
     }
 
     private static Integer arrayIndexSegment(String segment) {
+        if (!ARRAY_INDEX.matcher(segment).matches()) {
+            return null;
+        }
         try {
             int index = Integer.parseInt(segment);
             return index < 0 ? null : index;

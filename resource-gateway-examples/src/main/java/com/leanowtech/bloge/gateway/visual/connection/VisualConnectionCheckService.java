@@ -28,6 +28,7 @@ public class VisualConnectionCheckService {
     private static final String PREVIEW_EDGE_ID = "__preview_connection";
     private static final String CONTEXT_SOURCE_NODE_ID = "__ctx";
     private static final String CONFIG_TARGET_PORT = "config";
+    private static final Pattern ARRAY_INDEX = Pattern.compile("\\d+");
 
     private final GraphDraftValidator validator;
     private final VisualOperatorCatalog catalog;
@@ -515,6 +516,9 @@ public class VisualConnectionCheckService {
     }
 
     private static Integer arrayIndexSegment(String segment) {
+        if (!ARRAY_INDEX.matcher(segment).matches()) {
+            return null;
+        }
         try {
             int index = Integer.parseInt(segment);
             return index < 0 ? null : index;

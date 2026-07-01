@@ -28,6 +28,11 @@ import java.util.regex.Pattern;
 public class GraphDraftDslGenerator {
 
     private static final String DSL_IDENTIFIER_PATTERN = "[A-Za-z_][A-Za-z0-9_]*";
+    private static final String ARRAY_INDEX_PATTERN = "\\d+";
+    private static final String TEMPLATE_PATH_SEGMENT_PATTERN = "(?:" + DSL_IDENTIFIER_PATTERN + "|"
+            + ARRAY_INDEX_PATTERN + ")";
+    private static final String TEMPLATE_PATH_PATTERN = TEMPLATE_PATH_SEGMENT_PATTERN
+            + "(?:\\." + TEMPLATE_PATH_SEGMENT_PATTERN + ")*";
     private static final Set<String> EXECUTION_CONFIG_KEYS = Set.of("timeout", "retryAttempts");
     private static final Set<String> RESERVED_DSL_FIELD_NAMES = Set.of(
             "graph", "node", "branch", "decision_table", "on", "input", "depends_on",
@@ -38,10 +43,11 @@ public class GraphDraftDslGenerator {
             "let", "import", "as", "script", "exit", "exhausted"
     );
     private static final Pattern DSL_IDENTIFIER = Pattern.compile(DSL_IDENTIFIER_PATTERN);
+    private static final Pattern ARRAY_INDEX_SEGMENT = Pattern.compile(ARRAY_INDEX_PATTERN);
     private static final Pattern UNQUOTED_DSL_OPERATOR_REF = Pattern.compile(
             DSL_IDENTIFIER_PATTERN + "(?:\\." + DSL_IDENTIFIER_PATTERN + ")*");
     private static final Pattern TEMPLATE_REFERENCE = Pattern.compile("\\{\\{\\s*((?:input\\.)?"
-            + DSL_IDENTIFIER_PATTERN + "(?:\\." + DSL_IDENTIFIER_PATTERN + ")*)\\s*}}");
+            + TEMPLATE_PATH_PATTERN + ")\\s*}}");
 
     private final VisualOperatorCatalog catalog;
 
@@ -760,6 +766,9 @@ public class GraphDraftDslGenerator {
     }
 
     private static Integer arrayIndexSegment(String segment) {
+        if (!ARRAY_INDEX_SEGMENT.matcher(segment).matches()) {
+            return null;
+        }
         try {
             int index = Integer.parseInt(segment);
             return index < 0 ? null : index;

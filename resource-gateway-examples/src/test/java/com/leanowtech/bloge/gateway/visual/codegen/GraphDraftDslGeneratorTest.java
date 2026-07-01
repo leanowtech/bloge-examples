@@ -253,6 +253,40 @@ class GraphDraftDslGeneratorTest {
     }
 
     @Test
+    void lowersArrayIndexTemplatePathsToBracketDsl() {
+        GraphDraftDslGenerator generator = new GraphDraftDslGenerator(
+                VisualCatalogTestSupport.catalogWithLibrary(arrayIndexTemplateLibrary()));
+        GraphDraft draft = new GraphDraft(
+                "",
+                "",
+                0,
+                "arrayIndexTemplate",
+                "",
+                "",
+                "",
+                "",
+                null,
+                List.of(new GraphDraft.DraftNode(
+                        "firstScore",
+                        "risk:firstScore",
+                        "",
+                        Map.of("scores", GraphDraft.Binding.contextPath("scores", "inputs", "scores")),
+                        Map.of(),
+                        null
+                )),
+                List.of(),
+                Map.of(),
+                new GraphDraft.OutputSelection("firstScore", "")
+        );
+
+        DslGenerationResult result = generator.generate(draft);
+
+        assertThat(result.generated()).isTrue();
+        assertThat(result.dsl()).contains("score = ctx.scores[0]");
+        assertThat(result.dsl()).doesNotContain("{{");
+    }
+
+    @Test
     void lowersUserProvidedTransformOperator() {
         GraphDraftDslGenerator generator = new GraphDraftDslGenerator(
                 VisualCatalogTestSupport.catalogWithLibrary(
@@ -1303,6 +1337,44 @@ class GraphDraftDslGeneratorTest {
 
         assertThat(result.generated()).isTrue();
         assertThat(result.dsl()).contains("eligible = ctx.score >= 700");
+    }
+
+    private static OperatorLibrary arrayIndexTemplateLibrary() {
+        OperatorDefinition operator = new OperatorDefinition(
+                "bloge.visualOperator.v1",
+                "risk:firstScore",
+                "1.0.0",
+                new OperatorDefinition.Display("First score", "Selects the first score from an input array.",
+                        List.of("risk", "array")),
+                new OperatorDefinition.Source("user-library", "", "", "", true),
+                new OperatorDefinition.Ports(
+                        List.of(new OperatorDefinition.Port("inputs",
+                                SchemaEnvelope.object(Map.of(
+                                        "scores", Map.of("type", "array", "items", Map.of("type", "integer"))
+                                ), List.of("scores")),
+                                true,
+                                "Array score input.")),
+                        List.of(new OperatorDefinition.Port("output",
+                                SchemaEnvelope.object(Map.of("score", Map.of("type", "integer")), List.of()),
+                                true,
+                                "Selected score."))
+                ),
+                SchemaEnvelope.opaque(),
+                OperatorDefinition.Capabilities.pure(),
+                new OperatorDefinition.Lowering("transform", "transform", Map.of(
+                        "assignments", Map.of("score", "{{input.scores.0}}")
+                )),
+                List.of()
+        );
+        return new OperatorLibrary(
+                "bloge.visualOperatorLibrary.v1",
+                "risk-array-templates",
+                "Array template operators",
+                "1.0.0",
+                "risk-team",
+                "ACTIVE",
+                List.of(operator)
+        );
     }
 
     private static OperatorLibrary nativePolicyLibrary(String executableOperatorRef) {

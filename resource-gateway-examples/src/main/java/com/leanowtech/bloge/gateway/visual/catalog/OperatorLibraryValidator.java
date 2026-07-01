@@ -65,6 +65,11 @@ public class OperatorLibraryValidator {
             "let", "import", "as", "script", "exit", "exhausted"
     );
     private static final String IDENTIFIER_PATTERN = "[A-Za-z_][A-Za-z0-9_]*";
+    private static final String ARRAY_INDEX_PATTERN = "\\d+";
+    private static final String TEMPLATE_PATH_SEGMENT_PATTERN = "(?:" + IDENTIFIER_PATTERN + "|"
+            + ARRAY_INDEX_PATTERN + ")";
+    private static final String TEMPLATE_PATH_PATTERN = TEMPLATE_PATH_SEGMENT_PATTERN
+            + "(?:\\." + TEMPLATE_PATH_SEGMENT_PATTERN + ")*";
     private static final Pattern VISUAL_OPERATOR_REF = Pattern.compile(
             IDENTIFIER_PATTERN + "(?:(?::|\\.|-)" + IDENTIFIER_PATTERN + ")*");
     private static final Pattern PORT_NAME = Pattern.compile(IDENTIFIER_PATTERN);
@@ -72,10 +77,11 @@ public class OperatorLibraryValidator {
             IDENTIFIER_PATTERN + "(?:(?::|\\.|-)" + IDENTIFIER_PATTERN + ")*");
     private static final Pattern PATH_PATTERN = Pattern.compile(
             IDENTIFIER_PATTERN + "(?:\\." + IDENTIFIER_PATTERN + ")*");
+    private static final Pattern ARRAY_INDEX = Pattern.compile(ARRAY_INDEX_PATTERN);
     private static final Pattern TEMPLATE_REFERENCE = Pattern.compile("\\{\\{\\s*((?:input\\.)?"
-            + IDENTIFIER_PATTERN + "(?:\\." + IDENTIFIER_PATTERN + ")*)\\s*}}");
+            + TEMPLATE_PATH_PATTERN + ")\\s*}}");
     private static final Pattern PURE_TEMPLATE_REFERENCE = Pattern.compile("^\\{\\{\\s*((?:input\\.)?"
-            + IDENTIFIER_PATTERN + "(?:\\." + IDENTIFIER_PATTERN + ")*)\\s*}}$");
+            + TEMPLATE_PATH_PATTERN + ")\\s*}}$");
     private static final Pattern TEMPLATE_TOKEN = Pattern.compile("\\{\\{([^}]*)}}");
 
     /**
@@ -610,6 +616,9 @@ public class OperatorLibraryValidator {
     }
 
     private static Integer arrayIndexSegment(String segment) {
+        if (!ARRAY_INDEX.matcher(segment).matches()) {
+            return null;
+        }
         try {
             int index = Integer.parseInt(segment);
             return index < 0 ? null : index;

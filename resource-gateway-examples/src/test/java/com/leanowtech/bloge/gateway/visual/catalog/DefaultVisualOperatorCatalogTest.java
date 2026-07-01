@@ -160,6 +160,24 @@ class DefaultVisualOperatorCatalogTest {
     }
 
     @Test
+    void projectsPublishedVisualGraphWithNonCanonicalArrayIndexOutputPathAsOpaque() {
+        InMemoryVisualGraphPublicationRepository publications = new InMemoryVisualGraphPublicationRepository();
+        publications.create(publishedListFactsGraph("pub-list-facts-bad-index", "items.+1"));
+        DefaultVisualOperatorCatalog catalog = publicationCatalog(publications);
+
+        Map<String, Object> schema = catalog.find("publication:pub-list-facts-bad-index")
+                .orElseThrow()
+                .ports()
+                .outputs()
+                .getFirst()
+                .schema()
+                .schema();
+
+        assertThat(schema).isEqualTo(SchemaEnvelope.opaque().schema());
+        assertThat(schema).doesNotContainEntry("type", "integer");
+    }
+
+    @Test
     void projectsPublishedVisualGraphWholeMultiOutputAsPortObjectSchema() {
         InMemoryVisualGraphPublicationRepository publications = new InMemoryVisualGraphPublicationRepository();
         publications.create(publishedScoreFactsGraph("pub-score-facts-whole", ""));
@@ -445,6 +463,59 @@ class DefaultVisualOperatorCatalogTest {
                 null,
                 draft,
                 List.of(scoreFacts),
+                draft.operatorFingerprints(),
+                Map.of(),
+                dsl,
+                new VisualValidationResult(true, List.of()),
+                new DslGenerationResult(true, dsl, List.of())
+        );
+    }
+
+    private static VisualGraphPublication publishedListFactsGraph(String publicationId, String outputPath) {
+        OperatorDefinition listFacts = VisualCatalogTestSupport.listFactsOperator("integer");
+        GraphDraft draft = new GraphDraft(
+                "",
+                "draft-list-facts",
+                3,
+                "publishedListFacts",
+                "tenant-a",
+                "risk",
+                "prod",
+                "",
+                SchemaEnvelope.object(Map.of(), List.of()),
+                List.of(new GraphDraft.DraftNode(
+                        "listFacts",
+                        listFacts.operatorRef(),
+                        "",
+                        Map.of(),
+                        Map.of(),
+                        null
+                )),
+                List.of(),
+                Map.of(),
+                new GraphDraft.OutputSelection("listFacts", outputPath),
+                Map.of("listFacts", listFacts.fingerprint())
+        );
+        String dsl = """
+                graph publishedListFacts {
+                  node listFacts : riskListFacts {
+                    input {
+                    }
+                  }
+                }
+                """;
+        return new VisualGraphPublication(
+                "",
+                publicationId,
+                draft.draftId(),
+                draft.revision(),
+                draft.graphName(),
+                draft.tenantId(),
+                draft.namespace(),
+                draft.environment(),
+                null,
+                draft,
+                List.of(listFacts),
                 draft.operatorFingerprints(),
                 Map.of(),
                 dsl,

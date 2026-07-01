@@ -422,6 +422,27 @@ class VisualConnectionCheckServiceTest {
     }
 
     @Test
+    void rejectsConnectionPreviewWhenArrayIndexSegmentIsNotCanonical() {
+        VisualConnectionCheckService service = connectionService(VisualCatalogTestSupport
+                .catalogWithLibrary(VisualCatalogTestSupport.listCompatibilityLibrary("integer", "integer")));
+        GraphDraft draft = listCompatibilityDraft();
+
+        VisualConnectionCheckResult result = service.check(new VisualConnectionCheckRequest(
+                draft,
+                new GraphDraft.Endpoint("listFacts", "output", "items.+1"),
+                new GraphDraft.Endpoint("listConsumer", "inputs", "items.0"),
+                "data"
+        ));
+
+        assertThat(result.accepted()).isFalse();
+        assertThat(result.diagnostics())
+                .anySatisfy(diagnostic -> {
+                    assertThat(diagnostic.code()).isEqualTo("visual.edge.unknownSourcePath");
+                    assertThat(diagnostic.message()).contains("items.+1");
+                });
+    }
+
+    @Test
     void rejectsNodeConnectionThatWouldOverlapExistingRootBinding() {
         VisualConnectionCheckService service = connectionService(VisualCatalogTestSupport
                 .catalogWithLibrary(VisualCatalogTestSupport.rootObjectPortLibrary()));
@@ -1015,6 +1036,41 @@ class VisualConnectionCheckServiceTest {
                 List.of(),
                 Map.of(),
                 new GraphDraft.OutputSelection("riskScoreSink", "")
+        );
+    }
+
+    private static GraphDraft listCompatibilityDraft() {
+        return new GraphDraft(
+                "",
+                "",
+                0,
+                "listCompatibilityConnectionCheck",
+                "",
+                "",
+                "",
+                "",
+                null,
+                List.of(
+                        new GraphDraft.DraftNode(
+                                "listFacts",
+                                "risk:listFacts",
+                                "",
+                                Map.of(),
+                                Map.of(),
+                                null
+                        ),
+                        new GraphDraft.DraftNode(
+                                "listConsumer",
+                                "risk:listConsumer",
+                                "",
+                                Map.of(),
+                                Map.of(),
+                                null
+                        )
+                ),
+                List.of(),
+                Map.of(),
+                new GraphDraft.OutputSelection("listConsumer", "")
         );
     }
 

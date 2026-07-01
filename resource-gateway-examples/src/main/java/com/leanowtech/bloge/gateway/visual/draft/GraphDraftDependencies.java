@@ -13,10 +13,12 @@ import java.util.regex.Pattern;
 public final class GraphDraftDependencies {
 
     private static final String IDENTIFIER_PATTERN = "[A-Za-z_][A-Za-z0-9_]*";
-    private static final String PATH_PATTERN = IDENTIFIER_PATTERN + "(?:\\." + IDENTIFIER_PATTERN + ")*";
+    private static final String ARRAY_INDEX_PATTERN = "\\d+";
+    private static final String PATH_SEGMENT_PATTERN = IDENTIFIER_PATTERN + "(?:\\[" + ARRAY_INDEX_PATTERN + "\\])*";
+    private static final String PATH_PATTERN = PATH_SEGMENT_PATTERN + "(?:\\." + PATH_SEGMENT_PATTERN + ")*";
     private static final Pattern NODE_REFERENCE = Pattern.compile(
             "(?<![A-Za-z0-9_.])(" + IDENTIFIER_PATTERN + ")\\.output(?:\\.(" + PATH_PATTERN + "))?"
-                    + "(?![A-Za-z0-9_])");
+                    + "(?![A-Za-z0-9_.\\[])");
 
     private GraphDraftDependencies() {
     }

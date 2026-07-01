@@ -1727,6 +1727,59 @@ class GraphDraftValidatorTest {
     }
 
     @Test
+    void rejectsExpressionBindingWhenPureContextArrayIndexReferenceTypeDoesNotMatchTargetSchema() {
+        GraphDraftValidator validator = new GraphDraftValidator(
+                VisualCatalogTestSupport.catalogWithLibrary(
+                        VisualCatalogTestSupport.eligibilityLibrary("integer")));
+        GraphDraft draft = contextEligibilityDraft(graphInputSchema(
+                Map.of(
+                        "scores", Map.of("type", "array", "items", Map.of("type", "string")),
+                        "amount", Map.of("type", "number")
+                ),
+                List.of("scores", "amount")
+        ), Map.of(
+                "score", GraphDraft.Binding.expression("ctx.scores[0]"),
+                "amount", GraphDraft.Binding.contextPath("amount")
+        ));
+
+        VisualValidationResult result = validator.validate(draft);
+
+        assertThat(result.valid()).isFalse();
+        assertThat(result.diagnostics())
+                .anySatisfy(diagnostic -> {
+                    assertThat(diagnostic.code()).isEqualTo("visual.binding.typeMismatch");
+                    assertThat(diagnostic.message()).contains("ctx.scores[0]").contains("string")
+                            .contains("integer");
+                });
+    }
+
+    @Test
+    void rejectsExpressionBindingWhenContextArrayIndexReferencePathDoesNotExist() {
+        GraphDraftValidator validator = new GraphDraftValidator(
+                VisualCatalogTestSupport.catalogWithLibrary(
+                        VisualCatalogTestSupport.eligibilityLibrary("integer")));
+        GraphDraft draft = contextEligibilityDraft(graphInputSchema(
+                Map.of(
+                        "scores", Map.of("type", "array", "items", Map.of("type", "integer")),
+                        "amount", Map.of("type", "number")
+                ),
+                List.of("scores", "amount")
+        ), Map.of(
+                "score", GraphDraft.Binding.expression("ctx.scores[0].value + 1"),
+                "amount", GraphDraft.Binding.contextPath("amount")
+        ));
+
+        VisualValidationResult result = validator.validate(draft);
+
+        assertThat(result.valid()).isFalse();
+        assertThat(result.diagnostics())
+                .anySatisfy(diagnostic -> {
+                    assertThat(diagnostic.code()).isEqualTo("visual.binding.unknownContextPath");
+                    assertThat(diagnostic.message()).contains("ctx.scores.0.value");
+                });
+    }
+
+    @Test
     void rejectsExpressionBindingWhenStaticLiteralTypeDoesNotMatchTargetSchema() {
         GraphDraftValidator validator = new GraphDraftValidator(
                 VisualCatalogTestSupport.catalogWithLibrary(
@@ -1797,6 +1850,24 @@ class GraphDraftValidatorTest {
                 .anySatisfy(diagnostic -> {
                     assertThat(diagnostic.code()).isEqualTo("visual.expression.pathSegment.invalid");
                     assertThat(diagnostic.message()).contains("scoreFacts.output.facts.score-id").contains("score-id");
+                });
+    }
+
+    @Test
+    void rejectsExpressionBindingWhenNodeReferenceIndexesNonArrayOutput() {
+        GraphDraftValidator validator = new GraphDraftValidator(
+                VisualCatalogTestSupport.catalogWithLibrary(
+                        VisualCatalogTestSupport.multiOutputEligibilityLibrary("integer")));
+        GraphDraft draft = multiOutputEligibilityDraft(
+                GraphDraft.Binding.expression("scoreFacts.output.facts.score[0]"));
+
+        VisualValidationResult result = validator.validate(draft);
+
+        assertThat(result.valid()).isFalse();
+        assertThat(result.diagnostics())
+                .anySatisfy(diagnostic -> {
+                    assertThat(diagnostic.code()).isEqualTo("visual.binding.unknownOutputPath");
+                    assertThat(diagnostic.message()).contains("scoreFacts").contains("score.0");
                 });
     }
 
@@ -2413,6 +2484,50 @@ class GraphDraftValidatorTest {
         assertThat(result.diagnostics())
                 .noneSatisfy(diagnostic -> assertThat(diagnostic.code())
                         .isEqualTo("visual.binding.pathSegment.invalid"));
+    }
+
+    @Test
+    void acceptsExpressionNodeReferenceWithArrayIndexSegmentAndMatchingDataEdge() {
+        GraphDraftValidator validator = new GraphDraftValidator(
+                VisualCatalogTestSupport.catalogWithLibrary(arrayItemScoreLibrary()));
+        GraphDraft draft = new GraphDraft(
+                "",
+                "",
+                0,
+                "arrayExpressionBinding",
+                "",
+                "",
+                "",
+                "",
+                null,
+                List.of(
+                        new GraphDraft.DraftNode(
+                                "listFacts",
+                                "risk:listFacts",
+                                "",
+                                Map.of(),
+                                Map.of(),
+                                null
+                        ),
+                        new GraphDraft.DraftNode(
+                                "scoreConsumer",
+                                "risk:scoreConsumer",
+                                "",
+                                Map.of("score", GraphDraft.Binding.expression("listFacts.output.items[0]")),
+                                Map.of(),
+                                null
+                        )
+                ),
+                List.of(new GraphDraft.DraftEdge("score", "data",
+                        new GraphDraft.Endpoint("listFacts", "output", "items.0"),
+                        new GraphDraft.Endpoint("scoreConsumer", "inputs", "score"))),
+                Map.of(),
+                new GraphDraft.OutputSelection("scoreConsumer", "")
+        );
+
+        VisualValidationResult result = validator.validate(draft);
+
+        assertThat(result.valid()).as(result.diagnostics().toString()).isTrue();
     }
 
     @Test
