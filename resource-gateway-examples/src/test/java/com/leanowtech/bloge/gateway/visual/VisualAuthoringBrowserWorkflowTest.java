@@ -115,6 +115,15 @@ class VisualAuthoringBrowserWorkflowTest {
         assertThat(storedDraft.draftId()).isNotBlank();
         assertThat(storedDraft.revision()).isEqualTo(1);
         assertThat(storedDraft.operatorFingerprints()).containsKeys("fetchApplicant", "eligibility");
+        Map<String, Object> rebaseResult = postMap(
+                "/api/visual/drafts/" + storedDraft.draftId() + "/operator-fingerprints/rebase",
+                Map.of("expectedRevision", storedDraft.revision(), "nodeIds", List.of("eligibility"))
+        );
+        assertThat(rebaseResult).containsEntry("patched", true);
+        Map<String, Object> rebasedDraft = (Map<String, Object>) rebaseResult.get("draft");
+        assertThat(((Number) rebasedDraft.get("revision")).longValue()).isEqualTo(storedDraft.revision());
+        assertThat((Map<String, Object>) rebasedDraft.get("operatorFingerprints"))
+                .containsEntry("eligibility", storedDraft.operatorFingerprints().get("eligibility"));
 
         Map<String, Object> draftExport = getMap("/api/visual/drafts/" + storedDraft.draftId() + "/export");
         assertThat(draftExport)
@@ -347,6 +356,8 @@ class VisualAuthoringBrowserWorkflowTest {
                 .contains("/api/visual/drafts/run")
                 .contains("/api/visual/drafts/import")
                 .contains("/export")
+                .contains("/operator-fingerprints/rebase")
+                .contains("data-rebase-operator-fingerprint")
                 .contains("/api/visual/publications")
                 .contains("/api/visual/runs")
                 .contains("/api/visual/runs/stats")

@@ -133,8 +133,11 @@ class VisualAuthoringAppJsTest {
                 new vm.Script(source, { filename: 'app.js' });
 
                 function functionSource(name) {
-                  const start = source.indexOf(`function ${name}(`);
+                  let start = source.indexOf(`function ${name}(`);
                   if (start < 0) throw new Error(`missing function ${name}`);
+                  if (source.slice(Math.max(0, start - 6), start) === 'async ') {
+                    start -= 6;
+                  }
                   const openParen = source.indexOf('(', start);
                   let parenDepth = 0;
                   let brace = -1;
@@ -357,7 +360,10 @@ class VisualAuthoringAppJsTest {
                   'renderNodeImpactRow',
                   'renderNodeImpactClearButton',
                   'operatorUsageRefForNode',
+                  'rebaseOperatorFingerprint',
                   'renderOperatorUsagePanel',
+                  'renderOperatorFingerprintSnapshotPanel',
+                  'operatorFingerprintSnapshotStatus',
                   'renderOperatorUsageContent',
                   'renderOperatorUsageSection',
                   'renderOperatorDraftUsageRow',
@@ -461,6 +467,7 @@ class VisualAuthoringAppJsTest {
                         name: 'inputs',
                         schema: { fields: [{ path: 'score' }] }
                       }],
+                      fingerprint: 'current-fingerprint-123456',
                       configSchema: {
                         schema: {
                           type: 'object',
@@ -1052,6 +1059,11 @@ class VisualAuthoringAppJsTest {
                   builder: {
                     graphName: 'historyGraph',
                     selectedId: 'policy',
+                    operatorFingerprints: {
+                      policy: 'policy-current-fingerprint',
+                      riskNode: 'saved-fingerprint-123456',
+                      auditNode: 'audit-current-fingerprint'
+                    },
                     nodes: [
                       { id: 'policy', type: 'decisionTable', x: 80, y: 210 },
                       {
@@ -1083,6 +1095,12 @@ class VisualAuthoringAppJsTest {
                   builderHistoryUndo: [],
                   builderHistoryRedo: [],
                   builderHistoryMessage: null,
+                  currentDraftId: 'draft-risk',
+                  currentDraftRevision: 3,
+                  savedDraftSnapshot: null,
+                  drafts: [],
+                  draftRevisions: [],
+                  selectedDraftRevision: 3,
                   previewingDraftRevision: 7,
                   visualCheck: { message: 'Previously checked', level: 'success', diagnostics: [] },
                   connectionMessage: { text: 'connected', level: 'success' },
@@ -1126,6 +1144,7 @@ class VisualAuthoringAppJsTest {
                     'risk:eligibility': { text: '1 draft usage · 1 publication usage', level: 'warning' }
                   },
                   operatorUsageLoadingRef: '',
+                  operatorFingerprintRebaseNodeId: '',
                   lastPayload: { output: true },
                   selectedPublicationId: 'publication-1',
                   goldenAssertionMode: 'OUTPUT_MATCHES_SCHEMA',
@@ -1284,6 +1303,8 @@ class VisualAuthoringAppJsTest {
                 const riskUsagePrimaryStatus = context.operatorUsagePrimaryStatus(context.state.operatorUsageByRef['risk:eligibility']);
                 const riskUsageSummary = context.operatorUsageSummaryForNode(context.state.builder.nodes[1]);
                 const riskUsagePanel = context.renderOperatorUsagePanel(context.state.builder.nodes[1]);
+                const riskFingerprintStatus = context.operatorFingerprintSnapshotStatus(context.state.builder.nodes[1]);
+                const riskFingerprintPanel = context.renderOperatorFingerprintSnapshotPanel(context.state.builder.nodes[1]);
                 const fullOutputContract = context.graphOutputContractSummary(
                   context.state.builder.nodes[1],
                   { nodeId: 'riskNode', path: '' }
@@ -1664,6 +1685,12 @@ class VisualAuthoringAppJsTest {
                   ['risk usage panel includes refresh action', String(riskUsagePanel.includes('data-operator-usage="risk:eligibility"')), 'true'],
                   ['risk usage panel includes drift status', String(riskUsagePanel.includes('DRIFTED')), 'true'],
                   ['risk usage panel includes changed surface', String(riskUsagePanel.includes('output schema changed')), 'true'],
+                  ['risk fingerprint status', riskFingerprintStatus.status, 'DRIFTED'],
+                  ['risk fingerprint level', riskFingerprintStatus.level, 'warning'],
+                  ['risk fingerprint can rebase', riskFingerprintStatus.canRebase, true],
+                  ['risk fingerprint panel includes rebase action', String(riskFingerprintPanel.includes('data-rebase-operator-fingerprint="riskNode"')), 'true'],
+                  ['risk fingerprint panel includes drift label', String(riskFingerprintPanel.includes('Snapshot drifted')), 'true'],
+                  ['risk usage panel includes rebase action', String(riskUsagePanel.includes('data-rebase-operator-fingerprint="riskNode"')), 'true'],
                   ['full output contract type', fullOutputContract.type, 'object'],
                   ['full output contract fields', fullOutputContract.fieldCount, 4],
                   ['full output contract required', fullOutputContract.requiredCount, 2],
@@ -1775,6 +1802,97 @@ class VisualAuthoringAppJsTest {
                     ['auto bind button enabled', autoBindButton.disabled, false]
                   ];
                   for (const [label, actual, expected] of autoChecks) {
+                    if (actual !== expected) {
+                      throw new Error(`${label}: expected ${expected}, got ${actual}`);
+                    }
+                  }
+                  let rebaseFetchUrl = '';
+                  let rebaseFetchBody = '';
+                  let rebaseDraftMessage = '';
+                  let rebaseDraftMessageLevel = '';
+                  let rebaseDraftListCalls = 0;
+                  let rebaseRevisionCalls = 0;
+                  let rebaseUsageRef = '';
+                  let rebaseDraftControlRenders = 0;
+                  let rebaseEditorRenders = 0;
+                  let rebaseDiagramRenders = 0;
+                  context.fetch = async (url, options = {}) => {
+                    rebaseFetchUrl = url;
+                    rebaseFetchBody = options.body || '';
+                    return {
+                      ok: true,
+                      status: 200,
+                      json: async () => ({
+                        patched: true,
+                        draft: {
+                          draftId: 'draft-risk',
+                          revision: 4,
+                          operatorFingerprints: {
+                            policy: 'policy-current-fingerprint',
+                            riskNode: 'current-fingerprint-123456',
+                            auditNode: 'audit-current-fingerprint'
+                          }
+                        }
+                      })
+                    };
+                  };
+                  context.setDraftMessage = (text, level) => {
+                    rebaseDraftMessage = text;
+                    rebaseDraftMessageLevel = level;
+                  };
+                  context.loadDraftList = async () => {
+                    rebaseDraftListCalls += 1;
+                    return [];
+                  };
+                  context.loadDraftRevisions = async () => {
+                    rebaseRevisionCalls += 1;
+                    return [];
+                  };
+                  context.renderDraftControls = () => {
+                    rebaseDraftControlRenders += 1;
+                  };
+                  context.loadOperatorUsage = async (operatorRef) => {
+                    rebaseUsageRef = operatorRef;
+                  };
+                  context.renderSelectedOperatorEditor = () => {
+                    rebaseEditorRenders += 1;
+                  };
+                  context.renderDiagram = () => {
+                    rebaseDiagramRenders += 1;
+                  };
+                  return context.rebaseOperatorFingerprint('riskNode').then((rebasedDraft) => ({
+                    rebasedDraft,
+                    rebaseFetchUrl,
+                    rebaseFetchBody,
+                    rebaseDraftMessage,
+                    rebaseDraftMessageLevel,
+                    rebaseDraftListCalls,
+                    rebaseRevisionCalls,
+                    rebaseUsageRef,
+                    rebaseDraftControlRenders,
+                    rebaseEditorRenders,
+                    rebaseDiagramRenders
+                  }));
+                }).then((rebaseResult) => {
+                  const rebaseBody = JSON.parse(rebaseResult.rebaseFetchBody);
+                  const rebaseChecks = [
+                    ['rebase endpoint', rebaseResult.rebaseFetchUrl, '/api/visual/drafts/draft-risk/operator-fingerprints/rebase'],
+                    ['rebase expected revision', rebaseBody.expectedRevision, 3],
+                    ['rebase node id', rebaseBody.nodeIds.join('|'), 'riskNode'],
+                    ['rebase returned revision', rebaseResult.rebasedDraft.revision, 4],
+                    ['rebase state revision', context.state.currentDraftRevision, 4],
+                    ['rebase state fingerprint', context.state.builder.operatorFingerprints.riskNode, 'current-fingerprint-123456'],
+                    ['rebase message level', rebaseResult.rebaseDraftMessageLevel, 'success'],
+                    ['rebase message text', rebaseResult.rebaseDraftMessage, 'Rebased riskNode operator fingerprint at draft-risk@4.'],
+                    ['rebase draft list calls', rebaseResult.rebaseDraftListCalls, 1],
+                    ['rebase revision calls', rebaseResult.rebaseRevisionCalls, 1],
+                    ['rebase usage ref', rebaseResult.rebaseUsageRef, 'risk:eligibility'],
+                    ['rebase draft controls rendered', rebaseResult.rebaseDraftControlRenders, 1],
+                    ['rebase editor renders', rebaseResult.rebaseEditorRenders, 2],
+                    ['rebase diagram renders', rebaseResult.rebaseDiagramRenders, 1],
+                    ['rebase loading cleared', context.state.operatorFingerprintRebaseNodeId, '']
+                  ];
+                  for (const [label, actual, expected] of rebaseChecks) {
                     if (actual !== expected) {
                       throw new Error(`${label}: expected ${expected}, got ${actual}`);
                     }

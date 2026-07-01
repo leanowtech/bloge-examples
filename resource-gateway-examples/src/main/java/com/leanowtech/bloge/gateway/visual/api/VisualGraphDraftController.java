@@ -8,6 +8,7 @@ import com.leanowtech.bloge.gateway.visual.diagnostic.VisualDiagnostic;
 import com.leanowtech.bloge.gateway.visual.draft.GraphDraft;
 import com.leanowtech.bloge.gateway.visual.draft.GraphDraftExportBundle;
 import com.leanowtech.bloge.gateway.visual.draft.GraphDraftImportResult;
+import com.leanowtech.bloge.gateway.visual.draft.GraphDraftOperatorFingerprintRebaseRequest;
 import com.leanowtech.bloge.gateway.visual.draft.GraphDraftPatchRequest;
 import com.leanowtech.bloge.gateway.visual.draft.GraphDraftPatchResult;
 import com.leanowtech.bloge.gateway.visual.draft.GraphDraftPatchService;
@@ -275,6 +276,59 @@ public class VisualGraphDraftController {
     }
 
     /**
+     * Explicitly rebases stored operator fingerprint snapshots against the current operator catalog.
+     *
+     * @param draftId draft id
+     * @param request optional revision and node selection preconditions
+     * @return stored draft or rebase diagnostics
+     */
+    @PostMapping("/{draftId}/operator-fingerprints/rebase")
+    public ResponseEntity<GraphDraftPatchResult> rebaseOperatorFingerprints(
+            @PathVariable String draftId,
+            @RequestBody(required = false) GraphDraftOperatorFingerprintRebaseRequest request) {
+        Optional<GraphDraft> current = repository.find(draftId);
+        if (current.isEmpty()) {
+            return ResponseEntity.notFound().build();
+        }
+        GraphDraft draft = current.get();
+        long expectedRevision = request == null ? 0 : request.expectedRevision();
+        if (expectedRevision > 0 && expectedRevision != draft.revision()) {
+            return conflictResponse(draftId, expectedRevision, draft);
+        }
+
+        List<String> requestedNodeIds = request == null ? List.of() : request.nodeIds();
+        Map<String, String> activeFingerprints = currentOperatorFingerprints(draft);
+        List<VisualDiagnostic> diagnostics = operatorFingerprintRebaseDiagnostics(
+                draft, requestedNodeIds, activeFingerprints);
+        if (!diagnostics.isEmpty()) {
+            return ResponseEntity.badRequest()
+                    .body(GraphDraftPatchResult.rejected(draft, diagnostics));
+        }
+
+        List<GraphDraft.DraftNode> targetNodes = operatorFingerprintRebaseTargets(draft, requestedNodeIds);
+        Map<String, String> nextFingerprints = new LinkedHashMap<>(draft.operatorFingerprints());
+        for (GraphDraft.DraftNode node : targetNodes) {
+            nextFingerprints.put(node.id(), activeFingerprints.get(node.id()));
+        }
+        if (nextFingerprints.equals(draft.operatorFingerprints())) {
+            return ResponseEntity.ok(GraphDraftPatchResult.patched(draft));
+        }
+
+        GraphDraft candidate = draft.withOperatorFingerprints(nextFingerprints)
+                .withRevisionMetadata(GraphDraft.RevisionMetadata.patch(
+                        "visual-canvas",
+                        "operator-fingerprint-rebase",
+                        "Rebased operator fingerprint snapshot(s).",
+                        targetNodes.stream()
+                                .map(node -> "/operatorFingerprints/" + jsonPointerSegment(node.id()))
+                                .toList()
+                ));
+        return repository.saveIfRevision(draftId, draft.revision(), candidate)
+                .map(stored -> ResponseEntity.ok(GraphDraftPatchResult.patched(stored)))
+                .orElseGet(() -> conflictResponse(draftId, draft.revision(), draft));
+    }
+
+    /**
      * Deletes a draft.
      *
      * @param draftId draft id
@@ -486,6 +540,66 @@ public class VisualGraphDraftController {
         return fingerprints;
     }
 
+    private static List<VisualDiagnostic> operatorFingerprintRebaseDiagnostics(
+            GraphDraft draft,
+            List<String> requestedNodeIds,
+            Map<String, String> activeFingerprints) {
+        List<VisualDiagnostic> diagnostics = new ArrayList<>();
+        List<GraphDraft.DraftNode> targetNodes = operatorFingerprintRebaseTargets(draft, requestedNodeIds);
+        if (requestedNodeIds.isEmpty() && targetNodes.isEmpty()) {
+            diagnostics.add(VisualDiagnostic.error("visual.operatorFingerprintRebase.noTargets",
+                    "No draft nodes are available for operator fingerprint rebase.",
+                    "/nodes"));
+        }
+
+        Map<String, GraphDraft.DraftNode> nodesById = new LinkedHashMap<>();
+        for (GraphDraft.DraftNode node : draft.nodes()) {
+            nodesById.put(node.id(), node);
+        }
+        for (int i = 0; i < requestedNodeIds.size(); i++) {
+            String nodeId = requestedNodeIds.get(i);
+            if (!nodesById.containsKey(nodeId)) {
+                diagnostics.add(VisualDiagnostic.error("visual.operatorFingerprintRebase.nodeUnknown",
+                        "Cannot rebase operator fingerprint for unknown node '%s'.".formatted(nodeId),
+                        "/nodeIds/" + i));
+            }
+        }
+
+        for (GraphDraft.DraftNode node : targetNodes) {
+            String activeFingerprint = activeFingerprints.get(node.id());
+            if (activeFingerprint == null || activeFingerprint.isBlank()) {
+                diagnostics.add(VisualDiagnostic.error("visual.operatorFingerprintRebase.operatorUnavailable",
+                        "Cannot rebase node '%s' because operator '%s' is not available in the current catalog scope."
+                                .formatted(node.id(), node.operatorRef()),
+                        "/nodes/" + nodeIndex(draft, node.id()) + "/operatorRef"));
+            }
+        }
+        return diagnostics;
+    }
+
+    private static List<GraphDraft.DraftNode> operatorFingerprintRebaseTargets(
+            GraphDraft draft,
+            List<String> requestedNodeIds) {
+        if (requestedNodeIds.isEmpty()) {
+            return draft.nodes();
+        }
+        return requestedNodeIds.stream()
+                .map(nodeId -> draft.nodes().stream()
+                        .filter(node -> node.id().equals(nodeId))
+                        .findFirst())
+                .flatMap(Optional::stream)
+                .toList();
+    }
+
+    private static int nodeIndex(GraphDraft draft, String nodeId) {
+        for (int i = 0; i < draft.nodes().size(); i++) {
+            if (draft.nodes().get(i).id().equals(nodeId)) {
+                return i;
+            }
+        }
+        return -1;
+    }
+
     private List<OperatorDefinition> operatorSnapshots(GraphDraft draft) {
         return draft.nodes().stream()
                 .map(GraphDraft.DraftNode::operatorRef)
@@ -580,6 +694,10 @@ public class VisualGraphDraftController {
 
     private static boolean hasDiagnostic(List<VisualDiagnostic> diagnostics, String code) {
         return diagnostics.stream().anyMatch(diagnostic -> code.equals(diagnostic.code()));
+    }
+
+    private static String jsonPointerSegment(String value) {
+        return value.replace("~", "~0").replace("/", "~1");
     }
 
     /**

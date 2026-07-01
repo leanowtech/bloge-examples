@@ -1336,6 +1336,49 @@ body.dragging-operator * {
   color: var(--red);
 }
 
+.operator-fingerprint-snapshot {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px;
+  align-items: center;
+  padding: 6px 7px;
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  background: var(--surface-subtle);
+  color: var(--text);
+  font-size: 11px;
+}
+
+.operator-fingerprint-snapshot.success {
+  border-color: #86efac;
+  background: var(--green-soft);
+  color: var(--green);
+}
+
+.operator-fingerprint-snapshot.warning {
+  border-color: #f8d18d;
+  background: var(--amber-soft);
+  color: #8a5a13;
+}
+
+.operator-fingerprint-snapshot.error {
+  border-color: #fca5a5;
+  background: var(--red-soft);
+  color: var(--red);
+}
+
+.operator-fingerprint-snapshot div {
+  min-width: 0;
+  display: grid;
+  gap: 2px;
+}
+
+.operator-fingerprint-snapshot span {
+  overflow-wrap: anywhere;
+  color: inherit;
+  font-weight: 700;
+}
+
 .operator-usage-section,
 .operator-usage-diagnostics {
   display: grid;

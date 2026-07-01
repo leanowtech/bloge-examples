@@ -692,6 +692,9 @@ publication 级 warning，提示 replay、recertification 或 republish 前需�
 `bloge.visualOperatorUsage.v1` 合同：draft usage 返回 saved fingerprint
 状态，publication usage 返回 frozen fingerprint 状态，并在 frozen snapshot
 与当前 catalog definition 可比较时给出 changed-surface 摘要。
+如果用户审计后决定接受 drift，草稿层通过专用 rebase API 刷新节点
+fingerprint snapshot；普通保存和 PATCH 仍保留既有 snapshot，避免无意中把
+旧算子语义升级成新算子语义。
 
 ### 12.2 Draft API
 
@@ -702,6 +705,7 @@ publication 级 warning，提示 replay、recertification 或 republish 前需�
 | `GET` | `/api/visual/drafts/{draftId}/export` | 当前已实现：导出 `bloge.visualGraphDraftExport.v1` 包，包含 draft snapshot、operator snapshots 和 export-time diagnostics |
 | `POST` | `/api/visual/drafts/import` | 当前已实现：以新 identity 导入 export bundle，刷新当前 catalog fingerprints，存储前校验 bundle/draft contract，并返回 `bloge.visualGraphDraftImportResult.v1` 目标环境 diagnostics |
 | `PATCH` | `/api/visual/drafts/{draftId}` | 保存节点、边、layout、binding patch |
+| `POST` | `/api/visual/drafts/{draftId}/operator-fingerprints/rebase` | 当前已实现：显式刷新选中节点或全部节点的 service-managed operator fingerprint snapshot，使用 `expectedRevision` 防并发覆盖，并对未知节点/当前 catalog 缺失算子返回结构化 diagnostics |
 | `POST` | `/api/visual/drafts/{draftId}/validate` | 增量或全量校验 |
 | `POST` | `/api/visual/drafts/{draftId}/compile` | 生成 DSL 并编译 |
 | `POST` | `/api/visual/drafts/{draftId}/run` | 使用测试 context 运行 |
@@ -771,7 +775,7 @@ Palette 不应写死三类节点。它从 catalog 获取：
 
 | 对象 | Inspector 内容 |
 | --- | --- |
-| 节点 | operator 信息、input binding、config、timeout/retry/fallback、schema、当前画布影响面、跨 draft/publication 的 operator usage index 与 fingerprint drift，并在画布节点上回显 usage 风险 badge |
+| 节点 | operator 信息、input binding、config、timeout/retry/fallback、schema、当前画布影响面、跨 draft/publication 的 operator usage index 与 fingerprint drift、节点 saved-vs-current fingerprint snapshot 和显式 rebase 动作，并在画布节点上回显 usage 风险 badge |
 | 边 | source path、target path、类型兼容结果、transform 建议 |
 | decision table | input columns、output schema、hit policy、规则矩阵、冲突检测 |
 | transform | output object builder、表达式编辑、类型预览 |

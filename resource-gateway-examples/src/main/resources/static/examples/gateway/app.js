@@ -362,6 +362,7 @@ const state = {
   operatorUsageByRef: {},
   operatorUsageMessagesByRef: {},
   operatorUsageLoadingRef: '',
+  operatorFingerprintRebaseNodeId: '',
   visualCheck: {
     message: 'Not checked',
     level: 'info',
@@ -4640,6 +4641,7 @@ async function saveCurrentDraft() {
   state.currentDraftId = stored.draftId || '';
   state.currentDraftRevision = stored.revision || 0;
   state.savedDraftSnapshot = stored;
+  state.builder.operatorFingerprints = { ...(stored.operatorFingerprints || {}) };
   state.previewingDraftRevision = 0;
   setDraftMessage(`Saved ${state.currentDraftId}@${state.currentDraftRevision}.`, 'success');
   await loadDraftList({ render: false });
@@ -4966,6 +4968,12 @@ function renderSelectedOperatorEditor() {
   for (const button of target.querySelectorAll('[data-operator-usage]')) {
     button.addEventListener('click', () => {
       loadOperatorUsage(button.dataset.operatorUsage);
+    });
+  }
+
+  for (const button of target.querySelectorAll('[data-rebase-operator-fingerprint]')) {
+    button.addEventListener('click', () => {
+      rebaseOperatorFingerprint(button.dataset.rebaseOperatorFingerprint);
     });
   }
 
@@ -5897,6 +5905,75 @@ async function loadOperatorUsage(operatorRef) {
   }
 }
 
+async function rebaseOperatorFingerprint(nodeId) {
+  const node = state.builder.nodes.find((item) => item.id === nodeId);
+  if (!node) {
+    setDraftMessage(`Node ${nodeId || '(unknown)'} is no longer on the canvas.`, 'error');
+    renderSelectedOperatorEditor();
+    return null;
+  }
+  if (!state.currentDraftId || !state.currentDraftRevision) {
+    setDraftMessage('Save the draft before rebasing operator fingerprint snapshots.', 'error');
+    renderDraftControls();
+    renderSelectedOperatorEditor();
+    return null;
+  }
+
+  const operatorRef = operatorUsageRefForNode(node);
+  state.operatorFingerprintRebaseNodeId = node.id;
+  setDraftMessage(`Rebasing ${node.id} operator fingerprint snapshot...`, 'info');
+  renderSelectedOperatorEditor();
+  try {
+    const response = await fetch(
+      `/api/visual/drafts/${encodeURIComponent(state.currentDraftId)}/operator-fingerprints/rebase`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          expectedRevision: state.currentDraftRevision || 0,
+          nodeIds: [node.id]
+        })
+      }
+    );
+    const payload = await response.json().catch(() => null);
+    if (!response.ok || !payload?.draft) {
+      const diagnostics = normalizeDiagnostics(payload?.diagnostics);
+      if (response.status === 409 && payload?.draft?.revision !== undefined) {
+        state.currentDraftRevision = payload.draft.revision || 0;
+        state.savedDraftSnapshot = payload.draft;
+        await loadDraftList({ render: false });
+        await loadDraftRevisions({ render: false });
+        renderDraftControls();
+      }
+      setDraftMessage(diagnosticMessage(diagnostics, `Rebase failed with ${response.status}`), 'error');
+      return null;
+    }
+
+    const stored = payload.draft;
+    state.currentDraftId = stored.draftId || state.currentDraftId;
+    state.currentDraftRevision = stored.revision || state.currentDraftRevision;
+    state.savedDraftSnapshot = stored;
+    state.builder.operatorFingerprints = { ...(stored.operatorFingerprints || {}) };
+    setDraftMessage(`Rebased ${node.id} operator fingerprint at ${state.currentDraftId}@${state.currentDraftRevision}.`, 'success');
+    await loadDraftList({ render: false });
+    await loadDraftRevisions({ render: false });
+    renderDraftControls();
+    if (operatorRef) {
+      await loadOperatorUsage(operatorRef);
+    }
+    return stored;
+  } catch (error) {
+    setDraftMessage(error.message, 'error');
+    return null;
+  } finally {
+    if (state.operatorFingerprintRebaseNodeId === node.id) {
+      state.operatorFingerprintRebaseNodeId = '';
+    }
+    renderSelectedOperatorEditor();
+    renderDiagram();
+  }
+}
+
 function renderOperatorUsagePanel(node) {
   const operatorRef = operatorUsageRefForNode(node);
   if (!operatorRef) {
@@ -5925,10 +6002,91 @@ function renderOperatorUsagePanel(node) {
           ${loading ? 'disabled' : ''}
         >${loading ? 'Loading' : (usage ? 'Refresh' : 'Load')}</button>
       </div>
+      ${renderOperatorFingerprintSnapshotPanel(node)}
       ${message ? `<div class="operator-usage-message ${escapeHtml(message.level || 'info')}">${escapeHtml(message.text)}</div>` : ''}
       ${usage ? renderOperatorUsageContent(usage) : '<div class="operator-usage-empty">No usage snapshot loaded.</div>'}
     </div>
   `;
+}
+
+function renderOperatorFingerprintSnapshotPanel(node) {
+  const status = operatorFingerprintSnapshotStatus(node);
+  if (!status.operatorRef) {
+    return '';
+  }
+  const loading = state.operatorFingerprintRebaseNodeId === node.id;
+  const disabled = loading || !status.canRebase;
+  const reason = status.rebaseReason ? ` · ${status.rebaseReason}` : '';
+  return `
+    <div class="operator-fingerprint-snapshot ${escapeHtml(status.level)}">
+      <div>
+        <strong>${escapeHtml(status.label)}</strong>
+        <span>${escapeHtml(operatorUsageFingerprintPair(status.savedFingerprint, status.currentFingerprint, 'saved'))}</span>
+      </div>
+      <button
+        type="button"
+        class="secondary compact"
+        data-rebase-operator-fingerprint="${escapeHtml(node.id)}"
+        ${disabled ? 'disabled' : ''}
+        title="${escapeHtml(`Rebase ${node.id} to the current operator fingerprint${reason}`)}"
+      >${loading ? 'Rebasing' : 'Rebase snapshot'}</button>
+    </div>
+  `;
+}
+
+function operatorFingerprintSnapshotStatus(node) {
+  if (!node) {
+    return { operatorRef: '', status: 'UNKNOWN', label: 'Unknown', level: 'info', canRebase: false };
+  }
+  const spec = specForNode(node);
+  const operatorRef = operatorUsageRefForNode(node);
+  const savedFingerprint = state.builder.operatorFingerprints?.[node.id] || '';
+  const currentFingerprint = spec.fingerprint || '';
+  if (!currentFingerprint) {
+    return {
+      operatorRef,
+      savedFingerprint,
+      currentFingerprint,
+      status: 'OPERATOR_MISSING',
+      label: 'Operator unavailable',
+      level: 'error',
+      canRebase: false,
+      rebaseReason: 'current fingerprint unavailable'
+    };
+  }
+  if (!savedFingerprint) {
+    return {
+      operatorRef,
+      savedFingerprint,
+      currentFingerprint,
+      status: 'SNAPSHOT_MISSING',
+      label: 'Snapshot missing',
+      level: 'warning',
+      canRebase: Boolean(state.currentDraftId && state.currentDraftRevision),
+      rebaseReason: state.currentDraftId && state.currentDraftRevision ? '' : 'save draft first'
+    };
+  }
+  if (savedFingerprint === currentFingerprint) {
+    return {
+      operatorRef,
+      savedFingerprint,
+      currentFingerprint,
+      status: 'CURRENT',
+      label: 'Snapshot current',
+      level: 'success',
+      canRebase: false
+    };
+  }
+  return {
+    operatorRef,
+    savedFingerprint,
+    currentFingerprint,
+    status: 'DRIFTED',
+    label: 'Snapshot drifted',
+    level: 'warning',
+    canRebase: Boolean(state.currentDraftId && state.currentDraftRevision),
+    rebaseReason: state.currentDraftId && state.currentDraftRevision ? '' : 'save draft first'
+  };
 }
 
 function renderOperatorUsageContent(usage) {

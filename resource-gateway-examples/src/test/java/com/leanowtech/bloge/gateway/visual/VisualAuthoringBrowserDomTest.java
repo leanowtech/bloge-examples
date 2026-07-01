@@ -183,6 +183,11 @@ class VisualAuthoringBrowserDomTest {
         click(wait, By.cssSelector("#diagram [data-node-id='riskEligibility']"));
         waitForText(wait, By.id("selected-operator-editor"), "Eligibility");
         waitForText(wait, By.id("selected-operator-editor"), "Usage");
+        waitForText(wait, By.id("selected-operator-editor"), "Snapshot current");
+        WebElement rebaseButton = wait.until(ExpectedConditions.presenceOfElementLocated(
+                By.cssSelector("#selected-operator-editor [data-rebase-operator-fingerprint='riskEligibility']")
+        ));
+        assertThat(rebaseButton.isEnabled()).isFalse();
         click(wait, By.cssSelector("#selected-operator-editor [data-operator-usage='risk:eligibility']"));
         waitForText(wait, By.id("selected-operator-editor"), "draft usage");
         waitForText(wait, By.id("selected-operator-editor"), "publication usage");
