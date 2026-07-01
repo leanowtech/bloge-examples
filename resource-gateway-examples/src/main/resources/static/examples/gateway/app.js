@@ -2049,7 +2049,7 @@ function diagnosticTargetNodeId(diagnostic, builder = state.builder) {
     return direct;
   }
   const target = String(diagnostic?.target || '');
-  const pointerNode = nodeIdFromDiagnosticPointer(target, nodes, builder);
+  const pointerNode = nodeIdFromDiagnosticPointer(target, nodes, builder, state.layout);
   if (pointerNode) {
     return pointerNode;
   }
@@ -2059,8 +2059,20 @@ function diagnosticTargetNodeId(diagnostic, builder = state.builder) {
     .find((node) => node.id && haystack.includes(node.id))?.id || '';
 }
 
-function nodeIdFromDiagnosticPointer(target, nodes, builder = state.builder) {
+function nodeIdFromDiagnosticPointer(target, nodes, builder = state.builder, layout = state.layout) {
   const segments = String(target || '').split('/').filter(Boolean).map(jsonPointerUnescape);
+  if (segments[0] === 'visualLayout' && segments[1] === 'nodes' && segments.length > 2) {
+    const layoutNodes = Array.isArray(layout?.nodes) ? layout.nodes : [];
+    const value = normalizeDiagnosticNodeTarget(segments[2]);
+    const numeric = Number(value);
+    const layoutNode = Number.isInteger(numeric) && numeric >= 0 && numeric < layoutNodes.length
+      ? layoutNodes[numeric]
+      : layoutNodes.find((node) => node?.id === value);
+    const layoutNodeId = normalizeDiagnosticNodeTarget(layoutNode?.id || (!Number.isInteger(numeric) ? value : ''));
+    if (layoutNodeId && nodes.some((node) => node.id === layoutNodeId)) {
+      return layoutNodeId;
+    }
+  }
   const nodesIndex = segments.indexOf('nodes');
   if (nodesIndex >= 0 && segments.length > nodesIndex + 1) {
     const value = normalizeDiagnosticNodeTarget(segments[nodesIndex + 1]);

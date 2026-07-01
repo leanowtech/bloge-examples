@@ -5109,9 +5109,246 @@ class GraphDraftValidatorTest {
         assertThat(result.valid()).isTrue();
     }
 
+    @Test
+    void acceptsValidVisualLayoutContract() {
+        GraphDraftValidator validator = new GraphDraftValidator(
+                VisualCatalogTestSupport.catalogWithLibrary(
+                        VisualCatalogTestSupport.eligibilityLibrary("integer")));
+        GraphDraft draft = draftWithVisualLayout(validContextEligibilityDraft(), Map.of(
+                "schemaVersion", "bloge.visualLayout.v1",
+                "rootId", "contextEligibility",
+                "executionMode", "GRAPH",
+                "nodes", List.of(Map.of(
+                        "id", "eligibility",
+                        "kind", "customOperator",
+                        "operatorRef", "risk:eligibility",
+                        "position", Map.of("x", 120, "y", 240),
+                        "size", Map.of("width", 180, "height", 96),
+                        "annotations", Map.of("generated", true)
+                )),
+                "edges", List.of(),
+                "groups", List.of(Map.of(
+                        "id", "main",
+                        "nodeIds", List.of("eligibility")
+                )),
+                "viewport", Map.of("x", 0, "y", 0, "zoom", 1)
+        ));
+
+        VisualValidationResult result = validator.validate(draft);
+
+        assertThat(result.valid()).isTrue();
+        assertThat(result.diagnostics())
+                .noneSatisfy(diagnostic -> assertThat(diagnostic.code()).startsWith("visual.layout."));
+    }
+
+    @Test
+    void warnsWhenVisualLayoutOmitsGraphNode() {
+        GraphDraftValidator validator = new GraphDraftValidator(
+                VisualCatalogTestSupport.catalogWithLibrary(
+                        VisualCatalogTestSupport.eligibilityLibrary("integer")));
+        GraphDraft draft = draftWithVisualLayout(validContextEligibilityDraft(), Map.of(
+                "schemaVersion", "bloge.visualLayout.v1",
+                "rootId", "contextEligibility",
+                "nodes", List.of(),
+                "viewport", Map.of("x", 0, "y", 0, "zoom", 1)
+        ));
+
+        VisualValidationResult result = validator.validate(draft);
+
+        assertThat(result.valid()).isTrue();
+        assertThat(result.diagnostics())
+                .anySatisfy(diagnostic -> {
+                    assertThat(diagnostic.level()).isEqualTo("WARNING");
+                    assertThat(diagnostic.code()).isEqualTo("visual.layout.node.missing");
+                    assertThat(diagnostic.target()).isEqualTo("/nodes/0/position");
+                });
+    }
+
+    @Test
+    void warnsWhenVisualLayoutOmitsGraphEdge() {
+        GraphDraftValidator validator = new GraphDraftValidator(
+                VisualCatalogTestSupport.catalogWithLoanApplicantResourceAndLibrary(
+                        VisualCatalogTestSupport.eligibilityLibrary("integer")));
+        GraphDraft base = typedEligibilityDraft(
+                GraphDraft.Binding.nodePath("fetchApplicant", "score"),
+                new GraphDraft.DraftEdge("score", "data",
+                        new GraphDraft.Endpoint("fetchApplicant", "payload", "score"),
+                        new GraphDraft.Endpoint("eligibility", "inputs", "score")));
+        GraphDraft draft = draftWithVisualLayout(base, Map.of(
+                "schemaVersion", "bloge.visualLayout.v1",
+                "rootId", "typedEdge",
+                "nodes", List.of(
+                        Map.of(
+                                "id", "fetchApplicant",
+                                "operatorRef", "resource:" + VisualCatalogTestSupport.RESOURCE_ID,
+                                "position", Map.of("x", 80, "y", 100)),
+                        Map.of(
+                                "id", "eligibility",
+                                "operatorRef", "risk:eligibility",
+                                "position", Map.of("x", 320, "y", 100))
+                ),
+                "edges", List.of(),
+                "viewport", Map.of("x", 0, "y", 0, "zoom", 1)
+        ));
+
+        VisualValidationResult result = validator.validate(draft);
+
+        assertThat(result.valid()).isTrue();
+        assertThat(result.diagnostics())
+                .anySatisfy(diagnostic -> {
+                    assertThat(diagnostic.level()).isEqualTo("WARNING");
+                    assertThat(diagnostic.code()).isEqualTo("visual.layout.edge.missing");
+                    assertThat(diagnostic.target()).isEqualTo("/edges/0");
+                });
+    }
+
+    @Test
+    void rejectsVisualLayoutNodeDrift() {
+        GraphDraftValidator validator = new GraphDraftValidator(
+                VisualCatalogTestSupport.catalogWithLibrary(
+                        VisualCatalogTestSupport.eligibilityLibrary("integer")));
+        GraphDraft draft = draftWithVisualLayout(validContextEligibilityDraft(), Map.of(
+                "schemaVersion", "bloge.visualLayout.v1",
+                "nodes", List.of(
+                        Map.of("id", "eligibility", "position", Map.of("x", 120, "y", 240)),
+                        Map.of("id", "eligibility", "position", Map.of("x", 180, "y", 280)),
+                        Map.of("id", "ghost", "position", Map.of("x", 240, "y", 320))
+                )
+        ));
+
+        VisualValidationResult result = validator.validate(draft);
+
+        assertThat(result.valid()).isFalse();
+        assertThat(result.diagnostics())
+                .extracting("code", "target")
+                .contains(
+                        org.assertj.core.groups.Tuple.tuple("visual.layout.node.duplicateId",
+                                "/visualLayout/nodes/1/id"),
+                        org.assertj.core.groups.Tuple.tuple("visual.layout.node.unknown",
+                                "/visualLayout/nodes/2/id")
+                );
+    }
+
+    @Test
+    void rejectsVisualLayoutSemanticDriftMetadata() {
+        GraphDraftValidator validator = new GraphDraftValidator(
+                VisualCatalogTestSupport.catalogWithLibrary(
+                        VisualCatalogTestSupport.eligibilityLibrary("integer")));
+        GraphDraft draft = draftWithVisualLayout(validContextEligibilityDraft(), Map.of(
+                "schemaVersion", "bloge.visualLayout.v1",
+                "rootId", "staleGraph",
+                "nodes", List.of(Map.of(
+                        "id", "eligibility",
+                        "operatorRef", "risk:staleEligibility",
+                        "position", Map.of("x", 120, "y", 240)
+                ))
+        ));
+
+        VisualValidationResult result = validator.validate(draft);
+
+        assertThat(result.valid()).isFalse();
+        assertThat(result.diagnostics())
+                .extracting("code", "target")
+                .contains(
+                        org.assertj.core.groups.Tuple.tuple("visual.layout.rootId.mismatch",
+                                "/visualLayout/rootId"),
+                        org.assertj.core.groups.Tuple.tuple("visual.layout.node.operatorRefMismatch",
+                                "/visualLayout/nodes/0/operatorRef")
+                );
+    }
+
+    @Test
+    void rejectsMalformedVisualLayoutContract() {
+        GraphDraftValidator validator = new GraphDraftValidator(
+                VisualCatalogTestSupport.catalogWithLibrary(
+                        VisualCatalogTestSupport.eligibilityLibrary("integer")));
+        GraphDraft draft = draftWithVisualLayout(validContextEligibilityDraft(), Map.of(
+                "schemaVersion", "bloge.visualLayout.v2",
+                "nodes", List.of(Map.of(
+                        "id", "eligibility",
+                        "position", Map.of("x", Double.NaN, "y", 240),
+                        "size", Map.of("width", 0, "height", 96),
+                        "annotations", "generated"
+                )),
+                "edges", List.of(
+                        Map.of("id", "edge-a",
+                                "kind", "teleport",
+                                "source", "eligibility",
+                                "target", "ghost",
+                                "sourcePort", 7,
+                                "label", List.of("bad")),
+                        Map.of("id", "edge-a", "source", "eligibility", "target", "eligibility")
+                ),
+                "groups", List.of(Map.of(
+                        "id", "main",
+                        "nodeIds", List.of("ghost")
+                )),
+                "viewport", Map.of("x", 0, "y", "north", "zoom", 0)
+        ));
+
+        VisualValidationResult result = validator.validate(draft);
+
+        assertThat(result.valid()).isFalse();
+        assertThat(result.diagnostics())
+                .extracting("code", "target")
+                .contains(
+                        org.assertj.core.groups.Tuple.tuple("visual.layout.schemaVersion.unsupported",
+                                "/visualLayout/schemaVersion"),
+                        org.assertj.core.groups.Tuple.tuple("visual.layout.node.positionInvalid",
+                                "/visualLayout/nodes/0/position/x"),
+                        org.assertj.core.groups.Tuple.tuple("visual.layout.node.sizeInvalid",
+                                "/visualLayout/nodes/0/size/width"),
+                        org.assertj.core.groups.Tuple.tuple("visual.layout.node.annotationsInvalid",
+                                "/visualLayout/nodes/0/annotations"),
+                        org.assertj.core.groups.Tuple.tuple("visual.layout.edge.unknownNode",
+                                "/visualLayout/edges/0/target"),
+                        org.assertj.core.groups.Tuple.tuple("visual.layout.edge.kindUnsupported",
+                                "/visualLayout/edges/0/kind"),
+                        org.assertj.core.groups.Tuple.tuple("visual.layout.edge.fieldInvalid",
+                                "/visualLayout/edges/0/sourcePort"),
+                        org.assertj.core.groups.Tuple.tuple("visual.layout.edge.fieldInvalid",
+                                "/visualLayout/edges/0/label"),
+                        org.assertj.core.groups.Tuple.tuple("visual.layout.edge.duplicateId",
+                                "/visualLayout/edges/1/id"),
+                        org.assertj.core.groups.Tuple.tuple("visual.layout.group.unknownNode",
+                                "/visualLayout/groups/0/nodeIds/0"),
+                        org.assertj.core.groups.Tuple.tuple("visual.layout.viewport.invalid",
+                                "/visualLayout/viewport/y"),
+                        org.assertj.core.groups.Tuple.tuple("visual.layout.viewport.invalid",
+                                "/visualLayout/viewport/zoom")
+                );
+    }
+
     private static GraphDraft typedEligibilityDraft(GraphDraft.Binding scoreBinding,
                                                     GraphDraft.DraftEdge edge) {
         return typedEligibilityDraft(scoreBinding, List.of(edge));
+    }
+
+    private static GraphDraft validContextEligibilityDraft() {
+        return contextEligibilityDraft(null, Map.of(
+                "score", GraphDraft.Binding.constant(720),
+                "amount", GraphDraft.Binding.constant(1000)
+        ));
+    }
+
+    private static GraphDraft draftWithVisualLayout(GraphDraft base, Map<String, Object> visualLayout) {
+        return new GraphDraft(
+                base.schemaVersion(),
+                base.draftId(),
+                base.revision(),
+                base.graphName(),
+                base.tenantId(),
+                base.namespace(),
+                base.environment(),
+                base.status(),
+                base.inputSchema(),
+                base.nodes(),
+                base.edges(),
+                visualLayout,
+                base.output(),
+                base.operatorFingerprints(),
+                base.revisionMetadata()
+        );
     }
 
     private static OperatorLibrary rootArrayFactsLibrary() {

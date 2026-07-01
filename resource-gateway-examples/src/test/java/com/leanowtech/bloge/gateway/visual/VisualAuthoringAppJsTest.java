@@ -1555,6 +1555,16 @@ class VisualAuthoringAppJsTest {
                   .join('|');
                 const policyByPointer = context.diagnosticTargetNodeId({ target: '/nodes/0/config/rules/0' }, context.state.builder);
                 const riskByPointer = context.diagnosticTargetNodeId({ target: '/nodes/1/inputs/score' }, context.state.builder);
+                const originalLayoutBeforeDiagnosticProbe = context.state.layout;
+                context.state.layout = { nodes: [
+                  { id: 'riskNode', operatorRef: 'risk:eligibility' },
+                  { id: 'policy', operatorRef: 'bloge:decisionTable' }
+                ] };
+                const riskByLayoutPointer = context.diagnosticTargetNodeId(
+                  { target: '/visualLayout/nodes/0/operatorRef' },
+                  context.state.builder
+                );
+                context.state.layout = originalLayoutBeforeDiagnosticProbe;
                 const policyByDirectNode = context.diagnosticTargetNodeId({ nodeId: 'policy', target: '/graphName' }, context.state.builder);
                 const riskDiagnosticCount = context.diagnosticsForCanvasNode('riskNode').length;
                 const unescapedPointerSegment = context.jsonPointerUnescape('node~1with~0marker');
@@ -2195,6 +2205,7 @@ class VisualAuthoringAppJsTest {
                   ['canvas search custom config hit', riskSearch, 'riskNode'],
                   ['diagnostic node pointer index 0', policyByPointer, 'policy'],
                   ['diagnostic node pointer index 1', riskByPointer, 'riskNode'],
+                  ['diagnostic visual layout pointer index 0', riskByLayoutPointer, 'riskNode'],
                   ['diagnostic direct node target', policyByDirectNode, 'policy'],
                   ['diagnostic node count', riskDiagnosticCount, 1],
                   ['json pointer unescape', unescapedPointerSegment, 'node/with~marker'],

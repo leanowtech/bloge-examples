@@ -47,6 +47,15 @@ public class GraphDraftValidator {
     private static final Set<String> SUPPORTED_DRAFT_SCHEMA_VERSIONS = Set.of(
             GraphDraft.SCHEMA_VERSION
     );
+    private static final Set<String> SUPPORTED_LAYOUT_SCHEMA_VERSIONS = Set.of(
+            "bloge.visualLayout.v1"
+    );
+    private static final Set<String> SUPPORTED_LAYOUT_EDGE_KINDS = Set.of(
+            "data",
+            "dependency",
+            "route",
+            "config"
+    );
     private static final Set<String> SUPPORTED_EDGE_KINDS = Set.of("data", "dependency", "route");
     private static final Set<String> EXECUTION_CONFIG_KEYS = Set.of("timeout", "retryAttempts");
     private static final Set<String> SERVICE_MANAGED_PUBLICATION_CONFIG_KEYS = Set.of("publicationId", "outputNode");
@@ -192,6 +201,7 @@ public class GraphDraftValidator {
         }
 
         validateOperatorFingerprintKeys(draft.operatorFingerprints(), nodeIds, diagnostics);
+        validateVisualLayout(draft, nodesById, diagnostics);
         validateNodePathBindings(draft, nodesById, operatorsByNodeId, diagnostics);
         validateConfigReferences(draft, nodesById, operatorsByNodeId, configUnionBranchesByNode, diagnostics);
         validateEdgeIdentity(draft, diagnostics);
@@ -1474,6 +1484,365 @@ public class GraphDraftValidator {
             return Optional.empty();
         }
         return Optional.of(branches.get(selection.index()));
+    }
+
+    private static void validateVisualLayout(GraphDraft draft,
+                                             Map<String, GraphDraft.DraftNode> nodesById,
+                                             List<VisualDiagnostic> diagnostics) {
+        Map<String, Object> layout = draft.visualLayout();
+        if (layout == null || layout.isEmpty()) {
+            return;
+        }
+        Object rawSchemaVersion = layout.get("schemaVersion");
+        if (rawSchemaVersion != null) {
+            String schemaVersion = stringValue(rawSchemaVersion).trim();
+            if (!SUPPORTED_LAYOUT_SCHEMA_VERSIONS.contains(schemaVersion)) {
+                diagnostics.add(VisualDiagnostic.error("visual.layout.schemaVersion.unsupported",
+                        "Visual layout schemaVersion '%s' is unsupported; visual authoring supports %s."
+                                .formatted(schemaVersion, SUPPORTED_LAYOUT_SCHEMA_VERSIONS),
+                        "/visualLayout/schemaVersion"));
+            }
+        }
+        Object rootId = layout.get("rootId");
+        if (rootId != null && !stringValue(rootId).trim().isBlank()
+                && !draft.graphName().equals(stringValue(rootId).trim())) {
+            diagnostics.add(VisualDiagnostic.error("visual.layout.rootId.mismatch",
+                    "Visual layout rootId '%s' must match graphName '%s'."
+                            .formatted(stringValue(rootId).trim(), draft.graphName()),
+                    "/visualLayout/rootId"));
+        }
+        Optional<Set<String>> layoutNodeIds = validateLayoutNodes(layout.get("nodes"), nodesById, diagnostics);
+        layoutNodeIds.ifPresent(ids -> validateLayoutCoversGraphNodes(draft.nodes(), ids, diagnostics));
+        Optional<Set<LayoutEdgeKey>> layoutEdgeKeys = validateLayoutEdges(layout.get("edges"),
+                nodesById.keySet(), diagnostics);
+        layoutEdgeKeys.ifPresent(keys -> validateLayoutCoversGraphEdges(draft.edges(), keys, diagnostics));
+        validateLayoutGroups(layout.get("groups"), nodesById.keySet(), diagnostics);
+        validateLayoutViewport(layout.get("viewport"), diagnostics);
+    }
+
+    private static Optional<Set<String>> validateLayoutNodes(Object rawNodes,
+                                                             Map<String, GraphDraft.DraftNode> nodesById,
+                                                             List<VisualDiagnostic> diagnostics) {
+        if (rawNodes == null) {
+            return Optional.empty();
+        }
+        if (!(rawNodes instanceof List<?> layoutNodes)) {
+            diagnostics.add(VisualDiagnostic.error("visual.layout.nodes.invalid",
+                    "Visual layout nodes must be an array.", "/visualLayout/nodes"));
+            return Optional.empty();
+        }
+        Set<String> layoutNodeIds = new LinkedHashSet<>();
+        for (int i = 0; i < layoutNodes.size(); i++) {
+            String itemPath = "/visualLayout/nodes/" + i;
+            if (!(layoutNodes.get(i) instanceof Map<?, ?> rawNode)) {
+                diagnostics.add(VisualDiagnostic.error("visual.layout.node.invalid",
+                        "Visual layout node must be an object.", itemPath));
+                continue;
+            }
+            String nodeId = stringValue(rawNode.get("id")).trim();
+            if (nodeId.isBlank()) {
+                diagnostics.add(VisualDiagnostic.error("visual.layout.node.idMissing",
+                        "Visual layout node id is required.", itemPath + "/id"));
+            } else {
+                if (!layoutNodeIds.add(nodeId)) {
+                    diagnostics.add(VisualDiagnostic.error("visual.layout.node.duplicateId",
+                            "Visual layout contains duplicate node id: " + nodeId, itemPath + "/id"));
+                }
+                GraphDraft.DraftNode draftNode = nodesById.get(nodeId);
+                if (draftNode == null) {
+                    diagnostics.add(VisualDiagnostic.error("visual.layout.node.unknown",
+                            "Visual layout references unknown graph node: " + nodeId, itemPath + "/id"));
+                } else {
+                    validateLayoutNodeOperatorRef(rawNode, draftNode, itemPath, diagnostics);
+                }
+            }
+            validateLayoutNumberObject(rawNode.get("position"), itemPath + "/position",
+                    List.of(new LayoutNumberField("x", false), new LayoutNumberField("y", false)),
+                    "visual.layout.node.positionInvalid", diagnostics);
+            validateLayoutNumberObject(rawNode.get("size"), itemPath + "/size",
+                    List.of(new LayoutNumberField("width", true), new LayoutNumberField("height", true)),
+                    "visual.layout.node.sizeInvalid", diagnostics);
+            Object annotations = rawNode.get("annotations");
+            if (annotations != null && !(annotations instanceof Map<?, ?>)) {
+                diagnostics.add(VisualDiagnostic.error("visual.layout.node.annotationsInvalid",
+                        "Visual layout node annotations must be an object.", itemPath + "/annotations"));
+            }
+        }
+        return Optional.of(layoutNodeIds);
+    }
+
+    private static void validateLayoutCoversGraphNodes(List<GraphDraft.DraftNode> nodes,
+                                                       Set<String> layoutNodeIds,
+                                                       List<VisualDiagnostic> diagnostics) {
+        for (int i = 0; i < nodes.size(); i++) {
+            GraphDraft.DraftNode node = nodes.get(i);
+            if (layoutNodeIds.contains(node.id())) {
+                continue;
+            }
+            diagnostics.add(VisualDiagnostic.warning("visual.layout.node.missing",
+                    "Visual layout does not include graph node '%s'; the canvas may need to auto-place it."
+                            .formatted(node.id()),
+                    "/nodes/" + i + "/position"));
+        }
+    }
+
+    private static void validateLayoutNodeOperatorRef(Map<?, ?> rawNode,
+                                                      GraphDraft.DraftNode draftNode,
+                                                      String itemPath,
+                                                      List<VisualDiagnostic> diagnostics) {
+        Object rawOperatorRef = rawNode.get("operatorRef");
+        if (rawOperatorRef == null) {
+            return;
+        }
+        String operatorRef = stringValue(rawOperatorRef).trim();
+        if (operatorRef.isBlank()) {
+            return;
+        }
+        if (!draftNode.operatorRef().equals(operatorRef)) {
+            diagnostics.add(VisualDiagnostic.error("visual.layout.node.operatorRefMismatch",
+                    "Visual layout node '%s' operatorRef '%s' must match graph node operatorRef '%s'."
+                            .formatted(draftNode.id(), operatorRef, draftNode.operatorRef()),
+                    itemPath + "/operatorRef"));
+        }
+    }
+
+    private static Optional<Set<LayoutEdgeKey>> validateLayoutEdges(Object rawEdges,
+                                                                    Set<String> nodeIds,
+                                                                    List<VisualDiagnostic> diagnostics) {
+        if (rawEdges == null) {
+            return Optional.empty();
+        }
+        if (!(rawEdges instanceof List<?> layoutEdges)) {
+            diagnostics.add(VisualDiagnostic.error("visual.layout.edges.invalid",
+                    "Visual layout edges must be an array.", "/visualLayout/edges"));
+            return Optional.empty();
+        }
+        Set<String> layoutEdgeIds = new LinkedHashSet<>();
+        Set<LayoutEdgeKey> layoutEdgeKeys = new LinkedHashSet<>();
+        for (int i = 0; i < layoutEdges.size(); i++) {
+            String itemPath = "/visualLayout/edges/" + i;
+            if (!(layoutEdges.get(i) instanceof Map<?, ?> rawEdge)) {
+                diagnostics.add(VisualDiagnostic.error("visual.layout.edge.invalid",
+                        "Visual layout edge must be an object.", itemPath));
+                continue;
+            }
+            String edgeId = stringValue(rawEdge.get("id")).trim();
+            if (!edgeId.isBlank() && !layoutEdgeIds.add(edgeId)) {
+                diagnostics.add(VisualDiagnostic.error("visual.layout.edge.duplicateId",
+                        "Visual layout contains duplicate edge id: " + edgeId, itemPath + "/id"));
+            }
+            validateLayoutEdgeKind(rawEdge.get("kind"), itemPath + "/kind", diagnostics);
+            validateLayoutOptionalStringField(rawEdge, "sourcePort", itemPath, diagnostics);
+            validateLayoutOptionalStringField(rawEdge, "sourcePath", itemPath, diagnostics);
+            validateLayoutOptionalStringField(rawEdge, "targetPort", itemPath, diagnostics);
+            validateLayoutOptionalStringField(rawEdge, "targetPath", itemPath, diagnostics);
+            validateLayoutOptionalStringField(rawEdge, "condition", itemPath, diagnostics);
+            validateLayoutOptionalStringField(rawEdge, "label", itemPath, diagnostics);
+            validateLayoutEndpoint(rawEdge.get("source"), nodeIds, itemPath + "/source",
+                    "source", diagnostics);
+            validateLayoutEndpoint(rawEdge.get("target"), nodeIds, itemPath + "/target",
+                    "target", diagnostics);
+            layoutEdgeKey(rawEdge).ifPresent(layoutEdgeKeys::add);
+        }
+        return Optional.of(layoutEdgeKeys);
+    }
+
+    private static void validateLayoutCoversGraphEdges(List<GraphDraft.DraftEdge> edges,
+                                                       Set<LayoutEdgeKey> layoutEdgeKeys,
+                                                       List<VisualDiagnostic> diagnostics) {
+        for (int i = 0; i < edges.size(); i++) {
+            GraphDraft.DraftEdge edge = edges.get(i);
+            LayoutEdgeKey key = new LayoutEdgeKey(
+                    edge.kind(),
+                    edge.source().nodeId(),
+                    edge.source().port(),
+                    edge.source().path(),
+                    edge.target().nodeId(),
+                    edge.target().port(),
+                    edge.target().path(),
+                    "route".equals(edge.kind()) ? edge.condition() : ""
+            );
+            if (layoutEdgeKeys.contains(key)) {
+                continue;
+            }
+            diagnostics.add(VisualDiagnostic.warning("visual.layout.edge.missing",
+                    "Visual layout does not include graph edge '%s -> %s'; the canvas may need to redraw it."
+                            .formatted(edge.source().nodeId(), edge.target().nodeId()),
+                    "/edges/" + i));
+        }
+    }
+
+    private static Optional<LayoutEdgeKey> layoutEdgeKey(Map<?, ?> rawEdge) {
+        String source = layoutEndpointNodeId(rawEdge.get("source"));
+        String target = layoutEndpointNodeId(rawEdge.get("target"));
+        if (source.isBlank() || target.isBlank()) {
+            return Optional.empty();
+        }
+        String kind = layoutEdgeKind(rawEdge.get("kind"));
+        return Optional.of(new LayoutEdgeKey(
+                kind,
+                source,
+                stringValue(rawEdge.get("sourcePort")).trim(),
+                stringValue(rawEdge.get("sourcePath")).trim(),
+                target,
+                stringValue(rawEdge.get("targetPort")).trim(),
+                stringValue(rawEdge.get("targetPath")).trim(),
+                "route".equals(kind) ? stringValue(rawEdge.get("condition")).trim() : ""
+        ));
+    }
+
+    private static void validateLayoutEdgeKind(Object rawKind,
+                                               String targetPath,
+                                               List<VisualDiagnostic> diagnostics) {
+        if (rawKind == null) {
+            return;
+        }
+        if (!(rawKind instanceof String)) {
+            diagnostics.add(VisualDiagnostic.error("visual.layout.edge.fieldInvalid",
+                    "Visual layout edge kind must be a string.", targetPath));
+            return;
+        }
+        String kind = layoutEdgeKind(rawKind);
+        if (!SUPPORTED_LAYOUT_EDGE_KINDS.contains(kind)) {
+            diagnostics.add(VisualDiagnostic.error("visual.layout.edge.kindUnsupported",
+                    "Visual layout edge kind '%s' is unsupported; visual authoring supports %s."
+                            .formatted(kind, SUPPORTED_LAYOUT_EDGE_KINDS),
+                    targetPath));
+        }
+    }
+
+    private static String layoutEdgeKind(Object rawKind) {
+        String kind = stringValue(rawKind).trim();
+        return kind.isBlank() ? "data" : kind;
+    }
+
+    private static void validateLayoutOptionalStringField(Map<?, ?> rawEdge,
+                                                          String field,
+                                                          String itemPath,
+                                                          List<VisualDiagnostic> diagnostics) {
+        Object value = rawEdge.get(field);
+        if (value != null && !(value instanceof String)) {
+            diagnostics.add(VisualDiagnostic.error("visual.layout.edge.fieldInvalid",
+                    "Visual layout edge field '%s' must be a string.".formatted(field),
+                    itemPath + "/" + field));
+        }
+    }
+
+    private static void validateLayoutGroups(Object rawGroups,
+                                             Set<String> nodeIds,
+                                             List<VisualDiagnostic> diagnostics) {
+        if (rawGroups == null) {
+            return;
+        }
+        if (!(rawGroups instanceof List<?> groups)) {
+            diagnostics.add(VisualDiagnostic.error("visual.layout.groups.invalid",
+                    "Visual layout groups must be an array.", "/visualLayout/groups"));
+            return;
+        }
+        for (int i = 0; i < groups.size(); i++) {
+            String itemPath = "/visualLayout/groups/" + i;
+            if (!(groups.get(i) instanceof Map<?, ?> group)) {
+                diagnostics.add(VisualDiagnostic.error("visual.layout.group.invalid",
+                        "Visual layout group must be an object.", itemPath));
+                continue;
+            }
+            Object rawNodeIds = group.get("nodeIds");
+            if (rawNodeIds == null) {
+                continue;
+            }
+            if (!(rawNodeIds instanceof List<?> groupNodeIds)) {
+                diagnostics.add(VisualDiagnostic.error("visual.layout.group.nodeIdsInvalid",
+                        "Visual layout group nodeIds must be an array.", itemPath + "/nodeIds"));
+                continue;
+            }
+            for (int j = 0; j < groupNodeIds.size(); j++) {
+                String nodeId = stringValue(groupNodeIds.get(j)).trim();
+                if (nodeId.isBlank() || !nodeIds.contains(nodeId)) {
+                    diagnostics.add(VisualDiagnostic.error("visual.layout.group.unknownNode",
+                            "Visual layout group references unknown graph node: " + nodeId,
+                            itemPath + "/nodeIds/" + j));
+                }
+            }
+        }
+    }
+
+    private static void validateLayoutViewport(Object rawViewport,
+                                               List<VisualDiagnostic> diagnostics) {
+        validateLayoutNumberObject(rawViewport, "/visualLayout/viewport",
+                List.of(new LayoutNumberField("x", false),
+                        new LayoutNumberField("y", false),
+                        new LayoutNumberField("zoom", true)),
+                "visual.layout.viewport.invalid", diagnostics);
+    }
+
+    private static void validateLayoutEndpoint(Object rawEndpoint,
+                                               Set<String> nodeIds,
+                                               String targetPath,
+                                               String label,
+                                               List<VisualDiagnostic> diagnostics) {
+        String nodeId = layoutEndpointNodeId(rawEndpoint);
+        if (nodeId.isBlank()) {
+            diagnostics.add(VisualDiagnostic.error("visual.layout.edge.endpointMissing",
+                    "Visual layout edge %s node id is required.".formatted(label), targetPath));
+            return;
+        }
+        if (!nodeIds.contains(nodeId)) {
+            diagnostics.add(VisualDiagnostic.error("visual.layout.edge.unknownNode",
+                    "Visual layout edge %s references unknown graph node: %s.".formatted(label, nodeId),
+                    targetPath));
+        }
+    }
+
+    private static String layoutEndpointNodeId(Object rawEndpoint) {
+        if (rawEndpoint instanceof Map<?, ?> endpoint) {
+            return stringValue(endpoint.get("nodeId")).trim();
+        }
+        return stringValue(rawEndpoint).trim();
+    }
+
+    private static void validateLayoutNumberObject(Object rawObject,
+                                                   String targetPath,
+                                                   List<LayoutNumberField> fields,
+                                                   String code,
+                                                   List<VisualDiagnostic> diagnostics) {
+        if (rawObject == null) {
+            return;
+        }
+        if (!(rawObject instanceof Map<?, ?> object)) {
+            diagnostics.add(VisualDiagnostic.error(code,
+                    "Visual layout value at '%s' must be an object.".formatted(targetPath), targetPath));
+            return;
+        }
+        for (LayoutNumberField field : fields) {
+            Object value = object.get(field.name());
+            if (!validLayoutNumber(value, field.positive())) {
+                diagnostics.add(VisualDiagnostic.error(code,
+                        "Visual layout value at '%s/%s' must be a finite %snumber."
+                                .formatted(targetPath, field.name(), field.positive() ? "positive " : ""),
+                        targetPath + "/" + field.name()));
+            }
+        }
+    }
+
+    private static boolean validLayoutNumber(Object value, boolean positive) {
+        if (!(value instanceof Number number)) {
+            return false;
+        }
+        double numeric = number.doubleValue();
+        return Double.isFinite(numeric) && (!positive || numeric > 0);
+    }
+
+    private record LayoutEdgeKey(String kind,
+                                 String source,
+                                 String sourcePort,
+                                 String sourcePath,
+                                 String target,
+                                 String targetPort,
+                                 String targetPath,
+                                 String condition) {
+    }
+
+    private record LayoutNumberField(String name, boolean positive) {
     }
 
     private static Map<String, Map<String, GraphDraft.UnionBranchSelection>> configUnionBranchesByNode(

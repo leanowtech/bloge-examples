@@ -32,6 +32,7 @@
 
 - BLOGE DSL 和编译后的 Graph 仍是执行语义来源。
 - `visualLayout` 仍只保存位置、尺寸、分组和视口。
+- `visualLayout` 可被服务端校验 schemaVersion、rootId、节点 operatorRef、节点/边/分组引用、节点/边覆盖、edge kind / port-path metadata、几何值和 viewport，但不能反向定义业务语义。
 - `GraphDraft` 是画布编辑语义来源，但发布前必须生成 BLOGE DSL 并通过服务端编译。
 - `OperatorCatalog` 是设计时能力目录，不等同于 Java `OperatorRegistry` 反射结果。
 
