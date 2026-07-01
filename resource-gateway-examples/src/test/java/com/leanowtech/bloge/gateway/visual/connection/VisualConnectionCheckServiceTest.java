@@ -1,6 +1,8 @@
 package com.leanowtech.bloge.gateway.visual.connection;
 
 import com.leanowtech.bloge.gateway.visual.catalog.DefaultVisualOperatorCatalog;
+import com.leanowtech.bloge.gateway.visual.catalog.OperatorDefinition;
+import com.leanowtech.bloge.gateway.visual.catalog.OperatorLibrary;
 import com.leanowtech.bloge.gateway.visual.catalog.VisualCatalogTestSupport;
 import com.leanowtech.bloge.gateway.visual.draft.GraphDraft;
 import com.leanowtech.bloge.gateway.visual.model.SchemaEnvelope;
@@ -677,6 +679,43 @@ class VisualConnectionCheckServiceTest {
     }
 
     @Test
+    void acceptsRootArraySourcePickerConfigExpression() {
+        VisualConnectionCheckService service = connectionService(VisualCatalogTestSupport
+                .catalogWithLibrary(rootArrayConfigLibrary()));
+        GraphDraft draft = rootArrayConfigDraft();
+
+        VisualConnectionCheckResult result = service.check(new VisualConnectionCheckRequest(
+                draft,
+                new GraphDraft.Endpoint("rootFacts", "output", "0.score"),
+                new GraphDraft.Endpoint("policy", "config", "threshold"),
+                "data"
+        ));
+
+        assertThat(result.accepted()).as("diagnostics: %s", result.diagnostics()).isTrue();
+        assertThat(result.diagnostics()).isEmpty();
+        assertThat(result.edge().source().path()).isEqualTo("0.score");
+        assertThat(result.edge().target().path()).isEqualTo("threshold");
+    }
+
+    @Test
+    void acceptsArrayConfigTargetSourcePickerExpression() {
+        VisualConnectionCheckService service = connectionService(VisualCatalogTestSupport
+                .catalogWithLoanApplicantResourceAndLibrary(arrayConfigPolicyLibrary()));
+        GraphDraft draft = arrayConfigDraft();
+
+        VisualConnectionCheckResult result = service.check(new VisualConnectionCheckRequest(
+                draft,
+                new GraphDraft.Endpoint("fetchApplicant", "payload", "score"),
+                new GraphDraft.Endpoint("policy", "config", "thresholds.0"),
+                "data"
+        ));
+
+        assertThat(result.accepted()).as("diagnostics: %s", result.diagnostics()).isTrue();
+        assertThat(result.diagnostics()).isEmpty();
+        assertThat(result.edge().target().path()).isEqualTo("thresholds.0");
+    }
+
+    @Test
     void rejectsSchemaIncompatibleConfigSourcePickerExpression() {
         VisualConnectionCheckService service = connectionService(VisualCatalogTestSupport
                 .catalogWithLoanApplicantResourceAndLibrary(VisualCatalogTestSupport.configurablePolicyLibrary()));
@@ -976,6 +1015,160 @@ class VisualConnectionCheckServiceTest {
                 List.of(),
                 Map.of(),
                 new GraphDraft.OutputSelection("policy", "")
+        );
+    }
+
+    private static GraphDraft rootArrayConfigDraft() {
+        return new GraphDraft(
+                "",
+                "",
+                0,
+                "rootArrayConfigConnectionCheck",
+                "",
+                "",
+                "",
+                "",
+                null,
+                List.of(
+                        new GraphDraft.DraftNode(
+                                "rootFacts",
+                                "risk:rootArrayFacts",
+                                "",
+                                Map.of(),
+                                Map.of(),
+                                null
+                        ),
+                        new GraphDraft.DraftNode(
+                                "policy",
+                                "risk:configurablePolicy",
+                                "",
+                                Map.of(),
+                                Map.of("mode", "strict"),
+                                null
+                        )
+                ),
+                List.of(),
+                Map.of(),
+                new GraphDraft.OutputSelection("policy", "")
+        );
+    }
+
+    private static GraphDraft arrayConfigDraft() {
+        return new GraphDraft(
+                "",
+                "",
+                0,
+                "arrayConfigConnectionCheck",
+                "",
+                "",
+                "",
+                "",
+                null,
+                List.of(
+                        new GraphDraft.DraftNode(
+                                "fetchApplicant",
+                                "resource:" + VisualCatalogTestSupport.RESOURCE_ID,
+                                "",
+                                Map.of(),
+                                Map.of(),
+                                null
+                        ),
+                        new GraphDraft.DraftNode(
+                                "policy",
+                                "risk:arrayConfigPolicy",
+                                "",
+                                Map.of(),
+                                Map.of("mode", "strict"),
+                                null
+                        )
+                ),
+                List.of(),
+                Map.of(),
+                new GraphDraft.OutputSelection("policy", "")
+        );
+    }
+
+    private static OperatorLibrary arrayConfigPolicyLibrary() {
+        Map<String, Object> configProperties = new java.util.LinkedHashMap<>();
+        configProperties.put("thresholds", Map.of(
+                "type", "array",
+                "items", Map.of("type", "integer")
+        ));
+        configProperties.put("mode", Map.of(
+                "type", "enum",
+                "values", List.of("strict", "relaxed")
+        ));
+        Map<String, Object> outputProperties = Map.of("accepted", Map.of("type", "boolean"));
+        OperatorDefinition operator = new OperatorDefinition(
+                "bloge.visualOperator.v1",
+                "risk:arrayConfigPolicy",
+                "1.0.0",
+                new OperatorDefinition.Display("Array config policy",
+                        "Evaluates policy behavior controlled by array config.",
+                        List.of("risk", "config")),
+                new OperatorDefinition.Source("user-library", "", "", "", true),
+                new OperatorDefinition.Ports(
+                        List.of(),
+                        List.of(new OperatorDefinition.Port("output",
+                                SchemaEnvelope.object(outputProperties, List.of()),
+                                true,
+                                "Policy output."))
+                ),
+                SchemaEnvelope.object(configProperties, List.of("thresholds", "mode")),
+                OperatorDefinition.Capabilities.pure(),
+                new OperatorDefinition.Lowering("transform", "transform", Map.of(
+                        "assignments", Map.of("accepted", "true")
+                )),
+                List.of()
+        );
+        return new OperatorLibrary(
+                "bloge.visualOperatorLibrary.v1",
+                "risk-array-config-policy",
+                "Array config policy operators",
+                "1.0.0",
+                "risk-team",
+                "ACTIVE",
+                List.of(operator)
+        );
+    }
+
+    private static OperatorLibrary rootArrayConfigLibrary() {
+        OperatorDefinition rootArrayFacts = new OperatorDefinition(
+                "bloge.visualOperator.v1",
+                "risk:rootArrayFacts",
+                "1.0.0",
+                new OperatorDefinition.Display("Root array facts",
+                        "Produces an array as the output port root.",
+                        List.of("risk", "array")),
+                new OperatorDefinition.Source("user-library", "", "", "", false),
+                new OperatorDefinition.Ports(
+                        List.of(),
+                        List.of(new OperatorDefinition.Port("output",
+                                new SchemaEnvelope(SchemaEnvelope.JSON_SCHEMA, "2020-12", Map.of(
+                                        "type", "array",
+                                        "items", Map.of(
+                                                "type", "object",
+                                                "properties", Map.of("score", Map.of("type", "integer")),
+                                                "required", List.of("score"),
+                                                "additionalProperties", false
+                                        )
+                                )),
+                                true,
+                                "Root array facts."))
+                ),
+                SchemaEnvelope.opaque(),
+                OperatorDefinition.Capabilities.pure(),
+                new OperatorDefinition.Lowering("native", "riskRootArrayFacts", Map.of()),
+                List.of()
+        );
+        return new OperatorLibrary(
+                "bloge.visualOperatorLibrary.v1",
+                "risk-root-array-config",
+                "Risk root array config operators",
+                "1.0.0",
+                "risk-team",
+                "ACTIVE",
+                List.of(rootArrayFacts, VisualCatalogTestSupport.configurablePolicyOperator())
         );
     }
 

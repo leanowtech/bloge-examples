@@ -116,6 +116,7 @@ class VisualAuthoringAppJsTest {
                 for (const name of [
                   'arrayIndexSegment',
                   'dslReferenceSuffixForSchemaPath',
+                  'contextExpressionForPath',
                   'schemaPathSegmentsFromDslReferenceSuffix',
                   'schemaPathFromDslReferenceSuffix',
                   'expressionWithPath',
@@ -126,7 +127,30 @@ class VisualAuthoringAppJsTest {
                   'expressionForConnectionSource',
                   'sourceFromOutputExpressionParts',
                   'connectionSourceFromExpression',
-                  'bindingFromExpression'
+                  'bindingFromExpression',
+                  'configPathSegments',
+                  'hasConfigPath',
+                  'configValueAtPath',
+                  'setConfigValueAtPath',
+                  'deleteConfigValueAtPath',
+                  'isPlainObject',
+                  'isConfigContainerObject',
+                  'isConfigBindingObject',
+                  'isConfigContainerValue',
+                  'configHasSegment',
+                  'configSegmentValue',
+                  'setConfigSegmentValue',
+                  'deleteConfigSegmentValue',
+                  'emptyConfigContainerForNext',
+                  'configContainerForNext',
+                  'configContainerEmpty',
+                  'defaultInputExpressionsForOperator',
+                  'defaultCustomInputStateForOperator',
+                  'defaultResourceParamInputs',
+                  'resourceParamInputs',
+                  'isConfigExpressionValue',
+                  'configExpressionForField',
+                  'removeConfigReferencesToNode'
                 ]) {
                   vm.runInContext(functionSource(name), context);
                 }
@@ -141,6 +165,11 @@ class VisualAuthoringAppJsTest {
                 context.schemaType = (schema) => schema?.type || '';
                 context.isDslPathSafe = () => true;
                 context.isSchemaPathDslSafe = () => true;
+                context.inputPortsForSpec = (spec) => spec.ports || [];
+                context.schemaDefaultInputFields = (schema) => schema?.fields || [];
+                context.inputKeyForPortPath = (_spec, port, path) => `${port}.${path}`;
+                context.expressionReferencesNode = (expression, nodeId) =>
+                  String(expression || '').includes(`${nodeId}.output`);
 
                 const resolvedPortPath = context.sourceFromOutputExpressionParts(
                   { id: 'facts' },
@@ -166,6 +195,41 @@ class VisualAuthoringAppJsTest {
                   'ctx.customer-id',
                   { builder: { nodes: [] } }
                 );
+                const config = {};
+                context.setConfigValueAtPath(config, 'thresholds.0', { kind: 'expression', expr: 'ctx.score' });
+                context.setConfigValueAtPath(config, 'matrix.0.score', 720);
+                const configArrayBeforeDelete = Array.isArray(config.thresholds);
+                const configValueBeforeDelete = context.configValueAtPath(config, 'thresholds.0').expr;
+                const configNestedArrayBeforeDelete = Array.isArray(config.matrix);
+                const configNestedObjectValue = context.configValueAtPath(config, 'matrix.0.score');
+                context.deleteConfigValueAtPath(config, 'thresholds.0');
+                const arrayInputSpec = {
+                  ports: [{
+                    name: 'inputs',
+                    schema: { fields: [{ path: 'scores.0.value' }, { path: 'amount' }] }
+                  }]
+                };
+                const defaultInputs = context.defaultInputExpressionsForOperator(arrayInputSpec);
+                const customInputs = context.defaultCustomInputStateForOperator(arrayInputSpec);
+                const resourceInputs = context.defaultResourceParamInputs(arrayInputSpec);
+                const resourceFallbackInputs = context.resourceParamInputs(
+                  { paramName: 'scores.0.value' },
+                  { ports: [] }
+                );
+                const configWithArrayReferences = {
+                  thresholds: [
+                    { kind: 'expression', expr: 'deletedNode.output[0].score' },
+                    { kind: 'expression', expr: 'keptNode.output.score' },
+                    42
+                  ],
+                  nested: {
+                    values: [
+                      { kind: 'expression', expr: 'deletedNode.output.value' },
+                      'static'
+                    ]
+                  }
+                };
+                context.removeConfigReferencesToNode(configWithArrayReferences, 'deletedNode');
 
                 const checks = [
                   ['schema path suffix', context.dslReferenceSuffixForSchemaPath('items.0.score'), '.items[0].score'],
@@ -187,7 +251,21 @@ class VisualAuthoringAppJsTest {
                   ['context binding path', contextBinding.path, 'scores.0.value'],
                   ['output binding kind', outputBinding.kind, 'nodePath'],
                   ['output binding path', outputBinding.path, 'items.0.score'],
-                  ['unsafe context expression kind', unsafeContextExpression.kind, 'expression']
+                  ['unsafe context expression kind', unsafeContextExpression.kind, 'expression'],
+                  ['config array container', configArrayBeforeDelete, true],
+                  ['config array value', configValueBeforeDelete, 'ctx.score'],
+                  ['config nested array container', configNestedArrayBeforeDelete, true],
+                  ['config nested object value', configNestedObjectValue, 720],
+                  ['config array path deleted', context.hasConfigPath(config, 'thresholds.0'), false],
+                  ['default input array expression', defaultInputs['scores.0.value'], 'ctx.scores[0].value'],
+                  ['default custom input array expression', customInputs.customInputs['inputs.scores.0.value'], 'ctx.scores[0].value'],
+                  ['default resource param array expression', resourceInputs['scores.0.value'], 'ctx.scores[0].value'],
+                  ['resource param fallback array expression', resourceFallbackInputs['scores.0.value'], 'ctx.scores[0].value'],
+                  ['array config deleted node reference removed', context.hasConfigPath(configWithArrayReferences, 'thresholds.0'), false],
+                  ['array config sibling expression retained', context.configValueAtPath(configWithArrayReferences, 'thresholds.1').expr, 'keptNode.output.score'],
+                  ['array config scalar retained', context.configValueAtPath(configWithArrayReferences, 'thresholds.2'), 42],
+                  ['nested array config deleted node reference removed', context.hasConfigPath(configWithArrayReferences, 'nested.values.0'), false],
+                  ['nested array config scalar retained', context.configValueAtPath(configWithArrayReferences, 'nested.values.1'), 'static']
                 ];
 
                 for (const [label, actual, expected] of checks) {

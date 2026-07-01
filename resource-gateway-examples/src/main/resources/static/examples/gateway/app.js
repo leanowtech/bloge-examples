@@ -4132,7 +4132,7 @@ function renderConfigControl(node, field) {
         data-config-expression
         data-config-field="${escapeHtml(field.path)}"
         value="${escapeHtml(expression)}"
-        placeholder="ctx.${escapeHtml(field.path || 'value')}">
+        placeholder="${escapeHtml(contextExpressionForPath(field.path || 'value'))}">
     `;
   }
   return `
@@ -4677,7 +4677,7 @@ function renderInputBindingRow(node, target) {
         data-binding-port="${escapeHtml(target.port)}"
         data-binding-path="${escapeHtml(target.path || '')}"
         value="${escapeHtml(expression)}"
-        placeholder="ctx.${escapeHtml(target.path || 'value')}">
+        placeholder="${escapeHtml(contextExpressionForPath(target.path || 'value'))}">
       <div class="binding-status">${escapeHtml(status.message)}</div>
     </div>
   `;
@@ -4764,7 +4764,7 @@ function createBuilderNode(type, x, y) {
       ...base,
       resourceId: spec.resourceId || 'loan-applicant-service.getProfile',
       paramName,
-      applicantExpr: paramInputs[paramName] || `ctx.${paramName}`,
+      applicantExpr: paramInputs[paramName] || contextExpressionForPath(paramName),
       paramInputs,
       config: { timeout: '3s', retryAttempts: 1, ...defaultConfigForOperator(spec) }
     };
@@ -4806,7 +4806,7 @@ function defaultInputExpressionsForOperator(spec) {
     const fields = schemaDefaultInputFields(port?.schema);
     for (const field of fields) {
       if (!entries.some(([existing]) => existing === field.path)) {
-        entries.push([field.path, `ctx.${field.path}`]);
+        entries.push([field.path, contextExpressionForPath(field.path)]);
       }
     }
   }
@@ -4821,7 +4821,7 @@ function defaultCustomInputStateForOperator(spec) {
     const fields = schemaDefaultInputFields(port?.schema);
     for (const field of fields) {
       const key = inputKeyForPortPath(spec, port.name, field.path);
-      customInputs[key] = `ctx.${field.path}`;
+      customInputs[key] = contextExpressionForPath(field.path);
       customInputPorts[key] = port.name;
       customInputPaths[key] = field.path;
     }
@@ -4868,10 +4868,10 @@ function hasConfigPath(config, path) {
   }
   let current = config;
   for (const segment of segments) {
-    if (!isConfigContainerObject(current) || !Object.prototype.hasOwnProperty.call(current, segment)) {
+    if (!configHasSegment(current, segment)) {
       return false;
     }
-    current = current[segment];
+    current = configSegmentValue(current, segment);
   }
   return true;
 }
@@ -4880,10 +4880,10 @@ function configValueAtPath(config, path) {
   const segments = configPathSegments(path);
   let current = config;
   for (const segment of segments) {
-    if (!isConfigContainerObject(current) || !Object.prototype.hasOwnProperty.call(current, segment)) {
+    if (!configHasSegment(current, segment)) {
       return undefined;
     }
-    current = current[segment];
+    current = configSegmentValue(current, segment);
   }
   return current;
 }
@@ -4894,13 +4894,16 @@ function setConfigValueAtPath(config, path, value) {
     return;
   }
   let current = config;
-  for (const segment of segments.slice(0, -1)) {
-    if (!isConfigContainerObject(current[segment])) {
-      current[segment] = {};
+  for (let index = 0; index < segments.length - 1; index += 1) {
+    const segment = segments[index];
+    const nextSegment = segments[index + 1];
+    const child = configContainerForNext(configSegmentValue(current, segment), nextSegment);
+    if (child !== configSegmentValue(current, segment)) {
+      setConfigSegmentValue(current, segment, child);
     }
-    current = current[segment];
+    current = child;
   }
-  current[segments[segments.length - 1]] = value;
+  setConfigSegmentValue(current, segments[segments.length - 1], value);
 }
 
 function deleteConfigValueAtPath(config, path) {
@@ -4911,20 +4914,24 @@ function deleteConfigValueAtPath(config, path) {
   let current = config;
   const parents = [];
   for (const segment of segments.slice(0, -1)) {
-    if (!isConfigContainerObject(current) || !isConfigContainerObject(current[segment])) {
+    if (!configHasSegment(current, segment)) {
       return;
     }
     parents.push([current, segment]);
-    current = current[segment];
+    current = configSegmentValue(current, segment);
+    if (!isConfigContainerValue(current)) {
+      return;
+    }
   }
-  if (!isConfigContainerObject(current)) {
+  if (!isConfigContainerValue(current)) {
     return;
   }
-  delete current[segments[segments.length - 1]];
+  deleteConfigSegmentValue(current, segments[segments.length - 1]);
   for (let i = parents.length - 1; i >= 0; i--) {
     const [parent, segment] = parents[i];
-    if (isPlainObject(parent[segment]) && Object.keys(parent[segment]).length === 0) {
-      delete parent[segment];
+    const child = configSegmentValue(parent, segment);
+    if (configContainerEmpty(child)) {
+      deleteConfigSegmentValue(parent, segment);
     } else {
       break;
     }
@@ -4939,13 +4946,81 @@ function isConfigContainerObject(value) {
   return isPlainObject(value) && !isConfigBindingObject(value);
 }
 
+function isConfigContainerValue(value) {
+  return Array.isArray(value) || isConfigContainerObject(value);
+}
+
+function configHasSegment(container, segment) {
+  if (Array.isArray(container)) {
+    const index = arrayIndexSegment(segment);
+    return index !== null && Object.prototype.hasOwnProperty.call(container, index);
+  }
+  return isConfigContainerObject(container)
+    && Object.prototype.hasOwnProperty.call(container, segment);
+}
+
+function configSegmentValue(container, segment) {
+  if (Array.isArray(container)) {
+    const index = arrayIndexSegment(segment);
+    return index === null ? undefined : container[index];
+  }
+  return isConfigContainerObject(container) ? container[segment] : undefined;
+}
+
+function setConfigSegmentValue(container, segment, value) {
+  if (Array.isArray(container)) {
+    const index = arrayIndexSegment(segment);
+    if (index !== null) {
+      container[index] = value;
+    }
+    return;
+  }
+  if (isConfigContainerObject(container)) {
+    container[segment] = value;
+  }
+}
+
+function deleteConfigSegmentValue(container, segment) {
+  if (Array.isArray(container)) {
+    const index = arrayIndexSegment(segment);
+    if (index !== null) {
+      delete container[index];
+      while (container.length && !Object.prototype.hasOwnProperty.call(container, container.length - 1)) {
+        container.pop();
+      }
+    }
+    return;
+  }
+  if (isConfigContainerObject(container)) {
+    delete container[segment];
+  }
+}
+
+function emptyConfigContainerForNext(nextSegment) {
+  return arrayIndexSegment(nextSegment) !== null ? [] : {};
+}
+
+function configContainerForNext(value, nextSegment) {
+  if (arrayIndexSegment(nextSegment) !== null) {
+    return Array.isArray(value) ? value : [];
+  }
+  return isConfigContainerObject(value) ? value : {};
+}
+
+function configContainerEmpty(value) {
+  if (Array.isArray(value)) {
+    return !value.some((_, index) => Object.prototype.hasOwnProperty.call(value, index));
+  }
+  return isConfigContainerObject(value) && Object.keys(value).length === 0;
+}
+
 function defaultResourceParamInputs(spec) {
   const inputs = defaultInputExpressionsForOperator(spec);
   if (Object.keys(inputs).length) {
     return inputs;
   }
   const paramName = defaultParamNameForOperator(spec);
-  return { [paramName]: `ctx.${paramName}` };
+  return { [paramName]: contextExpressionForPath(paramName) };
 }
 
 function resourceParamInputs(node, spec = specForNode(node)) {
@@ -4953,7 +5028,7 @@ function resourceParamInputs(node, spec = specForNode(node)) {
     return { ...node.paramInputs };
   }
   const paramName = node.paramName || defaultParamNameForOperator(spec);
-  return { [paramName]: node.applicantExpr || `ctx.${paramName}` };
+  return { [paramName]: node.applicantExpr || contextExpressionForPath(paramName) };
 }
 
 function setResourceParamExpression(node, name, expression) {
@@ -5125,6 +5200,10 @@ function dslReferenceSuffixForSchemaPath(path) {
   return segments.map((segment) =>
     arrayIndexSegment(segment) !== null ? `[${segment}]` : `.${segment}`
   ).join('');
+}
+
+function contextExpressionForPath(path) {
+  return path ? `ctx${dslReferenceSuffixForSchemaPath(path)}` : 'ctx';
 }
 
 function schemaPathFromDslReferenceSuffix(path) {
@@ -5316,16 +5395,16 @@ function removeBuilderReferencesToNode(nodeId) {
 }
 
 function removeConfigReferencesToNode(value, nodeId) {
-  if (!isConfigContainerObject(value)) {
+  if (!isConfigContainerValue(value)) {
     return;
   }
   for (const [key, item] of Object.entries(value)) {
     if (isConfigExpressionValue(item) && expressionReferencesNode(configExpressionForField(item), nodeId)) {
-      delete value[key];
-    } else if (isConfigContainerObject(item)) {
+      deleteConfigSegmentValue(value, key);
+    } else if (isConfigContainerValue(item)) {
       removeConfigReferencesToNode(item, nodeId);
-      if (Object.keys(item).length === 0) {
-        delete value[key];
+      if (configContainerEmpty(item)) {
+        deleteConfigSegmentValue(value, key);
       }
     }
   }
@@ -5337,7 +5416,7 @@ function expressionReferencesNode(expression, nodeId) {
 }
 
 function fallbackContextExpression(path) {
-  return path ? `ctx.${path}` : '';
+  return path ? contextExpressionForPath(path) : '';
 }
 
 function applyResourceDefaults(resourceNode) {
@@ -6004,7 +6083,7 @@ function builderNodeFromDraftNode(node, draft, layoutNodes) {
       paletteType: OPERATOR_TYPES[`resource:${resourceId}`] ? `resource:${resourceId}` : '',
       resourceId,
       paramName: inputName,
-      applicantExpr: paramInputs[inputName] || `ctx.${inputName}`,
+      applicantExpr: paramInputs[inputName] || contextExpressionForPath(inputName),
       paramInputs,
       config: { ...(node.config || {}) }
     };
@@ -6884,7 +6963,7 @@ function endpointLabel(endpoint) {
     return '';
   }
   if (endpoint.nodeId === CONTEXT_SOURCE_ID) {
-    return endpoint.path ? `ctx.${endpoint.path}` : 'ctx';
+    return contextExpressionForPath(endpoint.path);
   }
   return [
     endpoint.nodeId,

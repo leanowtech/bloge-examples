@@ -283,21 +283,60 @@ public class VisualConnectionCheckService {
         if (segments.isEmpty()) {
             return;
         }
-        Map<String, Object> current = config;
+        Object current = config;
         for (int i = 0; i < segments.size() - 1; i++) {
             String segment = segments.get(i);
-            Object existing = current.get(segment);
-            Map<String, Object> child = existing instanceof Map<?, ?> map && !isConfigBindingMap(map)
-                    ? mutableStringMap(map)
-                    : new LinkedHashMap<>();
-            current.put(segment, child);
+            String nextSegment = segments.get(i + 1);
+            Object child = configContainerForNext(configSegmentValue(current, segment), nextSegment);
+            setConfigSegmentValue(current, segment, child);
             current = child;
         }
-        current.put(segments.get(segments.size() - 1), value);
+        setConfigSegmentValue(current, segments.get(segments.size() - 1), value);
     }
 
     private static boolean isConfigBindingMap(Map<?, ?> map) {
         return map.get("kind") instanceof String;
+    }
+
+    private static Object configContainerForNext(Object existing, String nextSegment) {
+        if (arrayIndexSegment(nextSegment) != null) {
+            return existing instanceof List<?> list ? new ArrayList<>(list) : new ArrayList<>();
+        }
+        return existing instanceof Map<?, ?> map && !isConfigBindingMap(map)
+                ? mutableStringMap(map)
+                : new LinkedHashMap<String, Object>();
+    }
+
+    private static Object configSegmentValue(Object container, String segment) {
+        if (container instanceof Map<?, ?> map) {
+            return map.get(segment);
+        }
+        if (container instanceof List<?> list) {
+            Integer index = arrayIndexSegment(segment);
+            return index != null && index < list.size() ? list.get(index) : null;
+        }
+        return null;
+    }
+
+    private static void setConfigSegmentValue(Object container, String segment, Object value) {
+        if (container instanceof Map<?, ?> map) {
+            @SuppressWarnings("unchecked")
+            Map<String, Object> current = (Map<String, Object>) map;
+            current.put(segment, value);
+            return;
+        }
+        if (container instanceof List<?> list) {
+            Integer index = arrayIndexSegment(segment);
+            if (index == null) {
+                return;
+            }
+            @SuppressWarnings("unchecked")
+            List<Object> current = (List<Object>) list;
+            while (current.size() <= index) {
+                current.add(null);
+            }
+            current.set(index, value);
+        }
     }
 
     private static Map<String, Object> mutableStringMap(Map<?, ?> map) {
@@ -644,6 +683,7 @@ public class VisualConnectionCheckService {
                                                    Map<String, Integer> nodeIndexes) {
         String target = diagnostic.target();
         return targetAtOrBelow(target, configPath)
+                || (targetAtOrAbove(target, configPath) && !target.endsWith("/config"))
                 || targetAtOrBelow(target, operatorPath)
                 || endpointNodeDiagnostic(target, request.source().nodeId(), nodeIndexes)
                 || endpointNodeDiagnostic(target, request.target().nodeId(), nodeIndexes);
@@ -681,6 +721,10 @@ public class VisualConnectionCheckService {
         return target.equals(path) || target.startsWith(path + "/");
     }
 
+    private static boolean targetAtOrAbove(String target, String path) {
+        return target.equals(path) || path.startsWith(target + "/");
+    }
+
     private static boolean endpointNodeDiagnostic(String target, String nodeId, Map<String, Integer> nodeIndexes) {
         Integer index = nodeIndexes.get(nodeId);
         return index != null && target.startsWith("/nodes/" + index + "/operatorRef");
@@ -688,10 +732,27 @@ public class VisualConnectionCheckService {
 
     private static String expressionForSource(GraphDraft.Endpoint source) {
         if (CONTEXT_SOURCE_NODE_ID.equals(source.nodeId())) {
-            return source.path().isBlank() ? "ctx" : "ctx." + source.path();
+            return "ctx" + dslReferenceSuffixForSchemaPath(source.path());
         }
         String portSegment = source.port().isBlank() || "output".equals(source.port()) ? "" : "." + source.port();
-        String pathSegment = source.path().isBlank() ? "" : "." + source.path();
-        return source.nodeId() + ".output" + portSegment + pathSegment;
+        return source.nodeId() + ".output" + portSegment + dslReferenceSuffixForSchemaPath(source.path());
+    }
+
+    private static String dslReferenceSuffixForSchemaPath(String path) {
+        if (path == null || path.isBlank()) {
+            return "";
+        }
+        StringBuilder suffix = new StringBuilder();
+        for (String segment : path.split("\\.")) {
+            if (segment.isBlank()) {
+                continue;
+            }
+            if (arrayIndexSegment(segment) != null) {
+                suffix.append('[').append(segment).append(']');
+            } else {
+                suffix.append('.').append(segment);
+            }
+        }
+        return suffix.toString();
     }
 }
