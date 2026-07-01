@@ -36,6 +36,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
 import java.util.Comparator;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
@@ -430,6 +431,58 @@ class VisualAuthoringBrowserDomTest {
                 .contains("branch on riskTypeRoute.output.value")
                 .contains("\"approved\" -> riskScoreFacts")
                 .contains("depends_on = [loanPolicy]");
+    }
+
+    @Test
+    void composerPersistsConfigUnionBranchSelectionInRealBrowser() throws JsonProcessingException {
+        driver = newChromeDriverOrSkip();
+        WebDriverWait wait = new WebDriverWait(driver, WAIT_TIMEOUT);
+        driver.get("http://localhost:" + port + "/examples/gateway");
+
+        waitForComposer(wait);
+        wait.until(ExpectedConditions.visibilityOfElementLocated(By.id("operator-palette")));
+
+        importOperatorLibrary(wait, configUnionPolicyLibrary());
+        dragOperatorToCanvas(wait, "Config union policy", "risk:configUnionPolicy",
+                "riskConfigUnionPolicy", 140, 120);
+
+        click(wait, By.cssSelector("#diagram [data-node-id='riskConfigUnionPolicy']"));
+        waitForText(wait, By.id("selected-operator-editor"), "Config union policy");
+
+        selectByValue(wait, By.cssSelector("[data-config-union-branch][data-config-field='payload']"),
+                "oneOf:0");
+        waitForValue(wait, By.cssSelector("[data-config-union-branch][data-config-field='payload']"),
+                "oneOf:0");
+        wait.until(ExpectedConditions.visibilityOfElementLocated(By.cssSelector(
+                "input[data-config-field='payload.score']"
+        )));
+        setControlValue(driver.findElement(By.cssSelector("input[data-config-field='payload.score']")), "720");
+        waitForValue(wait, By.cssSelector("input[data-config-field='payload.score']"), "720");
+
+        selectByValue(wait, By.id("graph-output-node"), "riskConfigUnionPolicy");
+        selectByValue(wait, By.id("graph-output-path"), "accepted");
+        click(wait, By.id("validate-visual-draft"));
+        waitForText(wait, By.id("visual-check-status"), "Valid visual graph.");
+
+        click(wait, By.id("save-draft"));
+        waitForText(wait, By.id("draft-status"), "Saved");
+        click(wait, By.id("export-draft"));
+        wait.until(ignored -> valueOf(By.id("draft-bundle-json"))
+                .contains("\"schemaVersion\": \"bloge.visualGraphDraftExport.v1\""));
+        String bundle = valueOf(By.id("draft-bundle-json"));
+        assertThat(bundle)
+                .contains("\"configUnionBranches\"")
+                .contains("\"keyword\": \"oneOf\"")
+                .contains("\"index\": 0")
+                .contains("\"payload\"")
+                .contains("\"score\": 720");
+
+        click(wait, By.id("import-draft"));
+        waitForText(wait, By.id("draft-status"), "Imported");
+        click(wait, By.cssSelector("#diagram [data-node-id='riskConfigUnionPolicy']"));
+        waitForValue(wait, By.cssSelector("[data-config-union-branch][data-config-field='payload']"),
+                "oneOf:0");
+        waitForValue(wait, By.cssSelector("input[data-config-field='payload.score']"), "720");
     }
 
     @Test
@@ -1211,6 +1264,55 @@ class VisualAuthoringBrowserDomTest {
                 "bloge.visualOperatorLibrary.v1",
                 "risk-array-output",
                 "Risk array output operators",
+                "1.0.0",
+                "risk-team",
+                "ACTIVE",
+                List.of(operator)
+        );
+    }
+
+    private static OperatorLibrary configUnionPolicyLibrary() {
+        Map<String, Object> configProperties = new LinkedHashMap<>();
+        configProperties.put("payload", Map.of("oneOf", List.of(
+                Map.of(
+                        "type", "object",
+                        "properties", Map.of("score", Map.of("type", "integer")),
+                        "required", List.of("score"),
+                        "additionalProperties", false
+                ),
+                Map.of(
+                        "type", "object",
+                        "properties", Map.of("decision", Map.of("type", "string")),
+                        "required", List.of("decision"),
+                        "additionalProperties", false
+                )
+        )));
+        OperatorDefinition operator = new OperatorDefinition(
+                "bloge.visualOperator.v1",
+                "risk:configUnionPolicy",
+                "1.0.0",
+                new OperatorDefinition.Display("Config union policy",
+                        "Evaluates policy behavior controlled by union configSchema.",
+                        List.of("risk", "config")),
+                new OperatorDefinition.Source("user-library", "", "", "", true),
+                new OperatorDefinition.Ports(
+                        List.of(),
+                        List.of(new OperatorDefinition.Port("output",
+                                SchemaEnvelope.object(Map.of("accepted", Map.of("type", "boolean")), List.of()),
+                                true,
+                                "Policy output."))
+                ),
+                SchemaEnvelope.object(configProperties, List.of("payload")),
+                OperatorDefinition.Capabilities.pure(),
+                new OperatorDefinition.Lowering("transform", "transform", Map.of(
+                        "assignments", Map.of("accepted", "true")
+                )),
+                List.of()
+        );
+        return new OperatorLibrary(
+                "bloge.visualOperatorLibrary.v1",
+                "risk-config-union-policy",
+                "Risk config union policy operators",
                 "1.0.0",
                 "risk-team",
                 "ACTIVE",
