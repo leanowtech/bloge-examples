@@ -541,6 +541,9 @@ resource-gateway 示例当前已在 binding 和 edge 校验中递归检查 objec
 target enum values 的子集，普通 `string` 不能直接接入 enum input。正式 draft
 还会校验 data edge 与语义依赖一致，包含 `nodePath` binding 和 config expression
 引用；`nodePath` binding 必须有可见 data edge，防止画布连线和 DSL 输入语义分叉。
+服务端还会在 `nodePath` binding、表达式引用、data edge source endpoint 和 graph
+output selection 解析后检查非默认 output port name 是否能作为 BLOGE DSL path segment，
+用于兜住历史 catalog 或外部 projector 绕过导入校验后的发布前安全边界。
 未知 binding kind 会在 `GraphDraftValidator` 被阻断，不能落到 codegen 的 literal fallback
 绕过 target schema gate。
 浏览器侧的 connection hint 和 source picker 也要复用这些关键规则，至少覆盖

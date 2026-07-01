@@ -582,6 +582,66 @@ public final class VisualCatalogTestSupport {
         );
     }
 
+    public static OperatorLibrary unsafeOutputPortLibrary() {
+        OperatorDefinition source = new OperatorDefinition(
+                "bloge.visualOperator.v1",
+                "risk:unsafePortFacts",
+                "1.0.0",
+                new OperatorDefinition.Display("Unsafe port facts",
+                        "Produces an output port name used to verify DSL-safe draft port validation.",
+                        List.of("risk", "facts")),
+                new OperatorDefinition.Source("user-library", "", "", "", true),
+                new OperatorDefinition.Ports(
+                        List.of(),
+                        List.of(new OperatorDefinition.Port("graph",
+                                SchemaEnvelope.object(Map.of("score", Map.of("type", "integer")), List.of()),
+                                true,
+                                "Unsafe output port facts."))
+                ),
+                SchemaEnvelope.opaque(),
+                OperatorDefinition.Capabilities.pure(),
+                new OperatorDefinition.Lowering("native", "riskUnsafePortFacts", Map.of()),
+                List.of()
+        );
+
+        OperatorDefinition sink = new OperatorDefinition(
+                "bloge.visualOperator.v1",
+                "risk:scoreSink",
+                "1.0.0",
+                new OperatorDefinition.Display("Score sink",
+                        "Consumes score paths used to verify DSL-safe draft port validation.",
+                        List.of("risk", "facts")),
+                new OperatorDefinition.Source("user-library", "", "", "", true),
+                new OperatorDefinition.Ports(
+                        List.of(new OperatorDefinition.Port("inputs",
+                                SchemaEnvelope.object(Map.of("score", Map.of("type", "integer")), List.of()),
+                                true,
+                                "Score inputs.")),
+                        List.of(new OperatorDefinition.Port("output",
+                                SchemaEnvelope.object(Map.of("acceptedScore", Map.of("type", "integer")),
+                                        List.of()),
+                                true,
+                                "Accepted score."))
+                ),
+                SchemaEnvelope.opaque(),
+                OperatorDefinition.Capabilities.pure(),
+                new OperatorDefinition.Lowering("transform", "transform", Map.of(
+                        "assignments", Map.of("acceptedScore", "{{input.score}}")
+                )),
+                List.of()
+        );
+
+        return new OperatorLibrary(
+                "bloge.visualOperatorLibrary.v1",
+                "risk-unsafe-output-ports",
+                "Unsafe output port operators",
+                "1.0.0",
+                "risk-team",
+                "ACTIVE",
+                List.of(source, sink)
+        );
+    }
+
     public static OperatorDefinition customerFactsOperator() {
         Map<String, Object> customerProperties = new LinkedHashMap<>();
         customerProperties.put("id", Map.of("type", "string"));

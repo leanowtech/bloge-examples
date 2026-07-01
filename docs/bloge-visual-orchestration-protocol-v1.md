@@ -1064,6 +1064,12 @@ schema、operator `configSchema` 复用同一个结构校验器：不支持的 `
 `required` 引用不存在的 property、array 缺少 `items`、enum 缺少 values 等都会
 产生 blocking diagnostic。
 
+draft 校验还必须把非默认 output port name 当作 `node.output.<port>` 的 DSL
+path segment 处理。即使历史 catalog 或外部投影绕过了 operator library 导入
+校验，只要 `nodePath` binding、表达式引用、data edge source endpoint 或 graph
+output selection 解析到不可渲染为 BLOGE DSL path segment 的 output port，服务端
+必须返回 blocking diagnostic，不能把该草稿交给 DSL generator。
+
 响应：
 
 ```json

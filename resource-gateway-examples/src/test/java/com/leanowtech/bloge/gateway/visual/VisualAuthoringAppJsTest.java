@@ -189,6 +189,7 @@ class VisualAuthoringAppJsTest {
                   'customOutputPortForKey',
                   'inputPortsForSpec',
                   'outputPortsForSpec',
+                  'dslSafeOutputPortsForSpec',
                   'inputPortForInputPath',
                   'schemaDeclaresPath',
                   'requiredInputNamesForPort',
@@ -203,6 +204,9 @@ class VisualAuthoringAppJsTest {
                   'requiredInputAutoBindPlan',
                   'autoBindRequiredInputsFromButton',
                   'applyRequiredInputAutoBindPlan',
+                  'sourceHandlesForNode',
+                  'outputPathOptionsForNode',
+                  'outputSelectionPathForHandle',
                   'isConfigExpressionValue',
                   'configExpressionForField',
                   'removeConfigReferencesToNode',
@@ -218,6 +222,7 @@ class VisualAuthoringAppJsTest {
                   'operatorLibraryPortFields',
                   'operatorLibraryConfigFields',
                   'operatorLibraryOutputPortDslPathSafe',
+                  'outputPortDslPathSafe',
                   'operatorLibraryFieldProfile',
                   'operatorLibrarySchemaSummary',
                   'operatorLibraryFieldLabel',
@@ -308,6 +313,8 @@ class VisualAuthoringAppJsTest {
                 ]) {
                   vm.runInContext(functionSource(name), context);
                 }
+                context.actualSourceHandlesForNode = context.sourceHandlesForNode;
+                context.actualOutputPathOptionsForNode = context.outputPathOptionsForNode;
 
                 context.BUILDER_HISTORY_LIMIT = 50;
                 context.CONTEXT_SOURCE_ID = '__ctx';
@@ -360,6 +367,24 @@ class VisualAuthoringAppJsTest {
                           }
                         }
                       }
+                    };
+                  }
+                  if (node.id === 'unsafeOutputNode') {
+                    return {
+                      label: 'Unsafe output',
+                      outputPort: 'graph',
+                      outputPorts: [{
+                        name: 'graph',
+                        required: true,
+                        schema: {
+                          schema: {
+                            type: 'object',
+                            properties: {
+                              score: { type: 'integer' }
+                            }
+                          }
+                        }
+                      }]
                     };
                   }
                   if (node.id === 'auditNode') {
@@ -843,6 +868,9 @@ class VisualAuthoringAppJsTest {
                 context.state.paletteSearch = 'suspendable write-external secret';
                 const paletteCapabilitySearchMatch = context.operatorMatchesPaletteFilter('awaitApproval', suspendablePaletteSpec);
                 context.state.paletteSearch = '';
+                const unsafeOutputNode = { id: 'unsafeOutputNode', type: 'customOperator' };
+                const unsafeOutputHandleCount = context.actualSourceHandlesForNode(unsafeOutputNode).length;
+                const unsafeOutputOptionCount = context.actualOutputPathOptionsForNode(unsafeOutputNode).length;
                 context.contextSourceHandles = () => [
                   { nodeId: '__ctx', path: 'name', type: 'string' },
                   { nodeId: '__ctx', path: 'score', type: 'integer' }
@@ -1114,6 +1142,8 @@ class VisualAuthoringAppJsTest {
                   ['context parse path', parsedContext.path, 'scores.0.value'],
                   ['unknown output parse path', parsedUnknownOutput.path, 'items.0.score'],
                   ['unknown output parse safety', parsedUnknownOutput.dslPathSafe, true],
+                  ['unsafe output port source handles filtered', unsafeOutputHandleCount, 0],
+                  ['unsafe output port output options filtered', unsafeOutputOptionCount, 0],
                   ['context binding kind', contextBinding.kind, 'contextPath'],
                   ['context binding path', contextBinding.path, 'scores.0.value'],
                   ['output binding kind', outputBinding.kind, 'nodePath'],

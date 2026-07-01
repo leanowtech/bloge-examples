@@ -380,6 +380,8 @@ public class GraphDraftValidator {
                     "/output/path"));
             return;
         }
+        validateOutputPortDslPathSegment(outputPort.get(), "/output/path",
+                "visual.output.portSegment.invalid", diagnostics);
         validateOutputDslPathSegments(outputPort.get().schema(), outputReference.path(), "/output/path", diagnostics);
         if (propertyAtPath(outputPort.get().schema(), outputReference.path()) == null) {
             diagnostics.add(VisualDiagnostic.error("visual.output.unknownPath",
@@ -805,6 +807,8 @@ public class GraphDraftValidator {
         }
 
         Map<String, Object> sourceProperty = propertyAtPath(sourcePort.get().schema(), binding.path());
+        validateOutputPortDslPathSegment(sourcePort.get(), targetPath + "/sourcePort",
+                "visual.binding.sourcePortSegment.invalid", diagnostics);
         validateDslPathSegments(sourcePort.get().schema(), binding.path(), targetPath + "/path", diagnostics);
         if (sourceProperty == null) {
             diagnostics.add(VisualDiagnostic.error("visual.binding.unknownOutputPath",
@@ -1184,6 +1188,8 @@ public class GraphDraftValidator {
             return null;
         }
 
+        validateOutputPortDslPathSegment(sourcePort.get(), targetPath,
+                "visual.expression.sourcePortSegment.invalid", diagnostics);
         Map<String, Object> sourceProperty = propertyAtPath(sourcePort.get().schema(), outputReference.path());
         if (sourceProperty == null) {
             diagnostics.add(VisualDiagnostic.error("visual.binding.unknownOutputPath",
@@ -1487,6 +1493,8 @@ public class GraphDraftValidator {
             }
             validateEdgeDslPathSegments(sourcePort.get().schema(), edge.source().path(), edgePath + "/source/path",
                     diagnostics);
+            validateOutputPortDslPathSegment(sourcePort.get(), edgePath + "/source/port",
+                    "visual.edge.sourcePortSegment.invalid", diagnostics);
             Map<String, Object> sourceProperty = propertyAtPath(sourcePort.get().schema(), edge.source().path());
             if (sourceProperty == null) {
                 diagnostics.add(VisualDiagnostic.error("visual.edge.unknownSourcePath",
@@ -2504,6 +2512,23 @@ public class GraphDraftValidator {
                                                       List<VisualDiagnostic> diagnostics) {
         validateDslPathSegments(schema, path, diagnosticPath, "visual.output.pathSegment.invalid",
                 "Output path segment", diagnostics);
+    }
+
+    private static void validateOutputPortDslPathSegment(OperatorDefinition.Port port,
+                                                         String diagnosticPath,
+                                                         String code,
+                                                         List<VisualDiagnostic> diagnostics) {
+        if (outputPortDslPathSafe(port)) {
+            return;
+        }
+        diagnostics.add(VisualDiagnostic.error(code,
+                "Output port '%s' cannot be rendered as a BLOGE DSL output path segment."
+                        .formatted(port.name()),
+                diagnosticPath));
+    }
+
+    private static boolean outputPortDslPathSafe(OperatorDefinition.Port port) {
+        return port == null || "output".equals(port.name()) || isDslFieldName(port.name());
     }
 
     private static void validateDslPathSegments(SchemaEnvelope schema,

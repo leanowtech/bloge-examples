@@ -679,6 +679,10 @@ function outputPortsForSpec(spec) {
   return [{ name: spec?.outputPort || 'output', schema: spec?.outputSchema || null, required: true }];
 }
 
+function dslSafeOutputPortsForSpec(spec) {
+  return outputPortsForSpec(spec).filter(outputPortDslPathSafe);
+}
+
 function inputPortForInputPath(spec, path) {
   const ports = inputPortsForSpec(spec);
   const matches = ports.filter((port) => schemaDeclaresPath(port.schema, path));
@@ -2303,6 +2307,10 @@ function operatorLibraryConfigFields(fields) {
 }
 
 function operatorLibraryOutputPortDslPathSafe(port) {
+  return outputPortDslPathSafe(port);
+}
+
+function outputPortDslPathSafe(port) {
   const name = String(port?.name || '');
   return name === 'output' || isDslFieldName(name);
 }
@@ -4594,7 +4602,7 @@ function renderGraphOutputEditor() {
   const pathOptions = selectedNode ? outputPathOptionsForNode(selectedNode) : [];
   const outputSummary = output.path ? `${output.nodeId}.${output.path}` : output.nodeId || 'No output';
   const orderedOutputNodes = orderedBuilderNodes();
-  const selectableOutputNodes = orderedOutputNodes.filter((node) => outputPortsForSpec(specForNode(node)).length > 0);
+  const selectableOutputNodes = orderedOutputNodes.filter((node) => dslSafeOutputPortsForSpec(specForNode(node)).length > 0);
   const nodeOptions = (selectableOutputNodes.length ? selectableOutputNodes : orderedOutputNodes).map((node) => {
     const selected = node.id === output.nodeId ? ' selected' : '';
     return `<option value="${escapeHtml(node.id)}"${selected}>${escapeHtml(labelForNode(node))} (${escapeHtml(node.id)})</option>`;
@@ -8275,7 +8283,7 @@ function sourceHandlesForNode(node) {
       type: path === 'rate' ? 'number' : (path === 'maxTerm' ? 'integer' : 'string')
     }));
   }
-  return outputPortsForSpec(spec).flatMap((port) => {
+  return dslSafeOutputPortsForSpec(spec).flatMap((port) => {
     const portName = port.name || spec.outputPort || 'output';
     const root = {
       nodeId: node.id,
@@ -8331,7 +8339,10 @@ function outputPathOptionsForNode(node) {
     return [];
   }
   const spec = specForNode(node);
-  const outputPorts = outputPortsForSpec(spec);
+  const outputPorts = dslSafeOutputPortsForSpec(spec);
+  if (!outputPorts.length) {
+    return [];
+  }
   const options = [{
     value: '',
     label: 'Full output',

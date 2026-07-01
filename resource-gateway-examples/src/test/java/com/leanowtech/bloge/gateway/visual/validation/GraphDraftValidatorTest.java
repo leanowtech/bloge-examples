@@ -4427,6 +4427,28 @@ class GraphDraftValidatorTest {
     }
 
     @Test
+    void rejectsNodePathBindingWhenSourceOutputPortCannotRenderAsDslPathSegment() {
+        GraphDraftValidator validator = new GraphDraftValidator(
+                VisualCatalogTestSupport.catalogWithLibrary(VisualCatalogTestSupport.unsafeOutputPortLibrary()));
+        GraphDraft draft = unsafeOutputPortDraft(
+                Map.of("score", GraphDraft.Binding.nodePath("unsafePortFacts", "graph", "score",
+                        "inputs", "score")),
+                List.of(),
+                new GraphDraft.OutputSelection("scoreSink", "")
+        );
+
+        VisualValidationResult result = validator.validate(draft);
+
+        assertThat(result.valid()).isFalse();
+        assertThat(result.diagnostics())
+                .anySatisfy(diagnostic -> {
+                    assertThat(diagnostic.code()).isEqualTo("visual.binding.sourcePortSegment.invalid");
+                    assertThat(diagnostic.target()).isEqualTo("/nodes/1/inputs/score/sourcePort");
+                    assertThat(diagnostic.message()).contains("graph");
+                });
+    }
+
+    @Test
     void rejectsNodePathBindingWhenTargetPathCannotRenderAsDslPathSegment() {
         GraphDraftValidator validator = new GraphDraftValidator(
                 VisualCatalogTestSupport.catalogWithLibrary(VisualCatalogTestSupport.unsafePathLibrary()));
@@ -4444,6 +4466,27 @@ class GraphDraftValidatorTest {
                 .anySatisfy(diagnostic -> {
                     assertThat(diagnostic.code()).isEqualTo("visual.binding.targetPathSegment.invalid");
                     assertThat(diagnostic.target()).isEqualTo("/nodes/1/inputs/bad-target");
+                });
+    }
+
+    @Test
+    void rejectsExpressionBindingWhenSourceOutputPortCannotRenderAsDslPathSegment() {
+        GraphDraftValidator validator = new GraphDraftValidator(
+                VisualCatalogTestSupport.catalogWithLibrary(VisualCatalogTestSupport.unsafeOutputPortLibrary()));
+        GraphDraft draft = unsafeOutputPortDraft(
+                Map.of("score", GraphDraft.Binding.expression("unsafePortFacts.output.graph.score")),
+                List.of(),
+                new GraphDraft.OutputSelection("scoreSink", "")
+        );
+
+        VisualValidationResult result = validator.validate(draft);
+
+        assertThat(result.valid()).isFalse();
+        assertThat(result.diagnostics())
+                .anySatisfy(diagnostic -> {
+                    assertThat(diagnostic.code()).isEqualTo("visual.expression.sourcePortSegment.invalid");
+                    assertThat(diagnostic.target()).isEqualTo("/nodes/1/inputs/score");
+                    assertThat(diagnostic.message()).contains("graph");
                 });
     }
 
@@ -4471,6 +4514,30 @@ class GraphDraftValidatorTest {
                 .anySatisfy(diagnostic -> {
                     assertThat(diagnostic.code()).isEqualTo("visual.edge.pathSegment.invalid");
                     assertThat(diagnostic.target()).isEqualTo("/edges/0/target/path");
+                });
+    }
+
+    @Test
+    void rejectsDataEdgeWhenSourceOutputPortCannotRenderAsDslPathSegment() {
+        GraphDraftValidator validator = new GraphDraftValidator(
+                VisualCatalogTestSupport.catalogWithLibrary(VisualCatalogTestSupport.unsafeOutputPortLibrary()));
+        GraphDraft draft = unsafeOutputPortDraft(
+                Map.of("score", GraphDraft.Binding.nodePath("unsafePortFacts", "graph", "score",
+                        "inputs", "score")),
+                List.of(new GraphDraft.DraftEdge("unsafe-port-edge", "data",
+                        new GraphDraft.Endpoint("unsafePortFacts", "graph", "score"),
+                        new GraphDraft.Endpoint("scoreSink", "inputs", "score"))),
+                new GraphDraft.OutputSelection("scoreSink", "")
+        );
+
+        VisualValidationResult result = validator.validate(draft);
+
+        assertThat(result.valid()).isFalse();
+        assertThat(result.diagnostics())
+                .anySatisfy(diagnostic -> {
+                    assertThat(diagnostic.code()).isEqualTo("visual.edge.sourcePortSegment.invalid");
+                    assertThat(diagnostic.target()).isEqualTo("/edges/0/source/port");
+                    assertThat(diagnostic.message()).contains("graph");
                 });
     }
 
@@ -4508,6 +4575,44 @@ class GraphDraftValidatorTest {
                 .anySatisfy(diagnostic -> {
                     assertThat(diagnostic.code()).isEqualTo("visual.output.pathSegment.invalid");
                     assertThat(diagnostic.target()).isEqualTo("/output/path");
+                });
+    }
+
+    @Test
+    void rejectsGraphOutputSelectionWhenOutputPortCannotRenderAsDslPathSegment() {
+        GraphDraftValidator validator = new GraphDraftValidator(
+                VisualCatalogTestSupport.catalogWithLibrary(VisualCatalogTestSupport.unsafeOutputPortLibrary()));
+        GraphDraft draft = new GraphDraft(
+                "",
+                "",
+                0,
+                "unsafeOutputPortSelection",
+                "",
+                "",
+                "",
+                "",
+                null,
+                List.of(new GraphDraft.DraftNode(
+                        "unsafePortFacts",
+                        "risk:unsafePortFacts",
+                        "",
+                        Map.of(),
+                        Map.of(),
+                        null
+                )),
+                List.of(),
+                Map.of(),
+                new GraphDraft.OutputSelection("unsafePortFacts", "graph.score")
+        );
+
+        VisualValidationResult result = validator.validate(draft);
+
+        assertThat(result.valid()).isFalse();
+        assertThat(result.diagnostics())
+                .anySatisfy(diagnostic -> {
+                    assertThat(diagnostic.code()).isEqualTo("visual.output.portSegment.invalid");
+                    assertThat(diagnostic.target()).isEqualTo("/output/path");
+                    assertThat(diagnostic.message()).contains("graph");
                 });
     }
 
@@ -4966,6 +5071,43 @@ class GraphDraftValidatorTest {
                         new GraphDraft.DraftNode(
                                 "unsafeFacts",
                                 "risk:unsafeFacts",
+                                "",
+                                Map.of(),
+                                Map.of(),
+                                null
+                        ),
+                        new GraphDraft.DraftNode(
+                                "scoreSink",
+                                "risk:scoreSink",
+                                "",
+                                sinkInputs,
+                                Map.of(),
+                                null
+                        )
+                ),
+                edges,
+                Map.of(),
+                output
+        );
+    }
+
+    private static GraphDraft unsafeOutputPortDraft(Map<String, GraphDraft.Binding> sinkInputs,
+                                                    List<GraphDraft.DraftEdge> edges,
+                                                    GraphDraft.OutputSelection output) {
+        return new GraphDraft(
+                "",
+                "",
+                0,
+                "unsafeOutputPortDraft",
+                "",
+                "",
+                "",
+                "",
+                null,
+                List.of(
+                        new GraphDraft.DraftNode(
+                                "unsafePortFacts",
+                                "risk:unsafePortFacts",
                                 "",
                                 Map.of(),
                                 Map.of(),
