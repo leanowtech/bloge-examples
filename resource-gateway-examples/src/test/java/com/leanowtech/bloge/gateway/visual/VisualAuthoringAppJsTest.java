@@ -348,6 +348,7 @@ class VisualAuthoringAppJsTest {
                   'connectionLocalHeuristicStatus',
                   'connectionLocalMismatchIsAdvisory',
                   'orderedBuilderNodes',
+                  'selectedBuilderNode',
                   'defaultOutputNodeForBuilder',
                   'defaultOutputPathForNode',
                   'ensureBuilderOutput',
@@ -390,6 +391,15 @@ class VisualAuthoringAppJsTest {
                   'renderNodeImpactSection',
                   'renderNodeImpactRow',
                   'renderNodeImpactClearButton',
+                  'nodeImpactClearActions',
+                  'uniqueNodeImpactActions',
+                  'nodeImpactActionKey',
+                  'clearNodeImpactRelationsFromButton',
+                  'clearNodeImpactRelationsForNode',
+                  'deleteSelectedBuilderNode',
+                  'removeBuilderReferencesToNode',
+                  'expressionReferencesNode',
+                  'fallbackContextExpression',
                   'operatorUsageRefForNode',
                   'rebaseOperatorFingerprint',
                   'renderOperatorUsagePanel',
@@ -1327,6 +1337,7 @@ class VisualAuthoringAppJsTest {
                 const riskContextInputs = riskImpact.contextInputs
                   .map((entry) => entry.detail)
                   .join('|');
+                const riskImpactClearActions = context.nodeImpactClearActions('riskNode', context.state.builder);
                 const riskImpactPanel = context.renderNodeImpactPanel(context.state.builder.nodes[1]);
                 const riskUsageRef = context.operatorUsageRefForNode(context.state.builder.nodes[1]);
                 const policyUsageRef = context.operatorUsageRefForNode(context.state.builder.nodes[0]);
@@ -1612,6 +1623,73 @@ class VisualAuthoringAppJsTest {
                 context.clearNodeImpactRelation(clearRouteAction, clearRouteBuilder);
                 const clearRouteAfter = clearRouteBuilder.routeEdges
                   .some((edge) => edge.source === 'riskNode' && edge.target === 'auditNode' && edge.condition === 'eligible');
+                const clearAllImpactBuilder = JSON.parse(JSON.stringify(context.state.builder));
+                const clearAllImpactActionCount = context.nodeImpactClearActions('riskNode', clearAllImpactBuilder).length;
+                const clearAllImpactCleared = context.clearNodeImpactRelationsForNode('riskNode', clearAllImpactBuilder);
+                const clearAllImpactRemaining = context.nodeImpactClearActions('riskNode', clearAllImpactBuilder)
+                  .filter((action) => context.nodeImpactRelationExists(action, clearAllImpactBuilder)).length;
+                const clearAllRiskNode = clearAllImpactBuilder.nodes.find((node) => node.id === 'riskNode');
+                const clearAllAuditNode = clearAllImpactBuilder.nodes.find((node) => node.id === 'auditNode');
+                const clearAllRiskScore = clearAllRiskNode.customInputs.score;
+                const clearAllRiskThresholdExists = context.hasConfigPath(clearAllRiskNode.config, 'threshold');
+                const clearAllAuditRisk = clearAllAuditNode.customInputs.risk;
+                const clearAllDependencyAfter = clearAllImpactBuilder.dependencyEdges
+                  .some((edge) => edge.source === 'riskNode' || edge.target === 'riskNode');
+                const clearAllRouteAfter = clearAllImpactBuilder.routeEdges
+                  .some((edge) => edge.source === 'riskNode' || edge.target === 'riskNode');
+                const clearAllOutputAfter = clearAllImpactBuilder.output?.nodeId || '';
+                const originalBuilderAfterImpactProbe = context.state.builder;
+                const originalSelectedNodeAfterImpactProbe = context.state.selectedNodeId;
+                const detachButtonBuilder = JSON.parse(JSON.stringify(context.state.builder));
+                detachButtonBuilder.output = { nodeId: 'riskNode', path: '' };
+                context.state.builder = detachButtonBuilder;
+                context.state.selectedNodeId = 'riskNode';
+                context.state.builderHistoryUndo = [];
+                context.state.builderHistoryRedo = [];
+                let detachButtonEditorRenders = 0;
+                let detachButtonDiagramRenders = 0;
+                let detachButtonMessage = '';
+                context.renderSelectedOperatorEditor = () => { detachButtonEditorRenders += 1; };
+                context.renderDiagram = () => { detachButtonDiagramRenders += 1; };
+                context.setConnectionMessage = (text) => { detachButtonMessage = text; };
+                context.clearNodeImpactRelationsFromButton({ dataset: { clearNodeImpact: 'riskNode' } });
+                const detachButtonOutputNode = context.state.builder.output?.nodeId || '';
+                const detachButtonRemaining = context.nodeImpactClearActions('riskNode', context.state.builder)
+                  .filter((action) => context.nodeImpactRelationExists(action, context.state.builder)).length;
+                const detachButtonRenderCounts = `${detachButtonEditorRenders}|${detachButtonDiagramRenders}`;
+                const deletePolicyBuilder = JSON.parse(JSON.stringify(originalBuilderAfterImpactProbe));
+                deletePolicyBuilder.selectedId = 'policy';
+                deletePolicyBuilder.nodes.find((node) => node.id === 'riskNode').customInputs.score = 'policy.output.maxTerm';
+                deletePolicyBuilder.nodes.find((node) => node.id === 'riskNode').config.threshold = {
+                  kind: 'expression',
+                  expr: 'policy.output.score'
+                };
+                context.state.builder = deletePolicyBuilder;
+                context.state.selectedNodeId = 'policy';
+                context.state.builderHistoryUndo = [];
+                context.state.builderHistoryRedo = [];
+                let deleteRenderInputCount = 0;
+                let deleteRenderDiagramCount = 0;
+                let deleteConnectionMessage = '';
+                context.renderInputForm = () => { deleteRenderInputCount += 1; };
+                context.renderDiagram = () => { deleteRenderDiagramCount += 1; };
+                context.setConnectionMessage = (text) => { deleteConnectionMessage = text; };
+                context.deleteSelectedBuilderNode();
+                const deletePolicyNodeStillPresent = context.state.builder.nodes
+                  .some((node) => node.id === 'policy');
+                const deletePolicyRiskNode = context.state.builder.nodes
+                  .find((node) => node.id === 'riskNode');
+                const deletePolicyRiskScore = deletePolicyRiskNode.customInputs.score;
+                const deletePolicyThresholdExists = context.hasConfigPath(deletePolicyRiskNode.config, 'threshold');
+                const deletePolicyEdgesRemain = [
+                  ...(context.state.builder.dependencyEdges || []),
+                  ...(context.state.builder.routeEdges || [])
+                ].some((edge) => edge.source === 'policy' || edge.target === 'policy');
+                const deletePolicyUndoSnapshotHasPolicy = JSON.parse(context.state.builderHistoryUndo[0].snapshot)
+                  .nodes.some((node) => node.id === 'policy');
+                const deletePolicyRenderCounts = `${deleteRenderInputCount}|${deleteRenderDiagramCount}`;
+                context.state.builder = originalBuilderAfterImpactProbe;
+                context.state.selectedNodeId = originalSelectedNodeAfterImpactProbe;
 
                 const checks = [
                   ['schema path suffix', context.dslReferenceSuffixForSchemaPath('items.0.score'), '.items[0].score'],
@@ -1767,6 +1845,9 @@ class VisualAuthoringAppJsTest {
                   ['risk impact panel includes delete summary', String(riskImpactPanel.includes('Delete Impact')), 'true'],
                   ['risk impact panel includes focus button', String(riskImpactPanel.includes('data-impact-node="auditNode"')), 'true'],
                   ['risk impact panel includes clear button', String(riskImpactPanel.includes('data-clear-impact="input"')), 'true'],
+                  ['risk impact clear action count', riskImpactClearActions.length, 7],
+                  ['risk impact panel includes bulk detach', String(riskImpactPanel.includes('data-clear-node-impact="riskNode"')), 'true'],
+                  ['risk impact panel includes downstream clear', String(riskImpactPanel.includes('data-impact-target="auditNode"')), 'true'],
                   ['risk usage ref', riskUsageRef, 'risk:eligibility'],
                   ['policy usage ref', policyUsageRef, 'bloge:decisionTable'],
                   ['risk usage level', riskUsageLevel, 'warning'],
@@ -1852,6 +1933,26 @@ class VisualAuthoringAppJsTest {
                   ['impact clear config path removed', clearConfigPathAfter, false],
                   ['impact clear dependency removed', clearDependencyAfter, false],
                   ['impact clear route removed', clearRouteAfter, false],
+                  ['impact clear all action count', clearAllImpactActionCount, 7],
+                  ['impact clear all cleared', clearAllImpactCleared, 7],
+                  ['impact clear all remaining', clearAllImpactRemaining, 0],
+                  ['impact clear all input value', clearAllRiskScore, ''],
+                  ['impact clear all config removed', clearAllRiskThresholdExists, false],
+                  ['impact clear all downstream input value', clearAllAuditRisk, ''],
+                  ['impact clear all dependencies removed', clearAllDependencyAfter, false],
+                  ['impact clear all routes removed', clearAllRouteAfter, false],
+                  ['impact clear all output removed', clearAllOutputAfter, ''],
+                  ['impact detach button output reassigned', detachButtonOutputNode, 'auditNode'],
+                  ['impact detach button remaining', detachButtonRemaining, 0],
+                  ['impact detach button render counts', detachButtonRenderCounts, '1|1'],
+                  ['impact detach button message', detachButtonMessage, 'Detached 7 impact relations for riskNode.'],
+                  ['delete selected removed policy', deletePolicyNodeStillPresent, false],
+                  ['delete selected fallback input', deletePolicyRiskScore, 'ctx.score'],
+                  ['delete selected config reference removed', deletePolicyThresholdExists, false],
+                  ['delete selected impact edges removed', deletePolicyEdgesRemain, false],
+                  ['delete selected undo snapshot retained node', deletePolicyUndoSnapshotHasPolicy, true],
+                  ['delete selected render counts', deletePolicyRenderCounts, '1|1'],
+                  ['delete selected impact message', deleteConnectionMessage, 'Deleted policy; cleaned 3 impact relations.'],
                   ['dynamic schema DSL targets', dynamicSchemaDslTargets, [
                     '/inputSchema/schema/properties/dynamicAdditional/additionalProperties/properties/bad-field',
                     '/inputSchema/schema/properties/dynamicResidual/unevaluatedProperties/properties/bad-residual-field',

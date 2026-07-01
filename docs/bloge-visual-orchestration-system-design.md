@@ -38,7 +38,7 @@ Phase 1 实现蓝图：[BLOGE 可视化编排 Phase 1 实现蓝图](./bloge-visu
 - `DatabaseResourceRegistry` 已经有 descriptor 持久化、热路径缓存和表达式预编译。
 - `/admin/resources` 已经提供资源描述符 CRUD。
 - `/api/visual/operators`、`/admin/visual-operator-libraries`、`/api/visual/drafts`、`/api/visual/connections/check`、`/api/visual/publications` 已形成服务端权威 authoring API。
-- 静态页面 `Custom Composer` 已从 catalog API 加载动态 palette，并支持用户算子库、resource 虚拟算子、schema-aware 连接、草稿、发布和运行。
+- 静态页面 `Custom Composer` 已从 catalog API 加载动态 palette，并支持用户算子库、resource 虚拟算子、schema-aware 连接、节点影响面 detach、草稿、发布和运行。
 
 推断：
 
@@ -782,7 +782,7 @@ Palette 不应写死三类节点。它从 catalog 获取：
 
 | 对象 | Inspector 内容 |
 | --- | --- |
-| 节点 | operator 信息、input binding、config、timeout/retry/fallback、schema、当前画布影响面、跨 draft/publication 的 operator usage index 与 fingerprint drift、节点 saved-vs-current fingerprint snapshot 和显式 rebase 动作，并在画布节点上回显 usage 风险 badge |
+| 节点 | operator 信息、input binding、config、timeout/retry/fallback、schema、当前画布上下游影响面、逐条/批量 detach 引用、跨 draft/publication 的 operator usage index 与 fingerprint drift、节点 saved-vs-current fingerprint snapshot 和显式 rebase 动作，并在画布节点上回显 usage 风险 badge |
 | 边 | source path、target path、类型兼容结果、transform 建议 |
 | decision table | input columns、output schema、hit policy、规则矩阵、冲突检测 |
 | transform | output object builder、表达式编辑、类型预览 |

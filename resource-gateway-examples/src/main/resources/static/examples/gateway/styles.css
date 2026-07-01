@@ -1229,7 +1229,7 @@ body.dragging-operator * {
 }
 
 .node-impact-delete {
-  grid-template-columns: minmax(0, 0.85fr) minmax(0, 1.15fr);
+  grid-template-columns: minmax(0, 0.8fr) minmax(0, 1fr) auto;
 }
 
 .node-impact-row:first-of-type {
@@ -1272,6 +1272,10 @@ body.dragging-operator * {
 .node-impact-link:hover,
 .node-impact-link:focus {
   color: var(--blue-strong);
+}
+
+.node-impact-clear-all {
+  justify-self: end;
 }
 
 .operator-usage-panel {

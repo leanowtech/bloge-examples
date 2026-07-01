@@ -5244,6 +5244,12 @@ function renderSelectedOperatorEditor() {
     });
   }
 
+  for (const button of target.querySelectorAll('[data-clear-node-impact]')) {
+    button.addEventListener('click', () => {
+      clearNodeImpactRelationsFromButton(button);
+    });
+  }
+
   for (const button of target.querySelectorAll('[data-connectability-action="connect"]')) {
     button.addEventListener('click', () => {
       connectNodeConnectabilityFromButton(button);
@@ -6078,6 +6084,10 @@ function renderNodeImpactPanel(node) {
   const controlConsumers = impact.outgoing.length - dataConsumers;
   const outputWarning = impact.graphOutputAffected ? ' Graph output currently points here.' : '';
   const deleteSummary = `${dataConsumers} downstream data/config binding(s) · ${controlConsumers} control edge(s).${outputWarning}`;
+  const clearActions = nodeImpactClearActions(node.id, state.builder);
+  const detachButton = clearActions.length
+    ? `<button type="button" class="secondary compact node-impact-clear-all" data-clear-node-impact="${escapeHtml(node.id)}">Detach ${escapeHtml(clearActions.length)}</button>`
+    : '<span></span>';
   return `
     <div class="node-impact-panel">
       <div class="binding-panel-title">
@@ -6089,6 +6099,7 @@ function renderNodeImpactPanel(node) {
       <div class="node-impact-delete">
         <strong>Delete Impact</strong>
         <span>${escapeHtml(deleteSummary)}</span>
+        ${detachButton}
       </div>
     </div>
   `;
@@ -6587,7 +6598,7 @@ function nodeImpactEdgeEntry(edge, direction, builder = state.builder) {
     peerLabel: peer ? `${labelForNode(peer)} (${peer.id})` : peerId,
     detail: nodeImpactEdgeDetail(edge, direction),
     focusable: Boolean(peer),
-    clearAction: direction === 'incoming' ? nodeImpactClearActionForEdge(edge, builder) : null
+    clearAction: nodeImpactClearActionForEdge(edge, builder)
   };
 }
 
@@ -6677,6 +6688,49 @@ function readableEdgeKind(kind) {
   return 'data';
 }
 
+function nodeImpactClearActions(nodeOrId, builder = state.builder) {
+  const impact = nodeImpactSummary(nodeOrId, builder);
+  const actions = [
+    ...impact.contextInputs,
+    ...impact.incoming,
+    ...impact.outgoing
+  ].map((entry) => entry.clearAction).filter(Boolean);
+  if (impact.graphOutputAffected) {
+    actions.push({
+      kind: 'output',
+      targetNodeId: impact.nodeId
+    });
+  }
+  return uniqueNodeImpactActions(actions);
+}
+
+function uniqueNodeImpactActions(actions) {
+  const byKey = new Map();
+  for (const action of Array.isArray(actions) ? actions : []) {
+    const key = nodeImpactActionKey(action);
+    if (key) {
+      byKey.set(key, action);
+    }
+  }
+  return Array.from(byKey.values());
+}
+
+function nodeImpactActionKey(action) {
+  const kind = canonicalImpactActionKind(action?.kind || '');
+  if (!kind) {
+    return '';
+  }
+  return [
+    kind,
+    action?.sourceNodeId || '',
+    action?.targetNodeId || '',
+    action?.targetPort || '',
+    action?.targetPath || '',
+    action?.inputKey || '',
+    action?.condition || ''
+  ].join('|');
+}
+
 function clearNodeImpactRelationFromButton(button) {
   const action = {
     kind: button.dataset.clearImpact || '',
@@ -6700,6 +6754,39 @@ function clearNodeImpactRelationFromButton(button) {
   renderDiagram();
 }
 
+function clearNodeImpactRelationsFromButton(button) {
+  const nodeId = button.dataset.clearNodeImpact || '';
+  if (!nodeId) {
+    return;
+  }
+  const count = nodeImpactClearActions(nodeId, state.builder)
+    .filter((action) => nodeImpactRelationExists(action, state.builder)).length;
+  if (!count) {
+    renderSelectedOperatorEditor();
+    return;
+  }
+  recordBuilderHistory(`Detach impact ${nodeId}`);
+  const cleared = clearNodeImpactRelationsForNode(nodeId, state.builder);
+  ensureBuilderOutput(state.builder, { excludeNodeId: nodeId });
+  syncComposerFromBuilder({ render: false });
+  setConnectionMessage(
+    cleared ? `Detached ${cleared} impact relation${cleared === 1 ? '' : 's'} for ${nodeId}.` : `No impact relations to detach for ${nodeId}.`,
+    cleared ? 'success' : 'info'
+  );
+  renderSelectedOperatorEditor();
+  renderDiagram();
+}
+
+function clearNodeImpactRelationsForNode(nodeId, builder = state.builder) {
+  let cleared = 0;
+  for (const action of nodeImpactClearActions(nodeId, builder)) {
+    if (nodeImpactRelationExists(action, builder) && clearNodeImpactRelation(action, builder)) {
+      cleared++;
+    }
+  }
+  return cleared;
+}
+
 function nodeImpactRelationExists(action, builder = state.builder) {
   const kind = canonicalImpactActionKind(action.kind);
   const node = (builder.nodes || []).find((item) => item.id === action.targetNodeId);
@@ -6720,6 +6807,9 @@ function nodeImpactRelationExists(action, builder = state.builder) {
         && edge.target === action.targetNodeId
         && (edge.condition || 'otherwise') === (action.condition || 'otherwise')
     );
+  }
+  if (kind === 'output') {
+    return builder.output?.nodeId === action.targetNodeId;
   }
   return false;
 }
@@ -6750,6 +6840,13 @@ function clearNodeImpactRelation(action, builder = state.builder) {
         && (edge.condition || 'otherwise') === (action.condition || 'otherwise'))
     );
     return builder.routeEdges.length !== before;
+  }
+  if (kind === 'output') {
+    if (builder.output?.nodeId !== action.targetNodeId) {
+      return false;
+    }
+    builder.output = {};
+    return true;
   }
   return false;
 }
@@ -6787,6 +6884,9 @@ function clearNodeImpactConfigBinding(node, targetPath) {
 }
 
 function canonicalImpactActionKind(kind) {
+  if (String(kind || '').trim().toLowerCase() === 'output') {
+    return 'output';
+  }
   const value = canonicalEdgeKind(kind);
   if (value === 'dependency' || value === 'route') {
     return value;
@@ -6799,6 +6899,9 @@ function canonicalImpactActionKind(kind) {
 
 function nodeImpactActionLabel(action) {
   const target = [action.targetNodeId, action.targetPort, action.targetPath].filter(Boolean).join('.');
+  if (action.kind === 'output') {
+    return `output:${action.targetNodeId}`;
+  }
   if (action.kind === 'dependency' || action.kind === 'route') {
     return `${action.kind}:${action.sourceNodeId}->${action.targetNodeId}`;
   }
@@ -8470,13 +8573,17 @@ function uniqueNodeId(baseId) {
 function deleteSelectedBuilderNode() {
   const selected = selectedBuilderNode();
   if (!selected || state.builder.nodes.length <= 1) return;
+  const impactCount = nodeImpactClearActions(selected.id, state.builder)
+    .filter((action) => nodeImpactRelationExists(action, state.builder))
+    .length;
   recordBuilderHistory(`Delete ${selected.id}`);
+  removeBuilderReferencesToNode(selected.id);
+  clearNodeImpactRelationsForNode(selected.id, state.builder);
   state.builder.nodes = state.builder.nodes.filter((node) => node.id !== selected.id);
   state.builder.dependencyEdges = (state.builder.dependencyEdges || [])
     .filter((edge) => edge.source !== selected.id && edge.target !== selected.id);
   state.builder.routeEdges = (state.builder.routeEdges || [])
     .filter((edge) => edge.source !== selected.id && edge.target !== selected.id);
-  removeBuilderReferencesToNode(selected.id);
   state.builder.selectedId = orderedBuilderNodes()[0]?.id || null;
   state.selectedNodeId = state.builder.selectedId;
   if (selected.type === 'httpResource' && !state.builder.nodes.some((node) => node.type === 'httpResource')) {
@@ -8486,6 +8593,10 @@ function deleteSelectedBuilderNode() {
     }
   }
   syncComposerFromBuilder();
+  setConnectionMessage(
+    impactCount ? `Deleted ${selected.id}; cleaned ${impactCount} impact relation${impactCount === 1 ? '' : 's'}.` : `Deleted ${selected.id}.`,
+    'success'
+  );
   renderInputForm();
   renderDiagram();
 }
@@ -8602,10 +8713,12 @@ function firstDecisionTableId() {
   return state.builder.nodes.find((node) => node.type === 'decisionTable')?.id || 'loanPolicy';
 }
 
-function defaultOutputNodeForBuilder(builder = state.builder) {
+function defaultOutputNodeForBuilder(builder = state.builder, options = {}) {
+  const excluded = String(options.excludeNodeId || '');
   const ordered = orderedBuilderNodes(builder);
-  const lastTransform = [...ordered].reverse().find((node) => node.type === 'transform');
-  const lastSelectable = [...ordered].reverse().find((node) => outputPathOptionsForNode(node).length > 0);
+  const candidates = excluded ? ordered.filter((node) => node.id !== excluded) : ordered;
+  const lastTransform = [...candidates].reverse().find((node) => node.type === 'transform');
+  const lastSelectable = [...candidates].reverse().find((node) => outputPathOptionsForNode(node).length > 0);
   return (lastTransform || lastSelectable || ordered[ordered.length - 1])?.id || 'response';
 }
 
@@ -8613,12 +8726,13 @@ function defaultOutputPathForNode(node) {
   return outputPathOptionsForNode(node)[0]?.value || '';
 }
 
-function ensureBuilderOutput(builder = state.builder) {
-  const fallbackNodeId = defaultOutputNodeForBuilder(builder);
+function ensureBuilderOutput(builder = state.builder, options = {}) {
+  const excluded = String(options.excludeNodeId || '');
+  const fallbackNodeId = defaultOutputNodeForBuilder(builder, options);
   const requested = builder.output || {};
   const nodeExists = builder.nodes.some((node) => node.id === requested.nodeId);
   const requestedNode = builder.nodes.find((node) => node.id === requested.nodeId);
-  const nodeId = nodeExists && outputPathOptionsForNode(requestedNode).length > 0
+  const nodeId = nodeExists && requested.nodeId !== excluded && outputPathOptionsForNode(requestedNode).length > 0
     ? requested.nodeId
     : fallbackNodeId;
   const node = builder.nodes.find((item) => item.id === nodeId);
