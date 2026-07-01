@@ -139,6 +139,39 @@ class VisualAuthoringAppJsTest {
                 .contains("deleteSelectedBuilderNode();");
     }
 
+    @Test
+    void summarizesGlobalVisualDiagnosticsByNode() throws Exception {
+        String source = appJsSource();
+
+        assertThat(source)
+                .contains("visualDiagnosticNodeFilter")
+                .contains("function renderVisualDiagnosticFilterNotice(count, activeNodeId = '')")
+                .contains("function renderVisualDiagnosticSummary(diagnostics, activeNodeId = '')")
+                .contains("function visualDiagnosticSummary(diagnostics)")
+                .contains("function visualDiagnosticNodeQueue(diagnostics)")
+                .contains("function visualDiagnosticNodeDisplayLabel(nodeId)")
+                .contains("function visualDiagnosticPreviewNodes(queue, activeNodeId = '', previewLimit = VISUAL_DIAGNOSTIC_NODE_PREVIEW_LIMIT)")
+                .contains("function visualDiagnosticOverflowText(totalCount, previewLimit = VISUAL_DIAGNOSTIC_NODE_PREVIEW_LIMIT)")
+                .contains("function visualDiagnosticQueuePositionText(queue, activeNodeId = '')")
+                .contains("function visualDiagnosticQueueTarget(diagnostics, activeNodeId = '', direction = 1)")
+                .contains("function stepVisualDiagnosticNode(direction = 1)")
+                .contains("function clearVisualDiagnosticNodeFilter()")
+                .contains("function visualDiagnosticShortcutDirection(event)")
+                .contains("function visualDiagnosticClearShortcut(event, activeNodeId = state.visualDiagnosticNodeFilter)")
+                .contains("function visualDiagnosticNodeSummaryText(entry)")
+                .contains("data-diagnostic-filter-node")
+                .contains("data-diagnostic-step")
+                .contains("data-diagnostic-clear-filter")
+                .contains("aria-label=\"Previous visual diagnostic node\"")
+                .contains("aria-label=\"Next visual diagnostic node\"")
+                .contains("aria-label=\"Show all visual diagnostics\"")
+                .contains("diagnostic-summary-overflow")
+                .contains("visual-diagnostic-filter-note")
+                .contains("visual-diagnostic-summary")
+                .contains("clearVisualDiagnosticNodeFilter();")
+                .contains("stepVisualDiagnosticNode(diagnosticDirection);");
+    }
+
     private static String appJsSource() throws IOException {
         return new ClassPathResource("static/examples/gateway/app.js")
                 .getContentAsString(StandardCharsets.UTF_8);
@@ -328,6 +361,19 @@ class VisualAuthoringAppJsTest {
                   'configExpressionForField',
                   'removeConfigReferencesToNode',
                   'normalizeDiagnostics',
+                  'renderVisualDiagnosticFilterNotice',
+                  'renderVisualDiagnosticSummary',
+                  'visualDiagnosticSummary',
+                  'visualDiagnosticNodeQueue',
+                  'visualDiagnosticNodeDisplayLabel',
+                  'visualDiagnosticPreviewNodes',
+                  'visualDiagnosticOverflowText',
+                  'visualDiagnosticQueuePositionText',
+                  'visualDiagnosticQueueTarget',
+                  'clearVisualDiagnosticNodeFilter',
+                  'visualDiagnosticShortcutDirection',
+                  'visualDiagnosticClearShortcut',
+                  'visualDiagnosticNodeSummaryText',
                   'renderLibraryProfilePanel',
                   'renderLibraryImpactPanel',
                   'libraryImpactSummaryFromPayload',
@@ -1331,10 +1377,89 @@ class VisualAuthoringAppJsTest {
                 });
                 context.state.visualCheck = {
                   diagnostics: [
-                    { level: 'ERROR', target: '/nodes/1/inputs/score', message: 'Risk node score failed.' },
-                    { level: 'WARNING', nodeId: 'policy', target: '/graphName', message: 'Policy warning.' }
+                    { level: 'ERROR', code: 'visual.input.required', target: '/nodes/1/inputs/score', message: 'Risk node score failed.' },
+                    { level: 'WARNING', code: 'visual.policy.scope', nodeId: 'policy', target: '/graphName', message: 'Policy warning.' },
+                    { level: 'INFO', code: 'visual.graph.notice', target: '/graphName', message: 'Graph notice.' }
                   ]
                 };
+                const visualDiagnosticSummary = context.visualDiagnosticSummary(context.state.visualCheck.diagnostics);
+                const visualDiagnosticNodeIds = visualDiagnosticSummary.nodes.map((entry) => entry.nodeId).join('|');
+                const visualDiagnosticQueueIds = context.visualDiagnosticNodeQueue(context.state.visualCheck.diagnostics)
+                  .map((entry) => entry.nodeId)
+                  .join('|');
+                const visualDiagnosticOverflowNone = context.visualDiagnosticOverflowText(6, 6);
+                const visualDiagnosticOverflowOne = context.visualDiagnosticOverflowText(7, 6);
+                const visualDiagnosticOverflowMany = context.visualDiagnosticOverflowText(9, 6);
+                const originalBuilderBeforeOverflowProbe = context.state.builder;
+                context.state.builder = {
+                  nodes: Array.from({ length: 8 }, (_, index) => ({ id: `overflowNode${index}` }))
+                };
+                const overflowDiagnostics = Array.from({ length: 8 }, (_, index) => ({
+                  level: index === 0 ? 'ERROR' : 'WARNING',
+                  nodeId: `overflowNode${index}`,
+                  code: `visual.overflow.${index}`,
+                  message: `Overflow ${index}`
+                }));
+                const visualDiagnosticOverflowSummary = context.visualDiagnosticSummary(overflowDiagnostics);
+                const visualDiagnosticOverflowPreview = context.visualDiagnosticPreviewNodes(
+                  visualDiagnosticOverflowSummary.nodes,
+                  'overflowNode7',
+                  6
+                ).map((entry) => entry.nodeId).join('|');
+                const visualDiagnosticOverflowHtml = context.renderVisualDiagnosticSummary(overflowDiagnostics);
+                const visualDiagnosticOverflowActiveHtml = context.renderVisualDiagnosticSummary(
+                  overflowDiagnostics,
+                  'overflowNode7'
+                );
+                context.state.builder = originalBuilderBeforeOverflowProbe;
+                const visualDiagnosticRiskPosition = context.visualDiagnosticQueuePositionText(
+                  visualDiagnosticSummary.nodes,
+                  'riskNode'
+                );
+                const visualDiagnosticPolicyPosition = context.visualDiagnosticQueuePositionText(
+                  visualDiagnosticSummary.nodes,
+                  'policy'
+                );
+                const visualDiagnosticMissingPosition = context.visualDiagnosticQueuePositionText(
+                  visualDiagnosticSummary.nodes,
+                  'missingNode'
+                );
+                const visualDiagnosticRiskDisplayLabel = context.visualDiagnosticNodeDisplayLabel('riskNode');
+                const visualDiagnosticMissingDisplayLabel = context.visualDiagnosticNodeDisplayLabel('missingNode');
+                const visualDiagnosticFilterNotice = context.renderVisualDiagnosticFilterNotice(1, 'riskNode');
+                const visualDiagnosticEmptyFilterNotice = context.renderVisualDiagnosticFilterNotice(1, '');
+                const visualDiagnosticFirstTarget = context.visualDiagnosticQueueTarget(context.state.visualCheck.diagnostics, '', 1);
+                const visualDiagnosticNextTarget = context.visualDiagnosticQueueTarget(context.state.visualCheck.diagnostics, 'riskNode', 1);
+                const visualDiagnosticPrevTarget = context.visualDiagnosticQueueTarget(context.state.visualCheck.diagnostics, 'riskNode', -1);
+                const visualDiagnosticShortcutNext = context.visualDiagnosticShortcutDirection({ key: 'F8' });
+                const visualDiagnosticShortcutPrev = context.visualDiagnosticShortcutDirection({ key: 'F8', shiftKey: true });
+                const visualDiagnosticShortcutCommand = context.visualDiagnosticShortcutDirection({ key: 'F8', ctrlKey: true });
+                const visualDiagnosticClearShortcutActive = context.visualDiagnosticClearShortcut(
+                  { key: 'Escape' },
+                  'riskNode'
+                );
+                const visualDiagnosticClearShortcutInactive = context.visualDiagnosticClearShortcut(
+                  { key: 'Escape' },
+                  ''
+                );
+                const visualDiagnosticClearShortcutCommand = context.visualDiagnosticClearShortcut(
+                  { key: 'Escape', metaKey: true },
+                  'riskNode'
+                );
+                context.state.visualDiagnosticNodeFilter = 'riskNode';
+                let visualDiagnosticClearRenderCount = 0;
+                context.renderVisualCheck = () => { visualDiagnosticClearRenderCount += 1; };
+                const visualDiagnosticClearResult = context.clearVisualDiagnosticNodeFilter();
+                const visualDiagnosticFilterAfterClear = context.state.visualDiagnosticNodeFilter;
+                const visualDiagnosticClearAgain = context.clearVisualDiagnosticNodeFilter();
+                const visualDiagnosticRiskText = context.visualDiagnosticNodeSummaryText(
+                  visualDiagnosticSummary.nodes.find((entry) => entry.nodeId === 'riskNode')
+                );
+                const visualDiagnosticSummaryHtml = context.renderVisualDiagnosticSummary(context.state.visualCheck.diagnostics);
+                const visualDiagnosticFilteredHtml = context.renderVisualDiagnosticSummary(
+                  context.state.visualCheck.diagnostics,
+                  'riskNode'
+                );
                 const riskSearch = context.canvasSearchResults('eligibility strict', context.state.builder, context.state.layout)
                   .map((entry) => entry.nodeId)
                   .join('|');
@@ -1416,6 +1541,7 @@ class VisualAuthoringAppJsTest {
                 context.state.builder = originalBuilderBeforeDuplicateProbe;
                 context.state.selectedNodeId = originalSelectedBeforeDuplicateProbe;
                 context.state.activeRunTrace = originalTraceBeforeDuplicateProbe;
+                """, """
                 const auditTraceSummaryLabel = context.nodeTraceSummaryLabel(context.runTraceForCanvasNode('auditNode'));
                 const traceCoverage = context.runTraceCanvasCoverage(context.state.activeRunTrace, context.state.builder, context.state.layout);
                 const traceCoverageText = context.runTraceCoverageText(traceCoverage);
@@ -1920,6 +2046,48 @@ class VisualAuthoringAppJsTest {
                   ['history clear message', historyClearMessage, 'Loaded draft; local edit history cleared.'],
                   ['history shortcut editable target', editableShortcutTarget, true],
                   ['history shortcut canvas target', canvasShortcutTarget, false],
+                  ['visual diagnostic summary total', visualDiagnosticSummary.total, 3],
+                  ['visual diagnostic summary errors', visualDiagnosticSummary.errorCount, 1],
+                  ['visual diagnostic summary warnings', visualDiagnosticSummary.warningCount, 1],
+                  ['visual diagnostic summary untargeted', visualDiagnosticSummary.untargetedCount, 1],
+                  ['visual diagnostic summary nodes', visualDiagnosticNodeIds, 'riskNode|policy'],
+                  ['visual diagnostic queue ids', visualDiagnosticQueueIds, 'riskNode|policy'],
+                  ['visual diagnostic overflow none', visualDiagnosticOverflowNone, ''],
+                  ['visual diagnostic overflow one', visualDiagnosticOverflowOne, '1 more node'],
+                  ['visual diagnostic overflow many', visualDiagnosticOverflowMany, '3 more nodes'],
+                  ['visual diagnostic active overflow preview', visualDiagnosticOverflowPreview, 'overflowNode0|overflowNode1|overflowNode2|overflowNode3|overflowNode4|overflowNode7'],
+                  ['visual diagnostic overflow chip', String(visualDiagnosticOverflowHtml.includes('2 more nodes')), 'true'],
+                  ['visual diagnostic overflow aria label', String(visualDiagnosticOverflowHtml.includes('aria-label="2 more nodes not shown in compact diagnostic preview"')), 'true'],
+                  ['visual diagnostic active overflow chip', String(visualDiagnosticOverflowActiveHtml.includes('overflowNode7') && visualDiagnosticOverflowActiveHtml.includes('8/8')), 'true'],
+                  ['visual diagnostic risk position', visualDiagnosticRiskPosition, '1/2'],
+                  ['visual diagnostic policy position', visualDiagnosticPolicyPosition, '2/2'],
+                  ['visual diagnostic missing position', visualDiagnosticMissingPosition, ''],
+                  ['visual diagnostic risk display label', visualDiagnosticRiskDisplayLabel, 'Eligibility (riskNode)'],
+                  ['visual diagnostic missing display label', visualDiagnosticMissingDisplayLabel, 'missingNode'],
+                  ['visual diagnostic filter notice', String(visualDiagnosticFilterNotice.includes('Showing 1 issue for Eligibility (riskNode)')), 'true'],
+                  ['visual diagnostic empty filter notice', visualDiagnosticEmptyFilterNotice, ''],
+                  ['visual diagnostic queue first', visualDiagnosticFirstTarget, 'riskNode'],
+                  ['visual diagnostic queue next', visualDiagnosticNextTarget, 'policy'],
+                  ['visual diagnostic queue prev', visualDiagnosticPrevTarget, 'policy'],
+                  ['visual diagnostic shortcut next', visualDiagnosticShortcutNext, 1],
+                  ['visual diagnostic shortcut prev', visualDiagnosticShortcutPrev, -1],
+                  ['visual diagnostic shortcut command ignored', visualDiagnosticShortcutCommand, 0],
+                  ['visual diagnostic clear shortcut active', visualDiagnosticClearShortcutActive, true],
+                  ['visual diagnostic clear shortcut inactive', visualDiagnosticClearShortcutInactive, false],
+                  ['visual diagnostic clear shortcut command ignored', visualDiagnosticClearShortcutCommand, false],
+                  ['visual diagnostic clear result', visualDiagnosticClearResult, true],
+                  ['visual diagnostic filter after clear', visualDiagnosticFilterAfterClear, ''],
+                  ['visual diagnostic clear render count', visualDiagnosticClearRenderCount, 1],
+                  ['visual diagnostic clear again', visualDiagnosticClearAgain, false],
+                  ['visual diagnostic risk text', visualDiagnosticRiskText, '1 issue · 1 error · visual.input.required'],
+                  ['visual diagnostic summary filter button', String(visualDiagnosticSummaryHtml.includes('data-diagnostic-filter-node="riskNode"')), 'true'],
+                  ['visual diagnostic summary node aria label', String(visualDiagnosticSummaryHtml.includes('aria-label="Filter visual diagnostics to Eligibility (riskNode): 1 issue')), 'true'],
+                  ['visual diagnostic summary step button', String(visualDiagnosticSummaryHtml.includes('data-diagnostic-step="1"')), 'true'],
+                  ['visual diagnostic summary step aria label', String(visualDiagnosticSummaryHtml.includes('aria-label="Next visual diagnostic node"')), 'true'],
+                  ['visual diagnostic summary clear aria label', String(visualDiagnosticFilteredHtml.includes('aria-label="Show all visual diagnostics"')), 'true'],
+                  ['visual diagnostic summary position chip', String(visualDiagnosticFilteredHtml.includes('1/2')), 'true'],
+                  ['visual diagnostic summary global count', String(visualDiagnosticSummaryHtml.includes('1 global')), 'true'],
+                  ['visual diagnostic summary active filter', String(visualDiagnosticFilteredHtml.includes('filtered to Eligibility (riskNode)')), 'true'],
                   ['canvas search custom config hit', riskSearch, 'riskNode'],
                   ['diagnostic node pointer index 0', policyByPointer, 'policy'],
                   ['diagnostic node pointer index 1', riskByPointer, 'riskNode'],

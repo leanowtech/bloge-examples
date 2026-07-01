@@ -2198,6 +2198,136 @@ body.dragging-operator * {
   gap: 6px;
 }
 
+.visual-diagnostic-summary {
+  display: grid;
+  gap: 7px;
+  padding: 8px;
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  background: #ffffff;
+}
+
+.diagnostic-summary-head,
+.diagnostic-summary-counts {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.diagnostic-summary-head strong {
+  color: var(--text);
+  font-size: 12px;
+}
+
+.diagnostic-summary-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 5px;
+}
+
+.diagnostic-summary-counts span,
+.diagnostic-summary-global {
+  padding: 3px 6px;
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  background: var(--surface-subtle);
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.diagnostic-summary-position {
+  border-color: var(--blue);
+  background: var(--blue-soft);
+  color: var(--blue);
+}
+
+.visual-diagnostic-filter-note {
+  padding: 6px 8px;
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  background: var(--blue-soft);
+  color: var(--blue);
+  font-size: 11px;
+  font-weight: 900;
+}
+
+.diagnostic-summary-nodes {
+  display: grid;
+  gap: 5px;
+}
+
+.diagnostic-summary-node {
+  display: grid;
+  gap: 2px;
+  padding: 6px 7px;
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  background: var(--surface-subtle);
+  text-align: left;
+}
+
+.diagnostic-summary-node strong,
+.diagnostic-summary-node span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.diagnostic-summary-node strong {
+  color: var(--text);
+  font-size: 11px;
+}
+
+.diagnostic-summary-node span {
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 800;
+}
+
+.diagnostic-summary-overflow {
+  padding: 6px 7px;
+  border: 1px dashed var(--line-strong);
+  border-radius: 5px;
+  background: #ffffff;
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 900;
+  text-align: center;
+}
+
+.diagnostic-summary-node.error {
+  border-color: #fca5a5;
+  background: var(--red-soft);
+}
+
+.diagnostic-summary-node.warning {
+  border-color: #f8d18d;
+  background: var(--amber-soft);
+}
+
+.diagnostic-summary-node.active,
+.diagnostic-summary-node:focus,
+.diagnostic-summary-node:hover {
+  border-color: var(--blue);
+  background: var(--blue-soft);
+}
+
+.diagnostic-summary-actions button,
+.diagnostic-summary-clear {
+  padding: 4px 7px;
+  border: 1px solid var(--line-strong);
+  border-radius: 5px;
+  background: var(--surface-subtle);
+  color: var(--blue);
+  font-size: 11px;
+  font-weight: 900;
+}
+
 .visual-diagnostic {
   display: grid;
   gap: 3px;

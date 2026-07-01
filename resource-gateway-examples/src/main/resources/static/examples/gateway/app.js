@@ -271,6 +271,7 @@ const SAMPLE_OPENAPI_RESOURCE_CONTRACT = {
 const NODE_SIZE = { width: 184, height: 76 };
 const DRAG_START_THRESHOLD = 4;
 const BUILDER_HISTORY_LIMIT = 50;
+const VISUAL_DIAGNOSTIC_NODE_PREVIEW_LIMIT = 6;
 const SUPPORTED_SCHEMA_FORMAT = 'json-schema';
 const SUPPORTED_SCHEMA_VERSION = '2020-12';
 const SUPPORTED_SCHEMA_KINDS = new Set([
@@ -368,6 +369,7 @@ const state = {
     level: 'info',
     diagnostics: []
   },
+  visualDiagnosticNodeFilter: '',
   operatorLibraries: [],
   selectedLibraryId: '',
   libraryImportText: pretty(SAMPLE_OPERATOR_LIBRARY),
@@ -2990,21 +2992,34 @@ function renderVisualCheck() {
   const list = $('visual-diagnostics');
   if (!status || !list) return;
   const check = state.visualCheck || {};
+  const diagnostics = normalizeDiagnostics(check.diagnostics);
+  if (state.visualDiagnosticNodeFilter
+      && !diagnostics.some((diagnostic) => diagnosticTargetNodeId(diagnostic) === state.visualDiagnosticNodeFilter)) {
+    state.visualDiagnosticNodeFilter = '';
+  }
+  const visibleDiagnostics = state.visualDiagnosticNodeFilter
+    ? diagnostics.filter((diagnostic) => diagnosticTargetNodeId(diagnostic) === state.visualDiagnosticNodeFilter)
+    : diagnostics;
   status.textContent = check.message || 'Not checked';
   status.className = `visual-check-status ${check.level || 'info'}`;
-  renderDiagnosticList(list, check.diagnostics || []);
+  renderDiagnosticList(list, visibleDiagnostics, {
+    headerHtml: renderVisualDiagnosticSummary(diagnostics, state.visualDiagnosticNodeFilter),
+    noticeHtml: renderVisualDiagnosticFilterNotice(visibleDiagnostics.length, state.visualDiagnosticNodeFilter)
+  });
 }
 
-function renderDiagnosticList(list, diagnostics) {
+function renderDiagnosticList(list, diagnostics, options = {}) {
   if (!list) return;
   const normalized = normalizeDiagnostics(diagnostics);
-  if (!normalized.length) {
+  const headerHtml = options.headerHtml || '';
+  const noticeHtml = options.noticeHtml || '';
+  if (!normalized.length && !headerHtml && !noticeHtml) {
     list.innerHTML = '';
     list.hidden = true;
     return;
   }
   list.hidden = false;
-  list.innerHTML = normalized.map((diagnostic) => {
+  list.innerHTML = headerHtml + noticeHtml + normalized.map((diagnostic) => {
     const level = String(diagnostic.level || 'INFO').toLowerCase();
     const target = diagnostic.target ? ` · ${diagnostic.target}` : '';
     const location = diagnostic.line >= 0 ? ` · ${diagnostic.line}:${diagnostic.column}` : '';
@@ -3027,6 +3042,257 @@ function renderDiagnosticList(list, diagnostics) {
       focusCanvasNode(button.dataset.diagnosticNode);
     });
   }
+  for (const button of list.querySelectorAll('[data-diagnostic-filter-node]')) {
+    button.addEventListener('click', () => {
+      state.visualDiagnosticNodeFilter = button.dataset.diagnosticFilterNode || '';
+      focusCanvasNode(state.visualDiagnosticNodeFilter);
+      renderVisualCheck();
+    });
+  }
+  for (const button of list.querySelectorAll('[data-diagnostic-clear-filter]')) {
+    button.addEventListener('click', () => {
+      clearVisualDiagnosticNodeFilter();
+    });
+  }
+  for (const button of list.querySelectorAll('[data-diagnostic-step]')) {
+    button.addEventListener('click', () => {
+      stepVisualDiagnosticNode(Number(button.dataset.diagnosticStep) || 1);
+    });
+  }
+}
+
+function renderVisualDiagnosticFilterNotice(count, activeNodeId = '') {
+  if (!activeNodeId) {
+    return '';
+  }
+  const issueText = `${count} issue${count === 1 ? '' : 's'}`;
+  return `<div class="visual-diagnostic-filter-note">${escapeHtml(`Showing ${issueText} for ${visualDiagnosticNodeDisplayLabel(activeNodeId)}`)}</div>`;
+}
+
+function renderVisualDiagnosticSummary(diagnostics, activeNodeId = '') {
+  const summary = visualDiagnosticSummary(diagnostics);
+  if (!summary.total) {
+    return '';
+  }
+  const activeLabel = activeNodeId ? ` · filtered to ${visualDiagnosticNodeDisplayLabel(activeNodeId)}` : '';
+  const clear = activeNodeId
+    ? '<button class="diagnostic-summary-clear" type="button" data-diagnostic-clear-filter aria-label="Show all visual diagnostics">All</button>'
+    : '';
+  const stepControls = summary.nodes.length > 1
+    ? '<button type="button" data-diagnostic-step="-1" aria-label="Previous visual diagnostic node">Prev</button><button type="button" data-diagnostic-step="1" aria-label="Next visual diagnostic node">Next</button>'
+    : '';
+  const previewNodes = visualDiagnosticPreviewNodes(
+    summary.nodes,
+    activeNodeId,
+    VISUAL_DIAGNOSTIC_NODE_PREVIEW_LIMIT
+  );
+  const nodeRows = previewNodes.map((entry) => {
+    const node = state.builder?.nodes?.find((candidate) => candidate.id === entry.nodeId);
+    const label = node ? labelForNode(node) : entry.nodeId;
+    const displayLabel = visualDiagnosticNodeDisplayLabel(entry.nodeId);
+    const level = entry.errorCount ? 'error' : (entry.warningCount ? 'warning' : 'info');
+    const active = activeNodeId === entry.nodeId ? ' active' : '';
+    const text = visualDiagnosticNodeSummaryText(entry);
+    return `
+      <button
+        class="diagnostic-summary-node ${escapeHtml(level)}${active}"
+        type="button"
+        data-diagnostic-filter-node="${escapeHtml(entry.nodeId)}"
+        aria-label="${escapeHtml(`Filter visual diagnostics to ${displayLabel}: ${text}`)}"
+        title="${escapeHtml(`${displayLabel} · ${text}`)}"
+      >
+        <strong>${escapeHtml(label || entry.nodeId)}</strong>
+        <span>${escapeHtml(text)}</span>
+      </button>
+    `;
+  }).join('');
+  const overflow = visualDiagnosticOverflowText(summary.nodes.length, VISUAL_DIAGNOSTIC_NODE_PREVIEW_LIMIT);
+  const untargeted = summary.untargetedCount
+    ? `<span class="diagnostic-summary-global">${escapeHtml(`${summary.untargetedCount} global`)}</span>`
+    : '';
+  const position = visualDiagnosticQueuePositionText(summary.nodes, activeNodeId);
+  return `
+    <div class="visual-diagnostic-summary">
+      <div class="diagnostic-summary-head">
+        <strong>${escapeHtml(`${summary.total} diagnostic${summary.total === 1 ? '' : 's'}${activeLabel}`)}</strong>
+        <div class="diagnostic-summary-actions">
+          ${stepControls}
+          ${clear}
+        </div>
+      </div>
+      <div class="diagnostic-summary-counts">
+        <span>${escapeHtml(`${summary.errorCount} error`)}</span>
+        <span>${escapeHtml(`${summary.warningCount} warning`)}</span>
+        <span>${escapeHtml(`${summary.nodes.length} node${summary.nodes.length === 1 ? '' : 's'}`)}</span>
+        ${position ? `<span class="diagnostic-summary-position">${escapeHtml(position)}</span>` : ''}
+        ${untargeted}
+      </div>
+      ${nodeRows || overflow ? `<div class="diagnostic-summary-nodes">${nodeRows}${overflow ? `<span class="diagnostic-summary-overflow" aria-label="${escapeHtml(`${overflow} not shown in compact diagnostic preview`)}">${escapeHtml(overflow)}</span>` : ''}</div>` : ''}
+    </div>
+  `;
+}
+
+function visualDiagnosticNodeQueue(diagnostics) {
+  return visualDiagnosticSummary(diagnostics).nodes;
+}
+
+function visualDiagnosticNodeDisplayLabel(nodeId) {
+  const id = String(nodeId || '').trim();
+  if (!id) {
+    return '';
+  }
+  const node = state.builder?.nodes?.find((candidate) => candidate.id === id);
+  const label = node ? (node.label || labelForNode(node)) : '';
+  return label && label !== id ? `${label} (${id})` : id;
+}
+
+function visualDiagnosticPreviewNodes(queue, activeNodeId = '', previewLimit = VISUAL_DIAGNOSTIC_NODE_PREVIEW_LIMIT) {
+  const nodes = Array.isArray(queue) ? queue : [];
+  const limit = Math.max(0, Number(previewLimit) || 0);
+  if (!limit || nodes.length <= limit) {
+    return nodes.slice(0, limit);
+  }
+  const preview = nodes.slice(0, limit);
+  const activeIndex = nodes.findIndex((entry) => entry.nodeId === activeNodeId);
+  if (activeIndex < limit) {
+    return preview;
+  }
+  return [...nodes.slice(0, limit - 1), nodes[activeIndex]];
+}
+
+function visualDiagnosticOverflowText(totalCount, previewLimit = VISUAL_DIAGNOSTIC_NODE_PREVIEW_LIMIT) {
+  const hidden = Math.max(0, Number(totalCount) - Number(previewLimit));
+  if (!hidden) {
+    return '';
+  }
+  return `${hidden} more node${hidden === 1 ? '' : 's'}`;
+}
+
+function visualDiagnosticQueuePositionText(queue, activeNodeId = '') {
+  if (!activeNodeId || !Array.isArray(queue) || !queue.length) {
+    return '';
+  }
+  const index = queue.findIndex((entry) => entry.nodeId === activeNodeId);
+  return index >= 0 ? `${index + 1}/${queue.length}` : '';
+}
+
+function visualDiagnosticQueueTarget(diagnostics, activeNodeId = '', direction = 1) {
+  const queue = visualDiagnosticNodeQueue(diagnostics);
+  if (!queue.length) {
+    return '';
+  }
+  const ids = queue.map((entry) => entry.nodeId);
+  const step = direction < 0 ? -1 : 1;
+  const activeIndex = ids.indexOf(activeNodeId);
+  const baseIndex = activeIndex >= 0 ? activeIndex : (step < 0 ? 0 : -1);
+  return ids[(baseIndex + step + ids.length) % ids.length];
+}
+
+function stepVisualDiagnosticNode(direction = 1) {
+  const active = state.visualDiagnosticNodeFilter || state.selectedNodeId || state.canvasFocusedNodeId || '';
+  const target = visualDiagnosticQueueTarget(state.visualCheck?.diagnostics || [], active, direction);
+  if (!target) {
+    return;
+  }
+  state.visualDiagnosticNodeFilter = target;
+  focusCanvasNode(target);
+  renderVisualCheck();
+}
+
+function clearVisualDiagnosticNodeFilter() {
+  if (!state.visualDiagnosticNodeFilter) {
+    return false;
+  }
+  state.visualDiagnosticNodeFilter = '';
+  renderVisualCheck();
+  return true;
+}
+
+function visualDiagnosticShortcutDirection(event) {
+  const key = String(event?.key || '').toLowerCase();
+  if (key !== 'f8' || event?.metaKey || event?.ctrlKey || event?.altKey) {
+    return 0;
+  }
+  return event?.shiftKey ? -1 : 1;
+}
+
+function visualDiagnosticClearShortcut(event, activeNodeId = state.visualDiagnosticNodeFilter) {
+  const key = String(event?.key || '').toLowerCase();
+  return Boolean(activeNodeId)
+      && key === 'escape'
+      && !event?.metaKey
+      && !event?.ctrlKey
+      && !event?.altKey;
+}
+
+function visualDiagnosticSummary(diagnostics) {
+  const summary = {
+    total: 0,
+    errorCount: 0,
+    warningCount: 0,
+    infoCount: 0,
+    untargetedCount: 0,
+    nodes: []
+  };
+  const byNode = new Map();
+  for (const diagnostic of normalizeDiagnostics(diagnostics)) {
+    summary.total += 1;
+    const level = String(diagnostic.level || 'INFO').toUpperCase();
+    if (level === 'ERROR') {
+      summary.errorCount += 1;
+    } else if (level === 'WARNING' || level === 'WARN') {
+      summary.warningCount += 1;
+    } else {
+      summary.infoCount += 1;
+    }
+    const nodeId = diagnosticTargetNodeId(diagnostic);
+    if (!nodeId) {
+      summary.untargetedCount += 1;
+      continue;
+    }
+    if (!byNode.has(nodeId)) {
+      byNode.set(nodeId, {
+        nodeId,
+        count: 0,
+        errorCount: 0,
+        warningCount: 0,
+        infoCount: 0,
+        codes: []
+      });
+    }
+    const entry = byNode.get(nodeId);
+    entry.count += 1;
+    if (level === 'ERROR') {
+      entry.errorCount += 1;
+    } else if (level === 'WARNING' || level === 'WARN') {
+      entry.warningCount += 1;
+    } else {
+      entry.infoCount += 1;
+    }
+    if (diagnostic.code && !entry.codes.includes(diagnostic.code)) {
+      entry.codes.push(diagnostic.code);
+    }
+  }
+  summary.nodes = [...byNode.values()].sort((left, right) =>
+    right.errorCount - left.errorCount
+      || right.warningCount - left.warningCount
+      || right.count - left.count
+      || left.nodeId.localeCompare(right.nodeId));
+  return summary;
+}
+
+function visualDiagnosticNodeSummaryText(entry) {
+  const parts = [`${entry.count} issue${entry.count === 1 ? '' : 's'}`];
+  if (entry.errorCount) {
+    parts.push(`${entry.errorCount} error${entry.errorCount === 1 ? '' : 's'}`);
+  }
+  if (entry.warningCount) {
+    parts.push(`${entry.warningCount} warning${entry.warningCount === 1 ? '' : 's'}`);
+  }
+  if (entry.codes.length) {
+    parts.push(entry.codes.slice(0, 2).join(', '));
+  }
+  return parts.join(' · ');
 }
 
 function setVisualCheck(message, level = 'info', diagnostics = []) {
@@ -14991,6 +15257,17 @@ function installBuilderHistoryShortcuts() {
     }
     const key = String(event.key || '').toLowerCase();
     const command = event.metaKey || event.ctrlKey;
+    if (visualDiagnosticClearShortcut(event)) {
+      event.preventDefault();
+      clearVisualDiagnosticNodeFilter();
+      return;
+    }
+    const diagnosticDirection = visualDiagnosticShortcutDirection(event);
+    if (diagnosticDirection) {
+      event.preventDefault();
+      stepVisualDiagnosticNode(diagnosticDirection);
+      return;
+    }
     if ((key === 'delete' || key === 'backspace') && !command && !event.altKey) {
       event.preventDefault();
       deleteSelectedBuilderNode();

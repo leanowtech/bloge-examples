@@ -38,7 +38,7 @@ Phase 1 实现蓝图：[BLOGE 可视化编排 Phase 1 实现蓝图](./bloge-visu
 - `DatabaseResourceRegistry` 已经有 descriptor 持久化、热路径缓存和表达式预编译。
 - `/admin/resources` 已经提供资源描述符 CRUD。
 - `/api/visual/operators`、`/admin/visual-operator-libraries`、`/api/visual/drafts`、`/api/visual/connections/check`、`/api/visual/publications` 已形成服务端权威 authoring API。
-- 静态页面 `Custom Composer` 已从 catalog API 加载动态 palette，并支持用户算子库、resource 虚拟算子、schema-aware 连接、selected-node diagnostics 归因、connectability blocked preview / reason 标签、已配置节点复制和 Cmd/Ctrl+D 快捷入口、Delete/Backspace 删除选中节点并复用 impact cleanup 路径、节点影响面 detach、草稿、发布和运行。
+- 静态页面 `Custom Composer` 已从 catalog API 加载动态 palette，并支持用户算子库、resource 虚拟算子、schema-aware 连接、Server Check 诊断按节点 label/id 聚合/过滤/聚焦/轮转、队列位置/过滤明细/隐藏节点提示，并在当前修复节点落在摘要折叠范围外时仍保留该节点预览，F8/Shift+F8 修复队列快捷导航和 Esc 清除过滤、selected-node diagnostics 归因、connectability blocked preview / reason 标签、已配置节点复制和 Cmd/Ctrl+D 快捷入口、Delete/Backspace 删除选中节点并复用 impact cleanup 路径、节点影响面 detach、草稿、发布和运行。
 
 推断：
 
@@ -793,7 +793,7 @@ Palette 不应写死三类节点。它从 catalog 获取：
 
 建议底部三 tab：
 
-1. Diagnostics：按 severity、node、field 分组。
+1. Diagnostics：按 severity、node、field 分组，并能从聚合摘要或 F8/Shift+F8 快捷键过滤/聚焦/轮转到受影响节点，显示当前队列位置、过滤后的 issue 数和未展开节点数量；当前过滤节点即使排在折叠范围外也保持可见，Esc 可清除当前过滤。
 2. DSL Preview：展示生成的 BLOGE DSL，支持复制和高级编辑。
 3. Run Console：输入 context，执行，查看输出和节点 trace。
 
