@@ -477,6 +477,7 @@ function rememberCatalogOperator(operator, options = {}) {
     rememberCoreOperatorFingerprint(operatorRef, operator.fingerprint || '');
     return operatorRef;
   }
+  const diagnostics = normalizeDiagnostics(operator.diagnostics);
   if (!operatorRef.startsWith('resource:')) {
     const inputPorts = normalizeOperatorPorts(operator.ports?.inputs, 'inputs');
     const outputPorts = normalizeOperatorPorts(operator.ports?.outputs, 'output');
@@ -501,6 +502,7 @@ function rememberCatalogOperator(operator, options = {}) {
       sourceKind: operator.source?.kind || '',
       policy: operator.policy,
       lowering: operator.lowering,
+      diagnostics,
       paletteVisible: options.paletteVisible !== false,
       deprecated: Boolean(options.deprecated)
     };
@@ -533,6 +535,7 @@ function rememberCatalogOperator(operator, options = {}) {
     sourceKind: operator.source?.kind || '',
     policy: operator.policy,
     lowering: operator.lowering,
+    diagnostics,
     paletteVisible: options.paletteVisible !== false,
     deprecated: Boolean(options.deprecated)
   };
@@ -1464,6 +1467,7 @@ function renderOperatorPalette() {
       <span>${escapeHtml(spec.kind)}</span>
       <small>${escapeHtml(operatorPaletteContractSummary(spec))}</small>
       ${operatorPaletteTagBadges(spec)}
+      ${operatorPaletteDiagnosticBadges(spec)}
     </button>
   `).join('') || '<div class="palette-empty">No matching operators.</div>';
   for (const button of target.querySelectorAll('[data-operator-type]')) {
@@ -1584,6 +1588,27 @@ function operatorPaletteTagBadges(spec) {
     `<em>${escapeHtml(tag)}</em>`).join('')}</div>`;
 }
 
+function operatorPaletteDiagnosticBadges(spec) {
+  const diagnostics = operatorDiagnosticsForSpec(spec);
+  if (!diagnostics.length) {
+    return '';
+  }
+  const errors = diagnostics.filter((diagnostic) =>
+    String(diagnostic.level || '').toUpperCase() === 'ERROR').length;
+  const warnings = diagnostics.filter((diagnostic) =>
+    String(diagnostic.level || '').toUpperCase() === 'WARNING').length;
+  const level = errors ? 'error' : (warnings ? 'warning' : 'info');
+  const count = errors || warnings || diagnostics.length;
+  const noun = count === 1 ? 'diagnostic' : 'diagnostics';
+  const first = diagnostics[0] || {};
+  const title = [first.code, first.message].filter(Boolean).join(': ');
+  return `
+    <div class="operator-card-diagnostics ${escapeHtml(level)}" title="${escapeHtml(title)}">
+      <span>${escapeHtml(`${count} ${level} ${noun}`)}</span>
+    </div>
+  `;
+}
+
 function operatorPaletteSearchValues(spec) {
   return [
     ...inputPortsForSpec(spec).flatMap((port) => [
@@ -1593,6 +1618,11 @@ function operatorPaletteSearchValues(spec) {
     ...outputPortsForSpec(spec).flatMap((port) => [
       port.name,
       ...schemaFieldDescriptors(port.schema).map((field) => field.path)
+    ]),
+    ...operatorDiagnosticsForSpec(spec).flatMap((diagnostic) => [
+      diagnostic.code,
+      diagnostic.message,
+      diagnostic.target
     ])
   ];
 }
@@ -1736,6 +1766,10 @@ function setVisualCheck(message, level = 'info', diagnostics = []) {
 
 function normalizeDiagnostics(diagnostics) {
   return Array.isArray(diagnostics) ? diagnostics : [];
+}
+
+function operatorDiagnosticsForSpec(spec) {
+  return normalizeDiagnostics(spec?.diagnostics);
 }
 
 function diagnosticMessage(diagnostics, fallback) {
@@ -4013,6 +4047,7 @@ function renderOperatorContractPanel(node) {
         <span>Contract</span>
         <small>${bound}/${targets.length} inputs bound · ${requiredValid}/${requiredTargets.length} required valid · ${errors} issues</small>
       </div>
+      ${renderOperatorDiagnosticsPanel(spec)}
       <div class="contract-port-groups">
         ${renderContractPortGroup('Inputs', inputPortsForSpec(spec))}
         ${renderContractPortGroup('Outputs', outputPortsForSpec(spec))}
@@ -4021,6 +4056,33 @@ function renderOperatorContractPanel(node) {
         <div class="contract-config-summary">
           <strong>Config</strong>
           <span>${configFields.length} fields · ${configFields.filter((field) => field.required).length} required</span>
+        </div>
+      ` : ''}
+    </div>
+  `;
+}
+
+function renderOperatorDiagnosticsPanel(spec) {
+  const diagnostics = operatorDiagnosticsForSpec(spec);
+  if (!diagnostics.length) {
+    return '';
+  }
+  return `
+    <div class="operator-diagnostics-panel visual-diagnostics">
+      ${diagnostics.slice(0, 3).map((diagnostic) => {
+        const level = String(diagnostic.level || 'INFO').toLowerCase();
+        const target = diagnostic.target ? ` · ${diagnostic.target}` : '';
+        return `
+          <div class="visual-diagnostic ${escapeHtml(level)}">
+            <strong>${escapeHtml(diagnostic.code || diagnostic.level || 'visual.info')}</strong>
+            <span>${escapeHtml((diagnostic.message || '') + target)}</span>
+          </div>
+        `;
+      }).join('')}
+      ${diagnostics.length > 3 ? `
+        <div class="visual-diagnostic info">
+          <strong>${escapeHtml(`+${diagnostics.length - 3} more`)}</strong>
+          <span>Additional operator diagnostics are available in the catalog payload.</span>
         </div>
       ` : ''}
     </div>
@@ -4697,9 +4759,35 @@ function renderInputBindingRow(node, target) {
         data-binding-path="${escapeHtml(target.path || '')}"
         value="${escapeHtml(expression)}"
         placeholder="${escapeHtml(contextExpressionForPath(target.path || 'value'))}">
+      <div class="binding-candidate-summary ${escapeHtml(bindingCandidateSummaryLevel(candidates))}">
+        ${escapeHtml(bindingCandidateSummary(candidates))}
+      </div>
       <div class="binding-status">${escapeHtml(status.message)}</div>
     </div>
   `;
+}
+
+function bindingCandidateSummary(candidates) {
+  const total = candidates.length;
+  const compatible = candidates.filter((candidate) => candidate.compatibility.ok).length;
+  const blocked = total - compatible;
+  if (!total) {
+    return '0 compatible sources.';
+  }
+  if (!blocked) {
+    return `${compatible} compatible source${compatible === 1 ? '' : 's'}.`;
+  }
+  const firstBlocked = candidates.find((candidate) => !candidate.compatibility.ok);
+  const reason = firstBlocked?.compatibility?.message || 'schema mismatch';
+  return `${compatible} compatible · ${blocked} blocked · ${reason}`;
+}
+
+function bindingCandidateSummaryLevel(candidates) {
+  const compatible = candidates.filter((candidate) => candidate.compatibility.ok).length;
+  if (compatible > 0) {
+    return 'success';
+  }
+  return candidates.length ? 'error' : 'info';
 }
 
 function bindingTargetFromElement(element) {

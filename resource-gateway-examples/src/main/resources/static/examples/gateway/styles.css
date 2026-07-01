@@ -768,6 +768,39 @@ body.dragging-operator * {
   overflow-wrap: anywhere;
 }
 
+.operator-card-diagnostics {
+  margin-top: 6px;
+}
+
+.operator-card-diagnostics span {
+  display: inline-flex;
+  max-width: 100%;
+  padding: 2px 5px;
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  background: var(--surface);
+  color: var(--muted);
+  font-size: 9px;
+  font-weight: 800;
+  overflow-wrap: anywhere;
+}
+
+.operator-card-diagnostics.warning span {
+  border-color: #f8d18d;
+  background: var(--amber-soft);
+  color: #8a5a13;
+}
+
+.operator-card-diagnostics.error span {
+  border-color: #fca5a5;
+  background: var(--red-soft);
+  color: var(--red);
+}
+
+.operator-diagnostics-panel {
+  margin: 8px 0;
+}
+
 .connection-status {
   min-height: 28px;
   padding: 7px 8px;
@@ -1439,6 +1472,21 @@ body.dragging-operator * {
   font-size: 11px;
   font-weight: 700;
   overflow-wrap: anywhere;
+}
+
+.binding-candidate-summary {
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 800;
+  overflow-wrap: anywhere;
+}
+
+.binding-candidate-summary.success {
+  color: var(--green);
+}
+
+.binding-candidate-summary.error {
+  color: var(--red);
 }
 
 .binding-row.success .binding-status {

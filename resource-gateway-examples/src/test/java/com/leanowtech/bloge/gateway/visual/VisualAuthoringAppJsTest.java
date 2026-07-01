@@ -114,6 +114,7 @@ class VisualAuthoringAppJsTest {
 
                 const context = vm.createContext({ console });
                 for (const name of [
+                  'escapeHtml',
                   'arrayIndexSegment',
                   'dslReferenceSuffixForSchemaPath',
                   'contextExpressionForPath',
@@ -178,7 +179,14 @@ class VisualAuthoringAppJsTest {
                   'resourceParamInputs',
                   'isConfigExpressionValue',
                   'configExpressionForField',
-                  'removeConfigReferencesToNode'
+                  'removeConfigReferencesToNode',
+                  'normalizeDiagnostics',
+                  'operatorDiagnosticsForSpec',
+                  'operatorPaletteDiagnosticBadges',
+                  'operatorPaletteSearchValues',
+                  'renderOperatorDiagnosticsPanel',
+                  'bindingCandidateSummary',
+                  'bindingCandidateSummaryLevel'
                 ]) {
                   vm.runInContext(functionSource(name), context);
                 }
@@ -408,6 +416,35 @@ class VisualAuthoringAppJsTest {
                   .map((field) => field.path)
                   .sort()
                   .join('|');
+                const operatorDiagnosticSpec = {
+                  diagnostics: [{
+                    level: 'WARNING',
+                    code: 'visual.catalog.operatorRefShadowed',
+                    message: 'OperatorRef shadowed by runtime Java operator.',
+                    target: '/operators/risk:eligibility'
+                  }]
+                };
+                const operatorDiagnosticSearchValues = context.operatorPaletteSearchValues(operatorDiagnosticSpec)
+                  .filter(Boolean)
+                  .join('|');
+                const operatorDiagnosticBadge = context.operatorPaletteDiagnosticBadges(operatorDiagnosticSpec);
+                const operatorDiagnosticPanel = context.renderOperatorDiagnosticsPanel(operatorDiagnosticSpec);
+                const mixedCandidateSummary = context.bindingCandidateSummary([
+                  { compatibility: { ok: true, message: '' } },
+                  { compatibility: { ok: false, message: 'source type string cannot feed target type integer' } }
+                ]);
+                const mixedCandidateLevel = context.bindingCandidateSummaryLevel([
+                  { compatibility: { ok: true, message: '' } },
+                  { compatibility: { ok: false, message: 'source type string cannot feed target type integer' } }
+                ]);
+                const blockedCandidateSummary = context.bindingCandidateSummary([
+                  { compatibility: { ok: false, message: 'Target path is not accepted.' } }
+                ]);
+                const blockedCandidateLevel = context.bindingCandidateSummaryLevel([
+                  { compatibility: { ok: false, message: 'Target path is not accepted.' } }
+                ]);
+                const emptyCandidateSummary = context.bindingCandidateSummary([]);
+                const emptyCandidateLevel = context.bindingCandidateSummaryLevel([]);
 
                 const checks = [
                   ['schema path suffix', context.dslReferenceSuffixForSchemaPath('items.0.score'), '.items[0].score'],
@@ -448,6 +485,15 @@ class VisualAuthoringAppJsTest {
                   ['DSL-safe static schema paths', dslSafeStaticPaths, 'items|items.0|items.0.safeNested|safeScore'],
                   ['DSL-safe dynamic input paths', dynamicInputPaths, 'safeScore'],
                   ['DSL-safe dynamic output paths', dynamicOutputPaths, 'safeScore'],
+                  ['operator diagnostic search', operatorDiagnosticSearchValues, 'payload|visual.catalog.operatorRefShadowed|OperatorRef shadowed by runtime Java operator.|/operators/risk:eligibility'],
+                  ['operator diagnostic badge warning', String(operatorDiagnosticBadge.includes('1 warning diagnostic')), 'true'],
+                  ['operator diagnostic panel code', String(operatorDiagnosticPanel.includes('visual.catalog.operatorRefShadowed')), 'true'],
+                  ['mixed binding candidate summary', mixedCandidateSummary, '1 compatible · 1 blocked · source type string cannot feed target type integer'],
+                  ['mixed binding candidate level', mixedCandidateLevel, 'success'],
+                  ['blocked binding candidate summary', blockedCandidateSummary, '0 compatible · 1 blocked · Target path is not accepted.'],
+                  ['blocked binding candidate level', blockedCandidateLevel, 'error'],
+                  ['empty binding candidate summary', emptyCandidateSummary, '0 compatible sources.'],
+                  ['empty binding candidate level', emptyCandidateLevel, 'info'],
                   ['dynamic schema DSL targets', dynamicSchemaDslTargets, [
                     '/inputSchema/schema/properties/dynamicAdditional/additionalProperties/properties/bad-field',
                     '/inputSchema/schema/properties/dynamicResidual/unevaluatedProperties/properties/bad-residual-field',
