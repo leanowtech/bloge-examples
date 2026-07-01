@@ -92,6 +92,32 @@ class OpenApiResourceDesignContractImporterTest {
     }
 
     @Test
+    void preservesSelectedJsonCompatibleMediaTypesInDescriptorHeaders() {
+        OpenApiResourceDesignContractImportResult result = importer.project(
+                request("order-service.updateOrder", "updateOrder", null, null, openApiVendorJsonUpdateOrder())
+        );
+
+        assertThat(result.validation().valid()).isTrue();
+        assertThat(result.contract()).isNotNull();
+        assertThat(result.contract().requestSchema().properties()).containsKey("body");
+        assertThat(result.contract().responseSchema().properties()).containsKey("id");
+        assertThat(result.descriptorSuggestion().defaultHeaders())
+                .containsEntry("Accept", "application/vnd.orders.result+json")
+                .containsEntry("Content-Type", "application/vnd.orders.update+json");
+        assertThat(result.descriptorSuggestion().parameterMapping().bodyExpression())
+                .isEqualTo("ctx.params.body");
+        assertThat(result.validation().diagnostics())
+                .filteredOn(diagnostic -> "visual.resourceContract.openapi.jsonCompatibleMediaTypeSelected"
+                        .equals(diagnostic.code()))
+                .hasSize(2)
+                .extracting(diagnostic -> diagnostic.message())
+                .anySatisfy(message -> assertThat(message)
+                        .contains("application/vnd.orders.update+json"))
+                .anySatisfy(message -> assertThat(message)
+                        .contains("application/vnd.orders.result+json"));
+    }
+
+    @Test
     void suggestsBearerAuthFromRootSecurityScheme() {
         OpenApiResourceDesignContractImportResult result = importer.project(
                 request("order-service.listOrders", "listOrders", null, null,
@@ -503,6 +529,58 @@ class OpenApiResourceDesignContractImporterTest {
                                                         "description", "ok",
                                                         "content", Map.of(
                                                                 "application/json", Map.of(
+                                                                        "schema", Map.of(
+                                                                                "type", "object",
+                                                                                "properties", Map.of(
+                                                                                        "id", Map.of("type", "string")
+                                                                                ),
+                                                                                "required", List.of("id")
+                                                                        )
+                                                                )
+                                                        )
+                                                )
+                                        )
+                                )
+                        )
+                )
+        );
+    }
+
+    private static Map<String, Object> openApiVendorJsonUpdateOrder() {
+        return Map.of(
+                "openapi", "3.1.0",
+                "servers", List.of(Map.of("url", "https://orders.example.test")),
+                "paths", Map.of(
+                        "/orders/{orderId}", Map.of(
+                                "put", Map.of(
+                                        "operationId", "updateOrder",
+                                        "parameters", List.of(
+                                                Map.of(
+                                                        "name", "orderId",
+                                                        "in", "path",
+                                                        "required", true,
+                                                        "schema", Map.of("type", "string")
+                                                )
+                                        ),
+                                        "requestBody", Map.of(
+                                                "required", true,
+                                                "content", Map.of(
+                                                        "application/vnd.orders.update+json", Map.of(
+                                                                "schema", Map.of(
+                                                                        "type", "object",
+                                                                        "properties", Map.of(
+                                                                                "status", Map.of("type", "string")
+                                                                        ),
+                                                                        "required", List.of("status")
+                                                                )
+                                                        )
+                                                )
+                                        ),
+                                        "responses", Map.of(
+                                                "200", Map.of(
+                                                        "description", "ok",
+                                                        "content", Map.of(
+                                                                "application/vnd.orders.result+json", Map.of(
                                                                         "schema", Map.of(
                                                                                 "type", "object",
                                                                                 "properties", Map.of(

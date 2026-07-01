@@ -755,7 +755,10 @@ bodies become `ctx.params.body`, common OpenAPI security schemes become
 review-only auth suggestions (`http` bearer/basic and header `apiKey`, using
 placeholder credentials), while OAuth2, OpenID Connect, and mutualTLS schemes
 produce explicit descriptor-suggestion warnings instead of unsafe runtime auth
-guesses. Standard JSON headers plus HTTP-status response handling are filled in.
+guesses. Standard JSON headers plus HTTP-status response handling are filled in;
+when an operation uses a JSON-compatible vendor media type such as
+`application/vnd.example+json`, the selected media type is preserved in
+`Accept` / `Content-Type` descriptor headers and reported as a review warning.
 Advanced security schemes remain in the design contract but are reported as
 descriptor-suggestion warnings when they cannot be represented by the runtime
 descriptor. When the resource already has a stored

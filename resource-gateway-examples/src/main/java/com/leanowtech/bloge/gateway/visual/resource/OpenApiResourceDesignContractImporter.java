@@ -309,19 +309,19 @@ public class OpenApiResourceDesignContractImporter {
         if (requestBody.isEmpty()) {
             return;
         }
-        Optional<Map<String, Object>> jsonContent = jsonContent(requestBody.get(), bodyTarget, diagnostics, false);
+        Optional<JsonContent> jsonContent = jsonContent(requestBody.get(), bodyTarget, diagnostics, false);
         if (jsonContent.isEmpty()) {
             return;
         }
-        Object rawSchema = jsonContent.get().get("schema");
+        String schemaTarget = bodyTarget + "/content/" + pointerSegment(jsonContent.get().mediaType()) + "/schema";
+        Object rawSchema = jsonContent.get().media().get("schema");
         if (!(rawSchema instanceof Map<?, ?> schemaMap)) {
             diagnostics.add(VisualDiagnostic.warning("visual.resourceContract.openapi.requestBodySchemaMissing",
                     "OpenAPI JSON requestBody has no schema; body input will be treated as opaque.",
-                    bodyTarget + "/content/schema"));
+                    schemaTarget));
             properties.put("body", SchemaEnvelope.opaque().schema());
         } else {
-            properties.put("body", visualSchema(openApi, objectMap(schemaMap), diagnostics,
-                    bodyTarget + "/content/schema"));
+            properties.put("body", visualSchema(openApi, objectMap(schemaMap), diagnostics, schemaTarget));
         }
         if (Boolean.TRUE.equals(requestBody.get().get("required"))) {
             required.add("body");
@@ -353,19 +353,19 @@ public class OpenApiResourceDesignContractImporter {
         if (response.isEmpty()) {
             return Optional.empty();
         }
-        Optional<Map<String, Object>> jsonContent = jsonContent(response.get(), responseTarget, diagnostics, true);
+        Optional<JsonContent> jsonContent = jsonContent(response.get(), responseTarget, diagnostics, true);
         if (jsonContent.isEmpty()) {
             return Optional.empty();
         }
-        Object rawSchema = jsonContent.get().get("schema");
+        String schemaTarget = responseTarget + "/content/" + pointerSegment(jsonContent.get().mediaType()) + "/schema";
+        Object rawSchema = jsonContent.get().media().get("schema");
         if (!(rawSchema instanceof Map<?, ?> schemaMap)) {
             diagnostics.add(VisualDiagnostic.error("visual.resourceContract.openapi.responseSchemaMissing",
                     "OpenAPI 2xx JSON response must declare a schema.",
-                    responseTarget + "/content/schema"));
+                    schemaTarget));
             return Optional.empty();
         }
-        return Optional.of(visualSchema(openApi, objectMap(schemaMap), diagnostics,
-                responseTarget + "/content/schema"));
+        return Optional.of(visualSchema(openApi, objectMap(schemaMap), diagnostics, schemaTarget));
     }
 
     private Optional<String> successStatus(Map<String, Object> responses) {
@@ -387,10 +387,10 @@ public class OpenApiResourceDesignContractImporter {
         }
     }
 
-    private Optional<Map<String, Object>> jsonContent(Map<String, Object> holder,
-                                                      String target,
-                                                      List<VisualDiagnostic> diagnostics,
-                                                      boolean required) {
+    private Optional<JsonContent> jsonContent(Map<String, Object> holder,
+                                              String target,
+                                              List<VisualDiagnostic> diagnostics,
+                                              boolean required) {
         Object rawContent = holder.get("content");
         if (!(rawContent instanceof Map<?, ?> content)) {
             if (required) {
@@ -401,24 +401,34 @@ public class OpenApiResourceDesignContractImporter {
             return Optional.empty();
         }
         Map<String, Object> contentMap = objectMap(content);
-        Object exact = contentMap.get("application/json");
-        if (exact instanceof Map<?, ?> media) {
-            return Optional.of(objectMap(media));
+        for (Map.Entry<String, Object> entry : contentMap.entrySet()) {
+            if ("application/json".equalsIgnoreCase(entry.getKey()) && entry.getValue() instanceof Map<?, ?> media) {
+                return Optional.of(new JsonContent(entry.getKey(), objectMap(media)));
+            }
         }
         return contentMap.entrySet().stream()
-                .filter(entry -> entry.getKey().endsWith("+json") || entry.getKey().contains("/json"))
-                .map(Map.Entry::getValue)
-                .filter(Map.class::isInstance)
-                .map(value -> objectMap((Map<?, ?>) value))
+                .filter(entry -> jsonCompatibleMediaType(entry.getKey()))
+                .filter(entry -> entry.getValue() instanceof Map<?, ?>)
+                .map(entry -> new JsonContent(entry.getKey(), objectMap((Map<?, ?>) entry.getValue())))
+                .peek(choice -> diagnostics.add(VisualDiagnostic.warning(
+                        "visual.resourceContract.openapi.jsonCompatibleMediaTypeSelected",
+                        "OpenAPI content does not declare application/json; selected JSON-compatible media type '%s'."
+                                .formatted(choice.mediaType()),
+                        target + "/content/" + pointerSegment(choice.mediaType()))))
                 .findFirst()
                 .or(() -> {
                     if (required) {
                         diagnostics.add(VisualDiagnostic.error("visual.resourceContract.openapi.jsonContentMissing",
-                                "OpenAPI response must declare application/json content.",
+                                "OpenAPI response must declare application/json or JSON-compatible content.",
                                 target + "/content"));
                     }
                     return Optional.empty();
                 });
+    }
+
+    private static boolean jsonCompatibleMediaType(String mediaType) {
+        String normalized = string(mediaType).toLowerCase(Locale.ROOT);
+        return normalized.endsWith("+json") || normalized.contains("/json");
     }
 
     private Map<String, Object> visualSchema(Map<String, Object> openApi,
@@ -755,11 +765,13 @@ public class OpenApiResourceDesignContractImporter {
             }
         }
 
-        boolean hasBody = hasJsonRequestBody(openApi, selected);
+        Optional<String> requestMediaType = requestJsonMediaType(openApi, selected);
+        Optional<String> responseMediaType = responseJsonMediaType(openApi, selected);
+        boolean hasBody = requestMediaType.isPresent();
         Map<String, String> headers = new LinkedHashMap<>();
-        headers.put("Accept", "application/json");
+        headers.put("Accept", responseMediaType.orElse("application/json"));
         if (hasBody) {
-            headers.put("Content-Type", "application/json");
+            headers.put("Content-Type", requestMediaType.get());
         }
 
         return new ResourceDescriptor(
@@ -815,16 +827,35 @@ public class OpenApiResourceDesignContractImporter {
         }
     }
 
-    private boolean hasJsonRequestBody(Map<String, Object> openApi, SelectedOperation selected) {
+    private Optional<String> requestJsonMediaType(Map<String, Object> openApi, SelectedOperation selected) {
         Object rawBody = selected.operation().get("requestBody");
         if (rawBody == null) {
-            return false;
+            return Optional.empty();
         }
         String bodyTarget = "/openApi/paths/" + pointerSegment(selected.path()) + "/" + selected.method()
                 + "/requestBody";
         Optional<Map<String, Object>> requestBody = dereferenceObject(openApi, rawBody, new ArrayList<>(),
                 bodyTarget, "requestBody");
-        return requestBody.flatMap(body -> jsonContent(body, bodyTarget, new ArrayList<>(), false)).isPresent();
+        return requestBody.flatMap(body -> jsonContent(body, bodyTarget, new ArrayList<>(), false))
+                .map(JsonContent::mediaType);
+    }
+
+    private Optional<String> responseJsonMediaType(Map<String, Object> openApi, SelectedOperation selected) {
+        Object rawResponses = selected.operation().get("responses");
+        String responsesTarget = "/openApi/paths/" + pointerSegment(selected.path()) + "/" + selected.method()
+                + "/responses";
+        if (!(rawResponses instanceof Map<?, ?> responses)) {
+            return Optional.empty();
+        }
+        Optional<String> status = successStatus(objectMap(responses));
+        if (status.isEmpty()) {
+            return Optional.empty();
+        }
+        String responseTarget = responsesTarget + "/" + status.get();
+        Optional<Map<String, Object>> response = dereferenceObject(openApi, objectMap(responses).get(status.get()),
+                new ArrayList<>(), responseTarget, "response");
+        return response.flatMap(value -> jsonContent(value, responseTarget, new ArrayList<>(), true))
+                .map(JsonContent::mediaType);
     }
 
     private HttpRequestInput.HttpAuth authStrategySuggestion(Map<String, Object> openApi,
@@ -1273,6 +1304,9 @@ public class OpenApiResourceDesignContractImporter {
             String location,
             String target
     ) {
+    }
+
+    private record JsonContent(String mediaType, Map<String, Object> media) {
     }
 
     private record SecurityRequirements(Object rawSecurity, String target) {
