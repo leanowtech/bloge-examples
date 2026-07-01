@@ -4042,6 +4042,12 @@ function renderSelectedOperatorEditor() {
     });
   }
 
+  for (const button of target.querySelectorAll('[data-connectability-action="connect"]')) {
+    button.addEventListener('click', () => {
+      connectNodeConnectabilityFromButton(button);
+    });
+  }
+
   for (const button of target.querySelectorAll('[data-impact-node]')) {
     button.addEventListener('click', () => {
       focusCanvasNode(button.dataset.impactNode);
@@ -4082,6 +4088,12 @@ function renderSelectedOperatorEditor() {
   for (const button of target.querySelectorAll('[data-add-dynamic-input]')) {
     button.addEventListener('click', () => {
       addDynamicInputBinding(node, button);
+    });
+  }
+
+  for (const button of target.querySelectorAll('[data-auto-bind-required]')) {
+    button.addEventListener('click', () => {
+      autoBindRequiredInputsFromButton(button);
     });
   }
 
@@ -4404,6 +4416,7 @@ function operatorEditorBody(node) {
         ${textField('Resource ID', node.resourceId, 'resourceId')}
       </div>
       ${renderOperatorContractPanel(node)}
+      ${renderNodeConnectabilityPanel(node)}
       ${renderNodeImpactPanel(node)}
       ${renderConfigPanel(node)}
       ${renderInputBindingsPanel(node)}
@@ -4420,6 +4433,7 @@ function operatorEditorBody(node) {
         ${textField('Operator', spec.visualOperatorRef || node.paletteType, '', true)}
       </div>
       ${renderOperatorContractPanel(node)}
+      ${renderNodeConnectabilityPanel(node)}
       ${renderNodeImpactPanel(node)}
       ${renderDynamicOutputPathControls(node)}
       ${renderConfigPanel(node)}
@@ -4443,6 +4457,7 @@ function operatorEditorBody(node) {
         ${textField('Node', node.id, '', true)}
       </div>
       ${renderOperatorContractPanel(node)}
+      ${renderNodeConnectabilityPanel(node)}
       ${renderNodeImpactPanel(node)}
       ${renderInputBindingsPanel(node)}
       <div class="rule-editor">
@@ -4475,6 +4490,7 @@ function operatorEditorBody(node) {
       ${textField('Policy Node', node.policyNodeCleared ? '' : (node.policyNode || firstDecisionTableId()), 'policyNode')}
     </div>
     ${renderOperatorContractPanel(node)}
+    ${renderNodeConnectabilityPanel(node)}
     ${renderNodeImpactPanel(node)}
   `;
 }
@@ -4517,6 +4533,291 @@ function renderOperatorContractPanel(node) {
       ` : ''}
     </div>
   `;
+}
+
+function renderNodeConnectabilityPanel(node) {
+  const summary = nodeConnectabilitySummary(node, state.builder);
+  if (!summary.sourceCount) {
+    return '';
+  }
+  return `
+    <div class="node-connectability-panel">
+      <div class="binding-panel-title">
+        <span>Connectability</span>
+        <small>${escapeHtml(nodeConnectabilityTotalsLabel(summary))}</small>
+      </div>
+      ${summary.sources.map((source) => renderNodeConnectabilityRow(source)).join('')}
+    </div>
+  `;
+}
+
+function renderNodeConnectabilityRow(sourceSummary) {
+  const targets = sourceSummary.compatibleTargets.length
+    ? sourceSummary.compatibleTargets
+    : sourceSummary.blockedTargets.slice(0, 2);
+  const targetRows = targets.length
+    ? targets.map((entry) => renderNodeConnectabilityTarget(sourceSummary.source, entry)).join('')
+    : '<span class="node-connectability-chip info">No canvas targets</span>';
+  return `
+    <div class="node-connectability-row ${escapeHtml(nodeConnectabilitySourceLevel(sourceSummary))}">
+      <strong>${escapeHtml(endpointLabel(sourceSummary.source))}</strong>
+      <span>${escapeHtml(nodeConnectabilitySourceSummary(sourceSummary))}</span>
+      <div class="node-connectability-targets">${targetRows}</div>
+    </div>
+  `;
+}
+
+function renderNodeConnectabilityTarget(source, entry) {
+  const label = nodeConnectabilityTargetLabel(entry);
+  const level = nodeConnectabilityTargetLevel(entry);
+  if (entry.compatibility.ok && !entry.alreadyConnected) {
+    return `
+      <button
+        type="button"
+        class="node-connectability-chip ${escapeHtml(level)} actionable"
+        data-connectability-action="connect"
+        data-connect-source-node="${escapeHtml(source.nodeId || '')}"
+        data-connect-source-port="${escapeHtml(source.port || '')}"
+        data-connect-source-path="${escapeHtml(source.path || '')}"
+        data-connect-target-node="${escapeHtml(entry.target.nodeId || '')}"
+        data-connect-target-port="${escapeHtml(entry.target.port || '')}"
+        data-connect-target-path="${escapeHtml(entry.target.path || '')}"
+        data-connect-target-kind="${escapeHtml(entry.kind || '')}"
+        data-connect-target-condition="${escapeHtml(entry.target.condition || '')}"
+      >${escapeHtml(label)}</button>
+    `;
+  }
+  return `<span class="node-connectability-chip ${escapeHtml(level)}">${escapeHtml(label)}</span>`;
+}
+
+function connectNodeConnectabilityFromButton(button) {
+  const source = nodeConnectabilitySourceFromButton(button);
+  let target = nodeConnectabilityTargetFromButton(button);
+  if (!source || !target) {
+    setConnectionMessage('Connectability endpoint is no longer available.', 'error');
+    renderSelectedOperatorEditor();
+    renderDiagram();
+    return Promise.resolve(false);
+  }
+  if (target.kind === 'route') {
+    const condition = routeConditionForConnection(target);
+    if (condition === null) {
+      renderSelectedOperatorEditor();
+      renderDiagram();
+      return Promise.resolve(false);
+    }
+    target = { ...target, condition };
+  }
+  if (connectionAlreadyApplied(source, target)) {
+    setConnectionMessage('Connection already exists.', 'info');
+    renderSelectedOperatorEditor();
+    renderDiagram();
+    return Promise.resolve(false);
+  }
+  const compatibility = connectionCompatibility(source, target);
+  button.disabled = true;
+  setConnectionMessage(connectionServerPreflightMessage(
+    compatibility,
+    'Checking connection with server...'
+  ), 'info');
+  return checkVisualConnectionOnServer(source, target)
+    .then((serverCheck) => {
+      if (serverCheck.accepted) {
+        const checkedTarget = targetWithServerBindingKey(target, serverCheck);
+        applyConnection(source, checkedTarget);
+        setConnectionMessage(
+          `Connected ${endpointLabel(source)} -> ${endpointLabel(checkedTarget)}.`,
+          'success'
+        );
+        return true;
+      }
+      setConnectionMessage(serverCheck.message, 'error');
+      return false;
+    })
+    .catch((error) => {
+      setConnectionMessage(error.message, 'error');
+      return false;
+    })
+    .finally(() => {
+      button.disabled = false;
+      renderSelectedOperatorEditor();
+      renderDiagram();
+    });
+}
+
+function nodeConnectabilitySourceFromButton(button) {
+  const node = state.builder.nodes.find((item) => item.id === button.dataset.connectSourceNode);
+  if (!node) {
+    return null;
+  }
+  const port = button.dataset.connectSourcePort || '';
+  const path = button.dataset.connectSourcePath || '';
+  return sourceHandlesForNode(node).find((handle) =>
+    handle.port === port && (handle.path || '') === path
+  ) || null;
+}
+
+function nodeConnectabilityTargetFromButton(button) {
+  const node = state.builder.nodes.find((item) => item.id === button.dataset.connectTargetNode);
+  if (!node) {
+    return null;
+  }
+  const port = button.dataset.connectTargetPort || '';
+  const path = button.dataset.connectTargetPath || '';
+  const kind = button.dataset.connectTargetKind || '';
+  const target = canvasTargetHandlesForNode(node).find((handle) =>
+    handle.port === port
+      && (handle.path || '') === path
+      && nodeConnectabilityTargetKind(handle) === kind
+  );
+  if (!target) {
+    return null;
+  }
+  return kind === 'route'
+    ? { ...target, condition: button.dataset.connectTargetCondition || target.condition || 'otherwise' }
+    : target;
+}
+
+function nodeConnectabilitySummary(nodeOrId, builder = state.builder) {
+  const nodeId = typeof nodeOrId === 'string' ? nodeOrId : nodeOrId?.id;
+  const node = (builder.nodes || []).find((item) => item.id === nodeId);
+  if (!node) {
+    return {
+      nodeId: '',
+      sourceCount: 0,
+      availableCount: 0,
+      alreadyCount: 0,
+      blockedCount: 0,
+      targetCount: 0,
+      sources: []
+    };
+  }
+  const sources = sourceHandlesForNode(node).map((source) => nodeConnectabilitySourceSummaryFor(source, builder));
+  return {
+    nodeId,
+    sourceCount: sources.length,
+    availableCount: sources.reduce((total, source) => total + source.availableCount, 0),
+    alreadyCount: sources.reduce((total, source) => total + source.alreadyCount, 0),
+    blockedCount: sources.reduce((total, source) => total + source.blockedCount, 0),
+    targetCount: sources.reduce((total, source) => total + source.targetCount, 0),
+    sources
+  };
+}
+
+function nodeConnectabilitySourceSummaryFor(source, builder = state.builder) {
+  const targets = nodeConnectabilityTargetsForSource(source, builder);
+  const compatibleTargets = targets.filter((entry) => entry.compatibility.ok);
+  const availableTargets = compatibleTargets.filter((entry) => !entry.alreadyConnected);
+  const alreadyTargets = compatibleTargets.filter((entry) => entry.alreadyConnected);
+  const blockedTargets = targets.filter((entry) => !entry.compatibility.ok);
+  return {
+    source,
+    targetCount: targets.length,
+    compatibleCount: compatibleTargets.length,
+    availableCount: availableTargets.length,
+    alreadyCount: alreadyTargets.length,
+    blockedCount: blockedTargets.length,
+    compatibleTargets,
+    availableTargets,
+    alreadyTargets,
+    blockedTargets,
+    firstBlockedMessage: blockedTargets[0]?.compatibility?.message || ''
+  };
+}
+
+function nodeConnectabilityTargetsForSource(source, builder = state.builder) {
+  const entries = [];
+  for (const targetNode of builder.nodes || []) {
+    if (targetNode.id === source.nodeId) {
+      continue;
+    }
+    for (const target of canvasTargetHandlesForNode(targetNode)) {
+      if (!nodeConnectabilityTargetAppliesToSource(source, target)) {
+        continue;
+      }
+      const compatibility = connectionCompatibility(source, target);
+      entries.push({
+        target,
+        targetNodeId: targetNode.id,
+        targetLabel: `${labelForNode(targetNode)} (${targetNode.id})`,
+        kind: nodeConnectabilityTargetKind(target),
+        compatibility,
+        alreadyConnected: compatibility.ok && connectionAlreadyApplied(source, target, builder)
+      });
+    }
+  }
+  return entries;
+}
+
+function nodeConnectabilityTargetAppliesToSource(source, target) {
+  if (source.kind === 'route') {
+    return target.kind === 'route';
+  }
+  return target.kind !== 'route';
+}
+
+function nodeConnectabilityTargetKind(target) {
+  if (target.port === 'config') {
+    return 'config';
+  }
+  return canonicalEdgeKind(target.kind || 'data');
+}
+
+function nodeConnectabilityTotalsLabel(summary) {
+  return [
+    `${summary.sourceCount} source${summary.sourceCount === 1 ? '' : 's'}`,
+    `${summary.availableCount} connectable`,
+    `${summary.alreadyCount} wired`,
+    `${summary.blockedCount} blocked`
+  ].join(' · ');
+}
+
+function nodeConnectabilitySourceSummary(sourceSummary) {
+  if (!sourceSummary.targetCount) {
+    return 'No canvas targets.';
+  }
+  const parts = [];
+  if (sourceSummary.availableCount) {
+    parts.push(`${sourceSummary.availableCount} connectable`);
+  }
+  if (sourceSummary.alreadyCount) {
+    parts.push(`${sourceSummary.alreadyCount} already wired`);
+  }
+  if (sourceSummary.blockedCount) {
+    parts.push(`${sourceSummary.blockedCount} blocked`);
+  }
+  if (!parts.length) {
+    return 'No compatible targets.';
+  }
+  const suffix = !sourceSummary.compatibleCount && sourceSummary.firstBlockedMessage
+    ? ` · ${sourceSummary.firstBlockedMessage}`
+    : '';
+  return `${parts.join(' · ')}${suffix}`;
+}
+
+function nodeConnectabilitySourceLevel(sourceSummary) {
+  if (sourceSummary.availableCount > 0) {
+    return 'success';
+  }
+  if (sourceSummary.alreadyCount > 0) {
+    return 'info';
+  }
+  return sourceSummary.blockedCount > 0 ? 'error' : 'info';
+}
+
+function nodeConnectabilityTargetLevel(entry) {
+  if (!entry.compatibility.ok) {
+    return 'error';
+  }
+  return entry.alreadyConnected ? 'info' : 'success';
+}
+
+function nodeConnectabilityTargetLabel(entry) {
+  const status = entry.compatibility.ok
+    ? (entry.alreadyConnected ? 'wired' : 'ready')
+    : 'blocked';
+  const targetPath = nodeImpactPortPath(entry.target.port || '', entry.target.path || '');
+  return `${entry.targetLabel} · ${readableEdgeKind(entry.kind)} -> ${targetPath} · ${status}`;
 }
 
 function renderNodeImpactPanel(node) {
@@ -5389,13 +5690,17 @@ function configValueMatchesSchema(value, schema) {
 function renderInputBindingsPanel(node) {
   const targets = targetHandlesForNode(node);
   const dynamicInputControls = renderDynamicInputBindingControls(node);
+  const autoBindPlan = requiredInputAutoBindPlan(node);
+  const autoBindButton = renderRequiredInputAutoBindButton(node, autoBindPlan);
+  const autoBindStatus = requiredInputAutoBindSummary(autoBindPlan);
   if (!targets.length) {
     return dynamicInputControls
       ? `
         <div class="binding-panel">
           <div class="binding-panel-title">
             <span>Input Bindings</span>
-            <small>schema checked</small>
+            <small>${escapeHtml(autoBindStatus)}</small>
+            ${autoBindButton}
           </div>
           ${dynamicInputControls}
         </div>
@@ -5406,12 +5711,135 @@ function renderInputBindingsPanel(node) {
     <div class="binding-panel">
       <div class="binding-panel-title">
         <span>Input Bindings</span>
-        <small>schema checked</small>
+        <small>${escapeHtml(autoBindStatus)}</small>
+        ${autoBindButton}
       </div>
       ${targets.map((target) => renderInputBindingRow(node, target)).join('')}
       ${dynamicInputControls}
     </div>
   `;
+}
+
+function renderRequiredInputAutoBindButton(node, plan) {
+  if (!plan.items.length) {
+    return '';
+  }
+  return `
+    <button
+      class="secondary compact"
+      type="button"
+      data-auto-bind-required
+      data-auto-bind-node="${escapeHtml(node.id)}">
+      Auto Bind ${escapeHtml(String(plan.items.length))}
+    </button>
+  `;
+}
+
+function requiredInputAutoBindSummary(plan) {
+  if (!plan.requiredUnboundCount) {
+    return 'schema checked';
+  }
+  if (plan.items.length) {
+    const skipped = plan.skippedCount ? ` · ${plan.skippedCount} ambiguous` : '';
+    return `${plan.items.length} required ready${skipped}`;
+  }
+  return `${plan.requiredUnboundCount} required unbound · ${plan.skippedCount} ambiguous`;
+}
+
+function requiredInputAutoBindPlan(nodeOrId) {
+  const nodeId = typeof nodeOrId === 'string' ? nodeOrId : nodeOrId?.id;
+  const node = state.builder.nodes.find((item) => item.id === nodeId);
+  if (!node) {
+    return { nodeId: '', requiredUnboundCount: 0, skippedCount: 0, items: [] };
+  }
+  const requiredTargets = targetHandlesForNode(node)
+    .filter((target) => target.required && !String(expressionForTargetInput(node, target) || '').trim());
+  const items = [];
+  let skippedCount = 0;
+  for (const target of requiredTargets) {
+    const candidates = sourceCandidatesForTarget(target)
+      .filter((candidate) => candidate.compatibility.ok)
+      .filter((candidate) => !connectionAlreadyApplied(candidate.source, target));
+    if (candidates.length === 1) {
+      items.push({ nodeId: node.id, target, source: candidates[0].source });
+    } else {
+      skippedCount += 1;
+    }
+  }
+  return {
+    nodeId: node.id,
+    requiredUnboundCount: requiredTargets.length,
+    skippedCount,
+    items
+  };
+}
+
+function autoBindRequiredInputsFromButton(button) {
+  const node = state.builder.nodes.find((item) => item.id === button.dataset.autoBindNode);
+  if (!node) {
+    setConnectionMessage('Auto-bind target node is no longer available.', 'error');
+    renderSelectedOperatorEditor();
+    renderDiagram();
+    return Promise.resolve(false);
+  }
+  const plan = requiredInputAutoBindPlan(node);
+  if (!plan.items.length) {
+    setConnectionMessage('No required inputs have a single safe source candidate.', 'info');
+    renderSelectedOperatorEditor();
+    renderDiagram();
+    return Promise.resolve(false);
+  }
+  button.disabled = true;
+  setConnectionMessage(`Checking ${plan.items.length} required input binding(s) with server...`, 'info');
+  return applyRequiredInputAutoBindPlan(plan)
+    .then((result) => {
+      const failures = result.rejected.length;
+      if (result.accepted > 0 && !failures) {
+        setConnectionMessage(`Auto-bound ${result.accepted} required input${result.accepted === 1 ? '' : 's'}.`, 'success');
+        return true;
+      }
+      if (result.accepted > 0) {
+        setConnectionMessage(`Auto-bound ${result.accepted}; ${failures} rejected by server.`, 'error');
+        return true;
+      }
+      const first = result.rejected[0]?.message || 'No required inputs were accepted by server.';
+      setConnectionMessage(first, 'error');
+      return false;
+    })
+    .catch((error) => {
+      setConnectionMessage(error.message, 'error');
+      return false;
+    })
+    .finally(() => {
+      button.disabled = false;
+      renderSelectedOperatorEditor();
+      renderDiagram();
+    });
+}
+
+function applyRequiredInputAutoBindPlan(plan, index = 0, result = { accepted: 0, rejected: [] }) {
+  if (index >= plan.items.length) {
+    return Promise.resolve(result);
+  }
+  const item = plan.items[index];
+  const node = state.builder.nodes.find((candidate) => candidate.id === item.nodeId);
+  if (!node || String(expressionForTargetInput(node, item.target) || '').trim()
+      || connectionAlreadyApplied(item.source, item.target)) {
+    return applyRequiredInputAutoBindPlan(plan, index + 1, result);
+  }
+  return checkVisualConnectionOnServer(item.source, item.target)
+    .then((serverCheck) => {
+      if (serverCheck.accepted) {
+        applyConnection(item.source, targetWithServerBindingKey(item.target, serverCheck));
+        result.accepted += 1;
+      } else {
+        result.rejected.push({
+          target: item.target,
+          message: serverCheck.message || `Server rejected ${endpointLabel(item.target)}.`
+        });
+      }
+      return applyRequiredInputAutoBindPlan(plan, index + 1, result);
+    });
 }
 
 function renderDynamicInputBindingControls(node) {
@@ -11401,6 +11829,7 @@ function moveConnectionDrag(event) {
   const svg = $('diagram');
   drag.current = svgPointFromClient(svg, event.clientX, event.clientY);
   const target = connectionTargetAtPoint(event);
+  drag.hoverTarget = target ? { ...target } : null;
   if (target) {
     const compatibility = connectionCompatibility(drag.source, target);
     setConnectionMessage(compatibility.ok
@@ -11419,7 +11848,7 @@ function finishConnectionDrag(event) {
   const drag = state.connectionDrag;
   if (!drag || event.pointerId !== drag.pointerId) return;
   event.preventDefault();
-  let target = connectionTargetAtPoint(event);
+  let target = connectionTargetAtPoint(event) || drag.hoverTarget || null;
   state.connectionDrag = null;
   document.body.classList.remove('connecting-edge');
   if (target) {
@@ -11983,6 +12412,7 @@ function installComposerDragHandlers() {
   document.addEventListener('pointercancel', () => {
     cancelPaletteDrag();
     state.nodeDrag = null;
+    state.connectionDrag = null;
   });
 }
 

@@ -143,6 +143,7 @@ class VisualAuthoringAppJsTest {
                   'sourceFromOutputExpressionParts',
                   'connectionSourceFromExpression',
                   'bindingFromExpression',
+                  'endpointLabel',
                   'configPathSegments',
                   'hasConfigPath',
                   'configValueAtPath',
@@ -195,6 +196,11 @@ class VisualAuthoringAppJsTest {
                   'resourceParamInputs',
                   'expressionForTargetInput',
                   'setExpressionForTargetInput',
+                  'renderRequiredInputAutoBindButton',
+                  'requiredInputAutoBindSummary',
+                  'requiredInputAutoBindPlan',
+                  'autoBindRequiredInputsFromButton',
+                  'applyRequiredInputAutoBindPlan',
                   'isConfigExpressionValue',
                   'configExpressionForField',
                   'removeConfigReferencesToNode',
@@ -206,6 +212,7 @@ class VisualAuthoringAppJsTest {
                   'bindingCandidateSummary',
                   'bindingCandidateSummaryLevel',
                   'connectionServerPreflightMessage',
+                  'targetWithServerBindingKey',
                   'connectionLocalHeuristicStatus',
                   'connectionLocalMismatchIsAdvisory',
                   'orderedBuilderNodes',
@@ -216,6 +223,22 @@ class VisualAuthoringAppJsTest {
                   'graphOutputContractSummary',
                   'graphOutputSelectedSchema',
                   'outputReferenceFromSelectionPath',
+                  'renderNodeConnectabilityPanel',
+                  'renderNodeConnectabilityRow',
+                  'renderNodeConnectabilityTarget',
+                  'connectNodeConnectabilityFromButton',
+                  'nodeConnectabilitySourceFromButton',
+                  'nodeConnectabilityTargetFromButton',
+                  'nodeConnectabilitySummary',
+                  'nodeConnectabilitySourceSummaryFor',
+                  'nodeConnectabilityTargetsForSource',
+                  'nodeConnectabilityTargetAppliesToSource',
+                  'nodeConnectabilityTargetKind',
+                  'nodeConnectabilityTotalsLabel',
+                  'nodeConnectabilitySourceSummary',
+                  'nodeConnectabilitySourceLevel',
+                  'nodeConnectabilityTargetLevel',
+                  'nodeConnectabilityTargetLabel',
                   'recordBuilderHistory',
                   'clearBuilderHistory',
                   'undoBuilderEdit',
@@ -716,6 +739,149 @@ class VisualAuthoringAppJsTest {
                   context.state.builder.nodes[1],
                   { nodeId: 'riskNode', path: 'facts.reason' }
                 );
+                context.sourceHandlesForNode = (node) => {
+                  if (node.id !== 'riskNode') {
+                    return [];
+                  }
+                  return [
+                    {
+                      nodeId: 'riskNode',
+                      port: 'payload',
+                      path: '',
+                      type: 'object',
+                      schema: {
+                        type: 'object',
+                        properties: {
+                          risk: { type: 'object' },
+                          score: { type: 'integer' },
+                          eligible: { type: 'boolean' }
+                        }
+                      },
+                      dslPathSafe: true
+                    },
+                    { nodeId: 'riskNode', port: 'payload', path: 'score', type: 'integer', schema: { type: 'integer' }, dslPathSafe: true },
+                    { nodeId: 'riskNode', port: 'payload', path: 'eligible', type: 'boolean', schema: { type: 'boolean' }, dslPathSafe: true }
+                  ];
+                };
+                context.canvasTargetHandlesForNode = (node) => {
+                  if (node.id !== 'auditNode') {
+                    return [];
+                  }
+                  return [
+                    { nodeId: 'auditNode', port: 'inputs', path: 'risk', type: 'object', schema: { type: 'object' } },
+                    { nodeId: 'auditNode', port: 'inputs', path: 'score', type: 'integer', schema: { type: 'integer' } },
+                    { nodeId: 'auditNode', port: 'inputs', path: 'approved', type: 'boolean', schema: { type: 'boolean' } },
+                    { nodeId: 'auditNode', port: 'config', path: 'threshold', type: 'integer', schema: { type: 'integer' } },
+                    { nodeId: 'auditNode', port: 'dependency', path: '', kind: 'dependency', type: 'dependency' }
+                  ];
+                };
+                context.connectionCompatibility = (source, target) => {
+                  if (target.kind === 'dependency') {
+                    return { ok: true, message: '' };
+                  }
+                  return source.type === target.type
+                    ? { ok: true, message: '' }
+                    : { ok: false, message: `Type mismatch: ${source.type} cannot feed ${target.type}.` };
+                };
+                context.connectionAlreadyApplied = (source, target) =>
+                  source.nodeId === 'riskNode'
+                    && source.port === 'payload'
+                    && source.path === ''
+                    && target.nodeId === 'auditNode'
+                    && target.port === 'inputs'
+                    && target.path === 'risk';
+                const connectability = context.nodeConnectabilitySummary('riskNode', context.state.builder);
+                const connectabilityPanel = context.renderNodeConnectabilityPanel(context.state.builder.nodes[1]);
+                const rootConnectability = connectability.sources.find((entry) => entry.source.path === '');
+                const scoreConnectability = connectability.sources.find((entry) => entry.source.path === 'score');
+                const eligibleConnectability = connectability.sources.find((entry) => entry.source.path === 'eligible');
+                const scoreReadyTarget = scoreConnectability.availableTargets
+                  .find((entry) => entry.target.nodeId === 'auditNode' && entry.target.path === 'score');
+                const quickConnectButton = {
+                  disabled: false,
+                  dataset: {
+                    connectSourceNode: scoreConnectability.source.nodeId,
+                    connectSourcePort: scoreConnectability.source.port,
+                    connectSourcePath: scoreConnectability.source.path,
+                    connectTargetNode: scoreReadyTarget.target.nodeId,
+                    connectTargetPort: scoreReadyTarget.target.port,
+                    connectTargetPath: scoreReadyTarget.target.path,
+                    connectTargetKind: scoreReadyTarget.kind,
+                    connectTargetCondition: ''
+                  }
+                };
+                const quickConnectSource = context.nodeConnectabilitySourceFromButton(quickConnectButton);
+                const quickConnectTarget = context.nodeConnectabilityTargetFromButton(quickConnectButton);
+                let quickConnectServerCall = '';
+                let quickConnectApplied = '';
+                let quickConnectMessage = '';
+                let quickConnectMessageLevel = '';
+                let quickConnectEditorRenders = 0;
+                let quickConnectDiagramRenders = 0;
+                context.checkVisualConnectionOnServer = async (source, target) => {
+                  quickConnectServerCall = `${context.endpointLabel(source)} -> ${context.endpointLabel(target)}`;
+                  return { accepted: true, bindingKey: 'inputs.score', diagnostics: [], message: '' };
+                };
+                context.applyConnection = (source, target) => {
+                  quickConnectApplied = `${context.endpointLabel(source)} -> ${context.endpointLabel(target)}:${target.key || ''}`;
+                };
+                context.setConnectionMessage = (text, level) => {
+                  quickConnectMessage = text;
+                  quickConnectMessageLevel = level;
+                };
+                context.renderSelectedOperatorEditor = () => {
+                  quickConnectEditorRenders += 1;
+                };
+                context.renderDiagram = () => {
+                  quickConnectDiagramRenders += 1;
+                };
+                const quickConnectPromise = context.connectNodeConnectabilityFromButton(quickConnectButton);
+                context.targetHandlesForNode = (node) => {
+                  if (node.id !== 'auditNode') {
+                    return [];
+                  }
+                  return [
+                    { nodeId: 'auditNode', port: 'inputs', key: 'risk', path: 'risk', type: 'object', schema: { type: 'object' }, required: true },
+                    { nodeId: 'auditNode', port: 'inputs', key: 'score', path: 'score', type: 'integer', schema: { type: 'integer' }, required: true },
+                    { nodeId: 'auditNode', port: 'inputs', key: 'approved', path: 'approved', type: 'boolean', schema: { type: 'boolean' }, required: true }
+                  ];
+                };
+                const autoScoreSource = {
+                  nodeId: 'riskNode',
+                  port: 'payload',
+                  path: 'score',
+                  type: 'integer',
+                  schema: { type: 'integer' },
+                  dslPathSafe: true
+                };
+                context.sourceCandidatesForTarget = (target) => {
+                  if (target.path === 'score') {
+                    return [{ source: autoScoreSource, compatibility: { ok: true, message: '' } }];
+                  }
+                  if (target.path === 'approved') {
+                    return [
+                      { source: { nodeId: 'riskNode', port: 'payload', path: 'eligible', type: 'boolean', schema: { type: 'boolean' } }, compatibility: { ok: true, message: '' } },
+                      { source: { nodeId: '__ctx', port: 'ctx', path: 'approved', type: 'boolean', schema: { type: 'boolean' } }, compatibility: { ok: true, message: '' } }
+                    ];
+                  }
+                  return [];
+                };
+                context.connectionAlreadyApplied = () => false;
+                const autoBindPlan = context.requiredInputAutoBindPlan('auditNode');
+                const autoBindButtonHtml = context.renderRequiredInputAutoBindButton(
+                  context.state.builder.nodes.find((node) => node.id === 'auditNode'),
+                  autoBindPlan
+                );
+                const autoBindButton = {
+                  disabled: false,
+                  dataset: { autoBindNode: 'auditNode' }
+                };
+                let autoBindServerCall = '';
+                let autoBindApplied = '';
+                let autoBindMessage = '';
+                let autoBindMessageLevel = '';
+                let autoBindEditorRenders = 0;
+                let autoBindDiagramRenders = 0;
                 const clearInputBuilder = JSON.parse(JSON.stringify(context.state.builder));
                 const clearInputAction = context.nodeImpactSummary('riskNode', clearInputBuilder)
                   .contextInputs.find((entry) => entry.kind === 'input').clearAction;
@@ -836,6 +1002,28 @@ class VisualAuthoringAppJsTest {
                   ['nested output contract type', nestedOutputContract.type, 'string'],
                   ['nested output contract fields', nestedOutputContract.fieldCount, 0],
                   ['nested output contract source label', nestedOutputContract.sourceLabel, 'riskNode.payload.facts.reason'],
+                  ['connectability source count', connectability.sourceCount, 3],
+                  ['connectability available count', connectability.availableCount, 6],
+                  ['connectability wired count', connectability.alreadyCount, 1],
+                  ['connectability blocked count', connectability.blockedCount, 8],
+                  ['connectability totals label', context.nodeConnectabilityTotalsLabel(connectability), '3 sources · 6 connectable · 1 wired · 8 blocked'],
+                  ['connectability root summary', context.nodeConnectabilitySourceSummary(rootConnectability), '1 connectable · 1 already wired · 3 blocked'],
+                  ['connectability score summary', context.nodeConnectabilitySourceSummary(scoreConnectability), '3 connectable · 2 blocked'],
+                  ['connectability eligible summary', context.nodeConnectabilitySourceSummary(eligibleConnectability), '2 connectable · 3 blocked'],
+                  ['connectability score level', context.nodeConnectabilitySourceLevel(scoreConnectability), 'success'],
+                  ['connectability root first target label', context.nodeConnectabilityTargetLabel(rootConnectability.compatibleTargets[0]), 'Audit (auditNode) · data -> inputs.risk · wired'],
+                  ['connectability panel includes score chip', String(connectabilityPanel.includes('riskNode.payload.score')), 'true'],
+                  ['connectability panel includes blocked chip', String(connectabilityPanel.includes('blocked')), 'true'],
+                  ['connectability panel includes connect action', String(connectabilityPanel.includes('data-connectability-action="connect"')), 'true'],
+                  ['connectability quick source', context.endpointLabel(quickConnectSource), 'riskNode.payload.score'],
+                  ['connectability quick target', context.endpointLabel(quickConnectTarget), 'auditNode.inputs.score'],
+                  ['auto bind required unbound count', autoBindPlan.requiredUnboundCount, 2],
+                  ['auto bind item count', autoBindPlan.items.length, 1],
+                  ['auto bind skipped count', autoBindPlan.skippedCount, 1],
+                  ['auto bind summary', context.requiredInputAutoBindSummary(autoBindPlan), '1 required ready · 1 ambiguous'],
+                  ['auto bind source label', context.endpointLabel(autoBindPlan.items[0].source), 'riskNode.payload.score'],
+                  ['auto bind target label', context.endpointLabel(autoBindPlan.items[0].target), 'auditNode.inputs.score'],
+                  ['auto bind button label', String(autoBindButtonHtml.includes('Auto Bind 1')), 'true'],
                   ['impact clear input existed before', clearInputExistsBefore, true],
                   ['impact clear input value after', clearInputValueAfter, ''],
                   ['impact clear input missing after', clearInputExistsAfter, false],
@@ -856,7 +1044,62 @@ class VisualAuthoringAppJsTest {
                     throw new Error(`${label}: expected ${expected}, got ${actual}`);
                   }
                 }
-                console.log('browser bracket path probe passed');
+                quickConnectPromise.then(() => {
+                  const asyncChecks = [
+                    ['connectability quick server call', quickConnectServerCall, 'riskNode.payload.score -> auditNode.inputs.score'],
+                    ['connectability quick applied', quickConnectApplied, 'riskNode.payload.score -> auditNode.inputs.score:inputs.score'],
+                    ['connectability quick message level', quickConnectMessageLevel, 'success'],
+                    ['connectability quick message', quickConnectMessage, 'Connected riskNode.payload.score -> auditNode.inputs.score.'],
+                    ['connectability quick editor render', quickConnectEditorRenders, 1],
+                    ['connectability quick diagram render', quickConnectDiagramRenders, 1],
+                    ['connectability quick button enabled', quickConnectButton.disabled, false]
+                  ];
+                  for (const [label, actual, expected] of asyncChecks) {
+                    if (actual !== expected) {
+                      throw new Error(`${label}: expected ${expected}, got ${actual}`);
+                    }
+                  }
+                  context.checkVisualConnectionOnServer = async (source, target) => {
+                    autoBindServerCall = `${context.endpointLabel(source)} -> ${context.endpointLabel(target)}`;
+                    return { accepted: true, bindingKey: 'inputs.score', diagnostics: [], message: '' };
+                  };
+                  context.applyConnection = (source, target) => {
+                    autoBindApplied = `${context.endpointLabel(source)} -> ${context.endpointLabel(target)}:${target.key || ''}`;
+                    context.state.builder.nodes.find((node) => node.id === target.nodeId).customInputs[target.key || target.path] =
+                      context.expressionForConnectionSource(source);
+                  };
+                  context.setConnectionMessage = (text, level) => {
+                    autoBindMessage = text;
+                    autoBindMessageLevel = level;
+                  };
+                  context.renderSelectedOperatorEditor = () => {
+                    autoBindEditorRenders += 1;
+                  };
+                  context.renderDiagram = () => {
+                    autoBindDiagramRenders += 1;
+                  };
+                  return context.autoBindRequiredInputsFromButton(autoBindButton);
+                }).then(() => {
+                  const autoChecks = [
+                    ['auto bind server call', autoBindServerCall, 'riskNode.payload.score -> auditNode.inputs.score'],
+                    ['auto bind applied', autoBindApplied, 'riskNode.payload.score -> auditNode.inputs.score:inputs.score'],
+                    ['auto bind custom input value', context.state.builder.nodes.find((node) => node.id === 'auditNode').customInputs['inputs.score'], 'riskNode.output.payload.score'],
+                    ['auto bind message level', autoBindMessageLevel, 'success'],
+                    ['auto bind message', autoBindMessage, 'Auto-bound 1 required input.'],
+                    ['auto bind editor render', autoBindEditorRenders, 1],
+                    ['auto bind diagram render', autoBindDiagramRenders, 1],
+                    ['auto bind button enabled', autoBindButton.disabled, false]
+                  ];
+                  for (const [label, actual, expected] of autoChecks) {
+                    if (actual !== expected) {
+                      throw new Error(`${label}: expected ${expected}, got ${actual}`);
+                    }
+                  }
+                  console.log('browser bracket path probe passed');
+                }).catch((error) => {
+                  console.error(error);
+                  process.exitCode = 1;
+                });
                 """;
     }
 

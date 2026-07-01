@@ -989,6 +989,94 @@ body.dragging-operator * {
   grid-template-columns: 1fr;
 }
 
+.node-connectability-panel {
+  display: grid;
+  gap: 8px;
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px solid var(--line);
+}
+
+.node-connectability-row {
+  display: grid;
+  grid-template-columns: minmax(0, 0.85fr) minmax(0, 1.15fr);
+  gap: 6px 8px;
+  align-items: baseline;
+  padding: 6px 0;
+  border-top: 1px solid rgba(148, 163, 184, 0.24);
+  font-size: 11px;
+}
+
+.node-connectability-row:first-of-type {
+  border-top: 0;
+}
+
+.node-connectability-row strong {
+  color: var(--text);
+  overflow-wrap: anywhere;
+}
+
+.node-connectability-row > span {
+  color: var(--muted);
+  font-weight: 800;
+  overflow-wrap: anywhere;
+}
+
+.node-connectability-row.success > span {
+  color: var(--green);
+}
+
+.node-connectability-row.error > span {
+  color: var(--red);
+}
+
+.node-connectability-targets {
+  grid-column: 1 / -1;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+}
+
+.node-connectability-chip {
+  max-width: 100%;
+  padding: 3px 7px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: #f8fafc;
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 800;
+  overflow-wrap: anywhere;
+}
+
+.node-connectability-chip.actionable {
+  cursor: pointer;
+  text-align: left;
+}
+
+.node-connectability-chip.actionable:hover,
+.node-connectability-chip.actionable:focus {
+  border-color: rgba(21, 101, 192, 0.42);
+  color: var(--blue-strong);
+}
+
+.node-connectability-chip.actionable:disabled {
+  cursor: wait;
+  opacity: 0.64;
+}
+
+.node-connectability-chip.success {
+  border-color: rgba(22, 163, 74, 0.28);
+  background: rgba(22, 163, 74, 0.08);
+  color: var(--green);
+}
+
+.node-connectability-chip.error {
+  border-color: rgba(220, 38, 38, 0.28);
+  background: rgba(220, 38, 38, 0.08);
+  color: var(--red);
+}
+
 .node-impact-panel {
   display: grid;
   gap: 8px;
@@ -2007,6 +2095,7 @@ body.dragging-operator * {
   .contract-port-groups,
   .contract-port-row,
   .contract-config-summary,
+  .node-connectability-row,
   .node-impact-row,
   .node-impact-delete,
   .graph-output-contract-row {
