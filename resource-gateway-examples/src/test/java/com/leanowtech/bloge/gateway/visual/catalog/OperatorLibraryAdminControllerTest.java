@@ -1068,6 +1068,9 @@ class OperatorLibraryAdminControllerTest {
                         .value(org.hamcrest.Matchers.containsString("saved fingerprint '" + originalFingerprint + "'")))
                 .andExpect(jsonPath("$.diagnostics[0].message")
                         .value(org.hamcrest.Matchers.containsString("'" + replacementFingerprint + "'")))
+                .andExpect(jsonPath("$.diagnostics[0].message")
+                        .value(org.hamcrest.Matchers.containsString(
+                                "changed surface: input port 'inputs' schema changed")))
                 .andExpect(jsonPath("$.diagnostics[0].target").value("/drafts/draft-1/nodes/0/operatorRef"));
 
         assertThat(replacementFingerprint).isNotEqualTo(originalFingerprint);
@@ -1150,6 +1153,9 @@ class OperatorLibraryAdminControllerTest {
                         .value("visual.library.publicationOperatorFingerprintDrift"))
                 .andExpect(jsonPath("$.diagnostics[0].message")
                         .value(org.hamcrest.Matchers.containsString("publication 'publication-1'")))
+                .andExpect(jsonPath("$.diagnostics[0].message")
+                        .value(org.hamcrest.Matchers.containsString(
+                                "changed surface: input port 'inputs' schema changed")))
                 .andExpect(jsonPath("$.diagnostics[0].message")
                         .value(org.hamcrest.Matchers.containsString("frozen DSL")))
                 .andExpect(jsonPath("$.diagnostics[0].target")

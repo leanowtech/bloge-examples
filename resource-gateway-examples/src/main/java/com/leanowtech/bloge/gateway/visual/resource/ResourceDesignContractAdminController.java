@@ -3,6 +3,7 @@ package com.leanowtech.bloge.gateway.visual.resource;
 import com.leanowtech.bloge.gateway.resource.ResourceDescriptor;
 import com.leanowtech.bloge.gateway.resource.ResourceRegistry;
 import com.leanowtech.bloge.gateway.visual.catalog.OperatorDefinition;
+import com.leanowtech.bloge.gateway.visual.catalog.OperatorDefinitionChangeSummary;
 import com.leanowtech.bloge.gateway.visual.catalog.ResourceVirtualOperatorProjector;
 import com.leanowtech.bloge.gateway.visual.diagnostic.VisualDiagnostic;
 import com.leanowtech.bloge.gateway.visual.draft.GraphDraft;
@@ -193,12 +194,14 @@ public class ResourceDesignContractAdminController {
      * @param resourceId descriptor id
      * @param contract new contract
      * @param force bypass stored-draft disablement protection
+     * @param ackWarnings true when the caller already reviewed non-blocking replacement warnings
      * @return stored contract
      */
     @PutMapping("/{resourceId:.+}")
     public ResponseEntity<?> upsert(@PathVariable String resourceId,
                                     @RequestBody ResourceDesignContract contract,
-                                    @RequestParam(defaultValue = "false") boolean force) {
+                                    @RequestParam(defaultValue = "false") boolean force,
+                                    @RequestParam(defaultValue = "false") boolean ackWarnings) {
         VisualValidationResult validation = validateAgainstRegistry(contract, force);
         if (!validation.valid()) {
             return ResponseEntity.status(validationFailureStatus(validation)).body(validation);
@@ -206,6 +209,10 @@ public class ResourceDesignContractAdminController {
         if (!resourceId.equals(contract.resourceId())) {
             throw new IllegalArgumentException("Path resourceId '%s' does not match body resourceId '%s'"
                     .formatted(resourceId, contract.resourceId()));
+        }
+        ResponseEntity<VisualValidationResult> warningGate = warningAcknowledgementResponse(validation, ackWarnings);
+        if (warningGate != null) {
+            return warningGate;
         }
         return ResponseEntity.ok(registry.upsert(contract));
     }
@@ -248,6 +255,16 @@ public class ResourceDesignContractAdminController {
                 : HttpStatus.BAD_REQUEST;
     }
 
+    private static ResponseEntity<VisualValidationResult> warningAcknowledgementResponse(
+            VisualValidationResult validation,
+            boolean ackWarnings) {
+        if (ackWarnings || validation.diagnostics().stream()
+                .noneMatch(diagnostic -> "WARNING".equalsIgnoreCase(diagnostic.level()))) {
+            return null;
+        }
+        return ResponseEntity.status(HttpStatus.CONFLICT).body(validation);
+    }
+
     private List<VisualDiagnostic> disablementImpactDiagnostics(ResourceDesignContract contract) {
         if (contract == null
                 || contract.visibleInCatalog(true)
@@ -267,8 +284,9 @@ public class ResourceDesignContractAdminController {
         }
 
         ResourceDescriptor descriptor = resourceRegistry.resolve(replacement.resourceId());
+        OperatorDefinition previousOperator = projector.project(descriptor, existing);
         OperatorDefinition replacementOperator = projector.project(descriptor, Optional.of(replacement));
-        if (projector.project(descriptor, existing).fingerprint().equals(replacementOperator.fingerprint())) {
+        if (previousOperator.fingerprint().equals(replacementOperator.fingerprint())) {
             return List.of();
         }
 
@@ -293,10 +311,12 @@ public class ResourceDesignContractAdminController {
                     continue;
                 }
                 diagnostics.add(VisualDiagnostic.warning("visual.resourceContract.operatorFingerprintDrift",
-                        "Resource design contract '%s' changes operatorRef '%s' used by draft '%s@%d' node '%s' from saved fingerprint '%s' to '%s'; review and resave the draft before execution."
+                        "Resource design contract '%s' changes operatorRef '%s' used by draft '%s@%d' node '%s' from saved fingerprint '%s' to '%s'; changed surface: %s; review and resave the draft before execution."
                                 .formatted(replacement.resourceId(), operatorRef, draft.draftId(),
                                         draft.revision(), node.id(), savedFingerprint,
-                                        replacementOperator.fingerprint()),
+                                        replacementOperator.fingerprint(),
+                                        OperatorDefinitionChangeSummary.describe(previousOperator,
+                                                replacementOperator)),
                         "/drafts/%s/nodes/%d/operatorRef".formatted(draft.draftId(), i)));
             }
         }

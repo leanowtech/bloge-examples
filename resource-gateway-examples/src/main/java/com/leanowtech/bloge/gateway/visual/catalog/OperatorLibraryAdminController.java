@@ -323,14 +323,14 @@ public class OperatorLibraryAdminController {
             existingByRef.putIfAbsent(operator.operatorRef(), operator);
         }
 
-        Map<String, OperatorDefinition> changedByRef = new LinkedHashMap<>();
+        Map<String, OperatorDefinitionChange> changedByRef = new LinkedHashMap<>();
         for (OperatorDefinition operator : replacement.operators()) {
             if (operator == null) {
                 continue;
             }
             OperatorDefinition previous = existingByRef.get(operator.operatorRef());
             if (previous != null && !previous.fingerprint().equals(operator.fingerprint())) {
-                changedByRef.putIfAbsent(operator.operatorRef(), operator);
+                changedByRef.putIfAbsent(operator.operatorRef(), new OperatorDefinitionChange(previous, operator));
             }
         }
         if (changedByRef.isEmpty()) {
@@ -341,8 +341,8 @@ public class OperatorLibraryAdminController {
         for (GraphDraft draft : draftRepository.all()) {
             for (int i = 0; i < draft.nodes().size(); i++) {
                 GraphDraft.DraftNode node = draft.nodes().get(i);
-                OperatorDefinition replacementOperator = changedByRef.get(node.operatorRef());
-                if (replacementOperator == null) {
+                OperatorDefinitionChange change = changedByRef.get(node.operatorRef());
+                if (change == null) {
                     continue;
                 }
                 String savedFingerprint = draft.operatorFingerprints().get(node.id());
@@ -354,14 +354,16 @@ public class OperatorLibraryAdminController {
                             "/drafts/%s/nodes/%d/operatorRef".formatted(draft.draftId(), i)));
                     continue;
                 }
-                if (savedFingerprint.equals(replacementOperator.fingerprint())) {
+                if (savedFingerprint.equals(change.replacement().fingerprint())) {
                     continue;
                 }
                 diagnostics.add(VisualDiagnostic.warning("visual.library.operatorFingerprintDrift",
-                        "Operator library '%s' changes operatorRef '%s' used by draft '%s@%d' node '%s' from saved fingerprint '%s' to '%s'; review and resave the draft before execution."
+                        "Operator library '%s' changes operatorRef '%s' used by draft '%s@%d' node '%s' from saved fingerprint '%s' to '%s'; changed surface: %s; review and resave the draft before execution."
                                 .formatted(replacement.libraryId(), node.operatorRef(), draft.draftId(),
                                         draft.revision(), node.id(), savedFingerprint,
-                                        replacementOperator.fingerprint()),
+                                        change.replacement().fingerprint(),
+                                        OperatorDefinitionChangeSummary.describe(change.previous(),
+                                                change.replacement())),
                         "/drafts/%s/nodes/%d/operatorRef".formatted(draft.draftId(), i)));
             }
         }
@@ -372,8 +374,8 @@ public class OperatorLibraryAdminController {
             }
             for (int i = 0; i < draft.nodes().size(); i++) {
                 GraphDraft.DraftNode node = draft.nodes().get(i);
-                OperatorDefinition replacementOperator = changedByRef.get(node.operatorRef());
-                if (replacementOperator == null) {
+                OperatorDefinitionChange change = changedByRef.get(node.operatorRef());
+                if (change == null) {
                     continue;
                 }
                 String publishedFingerprint = publication.operatorFingerprints().get(node.id());
@@ -385,17 +387,22 @@ public class OperatorLibraryAdminController {
                             "/publications/%s/nodes/%d/operatorRef".formatted(publication.publicationId(), i)));
                     continue;
                 }
-                if (publishedFingerprint.equals(replacementOperator.fingerprint())) {
+                if (publishedFingerprint.equals(change.replacement().fingerprint())) {
                     continue;
                 }
                 diagnostics.add(VisualDiagnostic.warning("visual.library.publicationOperatorFingerprintDrift",
-                        "Operator library '%s' changes operatorRef '%s' used by publication '%s' node '%s' from frozen fingerprint '%s' to '%s'; existing publication keeps its frozen DSL, but review before replaying, recertifying, or republishing."
+                        "Operator library '%s' changes operatorRef '%s' used by publication '%s' node '%s' from frozen fingerprint '%s' to '%s'; changed surface: %s; existing publication keeps its frozen DSL, but review before replaying, recertifying, or republishing."
                                 .formatted(replacement.libraryId(), node.operatorRef(), publication.publicationId(),
-                                        node.id(), publishedFingerprint, replacementOperator.fingerprint()),
+                                        node.id(), publishedFingerprint, change.replacement().fingerprint(),
+                                        OperatorDefinitionChangeSummary.describe(change.previous(),
+                                                change.replacement())),
                         "/publications/%s/nodes/%d/operatorRef".formatted(publication.publicationId(), i)));
             }
         }
         return diagnostics;
+    }
+
+    private record OperatorDefinitionChange(OperatorDefinition previous, OperatorDefinition replacement) {
     }
 
     private List<VisualDiagnostic> replacementPublicationRemovalDiagnostics(OperatorLibrary replacement) {

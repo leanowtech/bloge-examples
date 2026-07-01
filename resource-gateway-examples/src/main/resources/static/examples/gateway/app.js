@@ -422,6 +422,7 @@ function createDefaultResourceContractImport() {
     openApiText: pretty(SAMPLE_OPENAPI_RESOURCE_CONTRACT),
     contractText: '',
     descriptorText: '',
+    saveConfirmationKey: '',
     message: null
   };
 }
@@ -3067,6 +3068,7 @@ function renderResourceContractImportControls() {
   };
   contractEditor.oninput = () => {
     current.contractText = contractEditor.value;
+    current.saveConfirmationKey = '';
     const saveButton = $('save-resource-contract');
     if (saveButton) {
       saveButton.disabled = !current.contractText;
@@ -3105,6 +3107,7 @@ function updateProjectedResourceContractText(text) {
   const current = state.resourceContractImport || createDefaultResourceContractImport();
   state.resourceContractImport = current;
   current.contractText = text || '';
+  current.saveConfirmationKey = '';
   const contractEditor = $('resource-contract-json');
   if (contractEditor) {
     contractEditor.value = current.contractText;
@@ -3213,6 +3216,38 @@ async function previewOpenApiResourceContract() {
   }
 }
 
+async function validateResourceContractPayload(contract) {
+  const response = await fetch('/admin/resource-design-contracts/validate', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(contract)
+  });
+  const payload = await response.json().catch(() => null);
+  return {
+    response,
+    payload,
+    diagnostics: normalizeDiagnostics(payload?.diagnostics)
+  };
+}
+
+function resourceContractSaveConfirmationKey(contract, diagnostics = []) {
+  return JSON.stringify({
+    contract,
+    warnings: normalizeDiagnostics(diagnostics)
+      .filter((diagnostic) => String(diagnostic.level || '').toUpperCase() === 'WARNING')
+      .map((diagnostic) => ({
+        level: diagnostic.level || 'WARNING',
+        code: diagnostic.code || '',
+        message: diagnostic.message || '',
+        target: diagnostic.target || ''
+      }))
+  });
+}
+
+function resourceContractMutationQuery(ackWarnings = false) {
+  return ackWarnings ? '?ackWarnings=true' : '';
+}
+
 async function saveOpenApiResourceContract() {
   const current = state.resourceContractImport;
   let contract;
@@ -3226,13 +3261,50 @@ async function saveOpenApiResourceContract() {
     setResourceContractImportMessage('Projected contract resourceId is required.', 'error');
     return;
   }
+  let validation;
+  try {
+    validation = await validateResourceContractPayload(contract);
+  } catch (error) {
+    current.saveConfirmationKey = '';
+    setResourceContractImportMessage(error.message, 'error');
+    return;
+  }
+  const confirmationKey = resourceContractSaveConfirmationKey(contract, validation.diagnostics);
+  if (!validation.response.ok || validation.payload?.valid === false) {
+    current.saveConfirmationKey = '';
+    setResourceContractImportMessage(
+      validationResultMessage(
+        validation.payload?.valid,
+        validation.diagnostics,
+        `Validation failed with ${validation.response.status}`
+      ),
+      'error',
+      validation.diagnostics
+    );
+    return;
+  }
+  if (hasWarningDiagnostic(validation.diagnostics)
+      && current.saveConfirmationKey !== confirmationKey) {
+    current.saveConfirmationKey = confirmationKey;
+    setResourceContractImportMessage(
+      `${validationResultMessage(true, validation.diagnostics, 'Resource contract is valid.')} Review warnings, then click Save contract again to continue.`,
+      'warning',
+      validation.diagnostics
+    );
+    return;
+  }
+  if (!hasWarningDiagnostic(validation.diagnostics)) {
+    current.saveConfirmationKey = '';
+  }
   setResourceContractImportMessage('Saving resource contract...', 'info');
   try {
-    const response = await fetch(`/admin/resource-design-contracts/${encodeURIComponent(contract.resourceId)}`, {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(contract)
-    });
+    const response = await fetch(
+      `/admin/resource-design-contracts/${encodeURIComponent(contract.resourceId)}${resourceContractMutationQuery(hasWarningDiagnostic(validation.diagnostics))}`,
+      {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(contract)
+      });
     const text = await response.text();
     let payload = null;
     try {
@@ -3249,9 +3321,11 @@ async function saveOpenApiResourceContract() {
       return;
     }
     if (!payload) {
+      current.saveConfirmationKey = '';
       setResourceContractImportMessage('Save succeeded but no contract body was returned.', 'error');
       return;
     }
+    current.saveConfirmationKey = '';
     updateProjectedResourceContractText(pretty(payload));
     await loadVisualOperatorCatalog();
     renderOperatorPalette();

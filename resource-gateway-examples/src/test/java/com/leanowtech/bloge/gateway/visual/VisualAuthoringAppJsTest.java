@@ -78,6 +78,19 @@ class VisualAuthoringAppJsTest {
                 .doesNotContain("const disabled = candidate.compatibility.ok ? '' : ' disabled';");
     }
 
+    @Test
+    void requiresResourceContractWarningAcknowledgementBeforeSaving() throws Exception {
+        String source = appJsSource();
+
+        assertThat(source)
+                .contains("async function validateResourceContractPayload(contract)")
+                .contains("function resourceContractSaveConfirmationKey(contract, diagnostics = [])")
+                .contains("current.saveConfirmationKey !== confirmationKey")
+                .contains("Review warnings, then click Save contract again to continue.")
+                .contains("resourceContractMutationQuery(hasWarningDiagnostic(validation.diagnostics))")
+                .contains("return ackWarnings ? '?ackWarnings=true' : '';");
+    }
+
     private static String appJsSource() throws IOException {
         return new ClassPathResource("static/examples/gateway/app.js")
                 .getContentAsString(StandardCharsets.UTF_8);

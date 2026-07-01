@@ -333,6 +333,9 @@ class ResourceDesignContractAdminControllerTest {
                                 "saved fingerprint '" + originalFingerprint + "'")))
                 .andExpect(jsonPath("$.diagnostics[0].message")
                         .value(org.hamcrest.Matchers.containsString("'" + replacementFingerprint + "'")))
+                .andExpect(jsonPath("$.diagnostics[0].message")
+                        .value(org.hamcrest.Matchers.containsString(
+                                "changed surface: output port 'payload' schema changed")))
                 .andExpect(jsonPath("$.diagnostics[0].target").value("/drafts/draft-1/nodes/0/operatorRef"));
 
         assertThat(replacementFingerprint).isNotEqualTo(originalFingerprint);
@@ -359,6 +362,46 @@ class ResourceDesignContractAdminControllerTest {
                 .andExpect(jsonPath("$.diagnostics[0].target").value("/drafts/draft-1/nodes/0/operatorRef"));
 
         assertThat(registry.findByResourceId("order-service.listOrders")).contains(original);
+    }
+
+    @Test
+    void upsertRequiresWarningAcknowledgementBeforeStoringFingerprintDrift() throws Exception {
+        ResourceDesignContract original = validContract(Map.of());
+        ResourceDesignContract replacement = contractWithCountResponse();
+        registry.upsert(original);
+        drafts.save(draftUsingResource("order-service.listOrders",
+                projector.project(descriptor, Optional.of(original)).fingerprint()));
+
+        mockMvc.perform(put("/admin/resource-design-contracts/order-service.listOrders")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(replacement)))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.valid").value(true))
+                .andExpect(jsonPath("$.diagnostics[0].level").value("WARNING"))
+                .andExpect(jsonPath("$.diagnostics[0].code")
+                        .value("visual.resourceContract.operatorFingerprintDrift"))
+                .andExpect(jsonPath("$.diagnostics[0].message")
+                        .value(org.hamcrest.Matchers.containsString("changed surface: output port 'payload' schema changed")));
+
+        assertThat(registry.findByResourceId("order-service.listOrders")).contains(original);
+    }
+
+    @Test
+    void upsertStoresFingerprintDriftWhenWarningsAcknowledged() throws Exception {
+        ResourceDesignContract original = validContract(Map.of());
+        ResourceDesignContract replacement = contractWithCountResponse();
+        registry.upsert(original);
+        drafts.save(draftUsingResource("order-service.listOrders",
+                projector.project(descriptor, Optional.of(original)).fingerprint()));
+
+        mockMvc.perform(put("/admin/resource-design-contracts/order-service.listOrders")
+                        .param("ackWarnings", "true")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(replacement)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.resourceId").value("order-service.listOrders"));
+
+        assertThat(registry.findByResourceId("order-service.listOrders")).contains(replacement);
     }
 
     @Test
