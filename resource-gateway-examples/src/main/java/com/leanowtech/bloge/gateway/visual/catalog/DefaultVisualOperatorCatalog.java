@@ -14,6 +14,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -245,7 +246,7 @@ public class DefaultVisualOperatorCatalog implements VisualOperatorCatalog {
     private static boolean matches(OperatorDefinition operator, OperatorCatalogQuery query) {
         if (!query.search().isBlank()) {
             String haystack = operatorSearchText(operator).toLowerCase(Locale.ROOT);
-            if (!haystack.contains(query.search().toLowerCase(Locale.ROOT))) {
+            if (searchTokens(query.search()).stream().anyMatch(token -> !haystack.contains(token))) {
                 return false;
             }
         }
@@ -262,6 +263,13 @@ public class DefaultVisualOperatorCatalog implements VisualOperatorCatalog {
             return false;
         }
         return true;
+    }
+
+    private static List<String> searchTokens(String search) {
+        return Arrays.stream(search.toLowerCase(Locale.ROOT).split("\\s+"))
+                .map(String::trim)
+                .filter(token -> !token.isBlank())
+                .toList();
     }
 
     private static String operatorSearchText(OperatorDefinition operator) {

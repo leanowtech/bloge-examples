@@ -121,6 +121,12 @@ class DefaultVisualOperatorCatalogTest {
         assertThat(catalog.list(search("integer")))
                 .extracting(OperatorDefinition::operatorRef)
                 .contains("risk:eligibility");
+        assertThat(catalog.list(search("risk inputs.score config.threshold integer")))
+                .extracting(OperatorDefinition::operatorRef)
+                .contains("risk:eligibility");
+        assertThat(catalog.list(search("risk inputs.score missingField")))
+                .extracting(OperatorDefinition::operatorRef)
+                .doesNotContain("risk:eligibility");
     }
 
     @Test

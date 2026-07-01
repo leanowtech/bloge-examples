@@ -223,11 +223,19 @@ class VisualAuthoringAppJsTest {
                   'schemaDynamicSurfaceCount',
                   'operatorDiagnosticsForSpec',
                   'operatorPaletteDiagnosticBadges',
+                  'operatorMatchesPaletteFilter',
+                  'paletteSearchTokens',
                   'operatorPaletteSearchValues',
                   'operatorPaletteSchemaSearchValues',
                   'renderOperatorDiagnosticsPanel',
                   'bindingCandidateSummary',
                   'bindingCandidateSummaryLevel',
+                  'bindingSourceValue',
+                  'renderSourceCandidateOptions',
+                  'renderSourceCandidateGroup',
+                  'renderSourceCandidateOption',
+                  'sourceCandidatesForTarget',
+                  'sourceCandidateComparator',
                   'connectionServerPreflightMessage',
                   'targetWithServerBindingKey',
                   'connectionLocalHeuristicStatus',
@@ -619,7 +627,11 @@ class VisualAuthoringAppJsTest {
                   .join('|');
                 const operatorDiagnosticBadge = context.operatorPaletteDiagnosticBadges(operatorDiagnosticSpec);
                 const operatorDiagnosticPanel = context.renderOperatorDiagnosticsPanel(operatorDiagnosticSpec);
-                const paletteSchemaSearchValues = context.operatorPaletteSearchValues({
+                const paletteSearchSpec = {
+                  kind: 'custom',
+                  label: 'Eligibility',
+                  operatorRef: 'risk:eligibility',
+                  tags: ['risk', 'policy'],
                   inputPorts: [{
                     name: 'inputs',
                     schema: {
@@ -655,7 +667,8 @@ class VisualAuthoringAppJsTest {
                       }
                     }
                   }
-                });
+                };
+                const paletteSchemaSearchValues = context.operatorPaletteSearchValues(paletteSearchSpec);
                 const libraryProfile = context.operatorLibraryProfile({
                   libraryId: 'risk-profile',
                   version: '2.1.0',
@@ -802,6 +815,36 @@ class VisualAuthoringAppJsTest {
                     ]
                   }
                 };
+                const normalizedPaletteTokens = context.paletteSearchTokens('  Risk   SCORE  ').join('|');
+                context.state.paletteSearch = 'risk inputs.customer.id config.threshold number';
+                const paletteMultiTokenMatch = context.operatorMatchesPaletteFilter('risk:eligibility', paletteSearchSpec);
+                context.state.paletteSearch = 'risk inputs.customer.id missingField';
+                const paletteMultiTokenMiss = context.operatorMatchesPaletteFilter('risk:eligibility', paletteSearchSpec);
+                context.state.paletteSearch = '';
+                context.contextSourceHandles = () => [
+                  { nodeId: '__ctx', path: 'name', type: 'string' },
+                  { nodeId: '__ctx', path: 'score', type: 'integer' }
+                ];
+                context.sourceHandlesForNode = (node) => node.id === 'policy'
+                  ? [{ nodeId: 'policy', port: 'output', path: 'decision', type: 'boolean' }]
+                  : [];
+                context.connectionCompatibility = (source, target) => source.type === target.type
+                  ? { ok: true, message: '' }
+                  : { ok: false, message: `${source.type} cannot feed ${target.type}` };
+                const sourceCandidatesForScore = context.sourceCandidatesForTarget({
+                  nodeId: 'riskNode',
+                  port: 'inputs',
+                  path: 'score',
+                  type: 'integer',
+                  schema: { type: 'integer' }
+                });
+                const sourceCandidateOrder = sourceCandidatesForScore.map((candidate) =>
+                  `${context.endpointLabel(candidate.source)}:${candidate.compatibility.ok ? 'ok' : 'blocked'}`)
+                  .join('|');
+                const sourceCandidateOptionsHtml = context.renderSourceCandidateOptions(
+                  sourceCandidatesForScore,
+                  context.bindingSourceValue({ nodeId: '__ctx', path: 'score' })
+                );
                 context.recordBuilderHistory('Move policy');
                 context.state.builder.nodes[0].x = 260;
                 const historyUndoAfterRecord = context.state.builderHistoryUndo.length;
@@ -1079,6 +1122,9 @@ class VisualAuthoringAppJsTest {
                   ['palette schema search output type', String(paletteSchemaSearchValues.includes('integer')), 'true'],
                   ['palette schema search config field', String(paletteSchemaSearchValues.includes('config.threshold')), 'true'],
                   ['palette schema search config type', String(paletteSchemaSearchValues.includes('number')), 'true'],
+                  ['palette search tokens', normalizedPaletteTokens, 'risk|score'],
+                  ['palette multi-token match', String(paletteMultiTokenMatch), 'true'],
+                  ['palette multi-token miss', String(paletteMultiTokenMiss), 'false'],
                   ['library profile operator count', libraryProfile.operatorCount, 2],
                   ['library profile input count', libraryProfile.inputPortCount, 1],
                   ['library profile output count', libraryProfile.outputPortCount, 1],
@@ -1106,6 +1152,11 @@ class VisualAuthoringAppJsTest {
                   ['blocked binding candidate level', blockedCandidateLevel, 'error'],
                   ['empty binding candidate summary', emptyCandidateSummary, '0 compatible sources.'],
                   ['empty binding candidate level', emptyCandidateLevel, 'info'],
+                  ['source candidate compatible first', sourceCandidateOrder, 'ctx.score:ok|ctx.name:blocked|policy.output.decision:blocked'],
+                  ['source candidate compatible group', String(sourceCandidateOptionsHtml.includes('Compatible sources (1)')), 'true'],
+                  ['source candidate blocked group', String(sourceCandidateOptionsHtml.includes('Blocked sources (2)')), 'true'],
+                  ['source candidate selected option', String(sourceCandidateOptionsHtml.includes('ctx.score · integer') && sourceCandidateOptionsHtml.includes(' selected')), 'true'],
+                  ['source candidate blocked reason', String(sourceCandidateOptionsHtml.includes('ctx.name · string · string cannot feed integer')), 'true'],
                   ['local ok preflight message', localOkPreflightMessage, 'Checking connection with server...'],
                   ['local mismatch preflight message', localMismatchPreflightMessage, 'Type mismatch: string cannot feed integer. Asking server for final decision...'],
                   ['local mismatch advisory helper', String(context.connectionLocalMismatchIsAdvisory('Type mismatch: string cannot feed integer.')), 'true'],

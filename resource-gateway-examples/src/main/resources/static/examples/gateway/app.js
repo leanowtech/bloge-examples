@@ -1873,11 +1873,11 @@ function operatorMatchesPaletteFilter(type, spec) {
   if (state.paletteTag && !tags.includes(state.paletteTag)) {
     return false;
   }
-  const query = String(state.paletteSearch || '').trim().toLowerCase();
-  if (!query) {
+  const tokens = paletteSearchTokens(state.paletteSearch);
+  if (!tokens.length) {
     return true;
   }
-  return [
+  const values = [
     type,
     spec.label,
     spec.kind,
@@ -1890,7 +1890,16 @@ function operatorMatchesPaletteFilter(type, spec) {
     ...tags
   ]
     .filter(Boolean)
-    .some((value) => String(value).toLowerCase().includes(query));
+    .map((value) => String(value).toLowerCase());
+  return tokens.every((token) => values.some((value) => value.includes(token)));
+}
+
+function paletteSearchTokens(search) {
+  return String(search || '')
+    .trim()
+    .toLowerCase()
+    .split(/\s+/)
+    .filter(Boolean);
 }
 
 function operatorPaletteContractSummary(spec) {
@@ -5577,13 +5586,7 @@ function renderConfigSourceSelect(node, field, expression, expressionMode) {
     `<option value="" ${expressionMode ? '' : 'selected'}>Literal value</option>`,
     `<option value="${CONFIG_MANUAL_EXPRESSION}" ${expressionMode && !selectedValue ? 'selected' : ''}>Manual expression</option>`,
     staleOption,
-    ...candidates.map((candidate) => {
-      const value = bindingSourceValue(candidate.source);
-      const selected = value === selectedValue ? ' selected' : '';
-      const type = candidate.source.type ? ` · ${candidate.source.type}` : '';
-      const suffix = candidate.compatibility.ok ? '' : ` · ${candidate.compatibility.message}`;
-      return `<option value="${escapeHtml(value)}"${selected}>${escapeHtml(endpointLabel(candidate.source) + type + suffix)}</option>`;
-    })
+    renderSourceCandidateOptions(candidates, selectedValue)
   ].join('');
   return `
     <select
@@ -6213,13 +6216,7 @@ function renderInputBindingRow(node, target) {
   const options = [
     `<option value="" ${selectedValue ? '' : 'selected'}>Manual expression</option>`,
     staleOption,
-    ...candidates.map((candidate) => {
-      const value = bindingSourceValue(candidate.source);
-      const selected = value === selectedValue ? ' selected' : '';
-      const type = candidate.source.type ? ` · ${candidate.source.type}` : '';
-      const suffix = candidate.compatibility.ok ? '' : ` · ${candidate.compatibility.message}`;
-      return `<option value="${escapeHtml(value)}"${selected}>${escapeHtml(endpointLabel(candidate.source) + type + suffix)}</option>`;
-    })
+    renderSourceCandidateOptions(candidates, selectedValue)
   ].join('');
   const type = target.type
     || schemaType(schemaAtPath(schemaForPort(specForNode(node), 'target', target.port), target.path))
@@ -6287,6 +6284,34 @@ function bindingCandidateSummaryLevel(candidates) {
     return 'success';
   }
   return candidates.length ? 'error' : 'info';
+}
+
+function renderSourceCandidateOptions(candidates, selectedValue = '') {
+  const compatible = candidates.filter((candidate) => candidate.compatibility.ok);
+  const blocked = candidates.filter((candidate) => !candidate.compatibility.ok);
+  return [
+    renderSourceCandidateGroup('Compatible sources', compatible, selectedValue),
+    renderSourceCandidateGroup('Blocked sources', blocked, selectedValue)
+  ].filter(Boolean).join('');
+}
+
+function renderSourceCandidateGroup(label, candidates, selectedValue) {
+  if (!candidates.length) {
+    return '';
+  }
+  return `
+    <optgroup label="${escapeHtml(`${label} (${candidates.length})`)}">
+      ${candidates.map((candidate) => renderSourceCandidateOption(candidate, selectedValue)).join('')}
+    </optgroup>
+  `;
+}
+
+function renderSourceCandidateOption(candidate, selectedValue) {
+  const value = bindingSourceValue(candidate.source);
+  const selected = value === selectedValue ? ' selected' : '';
+  const type = candidate.source.type ? ` · ${candidate.source.type}` : '';
+  const suffix = candidate.compatibility.ok ? '' : ` · ${candidate.compatibility.message}`;
+  return `<option value="${escapeHtml(value)}"${selected}>${escapeHtml(endpointLabel(candidate.source) + type + suffix)}</option>`;
 }
 
 function bindingTargetFromElement(element) {
@@ -8476,9 +8501,11 @@ function schemaType(schema) {
 }
 
 function sourceCandidatesForTarget(target) {
+  let order = 0;
   const candidates = contextSourceHandles().map((source) => ({
     source,
-    compatibility: connectionCompatibility(source, target)
+    compatibility: connectionCompatibility(source, target),
+    order: order++
   }));
   for (const node of state.builder.nodes) {
     if (node.id === target.nodeId) {
@@ -8487,11 +8514,26 @@ function sourceCandidatesForTarget(target) {
     for (const source of sourceHandlesForNode(node)) {
       candidates.push({
         source,
-        compatibility: connectionCompatibility(source, target)
+        compatibility: connectionCompatibility(source, target),
+        order: order++
       });
     }
   }
-  return candidates;
+  return candidates
+    .sort(sourceCandidateComparator)
+    .map((candidate) => ({
+      source: candidate.source,
+      compatibility: candidate.compatibility
+    }));
+}
+
+function sourceCandidateComparator(left, right) {
+  const leftBlocked = left.compatibility?.ok ? 0 : 1;
+  const rightBlocked = right.compatibility?.ok ? 0 : 1;
+  if (leftBlocked !== rightBlocked) {
+    return leftBlocked - rightBlocked;
+  }
+  return (left.order || 0) - (right.order || 0);
 }
 
 function bindingStatusForTarget(node, target, expression) {
