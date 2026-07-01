@@ -665,6 +665,7 @@ node fetchApplicant : httpResource {
 | --- | --- | --- |
 | `GET` | `/api/visual/operators` | 查询可用算子，支持 pattern、tag、tenant、namespace、environment |
 | `GET` | `/api/visual/operators/{operatorRef}` | 获取单个算子定义 |
+| `GET` | `/api/visual/operators/{operatorRef}/usage` | 当前已实现：查询某个 operatorRef 被哪些 stored draft / immutable publication 节点使用，并返回 saved/frozen fingerprint 与当前 catalog fingerprint 的状态 |
 | `POST` | `/api/visual/operator-catalogs/import` | 导入用户提供的 catalog JSON/YAML |
 | `POST` | `/api/visual/operator-catalogs/validate` | 校验 catalog 定义 |
 | `GET` | `/api/visual/resource-operators` | 将 resource descriptors 投影为虚拟算子 |
@@ -687,6 +688,10 @@ operatorRef 会被阻断，same-ref fingerprint drift 会作为 warning 暴露�
 当前运行不依赖最新 catalog，因为 publication 持有 frozen DSL 和 operator snapshots，但 validate 会返回
 publication 级 warning，提示 replay、recertification 或 republish 前需要重新审计。直接删除 library 时，
 如果已有 published artifact 引用了该库内 operatorRef，服务端要求 `force=true` 才允许删除。
+`/api/visual/operators/{operatorRef}/usage` 已把这种影响分析拆成可查询的
+`bloge.visualOperatorUsage.v1` 合同：draft usage 返回 saved fingerprint
+状态，publication usage 返回 frozen fingerprint 状态，并在 frozen snapshot
+与当前 catalog definition 可比较时给出 changed-surface 摘要。
 
 ### 12.2 Draft API
 

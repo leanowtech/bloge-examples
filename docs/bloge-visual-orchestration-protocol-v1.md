@@ -14,14 +14,15 @@
 > `resource-gateway-examples` 的 wire contract 已收敛为
 > `bloge.visualOperator.v1`、`bloge.visualOperatorLibrary.v1`、
 > `bloge.visualOperatorCatalog.v1`、`bloge.visualGraphDraft.v1` 和
-> `bloge.visualGraphPublication.v1`。继续实现时以代码和实现状态审计为准，
+> `bloge.visualGraphPublication.v1`；operator usage index 当前为
+> `bloge.visualOperatorUsage.v1`。继续实现时以代码和实现状态审计为准，
 > 不要把早期草案名误认为当前 API 字段。
 
 ## 1. 协议目标
 
 这份文档把“可视化编排画布”从产品愿景压成可实现合同。它定义四个核心协议：
 
-1. `bloge.visualOperator.v1` / `bloge.visualOperatorLibrary.v1` / `bloge.visualOperatorCatalog.v1`：用户、运行时或 resource gateway 暴露给画布的算子定义、算子库和 catalog response。
+1. `bloge.visualOperator.v1` / `bloge.visualOperatorLibrary.v1` / `bloge.visualOperatorCatalog.v1` / `bloge.visualOperatorUsage.v1`：用户、运行时或 resource gateway 暴露给画布的算子定义、算子库、catalog response 和 operatorRef usage index。
 2. `bloge.visualGraphDraft.v1`：画布编辑中的图草稿模型。
 3. `VisualDiagnostic`：校验、编译、策略和运行错误如何定位回画布。
 4. `ResourceDesignContract`：`ResourceDescriptor` 如何补足设计时 schema，投影成虚拟算子。
@@ -919,6 +920,48 @@ GET /api/visual/operators?pattern=resource:*&tenantId=demo-tenant&namespace=loca
   "diagnostics": []
 }
 ```
+
+### 10.1.1 查询 operator usage index
+
+```http
+GET /api/visual/operators/risk:eligibility/usage
+```
+
+当前 `resource-gateway-examples` 已实现 `bloge.visualOperatorUsage.v1`：
+
+```json
+{
+  "schemaVersion": "bloge.visualOperatorUsage.v1",
+  "operatorRef": "risk:eligibility",
+  "currentFingerprint": "sha256:...",
+  "drafts": [
+    {
+      "draftId": "draft-risk",
+      "revision": 1,
+      "graphName": "riskGraph",
+      "nodeId": "eligibility",
+      "savedFingerprint": "sha256:...",
+      "currentFingerprint": "sha256:...",
+      "fingerprintStatus": "CURRENT"
+    }
+  ],
+  "publications": [
+    {
+      "publicationId": "pub-risk",
+      "nodeId": "eligibility",
+      "frozenFingerprint": "sha256:...",
+      "currentFingerprint": "sha256:...",
+      "fingerprintStatus": "DRIFTED",
+      "changedSurface": "input port 'inputs' schema changed"
+    }
+  ],
+  "diagnostics": []
+}
+```
+
+`fingerprintStatus` 的当前取值为 `CURRENT`、`DRIFTED`、
+`SNAPSHOT_MISSING` 或 `OPERATOR_MISSING`。这个 API 是 operator library
+替换、删除、recertification 和人工审计的查询面，不改变 catalog 或 draft。
 
 ### 10.2 校验 catalog
 

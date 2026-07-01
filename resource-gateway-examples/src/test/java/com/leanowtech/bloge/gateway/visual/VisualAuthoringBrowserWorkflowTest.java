@@ -192,6 +192,22 @@ class VisualAuthoringBrowserWorkflowTest {
         String publicationId = String.valueOf(publication.get("publicationId"));
         assertThat(publicationId).isNotBlank();
 
+        Map<String, Object> operatorUsage = getMap("/api/visual/operators/risk:eligibility/usage");
+        assertThat(operatorUsage)
+                .containsEntry("schemaVersion", "bloge.visualOperatorUsage.v1")
+                .containsEntry("operatorRef", "risk:eligibility");
+        assertThat(String.valueOf(operatorUsage.get("currentFingerprint"))).isNotBlank();
+        assertThat((List<Map<String, Object>>) operatorUsage.get("drafts"))
+                .anySatisfy(usage -> assertThat(usage)
+                        .containsEntry("draftId", storedDraft.draftId())
+                        .containsEntry("nodeId", "eligibility")
+                        .containsEntry("fingerprintStatus", "CURRENT"));
+        assertThat((List<Map<String, Object>>) operatorUsage.get("publications"))
+                .anySatisfy(usage -> assertThat(usage)
+                        .containsEntry("publicationId", publicationId)
+                        .containsEntry("nodeId", "eligibility")
+                        .containsEntry("fingerprintStatus", "CURRENT"));
+
         Map<String, Object> publicationRun = postMap(
                 "/api/visual/publications/" + publicationId + "/run",
                 Map.of("context", Map.of("applicantId", "standard", "amount", 100_000), "outputNode", "")
