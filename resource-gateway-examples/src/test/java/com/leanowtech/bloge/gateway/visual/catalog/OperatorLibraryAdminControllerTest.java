@@ -816,6 +816,46 @@ class OperatorLibraryAdminControllerTest {
     }
 
     @Test
+    void createRequiresWarningAcknowledgementForRuntimeCapabilityWarnings() throws Exception {
+        OperatorLibrary library = libraryWithCapabilities("capability-risk",
+                new OperatorDefinition.Capabilities("READ_EXTERNAL", "IDEMPOTENT", true, true, false));
+
+        mockMvc.perform(post("/admin/visual-operator-libraries")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(library)))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.valid").value(true))
+                .andExpect(jsonPath("$.diagnostics[0].level").value("WARNING"))
+                .andExpect(jsonPath("$.diagnostics[0].code")
+                        .value("visual.operator.capability.streamingRequiresRuntime"))
+                .andExpect(jsonPath("$.diagnostics[0].target")
+                        .value("/operators/0/capabilities/streaming"))
+                .andExpect(jsonPath("$.diagnostics[1].code")
+                        .value("visual.operator.capability.durableRequiresRuntime"))
+                .andExpect(jsonPath("$.diagnostics[1].target")
+                        .value("/operators/0/capabilities/durable"))
+                .andExpect(jsonPath("$.impact.warningCount").value(2))
+                .andExpect(jsonPath("$.impact.operatorRefs[0]").value("risk:eligibility"));
+
+        assertThat(registry.find("capability-risk")).isEmpty();
+    }
+
+    @Test
+    void createStoresCapabilityWarningLibraryWhenWarningsAcknowledged() throws Exception {
+        OperatorLibrary library = libraryWithCapabilities("governance-risk",
+                new OperatorDefinition.Capabilities("WRITE_EXTERNAL", "NON_IDEMPOTENT", false, false, true));
+
+        mockMvc.perform(post("/admin/visual-operator-libraries")
+                        .param("ackWarnings", "true")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(library)))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.libraryId").value("governance-risk"));
+
+        assertThat(registry.find("governance-risk")).contains(library);
+    }
+
+    @Test
     void validateReportsOperatorRefAlreadyOwnedByAnotherLibrary() throws Exception {
         OperatorLibrary original = VisualCatalogTestSupport.eligibilityLibrary("integer");
         OperatorLibrary duplicate = new OperatorLibrary(
@@ -1495,6 +1535,33 @@ class OperatorLibraryAdminControllerTest {
                 "bloge.visualOperatorLibrary.v1",
                 libraryId,
                 "Native lowering",
+                "1.0.0",
+                "risk-team",
+                "ACTIVE",
+                List.of(operator)
+        );
+    }
+
+    private static OperatorLibrary libraryWithCapabilities(String libraryId,
+                                                           OperatorDefinition.Capabilities capabilities) {
+        OperatorDefinition base = VisualCatalogTestSupport.eligibilityOperator("integer");
+        OperatorDefinition operator = new OperatorDefinition(
+                base.schemaVersion(),
+                base.operatorRef(),
+                base.operatorVersion(),
+                base.display(),
+                base.source(),
+                base.ports(),
+                base.configSchema(),
+                capabilities,
+                base.policy(),
+                base.lowering(),
+                base.diagnostics()
+        );
+        return new OperatorLibrary(
+                "bloge.visualOperatorLibrary.v1",
+                libraryId,
+                "Capability risk",
                 "1.0.0",
                 "risk-team",
                 "ACTIVE",

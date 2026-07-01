@@ -258,6 +258,7 @@ class VisualAuthoringAppJsTest {
                 const context = vm.createContext({ console });
                 context.SUPPORTED_SCHEMA_UNION_KEYWORDS = ['oneOf', 'anyOf'];
                 for (const name of [
+                  'pretty',
                   'escapeHtml',
                   'arrayIndexSegment',
                   'dslReferenceSuffixForSchemaPath',
@@ -371,6 +372,9 @@ class VisualAuthoringAppJsTest {
                   'configExpressionForField',
                   'removeConfigReferencesToNode',
                   'normalizeDiagnostics',
+                  'visualCheckLevel',
+                  'publishWarningAcknowledgementKey',
+                  'publishVisualDraft',
                   'renderVisualDiagnosticFilterNotice',
                   'renderVisualDiagnosticSummary',
                   'visualDiagnosticSummary',
@@ -1205,6 +1209,11 @@ class VisualAuthoringAppJsTest {
                     {
                       operatorRef: 'risk:route',
                       source: { kind: 'java-suspendable-operator' },
+                      policy: {
+                        tenants: ['demo-tenant'],
+                        namespaces: ['local'],
+                        environments: ['browser']
+                      },
                       ports: {
                         inputs: [{
                           name: 'mode',
@@ -1220,6 +1229,76 @@ class VisualAuthoringAppJsTest {
                 });
                 const libraryProfileHtml = context.renderLibraryProfilePanel(libraryProfile);
                 const invalidLibraryProfile = context.libraryProfileFromText('{broken');
+                const runtimeRiskProfile = context.operatorLibraryProfile({
+                  libraryId: 'runtime-risk',
+                  operators: [{
+                    operatorRef: 'risk:stream',
+                    display: { name: 'Runtime Risk' },
+                    ports: {
+                      outputs: [{
+                        name: 'output',
+                        schema: { schema: { type: 'object', properties: { ok: { type: 'boolean' } } } }
+                      }]
+                    },
+                    capabilities: { effect: 'READ_EXTERNAL', idempotency: 'IDEMPOTENT', streaming: true },
+                    lowering: { mode: 'native' }
+                  }]
+                });
+                const governanceRiskProfile = context.operatorLibraryProfile({
+                  libraryId: 'governance-risk',
+                  operators: [{
+                    operatorRef: 'risk:write',
+                    display: { name: 'Governance Risk' },
+                    ports: {
+                      outputs: [{
+                        name: 'output',
+                        schema: { schema: { type: 'object', properties: { ok: { type: 'boolean' } } } }
+                      }]
+                    },
+                    capabilities: {
+                      effect: 'WRITE_EXTERNAL',
+                      idempotency: 'NON_IDEMPOTENT',
+                      requiresSecrets: true
+                    },
+                    lowering: { mode: 'native' }
+                  }]
+                });
+                const externalOnlyProfile = context.operatorLibraryProfile({
+                  libraryId: 'external-only',
+                  operators: [{
+                    operatorRef: 'risk:read',
+                    display: { name: 'External Read' },
+                    ports: {
+                      outputs: [{
+                        name: 'output',
+                        schema: { schema: { type: 'object', properties: { ok: { type: 'boolean' } } } }
+                      }]
+                    },
+                    capabilities: { effect: 'READ_EXTERNAL', idempotency: 'IDEMPOTENT' },
+                    lowering: { mode: 'native' }
+                  }]
+                });
+                const policyOnlyProfile = context.operatorLibraryProfile({
+                  libraryId: 'policy-only',
+                  operators: [{
+                    operatorRef: 'risk:tenantScoped',
+                    display: { name: 'Tenant Scoped' },
+                    policies: {
+                      allowedTenants: ['gold', 'silver', 'bronze', 'trial'],
+                      allowedNamespaces: ['lending'],
+                      allowedEnvironments: ['prod']
+                    },
+                    ports: {
+                      outputs: [{
+                        name: 'output',
+                        schema: { schema: { type: 'object', properties: { ok: { type: 'boolean' } } } }
+                      }]
+                    },
+                    capabilities: { effect: 'PURE', idempotency: 'DETERMINISTIC' },
+                    lowering: { mode: 'native' }
+                  }]
+                });
+                const policyOnlyProfileHtml = context.renderLibraryProfilePanel(policyOnlyProfile);
                 const mixedCandidateSummary = context.bindingCandidateSummary([
                   { compatibility: { ok: true, message: '' } },
                   { compatibility: { ok: false, message: 'source type string cannot feed target type integer' } }
@@ -1295,6 +1374,7 @@ class VisualAuthoringAppJsTest {
                   builderHistoryMessage: null,
                   currentDraftId: 'draft-risk',
                   currentDraftRevision: 3,
+                  pendingPublishWarningKey: '',
                   savedDraftSnapshot: null,
                   drafts: [],
                   draftRevisions: [],
@@ -1433,6 +1513,7 @@ class VisualAuthoringAppJsTest {
                 const historyRenderCountAfterUndo = context.renderCount || 0;
                 context.redoBuilderEdit();
                 const historyRedoRestoredX = context.state.builder.nodes[0].x;
+                """, """
                 const historyUndoAfterRedo = context.state.builderHistoryUndo.length;
                 context.clearBuilderHistory('Loaded draft; local edit history cleared.');
                 const historyClearUndo = context.state.builderHistoryUndo.length;
@@ -1529,6 +1610,7 @@ class VisualAuthoringAppJsTest {
                   context.state.visualCheck.diagnostics,
                   'riskNode'
                 );
+                """, """
                 const normalizedOpenApiOperations = context.normalizeOpenApiOperations([
                   {
                     operationId: 'submitOrder',
@@ -1632,6 +1714,7 @@ class VisualAuthoringAppJsTest {
                 const policyByDirectNode = context.diagnosticTargetNodeId({ nodeId: 'policy', target: '/graphName' }, context.state.builder);
                 const riskDiagnosticCount = context.diagnosticsForCanvasNode('riskNode').length;
                 const unescapedPointerSegment = context.jsonPointerUnescape('node~1with~0marker');
+                """, """
                 context.state.activeRunTrace = {
                   nodes: [
                     { nodeId: 'policy', status: 'COMPLETED', diagnosticCount: 0, errorCount: 0, operatorRef: 'bloge:decisionTable' },
@@ -1845,6 +1928,7 @@ class VisualAuthoringAppJsTest {
                 const queuedAssertionModes = queuedAssertions.map((assertion) => assertion.mode).join('|');
                 const queuedAssertionSummary = context.goldenAssertionExpectedSummary(context.state.goldenAssertions[0]);
                 context.state.goldenAssertions = [];
+                """, """
                 context.sourceHandlesForNode = (node) => {
                   if (node.id !== 'riskNode') {
                     return [];
@@ -2085,6 +2169,7 @@ class VisualAuthoringAppJsTest {
                 context.state.builder = originalBuilderAfterImpactProbe;
                 context.state.selectedNodeId = originalSelectedNodeAfterImpactProbe;
 
+                """, """
                 const checks = [
                   ['schema path suffix', context.dslReferenceSuffixForSchemaPath('items.0.score'), '.items[0].score'],
                   ['schema path parse', context.schemaPathFromDslReferenceSuffix('items[0].score'), 'items.0.score'],
@@ -2170,16 +2255,27 @@ class VisualAuthoringAppJsTest {
                   ['library profile streaming operators', libraryProfile.streamingOperatorCount, 1],
                   ['library profile durable operators', libraryProfile.durableOperatorCount, 1],
                   ['library profile external operators', libraryProfile.externalOperatorCount, 1],
+                """, """
                   ['library profile non-idempotent operators', libraryProfile.nonIdempotentOperatorCount, 1],
                   ['library profile secret operators', libraryProfile.secretOperatorCount, 1],
+                  ['library profile policy-restricted operators', libraryProfile.policyRestrictedOperatorCount, 1],
                   ['library profile operator input field count', libraryProfile.operators[0].inputFields.length, 3],
                   ['library profile operator output field count', libraryProfile.operators[0].outputFields.length, 2],
                   ['library profile operator config field count', libraryProfile.operators[0].configFields.length, 1],
                   ['library profile level', context.libraryProfileLevel(libraryProfile), 'warning'],
+                  ['library profile runtime risk level', context.libraryProfileLevel(runtimeRiskProfile), 'warning'],
+                  ['library profile governance risk level', context.libraryProfileLevel(governanceRiskProfile), 'warning'],
+                  ['library profile external-only level', context.libraryProfileLevel(externalOnlyProfile), 'info'],
+                  ['library profile policy-only level', context.libraryProfileLevel(policyOnlyProfile), 'info'],
+                  ['library profile policy-only operators', policyOnlyProfile.policyRestrictedOperatorCount, 1],
+                  ['library profile policy-only summary', policyOnlyProfile.operators[0].policySummary, 'tenants gold, silver, bronze +1; namespaces lending; env prod'],
                   ['library profile html escapes score', String(libraryProfileHtml.includes('Risk &lt;Score&gt;')), 'true'],
                   ['library profile html streaming chip', String(libraryProfileHtml.includes('1 streaming operators')), 'true'],
                   ['library profile html durable chip', String(libraryProfileHtml.includes('1 durable operators')), 'true'],
                   ['library profile html non-idempotent chip', String(libraryProfileHtml.includes('1 non-idempotent operators')), 'true'],
+                  ['library profile html policy chip', String(libraryProfileHtml.includes('1 scope-restricted operators')), 'true'],
+                  ['library profile html policy summary', String(libraryProfileHtml.includes('policy tenants demo-tenant; namespaces local; env browser')), 'true'],
+                  ['library profile policy-only html summary', String(policyOnlyProfileHtml.includes('policy tenants gold, silver, bronze +1; namespaces lending; env prod')), 'true'],
                   ['library profile html includes required input field', String(libraryProfileHtml.includes('inputs.customer.id*')), 'true'],
                   ['library profile html includes unsafe input field', String(libraryProfileHtml.includes('inputs.customer.bad-field !')), 'true'],
                   ['library profile html includes unsafe input port', String(libraryProfileHtml.includes('mode.(root) !')), 'true'],
@@ -2285,6 +2381,7 @@ class VisualAuthoringAppJsTest {
                   ['diagnostic direct node target', policyByDirectNode, 'policy'],
                   ['diagnostic node count', riskDiagnosticCount, 1],
                   ['json pointer unescape', unescapedPointerSegment, 'node/with~marker'],
+                """, """
                   ['run trace node lookup', riskTraceNode.nodeId, 'riskNode'],
                   ['run trace level', riskTraceLevel, 'error'],
                   ['run trace status label', riskTraceStatus, 'COMPLETED'],
@@ -2452,6 +2549,7 @@ class VisualAuthoringAppJsTest {
                     throw new Error(`${label}: expected ${expected}, got ${actual}`);
                   }
                 }
+                """, """
                 quickConnectPromise.then(() => {
                   const asyncChecks = [
                     ['connectability quick server call', quickConnectServerCall, 'riskNode.payload.score -> auditNode.inputs.score'],
@@ -2590,6 +2688,148 @@ class VisualAuthoringAppJsTest {
                     ['rebase loading cleared', context.state.operatorFingerprintRebaseNodeId, '']
                   ];
                   for (const [label, actual, expected] of rebaseChecks) {
+                    if (actual !== expected) {
+                      throw new Error(`${label}: expected ${expected}, got ${actual}`);
+                    }
+                  }
+                  """, """
+                  let publishCallCount = 0;
+                  const publishBodies = [];
+                  const publishMessages = [];
+                  const publishChecks = [];
+                  let publishDraftSnapshotLoads = 0;
+                  let publishDraftListLoads = 0;
+                  let publishPublicationListLoads = 0;
+                  let publishGoldenCaseLoads = 0;
+                  let publishCertificationLoads = 0;
+                  let publishCatalogLoads = 0;
+                  let publishPaletteRenders = 0;
+                  let publishControlRenders = 0;
+                  context.state.currentDraftRevision = 4;
+                  context.state.pendingPublishWarningKey = '';
+                  context.saveCurrentDraft = async () => ({ draftId: 'draft-risk', revision: 4 });
+                  context.fetch = async (url, options = {}) => {
+                    publishCallCount += 1;
+                    publishChecks.push(url);
+                    publishBodies.push(JSON.parse(options.body || '{}'));
+                    if (publishCallCount === 1) {
+                      return {
+                        status: 409,
+                        json: async () => ({
+                          published: false,
+                          diagnostics: [{
+                            level: 'WARNING',
+                            code: 'visual.operator.governance.nonIdempotent',
+                            message: 'Operator requires production promotion review.'
+                          }]
+                        })
+                      };
+                    }
+                    return {
+                      status: 201,
+                      json: async () => ({
+                        published: true,
+                        publication: { publicationId: 'pub-risk' },
+                        diagnostics: []
+                      })
+                    };
+                  };
+                  context.loadCurrentDraftSnapshot = async () => {
+                    publishDraftSnapshotLoads += 1;
+                  };
+                  context.loadDraftList = async () => {
+                    publishDraftListLoads += 1;
+                    return [];
+                  };
+                  context.loadPublicationList = async () => {
+                    publishPublicationListLoads += 1;
+                    return [];
+                  };
+                  context.loadGoldenCases = async () => {
+                    publishGoldenCaseLoads += 1;
+                    return [];
+                  };
+                  context.loadGoldenCertificationStatus = async () => {
+                    publishCertificationLoads += 1;
+                    return null;
+                  };
+                  context.loadVisualOperatorCatalog = async () => {
+                    publishCatalogLoads += 1;
+                    return [];
+                  };
+                  context.renderOperatorPalette = () => {
+                    publishPaletteRenders += 1;
+                  };
+                  context.renderPublicationControls = () => {
+                    publishControlRenders += 1;
+                  };
+                  context.setPublicationMessage = (text, level) => {
+                    publishMessages.push({ text, level });
+                  };
+                  context.setVisualCheck = (message, level, diagnostics = []) => {
+                    context.state.visualCheck = { message, level, diagnostics };
+                  };
+                  context.$ = (id) => {
+                    context.elements[id] = context.elements[id] || { textContent: '', value: '' };
+                    return context.elements[id];
+                  };
+                  return context.publishVisualDraft()
+                    .then(() => {
+                      const firstWarningKey = context.state.pendingPublishWarningKey;
+                      const firstVisualLevel = context.state.visualCheck.level;
+                      const firstVisualMessage = context.state.visualCheck.message;
+                      const warningMessage = publishMessages[0] || {};
+                      return context.publishVisualDraft().then(() => ({
+                        firstBody: publishBodies[0],
+                        secondBody: publishBodies[1],
+                        endpoint: publishChecks[0],
+                        firstWarningKey,
+                        firstVisualLevel,
+                        firstVisualMessage,
+                        warningMessage,
+                        finalWarningKey: context.state.pendingPublishWarningKey,
+                        finalPublicationId: context.state.selectedPublicationId,
+                        successMessage: publishMessages[publishMessages.length - 1] || {},
+                        finalVisualLevel: context.state.visualCheck.level,
+                        outputText: context.elements.output.textContent,
+                        publishDraftSnapshotLoads,
+                        publishDraftListLoads,
+                        publishPublicationListLoads,
+                        publishGoldenCaseLoads,
+                        publishCertificationLoads,
+                        publishCatalogLoads,
+                        publishPaletteRenders,
+                        publishControlRenders
+                      }));
+                    });
+                }).then((publishResult) => {
+                  const publishChecks = [
+                    ['publish endpoint', publishResult.endpoint, '/api/visual/drafts/draft-risk/publish'],
+                    ['publish first expected revision', publishResult.firstBody.expectedRevision, 4],
+                    ['publish first warning ack', publishResult.firstBody.ackWarnings, false],
+                    ['publish pending warning key', publishResult.firstWarningKey, 'draft-risk@4'],
+                    ['publish warning message level', publishResult.warningMessage.level, 'warning'],
+                    ['publish warning message text', publishResult.warningMessage.text, 'Review publish warnings, then click Publish again to continue.'],
+                    ['publish first visual level', publishResult.firstVisualLevel, 'warning'],
+                    ['publish first visual message', publishResult.firstVisualMessage, 'Visual graph was not published.'],
+                    ['publish warning draft snapshot load', publishResult.publishDraftSnapshotLoads, 1],
+                    ['publish warning draft list load', publishResult.publishDraftListLoads, 1],
+                    ['publish second expected revision', publishResult.secondBody.expectedRevision, 4],
+                    ['publish second warning ack', publishResult.secondBody.ackWarnings, true],
+                    ['publish final warning key cleared', publishResult.finalWarningKey, ''],
+                    ['publish selected publication', publishResult.finalPublicationId, 'pub-risk'],
+                    ['publish success message level', publishResult.successMessage.level, 'success'],
+                    ['publish success message text', publishResult.successMessage.text, 'Published pub-risk.'],
+                    ['publish final visual level', publishResult.finalVisualLevel, 'success'],
+                    ['publish publication list load', publishResult.publishPublicationListLoads, 1],
+                    ['publish golden case load', publishResult.publishGoldenCaseLoads, 1],
+                    ['publish certification load', publishResult.publishCertificationLoads, 1],
+                    ['publish catalog load', publishResult.publishCatalogLoads, 1],
+                    ['publish palette render', publishResult.publishPaletteRenders, 1],
+                    ['publish controls render', publishResult.publishControlRenders, 1],
+                    ['publish output payload', String(publishResult.outputText.includes('"published": true')), 'true']
+                  ];
+                  for (const [label, actual, expected] of publishChecks) {
                     if (actual !== expected) {
                       throw new Error(`${label}: expected ${expected}, got ${actual}`);
                     }

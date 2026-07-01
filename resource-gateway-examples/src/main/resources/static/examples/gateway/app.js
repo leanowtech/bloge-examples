@@ -333,6 +333,7 @@ const state = {
   currentDraftId: '',
   currentDraftRevision: 0,
   savedDraftSnapshot: null,
+  pendingPublishWarningKey: '',
   draftRevisions: [],
   selectedDraftRevision: 0,
   previewingDraftRevision: 0,
@@ -2478,6 +2479,9 @@ function renderLibraryProfilePanel(profile) {
   if (profile.secretOperatorCount) {
     warningChips.push(`${profile.secretOperatorCount} secret-bound operators`);
   }
+  if (profile.policyRestrictedOperatorCount) {
+    warningChips.push(`${profile.policyRestrictedOperatorCount} scope-restricted operators`);
+  }
   const warnings = warningChips.length
     ? `<div class="library-profile-flags">${warningChips
       .map((item) => `<span>${escapeHtml(item)}</span>`)
@@ -2493,6 +2497,7 @@ function renderLibraryProfilePanel(profile) {
       ${operator.inputUnionSummary ? `<small class="schema-union-summary">in union ${escapeHtml(operator.inputUnionSummary)}</small>` : ''}
       ${operator.outputUnionSummary ? `<small class="schema-union-summary">out union ${escapeHtml(operator.outputUnionSummary)}</small>` : ''}
       ${operator.configUnionSummary ? `<small class="schema-union-summary">config union ${escapeHtml(operator.configUnionSummary)}</small>` : ''}
+      ${operator.policySummary ? `<small class="schema-union-summary">policy ${escapeHtml(operator.policySummary)}</small>` : ''}
     </div>
   `).join('');
   const remaining = profile.operators.length > 5
@@ -2801,10 +2806,13 @@ function libraryProfileLevel(profile) {
   if (profile.dslUnsafeFieldCount || !profile.operatorCount) {
     return 'warning';
   }
-  if (profile.externalOperatorCount || profile.nonIdempotentOperatorCount || profile.secretOperatorCount) {
-    return 'info';
+  if (profile.streamingOperatorCount
+      || profile.durableOperatorCount
+      || profile.nonIdempotentOperatorCount
+      || profile.secretOperatorCount) {
+    return 'warning';
   }
-  if (profile.streamingOperatorCount || profile.durableOperatorCount) {
+  if (profile.externalOperatorCount || profile.policyRestrictedOperatorCount) {
     return 'info';
   }
   return 'success';
@@ -2839,6 +2847,7 @@ function operatorLibraryProfile(library) {
     accumulator.externalOperatorCount += operator.external ? 1 : 0;
     accumulator.nonIdempotentOperatorCount += operator.nonIdempotent ? 1 : 0;
     accumulator.secretOperatorCount += operator.requiresSecrets ? 1 : 0;
+    accumulator.policyRestrictedOperatorCount += operator.policyRestricted ? 1 : 0;
     return accumulator;
   }, {
     inputPortCount: 0,
@@ -2852,7 +2861,8 @@ function operatorLibraryProfile(library) {
     durableOperatorCount: 0,
     externalOperatorCount: 0,
     nonIdempotentOperatorCount: 0,
-    secretOperatorCount: 0
+    secretOperatorCount: 0,
+    policyRestrictedOperatorCount: 0
   });
   return {
     libraryId: String(library?.libraryId || ''),
@@ -2886,6 +2896,7 @@ function operatorLibraryOperatorProfile(operator) {
   const durable = sourceKind === 'java-suspendable-operator'
     || Boolean(operator?.capabilities?.durable);
   const idempotency = String(operator?.capabilities?.idempotency || '').trim().toUpperCase();
+  const policyProfile = operatorLibraryPolicyProfile(operator?.policy || operator?.policies);
   return {
     label: operator?.display?.name || operator?.operatorRef || 'operator',
     operatorRef: String(operator?.operatorRef || ''),
@@ -2903,6 +2914,8 @@ function operatorLibraryOperatorProfile(operator) {
     external: effect !== 'PURE',
     nonIdempotent: idempotency === 'NON_IDEMPOTENT',
     requiresSecrets: Boolean(operator?.capabilities?.requiresSecrets),
+    policyRestricted: policyProfile.restricted,
+    policySummary: policyProfile.summary,
     inputFields,
     outputFields,
     configFields: configFieldProfiles,
@@ -2910,6 +2923,38 @@ function operatorLibraryOperatorProfile(operator) {
     outputUnionSummary,
     configUnionSummary
   };
+}
+
+function operatorLibraryPolicyProfile(policy) {
+  const tenants = operatorLibraryPolicyScope(policy?.tenants || policy?.allowedTenants);
+  const namespaces = operatorLibraryPolicyScope(policy?.namespaces || policy?.allowedNamespaces);
+  const environments = operatorLibraryPolicyScope(policy?.environments || policy?.allowedEnvironments);
+  const parts = [];
+  if (tenants.restricted) {
+    parts.push(`tenants ${tenants.label}`);
+  }
+  if (namespaces.restricted) {
+    parts.push(`namespaces ${namespaces.label}`);
+  }
+  if (environments.restricted) {
+    parts.push(`env ${environments.label}`);
+  }
+  return {
+    restricted: parts.length > 0,
+    summary: parts.join('; ')
+  };
+}
+
+function operatorLibraryPolicyScope(values) {
+  const normalized = Array.isArray(values)
+    ? values.map((value) => String(value || '').trim()).filter(Boolean)
+    : [];
+  const restricted = normalized.length > 0 && !normalized.includes('*');
+  const visible = normalized.slice(0, 3);
+  const label = visible.length
+    ? `${visible.join(', ')}${normalized.length > visible.length ? ` +${normalized.length - visible.length}` : ''}`
+    : '';
+  return { restricted, label };
 }
 
 function emptyOperatorLibraryPortProfile() {
@@ -3469,19 +3514,34 @@ async function publishVisualDraft() {
     }
     const draftId = stored.draftId;
     const expectedRevision = stored.revision || state.currentDraftRevision || 0;
+    const warningKey = publishWarningAcknowledgementKey(draftId, expectedRevision);
+    const ackWarnings = state.pendingPublishWarningKey === warningKey;
     const response = await fetch(`/api/visual/drafts/${encodeURIComponent(draftId)}/publish`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ expectedRevision })
+      body: JSON.stringify({ expectedRevision, ackWarnings })
     });
     const payload = await response.json();
     const diagnostics = normalizeDiagnostics(payload.diagnostics);
+    const hasWarning = diagnostics.some((diagnostic) =>
+      String(diagnostic?.level || '').toUpperCase() === 'WARNING');
+    const hasError = diagnostics.some((diagnostic) =>
+      String(diagnostic?.level || '').toUpperCase() === 'ERROR');
     if (response.status === 409) {
       await loadCurrentDraftSnapshot();
       await loadDraftList();
+      if (hasWarning && !hasError) {
+        state.pendingPublishWarningKey = warningKey;
+        setPublicationMessage('Review publish warnings, then click Publish again to continue.', 'warning');
+      } else {
+        state.pendingPublishWarningKey = '';
+      }
+    } else if (!payload.published) {
+      state.pendingPublishWarningKey = '';
     }
     const publication = payload.publication || {};
     if (payload.published && publication.publicationId) {
+      state.pendingPublishWarningKey = '';
       state.selectedPublicationId = publication.publicationId;
       await loadPublicationList({ render: false });
       await loadGoldenCases({ render: false });
@@ -3500,6 +3560,10 @@ async function publishVisualDraft() {
   } catch (error) {
     setVisualCheck(error.message, 'error');
   }
+}
+
+function publishWarningAcknowledgementKey(draftId, revision) {
+  return `${String(draftId || '').trim()}@${Number(revision) || 0}`;
 }
 
 async function loadOperatorLibraries(options = {}) {

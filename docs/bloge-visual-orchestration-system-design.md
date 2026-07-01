@@ -688,6 +688,12 @@ operatorRef 会被阻断，same-ref fingerprint drift 会作为 warning 暴露�
 当前运行不依赖最新 catalog，因为 publication 持有 frozen DSL 和 operator snapshots，但 validate 会返回
 publication 级 warning，提示 replay、recertification 或 republish 前需要重新审计。直接删除 library 时，
 如果已有 published artifact 引用了该库内 operatorRef，服务端要求 `force=true` 才允许删除。
+导入阶段还会 warning-gate capability 和治理风险：streaming/durable 算子可以被显式确认后进入 catalog，
+但当前 request-response runtime 会阻断使用它们的 draft；secret-backed execution 和
+`NON_IDEMPOTENT` 外部副作用也必须经 `ackWarnings=true` 确认后才会写入。
+发布阶段同样 warning-gate production promotion：stored draft validate 如果只返回
+warning-level diagnostics，`/api/visual/drafts/{draftId}/publish` 会先返回 `409`，
+要求作者审阅并携带 `ackWarnings=true` 后才写入 immutable publication。
 validate、warning-gated import/replace 和 delete conflict 响应会返回
 `bloge.visualOperatorLibraryImpact.v1`，按 error/warning、affected draft、
 affected draft node target、publication、operatorRef 和 diagnostic code 给出机器可消费的影响摘要。
@@ -716,7 +722,7 @@ fingerprint snapshot；普通保存和 PATCH 仍保留既有 snapshot，避免�
 | `POST` | `/api/visual/drafts/{draftId}/validate` | 增量或全量校验 |
 | `POST` | `/api/visual/drafts/{draftId}/compile` | 生成 DSL 并编译 |
 | `POST` | `/api/visual/drafts/{draftId}/run` | 使用测试 context 运行 |
-| `POST` | `/api/visual/drafts/{draftId}/publish` | 发布为 graph version |
+| `POST` | `/api/visual/drafts/{draftId}/publish` | 发布为 graph version；warning-level diagnostics 需 `ackWarnings=true` 后才写入 |
 
 ### 12.3 Runtime / Trace API
 
@@ -1068,8 +1074,10 @@ resource-gateway 已有 rate limiting、cache、circuit breaker，可以作为�
 前再次阻断不匹配的 operator。它也已经把 streaming/durable runtime capability
 纳入 `OperatorDefinition` fingerprint，并在当前 request-response visual runtime 中阻断
 `streaming=true` 或 `durable=true` 的 operator；对 `NON_IDEMPOTENT` 外部副作用算子会给出
-production promotion 前需要 review/audit control 的 warning。完整 RBAC、secret 权限和真正的 durable
-runtime authoring/instance 管理仍属于后续治理层增强。
+production promotion 前需要 review/audit control 的 warning。用户算子库导入阶段也会对
+streaming/durable、secret-backed execution 和 non-idempotent external effect 发出
+warning-gated diagnostics，避免高风险 operator 未经审阅进入 catalog。完整 RBAC、secret 权限和真正的
+durable runtime authoring/instance 管理仍属于后续治理层增强。
 
 ### 19.3 新增
 

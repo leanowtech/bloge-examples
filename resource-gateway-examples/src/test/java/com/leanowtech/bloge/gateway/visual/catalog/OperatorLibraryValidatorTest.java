@@ -145,6 +145,54 @@ class OperatorLibraryValidatorTest {
     }
 
     @Test
+    void warnsWhenImportedOperatorRequiresStreamingOrDurableRuntime() {
+        OperatorDefinition operator = operatorWithCapabilities(new OperatorDefinition.Capabilities(
+                "READ_EXTERNAL", "IDEMPOTENT", true, true, false));
+
+        VisualValidationResult result = validator.validate(libraryWith(operator));
+
+        assertThat(result.valid()).as(result.diagnostics().toString()).isTrue();
+        assertThat(result.diagnostics())
+                .anySatisfy(diagnostic -> {
+                    assertThat(diagnostic.level()).isEqualTo("WARNING");
+                    assertThat(diagnostic.code())
+                            .isEqualTo("visual.operator.capability.streamingRequiresRuntime");
+                    assertThat(diagnostic.message()).contains("streaming=true").contains("request-response");
+                    assertThat(diagnostic.target()).isEqualTo("/operators/0/capabilities/streaming");
+                })
+                .anySatisfy(diagnostic -> {
+                    assertThat(diagnostic.level()).isEqualTo("WARNING");
+                    assertThat(diagnostic.code())
+                            .isEqualTo("visual.operator.capability.durableRequiresRuntime");
+                    assertThat(diagnostic.message()).contains("durable=true").contains("durable/suspendable");
+                    assertThat(diagnostic.target()).isEqualTo("/operators/0/capabilities/durable");
+                });
+    }
+
+    @Test
+    void warnsWhenImportedOperatorRequiresSecretOrNonIdempotentGovernance() {
+        OperatorDefinition operator = operatorWithCapabilities(new OperatorDefinition.Capabilities(
+                "WRITE_EXTERNAL", "NON_IDEMPOTENT", false, false, true));
+
+        VisualValidationResult result = validator.validate(libraryWith(operator));
+
+        assertThat(result.valid()).as(result.diagnostics().toString()).isTrue();
+        assertThat(result.diagnostics())
+                .anySatisfy(diagnostic -> {
+                    assertThat(diagnostic.level()).isEqualTo("WARNING");
+                    assertThat(diagnostic.code()).isEqualTo("visual.operator.governance.requiresSecrets");
+                    assertThat(diagnostic.message()).contains("secretRef").contains("access controls");
+                    assertThat(diagnostic.target()).isEqualTo("/operators/0/capabilities/requiresSecrets");
+                })
+                .anySatisfy(diagnostic -> {
+                    assertThat(diagnostic.level()).isEqualTo("WARNING");
+                    assertThat(diagnostic.code()).isEqualTo("visual.operator.governance.nonIdempotent");
+                    assertThat(diagnostic.message()).contains("non-idempotent").contains("retry");
+                    assertThat(diagnostic.target()).isEqualTo("/operators/0/capabilities/idempotency");
+                });
+    }
+
+    @Test
     void acceptsCanonicalizedLoweringMode() {
         OperatorDefinition base = VisualCatalogTestSupport.eligibilityOperator("integer");
         OperatorDefinition operator = new OperatorDefinition(
@@ -3972,6 +4020,23 @@ class OperatorLibraryValidatorTest {
                 "risk-team",
                 "ACTIVE",
                 List.of(operator)
+        );
+    }
+
+    private static OperatorDefinition operatorWithCapabilities(OperatorDefinition.Capabilities capabilities) {
+        OperatorDefinition base = VisualCatalogTestSupport.eligibilityOperator("integer");
+        return new OperatorDefinition(
+                base.schemaVersion(),
+                base.operatorRef(),
+                base.operatorVersion(),
+                base.display(),
+                base.source(),
+                base.ports(),
+                base.configSchema(),
+                capabilities,
+                base.policy(),
+                base.lowering(),
+                base.diagnostics()
         );
     }
 

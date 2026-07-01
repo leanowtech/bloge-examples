@@ -413,7 +413,7 @@ public class VisualGraphDraftController {
      * Publishes a stored draft as an immutable visual graph artifact.
      *
      * @param draftId draft id
-     * @param request optional revision precondition
+     * @param request optional revision precondition and warning acknowledgement
      * @return publication result
      */
     @PostMapping("/{draftId}/publish")
@@ -421,7 +421,10 @@ public class VisualGraphDraftController {
                                                                 @RequestBody(required = false)
                                                                 VisualGraphPublishRequest request) {
         return repository.find(draftId)
-                .map(draft -> publishDraft(draftId, request == null ? 0 : request.expectedRevision(), draft))
+                .map(draft -> publishDraft(draftId,
+                        request == null ? 0 : request.expectedRevision(),
+                        request != null && request.ackWarnings(),
+                        draft))
                 .orElseGet(() -> ResponseEntity.notFound().build());
     }
 
@@ -439,6 +442,7 @@ public class VisualGraphDraftController {
 
     private ResponseEntity<VisualGraphPublicationResult> publishDraft(String draftId,
                                                                       long expectedRevision,
+                                                                      boolean ackWarnings,
                                                                       GraphDraft draft) {
         if (expectedRevision > 0 && expectedRevision != draft.revision()) {
             return publishConflictResponse(draftId, expectedRevision, draft);
@@ -446,6 +450,10 @@ public class VisualGraphDraftController {
         VisualValidationResult validation = validator.validate(draft);
         if (!validation.valid()) {
             return ResponseEntity.badRequest()
+                    .body(VisualGraphPublicationResult.rejected(validation.diagnostics()));
+        }
+        if (!ackWarnings && containsWarnings(validation.diagnostics())) {
+            return ResponseEntity.status(HttpStatus.CONFLICT)
                     .body(VisualGraphPublicationResult.rejected(validation.diagnostics()));
         }
         DslGenerationResult generation = runner.compile(draft);
@@ -463,6 +471,11 @@ public class VisualGraphDraftController {
         ));
         return ResponseEntity.status(HttpStatus.CREATED)
                 .body(VisualGraphPublicationResult.published(publication));
+    }
+
+    private static boolean containsWarnings(List<VisualDiagnostic> diagnostics) {
+        return diagnostics.stream()
+                .anyMatch(diagnostic -> "WARNING".equalsIgnoreCase(diagnostic.level()));
     }
 
     private ResponseEntity<VisualGraphPublicationResult> publishConflictResponse(String draftId,

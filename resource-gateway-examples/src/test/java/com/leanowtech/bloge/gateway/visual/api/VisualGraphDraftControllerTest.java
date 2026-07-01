@@ -1090,6 +1090,64 @@ class VisualGraphDraftControllerTest {
     }
 
     @Test
+    void publishRequiresWarningAcknowledgementBeforeProductionPromotion() {
+        DefaultVisualOperatorCatalog catalog = VisualCatalogTestSupport.catalogWithLibrary(
+                eligibilityLibraryWithCapabilities(new OperatorDefinition.Capabilities(
+                        "WRITE_EXTERNAL", "NON_IDEMPOTENT", false, false, false)));
+        InMemoryGraphDraftRepository drafts = new InMemoryGraphDraftRepository();
+        InMemoryVisualGraphPublicationRepository publications = new InMemoryVisualGraphPublicationRepository();
+        VisualGraphDraftController controller = controllerWithCatalog(catalog, drafts, publications);
+        GraphDraft stored = controller.create(eligibilityDraft(graphInputSchema(
+                Map.of(
+                        "score", Map.of("type", "integer"),
+                        "amount", Map.of("type", "number")
+                )
+        )));
+
+        ResponseEntity<VisualGraphPublicationResult> response = controller.publish(stored.draftId(),
+                new VisualGraphPublishRequest(stored.revision()));
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.CONFLICT);
+        assertThat(response.getBody()).isNotNull();
+        assertThat(response.getBody().published()).isFalse();
+        assertThat(response.getBody().diagnostics())
+                .anySatisfy(diagnostic -> {
+                    assertThat(diagnostic.level()).isEqualTo("WARNING");
+                    assertThat(diagnostic.code()).isEqualTo("visual.operator.governance.nonIdempotent");
+                    assertThat(diagnostic.message()).contains("production promotion");
+                });
+        assertThat(publications.all()).isEmpty();
+    }
+
+    @Test
+    void publishStoresWarningDraftWhenWarningsAcknowledged() {
+        DefaultVisualOperatorCatalog catalog = VisualCatalogTestSupport.catalogWithLibrary(
+                eligibilityLibraryWithCapabilities(new OperatorDefinition.Capabilities(
+                        "WRITE_EXTERNAL", "NON_IDEMPOTENT", false, false, false)));
+        InMemoryGraphDraftRepository drafts = new InMemoryGraphDraftRepository();
+        InMemoryVisualGraphPublicationRepository publications = new InMemoryVisualGraphPublicationRepository();
+        VisualGraphDraftController controller = controllerWithCatalog(catalog, drafts, publications);
+        GraphDraft stored = controller.create(eligibilityDraft(graphInputSchema(
+                Map.of(
+                        "score", Map.of("type", "integer"),
+                        "amount", Map.of("type", "number")
+                )
+        )));
+
+        ResponseEntity<VisualGraphPublicationResult> response = controller.publish(stored.draftId(),
+                new VisualGraphPublishRequest(stored.revision(), true));
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.CREATED);
+        VisualGraphPublicationResult result = response.getBody();
+        assertThat(result).isNotNull();
+        assertThat(result.published()).isTrue();
+        assertThat(result.publication().validation().diagnostics())
+                .anySatisfy(diagnostic ->
+                        assertThat(diagnostic.code()).isEqualTo("visual.operator.governance.nonIdempotent"));
+        assertThat(publications.find(result.publication().publicationId())).contains(result.publication());
+    }
+
+    @Test
     void publishRejectsStaleExpectedRevision() {
         DefaultVisualOperatorCatalog catalog = VisualCatalogTestSupport.catalogWithLibrary(
                 VisualCatalogTestSupport.eligibilityLibrary("integer"));
@@ -1183,6 +1241,32 @@ class VisualGraphDraftControllerTest {
     private static DefaultVisualOperatorCatalog eligibilityCatalog() {
         return VisualCatalogTestSupport.catalogWithLibrary(
                 VisualCatalogTestSupport.eligibilityLibrary("integer"));
+    }
+
+    private static OperatorLibrary eligibilityLibraryWithCapabilities(OperatorDefinition.Capabilities capabilities) {
+        OperatorDefinition base = VisualCatalogTestSupport.eligibilityOperator("integer");
+        OperatorDefinition operator = new OperatorDefinition(
+                base.schemaVersion(),
+                base.operatorRef(),
+                base.operatorVersion(),
+                base.display(),
+                base.source(),
+                base.ports(),
+                base.configSchema(),
+                capabilities,
+                base.policy(),
+                base.lowering(),
+                base.diagnostics()
+        );
+        return new OperatorLibrary(
+                "bloge.visualOperatorLibrary.v1",
+                "risk-policy",
+                "Risk policy operators",
+                "1.0.0",
+                "risk-team",
+                "ACTIVE",
+                List.of(operator)
+        );
     }
 
     private static DefaultVisualOperatorCatalog emptyCatalog() {

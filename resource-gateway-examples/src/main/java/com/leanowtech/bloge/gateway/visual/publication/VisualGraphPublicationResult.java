@@ -9,7 +9,7 @@ import java.util.List;
  *
  * @param published whether publication succeeded
  * @param publication immutable artifact when publication succeeded
- * @param diagnostics validation/generation diagnostics when publication failed
+ * @param diagnostics validation/generation diagnostics when publication failed or requires review
  */
 public record VisualGraphPublicationResult(
         boolean published,
@@ -33,7 +33,7 @@ public record VisualGraphPublicationResult(
     }
 
     /**
-     * @param diagnostics blocking diagnostics
+     * @param diagnostics rejection diagnostics
      * @return rejected result
      */
     public static VisualGraphPublicationResult rejected(List<VisualDiagnostic> diagnostics) {

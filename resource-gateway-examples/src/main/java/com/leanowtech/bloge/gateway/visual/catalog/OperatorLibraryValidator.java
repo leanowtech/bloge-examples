@@ -285,6 +285,31 @@ public class OperatorLibraryValidator {
                                     SUPPORTED_CAPABILITY_IDEMPOTENCY),
                     path + "/idempotency"));
         }
+        if (capabilities.streaming()) {
+            diagnostics.add(VisualDiagnostic.warning("visual.operator.capability.streamingRequiresRuntime",
+                    "Operator '%s' declares streaming=true; the current visual authoring runtime is request-response only, so drafts using this operator will be blocked until a streaming runtime is enabled."
+                            .formatted(operator.operatorRef()),
+                    path + "/streaming"));
+        }
+        if (capabilities.durable()) {
+            diagnostics.add(VisualDiagnostic.warning("visual.operator.capability.durableRequiresRuntime",
+                    "Operator '%s' declares durable=true; the current visual authoring runtime is request-response only, so drafts using this operator will be blocked until durable/suspendable execution is enabled."
+                            .formatted(operator.operatorRef()),
+                    path + "/durable"));
+        }
+        if (capabilities.requiresSecrets()) {
+            diagnostics.add(VisualDiagnostic.warning("visual.operator.governance.requiresSecrets",
+                    "Operator '%s' requires secret-backed execution; review secretRef binding and access controls before importing this operator library."
+                            .formatted(operator.operatorRef()),
+                    path + "/requiresSecrets"));
+        }
+        if (!"PURE".equals(capabilities.effect())
+                && "NON_IDEMPOTENT".equals(capabilities.idempotency())) {
+            diagnostics.add(VisualDiagnostic.warning("visual.operator.governance.nonIdempotent",
+                    "Operator '%s' declares non-idempotent side effects; review retry, audit, and approval controls before importing this operator library."
+                            .formatted(operator.operatorRef()),
+                    path + "/idempotency"));
+        }
     }
 
     private static void validatePolicy(OperatorDefinition operator,
