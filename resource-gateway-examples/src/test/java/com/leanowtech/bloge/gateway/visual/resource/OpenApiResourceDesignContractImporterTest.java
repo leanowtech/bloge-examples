@@ -163,7 +163,7 @@ class OpenApiResourceDesignContractImporterTest {
     }
 
     @Test
-    void warnsWhenOpenApiSecurityCannotBeMappedToDescriptorAuth() {
+    void warnsWhenOauth2SecurityCannotBeMappedToDescriptorAuth() {
         OpenApiResourceDesignContractImportResult result = importer.project(
                 request("order-service.listOrders", "listOrders", null, null,
                         openApiWithSecurity(
@@ -171,7 +171,16 @@ class OpenApiResourceDesignContractImporterTest {
                                 null,
                                 Map.of("OAuth", Map.of(
                                         "type", "oauth2",
-                                        "flows", Map.of()
+                                        "flows", Map.of(
+                                                "authorizationCode", Map.of(
+                                                        "authorizationUrl", "https://idp.example.test/auth",
+                                                        "tokenUrl", "https://idp.example.test/token",
+                                                        "scopes", Map.of(
+                                                                "orders:read", "Read orders",
+                                                                "orders:write", "Write orders"
+                                                        )
+                                                )
+                                        )
                                 ))
                         ))
         );
@@ -180,7 +189,76 @@ class OpenApiResourceDesignContractImporterTest {
         assertThat(result.descriptorSuggestion().authStrategy()).isNull();
         assertThat(result.validation().diagnostics())
                 .extracting("code")
-                .contains("visual.resourceContract.openapi.securitySchemeUnsupported");
+                .contains("visual.resourceContract.openapi.oauth2DescriptorUnsupported");
+        assertThat(result.validation().diagnostics())
+                .filteredOn(diagnostic -> "visual.resourceContract.openapi.oauth2DescriptorUnsupported"
+                        .equals(diagnostic.code()))
+                .singleElement()
+                .satisfies(diagnostic -> {
+                    assertThat(diagnostic.message())
+                            .contains("authorizationCode")
+                            .contains("orders:read")
+                            .contains("orders:write");
+                    assertThat(diagnostic.target())
+                            .isEqualTo("/openApi/components/securitySchemes/OAuth/flows");
+                });
+    }
+
+    @Test
+    void warnsWhenOpenIdConnectSecurityCannotBeMappedToDescriptorAuth() {
+        OpenApiResourceDesignContractImportResult result = importer.project(
+                request("order-service.listOrders", "listOrders", null, null,
+                        openApiWithSecurity(
+                                List.of(Map.of("Oidc", List.of("orders:read"))),
+                                null,
+                                Map.of("Oidc", Map.of(
+                                        "type", "openIdConnect",
+                                        "openIdConnectUrl", "https://idp.example.test/.well-known/openid-configuration"
+                                ))
+                        ))
+        );
+
+        assertThat(result.validation().valid()).isTrue();
+        assertThat(result.descriptorSuggestion().authStrategy()).isNull();
+        assertThat(result.validation().diagnostics())
+                .filteredOn(diagnostic -> "visual.resourceContract.openapi.openIdConnectDescriptorUnsupported"
+                        .equals(diagnostic.code()))
+                .singleElement()
+                .satisfies(diagnostic -> {
+                    assertThat(diagnostic.message())
+                            .contains("discovery URL")
+                            .contains("https://idp.example.test/.well-known/openid-configuration");
+                    assertThat(diagnostic.target())
+                            .isEqualTo("/openApi/components/securitySchemes/Oidc/openIdConnectUrl");
+                });
+    }
+
+    @Test
+    void warnsWhenMutualTlsSecurityCannotBeMappedToDescriptorAuth() {
+        OpenApiResourceDesignContractImportResult result = importer.project(
+                request("order-service.listOrders", "listOrders", null, null,
+                        openApiWithSecurity(
+                                List.of(Map.of("ClientCertificate", List.of())),
+                                null,
+                                Map.of("ClientCertificate", Map.of(
+                                        "type", "mutualTLS"
+                                ))
+                        ))
+        );
+
+        assertThat(result.validation().valid()).isTrue();
+        assertThat(result.descriptorSuggestion().authStrategy()).isNull();
+        assertThat(result.validation().diagnostics())
+                .filteredOn(diagnostic -> "visual.resourceContract.openapi.mutualTlsDescriptorUnsupported"
+                        .equals(diagnostic.code()))
+                .singleElement()
+                .satisfies(diagnostic -> {
+                    assertThat(diagnostic.message())
+                            .contains("client certificate")
+                            .contains("request-level bearer, basic, or header apiKey");
+                    assertThat(diagnostic.target())
+                            .isEqualTo("/openApi/components/securitySchemes/ClientCertificate/type");
+                });
     }
 
     @Test

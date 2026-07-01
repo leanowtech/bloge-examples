@@ -753,10 +753,12 @@ servers plus path are projected into `urlTemplate`, path/query parameters become
 header names), cookie parameters become dynamic `cookieExpressions`, JSON request
 bodies become `ctx.params.body`, common OpenAPI security schemes become
 review-only auth suggestions (`http` bearer/basic and header `apiKey`, using
-placeholder credentials), and standard JSON headers plus HTTP-status response
-handling are filled in. Advanced security schemes remain in the design contract
-but are reported as descriptor-suggestion warnings when they cannot be
-represented by the runtime descriptor. When the resource already has a stored
+placeholder credentials), while OAuth2, OpenID Connect, and mutualTLS schemes
+produce explicit descriptor-suggestion warnings instead of unsafe runtime auth
+guesses. Standard JSON headers plus HTTP-status response handling are filled in.
+Advanced security schemes remain in the design contract but are reported as
+descriptor-suggestion warnings when they cannot be represented by the runtime
+descriptor. When the resource already has a stored
 design contract or registered runtime descriptor, the preview also returns
 review diagnostics for request/response schema drift, contract metadata drift,
 and descriptor field drift before authors save replacements. The endpoint then runs the same registry-aware validation

@@ -959,6 +959,18 @@ public class OpenApiResourceDesignContractImporter {
         if ("apikey".equals(type)) {
             return apiKeyAuthStrategy(scheme, diagnostics);
         }
+        if ("oauth2".equals(type)) {
+            warnOauth2DescriptorUnsupported(scheme, diagnostics);
+            return Optional.empty();
+        }
+        if ("openidconnect".equals(type)) {
+            warnOpenIdConnectDescriptorUnsupported(scheme, diagnostics);
+            return Optional.empty();
+        }
+        if ("mutualtls".equals(type)) {
+            warnMutualTlsDescriptorUnsupported(scheme, diagnostics);
+            return Optional.empty();
+        }
         diagnostics.add(VisualDiagnostic.warning("visual.resourceContract.openapi.securitySchemeUnsupported",
                 "OpenAPI security scheme '%s' has unsupported type '%s'; descriptorSuggestion leaves authStrategy empty."
                         .formatted(scheme.name(), blank(type) ? "<blank>" : type),
@@ -1000,6 +1012,62 @@ public class OpenApiResourceDesignContractImporter {
                         .formatted(scheme.name(), blank(location) ? "<blank>" : location),
                 scheme.target() + "/in"));
         return Optional.empty();
+    }
+
+    private void warnOauth2DescriptorUnsupported(OpenApiSecurityScheme scheme,
+                                                 List<VisualDiagnostic> diagnostics) {
+        List<String> flows = oauth2FlowNames(scheme);
+        List<String> scopes = oauth2Scopes(scheme);
+        diagnostics.add(VisualDiagnostic.warning("visual.resourceContract.openapi.oauth2DescriptorUnsupported",
+                "OpenAPI OAuth2 security scheme '%s' declares flows %s and scopes %s; ResourceDescriptor cannot acquire OAuth tokens, so descriptorSuggestion leaves authStrategy empty."
+                        .formatted(scheme.name(), flows, scopes),
+                scheme.target() + "/flows"));
+    }
+
+    private List<String> oauth2FlowNames(OpenApiSecurityScheme scheme) {
+        Object rawFlows = scheme.scheme().get("flows");
+        if (!(rawFlows instanceof Map<?, ?> flows)) {
+            return List.of();
+        }
+        return objectMap(flows).keySet().stream().sorted().toList();
+    }
+
+    private List<String> oauth2Scopes(OpenApiSecurityScheme scheme) {
+        Object rawFlows = scheme.scheme().get("flows");
+        if (!(rawFlows instanceof Map<?, ?> flows)) {
+            return List.of();
+        }
+        Set<String> scopes = new LinkedHashSet<>();
+        for (Object flowValue : flows.values()) {
+            if (!(flowValue instanceof Map<?, ?> flow)) {
+                continue;
+            }
+            Object rawScopes = flow.get("scopes");
+            if (rawScopes instanceof Map<?, ?> scopeMap) {
+                scopeMap.keySet().forEach(scope -> scopes.add(String.valueOf(scope)));
+            }
+        }
+        return scopes.stream().sorted().toList();
+    }
+
+    private void warnOpenIdConnectDescriptorUnsupported(OpenApiSecurityScheme scheme,
+                                                        List<VisualDiagnostic> diagnostics) {
+        String discoveryUrl = string(scheme.scheme().get("openIdConnectUrl"));
+        String detail = discoveryUrl.isBlank()
+                ? "without a discovery URL"
+                : "with discovery URL '%s'".formatted(discoveryUrl);
+        diagnostics.add(VisualDiagnostic.warning("visual.resourceContract.openapi.openIdConnectDescriptorUnsupported",
+                "OpenAPI OpenID Connect security scheme '%s' declares %s; ResourceDescriptor cannot perform identity-provider discovery or token acquisition, so descriptorSuggestion leaves authStrategy empty."
+                        .formatted(scheme.name(), detail),
+                scheme.target() + (discoveryUrl.isBlank() ? "/type" : "/openIdConnectUrl")));
+    }
+
+    private void warnMutualTlsDescriptorUnsupported(OpenApiSecurityScheme scheme,
+                                                    List<VisualDiagnostic> diagnostics) {
+        diagnostics.add(VisualDiagnostic.warning("visual.resourceContract.openapi.mutualTlsDescriptorUnsupported",
+                "OpenAPI mutualTLS security scheme '%s' requires client certificate transport configuration; ResourceDescriptor authStrategy only models request-level bearer, basic, or header apiKey credentials."
+                        .formatted(scheme.name()),
+                scheme.target() + "/type"));
     }
 
     private void warnAuthPlaceholder(OpenApiSecurityScheme scheme,
