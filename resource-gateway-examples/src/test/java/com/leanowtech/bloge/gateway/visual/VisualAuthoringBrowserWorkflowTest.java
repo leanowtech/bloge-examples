@@ -298,6 +298,12 @@ class VisualAuthoringBrowserWorkflowTest {
         assertThat((Map<String, Object>) runStats.get("bySourceKind"))
                 .containsEntry("STORED_DRAFT", 1)
                 .containsEntry("PUBLICATION", 4);
+
+        Map<String, Object> nodeStats = getMap("/api/visual/runs/node-stats?graphName=browserSmokePolicy&limit=10");
+        assertThat(nodeStats)
+                .containsEntry("schemaVersion", "bloge.visualGraphRunNodeStats.v1")
+                .containsEntry("totalRuns", 5);
+        assertThat((Collection<?>) nodeStats.get("nodes")).isNotEmpty();
     }
 
     private void assertBrowserAssetsExposeVisualWorkflowEntrypoints() {
@@ -341,7 +347,9 @@ class VisualAuthoringBrowserWorkflowTest {
                 .contains("draft-bundle-json")
                 .contains("run-history-list")
                 .contains("run-history-stats")
+                .contains("run-history-node-stats")
                 .contains("/api/visual/runs/${encodeURIComponent(runId)}/trace")
+                .contains("/api/visual/runs/node-stats")
                 .contains("activeRunTrace")
                 .contains("runTraceCanvasCoverage")
                 .contains("runTraceCoverageText")

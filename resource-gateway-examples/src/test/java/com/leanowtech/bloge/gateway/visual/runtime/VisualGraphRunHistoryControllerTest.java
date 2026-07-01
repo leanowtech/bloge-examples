@@ -74,6 +74,70 @@ class VisualGraphRunHistoryControllerTest {
     }
 
     @Test
+    void nodeStatsSummarizeFilteredRunRecords() {
+        InMemoryVisualGraphRunRepository repository = new InMemoryVisualGraphRunRepository();
+        repository.create(traceRecord(true, 25,
+                Map.of("loanPolicy", "COMPLETED", "response", "COMPLETED"),
+                List.of(
+                        VisualDiagnostic.warning("bloge.dsl", "Policy expression uses a legacy form.",
+                                "/nodes/loanPolicy/expression"),
+                        VisualDiagnostic.error("visual.operator.fingerprintMissing",
+                                "Response operator fingerprint is missing.", "/nodes/1/operatorRef")
+                )));
+        repository.create(traceRecord(false, 75,
+                Map.of("loanPolicy", "FAILED", "response", "SKIPPED"),
+                List.of(VisualDiagnostic.error("visual.runtime.nodeFailed",
+                        "Loan policy failed.", "/draft/nodes/0/runtime"))));
+        repository.create(record("draft-2", VisualGraphRunRecord.SOURCE_PUBLICATION, "publication-1",
+                true, true, 5));
+        VisualGraphRunHistoryController controller = new VisualGraphRunHistoryController(repository);
+
+        VisualGraphRunNodeStats stats = controller.nodeStats("stored_draft", "draft-1", null,
+                "visualPolicy", null, null);
+
+        assertThat(stats.schemaVersion()).isEqualTo(VisualGraphRunNodeStats.SCHEMA_VERSION);
+        assertThat(stats.totalRuns()).isEqualTo(2);
+        assertThat(stats.nodes())
+                .extracting(VisualGraphRunNodeStats.NodeStats::nodeId)
+                .containsExactly("loanPolicy", "response");
+        VisualGraphRunNodeStats.NodeStats loanPolicy = stats.nodes().stream()
+                .filter(node -> node.nodeId().equals("loanPolicy"))
+                .findFirst()
+                .orElseThrow();
+        assertThat(loanPolicy.nodeIndex()).isZero();
+        assertThat(loanPolicy.operatorRef()).isEqualTo("risk:loanPolicy");
+        assertThat(loanPolicy.label()).isEqualTo("Loan Policy");
+        assertThat(loanPolicy.runCount()).isEqualTo(2);
+        assertThat(loanPolicy.successfulRuns()).isEqualTo(1);
+        assertThat(loanPolicy.failedRuns()).isEqualTo(1);
+        assertThat(loanPolicy.statusKnownRuns()).isEqualTo(2);
+        assertThat(loanPolicy.resultKnownRuns()).isEqualTo(2);
+        assertThat(loanPolicy.outputSelectedRuns()).isZero();
+        assertThat(loanPolicy.diagnosticCount()).isEqualTo(2);
+        assertThat(loanPolicy.errorCount()).isEqualTo(1);
+        assertThat(loanPolicy.p50ObservedElapsedMs()).isEqualTo(25);
+        assertThat(loanPolicy.p95ObservedElapsedMs()).isEqualTo(75);
+        assertThat(loanPolicy.maxObservedElapsedMs()).isEqualTo(75);
+        assertThat(loanPolicy.statusCounts())
+                .containsEntry("COMPLETED", 1)
+                .containsEntry("FAILED", 1);
+        assertThat(loanPolicy.firstSeenAt()).isNotNull();
+        assertThat(loanPolicy.latestSeenAt()).isNotNull();
+
+        VisualGraphRunNodeStats.NodeStats response = stats.nodes().stream()
+                .filter(node -> node.nodeId().equals("response"))
+                .findFirst()
+                .orElseThrow();
+        assertThat(response.nodeIndex()).isEqualTo(1);
+        assertThat(response.outputSelectedRuns()).isEqualTo(2);
+        assertThat(response.diagnosticCount()).isEqualTo(1);
+        assertThat(response.errorCount()).isEqualTo(1);
+        assertThat(response.statusCounts())
+                .containsEntry("COMPLETED", 1)
+                .containsEntry("SKIPPED", 1);
+    }
+
+    @Test
     void traceReturnsShapeOnlyNodeReplayView() {
         InMemoryVisualGraphRunRepository repository = new InMemoryVisualGraphRunRepository();
         VisualGraphRunRecord stored = repository.create(traceRecord());
@@ -182,6 +246,20 @@ class VisualGraphRunHistoryControllerTest {
     }
 
     private static VisualGraphRunRecord traceRecord() {
+        return traceRecord(true, 25,
+                Map.of("loanPolicy", "COMPLETED", "response", "COMPLETED"),
+                List.of(
+                        VisualDiagnostic.warning("bloge.dsl", "Policy expression uses a legacy form.",
+                                "/nodes/loanPolicy/expression"),
+                        VisualDiagnostic.error("visual.operator.fingerprintMissing",
+                                "Response operator fingerprint is missing.", "/nodes/1/operatorRef")
+                ));
+    }
+
+    private static VisualGraphRunRecord traceRecord(boolean success,
+                                                    long elapsedMs,
+                                                    Map<String, String> statusMap,
+                                                    List<VisualDiagnostic> diagnostics) {
         GraphDraft draft = new GraphDraft(
                 "",
                 "draft-1",
@@ -205,7 +283,7 @@ class VisualGraphRunHistoryControllerTest {
         VisualGraphRunResponse response = new VisualGraphRunResponse(
                 true,
                 true,
-                true,
+                success,
                 "visualPolicy",
                 "response",
                 Map.of("approved", true),
@@ -213,15 +291,12 @@ class VisualGraphRunHistoryControllerTest {
                         "loanPolicy", Map.of("decision", "approved", "rate", 3.5),
                         "response", Map.of("approved", true, "policy", Map.of("decision", "approved"))
                 ),
-                Map.of("loanPolicy", "COMPLETED", "response", "COMPLETED"),
-                25,
-                List.of(
-                        VisualDiagnostic.warning("bloge.dsl", "Policy expression uses a legacy form.",
-                                "/nodes/loanPolicy/expression"),
-                        VisualDiagnostic.error("visual.operator.fingerprintMissing",
-                                "Response operator fingerprint is missing.", "/nodes/1/operatorRef")
-                ),
-                List.of("Response operator fingerprint is missing."),
+                statusMap,
+                elapsedMs,
+                diagnostics,
+                diagnostics.stream().filter(VisualDiagnostic::error)
+                        .map(VisualDiagnostic::message)
+                        .toList(),
                 null,
                 null,
                 "graph visualPolicy {}"

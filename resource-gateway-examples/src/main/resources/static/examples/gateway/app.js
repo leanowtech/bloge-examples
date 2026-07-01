@@ -356,6 +356,7 @@ const state = {
   },
   runHistoryMessage: null,
   runHistoryStats: null,
+  runHistoryNodeStats: null,
   activeRunTrace: null,
   activeRunTraceId: '',
   visualCheck: {
@@ -1071,6 +1072,7 @@ function renderInputForm() {
         </div>
         <div id="run-history-status" class="draft-status" hidden></div>
         <div id="run-history-stats" class="run-history-stats"></div>
+        <div id="run-history-node-stats" class="run-history-node-stats"></div>
         <div id="run-history-list" class="run-history-list"></div>
       </div>
       <div id="selected-operator-editor" class="builder-panel"></div>
@@ -3783,6 +3785,7 @@ function renderRunHistoryControls() {
   reload.onclick = loadRunHistory;
   renderRunHistoryStatus();
   renderRunHistoryStats();
+  renderRunHistoryNodeStats();
   renderRunHistoryList();
 }
 
@@ -3817,6 +3820,42 @@ function runHistoryStatHtml(label, value) {
     <div class="run-history-stat">
       <span>${escapeHtml(label)}</span>
       <strong>${escapeHtml(value)}</strong>
+    </div>
+  `;
+}
+
+function renderRunHistoryNodeStats() {
+  const target = $('run-history-node-stats');
+  if (!target) return;
+  const nodes = Array.isArray(state.runHistoryNodeStats?.nodes)
+    ? state.runHistoryNodeStats.nodes
+    : [];
+  if (!nodes.length) {
+    target.innerHTML = '';
+    return;
+  }
+  const ranked = [...nodes]
+    .sort((a, b) => {
+      const issueDelta = ((Number(b.errorCount) || 0) * 100 + (Number(b.diagnosticCount) || 0))
+        - ((Number(a.errorCount) || 0) * 100 + (Number(a.diagnosticCount) || 0));
+      if (issueDelta) return issueDelta;
+      return (Number(b.p95ObservedElapsedMs) || 0) - (Number(a.p95ObservedElapsedMs) || 0);
+    })
+    .slice(0, 3);
+  target.innerHTML = ranked.map((node) => runHistoryNodeStatHtml(node)).join('');
+}
+
+function runHistoryNodeStatHtml(node) {
+  const errors = Number(node.errorCount) || 0;
+  const diagnostics = Number(node.diagnosticCount) || 0;
+  const level = errors ? 'error' : diagnostics ? 'warning' : 'clean';
+  const name = node.label || node.nodeId || 'node';
+  const operator = node.operatorRef ? ` · ${node.operatorRef}` : '';
+  const p95 = Number(node.p95ObservedElapsedMs) || 0;
+  return `
+    <div class="run-history-node-stat ${escapeHtml(level)}">
+      <span>${escapeHtml(name)}${escapeHtml(operator)}</span>
+      <small>${escapeHtml(node.runCount || 0)} runs · ${escapeHtml(errors)} err · ${escapeHtml(diagnostics)} diag · p95 ${escapeHtml(p95)}ms</small>
     </div>
   `;
 }
@@ -3922,9 +3961,10 @@ function runTraceSummary(trace) {
 
 async function loadRunHistory(options = {}) {
   try {
-    const [historyResponse, statsResponse] = await Promise.all([
+    const [historyResponse, statsResponse, nodeStatsResponse] = await Promise.all([
       fetch(runHistoryUrl()),
-      fetch(runHistoryStatsUrl())
+      fetch(runHistoryStatsUrl()),
+      fetch(runHistoryNodeStatsUrl())
     ]);
     if (!historyResponse.ok) {
       throw new Error(`Run history failed with ${historyResponse.status}`);
@@ -3932,12 +3972,17 @@ async function loadRunHistory(options = {}) {
     if (!statsResponse.ok) {
       throw new Error(`Run history stats failed with ${statsResponse.status}`);
     }
+    if (!nodeStatsResponse.ok) {
+      throw new Error(`Run history node stats failed with ${nodeStatsResponse.status}`);
+    }
     state.runHistory = await historyResponse.json();
     state.runHistoryStats = await statsResponse.json();
+    state.runHistoryNodeStats = await nodeStatsResponse.json();
     state.runHistoryMessage = null;
   } catch (error) {
     state.runHistory = [];
     state.runHistoryStats = null;
+    state.runHistoryNodeStats = null;
     state.runHistoryMessage = { text: error.message, level: 'error' };
   }
   if (options.render !== false) {
@@ -3952,6 +3997,10 @@ function runHistoryUrl() {
 
 function runHistoryStatsUrl() {
   return runHistoryUrlFor('/api/visual/runs/stats');
+}
+
+function runHistoryNodeStatsUrl() {
+  return runHistoryUrlFor('/api/visual/runs/node-stats');
 }
 
 function runHistoryUrlFor(path) {

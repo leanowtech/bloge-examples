@@ -1437,6 +1437,11 @@ body.dragging-operator * {
   gap: 6px;
 }
 
+.run-history-node-stats {
+  display: grid;
+  gap: 6px;
+}
+
 .run-history-stat {
   display: grid;
   gap: 2px;
@@ -1463,6 +1468,42 @@ body.dragging-operator * {
   color: var(--text);
   font-size: 13px;
   line-height: 1.15;
+}
+
+.run-history-node-stat {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+  padding: 7px 8px;
+  border: 1px solid var(--line);
+  border-left: 4px solid var(--green);
+  border-radius: 6px;
+  background: var(--surface-subtle);
+}
+
+.run-history-node-stat.warning {
+  border-left-color: var(--amber);
+}
+
+.run-history-node-stat.error {
+  border-left-color: var(--red);
+}
+
+.run-history-node-stat span,
+.run-history-node-stat small {
+  overflow-wrap: anywhere;
+}
+
+.run-history-node-stat span {
+  color: var(--text);
+  font-size: 11px;
+  font-weight: 900;
+}
+
+.run-history-node-stat small {
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 700;
 }
 
 .run-history-row {
