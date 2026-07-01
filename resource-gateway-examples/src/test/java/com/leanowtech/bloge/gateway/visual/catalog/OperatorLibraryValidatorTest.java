@@ -3403,6 +3403,68 @@ class OperatorLibraryValidatorTest {
     }
 
     @Test
+    void rejectsTransformLoweringWhenInputPortNameUsesReservedDslFieldName() {
+        OperatorDefinition operator = new OperatorDefinition(
+                "bloge.visualOperator.v1",
+                "risk:reservedTransformInputPort",
+                "1.0.0",
+                new OperatorDefinition.Display("Reserved transform input port", "Test operator.", List.of("test")),
+                new OperatorDefinition.Source("user-library", "", "", "", true),
+                new OperatorDefinition.Ports(
+                        List.of(new OperatorDefinition.Port("mode",
+                                SchemaEnvelope.object(Map.of("score", Map.of("type", "integer")), List.of("score")),
+                                true,
+                                "Inputs.")),
+                        List.of(new OperatorDefinition.Port("output",
+                                SchemaEnvelope.object(Map.of("accepted", Map.of("type", "boolean")),
+                                        List.of("accepted")),
+                                true,
+                                "Output."))
+                ),
+                SchemaEnvelope.opaque(),
+                OperatorDefinition.Capabilities.pure(),
+                new OperatorDefinition.Lowering("transform", "transform", Map.of(
+                        "assignments", Map.of("accepted", "{{input.score}} >= 700")
+                )),
+                List.of()
+        );
+
+        VisualValidationResult result = validator.validate(libraryWith(operator));
+
+        assertThat(result.valid()).isFalse();
+        assertThat(result.diagnostics())
+                .anySatisfy(diagnostic -> {
+                    assertThat(diagnostic.code()).isEqualTo("visual.operator.lowering.dslField.invalid");
+                    assertThat(diagnostic.target()).isEqualTo("/operators/0/ports/inputs/0/name");
+                });
+    }
+
+    @Test
+    void rejectsTransformLoweringWhenInputSchemaUsesUnsafeDslFieldName() {
+        OperatorDefinition operator = transformOperator(
+                "risk:unsafeTransformInputField",
+                Map.of(
+                        "score", Map.of("type", "integer"),
+                        "bad-field", Map.of("type", "string")
+                ),
+                List.of("score"),
+                Map.of("accepted", Map.of("type", "boolean")),
+                List.of("accepted"),
+                Map.of("accepted", "{{input.score}} >= 700")
+        );
+
+        VisualValidationResult result = validator.validate(libraryWith(operator));
+
+        assertThat(result.valid()).isFalse();
+        assertThat(result.diagnostics())
+                .anySatisfy(diagnostic -> {
+                    assertThat(diagnostic.code()).isEqualTo("visual.operator.lowering.dslField.invalid");
+                    assertThat(diagnostic.target())
+                            .isEqualTo("/operators/0/ports/inputs/0/schema/schema/properties/bad-field");
+                });
+    }
+
+    @Test
     void rejectsTransformLoweringWithoutAssignments() {
         OperatorDefinition operator = transformOperator(
                 "risk:missingAssignments",

@@ -227,6 +227,32 @@ class VisualConnectionCheckServiceTest {
     }
 
     @Test
+    void rejectsConnectionPreviewWhenTargetInputPortCannotRenderAsDslPathSegment() {
+        VisualConnectionCheckService service = connectionService(VisualCatalogTestSupport
+                .catalogWithLibrary(VisualCatalogTestSupport.unsafeInputPortLibrary()));
+        GraphDraft draft = unsafeInputPortDraft();
+
+        VisualConnectionCheckResult result = service.check(new VisualConnectionCheckRequest(
+                draft,
+                new GraphDraft.Endpoint("safeScoreFacts", "output", "score"),
+                new GraphDraft.Endpoint("unsafeInputPortSink", "mode", "score"),
+                "data"
+        ));
+
+        assertThat(result.accepted()).isFalse();
+        assertThat(result.bindingKey()).isEqualTo("score");
+        assertThat(result.diagnostics())
+                .anySatisfy(diagnostic -> {
+                    assertThat(diagnostic.code()).isEqualTo("visual.binding.targetPortSegment.invalid");
+                    assertThat(diagnostic.target()).isEqualTo("/nodes/1/inputs/score/targetPort");
+                })
+                .anySatisfy(diagnostic -> {
+                    assertThat(diagnostic.code()).isEqualTo("visual.edge.targetPortSegment.invalid");
+                    assertThat(diagnostic.target()).isEqualTo("/edges/0/target/port");
+                });
+    }
+
+    @Test
     void rejectsUnsupportedEdgeKindPreview() {
         VisualConnectionCheckService service = connectionService(VisualCatalogTestSupport
                 .catalogWithLoanApplicantResourceAndLibrary(VisualCatalogTestSupport.eligibilityLibrary("integer")));
@@ -1701,6 +1727,41 @@ class VisualConnectionCheckServiceTest {
                 List.of(),
                 Map.of(),
                 new GraphDraft.OutputSelection("scoreSink", "")
+        );
+    }
+
+    private static GraphDraft unsafeInputPortDraft() {
+        return new GraphDraft(
+                "",
+                "",
+                0,
+                "unsafeInputPortConnectionCheck",
+                "",
+                "",
+                "",
+                "",
+                null,
+                List.of(
+                        new GraphDraft.DraftNode(
+                                "safeScoreFacts",
+                                "risk:safeScoreFacts",
+                                "",
+                                Map.of(),
+                                Map.of(),
+                                null
+                        ),
+                        new GraphDraft.DraftNode(
+                                "unsafeInputPortSink",
+                                "risk:unsafeInputPortSink",
+                                "",
+                                Map.of(),
+                                Map.of(),
+                                null
+                        )
+                ),
+                List.of(),
+                Map.of(),
+                new GraphDraft.OutputSelection("unsafeInputPortSink", "")
         );
     }
 

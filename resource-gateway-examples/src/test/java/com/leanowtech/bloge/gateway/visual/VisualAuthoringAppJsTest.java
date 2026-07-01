@@ -331,6 +331,7 @@ class VisualAuthoringAppJsTest {
                   'customOutputPathForKey',
                   'customOutputPortForKey',
                   'inputPortsForSpec',
+                  'dslSafeInputPortsForSpec',
                   'outputPortsForSpec',
                   'dslSafeOutputPortsForSpec',
                   'allOutputPortsDslPathSafe',
@@ -414,6 +415,7 @@ class VisualAuthoringAppJsTest {
                   'operatorLibraryPortProfile',
                   'operatorLibraryPortFields',
                   'operatorLibraryConfigFields',
+                  'operatorLibraryInputPortDslPathSafe',
                   'operatorLibraryOutputPortDslPathSafe',
                   'outputPortDslPathSafe',
                   'operatorLibraryFieldProfile',
@@ -675,6 +677,30 @@ class VisualAuthoringAppJsTest {
                       }]
                     };
                   }
+                  if (node.id === 'unsafeInputNode') {
+                    return {
+                      label: 'Unsafe input',
+                      inputPort: 'mode',
+                      outputPort: 'output',
+                      ports: [{
+                        name: 'mode',
+                        required: true,
+                        schema: {
+                          schema: {
+                            type: 'object',
+                            properties: {
+                              score: { type: 'integer' }
+                            },
+                            required: ['score']
+                          }
+                        }
+                      }],
+                      outputPorts: [{
+                        name: 'output',
+                        schema: { schema: { type: 'object', properties: { accepted: { type: 'boolean' } } } }
+                      }]
+                    };
+                  }
                   if (node.id === 'nativeConfigPolicy') {
                     return {
                       label: 'Native config policy',
@@ -900,6 +926,15 @@ class VisualAuthoringAppJsTest {
                 };
                 const defaultInputs = context.defaultInputExpressionsForOperator(arrayInputSpec);
                 const customInputs = context.defaultCustomInputStateForOperator(arrayInputSpec);
+                const unsafeDefaultInputSpec = {
+                  inputPort: 'mode',
+                  ports: [{
+                    name: 'mode',
+                    schema: { fields: [{ path: 'score' }] }
+                  }]
+                };
+                const unsafeDefaultInputs = context.defaultInputExpressionsForOperator(unsafeDefaultInputSpec);
+                const unsafeDefaultCustomInputs = context.defaultCustomInputStateForOperator(unsafeDefaultInputSpec);
                 const resourceInputs = context.defaultResourceParamInputs(arrayInputSpec);
                 const resourceFallbackInputs = context.resourceParamInputs(
                   { paramName: 'scores.0.value' },
@@ -1163,7 +1198,14 @@ class VisualAuthoringAppJsTest {
                     },
                     {
                       operatorRef: 'risk:route',
-                      ports: { inputs: [], outputs: [] },
+                      ports: {
+                        inputs: [{
+                          name: 'mode',
+                          required: false,
+                          schema: { schema: { type: 'string' } }
+                        }],
+                        outputs: []
+                      },
                       capabilities: { effect: 'PURE', requiresSecrets: false },
                       lowering: { mode: 'branch' }
                     }
@@ -1328,6 +1370,8 @@ class VisualAuthoringAppJsTest {
                   output: { nodeId: 'mixedOutputNode', path: '' }
                 };
                 const mixedOutputNormalizedPath = context.ensureBuilderOutput(mixedOutputBuilder).path;
+                const unsafeInputNode = { id: 'unsafeInputNode', type: 'customOperator' };
+                const unsafeInputTargetCount = context.targetHandlesForNode(unsafeInputNode).length;
                 const nativeConfigPolicyNode = {
                   id: 'nativeConfigPolicy',
                   type: 'customOperator',
@@ -2055,6 +2099,7 @@ class VisualAuthoringAppJsTest {
                   ['mixed unsafe output hides full output option', mixedOutputOptions, 'facts'],
                   ['mixed unsafe output default path', mixedOutputDefaultPath, 'facts'],
                   ['mixed unsafe output normalized path', mixedOutputNormalizedPath, 'facts'],
+                  ['unsafe input port target handles filtered', unsafeInputTargetCount, 0],
                   ['native config input hidden with business config', nativeConfigInputHidden, false],
                   ['native score input visible with business config', nativeScoreInputVisible, true],
                   ['native config input visible with execution config only', nativeExecutionOnlyConfigVisible, true],
@@ -2081,6 +2126,8 @@ class VisualAuthoringAppJsTest {
                   ['config array path deleted', context.hasConfigPath(config, 'thresholds.0'), false],
                   ['default input array expression', defaultInputs['scores.0.value'], 'ctx.scores[0].value'],
                   ['default custom input array expression', customInputs.customInputs['inputs.scores.0.value'], 'ctx.scores[0].value'],
+                  ['unsafe input port default input count', Object.keys(unsafeDefaultInputs).length, 0],
+                  ['unsafe input port default custom input count', Object.keys(unsafeDefaultCustomInputs.customInputs).length, 0],
                   ['default resource param array expression', resourceInputs['scores.0.value'], 'ctx.scores[0].value'],
                   ['resource param fallback array expression', resourceFallbackInputs['scores.0.value'], 'ctx.scores[0].value'],
                   ['array config deleted node reference removed', context.hasConfigPath(configWithArrayReferences, 'thresholds.0'), false],
@@ -2106,12 +2153,12 @@ class VisualAuthoringAppJsTest {
                   ['palette capability badges', String(suspendableCapabilityBadges.includes('suspendable') && suspendableCapabilityBadges.includes('requires secret')), 'true'],
                   ['palette capability search match', String(paletteCapabilitySearchMatch), 'true'],
                   ['library profile operator count', libraryProfile.operatorCount, 2],
-                  ['library profile input count', libraryProfile.inputPortCount, 1],
+                  ['library profile input count', libraryProfile.inputPortCount, 2],
                   ['library profile output count', libraryProfile.outputPortCount, 1],
                   ['library profile required count', libraryProfile.requiredInputCount, 1],
                   ['library profile config fields', libraryProfile.configFieldCount, 1],
                   ['library profile output fields', libraryProfile.outputFieldCount, 2],
-                  ['library profile unsafe fields', libraryProfile.dslUnsafeFieldCount, 2],
+                  ['library profile unsafe fields', libraryProfile.dslUnsafeFieldCount, 3],
                   ['library profile dynamic schemas', libraryProfile.dynamicSchemaCount, 2],
                   ['library profile external operators', libraryProfile.externalOperatorCount, 1],
                   ['library profile secret operators', libraryProfile.secretOperatorCount, 1],
@@ -2122,6 +2169,8 @@ class VisualAuthoringAppJsTest {
                   ['library profile html escapes score', String(libraryProfileHtml.includes('Risk &lt;Score&gt;')), 'true'],
                   ['library profile html includes required input field', String(libraryProfileHtml.includes('inputs.customer.id*')), 'true'],
                   ['library profile html includes unsafe input field', String(libraryProfileHtml.includes('inputs.customer.bad-field !')), 'true'],
+                  ['library profile html includes unsafe input port', String(libraryProfileHtml.includes('mode.(root) !')), 'true'],
+                  ['library profile html includes unsafe field chip', String(libraryProfileHtml.includes('3 DSL-unsafe fields/ports')), 'true'],
                   ['library profile html includes output field', String(libraryProfileHtml.includes('graph.score* !')), 'true'],
                   ['library profile html includes config field', String(libraryProfileHtml.includes('config threshold')), 'true'],
                   ['library profile html includes dynamic flag', String(libraryProfileHtml.includes('2 dynamic schema surfaces')), 'true'],
@@ -2650,6 +2699,7 @@ class VisualAuthoringAppJsTest {
                   'operatorLibraryPortFields',
                   'operatorLibraryConfigFields',
                   'operatorLibraryPortUnionSummary',
+                  'operatorLibraryInputPortDslPathSafe',
                   'operatorLibraryFieldProfile',
                   'operatorLibrarySchemaSummary',
                   'operatorLibraryFieldLabel'

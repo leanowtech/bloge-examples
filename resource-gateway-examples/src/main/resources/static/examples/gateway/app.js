@@ -682,6 +682,11 @@ function inputPortsForSpec(spec) {
   return [{ name: spec?.inputPort || 'inputs', schema: spec?.inputSchema || null, required: true }];
 }
 
+function dslSafeInputPortsForSpec(spec) {
+  return inputPortsForSpec(spec).filter((port) =>
+    operatorLibraryInputPortDslPathSafe({ ...port, name: port?.name || spec?.inputPort || 'inputs' }));
+}
+
 function outputPortsForSpec(spec) {
   if (spec?.lowering?.mode === 'branch') {
     return [];
@@ -2450,7 +2455,7 @@ function renderLibraryProfilePanel(profile) {
   }
   const warningChips = [];
   if (profile.dslUnsafeFieldCount) {
-    warningChips.push(`${profile.dslUnsafeFieldCount} DSL-unsafe fields`);
+    warningChips.push(`${profile.dslUnsafeFieldCount} DSL-unsafe fields/ports`);
   }
   if (profile.dynamicSchemaCount) {
     warningChips.push(`${profile.dynamicSchemaCount} dynamic schema surfaces`);
@@ -2899,7 +2904,9 @@ function operatorLibraryPortProfile(port, options = {}) {
   const fields = schemaFieldDescriptors(port?.schema);
   const requiredFields = fields.filter((field) => field.required);
   const requiredCount = requiredFields.length || (port?.required ? 1 : 0);
-  const portDslUnsafe = options.output === true && !operatorLibraryOutputPortDslPathSafe(port);
+  const portDslUnsafe = options.output === true
+    ? !operatorLibraryOutputPortDslPathSafe(port)
+    : !operatorLibraryInputPortDslPathSafe(port);
   return {
     fieldCount: fields.length || (port?.schema ? 1 : 0),
     requiredCount,
@@ -2913,7 +2920,9 @@ function operatorLibraryPortFields(ports, options = {}) {
     const fields = schemaFieldDescriptors(port?.schema);
     const leaves = fields.filter((field) => !hasSchemaProperties(field.schema));
     const preferred = leaves.length ? leaves : fields;
-    const portDslPathSafe = options.output !== true || operatorLibraryOutputPortDslPathSafe(port);
+    const portDslPathSafe = options.output === true
+      ? operatorLibraryOutputPortDslPathSafe(port)
+      : operatorLibraryInputPortDslPathSafe(port);
     if (!preferred.length && port?.schema) {
       return [operatorLibraryFieldProfile(port?.name || '',
         { path: '', required: Boolean(port?.required) }, portDslPathSafe)];
@@ -2940,6 +2949,10 @@ function operatorLibraryPortUnionSummary(ports) {
 
 function operatorLibraryOutputPortDslPathSafe(port) {
   return outputPortDslPathSafe(port);
+}
+
+function operatorLibraryInputPortDslPathSafe(port) {
+  return isDslFieldName(String(port?.name || ''));
 }
 
 function outputPortDslPathSafe(port) {
@@ -8606,7 +8619,7 @@ function defaultParamNameForOperator(spec) {
 
 function defaultInputExpressionsForOperator(spec) {
   const entries = [];
-  for (const port of inputPortsForSpec(spec)) {
+  for (const port of dslSafeInputPortsForSpec(spec)) {
     const fields = schemaDefaultInputFields(port?.schema);
     for (const field of fields) {
       if (!entries.some(([existing]) => existing === field.path)) {
@@ -8621,12 +8634,13 @@ function defaultCustomInputStateForOperator(spec) {
   const customInputs = {};
   const customInputPorts = {};
   const customInputPaths = {};
-  for (const port of inputPortsForSpec(spec)) {
+  for (const port of dslSafeInputPortsForSpec(spec)) {
+    const portName = port.name || spec?.inputPort || 'inputs';
     const fields = schemaDefaultInputFields(port?.schema);
     for (const field of fields) {
-      const key = inputKeyForPortPath(spec, port.name, field.path);
+      const key = inputKeyForPortPath(spec, portName, field.path);
       customInputs[key] = contextExpressionForPath(field.path);
-      customInputPorts[key] = port.name;
+      customInputPorts[key] = portName;
       customInputPaths[key] = field.path;
     }
   }
@@ -10784,6 +10798,9 @@ function targetHandlesForNode(node) {
   if (node.type === 'customOperator') {
     return inputPortsForSpec(spec).flatMap((port) => {
       const portName = port.name || spec.inputPort || 'inputs';
+      if (!isDslFieldName(portName)) {
+        return [];
+      }
       const configInputConflict = nativeOperatorLowersConfigInput(node, spec);
       const seenPaths = new Set();
       const branchSelections = inputUnionBranchesForPort(node, spec, portName);

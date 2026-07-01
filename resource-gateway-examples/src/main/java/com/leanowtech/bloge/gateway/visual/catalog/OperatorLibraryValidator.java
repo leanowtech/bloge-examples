@@ -226,6 +226,7 @@ public class OperatorLibraryValidator {
         }
         validatePorts(operator, "inputs", operator.ports().inputs(), path + "/ports/inputs", diagnostics);
         validatePorts(operator, "outputs", operator.ports().outputs(), path + "/ports/outputs", diagnostics);
+        validateInputDslFieldNames(operator, path, diagnostics);
         validateOutputDslFieldNames(operator, path, diagnostics);
         diagnostics.addAll(VisualSchemaValidator.validateEnvelope(
                 operator.configSchema(), path + "/configSchema"));
@@ -340,6 +341,29 @@ public class OperatorLibraryValidator {
         }
     }
 
+    private static void validateInputDslFieldNames(OperatorDefinition operator,
+                                                   String operatorPath,
+                                                   List<VisualDiagnostic> diagnostics) {
+        for (int i = 0; i < operator.ports().inputs().size(); i++) {
+            OperatorDefinition.Port port = operator.ports().inputs().get(i);
+            if (port == null) {
+                continue;
+            }
+            String portPath = operatorPath + "/ports/inputs/" + i;
+            if (!isDslFieldName(port.name())) {
+                diagnostics.add(VisualDiagnostic.error("visual.operator.lowering.dslField.invalid",
+                        "Operator '%s' input port '%s' cannot be rendered as a BLOGE DSL input field."
+                                .formatted(operator.operatorRef(), port.name()),
+                        portPath + "/name"));
+            }
+            validateDslSchemaPropertyNames(operator,
+                    port.schema().schema(),
+                    portPath + "/schema/schema",
+                    Set.of(),
+                    diagnostics);
+        }
+    }
+
     private static void validateOutputDslFieldNames(OperatorDefinition operator,
                                                     String operatorPath,
                                                     List<VisualDiagnostic> diagnostics) {
@@ -419,23 +443,6 @@ public class OperatorLibraryValidator {
     private static void validateNativeDslFieldNames(OperatorDefinition operator,
                                                     String operatorPath,
                                                     List<VisualDiagnostic> diagnostics) {
-        for (int i = 0; i < operator.ports().inputs().size(); i++) {
-            OperatorDefinition.Port port = operator.ports().inputs().get(i);
-            if (port == null) {
-                continue;
-            }
-            if (!isDslFieldName(port.name())) {
-                diagnostics.add(VisualDiagnostic.error("visual.operator.lowering.dslField.invalid",
-                        "Native operator '%s' input port '%s' cannot be rendered as a BLOGE DSL input field."
-                                .formatted(operator.operatorRef(), port.name()),
-                        operatorPath + "/ports/inputs/" + i + "/name"));
-            }
-            validateDslSchemaPropertyNames(operator,
-                    port.schema().schema(),
-                    operatorPath + "/ports/inputs/" + i + "/schema/schema",
-                    Set.of(),
-                    diagnostics);
-        }
         validateDslSchemaPropertyNames(operator,
                 operator.configSchema().schema(),
                 operatorPath + "/configSchema/schema",

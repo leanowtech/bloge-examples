@@ -4694,6 +4694,28 @@ class GraphDraftValidatorTest {
     }
 
     @Test
+    void rejectsNodePathBindingWhenTargetInputPortCannotRenderAsDslPathSegment() {
+        GraphDraftValidator validator = new GraphDraftValidator(
+                VisualCatalogTestSupport.catalogWithLibrary(VisualCatalogTestSupport.unsafeInputPortLibrary()));
+        GraphDraft draft = unsafeInputPortDraft(
+                Map.of("score", GraphDraft.Binding.nodePath("safeScoreFacts", "output", "score",
+                        "mode", "score")),
+                List.of(),
+                new GraphDraft.OutputSelection("unsafeInputPortSink", "")
+        );
+
+        VisualValidationResult result = validator.validate(draft);
+
+        assertThat(result.valid()).isFalse();
+        assertThat(result.diagnostics())
+                .anySatisfy(diagnostic -> {
+                    assertThat(diagnostic.code()).isEqualTo("visual.binding.targetPortSegment.invalid");
+                    assertThat(diagnostic.target()).isEqualTo("/nodes/1/inputs/score/targetPort");
+                    assertThat(diagnostic.message()).contains("mode");
+                });
+    }
+
+    @Test
     void rejectsNodePathBindingWhenTargetPathCannotRenderAsDslPathSegment() {
         GraphDraftValidator validator = new GraphDraftValidator(
                 VisualCatalogTestSupport.catalogWithLibrary(VisualCatalogTestSupport.unsafePathLibrary()));
@@ -4783,6 +4805,30 @@ class GraphDraftValidatorTest {
                     assertThat(diagnostic.code()).isEqualTo("visual.edge.sourcePortSegment.invalid");
                     assertThat(diagnostic.target()).isEqualTo("/edges/0/source/port");
                     assertThat(diagnostic.message()).contains("graph");
+                });
+    }
+
+    @Test
+    void rejectsDataEdgeWhenTargetInputPortCannotRenderAsDslPathSegment() {
+        GraphDraftValidator validator = new GraphDraftValidator(
+                VisualCatalogTestSupport.catalogWithLibrary(VisualCatalogTestSupport.unsafeInputPortLibrary()));
+        GraphDraft draft = unsafeInputPortDraft(
+                Map.of("score", GraphDraft.Binding.nodePath("safeScoreFacts", "output", "score",
+                        "mode", "score")),
+                List.of(new GraphDraft.DraftEdge("unsafe-target-port-edge", "data",
+                        new GraphDraft.Endpoint("safeScoreFacts", "output", "score"),
+                        new GraphDraft.Endpoint("unsafeInputPortSink", "mode", "score"))),
+                new GraphDraft.OutputSelection("unsafeInputPortSink", "")
+        );
+
+        VisualValidationResult result = validator.validate(draft);
+
+        assertThat(result.valid()).isFalse();
+        assertThat(result.diagnostics())
+                .anySatisfy(diagnostic -> {
+                    assertThat(diagnostic.code()).isEqualTo("visual.edge.targetPortSegment.invalid");
+                    assertThat(diagnostic.target()).isEqualTo("/edges/0/target/port");
+                    assertThat(diagnostic.message()).contains("mode");
                 });
     }
 
@@ -5636,6 +5682,43 @@ class GraphDraftValidatorTest {
                         new GraphDraft.DraftNode(
                                 "scoreSink",
                                 "risk:scoreSink",
+                                "",
+                                sinkInputs,
+                                Map.of(),
+                                null
+                        )
+                ),
+                edges,
+                Map.of(),
+                output
+        );
+    }
+
+    private static GraphDraft unsafeInputPortDraft(Map<String, GraphDraft.Binding> sinkInputs,
+                                                   List<GraphDraft.DraftEdge> edges,
+                                                   GraphDraft.OutputSelection output) {
+        return new GraphDraft(
+                "",
+                "",
+                0,
+                "unsafeInputPortDraft",
+                "",
+                "",
+                "",
+                "",
+                null,
+                List.of(
+                        new GraphDraft.DraftNode(
+                                "safeScoreFacts",
+                                "risk:safeScoreFacts",
+                                "",
+                                Map.of(),
+                                Map.of(),
+                                null
+                        ),
+                        new GraphDraft.DraftNode(
+                                "unsafeInputPortSink",
+                                "risk:unsafeInputPortSink",
                                 "",
                                 sinkInputs,
                                 Map.of(),

@@ -2164,6 +2164,8 @@ public class GraphDraftValidator {
             }
             validateEdgeDslPathSegments(targetPort.get().schema(), edge.target().path(), edgePath + "/target/path",
                     diagnostics);
+            validateInputPortDslPathSegment(targetPort.get(), edgePath + "/target/port",
+                    "visual.edge.targetPortSegment.invalid", diagnostics);
             Optional<GraphDraft.Binding> edgeBinding = bindingForDataEdge(targetNode, edge);
             Map<String, Object> targetProperty = edgeBinding
                     .map(binding -> targetPropertyAtPath(targetPort.get(), edge.target().path(), binding,
@@ -3258,8 +3260,13 @@ public class GraphDraftValidator {
                                                              List<VisualDiagnostic> diagnostics) {
         Optional<OperatorDefinition.Port> targetPort = resolveInputPort(targetOperator, binding.targetPort(),
                 inputName);
-        targetPort.ifPresent(port -> validateDslPathSegments(port.schema(), inputName, diagnosticPath,
-                "visual.binding.targetPathSegment.invalid", "Binding target path segment", diagnostics));
+        targetPort.ifPresent(port -> {
+            validateInputPortDslPathSegment(port,
+                    binding.targetPort().isBlank() ? diagnosticPath : diagnosticPath + "/targetPort",
+                    "visual.binding.targetPortSegment.invalid", diagnostics);
+            validateDslPathSegments(port.schema(), inputName, diagnosticPath,
+                    "visual.binding.targetPathSegment.invalid", "Binding target path segment", diagnostics);
+        });
     }
 
     private static void validateEdgeDslPathSegments(SchemaEnvelope schema,
@@ -3291,8 +3298,25 @@ public class GraphDraftValidator {
                 diagnosticPath));
     }
 
+    private static void validateInputPortDslPathSegment(OperatorDefinition.Port port,
+                                                        String diagnosticPath,
+                                                        String code,
+                                                        List<VisualDiagnostic> diagnostics) {
+        if (inputPortDslPathSafe(port)) {
+            return;
+        }
+        diagnostics.add(VisualDiagnostic.error(code,
+                "Input port '%s' cannot be rendered as a BLOGE DSL input path segment."
+                        .formatted(port.name()),
+                diagnosticPath));
+    }
+
     private static boolean outputPortDslPathSafe(OperatorDefinition.Port port) {
         return port == null || "output".equals(port.name()) || isDslFieldName(port.name());
+    }
+
+    private static boolean inputPortDslPathSafe(OperatorDefinition.Port port) {
+        return port == null || isDslFieldName(port.name());
     }
 
     private static void validateDslPathSegments(SchemaEnvelope schema,
