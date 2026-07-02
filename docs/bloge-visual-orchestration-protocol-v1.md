@@ -1384,6 +1384,15 @@ snapshot 提供 source/lowering 审阅上下文，但仍把运行状态标记为
 `CATALOG_MISSING`，避免跨环境迁移或坏版本导入时把 schema-only 设计资产误判为
 可执行图。
 
+浏览器 Drafts 依赖面板消费该报告时可以把 `drifted` 和 `missing-snapshot`
+节点行映射为受控 rebase 动作，但必须继续使用 draft revision guard，并且不得为
+`catalog-missing` 节点提供 rebase 假动作；catalog 缺失需要先修复目标环境算子库。
+任何成功改变 current catalog 的 operator-library import、delete 或 restore 都应刷新当前
+active draft 的 dependency report，避免作者在 stale catalog 视图下做错误 rebase 或发布判断。
+当 operator library 被强制删除导致 stored draft 出现 `catalog-missing` 时，控制面仍应保留
+saved operator snapshot 提供节点审阅和迁移修复上下文；这类 draft 是设计资产缺依赖，
+不是无意义垃圾数据。
+
 resource-gateway 示例还提供 portable draft export/import：
 
 ```http

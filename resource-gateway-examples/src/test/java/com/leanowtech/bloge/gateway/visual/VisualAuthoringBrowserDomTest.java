@@ -258,6 +258,81 @@ class VisualAuthoringBrowserDomTest {
     }
 
     @Test
+    void composerRebasesFingerprintDriftFromDraftDependencyPanelInRealBrowser() throws JsonProcessingException {
+        driver = newChromeDriverOrSkip();
+        WebDriverWait wait = new WebDriverWait(driver, WAIT_TIMEOUT);
+        driver.get("http://localhost:" + port + "/examples/gateway");
+
+        waitForComposer(wait);
+        wait.until(ExpectedConditions.visibilityOfElementLocated(By.id("operator-palette")));
+
+        importOperatorLibrary(wait, VisualCatalogTestSupport.eligibilityLibrary("integer"));
+        dragOperatorToCanvas(wait, "Eligibility", "risk:eligibility", "riskEligibility", 140, 120);
+        click(wait, By.id("save-draft"));
+        waitForText(wait, By.id("draft-status"), "Saved");
+        waitForText(wait, By.id("draft-dependencies"), "Draft Dependencies");
+        waitForText(wait, By.id("draft-dependencies"), "risk:eligibility");
+        waitForText(wait, By.id("draft-dependencies"), "fingerprint current");
+        assertThat(driver.findElements(By.cssSelector(
+                "#draft-dependencies [data-draft-dependency-rebase='riskEligibility']"
+        ))).isEmpty();
+
+        importOperatorLibrary(wait, eligibilityLibraryWithAdditionalOutput());
+        waitForText(wait, By.id("library-status"), "Replaced risk-policy");
+        waitForText(wait, By.id("draft-dependencies"), "fingerprint drifted");
+        waitForText(wait, By.id("draft-dependencies"), "Rebase");
+
+        click(wait, By.cssSelector("#draft-dependencies [data-draft-dependency-rebase='riskEligibility']"));
+        waitForText(wait, By.id("draft-status"), "Rebased riskEligibility operator fingerprint");
+        waitForText(wait, By.id("draft-dependencies"), "fingerprint current");
+        wait.until(ignored -> driver.findElements(By.cssSelector(
+                "#draft-dependencies [data-draft-dependency-rebase='riskEligibility']"
+        )).isEmpty());
+
+        click(wait, By.cssSelector("#draft-dependencies [data-draft-dependency-node='riskEligibility']"));
+        waitForText(wait, By.id("selected-operator-editor"), "riskEligibility");
+        waitForText(wait, By.id("selected-operator-editor"), "Snapshot current");
+    }
+
+    @Test
+    void composerShowsCatalogMissingInDraftDependencyPanelWithoutRebaseActionInRealBrowser()
+            throws JsonProcessingException {
+        driver = newChromeDriverOrSkip();
+        WebDriverWait wait = new WebDriverWait(driver, WAIT_TIMEOUT);
+        driver.get("http://localhost:" + port + "/examples/gateway");
+
+        waitForComposer(wait);
+        wait.until(ExpectedConditions.visibilityOfElementLocated(By.id("operator-palette")));
+
+        importOperatorLibrary(wait, VisualCatalogTestSupport.eligibilityLibrary("integer"));
+        dragOperatorToCanvas(wait, "Eligibility", "risk:eligibility", "riskEligibility", 140, 120);
+        click(wait, By.id("save-draft"));
+        waitForText(wait, By.id("draft-status"), "Saved");
+        waitForText(wait, By.id("draft-dependencies"), "fingerprint current");
+
+        if (!driver.findElement(By.id("library-force")).isSelected()) {
+            click(wait, By.id("library-force"));
+        }
+        useConfirm(true);
+        click(wait, By.id("delete-library"));
+
+        waitForText(wait, By.id("library-status"), "Deleted risk-policy");
+        waitForText(wait, By.id("draft-dependencies"), "catalog missing");
+        waitForText(wait, By.id("draft-dependencies"), "risk:eligibility");
+        assertThat(driver.findElements(By.cssSelector(
+                "#draft-dependencies [data-draft-dependency-rebase='riskEligibility']"
+        ))).isEmpty();
+
+        click(wait, By.cssSelector("#draft-dependencies [data-draft-dependency-node='riskEligibility']"));
+        waitForText(wait, By.id("selected-operator-editor"), "Unavailable: Risk:eligibility");
+        waitForText(wait, By.id("selected-operator-editor"), "Operator unavailable");
+        waitForText(wait, By.id("selected-operator-editor"), "current missing");
+        assertThat(driver.findElements(By.cssSelector(
+                "#selected-operator-editor [data-rebase-operator-fingerprint='riskEligibility']"
+        ))).isEmpty();
+    }
+
+    @Test
     void composerImportsYamlOperatorLibraryAndUsesItOnCanvasInRealBrowser() throws JsonProcessingException {
         driver = newChromeDriverOrSkip();
         WebDriverWait wait = new WebDriverWait(driver, WAIT_TIMEOUT);
@@ -663,25 +738,47 @@ class VisualAuthoringBrowserDomTest {
         waitForComposer(wait);
         wait.until(ExpectedConditions.visibilityOfElementLocated(By.id("operator-palette")));
 
-        importOperatorLibrary(wait, unsafeOutputLibrary());
-        dragOperatorToCanvas(wait, "Unsafe facts", "risk:unsafeFacts", "riskUnsafeFacts", 140, 120);
+        importOperatorLibrary(wait, VisualCatalogTestSupport.designOnlyEligibilityLibrary("integer"));
+        dragOperatorToCanvas(wait, "Eligibility", "risk:eligibility", "riskEligibility", 140, 120);
         wait.until(ExpectedConditions.visibilityOfElementLocated(
-                By.cssSelector("#diagram [data-node-id='riskUnsafeFacts']")
+                By.cssSelector("#diagram [data-node-id='riskEligibility'] "
+                        + "[data-port-role='target'][data-port='inputs'][data-path='score']")
         ));
-        selectByValue(wait, By.id("graph-output-node"), "riskUnsafeFacts");
-        selectByValue(wait, By.id("graph-output-path"), "safeId");
+        wait.until(ExpectedConditions.visibilityOfElementLocated(
+                By.cssSelector("#diagram [data-node-id='riskEligibility'] "
+                        + "[data-port-role='source'][data-port='output'][data-path='eligible']")
+        ));
+        selectByValue(wait, By.id("graph-output-node"), "riskEligibility");
+        selectByValue(wait, By.id("graph-output-path"), "eligible");
 
         click(wait, By.id("validate-visual-draft"));
         waitForText(wait, By.id("visual-check-status"), "DESIGN artifact");
         assertThat(valueOf(By.id("publish-artifact-kind"))).isEqualTo("DESIGN");
+        assertThat(driver.findElement(By.cssSelector(
+                "#publish-artifact-kind option[value='EXECUTABLE']"
+        )).getAttribute("disabled")).isNotNull();
         assertThat(driver.findElement(By.id("compile-visual-draft")).isEnabled()).isFalse();
         assertThat(driver.findElement(By.id("run-scenario")).isEnabled()).isFalse();
+
+        click(wait, By.id("save-draft"));
+        waitForText(wait, By.id("draft-status"), "Saved");
+        click(wait, By.id("export-draft"));
+        wait.until(ignored -> valueOf(By.id("draft-bundle-json"))
+                .contains("\"schemaVersion\": \"bloge.visualGraphDraftExport.v1\""));
+        assertThat(valueOf(By.id("draft-bundle-json")))
+                .contains("\"risk:eligibility\"")
+                .contains("\"operatorSnapshots\"")
+                .contains("\"operatorFingerprints\"");
 
         publishVisualDraft(wait);
         String publicationId = valueOf(By.id("publication-select"));
         assertThat(publicationId).isNotBlank();
         waitForText(wait, By.id("publication-select"), "DESIGN");
         assertThat(driver.findElement(By.id("run-publication")).isEnabled()).isFalse();
+        assertThat(driver.findElement(By.id("save-golden-case")).isEnabled()).isFalse();
+        assertThat(driver.findElement(By.id("run-golden-case")).isEnabled()).isFalse();
+        assertThat(driver.findElement(By.id("run-golden-suite")).isEnabled()).isFalse();
+        assertThat(driver.findElement(By.id("certify-golden-suite")).isEnabled()).isFalse();
 
         setControlValue(driver.findElement(By.id("operator-palette-search")), "");
         assertThat(driver.findElements(By.cssSelector(
@@ -1211,6 +1308,56 @@ class VisualAuthoringBrowserDomTest {
         waitForText(wait, By.id("library-profile"), "0 config fields");
         waitForText(wait, By.id("library-profile"), "2 output fields");
         waitForText(wait, By.id("library-profile"), "Eligibility");
+    }
+
+    private static OperatorLibrary eligibilityLibraryWithAdditionalOutput() {
+        Map<String, Object> inputProperties = new LinkedHashMap<>();
+        inputProperties.put("score", Map.of("type", "integer"));
+        inputProperties.put("amount", Map.of("type", "number"));
+
+        Map<String, Object> outputProperties = new LinkedHashMap<>();
+        outputProperties.put("eligible", Map.of("type", "boolean"));
+        outputProperties.put("ruleId", Map.of("type", "string"));
+        outputProperties.put("reviewCode", Map.of("type", "string"));
+
+        OperatorDefinition operator = new OperatorDefinition(
+                "bloge.visualOperator.v1",
+                "risk:eligibility",
+                "1.1.0",
+                new OperatorDefinition.Display("Eligibility",
+                        "Evaluates a reusable eligibility predicate with a review code.",
+                        List.of("risk", "policy")),
+                new OperatorDefinition.Source("user-library", "", "", "", true),
+                new OperatorDefinition.Ports(
+                        List.of(new OperatorDefinition.Port("inputs",
+                                SchemaEnvelope.object(inputProperties, List.of("score", "amount")),
+                                true,
+                                "Eligibility inputs.")),
+                        List.of(new OperatorDefinition.Port("output",
+                                SchemaEnvelope.object(outputProperties, List.of()),
+                                true,
+                                "Eligibility result."))
+                ),
+                SchemaEnvelope.opaque(),
+                OperatorDefinition.Capabilities.pure(),
+                new OperatorDefinition.Lowering("transform", "transform", Map.of(
+                        "assignments", Map.of(
+                                "eligible", "{{input.score}} >= 700 && {{input.amount}} <= 300000",
+                                "ruleId", "\"ELIGIBILITY_V2\"",
+                                "reviewCode", "\"AUTO_REVIEW\""
+                        )
+                )),
+                List.of()
+        );
+        return new OperatorLibrary(
+                "bloge.visualOperatorLibrary.v1",
+                "risk-policy",
+                "Risk policy operators",
+                "1.1.0",
+                "risk-team",
+                "ACTIVE",
+                List.of(operator)
+        );
     }
 
     private void importOperatorLibrary(WebDriverWait wait, OperatorLibrary library) throws JsonProcessingException {

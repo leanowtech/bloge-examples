@@ -4926,6 +4926,7 @@ async function importOperatorLibrary() {
   state.libraryImportText = pretty(stored);
   await loadOperatorLibraries({ render: false });
   await loadVisualOperatorCatalog();
+  await refreshCatalogDependentAuthoringViews();
   renderOperatorPalette();
   renderOperatorLibraryControls();
   setLibraryMessage(`${action} ${stored.libraryId}.`, 'success');
@@ -4964,6 +4965,7 @@ async function deleteSelectedOperatorLibrary() {
   state.libraryRestoreConfirmationKey = '';
   await loadOperatorLibraries({ render: false });
   await loadVisualOperatorCatalog();
+  await refreshCatalogDependentAuthoringViews();
   renderOperatorPalette();
   renderOperatorLibraryControls();
   setLibraryMessage(`Deleted ${deletedId}. History remains available for restore.`, 'success');
@@ -5058,9 +5060,17 @@ async function restoreSelectedOperatorLibraryRevision() {
   await loadOperatorLibraries({ render: false });
   await loadOperatorLibraryRevisions({ render: false });
   await loadVisualOperatorCatalog();
+  await refreshCatalogDependentAuthoringViews();
   renderOperatorPalette();
   renderOperatorLibraryControls();
   setLibraryMessage(`Restored ${stored.libraryId} from @${revision.revision || 0}.`, 'success');
+}
+
+async function refreshCatalogDependentAuthoringViews() {
+  await loadDraftDependencies({ render: false });
+  renderDraftControls();
+  renderSelectedOperatorEditor();
+  renderDiagram();
 }
 
 function libraryForceQuery() {
@@ -6013,6 +6023,11 @@ function renderDraftDependencyReport() {
       focusCanvasNode(button.dataset.draftDependencyNode);
     });
   }
+  for (const button of target.querySelectorAll('[data-draft-dependency-rebase]')) {
+    button.addEventListener('click', () => {
+      rebaseOperatorFingerprint(button.dataset.draftDependencyRebase);
+    });
+  }
 }
 
 function draftDependencyReportLevel(report) {
@@ -6103,7 +6118,7 @@ function draftDependencyNodeRows(report) {
     <div class="library-impact-risk ${escapeHtml(draftDependencyFingerprintLevel(node.fingerprintState, node.runtimeReadinessState))}">
       <strong>${draftDependencyNodeButton(node.nodeId || 'node')}</strong>
       <span>${escapeHtml(node.operatorRef || 'operator')} · ${escapeHtml(draftDependencyLineageLabel(node))}</span>
-      <small>${escapeHtml(draftDependencyNodeSummary(node))}</small>
+      <small>${escapeHtml(draftDependencyNodeSummary(node))}${draftDependencyRebaseButton(node)}</small>
     </div>
   `).join('');
   const hidden = Math.max(0, interesting.length - 5);
@@ -6126,6 +6141,25 @@ function draftDependencyNodeButton(nodeId) {
     return '';
   }
   return `<button class="diagnostic-focus" type="button" data-draft-dependency-node="${escapeHtml(id)}">${escapeHtml(id)}</button>`;
+}
+
+function draftDependencyRebaseButton(node) {
+  const nodeId = String(node?.nodeId || '').trim();
+  if (!nodeId || !draftDependencyCanRebase(node)) {
+    return '';
+  }
+  const loading = state.operatorFingerprintRebaseNodeId === nodeId;
+  return ` <button class="secondary compact" type="button" data-draft-dependency-rebase="${escapeHtml(nodeId)}" ${loading ? 'disabled' : ''}>${loading ? 'Rebasing' : 'Rebase'}</button>`;
+}
+
+function draftDependencyCanRebase(row) {
+  if (!state.currentDraftId || !state.currentDraftRevision) {
+    return false;
+  }
+  const fingerprintState = String(row?.fingerprintState || '').toLowerCase();
+  const readiness = String(row?.runtimeReadinessState || '').toUpperCase();
+  return ['drifted', 'missing-snapshot'].includes(fingerprintState)
+    && readiness !== 'CATALOG_MISSING';
 }
 
 function draftDependencyRowRank(row) {
@@ -8905,6 +8939,7 @@ async function rebaseOperatorFingerprint(nodeId) {
   const operatorRef = operatorUsageRefForNode(node);
   state.operatorFingerprintRebaseNodeId = node.id;
   setDraftMessage(`Rebasing ${node.id} operator fingerprint snapshot...`, 'info');
+  renderDraftControls();
   renderSelectedOperatorEditor();
   try {
     const response = await fetch(
@@ -8942,7 +8977,6 @@ async function rebaseOperatorFingerprint(nodeId) {
     await loadDraftList({ render: false });
     await loadDraftRevisions({ render: false });
     await loadDraftDependencies({ render: false });
-    renderDraftControls();
     if (operatorRef) {
       await loadOperatorUsage(operatorRef);
     }
@@ -8954,6 +8988,7 @@ async function rebaseOperatorFingerprint(nodeId) {
     if (state.operatorFingerprintRebaseNodeId === node.id) {
       state.operatorFingerprintRebaseNodeId = '';
     }
+    renderDraftControls();
     renderSelectedOperatorEditor();
     renderDiagram();
   }
@@ -9004,6 +9039,15 @@ function renderOperatorFingerprintSnapshotPanel(node) {
   const reason = status.rebaseReason ? ` · ${status.rebaseReason}` : '';
   const risk = status.changeRisk ? changeRiskLabel(status.changeRisk) : '';
   const riskText = risk ? `${risk}: ${operatorUsageRiskActionText(status.changeRisk, 'draft')}` : '';
+  const rebaseControl = status.status === 'OPERATOR_MISSING'
+    ? `<small>${escapeHtml(status.rebaseReason || 'restore the operator library first')}</small>`
+    : `<button
+        type="button"
+        class="secondary compact"
+        data-rebase-operator-fingerprint="${escapeHtml(node.id)}"
+        ${disabled ? 'disabled' : ''}
+        title="${escapeHtml(`Rebase ${node.id} to the current operator fingerprint${reason}`)}"
+      >${loading ? 'Rebasing' : 'Rebase snapshot'}</button>`;
   return `
     <div class="operator-fingerprint-snapshot ${escapeHtml(status.level)}">
       <div>
@@ -9011,13 +9055,7 @@ function renderOperatorFingerprintSnapshotPanel(node) {
         <span>${escapeHtml(operatorUsageFingerprintPair(status.savedFingerprint, status.currentFingerprint, 'saved'))}</span>
         ${riskText ? `<small class="operator-usage-risk">${escapeHtml(riskText)}</small>` : ''}
       </div>
-      <button
-        type="button"
-        class="secondary compact"
-        data-rebase-operator-fingerprint="${escapeHtml(node.id)}"
-        ${disabled ? 'disabled' : ''}
-        title="${escapeHtml(`Rebase ${node.id} to the current operator fingerprint${reason}`)}"
-      >${loading ? 'Rebasing' : 'Rebase snapshot'}</button>
+      ${rebaseControl}
     </div>
   `;
 }

@@ -119,7 +119,14 @@ class VisualAuthoringAppJsTest {
                 .contains("fingerprint drifted")
                 .contains("catalog missing")
                 .contains("data-draft-dependency-node")
+                .contains("data-draft-dependency-rebase")
                 .contains("focusCanvasNode(button.dataset.draftDependencyNode)")
+                .contains("rebaseOperatorFingerprint(button.dataset.draftDependencyRebase)")
+                .contains("function draftDependencyCanRebase(row)")
+                .contains("readiness !== 'CATALOG_MISSING'")
+                .contains("async function refreshCatalogDependentAuthoringViews()")
+                .contains("status.status === 'OPERATOR_MISSING'")
+                .contains("restore the operator library first")
                 .contains("await loadDraftDependencies({ render: false });")
                 .contains("renderDraftDependencyReport();");
     }
@@ -3319,7 +3326,7 @@ class VisualAuthoringAppJsTest {
                     ['rebase draft list calls', rebaseResult.rebaseDraftListCalls, 1],
                     ['rebase revision calls', rebaseResult.rebaseRevisionCalls, 1],
                     ['rebase usage ref', rebaseResult.rebaseUsageRef, 'risk:eligibility'],
-                    ['rebase draft controls rendered', rebaseResult.rebaseDraftControlRenders, 1],
+                    ['rebase draft controls rendered', rebaseResult.rebaseDraftControlRenders, 2],
                     ['rebase editor renders', rebaseResult.rebaseEditorRenders, 2],
                     ['rebase diagram renders', rebaseResult.rebaseDiagramRenders, 1],
                     ['rebase loading cleared', context.state.operatorFingerprintRebaseNodeId, '']
