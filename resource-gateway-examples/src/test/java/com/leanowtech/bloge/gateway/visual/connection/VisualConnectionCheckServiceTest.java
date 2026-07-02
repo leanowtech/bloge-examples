@@ -102,6 +102,48 @@ class VisualConnectionCheckServiceTest {
     }
 
     @Test
+    void acceptsConnectionPreviewThatReplacesRootPortBinding() {
+        VisualConnectionCheckService service = connectionService(VisualCatalogTestSupport
+                .catalogWithLoanApplicantResourceAndLibrary(VisualCatalogTestSupport.eligibilityLibrary("integer")));
+        GraphDraft draft = resourceEligibilityDraftWithEligibilityInputs(
+                Map.of("inputs", GraphDraft.Binding.contextPath("score", "inputs", "")),
+                List.of()
+        );
+
+        VisualConnectionCheckResult result = service.check(new VisualConnectionCheckRequest(
+                draft,
+                new GraphDraft.Endpoint("fetchApplicant", "payload", "score"),
+                new GraphDraft.Endpoint("eligibility", "inputs", "score"),
+                "data"
+        ));
+
+        assertThat(result.accepted()).isTrue();
+        assertThat(result.bindingKey()).isEqualTo("score");
+        assertThat(result.diagnostics()).isEmpty();
+    }
+
+    @Test
+    void acceptsConnectionPreviewThatReplacesLegacyPortAliasBinding() {
+        VisualConnectionCheckService service = connectionService(VisualCatalogTestSupport
+                .catalogWithLoanApplicantResourceAndLibrary(VisualCatalogTestSupport.eligibilityLibrary("integer")));
+        GraphDraft draft = resourceEligibilityDraftWithEligibilityInputs(
+                Map.of("inputs.score", GraphDraft.Binding.contextPath("score", "input", "score")),
+                List.of()
+        );
+
+        VisualConnectionCheckResult result = service.check(new VisualConnectionCheckRequest(
+                draft,
+                new GraphDraft.Endpoint("fetchApplicant", "payload", "score"),
+                new GraphDraft.Endpoint("eligibility", "inputs", "score"),
+                "data"
+        ));
+
+        assertThat(result.accepted()).isTrue();
+        assertThat(result.bindingKey()).isEqualTo("score");
+        assertThat(result.diagnostics()).isEmpty();
+    }
+
+    @Test
     void rejectsDuplicateDataConnectionPreview() {
         VisualConnectionCheckService service = connectionService(VisualCatalogTestSupport
                 .catalogWithLoanApplicantResourceAndLibrary(VisualCatalogTestSupport.eligibilityLibrary("integer")));

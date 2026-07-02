@@ -4,6 +4,7 @@ import com.leanowtech.bloge.gateway.visual.catalog.OperatorDefinition;
 import com.leanowtech.bloge.gateway.visual.catalog.VisualOperatorCatalog;
 import com.leanowtech.bloge.gateway.visual.diagnostic.VisualDiagnostic;
 import com.leanowtech.bloge.gateway.visual.draft.GraphDraft;
+import com.leanowtech.bloge.gateway.visual.model.SchemaEnvelope;
 import com.leanowtech.bloge.gateway.visual.validation.GraphDraftValidator;
 import com.leanowtech.bloge.gateway.visual.validation.VisualSchemaCompatibility;
 import com.leanowtech.bloge.gateway.visual.validation.VisualValidationResult;
@@ -95,7 +96,8 @@ public class VisualConnectionCheckService {
                 request.target().port(),
                 request.target().path()
         ));
-        GraphDraft candidate = draftWithPreviewBindingAndEdge(request.draft(), targetIndex, inputKey, binding, edge);
+        GraphDraft candidate = draftWithPreviewBindingAndEdge(request.draft(), targetIndex, inputKey, binding, edge,
+                targetOperator(request.draft(), request.target().nodeId()));
         int previewIndex = candidate.edges().size() - 1;
         String bindingPath = "/nodes/" + targetIndex + "/inputs/" + inputKey;
         String operatorPath = "/nodes/" + targetIndex + "/operatorRef";
@@ -209,7 +211,8 @@ public class VisualConnectionCheckService {
                 request.target().port(),
                 request.target().path()
         ));
-        GraphDraft candidate = draftWithPreviewBinding(request.draft(), targetIndex, inputKey, binding);
+        GraphDraft candidate = draftWithPreviewBinding(request.draft(), targetIndex, inputKey, binding,
+                targetOperator(request.draft(), request.target().nodeId()));
         String bindingPath = "/nodes/" + targetIndex + "/inputs/" + inputKey;
         String operatorPath = "/nodes/" + targetIndex + "/operatorRef";
 
@@ -237,7 +240,9 @@ public class VisualConnectionCheckService {
                 edges,
                 draft.visualLayout(),
                 draft.output(),
-                draft.operatorFingerprints()
+                draft.operatorFingerprints(),
+                draft.operatorSnapshots(),
+                draft.revisionMetadata()
         );
     }
 
@@ -298,7 +303,9 @@ public class VisualConnectionCheckService {
                 draft.edges(),
                 draft.visualLayout(),
                 draft.output(),
-                draft.operatorFingerprints()
+                draft.operatorFingerprints(),
+                draft.operatorSnapshots(),
+                draft.revisionMetadata()
         );
     }
 
@@ -389,12 +396,13 @@ public class VisualConnectionCheckService {
     private static GraphDraft draftWithPreviewBinding(GraphDraft draft,
                                                       int targetIndex,
                                                       String inputKey,
-                                                      GraphDraft.Binding binding) {
+                                                      GraphDraft.Binding binding,
+                                                      Optional<OperatorDefinition> targetOperator) {
         List<GraphDraft.DraftNode> nodes = new ArrayList<>(draft.nodes());
         GraphDraft.DraftNode target = nodes.get(targetIndex);
         Map<String, GraphDraft.Binding> inputs = new LinkedHashMap<>(target.inputs());
         inputs.entrySet().removeIf(entry -> !entry.getKey().equals(inputKey)
-                && sameBindingTarget(entry.getKey(), entry.getValue(), inputKey, binding));
+                && sameBindingTarget(entry.getKey(), entry.getValue(), inputKey, binding, targetOperator));
         inputs.put(inputKey, binding);
         nodes.set(targetIndex, new GraphDraft.DraftNode(
                 target.id(),
@@ -418,16 +426,75 @@ public class VisualConnectionCheckService {
                 draft.edges(),
                 draft.visualLayout(),
                 draft.output(),
-                draft.operatorFingerprints()
+                draft.operatorFingerprints(),
+                draft.operatorSnapshots(),
+                draft.revisionMetadata()
         );
     }
 
     private static boolean sameBindingTarget(String leftKey,
                                              GraphDraft.Binding left,
                                              String rightKey,
-                                             GraphDraft.Binding right) {
+                                             GraphDraft.Binding right,
+                                             Optional<OperatorDefinition> targetOperator) {
+        Optional<BindingTarget> leftTarget = resolvedBindingTarget(targetOperator, leftKey, left);
+        Optional<BindingTarget> rightTarget = resolvedBindingTarget(targetOperator, rightKey, right);
+        if (leftTarget.isPresent() && rightTarget.isPresent()) {
+            BindingTarget leftValue = leftTarget.get();
+            BindingTarget rightValue = rightTarget.get();
+            return leftValue.equals(rightValue)
+                    || (leftValue.overlaps(rightValue)
+                    && replaceableOverlappingBinding(leftKey, leftValue, rightKey, rightValue));
+        }
         return compatibleTargetPorts(left.targetPort(), right.targetPort())
                 && bindingTargetPath(leftKey, left).equals(bindingTargetPath(rightKey, right));
+    }
+
+    private static boolean replaceableOverlappingBinding(String leftKey,
+                                                         BindingTarget left,
+                                                         String rightKey,
+                                                         BindingTarget right) {
+        if (!left.path().isBlank() && !right.path().isBlank()) {
+            return false;
+        }
+        return leftKey.equals(rightKey) || isGenericInputPort(left.port()) || isGenericInputPort(right.port());
+    }
+
+    private static boolean isGenericInputPort(String port) {
+        return port == null || port.isBlank() || "inputs".equals(port) || "input".equals(port);
+    }
+
+    private static Optional<BindingTarget> resolvedBindingTarget(Optional<OperatorDefinition> operator,
+                                                                 String inputKey,
+                                                                 GraphDraft.Binding binding) {
+        if (operator.isEmpty()) {
+            return Optional.empty();
+        }
+        String path = bindingTargetPath(inputKey, binding);
+        return resolveInputPort(operator.get(), binding.targetPort(), path)
+                .map(port -> new BindingTarget(port.name(), path));
+    }
+
+    private static Optional<OperatorDefinition.Port> resolveInputPort(OperatorDefinition operator,
+                                                                      String portName,
+                                                                      String inputName) {
+        if (portName != null && !portName.isBlank()) {
+            return operator.ports().inputs().stream()
+                    .filter(port -> portName.equals(port.name()))
+                    .findFirst();
+        }
+        List<OperatorDefinition.Port> ports = operator.ports().inputs();
+        if (ports.isEmpty()) {
+            return Optional.of(new OperatorDefinition.Port("inputs", SchemaEnvelope.opaque(), false,
+                    "Implicit opaque port."));
+        }
+        if (ports.size() == 1) {
+            return Optional.of(ports.getFirst());
+        }
+        List<OperatorDefinition.Port> matches = ports.stream()
+                .filter(port -> schemaAtPath(port.schema().schema(), inputName) != null)
+                .toList();
+        return matches.size() == 1 ? Optional.of(matches.getFirst()) : Optional.empty();
     }
 
     private static boolean compatibleTargetPorts(String left, String right) {
@@ -435,15 +502,22 @@ public class VisualConnectionCheckService {
     }
 
     private static String bindingTargetPath(String inputKey, GraphDraft.Binding binding) {
-        return binding.targetPath().isBlank() ? inputKey : binding.targetPath();
+        if (!binding.targetPath().isBlank()) {
+            return binding.targetPath();
+        }
+        if (!binding.targetPort().isBlank() && binding.targetPort().equals(inputKey)) {
+            return "";
+        }
+        return inputKey;
     }
 
     private static GraphDraft draftWithPreviewBindingAndEdge(GraphDraft draft,
                                                              int targetIndex,
                                                              String inputKey,
                                                              GraphDraft.Binding binding,
-                                                             GraphDraft.DraftEdge edge) {
-        GraphDraft withBinding = draftWithPreviewBinding(draft, targetIndex, inputKey, binding);
+                                                             GraphDraft.DraftEdge edge,
+                                                             Optional<OperatorDefinition> targetOperator) {
+        GraphDraft withBinding = draftWithPreviewBinding(draft, targetIndex, inputKey, binding, targetOperator);
         List<GraphDraft.DraftEdge> edges = new ArrayList<>();
         for (GraphDraft.DraftEdge existing : withBinding.edges()) {
             if (!sameTargetEndpoint(existing.target(), edge.target())) {
@@ -465,8 +539,25 @@ public class VisualConnectionCheckService {
                 edges,
                 withBinding.visualLayout(),
                 withBinding.output(),
-                withBinding.operatorFingerprints()
+                withBinding.operatorFingerprints(),
+                withBinding.operatorSnapshots(),
+                withBinding.revisionMetadata()
         );
+    }
+
+    private record BindingTarget(String port, String path) {
+
+        private boolean overlaps(BindingTarget other) {
+            if (!port.equals(other.port)) {
+                return false;
+            }
+            if (path.isBlank() || other.path.isBlank()) {
+                return true;
+            }
+            return path.equals(other.path)
+                    || path.startsWith(other.path + ".")
+                    || other.path.startsWith(path + ".");
+        }
     }
 
     private static boolean sameTargetEndpoint(GraphDraft.Endpoint left, GraphDraft.Endpoint right) {

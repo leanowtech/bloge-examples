@@ -1539,6 +1539,10 @@ body.dragging-operator * {
   font-weight: 700;
 }
 
+.operator-fingerprint-snapshot small {
+  overflow-wrap: anywhere;
+}
+
 .operator-usage-section,
 .operator-usage-diagnostics {
   display: grid;
@@ -1564,6 +1568,19 @@ body.dragging-operator * {
   font-style: normal;
   font-weight: 700;
   overflow-wrap: anywhere;
+}
+
+.operator-usage-risk,
+.operator-usage-action {
+  grid-column: 1 / -1;
+  color: inherit;
+  font-size: 11px;
+  font-weight: 700;
+  overflow-wrap: anywhere;
+}
+
+.operator-usage-action {
+  opacity: 0.82;
 }
 
 .operator-usage-row.empty {

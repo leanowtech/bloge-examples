@@ -185,6 +185,9 @@ class VisualGraphDraftControllerTest {
 
         assertThat(stored.operatorFingerprints())
                 .containsEntry("eligibility", catalog.find("risk:eligibility").orElseThrow().fingerprint());
+        assertThat(stored.operatorSnapshots())
+                .containsKey("eligibility");
+        assertThat(stored.operatorSnapshots().get("eligibility").operatorRef()).isEqualTo("risk:eligibility");
     }
 
     @Test
@@ -321,6 +324,7 @@ class VisualGraphDraftControllerTest {
         assertThat(imported.operatorFingerprints())
                 .containsEntry("eligibility", evolvedFingerprint)
                 .doesNotContainEntry("eligibility", initialFingerprint);
+        assertThat(imported.operatorSnapshots().get("eligibility").fingerprint()).isEqualTo(evolvedFingerprint);
         assertThat(imported.revisionMetadata().changeSource()).isEqualTo("import");
         assertThat(imported.revisionMetadata().changeSummary()).isEqualTo("Imported draft from export bundle.");
         assertThat(importedRepository.all()).containsExactly(imported);
@@ -626,9 +630,11 @@ class VisualGraphDraftControllerTest {
         assertThat(rebased.operatorFingerprints())
                 .containsEntry("eligibility", evolvedFingerprint)
                 .doesNotContainEntry("eligibility", initialFingerprint);
+        assertThat(rebased.operatorSnapshots().get("eligibility").fingerprint()).isEqualTo(evolvedFingerprint);
         assertThat(rebased.graphName()).isEqualTo(stored.graphName());
         assertThat(rebased.revisionMetadata().changeSource()).isEqualTo("operator-fingerprint-rebase");
-        assertThat(rebased.revisionMetadata().changedPaths()).containsExactly("/operatorFingerprints/eligibility");
+        assertThat(rebased.revisionMetadata().changedPaths())
+                .containsExactly("/operatorFingerprints/eligibility", "/operatorSnapshots/eligibility");
         assertThat(validator(evolvedCatalog).validate(rebased).diagnostics())
                 .extracting("code")
                 .doesNotContain("visual.operator.fingerprintMismatch");

@@ -390,6 +390,7 @@ class VisualAuthoringAppJsTest {
                   'applyRequiredInputAutoBindPlan',
                   'sourceHandlesForNode',
                   'targetHandlesForNode',
+                  'canvasTargetHandlesForNode',
                   'nativeOperatorLowersConfigInput',
                   'usesNativeNodeBlock',
                   'nativeInputPathForTarget',
@@ -562,6 +563,12 @@ class VisualAuthoringAppJsTest {
                   'operatorUsageStatusLevel',
                   'operatorUsageFingerprintPair',
                   'operatorUsageShortFingerprint',
+                  'operatorUsageDraftEntryForNode',
+                  'operatorUsageChangeRisk',
+                  'operatorUsageChangeLine',
+                  'operatorUsageRiskActionLine',
+                  'operatorUsageRiskActionText',
+                  'operatorUsageHighestChangeRisk',
                   'operatorUsageSummaryForNode',
                   'operatorUsagePrimaryStatus',
                   'operatorUsageBadgeText',
@@ -1563,7 +1570,11 @@ class VisualAuthoringAppJsTest {
                         nodeLabel: 'Eligibility',
                         savedFingerprint: 'saved-fingerprint-123456',
                         currentFingerprint: 'current-fingerprint-123456',
-                        fingerprintStatus: 'DRIFTED'
+                        fingerprintStatus: 'DRIFTED',
+                        changedSurface: "input port 'inputs' schema changed",
+                        changeRisk: 'BREAKING_SCHEMA',
+                        changeCategories: ['BREAKING_SCHEMA'],
+                        changeSummary: "input port 'inputs' schema changed"
                       }],
                       publications: [{
                         publicationId: 'publication-risk-0001',
@@ -1578,7 +1589,10 @@ class VisualAuthoringAppJsTest {
                         frozenFingerprint: 'frozen-fingerprint-123456',
                         currentFingerprint: 'current-fingerprint-123456',
                         fingerprintStatus: 'DRIFTED',
-                        changedSurface: 'output schema changed'
+                        changedSurface: 'lowering changed',
+                        changeRisk: 'RUNTIME_BINDING',
+                        changeCategories: ['RUNTIME_BINDING'],
+                        changeSummary: 'lowering changed'
                       }],
                       diagnostics: []
                     }
@@ -1639,6 +1653,14 @@ class VisualAuthoringAppJsTest {
                 const mixedOutputNormalizedPath = context.ensureBuilderOutput(mixedOutputBuilder).path;
                 const unsafeInputNode = { id: 'unsafeInputNode', type: 'customOperator' };
                 const unsafeInputTargetCount = context.targetHandlesForNode(unsafeInputNode).length;
+                const canvasEligibilityTargets = context.canvasTargetHandlesForNode({
+                  id: 'riskNode',
+                  type: 'customOperator',
+                  paletteType: 'risk:eligibility'
+                })
+                  .filter((target) => target.port === 'inputs')
+                  .map((target) => target.path || '<root>')
+                  .join('|');
                 const nativeConfigPolicyNode = {
                   id: 'nativeConfigPolicy',
                   type: 'customOperator',
@@ -2004,6 +2026,9 @@ class VisualAuthoringAppJsTest {
                 const riskUsagePanel = context.renderOperatorUsagePanel(context.state.builder.nodes[1]);
                 const riskFingerprintStatus = context.operatorFingerprintSnapshotStatus(context.state.builder.nodes[1]);
                 const riskFingerprintPanel = context.renderOperatorFingerprintSnapshotPanel(context.state.builder.nodes[1]);
+                const riskUsageDraftEntry = context.operatorUsageDraftEntryForNode(context.state.builder.nodes[1]);
+                const riskUsageChange = context.operatorUsageChangeLine(riskUsageDraftEntry);
+                const riskUsageAction = context.operatorUsageRiskActionLine(riskUsageDraftEntry, 'draft');
                 const libraryImpactDiagnostics = [
                   {
                     level: 'ERROR',
@@ -2390,6 +2415,7 @@ class VisualAuthoringAppJsTest {
                   ['mixed unsafe output default path', mixedOutputDefaultPath, 'facts'],
                   ['mixed unsafe output normalized path', mixedOutputNormalizedPath, 'facts'],
                   ['unsafe input port target handles filtered', unsafeInputTargetCount, 0],
+                  ['canvas custom input omits root target when fields exist', canvasEligibilityTargets, 'score|amount'],
                   ['native config input hidden with business config', nativeConfigInputHidden, false],
                   ['native score input visible with business config', nativeScoreInputVisible, true],
                   ['native config input visible with execution config only', nativeExecutionOnlyConfigVisible, true],
@@ -2656,15 +2682,21 @@ class VisualAuthoringAppJsTest {
                   ['risk usage level', riskUsageLevel, 'warning'],
                   ['risk usage primary status', riskUsagePrimaryStatus, 'DRIFTED'],
                   ['risk usage summary label', riskUsageSummary.label, 'DRIFT'],
-                  ['risk usage summary title', riskUsageSummary.title, 'risk:eligibility: 1 draft · 1 publication · DRIFTED'],
+                  ['risk usage summary title', riskUsageSummary.title, 'risk:eligibility: 1 draft · 1 publication · DRIFTED · Breaking Schema'],
+                  ['risk usage change line', riskUsageChange, "Breaking Schema: input port 'inputs' schema changed"],
+                  ['risk usage action line', riskUsageAction, 'Repair affected bindings or explicitly review before rebasing.'],
                   ['risk usage panel includes refresh action', String(riskUsagePanel.includes('data-operator-usage="risk:eligibility"')), 'true'],
                   ['risk usage panel includes drift status', String(riskUsagePanel.includes('DRIFTED')), 'true'],
-                  ['risk usage panel includes changed surface', String(riskUsagePanel.includes('output schema changed')), 'true'],
+                  ['risk usage panel includes changed surface', String(riskUsagePanel.includes('input port &#39;inputs&#39; schema changed')), 'true'],
+                  ['risk usage panel includes risk label', String(riskUsagePanel.includes('Breaking Schema')), 'true'],
+                  ['risk usage panel includes action guidance', String(riskUsagePanel.includes('Repair affected bindings')), 'true'],
                   ['risk fingerprint status', riskFingerprintStatus.status, 'DRIFTED'],
                   ['risk fingerprint level', riskFingerprintStatus.level, 'warning'],
+                  ['risk fingerprint risk', riskFingerprintStatus.changeRisk, 'BREAKING_SCHEMA'],
                   ['risk fingerprint can rebase', riskFingerprintStatus.canRebase, true],
                   ['risk fingerprint panel includes rebase action', String(riskFingerprintPanel.includes('data-rebase-operator-fingerprint="riskNode"')), 'true'],
                   ['risk fingerprint panel includes drift label', String(riskFingerprintPanel.includes('Snapshot drifted')), 'true'],
+                  ['risk fingerprint panel includes risk guidance', String(riskFingerprintPanel.includes('Repair affected bindings')), 'true'],
                   ['risk usage panel includes rebase action', String(riskUsagePanel.includes('data-rebase-operator-fingerprint="riskNode"')), 'true'],
                   ['library impact diagnostics', libraryImpact.diagnosticCount, 4],
                   ['library impact errors', libraryImpact.errorCount, 2],

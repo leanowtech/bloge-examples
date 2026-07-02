@@ -1,5 +1,6 @@
 package com.leanowtech.bloge.gateway.visual.draft;
 
+import com.leanowtech.bloge.gateway.visual.catalog.OperatorDefinition;
 import com.leanowtech.bloge.gateway.visual.model.SchemaEnvelope;
 
 import java.time.Instant;
@@ -26,6 +27,7 @@ import java.util.Set;
  * @param visualLayout opaque visual layout model
  * @param output selected graph output
  * @param operatorFingerprints operator fingerprint snapshot keyed by node id
+ * @param operatorSnapshots operator definition snapshot keyed by node id
  * @param revisionMetadata audit metadata captured for this revision snapshot
  */
 public record GraphDraft(
@@ -43,6 +45,7 @@ public record GraphDraft(
         Map<String, Object> visualLayout,
         OutputSelection output,
         Map<String, String> operatorFingerprints,
+        Map<String, OperatorDefinition> operatorSnapshots,
         RevisionMetadata revisionMetadata
 ) {
     public static final String SCHEMA_VERSION = "bloge.visualGraphDraft.v1";
@@ -72,6 +75,7 @@ public record GraphDraft(
         visualLayout = visualLayout == null ? Map.of() : new LinkedHashMap<>(visualLayout);
         output = output == null ? OutputSelection.empty() : output;
         operatorFingerprints = operatorFingerprints == null ? Map.of() : new LinkedHashMap<>(operatorFingerprints);
+        operatorSnapshots = operatorSnapshots == null ? Map.of() : new LinkedHashMap<>(operatorSnapshots);
         revisionMetadata = revisionMetadata == null ? RevisionMetadata.empty() : revisionMetadata;
     }
 
@@ -81,6 +85,28 @@ public record GraphDraft(
      */
     public static boolean isSupportedStatus(String status) {
         return SUPPORTED_STATUSES.contains(normalizeStatus(status));
+    }
+
+    /**
+     * Backward-compatible constructor for drafts created before operator definition snapshots existed.
+     */
+    public GraphDraft(String schemaVersion,
+                      String draftId,
+                      long revision,
+                      String graphName,
+                      String tenantId,
+                      String namespace,
+                      String environment,
+                      String status,
+                      SchemaEnvelope inputSchema,
+                      List<DraftNode> nodes,
+                      List<DraftEdge> edges,
+                      Map<String, Object> visualLayout,
+                      OutputSelection output,
+                      Map<String, String> operatorFingerprints,
+                      RevisionMetadata revisionMetadata) {
+        this(schemaVersion, draftId, revision, graphName, tenantId, namespace, environment, status,
+                inputSchema, nodes, edges, visualLayout, output, operatorFingerprints, Map.of(), revisionMetadata);
     }
 
     /**
@@ -101,7 +127,8 @@ public record GraphDraft(
                       OutputSelection output,
                       Map<String, String> operatorFingerprints) {
         this(schemaVersion, draftId, revision, graphName, tenantId, namespace, environment, status,
-                inputSchema, nodes, edges, visualLayout, output, operatorFingerprints, RevisionMetadata.empty());
+                inputSchema, nodes, edges, visualLayout, output, operatorFingerprints, Map.of(),
+                RevisionMetadata.empty());
     }
 
     /**
@@ -121,7 +148,7 @@ public record GraphDraft(
                       Map<String, Object> visualLayout,
                       OutputSelection output) {
         this(schemaVersion, draftId, revision, graphName, tenantId, namespace, environment, status,
-                inputSchema, nodes, edges, visualLayout, output, Map.of(), RevisionMetadata.empty());
+                inputSchema, nodes, edges, visualLayout, output, Map.of(), Map.of(), RevisionMetadata.empty());
     }
 
     /**
@@ -134,7 +161,7 @@ public record GraphDraft(
     public GraphDraft withIdentity(String newDraftId, long newRevision) {
         return new GraphDraft(schemaVersion, newDraftId, newRevision, graphName, tenantId, namespace,
                 environment, status, inputSchema, nodes, edges, visualLayout, output, operatorFingerprints,
-                revisionMetadata);
+                operatorSnapshots, revisionMetadata);
     }
 
     /**
@@ -146,7 +173,33 @@ public record GraphDraft(
     public GraphDraft withOperatorFingerprints(Map<String, String> fingerprints) {
         return new GraphDraft(schemaVersion, draftId, revision, graphName, tenantId, namespace,
                 environment, status, inputSchema, nodes, edges, visualLayout, output, fingerprints,
-                revisionMetadata);
+                operatorSnapshots, revisionMetadata);
+    }
+
+    /**
+     * Returns a copy carrying the operator definition snapshots observed when the draft was saved/submitted.
+     *
+     * @param snapshots operator definitions keyed by node id
+     * @return updated draft
+     */
+    public GraphDraft withOperatorSnapshots(Map<String, OperatorDefinition> snapshots) {
+        return new GraphDraft(schemaVersion, draftId, revision, graphName, tenantId, namespace,
+                environment, status, inputSchema, nodes, edges, visualLayout, output, operatorFingerprints,
+                snapshots, revisionMetadata);
+    }
+
+    /**
+     * Returns a copy carrying both operator fingerprint and definition snapshots.
+     *
+     * @param fingerprints operator fingerprints keyed by node id
+     * @param snapshots operator definitions keyed by node id
+     * @return updated draft
+     */
+    public GraphDraft withOperatorSnapshotState(Map<String, String> fingerprints,
+                                                Map<String, OperatorDefinition> snapshots) {
+        return new GraphDraft(schemaVersion, draftId, revision, graphName, tenantId, namespace,
+                environment, status, inputSchema, nodes, edges, visualLayout, output, fingerprints,
+                snapshots, revisionMetadata);
     }
 
     /**
@@ -158,7 +211,7 @@ public record GraphDraft(
     public GraphDraft withRevisionMetadata(RevisionMetadata metadata) {
         return new GraphDraft(schemaVersion, draftId, revision, graphName, tenantId, namespace,
                 environment, status, inputSchema, nodes, edges, visualLayout, output, operatorFingerprints,
-                metadata);
+                operatorSnapshots, metadata);
     }
 
     /**

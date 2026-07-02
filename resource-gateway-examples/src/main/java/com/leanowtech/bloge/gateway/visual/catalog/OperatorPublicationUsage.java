@@ -1,5 +1,7 @@
 package com.leanowtech.bloge.gateway.visual.catalog;
 
+import java.util.List;
+
 /**
  * Immutable-publication usage of one visual operator reference.
  *
@@ -16,6 +18,9 @@ package com.leanowtech.bloge.gateway.visual.catalog;
  * @param currentFingerprint fingerprint currently exposed by the catalog
  * @param fingerprintStatus CURRENT, DRIFTED, SNAPSHOT_MISSING, or OPERATOR_MISSING
  * @param changedSurface concise description of current-vs-frozen operator surface changes
+ * @param changeRisk highest-risk category for the surface change
+ * @param changeCategories all risk categories present in the surface change
+ * @param changeSummary concise human-readable surface change summary
  */
 public record OperatorPublicationUsage(
         String publicationId,
@@ -30,7 +35,10 @@ public record OperatorPublicationUsage(
         String frozenFingerprint,
         String currentFingerprint,
         String fingerprintStatus,
-        String changedSurface
+        String changedSurface,
+        String changeRisk,
+        List<String> changeCategories,
+        String changeSummary
 ) {
     /**
      * Creates a publication usage item.
@@ -50,5 +58,8 @@ public record OperatorPublicationUsage(
                 ? "UNKNOWN"
                 : fingerprintStatus;
         changedSurface = changedSurface == null ? "" : changedSurface;
+        changeRisk = changeRisk == null ? "" : changeRisk;
+        changeCategories = changeCategories == null ? List.of() : List.copyOf(changeCategories);
+        changeSummary = changeSummary == null ? "" : changeSummary;
     }
 }

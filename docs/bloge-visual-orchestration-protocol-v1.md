@@ -102,8 +102,11 @@ sha256(canonical(operatorRef + source + inputSchema + outputSchema + configSchem
 resource-gateway 示例中 `OperatorDefinition.fingerprint` 由服务端按规范化后的
 source、ports、configSchema、capabilities、lowering 等执行/约束相关元数据计算。
 `GraphDraft.operatorFingerprints` 按 node id 保存草稿创建或提交时看到的
-fingerprint；如果当前 catalog 暴露的同一算子 fingerprint 不同，validate/compile/run
-会以 drift error 阻断。
+fingerprint；`GraphDraft.operatorSnapshots` 按 node id 保存同一时刻的
+`OperatorDefinition` 快照，用于在算子库 replacement 之后解释 drift 的
+schema/capability/policy/lowering 风险，而不是只报告一个 hash 不一致。如果当前
+catalog 暴露的同一算子 fingerprint 不同，validate/compile/run 会以 drift error
+阻断；作者可以在审计 usage risk 后显式 rebase 选中节点或全图的服务端托管快照。
 
 ## 4. Schema 表达
 
@@ -526,6 +529,13 @@ validation；它不直接写入 registry。
   "operatorFingerprints": {
     "fetchApplicant": "sha256:..."
   },
+  "operatorSnapshots": {
+    "fetchApplicant": {
+      "schemaVersion": "bloge.visualOperator.v1",
+      "operatorRef": "resource:loan-applicant-service.getProfile",
+      "fingerprint": "sha256:..."
+    }
+  },
   "revisionMetadata": {
     "createdAt": "2026-06-30T00:00:00Z",
     "createdBy": "visual-canvas",
@@ -590,7 +600,7 @@ gate 都以这个 schema 为准；Context JSON 只作为一次运行或调试的
 
 - `id` 必须符合 BLOGE DSL node id 规则。
 - `operatorRef` 必须能在 catalog 中解析。
-- `operatorFingerprints[nodeId]` 发布时必填，草稿保存时由服务端补齐；若存在且与当前 catalog fingerprint 不一致，必须阻断发布/运行。
+- `operatorFingerprints[nodeId]` 发布时必填，草稿保存时由服务端补齐；`operatorSnapshots[nodeId]` 同步保存可解释该 fingerprint 的 operator definition；若 fingerprint 存在且与当前 catalog fingerprint 不一致，必须阻断发布/运行，除非作者通过 rebase API 显式刷新快照。
 - `inputs` 的 key 必须对应 input schema 字段。
 - `config` 必须满足 `configSchema`。
   resource-gateway 示例已经把该规则落成服务端 gate：缺必填 config、类型不匹配、enum 不匹配、`additionalProperties=false` 下的未知 config 字段都会阻断 validate/compile/run。
@@ -980,7 +990,11 @@ GET /api/visual/operators/risk:eligibility/usage
       "nodeId": "eligibility",
       "savedFingerprint": "sha256:...",
       "currentFingerprint": "sha256:...",
-      "fingerprintStatus": "CURRENT"
+      "fingerprintStatus": "DRIFTED",
+      "changedSurface": "input port 'inputs' schema changed",
+      "changeRisk": "BREAKING_SCHEMA",
+      "changeCategories": ["BREAKING_SCHEMA"],
+      "changeSummary": "input port 'inputs' schema changed"
     }
   ],
   "publications": [
@@ -990,7 +1004,10 @@ GET /api/visual/operators/risk:eligibility/usage
       "frozenFingerprint": "sha256:...",
       "currentFingerprint": "sha256:...",
       "fingerprintStatus": "DRIFTED",
-      "changedSurface": "input port 'inputs' schema changed"
+      "changedSurface": "lowering changed",
+      "changeRisk": "RUNTIME_BINDING",
+      "changeCategories": ["RUNTIME_BINDING"],
+      "changeSummary": "lowering changed"
     }
   ],
   "diagnostics": []
@@ -998,8 +1015,14 @@ GET /api/visual/operators/risk:eligibility/usage
 ```
 
 `fingerprintStatus` 的当前取值为 `CURRENT`、`DRIFTED`、
-`SNAPSHOT_MISSING` 或 `OPERATOR_MISSING`。这个 API 是 operator library
-替换、删除、recertification 和人工审计的查询面，不改变 catalog 或 draft。
+`SNAPSHOT_MISSING` 或 `OPERATOR_MISSING`。当 draft 行存在
+`operatorSnapshots[nodeId]`，publication 行存在 frozen operator snapshot，且
+current catalog 仍暴露同一 `operatorRef` 时，usage index 会返回
+`changedSurface/changeRisk/changeCategories/changeSummary`。前端据此把
+`BREAKING_SCHEMA`、`RUNTIME_BINDING`、`GOVERNANCE`、`POLICY`、
+`COMPATIBLE_SCHEMA` 和 `METADATA` 映射为修复、治理复核或可审阅 rebase 的动作建议。
+这个 API 是 operator library 替换、删除、recertification 和人工审计的查询面，
+不改变 catalog 或 draft。
 
 ### 10.2 校验 catalog
 

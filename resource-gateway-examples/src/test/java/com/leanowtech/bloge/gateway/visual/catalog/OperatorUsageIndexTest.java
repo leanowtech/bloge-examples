@@ -26,10 +26,7 @@ class OperatorUsageIndexTest {
         OperatorDefinition frozenOperator = VisualCatalogTestSupport.eligibilityOperator("integer");
         OperatorDefinition currentOperator = VisualCatalogTestSupport.eligibilityOperator("string");
         InMemoryGraphDraftRepository drafts = new InMemoryGraphDraftRepository();
-        GraphDraft storedDraft = drafts.save(draftUsingOperator(
-                frozenOperator.operatorRef(),
-                frozenOperator.fingerprint()
-        ));
+        GraphDraft storedDraft = drafts.save(draftUsingOperator(frozenOperator));
         InMemoryVisualGraphPublicationRepository publications = new InMemoryVisualGraphPublicationRepository();
         publications.create(publicationUsing(storedDraft, frozenOperator));
 
@@ -48,6 +45,9 @@ class OperatorUsageIndexTest {
                     assertThat(usage.nodeId()).isEqualTo("eligibility");
                     assertThat(usage.savedFingerprint()).isEqualTo(frozenOperator.fingerprint());
                     assertThat(usage.fingerprintStatus()).isEqualTo("DRIFTED");
+                    assertThat(usage.changedSurface()).contains("input port 'inputs' schema changed");
+                    assertThat(usage.changeRisk()).isEqualTo("BREAKING_SCHEMA");
+                    assertThat(usage.changeCategories()).containsExactly("BREAKING_SCHEMA");
                 });
         assertThat(response.publications())
                 .singleElement()
@@ -56,6 +56,8 @@ class OperatorUsageIndexTest {
                     assertThat(usage.frozenFingerprint()).isEqualTo(frozenOperator.fingerprint());
                     assertThat(usage.fingerprintStatus()).isEqualTo("DRIFTED");
                     assertThat(usage.changedSurface()).contains("input port 'inputs' schema changed");
+                    assertThat(usage.changeRisk()).isEqualTo("BREAKING_SCHEMA");
+                    assertThat(usage.changeCategories()).containsExactly("BREAKING_SCHEMA");
                 });
     }
 
@@ -146,6 +148,11 @@ class OperatorUsageIndexTest {
                 GraphDraft.OutputSelection.empty(),
                 fingerprints
         );
+    }
+
+    private static GraphDraft draftUsingOperator(OperatorDefinition operator) {
+        return draftUsingOperator(operator.operatorRef(), operator.fingerprint())
+                .withOperatorSnapshots(Map.of("eligibility", operator));
     }
 
     private static VisualGraphPublication publicationUsing(GraphDraft draft, OperatorDefinition operator) {

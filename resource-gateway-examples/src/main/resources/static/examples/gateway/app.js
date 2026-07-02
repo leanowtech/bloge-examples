@@ -5974,6 +5974,7 @@ async function saveCurrentDraft() {
   state.currentDraftRevision = stored.revision || 0;
   state.savedDraftSnapshot = stored;
   state.builder.operatorFingerprints = { ...(stored.operatorFingerprints || {}) };
+  state.builder.operatorSnapshots = { ...(stored.operatorSnapshots || {}) };
   state.previewingDraftRevision = 0;
   setDraftMessage(`Saved ${state.currentDraftId}@${state.currentDraftRevision}.`, 'success');
   await loadDraftList({ render: false });
@@ -6016,6 +6017,7 @@ function normalizeDraftForPatch(draft) {
     revision,
     revisionMetadata,
     operatorFingerprints,
+    operatorSnapshots,
     ...patchableDraft
   } = draft;
   return patchableDraft;
@@ -7323,6 +7325,7 @@ async function rebaseOperatorFingerprint(nodeId) {
     state.currentDraftRevision = stored.revision || state.currentDraftRevision;
     state.savedDraftSnapshot = stored;
     state.builder.operatorFingerprints = { ...(stored.operatorFingerprints || {}) };
+    state.builder.operatorSnapshots = { ...(stored.operatorSnapshots || {}) };
     setDraftMessage(`Rebased ${node.id} operator fingerprint at ${state.currentDraftId}@${state.currentDraftRevision}.`, 'success');
     await loadDraftList({ render: false });
     await loadDraftRevisions({ render: false });
@@ -7386,11 +7389,14 @@ function renderOperatorFingerprintSnapshotPanel(node) {
   const loading = state.operatorFingerprintRebaseNodeId === node.id;
   const disabled = loading || !status.canRebase;
   const reason = status.rebaseReason ? ` · ${status.rebaseReason}` : '';
+  const risk = status.changeRisk ? changeRiskLabel(status.changeRisk) : '';
+  const riskText = risk ? `${risk}: ${operatorUsageRiskActionText(status.changeRisk, 'draft')}` : '';
   return `
     <div class="operator-fingerprint-snapshot ${escapeHtml(status.level)}">
       <div>
         <strong>${escapeHtml(status.label)}</strong>
         <span>${escapeHtml(operatorUsageFingerprintPair(status.savedFingerprint, status.currentFingerprint, 'saved'))}</span>
+        ${riskText ? `<small class="operator-usage-risk">${escapeHtml(riskText)}</small>` : ''}
       </div>
       <button
         type="button"
@@ -7446,6 +7452,8 @@ function operatorFingerprintSnapshotStatus(node) {
       canRebase: false
     };
   }
+  const usageEntry = operatorUsageDraftEntryForNode(node);
+  const changeRisk = operatorUsageChangeRisk(usageEntry);
   return {
     operatorRef,
     savedFingerprint,
@@ -7454,7 +7462,9 @@ function operatorFingerprintSnapshotStatus(node) {
     label: 'Snapshot drifted',
     level: 'warning',
     canRebase: Boolean(state.currentDraftId && state.currentDraftRevision),
-    rebaseReason: state.currentDraftId && state.currentDraftRevision ? '' : 'save draft first'
+    rebaseReason: state.currentDraftId && state.currentDraftRevision ? '' : 'save draft first',
+    changeRisk,
+    changeSummary: usageEntry?.changeSummary || usageEntry?.changedSurface || ''
   };
 }
 
@@ -7484,11 +7494,15 @@ function renderOperatorDraftUsageRow(entry) {
   const graph = entry.graphName || entry.draftId || 'draft';
   const scope = [entry.tenantId, entry.namespace, entry.environment].filter(Boolean).join(' / ');
   const draft = [entry.draftId, entry.revision ? `r${entry.revision}` : ''].filter(Boolean).join('@');
+  const change = operatorUsageChangeLine(entry);
+  const action = operatorUsageRiskActionLine(entry, 'draft');
   return `
     <div class="operator-usage-row ${escapeHtml(operatorUsageStatusLevel(status))}">
       <strong>${escapeHtml(label)}</strong>
       <span>${escapeHtml([graph, draft, scope].filter(Boolean).join(' · '))}</span>
       <em>${escapeHtml(status)} · ${escapeHtml(operatorUsageFingerprintPair(entry.savedFingerprint, entry.currentFingerprint, 'saved'))}</em>
+      ${change ? `<small class="operator-usage-risk">${escapeHtml(change)}</small>` : ''}
+      ${action ? `<small class="operator-usage-action">${escapeHtml(action)}</small>` : ''}
     </div>
   `;
 }
@@ -7498,12 +7512,15 @@ function renderOperatorPublicationUsageRow(entry) {
   const label = entry.nodeLabel || entry.nodeId || 'node';
   const graph = entry.graphName || entry.publicationId || 'publication';
   const sourceDraft = [entry.draftId, entry.draftRevision ? `r${entry.draftRevision}` : ''].filter(Boolean).join('@');
-  const surface = entry.changedSurface ? ` · ${entry.changedSurface}` : '';
+  const change = operatorUsageChangeLine(entry);
+  const action = operatorUsageRiskActionLine(entry, 'publication');
   return `
     <div class="operator-usage-row ${escapeHtml(operatorUsageStatusLevel(status))}">
       <strong>${escapeHtml(label)}</strong>
       <span>${escapeHtml([graph, shortRunId(entry.publicationId), sourceDraft].filter(Boolean).join(' · '))}</span>
-      <em>${escapeHtml(status)} · ${escapeHtml(operatorUsageFingerprintPair(entry.frozenFingerprint, entry.currentFingerprint, 'frozen'))}${escapeHtml(surface)}</em>
+      <em>${escapeHtml(status)} · ${escapeHtml(operatorUsageFingerprintPair(entry.frozenFingerprint, entry.currentFingerprint, 'frozen'))}</em>
+      ${change ? `<small class="operator-usage-risk">${escapeHtml(change)}</small>` : ''}
+      ${action ? `<small class="operator-usage-action">${escapeHtml(action)}</small>` : ''}
     </div>
   `;
 }
@@ -7565,6 +7582,66 @@ function operatorUsageShortFingerprint(fingerprint) {
   return value ? value.slice(0, 12) : 'missing';
 }
 
+function operatorUsageDraftEntryForNode(node) {
+  const operatorRef = operatorUsageRefForNode(node);
+  const usage = operatorRef ? (state.operatorUsageByRef || {})[operatorRef] : null;
+  const drafts = Array.isArray(usage?.drafts) ? usage.drafts : [];
+  return drafts.find((entry) => entry.nodeId === node?.id
+    && (!state.currentDraftId || !entry.draftId || entry.draftId === state.currentDraftId)) || null;
+}
+
+function operatorUsageChangeRisk(entry) {
+  return String(entry?.changeRisk || '').trim().toUpperCase();
+}
+
+function operatorUsageChangeLine(entry) {
+  const risk = operatorUsageChangeRisk(entry);
+  const summary = String(entry?.changeSummary || entry?.changedSurface || '').trim();
+  if (!risk && !summary) {
+    return '';
+  }
+  return [risk ? changeRiskLabel(risk) : '', summary].filter(Boolean).join(': ');
+}
+
+function operatorUsageRiskActionLine(entry, artifactKind = 'draft') {
+  const risk = operatorUsageChangeRisk(entry);
+  if (!risk) {
+    return '';
+  }
+  return operatorUsageRiskActionText(risk, artifactKind);
+}
+
+function operatorUsageRiskActionText(risk, artifactKind = 'draft') {
+  const normalized = String(risk || '').toUpperCase();
+  const frozen = artifactKind === 'publication';
+  return {
+    BREAKING_SCHEMA: frozen
+      ? 'Frozen publication is stable; repair and recertify a new draft before republishing.'
+      : 'Repair affected bindings or explicitly review before rebasing.',
+    RUNTIME_BINDING: frozen
+      ? 'Verify runtime binding before replaying or republishing.'
+      : 'Verify executable availability before publishing.',
+    GOVERNANCE: frozen
+      ? 'Review secrets, effects, retry, approval policy, and audit impact before replay.'
+      : 'Review secrets, effects, retry, and approval policy before rebasing.',
+    POLICY: frozen
+      ? 'Review tenant, namespace, and environment availability before replay.'
+      : 'Review tenant, namespace, and environment availability before rebasing.',
+    COMPATIBLE_SCHEMA: 'Schema growth is compatible; review and rebase when ready.',
+    METADATA: 'Metadata drift; review and rebase when ready.'
+  }[normalized] || 'Operator surface drift; review before rebasing.';
+}
+
+function operatorUsageHighestChangeRisk(usage) {
+  const risks = [
+    ...(Array.isArray(usage?.drafts) ? usage.drafts : []),
+    ...(Array.isArray(usage?.publications) ? usage.publications : [])
+  ].map(operatorUsageChangeRisk)
+    .filter(Boolean)
+    .sort((left, right) => changeRiskRank(right) - changeRiskRank(left) || left.localeCompare(right));
+  return risks[0] || '';
+}
+
 function operatorUsageSummaryForNode(node) {
   const operatorRef = operatorUsageRefForNode(node);
   const usage = operatorRef ? (state.operatorUsageByRef || {})[operatorRef] : null;
@@ -7575,12 +7652,14 @@ function operatorUsageSummaryForNode(node) {
   const level = operatorUsageResponseLevel(usage);
   const draftCount = Array.isArray(usage.drafts) ? usage.drafts.length : 0;
   const publicationCount = Array.isArray(usage.publications) ? usage.publications.length : 0;
+  const risk = operatorUsageHighestChangeRisk(usage);
+  const riskText = risk ? ` · ${changeRiskLabel(risk)}` : '';
   return {
     operatorRef,
     status,
     level,
     label: operatorUsageBadgeText(status, level),
-    title: `${operatorRef}: ${draftCount} draft · ${publicationCount} publication · ${status}`
+    title: `${operatorRef}: ${draftCount} draft · ${publicationCount} publication · ${status}${riskText}`
   };
 }
 
@@ -10358,6 +10437,7 @@ function builderFromVisualDraft(draft) {
       path: draft.output?.path || ''
     },
     operatorFingerprints: { ...(draft.operatorFingerprints || {}) },
+    operatorSnapshots: { ...(draft.operatorSnapshots || {}) },
     dependencyEdges: dependencyEdgesFromDraft(draft),
     routeEdges: routeEdgesFromDraft(draft),
     nodes
@@ -11547,11 +11627,22 @@ function dynamicInputFieldDescriptors(node, spec, portName, portSchema, branchSe
 
 function canvasTargetHandlesForNode(node) {
   return [
-    ...targetHandlesForNode(node),
+    ...canvasDataTargetHandlesForNode(node),
     ...configTargetsForNode(node),
     ...dependencyTargetsForNode(node),
     ...routeTargetsForNode(node)
   ];
+}
+
+function canvasDataTargetHandlesForNode(node) {
+  const targets = targetHandlesForNode(node);
+  if (!node || node.type !== 'customOperator') {
+    return targets;
+  }
+  const portsWithFieldTargets = new Set(targets
+    .filter((target) => target.path)
+    .map((target) => target.port || ''));
+  return targets.filter((target) => target.path || !portsWithFieldTargets.has(target.port || ''));
 }
 
 function routeTargetsForNode(node) {

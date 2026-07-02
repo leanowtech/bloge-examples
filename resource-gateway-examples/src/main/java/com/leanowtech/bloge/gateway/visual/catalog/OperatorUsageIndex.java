@@ -85,6 +85,11 @@ public class OperatorUsageIndex {
                     continue;
                 }
                 String savedFingerprint = draft.operatorFingerprints().get(node.id());
+                String status = fingerprintStatus(savedFingerprint, currentFingerprint, currentOperatorPresent);
+                UsageChangeReport report = changeReport(status,
+                        Optional.ofNullable(draft.operatorSnapshots().get(node.id()))
+                                .filter(snapshot -> snapshotMatches(snapshot, operatorRef, savedFingerprint)),
+                        catalog.find(operatorRef));
                 usages.add(new OperatorDraftUsage(
                         draft.draftId(),
                         draft.revision(),
@@ -96,7 +101,11 @@ public class OperatorUsageIndex {
                         node.label(),
                         savedFingerprint,
                         currentFingerprint,
-                        fingerprintStatus(savedFingerprint, currentFingerprint, currentOperatorPresent)
+                        status,
+                        report.summary(),
+                        report.risk(),
+                        report.categories(),
+                        report.summary()
                 ));
             }
         }
@@ -117,13 +126,16 @@ public class OperatorUsageIndex {
             if (draft == null) {
                 continue;
             }
-            Optional<OperatorDefinition> frozenOperator = frozenOperator(publication, operatorRef);
             for (GraphDraft.DraftNode node : draft.nodes()) {
                 if (!operatorRef.equals(node.operatorRef())) {
                     continue;
                 }
                 String frozenFingerprint = publication.operatorFingerprints().get(node.id());
                 String status = fingerprintStatus(frozenFingerprint, currentFingerprint, currentOperatorPresent);
+                Optional<OperatorDefinition> frozenOperator = frozenOperator(publication, operatorRef,
+                        frozenFingerprint);
+                UsageChangeReport report = changeReport(status, frozenOperator,
+                        currentOperator);
                 usages.add(new OperatorPublicationUsage(
                         publication.publicationId(),
                         publication.draftId(),
@@ -137,7 +149,10 @@ public class OperatorUsageIndex {
                         frozenFingerprint,
                         currentFingerprint,
                         status,
-                        changedSurface(status, frozenOperator, currentOperator)
+                        report.summary(),
+                        report.risk(),
+                        report.categories(),
+                        report.summary()
                 ));
             }
         }
@@ -178,18 +193,43 @@ public class OperatorUsageIndex {
     }
 
     private static Optional<OperatorDefinition> frozenOperator(VisualGraphPublication publication,
-                                                               String operatorRef) {
+                                                               String operatorRef,
+                                                               String frozenFingerprint) {
         return publication.operatorSnapshots().stream()
-                .filter(operator -> operator != null && operatorRef.equals(operator.operatorRef()))
+                .filter(operator -> snapshotMatches(operator, operatorRef, frozenFingerprint))
                 .findFirst();
     }
 
-    private static String changedSurface(String status,
-                                         Optional<OperatorDefinition> frozenOperator,
-                                         Optional<OperatorDefinition> currentOperator) {
-        if (!DRIFTED.equals(status) || frozenOperator.isEmpty() || currentOperator.isEmpty()) {
-            return "";
+    private static boolean snapshotMatches(OperatorDefinition snapshot,
+                                           String operatorRef,
+                                           String fingerprint) {
+        if (snapshot == null || !operatorRef.equals(snapshot.operatorRef())) {
+            return false;
         }
-        return OperatorDefinitionChangeSummary.describe(frozenOperator.get(), currentOperator.get());
+        return fingerprint == null || fingerprint.isBlank() || fingerprint.equals(snapshot.fingerprint());
+    }
+
+    private static UsageChangeReport changeReport(
+            String status,
+            Optional<OperatorDefinition> previousOperator,
+            Optional<OperatorDefinition> currentOperator) {
+        if (!DRIFTED.equals(status) || previousOperator.isEmpty() || currentOperator.isEmpty()) {
+            return UsageChangeReport.empty();
+        }
+        OperatorDefinitionChangeSummary.ChangeReport report = OperatorDefinitionChangeSummary.analyze(
+                previousOperator.get(), currentOperator.get());
+        return new UsageChangeReport(report.risk(), report.categories(), report.summary());
+    }
+
+    private record UsageChangeReport(String risk, List<String> categories, String summary) {
+        private UsageChangeReport {
+            risk = risk == null ? "" : risk;
+            categories = categories == null ? List.of() : List.copyOf(categories);
+            summary = summary == null ? "" : summary;
+        }
+
+        private static UsageChangeReport empty() {
+            return new UsageChangeReport("", List.of(), "");
+        }
     }
 }

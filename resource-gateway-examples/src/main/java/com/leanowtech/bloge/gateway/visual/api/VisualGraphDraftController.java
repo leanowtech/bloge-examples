@@ -100,7 +100,7 @@ public class VisualGraphDraftController {
     @PostMapping
     public GraphDraft create(@RequestBody GraphDraft draft) {
         requireSupportedDraftContract(draft);
-        return repository.save(withCurrentOperatorFingerprints(draft.withIdentity("", 0))
+        return repository.save(withCurrentOperatorSnapshotState(draft.withIdentity("", 0))
                 .withRevisionMetadata(GraphDraft.RevisionMetadata.patch(
                         "visual-canvas",
                         "api",
@@ -152,7 +152,7 @@ public class VisualGraphDraftController {
             return ResponseEntity.badRequest()
                     .body(GraphDraftImportResult.rejected(diagnostics));
         }
-        GraphDraft imported = bundle.draft()
+        GraphDraft imported = withBundleOperatorSnapshots(bundle.draft(), bundle.operatorSnapshots())
                 .withIdentity("", 0)
                 .withRevisionMetadata(GraphDraft.RevisionMetadata.patch(
                         "visual-canvas",
@@ -160,7 +160,7 @@ public class VisualGraphDraftController {
                         "Imported draft from export bundle.",
                         List.of()
                 ));
-        GraphDraft stored = repository.save(withCurrentOperatorFingerprints(imported));
+        GraphDraft stored = repository.save(withCurrentOrProvidedOperatorSnapshotState(imported));
         return ResponseEntity.status(HttpStatus.CREATED)
                 .body(GraphDraftImportResult.imported(stored, validator.validate(stored).diagnostics()));
     }
@@ -216,7 +216,7 @@ public class VisualGraphDraftController {
             return ResponseEntity.badRequest()
                     .body(new VisualValidationResult(false, contractDiagnostics));
         }
-        GraphDraft candidate = withExistingOrCurrentOperatorFingerprints(current.get(),
+        GraphDraft candidate = withExistingOrCurrentOperatorSnapshotState(current.get(),
                 draft.withIdentity(draftId, expectedRevision).withRevisionMetadata(GraphDraft.RevisionMetadata.patch(
                         "visual-canvas",
                         "api",
@@ -264,7 +264,7 @@ public class VisualGraphDraftController {
                 return ResponseEntity.badRequest()
                         .body(GraphDraftPatchResult.rejected(current.get(), contractDiagnostics));
             }
-            GraphDraft candidate = withExistingOrCurrentOperatorFingerprints(current.get(), patched);
+            GraphDraft candidate = withExistingOrCurrentOperatorSnapshotState(current.get(), patched);
             return repository.saveIfRevision(draftId, request.expectedRevision(), candidate)
                     .map(stored -> ResponseEntity.ok(GraphDraftPatchResult.patched(stored)))
                     .orElseGet(() -> conflictResponse(draftId, request.expectedRevision(), current.get()));
@@ -298,6 +298,7 @@ public class VisualGraphDraftController {
 
         List<String> requestedNodeIds = request == null ? List.of() : request.nodeIds();
         Map<String, String> activeFingerprints = currentOperatorFingerprints(draft);
+        Map<String, OperatorDefinition> activeSnapshots = currentOperatorSnapshots(draft);
         List<VisualDiagnostic> diagnostics = operatorFingerprintRebaseDiagnostics(
                 draft, requestedNodeIds, activeFingerprints);
         if (!diagnostics.isEmpty()) {
@@ -307,21 +308,21 @@ public class VisualGraphDraftController {
 
         List<GraphDraft.DraftNode> targetNodes = operatorFingerprintRebaseTargets(draft, requestedNodeIds);
         Map<String, String> nextFingerprints = new LinkedHashMap<>(draft.operatorFingerprints());
+        Map<String, OperatorDefinition> nextSnapshots = new LinkedHashMap<>(draft.operatorSnapshots());
         for (GraphDraft.DraftNode node : targetNodes) {
             nextFingerprints.put(node.id(), activeFingerprints.get(node.id()));
+            nextSnapshots.put(node.id(), activeSnapshots.get(node.id()));
         }
-        if (nextFingerprints.equals(draft.operatorFingerprints())) {
+        if (nextFingerprints.equals(draft.operatorFingerprints()) && nextSnapshots.equals(draft.operatorSnapshots())) {
             return ResponseEntity.ok(GraphDraftPatchResult.patched(draft));
         }
 
-        GraphDraft candidate = draft.withOperatorFingerprints(nextFingerprints)
+        GraphDraft candidate = draft.withOperatorSnapshotState(nextFingerprints, nextSnapshots)
                 .withRevisionMetadata(GraphDraft.RevisionMetadata.patch(
                         "visual-canvas",
                         "operator-fingerprint-rebase",
                         "Rebased operator fingerprint snapshot(s).",
-                        targetNodes.stream()
-                                .map(node -> "/operatorFingerprints/" + jsonPointerSegment(node.id()))
-                                .toList()
+                        operatorSnapshotRebaseChangedPaths(targetNodes)
                 ));
         return repository.saveIfRevision(draftId, draft.revision(), candidate)
                 .map(stored -> ResponseEntity.ok(GraphDraftPatchResult.patched(stored)))
@@ -432,16 +433,52 @@ public class VisualGraphDraftController {
                 .orElseGet(() -> ResponseEntity.notFound().build());
     }
 
-    private GraphDraft withCurrentOperatorFingerprints(GraphDraft draft) {
-        return draft.withOperatorFingerprints(currentOperatorFingerprints(draft));
+    private GraphDraft withCurrentOperatorSnapshotState(GraphDraft draft) {
+        Map<String, OperatorDefinition> snapshots = currentOperatorSnapshots(draft);
+        return draft.withOperatorSnapshotState(fingerprintsForSnapshots(snapshots), snapshots);
     }
 
-    private GraphDraft withMissingCurrentOperatorFingerprints(GraphDraft draft) {
-        return draft.withOperatorFingerprints(fingerprintsWithMissingCurrentValues(draft));
+    private GraphDraft withMissingCurrentOperatorSnapshotState(GraphDraft draft) {
+        Map<String, String> fingerprints = new LinkedHashMap<>(currentOperatorFingerprints(draft));
+        fingerprints.putAll(fingerprintsForDraftNodes(draft, draft.operatorFingerprints()));
+        Map<String, OperatorDefinition> snapshots = new LinkedHashMap<>(currentOperatorSnapshots(draft));
+        snapshots.putAll(matchingSnapshotsForDraftNodes(draft, draft.operatorSnapshots()));
+        return draft.withOperatorSnapshotState(fingerprints, snapshots);
     }
 
-    private GraphDraft withExistingOrCurrentOperatorFingerprints(GraphDraft current, GraphDraft draft) {
-        return draft.withOperatorFingerprints(fingerprintsWithExistingOrCurrentValues(current, draft));
+    private GraphDraft withCurrentOrProvidedOperatorSnapshotState(GraphDraft draft) {
+        Map<String, String> fingerprints = new LinkedHashMap<>(fingerprintsForDraftNodes(draft,
+                draft.operatorFingerprints()));
+        fingerprints.putAll(currentOperatorFingerprints(draft));
+        Map<String, OperatorDefinition> snapshots = new LinkedHashMap<>(matchingSnapshotsForDraftNodes(draft,
+                draft.operatorSnapshots()));
+        snapshots.putAll(currentOperatorSnapshots(draft));
+        return draft.withOperatorSnapshotState(fingerprints, snapshots);
+    }
+
+    private GraphDraft withExistingOrCurrentOperatorSnapshotState(GraphDraft current, GraphDraft draft) {
+        Map<String, String> activeFingerprints = currentOperatorFingerprints(draft);
+        Map<String, OperatorDefinition> activeSnapshots = currentOperatorSnapshots(draft);
+        Map<String, String> fingerprints = new LinkedHashMap<>();
+        Map<String, OperatorDefinition> snapshots = new LinkedHashMap<>();
+        for (GraphDraft.DraftNode node : draft.nodes()) {
+            OperatorDefinition existingSnapshot = current.operatorSnapshots().get(node.id());
+            String existingFingerprint = current.operatorFingerprints().get(node.id());
+            if (existingFingerprint != null && !existingFingerprint.isBlank()
+                    && (existingSnapshot == null || snapshotMatchesNode(existingSnapshot, node))) {
+                fingerprints.put(node.id(), existingFingerprint);
+            } else {
+                Optional.ofNullable(activeFingerprints.get(node.id()))
+                        .ifPresent(fingerprint -> fingerprints.put(node.id(), fingerprint));
+            }
+            if (snapshotMatchesNode(existingSnapshot, node)) {
+                snapshots.put(node.id(), existingSnapshot);
+            } else {
+                Optional.ofNullable(activeSnapshots.get(node.id()))
+                        .ifPresent(snapshot -> snapshots.put(node.id(), snapshot));
+            }
+        }
+        return draft.withOperatorSnapshotState(fingerprints, snapshots);
     }
 
     private ResponseEntity<VisualGraphPublicationResult> publishDraft(String draftId,
@@ -475,7 +512,7 @@ public class VisualGraphDraftController {
                     .body(VisualGraphPublicationResult.rejected(generation.diagnostics()));
         }
 
-        GraphDraft snapshot = draft.withOperatorFingerprints(fingerprintsWithMissingCurrentValues(draft));
+        GraphDraft snapshot = withMissingCurrentOperatorSnapshotState(draft);
         List<OperatorDefinition> snapshots = operatorSnapshots(snapshot);
         VisualGraphPublication candidate = VisualGraphPublishRequest.ARTIFACT_DESIGN.equals(artifactKind)
                 ? VisualGraphPublication.design(snapshot, snapshots, validation, generation)
@@ -523,28 +560,11 @@ public class VisualGraphDraftController {
                 ));
     }
 
-    private Map<String, String> fingerprintsWithMissingCurrentValues(GraphDraft draft) {
-        Map<String, String> fingerprints = new LinkedHashMap<>(currentOperatorFingerprints(draft));
-        fingerprints.putAll(draft.operatorFingerprints());
-        return fingerprints;
-    }
-
-    private Map<String, String> fingerprintsWithExistingOrCurrentValues(GraphDraft current, GraphDraft draft) {
-        Map<String, String> activeFingerprints = currentOperatorFingerprints(draft);
-        Map<String, String> fingerprints = new LinkedHashMap<>();
-        for (GraphDraft.DraftNode node : draft.nodes()) {
-            String existing = current.operatorFingerprints().get(node.id());
-            if (existing != null && !existing.isBlank()) {
-                fingerprints.put(node.id(), existing);
-                continue;
-            }
-            Optional.ofNullable(activeFingerprints.get(node.id()))
-                    .ifPresent(fingerprint -> fingerprints.put(node.id(), fingerprint));
-        }
-        return fingerprints;
-    }
-
     private Map<String, String> currentOperatorFingerprints(GraphDraft draft) {
+        return fingerprintsForSnapshots(currentOperatorSnapshots(draft));
+    }
+
+    private Map<String, OperatorDefinition> currentOperatorSnapshots(GraphDraft draft) {
         Map<String, OperatorDefinition> activeOperators = new LinkedHashMap<>();
         catalog.list(new OperatorCatalogQuery(
                 "",
@@ -556,13 +576,85 @@ public class VisualGraphDraftController {
                 draft.environment()
         )).forEach(operator -> activeOperators.put(operator.operatorRef(), operator));
 
-        Map<String, String> fingerprints = new LinkedHashMap<>();
+        Map<String, OperatorDefinition> snapshots = new LinkedHashMap<>();
         for (GraphDraft.DraftNode node : draft.nodes()) {
             Optional.ofNullable(activeOperators.get(node.operatorRef()))
-                    .map(OperatorDefinition::fingerprint)
-                    .ifPresent(fingerprint -> fingerprints.put(node.id(), fingerprint));
+                    .ifPresent(operator -> snapshots.put(node.id(), operator));
         }
+        return snapshots;
+    }
+
+    private static Map<String, String> fingerprintsForSnapshots(Map<String, OperatorDefinition> snapshots) {
+        Map<String, String> fingerprints = new LinkedHashMap<>();
+        snapshots.forEach((nodeId, snapshot) -> Optional.ofNullable(snapshot)
+                .map(OperatorDefinition::fingerprint)
+                .filter(fingerprint -> !fingerprint.isBlank())
+                .ifPresent(fingerprint -> fingerprints.put(nodeId, fingerprint)));
         return fingerprints;
+    }
+
+    private static Map<String, String> fingerprintsForDraftNodes(GraphDraft draft,
+                                                                 Map<String, String> fingerprints) {
+        Map<String, String> result = new LinkedHashMap<>();
+        for (GraphDraft.DraftNode node : draft.nodes()) {
+            String fingerprint = fingerprints.get(node.id());
+            if (fingerprint != null && !fingerprint.isBlank()) {
+                result.put(node.id(), fingerprint);
+            }
+        }
+        return result;
+    }
+
+    private static Map<String, OperatorDefinition> matchingSnapshotsForDraftNodes(
+            GraphDraft draft,
+            Map<String, OperatorDefinition> snapshots) {
+        Map<String, OperatorDefinition> result = new LinkedHashMap<>();
+        for (GraphDraft.DraftNode node : draft.nodes()) {
+            OperatorDefinition snapshot = snapshots.get(node.id());
+            if (snapshotMatchesNode(snapshot, node)) {
+                result.put(node.id(), snapshot);
+            }
+        }
+        return result;
+    }
+
+    private static boolean snapshotMatchesNode(OperatorDefinition snapshot, GraphDraft.DraftNode node) {
+        return snapshot != null && node != null && snapshot.operatorRef().equals(node.operatorRef());
+    }
+
+    private static List<String> operatorSnapshotRebaseChangedPaths(List<GraphDraft.DraftNode> nodes) {
+        List<String> changedPaths = new ArrayList<>();
+        for (GraphDraft.DraftNode node : nodes) {
+            String segment = jsonPointerSegment(node.id());
+            changedPaths.add("/operatorFingerprints/" + segment);
+            changedPaths.add("/operatorSnapshots/" + segment);
+        }
+        return changedPaths;
+    }
+
+    private static GraphDraft withBundleOperatorSnapshots(GraphDraft draft, List<OperatorDefinition> snapshots) {
+        if (draft == null || snapshots == null || snapshots.isEmpty()) {
+            return draft;
+        }
+        Map<String, OperatorDefinition> byRef = new LinkedHashMap<>();
+        for (OperatorDefinition snapshot : snapshots) {
+            if (snapshot != null) {
+                byRef.putIfAbsent(snapshot.operatorRef(), snapshot);
+            }
+        }
+        Map<String, OperatorDefinition> nodeSnapshots = new LinkedHashMap<>(draft.operatorSnapshots());
+        Map<String, String> fingerprints = new LinkedHashMap<>(draft.operatorFingerprints());
+        for (GraphDraft.DraftNode node : draft.nodes()) {
+            if (!snapshotMatchesNode(nodeSnapshots.get(node.id()), node)) {
+                Optional.ofNullable(byRef.get(node.operatorRef()))
+                        .ifPresent(snapshot -> nodeSnapshots.put(node.id(), snapshot));
+            }
+            Optional.ofNullable(nodeSnapshots.get(node.id()))
+                    .map(OperatorDefinition::fingerprint)
+                    .filter(fingerprint -> !fingerprint.isBlank())
+                    .ifPresent(fingerprint -> fingerprints.putIfAbsent(node.id(), fingerprint));
+        }
+        return draft.withOperatorSnapshotState(fingerprints, nodeSnapshots);
     }
 
     private static List<VisualDiagnostic> operatorFingerprintRebaseDiagnostics(
@@ -626,12 +718,18 @@ public class VisualGraphDraftController {
     }
 
     private List<OperatorDefinition> operatorSnapshots(GraphDraft draft) {
-        return draft.nodes().stream()
-                .map(GraphDraft.DraftNode::operatorRef)
-                .distinct()
-                .map(catalog::find)
-                .flatMap(Optional::stream)
-                .toList();
+        Map<String, OperatorDefinition> snapshots = new LinkedHashMap<>();
+        Map<String, OperatorDefinition> currentSnapshots = currentOperatorSnapshots(draft);
+        for (GraphDraft.DraftNode node : draft.nodes()) {
+            OperatorDefinition snapshot = draft.operatorSnapshots().get(node.id());
+            if (!snapshotMatchesNode(snapshot, node)) {
+                snapshot = currentSnapshots.get(node.id());
+            }
+            if (snapshot != null) {
+                snapshots.putIfAbsent(snapshot.operatorRef() + "@" + snapshot.fingerprint(), snapshot);
+            }
+        }
+        return List.copyOf(snapshots.values());
     }
 
     private static void requireSupportedDraftContract(GraphDraft draft) {
