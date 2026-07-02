@@ -1,6 +1,7 @@
 package com.leanowtech.bloge.gateway.visual.catalog;
 
 import com.leanowtech.bloge.gateway.visual.diagnostic.VisualDiagnostic;
+import com.leanowtech.bloge.gateway.visual.validation.VisualRuntimeBindingRequirementKey;
 import com.leanowtech.bloge.gateway.visual.validation.VisualRuntimeBindingRequirementPlanner;
 
 import java.util.ArrayList;
@@ -47,6 +48,7 @@ import java.util.Set;
  * @param message human-readable decision summary
  * @param recommendedAction concise next action for UI or automation
  * @param runtimeBindingRequirementCount runtime binding requirement count for submitted operators
+ * @param runtimeBindingRequirementKeys stable keys aligned with runtimeBindingRequirements
  * @param runtimeBindingRequirements per-operator runtime binding requirements before executable use
  */
 public record OperatorLibraryImportReadiness(
@@ -77,6 +79,7 @@ public record OperatorLibraryImportReadiness(
         String message,
         String recommendedAction,
         int runtimeBindingRequirementCount,
+        List<String> runtimeBindingRequirementKeys,
         List<RuntimeBindingRequirement> runtimeBindingRequirements
 ) {
     public static final String SCHEMA_VERSION = "bloge.visualOperatorLibraryImportReadiness.v1";
@@ -128,6 +131,11 @@ public record OperatorLibraryImportReadiness(
         message = message == null ? "" : message;
         recommendedAction = recommendedAction == null ? "" : recommendedAction;
         runtimeBindingRequirements = immutableRuntimeBindingRequirements(runtimeBindingRequirements);
+        runtimeBindingRequirementKeys = runtimeBindingRequirementKeys == null
+                ? runtimeBindingRequirements.stream()
+                .map(RuntimeBindingRequirement::requirementKey)
+                .toList()
+                : immutableStringList(runtimeBindingRequirementKeys);
         runtimeBindingRequirementCount = runtimeBindingRequirements.size();
     }
 
@@ -241,6 +249,9 @@ public record OperatorLibraryImportReadiness(
                 message,
                 recommendedAction,
                 runtimeBindingRequirements.size(),
+                runtimeBindingRequirements.stream()
+                        .map(RuntimeBindingRequirement::requirementKey)
+                        .toList(),
                 runtimeBindingRequirements
         );
     }
@@ -371,7 +382,7 @@ public record OperatorLibraryImportReadiness(
                 continue;
             }
             OperatorLibraryProfile.OperatorProfile operatorProfile = profilesByOperatorRef.get(operator.operatorRef());
-            requirements.addAll(RuntimeBindingRequirement.from(operator, operatorProfile));
+            requirements.addAll(RuntimeBindingRequirement.from(library.libraryId(), operator, operatorProfile));
         }
         return List.copyOf(requirements);
     }
@@ -386,9 +397,19 @@ public record OperatorLibraryImportReadiness(
                 .toList());
     }
 
+    private static List<String> immutableStringList(List<String> values) {
+        if (values == null || values.isEmpty()) {
+            return List.of();
+        }
+        return Collections.unmodifiableList(values.stream()
+                .map(value -> value == null ? "" : value)
+                .toList());
+    }
+
     /**
      * Runtime binding required for an imported operator before executable graph use.
      *
+     * @param requirementKey stable import-time binding requirement key
      * @param operatorRef operator reference that needs runtime binding
      * @param label display label
      * @param state readiness state that produced the requirement
@@ -405,6 +426,7 @@ public record OperatorLibraryImportReadiness(
      * @param recommendedAction human-readable next action
      */
     public record RuntimeBindingRequirement(
+            String requirementKey,
             String operatorRef,
             String label,
             String state,
@@ -429,6 +451,15 @@ public record OperatorLibraryImportReadiness(
             loweringMode = normalizeFacetValue(loweringMode);
             bindingKind = normalizeFacetValue(bindingKind);
             bindingTarget = bindingTarget == null ? "" : bindingTarget;
+            requirementKey = requirementKey == null || requirementKey.isBlank()
+                    ? VisualRuntimeBindingRequirementKey.stable(
+                    "operator-library",
+                    "",
+                    operatorRef,
+                    bindingKind,
+                    bindingTarget,
+                    "")
+                    : requirementKey;
             handoffLane = normalizeFacetValue(handoffLane);
             handoffKind = normalizeFacetValue(handoffKind);
             handoffTarget = handoffTarget == null ? "" : handoffTarget;
@@ -438,6 +469,7 @@ public record OperatorLibraryImportReadiness(
         }
 
         private static List<RuntimeBindingRequirement> from(
+                String libraryId,
                 OperatorDefinition operator,
                 OperatorLibraryProfile.OperatorProfile operatorProfile) {
             String state = operatorProfile == null
@@ -448,14 +480,22 @@ public record OperatorLibraryImportReadiness(
                     : operatorProfile.runtimeReadinessLevel();
             String fallbackSummary = operatorProfile == null ? "" : operatorProfile.runtimeReadinessSummary();
             return VisualRuntimeBindingRequirementPlanner.from(operator, state, level, fallbackSummary).stream()
-                    .map(requirement -> requirement(requirement, importRecommendedAction(requirement)))
+                    .map(requirement -> requirement(libraryId, requirement, importRecommendedAction(requirement)))
                     .toList();
         }
 
         private static RuntimeBindingRequirement requirement(
+                String libraryId,
                 VisualRuntimeBindingRequirementPlanner.OperatorRequirement requirement,
                 String recommendedAction) {
             return new RuntimeBindingRequirement(
+                    VisualRuntimeBindingRequirementKey.stable(
+                            "operator-library",
+                            libraryId,
+                            requirement.operatorRef(),
+                            requirement.bindingKind(),
+                            requirement.bindingTarget(),
+                            ""),
                     requirement.operatorRef(),
                     requirement.label(),
                     requirement.state(),

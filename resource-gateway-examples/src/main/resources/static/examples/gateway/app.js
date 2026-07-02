@@ -417,6 +417,7 @@ const state = {
     sourceKind: '',
     loweringMode: '',
     readinessState: '',
+    requirementKey: '',
     offset: 0,
     limit: 10
   },
@@ -798,6 +799,9 @@ function visualRuntimeBindingRequirementsUrl(builder = state.builder) {
   if (query.readinessState) {
     params.set('readinessState', query.readinessState);
   }
+  if (query.requirementKey) {
+    params.set('requirementKey', query.requirementKey);
+  }
   return `/api/visual/assets/runtime-binding-requirements?${params.toString()}`;
 }
 
@@ -832,6 +836,7 @@ function normalizeVisualRuntimeBindingRequirementQuery(query = {}) {
     sourceKind: String(query.sourceKind || '').trim().toLowerCase(),
     loweringMode: String(query.loweringMode || '').trim().toLowerCase(),
     readinessState: String(query.readinessState || '').trim().toLowerCase(),
+    requirementKey: String(query.requirementKey || '').trim(),
     offset: Math.max(0, Number(query.offset || 0) || 0),
     limit
   };
@@ -4316,6 +4321,7 @@ function normalizeOperatorLibraryImportReadiness(importReadiness) {
     warningCodes: normalizeStringArray(importReadiness.warningCodes),
     message: String(importReadiness.message || ''),
     recommendedAction: String(importReadiness.recommendedAction || ''),
+    runtimeBindingRequirementKeys: normalizeStringArray(importReadiness.runtimeBindingRequirementKeys),
     runtimeBindingRequirements: Array.isArray(importReadiness.runtimeBindingRequirements)
       ? importReadiness.runtimeBindingRequirements.map(normalizeRuntimeBindingRequirement)
       : [],
@@ -5199,6 +5205,7 @@ function normalizeVisualGraphReadiness(readiness) {
 
 function normalizeRuntimeBindingRequirement(requirement) {
   return {
+    requirementKey: String(requirement?.requirementKey || ''),
     nodeId: String(requirement?.nodeId || ''),
     operatorRef: String(requirement?.operatorRef || ''),
     label: String(requirement?.label || ''),
@@ -7287,6 +7294,7 @@ function visualRuntimeBindingRequirementsShouldShow(bindingIndex) {
       || query.sourceKind
       || query.loweringMode
       || query.readinessState
+      || query.requirementKey
       || query.offset);
 }
 
@@ -7367,6 +7375,7 @@ function visualRuntimeBindingRequirementControls(bindingIndex) {
     || query.sourceKind
     || query.loweringMode
     || query.readinessState
+    || query.requirementKey
     || offset
     || pageSize !== 10);
   const canPrevious = offset > 0;
@@ -7837,6 +7846,7 @@ function attachVisualRuntimeBindingRequirementQueryHandlers(bindingIndex) {
       sourceKind: '',
       loweringMode: '',
       readinessState: '',
+      requirementKey: '',
       offset: 0,
       limit: 10
     });

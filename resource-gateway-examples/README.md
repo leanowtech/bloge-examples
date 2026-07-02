@@ -153,8 +153,9 @@ per-operator import-time `runtimeBindingRequirements` show which schema-only,
 remote-worker, AI-tool, event/message/webhook, streaming, durable, or unresolved
 native operators need runtime-plane binding before executable graph use; those
 operator-level requirement kinds, targets, and handoff lane/kind/target routing
-metadata are derived by the same server planner later used by graph readiness
-and workspace runtime-binding indexes,
+metadata plus stable `requirementKey` / `runtimeBindingRequirementKeys` are derived
+by the same server planner later used by graph readiness and workspace
+runtime-binding indexes,
 opt into `force=true` for explicit destructive operator-library replacement or
 deletion after inspecting the server-provided impact review for affected drafts,
 publications, operators, and diagnostic codes, jump from an affected draft chip
@@ -776,7 +777,7 @@ Showcase metadata APIs:
 | `GET` | `/api/visual/operators` | List native, Java registry, imported, executable publication-backed subgraph, and resource-backed visual operator definitions; supports `tenantId`, `namespace`, and `environment` policy filtering, `sourceKind` / `loweringMode` / `capability` / `runtimeReadiness` catalog facets, plus multi-term schema-aware search across input/output/config fields, field types, and readiness summaries; response includes `facets.total/sourceKinds/loweringModes/capabilities/runtimeReadinessStates` counts |
 | `GET` | `/api/visual/operators/{operatorRef}/usage` | Return stored draft and immutable-publication usage of one operatorRef, including saved/frozen fingerprint status, changed-surface drift summaries, and `changeRisk/changeCategories/changeSummary` when snapshots allow risk classification |
 | `GET` | `/api/visual/assets/overview` | Return `bloge.visualAssetOverview.v1`, an environment-level visual authoring overview that echoes the requested authoring scope while aggregating draft summaries, publication summaries, current operator catalog facets, and an action-readiness/runtime-binding-requirement-aware server-derived action queue with optional `tenantId` / `namespace` / `environment` scope filters plus `actionLimit` / `actionOffset` / `actionSeverity` / `actionType` / `actionTargetKind` queue query controls |
-| `GET` | `/api/visual/assets/runtime-binding-requirements` | Return `bloge.visualRuntimeBindingRequirements.v1`, a scope-aware, pageable runtime-binding gap index for active drafts and immutable publications, with `targetKind` / `bindingKind` / `handoffLane` / `handoffKind` / `handoffTarget` / `sourceKind` / `loweringMode` / `readinessState` filters, stable requirement keys, and handoff lane/kind/target fields for external runtime-plane routing |
+| `GET` | `/api/visual/assets/runtime-binding-requirements` | Return `bloge.visualRuntimeBindingRequirements.v1`, a scope-aware, pageable runtime-binding gap index for active drafts and immutable publications, with `targetKind` / `bindingKind` / `handoffLane` / `handoffKind` / `handoffTarget` / `sourceKind` / `loweringMode` / `readinessState` / `requirementKey` filters, stable requirement keys, and handoff lane/kind/target fields for external runtime-plane routing |
 | `GET` | `/api/visual/drafts` | List stored visual graph drafts with optional `tenantId` / `namespace` / `environment` scope filters |
 | `GET` | `/api/visual/drafts/history` | List lightweight active/deleted draft history summaries with current/latest revision, revision count, latest actor/source/summary, recovery status, and optional `tenantId` / `namespace` / `environment` scope filters |
 | `GET` | `/api/visual/drafts/summaries` | List `bloge.visualGraphDraftSummary.v1` draft asset summaries that combine history, server validation/readiness/action-readiness, diagnostic counts, and dependency counts without returning full draft JSON; supports optional `tenantId` / `namespace` / `environment` scope filters |
@@ -1118,7 +1119,7 @@ recommendation list, `/api/visual/assets/runtime-binding-requirements` exposes
 the same gaps as `bloge.visualRuntimeBindingRequirements.v1`, scoped and
 pageable by tenant/namespace/environment and filterable by target kind, binding
 kind, handoff lane, handoff work kind, handoff route target, source kind,
-lowering mode, or readiness state. The same
+lowering mode, readiness state, or stable requirement key. The same
 Workspace Overview panel renders that index with filters, paging, and
 draft/publication Open actions, so design-time binding work is visible from the canvas without
 pretending the graph is executable.
@@ -1506,7 +1507,7 @@ Seven `.bloge` graphs live in `src/main/resources/bloge/gateway/`:
 | `ResourceDesignContractValidator` | Blocks invalid resource authoring schemas and raw secret examples before resource contracts enter the virtual operator catalog |
 | `OperatorLibrary` | User-provided operator catalog bundle with schema-aware `OperatorDefinition` entries |
 | `OperatorLibraryExportBundle` | Portable operator-library package with source identity, current library snapshot, latest registry revision evidence, and export-time validation/profile/impact/readiness result |
-| `OperatorLibraryImportReadiness` | Server-derived operator-library import decision summary, separating importable/design-only/runtime-binding/governance/force/catalog-repair states from raw diagnostics and listing per-operator import-time runtime binding requirements |
+| `OperatorLibraryImportReadiness` | Server-derived operator-library import decision summary, separating importable/design-only/runtime-binding/governance/force/catalog-repair states from raw diagnostics and listing per-operator import-time runtime binding requirements with stable keys |
 | `OperatorLibraryImportResult` | Target-environment result for importing an operator-library export bundle, including source identity, import decision, target latest revision, and target preflight validation/profile/impact/readiness evidence |
 | `OperatorLibraryRevision` | Immutable create/replace/delete/restore audit snapshot for user-provided operator-library registry changes |
 | `DatabaseOperatorLibraryRegistry` | H2-backed user operator-library registry with current catalog storage plus immutable revision snapshots, so imported operator catalogs and their governance history survive restart |

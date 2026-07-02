@@ -1254,7 +1254,30 @@ libraryId 拉取 history、在 JSON editor 中预览历史 snapshot、并通过 
     "blockingCodes": [],
     "warningCodes": ["visual.operator.lowering.operatorRefUnresolved"],
     "message": "The library can support authoring, but runtime binding is incomplete for executable graphs.",
-    "recommendedAction": "Import for design work or bind the missing runtime before executable publication."
+    "recommendedAction": "Import for design work or bind the missing runtime before executable publication.",
+    "runtimeBindingRequirementCount": 1,
+    "runtimeBindingRequirementKeys": [
+      "RUNTIME_BINDING|operator-library|risk-policy|risk:eligibility|executable-lowering|risk:eligibility|"
+    ],
+    "runtimeBindingRequirements": [
+      {
+        "requirementKey": "RUNTIME_BINDING|operator-library|risk-policy|risk:eligibility|executable-lowering|risk:eligibility|",
+        "operatorRef": "risk:eligibility",
+        "label": "Eligibility",
+        "state": "design-only",
+        "level": "info",
+        "sourceKind": "user-library",
+        "loweringMode": "design",
+        "bindingKind": "executable-lowering",
+        "bindingTarget": "risk:eligibility",
+        "handoffLane": "operator-platform",
+        "handoffKind": "operator-implementation",
+        "handoffTarget": "risk:eligibility",
+        "title": "Executable lowering required",
+        "summary": "This operator is schema-authorable only; no executable lowering is bound.",
+        "recommendedAction": "Bind a native/resource/subgraph lowering before using this operator in EXECUTABLE graphs."
+      }
+    ]
   },
   "impact": {
     "schemaVersion": "bloge.visualOperatorLibraryImpact.v1",
@@ -1299,6 +1322,10 @@ governance-review/design-only 计数，以及用于浏览器 profile 面板的�
 浏览器、CI 或外部控制面应使用 `requiresAckWarnings`、`requiresForce`、
 `requiresGovernanceEvidence`、`blockingCodes`、`warningCodes` 和 affected counts
 路由下一步动作，而不是解析自然语言 diagnostic message。
+当导入前存在 runtime binding gap 时，`runtimeBindingRequirements[]` 中每个 item
+都会携带稳定 `requirementKey`，顶层 `runtimeBindingRequirementKeys[]` 与该数组按顺序对齐。
+当前 key 公式与后续图级 runtime-binding index 共用同一前缀：
+`RUNTIME_BINDING|operator-library|{libraryId}|{operatorRef}|{bindingKind}|{bindingTarget}|`。
 
 `bloge.visualOperatorLibraryImpact.v1` 是导入/替换/删除前的机器可读影响面。
 当前实现会聚合 affected draft、publication、operatorRef、draft node target、
@@ -1707,8 +1734,9 @@ message handler、webhook、streaming 或 durable capability 暂时不能运行�
 `bloge.visualRuntimeBindingRequirements.v1`，按 active draft 和 immutable publication
 展开同一批 requirement，并支持 `tenantId/namespace/environment`、`limit/offset`、
 `targetKind`、`bindingKind`、`handoffLane`、`handoffKind`、`handoffTarget`、
-`sourceKind`、`loweringMode` 和 `readinessState`
-查询。该索引不持久化待办状态，`readiness.runtimeBindingRequirements[]`
+`sourceKind`、`loweringMode`、`readinessState` 和 `requirementKey`
+查询。`requirementKey` 用于让 draft/publication import result 或 workspace item
+直接回查同一条 runtime binding gap，而不是分页扫描索引。该索引不持久化待办状态，`readiness.runtimeBindingRequirements[]`
 仍是唯一事实来源。
 `actionReadiness` 则把同一批 diagnostics/readiness 压成产品动作门禁：`compileNow`、
 `runNow`、`publishDesignNow`、`publishDesignAfterReview`、`publishExecutableNow`、

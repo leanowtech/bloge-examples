@@ -710,7 +710,10 @@ publication / operator counts，避免浏览器或 CI 解析自然语言诊断�
 operatorRef 会生成 `runtime-adapter`，remote-worker / AI-tool / event-source /
 message-handler / webhook / streaming / durable 会生成对应 runtime binding kind、target
 和 recommendedAction，并同时生成 `handoffLane`、`handoffKind`、`handoffTarget`
-这组无状态路由元数据。这样用户刚贴入算子库定义时就能把运行时绑定工作派给 runtime plane，
+这组无状态路由元数据。每条 requirement 也会携带稳定 `requirementKey`，顶层
+`runtimeBindingRequirementKeys[]` 与明细数组按顺序对齐，key 形如
+`RUNTIME_BINDING|operator-library|{libraryId}|{operatorRef}|{bindingKind}|{bindingTarget}|`。
+这样用户刚贴入算子库定义时就能把运行时绑定工作派给 runtime plane，
 而不是等图已经被大量草稿引用后才从单个 draft readiness 里反推。
 这些 operator-level binding kind/target/handoff/title/summary 与后续
 `VisualGraphReadiness.runtimeBindingRequirements[]` 共用同一服务端 planner；导入面和图面只附加
@@ -750,7 +753,8 @@ per-node `PLAN_DRAFT_RUNTIME_BINDING` / `PLAN_PUBLICATION_RUNTIME_BINDING` items
 而不是只凭 `design-only` readiness 做粗粒度归类。
 同一事实源还会通过 `GET /api/visual/assets/runtime-binding-requirements` 暴露为
 `bloge.visualRuntimeBindingRequirements.v1`，给外部 runtime-plane 集成团队按
-scope、targetKind、bindingKind、handoffLane、handoffKind、handoffTarget、sourceKind、loweringMode 和 readinessState 查询、分页和计数；
+scope、targetKind、bindingKind、handoffLane、handoffKind、handoffTarget、sourceKind、loweringMode、readinessState 和 requirementKey 查询、分页和计数；
+其中 `requirementKey` 是 import result、overview item 和索引 row 之间的精确回查桥。
 这个索引不保存待办状态，避免和 draft/publication readiness 形成第二套真相源。
 浏览器 Workspace Overview 会同步加载这个索引并展示 Runtime Binding Requirements 小节，
 提供同类过滤、分页和 draft/publication 打开动作，让作者和集成团队在画布工作台内看到
@@ -836,7 +840,7 @@ fingerprint snapshot；普通保存和 PATCH 仍保留既有 snapshot，避免�
 | `GET` | `/api/visual/publications/{publicationId}/export` | 当前已实现：导出 immutable publication 为 `bloge.visualGraphPublicationExport.v1` portable bundle，包含 source lineage、frozen artifact、validation/readiness 和 dependency report |
 | `POST` | `/api/visual/publications/import-bundle` | 当前已实现：导入 portable publication bundle，返回 `bloge.visualGraphPublicationImportResult.v1`，包含 source bundle dependency report、基于目标环境当前 catalog 计算的 target dependency report、frozen readiness 派生的 target runtime-binding handoff requirements 和 stable keys，并对 unsupported bundle/publication schemaVersion、缺失 snapshot 和重复 publicationId 做结构化拒绝 |
 | `GET` | `/api/visual/assets/overview` | 当前已实现：返回 `bloge.visualAssetOverview.v1`，聚合 draft/publication/operator catalog readiness，并用 summary actionReadiness 和 runtimeBindingRequirements 派生可分页 action queue |
-| `GET` | `/api/visual/assets/runtime-binding-requirements` | 当前已实现：返回 `bloge.visualRuntimeBindingRequirements.v1`，把 active draft 和 immutable publication 的 runtime binding gaps 暴露为 scope-aware/filterable/pageable 事实索引 |
+| `GET` | `/api/visual/assets/runtime-binding-requirements` | 当前已实现：返回 `bloge.visualRuntimeBindingRequirements.v1`，把 active draft 和 immutable publication 的 runtime binding gaps 暴露为 scope-aware/filterable/pageable 事实索引，并支持 `requirementKey` 精确回查 |
 
 ### 12.3 Runtime / Trace API
 

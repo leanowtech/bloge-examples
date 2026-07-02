@@ -1,7 +1,7 @@
 package com.leanowtech.bloge.gateway.visual.validation;
 
 /**
- * Stable key contract for node-scoped runtime binding requirements.
+ * Stable key contract for runtime binding requirements.
  */
 public final class VisualRuntimeBindingRequirementKey {
 
@@ -9,11 +9,11 @@ public final class VisualRuntimeBindingRequirementKey {
     }
 
     /**
-     * Builds the stable key shared by import results and the runtime-binding requirement index.
+     * Builds the stable key shared by import results, import readiness, and the runtime-binding requirement index.
      *
-     * @param targetKind draft or publication
+     * @param targetKind draft, publication, or operator-library
      * @param targetId target asset id
-     * @param nodeId node id that needs the binding
+     * @param nodeId node id or operatorRef that needs the binding
      * @param bindingKind missing binding kind
      * @param bindingTarget binding route or operator target
      * @param artifactKind publication artifact kind, blank for drafts

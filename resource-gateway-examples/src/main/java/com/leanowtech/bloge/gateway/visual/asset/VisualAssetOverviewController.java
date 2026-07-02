@@ -121,6 +121,7 @@ public class VisualAssetOverviewController {
      * @param sourceKind optional source kind filter
      * @param loweringMode optional lowering mode filter
      * @param readinessState optional graph or node readiness state filter
+     * @param requirementKey optional stable requirement key filter
      * @return runtime binding requirement index
      */
     @GetMapping("/runtime-binding-requirements")
@@ -137,7 +138,8 @@ public class VisualAssetOverviewController {
             @RequestParam(defaultValue = "") String handoffTarget,
             @RequestParam(defaultValue = "") String sourceKind,
             @RequestParam(defaultValue = "") String loweringMode,
-            @RequestParam(defaultValue = "") String readinessState) {
+            @RequestParam(defaultValue = "") String readinessState,
+            @RequestParam(defaultValue = "") String requirementKey) {
         return VisualRuntimeBindingRequirements.from(
                 draftSummaries(tenantId, namespace, environment),
                 publicationSummaries(tenantId, namespace, environment),
@@ -153,7 +155,8 @@ public class VisualAssetOverviewController {
                 handoffTarget,
                 sourceKind,
                 loweringMode,
-                readinessState
+                readinessState,
+                requirementKey
         );
     }
 
@@ -169,7 +172,7 @@ public class VisualAssetOverviewController {
                                                                 String namespace,
                                                                 String environment) {
         return runtimeBindingRequirements(tenantId, namespace, environment,
-                VisualRuntimeBindingRequirements.DEFAULT_ITEM_LIMIT, 0, "", "", "", "", "", "", "", "");
+                VisualRuntimeBindingRequirements.DEFAULT_ITEM_LIMIT, 0, "", "", "", "", "", "", "", "", "");
     }
 
     private List<GraphDraftSummary> draftSummaries(String tenantId, String namespace, String environment) {

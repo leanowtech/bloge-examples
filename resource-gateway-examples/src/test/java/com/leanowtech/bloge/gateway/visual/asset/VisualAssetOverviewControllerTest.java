@@ -141,7 +141,26 @@ class VisualAssetOverviewControllerTest {
                 "",
                 "",
                 "",
+                "",
                 ""
+        );
+        String draftRequirementKey = "RUNTIME_BINDING|draft|%s|eligibility|executable-lowering|risk:eligibility|"
+                .formatted(draft.draftId());
+        VisualRuntimeBindingRequirements byRequirementKey = controller.runtimeBindingRequirements(
+                "",
+                "",
+                "",
+                10,
+                0,
+                "",
+                "",
+                "",
+                "",
+                "",
+                "",
+                "",
+                "",
+                draftRequirementKey
         );
         VisualRuntimeBindingRequirements draftOnly = controller.runtimeBindingRequirements(
                 "",
@@ -154,6 +173,7 @@ class VisualAssetOverviewControllerTest {
                 "operator-platform",
                 "operator-implementation",
                 "risk:eligibility",
+                "",
                 "",
                 "",
                 ""
@@ -181,8 +201,7 @@ class VisualAssetOverviewControllerTest {
         assertThat(firstPage.artifactKindCounts()).containsEntry("DESIGN", 1);
         assertThat(firstPage.items()).singleElement().satisfies(item -> {
             assertThat(item.requirementKey()).isEqualTo(
-                    "RUNTIME_BINDING|draft|%s|eligibility|executable-lowering|risk:eligibility|"
-                            .formatted(draft.draftId()));
+                    draftRequirementKey);
             assertThat(item.targetKind()).isEqualTo("draft");
             assertThat(item.targetLabel()).contains("visualPolicy").contains("eligibility");
             assertThat(item.operatorRef()).isEqualTo("risk:eligibility");
@@ -204,6 +223,13 @@ class VisualAssetOverviewControllerTest {
         assertThat(draftOnly.items()).singleElement()
                 .extracting(VisualRuntimeBindingRequirements.RequirementItem::targetId)
                 .isEqualTo(draft.draftId());
+        assertThat(byRequirementKey.filter().filtered()).isTrue();
+        assertThat(byRequirementKey.filter().requirementKey()).isEqualTo(draftRequirementKey);
+        assertThat(byRequirementKey.total()).isEqualTo(1);
+        assertThat(byRequirementKey.unfilteredTotal()).isEqualTo(2);
+        assertThat(byRequirementKey.items()).singleElement()
+                .extracting(VisualRuntimeBindingRequirements.RequirementItem::requirementKey)
+                .isEqualTo(draftRequirementKey);
         assertThat(firstPage.items()).noneMatch(item -> item.targetId().equals(publication.publicationId()));
         assertThat(excludedScope.scope().filtered()).isTrue();
         assertThat(excludedScope.total()).isZero();
