@@ -385,6 +385,7 @@ const state = {
   paletteTag: '',
   paletteSourceKind: '',
   paletteCapability: '',
+  paletteReadiness: '',
   paletteLoweringMode: '',
   draggingOperatorType: null,
   paletteDrag: null,
@@ -980,6 +981,7 @@ function renderInputForm() {
           <select id="operator-palette-tag" aria-label="Filter operators by tag"></select>
           <select id="operator-palette-source-kind" aria-label="Filter operators by source"></select>
           <select id="operator-palette-capability" aria-label="Filter operators by capability"></select>
+          <select id="operator-palette-readiness" aria-label="Filter operators by runtime readiness"></select>
           <select id="operator-palette-lowering-mode" aria-label="Filter operators by lowering mode"></select>
         </div>
         <div id="operator-palette-summary" class="palette-summary"></div>
@@ -2250,6 +2252,25 @@ function renderOperatorPaletteFilters(entries) {
     };
   }
 
+  const readinessStates = [...new Set(entries
+    .map(([, spec]) => operatorPaletteReadinessState(spec))
+    .filter(Boolean))]
+    .sort();
+  const readinessSelect = $('operator-palette-readiness');
+  if (readinessSelect) {
+    const selected = readinessStates.includes(state.paletteReadiness) ? state.paletteReadiness : '';
+    state.paletteReadiness = selected;
+    readinessSelect.innerHTML = ['<option value="">All readiness</option>']
+      .concat(readinessStates.map((readiness) =>
+        `<option value="${escapeHtml(readiness)}">${escapeHtml(operatorPaletteFacetLabel(readiness))}</option>`))
+      .join('');
+    readinessSelect.value = selected;
+    readinessSelect.onchange = (event) => {
+      state.paletteReadiness = event.target.value;
+      renderOperatorPalette();
+    };
+  }
+
   const loweringModes = [...new Set(entries
     .map(([, spec]) => operatorPaletteLoweringMode(spec))
     .filter(Boolean))]
@@ -2279,6 +2300,7 @@ function renderOperatorPaletteSummary(visible, total) {
     state.paletteTag ? `tag ${state.paletteTag}` : '',
     state.paletteSourceKind ? `source ${operatorPaletteFacetLabel(state.paletteSourceKind)}` : '',
     state.paletteCapability ? `capability ${operatorPaletteFacetLabel(state.paletteCapability)}` : '',
+    state.paletteReadiness ? `readiness ${operatorPaletteFacetLabel(state.paletteReadiness)}` : '',
     state.paletteLoweringMode ? `lowering ${operatorPaletteFacetLabel(state.paletteLoweringMode)}` : ''
   ].filter(Boolean);
   const matchSummary = filters.length
@@ -2296,34 +2318,60 @@ function normalizeOperatorCatalogFacets(facets, operators = []) {
     total: Number(payload.total) || 0,
     sourceKinds: normalizeFacetCountMap(payload.sourceKinds),
     loweringModes: normalizeFacetCountMap(payload.loweringModes),
-    capabilities: normalizeFacetCountMap(payload.capabilities)
+    capabilities: normalizeFacetCountMap(payload.capabilities),
+    runtimeReadinessStates: normalizeFacetCountMap(payload.runtimeReadinessStates)
   };
+  const fallback = operatorCatalogFallbackFacets(operators);
+  if (!normalized.total) {
+    normalized.total = fallback.total;
+  }
+  if (!Object.keys(normalized.sourceKinds).length) {
+    normalized.sourceKinds = fallback.sourceKinds;
+  }
+  if (!Object.keys(normalized.loweringModes).length) {
+    normalized.loweringModes = fallback.loweringModes;
+  }
+  if (!Object.keys(normalized.capabilities).length) {
+    normalized.capabilities = fallback.capabilities;
+  }
+  if (!Object.keys(normalized.runtimeReadinessStates).length) {
+    normalized.runtimeReadinessStates = fallback.runtimeReadinessStates;
+  }
   if (normalized.total
       || Object.keys(normalized.sourceKinds).length
       || Object.keys(normalized.loweringModes).length
-      || Object.keys(normalized.capabilities).length) {
+      || Object.keys(normalized.capabilities).length
+      || Object.keys(normalized.runtimeReadinessStates).length) {
     return normalized;
   }
+  return fallback;
+}
+
+function operatorCatalogFallbackFacets(operators = []) {
   const sourceKinds = {};
   const loweringModes = {};
   const capabilities = {};
+  const runtimeReadinessStates = {};
   for (const operator of Array.isArray(operators) ? operators : []) {
     const spec = {
       sourceKind: operator?.source?.kind || '',
       lowering: operator?.lowering || {},
-      capabilities: operator?.capabilities || {}
+      capabilities: operator?.capabilities || {},
+      runtimeReadiness: operator?.runtimeReadiness || null
     };
     incrementFacetCount(sourceKinds, spec.sourceKind);
     incrementFacetCount(loweringModes, operatorPaletteLoweringMode(spec));
     for (const capability of operatorPaletteCapabilityFacetValues(spec)) {
       incrementFacetCount(capabilities, capability);
     }
+    incrementFacetCount(runtimeReadinessStates, operatorPaletteReadinessState(spec));
   }
   return {
     total: Array.isArray(operators) ? operators.length : 0,
     sourceKinds,
     loweringModes,
-    capabilities
+    capabilities,
+    runtimeReadinessStates
   };
 }
 
@@ -2350,9 +2398,13 @@ function operatorCatalogFacetSummary(facets) {
     return '';
   }
   const capabilities = facets.capabilities || {};
+  const readinessStates = facets.runtimeReadinessStates || {};
   const parts = [
-    facetSummaryPart(capabilities, 'runtime-executable'),
-    facetSummaryPart(capabilities, 'design-only'),
+    facetSummaryPart(readinessStates, 'runtime-executable'),
+    facetSummaryPart(readinessStates, 'design-only'),
+    facetSummaryPart(readinessStates, 'runtime-blocked'),
+    facetSummaryPart(readinessStates, 'governance-review'),
+    facetSummaryPart(readinessStates, 'catalog-repair-required'),
     facetSummaryPart(capabilities, 'streaming'),
     facetSummaryPart(capabilities, 'durable'),
     facetSummaryPart(capabilities, 'requires-secret'),
@@ -2381,6 +2433,9 @@ function operatorMatchesPaletteFilter(type, spec) {
       && !operatorPaletteCapabilityFacetValues(spec).includes(state.paletteCapability)) {
     return false;
   }
+  if (state.paletteReadiness && operatorPaletteReadinessState(spec) !== state.paletteReadiness) {
+    return false;
+  }
   if (state.paletteLoweringMode && operatorPaletteLoweringMode(spec) !== state.paletteLoweringMode) {
     return false;
   }
@@ -2398,6 +2453,8 @@ function operatorMatchesPaletteFilter(type, spec) {
     spec.description,
     spec.sourceKind,
     operatorPaletteLoweringMode(spec),
+    operatorPaletteReadinessState(spec),
+    operatorPaletteFacetLabel(operatorPaletteReadinessState(spec)),
     ...operatorPaletteSearchValues(spec),
     ...operatorPaletteCapabilityLabels(spec),
     ...operatorPaletteCapabilityFacetValues(spec).map(operatorPaletteFacetLabel),
@@ -2507,6 +2564,29 @@ function operatorPaletteCapabilityFacetValues(spec) {
   return [...new Set(facets)];
 }
 
+function operatorPaletteReadinessState(spec) {
+  const readiness = normalizeOperatorRuntimeReadiness(spec?.runtimeReadiness);
+  if (readiness?.state) {
+    return String(readiness.state).trim().toLowerCase().replaceAll('_', '-');
+  }
+  const facets = operatorPaletteCapabilityFacetValues(spec);
+  if (facets.includes('design-only')) {
+    return 'design-only';
+  }
+  if (facets.includes('streaming') || facets.includes('durable')) {
+    return 'runtime-blocked';
+  }
+  if (facets.includes('requires-secret')
+      || facets.includes('non-idempotent')
+      || facets.includes('external-effect')) {
+    return 'governance-review';
+  }
+  if (facets.includes('runtime-executable')) {
+    return 'runtime-executable';
+  }
+  return '';
+}
+
 function operatorPaletteLoweringMode(spec) {
   return String(spec?.lowering?.mode || '').trim().toLowerCase();
 }
@@ -2522,6 +2602,9 @@ function operatorPaletteFacetLabel(value) {
     'visual-publication': 'Visual publication',
     'runtime-executable': 'Runtime executable',
     'design-only': 'Design only',
+    'runtime-blocked': 'Runtime blocked',
+    'governance-review': 'Governance review',
+    'catalog-repair-required': 'Catalog repair required',
     streaming: 'Streaming',
     durable: 'Durable',
     suspendable: 'Suspendable',

@@ -931,7 +931,7 @@ transform assemble {
 ### 10.1 查询 catalog
 
 ```http
-GET /api/visual/operators?search=score&tenantId=demo-tenant&namespace=local&environment=dev&sourceKind=user-library&loweringMode=design&capability=design-only
+GET /api/visual/operators?search=score&tenantId=demo-tenant&namespace=local&environment=dev&sourceKind=user-library&loweringMode=design&capability=design-only&runtimeReadiness=design-only
 ```
 
 当前 `resource-gateway-examples` 的查询面支持：
@@ -946,6 +946,7 @@ GET /api/visual/operators?search=score&tenantId=demo-tenant&namespace=local&envi
 | `sourceKind` | 可重复；例如 `user-library`、`resource-descriptor`、`java-operator`、`java-streaming-operator`、`java-suspendable-operator`、`visual-publication` |
 | `loweringMode` | 可重复；例如 `native`、`transform`、`branch`、`resource-descriptor`、`design` |
 | `capability` | 可重复；例如 `design-only`、`runtime-executable`、`streaming`、`durable`、`suspendable`、`requires-secret`、`external-effect`、`non-idempotent` |
+| `runtimeReadiness` | 可重复；按服务端派生 readiness state 过滤，例如 `runtime-executable`、`design-only`、`runtime-blocked`、`governance-review`、`catalog-repair-required` |
 
 响应：
 
@@ -983,6 +984,9 @@ GET /api/visual/operators?search=score&tenantId=demo-tenant&namespace=local&envi
       "external-effect": 1,
       "read-external": 1,
       "idempotent": 1
+    },
+    "runtimeReadinessStates": {
+      "governance-review": 1
     }
   }
 }
@@ -991,7 +995,8 @@ GET /api/visual/operators?search=score&tenantId=demo-tenant&namespace=local&envi
 `runtimeReadiness` 由服务端按 `source`、`lowering`、`capabilities` 和 catalog
 diagnostics 派生，用户导入的算子库不能伪造。当前 request-response runtime 会返回
 `RUNTIME_EXECUTABLE`、`DESIGN_ONLY`、`RUNTIME_BLOCKED`、`GOVERNANCE_REVIEW` 或
-`CATALOG_REPAIR_REQUIRED`，浏览器优先消费该字段；缺失时才使用本地兼容推断。
+`CATALOG_REPAIR_REQUIRED`，并作为 `runtimeReadiness` query filter 与
+`facets.runtimeReadinessStates` 聚合维度暴露。浏览器优先消费该字段；缺失时才使用本地兼容推断。
 
 ### 10.1.1 查询 operator usage index
 

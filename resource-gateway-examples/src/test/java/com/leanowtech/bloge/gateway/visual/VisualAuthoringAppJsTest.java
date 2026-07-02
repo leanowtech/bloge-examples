@@ -470,6 +470,7 @@ class VisualAuthoringAppJsTest {
                   'operatorPaletteCapabilityBadges',
                   'operatorPaletteCapabilityLabels',
                   'operatorPaletteCapabilityFacetValues',
+                  'operatorPaletteReadinessState',
                   'operatorPaletteLoweringMode',
                   'operatorPaletteFacetLabel',
                   'normalizeOperatorCatalogFacets',
@@ -1216,7 +1217,9 @@ class VisualAuthoringAppJsTest {
                 };
                 const designOnlyCapabilityLabels = context.operatorPaletteCapabilityLabels(designOnlyPaletteSpec).join('|');
                 const designOnlyCapabilityFacets = context.operatorPaletteCapabilityFacetValues(designOnlyPaletteSpec).join('|');
+                const designOnlyReadinessFacet = context.operatorPaletteReadinessState(designOnlyPaletteSpec);
                 const executableCapabilityFacets = context.operatorPaletteCapabilityFacetValues(paletteSearchSpec).join('|');
+                const executableReadinessFacet = context.operatorPaletteReadinessState(paletteSearchSpec);
                 const governedPaletteSpec = {
                   kind: 'custom',
                   label: 'Write Audit',
@@ -1262,6 +1265,7 @@ class VisualAuthoringAppJsTest {
                 const governedReadinessPanel = context.renderOperatorReadinessPanel(governedPaletteSpec);
                 const serverReadiness = context.operatorRuntimeReadiness(serverReadinessSpec);
                 const serverReadinessPanel = context.renderOperatorReadinessPanel(serverReadinessSpec);
+                const serverReadinessFacet = context.operatorPaletteReadinessState(serverReadinessSpec);
                 const serverCatalogFacets = context.normalizeOperatorCatalogFacets({
                   total: 6,
                   capabilities: {
@@ -1270,6 +1274,12 @@ class VisualAuthoringAppJsTest {
                     streaming: 1,
                     'requires-secret': 1,
                     'external-effect': 1
+                  },
+                  runtimeReadinessStates: {
+                    'runtime-executable': 3,
+                    'design-only': 2,
+                    'runtime-blocked': 1,
+                    'governance-review': 1
                   },
                   sourceKinds: { 'user-library': 3 },
                   loweringModes: { transform: 2, design: 1 }
@@ -1662,6 +1672,11 @@ class VisualAuthoringAppJsTest {
                 context.state.paletteCapability = 'runtime-executable';
                 const paletteCapabilityFilterMiss = context.operatorMatchesPaletteFilter('awaitApproval', suspendablePaletteSpec);
                 context.state.paletteCapability = '';
+                context.state.paletteReadiness = 'governance-review';
+                const paletteReadinessFilterMatch = context.operatorMatchesPaletteFilter('risk:writeAudit', governedPaletteSpec);
+                context.state.paletteReadiness = 'runtime-executable';
+                const paletteReadinessFilterMiss = context.operatorMatchesPaletteFilter('risk:writeAudit', governedPaletteSpec);
+                context.state.paletteReadiness = '';
                 context.state.paletteLoweringMode = 'transform';
                 const paletteLoweringFilterMatch = context.operatorMatchesPaletteFilter('risk:eligibility', paletteSearchSpec);
                 context.state.paletteLoweringMode = 'design';
@@ -2558,7 +2573,9 @@ class VisualAuthoringAppJsTest {
                   ['palette capability badges', String(suspendableCapabilityBadges.includes('durable') && suspendableCapabilityBadges.includes('suspendable') && suspendableCapabilityBadges.includes('requires secret')), 'true'],
                   ['palette design-only capability labels', designOnlyCapabilityLabels, 'design-only'],
                   ['palette design-only capability facets', designOnlyCapabilityFacets, 'design-only'],
+                  ['palette design-only readiness facet', designOnlyReadinessFacet, 'design-only'],
                   ['palette executable capability facets', executableCapabilityFacets, 'runtime-executable|idempotent'],
+                  ['palette executable readiness facet', executableReadinessFacet, 'runtime-executable'],
                   ['operator runtime readiness executable', `${executableReadiness.level}|${executableReadiness.title}`, 'success|Runtime executable'],
                   ['operator runtime readiness design-only', `${designOnlyReadiness.level}|${designOnlyReadiness.title}`, 'info|Design-only operator'],
                   ['operator runtime readiness design-only panel', String(designOnlyReadinessPanel.includes('DESIGN artifact only') && designOnlyReadinessPanel.includes('executable lowering is not bound yet')), 'true'],
@@ -2567,15 +2584,20 @@ class VisualAuthoringAppJsTest {
                   ['operator runtime readiness governed panel', String(governedReadinessPanel.includes('secret binding') && governedReadinessPanel.includes('non-idempotent side effect')), 'true'],
                   ['operator runtime readiness server state', `${serverReadiness.state}|${serverReadiness.title}`, 'GOVERNANCE_REVIEW|Server authoritative readiness'],
                   ['operator runtime readiness server panel', String(serverReadinessPanel.includes('server-reviewed')), 'true'],
-                  ['catalog facet summary', serverCatalogFacetSummary, 'Catalog mix: 4 Runtime executable · 2 Design only · 1 Streaming · 1 Requires secret · 1 External effect.'],
+                  ['operator runtime readiness server facet', serverReadinessFacet, 'governance-review'],
+                  ['catalog facet summary', serverCatalogFacetSummary, 'Catalog mix: 3 Runtime executable · 2 Design only · 1 Runtime blocked · 1 Governance review · 1 Streaming · 1 Requires secret · 1 External effect.'],
                   ['catalog facet fallback total', fallbackCatalogFacets.total, 2],
                   ['catalog facet fallback design count', fallbackCatalogFacets.capabilities['design-only'], 1],
                   ['catalog facet fallback durable count', fallbackCatalogFacets.capabilities.durable, 1],
+                  ['catalog facet fallback design readiness count', fallbackCatalogFacets.runtimeReadinessStates['design-only'], 1],
+                  ['catalog facet fallback blocked readiness count', fallbackCatalogFacets.runtimeReadinessStates['runtime-blocked'], 1],
                   ['palette capability search match', String(paletteCapabilitySearchMatch), 'true'],
                   ['palette source filter match', String(paletteSourceFilterMatch), 'true'],
                   ['palette source filter miss', String(paletteSourceFilterMiss), 'false'],
                   ['palette capability filter match', String(paletteCapabilityFilterMatch), 'true'],
                   ['palette capability filter miss', String(paletteCapabilityFilterMiss), 'false'],
+                  ['palette readiness filter match', String(paletteReadinessFilterMatch), 'true'],
+                  ['palette readiness filter miss', String(paletteReadinessFilterMiss), 'false'],
                   ['palette lowering filter match', String(paletteLoweringFilterMatch), 'true'],
                   ['palette lowering filter miss', String(paletteLoweringFilterMiss), 'false'],
                   ['library profile operator count', libraryProfile.operatorCount, 2],

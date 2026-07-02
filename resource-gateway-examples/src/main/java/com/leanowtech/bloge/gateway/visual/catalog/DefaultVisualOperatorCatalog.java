@@ -163,7 +163,8 @@ public class DefaultVisualOperatorCatalog implements VisualOperatorCatalog {
                 && query.tags().isEmpty()
                 && query.sourceKinds().isEmpty()
                 && query.loweringModes().isEmpty()
-                && query.capabilities().isEmpty();
+                && query.capabilities().isEmpty()
+                && query.runtimeReadinessStates().isEmpty();
     }
 
     private List<OperatorDefinition> libraryOperators(boolean includeDeprecated) {
@@ -314,6 +315,11 @@ public class DefaultVisualOperatorCatalog implements VisualOperatorCatalog {
                 && query.capabilities().stream().anyMatch(capability -> !matchesCapability(operator, capability))) {
             return false;
         }
+        if (!query.runtimeReadinessStates().isEmpty()
+                && query.runtimeReadinessStates().stream()
+                .noneMatch(readinessState -> matchesRuntimeReadiness(operator, readinessState))) {
+            return false;
+        }
         if (!query.tenantId().isBlank() && !operator.policy().allowsTenant(query.tenantId())) {
             return false;
         }
@@ -324,6 +330,23 @@ public class DefaultVisualOperatorCatalog implements VisualOperatorCatalog {
             return false;
         }
         return true;
+    }
+
+    private static boolean matchesRuntimeReadiness(OperatorDefinition operator, String readinessState) {
+        String normalized = normalizeReadinessStateAlias(readinessState);
+        return OperatorCatalogFacets.readinessStateValue(operator).equals(normalized);
+    }
+
+    private static String normalizeReadinessStateAlias(String value) {
+        String normalized = normalizeFacetValue(value);
+        return switch (normalized) {
+            case "executable", "runtime" -> "runtime-executable";
+            case "design", "schema-only" -> "design-only";
+            case "blocked" -> "runtime-blocked";
+            case "governance" -> "governance-review";
+            case "repair", "catalog-repair" -> "catalog-repair-required";
+            default -> normalized;
+        };
     }
 
     private static boolean matchesCapability(OperatorDefinition operator, String capability) {
@@ -360,6 +383,9 @@ public class DefaultVisualOperatorCatalog implements VisualOperatorCatalog {
         addSearchValue(values, operator.display().description());
         addSearchValue(values, operator.source().kind());
         addSearchValue(values, operator.source().resourceId());
+        addSearchValue(values, OperatorCatalogFacets.readinessStateValue(operator));
+        addSearchValue(values, operator.runtimeReadiness().title());
+        addSearchValue(values, operator.runtimeReadiness().summary());
         addSchemaSearchValues(values, "config", operator.configSchema());
         for (OperatorDefinition.Port port : operator.ports().inputs()) {
             addPortSearchValues(values, port);

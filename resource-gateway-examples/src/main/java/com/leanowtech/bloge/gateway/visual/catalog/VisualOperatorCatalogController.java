@@ -36,6 +36,7 @@ public class VisualOperatorCatalogController {
      * @param sourceKinds source kind filters
      * @param loweringModes lowering mode filters
      * @param capabilities capability facet filters
+     * @param runtimeReadinessStates runtime readiness state filters
      * @return catalog response
      */
     @GetMapping
@@ -51,9 +52,11 @@ public class VisualOperatorCatalogController {
                                         @RequestParam(name = "loweringMode", defaultValue = "")
                                         List<String> loweringModes,
                                         @RequestParam(name = "capability", defaultValue = "")
-                                        List<String> capabilities) {
+                                        List<String> capabilities,
+                                        @RequestParam(name = "runtimeReadiness", defaultValue = "")
+                                        List<String> runtimeReadinessStates) {
         OperatorCatalogQuery query = new OperatorCatalogQuery(search, tags, resourceOnly, includeDeprecated,
-                tenantId, namespace, environment, sourceKinds, loweringModes, capabilities);
+                tenantId, namespace, environment, sourceKinds, loweringModes, capabilities, runtimeReadinessStates);
         return new OperatorCatalogResponse(
                 "bloge.visualOperatorCatalog.v1",
                 catalog.list(query),

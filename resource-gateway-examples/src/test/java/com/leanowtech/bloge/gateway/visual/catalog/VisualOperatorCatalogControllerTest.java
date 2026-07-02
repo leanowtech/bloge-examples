@@ -48,13 +48,16 @@ class VisualOperatorCatalogControllerTest {
                         .param("sourceKind", "resource-descriptor")
                         .param("loweringMode", "design")
                         .param("capability", "runtime-executable")
-                        .param("capability", "requires_secret"))
+                        .param("capability", "requires_secret")
+                        .param("runtimeReadiness", "governance_review")
+                        .param("runtimeReadiness", "design-only"))
                 .andExpect(status().isOk());
 
         OperatorCatalogQuery query = catalog.lastQuery.get();
         assertThat(query.sourceKinds()).containsExactly("user-library", "resource-descriptor");
         assertThat(query.loweringModes()).containsExactly("design");
         assertThat(query.capabilities()).containsExactly("runtime-executable", "requires-secret");
+        assertThat(query.runtimeReadinessStates()).containsExactly("governance-review", "design-only");
     }
 
     @Test
@@ -71,6 +74,8 @@ class VisualOperatorCatalogControllerTest {
                 .andExpect(jsonPath("$.facets.loweringModes.design").value(1))
                 .andExpect(jsonPath("$.facets.capabilities['runtime-executable']").value(1))
                 .andExpect(jsonPath("$.facets.capabilities['design-only']").value(1))
+                .andExpect(jsonPath("$.facets.runtimeReadinessStates['runtime-executable']").value(1))
+                .andExpect(jsonPath("$.facets.runtimeReadinessStates['design-only']").value(1))
                 .andExpect(jsonPath("$.operators[0].runtimeReadiness.state").value("RUNTIME_EXECUTABLE"))
                 .andExpect(jsonPath("$.operators[0].runtimeReadiness.executable").value(true))
                 .andExpect(jsonPath("$.operators[1].runtimeReadiness.state").value("DESIGN_ONLY"))

@@ -664,7 +664,7 @@ node fetchApplicant : httpResource {
 
 | Method | Path | 说明 |
 | --- | --- | --- |
-| `GET` | `/api/visual/operators` | 查询可用算子，支持 pattern、tag、tenant、namespace、environment |
+| `GET` | `/api/visual/operators` | 查询可用算子，支持 pattern、tag、tenant、namespace、environment、source/lowering/capability/runtime-readiness facets |
 | `GET` | `/api/visual/operators/{operatorRef}` | 获取单个算子定义 |
 | `GET` | `/api/visual/operators/{operatorRef}/usage` | 当前已实现：查询某个 operatorRef 被哪些 stored draft / immutable publication 节点使用，并返回 saved/frozen fingerprint 与当前 catalog fingerprint 的状态 |
 | `POST` | `/api/visual/operator-catalogs/import` | 导入用户提供的 catalog JSON/YAML |
@@ -687,7 +687,8 @@ assignment target 不在 output schema 中、template 引用不存在 input path
 返回 `visual.operator.policyDenied` 阻断越权 operator 使用。`OperatorDefinition`
 当前还包含服务端派生的 `runtimeReadiness`，按 source/lowering/capability/diagnostics
 给出 `RUNTIME_EXECUTABLE`、`DESIGN_ONLY`、`RUNTIME_BLOCKED`、`GOVERNANCE_REVIEW`
-或 `CATALOG_REPAIR_REQUIRED`，避免浏览器用前端启发式伪造控制面判断。当前还支持
+或 `CATALOG_REPAIR_REQUIRED`，并作为 `/api/visual/operators` 的 `runtimeReadiness`
+filter 与 `facets.runtimeReadinessStates` 聚合维度返回，避免浏览器用前端启发式伪造控制面判断。当前还支持
 `lowering.mode=design` 的 schema-only authoring：这类用户算子可以进入 catalog、
 拖拽、连线、保存、导出、被 schema validator 校验，并可通过浏览器发布模式或 API
 `artifactKind=DESIGN` 发布成非执行型设计制品；compile/run/default executable publish 会返回

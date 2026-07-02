@@ -211,6 +211,18 @@ class DefaultVisualOperatorCatalogTest {
                 "non-idempotent"))))
                 .extracting(OperatorDefinition::operatorRef)
                 .containsExactly("risk:writeAudit");
+        assertThat(catalog.list(readinessQuery("runtime-executable")))
+                .extracting(OperatorDefinition::operatorRef)
+                .contains("risk:eligibility")
+                .doesNotContain("risk:writeAudit", "risk:designIntake",
+                        "resource:" + VisualCatalogTestSupport.RESOURCE_ID);
+        assertThat(catalog.list(readinessQuery("governance-review")))
+                .extracting(OperatorDefinition::operatorRef)
+                .contains("risk:writeAudit", "resource:" + VisualCatalogTestSupport.RESOURCE_ID)
+                .doesNotContain("risk:eligibility", "risk:designIntake");
+        assertThat(catalog.list(readinessQuery("schema-only")))
+                .extracting(OperatorDefinition::operatorRef)
+                .containsExactly("risk:designIntake");
     }
 
     @Test
@@ -397,6 +409,11 @@ class DefaultVisualOperatorCatalogTest {
                                                    List<String> capabilities) {
         return new OperatorCatalogQuery("", List.of(), false, false, "", "", "",
                 sourceKinds, loweringModes, capabilities);
+    }
+
+    private static OperatorCatalogQuery readinessQuery(String readinessState) {
+        return new OperatorCatalogQuery("", List.of(), false, false, "", "", "",
+                List.of(), List.of(), List.of(), List.of(readinessState));
     }
 
     @Test

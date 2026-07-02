@@ -14,12 +14,14 @@ import java.util.TreeMap;
  * @param sourceKinds count by source kind
  * @param loweringModes count by lowering mode
  * @param capabilities count by runtime/governance capability facet
+ * @param runtimeReadinessStates count by server-derived runtime readiness state
  */
 public record OperatorCatalogFacets(
         int total,
         Map<String, Integer> sourceKinds,
         Map<String, Integer> loweringModes,
-        Map<String, Integer> capabilities
+        Map<String, Integer> capabilities,
+        Map<String, Integer> runtimeReadinessStates
 ) {
     /**
      * Creates a facet summary.
@@ -31,6 +33,8 @@ public record OperatorCatalogFacets(
                 : Collections.unmodifiableMap(new LinkedHashMap<>(loweringModes));
         capabilities = capabilities == null ? Map.of()
                 : Collections.unmodifiableMap(new LinkedHashMap<>(capabilities));
+        runtimeReadinessStates = runtimeReadinessStates == null ? Map.of()
+                : Collections.unmodifiableMap(new LinkedHashMap<>(runtimeReadinessStates));
     }
 
     /**
@@ -46,18 +50,21 @@ public record OperatorCatalogFacets(
         Map<String, Integer> sourceKinds = new TreeMap<>();
         Map<String, Integer> loweringModes = new TreeMap<>();
         Map<String, Integer> capabilities = new TreeMap<>();
+        Map<String, Integer> runtimeReadinessStates = new TreeMap<>();
         for (OperatorDefinition operator : safeOperators) {
             increment(sourceKinds, normalizeFacetValue(operator.source().kind()));
             increment(loweringModes, normalizeFacetValue(operator.lowering().mode()));
             for (String capability : capabilityValues(operator)) {
                 increment(capabilities, capability);
             }
+            increment(runtimeReadinessStates, readinessStateValue(operator));
         }
         return new OperatorCatalogFacets(
                 safeOperators.size(),
                 new LinkedHashMap<>(sourceKinds),
                 new LinkedHashMap<>(loweringModes),
-                new LinkedHashMap<>(capabilities)
+                new LinkedHashMap<>(capabilities),
+                new LinkedHashMap<>(runtimeReadinessStates)
         );
     }
 
@@ -106,6 +113,13 @@ public record OperatorCatalogFacets(
         return values.stream()
                 .filter(value -> !value.isBlank())
                 .toList();
+    }
+
+    static String readinessStateValue(OperatorDefinition operator) {
+        if (operator == null || operator.runtimeReadiness() == null) {
+            return "";
+        }
+        return normalizeFacetValue(operator.runtimeReadiness().state());
     }
 
     static String normalizeFacetValue(String value) {

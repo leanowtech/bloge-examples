@@ -15,6 +15,7 @@ import java.util.List;
  * @param sourceKinds required operator source kinds
  * @param loweringModes required lowering modes
  * @param capabilities required catalog capability facets
+ * @param runtimeReadinessStates required server-derived runtime readiness states
  */
 public record OperatorCatalogQuery(
         String search,
@@ -26,7 +27,8 @@ public record OperatorCatalogQuery(
         String environment,
         List<String> sourceKinds,
         List<String> loweringModes,
-        List<String> capabilities
+        List<String> capabilities,
+        List<String> runtimeReadinessStates
 ) {
     /**
      * Creates a query object.
@@ -43,6 +45,7 @@ public record OperatorCatalogQuery(
         sourceKinds = normalizeFacetValues(sourceKinds);
         loweringModes = normalizeFacetValues(loweringModes);
         capabilities = normalizeFacetValues(capabilities);
+        runtimeReadinessStates = normalizeFacetValues(runtimeReadinessStates);
     }
 
     /**
@@ -66,7 +69,24 @@ public record OperatorCatalogQuery(
                                 String namespace,
                                 String environment) {
         this(search, tags, resourceOnly, includeDeprecated, tenantId, namespace, environment,
-                List.of(), List.of(), List.of());
+                List.of(), List.of(), List.of(), List.of());
+    }
+
+    /**
+     * Backward-compatible constructor for callers that do not filter by runtime readiness.
+     */
+    public OperatorCatalogQuery(String search,
+                                List<String> tags,
+                                boolean resourceOnly,
+                                boolean includeDeprecated,
+                                String tenantId,
+                                String namespace,
+                                String environment,
+                                List<String> sourceKinds,
+                                List<String> loweringModes,
+                                List<String> capabilities) {
+        this(search, tags, resourceOnly, includeDeprecated, tenantId, namespace, environment,
+                sourceKinds, loweringModes, capabilities, List.of());
     }
 
     /**
