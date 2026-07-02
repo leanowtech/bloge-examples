@@ -178,6 +178,22 @@ class VisualAssetOverviewControllerTest {
                 "",
                 ""
         );
+        VisualRuntimeBindingHandoffBundle handoffBundle = controller.runtimeBindingHandoffBundle(
+                "",
+                "",
+                "",
+                10,
+                0,
+                "draft",
+                "executable-lowering",
+                "operator-platform",
+                "operator-implementation",
+                "risk:eligibility",
+                "",
+                "",
+                "",
+                ""
+        );
         VisualRuntimeBindingRequirements excludedScope =
                 controller.runtimeBindingRequirements("tenant-b", "risk", "dev");
 
@@ -230,6 +246,28 @@ class VisualAssetOverviewControllerTest {
         assertThat(byRequirementKey.items()).singleElement()
                 .extracting(VisualRuntimeBindingRequirements.RequirementItem::requirementKey)
                 .isEqualTo(draftRequirementKey);
+        assertThat(handoffBundle.schemaVersion()).isEqualTo(VisualRuntimeBindingHandoffBundle.SCHEMA_VERSION);
+        assertThat(handoffBundle.sourceIndexSchemaVersion())
+                .isEqualTo(VisualRuntimeBindingRequirements.SCHEMA_VERSION);
+        assertThat(handoffBundle.filter().targetKind()).isEqualTo("draft");
+        assertThat(handoffBundle.filter().bindingKind()).isEqualTo("executable-lowering");
+        assertThat(handoffBundle.filter().handoffLane()).isEqualTo("operator-platform");
+        assertThat(handoffBundle.filter().handoffKind()).isEqualTo("operator-implementation");
+        assertThat(handoffBundle.filter().handoffTarget()).isEqualTo("risk:eligibility");
+        assertThat(handoffBundle.total()).isEqualTo(1);
+        assertThat(handoffBundle.unfilteredTotal()).isEqualTo(2);
+        assertThat(handoffBundle.displayedCount()).isEqualTo(1);
+        assertThat(handoffBundle.hasMore()).isFalse();
+        assertThat(handoffBundle.requirementKeys()).containsExactly(draftRequirementKey);
+        assertThat(handoffBundle.handoffLaneCounts()).containsEntry("operator-platform", 1);
+        assertThat(handoffBundle.handoffKindCounts()).containsEntry("operator-implementation", 1);
+        assertThat(handoffBundle.handoffTargetCounts()).containsEntry("risk:eligibility", 1);
+        assertThat(handoffBundle.requirements()).singleElement().satisfies(item -> {
+            assertThat(item.requirementKey()).isEqualTo(draftRequirementKey);
+            assertThat(item.targetKind()).isEqualTo("draft");
+            assertThat(item.targetId()).isEqualTo(draft.draftId());
+            assertThat(item.operatorRef()).isEqualTo("risk:eligibility");
+        });
         assertThat(firstPage.items()).noneMatch(item -> item.targetId().equals(publication.publicationId()));
         assertThat(excludedScope.scope().filtered()).isTrue();
         assertThat(excludedScope.total()).isZero();

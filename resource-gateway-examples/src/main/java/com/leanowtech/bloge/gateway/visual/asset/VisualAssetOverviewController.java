@@ -160,6 +160,64 @@ public class VisualAssetOverviewController {
         );
     }
 
+    /**
+     * Exports the current runtime-binding requirement window as a portable handoff bundle.
+     *
+     * <p>The bundle is a transfer snapshot for runtime-plane implementation teams. It
+     * is derived from the same read model as {@link #runtimeBindingRequirements} and
+     * does not create workflow state.</p>
+     *
+     * @param tenantId tenant scope, empty for all
+     * @param namespace namespace scope, empty for all
+     * @param environment environment scope, empty for all
+     * @param limit requested number of requirement item details
+     * @param offset zero-based requirement item offset after filtering
+     * @param targetKind optional target kind filter
+     * @param bindingKind optional binding kind filter
+     * @param handoffLane optional runtime-plane handoff lane filter
+     * @param handoffKind optional runtime-plane handoff work kind filter
+     * @param handoffTarget optional runtime-plane routing target filter
+     * @param sourceKind optional operator source kind filter
+     * @param loweringMode optional lowering mode filter
+     * @param readinessState optional graph or node readiness state filter
+     * @param requirementKey optional stable requirement key filter
+     * @return portable runtime-binding handoff bundle
+     */
+    @GetMapping("/runtime-binding-requirements/handoff-bundle")
+    public VisualRuntimeBindingHandoffBundle runtimeBindingHandoffBundle(
+            @RequestParam(defaultValue = "") String tenantId,
+            @RequestParam(defaultValue = "") String namespace,
+            @RequestParam(defaultValue = "") String environment,
+            @RequestParam(defaultValue = "50") int limit,
+            @RequestParam(defaultValue = "0") int offset,
+            @RequestParam(defaultValue = "") String targetKind,
+            @RequestParam(defaultValue = "") String bindingKind,
+            @RequestParam(defaultValue = "") String handoffLane,
+            @RequestParam(defaultValue = "") String handoffKind,
+            @RequestParam(defaultValue = "") String handoffTarget,
+            @RequestParam(defaultValue = "") String sourceKind,
+            @RequestParam(defaultValue = "") String loweringMode,
+            @RequestParam(defaultValue = "") String readinessState,
+            @RequestParam(defaultValue = "") String requirementKey) {
+        VisualRuntimeBindingRequirements index = runtimeBindingRequirements(
+                tenantId,
+                namespace,
+                environment,
+                limit,
+                offset,
+                targetKind,
+                bindingKind,
+                handoffLane,
+                handoffKind,
+                handoffTarget,
+                sourceKind,
+                loweringMode,
+                readinessState,
+                requirementKey
+        );
+        return VisualRuntimeBindingHandoffBundle.from(index);
+    }
+
     VisualAssetOverview overview(String tenantId, String namespace, String environment) {
         return overview(tenantId, namespace, environment, VisualAssetOverview.DEFAULT_ACTION_ITEM_LIMIT);
     }

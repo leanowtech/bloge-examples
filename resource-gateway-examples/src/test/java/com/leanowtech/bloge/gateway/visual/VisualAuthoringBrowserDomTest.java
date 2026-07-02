@@ -927,11 +927,8 @@ class VisualAuthoringBrowserDomTest {
 
         importSampleOperatorLibrary(wait);
         dragOperatorToCanvas(wait, "Eligibility", "risk:eligibility", "riskEligibility", 140, 120);
-        List<String> scoreSourceOptions = driver.findElements(By.cssSelector(
-                        "[data-binding-source][data-binding-path='score'] option"))
-                .stream()
-                .map(WebElement::getText)
-                .toList();
+        List<String> scoreSourceOptions = optionTexts(wait, By.cssSelector(
+                "[data-binding-source][data-binding-path='score'] option"));
         assertThat(scoreSourceOptions).anyMatch(option -> option.contains("ctx.safeScore"));
         assertThat(scoreSourceOptions).noneMatch(option -> option.contains("ctx.customer-id"));
 
@@ -1167,11 +1164,8 @@ class VisualAuthoringBrowserDomTest {
 
         importSampleOperatorLibrary(wait);
         dragOperatorToCanvas(wait, "Eligibility", "risk:eligibility", "riskEligibility", 140, 120);
-        List<String> scoreSourceOptions = driver.findElements(By.cssSelector(
-                        "[data-binding-source][data-binding-path='score'] option"))
-                .stream()
-                .map(WebElement::getText)
-                .toList();
+        List<String> scoreSourceOptions = optionTexts(wait, By.cssSelector(
+                "[data-binding-source][data-binding-path='score'] option"));
         assertThat(scoreSourceOptions).anyMatch(option -> option.contains("ctx.riskScore"));
         assertThat(scoreSourceOptions).anyMatch(option -> option.contains("ctx.riskAmount"));
         assertThat(scoreSourceOptions).noneMatch(option -> option.contains("ctx.ignored"));
@@ -1227,11 +1221,8 @@ class VisualAuthoringBrowserDomTest {
 
         importSampleOperatorLibrary(wait);
         dragOperatorToCanvas(wait, "Eligibility", "risk:eligibility", "riskEligibility", 140, 120);
-        List<String> scoreSourceOptions = driver.findElements(By.cssSelector(
-                        "[data-binding-source][data-binding-path='score'] option"))
-                .stream()
-                .map(WebElement::getText)
-                .toList();
+        List<String> scoreSourceOptions = optionTexts(wait, By.cssSelector(
+                "[data-binding-source][data-binding-path='score'] option"));
         assertThat(scoreSourceOptions).anyMatch(option -> option.contains("ctx.riskScore"));
         assertThat(scoreSourceOptions).anyMatch(option -> option.contains("ctx.riskAmount"));
         assertThat(scoreSourceOptions).noneMatch(option -> option.contains("ctx.badScore"));
@@ -2051,6 +2042,19 @@ class VisualAuthoringBrowserDomTest {
         } catch (RuntimeException ex) {
             return "<missing>";
         }
+    }
+
+    private List<String> optionTexts(WebDriverWait wait, By locator) {
+        return wait.until(ignored -> {
+            try {
+                List<String> texts = driver.findElements(locator).stream()
+                        .map(WebElement::getText)
+                        .toList();
+                return texts.isEmpty() ? null : texts;
+            } catch (StaleElementReferenceException ex) {
+                return null;
+            }
+        });
     }
 
     private String valueOf(By locator) {

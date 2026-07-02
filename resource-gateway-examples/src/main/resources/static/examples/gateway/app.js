@@ -408,6 +408,7 @@ const state = {
   activeVisualAssetAction: null,
   visualRuntimeBindingRequirements: null,
   visualRuntimeBindingRequirementsMessage: null,
+  visualRuntimeBindingHandoffBundleMessage: null,
   visualRuntimeBindingRequirementQuery: {
     targetKind: '',
     bindingKind: '',
@@ -767,6 +768,16 @@ function visualAssetOverviewUrl(builder = state.builder) {
 }
 
 function visualRuntimeBindingRequirementsUrl(builder = state.builder) {
+  const params = visualRuntimeBindingRequirementParams(builder);
+  return `/api/visual/assets/runtime-binding-requirements?${params.toString()}`;
+}
+
+function visualRuntimeBindingHandoffBundleUrl(builder = state.builder) {
+  const params = visualRuntimeBindingRequirementParams(builder);
+  return `/api/visual/assets/runtime-binding-requirements/handoff-bundle?${params.toString()}`;
+}
+
+function visualRuntimeBindingRequirementParams(builder = state.builder) {
   const scope = builderScope(builder);
   const params = new URLSearchParams();
   params.set('tenantId', scope.tenantId);
@@ -804,7 +815,7 @@ function visualRuntimeBindingRequirementsUrl(builder = state.builder) {
   if (query.requirementKey) {
     params.set('requirementKey', query.requirementKey);
   }
-  return `/api/visual/assets/runtime-binding-requirements?${params.toString()}`;
+  return params;
 }
 
 function normalizeVisualAssetActionQuery(query = {}) {
@@ -850,7 +861,32 @@ async function updateVisualRuntimeBindingRequirementQuery(patch = {}) {
     ...patch
   });
   state.activeVisualRuntimeBindingRequirement = null;
+  state.visualRuntimeBindingHandoffBundleMessage = null;
   await loadVisualRuntimeBindingRequirements();
+}
+
+async function exportVisualRuntimeBindingHandoffBundle() {
+  try {
+    const response = await fetch(visualRuntimeBindingHandoffBundleUrl());
+    const payload = await response.json().catch(() => null);
+    if (!response.ok) {
+      throw new Error(`Runtime binding handoff export failed with ${response.status}`);
+    }
+    const displayed = Number(payload?.displayedCount ?? payload?.requirements?.length ?? 0) || 0;
+    const total = Number(payload?.total || 0) || 0;
+    const hasMore = payload?.hasMore ? ' Current query has more matching requirements after this window.' : '';
+    state.visualRuntimeBindingHandoffBundleMessage = {
+      text: `Exported ${displayed} of ${total} runtime binding requirement(s).${hasMore}`,
+      level: 'success'
+    };
+    $('output').textContent = pretty({ status: response.status, runtimeBindingHandoffBundle: payload });
+  } catch (error) {
+    state.visualRuntimeBindingHandoffBundleMessage = {
+      text: error.message,
+      level: 'error'
+    };
+  }
+  renderVisualAssetOverview();
 }
 
 function visualDraftsUrl(builder = state.builder) {
@@ -7175,6 +7211,7 @@ function renderVisualAssetOverview() {
   );
   const activeAction = visualAssetActionContext(state.activeVisualAssetAction);
   const activeBinding = visualRuntimeBindingRequirementContext(state.activeVisualRuntimeBindingRequirement);
+  const handoffBundleMessage = state.visualRuntimeBindingHandoffBundleMessage || null;
   const scopeLabel = visualAssetOverviewScopeLabel(overview);
   const actionQueueVisible = visualAssetOverviewShouldShowActionQueue(actionQueue);
   const bindingRequirementsVisible = visualRuntimeBindingRequirementsShouldShow(bindingIndex)
@@ -7212,6 +7249,10 @@ function renderVisualAssetOverview() {
     ${activeBinding ? `<div class="library-impact-risk ${escapeHtml(activeBinding.level)}">
       <strong>${escapeHtml('Current runtime binding')}</strong>
       <span>${escapeHtml(activeBinding.message)}</span>
+    </div>` : ''}
+    ${handoffBundleMessage?.text ? `<div class="library-impact-risk ${escapeHtml(handoffBundleMessage.level || 'info')}">
+      <strong>${escapeHtml('Runtime binding handoff')}</strong>
+      <span>${escapeHtml(handoffBundleMessage.text)}</span>
     </div>` : ''}
     <div class="library-impact-stats">${stats}</div>
     ${rows.length ? `<div class="library-impact-risks">${rows.map((row) => `
@@ -7447,6 +7488,7 @@ function visualRuntimeBindingRequirementControls(bindingIndex) {
       </label>
       <button type="button" class="secondary compact" id="runtime-binding-prev" ${canPrevious ? '' : 'disabled'}>Prev</button>
       <button type="button" class="secondary compact" id="runtime-binding-next" ${canNext ? '' : 'disabled'}>Next</button>
+      <button type="button" class="secondary compact" id="runtime-binding-export" ${bindingIndex ? '' : 'disabled'}>Export Handoff</button>
       <button type="button" class="secondary compact" id="runtime-binding-reset" ${hasFilter ? '' : 'disabled'}>Reset</button>
     </div>
   `;
@@ -7836,6 +7878,10 @@ function attachVisualRuntimeBindingRequirementQueryHandlers(bindingIndex) {
   const next = $('runtime-binding-next');
   if (next) {
     next.onclick = () => updateVisualRuntimeBindingRequirementQuery({ offset: offset + pageSize });
+  }
+  const exportButton = $('runtime-binding-export');
+  if (exportButton) {
+    exportButton.onclick = exportVisualRuntimeBindingHandoffBundle;
   }
   const reset = $('runtime-binding-reset');
   if (reset) {
