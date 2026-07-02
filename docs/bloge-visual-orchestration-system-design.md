@@ -709,7 +709,8 @@ publication result 也会在成功或拒绝响应中携带同一份 validation/r
 浏览器因此可以把 Server Check 的 readiness 反向施加到发布控件上：只允许
 `DESIGN` 的图会自动切到设计制品发布，`draft-repair-required` 这类没有
 publishable artifact kind 的图则禁用发布入口。
-compile 和 run 响应同样携带本次服务端门禁使用的 validation/readiness；
+connection preflight 会返回候选连接相关的局部 diagnostics，同时携带应用 preview
+edge/binding/config expression 后的完整 candidate draft validation/readiness；compile 和 run 响应同样携带本次服务端门禁使用的 validation/readiness；
 publication run 则回传 artifact 冻结时的 validation/readiness，不能按当前 catalog
 重新解释历史发布物。这样浏览器在 compile/run/connection preflight 之后不会丢失
 design-only、runtime-blocked、governance-review 或 draft-repair-required 的发布引导。
@@ -752,6 +753,7 @@ fingerprint snapshot；普通保存和 PATCH 仍保留既有 snapshot，避免�
 | `POST` | `/api/visual/drafts/import` | 当前已实现：以新 identity 导入 export bundle，刷新当前 catalog fingerprints，存储前校验 bundle/draft contract，并返回 `bloge.visualGraphDraftImportResult.v1` 目标环境 diagnostics 和 validation/readiness |
 | `PATCH` | `/api/visual/drafts/{draftId}` | 保存节点、边、layout、binding patch |
 | `POST` | `/api/visual/drafts/{draftId}/operator-fingerprints/rebase` | 当前已实现：显式刷新选中节点或全部节点的 service-managed operator fingerprint snapshot，使用 `expectedRevision` 防并发覆盖，并对未知节点/当前 catalog 缺失算子返回结构化 diagnostics |
+| `POST` | `/api/visual/connections/check` | 当前已实现：服务端权威预检候选 data/dependency/route/config/context 连接；响应的 `diagnostics` 只保留候选连接相关问题，`validation/readiness` 表达加上候选连接后的完整 candidate draft 状态 |
 | `POST` | `/api/visual/drafts/{draftId}/validate` | 增量或全量校验；当前实现的 transient `/api/visual/drafts/validate` 返回 `valid`、`diagnostics` 和 `bloge.visualGraphReadiness.v1` 图级 runtime/design readiness |
 | `POST` | `/api/visual/drafts/{draftId}/compile` | 生成 DSL 并编译；响应携带本次 draft validation/readiness，供客户端在 compiler 或 design-only blocking 后继续约束发布路径 |
 | `POST` | `/api/visual/drafts/{draftId}/run` | 使用测试 context 运行；响应携带本次 draft validation/readiness、diagnostics 和 run history id |

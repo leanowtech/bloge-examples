@@ -90,7 +90,10 @@ class VisualAuthoringAppJsTest {
                 .contains("const readinessBeforeRun = publication.validation?.readiness || state.visualCheck?.readiness || null;")
                 .contains("payload.validation?.readiness || readinessBeforeRun")
                 .contains("setVisualCheck(error.message, 'error', [], readinessBeforeRun);")
-                .contains("payload.validation?.readiness || state.visualCheck?.readiness || null");
+                .contains("const validation = payload.validation || null;")
+                .contains("const readiness = validation?.readiness || state.visualCheck?.readiness || null;")
+                .contains("if (diagnostics.length || readiness)")
+                .contains("Connection accepted; graph still has validation issues.");
     }
 
     @Test

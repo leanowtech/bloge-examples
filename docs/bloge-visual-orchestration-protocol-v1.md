@@ -1453,8 +1453,11 @@ Content-Type: application/json
 画布拖拽连线时可以先做浏览器本地快速判断，但释放连线前必须能调用服务端
 预检，以免浏览器复制的 schema 规则和发布门禁分叉。请求体包含当前 draft
 快照、source endpoint、target endpoint 和 edge kind；服务端临时追加一条
-preview edge，复用 draft validation 的 edge schema 与 DAG 规则，只返回
-与这条候选连接相关的 diagnostics。预检阶段尚未写入 target binding，因此不会执行
+preview edge / preview binding / preview config expression，复用 draft validation 的
+edge schema、binding schema、policy 与 DAG 规则。响应中的 `diagnostics` 只保留
+与这条候选连接相关的局部 diagnostics，避免画布上其他旧问题误杀一次拖拽；
+`validation` 则保留加上候选连接后的完整 candidate draft validation/readiness，让客户端
+能同步刷新 Server Check 和发布模式。预检阶段尚未写入 target binding，因此不会执行
 正式 draft 的 edge/semantic dependency 一致性 gate；drop 成功写入后，后续
 validate/compile/run 会再次要求 data edge 对应真实语义依赖，且 `nodePath`
 binding 必须有可见 data edge。
@@ -1493,7 +1496,26 @@ binding 必须有可见 data edge。
     "source": { "nodeId": "fetchApplicant", "port": "payload", "path": "score" },
     "target": { "nodeId": "loanPolicy", "port": "inputs", "path": "score" }
   },
-  "diagnostics": []
+  "diagnostics": [],
+  "validation": {
+    "valid": false,
+    "diagnostics": [
+      {
+        "level": "ERROR",
+        "code": "visual.input.required",
+        "message": "Node 'loanPolicy' is missing required input 'amount'.",
+        "target": "/nodes/1/inputs/amount",
+        "line": -1,
+        "column": -1
+      }
+    ],
+    "readiness": {
+      "schemaVersion": "bloge.visualGraphReadiness.v1",
+      "state": "draft-repair-required",
+      "executable": false,
+      "artifactKinds": []
+    }
+  }
 }
 ```
 

@@ -16405,12 +16405,21 @@ async function checkVisualConnectionOnServer(source, target) {
   }
   const payload = await response.json();
   const diagnostics = normalizeDiagnostics(payload.diagnostics);
-  if (diagnostics.length) {
+  const validation = payload.validation || null;
+  const readiness = validation?.readiness || state.visualCheck?.readiness || null;
+  if (diagnostics.length || readiness) {
+    const graphDiagnostics = normalizeDiagnostics(validation?.diagnostics);
+    const visualDiagnostics = diagnostics.length ? diagnostics : graphDiagnostics;
+    const graphStillInvalid = !diagnostics.length && validation?.valid === false;
+    const visualMessage = diagnostics.length
+      ? (payload.accepted ? 'Connection accepted with diagnostics.' : 'Connection rejected.')
+      : (!payload.accepted ? 'Connection rejected.'
+          : (graphStillInvalid ? 'Connection accepted; graph still has validation issues.' : 'Connection accepted.'));
     setVisualCheck(
-      payload.accepted ? 'Connection accepted with diagnostics.' : 'Connection rejected.',
-      visualCheckLevel(diagnostics, Boolean(payload.accepted)),
-      diagnostics,
-      payload.validation?.readiness || state.visualCheck?.readiness || null
+      visualMessage,
+      visualCheckLevel(visualDiagnostics, Boolean(payload.accepted) && !graphStillInvalid),
+      visualDiagnostics,
+      readiness
     );
   }
   return {

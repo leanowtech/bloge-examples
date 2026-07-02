@@ -108,7 +108,7 @@ public class VisualConnectionCheckService {
                 diagnostic -> relevantToConnection(diagnostic, previewIndex, bindingPath, operatorPath,
                         request, nodeIndexes));
         return new VisualConnectionCheckResult(diagnostics.stream().noneMatch(VisualDiagnostic::error),
-                edge, inputKey, diagnostics);
+                edge, inputKey, diagnostics, validation);
     }
 
     private VisualConnectionCheckResult checkDependencyEdge(VisualConnectionCheckRequest request,
@@ -130,7 +130,7 @@ public class VisualConnectionCheckService {
         List<VisualDiagnostic> diagnostics = preflightDiagnostics(validation,
                 diagnostic -> relevantToDependencyEdge(diagnostic, previewIndex, request, nodeIndexes));
         return new VisualConnectionCheckResult(diagnostics.stream().noneMatch(VisualDiagnostic::error),
-                edge, diagnostics);
+                edge, "", diagnostics, validation);
     }
 
     private VisualConnectionCheckResult checkRouteEdge(VisualConnectionCheckRequest request,
@@ -152,7 +152,7 @@ public class VisualConnectionCheckService {
         List<VisualDiagnostic> diagnostics = preflightDiagnostics(validation,
                 diagnostic -> relevantToDependencyEdge(diagnostic, previewIndex, request, nodeIndexes));
         return new VisualConnectionCheckResult(diagnostics.stream().noneMatch(VisualDiagnostic::error),
-                edge, diagnostics);
+                edge, "", diagnostics, validation);
     }
 
     private VisualConnectionCheckResult checkConfigBinding(VisualConnectionCheckRequest request,
@@ -191,7 +191,7 @@ public class VisualConnectionCheckService {
                 diagnostic -> relevantToConfigBinding(diagnostic, configPath, operatorPath,
                         request, nodeIndexes));
         return new VisualConnectionCheckResult(diagnostics.stream().noneMatch(VisualDiagnostic::error),
-                edge, diagnostics);
+                edge, "", diagnostics, validation);
     }
 
     private VisualConnectionCheckResult checkContextBinding(VisualConnectionCheckRequest request,
@@ -220,7 +220,7 @@ public class VisualConnectionCheckService {
         List<VisualDiagnostic> diagnostics = preflightDiagnostics(validation,
                 diagnostic -> relevantToContextBinding(diagnostic, bindingPath, operatorPath));
         return new VisualConnectionCheckResult(diagnostics.stream().noneMatch(VisualDiagnostic::error),
-                edge, inputKey, diagnostics);
+                edge, inputKey, diagnostics, validation);
     }
 
     private static GraphDraft draftWithPreviewEdge(GraphDraft draft, GraphDraft.DraftEdge edge) {

@@ -37,6 +37,11 @@ class VisualConnectionCheckServiceTest {
         assertThat(result.diagnostics()).isEmpty();
         assertThat(result.edge().source().port()).isEqualTo("payload");
         assertThat(result.edge().target().path()).isEqualTo("score");
+        assertThat(result.validation().valid()).isFalse();
+        assertThat(result.validation().readiness().state()).isEqualTo("draft-repair-required");
+        assertThat(result.validation().diagnostics())
+                .extracting("code")
+                .contains("visual.input.required");
     }
 
     @Test
