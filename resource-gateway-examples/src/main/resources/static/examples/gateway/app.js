@@ -340,6 +340,8 @@ const state = {
   publishArtifactKind: 'EXECUTABLE',
   draftRevisions: [],
   draftRevisionDiff: null,
+  draftDependencyReport: null,
+  draftDependencyMessage: null,
   selectedDraftRevision: 0,
   previewingDraftRevision: 0,
   draftBundleText: '',
@@ -1087,6 +1089,7 @@ function renderInputForm() {
           <button id="restore-revision" class="secondary compact" type="button">Restore</button>
         </div>
         <div id="draft-revision-diff" class="library-impact-panel" hidden></div>
+        <div id="draft-dependencies" class="library-impact-panel" hidden></div>
         <div class="draft-transfer-controls">
           <button id="export-draft" class="secondary compact" type="button">Export</button>
           <button id="import-draft" class="secondary compact" type="button">Import Bundle</button>
@@ -1651,6 +1654,8 @@ function resetComposer() {
   state.savedDraftSnapshot = null;
   state.draftRevisions = [];
   state.draftRevisionDiff = null;
+  state.draftDependencyReport = null;
+  state.draftDependencyMessage = null;
   state.selectedDraftRevision = 0;
   state.previewingDraftRevision = 0;
   state.draftMessage = null;
@@ -1735,6 +1740,8 @@ function restoreBuilderHistorySnapshot(snapshot, message) {
   }
   state.selectedNodeId = state.builder.selectedId;
   state.previewingDraftRevision = 0;
+  state.draftDependencyReport = null;
+  state.draftDependencyMessage = null;
   state.visualCheck = { message: 'Not checked', level: 'info', diagnostics: [] };
   clearActiveRunTrace();
   state.connectionMessage = null;
@@ -5745,11 +5752,14 @@ function renderDraftControls() {
     state.savedDraftSnapshot = draft || null;
     state.draftRevisions = [];
     state.draftRevisionDiff = null;
+    state.draftDependencyReport = null;
+    state.draftDependencyMessage = null;
     state.selectedDraftRevision = 0;
     state.previewingDraftRevision = 0;
     state.draftMessage = null;
     if (state.currentDraftId) {
       loadDraftRevisions();
+      loadDraftDependencies();
     }
     renderDraftControls();
   };
@@ -5791,6 +5801,7 @@ function renderDraftControls() {
     };
   }
   renderDraftRevisionControls();
+  renderDraftDependencyReport();
   renderDraftStatus();
 }
 
@@ -5951,6 +5962,236 @@ function draftRevisionDiffRiskLevel(risk) {
     return 'error';
   }
   return normalized === 'METADATA' ? 'success' : 'warning';
+}
+
+function renderDraftDependencyReport() {
+  const target = $('draft-dependencies');
+  if (!target) return;
+  const report = state.draftDependencyReport;
+  const message = state.draftDependencyMessage;
+  if (!report && !message) {
+    target.hidden = true;
+    target.innerHTML = '';
+    return;
+  }
+  const level = report ? draftDependencyReportLevel(report) : (message?.level || 'info');
+  target.hidden = false;
+  target.className = `library-impact-panel ${escapeHtml(level)}`;
+  if (!report) {
+    target.innerHTML = `
+      <div class="library-impact-head">
+        <strong>Draft Dependencies</strong>
+        <span>${escapeHtml(message?.text || 'Dependency report unavailable.')}</span>
+      </div>
+    `;
+    return;
+  }
+  const stats = [
+    ['Operators', report.operatorDependencyCount || 0],
+    ['Nodes', report.nodeCount || 0],
+    ['Missing', report.missingOperatorCount || 0],
+    ['Drifted', report.driftedFingerprintCount || 0],
+    ['Unsnapshotted', report.missingFingerprintCount || 0]
+  ].map(([label, value]) => `<span><strong>${escapeHtml(value)}</strong> ${escapeHtml(label)}</span>`).join('');
+  const readinessRows = draftDependencyCountRows(report.runtimeReadinessStateCounts || {}, 'readiness');
+  const sourceRows = draftDependencyCountRows(report.sourceKindCounts || {}, 'source');
+  const operatorRows = draftDependencyOperatorRows(report);
+  const nodeRows = draftDependencyNodeRows(report);
+  target.innerHTML = `
+    <div class="library-impact-head">
+      <strong>Draft Dependencies</strong>
+      <span>${escapeHtml(`${report.draftId || 'draft'}@${report.revision || 0}`)}</span>
+    </div>
+    <div class="library-impact-risk-summary">${escapeHtml(draftDependencySummary(report))}</div>
+    <div class="library-impact-stats">${stats}</div>
+    ${readinessRows || sourceRows ? `<div class="library-impact-codes">${readinessRows}${sourceRows}</div>` : ''}
+    ${operatorRows ? `<div class="library-impact-risks">${operatorRows}</div>` : ''}
+    ${nodeRows ? `<div class="library-impact-risks">${nodeRows}</div>` : ''}
+  `;
+  for (const button of target.querySelectorAll('[data-draft-dependency-node]')) {
+    button.addEventListener('click', () => {
+      focusCanvasNode(button.dataset.draftDependencyNode);
+    });
+  }
+}
+
+function draftDependencyReportLevel(report) {
+  if ((Number(report?.missingOperatorCount) || 0) > 0) {
+    return 'error';
+  }
+  if ((Number(report?.driftedFingerprintCount) || 0) > 0
+      || (Number(report?.missingFingerprintCount) || 0) > 0) {
+    return 'warning';
+  }
+  const readinessCounts = report?.runtimeReadinessStateCounts || {};
+  if (Number(readinessCounts.CATALOG_MISSING || readinessCounts.catalog_missing || 0) > 0) {
+    return 'error';
+  }
+  if (Object.keys(readinessCounts).some((key) =>
+    ['DESIGN_ONLY', 'RUNTIME_BLOCKED', 'GOVERNANCE_REVIEW', 'CATALOG_REPAIR_REQUIRED']
+      .includes(String(key || '').toUpperCase()))) {
+    return 'warning';
+  }
+  return 'success';
+}
+
+function draftDependencySummary(report) {
+  const parts = [];
+  const missing = Number(report?.missingOperatorCount) || 0;
+  const drifted = Number(report?.driftedFingerprintCount) || 0;
+  const unsnapshotted = Number(report?.missingFingerprintCount) || 0;
+  if (missing) {
+    parts.push(`${missing} catalog-missing node${missing === 1 ? '' : 's'}`);
+  }
+  if (drifted) {
+    parts.push(`${drifted} drifted fingerprint${drifted === 1 ? '' : 's'}`);
+  }
+  if (unsnapshotted) {
+    parts.push(`${unsnapshotted} missing snapshot${unsnapshotted === 1 ? '' : 's'}`);
+  }
+  return parts.length
+    ? parts.join(' · ')
+    : 'Current catalog dependencies are snapshotted and aligned.';
+}
+
+function draftDependencyCountRows(counts, label) {
+  return Object.entries(counts || {})
+    .filter(([, count]) => Number(count) > 0)
+    .sort(([left], [right]) => String(left).localeCompare(String(right)))
+    .map(([key, count]) => `
+      <div class="library-impact-code ${escapeHtml(draftDependencyCountLevel(label, key))}">
+        <strong>${escapeHtml(count)}</strong>
+        <span>${escapeHtml(`${operatorPaletteFacetLabel(key)} ${label}`)}</span>
+      </div>
+    `).join('');
+}
+
+function draftDependencyCountLevel(label, key) {
+  const normalized = String(key || '').trim().toUpperCase().replaceAll('-', '_');
+  if (normalized === 'CATALOG_MISSING' || normalized === 'CATALOG_REPAIR_REQUIRED') {
+    return 'error';
+  }
+  if (label === 'readiness' && normalized !== 'RUNTIME_EXECUTABLE') {
+    return 'warning';
+  }
+  return 'success';
+}
+
+function draftDependencyOperatorRows(report) {
+  const operators = Array.isArray(report?.operators) ? report.operators : [];
+  const sorted = [...operators].sort((left, right) =>
+    draftDependencyRowRank(right) - draftDependencyRowRank(left)
+      || String(left.operatorRef || '').localeCompare(String(right.operatorRef || '')));
+  const rows = sorted.slice(0, 6).map((operator) => `
+    <div class="library-impact-risk ${escapeHtml(draftDependencyFingerprintLevel(operator.fingerprintState, operator.runtimeReadinessState))}">
+      <strong>${escapeHtml(operator.operatorRef || 'operator')}</strong>
+      <span>${escapeHtml(draftDependencyOperatorSummary(operator))}</span>
+      <small>${draftDependencyNodeButtons(operator.nodeIds)}</small>
+    </div>
+  `).join('');
+  const hidden = Math.max(0, sorted.length - 6);
+  return rows + (hidden ? `<div class="library-impact-more">+${hidden} more operator dependencies</div>` : '');
+}
+
+function draftDependencyNodeRows(report) {
+  const nodes = Array.isArray(report?.nodes) ? report.nodes : [];
+  const interesting = nodes
+    .filter((node) => draftDependencyRowRank(node) > 0 || (node.upstreamNodes || []).length || (node.downstreamNodes || []).length)
+    .sort((left, right) => draftDependencyRowRank(right) - draftDependencyRowRank(left)
+      || String(left.nodeId || '').localeCompare(String(right.nodeId || '')));
+  const rows = interesting.slice(0, 5).map((node) => `
+    <div class="library-impact-risk ${escapeHtml(draftDependencyFingerprintLevel(node.fingerprintState, node.runtimeReadinessState))}">
+      <strong>${draftDependencyNodeButton(node.nodeId || 'node')}</strong>
+      <span>${escapeHtml(node.operatorRef || 'operator')} · ${escapeHtml(draftDependencyLineageLabel(node))}</span>
+      <small>${escapeHtml(draftDependencyNodeSummary(node))}</small>
+    </div>
+  `).join('');
+  const hidden = Math.max(0, interesting.length - 5);
+  return rows + (hidden ? `<div class="library-impact-more">+${hidden} more node dependencies</div>` : '');
+}
+
+function draftDependencyNodeButtons(nodeIds) {
+  const ids = uniqueStrings(nodeIds);
+  if (!ids.length) {
+    return 'nodes none';
+  }
+  const visible = ids.slice(0, 3).map((nodeId) => draftDependencyNodeButton(nodeId)).join(' ');
+  const hidden = Math.max(0, ids.length - 3);
+  return `nodes ${visible}${hidden ? ` +${hidden} more` : ''}`;
+}
+
+function draftDependencyNodeButton(nodeId) {
+  const id = String(nodeId || '').trim();
+  if (!id) {
+    return '';
+  }
+  return `<button class="diagnostic-focus" type="button" data-draft-dependency-node="${escapeHtml(id)}">${escapeHtml(id)}</button>`;
+}
+
+function draftDependencyRowRank(row) {
+  const fingerprintState = String(row?.fingerprintState || '').toLowerCase();
+  const readiness = String(row?.runtimeReadinessState || '').toUpperCase();
+  if (fingerprintState === 'catalog-missing' || readiness === 'CATALOG_MISSING'
+      || readiness === 'CATALOG_REPAIR_REQUIRED') {
+    return 4;
+  }
+  if (fingerprintState === 'drifted') {
+    return 3;
+  }
+  if (fingerprintState === 'missing-snapshot'
+      || ['RUNTIME_BLOCKED', 'GOVERNANCE_REVIEW', 'DESIGN_ONLY'].includes(readiness)) {
+    return 2;
+  }
+  return 0;
+}
+
+function draftDependencyFingerprintLevel(fingerprintState, runtimeReadinessState) {
+  const stateLabel = String(fingerprintState || '').toLowerCase();
+  const readiness = String(runtimeReadinessState || '').toUpperCase();
+  if (stateLabel === 'catalog-missing' || readiness === 'CATALOG_MISSING'
+      || readiness === 'CATALOG_REPAIR_REQUIRED') {
+    return 'error';
+  }
+  if (stateLabel === 'drifted' || stateLabel === 'missing-snapshot'
+      || ['DESIGN_ONLY', 'RUNTIME_BLOCKED', 'GOVERNANCE_REVIEW'].includes(readiness)) {
+    return 'warning';
+  }
+  return 'success';
+}
+
+function draftDependencyOperatorSummary(operator) {
+  return [
+    operatorPaletteFacetLabel(operator.sourceKind || 'unknown'),
+    operatorPaletteFacetLabel(operator.loweringMode || 'native'),
+    operatorPaletteFacetLabel(operator.runtimeReadinessState || 'UNKNOWN'),
+    draftDependencyFingerprintLabel(operator.fingerprintState)
+  ].filter(Boolean).join(' · ');
+}
+
+function draftDependencyFingerprintLabel(value) {
+  return {
+    'catalog-missing': 'catalog missing',
+    'missing-snapshot': 'missing snapshot',
+    drifted: 'fingerprint drifted',
+    current: 'fingerprint current'
+  }[String(value || '').toLowerCase()] || String(value || 'unknown');
+}
+
+function draftDependencyLineageLabel(node) {
+  const upstream = uniqueStrings(node?.upstreamNodes);
+  const downstream = uniqueStrings(node?.downstreamNodes);
+  return `${upstream.length} upstream · ${downstream.length} downstream`;
+}
+
+function draftDependencyNodeSummary(node) {
+  const binding = uniqueStrings(node?.bindingSourceNodes);
+  const edges = uniqueStrings(node?.edgeSourceNodes);
+  const parts = [
+    binding.length ? `binding: ${binding.join(', ')}` : '',
+    edges.length ? `edge: ${edges.join(', ')}` : '',
+    draftDependencyFingerprintLabel(node?.fingerprintState)
+  ].filter(Boolean);
+  return parts.join(' · ');
 }
 
 function renderDraftStatus() {
@@ -7092,11 +7333,15 @@ async function loadDraftList(options = {}) {
       state.savedDraftSnapshot = null;
       state.draftRevisions = [];
       state.draftRevisionDiff = null;
+      state.draftDependencyReport = null;
+      state.draftDependencyMessage = null;
       state.selectedDraftRevision = 0;
       state.previewingDraftRevision = 0;
     } else if (state.currentDraftId && !currentDraftIsActive()) {
       state.currentDraftRevision = 0;
       state.savedDraftSnapshot = null;
+      state.draftDependencyReport = null;
+      state.draftDependencyMessage = null;
     }
     if (options.render !== false) {
       renderDraftControls();
@@ -7110,6 +7355,8 @@ async function loadDraftRevisions(options = {}) {
   if (!state.currentDraftId) {
     state.draftRevisions = [];
     state.draftRevisionDiff = null;
+    state.draftDependencyReport = null;
+    state.draftDependencyMessage = null;
     state.selectedDraftRevision = 0;
     state.previewingDraftRevision = 0;
     if (options.render !== false) {
@@ -7167,6 +7414,33 @@ async function loadDraftRevisionDiff(options = {}) {
   }
 }
 
+async function loadDraftDependencies(options = {}) {
+  state.draftDependencyReport = null;
+  state.draftDependencyMessage = null;
+  if (options.render !== false) {
+    renderDraftDependencyReport();
+  }
+  if (!state.currentDraftId || !currentDraftIsActive()) {
+    return null;
+  }
+  try {
+    const response = await fetch(`/api/visual/drafts/${encodeURIComponent(state.currentDraftId)}/dependencies`);
+    if (!response.ok) {
+      throw new Error(`Draft dependency report failed with ${response.status}`);
+    }
+    state.draftDependencyReport = await response.json();
+    return state.draftDependencyReport;
+  } catch (error) {
+    state.draftDependencyReport = null;
+    state.draftDependencyMessage = { text: error.message, level: 'error' };
+    return null;
+  } finally {
+    if (options.render !== false) {
+      renderDraftDependencyReport();
+    }
+  }
+}
+
 function latestDraftRevision() {
   const revisions = Array.isArray(state.draftRevisions) ? state.draftRevisions : [];
   return revisions[0] || null;
@@ -7206,7 +7480,9 @@ async function saveCurrentDraft() {
     if (!patch.length) {
       const current = baseDraft || draft;
       state.savedDraftSnapshot = current;
+      await loadDraftDependencies({ render: false });
       setDraftMessage(`No changes in ${draftId}@${state.currentDraftRevision || 0}.`, 'success');
+      renderDraftControls();
       return current;
     }
     response = await fetch(`/api/visual/drafts/${encodeURIComponent(draftId)}`, {
@@ -7249,6 +7525,7 @@ async function saveCurrentDraft() {
   setDraftMessage(`Saved ${state.currentDraftId}@${state.currentDraftRevision}.`, 'success');
   await loadDraftList({ render: false });
   await loadDraftRevisions({ render: false });
+  await loadDraftDependencies({ render: false });
   renderDraftControls();
   return stored;
 }
@@ -7347,6 +7624,7 @@ async function loadSelectedDraft() {
   state.lastPayload = null;
   state.lastGeneratedVisualDsl = '';
   await loadDraftRevisions({ render: false });
+  await loadDraftDependencies({ render: false });
   syncGraphInputSchemaTextFromBuilder({ render: false });
   syncComposerFromBuilder({ render: false });
   setDraftMessage(`Loaded ${state.currentDraftId}@${state.currentDraftRevision}.`, 'success');
@@ -7408,6 +7686,7 @@ async function importDraftBundle() {
   state.lastGeneratedVisualDsl = '';
   await loadDraftList({ render: false });
   await loadDraftRevisions({ render: false });
+  await loadDraftDependencies({ render: false });
   syncGraphInputSchemaTextFromBuilder({ render: false });
   syncComposerFromBuilder({ render: false });
   const hasImportErrors = diagnostics.some((diagnostic) => String(diagnostic.level || '').toUpperCase() === 'ERROR');
@@ -7442,6 +7721,8 @@ async function previewSelectedDraftRevision() {
   state.currentDraftRevision = current?.revision || (historyEntry?.active ? historyEntry.currentRevision : 0);
   state.savedDraftSnapshot = current || null;
   state.previewingDraftRevision = draft.revision || 0;
+  state.draftDependencyReport = null;
+  state.draftDependencyMessage = null;
   state.lastPayload = null;
   state.lastGeneratedVisualDsl = '';
   syncGraphInputSchemaTextFromBuilder({ render: false });
@@ -7498,6 +7779,7 @@ async function restoreSelectedDraftRevision() {
   state.lastGeneratedVisualDsl = '';
   await loadDraftList({ render: false });
   await loadDraftRevisions({ render: false });
+  await loadDraftDependencies({ render: false });
   syncGraphInputSchemaTextFromBuilder({ render: false });
   syncComposerFromBuilder({ render: false });
   setDraftMessage(`Restored @${revision} as @${restored.revision || 0}.`, 'success');
@@ -7575,6 +7857,8 @@ async function deleteSelectedDraft() {
   state.savedDraftSnapshot = null;
   state.draftRevisions = [];
   state.draftRevisionDiff = null;
+  state.draftDependencyReport = null;
+  state.draftDependencyMessage = null;
   state.selectedDraftRevision = 0;
   state.previewingDraftRevision = 0;
   await loadDraftList({ render: false });
@@ -8657,6 +8941,7 @@ async function rebaseOperatorFingerprint(nodeId) {
     setDraftMessage(`Rebased ${node.id} operator fingerprint at ${state.currentDraftId}@${state.currentDraftRevision}.`, 'success');
     await loadDraftList({ render: false });
     await loadDraftRevisions({ render: false });
+    await loadDraftDependencies({ render: false });
     renderDraftControls();
     if (operatorRef) {
       await loadOperatorUsage(operatorRef);

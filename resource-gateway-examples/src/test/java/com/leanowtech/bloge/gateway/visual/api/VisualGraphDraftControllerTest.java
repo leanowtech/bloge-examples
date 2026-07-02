@@ -7,6 +7,7 @@ import com.leanowtech.bloge.gateway.visual.catalog.VisualCatalogTestSupport;
 import com.leanowtech.bloge.gateway.visual.codegen.DslGenerationResult;
 import com.leanowtech.bloge.gateway.visual.codegen.GraphDraftDslGenerator;
 import com.leanowtech.bloge.gateway.visual.draft.GraphDraft;
+import com.leanowtech.bloge.gateway.visual.draft.GraphDraftDependencyReport;
 import com.leanowtech.bloge.gateway.visual.draft.GraphDraftDiff;
 import com.leanowtech.bloge.gateway.visual.draft.GraphDraftExportBundle;
 import com.leanowtech.bloge.gateway.visual.draft.GraphDraftHistorySummary;
@@ -210,6 +211,93 @@ class VisualGraphDraftControllerTest {
                 .containsExactly(org.assertj.core.groups.Tuple.tuple(
                         "visual.codegen.designOnlyOperator",
                         "/nodes/eligibility/operatorRef"));
+    }
+
+    @Test
+    void dependenciesSummarizeStoredDraftLineageAndRuntimeReadiness() {
+        DefaultVisualOperatorCatalog catalog = eligibilityCatalog();
+        VisualGraphDraftController controller = controllerWithCatalog(catalog, new InMemoryGraphDraftRepository());
+        GraphDraft stored = controller.create(twoNodeEligibilityDraft());
+
+        ResponseEntity<GraphDraftDependencyReport> response = controller.dependencies(stored.draftId());
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat(response.getBody()).isNotNull();
+        GraphDraftDependencyReport report = response.getBody();
+        assertThat(report.schemaVersion()).isEqualTo(GraphDraftDependencyReport.SCHEMA_VERSION);
+        assertThat(report.draftId()).isEqualTo(stored.draftId());
+        assertThat(report.revision()).isEqualTo(stored.revision());
+        assertThat(report.nodeCount()).isEqualTo(2);
+        assertThat(report.edgeCount()).isEqualTo(1);
+        assertThat(report.operatorDependencyCount()).isEqualTo(1);
+        assertThat(report.missingOperatorCount()).isZero();
+        assertThat(report.driftedFingerprintCount()).isZero();
+        assertThat(report.missingFingerprintCount()).isZero();
+        assertThat(report.sourceKindCounts()).containsEntry("user-library", 2);
+        assertThat(report.loweringModeCounts()).containsEntry("transform", 2);
+        assertThat(report.runtimeReadinessStateCounts()).containsEntry("RUNTIME_EXECUTABLE", 2);
+        assertThat(report.operators())
+                .singleElement()
+                .satisfies(operator -> {
+                    assertThat(operator.operatorRef()).isEqualTo("risk:eligibility");
+                    assertThat(operator.executable()).isTrue();
+                    assertThat(operator.artifactKinds()).containsExactly("EXECUTABLE");
+                    assertThat(operator.fingerprintState()).isEqualTo("current");
+                    assertThat(operator.nodeIds()).containsExactly("eligibility", "audit");
+                });
+        assertThat(report.nodes())
+                .filteredOn(node -> node.nodeId().equals("audit"))
+                .singleElement()
+                .satisfies(node -> {
+                    assertThat(node.bindingSourceNodes()).containsExactly("eligibility");
+                    assertThat(node.edgeSourceNodes()).containsExactly("eligibility");
+                    assertThat(node.upstreamNodes()).containsExactly("eligibility");
+                    assertThat(node.downstreamNodes()).isEmpty();
+                    assertThat(node.fingerprintState()).isEqualTo("current");
+                });
+        assertThat(report.nodes())
+                .filteredOn(node -> node.nodeId().equals("eligibility"))
+                .singleElement()
+                .satisfies(node -> assertThat(node.downstreamNodes()).containsExactly("audit"));
+    }
+
+    @Test
+    void dependenciesKeepSavedSnapshotContextWhenCurrentCatalogIsMissing() {
+        InMemoryGraphDraftRepository drafts = new InMemoryGraphDraftRepository();
+        GraphDraft stored = controllerWithCatalog(eligibilityCatalog(), drafts).create(eligibilityDraft(graphInputSchema(
+                Map.of(
+                        "score", Map.of("type", "integer"),
+                        "amount", Map.of("type", "number")
+                )
+        )));
+        VisualGraphDraftController controllerWithMissingCatalog = controllerWithCatalog(emptyCatalog(), drafts);
+
+        ResponseEntity<GraphDraftDependencyReport> response =
+                controllerWithMissingCatalog.dependencies(stored.draftId());
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat(response.getBody()).isNotNull();
+        GraphDraftDependencyReport report = response.getBody();
+        assertThat(report.missingOperatorCount()).isEqualTo(1);
+        assertThat(report.sourceKindCounts()).containsEntry("user-library", 1);
+        assertThat(report.runtimeReadinessStateCounts()).containsEntry("CATALOG_MISSING", 1);
+        assertThat(report.operators())
+                .singleElement()
+                .satisfies(operator -> {
+                    assertThat(operator.operatorRef()).isEqualTo("risk:eligibility");
+                    assertThat(operator.currentFingerprint()).isBlank();
+                    assertThat(operator.fingerprintState()).isEqualTo("catalog-missing");
+                    assertThat(operator.executable()).isFalse();
+                    assertThat(operator.nodeIds()).containsExactly("eligibility");
+                });
+        assertThat(report.nodes())
+                .singleElement()
+                .satisfies(node -> {
+                    assertThat(node.savedFingerprint()).startsWith("sha256:");
+                    assertThat(node.currentFingerprint()).isBlank();
+                    assertThat(node.fingerprintState()).isEqualTo("catalog-missing");
+                    assertThat(node.runtimeReadinessState()).isEqualTo("CATALOG_MISSING");
+                });
     }
 
     @Test
@@ -1819,6 +1907,55 @@ class VisualGraphDraftControllerTest {
                 List.of(),
                 Map.of(),
                 new GraphDraft.OutputSelection("eligibility", "")
+        );
+    }
+
+    private static GraphDraft twoNodeEligibilityDraft() {
+        return new GraphDraft(
+                "",
+                "",
+                0,
+                "dependencyGate",
+                "",
+                "",
+                "",
+                "",
+                graphInputSchema(Map.of(
+                        "score", Map.of("type", "integer"),
+                        "amount", Map.of("type", "number")
+                )),
+                List.of(
+                        new GraphDraft.DraftNode(
+                                "eligibility",
+                                "risk:eligibility",
+                                "",
+                                Map.of(
+                                        "score", GraphDraft.Binding.contextPath("score"),
+                                        "amount", GraphDraft.Binding.contextPath("amount")
+                                ),
+                                Map.of(),
+                                null
+                        ),
+                        new GraphDraft.DraftNode(
+                                "audit",
+                                "risk:eligibility",
+                                "Audit eligibility",
+                                Map.of(
+                                        "score", GraphDraft.Binding.expression("eligibility.output.ruleId"),
+                                        "amount", GraphDraft.Binding.contextPath("amount")
+                                ),
+                                Map.of(),
+                                null
+                        )
+                ),
+                List.of(new GraphDraft.DraftEdge(
+                        "eligibility-to-audit",
+                        "dependency",
+                        new GraphDraft.Endpoint("eligibility", "", ""),
+                        new GraphDraft.Endpoint("audit", "", "")
+                )),
+                Map.of(),
+                new GraphDraft.OutputSelection("audit", "")
         );
     }
 

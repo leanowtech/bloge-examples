@@ -106,6 +106,25 @@ class VisualAuthoringAppJsTest {
     }
 
     @Test
+    void surfacesStoredDraftDependencyReportInDraftPanel() throws Exception {
+        String source = appJsSource();
+
+        assertThat(source)
+                .contains("draftDependencyReport: null")
+                .contains("id=\"draft-dependencies\"")
+                .contains("async function loadDraftDependencies(options = {})")
+                .contains("/api/visual/drafts/${encodeURIComponent(state.currentDraftId)}/dependencies")
+                .contains("function renderDraftDependencyReport()")
+                .contains("Draft Dependencies")
+                .contains("fingerprint drifted")
+                .contains("catalog missing")
+                .contains("data-draft-dependency-node")
+                .contains("focusCanvasNode(button.dataset.draftDependencyNode)")
+                .contains("await loadDraftDependencies({ render: false });")
+                .contains("renderDraftDependencyReport();");
+    }
+
+    @Test
     void requiresResourceContractWarningAcknowledgementBeforeSaving() throws Exception {
         String source = appJsSource();
 

@@ -13,8 +13,8 @@
 > `bloge.operatorCatalog.v1` 和 `bloge.graphDraft.v1`。当前
 > `resource-gateway-examples` 的 wire contract 已收敛为
 > `bloge.visualOperator.v1`、`bloge.visualOperatorLibrary.v1`、
-> `bloge.visualOperatorCatalog.v1`、`bloge.visualGraphDraft.v1` 和
-> `bloge.visualGraphPublication.v1`；operator usage index 当前为
+> `bloge.visualOperatorCatalog.v1`、`bloge.visualGraphDraft.v1`、
+> `bloge.visualGraphDraftDependencies.v1` 和 `bloge.visualGraphPublication.v1`；operator usage index 当前为
 > `bloge.visualOperatorUsage.v1`。继续实现时以代码和实现状态审计为准，
 > 不要把早期草案名误认为当前 API 字段。
 
@@ -23,7 +23,7 @@
 这份文档把“可视化编排画布”从产品愿景压成可实现合同。它定义四个核心协议：
 
 1. `bloge.visualOperator.v1` / `bloge.visualOperatorLibrary.v1` / `bloge.visualOperatorCatalog.v1` / `bloge.visualOperatorUsage.v1`：用户、运行时或 resource gateway 暴露给画布的算子定义、算子库、catalog response 和 operatorRef usage index。
-2. `bloge.visualGraphDraft.v1`：画布编辑中的图草稿模型。
+2. `bloge.visualGraphDraft.v1` / `bloge.visualGraphDraftDependencies.v1`：画布编辑中的图草稿模型，以及 stored draft 的当前 catalog 依赖审阅报告。
 3. `VisualDiagnostic`：校验、编译、策略和运行错误如何定位回画布。
 4. `ResourceDesignContract`：`ResourceDescriptor` 如何补足设计时 schema，投影成虚拟算子。
 5. `bloge.visualGraphPublication.v1`：冻结 DSL、draft、operator snapshots、fingerprints、layout 和报告的不可变发布物。
@@ -1366,6 +1366,23 @@ revision，并继续沿用单调递增 revision 序列。
 浏览器 Drafts 面板已接入该 API：可以加载 revision 列表、把历史快照预览到
 画布上，查看 latest-to-selected draft diff，并通过 guarded restore endpoint
 把选中 revision 恢复成新的最新 revision。
+
+resource-gateway 示例还提供 stored draft dependency report：
+
+```http
+GET /api/visual/drafts/{draftId}/dependencies
+```
+
+该端点返回 `bloge.visualGraphDraftDependencies.v1`，用于外部控制面、迁移审阅和
+后续浏览器依赖面板。报告按当前 catalog 解析 draft 中的 operatorRef，输出
+distinct operator dependencies、每个节点的 binding/edge upstream lineage、
+downstream edge targets、source kind / lowering mode / runtime readiness 计数，
+以及每个节点 saved fingerprint 与 current catalog fingerprint 的状态：
+`current`、`missing-snapshot`、`drifted` 或 `catalog-missing`。当目标环境 catalog
+缺少当前 operatorRef 时，报告会回退到 draft 保存时冻结的 operator definition
+snapshot 提供 source/lowering 审阅上下文，但仍把运行状态标记为
+`CATALOG_MISSING`，避免跨环境迁移或坏版本导入时把 schema-only 设计资产误判为
+可执行图。
 
 resource-gateway 示例还提供 portable draft export/import：
 

@@ -6,6 +6,7 @@ import com.leanowtech.bloge.gateway.visual.catalog.OperatorDefinition;
 import com.leanowtech.bloge.gateway.visual.catalog.VisualOperatorCatalog;
 import com.leanowtech.bloge.gateway.visual.diagnostic.VisualDiagnostic;
 import com.leanowtech.bloge.gateway.visual.draft.GraphDraft;
+import com.leanowtech.bloge.gateway.visual.draft.GraphDraftDependencyReport;
 import com.leanowtech.bloge.gateway.visual.draft.GraphDraftDiff;
 import com.leanowtech.bloge.gateway.visual.draft.GraphDraftExportBundle;
 import com.leanowtech.bloge.gateway.visual.draft.GraphDraftHistorySummary;
@@ -132,6 +133,19 @@ public class VisualGraphDraftController {
     public ResponseEntity<GraphDraft> get(@PathVariable String draftId) {
         return repository.find(draftId)
                 .map(ResponseEntity::ok)
+                .orElseGet(() -> ResponseEntity.notFound().build());
+    }
+
+    /**
+     * Summarizes a stored draft's current catalog dependencies.
+     *
+     * @param draftId draft id
+     * @return dependency report when the draft exists
+     */
+    @GetMapping("/{draftId}/dependencies")
+    public ResponseEntity<GraphDraftDependencyReport> dependencies(@PathVariable String draftId) {
+        return repository.find(draftId)
+                .map(draft -> ResponseEntity.ok(GraphDraftDependencyReport.from(draft, catalog)))
                 .orElseGet(() -> ResponseEntity.notFound().build());
     }
 

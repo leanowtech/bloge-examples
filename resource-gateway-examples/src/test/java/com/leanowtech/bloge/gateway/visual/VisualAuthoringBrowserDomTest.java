@@ -164,6 +164,11 @@ class VisualAuthoringBrowserDomTest {
 
         click(wait, By.id("save-draft"));
         waitForText(wait, By.id("draft-status"), "Saved");
+        waitForText(wait, By.id("draft-dependencies"), "Draft Dependencies");
+        waitForText(wait, By.id("draft-dependencies"), "risk:eligibility");
+        waitForText(wait, By.id("draft-dependencies"), "fingerprint current");
+        click(wait, By.cssSelector("#draft-dependencies [data-draft-dependency-node='riskEligibility']"));
+        waitForText(wait, By.id("selected-operator-editor"), "riskEligibility");
 
         click(wait, By.id("export-draft"));
         wait.until(ignored -> valueOf(By.id("draft-bundle-json"))
