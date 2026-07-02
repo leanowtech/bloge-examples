@@ -1,5 +1,7 @@
 package com.leanowtech.bloge.gateway.visual.publication;
 
+import com.leanowtech.bloge.gateway.visual.catalog.VisualOperatorCatalog;
+import com.leanowtech.bloge.gateway.visual.diagnostic.VisualDiagnostic;
 import com.leanowtech.bloge.gateway.visual.draft.GraphDraftDependencyReport;
 import com.leanowtech.bloge.gateway.visual.runtime.VisualGraphRunResponse;
 import com.leanowtech.bloge.gateway.visual.runtime.VisualGraphRunRecord;
@@ -7,6 +9,8 @@ import com.leanowtech.bloge.gateway.visual.runtime.VisualGraphRunRepository;
 import com.leanowtech.bloge.gateway.visual.runtime.VisualGraphRunService;
 import com.leanowtech.bloge.gateway.visual.runtime.VisualStoredDraftRunRequest;
 
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -18,6 +22,7 @@ import org.springframework.web.bind.annotation.RestController;
 
 import java.util.Collection;
 import java.util.List;
+import java.util.Map;
 
 /**
  * Public API for immutable visual graph publications.
@@ -29,17 +34,32 @@ public class VisualGraphPublicationController {
     private final VisualGraphPublicationRepository repository;
     private final VisualGraphRunService runner;
     private final VisualGraphRunRepository runRepository;
+    private final VisualOperatorCatalog catalog;
 
     /**
      * @param repository publication repository
      * @param runner publication runner
+     * @param runRepository run history repository
+     * @param catalog current visual operator catalog used for target-environment import review
      */
+    @Autowired
     public VisualGraphPublicationController(VisualGraphPublicationRepository repository,
                                             VisualGraphRunService runner,
-                                            VisualGraphRunRepository runRepository) {
+                                            VisualGraphRunRepository runRepository,
+                                            VisualOperatorCatalog catalog) {
         this.repository = repository;
         this.runner = runner;
         this.runRepository = runRepository;
+        this.catalog = catalog;
+    }
+
+    /**
+     * Backward-compatible constructor for tests that do not need target-environment dependency review.
+     */
+    VisualGraphPublicationController(VisualGraphPublicationRepository repository,
+                                     VisualGraphRunService runner,
+                                     VisualGraphRunRepository runRepository) {
+        this(repository, runner, runRepository, null);
     }
 
     /**
@@ -127,6 +147,56 @@ public class VisualGraphPublicationController {
     }
 
     /**
+     * Exports an immutable publication as a portable bundle.
+     *
+     * @param publicationId publication id
+     * @return publication export bundle when present
+     */
+    @GetMapping("/{publicationId}/export")
+    public ResponseEntity<VisualGraphPublicationExportBundle> export(@PathVariable String publicationId) {
+        return repository.find(publicationId)
+                .map(publication -> ResponseEntity.ok(VisualGraphPublicationExportBundle.from(publication)))
+                .orElseGet(() -> ResponseEntity.notFound().build());
+    }
+
+    /**
+     * Imports a portable immutable publication bundle into the target repository.
+     *
+     * @param bundle portable publication bundle
+     * @return target-environment import result
+     */
+    @PostMapping("/import-bundle")
+    public ResponseEntity<VisualGraphPublicationImportResult> importBundle(
+            @RequestBody(required = false) VisualGraphPublicationExportBundle bundle) {
+        if (bundle != null && !VisualGraphPublicationExportBundle.SCHEMA_VERSION.equals(bundle.schemaVersion())) {
+            return ResponseEntity.badRequest().body(VisualGraphPublicationImportResult.rejected(
+                    bundle, bundle.publication(), publicationBundleSchemaVersionDiagnostics(bundle)));
+        }
+        VisualGraphPublication publication = bundle == null ? null : bundle.publication();
+        if (publication == null) {
+            return ResponseEntity.badRequest().body(VisualGraphPublicationImportResult.rejected(
+                    bundle, publicationBundleSnapshotMissingDiagnostics()));
+        }
+        if (!VisualGraphPublication.SCHEMA_VERSION.equals(publication.schemaVersion())) {
+            return ResponseEntity.badRequest().body(VisualGraphPublicationImportResult.rejected(
+                    bundle, publication, publicationSchemaVersionDiagnostics(publication)));
+        }
+        GraphDraftDependencyReport targetDependencyReport = targetDependencyReport(publication);
+        if (!publication.publicationId().isBlank() && repository.find(publication.publicationId()).isPresent()) {
+            return ResponseEntity.status(HttpStatus.CONFLICT).body(VisualGraphPublicationImportResult.rejected(
+                    bundle, publication, targetDependencyReport, publicationAlreadyExistsDiagnostics(publication)));
+        }
+        try {
+            VisualGraphPublication stored = repository.create(publication);
+            return ResponseEntity.status(HttpStatus.CREATED).body(VisualGraphPublicationImportResult.imported(
+                    bundle, stored, targetDependencyReport(stored)));
+        } catch (IllegalArgumentException e) {
+            return ResponseEntity.status(HttpStatus.CONFLICT).body(VisualGraphPublicationImportResult.rejected(
+                    bundle, publication, targetDependencyReport, publicationAlreadyExistsDiagnostics(publication)));
+        }
+    }
+
+    /**
      * Gets the publish-time dependency report frozen with a publication.
      *
      * @param publicationId publication id
@@ -157,5 +227,51 @@ public class VisualGraphPublicationController {
                     return ResponseEntity.ok(response.withRunId(record.runId()));
                 })
                 .orElseGet(() -> ResponseEntity.notFound().build());
+    }
+
+    private static List<VisualDiagnostic> publicationBundleSchemaVersionDiagnostics(
+            VisualGraphPublicationExportBundle bundle) {
+        String actual = bundle == null ? "" : bundle.schemaVersion();
+        return List.of(VisualDiagnostic.error(
+                "visual.publication.bundle.schemaVersionUnsupported",
+                "Visual graph publication import bundle schemaVersion '%s' is not supported; expected '%s'."
+                        .formatted(actual, VisualGraphPublicationExportBundle.SCHEMA_VERSION),
+                "/schemaVersion",
+                Map.of("actual", actual, "expected", VisualGraphPublicationExportBundle.SCHEMA_VERSION)
+        ));
+    }
+
+    private static List<VisualDiagnostic> publicationBundleSnapshotMissingDiagnostics() {
+        return List.of(VisualDiagnostic.error(
+                "visual.publication.bundle.snapshotMissing",
+                "Visual graph publication import bundle must include a publication snapshot.",
+                "/publication"
+        ));
+    }
+
+    private static List<VisualDiagnostic> publicationSchemaVersionDiagnostics(VisualGraphPublication publication) {
+        String actual = publication == null ? "" : publication.schemaVersion();
+        return List.of(VisualDiagnostic.error(
+                "visual.publication.schemaVersionUnsupported",
+                "Visual graph publication schemaVersion '%s' is not supported; expected '%s'."
+                        .formatted(actual, VisualGraphPublication.SCHEMA_VERSION),
+                "/publication/schemaVersion",
+                Map.of("actual", actual, "expected", VisualGraphPublication.SCHEMA_VERSION)
+        ));
+    }
+
+    private static List<VisualDiagnostic> publicationAlreadyExistsDiagnostics(VisualGraphPublication publication) {
+        String publicationId = publication == null ? "" : publication.publicationId();
+        return List.of(VisualDiagnostic.error(
+                "visual.publication.importConflict",
+                "Visual graph publication '%s' already exists in the target repository.".formatted(publicationId),
+                "/publication/publicationId",
+                Map.of("publicationId", publicationId)
+        ));
+    }
+
+    private GraphDraftDependencyReport targetDependencyReport(VisualGraphPublication publication) {
+        return publication == null ? GraphDraftDependencyReport.empty()
+                : GraphDraftDependencyReport.from(publication.draft(), catalog);
     }
 }

@@ -390,6 +390,7 @@ const state = {
   publicationSummaries: [],
   publicationDetailsById: {},
   selectedPublicationId: '',
+  publicationBundleText: '',
   publicationMessage: null,
   goldenCases: [],
   selectedGoldenCaseId: '',
@@ -1371,6 +1372,11 @@ function renderInputForm() {
           <button id="run-publication" class="secondary compact" type="button">Run</button>
           <button id="reload-publications" class="secondary compact" type="button">Reload</button>
         </div>
+        <div class="draft-transfer-controls">
+          <button id="export-publication" class="secondary compact" type="button">Export</button>
+          <button id="import-publication" class="secondary compact" type="button">Import Bundle</button>
+        </div>
+        <textarea id="publication-bundle-json" class="library-editor draft-bundle-editor" spellcheck="false"></textarea>
         <div id="publication-asset-summary" class="library-impact-panel" hidden></div>
         <div class="draft-controls">
           <select id="golden-case-select" aria-label="Golden regression cases"></select>
@@ -8537,6 +8543,9 @@ function renderPublicationControls() {
 
   const runButton = $('run-publication');
   const reloadButton = $('reload-publications');
+  const exportButton = $('export-publication');
+  const importButton = $('import-publication');
+  const bundleEditor = $('publication-bundle-json');
   const executablePublicationSelected = selectedPublicationExecutable();
   if (runButton) {
     runButton.disabled = !executablePublicationSelected;
@@ -8552,6 +8561,24 @@ function renderPublicationControls() {
       await loadGoldenCases({ render: false });
       await loadGoldenCertificationStatus({ render: false });
       renderPublicationControls();
+    };
+  }
+  if (exportButton) {
+    exportButton.disabled = !state.selectedPublicationId;
+    exportButton.onclick = exportSelectedPublication;
+  }
+  if (importButton) {
+    importButton.disabled = !state.publicationBundleText.trim();
+    importButton.onclick = importPublicationBundle;
+  }
+  if (bundleEditor) {
+    bundleEditor.value = state.publicationBundleText;
+    bundleEditor.oninput = () => {
+      state.publicationBundleText = bundleEditor.value;
+      const button = $('import-publication');
+      if (button) {
+        button.disabled = !state.publicationBundleText.trim();
+      }
     };
   }
   renderPublicationAssetSummary();
@@ -9803,6 +9830,86 @@ async function certifyPublicationGoldenSuite() {
   } catch (error) {
     setPublicationMessage(error.message, 'error');
   }
+}
+
+async function exportSelectedPublication() {
+  const publication = selectedPublication();
+  if (!publication?.publicationId) {
+    setPublicationMessage('Select a publication first.', 'error');
+    return;
+  }
+  const response = await fetch(`/api/visual/publications/${encodeURIComponent(publication.publicationId)}/export`);
+  const payload = await response.json().catch(() => null);
+  if (!response.ok) {
+    setPublicationMessage(`Export failed with ${response.status}`, 'error');
+    $('output').textContent = pretty({ status: response.status, publicationExport: payload });
+    return;
+  }
+  state.publicationBundleText = pretty(payload);
+  setPublicationMessage(`Exported ${payload?.sourcePublicationId || publication.publicationId}.`, 'success');
+  $('output').textContent = pretty({ status: response.status, publicationExport: payload });
+  renderPublicationControls();
+}
+
+async function importPublicationBundle() {
+  let bundle;
+  try {
+    bundle = JSON.parse(state.publicationBundleText || '{}');
+  } catch (error) {
+    setPublicationMessage(`Invalid publication bundle JSON: ${error.message}`, 'error');
+    return;
+  }
+  const response = await fetch('/api/visual/publications/import-bundle', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(bundle)
+  });
+  const payload = await response.json().catch(() => null);
+  const diagnostics = normalizeDiagnostics(payload?.diagnostics);
+  if (!response.ok) {
+    setPublicationMessage(diagnosticMessage(diagnostics, `Import failed with ${response.status}`), 'error');
+    $('output').textContent = pretty({ status: response.status, publicationImport: payload });
+    return;
+  }
+  const importedPublication = payload?.publication || null;
+  if (importedPublication?.publicationId) {
+    state.selectedPublicationId = importedPublication.publicationId;
+    state.publicationDetailsById[importedPublication.publicationId] = importedPublication;
+  }
+  await loadPublicationList({ render: false });
+  await loadSelectedPublicationDetails({ render: false });
+  await loadGoldenCases({ render: false });
+  await loadGoldenCertificationStatus({ render: false });
+  await loadVisualAssetOverview({ render: false });
+  const sourceLineage = payload?.sourcePublicationId ? ` from ${payload.sourcePublicationId}` : '';
+  const targetReview = publicationImportTargetReviewText(payload?.targetDependencyReport);
+  setPublicationMessage(
+    `Imported ${payload?.importedPublicationId || importedPublication?.publicationId || 'publication'}${sourceLineage}.${targetReview ? ` ${targetReview}` : ''}`,
+    'success'
+  );
+  renderPublicationControls();
+  renderVisualAssetOverview();
+  $('output').textContent = pretty({ status: response.status, publicationImport: payload });
+}
+
+function publicationImportTargetReviewText(report) {
+  if (!report) {
+    return '';
+  }
+  const missing = Number(report.missingOperatorCount || 0);
+  const scopeMismatch = Number(report.scopeMismatchOperatorCount || 0);
+  const drifted = Number(report.driftedFingerprintCount || 0);
+  const missingSnapshot = Number(report.missingFingerprintCount || 0);
+  const issues = [
+    missing ? `${missing} missing operator${missing === 1 ? '' : 's'}` : '',
+    scopeMismatch ? `${scopeMismatch} scope mismatch${scopeMismatch === 1 ? '' : 'es'}` : '',
+    drifted ? `${drifted} fingerprint drift${drifted === 1 ? '' : 's'}` : '',
+    missingSnapshot ? `${missingSnapshot} missing fingerprint snapshot${missingSnapshot === 1 ? '' : 's'}` : ''
+  ].filter(Boolean);
+  if (issues.length) {
+    return `Target review: ${issues.join(', ')}.`;
+  }
+  return 'Target review: all frozen operator dependencies are available.';
 }
 
 async function runSelectedPublication() {

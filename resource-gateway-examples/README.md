@@ -593,7 +593,15 @@ labels each artifact as `EXECUTABLE` or `DESIGN`, and disables run/golden action
 for design artifacts. It also renders the selected artifact's frozen graph
 readiness, non-executable node rows, and frozen dependency summary from the
 publication snapshot, so a design artifact can be reviewed without depending on
-the current catalog.
+the current catalog. Immutable publications can also be exported as
+`bloge.visualGraphPublicationExport.v1` bundles and imported into another
+target repository through a schema-version-gated import path that preserves the
+frozen publication snapshot while rejecting duplicate publication ids. The
+import result returns both the source bundle dependency report and a
+target-environment dependency report computed from the current target catalog
+without rewriting the immutable artifact, so design-only artifacts can leave
+the browser/database as portable control-plane assets before runtime binding
+work exists.
 Publish requests return validation/readiness/action-readiness on both accepted and rejected
 attempts, then reject warning-level validation diagnostics
 until the caller repeats the request with `ackWarnings=true`, so non-idempotent
@@ -790,8 +798,10 @@ Showcase metadata APIs:
 | `POST` | `/api/visual/drafts/{draftId}/publish` | Publish an immutable visual graph artifact; default `artifactKind=EXECUTABLE` validates, compiles, and stores frozen DSL, while `artifactKind=DESIGN` freezes a schema-valid non-executable design artifact with generation diagnostics; response includes validation/readiness/action-readiness on accepted and rejected attempts so clients can constrain publish artifact kinds and warning review gates; optional `expectedRevision` rejects stale publishes with `409 CONFLICT`; warning-level validation diagnostics require `ackWarnings=true`, and warning-acknowledged storage also requires non-empty `actor` and `reason` evidence that is frozen as publication metadata |
 | `GET` | `/api/visual/publications` | List immutable visual graph publications |
 | `GET` | `/api/visual/publications/summaries` | List `bloge.visualGraphPublicationSummary.v1` publication asset summaries with frozen artifact kind, readiness/action-readiness, diagnostic counts, dependency counts, and source/runtime-readiness distributions without returning full publication payloads; supports optional `tenantId` / `namespace` / `environment` scope filters |
+| `POST` | `/api/visual/publications/import-bundle` | Import a portable `bloge.visualGraphPublicationExport.v1` bundle and return `bloge.visualGraphPublicationImportResult.v1` with source and target dependency reports; rejects unsupported bundle/publication schema versions, missing publication snapshots, and duplicate target publication ids |
 | `GET` | `/api/visual/publications/{publicationId}` | Load a published visual graph artifact |
 | `GET` | `/api/visual/publications/{publicationId}/dependencies` | Load the publish-time dependency report frozen with an immutable visual graph artifact |
+| `GET` | `/api/visual/publications/{publicationId}/export` | Export an immutable publication as `bloge.visualGraphPublicationExport.v1`, including source lineage, frozen publication snapshot, validation/readiness, and publish-time dependency report |
 | `POST` | `/api/visual/publications/{publicationId}/run` | Execute a published artifact from its frozen DSL and return the artifact's frozen validation/readiness/action-readiness |
 | `GET` | `/api/visual/golden-cases?publicationId=...` | List golden regression cases bound to an immutable publication |
 | `GET` | `/api/visual/golden-cases/{caseId}` | Load one golden regression case |

@@ -833,6 +833,8 @@ fingerprint snapshot；普通保存和 PATCH 仍保留既有 snapshot，避免�
 | `POST` | `/api/visual/drafts/{draftId}/compile` | 生成 DSL 并编译；响应携带本次 draft validation/readiness/actionReadiness，供客户端在 compiler 或 design-only blocking 后继续约束发布路径 |
 | `POST` | `/api/visual/drafts/{draftId}/run` | 使用测试 context 运行；响应携带本次 draft validation/readiness/actionReadiness、diagnostics 和 run history id |
 | `POST` | `/api/visual/drafts/{draftId}/publish` | 发布为 graph version；浏览器和 API 默认 `artifactKind=EXECUTABLE`，也支持 `artifactKind=DESIGN` 冻结非执行型设计制品；warning-level diagnostics 需 `ackWarnings=true` 后才写入；响应在成功和拒绝时都保留 validation/readiness/actionReadiness，供客户端按 artifact kind 和 warning gate 纠偏 |
+| `GET` | `/api/visual/publications/{publicationId}/export` | 当前已实现：导出 immutable publication 为 `bloge.visualGraphPublicationExport.v1` portable bundle，包含 source lineage、frozen artifact、validation/readiness 和 dependency report |
+| `POST` | `/api/visual/publications/import-bundle` | 当前已实现：导入 portable publication bundle，返回 `bloge.visualGraphPublicationImportResult.v1`，包含 source bundle dependency report 和基于目标环境当前 catalog 计算的 target dependency report，并对 unsupported bundle/publication schemaVersion、缺失 snapshot 和重复 publicationId 做结构化拒绝 |
 | `GET` | `/api/visual/assets/overview` | 当前已实现：返回 `bloge.visualAssetOverview.v1`，聚合 draft/publication/operator catalog readiness，并用 summary actionReadiness 和 runtimeBindingRequirements 派生可分页 action queue |
 | `GET` | `/api/visual/assets/runtime-binding-requirements` | 当前已实现：返回 `bloge.visualRuntimeBindingRequirements.v1`，把 active draft 和 immutable publication 的 runtime binding gaps 暴露为 scope-aware/filterable/pageable 事实索引 |
 

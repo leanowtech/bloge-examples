@@ -1,6 +1,7 @@
 package com.leanowtech.bloge.gateway.visual.publication;
 
 import com.leanowtech.bloge.gateway.visual.catalog.OperatorDefinition;
+import com.leanowtech.bloge.gateway.visual.catalog.OperatorLibrary;
 import com.leanowtech.bloge.gateway.visual.catalog.VisualCatalogTestSupport;
 import com.leanowtech.bloge.gateway.visual.codegen.DslGenerationResult;
 import com.leanowtech.bloge.gateway.visual.draft.GraphDraft;
@@ -116,6 +117,214 @@ class VisualGraphPublicationControllerTest {
     }
 
     @Test
+    void exportPublicationReturnsPortableBundle() {
+        InMemoryVisualGraphPublicationRepository repository = new InMemoryVisualGraphPublicationRepository();
+        VisualGraphPublication stored = repository.create(publication());
+        VisualGraphPublicationController controller = new VisualGraphPublicationController(repository, runner(),
+                new InMemoryVisualGraphRunRepository());
+
+        ResponseEntity<VisualGraphPublicationExportBundle> response = controller.export(stored.publicationId());
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat(response.getBody()).isNotNull();
+        assertThat(response.getBody().schemaVersion())
+                .isEqualTo(VisualGraphPublicationExportBundle.SCHEMA_VERSION);
+        assertThat(response.getBody().sourcePublicationId()).isEqualTo(stored.publicationId());
+        assertThat(response.getBody().sourceDraftId()).isEqualTo(stored.draftId());
+        assertThat(response.getBody().sourceDraftRevision()).isEqualTo(stored.draftRevision());
+        assertThat(response.getBody().sourceArtifactKind()).isEqualTo(stored.artifactKind());
+        assertThat(response.getBody().publication()).isEqualTo(stored);
+        assertThat(response.getBody().validation()).isEqualTo(stored.validation());
+        assertThat(response.getBody().dependencyReport()).isEqualTo(stored.dependencyReport());
+    }
+
+    @Test
+    void importBundleStoresImmutablePublicationSnapshot() {
+        InMemoryVisualGraphPublicationRepository sourceRepository = new InMemoryVisualGraphPublicationRepository();
+        VisualGraphPublication source = sourceRepository.create(publication("tenant-a", "risk", "prod"));
+        VisualGraphPublicationExportBundle bundle = VisualGraphPublicationExportBundle.from(source);
+        InMemoryVisualGraphPublicationRepository targetRepository = new InMemoryVisualGraphPublicationRepository();
+        VisualGraphPublicationController controller = new VisualGraphPublicationController(targetRepository, runner(),
+                new InMemoryVisualGraphRunRepository(), VisualCatalogTestSupport.catalogWithLibrary(
+                        VisualCatalogTestSupport.eligibilityLibrary("integer")));
+
+        ResponseEntity<VisualGraphPublicationImportResult> response = controller.importBundle(bundle);
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.CREATED);
+        assertThat(response.getBody()).isNotNull();
+        assertThat(response.getBody().schemaVersion())
+                .isEqualTo(VisualGraphPublicationImportResult.SCHEMA_VERSION);
+        assertThat(response.getBody().imported()).isTrue();
+        assertThat(response.getBody().sourceBundleSchemaVersion())
+                .isEqualTo(VisualGraphPublicationExportBundle.SCHEMA_VERSION);
+        assertThat(response.getBody().sourcePublicationId()).isEqualTo(source.publicationId());
+        assertThat(response.getBody().sourceArtifactKind()).isEqualTo(source.artifactKind());
+        assertThat(response.getBody().importedPublicationId()).isEqualTo(source.publicationId());
+        assertThat(response.getBody().sourceDependencyReport()).isEqualTo(bundle.dependencyReport());
+        assertThat(response.getBody().targetDependencyReport().draftId()).isEqualTo(source.draftId());
+        assertThat(response.getBody().targetDependencyReport().missingOperatorCount()).isZero();
+        assertThat(response.getBody().targetDependencyReport().runtimeReadinessStateCounts())
+                .containsEntry("RUNTIME_EXECUTABLE", 1);
+        assertThat(response.getBody().targetDependencyReport().operators())
+                .singleElement()
+                .satisfies(operator -> {
+                    assertThat(operator.operatorRef()).isEqualTo("risk:eligibility");
+                    assertThat(operator.fingerprintState()).isEqualTo("current");
+                });
+        assertThat(response.getBody().diagnostics()).isEmpty();
+        assertThat(targetRepository.find(source.publicationId())).contains(response.getBody().publication());
+    }
+
+    @Test
+    void importBundleReturnsTargetDependencyReportForMissingCatalogOperator() {
+        InMemoryVisualGraphPublicationRepository sourceRepository = new InMemoryVisualGraphPublicationRepository();
+        VisualGraphPublication source = sourceRepository.create(publication("tenant-a", "risk", "prod"));
+        VisualGraphPublicationExportBundle bundle = VisualGraphPublicationExportBundle.from(source);
+        VisualGraphPublicationController controller = new VisualGraphPublicationController(
+                new InMemoryVisualGraphPublicationRepository(), runner(), new InMemoryVisualGraphRunRepository(),
+                emptyCatalog());
+
+        ResponseEntity<VisualGraphPublicationImportResult> response = controller.importBundle(bundle);
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.CREATED);
+        assertThat(response.getBody()).isNotNull();
+        assertThat(response.getBody().imported()).isTrue();
+        assertThat(response.getBody().sourceDependencyReport().missingOperatorCount()).isZero();
+        assertThat(response.getBody().targetDependencyReport().missingOperatorCount()).isEqualTo(1);
+        assertThat(response.getBody().targetDependencyReport().runtimeReadinessStateCounts())
+                .containsEntry("CATALOG_MISSING", 1);
+        assertThat(response.getBody().targetDependencyReport().operators())
+                .singleElement()
+                .satisfies(operator -> {
+                    assertThat(operator.operatorRef()).isEqualTo("risk:eligibility");
+                    assertThat(operator.fingerprintState()).isEqualTo("catalog-missing");
+                    assertThat(operator.scopeAllowed()).isFalse();
+                });
+    }
+
+    @Test
+    void importBundleRejectsUnsupportedBundleSchemaVersion() {
+        InMemoryVisualGraphPublicationRepository repository = new InMemoryVisualGraphPublicationRepository();
+        VisualGraphPublication stored = repository.create(publication());
+        VisualGraphPublicationExportBundle unsupported = new VisualGraphPublicationExportBundle(
+                "bloge.visualGraphPublicationExport.v2",
+                null,
+                stored.publicationId(),
+                stored.draftId(),
+                stored.draftRevision(),
+                stored.artifactKind(),
+                stored,
+                stored.validation(),
+                stored.dependencyReport()
+        );
+        VisualGraphPublicationController controller = new VisualGraphPublicationController(
+                new InMemoryVisualGraphPublicationRepository(), runner(), new InMemoryVisualGraphRunRepository());
+
+        ResponseEntity<VisualGraphPublicationImportResult> response = controller.importBundle(unsupported);
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+        assertThat(response.getBody()).isNotNull();
+        assertThat(response.getBody().imported()).isFalse();
+        assertThat(response.getBody().diagnostics())
+                .singleElement()
+                .satisfies(diagnostic -> {
+                    assertThat(diagnostic.code())
+                            .isEqualTo("visual.publication.bundle.schemaVersionUnsupported");
+                    assertThat(diagnostic.target()).isEqualTo("/schemaVersion");
+                });
+    }
+
+    @Test
+    void importBundleRejectsMissingPublicationSnapshot() {
+        VisualGraphPublicationExportBundle missingSnapshot = new VisualGraphPublicationExportBundle(
+                VisualGraphPublicationExportBundle.SCHEMA_VERSION,
+                null,
+                "source-publication",
+                "draft-1",
+                1,
+                "DESIGN",
+                null,
+                null,
+                null
+        );
+        VisualGraphPublicationController controller = new VisualGraphPublicationController(
+                new InMemoryVisualGraphPublicationRepository(), runner(), new InMemoryVisualGraphRunRepository());
+
+        ResponseEntity<VisualGraphPublicationImportResult> response = controller.importBundle(missingSnapshot);
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+        assertThat(response.getBody()).isNotNull();
+        assertThat(response.getBody().imported()).isFalse();
+        assertThat(response.getBody().diagnostics())
+                .singleElement()
+                .satisfies(diagnostic -> {
+                    assertThat(diagnostic.code()).isEqualTo("visual.publication.bundle.snapshotMissing");
+                    assertThat(diagnostic.target()).isEqualTo("/publication");
+                });
+    }
+
+    @Test
+    void importBundleRejectsUnsupportedPublicationSchemaVersion() {
+        VisualGraphPublication base = publication().withIdentity("publication-v2", java.time.Instant.now());
+        VisualGraphPublication unsupportedPublication = new VisualGraphPublication(
+                "bloge.visualGraphPublication.v2",
+                base.publicationId(),
+                base.draftId(),
+                base.draftRevision(),
+                base.graphName(),
+                base.tenantId(),
+                base.namespace(),
+                base.environment(),
+                base.createdAt(),
+                base.artifactKind(),
+                base.draft(),
+                base.operatorSnapshots(),
+                base.operatorFingerprints(),
+                base.visualLayout(),
+                base.dsl(),
+                base.validation(),
+                base.generation(),
+                base.dependencyReport(),
+                base.publicationMetadata()
+        );
+        VisualGraphPublicationExportBundle bundle = VisualGraphPublicationExportBundle.from(unsupportedPublication);
+        VisualGraphPublicationController controller = new VisualGraphPublicationController(
+                new InMemoryVisualGraphPublicationRepository(), runner(), new InMemoryVisualGraphRunRepository());
+
+        ResponseEntity<VisualGraphPublicationImportResult> response = controller.importBundle(bundle);
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+        assertThat(response.getBody()).isNotNull();
+        assertThat(response.getBody().diagnostics())
+                .singleElement()
+                .satisfies(diagnostic -> {
+                    assertThat(diagnostic.code()).isEqualTo("visual.publication.schemaVersionUnsupported");
+                    assertThat(diagnostic.target()).isEqualTo("/publication/schemaVersion");
+                });
+    }
+
+    @Test
+    void importBundleRejectsExistingPublicationId() {
+        InMemoryVisualGraphPublicationRepository repository = new InMemoryVisualGraphPublicationRepository();
+        VisualGraphPublication stored = repository.create(publication());
+        VisualGraphPublicationController controller = new VisualGraphPublicationController(repository, runner(),
+                new InMemoryVisualGraphRunRepository());
+
+        ResponseEntity<VisualGraphPublicationImportResult> response = controller.importBundle(
+                VisualGraphPublicationExportBundle.from(stored));
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.CONFLICT);
+        assertThat(response.getBody()).isNotNull();
+        assertThat(response.getBody().imported()).isFalse();
+        assertThat(response.getBody().diagnostics())
+                .singleElement()
+                .satisfies(diagnostic -> {
+                    assertThat(diagnostic.code()).isEqualTo("visual.publication.importConflict");
+                    assertThat(diagnostic.target()).isEqualTo("/publication/publicationId");
+                });
+    }
+
+    @Test
     void runPublicationDelegatesToRunner() {
         InMemoryVisualGraphPublicationRepository repository = new InMemoryVisualGraphPublicationRepository();
         VisualGraphPublication stored = repository.create(publication());
@@ -187,6 +396,18 @@ class VisualGraphPublicationControllerTest {
                 GraphDraftDependencyReport.from(draft, VisualCatalogTestSupport.catalogWithLibrary(
                         VisualCatalogTestSupport.eligibilityLibrary("integer")))
         );
+    }
+
+    private static com.leanowtech.bloge.gateway.visual.catalog.VisualOperatorCatalog emptyCatalog() {
+        return VisualCatalogTestSupport.catalogWithLibrary(new OperatorLibrary(
+                "bloge.visualOperatorLibrary.v1",
+                "empty-library",
+                "Empty library",
+                "1.0.0",
+                "risk-team",
+                "ACTIVE",
+                List.of()
+        ));
     }
 
     private static class CapturingRunService extends VisualGraphRunService {

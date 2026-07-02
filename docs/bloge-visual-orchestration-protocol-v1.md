@@ -15,19 +15,21 @@
 > `bloge.visualOperator.v1`、`bloge.visualOperatorLibrary.v1`、
 > `bloge.visualOperatorCatalog.v1`、`bloge.visualGraphDraft.v1`、
 > `bloge.visualGraphReadiness.v1`、`bloge.visualGraphActionReadiness.v1`、
-> `bloge.visualGraphDraftDependencies.v1` 和 `bloge.visualGraphPublication.v1`；operator usage index 当前为
+> `bloge.visualGraphDraftDependencies.v1`、`bloge.visualGraphPublication.v1`、
+> `bloge.visualGraphPublicationExport.v1` 和
+> `bloge.visualGraphPublicationImportResult.v1`；operator usage index 当前为
 > `bloge.visualOperatorUsage.v1`。继续实现时以代码和实现状态审计为准，
 > 不要把早期草案名误认为当前 API 字段。
 
 ## 1. 协议目标
 
-这份文档把“可视化编排画布”从产品愿景压成可实现合同。它定义四个核心协议：
+这份文档把“可视化编排画布”从产品愿景压成可实现合同。它定义五个核心协议：
 
 1. `bloge.visualOperator.v1` / `bloge.visualOperatorLibrary.v1` / `bloge.visualOperatorCatalog.v1` / `bloge.visualOperatorUsage.v1`：用户、运行时或 resource gateway 暴露给画布的算子定义、算子库、catalog response 和 operatorRef usage index。
 2. `bloge.visualGraphDraft.v1` / `bloge.visualGraphReadiness.v1` / `bloge.visualGraphActionReadiness.v1` / `bloge.visualGraphDraftDependencies.v1`：画布编辑中的图草稿模型、图级 runtime/design readiness、compile/run/publication 动作准入，以及 stored draft 的当前 catalog 依赖审阅报告。
 3. `VisualDiagnostic`：校验、编译、策略和运行错误如何定位回画布。
 4. `ResourceDesignContract`：`ResourceDescriptor` 如何补足设计时 schema，投影成虚拟算子。
-5. `bloge.visualGraphPublication.v1`：冻结 DSL、draft、operator snapshots、fingerprints、layout 和报告的不可变发布物。
+5. `bloge.visualGraphPublication.v1` / `bloge.visualGraphPublicationExport.v1` / `bloge.visualGraphPublicationImportResult.v1`：冻结 DSL、draft、operator snapshots、fingerprints、layout 和报告的不可变发布物，以及跨环境 portable bundle。
 
 边界判断：
 
@@ -1892,7 +1894,7 @@ artifact。发布成功后 artifact 必须不可变，
 - publish-time dependency report。
 - publication metadata：`actor`、`changeSource`、`changeSummary`、`reason`。
 
-resource-gateway 示例将 artifact 存入 `visual_graph_publications`，提供 list/get/run，
+resource-gateway 示例将 artifact 存入 `visual_graph_publications`，提供 list/get/run/export/import-bundle，
 不提供 update/delete。
 当前实现的 publication result 会在成功和失败响应中暴露 `validation`；即使
 `artifactKind=EXECUTABLE` 因 schema-only/design-only operator 无法 codegen 而被拒，
@@ -1950,7 +1952,51 @@ diagnostic 且调用方用 `ackWarnings=true` 继续发布时，服务端要求 
 }
 ```
 
-### 10.8 运行发布 artifact
+### 10.8 发布物跨环境 Bundle
+
+不可变 publication 既可能是可执行制品，也可能是 schema-valid 但尚未 runtime-bound
+的 `DESIGN` 制品。后者如果只能停留在当前环境，就不是真正的一等资产。因此当前
+实现提供 publication portable bundle：
+
+```http
+GET /api/visual/publications/{publicationId}/export
+```
+
+返回 `bloge.visualGraphPublicationExport.v1`，包含：
+
+- `sourcePublicationId`、`sourceDraftId`、`sourceDraftRevision`、`sourceArtifactKind`。
+- 完整 `publication` snapshot。
+- 冻结的 publish-time `validation/readiness`。
+- 冻结的 publish-time `dependencyReport`。
+
+导入目标环境：
+
+```http
+POST /api/visual/publications/import-bundle
+Content-Type: application/json
+```
+
+返回 `bloge.visualGraphPublicationImportResult.v1`。导入只做 portable artifact
+边界校验，不重新 lower draft，也不使用当前 catalog 改写 publication：
+
+- 成功和可审阅拒绝结果会返回 `sourceDependencyReport` 与
+  `targetDependencyReport`。前者来自 bundle，后者基于目标环境当前 catalog
+  即时计算，用于暴露 missing operator、scope mismatch、fingerprint drift 和
+  target runtime-readiness 分布。
+- unsupported bundle schemaVersion 返回
+  `visual.publication.bundle.schemaVersionUnsupported`。
+- 缺失 publication snapshot 返回
+  `visual.publication.bundle.snapshotMissing`。
+- unsupported inner publication schemaVersion 返回
+  `visual.publication.schemaVersionUnsupported`。
+- 目标 repository 已存在同一 `publicationId` 返回
+  `visual.publication.importConflict`。
+
+这条路径让 `DESIGN` publication 可以作为跨环境、跨 runtime-plane 的控制面资产被
+移交；后续是否具备 runtime binding 仍由 asset overview 和 runtime binding
+requirement index 审阅，不由 import 动作伪造执行能力。
+
+### 10.9 运行发布 artifact
 
 发布 artifact 的 `bloge.visualGraphPublication.v1` 会冻结 publish-time
 `dependencyReport`。这份报告使用与 stored draft dependency report 相同的

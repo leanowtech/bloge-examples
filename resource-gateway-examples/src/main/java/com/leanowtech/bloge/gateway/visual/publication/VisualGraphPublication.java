@@ -56,6 +56,7 @@ public record VisualGraphPublication(
         GraphDraftDependencyReport dependencyReport,
         PublicationMetadata publicationMetadata
 ) {
+    public static final String SCHEMA_VERSION = "bloge.visualGraphPublication.v1";
     public static final String ARTIFACT_EXECUTABLE = "EXECUTABLE";
     public static final String ARTIFACT_DESIGN = "DESIGN";
 
@@ -64,7 +65,7 @@ public record VisualGraphPublication(
      */
     public VisualGraphPublication {
         schemaVersion = schemaVersion == null || schemaVersion.isBlank()
-                ? "bloge.visualGraphPublication.v1"
+                ? SCHEMA_VERSION
                 : schemaVersion;
         publicationId = publicationId == null ? "" : publicationId;
         draftId = draftId == null ? "" : draftId;

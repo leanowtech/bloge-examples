@@ -79,6 +79,28 @@ class VisualAuthoringAppJsTest {
     }
 
     @Test
+    void surfacesPortablePublicationBundlesInBrowserControls() throws Exception {
+        String source = appJsSource();
+
+        assertThat(source)
+                .contains("publicationBundleText: ''")
+                .contains("id=\"export-publication\"")
+                .contains("id=\"import-publication\"")
+                .contains("id=\"publication-bundle-json\"")
+                .contains("exportButton.onclick = exportSelectedPublication;")
+                .contains("importButton.onclick = importPublicationBundle;")
+                .contains("async function exportSelectedPublication()")
+                .contains("async function importPublicationBundle()")
+                .contains("/api/visual/publications/${encodeURIComponent(publication.publicationId)}/export")
+                .contains("fetch('/api/visual/publications/import-bundle'")
+                .contains("publicationExport: payload")
+                .contains("publicationImport: payload")
+                .contains("const targetReview = publicationImportTargetReviewText(payload?.targetDependencyReport);")
+                .contains("function publicationImportTargetReviewText(report)")
+                .contains("Target review: all frozen operator dependencies are available.");
+    }
+
+    @Test
     void keepsVisualReadinessAcrossCompileRunAndConnectionPreflightStatusUpdates() throws Exception {
         String source = appJsSource();
 
