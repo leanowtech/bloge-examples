@@ -18,6 +18,9 @@ import java.util.Map;
  * @param schemaVersion summary contract version
  * @param draftId draft id
  * @param graphName latest known graph name
+ * @param tenantId tenant scope of the summarized snapshot
+ * @param namespace namespace scope of the summarized snapshot
+ * @param environment authoring environment of the summarized snapshot
  * @param active true when the draft has a current working copy
  * @param currentRevision current working revision, or zero when deleted
  * @param latestRevision latest retained revision
@@ -47,6 +50,9 @@ public record GraphDraftSummary(
         String schemaVersion,
         String draftId,
         String graphName,
+        String tenantId,
+        String namespace,
+        String environment,
         boolean active,
         long currentRevision,
         long latestRevision,
@@ -81,6 +87,9 @@ public record GraphDraftSummary(
         schemaVersion = schemaVersion == null || schemaVersion.isBlank() ? SCHEMA_VERSION : schemaVersion;
         draftId = draftId == null ? "" : draftId;
         graphName = graphName == null ? "" : graphName;
+        tenantId = tenantId == null ? "" : tenantId;
+        namespace = namespace == null ? "" : namespace;
+        environment = environment == null ? "" : environment;
         updatedAt = updatedAt == null ? "" : updatedAt;
         updatedBy = updatedBy == null ? "" : updatedBy;
         changeSource = changeSource == null ? "" : changeSource;
@@ -122,6 +131,9 @@ public record GraphDraftSummary(
                 SCHEMA_VERSION,
                 history == null ? draft == null ? "" : draft.draftId() : history.draftId(),
                 history == null ? draft == null ? "" : draft.graphName() : history.graphName(),
+                draft == null ? "" : draft.tenantId(),
+                draft == null ? "" : draft.namespace(),
+                draft == null ? "" : draft.environment(),
                 history != null && history.active(),
                 history == null ? draft == null ? 0 : draft.revision() : history.currentRevision(),
                 history == null ? draft == null ? 0 : draft.revision() : history.latestRevision(),

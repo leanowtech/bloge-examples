@@ -1669,6 +1669,9 @@ class VisualGraphDraftControllerTest {
                 .singleElement()
                 .satisfies(summary -> {
                     assertThat(summary.schemaVersion()).isEqualTo("bloge.visualGraphDraftSummary.v1");
+                    assertThat(summary.tenantId()).isEqualTo(active.tenantId());
+                    assertThat(summary.namespace()).isEqualTo(active.namespace());
+                    assertThat(summary.environment()).isEqualTo(active.environment());
                     assertThat(summary.active()).isTrue();
                     assertThat(summary.currentRevision()).isEqualTo(active.revision());
                     assertThat(summary.valid()).isTrue();

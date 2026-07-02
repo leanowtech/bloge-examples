@@ -982,6 +982,24 @@ class VisualAuthoringBrowserDomTest {
         waitForText(wait, By.id("draft-asset-summary"), "Draft Asset Index");
         waitForText(wait, By.id("draft-asset-summary"), "Design only");
         waitForText(wait, By.id("draft-asset-summary"), "Server-derived draft readiness is visible before loading a draft.");
+        waitForText(wait, By.id("visual-asset-overview"), "Workspace Asset Overview");
+        waitForText(wait, By.id("visual-asset-overview"), "Design-only drafts");
+        waitForText(wait, By.id("visual-asset-overview"), "Action Queue");
+        waitForText(wait, By.id("visual-asset-overview"), "suggested actions");
+        List<WebElement> overviewActions = driver.findElements(
+                By.cssSelector("#visual-asset-overview [data-visual-asset-action]"));
+        assertThat(overviewActions).isNotEmpty();
+        String actionTargetKind = overviewActions.getFirst()
+                .getAttribute("data-visual-asset-action-target-kind");
+        assertThat(actionTargetKind).isIn("draft", "publication", "operator");
+        overviewActions.getFirst().click();
+        waitForText(wait, By.id("visual-asset-overview"), "Current action");
+        switch (actionTargetKind) {
+            case "draft" -> waitForText(wait, By.id("draft-status"), "Opened overview action");
+            case "publication" -> waitForText(wait, By.id("publication-status"), "Opened overview action");
+            case "operator" -> waitForText(wait, By.id("visual-check-status"), "Opened overview action");
+            default -> throw new AssertionError("Unsupported overview action target kind: " + actionTargetKind);
+        }
         click(wait, By.id("export-draft"));
         wait.until(ignored -> valueOf(By.id("draft-bundle-json"))
                 .contains("\"schemaVersion\": \"bloge.visualGraphDraftExport.v1\""));
@@ -998,6 +1016,7 @@ class VisualAuthoringBrowserDomTest {
         waitForText(wait, By.id("publication-asset-summary"), "DESIGN");
         waitForText(wait, By.id("publication-asset-summary"), "Design only");
         waitForText(wait, By.id("publication-asset-summary"), "Frozen publication readiness is visible before selecting an artifact.");
+        waitForText(wait, By.id("visual-asset-overview"), "Design publications");
         assertThat(driver.findElement(By.id("run-publication")).isEnabled()).isFalse();
         assertThat(driver.findElement(By.id("save-golden-case")).isEnabled()).isFalse();
         assertThat(driver.findElement(By.id("run-golden-case")).isEnabled()).isFalse();

@@ -356,6 +356,9 @@ const state = {
   selectedGoldenCaseId: '',
   goldenCertification: null,
   goldenCertificationStatus: null,
+  visualAssetOverview: null,
+  visualAssetOverviewMessage: null,
+  activeVisualAssetAction: null,
   goldenAssertionMode: 'EXACT_OUTPUT',
   goldenAssertionPath: '',
   goldenAssertionValueText: '',
@@ -473,6 +476,7 @@ async function loadScenarios() {
   await loadOperatorLibraries({ render: false });
   await loadDraftList({ render: false });
   await loadPublicationList({ render: false });
+  await loadVisualAssetOverview({ render: false });
   await loadGoldenCases({ render: false });
   await loadGoldenCertificationStatus({ render: false });
   await loadRunHistory({ render: false });
@@ -528,9 +532,28 @@ async function loadVisualOperatorCatalog() {
         }
       }
     }
+    await loadVisualAssetOverview();
   } catch (error) {
     console.debug('Visual operator catalog unavailable', error);
   }
+}
+
+async function loadVisualAssetOverview(options = {}) {
+  try {
+    const response = await fetch('/api/visual/assets/overview');
+    if (!response.ok) {
+      throw new Error(`Asset overview failed with ${response.status}`);
+    }
+    state.visualAssetOverview = await response.json();
+    state.visualAssetOverviewMessage = null;
+  } catch (error) {
+    state.visualAssetOverview = null;
+    state.visualAssetOverviewMessage = { text: error.message, level: 'error' };
+  }
+  if (options.render !== false) {
+    renderVisualAssetOverview();
+  }
+  return state.visualAssetOverview;
 }
 
 function rememberCatalogOperator(operator, options = {}) {
@@ -1097,6 +1120,13 @@ function renderInputForm() {
         <div id="resource-contract-diagnostics" class="visual-diagnostics"></div>
       </div>
       <div class="builder-panel">
+        <div class="panel-title">Workspace Overview</div>
+        <div class="draft-controls">
+          <button id="reload-asset-overview" class="secondary compact" type="button">Overview</button>
+        </div>
+        <div id="visual-asset-overview" class="library-impact-panel" hidden></div>
+      </div>
+      <div class="builder-panel">
         <div class="panel-title">Drafts</div>
         <div class="draft-controls">
           <select id="draft-select" aria-label="Stored graph drafts"></select>
@@ -1208,6 +1238,7 @@ function renderInputForm() {
     renderConnectionStatus();
     renderOperatorLibraryControls();
     renderResourceContractImportControls();
+    renderVisualAssetOverview();
     renderDraftControls();
     renderPublicationControls();
     renderRunHistoryControls();
@@ -6610,6 +6641,300 @@ function currentDraftIsActive() {
   return !state.currentDraftId || entry?.active !== false;
 }
 
+function renderVisualAssetOverview() {
+  const reloadButton = $('reload-asset-overview');
+  if (reloadButton) {
+    reloadButton.onclick = () => loadVisualAssetOverview();
+  }
+  const target = $('visual-asset-overview');
+  if (!target) return;
+  if (state.visualAssetOverviewMessage?.text) {
+    target.hidden = false;
+    target.className = `library-impact-panel ${escapeHtml(state.visualAssetOverviewMessage.level || 'error')}`;
+    target.innerHTML = `
+      <div class="library-impact-head">
+        <strong>Workspace Asset Overview</strong>
+        <span>${escapeHtml('Unavailable')}</span>
+      </div>
+      <div class="library-impact-risk-summary">${escapeHtml(state.visualAssetOverviewMessage.text)}</div>
+    `;
+    return;
+  }
+  const overview = state.visualAssetOverview || null;
+  if (!overview) {
+    target.hidden = true;
+    target.innerHTML = '';
+    return;
+  }
+  const drafts = overview.drafts || {};
+  const publications = overview.publications || {};
+  const catalog = overview.catalog || {};
+  const actionQueue = overview.actionQueue || {};
+  const rows = visualAssetOverviewRows(overview);
+  const actionRows = visualAssetOverviewActionRows(actionQueue);
+  const actionOverflow = Math.max(0, Number(actionQueue.total || 0) - actionRows.length);
+  const activeAction = visualAssetActionContext(state.activeVisualAssetAction);
+  const stats = [
+    ['Drafts', drafts.total],
+    ['Active', drafts.activeCount],
+    ['Recoverable', drafts.recoverableDeletedCount],
+    ['Publications', publications.total],
+    ['DESIGN artifacts', publications.designArtifactCount],
+    ['Operators', catalog.totalOperators],
+    ['Actions', actionQueue.total],
+    ['Design-only operators', visualAssetOverviewCatalogReadiness(catalog, 'design-only')],
+    ['Runtime-blocked operators', visualAssetOverviewCatalogReadiness(catalog, 'runtime-blocked')]
+  ].filter(([, value], index) => index < 7 || Number(value || 0) > 0)
+    .map(([label, value]) => `<span><strong>${escapeHtml(Number(value || 0))}</strong> ${escapeHtml(label)}</span>`)
+    .join('');
+  target.hidden = false;
+  target.className = `library-impact-panel ${escapeHtml(visualAssetOverviewLevel(overview))}`;
+  target.innerHTML = `
+    <div class="library-impact-head">
+      <strong>Workspace Asset Overview</strong>
+      <span>${escapeHtml(`${drafts.total || 0} drafts / ${publications.total || 0} artifacts`)}</span>
+    </div>
+    <div class="library-impact-risk-summary">${escapeHtml('Server-derived readiness across drafts, publications, and catalog.')}</div>
+    ${activeAction ? `<div class="library-impact-risk ${escapeHtml(activeAction.level)}">
+      <strong>${escapeHtml('Current action')}</strong>
+      <span>${escapeHtml(activeAction.message)}</span>
+    </div>` : ''}
+    <div class="library-impact-stats">${stats}</div>
+    ${rows.length ? `<div class="library-impact-risks">${rows.map((row) => `
+      <div class="library-impact-risk ${escapeHtml(row.level)}">
+        <strong>${escapeHtml(row.label)}</strong>
+        <span>${escapeHtml(row.value)}</span>
+      </div>
+    `).join('')}</div>` : ''}
+    ${actionRows.length ? `<div class="library-impact-risks">
+      <div class="library-impact-head">
+        <strong>Action Queue</strong>
+        <span>${escapeHtml(`${actionQueue.total || actionRows.length} suggested actions`)}</span>
+      </div>
+      ${actionRows.map((row) => `
+        <div class="library-impact-risk ${escapeHtml(row.level)}">
+          <strong>${escapeHtml(row.label)}</strong>
+          <span>${escapeHtml(row.value)}</span>
+          ${row.openable ? `<button type="button" class="secondary compact"
+            data-visual-asset-action="${escapeHtml(row.index)}"
+            data-visual-asset-action-target-kind="${escapeHtml(row.targetKind)}"
+            data-visual-asset-action-target-id="${escapeHtml(row.targetId)}">Open</button>` : ''}
+        </div>
+      `).join('')}
+      ${actionOverflow ? `<div class="library-impact-more">+${actionOverflow} more server-derived actions</div>` : ''}
+    </div>` : ''}
+  `;
+  attachVisualAssetOverviewActionHandlers();
+}
+
+function visualAssetOverviewRows(overview) {
+  const drafts = overview?.drafts || {};
+  const publications = overview?.publications || {};
+  const catalog = overview?.catalog || {};
+  return [
+    visualAssetOverviewRow(
+      'Draft repair required',
+      visualAssetOverviewReadiness(drafts, 'draft-repair-required')
+        + visualAssetOverviewReadiness(drafts, 'catalog-repair-required')
+        + Number(drafts.invalidCount || 0),
+      'error',
+      'drafts have blocking validation or catalog repair issues'
+    ),
+    visualAssetOverviewRow(
+      'Runtime-blocked drafts',
+      visualAssetOverviewReadiness(drafts, 'runtime-blocked'),
+      'warning',
+      'drafts need runtime binding before execution'
+    ),
+    visualAssetOverviewRow(
+      'Design-only drafts',
+      visualAssetOverviewReadiness(drafts, 'design-only'),
+      'info',
+      'drafts are valid design artifacts'
+    ),
+    visualAssetOverviewRow(
+      'Design publications',
+      Number(publications.designArtifactCount || 0),
+      'info',
+      'published non-executable design artifacts'
+    ),
+    visualAssetOverviewRow(
+      'Runtime-blocked catalog',
+      visualAssetOverviewCatalogReadiness(catalog, 'runtime-blocked'),
+      'warning',
+      'operators are authorable but not executable in this runtime'
+    ),
+    visualAssetOverviewRow(
+      'Catalog repair required',
+      visualAssetOverviewCatalogReadiness(catalog, 'catalog-repair-required'),
+      'error',
+      'operators need catalog repair before reliable authoring'
+    )
+  ].filter(Boolean);
+}
+
+function visualAssetOverviewRow(label, count, level, suffix) {
+  const normalized = Number(count || 0);
+  if (!normalized) {
+    return null;
+  }
+  return {
+    label,
+    level,
+    value: `${normalized} ${suffix}`
+  };
+}
+
+function visualAssetOverviewLevel(overview) {
+  const drafts = overview?.drafts || {};
+  const publications = overview?.publications || {};
+  const catalog = overview?.catalog || {};
+  if (Number(drafts.invalidCount || 0)
+      || visualAssetOverviewReadiness(drafts, 'draft-repair-required')
+      || visualAssetOverviewReadiness(drafts, 'catalog-repair-required')
+      || visualAssetOverviewReadiness(publications, 'draft-repair-required')
+      || visualAssetOverviewReadiness(publications, 'catalog-repair-required')
+      || visualAssetOverviewCatalogReadiness(catalog, 'catalog-repair-required')
+      || Number(catalog.errorCount || 0)) {
+    return 'error';
+  }
+  if (visualAssetOverviewReadiness(drafts, 'runtime-blocked')
+      || visualAssetOverviewReadiness(drafts, 'governance-review')
+      || visualAssetOverviewReadiness(publications, 'runtime-blocked')
+      || visualAssetOverviewReadiness(publications, 'governance-review')
+      || visualAssetOverviewCatalogReadiness(catalog, 'runtime-blocked')
+      || visualAssetOverviewCatalogReadiness(catalog, 'governance-review')
+      || Number(catalog.warningCount || 0)) {
+    return 'warning';
+  }
+  return 'success';
+}
+
+function visualAssetOverviewReadiness(section, state) {
+  return visualAssetOverviewCount(section?.graphReadinessStateCounts, state);
+}
+
+function visualAssetOverviewCatalogReadiness(catalog, state) {
+  return visualAssetOverviewCount(catalog?.facets?.runtimeReadinessStates, state);
+}
+
+function visualAssetOverviewCount(counts, key) {
+  if (!counts || !key) {
+    return 0;
+  }
+  const normalized = normalizeReadinessState(key);
+  return Number(counts[normalized] || counts[String(key).toUpperCase()] || counts[key] || 0);
+}
+
+function visualAssetOverviewActionRows(actionQueue) {
+  return (Array.isArray(actionQueue?.items) ? actionQueue.items : [])
+    .map((item, index) => ({
+      index,
+      level: ['error', 'warning', 'info', 'success'].includes(String(item?.severity || '').toLowerCase())
+        ? String(item.severity).toLowerCase()
+        : 'info',
+      label: visualAssetOverviewActionLabel(item),
+      value: item?.recommendedAction || item?.summary || 'Review this server-derived action.',
+      targetKind: String(item?.targetKind || '').toLowerCase(),
+      targetId: item?.targetId || '',
+      openable: ['draft', 'publication', 'operator'].includes(String(item?.targetKind || '').toLowerCase())
+        && String(item?.targetId || '').trim()
+    }));
+}
+
+function visualAssetActionContext(item) {
+  if (!item) {
+    return null;
+  }
+  const target = [item.targetKind, item.targetLabel || item.targetId]
+    .filter(Boolean)
+    .join(' ');
+  const readiness = item.readinessState ? operatorPaletteFacetLabel(item.readinessState) : '';
+  const action = String(item.actionType || 'REVIEW_ASSET').replaceAll('_', ' ').toLowerCase();
+  return {
+    level: ['error', 'warning', 'info', 'success'].includes(String(item.severity || '').toLowerCase())
+      ? String(item.severity).toLowerCase()
+      : 'info',
+    message: [action, target, readiness, item.recommendedAction || item.summary]
+      .filter(Boolean)
+      .join(' · ')
+  };
+}
+
+function visualAssetOverviewActionLabel(item) {
+  const target = [item?.targetKind, item?.targetLabel || item?.targetId]
+    .filter(Boolean)
+    .join(' ');
+  const readiness = item?.readinessState ? operatorPaletteFacetLabel(item.readinessState) : '';
+  const action = String(item?.actionType || 'REVIEW_ASSET').replaceAll('_', ' ').toLowerCase();
+  return [action, target, readiness]
+    .filter(Boolean)
+    .join(' · ');
+}
+
+function attachVisualAssetOverviewActionHandlers() {
+  document.querySelectorAll('[data-visual-asset-action]').forEach((button) => {
+    button.onclick = () => openVisualAssetAction(button.dataset.visualAssetAction);
+  });
+}
+
+async function openVisualAssetAction(index) {
+  const items = state.visualAssetOverview?.actionQueue?.items || [];
+  const item = items[Number(index)];
+  if (!item?.targetId) {
+    return null;
+  }
+  state.activeVisualAssetAction = item;
+  const context = visualAssetActionContext(item);
+  renderVisualAssetOverview();
+  switch (String(item.targetKind || '').toLowerCase()) {
+    case 'draft': {
+      const draft = await openLibraryImpactDraftTarget(item.targetId, -1);
+      if (context) {
+        setDraftMessage(`Opened overview action: ${context.message}`, context.level);
+      }
+      return draft;
+    }
+    case 'publication': {
+      const publication = await openLibraryImpactPublicationTarget(item.targetId, -1);
+      if (context) {
+        setPublicationMessage(`Opened overview action: ${context.message}`, context.level);
+      }
+      return publication;
+    }
+    case 'operator':
+      return focusOperatorPaletteRef(item.targetId, context);
+    default:
+      return null;
+  }
+}
+
+async function focusOperatorPaletteRef(operatorRef, context = null) {
+  const normalized = String(operatorRef || '').trim();
+  if (!normalized) {
+    return null;
+  }
+  state.paletteSearch = normalized;
+  state.paletteKind = '';
+  state.paletteTag = '';
+  state.paletteSourceKind = '';
+  state.paletteCapability = '';
+  state.paletteReadiness = '';
+  state.paletteLoweringMode = '';
+  renderOperatorPalette();
+  const search = $('operator-palette-search');
+  if (search) {
+    search.focus();
+  }
+  setVisualCheck(
+    context ? `Opened overview action: ${context.message}` : `Focused operator ${normalized} in the palette.`,
+    context?.level || 'info',
+    state.visualCheck?.diagnostics || [],
+    state.visualCheck?.readiness || null
+  );
+  return normalized;
+}
+
 function draftHistoryOptionLabel(entry) {
   const revision = entry.active ? (entry.currentRevision || entry.latestRevision || 0) : (entry.latestRevision || 0);
   const status = entry.active ? 'active' : 'deleted';
@@ -8799,7 +9124,9 @@ async function saveCurrentDraft() {
   await loadDraftList({ render: false });
   await loadDraftRevisions({ render: false });
   await loadDraftDependencies({ render: false });
+  await loadVisualAssetOverview({ render: false });
   renderDraftControls();
+  renderVisualAssetOverview();
   return stored;
 }
 
@@ -9064,6 +9391,7 @@ async function importDraftBundle() {
   } else {
     await loadDraftDependencies({ render: false });
   }
+  await loadVisualAssetOverview({ render: false });
   syncGraphInputSchemaTextFromBuilder({ render: false });
   syncComposerFromBuilder({ render: false });
   const hasImportErrors = diagnostics.some((diagnostic) => String(diagnostic.level || '').toUpperCase() === 'ERROR');
@@ -9084,6 +9412,7 @@ async function importDraftBundle() {
     validation?.readiness
   );
   renderScenario();
+  renderVisualAssetOverview();
   $('output').textContent = pretty({ status: response.status, draftImport: payload, importedDraft });
 }
 
@@ -9170,10 +9499,12 @@ async function restoreSelectedDraftRevision() {
   await loadDraftList({ render: false });
   await loadDraftRevisions({ render: false });
   await loadDraftDependencies({ render: false });
+  await loadVisualAssetOverview({ render: false });
   syncGraphInputSchemaTextFromBuilder({ render: false });
   syncComposerFromBuilder({ render: false });
   setDraftMessage(`Restored @${revision} as @${restored.revision || 0}.`, 'success');
   renderScenario();
+  renderVisualAssetOverview();
 }
 
 async function selectedDraftRevisionSnapshot() {
@@ -9254,7 +9585,9 @@ async function deleteSelectedDraft() {
   state.previewingDraftRevision = 0;
   await loadDraftList({ render: false });
   await loadDraftRevisions({ render: false });
+  await loadVisualAssetOverview({ render: false });
   renderDraftControls();
+  renderVisualAssetOverview();
   setDraftMessage(`Deleted ${deletedId}; history remains available for preview and restore.`, 'success');
 }
 

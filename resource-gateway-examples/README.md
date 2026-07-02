@@ -749,6 +749,7 @@ Showcase metadata APIs:
 | `POST` | `/api/gateway/examples/compose/run` | Compile and run submitted DSL with JSON context, returning diagnostics, output, layout, and decision-table metadata |
 | `GET` | `/api/visual/operators` | List native, Java registry, imported, executable publication-backed subgraph, and resource-backed visual operator definitions; supports `tenantId`, `namespace`, and `environment` policy filtering, `sourceKind` / `loweringMode` / `capability` / `runtimeReadiness` catalog facets, plus multi-term schema-aware search across input/output/config fields, field types, and readiness summaries; response includes `facets.total/sourceKinds/loweringModes/capabilities/runtimeReadinessStates` counts |
 | `GET` | `/api/visual/operators/{operatorRef}/usage` | Return stored draft and immutable-publication usage of one operatorRef, including saved/frozen fingerprint status, changed-surface drift summaries, and `changeRisk/changeCategories/changeSummary` when snapshots allow risk classification |
+| `GET` | `/api/visual/assets/overview` | Return `bloge.visualAssetOverview.v1`, an environment-level visual authoring overview aggregating draft summaries, publication summaries, current operator catalog facets, and a server-derived action queue with optional `tenantId` / `namespace` / `environment` scope filters |
 | `GET` | `/api/visual/drafts` | List stored visual graph drafts |
 | `GET` | `/api/visual/drafts/history` | List lightweight active/deleted draft history summaries with current/latest revision, revision count, latest actor/source/summary, and recovery status |
 | `GET` | `/api/visual/drafts/summaries` | List `bloge.visualGraphDraftSummary.v1` draft asset summaries that combine history, server validation/readiness, diagnostic counts, and dependency counts without returning full draft JSON |
@@ -1075,6 +1076,14 @@ Index from `bloge.visualGraphPublicationSummary.v1`, counting `EXECUTABLE`
 versus `DESIGN` artifacts and surfacing frozen readiness states such as
 design-only, runtime-blocked, governance-review, and repair-required before the
 author loads a full immutable publication payload.
+The Workspace Overview panel consumes `bloge.visualAssetOverview.v1` to show the
+same readiness distribution across drafts, immutable publications, and the
+current operator catalog, plus a server-derived action queue for repair,
+runtime-binding, governance-review, and design-asset tracking work. Large
+schema-only workspaces can therefore be triaged without pulling every graph or
+artifact body. Queue items include navigation targets, so the browser can open
+the affected draft or publication, or focus the relevant operator in the palette,
+without treating the queue itself as a stateful workflow engine.
 Authors can still publish the draft as a non-executable
 `artifactKind=DESIGN` artifact to freeze the schema-valid composition for
 review and later runtime binding. Design-only
