@@ -74,6 +74,7 @@ class VisualConnectionCheckServiceTest {
         assertThat(result.schemaVersion()).isEqualTo("bloge.visualConnectionCandidates.v1");
         assertThat(result.source().nodeId()).isEqualTo("fetchApplicant");
         assertThat(result.kind()).isEqualTo("data");
+        assertThat(result.offset()).isZero();
         assertThat(result.totalCandidateCount()).isGreaterThan(0);
         assertThat(result.acceptedCount()).isGreaterThan(0);
         assertThat(result.rejectedCount()).isGreaterThan(0);
@@ -90,16 +91,86 @@ class VisualConnectionCheckServiceTest {
                     assertThat(candidate.accepted()).isTrue();
                     assertThat(candidate.bindingKey()).isEqualTo("score");
                     assertThat(candidate.summary().accepted()).isTrue();
+                    assertThat(candidate.explanation().sourceLabel()).isEqualTo("fetchApplicant.payload.score");
+                    assertThat(candidate.explanation().targetLabel()).isEqualTo("eligibility.inputs.score");
+                    assertThat(candidate.explanation().sourceSchemaType()).isEqualTo("integer");
+                    assertThat(candidate.explanation().targetSchemaType()).isEqualTo("integer");
+                    assertThat(candidate.explanation().sourceSchemaKnown()).isTrue();
+                    assertThat(candidate.explanation().targetSchemaKnown()).isTrue();
+                    assertThat(candidate.explanation().decisionSource()).isEqualTo("server-validator");
+                    assertThat(candidate.explanation().firstDiagnosticCode()).isBlank();
                 })
                 .anySatisfy(candidate -> {
                     assertThat(candidate.targetNodeId()).isEqualTo("eligibility");
                     assertThat(candidate.target().port()).isEqualTo("inputs");
                     assertThat(candidate.target().path()).isBlank();
                     assertThat(candidate.accepted()).isFalse();
+                    assertThat(candidate.explanation().targetSchemaType()).isEqualTo("object");
+                    assertThat(candidate.explanation().firstDiagnosticCode()).isEqualTo("visual.binding.typeMismatch");
                     assertThat(candidate.diagnostics())
                             .extracting("code")
                             .contains("visual.binding.typeMismatch");
                 });
+    }
+
+    @Test
+    void connectionCandidatesCanBeFilteredToTargetNodeAndSurface() {
+        VisualConnectionCheckService service = connectionService(VisualCatalogTestSupport
+                .catalogWithLoanApplicantResourceAndLibrary(VisualCatalogTestSupport.eligibilityLibrary("integer")));
+        GraphDraft draft = resourceEligibilityDraft(List.of());
+
+        VisualConnectionCandidatesResult result = service.candidates(new VisualConnectionCandidatesRequest(
+                draft,
+                new GraphDraft.Endpoint("fetchApplicant", "payload", "score"),
+                "data",
+                true,
+                50,
+                0,
+                "eligibility",
+                "input"
+        ));
+
+        assertThat(result.offset()).isZero();
+        assertThat(result.totalCandidateCount()).isGreaterThan(0);
+        assertThat(result.candidates()).isNotEmpty();
+        assertThat(result.candidates()).allSatisfy(candidate -> {
+            assertThat(candidate.targetNodeId()).isEqualTo("eligibility");
+            assertThat(candidate.targetSurface()).isEqualTo("input");
+        });
+    }
+
+    @Test
+    void connectionCandidatesApplyOffsetAfterAcceptedRejectedFiltering() {
+        VisualConnectionCheckService service = connectionService(VisualCatalogTestSupport
+                .catalogWithLoanApplicantResourceAndLibrary(VisualCatalogTestSupport.eligibilityLibrary("integer")));
+        GraphDraft draft = resourceEligibilityDraft(List.of());
+
+        VisualConnectionCandidatesResult first = service.candidates(new VisualConnectionCandidatesRequest(
+                draft,
+                new GraphDraft.Endpoint("fetchApplicant", "payload", "score"),
+                "data",
+                true,
+                1,
+                0,
+                "eligibility",
+                "input"
+        ));
+        VisualConnectionCandidatesResult second = service.candidates(new VisualConnectionCandidatesRequest(
+                draft,
+                new GraphDraft.Endpoint("fetchApplicant", "payload", "score"),
+                "data",
+                true,
+                1,
+                1,
+                "eligibility",
+                "input"
+        ));
+
+        assertThat(second.offset()).isEqualTo(1);
+        assertThat(second.totalCandidateCount()).isEqualTo(first.totalCandidateCount());
+        assertThat(second.displayedCount()).isEqualTo(1);
+        assertThat(second.candidates()).hasSize(1);
+        assertThat(second.candidates().getFirst().target()).isNotEqualTo(first.candidates().getFirst().target());
     }
 
     @Test

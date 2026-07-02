@@ -1527,9 +1527,19 @@ class VisualAuthoringBrowserDomTest {
     }
 
     private void click(WebDriverWait wait, By locator) {
-        WebElement element = wait.until(ExpectedConditions.elementToBeClickable(locator));
-        scrollIntoView(element);
-        element.click();
+        wait.until(ignored -> {
+            try {
+                WebElement element = driver.findElement(locator);
+                if (!element.isDisplayed() || !element.isEnabled()) {
+                    return false;
+                }
+                scrollIntoView(element);
+                element.click();
+                return true;
+            } catch (NoSuchElementException | StaleElementReferenceException ex) {
+                return false;
+            }
+        });
     }
 
     private void importSampleOperatorLibrary(WebDriverWait wait) {
@@ -2058,8 +2068,12 @@ class VisualAuthoringBrowserDomTest {
     }
 
     private String valueOf(By locator) {
-        WebElement element = driver.findElement(locator);
-        return String.valueOf(element.getAttribute("value"));
+        try {
+            WebElement element = driver.findElement(locator);
+            return String.valueOf(element.getAttribute("value"));
+        } catch (RuntimeException ex) {
+            return "<missing>";
+        }
     }
 
     private void setControlValue(WebElement element, String value) {

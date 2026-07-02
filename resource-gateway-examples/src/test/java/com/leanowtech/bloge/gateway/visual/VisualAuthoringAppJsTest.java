@@ -73,6 +73,9 @@ class VisualAuthoringAppJsTest {
                 .contains("connectionCandidatePreview: null")
                 .contains("startConnectionCandidatePreview(source);")
                 .contains("fetch('/api/visual/connections/candidates'")
+                .contains("targetNodeId: options.targetNodeId || ''")
+                .contains("targetSurface: options.targetSurface || ''")
+                .contains("normalizeConnectionCandidateExplanation(candidate?.explanation")
                 .contains("normalizeConnectionCandidatesResult(payload, source)")
                 .contains("connectionDragTargetDecision(state.connectionDrag.source, handle)")
                 .contains("Asking server for final decision...")
@@ -3143,6 +3146,7 @@ class VisualAuthoringAppJsTest {
                     path: scoreConnectability.source.path
                   },
                   totalCandidateCount: 3,
+                  offset: 1,
                   acceptedCount: 1,
                   rejectedCount: 2,
                   displayedCount: 2,
@@ -3155,6 +3159,17 @@ class VisualAuthoringAppJsTest {
                     accepted: true,
                     bindingKey: 'inputs.score',
                     summary: { message: 'Server schema accepts score.' },
+                    explanation: {
+                      sourceLabel: 'riskNode.payload.score',
+                      targetLabel: 'auditNode.inputs.score',
+                      sourceSchemaType: 'integer',
+                      targetSchemaType: 'integer',
+                      sourceSchemaKnown: true,
+                      targetSchemaKnown: true,
+                      decisionSource: 'server-validator',
+                      decisionMessage: '',
+                      replacementSummary: ''
+                    },
                     diagnostics: []
                   }, {
                     targetNodeId: 'auditNode',
@@ -3165,6 +3180,19 @@ class VisualAuthoringAppJsTest {
                     accepted: false,
                     bindingKey: '',
                     summary: { message: '' },
+                    explanation: {
+                      sourceLabel: 'riskNode.payload.score',
+                      targetLabel: 'auditNode.inputs.risk',
+                      sourceSchemaType: 'integer',
+                      targetSchemaType: 'object',
+                      sourceSchemaKnown: true,
+                      targetSchemaKnown: true,
+                      decisionSource: 'server-validator',
+                      decisionMessage: 'Server schema rejects root risk.',
+                      firstDiagnosticCode: 'visual.binding.typeMismatch',
+                      replacementSummary: 'Replaces 1 binding.',
+                      replacedBindingCount: 1
+                    },
                     diagnostics: [{ level: 'ERROR', message: 'Server schema rejects root risk.' }]
                   }]
                 }, scoreConnectability.source);
@@ -3863,9 +3891,14 @@ class VisualAuthoringAppJsTest {
                   ['connectability quick source', context.endpointLabel(quickConnectSource), 'riskNode.payload.score'],
                   ['connectability quick target', context.endpointLabel(quickConnectTarget), 'auditNode.inputs.score'],
                   ['connection candidates schema', serverCandidateResult.schemaVersion, 'bloge.visualConnectionCandidates.v1'],
+                  ['connection candidates offset', serverCandidateResult.offset, 1],
                   ['connection candidates target keys', Object.keys(serverCandidateResult.candidatesByTargetKey).sort().join('|'), 'data:auditNode:inputs:risk|data:auditNode:inputs:score'],
                   ['connection candidates accepted count', serverCandidateResult.acceptedCount, 1],
                   ['connection candidates rejected count', serverCandidateResult.rejectedCount, 2],
+                  ['connection candidates explanation source type', serverCandidateResult.candidates[0].explanation.sourceSchemaType, 'integer'],
+                  ['connection candidates explanation target type', serverCandidateResult.candidates[0].explanation.targetSchemaType, 'integer'],
+                  ['connection candidates explanation diagnostic code', serverCandidateResult.candidates[1].explanation.firstDiagnosticCode, 'visual.binding.typeMismatch'],
+                  ['connection candidates explanation replacement', serverCandidateResult.candidates[1].explanation.replacementSummary, 'Replaces 1 binding.'],
                   ['server candidate decision source', serverAcceptedDecision.source, 'server'],
                   ['server candidate accepted', serverAcceptedDecision.ok, true],
                   ['server candidate accepted message', serverAcceptedMessage, 'Server schema accepts score.'],
@@ -3879,7 +3912,7 @@ class VisualAuthoringAppJsTest {
                   ['server connectability score blocked', serverScoreConnectability.blockedCount, 2],
                   ['server connectability ready source', serverReadyTarget.decisionSource, 'server'],
                   ['server connectability blocked source', serverRiskTarget.decisionSource, 'server'],
-                  ['server connectability blocked title', context.nodeConnectabilityTargetTitle(serverRiskTarget), 'Audit (auditNode) · data -> inputs.risk · blocked · Server schema rejects root risk.'],
+                  ['server connectability blocked title', context.nodeConnectabilityTargetTitle(serverRiskTarget), 'Audit (auditNode) · data -> inputs.risk · blocked · Server schema rejects root risk. · integer -> object · Replaces 1 binding.'],
                   ['server connectability panel synced', String(serverConnectabilityPanel.includes('Server candidates synced')), 'true'],
                   ['auto bind required unbound count', autoBindPlan.requiredUnboundCount, 2],
                   ['auto bind item count', autoBindPlan.items.length, 1],

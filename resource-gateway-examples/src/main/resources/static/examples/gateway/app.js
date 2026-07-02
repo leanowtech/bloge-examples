@@ -11873,7 +11873,17 @@ function nodeConnectabilityTargetLabel(entry) {
 function nodeConnectabilityTargetTitle(entry) {
   const label = nodeConnectabilityTargetLabel(entry);
   const message = String(entry.compatibility?.message || '').trim();
-  return !entry.compatibility?.ok && message ? `${label} · ${message}` : label;
+  const explanation = entry.serverCandidate?.explanation || null;
+  const schemaHint = explanation && (explanation.sourceSchemaType || explanation.targetSchemaType)
+    ? `${explanation.sourceSchemaType || 'unknown'} -> ${explanation.targetSchemaType || 'unknown'}`
+    : '';
+  const replacement = explanation?.replacementSummary || '';
+  return [
+    label,
+    !entry.compatibility?.ok && message ? message : '',
+    schemaHint,
+    replacement
+  ].filter(Boolean).join(' · ');
 }
 
 function renderNodeImpactPanel(node) {
@@ -20584,6 +20594,9 @@ async function discoverVisualConnectionCandidatesOnServer(source, options = {}) 
       kind,
       includeRejected: options.includeRejected !== false,
       limit: Number.isFinite(Number(options.limit)) ? Number(options.limit) : 250,
+      offset: Number.isFinite(Number(options.offset)) ? Number(options.offset) : 0,
+      targetNodeId: options.targetNodeId || '',
+      targetSurface: options.targetSurface || '',
       source: {
         nodeId: source.nodeId,
         port: source.port || '',
@@ -20611,6 +20624,7 @@ function normalizeConnectionCandidatesResult(payload, source = null) {
     source: payload?.source || source || null,
     kind,
     totalCandidateCount: numericCount(payload?.totalCandidateCount, 0),
+    offset: numericCount(payload?.offset, 0),
     acceptedCount: numericCount(
       payload?.acceptedCount,
       candidates.filter((candidate) => candidate.accepted).length
@@ -20639,6 +20653,7 @@ function normalizeConnectionCandidate(candidate, kind = 'data') {
     bindingKey: candidate?.bindingKey || ''
   };
   const summary = normalizeConnectionCheckSummary(candidate?.summary, payload, diagnostics, null);
+  const explanation = normalizeConnectionCandidateExplanation(candidate?.explanation, summary, diagnostics);
   const target = candidate?.target || {};
   return {
     targetNodeId: candidate?.targetNodeId || target.nodeId || '',
@@ -20654,11 +20669,57 @@ function normalizeConnectionCandidate(candidate, kind = 'data') {
     accepted: Boolean(candidate?.accepted),
     bindingKey: candidate?.bindingKey || '',
     summary,
+    explanation,
     diagnostics,
     message: candidate?.accepted
-      ? (summary.message || 'Connection accepted.')
-      : diagnosticMessage(diagnostics, summary.message || 'Connection rejected by server.')
+      ? (explanation.decisionMessage || summary.message || 'Connection accepted.')
+      : diagnosticMessage(diagnostics, explanation.decisionMessage || summary.message || 'Connection rejected by server.')
   };
+}
+
+function normalizeConnectionCandidateExplanation(explanation, summary = null, diagnostics = []) {
+  const firstDiagnostic = normalizeDiagnostics(diagnostics)[0] || null;
+  const replacedBindingCount = numericCount(
+    explanation?.replacedBindingCount,
+    summary?.replacedBindingCount || 0
+  );
+  const replacedEdgeCount = numericCount(
+    explanation?.replacedEdgeCount,
+    summary?.replacedEdgeCount || 0
+  );
+  return {
+    sourceLabel: explanation?.sourceLabel || endpointLabel(summary?.source || {}),
+    targetLabel: explanation?.targetLabel || endpointLabel(summary?.target || {}),
+    sourceSchemaType: explanation?.sourceSchemaType || '',
+    targetSchemaType: explanation?.targetSchemaType || '',
+    sourceSchemaKnown: Boolean(explanation?.sourceSchemaKnown),
+    targetSchemaKnown: Boolean(explanation?.targetSchemaKnown),
+    decisionSource: explanation?.decisionSource || 'server-validator',
+    decisionMessage: explanation?.decisionMessage || '',
+    firstDiagnosticCode: explanation?.firstDiagnosticCode || firstDiagnostic?.code || '',
+    replacementSummary: explanation?.replacementSummary || connectionReplacementSummary(
+      replacedBindingCount,
+      replacedEdgeCount
+    ),
+    replacedBindingCount,
+    replacedEdgeCount
+  };
+}
+
+function connectionReplacementSummary(replacedBindingCount = 0, replacedEdgeCount = 0) {
+  const bindings = numericCount(replacedBindingCount, 0);
+  const edges = numericCount(replacedEdgeCount, 0);
+  if (!bindings && !edges) {
+    return '';
+  }
+  const parts = [];
+  if (bindings) {
+    parts.push(`${bindings} binding${bindings === 1 ? '' : 's'}`);
+  }
+  if (edges) {
+    parts.push(`${edges} edge${edges === 1 ? '' : 's'}`);
+  }
+  return `Replaces ${parts.join(' and ')}.`;
 }
 
 function connectionCandidateKindForSource(source) {

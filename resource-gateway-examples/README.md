@@ -570,10 +570,13 @@ prose. The browser applies those replacement keys before writing the accepted
 connection, which keeps root/field rebinding behavior aligned with the
 server-side preview instead of leaving stale overlapping inputs behind.
 The Browser Composer also prefetches `bloge.visualConnectionCandidates.v1`
-when a normal data/config connection drag starts. Hover feedback prefers the
-server candidate summary or blocked diagnostic when present, falls back to local
-schema hints when the read model is unavailable or does not cover that target,
-and still runs `/api/visual/connections/check` before writing the edge.
+when a normal data/config connection drag starts. The read model supports
+focused windows (`targetNodeId`, `targetSurface`, `offset`, `limit`) and returns
+per-candidate schema explanations with source/target labels, schema type
+summaries, first diagnostic code, and replacement counts. Hover feedback prefers
+the server candidate explanation or blocked diagnostic when present, falls back
+to local schema hints when the read model is unavailable or does not cover that
+target, and still runs `/api/visual/connections/check` before writing the edge.
 The selected-node Connectability inspector uses the same source-scoped candidate
 read model as a short-lived server snapshot, so blocked previews and quick-connect
 suggestions can show server-derived reasons before the author clicks; the click
@@ -808,7 +811,7 @@ Showcase metadata APIs:
 | `POST` | `/api/visual/drafts/validate` | Validate a visual graph draft against operator schemas, typed port edges, and DAG constraints; response includes `bloge.visualGraphReadiness.v1` and `bloge.visualGraphActionReadiness.v1` so callers can distinguish runtime-executable, design-only, runtime-blocked, governance-review, draft-repair-required graphs and the allowed compile/run/DESIGN publish/EXECUTABLE publish actions |
 | `POST` | `/api/visual/drafts/compile` | Validate a visual graph draft, lower it to BLOGE DSL, then compile the DSL; response includes validation/readiness/action-readiness so clients keep publish and action guidance after compile diagnostics |
 | `POST` | `/api/visual/connections/check` | Check a proposed source-to-target canvas connection against the same schema and DAG rules used by draft validation, returning connection-scoped diagnostics, a machine-readable decision/replacement summary, the canonical binding key for data/input bindings, and candidate draft validation/readiness/action-readiness |
-| `POST` | `/api/visual/connections/candidates` | Discover schema-aware target endpoints for one dragged source endpoint, returning `bloge.visualConnectionCandidates.v1` accepted/rejected counts, an optional blocked-target window with diagnostics, per-candidate preflight summaries, and the same binding keys produced by connection check |
+| `POST` | `/api/visual/connections/candidates` | Discover schema-aware target endpoints for one dragged source endpoint, returning `bloge.visualConnectionCandidates.v1` accepted/rejected counts, focused target filters/windowing, per-candidate schema explanations, optional blocked diagnostics, preflight summaries, and the same binding keys produced by connection check |
 | `POST` | `/api/visual/drafts/run` | Validate, compile, and execute a transient visual graph draft; response includes validation/readiness/action-readiness and a run history id |
 | `POST` | `/api/visual/drafts/{draftId}/run` | Execute a stored visual graph draft with submitted context; response includes validation/readiness/action-readiness, and optional `expectedRevision` rejects stale runs with `409 CONFLICT` |
 | `POST` | `/api/visual/drafts/{draftId}/publish` | Publish an immutable visual graph artifact; default `artifactKind=EXECUTABLE` validates, compiles, and stores frozen DSL, while `artifactKind=DESIGN` freezes a schema-valid non-executable design artifact with generation diagnostics; response includes validation/readiness/action-readiness on accepted and rejected attempts so clients can constrain publish artifact kinds and warning review gates; optional `expectedRevision` rejects stale publishes with `409 CONFLICT`; warning-level validation diagnostics require `ackWarnings=true`, and warning-acknowledged storage also requires non-empty `actor` and `reason` evidence that is frozen as publication metadata |

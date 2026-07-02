@@ -1939,6 +1939,9 @@ draft，不产生新 edge，也不成为新的 schema 判断来源。
   "kind": "data",
   "includeRejected": true,
   "limit": 100,
+  "offset": 0,
+  "targetNodeId": "loanPolicy",
+  "targetSurface": "input",
   "draft": {
     "schemaVersion": "bloge.visualGraphDraft.v1",
     "graphName": "customLoanPolicy",
@@ -1959,6 +1962,7 @@ draft，不产生新 edge，也不成为新的 schema 判断来源。
   "schemaVersion": "bloge.visualConnectionCandidates.v1",
   "source": { "nodeId": "fetchApplicant", "port": "payload", "path": "score" },
   "kind": "data",
+  "offset": 0,
   "totalCandidateCount": 5,
   "acceptedCount": 1,
   "rejectedCount": 4,
@@ -1982,6 +1986,20 @@ draft，不产生新 edge，也不成为新的 schema 判断来源。
         "diagnosticCount": 0,
         "message": "Connection accepted."
       },
+      "explanation": {
+        "sourceLabel": "fetchApplicant.payload.score",
+        "targetLabel": "loanPolicy.inputs.score",
+        "sourceSchemaType": "integer",
+        "targetSchemaType": "integer",
+        "sourceSchemaKnown": true,
+        "targetSchemaKnown": true,
+        "decisionSource": "server-validator",
+        "decisionMessage": "Connection accepted.",
+        "firstDiagnosticCode": "",
+        "replacementSummary": "",
+        "replacedBindingCount": 0,
+        "replacedEdgeCount": 0
+      },
       "diagnostics": []
     }
   ]
@@ -1990,8 +2008,13 @@ draft，不产生新 edge，也不成为新的 schema 判断来源。
 
 `includeRejected=false` 时默认只返回可接目标，但 `totalCandidateCount`、
 `acceptedCount` 和 `rejectedCount` 仍反映服务端评估过的完整候选集合。
+`targetNodeId`、`targetSurface`、`offset` 和 `limit` 用于大画布 focused discovery；
+外部控制面可以只请求某个目标节点或某类 target surface，而不必拉完整候选集合。
 `includeRejected=true` 可用于 inspector、调试面板或可访问性提示，展示被阻断
-目标及其 `visual.binding.*` / `visual.edge.*` diagnostics。客户端仍必须在真正
+目标及其 `visual.binding.*` / `visual.edge.*` diagnostics。每个候选的
+`explanation` 是稳定的机器可读说明面：source/target label、schema type、
+first diagnostic code 和 replacement counts 不应从自然语言 message 里反解析。
+客户端仍必须在真正
 drop 或写入 binding 前调用 `/api/visual/connections/check`，因为候选发现结果只是
 某一时刻 draft 快照的读模型；任何本地编辑、revision rebase 或 catalog drift 都可能
 使候选结论失效。

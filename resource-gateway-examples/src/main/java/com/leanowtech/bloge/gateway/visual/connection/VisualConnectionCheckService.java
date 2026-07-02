@@ -291,7 +291,7 @@ public class VisualConnectionCheckService {
             );
         }
 
-        List<ConnectionCandidateTarget> targets = candidateTargets(request.draft(), request.kind());
+        List<ConnectionCandidateTarget> targets = candidateTargets(request.draft(), request);
         List<VisualConnectionCandidatesResult.ConnectionCandidate> candidates = new ArrayList<>();
         for (ConnectionCandidateTarget target : targets) {
             VisualConnectionCheckResult check = check(new VisualConnectionCheckRequest(
@@ -309,6 +309,7 @@ public class VisualConnectionCheckService {
                     check.accepted(),
                     check.bindingKey(),
                     check.summary(),
+                    candidateExplanation(request.draft(), request.source(), target, check),
                     check.diagnostics()
             ));
         }
@@ -323,14 +324,16 @@ public class VisualConnectionCheckService {
         List<VisualConnectionCandidatesResult.ConnectionCandidate> visible = candidates.stream()
                 .filter(candidate -> request.includeRejected() || candidate.accepted())
                 .toList();
-        boolean truncated = visible.size() > request.limit();
+        boolean truncated = visible.size() > request.offset() + request.limit();
         List<VisualConnectionCandidatesResult.ConnectionCandidate> window = visible.stream()
+                .skip(request.offset())
                 .limit(request.limit())
                 .toList();
         return new VisualConnectionCandidatesResult(
                 VisualConnectionCandidatesResult.SCHEMA_VERSION,
                 request.source(),
                 request.kind(),
+                request.offset(),
                 candidates.size(),
                 acceptedCount,
                 rejectedCount,
@@ -341,10 +344,15 @@ public class VisualConnectionCheckService {
         );
     }
 
-    private List<ConnectionCandidateTarget> candidateTargets(GraphDraft draft, String kind) {
+    private List<ConnectionCandidateTarget> candidateTargets(GraphDraft draft,
+                                                             VisualConnectionCandidatesRequest request) {
         List<ConnectionCandidateTarget> targets = new ArrayList<>();
+        String kind = request.kind();
         if ("dependency".equals(kind) || "route".equals(kind)) {
             for (GraphDraft.DraftNode node : draft.nodes()) {
+                if (!candidateTargetMatches(request, node, kind)) {
+                    continue;
+                }
                 targets.add(new ConnectionCandidateTarget(
                         node,
                         kind,
@@ -355,30 +363,254 @@ public class VisualConnectionCheckService {
         }
 
         for (GraphDraft.DraftNode node : draft.nodes()) {
+            if (!candidateTargetMatches(request, node, "")) {
+                continue;
+            }
             Optional<OperatorDefinition> operator = catalog.find(node.operatorRef());
             if (operator.isEmpty()) {
                 continue;
             }
-            for (OperatorDefinition.Port port : operator.get().ports().inputs()) {
-                for (String path : connectableSchemaPaths(port.schema())) {
-                    targets.add(new ConnectionCandidateTarget(
-                            node,
-                            "input",
-                            new GraphDraft.Endpoint(node.id(), port.name(), path)
-                    ));
+            if (candidateSurfaceMatches(request.targetSurface(), "input")) {
+                for (OperatorDefinition.Port port : operator.get().ports().inputs()) {
+                    for (String path : connectableSchemaPaths(port.schema())) {
+                        targets.add(new ConnectionCandidateTarget(
+                                node,
+                                "input",
+                                new GraphDraft.Endpoint(node.id(), port.name(), path)
+                        ));
+                    }
                 }
             }
-            for (String path : connectableSchemaPaths(operator.get().configSchema())) {
-                if (!path.isBlank()) {
-                    targets.add(new ConnectionCandidateTarget(
-                            node,
-                            "config",
-                            new GraphDraft.Endpoint(node.id(), CONFIG_TARGET_PORT, path)
-                    ));
+            if (candidateSurfaceMatches(request.targetSurface(), "config")) {
+                for (String path : connectableSchemaPaths(operator.get().configSchema())) {
+                    if (!path.isBlank()) {
+                        targets.add(new ConnectionCandidateTarget(
+                                node,
+                                "config",
+                                new GraphDraft.Endpoint(node.id(), CONFIG_TARGET_PORT, path)
+                        ));
+                    }
                 }
             }
         }
         return targets;
+    }
+
+    private static boolean candidateTargetMatches(VisualConnectionCandidatesRequest request,
+                                                  GraphDraft.DraftNode node,
+                                                  String surface) {
+        if (!request.targetNodeId().isBlank() && !request.targetNodeId().equals(node.id())) {
+            return false;
+        }
+        return surface.isBlank() || candidateSurfaceMatches(request.targetSurface(), surface);
+    }
+
+    private static boolean candidateSurfaceMatches(String requested, String actual) {
+        if (requested == null || requested.isBlank()) {
+            return true;
+        }
+        if (requested.equals(actual)) {
+            return true;
+        }
+        return "control".equals(requested) && ("dependency".equals(actual) || "route".equals(actual));
+    }
+
+    private VisualConnectionCandidatesResult.ConnectionCandidateExplanation candidateExplanation(
+            GraphDraft draft,
+            GraphDraft.Endpoint source,
+            ConnectionCandidateTarget target,
+            VisualConnectionCheckResult check) {
+        Map<String, Object> sourceSchema = endpointSourceSchema(draft, source);
+        Map<String, Object> targetSchema = endpointTargetSchema(draft, target.endpoint(), target.surface());
+        VisualDiagnostic firstDiagnostic = firstDiagnostic(check.diagnostics());
+        VisualConnectionCheckResult.VisualConnectionCheckSummary summary = check.summary();
+        int replacedBindings = summary == null ? 0 : summary.replacedBindingCount();
+        int replacedEdges = summary == null ? 0 : summary.replacedEdgeCount();
+        return new VisualConnectionCandidatesResult.ConnectionCandidateExplanation(
+                endpointLabel(source, true),
+                endpointLabel(target.endpoint(), false),
+                schemaTypeLabel(sourceSchema, controlSurface(target.surface()) ? target.surface() : ""),
+                schemaTypeLabel(targetSchema, controlSurface(target.surface()) ? target.surface() : ""),
+                schemaKnown(sourceSchema),
+                schemaKnown(targetSchema),
+                "server-validator",
+                candidateDecisionMessage(check, firstDiagnostic),
+                firstDiagnostic == null ? "" : firstDiagnostic.code(),
+                replacementSummary(replacedBindings, replacedEdges),
+                replacedBindings,
+                replacedEdges
+        );
+    }
+
+    private Map<String, Object> endpointSourceSchema(GraphDraft draft, GraphDraft.Endpoint source) {
+        if (source == null || source.nodeId().isBlank()) {
+            return null;
+        }
+        if (CONTEXT_SOURCE_NODE_ID.equals(source.nodeId())) {
+            return schemaAtPath(draft.inputSchema().schema(), source.path());
+        }
+        Optional<GraphDraft.DraftNode> node = draft.nodes().stream()
+                .filter(candidate -> candidate.id().equals(source.nodeId()))
+                .findFirst();
+        if (node.isEmpty()) {
+            return null;
+        }
+        Optional<OperatorDefinition> operator = catalog.find(node.get().operatorRef());
+        if (operator.isEmpty()) {
+            return null;
+        }
+        return resolveOutputPort(operator.get(), source.port(), source.path())
+                .map(port -> schemaAtPath(port.schema().schema(), source.path()))
+                .orElse(null);
+    }
+
+    private Map<String, Object> endpointTargetSchema(GraphDraft draft,
+                                                     GraphDraft.Endpoint target,
+                                                     String surface) {
+        if (target == null || target.nodeId().isBlank() || controlSurface(surface)) {
+            return null;
+        }
+        Optional<GraphDraft.DraftNode> node = draft.nodes().stream()
+                .filter(candidate -> candidate.id().equals(target.nodeId()))
+                .findFirst();
+        if (node.isEmpty()) {
+            return null;
+        }
+        Optional<OperatorDefinition> operator = catalog.find(node.get().operatorRef());
+        if (operator.isEmpty()) {
+            return null;
+        }
+        if (CONFIG_TARGET_PORT.equals(target.port()) || "config".equals(surface)) {
+            return schemaAtPath(operator.get().configSchema().schema(), target.path());
+        }
+        return resolveInputPort(operator.get(), target.port(), target.path())
+                .map(port -> schemaAtPath(port.schema().schema(), target.path()))
+                .orElse(null);
+    }
+
+    private static Optional<OperatorDefinition.Port> resolveOutputPort(OperatorDefinition operator,
+                                                                       String portName,
+                                                                       String path) {
+        if (portName != null && !portName.isBlank()) {
+            return operator.ports().outputs().stream()
+                    .filter(port -> portName.equals(port.name()))
+                    .findFirst();
+        }
+        List<OperatorDefinition.Port> ports = operator.ports().outputs();
+        if (ports.isEmpty()) {
+            return Optional.empty();
+        }
+        if (ports.size() == 1) {
+            return Optional.of(ports.getFirst());
+        }
+        List<OperatorDefinition.Port> matches = ports.stream()
+                .filter(port -> schemaAtPath(port.schema().schema(), path) != null)
+                .toList();
+        return matches.size() == 1 ? Optional.of(matches.getFirst()) : Optional.empty();
+    }
+
+    private static boolean controlSurface(String surface) {
+        return "dependency".equals(surface) || "route".equals(surface) || "control".equals(surface);
+    }
+
+    private static VisualDiagnostic firstDiagnostic(List<VisualDiagnostic> diagnostics) {
+        if (diagnostics == null || diagnostics.isEmpty()) {
+            return null;
+        }
+        return diagnostics.getFirst();
+    }
+
+    private static String candidateDecisionMessage(VisualConnectionCheckResult check,
+                                                   VisualDiagnostic firstDiagnostic) {
+        if (firstDiagnostic != null && !firstDiagnostic.message().isBlank()) {
+            return firstDiagnostic.message();
+        }
+        if (check.summary() != null && !check.summary().message().isBlank()) {
+            return check.summary().message();
+        }
+        return check.accepted() ? "Connection accepted by server validator." : "Connection rejected by server validator.";
+    }
+
+    private static String replacementSummary(int replacedBindings, int replacedEdges) {
+        if (replacedBindings == 0 && replacedEdges == 0) {
+            return "";
+        }
+        List<String> parts = new ArrayList<>();
+        if (replacedBindings > 0) {
+            parts.add(replacedBindings + " binding" + (replacedBindings == 1 ? "" : "s"));
+        }
+        if (replacedEdges > 0) {
+            parts.add(replacedEdges + " edge" + (replacedEdges == 1 ? "" : "s"));
+        }
+        return "Replaces " + String.join(" and ", parts) + ".";
+    }
+
+    private static String endpointLabel(GraphDraft.Endpoint endpoint, boolean source) {
+        if (endpoint == null) {
+            return "";
+        }
+        if (CONTEXT_SOURCE_NODE_ID.equals(endpoint.nodeId())) {
+            return endpoint.path().isBlank() ? "ctx" : "ctx." + endpoint.path();
+        }
+        String prefix = endpoint.nodeId();
+        if (prefix.isBlank()) {
+            return "";
+        }
+        if (endpoint.port().isBlank() && endpoint.path().isBlank()) {
+            return prefix;
+        }
+        String port = endpoint.port().isBlank() ? (source ? "output" : "input") : endpoint.port();
+        return endpoint.path().isBlank()
+                ? prefix + "." + port
+                : prefix + "." + port + "." + endpoint.path();
+    }
+
+    private static boolean schemaKnown(Map<String, Object> schema) {
+        return schema != null && !schema.isEmpty();
+    }
+
+    private static String schemaTypeLabel(Map<String, Object> schema, String fallback) {
+        if (schema == null) {
+            return fallback == null ? "" : fallback;
+        }
+        if (schema.isEmpty()) {
+            return "any";
+        }
+        String union = unionTypeLabel(schema, "oneOf");
+        if (!union.isBlank()) {
+            return union;
+        }
+        union = unionTypeLabel(schema, "anyOf");
+        if (!union.isBlank()) {
+            return union;
+        }
+        Object enumValues = schema.get("enum");
+        if (enumValues instanceof List<?> values && !values.isEmpty()) {
+            return "enum";
+        }
+        String type = schemaType(schema);
+        if ("array".equals(type)) {
+            Map<String, Object> items = objectSchema(schema.get("items"));
+            return items == null ? "array" : "array<" + schemaTypeLabel(items, "any") + ">";
+        }
+        if (!type.isBlank()) {
+            return type;
+        }
+        return fallback == null || fallback.isBlank() ? "any" : fallback;
+    }
+
+    private static String unionTypeLabel(Map<String, Object> schema, String keyword) {
+        Object raw = schema.get(keyword);
+        if (!(raw instanceof List<?> branches) || branches.isEmpty()) {
+            return "";
+        }
+        List<String> labels = branches.stream()
+                .map(VisualConnectionCheckService::objectSchema)
+                .filter(candidate -> candidate != null)
+                .map(candidate -> schemaTypeLabel(candidate, "any"))
+                .distinct()
+                .toList();
+        return labels.isEmpty() ? keyword : keyword + "<" + String.join("|", labels) + ">";
     }
 
     private static List<String> connectableSchemaPaths(SchemaEnvelope schema) {
