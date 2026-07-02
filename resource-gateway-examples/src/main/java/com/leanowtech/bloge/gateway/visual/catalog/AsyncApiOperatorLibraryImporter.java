@@ -62,21 +62,24 @@ public class AsyncApiOperatorLibraryImporter {
         }
 
         List<ProjectionCandidate> candidates = projectionCandidates(asyncApi, diagnostics);
+        List<AsyncApiOperationSummary> availableOperations = operationSummaries(candidates, asyncApi);
+        boolean selectionApplied = hasSelection(request);
         if (candidates.isEmpty()) {
             diagnostics.add(VisualDiagnostic.error("visual.library.asyncapi.operationsMissing",
                     "AsyncAPI document must declare channels with publish/subscribe operations or root operations.",
                     "/asyncApi"));
         }
         if (hasErrors(diagnostics)) {
-            return result(null, diagnostics);
+            return result(null, diagnostics, availableOperations, List.of(), selectionApplied);
         }
 
         candidates = selectedCandidates(request, candidates);
+        List<AsyncApiOperationSummary> selectedOperations = operationSummaries(candidates, asyncApi);
         if (candidates.isEmpty()) {
             diagnostics.add(VisualDiagnostic.error("visual.library.asyncapi.selectionMissing",
                     "No AsyncAPI operation/message matched the requested selector.",
                     selectionTarget(request)));
-            return result(null, diagnostics);
+            return result(null, diagnostics, availableOperations, selectedOperations, selectionApplied);
         }
 
         String libraryVersion = libraryVersion(request, asyncApi);
@@ -86,7 +89,7 @@ public class AsyncApiOperatorLibraryImporter {
             operators.add(operatorFrom(candidate, asyncApi, libraryVersion, operatorRefs, diagnostics));
         }
         if (hasErrors(diagnostics)) {
-            return result(null, diagnostics);
+            return result(null, diagnostics, availableOperations, selectedOperations, selectionApplied);
         }
         OperatorLibrary library = new OperatorLibrary(
                 "bloge.visualOperatorLibrary.v1",
@@ -97,7 +100,7 @@ public class AsyncApiOperatorLibraryImporter {
                 request.status(),
                 operators
         );
-        return result(library, diagnostics);
+        return result(library, diagnostics, availableOperations, selectedOperations, selectionApplied);
     }
 
     /**
@@ -132,23 +135,30 @@ public class AsyncApiOperatorLibraryImporter {
             return operationResult(List.of(), diagnostics);
         }
 
-        return operationResult(
-                candidates.stream()
-                        .map(candidate -> operationSummary(candidate, asyncApi))
-                        .toList(),
-                diagnostics
-        );
+        return operationResult(operationSummaries(candidates, asyncApi), diagnostics);
     }
 
     private static AsyncApiOperatorLibraryImportResult result(OperatorLibrary library,
                                                               List<VisualDiagnostic> diagnostics) {
+        return result(library, diagnostics, List.of(), List.of(), false);
+    }
+
+    private static AsyncApiOperatorLibraryImportResult result(OperatorLibrary library,
+                                                              List<VisualDiagnostic> diagnostics,
+                                                              List<AsyncApiOperationSummary> availableOperations,
+                                                              List<AsyncApiOperationSummary> selectedOperations,
+                                                              boolean selectionApplied) {
         OperatorLibraryValidationResult validation = new OperatorLibraryValidationResult(
                 diagnostics.stream().noneMatch(VisualDiagnostic::error),
                 diagnostics,
                 OperatorLibraryImpactReview.empty(),
                 library == null ? OperatorLibraryProfile.empty() : OperatorLibraryProfile.from(library, diagnostics)
         );
-        return new AsyncApiOperatorLibraryImportResult(library, validation);
+        return new AsyncApiOperatorLibraryImportResult(library, validation,
+                availableOperations,
+                selectedOperations,
+                Math.max(0, availableOperations.size() - selectedOperations.size()),
+                selectionApplied);
     }
 
     private static AsyncApiOperationDiscoveryResult operationResult(List<AsyncApiOperationSummary> operations,
@@ -157,6 +167,13 @@ public class AsyncApiOperatorLibraryImporter {
                 operations,
                 new VisualValidationResult(diagnostics.stream().noneMatch(VisualDiagnostic::error), diagnostics)
         );
+    }
+
+    private static List<AsyncApiOperationSummary> operationSummaries(List<ProjectionCandidate> candidates,
+                                                                     Map<String, Object> asyncApi) {
+        return candidates.stream()
+                .map(candidate -> operationSummary(candidate, asyncApi))
+                .toList();
     }
 
     private static AsyncApiOperationSummary operationSummary(ProjectionCandidate candidate,

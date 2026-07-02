@@ -496,9 +496,12 @@ resource-gateway 示例也提供
 `POST /admin/visual-operator-libraries/from-asyncapi` 作为 validate-only
 operator-library projection endpoint。请求传入 parsed `asyncApi` 或 raw
 JSON/YAML `asyncApiText`，可指定 `libraryId/displayName/version/owner/status`，
-也可用 `operationId/channel/action/messageName` 选择一个 operation/message 子集；
-响应为 `bloge.asyncApiOperatorLibraryImportResult.v1`，包含生成的
-`bloge.visualOperatorLibrary.v1` 草案和 `OperatorLibraryValidationResult`。
+也可用单个 `operationId/channel/action/messageName` selector，或用
+`selections[]` 批量选择多个 operation/message 子集；响应为
+`bloge.asyncApiOperatorLibraryImportResult.v1`，包含生成的
+`bloge.visualOperatorLibrary.v1` 草案、`OperatorLibraryValidationResult`，以及
+`availableOperations`、`selectedOperations`、`omittedOperationCount` 和
+`selectionApplied` 投影审计证据。
 该 importer 把 AsyncAPI channel/root operation 的 message payload 投影为
 `event-source`、`message-handler` 或 `webhook` runtime-blocked operator，并继续复用
 operator-library validator、profile 和 impact review；它不直接写入 registry。

@@ -5140,6 +5140,22 @@ function asyncApiProjectionRequest(sourceText) {
   return request;
 }
 
+function asyncApiProjectionAuditMessage(payload) {
+  const available = normalizeAsyncApiOperations(payload?.availableOperations);
+  const selected = normalizeAsyncApiOperations(payload?.selectedOperations);
+  const operatorCount = Array.isArray(payload?.library?.operators) ? payload.library.operators.length : 0;
+  const selectedCount = selected.length || operatorCount;
+  const availableCount = available.length;
+  if (!availableCount) {
+    return '';
+  }
+  const omitted = Number.isFinite(Number(payload?.omittedOperationCount))
+    ? Number(payload.omittedOperationCount)
+    : Math.max(0, availableCount - selectedCount);
+  const suffix = omitted > 0 ? ` (${omitted} omitted)` : '';
+  return `Projected ${selectedCount} of ${availableCount} AsyncAPI operation${availableCount === 1 ? '' : 's'}${suffix}.`;
+}
+
 async function projectAsyncApiOperatorLibrary() {
   const sourceText = state.libraryImportText || '';
   if (!sourceText.trim()) {
@@ -5181,8 +5197,13 @@ async function projectAsyncApiOperatorLibrary() {
   state.libraryImportConfirmationKey = '';
   state.libraryRestoreConfirmationKey = '';
   renderOperatorLibraryControls();
+  const auditMessage = asyncApiProjectionAuditMessage(payload);
   setLibraryMessage(
-    `Projected AsyncAPI into ${payload.library.libraryId}. Review generated library, then Import.`,
+    [
+      `Projected AsyncAPI into ${payload.library.libraryId}.`,
+      auditMessage,
+      'Review generated library, then Import.'
+    ].filter(Boolean).join(' '),
     visualCheckLevel(diagnostics, validation?.valid !== false),
     diagnostics,
     validation?.impact,

@@ -550,6 +550,7 @@ class VisualAuthoringBrowserDomTest {
 
         click(wait, By.id("project-asyncapi-library"));
         waitForText(wait, By.id("library-status"), "Projected AsyncAPI into risk-events-operators");
+        waitForText(wait, By.id("library-status"), "Projected 2 of 3 AsyncAPI operations");
         waitForText(wait, By.id("library-profile"), "runtime-blocked");
         assertThat(valueOf(By.id("operator-library-json")))
                 .contains("\"schemaVersion\": \"bloge.visualOperatorLibrary.v1\"")

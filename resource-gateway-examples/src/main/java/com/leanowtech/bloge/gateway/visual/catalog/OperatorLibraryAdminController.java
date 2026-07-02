@@ -206,7 +206,11 @@ public class OperatorLibraryAdminController {
         List<VisualDiagnostic> diagnostics = new ArrayList<>(projected.validation().diagnostics());
         diagnostics.addAll(validateAgainstRegistry(projected.library(), force).diagnostics());
         return new AsyncApiOperatorLibraryImportResult(projected.library(),
-                validationResult(projected.library(), diagnostics));
+                validationResult(projected.library(), diagnostics),
+                projected.availableOperations(),
+                projected.selectedOperations(),
+                projected.omittedOperationCount(),
+                projected.selectionApplied());
     }
 
     /**
