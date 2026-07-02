@@ -708,6 +708,27 @@ class OperatorLibraryValidatorTest {
     }
 
     @Test
+    void acceptsExternalBoundarySourceKindsAsRuntimeBlockedDesignBindings() {
+        VisualValidationResult result = validator.validate(VisualCatalogTestSupport.externalBoundaryLibrary());
+        OperatorDefinition eventSource = VisualCatalogTestSupport.orderSubmittedEventSourceOperator();
+        OperatorDefinition messageHandler = VisualCatalogTestSupport.riskCommandMessageHandlerOperator();
+        OperatorDefinition webhook = VisualCatalogTestSupport.creditDecisionWebhookOperator();
+
+        assertThat(result.valid()).as(result.diagnostics().toString()).isTrue();
+        assertThat(result.diagnostics()).isEmpty();
+        assertThat(eventSource.source().kind()).isEqualTo("event-source");
+        assertThat(eventSource.lowering().mode()).isEqualTo("event-source");
+        assertThat(eventSource.runtimeReadiness().state()).isEqualTo("RUNTIME_BLOCKED");
+        assertThat(eventSource.runtimeReadiness().artifactKinds()).containsExactly("DESIGN");
+        assertThat(messageHandler.source().kind()).isEqualTo("message-handler");
+        assertThat(messageHandler.lowering().mode()).isEqualTo("message-handler");
+        assertThat(messageHandler.runtimeReadiness().state()).isEqualTo("RUNTIME_BLOCKED");
+        assertThat(webhook.source().kind()).isEqualTo("webhook");
+        assertThat(webhook.lowering().mode()).isEqualTo("webhook");
+        assertThat(webhook.runtimeReadiness().title()).isEqualTo("Webhook runtime blocked");
+    }
+
+    @Test
     void rejectsRuntimeBindingLoweringWithoutRequiredSourceKindAndBindingParameter() {
         OperatorDefinition base = VisualCatalogTestSupport.eligibilityOperator("integer");
         OperatorDefinition operator = new OperatorDefinition(
@@ -738,7 +759,74 @@ class OperatorLibraryValidatorTest {
                                 "/operators/0/lowering/operatorRef"),
                         org.assertj.core.groups.Tuple.tuple(
                                 "visual.operator.lowering.parameter.required",
-                                "/operators/0/lowering/parameters/workerTopic")
+                        "/operators/0/lowering/parameters/workerTopic")
+                );
+    }
+
+    @Test
+    void rejectsExternalBoundaryLoweringWithoutRequiredSourceKindAndBindingParameter() {
+        OperatorDefinition base = VisualCatalogTestSupport.orderSubmittedEventSourceOperator();
+        OperatorDefinition operator = new OperatorDefinition(
+                base.schemaVersion(),
+                base.operatorRef(),
+                base.operatorVersion(),
+                base.display(),
+                new OperatorDefinition.Source("user-library", "", "", "", false),
+                base.ports(),
+                base.configSchema(),
+                base.capabilities(),
+                base.policy(),
+                new OperatorDefinition.Lowering("event-source", "eventRuntime", Map.of()),
+                base.diagnostics()
+        );
+
+        VisualValidationResult result = validator.validate(libraryWith(operator));
+
+        assertThat(result.valid()).isFalse();
+        assertThat(result.diagnostics())
+                .extracting("code", "target")
+                .contains(
+                        org.assertj.core.groups.Tuple.tuple(
+                                "visual.operator.lowering.sourceKindMismatch",
+                                "/operators/0/source/kind"),
+                        org.assertj.core.groups.Tuple.tuple(
+                                "visual.operator.lowering.runtimeOperatorRefUnsupported",
+                                "/operators/0/lowering/operatorRef"),
+                        org.assertj.core.groups.Tuple.tuple(
+                                "visual.operator.lowering.parameter.required",
+                                "/operators/0/lowering/parameters/eventType")
+                );
+    }
+
+    @Test
+    void rejectsWebhookLoweringWithoutMethodAndPath() {
+        OperatorDefinition base = VisualCatalogTestSupport.creditDecisionWebhookOperator();
+        OperatorDefinition operator = new OperatorDefinition(
+                base.schemaVersion(),
+                base.operatorRef(),
+                base.operatorVersion(),
+                base.display(),
+                base.source(),
+                base.ports(),
+                base.configSchema(),
+                base.capabilities(),
+                base.policy(),
+                new OperatorDefinition.Lowering("webhook", "", Map.of()),
+                base.diagnostics()
+        );
+
+        VisualValidationResult result = validator.validate(libraryWith(operator));
+
+        assertThat(result.valid()).isFalse();
+        assertThat(result.diagnostics())
+                .extracting("code", "target")
+                .contains(
+                        org.assertj.core.groups.Tuple.tuple(
+                                "visual.operator.lowering.parameter.required",
+                                "/operators/0/lowering/parameters/method"),
+                        org.assertj.core.groups.Tuple.tuple(
+                                "visual.operator.lowering.parameter.required",
+                                "/operators/0/lowering/parameters/path")
                 );
     }
 

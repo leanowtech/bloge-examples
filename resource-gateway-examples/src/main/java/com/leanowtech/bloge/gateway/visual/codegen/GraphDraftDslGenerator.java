@@ -48,6 +48,13 @@ public class GraphDraftDslGenerator {
             DSL_IDENTIFIER_PATTERN + "(?:\\." + DSL_IDENTIFIER_PATTERN + ")*");
     private static final Pattern TEMPLATE_REFERENCE = Pattern.compile("\\{\\{\\s*((?:input\\.)?"
             + TEMPLATE_PATH_PATTERN + ")\\s*}}");
+    private static final Set<String> RUNTIME_BINDING_BLOCKED_KINDS = Set.of(
+            "remote-worker",
+            "ai-tool",
+            "event-source",
+            "message-handler",
+            "webhook"
+    );
 
     private final VisualOperatorCatalog catalog;
 
@@ -121,8 +128,8 @@ public class GraphDraftDslGenerator {
     }
 
     private static boolean runtimeBindingBlocked(OperatorDefinition operator) {
-        return operator != null && (Set.of("remote-worker", "ai-tool").contains(operator.source().kind())
-                || Set.of("remote-worker", "ai-tool").contains(operator.lowering().mode()));
+        return operator != null && (RUNTIME_BINDING_BLOCKED_KINDS.contains(operator.source().kind())
+                || RUNTIME_BINDING_BLOCKED_KINDS.contains(operator.lowering().mode()));
     }
 
     private String nodeToDsl(GraphDraft.DraftNode node,

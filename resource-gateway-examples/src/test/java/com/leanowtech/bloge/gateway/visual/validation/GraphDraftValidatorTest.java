@@ -218,6 +218,52 @@ class GraphDraftValidatorTest {
     }
 
     @Test
+    void acceptsExternalBoundaryOperatorsAsSchemaValidRuntimeBlockedDesignArtifacts() {
+        GraphDraftValidator validator = new GraphDraftValidator(
+                VisualCatalogTestSupport.catalogWithLibrary(
+                        VisualCatalogTestSupport.externalBoundaryLibrary()));
+        GraphDraft draft = new GraphDraft(
+                "",
+                "",
+                0,
+                "eventBoundaryDesign",
+                "",
+                "",
+                "",
+                "",
+                null,
+                List.of(new GraphDraft.DraftNode(
+                        "orderEvent",
+                        "event:orderSubmitted",
+                        "",
+                        Map.of(),
+                        Map.of(),
+                        null
+                )),
+                List.of(),
+                Map.of(),
+                new GraphDraft.OutputSelection("orderEvent", "")
+        );
+
+        VisualValidationResult result = validator.validate(draft);
+
+        assertThat(result.valid()).as(result.diagnostics().toString()).isTrue();
+        assertThat(result.diagnostics()).isEmpty();
+        assertThat(result.readiness().state()).isEqualTo("runtime-blocked");
+        assertThat(result.readiness().executable()).isFalse();
+        assertThat(result.readiness().artifactKinds()).containsExactly("DESIGN");
+        assertThat(result.readiness().runtimeBlockedNodeCount()).isEqualTo(1);
+        assertThat(result.readiness().nodes())
+                .singleElement()
+                .satisfies(node -> {
+                    assertThat(node.nodeId()).isEqualTo("orderEvent");
+                    assertThat(node.operatorRef()).isEqualTo("event:orderSubmitted");
+                    assertThat(node.state()).isEqualTo("runtime-blocked");
+                    assertThat(node.title()).isEqualTo("Event source runtime blocked");
+                });
+    }
+
+    @Test
     void rejectsDraftIdentifiersThatCannotRenderAsDslIdentifiers() {
         GraphDraftValidator validator = new GraphDraftValidator(
                 VisualCatalogTestSupport.catalogWithLibrary(

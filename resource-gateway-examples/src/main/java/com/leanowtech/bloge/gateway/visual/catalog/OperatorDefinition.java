@@ -449,6 +449,45 @@ public record OperatorDefinition(
                         details
                 );
             }
+            if ("event-source".equals(sourceKind) || "event-source".equals(loweringMode)) {
+                details.add(new ReadinessDetail("Execution", "External event source runtime is not enabled"));
+                details.add(new ReadinessDetail("Publish", "DESIGN artifact only until an event runtime is bound"));
+                return new RuntimeReadiness(
+                        "RUNTIME_BLOCKED",
+                        "warning",
+                        false,
+                        List.of("DESIGN"),
+                        "Event source runtime blocked",
+                        "The operator declares an external event source boundary, but this request-response visual runtime cannot subscribe to events yet.",
+                        details
+                );
+            }
+            if ("message-handler".equals(sourceKind) || "message-handler".equals(loweringMode)) {
+                details.add(new ReadinessDetail("Execution", "Message handler runtime is not enabled"));
+                details.add(new ReadinessDetail("Publish", "DESIGN artifact only until a message runtime is bound"));
+                return new RuntimeReadiness(
+                        "RUNTIME_BLOCKED",
+                        "warning",
+                        false,
+                        List.of("DESIGN"),
+                        "Message handler runtime blocked",
+                        "The operator declares a message handling boundary, but this request-response visual runtime cannot consume message channels yet.",
+                        details
+                );
+            }
+            if ("webhook".equals(sourceKind) || "webhook".equals(loweringMode)) {
+                details.add(new ReadinessDetail("Execution", "Webhook ingress runtime is not enabled"));
+                details.add(new ReadinessDetail("Publish", "DESIGN artifact only until webhook ingress is bound"));
+                return new RuntimeReadiness(
+                        "RUNTIME_BLOCKED",
+                        "warning",
+                        false,
+                        List.of("DESIGN"),
+                        "Webhook runtime blocked",
+                        "The operator declares a webhook ingress boundary, but this request-response visual runtime cannot expose inbound webhooks yet.",
+                        details
+                );
+            }
             if (streaming || durable) {
                 String blockers = String.join(" + ", List.of(
                                 streaming ? "streaming runtime" : "",

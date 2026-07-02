@@ -471,7 +471,9 @@ public class GraphDraftValidator {
         }
         GraphDraft.DraftNode outputNode = nodesById.get(output.nodeId());
         if (output.path().isBlank()) {
-            validateWholeOutputPortDslPathSegments(operator, diagnostics);
+            if (requiresExecutableDslSafePaths(operator)) {
+                validateWholeOutputPortDslPathSegments(operator, diagnostics);
+            }
             return;
         }
         OutputReference outputReference = outputReference(operator, output.path());
@@ -483,9 +485,12 @@ public class GraphDraftValidator {
                     "/output/path"));
             return;
         }
-        validateOutputPortDslPathSegment(outputPort.get(), "/output/path",
-                "visual.output.portSegment.invalid", diagnostics);
-        validateOutputDslPathSegments(outputPort.get().schema(), outputReference.path(), "/output/path", diagnostics);
+        if (requiresExecutableDslSafePaths(operator)) {
+            validateOutputPortDslPathSegment(outputPort.get(), "/output/path",
+                    "visual.output.portSegment.invalid", diagnostics);
+            validateOutputDslPathSegments(outputPort.get().schema(), outputReference.path(), "/output/path",
+                    diagnostics);
+        }
         if (outputPropertyAtPath(outputNode, operator, outputPort.get(), outputReference.path()) == null) {
             diagnostics.add(VisualDiagnostic.error("visual.output.unknownPath",
                     "Output node '%s' port '%s' does not expose path '%s'."
@@ -933,9 +938,11 @@ public class GraphDraftValidator {
 
         Map<String, Object> sourceProperty = outputPropertyAtPath(sourceNode, sourceOperator,
                 sourcePort.get(), binding.path());
-        validateOutputPortDslPathSegment(sourcePort.get(), targetPath + "/sourcePort",
-                "visual.binding.sourcePortSegment.invalid", diagnostics);
-        validateDslPathSegments(sourcePort.get().schema(), binding.path(), targetPath + "/path", diagnostics);
+        if (requiresExecutableDslSafePaths(sourceOperator)) {
+            validateOutputPortDslPathSegment(sourcePort.get(), targetPath + "/sourcePort",
+                    "visual.binding.sourcePortSegment.invalid", diagnostics);
+            validateDslPathSegments(sourcePort.get().schema(), binding.path(), targetPath + "/path", diagnostics);
+        }
         if (sourceProperty == null) {
             diagnostics.add(VisualDiagnostic.error("visual.binding.unknownOutputPath",
                     "Source node '%s' port '%s' output path does not exist: %s"
@@ -1405,8 +1412,10 @@ public class GraphDraftValidator {
             return null;
         }
 
-        validateOutputPortDslPathSegment(sourcePort.get(), targetPath,
-                "visual.expression.sourcePortSegment.invalid", diagnostics);
+        if (requiresExecutableDslSafePaths(sourceOperator)) {
+            validateOutputPortDslPathSegment(sourcePort.get(), targetPath,
+                    "visual.expression.sourcePortSegment.invalid", diagnostics);
+        }
         Map<String, Object> sourceProperty = outputPropertyAtPath(sourceNode, sourceOperator,
                 sourcePort.get(), outputReference.path());
         if (sourceProperty == null) {
@@ -2447,10 +2456,12 @@ public class GraphDraftValidator {
                         edgePath + "/target/port"));
                 continue;
             }
-            validateEdgeDslPathSegments(sourcePort.get().schema(), edge.source().path(), edgePath + "/source/path",
-                    diagnostics);
-            validateOutputPortDslPathSegment(sourcePort.get(), edgePath + "/source/port",
-                    "visual.edge.sourcePortSegment.invalid", diagnostics);
+            if (requiresExecutableDslSafePaths(sourceOperator)) {
+                validateEdgeDslPathSegments(sourcePort.get().schema(), edge.source().path(),
+                        edgePath + "/source/path", diagnostics);
+                validateOutputPortDslPathSegment(sourcePort.get(), edgePath + "/source/port",
+                        "visual.edge.sourcePortSegment.invalid", diagnostics);
+            }
             Map<String, Object> sourceProperty = outputPropertyAtPath(sourceNode, sourceOperator,
                     sourcePort.get(), edge.source().path());
             if (sourceProperty == null) {
@@ -2460,10 +2471,12 @@ public class GraphDraftValidator {
                         edgePath + "/source/path"));
                 continue;
             }
-            validateEdgeDslPathSegments(targetPort.get().schema(), edge.target().path(), edgePath + "/target/path",
-                    diagnostics);
-            validateInputPortDslPathSegment(targetPort.get(), edgePath + "/target/port",
-                    "visual.edge.targetPortSegment.invalid", diagnostics);
+            if (requiresExecutableDslSafePaths(targetOperator)) {
+                validateEdgeDslPathSegments(targetPort.get().schema(), edge.target().path(),
+                        edgePath + "/target/path", diagnostics);
+                validateInputPortDslPathSegment(targetPort.get(), edgePath + "/target/port",
+                        "visual.edge.targetPortSegment.invalid", diagnostics);
+            }
             Optional<GraphDraft.Binding> edgeBinding = bindingForDataEdge(targetNode, edge);
             Map<String, Object> targetProperty = edgeBinding
                     .map(binding -> targetPropertyAtPath(targetPort.get(), edge.target().path(), binding,
@@ -3556,6 +3569,9 @@ public class GraphDraftValidator {
                                                              OperatorDefinition targetOperator,
                                                              String diagnosticPath,
                                                              List<VisualDiagnostic> diagnostics) {
+        if (!requiresExecutableDslSafePaths(targetOperator)) {
+            return;
+        }
         Optional<OperatorDefinition.Port> targetPort = resolveInputPort(targetOperator, binding.targetPort(),
                 inputName);
         targetPort.ifPresent(port -> {
@@ -3616,6 +3632,12 @@ public class GraphDraftValidator {
 
     private static boolean inputPortDslPathSafe(OperatorDefinition.Port port) {
         return port == null || isDslFieldName(port.name());
+    }
+
+    private static boolean requiresExecutableDslSafePaths(OperatorDefinition operator) {
+        return operator != null
+                && operator.runtimeReadiness() != null
+                && operator.runtimeReadiness().executable();
     }
 
     private static void validateDslPathSegments(SchemaEnvelope schema,

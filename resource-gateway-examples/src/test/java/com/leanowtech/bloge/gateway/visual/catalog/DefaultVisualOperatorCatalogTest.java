@@ -89,6 +89,7 @@ class DefaultVisualOperatorCatalogTest {
         OperatorDefinition designOnly = VisualCatalogTestSupport.designOnlyEligibilityOperator("integer");
         OperatorDefinition remoteWorker = VisualCatalogTestSupport.remoteWorkerEligibilityOperator("integer");
         OperatorDefinition aiTool = VisualCatalogTestSupport.aiToolSummaryOperator();
+        OperatorDefinition eventSource = VisualCatalogTestSupport.orderSubmittedEventSourceOperator();
         OperatorDefinition forged = new OperatorDefinition(
                 designOnly.schemaVersion(),
                 designOnly.operatorRef(),
@@ -125,6 +126,10 @@ class DefaultVisualOperatorCatalogTest {
         assertThat(aiTool.runtimeReadiness().state()).isEqualTo("RUNTIME_BLOCKED");
         assertThat(aiTool.runtimeReadiness().title()).isEqualTo("AI tool runtime blocked");
         assertThat(aiTool.runtimeReadiness().artifactKinds()).containsExactly("DESIGN");
+        assertThat(eventSource.source().kind()).isEqualTo("event-source");
+        assertThat(eventSource.runtimeReadiness().state()).isEqualTo("RUNTIME_BLOCKED");
+        assertThat(eventSource.runtimeReadiness().title()).isEqualTo("Event source runtime blocked");
+        assertThat(eventSource.runtimeReadiness().artifactKinds()).containsExactly("DESIGN");
         assertThat(forged.runtimeReadiness().state()).isEqualTo("DESIGN_ONLY");
         assertThat(forged.runtimeReadiness().title()).isEqualTo("Design-only operator");
     }
@@ -151,6 +156,25 @@ class DefaultVisualOperatorCatalogTest {
                 .containsEntry("ai-tool", 1);
         assertThat(facets.runtimeReadinessStates())
                 .containsEntry("runtime-blocked", 2);
+    }
+
+    @Test
+    void catalogFacetsIncludeExternalBoundaryRuntimeBindings() {
+        DefaultVisualOperatorCatalog catalog = VisualCatalogTestSupport.catalogWithLibrary(
+                VisualCatalogTestSupport.externalBoundaryLibrary());
+
+        OperatorCatalogFacets facets = OperatorCatalogFacets.from(catalog.list(OperatorCatalogQuery.all()));
+
+        assertThat(facets.sourceKinds())
+                .containsEntry("event-source", 1)
+                .containsEntry("message-handler", 1)
+                .containsEntry("webhook", 1);
+        assertThat(facets.loweringModes())
+                .containsEntry("event-source", 1)
+                .containsEntry("message-handler", 1)
+                .containsEntry("webhook", 1);
+        assertThat(facets.runtimeReadinessStates())
+                .containsEntry("runtime-blocked", 3);
     }
 
     @Test

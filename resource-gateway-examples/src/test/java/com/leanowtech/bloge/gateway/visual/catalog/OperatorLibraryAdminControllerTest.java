@@ -159,6 +159,147 @@ class OperatorLibraryAdminControllerTest {
     }
 
     @Test
+    void fromAsyncApiProjectsExternalBoundaryOperatorsWithoutStoring() throws Exception {
+        String asyncApi = """
+                asyncapi: '2.6.0'
+                info:
+                  title: Risk Events
+                  version: 1.2.3
+                  contact:
+                    name: risk-platform
+                channels:
+                  /webhooks/credit-decision:
+                    subscribe:
+                      operationId: creditDecisionWebhook
+                      x-bloge-source-kind: webhook
+                      bindings:
+                        http:
+                          method: post
+                      message:
+                        name: CreditDecision
+                        payload:
+                          type: object
+                          properties:
+                            applicationId:
+                              type: string
+                            decision:
+                              type: string
+                          required:
+                            - applicationId
+                            - decision
+                  risk.commands:
+                    publish:
+                      operationId: sendRiskCommand
+                      message:
+                        name: RiskCommand
+                        payload:
+                          $ref: '#/components/schemas/RiskCommand'
+                components:
+                  schemas:
+                    RiskCommand:
+                      type: object
+                      properties:
+                        commandId:
+                          type: string
+                        score:
+                          type: integer
+                      required:
+                        - commandId
+                """;
+        AsyncApiOperatorLibraryImportRequest request = new AsyncApiOperatorLibraryImportRequest(
+                "risk-events-operators",
+                "Risk events operators",
+                "",
+                "",
+                "",
+                Map.of(),
+                asyncApi
+        );
+
+        mockMvc.perform(post("/admin/visual-operator-libraries/from-asyncapi")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(request)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.schemaVersion")
+                        .value(AsyncApiOperatorLibraryImportResult.SCHEMA_VERSION))
+                .andExpect(jsonPath("$.library.libraryId").value("risk-events-operators"))
+                .andExpect(jsonPath("$.library.displayName").value("Risk events operators"))
+                .andExpect(jsonPath("$.library.version").value("1.2.3"))
+                .andExpect(jsonPath("$.library.owner").value("risk-platform"))
+                .andExpect(jsonPath("$.library.operators.length()").value(2))
+                .andExpect(jsonPath("$.library.operators[0].source.kind").value("webhook"))
+                .andExpect(jsonPath("$.library.operators[0].source.method").value("POST"))
+                .andExpect(jsonPath("$.library.operators[0].source.urlTemplate")
+                        .value("/webhooks/credit-decision"))
+                .andExpect(jsonPath("$.library.operators[0].ports.outputs[0].name")
+                        .value("request"))
+                .andExpect(jsonPath("$.library.operators[0].lowering.mode").value("webhook"))
+                .andExpect(jsonPath("$.library.operators[0].lowering.parameters.method")
+                        .value("POST"))
+                .andExpect(jsonPath("$.library.operators[0].lowering.parameters.path")
+                        .value("/webhooks/credit-decision"))
+                .andExpect(jsonPath("$.library.operators[1].source.kind").value("message-handler"))
+                .andExpect(jsonPath("$.library.operators[1].ports.inputs[0].name")
+                        .value("message"))
+                .andExpect(jsonPath("$.library.operators[1].ports.outputs[0].name")
+                        .value("ack"))
+                .andExpect(jsonPath("$.library.operators[1].lowering.mode").value("message-handler"))
+                .andExpect(jsonPath("$.library.operators[1].lowering.parameters.channel")
+                        .value("risk.commands"))
+                .andExpect(jsonPath("$.validation.valid").value(true))
+                .andExpect(jsonPath("$.validation.diagnostics").isEmpty())
+                .andExpect(jsonPath("$.validation.profile.libraryId")
+                        .value("risk-events-operators"))
+                .andExpect(jsonPath("$.validation.profile.runtimeBlockedOperatorCount").value(2))
+                .andExpect(jsonPath("$.validation.profile.facets.runtimeReadinessStates['runtime-blocked']")
+                        .value(2));
+
+        assertThat(registry.all()).isEmpty();
+    }
+
+    @Test
+    void fromAsyncApiRejectsUnsupportedSourceKind() throws Exception {
+        String asyncApi = """
+                asyncapi: '2.6.0'
+                info:
+                  title: Risk Events
+                  version: 1.2.3
+                channels:
+                  risk.events:
+                    subscribe:
+                      x-bloge-source-kind: kafka-magic
+                      message:
+                        name: RiskEvent
+                        payload:
+                          type: object
+                """;
+        AsyncApiOperatorLibraryImportRequest request = new AsyncApiOperatorLibraryImportRequest(
+                "",
+                "",
+                "",
+                "",
+                "",
+                Map.of(),
+                asyncApi
+        );
+
+        mockMvc.perform(post("/admin/visual-operator-libraries/from-asyncapi")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(request)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.schemaVersion")
+                        .value(AsyncApiOperatorLibraryImportResult.SCHEMA_VERSION))
+                .andExpect(jsonPath("$.library").doesNotExist())
+                .andExpect(jsonPath("$.validation.valid").value(false))
+                .andExpect(jsonPath("$.validation.diagnostics[0].code")
+                        .value("visual.library.asyncapi.sourceKindUnsupported"))
+                .andExpect(jsonPath("$.validation.diagnostics[0].target")
+                        .value("/asyncApi/channels/risk.events/subscribe/x-bloge-source-kind"));
+
+        assertThat(registry.all()).isEmpty();
+    }
+
+    @Test
     void exportLibraryReturnsPortableBundleWithRevisionEvidenceAndValidationProfile() throws Exception {
         OperatorLibrary library = VisualCatalogTestSupport.designOnlyEligibilityLibrary("integer");
 

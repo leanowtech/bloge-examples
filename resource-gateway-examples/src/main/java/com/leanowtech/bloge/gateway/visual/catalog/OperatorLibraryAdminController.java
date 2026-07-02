@@ -48,6 +48,7 @@ public class OperatorLibraryAdminController {
     private final GraphDraftRepository draftRepository;
     private final VisualGraphPublicationRepository publicationRepository;
     private final JavaOperatorInventoryProjector javaOperatorProjector;
+    private final AsyncApiOperatorLibraryImporter asyncApiImporter;
 
     /**
      * @param registry library registry
@@ -55,13 +56,15 @@ public class OperatorLibraryAdminController {
      * @param draftRepository stored visual graph draft repository
      * @param publicationRepository immutable visual graph publication repository
      * @param javaOperatorProjector runtime Java operator projector
+     * @param asyncApiImporter AsyncAPI operator-library preview importer
      */
     @Autowired
     public OperatorLibraryAdminController(OperatorLibraryRegistry registry,
                                           OperatorLibraryValidator validator,
                                           GraphDraftRepository draftRepository,
                                           VisualGraphPublicationRepository publicationRepository,
-                                          JavaOperatorInventoryProjector javaOperatorProjector) {
+                                          JavaOperatorInventoryProjector javaOperatorProjector,
+                                          AsyncApiOperatorLibraryImporter asyncApiImporter) {
         this.registry = registry;
         this.validator = validator;
         this.draftRepository = draftRepository;
@@ -69,13 +72,26 @@ public class OperatorLibraryAdminController {
         this.javaOperatorProjector = javaOperatorProjector == null
                 ? JavaOperatorInventoryProjector.empty()
                 : javaOperatorProjector;
+        this.asyncApiImporter = asyncApiImporter == null
+                ? new AsyncApiOperatorLibraryImporter()
+                : asyncApiImporter;
+    }
+
+    OperatorLibraryAdminController(OperatorLibraryRegistry registry,
+                                   OperatorLibraryValidator validator,
+                                   GraphDraftRepository draftRepository,
+                                   VisualGraphPublicationRepository publicationRepository,
+                                   JavaOperatorInventoryProjector javaOperatorProjector) {
+        this(registry, validator, draftRepository, publicationRepository, javaOperatorProjector,
+                new AsyncApiOperatorLibraryImporter());
     }
 
     OperatorLibraryAdminController(OperatorLibraryRegistry registry,
                                    OperatorLibraryValidator validator,
                                    GraphDraftRepository draftRepository,
                                    VisualGraphPublicationRepository publicationRepository) {
-        this(registry, validator, draftRepository, publicationRepository, JavaOperatorInventoryProjector.empty());
+        this(registry, validator, draftRepository, publicationRepository, JavaOperatorInventoryProjector.empty(),
+                new AsyncApiOperatorLibraryImporter());
     }
 
     /**
@@ -170,6 +186,27 @@ public class OperatorLibraryAdminController {
                 : HttpStatus.CREATED;
         return importLibrary(parsed.library(), force, ackWarnings, successStatus,
                 revisionMetadata(actor, changeSource, changeSummary, reason));
+    }
+
+    /**
+     * Projects AsyncAPI JSON or YAML into an operator-library draft without storing it.
+     *
+     * @param request projection request
+     * @param force bypass stored-draft replacement impact diagnostics in preview
+     * @return generated library draft plus the same validation/profile/impact evidence used by imports
+     */
+    @PostMapping("/from-asyncapi")
+    public AsyncApiOperatorLibraryImportResult fromAsyncApi(
+            @RequestBody(required = false) AsyncApiOperatorLibraryImportRequest request,
+            @RequestParam(defaultValue = "false") boolean force) {
+        AsyncApiOperatorLibraryImportResult projected = asyncApiImporter.project(request);
+        if (projected.library() == null || !projected.validation().valid()) {
+            return projected;
+        }
+        List<VisualDiagnostic> diagnostics = new ArrayList<>(projected.validation().diagnostics());
+        diagnostics.addAll(validateAgainstRegistry(projected.library(), force).diagnostics());
+        return new AsyncApiOperatorLibraryImportResult(projected.library(),
+                validationResult(projected.library(), diagnostics));
     }
 
     /**

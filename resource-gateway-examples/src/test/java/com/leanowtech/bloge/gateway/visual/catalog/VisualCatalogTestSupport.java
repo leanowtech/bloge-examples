@@ -276,6 +276,113 @@ public final class VisualCatalogTestSupport {
         );
     }
 
+    public static OperatorDefinition orderSubmittedEventSourceOperator() {
+        return new OperatorDefinition(
+                "bloge.visualOperator.v1",
+                "event:orderSubmitted",
+                "1.0.0",
+                new OperatorDefinition.Display("Order submitted",
+                        "Represents an external order-submitted event payload.",
+                        List.of("event", "order")),
+                new OperatorDefinition.Source("event-source", "", "", "", false),
+                new OperatorDefinition.Ports(
+                        List.of(),
+                        List.of(new OperatorDefinition.Port("event",
+                                SchemaEnvelope.object(Map.of(
+                                        "orderId", Map.of("type", "string"),
+                                        "customerId", Map.of("type", "string"),
+                                        "amount", Map.of("type", "number")
+                                ), List.of("orderId", "customerId")),
+                                true,
+                                "Order event payload."))
+                ),
+                SchemaEnvelope.opaque(),
+                new OperatorDefinition.Capabilities("READ_EXTERNAL", "IDEMPOTENT", false, false, false),
+                new OperatorDefinition.Lowering("event-source", "", Map.of(
+                        "eventType", "order.submitted"
+                )),
+                List.of()
+        );
+    }
+
+    public static OperatorDefinition riskCommandMessageHandlerOperator() {
+        return new OperatorDefinition(
+                "bloge.visualOperator.v1",
+                "message:riskCommand",
+                "1.0.0",
+                new OperatorDefinition.Display("Risk command handler",
+                        "Represents a command consumed from an external message channel.",
+                        List.of("message", "risk")),
+                new OperatorDefinition.Source("message-handler", "", "", "", false),
+                new OperatorDefinition.Ports(
+                        List.of(new OperatorDefinition.Port("message",
+                                SchemaEnvelope.object(Map.of(
+                                        "commandId", Map.of("type", "string"),
+                                        "customerId", Map.of("type", "string"),
+                                        "score", Map.of("type", "integer")
+                                ), List.of("commandId", "customerId")),
+                                true,
+                                "Inbound command message.")),
+                        List.of(new OperatorDefinition.Port("ack",
+                                SchemaEnvelope.object(Map.of(
+                                        "accepted", Map.of("type", "boolean"),
+                                        "messageId", Map.of("type", "string")
+                                ), List.of("accepted")),
+                                true,
+                                "Message handling acknowledgement."))
+                ),
+                SchemaEnvelope.opaque(),
+                new OperatorDefinition.Capabilities("READ_EXTERNAL", "IDEMPOTENT", false, false, false),
+                new OperatorDefinition.Lowering("message-handler", "", Map.of(
+                        "channel", "risk.commands"
+                )),
+                List.of()
+        );
+    }
+
+    public static OperatorDefinition creditDecisionWebhookOperator() {
+        return new OperatorDefinition(
+                "bloge.visualOperator.v1",
+                "webhook:creditDecision",
+                "1.0.0",
+                new OperatorDefinition.Display("Credit decision webhook",
+                        "Represents an inbound credit decision callback.",
+                        List.of("webhook", "credit")),
+                new OperatorDefinition.Source("webhook", "", "POST", "/webhooks/credit-decision", false),
+                new OperatorDefinition.Ports(
+                        List.of(),
+                        List.of(new OperatorDefinition.Port("request",
+                                SchemaEnvelope.object(Map.of(
+                                        "applicationId", Map.of("type", "string"),
+                                        "decision", Map.of("type", "string")
+                                ), List.of("applicationId", "decision")),
+                                true,
+                                "Webhook request payload."))
+                ),
+                SchemaEnvelope.opaque(),
+                new OperatorDefinition.Capabilities("READ_EXTERNAL", "IDEMPOTENT", false, false, false),
+                new OperatorDefinition.Lowering("webhook", "", Map.of(
+                        "method", "POST",
+                        "path", "/webhooks/credit-decision"
+                )),
+                List.of()
+        );
+    }
+
+    public static OperatorLibrary externalBoundaryLibrary() {
+        return new OperatorLibrary(
+                "bloge.visualOperatorLibrary.v1",
+                "external-boundaries",
+                "External boundary operators",
+                "1.0.0",
+                "platform-team",
+                "ACTIVE",
+                List.of(orderSubmittedEventSourceOperator(),
+                        riskCommandMessageHandlerOperator(),
+                        creditDecisionWebhookOperator())
+        );
+    }
+
     public static OperatorDefinition scoreFactsOperator() {
         Map<String, Object> summaryProperties = new LinkedHashMap<>();
         summaryProperties.put("band", Map.of("type", "string"));

@@ -298,9 +298,9 @@ MVP schema kind：
 | `operatorVersion` | 否 | 用户导入 catalog 时必须建议填写 |
 | `fingerprint` | 发布时是 | 可由服务端计算 |
 | `display` | 是 | 画布展示所需 |
-| `source.kind` | 是 | 当前实现支持 `java-operator`、`java-streaming-operator`、`java-suspendable-operator`、`resource-descriptor`、`visual-publication`、`user-library`、`remote-worker`、`ai-tool`；平台化草案继续预留 `subgraph` |
-| `ports.inputs` | 是 | 至少一个输入端口，常规算子为 `input` |
-| `ports.outputs` | 是 | 至少一个输出端口，常规算子为 `output` |
+| `source.kind` | 是 | 当前实现支持 `java-operator`、`java-streaming-operator`、`java-suspendable-operator`、`resource-descriptor`、`visual-publication`、`user-library`、`remote-worker`、`ai-tool`、`event-source`、`message-handler`、`webhook`；平台化草案继续预留 `subgraph` |
+| `ports.inputs` | 是 | 可以为空；常规消费型算子通常为 `input`，事件源/生成型算子可以没有输入 |
+| `ports.outputs` | 是 | 除 branch lowering 外至少一个输出端口；常规算子为 `output` |
 | `configSchema` | 否 | timeout/retry/fallback 之外的算子配置；导入时必须校验 schema 结构，draft 校验时必须约束 `node.config` |
 | `capabilities` | 是 | 决定运行、安全和画布限制 |
 | `policy` | 否 | 算子可用性策略；缺省表示不限制 tenant/namespace/environment |
@@ -320,12 +320,16 @@ MVP schema kind：
 | `subgraph` | 否 | 必填 | lower 到 subgraph 调用或 inline graph |
 | `remote-worker` | 当前 request-response runtime 不可执行 | 必填 | 用户库可写 source kind；`lowering.mode=remote-worker`、`lowering.operatorRef` 为空、`lowering.parameters.workerTopic` 必填；validate/save/export/design publication 允许，compile/run/executable publish 以 runtime-blocked 阻断 |
 | `ai-tool` | 当前 request-response runtime 不可执行 | 必填 | 用户库可写 source kind；`lowering.mode=ai-tool`、`lowering.operatorRef` 为空、`lowering.parameters.toolRef` 必填；必须声明 structured output schema；当前只能冻结 DESIGN artifact |
+| `event-source` | 当前 request-response runtime 不可执行 | 必填 | 用户库可写 source kind；`lowering.mode=event-source`、`lowering.operatorRef` 为空、`lowering.parameters.eventType` 必填；用于表达外部事件 payload schema，允许 validate/save/export/DESIGN publication |
+| `message-handler` | 当前 request-response runtime 不可执行 | 必填 | 用户库可写 source kind；`lowering.mode=message-handler`、`lowering.operatorRef` 为空、`lowering.parameters.channel` 必填；用于表达消息通道消费/处理边界，当前只能冻结 DESIGN artifact |
+| `webhook` | 当前 request-response runtime 不可执行 | 必填 | 用户库可写 source kind；`lowering.mode=webhook`、`lowering.operatorRef` 为空、`lowering.parameters.method` 与 `lowering.parameters.path` 必填；用于表达 inbound webhook payload schema，当前只能冻结 DESIGN artifact |
 | `user-defined` | 否 | 必填 | 仅 catalog 定义，不能凭空执行 |
 
-`remote-worker` 和 `ai-tool` 不是 `design` 的别名。`design` 表示没有 runtime
-binding；`remote-worker` / `ai-tool` 表示 source/lowering 中已经声明未来执行边界，
-但当前 resource-gateway request-response visual runtime 还不能调度 worker job 或调用
-AI tool。服务端因此派生 `runtimeReadiness.state=RUNTIME_BLOCKED`、
+`remote-worker`、`ai-tool`、`event-source`、`message-handler` 和 `webhook` 不是
+`design` 的别名。`design` 表示没有 runtime binding；这些 source/lowering 表示
+已经声明未来执行或外部事件边界，但当前 resource-gateway request-response visual
+runtime 还不能调度 worker job、调用 AI tool、订阅事件、消费消息通道或暴露 inbound
+webhook。服务端因此派生 `runtimeReadiness.state=RUNTIME_BLOCKED`、
 `executable=false`、`artifactKinds=["DESIGN"]`，并在 DSL generation 阶段返回
 `visual.codegen.runtimeBindingUnsupported`，避免画布把尚未接入的运行时伪装成可执行图。
 
@@ -487,6 +491,16 @@ OpenAPI path/query/header/cookie parameters、JSON requestBody 和 2xx JSON
 response schema 投影为 visual schema，并把 local
 `#/components/schemas/*` 引用改写为 `$defs` 后再复用 resource-contract
 validation；它不直接写入 registry。
+
+resource-gateway 示例也提供
+`POST /admin/visual-operator-libraries/from-asyncapi` 作为 validate-only
+operator-library projection endpoint。请求传入 parsed `asyncApi` 或 raw
+JSON/YAML `asyncApiText`，可指定 `libraryId/displayName/version/owner/status`；
+响应为 `bloge.asyncApiOperatorLibraryImportResult.v1`，包含生成的
+`bloge.visualOperatorLibrary.v1` 草案和 `OperatorLibraryValidationResult`。
+该 importer 把 AsyncAPI channel/root operation 的 message payload 投影为
+`event-source`、`message-handler` 或 `webhook` runtime-blocked operator，并继续复用
+operator-library validator、profile 和 impact review；它不直接写入 registry。
 
 ### 6.4 缺 schema 时的降级
 
@@ -950,8 +964,8 @@ GET /api/visual/operators?search=score&tenantId=demo-tenant&namespace=local&envi
 | `resourceOnly` | 只返回 resource-backed virtual operators |
 | `includeDeprecated` | 包含 deprecated library/resource contract；disabled 仍不进入公开 catalog |
 | `tenantId` / `namespace` / `environment` | authoring scope policy filtering |
-| `sourceKind` | 可重复；例如 `user-library`、`remote-worker`、`ai-tool`、`resource-descriptor`、`java-operator`、`java-streaming-operator`、`java-suspendable-operator`、`visual-publication` |
-| `loweringMode` | 可重复；例如 `native`、`transform`、`branch`、`resource-descriptor`、`design`、`remote-worker`、`ai-tool` |
+| `sourceKind` | 可重复；例如 `user-library`、`remote-worker`、`ai-tool`、`event-source`、`message-handler`、`webhook`、`resource-descriptor`、`java-operator`、`java-streaming-operator`、`java-suspendable-operator`、`visual-publication` |
+| `loweringMode` | 可重复；例如 `native`、`transform`、`branch`、`resource-descriptor`、`design`、`remote-worker`、`ai-tool`、`event-source`、`message-handler`、`webhook` |
 | `capability` | 可重复；例如 `design-only`、`runtime-executable`、`streaming`、`durable`、`suspendable`、`requires-secret`、`external-effect`、`non-idempotent` |
 | `runtimeReadiness` | 可重复；按服务端派生 readiness state 过滤，例如 `runtime-executable`、`design-only`、`runtime-blocked`、`governance-review`、`catalog-repair-required` |
 

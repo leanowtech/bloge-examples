@@ -249,6 +249,48 @@ class GraphDraftDslGeneratorTest {
     }
 
     @Test
+    void blocksExternalBoundaryOperatorsDuringDslGeneration() {
+        GraphDraftDslGenerator generator = new GraphDraftDslGenerator(
+                VisualCatalogTestSupport.catalogWithLibrary(
+                        VisualCatalogTestSupport.externalBoundaryLibrary()));
+        GraphDraft draft = new GraphDraft(
+                "",
+                "",
+                0,
+                "eventBoundaryDesign",
+                "",
+                "",
+                "",
+                "",
+                null,
+                List.of(new GraphDraft.DraftNode(
+                        "orderEvent",
+                        "event:orderSubmitted",
+                        "",
+                        Map.of(),
+                        Map.of(),
+                        null
+                )),
+                List.of(),
+                Map.of(),
+                new GraphDraft.OutputSelection("orderEvent", "")
+        );
+
+        DslGenerationResult result = generator.generate(draft);
+
+        assertThat(result.generated()).isFalse();
+        assertThat(result.diagnostics())
+                .extracting("code", "target")
+                .containsExactly(org.assertj.core.groups.Tuple.tuple(
+                        "visual.codegen.runtimeBindingUnsupported",
+                        "/nodes/orderEvent/operatorRef"));
+        assertThat(result.diagnostics().getFirst().message())
+                .contains("lowering.mode=event-source")
+                .contains("DESIGN artifact")
+                .contains("cannot execute");
+    }
+
+    @Test
     void rejectsBindingPathsThatCannotRenderAsDslPathSegments() {
         GraphDraftDslGenerator generator = new GraphDraftDslGenerator(
                 VisualCatalogTestSupport.catalogWithLibrary(

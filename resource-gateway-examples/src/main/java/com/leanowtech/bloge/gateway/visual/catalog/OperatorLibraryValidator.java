@@ -64,7 +64,10 @@ public class OperatorLibraryValidator {
             "branch",
             "design",
             "remote-worker",
-            "ai-tool"
+            "ai-tool",
+            "event-source",
+            "message-handler",
+            "webhook"
     );
     private static final Set<String> SUPPORTED_CAPABILITY_EFFECTS = Set.of(
             "PURE",
@@ -88,7 +91,25 @@ public class OperatorLibraryValidator {
     private static final Set<String> SUPPORTED_IMPORTED_SOURCE_KINDS = Set.of(
             "user-library",
             "remote-worker",
-            "ai-tool"
+            "ai-tool",
+            "event-source",
+            "message-handler",
+            "webhook"
+    );
+    private static final Set<String> NON_EXECUTABLE_BINDING_SOURCE_KINDS = Set.of(
+            "remote-worker",
+            "ai-tool",
+            "event-source",
+            "message-handler",
+            "webhook"
+    );
+    private static final Set<String> NON_EXECUTABLE_LOWERING_MODES = Set.of(
+            "design",
+            "remote-worker",
+            "ai-tool",
+            "event-source",
+            "message-handler",
+            "webhook"
     );
     private static final Set<String> EXECUTION_CONFIG_KEYS = Set.of("timeout", "retryAttempts");
     private static final Set<String> RESERVED_DSL_FIELD_NAMES = Set.of(
@@ -278,10 +299,10 @@ public class OperatorLibraryValidator {
                                     SUPPORTED_IMPORTED_SOURCE_KINDS),
                     path + "/kind"));
         }
-        if (Set.of("remote-worker", "ai-tool").contains(operator.source().kind())
+        if (NON_EXECUTABLE_BINDING_SOURCE_KINDS.contains(operator.source().kind())
                 && !operator.source().kind().equals(operator.lowering().mode())) {
             diagnostics.add(VisualDiagnostic.error("visual.operator.source.loweringModeMismatch",
-                    "Operator '%s' uses source.kind='%s' but lowering.mode is '%s'; runtime-binding source kinds must use the matching lowering mode."
+                    "Operator '%s' uses source.kind='%s' but lowering.mode is '%s'; non-executable binding source kinds must use the matching lowering mode."
                             .formatted(operator.operatorRef(), operator.source().kind(),
                                     operator.lowering().mode()),
                     path + "/kind"));
@@ -289,7 +310,7 @@ public class OperatorLibraryValidator {
     }
 
     private static boolean requiresExecutableDslSafeFields(String loweringMode) {
-        return !Set.of("design", "remote-worker", "ai-tool").contains(loweringMode);
+        return !NON_EXECUTABLE_LOWERING_MODES.contains(loweringMode);
     }
 
     private static void validateCapabilities(OperatorDefinition operator,
@@ -467,6 +488,18 @@ public class OperatorLibraryValidator {
             validateAiToolLowering(operator, path, diagnostics);
             return;
         }
+        if ("event-source".equals(mode)) {
+            validateEventSourceLowering(operator, path, diagnostics);
+            return;
+        }
+        if ("message-handler".equals(mode)) {
+            validateMessageHandlerLowering(operator, path, diagnostics);
+            return;
+        }
+        if ("webhook".equals(mode)) {
+            validateWebhookLowering(operator, path, diagnostics);
+            return;
+        }
         validateTransformLowering(operator, path, diagnostics);
     }
 
@@ -495,6 +528,31 @@ public class OperatorLibraryValidator {
         validateRuntimeBindingSourceKind(operator, path, "ai-tool", diagnostics);
         validateRuntimeBindingOperatorRefBlank(operator, path, "AI tool", diagnostics);
         validateRequiredStringParameter(operator, path, "toolRef", "AI tool reference", diagnostics);
+    }
+
+    private static void validateEventSourceLowering(OperatorDefinition operator,
+                                                    String path,
+                                                    List<VisualDiagnostic> diagnostics) {
+        validateRuntimeBindingSourceKind(operator, path, "event-source", diagnostics);
+        validateRuntimeBindingOperatorRefBlank(operator, path, "event source", diagnostics);
+        validateRequiredStringParameter(operator, path, "eventType", "event type", diagnostics);
+    }
+
+    private static void validateMessageHandlerLowering(OperatorDefinition operator,
+                                                       String path,
+                                                       List<VisualDiagnostic> diagnostics) {
+        validateRuntimeBindingSourceKind(operator, path, "message-handler", diagnostics);
+        validateRuntimeBindingOperatorRefBlank(operator, path, "message handler", diagnostics);
+        validateRequiredStringParameter(operator, path, "channel", "message channel", diagnostics);
+    }
+
+    private static void validateWebhookLowering(OperatorDefinition operator,
+                                                String path,
+                                                List<VisualDiagnostic> diagnostics) {
+        validateRuntimeBindingSourceKind(operator, path, "webhook", diagnostics);
+        validateRuntimeBindingOperatorRefBlank(operator, path, "webhook", diagnostics);
+        validateRequiredStringParameter(operator, path, "method", "webhook HTTP method", diagnostics);
+        validateRequiredStringParameter(operator, path, "path", "webhook path", diagnostics);
     }
 
     private static void validateRuntimeBindingSourceKind(OperatorDefinition operator,
