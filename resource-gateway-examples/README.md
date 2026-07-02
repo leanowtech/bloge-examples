@@ -149,7 +149,8 @@ the browser profile marks those same runtime/governance risks as review-level wa
 opt into `force=true` for explicit destructive operator-library replacement or
 deletion after inspecting the server-provided impact review for affected drafts,
 publications, operators, and diagnostic codes, jump from an affected draft chip
-into that draft and focus the affected node for review and repair, keep
+into that draft and focus the affected node, or select an affected publication
+chip with the impacted frozen node index for review and recertification, keep
 deprecated operator libraries and deprecated resource design contracts hidden
 from the default palette while still resolving them for stored draft review via
 `includeDeprecated`, and surface `visual.operator.lifecycle.deprecated` as a
@@ -811,11 +812,11 @@ operator catalog:
 |--------|------|-------------|--------|
 | `GET` | `/admin/resource-design-contracts` | List all visual resource contracts | 200 |
 | `GET` | `/admin/resource-design-contracts/{resourceId}` | Get one visual contract | 200 / 404 |
-| `POST` | `/admin/resource-design-contracts/validate` | Validate a visual resource contract without storing it and return `bloge.resourceDesignContractImpact.v1`; use `force=true` to suppress stored-draft disablement impact diagnostics; same-resource fingerprint drift is reported as a warning with changed-surface risk counts | 200 |
+| `POST` | `/admin/resource-design-contracts/validate` | Validate a visual resource contract without storing it and return `bloge.resourceDesignContractImpact.v1`; use `force=true` to suppress disablement impact diagnostics; same-resource draft/publication fingerprint drift and lifecycle downgrade are reported as warnings with changed-surface risk counts | 200 |
 | `POST` | `/admin/resource-design-contracts/from-openapi/operations` | Discover HTTP operations from parsed `openApi` or raw JSON/YAML `openApiText` before selecting one for projection; returns path, method, operationId, tags, request/response media summaries, projection readiness, and structured diagnostics without storing anything | 200 |
 | `POST` | `/admin/resource-design-contracts/from-openapi` | Project one OpenAPI operation from parsed `openApi` or raw JSON/YAML `openApiText` into a visual resource contract draft and reviewable runtime descriptor suggestion without storing either; returns the draft plus structured validation diagnostics and `bloge.resourceDesignContractImpact.v1` | 200 |
-| `PUT` | `/admin/resource-design-contracts/{resourceId}` | Create or replace a visual contract; warning/error responses include `bloge.resourceDesignContractImpact.v1`, reject disablement of stored-draft `resource:<resourceId>` references unless `force=true`, and require `ackWarnings=true` before storing warning-level lifecycle or fingerprint drift | 200 / 400 / 409 |
-| `DELETE` | `/admin/resource-design-contracts/{resourceId}` | Delete a visual contract; rejects stored-draft `resource:<resourceId>` references unless `force=true`, returning `bloge.resourceDesignContractImpact.v1` on conflict | 204 / 409 |
+| `PUT` | `/admin/resource-design-contracts/{resourceId}` | Create or replace a visual contract; warning/error responses include `bloge.resourceDesignContractImpact.v1`, reject disablement of stored-draft `resource:<resourceId>` references unless `force=true`, and require `ackWarnings=true` before storing warning-level lifecycle, publication, or fingerprint drift | 200 / 400 / 409 |
+| `DELETE` | `/admin/resource-design-contracts/{resourceId}` | Delete a visual contract; rejects stored-draft and immutable-publication `resource:<resourceId>` references unless `force=true`, returning `bloge.resourceDesignContractImpact.v1` on conflict | 204 / 409 |
 
 Validate and upsert run the same resource-contract validator before storage.
 The OpenAPI operation discovery and projection endpoints accept either a parsed OpenAPI 3 document in
@@ -893,21 +894,27 @@ Bootstrap seeds only missing built-in contracts and does not overwrite a
 persisted contract that an author has already customized. Deleting a visual
 resource design contract or replacing it with `DISABLED` is impact-aware: by
 default the admin API rejects the operation with `409 CONFLICT` when any stored
-draft still uses the corresponding `resource:<resourceId>` operator, and
-`force=true` is required for an explicit destructive change.
+draft still uses the corresponding `resource:<resourceId>` operator, rejects
+deletion when immutable publications were authored with that resource-backed
+operator, and requires `force=true` for an explicit destructive change. A
+disablement that only affects immutable publications is warning-gated instead of
+hard-blocked because the publication keeps its frozen DSL, but replay,
+recertification, or republishing must still be reviewed before the change is
+stored.
 Replacing a catalog-visible contract with schema- or projection-relevant changes
-also emits non-blocking fingerprint drift warnings for stored drafts, including
-a concise changed-surface summary such as the affected input/output/config
-schema, capability, policy, or lowering area, and warns when an affected legacy
-draft lacks a saved node fingerprint snapshot. Direct replacement requires
+also emits non-blocking fingerprint drift warnings for stored drafts and
+immutable publications, including a concise changed-surface summary such as the
+affected input/output/config schema, capability, policy, or lowering area, and
+warns when an affected legacy draft or publication lacks a saved node fingerprint
+snapshot. Direct replacement requires
 `ackWarnings=true` before warning-level drift is stored; the browser OpenAPI
 panel mirrors this with a second Save click after warnings are shown, renders
 the server-provided impact review, and uses its change-risk summary in the
 acknowledgement copy.
 Resource contract preflight responses also carry
 `bloge.resourceDesignContractImpact.v1`, with affected resource ids,
-`resource:<resourceId>` operator refs, stored draft ids, draft node targets,
-diagnostic code counts, and `changeRiskCounts` derived from the same
+`resource:<resourceId>` operator refs, stored draft ids, immutable publication
+ids, draft node targets, publication node targets, diagnostic code counts, and `changeRiskCounts` derived from the same
 `BREAKING_SCHEMA` / `COMPATIBLE_SCHEMA` / `RUNTIME_BINDING` / `GOVERNANCE` /
 `POLICY` / `METADATA` categories used by imported operator libraries.
 
@@ -956,7 +963,7 @@ validation blocks execution. Drafts missing the affected node's fingerprint
 snapshot are warned as legacy/unsafe-to-assume-compatible drafts.
 The same validation warns when a replacement or removal touches immutable
 publications that were authored with the affected operatorRef, also including
-the changed-surface summary for same-ref replacements. Existing publications
+the changed-surface summary and affected publication node target for same-ref replacements. Existing publications
 keep running from their frozen DSL, but the warning marks artifacts
 that should be reviewed before replay, recertification, or republishing.
 The same panel exposes a `Force` switch that passes `force=true` to validate,

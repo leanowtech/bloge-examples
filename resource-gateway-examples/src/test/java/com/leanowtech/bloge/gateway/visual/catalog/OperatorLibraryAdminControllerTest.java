@@ -1379,6 +1379,8 @@ class OperatorLibraryAdminControllerTest {
                 .andExpect(jsonPath("$.diagnostics[0].target")
                         .value("/publications/publication-1/nodes/0/operatorRef"))
                 .andExpect(jsonPath("$.impact.publicationIds[0]").value("publication-1"))
+                .andExpect(jsonPath("$.impact.publicationTargets[0].publicationId").value("publication-1"))
+                .andExpect(jsonPath("$.impact.publicationTargets[0].nodeIndex").value(0))
                 .andExpect(jsonPath("$.impact.operatorRefs[0]").value("risk:eligibility"))
                 .andExpect(jsonPath("$.impact.changeRiskCounts[0].risk").value("BREAKING_SCHEMA"))
                 .andExpect(jsonPath("$.impact.codeCounts[0].code")
@@ -1408,6 +1410,8 @@ class OperatorLibraryAdminControllerTest {
                 .andExpect(jsonPath("$.diagnostics[0].target")
                         .value("/publications/publication-1/nodes/0/operatorRef"))
                 .andExpect(jsonPath("$.impact.publicationIds[0]").value("publication-1"))
+                .andExpect(jsonPath("$.impact.publicationTargets[0].publicationId").value("publication-1"))
+                .andExpect(jsonPath("$.impact.publicationTargets[0].nodeIndex").value(0))
                 .andExpect(jsonPath("$.impact.operatorRefs[0]").value("risk:eligibility"))
                 .andExpect(jsonPath("$.impact.codeCounts[0].code")
                         .value("visual.library.publicationLifecycleDeprecated"));

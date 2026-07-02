@@ -2796,7 +2796,7 @@ function renderLibraryImpactPanel(target, diagnostics, impact = null) {
   `).join('');
   const refs = [
     libraryImpactRefGroup('Drafts', summary.draftIds, 'draft', summary.draftTargets),
-    libraryImpactRefGroup('Publications', summary.publicationIds),
+    libraryImpactRefGroup('Publications', summary.publicationIds, 'publication', summary.publicationTargets),
     libraryImpactRefGroup('Resources', summary.resourceIds || []),
     libraryImpactRefGroup('Operators', summary.operatorRefs)
   ].filter(Boolean).join('');
@@ -2836,6 +2836,14 @@ function renderLibraryImpactPanel(target, diagnostics, impact = null) {
         );
       });
     }
+    for (const button of target.querySelectorAll('[data-library-impact-publication]')) {
+      button.addEventListener('click', () => {
+        openLibraryImpactPublicationTarget(
+          button.dataset.libraryImpactPublication,
+          Number(button.dataset.libraryImpactNodeIndex)
+        );
+      });
+    }
   }
 }
 
@@ -2851,6 +2859,7 @@ function libraryImpactSummaryFromPayload(impact) {
   const resourceIds = uniqueStrings(impact.resourceIds).sort();
   const operatorRefs = uniqueStrings(impact.operatorRefs).sort();
   const draftTargets = libraryImpactDraftTargetsFromPayload(impact);
+  const publicationTargets = libraryImpactPublicationTargetsFromPayload(impact);
   const codeCounts = Array.isArray(impact.codeCounts)
     ? impact.codeCounts.map((entry) => ({
       code: String(entry?.code || 'visual.info'),
@@ -2874,6 +2883,7 @@ function libraryImpactSummaryFromPayload(impact) {
     resourceIds,
     operatorRefs,
     draftTargets,
+    publicationTargets,
     changeRiskCounts,
     codeCounts,
     level: errorCount ? 'error' : (warningCount ? 'warning' : 'success')
@@ -2892,11 +2902,24 @@ function libraryImpactDraftTargetsFromPayload(impact) {
   return uniqueStrings(impact?.draftIds).map((draftId) => ({ draftId, nodeIndex: -1 }));
 }
 
+function libraryImpactPublicationTargetsFromPayload(impact) {
+  const rawTargets = Array.isArray(impact?.publicationTargets) ? impact.publicationTargets : [];
+  const parsed = rawTargets.map((target) => ({
+    publicationId: String(target?.publicationId || '').trim(),
+    nodeIndex: Number.isInteger(Number(target?.nodeIndex)) ? Number(target.nodeIndex) : -1
+  })).filter((target) => target.publicationId && target.nodeIndex >= 0);
+  if (parsed.length) {
+    return uniqueLibraryImpactPublicationTargets(parsed);
+  }
+  return uniqueStrings(impact?.publicationIds).map((publicationId) => ({ publicationId, nodeIndex: -1 }));
+}
+
 function libraryImpactSummary(diagnostics) {
   const normalized = normalizeDiagnostics(diagnostics);
   const draftIds = new Set();
   const draftTargets = [];
   const publicationIds = new Set();
+  const publicationTargets = [];
   const resourceIds = new Set();
   const operatorRefs = new Set();
   const codeCounts = new Map();
@@ -2924,6 +2947,7 @@ function libraryImpactSummary(diagnostics) {
     refs.draftIds.forEach((draftId) => draftIds.add(draftId));
     draftTargets.push(...refs.draftTargets);
     refs.publicationIds.forEach((publicationId) => publicationIds.add(publicationId));
+    publicationTargets.push(...refs.publicationTargets);
     refs.resourceIds.forEach((resourceId) => resourceIds.add(resourceId));
     refs.operatorRefs.forEach((operatorRef) => operatorRefs.add(operatorRef));
   }
@@ -2943,6 +2967,7 @@ function libraryImpactSummary(diagnostics) {
     resourceIds: Array.from(resourceIds).sort(),
     operatorRefs: Array.from(operatorRefs).sort(),
     draftTargets: uniqueLibraryImpactDraftTargets(draftTargets),
+    publicationTargets: uniqueLibraryImpactPublicationTargets(publicationTargets),
     changeRiskCounts: riskEntries,
     codeCounts: codeEntries,
     level: errorCount ? 'error' : (warningCount ? 'warning' : 'success')
@@ -3026,6 +3051,7 @@ function libraryImpactRefsFromDiagnostic(diagnostic) {
   const draftIds = [];
   const draftTargets = [];
   const publicationIds = [];
+  const publicationTargets = [];
   const resourceIds = [];
   const operatorRefs = [];
   if (segments[0] === 'drafts' && segments[1]) {
@@ -3036,6 +3062,9 @@ function libraryImpactRefsFromDiagnostic(diagnostic) {
   }
   if (segments[0] === 'publications' && segments[1]) {
     publicationIds.push(segments[1]);
+    if (segments[2] === 'nodes' && Number.isInteger(Number(segments[3]))) {
+      publicationTargets.push({ publicationId: segments[1], nodeIndex: Number(segments[3]) });
+    }
   }
   if (typeof diagnostic?.metadata?.resourceId === 'string' && diagnostic.metadata.resourceId.trim()) {
     resourceIds.push(diagnostic.metadata.resourceId.trim());
@@ -3056,7 +3085,8 @@ function libraryImpactRefsFromDiagnostic(diagnostic) {
     publicationIds,
     resourceIds,
     operatorRefs,
-    draftTargets
+    draftTargets,
+    publicationTargets
   };
 }
 
@@ -3072,6 +3102,20 @@ function uniqueLibraryImpactDraftTargets(values) {
   }
   return Array.from(byKey.values())
     .sort((left, right) => left.draftId.localeCompare(right.draftId) || left.nodeIndex - right.nodeIndex);
+}
+
+function uniqueLibraryImpactPublicationTargets(values) {
+  const byKey = new Map();
+  for (const value of Array.isArray(values) ? values : []) {
+    const publicationId = String(value?.publicationId || '').trim();
+    const nodeIndex = Number.isInteger(Number(value?.nodeIndex)) ? Number(value.nodeIndex) : -1;
+    if (!publicationId || nodeIndex < 0) {
+      continue;
+    }
+    byKey.set(`${publicationId}:${nodeIndex}`, { publicationId, nodeIndex });
+  }
+  return Array.from(byKey.values())
+    .sort((left, right) => left.publicationId.localeCompare(right.publicationId) || left.nodeIndex - right.nodeIndex);
 }
 
 function libraryImpactHighestLevel(left, right) {
@@ -3105,18 +3149,26 @@ function libraryImpactSummaryLabel(summary) {
   return parts.join(' · ');
 }
 
-function libraryImpactRefGroup(label, values, action = '', draftTargets = []) {
+function libraryImpactRefGroup(label, values, action = '', targets = []) {
   if (!Array.isArray(values) || !values.length) {
     return '';
   }
   const visible = values.slice(0, 4).map((value) => {
     if (action === 'draft') {
-      const firstTarget = (Array.isArray(draftTargets) ? draftTargets : [])
+      const firstTarget = (Array.isArray(targets) ? targets : [])
         .find((target) => target.draftId === value);
       const nodeIndexAttr = firstTarget && firstTarget.nodeIndex >= 0
         ? ` data-library-impact-node-index="${escapeHtml(firstTarget.nodeIndex)}"`
         : '';
       return `<button type="button" data-library-impact-draft="${escapeHtml(value)}"${nodeIndexAttr}>${escapeHtml(value)}</button>`;
+    }
+    if (action === 'publication') {
+      const firstTarget = (Array.isArray(targets) ? targets : [])
+        .find((target) => target.publicationId === value);
+      const nodeIndexAttr = firstTarget && firstTarget.nodeIndex >= 0
+        ? ` data-library-impact-node-index="${escapeHtml(firstTarget.nodeIndex)}"`
+        : '';
+      return `<button type="button" data-library-impact-publication="${escapeHtml(value)}"${nodeIndexAttr}>${escapeHtml(value)}</button>`;
     }
     return `<span>${escapeHtml(value)}</span>`;
   }).join('');
@@ -3157,6 +3209,32 @@ async function openLibraryImpactDraftTarget(draftId, nodeIndex = -1) {
     }
   }
   return state.savedDraftSnapshot;
+}
+
+async function openLibraryImpactPublicationTarget(publicationId, nodeIndex = -1) {
+  const normalized = String(publicationId || '').trim();
+  if (!normalized) {
+    return null;
+  }
+  if (!state.publications.some((publication) => publication.publicationId === normalized)) {
+    await loadPublicationList({ render: false });
+  }
+  const publication = state.publications.find((entry) => entry.publicationId === normalized);
+  state.selectedPublicationId = normalized;
+  state.selectedGoldenCaseId = '';
+  state.goldenAssertions = [];
+  await loadGoldenCases({ render: false });
+  await loadGoldenCertificationStatus({ render: false });
+  renderPublicationControls();
+  const index = Number(nodeIndex);
+  const nodeText = Number.isInteger(index) && index >= 0 ? ` node index ${index}` : '';
+  setPublicationMessage(
+    publication
+      ? `Selected impacted publication ${normalized}${nodeText}.`
+      : `Publication ${normalized}${nodeText} is no longer listed.`,
+    publication ? 'info' : 'warning'
+  );
+  return publication || null;
 }
 
 function libraryProfileLevel(profile) {

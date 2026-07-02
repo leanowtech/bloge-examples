@@ -21,6 +21,7 @@ import java.util.Set;
  * @param publicationIds affected immutable publication ids
  * @param operatorRefs affected operator refs
  * @param draftTargets affected stored draft node targets
+ * @param publicationTargets affected immutable publication node targets
  * @param changeRiskCounts operator definition change-risk counts grouped by risk category
  * @param codeCounts diagnostic counts grouped by code
  */
@@ -34,6 +35,7 @@ public record OperatorLibraryImpactReview(
         List<String> publicationIds,
         List<String> operatorRefs,
         List<DraftTarget> draftTargets,
+        List<PublicationTarget> publicationTargets,
         List<ChangeRiskCount> changeRiskCounts,
         List<DiagnosticCodeCount> codeCounts
 ) {
@@ -51,6 +53,12 @@ public record OperatorLibraryImpactReview(
                 .filter(target -> target != null && !target.draftId().isBlank() && target.nodeIndex() >= 0)
                 .distinct()
                 .sorted(Comparator.comparing(DraftTarget::draftId).thenComparingInt(DraftTarget::nodeIndex))
+                .toList();
+        publicationTargets = publicationTargets == null ? List.of() : publicationTargets.stream()
+                .filter(target -> target != null && !target.publicationId().isBlank() && target.nodeIndex() >= 0)
+                .distinct()
+                .sorted(Comparator.comparing(PublicationTarget::publicationId)
+                        .thenComparingInt(PublicationTarget::nodeIndex))
                 .toList();
         changeRiskCounts = changeRiskCounts == null ? List.of() : changeRiskCounts.stream()
                 .filter(entry -> entry != null && !entry.risk().isBlank() && entry.count() > 0)
@@ -79,6 +87,7 @@ public record OperatorLibraryImpactReview(
         Set<String> publicationIds = new LinkedHashSet<>();
         Set<String> refs = new LinkedHashSet<>();
         Set<DraftTarget> draftTargets = new LinkedHashSet<>();
+        Set<PublicationTarget> publicationTargets = new LinkedHashSet<>();
         Map<String, Integer> changeRisks = new LinkedHashMap<>();
         if (operatorRefs != null) {
             for (String operatorRef : operatorRefs) {
@@ -116,6 +125,10 @@ public record OperatorLibraryImpactReview(
             }
             if (target.size() > 1 && "publications".equals(target.getFirst())) {
                 publicationIds.add(target.get(1));
+                if (target.size() > 3 && "nodes".equals(target.get(2))) {
+                    parseNonNegativeInt(target.get(3)).ifPresent(nodeIndex ->
+                            publicationTargets.add(new PublicationTarget(target.get(1), nodeIndex)));
+                }
             }
         }
         List<DiagnosticCodeCount> codeCounts = counts.values().stream()
@@ -137,6 +150,7 @@ public record OperatorLibraryImpactReview(
                 List.copyOf(publicationIds),
                 List.copyOf(refs),
                 List.copyOf(draftTargets),
+                List.copyOf(publicationTargets),
                 changeRiskCounts,
                 codeCounts
         );
@@ -193,6 +207,19 @@ public record OperatorLibraryImpactReview(
     public record DraftTarget(String draftId, int nodeIndex) {
         public DraftTarget {
             draftId = draftId == null ? "" : draftId;
+            nodeIndex = Math.max(-1, nodeIndex);
+        }
+    }
+
+    /**
+     * Affected immutable publication node target.
+     *
+     * @param publicationId immutable publication id
+     * @param nodeIndex node index in the frozen publication draft
+     */
+    public record PublicationTarget(String publicationId, int nodeIndex) {
+        public PublicationTarget {
+            publicationId = publicationId == null ? "" : publicationId;
             nodeIndex = Math.max(-1, nodeIndex);
         }
     }

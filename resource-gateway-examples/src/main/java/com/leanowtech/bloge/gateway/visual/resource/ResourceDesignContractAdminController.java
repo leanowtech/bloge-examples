@@ -8,6 +8,8 @@ import com.leanowtech.bloge.gateway.visual.catalog.ResourceVirtualOperatorProjec
 import com.leanowtech.bloge.gateway.visual.diagnostic.VisualDiagnostic;
 import com.leanowtech.bloge.gateway.visual.draft.GraphDraft;
 import com.leanowtech.bloge.gateway.visual.draft.GraphDraftRepository;
+import com.leanowtech.bloge.gateway.visual.publication.VisualGraphPublication;
+import com.leanowtech.bloge.gateway.visual.publication.VisualGraphPublicationRepository;
 import com.leanowtech.bloge.gateway.visual.validation.VisualValidationResult;
 
 import org.springframework.http.HttpStatus;
@@ -43,6 +45,7 @@ public class ResourceDesignContractAdminController {
     private final ResourceDesignContractValidator validator;
     private final OpenApiResourceDesignContractImporter openApiImporter;
     private final GraphDraftRepository draftRepository;
+    private final VisualGraphPublicationRepository publicationRepository;
     private final ResourceRegistry resourceRegistry;
     private final ResourceVirtualOperatorProjector projector;
 
@@ -50,6 +53,7 @@ public class ResourceDesignContractAdminController {
      * @param registry contract registry
      * @param validator contract validator
      * @param draftRepository stored visual graph draft repository
+     * @param publicationRepository immutable visual graph publication repository
      * @param resourceRegistry resource descriptor registry
      * @param projector resource virtual operator projector
      */
@@ -57,12 +61,14 @@ public class ResourceDesignContractAdminController {
                                                  ResourceDesignContractValidator validator,
                                                  OpenApiResourceDesignContractImporter openApiImporter,
                                                  GraphDraftRepository draftRepository,
+                                                 VisualGraphPublicationRepository publicationRepository,
                                                  ResourceRegistry resourceRegistry,
                                                  ResourceVirtualOperatorProjector projector) {
         this.registry = registry;
         this.validator = validator;
         this.openApiImporter = openApiImporter;
         this.draftRepository = draftRepository;
+        this.publicationRepository = publicationRepository;
         this.resourceRegistry = resourceRegistry;
         this.projector = projector;
     }
@@ -243,7 +249,9 @@ public class ResourceDesignContractAdminController {
     public ResponseEntity<?> delete(@PathVariable String resourceId,
                                     @RequestParam(defaultValue = "false") boolean force) {
         if (!force && registry.findByResourceId(resourceId).isPresent()) {
-            List<VisualDiagnostic> diagnostics = storedDraftReferenceDiagnostics(resourceId, "deleted");
+            List<VisualDiagnostic> diagnostics = new ArrayList<>();
+            diagnostics.addAll(storedDraftReferenceDiagnostics(resourceId, "deleted"));
+            diagnostics.addAll(publishedArtifactReferenceDiagnostics(resourceId, "deleted"));
             if (!diagnostics.isEmpty()) {
                 return ResponseEntity.status(HttpStatus.CONFLICT)
                         .body(validationResult(registry.findByResourceId(resourceId).orElse(null), diagnostics));
@@ -267,7 +275,8 @@ public class ResourceDesignContractAdminController {
 
     private static HttpStatus validationFailureStatus(ResourceDesignContractValidationResult validation) {
         return validation.diagnostics().stream()
-                .anyMatch(diagnostic -> "visual.resourceContract.inUse".equals(diagnostic.code()))
+                .anyMatch(diagnostic -> "visual.resourceContract.inUse".equals(diagnostic.code())
+                        || "visual.resourceContract.publicationInUse".equals(diagnostic.code()))
                 ? HttpStatus.CONFLICT
                 : HttpStatus.BAD_REQUEST;
     }
@@ -288,7 +297,10 @@ public class ResourceDesignContractAdminController {
                 || registry.findByResourceId(contract.resourceId()).isEmpty()) {
             return List.of();
         }
-        return storedDraftReferenceDiagnostics(contract.resourceId(), "disabled without force=true");
+        List<VisualDiagnostic> diagnostics = new ArrayList<>();
+        diagnostics.addAll(storedDraftReferenceDiagnostics(contract.resourceId(), "disabled without force=true"));
+        diagnostics.addAll(publicationDisablementDiagnostics(contract.resourceId()));
+        return diagnostics;
     }
 
     private List<VisualDiagnostic> deprecationImpactDiagnostics(ResourceDesignContract contract) {
@@ -315,6 +327,24 @@ public class ResourceDesignContractAdminController {
                         lifecycleMetadata(contract, existing.get(), node.id(), operatorRef)));
             }
         }
+        for (VisualGraphPublication publication : publicationRepository.all()) {
+            GraphDraft draft = publication.draft();
+            if (draft == null) {
+                continue;
+            }
+            for (int i = 0; i < draft.nodes().size(); i++) {
+                GraphDraft.DraftNode node = draft.nodes().get(i);
+                if (!operatorRef.equals(node.operatorRef())) {
+                    continue;
+                }
+                diagnostics.add(VisualDiagnostic.warning("visual.resourceContract.publicationLifecycleDeprecated",
+                        "Resource design contract for '%s' is being deprecated while publication '%s' node '%s' was authored with operatorRef '%s'. Existing publication keeps its frozen DSL, but replay, recertification, or republishing should be reviewed."
+                                .formatted(contract.resourceId(), publication.publicationId(), node.id(),
+                                        node.operatorRef()),
+                        "/publications/%s/nodes/%d/operatorRef".formatted(publication.publicationId(), i),
+                        publicationLifecycleMetadata(contract, existing.get(), publication, node.id(), operatorRef)));
+            }
+        }
         return diagnostics;
     }
 
@@ -331,6 +361,16 @@ public class ResourceDesignContractAdminController {
         if (nodeId != null && !nodeId.isBlank()) {
             metadata.put("nodeId", nodeId);
         }
+        return metadata;
+    }
+
+    private static Map<String, Object> publicationLifecycleMetadata(ResourceDesignContract replacement,
+                                                                    ResourceDesignContract existing,
+                                                                    VisualGraphPublication publication,
+                                                                    String nodeId,
+                                                                    String operatorRef) {
+        Map<String, Object> metadata = lifecycleMetadata(replacement, existing, nodeId, operatorRef);
+        metadata.put("publicationId", publication.publicationId());
         return metadata;
     }
 
@@ -352,14 +392,14 @@ public class ResourceDesignContractAdminController {
 
         String operatorRef = "resource:" + replacement.resourceId();
         List<VisualDiagnostic> diagnostics = new ArrayList<>();
+        OperatorDefinitionChangeSummary.ChangeReport report = OperatorDefinitionChangeSummary.analyze(
+                previousOperator, replacementOperator);
         for (GraphDraft draft : draftRepository.all()) {
             for (int i = 0; i < draft.nodes().size(); i++) {
                 GraphDraft.DraftNode node = draft.nodes().get(i);
                 if (!operatorRef.equals(node.operatorRef())) {
                     continue;
                 }
-                OperatorDefinitionChangeSummary.ChangeReport report = OperatorDefinitionChangeSummary.analyze(
-                        previousOperator, replacementOperator);
                 String savedFingerprint = draft.operatorFingerprints().get(node.id());
                 if (savedFingerprint == null || savedFingerprint.isBlank()) {
                     diagnostics.add(VisualDiagnostic.warning("visual.resourceContract.operatorFingerprintSnapshotMissing",
@@ -381,6 +421,39 @@ public class ResourceDesignContractAdminController {
                                         report.summary()),
                         "/drafts/%s/nodes/%d/operatorRef".formatted(draft.draftId(), i),
                         changeMetadata(replacement, operatorRef, node.id(), report)));
+            }
+        }
+        for (VisualGraphPublication publication : publicationRepository.all()) {
+            GraphDraft draft = publication.draft();
+            if (draft == null) {
+                continue;
+            }
+            for (int i = 0; i < draft.nodes().size(); i++) {
+                GraphDraft.DraftNode node = draft.nodes().get(i);
+                if (!operatorRef.equals(node.operatorRef())) {
+                    continue;
+                }
+                String publishedFingerprint = publication.operatorFingerprints().get(node.id());
+                if (publishedFingerprint == null || publishedFingerprint.isBlank()) {
+                    diagnostics.add(VisualDiagnostic.warning(
+                            "visual.resourceContract.publicationOperatorFingerprintSnapshotMissing",
+                            "Resource design contract '%s' changes operatorRef '%s' used by publication '%s' node '%s', but the publication has no frozen operator fingerprint; existing publication keeps its frozen DSL, but review before replaying or republishing."
+                                    .formatted(replacement.resourceId(), operatorRef, publication.publicationId(),
+                                            node.id()),
+                            "/publications/%s/nodes/%d/operatorRef".formatted(publication.publicationId(), i),
+                            publicationChangeMetadata(replacement, operatorRef, publication, node.id(), report)));
+                    continue;
+                }
+                if (publishedFingerprint.equals(replacementOperator.fingerprint())) {
+                    continue;
+                }
+                diagnostics.add(VisualDiagnostic.warning("visual.resourceContract.publicationOperatorFingerprintDrift",
+                        "Resource design contract '%s' changes operatorRef '%s' used by publication '%s' node '%s' from frozen fingerprint '%s' to '%s'; changed surface: %s; existing publication keeps its frozen DSL, but review before replaying, recertifying, or republishing."
+                                .formatted(replacement.resourceId(), operatorRef, publication.publicationId(),
+                                        node.id(), publishedFingerprint, replacementOperator.fingerprint(),
+                                        report.summary()),
+                        "/publications/%s/nodes/%d/operatorRef".formatted(publication.publicationId(), i),
+                        publicationChangeMetadata(replacement, operatorRef, publication, node.id(), report)));
             }
         }
         return diagnostics;
@@ -405,6 +478,44 @@ public class ResourceDesignContractAdminController {
         return metadata;
     }
 
+    private static Map<String, Object> publicationChangeMetadata(ResourceDesignContract replacement,
+                                                                 String operatorRef,
+                                                                 VisualGraphPublication publication,
+                                                                 String nodeId,
+                                                                 OperatorDefinitionChangeSummary.ChangeReport report) {
+        Map<String, Object> metadata = changeMetadata(replacement, operatorRef, nodeId, report);
+        metadata.put("publicationId", publication.publicationId());
+        return metadata;
+    }
+
+    private List<VisualDiagnostic> publicationDisablementDiagnostics(String resourceId) {
+        String operatorRef = "resource:" + resourceId;
+        List<VisualDiagnostic> diagnostics = new ArrayList<>();
+        for (VisualGraphPublication publication : publicationRepository.all()) {
+            GraphDraft draft = publication.draft();
+            if (draft == null) {
+                continue;
+            }
+            for (int i = 0; i < draft.nodes().size(); i++) {
+                GraphDraft.DraftNode node = draft.nodes().get(i);
+                if (operatorRef.equals(node.operatorRef())) {
+                    diagnostics.add(VisualDiagnostic.warning("visual.resourceContract.publicationDisabled",
+                            "Resource design contract for '%s' is being disabled while publication '%s' node '%s' was authored with operatorRef '%s'. Existing publication keeps its frozen DSL, but replay, recertification, or republishing should be reviewed."
+                                    .formatted(resourceId, publication.publicationId(), node.id(),
+                                            node.operatorRef()),
+                            "/publications/%s/nodes/%d/operatorRef".formatted(publication.publicationId(), i),
+                            Map.of(
+                                    "resourceId", resourceId,
+                                    "operatorRef", operatorRef,
+                                    "publicationId", publication.publicationId(),
+                                    "nodeId", node.id()
+                            )));
+                }
+            }
+        }
+        return diagnostics;
+    }
+
     private List<VisualDiagnostic> storedDraftReferenceDiagnostics(String resourceId, String action) {
         String operatorRef = "resource:" + resourceId;
         List<VisualDiagnostic> diagnostics = new ArrayList<>();
@@ -417,6 +528,34 @@ public class ResourceDesignContractAdminController {
                                     .formatted(resourceId, action, draft.draftId(), draft.revision(),
                                             node.id(), node.operatorRef()),
                             "/drafts/%s/nodes/%d/operatorRef".formatted(draft.draftId(), i)));
+                }
+            }
+        }
+        return diagnostics;
+    }
+
+    private List<VisualDiagnostic> publishedArtifactReferenceDiagnostics(String resourceId, String action) {
+        String operatorRef = "resource:" + resourceId;
+        List<VisualDiagnostic> diagnostics = new ArrayList<>();
+        for (VisualGraphPublication publication : publicationRepository.all()) {
+            GraphDraft draft = publication.draft();
+            if (draft == null) {
+                continue;
+            }
+            for (int i = 0; i < draft.nodes().size(); i++) {
+                GraphDraft.DraftNode node = draft.nodes().get(i);
+                if (operatorRef.equals(node.operatorRef())) {
+                    diagnostics.add(VisualDiagnostic.error("visual.resourceContract.publicationInUse",
+                            "Resource design contract for '%s' cannot be %s without force=true because publication '%s' node '%s' was authored with operatorRef '%s'. Existing publication keeps its frozen DSL, but replay, recertification, or republishing should be reviewed."
+                                    .formatted(resourceId, action, publication.publicationId(), node.id(),
+                                            node.operatorRef()),
+                            "/publications/%s/nodes/%d/operatorRef".formatted(publication.publicationId(), i),
+                            Map.of(
+                                    "resourceId", resourceId,
+                                    "operatorRef", operatorRef,
+                                    "publicationId", publication.publicationId(),
+                                    "nodeId", node.id()
+                            )));
                 }
             }
         }

@@ -10,6 +10,9 @@ import com.leanowtech.bloge.gateway.visual.catalog.ResourceVirtualOperatorProjec
 import com.leanowtech.bloge.gateway.visual.draft.GraphDraft;
 import com.leanowtech.bloge.gateway.visual.draft.InMemoryGraphDraftRepository;
 import com.leanowtech.bloge.gateway.visual.model.SchemaEnvelope;
+import com.leanowtech.bloge.gateway.visual.publication.InMemoryVisualGraphPublicationRepository;
+import com.leanowtech.bloge.gateway.visual.publication.VisualGraphPublication;
+import com.leanowtech.bloge.gateway.visual.validation.VisualValidationResult;
 
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -38,6 +41,7 @@ class ResourceDesignContractAdminControllerTest {
 
     private InMemoryResourceDesignContractRegistry registry;
     private InMemoryGraphDraftRepository drafts;
+    private InMemoryVisualGraphPublicationRepository publications;
     private MockMvc mockMvc;
     private ObjectMapper objectMapper;
     private ResourceDescriptor descriptor;
@@ -47,6 +51,7 @@ class ResourceDesignContractAdminControllerTest {
     void setUp() {
         registry = new InMemoryResourceDesignContractRegistry();
         drafts = new InMemoryGraphDraftRepository();
+        publications = new InMemoryVisualGraphPublicationRepository();
         objectMapper = new ObjectMapper();
         descriptor = orderDescriptor();
         projector = new ResourceVirtualOperatorProjector();
@@ -55,6 +60,7 @@ class ResourceDesignContractAdminControllerTest {
                 new ResourceDesignContractValidator(),
                 new OpenApiResourceDesignContractImporter(),
                 drafts,
+                publications,
                 resourceRegistry(descriptor),
                 projector
         );
@@ -382,6 +388,38 @@ class ResourceDesignContractAdminControllerTest {
     }
 
     @Test
+    void validateWarnsWhenDeprecatingContractReferencedByPublishedArtifact() throws Exception {
+        ResourceDesignContract original = validContract(Map.of());
+        ResourceDesignContract deprecated = validContract(Map.of(), ResourceDesignContract.STATUS_DEPRECATED);
+        registry.upsert(original);
+        publications.create(publicationUsingResource("order-service.listOrders"));
+
+        mockMvc.perform(post("/admin/resource-design-contracts/validate")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(deprecated)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.valid").value(true))
+                .andExpect(jsonPath("$.diagnostics[0].level").value("WARNING"))
+                .andExpect(jsonPath("$.diagnostics[0].code")
+                        .value("visual.resourceContract.publicationLifecycleDeprecated"))
+                .andExpect(jsonPath("$.diagnostics[0].message").value(
+                        "Resource design contract for 'order-service.listOrders' is being deprecated while publication 'pub-1' node 'orders' was authored with operatorRef 'resource:order-service.listOrders'. Existing publication keeps its frozen DSL, but replay, recertification, or republishing should be reviewed."))
+                .andExpect(jsonPath("$.diagnostics[0].target")
+                        .value("/publications/pub-1/nodes/0/operatorRef"))
+                .andExpect(jsonPath("$.diagnostics[0].metadata.publicationId").value("pub-1"))
+                .andExpect(jsonPath("$.diagnostics[0].metadata.resourceId").value("order-service.listOrders"))
+                .andExpect(jsonPath("$.impact.warningCount").value(1))
+                .andExpect(jsonPath("$.impact.publicationIds[0]").value("pub-1"))
+                .andExpect(jsonPath("$.impact.publicationTargets[0].publicationId").value("pub-1"))
+                .andExpect(jsonPath("$.impact.publicationTargets[0].nodeIndex").value(0))
+                .andExpect(jsonPath("$.impact.operatorRefs[0]").value("resource:order-service.listOrders"))
+                .andExpect(jsonPath("$.impact.codeCounts[0].code")
+                        .value("visual.resourceContract.publicationLifecycleDeprecated"));
+
+        assertThat(registry.findByResourceId("order-service.listOrders")).contains(original);
+    }
+
+    @Test
     void upsertRequiresWarningAcknowledgementBeforeDeprecatingUsedContract() throws Exception {
         ResourceDesignContract original = validContract(Map.of());
         ResourceDesignContract deprecated = validContract(Map.of(), ResourceDesignContract.STATUS_DEPRECATED);
@@ -407,6 +445,37 @@ class ResourceDesignContractAdminControllerTest {
                 .andExpect(jsonPath("$.status").value("DEPRECATED"));
 
         assertThat(registry.findByResourceId("order-service.listOrders")).contains(deprecated);
+    }
+
+    @Test
+    void upsertRequiresWarningAcknowledgementBeforeDisablingPublishedContract() throws Exception {
+        ResourceDesignContract original = validContract(Map.of());
+        ResourceDesignContract disabled = validContract(Map.of(), ResourceDesignContract.STATUS_DISABLED);
+        registry.upsert(original);
+        publications.create(publicationUsingResource("order-service.listOrders"));
+
+        mockMvc.perform(put("/admin/resource-design-contracts/order-service.listOrders")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(disabled)))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.valid").value(true))
+                .andExpect(jsonPath("$.diagnostics[0].level").value("WARNING"))
+                .andExpect(jsonPath("$.diagnostics[0].code")
+                        .value("visual.resourceContract.publicationDisabled"))
+                .andExpect(jsonPath("$.impact.publicationIds[0]").value("pub-1"))
+                .andExpect(jsonPath("$.impact.publicationTargets[0].publicationId").value("pub-1"))
+                .andExpect(jsonPath("$.impact.publicationTargets[0].nodeIndex").value(0));
+
+        assertThat(registry.findByResourceId("order-service.listOrders")).contains(original);
+
+        mockMvc.perform(put("/admin/resource-design-contracts/order-service.listOrders")
+                        .param("ackWarnings", "true")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(disabled)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("DISABLED"));
+
+        assertThat(registry.findByResourceId("order-service.listOrders")).contains(disabled);
     }
 
     @Test
@@ -440,6 +509,43 @@ class ResourceDesignContractAdminControllerTest {
                 .andExpect(jsonPath("$.diagnostics[0].metadata.resourceId").value("order-service.listOrders"))
                 .andExpect(jsonPath("$.impact.changeRiskCounts[0].risk").value("BREAKING_SCHEMA"))
                 .andExpect(jsonPath("$.impact.changeRiskCounts[0].count").value(1))
+                .andExpect(jsonPath("$.impact.operatorRefs[0]").value("resource:order-service.listOrders"));
+
+        assertThat(replacementFingerprint).isNotEqualTo(originalFingerprint);
+        assertThat(registry.findByResourceId("order-service.listOrders")).contains(original);
+    }
+
+    @Test
+    void validateWarnsWhenReplacingPublishedContractWithDifferentFingerprint() throws Exception {
+        ResourceDesignContract original = validContract(Map.of());
+        ResourceDesignContract replacement = contractWithCountResponse();
+        String originalFingerprint = projector.project(descriptor, Optional.of(original)).fingerprint();
+        String replacementFingerprint = projector.project(descriptor, Optional.of(replacement)).fingerprint();
+        registry.upsert(original);
+        publications.create(publicationUsingResource("order-service.listOrders", originalFingerprint));
+
+        mockMvc.perform(post("/admin/resource-design-contracts/validate")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(replacement)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.valid").value(true))
+                .andExpect(jsonPath("$.diagnostics[0].level").value("WARNING"))
+                .andExpect(jsonPath("$.diagnostics[0].code")
+                        .value("visual.resourceContract.publicationOperatorFingerprintDrift"))
+                .andExpect(jsonPath("$.diagnostics[0].message")
+                        .value(org.hamcrest.Matchers.containsString(
+                                "publication 'pub-1' node 'orders' from frozen fingerprint '"
+                                        + originalFingerprint + "'")))
+                .andExpect(jsonPath("$.diagnostics[0].message")
+                        .value(org.hamcrest.Matchers.containsString("'" + replacementFingerprint + "'")))
+                .andExpect(jsonPath("$.diagnostics[0].target")
+                        .value("/publications/pub-1/nodes/0/operatorRef"))
+                .andExpect(jsonPath("$.diagnostics[0].metadata.publicationId").value("pub-1"))
+                .andExpect(jsonPath("$.diagnostics[0].metadata.changeRisk").value("BREAKING_SCHEMA"))
+                .andExpect(jsonPath("$.impact.publicationIds[0]").value("pub-1"))
+                .andExpect(jsonPath("$.impact.publicationTargets[0].publicationId").value("pub-1"))
+                .andExpect(jsonPath("$.impact.publicationTargets[0].nodeIndex").value(0))
+                .andExpect(jsonPath("$.impact.changeRiskCounts[0].risk").value("BREAKING_SCHEMA"))
                 .andExpect(jsonPath("$.impact.operatorRefs[0]").value("resource:order-service.listOrders"));
 
         assertThat(replacementFingerprint).isNotEqualTo(originalFingerprint);
@@ -540,6 +646,32 @@ class ResourceDesignContractAdminControllerTest {
                 .andExpect(jsonPath("$.impact.operatorRefs[0]").value("resource:order-service.listOrders"))
                 .andExpect(jsonPath("$.impact.draftTargets[0].nodeIndex").value(0))
                 .andExpect(jsonPath("$.impact.codeCounts[0].code").value("visual.resourceContract.inUse"));
+
+        assertThat(registry.findByResourceId("order-service.listOrders")).contains(contract);
+    }
+
+    @Test
+    void deleteRejectsContractReferencedByPublishedArtifact() throws Exception {
+        ResourceDesignContract contract = validContract(Map.of());
+        registry.upsert(contract);
+        publications.create(publicationUsingResource("order-service.listOrders"));
+
+        mockMvc.perform(delete("/admin/resource-design-contracts/order-service.listOrders"))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.valid").value(false))
+                .andExpect(jsonPath("$.diagnostics[0].code")
+                        .value("visual.resourceContract.publicationInUse"))
+                .andExpect(jsonPath("$.diagnostics[0].target")
+                        .value("/publications/pub-1/nodes/0/operatorRef"))
+                .andExpect(jsonPath("$.diagnostics[0].metadata.publicationId").value("pub-1"))
+                .andExpect(jsonPath("$.impact.errorCount").value(1))
+                .andExpect(jsonPath("$.impact.publicationIds[0]").value("pub-1"))
+                .andExpect(jsonPath("$.impact.publicationTargets[0].publicationId").value("pub-1"))
+                .andExpect(jsonPath("$.impact.publicationTargets[0].nodeIndex").value(0))
+                .andExpect(jsonPath("$.impact.resourceIds[0]").value("order-service.listOrders"))
+                .andExpect(jsonPath("$.impact.operatorRefs[0]").value("resource:order-service.listOrders"))
+                .andExpect(jsonPath("$.impact.codeCounts[0].code")
+                        .value("visual.resourceContract.publicationInUse"));
 
         assertThat(registry.findByResourceId("order-service.listOrders")).contains(contract);
     }
@@ -653,6 +785,16 @@ class ResourceDesignContractAdminControllerTest {
                 new GraphDraft.OutputSelection("orders", ""),
                 fingerprints
         );
+    }
+
+    private static VisualGraphPublication publicationUsingResource(String resourceId) {
+        return publicationUsingResource(resourceId, "fingerprint");
+    }
+
+    private static VisualGraphPublication publicationUsingResource(String resourceId, String fingerprint) {
+        GraphDraft draft = draftUsingResource(resourceId, fingerprint);
+        return VisualGraphPublication.design(draft, List.of(), new VisualValidationResult(true, List.of()), null)
+                .withIdentity("pub-1", null);
     }
 
     private static ResourceDescriptor orderDescriptor() {

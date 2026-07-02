@@ -117,9 +117,11 @@ class VisualAuthoringAppJsTest {
                 .contains("function libraryImpactRiskSummaryText(summary)")
                 .contains("function operatorLibraryWarningAcknowledgementMessage(impact, diagnostics, actionLabel = 'Import')")
                 .contains("data-library-impact-draft")
+                .contains("data-library-impact-publication")
                 .contains("data-library-impact-node-index")
                 .contains("function openLibraryImpactDraft(draftId)")
                 .contains("function openLibraryImpactDraftTarget(draftId, nodeIndex = -1)")
+                .contains("function openLibraryImpactPublicationTarget(publicationId, nodeIndex = -1)")
                 .contains("Impact Review")
                 .contains("payload?.impact")
                 .contains("Review warnings, then click ${actionLabel} again to continue.")
@@ -2074,6 +2076,10 @@ class VisualAuthoringAppJsTest {
                     { draftId: 'draft-risk', nodeIndex: 1 },
                     { draftId: 'draft-risk', nodeIndex: 1 }
                   ],
+                  publicationTargets: [
+                    { publicationId: 'pub-risk', nodeIndex: 4 },
+                    { publicationId: 'pub-risk', nodeIndex: 4 }
+                  ],
                   codeCounts: [
                     { code: 'visual.library.operatorFingerprintDrift', level: 'WARNING', count: 2 },
                     { code: 'visual.library.inUse', level: 'ERROR', count: 1 }
@@ -2100,7 +2106,9 @@ class VisualAuthoringAppJsTest {
                   resourceIds: ['order-service.listOrders', 'order-service.listOrders'],
                   operatorRefs: ['resource:order-service.listOrders'],
                   draftIds: ['draft-orders'],
+                  publicationIds: ['pub-orders'],
                   draftTargets: [{ draftId: 'draft-orders', nodeIndex: 3 }],
+                  publicationTargets: [{ publicationId: 'pub-orders', nodeIndex: 4 }],
                   codeCounts: [
                     { code: 'visual.resourceContract.operatorFingerprintDrift', level: 'WARNING', count: 1 },
                     { code: 'visual.resourceContract.lifecycle.deprecated', level: 'WARNING', count: 1 }
@@ -2118,6 +2126,18 @@ class VisualAuthoringAppJsTest {
                     metadata: {
                       resourceId: 'order-service.listOrders',
                       operatorRef: 'resource:order-service.listOrders',
+                      changeRisk: 'BREAKING_SCHEMA'
+                    }
+                  },
+                  {
+                    level: 'WARNING',
+                    code: 'visual.resourceContract.publicationOperatorFingerprintDrift',
+                    target: '/publications/pub-orders/nodes/4/operatorRef',
+                    message: "Resource design contract 'order-service.listOrders' changes operatorRef 'resource:order-service.listOrders' used by publication 'pub-orders' node 'orders' from frozen fingerprint 'old' to 'new'; changed surface: output schema changed.",
+                    metadata: {
+                      resourceId: 'order-service.listOrders',
+                      operatorRef: 'resource:order-service.listOrders',
+                      publicationId: 'pub-orders',
                       changeRisk: 'BREAKING_SCHEMA'
                     }
                   }
@@ -2143,6 +2163,7 @@ class VisualAuthoringAppJsTest {
                     publicationIds: ['pub-from-payload'],
                     operatorRefs: ['risk:payload'],
                     draftTargets: [{ draftId: 'draft-from-payload', nodeIndex: 2 }],
+                    publicationTargets: [{ publicationId: 'pub-from-payload', nodeIndex: 5 }],
                     codeCounts: [
                       { code: 'visual.library.payloadImpact', level: 'WARNING', count: 2 }
                     ],
@@ -2756,6 +2777,7 @@ class VisualAuthoringAppJsTest {
                   ['library payload impact diagnostics', libraryImpactFromPayload.diagnosticCount, 3],
                   ['library payload impact drafts deduped', libraryImpactFromPayload.draftIds.join('|'), 'draft-risk'],
                   ['library payload impact node index', libraryImpactFromPayload.draftTargets[0].nodeIndex, 1],
+                  ['library payload impact publication target', libraryImpactFromPayload.publicationTargets[0].nodeIndex, 4],
                   ['library payload impact code', libraryImpactFromPayload.codeCounts[0].code, 'visual.library.operatorFingerprintDrift'],
                   ['library payload impact risk', libraryImpactFromPayload.changeRiskCounts[0].risk, 'BREAKING_SCHEMA'],
                   ['library payload risk text', libraryPayloadRiskText, 'Breaking schema change: affected drafts need repair or explicit rebase review. Breaking Schema 2.'],
@@ -2766,20 +2788,29 @@ class VisualAuthoringAppJsTest {
                   ['library impact panel prefers payload draft', String(libraryImpactPanel.innerHTML.includes('draft-from-payload')), 'true'],
                   ['library impact panel ignores fallback draft', String(libraryImpactPanel.innerHTML.includes('draft-risk')), 'false'],
                   ['library impact panel includes node index', String(libraryImpactPanel.innerHTML.includes('data-library-impact-node-index="2"')), 'true'],
+                  ['library impact panel includes publication action', String(libraryImpactPanel.innerHTML.includes('data-library-impact-publication="pub-from-payload"')), 'true'],
+                  ['library impact panel includes publication node index', String(libraryImpactPanel.innerHTML.includes('data-library-impact-node-index="5"')), 'true'],
                   ['library impact panel includes payload code', String(libraryImpactPanel.innerHTML.includes('visual.library.payloadImpact')), 'true'],
                   ['library impact panel includes risk label', String(libraryImpactPanel.innerHTML.includes('Runtime Binding')), 'true'],
                   ['library impact panel includes risk summary', String(libraryImpactPanel.innerHTML.includes('Runtime binding change')), 'true'],
                   ['library impact draft group action', String(libraryImpactDraftGroup.includes('data-library-impact-draft="draft-risk"')), 'true'],
                   ['resource payload impact resources deduped', resourceImpactFromPayload.resourceIds.join('|'), 'order-service.listOrders'],
                   ['resource payload impact operators', resourceImpactFromPayload.operatorRefs.join('|'), 'resource:order-service.listOrders'],
+                  ['resource payload impact publications', resourceImpactFromPayload.publicationIds.join('|'), 'pub-orders'],
                   ['resource payload impact draft target', resourceImpactFromPayload.draftTargets[0].nodeIndex, 3],
+                  ['resource payload impact publication target', resourceImpactFromPayload.publicationTargets[0].nodeIndex, 4],
                   ['resource diagnostic impact resources', resourceImpactFromDiagnostics.resourceIds.join('|'), 'order-service.listOrders'],
+                  ['resource diagnostic impact publications', resourceImpactFromDiagnostics.publicationIds.join('|'), 'pub-orders'],
+                  ['resource diagnostic impact publication target', resourceImpactFromDiagnostics.publicationTargets[0].nodeIndex, 4],
                   ['resource diagnostic impact risk', resourceImpactFromDiagnostics.changeRiskCounts[0].risk, 'BREAKING_SCHEMA'],
                   ['resource warning acknowledgement risk', String(resourceWarningAcknowledgement.includes('Breaking schema change')), 'true'],
                   ['resource warning acknowledgement click', String(resourceWarningAcknowledgement.includes('click Save contract again')), 'true'],
                   ['resource impact panel visible', resourceImpactPanel.hidden, false],
                   ['resource impact panel level', resourceImpactPanel.className, 'library-impact-panel warning'],
                   ['resource impact panel includes resource', String(resourceImpactPanel.innerHTML.includes('order-service.listOrders')), 'true'],
+                  ['resource impact panel includes publication', String(resourceImpactPanel.innerHTML.includes('pub-orders')), 'true'],
+                  ['resource impact panel includes publication action', String(resourceImpactPanel.innerHTML.includes('data-library-impact-publication="pub-orders"')), 'true'],
+                  ['resource impact panel includes publication node index', String(resourceImpactPanel.innerHTML.includes('data-library-impact-node-index="4"')), 'true'],
                   ['resource impact panel includes resource code', String(resourceImpactPanel.innerHTML.includes('visual.resourceContract.operatorFingerprintDrift')), 'true'],
                   ['resource impact panel includes node index', String(resourceImpactPanel.innerHTML.includes('data-library-impact-node-index="3"')), 'true'],
                   ['full output contract type', fullOutputContract.type, 'object'],

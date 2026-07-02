@@ -1070,6 +1070,7 @@ resource-gateway 示例阶段已落地等价管理端点：
     "publicationIds": [],
     "operatorRefs": ["risk:eligibility"],
     "draftTargets": [{ "draftId": "draft-1", "nodeIndex": 0 }],
+    "publicationTargets": [],
     "changeRiskCounts": [{ "risk": "BREAKING_SCHEMA", "count": 1 }],
     "codeCounts": [
       { "code": "visual.library.operatorFingerprintDrift", "level": "WARNING", "count": 1 }
@@ -1089,7 +1090,7 @@ resource-gateway 示例阶段已落地等价管理端点：
 
 `bloge.visualOperatorLibraryImpact.v1` 是导入/替换/删除前的机器可读影响面。
 当前实现会聚合 affected draft、publication、operatorRef、draft node target、
-diagnostic code counts，并在 same-ref replacement drift 时返回
+publication node target、diagnostic code counts，并在 same-ref replacement drift 时返回
 `changeRiskCounts`。`changeRisk` 当前取值包括：
 `BREAKING_SCHEMA`、`COMPATIBLE_SCHEMA`、`RUNTIME_BINDING`、`GOVERNANCE`、
 `POLICY`、`METADATA`。其中 schema 兼容判断按真实编排方向计算：input/config
@@ -1112,7 +1113,9 @@ upsert 和 delete conflict 响应会在原有 `valid/diagnostics` 旁返回：
     "resourceIds": ["order-service.listOrders"],
     "operatorRefs": ["resource:order-service.listOrders"],
     "draftIds": ["draft-1"],
+    "publicationIds": ["pub-1"],
     "draftTargets": [{ "draftId": "draft-1", "nodeIndex": 0 }],
+    "publicationTargets": [{ "publicationId": "pub-1", "nodeIndex": 0 }],
     "changeRiskCounts": [{ "risk": "BREAKING_SCHEMA", "count": 1 }],
     "codeCounts": [
       { "code": "visual.resourceContract.operatorFingerprintDrift", "level": "WARNING", "count": 1 }
@@ -1130,9 +1133,13 @@ upsert 和 delete conflict 响应会在原有 `valid/diagnostics` 旁返回：
 
 这个合同用于让 resource-backed 虚拟算子的 schema drift、lifecycle
 downgrade、disable/delete impact 和 OpenAPI re-import preview 与用户算子库
-具备同等的机器可审阅能力。当前浏览器 OpenAPI Resource Contract 面板会渲染该
-impact review，并在 warning-gated Save Contract 二次确认文案中使用
-`changeRiskCounts`。旧客户端仍可只读取 `valid/diagnostics`。
+具备同等的机器可审阅能力。`publicationIds` 表示已有 immutable publication
+的冻结 draft 曾使用该 `resource:<resourceId>` operatorRef；`publicationTargets`
+进一步给出 `{ publicationId, nodeIndex }`，供浏览器或外部控制面定位到冻结发布物内
+的受影响节点。冻结 DSL 不会因合同变更立刻被重写，但 replay、recertification、
+republish 和设计时追溯都必须被显式审阅。当前浏览器 OpenAPI Resource Contract 面板会渲染该 impact review，
+并在 warning-gated Save Contract 二次确认文案中使用 `changeRiskCounts`。
+旧客户端仍可只读取 `valid/diagnostics`。
 
 MVP 至少阻断：
 
