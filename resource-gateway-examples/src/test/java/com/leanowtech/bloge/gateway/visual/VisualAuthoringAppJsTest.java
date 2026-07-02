@@ -192,6 +192,51 @@ class VisualAuthoringAppJsTest {
     }
 
     @Test
+    void surfacesWorkspaceRuntimeBindingRequirementsIndex() throws Exception {
+        String source = appJsSource();
+
+        assertThat(source)
+                .contains("visualRuntimeBindingRequirements: null")
+                .contains("visualRuntimeBindingRequirementsMessage: null")
+                .contains("visualRuntimeBindingRequirementQuery: {")
+                .contains("activeVisualRuntimeBindingRequirement: null")
+                .contains("await loadVisualRuntimeBindingRequirements({ render: false })")
+                .contains("async function loadVisualRuntimeBindingRequirements(options = {})")
+                .contains("fetch(visualRuntimeBindingRequirementsUrl())")
+                .contains("function visualRuntimeBindingRequirementsUrl(builder = state.builder)")
+                .contains("/api/visual/assets/runtime-binding-requirements")
+                .contains("params.set('limit', String(query.limit))")
+                .contains("params.set('targetKind', query.targetKind)")
+                .contains("params.set('bindingKind', query.bindingKind)")
+                .contains("params.set('sourceKind', query.sourceKind)")
+                .contains("params.set('loweringMode', query.loweringMode)")
+                .contains("params.set('readinessState', query.readinessState)")
+                .contains("function normalizeVisualRuntimeBindingRequirementQuery(query = {})")
+                .contains("async function updateVisualRuntimeBindingRequirementQuery(patch = {})")
+                .contains("Runtime Binding Requirements")
+                .contains("Current runtime binding")
+                .contains("Runtime binding index unavailable")
+                .contains("function visualRuntimeBindingRequirementControls(bindingIndex)")
+                .contains("runtime-binding-target-kind")
+                .contains("runtime-binding-kind")
+                .contains("runtime-binding-source-kind")
+                .contains("runtime-binding-lowering-mode")
+                .contains("runtime-binding-readiness-state")
+                .contains("runtime-binding-limit")
+                .contains("runtime-binding-prev")
+                .contains("runtime-binding-next")
+                .contains("runtime-binding-reset")
+                .contains("function visualRuntimeBindingRequirementRows(bindingIndex)")
+                .contains("function visualRuntimeBindingRequirementContext(item)")
+                .contains("function openVisualRuntimeBindingRequirement(index, requirementKey = '')")
+                .contains("data-runtime-binding-requirement")
+                .contains("data-runtime-binding-requirement-key")
+                .contains("Opened runtime binding requirement:")
+                .contains("No matching runtime binding requirements")
+                .contains("more runtime binding requirements");
+    }
+
+    @Test
     void surfacesStoredDraftDependencyReportInDraftPanel() throws Exception {
         String source = appJsSource();
 

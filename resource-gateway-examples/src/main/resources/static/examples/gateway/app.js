@@ -353,6 +353,12 @@ const VISUAL_ASSET_ACTION_TYPES = [
   ['TRACK_SCHEMA_ONLY_OPERATOR', 'Track schema-only operator']
 ];
 const VISUAL_ASSET_ACTION_LIMITS = [12, 24, 48];
+const VISUAL_RUNTIME_BINDING_TARGET_KINDS = [
+  ['', 'All assets'],
+  ['draft', 'Draft'],
+  ['publication', 'Publication']
+];
+const VISUAL_RUNTIME_BINDING_LIMITS = [10, 25, 50];
 
 const state = {
   scenarios: [],
@@ -399,6 +405,18 @@ const state = {
     limit: 12
   },
   activeVisualAssetAction: null,
+  visualRuntimeBindingRequirements: null,
+  visualRuntimeBindingRequirementsMessage: null,
+  visualRuntimeBindingRequirementQuery: {
+    targetKind: '',
+    bindingKind: '',
+    sourceKind: '',
+    loweringMode: '',
+    readinessState: '',
+    offset: 0,
+    limit: 10
+  },
+  activeVisualRuntimeBindingRequirement: null,
   goldenAssertionMode: 'EXACT_OUTPUT',
   goldenAssertionPath: '',
   goldenAssertionValueText: '',
@@ -591,10 +609,31 @@ async function loadVisualAssetOverview(options = {}) {
     state.visualAssetOverview = null;
     state.visualAssetOverviewMessage = { text: error.message, level: 'error' };
   }
+  if (options.loadRuntimeBindings !== false) {
+    await loadVisualRuntimeBindingRequirements({ render: false });
+  }
   if (options.render !== false) {
     renderVisualAssetOverview();
   }
   return state.visualAssetOverview;
+}
+
+async function loadVisualRuntimeBindingRequirements(options = {}) {
+  try {
+    const response = await fetch(visualRuntimeBindingRequirementsUrl());
+    if (!response.ok) {
+      throw new Error(`Runtime binding requirements failed with ${response.status}`);
+    }
+    state.visualRuntimeBindingRequirements = await response.json();
+    state.visualRuntimeBindingRequirementsMessage = null;
+  } catch (error) {
+    state.visualRuntimeBindingRequirements = null;
+    state.visualRuntimeBindingRequirementsMessage = { text: error.message, level: 'error' };
+  }
+  if (options.render !== false) {
+    renderVisualAssetOverview();
+  }
+  return state.visualRuntimeBindingRequirements;
 }
 
 function rememberCatalogOperator(operator, options = {}) {
@@ -720,6 +759,35 @@ function visualAssetOverviewUrl(builder = state.builder) {
   return `/api/visual/assets/overview?${params.toString()}`;
 }
 
+function visualRuntimeBindingRequirementsUrl(builder = state.builder) {
+  const scope = builderScope(builder);
+  const params = new URLSearchParams();
+  params.set('tenantId', scope.tenantId);
+  params.set('namespace', scope.namespace);
+  params.set('environment', scope.environment);
+  const query = normalizeVisualRuntimeBindingRequirementQuery(state.visualRuntimeBindingRequirementQuery);
+  params.set('limit', String(query.limit));
+  if (query.offset > 0) {
+    params.set('offset', String(query.offset));
+  }
+  if (query.targetKind) {
+    params.set('targetKind', query.targetKind);
+  }
+  if (query.bindingKind) {
+    params.set('bindingKind', query.bindingKind);
+  }
+  if (query.sourceKind) {
+    params.set('sourceKind', query.sourceKind);
+  }
+  if (query.loweringMode) {
+    params.set('loweringMode', query.loweringMode);
+  }
+  if (query.readinessState) {
+    params.set('readinessState', query.readinessState);
+  }
+  return `/api/visual/assets/runtime-binding-requirements?${params.toString()}`;
+}
+
 function normalizeVisualAssetActionQuery(query = {}) {
   const limit = Math.max(1, Math.min(Number(query.limit || 12) || 12, 100));
   return {
@@ -738,6 +806,28 @@ async function updateVisualAssetActionQuery(patch = {}) {
   });
   state.activeVisualAssetAction = null;
   await loadVisualAssetOverview();
+}
+
+function normalizeVisualRuntimeBindingRequirementQuery(query = {}) {
+  const limit = Math.max(1, Math.min(Number(query.limit || 10) || 10, 200));
+  return {
+    targetKind: String(query.targetKind || '').trim().toLowerCase(),
+    bindingKind: String(query.bindingKind || '').trim().toLowerCase(),
+    sourceKind: String(query.sourceKind || '').trim().toLowerCase(),
+    loweringMode: String(query.loweringMode || '').trim().toLowerCase(),
+    readinessState: String(query.readinessState || '').trim().toLowerCase(),
+    offset: Math.max(0, Number(query.offset || 0) || 0),
+    limit
+  };
+}
+
+async function updateVisualRuntimeBindingRequirementQuery(patch = {}) {
+  state.visualRuntimeBindingRequirementQuery = normalizeVisualRuntimeBindingRequirementQuery({
+    ...state.visualRuntimeBindingRequirementQuery,
+    ...patch
+  });
+  state.activeVisualRuntimeBindingRequirement = null;
+  await loadVisualRuntimeBindingRequirements();
 }
 
 function visualDraftsUrl(builder = state.builder) {
@@ -7013,15 +7103,24 @@ function renderVisualAssetOverview() {
   const publications = overview.publications || {};
   const catalog = overview.catalog || {};
   const actionQueue = overview.actionQueue || {};
+  const bindingIndex = state.visualRuntimeBindingRequirements || null;
+  const bindingRows = visualRuntimeBindingRequirementRows(bindingIndex);
   const rows = visualAssetOverviewRows(overview);
   const actionRows = visualAssetOverviewActionRows(actionQueue);
   const actionOverflow = Math.max(
     0,
     Number(actionQueue.total || 0) - Number(actionQueue.offset || 0) - actionRows.length
   );
+  const bindingOverflow = Math.max(
+    0,
+    Number(bindingIndex?.total || 0) - Number(bindingIndex?.offset || 0) - bindingRows.length
+  );
   const activeAction = visualAssetActionContext(state.activeVisualAssetAction);
+  const activeBinding = visualRuntimeBindingRequirementContext(state.activeVisualRuntimeBindingRequirement);
   const scopeLabel = visualAssetOverviewScopeLabel(overview);
   const actionQueueVisible = visualAssetOverviewShouldShowActionQueue(actionQueue);
+  const bindingRequirementsVisible = visualRuntimeBindingRequirementsShouldShow(bindingIndex)
+    || Boolean(state.visualRuntimeBindingRequirementsMessage?.text);
   const stats = [
     ['Drafts', drafts.total],
     ['Active', drafts.activeCount],
@@ -7030,6 +7129,7 @@ function renderVisualAssetOverview() {
     ['DESIGN artifacts', publications.designArtifactCount],
     ['Operators', catalog.totalOperators],
     ['Actions', actionQueue.unfilteredTotal ?? actionQueue.total],
+    ['Runtime bindings', bindingIndex?.unfilteredTotal ?? bindingIndex?.total],
     ['Design-only operators', visualAssetOverviewCatalogReadiness(catalog, 'design-only')],
     ['Runtime-blocked operators', visualAssetOverviewCatalogReadiness(catalog, 'runtime-blocked')]
   ].filter(([, value], index) => index < 7 || Number(value || 0) > 0)
@@ -7050,6 +7150,10 @@ function renderVisualAssetOverview() {
     ${activeAction ? `<div class="library-impact-risk ${escapeHtml(activeAction.level)}">
       <strong>${escapeHtml('Current action')}</strong>
       <span>${escapeHtml(activeAction.message)}</span>
+    </div>` : ''}
+    ${activeBinding ? `<div class="library-impact-risk ${escapeHtml(activeBinding.level)}">
+      <strong>${escapeHtml('Current runtime binding')}</strong>
+      <span>${escapeHtml(activeBinding.message)}</span>
     </div>` : ''}
     <div class="library-impact-stats">${stats}</div>
     ${rows.length ? `<div class="library-impact-risks">${rows.map((row) => `
@@ -7078,9 +7182,33 @@ function renderVisualAssetOverview() {
       ${actionRows.length ? '' : `<div class="library-impact-more">${escapeHtml('No matching server-derived actions')}</div>`}
       ${actionOverflow ? `<div class="library-impact-more">+${actionOverflow} more server-derived actions</div>` : ''}
     </div>` : ''}
+    ${bindingRequirementsVisible ? `<div class="library-impact-risks">
+      <div class="library-impact-head">
+        <strong>Runtime Binding Requirements</strong>
+        <span>${escapeHtml(visualRuntimeBindingRequirementWindowSummary(bindingIndex, bindingRows))}</span>
+      </div>
+      ${state.visualRuntimeBindingRequirementsMessage?.text ? `<div class="library-impact-risk ${escapeHtml(state.visualRuntimeBindingRequirementsMessage.level || 'error')}">
+        <strong>${escapeHtml('Runtime binding index unavailable')}</strong>
+        <span>${escapeHtml(state.visualRuntimeBindingRequirementsMessage.text)}</span>
+      </div>` : ''}
+      ${visualRuntimeBindingRequirementControls(bindingIndex)}
+      ${bindingRows.map((row) => `
+        <div class="library-impact-risk ${escapeHtml(row.level)}">
+          <strong>${escapeHtml(row.label)}</strong>
+          <span>${escapeHtml(row.value)}</span>
+          ${row.openable ? `<button type="button" class="secondary compact"
+            data-runtime-binding-requirement="${escapeHtml(row.index)}"
+            data-runtime-binding-requirement-key="${escapeHtml(row.requirementKey)}">Open</button>` : ''}
+        </div>
+      `).join('')}
+      ${bindingRows.length ? '' : `<div class="library-impact-more">${escapeHtml('No matching runtime binding requirements')}</div>`}
+      ${bindingOverflow ? `<div class="library-impact-more">+${bindingOverflow} more runtime binding requirements</div>` : ''}
+    </div>` : ''}
   `;
   attachVisualAssetOverviewActionHandlers();
   attachVisualAssetOverviewActionQueryHandlers(actionQueue);
+  attachVisualRuntimeBindingRequirementHandlers();
+  attachVisualRuntimeBindingRequirementQueryHandlers(bindingIndex);
 }
 
 function visualAssetOverviewScopeLabel(overview) {
@@ -7099,6 +7227,17 @@ function visualAssetOverviewShouldShowActionQueue(actionQueue) {
     || Boolean(query.severity || query.actionType || query.targetKind || query.offset);
 }
 
+function visualRuntimeBindingRequirementsShouldShow(bindingIndex) {
+  const query = normalizeVisualRuntimeBindingRequirementQuery(state.visualRuntimeBindingRequirementQuery);
+  return Number(bindingIndex?.unfilteredTotal ?? bindingIndex?.total ?? 0) > 0
+    || Boolean(query.targetKind
+      || query.bindingKind
+      || query.sourceKind
+      || query.loweringMode
+      || query.readinessState
+      || query.offset);
+}
+
 function visualAssetOverviewActionWindowSummary(actionQueue, actionRows) {
   const total = Number(actionQueue?.total ?? actionRows.length ?? 0) || 0;
   const unfilteredTotal = Number(actionQueue?.unfilteredTotal ?? total) || 0;
@@ -7108,6 +7247,17 @@ function visualAssetOverviewActionWindowSummary(actionQueue, actionRows) {
   return unfilteredTotal !== total
     ? `${range} / ${unfilteredTotal} total`
     : `${range} suggested actions`;
+}
+
+function visualRuntimeBindingRequirementWindowSummary(bindingIndex, rows) {
+  const total = Number(bindingIndex?.total ?? rows.length ?? 0) || 0;
+  const unfilteredTotal = Number(bindingIndex?.unfilteredTotal ?? total) || 0;
+  const offset = Number(bindingIndex?.offset || 0) || 0;
+  const displayed = Number(bindingIndex?.displayedCount ?? rows.length) || 0;
+  const range = displayed ? `${offset + 1}-${offset + displayed} of ${total}` : `0 of ${total}`;
+  return unfilteredTotal !== total
+    ? `${range} / ${unfilteredTotal} total`
+    : `${range} runtime binding gaps`;
 }
 
 function visualAssetOverviewActionControls(actionQueue) {
@@ -7151,6 +7301,95 @@ function visualAssetOverviewActionControls(actionQueue) {
       <button type="button" class="secondary compact" id="visual-asset-action-reset" ${hasFilter ? '' : 'disabled'}>Reset</button>
     </div>
   `;
+}
+
+function visualRuntimeBindingRequirementControls(bindingIndex) {
+  const query = normalizeVisualRuntimeBindingRequirementQuery(state.visualRuntimeBindingRequirementQuery);
+  const offset = Number(bindingIndex?.offset ?? query.offset) || 0;
+  const pageSize = Number(bindingIndex?.itemLimit || query.limit || 10) || 10;
+  const hasFilter = Boolean(query.targetKind
+    || query.bindingKind
+    || query.sourceKind
+    || query.loweringMode
+    || query.readinessState
+    || offset
+    || pageSize !== 10);
+  const canPrevious = offset > 0;
+  const canNext = Boolean(bindingIndex?.hasMore);
+  return `
+    <div class="library-impact-controls">
+      <label>
+        <span>${escapeHtml('Asset')}</span>
+        <select id="runtime-binding-target-kind" aria-label="Filter runtime binding requirements by asset kind">
+          ${visualRuntimeBindingOptionMarkup(
+            VISUAL_RUNTIME_BINDING_TARGET_KINDS,
+            query.targetKind,
+            bindingIndex?.targetKindCounts
+          )}
+        </select>
+      </label>
+      <label>
+        <span>${escapeHtml('Binding')}</span>
+        <select id="runtime-binding-kind" aria-label="Filter runtime binding requirements by binding kind">
+          ${visualRuntimeBindingDynamicOptionMarkup('All bindings', bindingIndex?.bindingKindCounts, query.bindingKind)}
+        </select>
+      </label>
+      <label>
+        <span>${escapeHtml('Source')}</span>
+        <select id="runtime-binding-source-kind" aria-label="Filter runtime binding requirements by source kind">
+          ${visualRuntimeBindingDynamicOptionMarkup('All sources', bindingIndex?.sourceKindCounts, query.sourceKind)}
+        </select>
+      </label>
+      <label>
+        <span>${escapeHtml('Lowering')}</span>
+        <select id="runtime-binding-lowering-mode" aria-label="Filter runtime binding requirements by lowering mode">
+          ${visualRuntimeBindingDynamicOptionMarkup('All lowerings', bindingIndex?.loweringModeCounts, query.loweringMode)}
+        </select>
+      </label>
+      <label>
+        <span>${escapeHtml('State')}</span>
+        <select id="runtime-binding-readiness-state" aria-label="Filter runtime binding requirements by readiness state">
+          ${visualRuntimeBindingDynamicOptionMarkup('All states', bindingIndex?.readinessStateCounts, query.readinessState)}
+        </select>
+      </label>
+      <label>
+        <span>${escapeHtml('Size')}</span>
+        <select id="runtime-binding-limit" aria-label="Runtime binding requirement page size">
+          ${VISUAL_RUNTIME_BINDING_LIMITS.map((limit) => {
+            const selected = pageSize === limit ? ' selected' : '';
+            return `<option value="${escapeHtml(limit)}"${selected}>${escapeHtml(limit)}</option>`;
+          }).join('')}
+        </select>
+      </label>
+      <button type="button" class="secondary compact" id="runtime-binding-prev" ${canPrevious ? '' : 'disabled'}>Prev</button>
+      <button type="button" class="secondary compact" id="runtime-binding-next" ${canNext ? '' : 'disabled'}>Next</button>
+      <button type="button" class="secondary compact" id="runtime-binding-reset" ${hasFilter ? '' : 'disabled'}>Reset</button>
+    </div>
+  `;
+}
+
+function visualRuntimeBindingOptionMarkup(staticOptions, selectedValue, counts = {}) {
+  const selected = String(selectedValue || '');
+  const known = new Set(staticOptions.map(([value]) => String(value || '')));
+  const dynamic = Object.keys(counts || {})
+    .filter((value) => !known.has(value))
+    .map((value) => [value, operatorPaletteFacetLabel(value)]);
+  if (selected && !known.has(selected) && !dynamic.some(([value]) => value === selected)) {
+    dynamic.push([selected, operatorPaletteFacetLabel(selected)]);
+  }
+  return visualAssetActionOptionMarkup([...staticOptions, ...dynamic], selected);
+}
+
+function visualRuntimeBindingDynamicOptionMarkup(emptyLabel, counts = {}, selectedValue = '') {
+  const selected = String(selectedValue || '');
+  const options = [['', emptyLabel]];
+  Object.keys(counts || {})
+    .sort()
+    .forEach((value) => options.push([value, operatorPaletteFacetLabel(value)]));
+  if (selected && !options.some(([value]) => value === selected)) {
+    options.push([selected, operatorPaletteFacetLabel(selected)]);
+  }
+  return visualAssetActionOptionMarkup(options, selected);
 }
 
 function visualAssetActionOptionMarkup(options, selectedValue) {
@@ -7276,6 +7515,63 @@ function visualAssetOverviewActionRows(actionQueue) {
     }));
 }
 
+function visualRuntimeBindingRequirementRows(bindingIndex) {
+  return (Array.isArray(bindingIndex?.items) ? bindingIndex.items : [])
+    .map((item, index) => ({
+      index,
+      level: ['error', 'warning', 'info', 'success'].includes(String(item?.level || '').toLowerCase())
+        ? String(item.level).toLowerCase()
+        : 'warning',
+      label: visualRuntimeBindingRequirementLabel(item),
+      value: visualRuntimeBindingRequirementValue(item),
+      requirementKey: item?.requirementKey || '',
+      targetKind: String(item?.targetKind || '').toLowerCase(),
+      targetId: item?.targetId || '',
+      openable: ['draft', 'publication'].includes(String(item?.targetKind || '').toLowerCase())
+        && String(item?.targetId || '').trim()
+    }));
+}
+
+function visualRuntimeBindingRequirementContext(item) {
+  if (!item) {
+    return null;
+  }
+  const binding = [operatorPaletteFacetLabel(item.bindingKind), item.bindingTarget]
+    .filter(Boolean)
+    .join(' ');
+  const target = [item.targetKind, item.targetLabel || item.targetId]
+    .filter(Boolean)
+    .join(' ');
+  return {
+    level: ['error', 'warning', 'info', 'success'].includes(String(item.level || '').toLowerCase())
+      ? String(item.level).toLowerCase()
+      : 'warning',
+    message: [binding, target, item.recommendedAction || item.summary]
+      .filter(Boolean)
+      .join(' · ')
+  };
+}
+
+function visualRuntimeBindingRequirementLabel(item) {
+  const binding = [operatorPaletteFacetLabel(item?.bindingKind || ''), item?.bindingTarget || '']
+    .filter(Boolean)
+    .join(' ');
+  const target = [item?.targetKind, item?.targetLabel || item?.targetId]
+    .filter(Boolean)
+    .join(' ');
+  const operator = item?.operatorRef ? `operator ${item.operatorRef}` : '';
+  return [binding, target, operator]
+    .filter(Boolean)
+    .join(' · ');
+}
+
+function visualRuntimeBindingRequirementValue(item) {
+  const state = item?.readinessState ? operatorPaletteFacetLabel(item.readinessState) : '';
+  return [item?.recommendedAction || item?.summary || 'Bind runtime implementation before EXECUTABLE promotion.', state]
+    .filter(Boolean)
+    .join(' · ');
+}
+
 function visualAssetActionContext(item) {
   if (!item) {
     return null;
@@ -7351,6 +7647,82 @@ function attachVisualAssetOverviewActionQueryHandlers(actionQueue) {
   }
 }
 
+function attachVisualRuntimeBindingRequirementHandlers() {
+  document.querySelectorAll('[data-runtime-binding-requirement]').forEach((button) => {
+    button.onclick = () => openVisualRuntimeBindingRequirement(
+      button.dataset.runtimeBindingRequirement,
+      button.dataset.runtimeBindingRequirementKey
+    );
+  });
+}
+
+function attachVisualRuntimeBindingRequirementQueryHandlers(bindingIndex) {
+  const targetKind = $('runtime-binding-target-kind');
+  if (targetKind) {
+    targetKind.onchange = () => updateVisualRuntimeBindingRequirementQuery({
+      targetKind: targetKind.value,
+      offset: 0
+    });
+  }
+  const bindingKind = $('runtime-binding-kind');
+  if (bindingKind) {
+    bindingKind.onchange = () => updateVisualRuntimeBindingRequirementQuery({
+      bindingKind: bindingKind.value,
+      offset: 0
+    });
+  }
+  const sourceKind = $('runtime-binding-source-kind');
+  if (sourceKind) {
+    sourceKind.onchange = () => updateVisualRuntimeBindingRequirementQuery({
+      sourceKind: sourceKind.value,
+      offset: 0
+    });
+  }
+  const loweringMode = $('runtime-binding-lowering-mode');
+  if (loweringMode) {
+    loweringMode.onchange = () => updateVisualRuntimeBindingRequirementQuery({
+      loweringMode: loweringMode.value,
+      offset: 0
+    });
+  }
+  const readinessState = $('runtime-binding-readiness-state');
+  if (readinessState) {
+    readinessState.onchange = () => updateVisualRuntimeBindingRequirementQuery({
+      readinessState: readinessState.value,
+      offset: 0
+    });
+  }
+  const limit = $('runtime-binding-limit');
+  if (limit) {
+    limit.onchange = () => updateVisualRuntimeBindingRequirementQuery({
+      limit: Number(limit.value || 10),
+      offset: 0
+    });
+  }
+  const pageSize = Number(bindingIndex?.itemLimit || state.visualRuntimeBindingRequirementQuery.limit || 10) || 10;
+  const offset = Number(bindingIndex?.offset || 0) || 0;
+  const previous = $('runtime-binding-prev');
+  if (previous) {
+    previous.onclick = () => updateVisualRuntimeBindingRequirementQuery({ offset: Math.max(0, offset - pageSize) });
+  }
+  const next = $('runtime-binding-next');
+  if (next) {
+    next.onclick = () => updateVisualRuntimeBindingRequirementQuery({ offset: offset + pageSize });
+  }
+  const reset = $('runtime-binding-reset');
+  if (reset) {
+    reset.onclick = () => updateVisualRuntimeBindingRequirementQuery({
+      targetKind: '',
+      bindingKind: '',
+      sourceKind: '',
+      loweringMode: '',
+      readinessState: '',
+      offset: 0,
+      limit: 10
+    });
+  }
+}
+
 async function openVisualAssetAction(index, actionKey = '') {
   const items = state.visualAssetOverview?.actionQueue?.items || [];
   const item = actionKey
@@ -7379,6 +7751,37 @@ async function openVisualAssetAction(index, actionKey = '') {
     }
     case 'operator':
       return focusOperatorPaletteRef(item.targetId, context);
+    default:
+      return null;
+  }
+}
+
+async function openVisualRuntimeBindingRequirement(index, requirementKey = '') {
+  const items = state.visualRuntimeBindingRequirements?.items || [];
+  const item = requirementKey
+    ? items.find((candidate) => candidate?.requirementKey === requirementKey) || items[Number(index)]
+    : items[Number(index)];
+  if (!item?.targetId) {
+    return null;
+  }
+  state.activeVisualRuntimeBindingRequirement = item;
+  const context = visualRuntimeBindingRequirementContext(item);
+  renderVisualAssetOverview();
+  switch (String(item.targetKind || '').toLowerCase()) {
+    case 'draft': {
+      const draft = await openLibraryImpactDraftTarget(item.targetId, -1);
+      if (context) {
+        setDraftMessage(`Opened runtime binding requirement: ${context.message}`, context.level);
+      }
+      return draft;
+    }
+    case 'publication': {
+      const publication = await openLibraryImpactPublicationTarget(item.targetId, -1);
+      if (context) {
+        setPublicationMessage(`Opened runtime binding requirement: ${context.message}`, context.level);
+      }
+      return publication;
+    }
     default:
       return null;
   }

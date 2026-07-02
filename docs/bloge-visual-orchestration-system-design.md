@@ -740,6 +740,9 @@ per-node `PLAN_DRAFT_RUNTIME_BINDING` / `PLAN_PUBLICATION_RUNTIME_BINDING` items
 `bloge.visualRuntimeBindingRequirements.v1`，给外部 runtime-plane 集成团队按
 scope、targetKind、bindingKind、sourceKind、loweringMode 和 readinessState 查询、分页和计数；
 这个索引不保存待办状态，避免和 draft/publication readiness 形成第二套真相源。
+浏览器 Workspace Overview 会同步加载这个索引并展示 Runtime Binding Requirements 小节，
+提供同类过滤、分页和 draft/publication 打开动作，让作者和集成团队在画布工作台内看到
+“可设计但不可执行”的具体 runtime-plane 交接项。
 connection preflight 会返回候选连接相关的局部 diagnostics，同时携带应用 preview
 edge/binding/config expression 后的完整 candidate draft validation/readiness/actionReadiness；compile 和 run 响应同样携带本次服务端门禁使用的 validation/readiness/actionReadiness；
 publication run 则回传 artifact 冻结时的 validation/readiness/actionReadiness，不能按当前 catalog

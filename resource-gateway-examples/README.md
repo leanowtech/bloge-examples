@@ -1095,7 +1095,10 @@ For external integration teams that need a factual queue rather than a
 recommendation list, `/api/visual/assets/runtime-binding-requirements` exposes
 the same gaps as `bloge.visualRuntimeBindingRequirements.v1`, scoped and
 pageable by tenant/namespace/environment and filterable by target kind, binding
-kind, source kind, lowering mode, or readiness state.
+kind, source kind, lowering mode, or readiness state. The same Workspace
+Overview panel renders that index with filters, paging, and draft/publication
+Open actions, so design-time binding work is visible from the canvas without
+pretending the graph is executable.
 The Drafts panel renders a Draft Asset Index from server-side draft summaries
 for the active Authoring Scope, so active and recoverable deleted drafts expose
 design-only, runtime-blocked, governance-review, repair-required readiness, and
