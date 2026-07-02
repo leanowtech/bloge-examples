@@ -1,5 +1,6 @@
 package com.leanowtech.bloge.gateway.visual.publication;
 
+import com.leanowtech.bloge.gateway.visual.draft.GraphDraftDependencyReport;
 import com.leanowtech.bloge.gateway.visual.runtime.VisualGraphRunResponse;
 import com.leanowtech.bloge.gateway.visual.runtime.VisualGraphRunRecord;
 import com.leanowtech.bloge.gateway.visual.runtime.VisualGraphRunRepository;
@@ -57,6 +58,19 @@ public class VisualGraphPublicationController {
     public ResponseEntity<VisualGraphPublication> get(@PathVariable String publicationId) {
         return repository.find(publicationId)
                 .map(ResponseEntity::ok)
+                .orElseGet(() -> ResponseEntity.notFound().build());
+    }
+
+    /**
+     * Gets the publish-time dependency report frozen with a publication.
+     *
+     * @param publicationId publication id
+     * @return frozen dependency report when the publication exists
+     */
+    @GetMapping("/{publicationId}/dependencies")
+    public ResponseEntity<GraphDraftDependencyReport> dependencies(@PathVariable String publicationId) {
+        return repository.find(publicationId)
+                .map(publication -> ResponseEntity.ok(publication.dependencyReport()))
                 .orElseGet(() -> ResponseEntity.notFound().build());
     }
 

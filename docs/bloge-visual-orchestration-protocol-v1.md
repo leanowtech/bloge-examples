@@ -1704,6 +1704,19 @@ resource-gateway 示例将 artifact 存入 `visual_graph_publications`，提供 
 
 ### 10.8 运行发布 artifact
 
+发布 artifact 的 `bloge.visualGraphPublication.v1` 会冻结 publish-time
+`dependencyReport`。这份报告使用与 stored draft dependency report 相同的
+`bloge.visualGraphDraftDependencies.v1` 行结构，但语义不同：它描述的是 artifact
+写入时的 operator/source/lowering/readiness/fingerprint 视图，不会随当前 catalog
+变化而重新解释。外部控制面可直接读取 artifact，也可通过专用 endpoint 只取报告：
+
+```http
+GET /api/visual/publications/{publicationId}/dependencies
+```
+
+若 artifact 不存在返回 `404 NOT FOUND`。这条接口是为审计、迁移复核和设计制品治理准备的，
+不允许客户端把返回内容当作可 rebase 的 current draft 状态。
+
 ```http
 POST /api/visual/publications/{publicationId}/run
 Content-Type: application/json

@@ -3,6 +3,7 @@ package com.leanowtech.bloge.gateway.visual.publication;
 import com.leanowtech.bloge.gateway.visual.catalog.OperatorDefinition;
 import com.leanowtech.bloge.gateway.visual.codegen.DslGenerationResult;
 import com.leanowtech.bloge.gateway.visual.draft.GraphDraft;
+import com.leanowtech.bloge.gateway.visual.draft.GraphDraftDependencyReport;
 import com.leanowtech.bloge.gateway.visual.validation.VisualValidationResult;
 
 import java.time.Instant;
@@ -31,6 +32,7 @@ import java.util.Map;
  * @param dsl generated executable BLOGE DSL
  * @param validation validation report captured at publish time
  * @param generation DSL generation result captured at publish time
+ * @param dependencyReport publish-time dependency report frozen with the artifact
  */
 public record VisualGraphPublication(
         String schemaVersion,
@@ -49,7 +51,8 @@ public record VisualGraphPublication(
         Map<String, Object> visualLayout,
         String dsl,
         VisualValidationResult validation,
-        DslGenerationResult generation
+        DslGenerationResult generation,
+        GraphDraftDependencyReport dependencyReport
 ) {
     public static final String ARTIFACT_EXECUTABLE = "EXECUTABLE";
     public static final String ARTIFACT_DESIGN = "DESIGN";
@@ -76,6 +79,32 @@ public record VisualGraphPublication(
         dsl = dsl == null ? "" : dsl;
         validation = validation == null ? new VisualValidationResult(true, List.of()) : validation;
         generation = generation == null ? new DslGenerationResult(true, dsl, List.of()) : generation;
+        dependencyReport = dependencyReport == null ? GraphDraftDependencyReport.empty() : dependencyReport;
+    }
+
+    /**
+     * Backward-compatible constructor for callers that do not freeze dependency reports.
+     */
+    public VisualGraphPublication(String schemaVersion,
+                                  String publicationId,
+                                  String draftId,
+                                  long draftRevision,
+                                  String graphName,
+                                  String tenantId,
+                                  String namespace,
+                                  String environment,
+                                  Instant createdAt,
+                                  String artifactKind,
+                                  GraphDraft draft,
+                                  List<OperatorDefinition> operatorSnapshots,
+                                  Map<String, String> operatorFingerprints,
+                                  Map<String, Object> visualLayout,
+                                  String dsl,
+                                  VisualValidationResult validation,
+                                  DslGenerationResult generation) {
+        this(schemaVersion, publicationId, draftId, draftRevision, graphName, tenantId, namespace, environment,
+                createdAt, artifactKind, draft, operatorSnapshots, operatorFingerprints, visualLayout, dsl,
+                validation, generation, GraphDraftDependencyReport.empty());
     }
 
     /**
@@ -99,7 +128,7 @@ public record VisualGraphPublication(
                                   DslGenerationResult generation) {
         this(schemaVersion, publicationId, draftId, draftRevision, graphName, tenantId, namespace, environment,
                 createdAt, ARTIFACT_EXECUTABLE, draft, operatorSnapshots, operatorFingerprints, visualLayout, dsl,
-                validation, generation);
+                validation, generation, GraphDraftDependencyReport.empty());
     }
 
     /**
@@ -109,6 +138,24 @@ public record VisualGraphPublication(
                                               List<OperatorDefinition> operatorSnapshots,
                                               VisualValidationResult validation,
                                               DslGenerationResult generation) {
+        return from(draft, operatorSnapshots, validation, generation, GraphDraftDependencyReport.empty());
+    }
+
+    /**
+     * Builds a publication from validated/generated draft state.
+     *
+     * @param draft stored draft snapshot
+     * @param operatorSnapshots frozen operator snapshots
+     * @param validation publish-time validation and readiness
+     * @param generation publish-time DSL generation result
+     * @param dependencyReport publish-time dependency report
+     * @return immutable publication artifact
+     */
+    public static VisualGraphPublication from(GraphDraft draft,
+                                              List<OperatorDefinition> operatorSnapshots,
+                                              VisualValidationResult validation,
+                                              DslGenerationResult generation,
+                                              GraphDraftDependencyReport dependencyReport) {
         return new VisualGraphPublication(
                 "",
                 "",
@@ -126,7 +173,8 @@ public record VisualGraphPublication(
                 draft.visualLayout(),
                 generation.dsl(),
                 validation,
-                generation
+                generation,
+                dependencyReport
         );
     }
 
@@ -137,6 +185,24 @@ public record VisualGraphPublication(
                                                 List<OperatorDefinition> operatorSnapshots,
                                                 VisualValidationResult validation,
                                                 DslGenerationResult generation) {
+        return design(draft, operatorSnapshots, validation, generation, GraphDraftDependencyReport.empty());
+    }
+
+    /**
+     * Builds a non-executable design publication from validated draft state.
+     *
+     * @param draft stored draft snapshot
+     * @param operatorSnapshots frozen operator snapshots
+     * @param validation publish-time validation and readiness
+     * @param generation publish-time generation diagnostics
+     * @param dependencyReport publish-time dependency report
+     * @return immutable design artifact
+     */
+    public static VisualGraphPublication design(GraphDraft draft,
+                                                List<OperatorDefinition> operatorSnapshots,
+                                                VisualValidationResult validation,
+                                                DslGenerationResult generation,
+                                                GraphDraftDependencyReport dependencyReport) {
         return new VisualGraphPublication(
                 "",
                 "",
@@ -154,7 +220,8 @@ public record VisualGraphPublication(
                 draft.visualLayout(),
                 generation == null ? "" : generation.dsl(),
                 validation,
-                generation == null ? new DslGenerationResult(false, "", List.of()) : generation
+                generation == null ? new DslGenerationResult(false, "", List.of()) : generation,
+                dependencyReport
         );
     }
 
@@ -178,7 +245,7 @@ public record VisualGraphPublication(
     public VisualGraphPublication withIdentity(String newPublicationId, Instant newCreatedAt) {
         return new VisualGraphPublication(schemaVersion, newPublicationId, draftId, draftRevision, graphName,
                 tenantId, namespace, environment, newCreatedAt, artifactKind, draft, operatorSnapshots,
-                operatorFingerprints, visualLayout, dsl, validation, generation);
+                operatorFingerprints, visualLayout, dsl, validation, generation, dependencyReport);
     }
 
     private static String normalizeArtifactKind(String value) {

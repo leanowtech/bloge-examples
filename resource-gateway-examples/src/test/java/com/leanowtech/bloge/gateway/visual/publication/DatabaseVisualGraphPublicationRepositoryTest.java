@@ -6,6 +6,7 @@ import com.leanowtech.bloge.gateway.visual.catalog.OperatorDefinition;
 import com.leanowtech.bloge.gateway.visual.catalog.VisualCatalogTestSupport;
 import com.leanowtech.bloge.gateway.visual.codegen.DslGenerationResult;
 import com.leanowtech.bloge.gateway.visual.draft.GraphDraft;
+import com.leanowtech.bloge.gateway.visual.draft.GraphDraftDependencyReport;
 import com.leanowtech.bloge.gateway.visual.validation.VisualValidationResult;
 
 import org.junit.jupiter.api.BeforeEach;
@@ -88,6 +89,25 @@ class DatabaseVisualGraphPublicationRepositoryTest {
     }
 
     @Test
+    void persistsFrozenDependencyReport() {
+        VisualGraphPublication stored = repository.create(publication("publication-with-dependencies"));
+
+        DatabaseVisualGraphPublicationRepository reloaded =
+                new DatabaseVisualGraphPublicationRepository(jdbc, objectMapper);
+        reloaded.init();
+
+        assertThat(reloaded.find(stored.publicationId()))
+                .get()
+                .extracting(VisualGraphPublication::dependencyReport)
+                .satisfies(report -> {
+                    assertThat(report.draftId()).isEqualTo("draft-1");
+                    assertThat(report.operatorDependencyCount()).isEqualTo(1);
+                    assertThat(report.runtimeReadinessStateCounts())
+                            .containsEntry("RUNTIME_EXECUTABLE", 1);
+                });
+    }
+
+    @Test
     void createDoesNotOverwriteExistingPublication() {
         repository.create(publication("publication-1"));
 
@@ -123,23 +143,13 @@ class DatabaseVisualGraphPublicationRepositoryTest {
                 new GraphDraft.OutputSelection("eligibility", ""),
                 Map.of("eligibility", operator.fingerprint())
         );
-        return new VisualGraphPublication(
-                "",
-                publicationId,
-                draft.draftId(),
-                draft.revision(),
-                draft.graphName(),
-                draft.tenantId(),
-                draft.namespace(),
-                draft.environment(),
-                null,
+        return VisualGraphPublication.from(
                 draft,
                 List.of(operator),
-                draft.operatorFingerprints(),
-                draft.visualLayout(),
-                "graph visualPolicy {}",
                 new VisualValidationResult(true, List.of()),
-                new DslGenerationResult(true, "graph visualPolicy {}", List.of())
-        );
+                new DslGenerationResult(true, "graph visualPolicy {}", List.of()),
+                GraphDraftDependencyReport.from(draft, VisualCatalogTestSupport.catalogWithLibrary(
+                        VisualCatalogTestSupport.eligibilityLibrary("integer")))
+        ).withIdentity(publicationId, null);
     }
 }

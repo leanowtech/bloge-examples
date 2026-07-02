@@ -1635,6 +1635,18 @@ class VisualGraphDraftControllerTest {
                 .extracting("operatorRef")
                 .containsExactly("risk:eligibility");
         assertThat(result.publication().operatorFingerprints()).containsKey("eligibility");
+        assertThat(result.publication().dependencyReport().draftId()).isEqualTo(stored.draftId());
+        assertThat(result.publication().dependencyReport().revision()).isEqualTo(stored.revision());
+        assertThat(result.publication().dependencyReport().missingOperatorCount()).isZero();
+        assertThat(result.publication().dependencyReport().runtimeReadinessStateCounts())
+                .containsEntry("RUNTIME_EXECUTABLE", 1);
+        assertThat(result.publication().dependencyReport().operators())
+                .singleElement()
+                .satisfies(operator -> {
+                    assertThat(operator.operatorRef()).isEqualTo("risk:eligibility");
+                    assertThat(operator.fingerprintState()).isEqualTo("current");
+                    assertThat(operator.scopeAllowed()).isTrue();
+                });
         assertThat(publications.find(result.publication().publicationId())).contains(result.publication());
     }
 
@@ -1817,6 +1829,16 @@ class VisualGraphDraftControllerTest {
         assertThat(result.publication().operatorSnapshots())
                 .extracting("operatorRef")
                 .containsExactly("risk:eligibility");
+        assertThat(result.publication().dependencyReport().runtimeReadinessStateCounts())
+                .containsEntry("DESIGN_ONLY", 1);
+        assertThat(result.publication().dependencyReport().operators())
+                .singleElement()
+                .satisfies(operator -> {
+                    assertThat(operator.operatorRef()).isEqualTo("risk:eligibility");
+                    assertThat(operator.runtimeReadinessState()).isEqualTo("DESIGN_ONLY");
+                    assertThat(operator.artifactKinds()).containsExactly("DESIGN");
+                    assertThat(operator.executable()).isFalse();
+                });
         assertThat(publications.find(result.publication().publicationId())).contains(result.publication());
     }
 

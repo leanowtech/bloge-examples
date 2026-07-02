@@ -4,6 +4,7 @@ import com.leanowtech.bloge.gateway.visual.catalog.OperatorDefinition;
 import com.leanowtech.bloge.gateway.visual.catalog.VisualCatalogTestSupport;
 import com.leanowtech.bloge.gateway.visual.codegen.DslGenerationResult;
 import com.leanowtech.bloge.gateway.visual.draft.GraphDraft;
+import com.leanowtech.bloge.gateway.visual.draft.GraphDraftDependencyReport;
 import com.leanowtech.bloge.gateway.visual.runtime.InMemoryVisualGraphRunRepository;
 import com.leanowtech.bloge.gateway.visual.runtime.VisualGraphRunResponse;
 import com.leanowtech.bloge.gateway.visual.runtime.VisualGraphRunRecord;
@@ -45,6 +46,27 @@ class VisualGraphPublicationControllerTest {
                         new InMemoryVisualGraphRunRepository());
 
         assertThat(controller.get("missing").getStatusCode()).isEqualTo(HttpStatus.NOT_FOUND);
+    }
+
+    @Test
+    void dependenciesReturnsFrozenPublicationDependencyReport() {
+        InMemoryVisualGraphPublicationRepository repository = new InMemoryVisualGraphPublicationRepository();
+        VisualGraphPublication stored = repository.create(publication());
+        VisualGraphPublicationController controller = new VisualGraphPublicationController(repository, runner(),
+                new InMemoryVisualGraphRunRepository());
+
+        ResponseEntity<GraphDraftDependencyReport> response = controller.dependencies(stored.publicationId());
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat(response.getBody()).isNotNull();
+        assertThat(response.getBody()).isEqualTo(stored.dependencyReport());
+        assertThat(response.getBody().draftId()).isEqualTo(stored.draftId());
+        assertThat(response.getBody().operators())
+                .singleElement()
+                .satisfies(operator -> {
+                    assertThat(operator.operatorRef()).isEqualTo("risk:eligibility");
+                    assertThat(operator.fingerprintState()).isEqualTo("current");
+                });
     }
 
     @Test
@@ -107,7 +129,9 @@ class VisualGraphPublicationControllerTest {
                 draft,
                 List.of(operator),
                 new VisualValidationResult(true, List.of()),
-                new DslGenerationResult(true, "graph visualPolicy {}", List.of())
+                new DslGenerationResult(true, "graph visualPolicy {}", List.of()),
+                GraphDraftDependencyReport.from(draft, VisualCatalogTestSupport.catalogWithLibrary(
+                        VisualCatalogTestSupport.eligibilityLibrary("integer")))
         );
     }
 

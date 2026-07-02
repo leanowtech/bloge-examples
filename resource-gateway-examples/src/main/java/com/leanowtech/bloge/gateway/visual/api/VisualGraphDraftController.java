@@ -638,9 +638,10 @@ public class VisualGraphDraftController {
 
         GraphDraft snapshot = withMissingCurrentOperatorSnapshotState(draft);
         List<OperatorDefinition> snapshots = operatorSnapshots(snapshot);
+        GraphDraftDependencyReport dependencyReport = GraphDraftDependencyReport.from(snapshot, catalog);
         VisualGraphPublication candidate = VisualGraphPublishRequest.ARTIFACT_DESIGN.equals(artifactKind)
-                ? VisualGraphPublication.design(snapshot, snapshots, validation, generation)
-                : VisualGraphPublication.from(snapshot, snapshots, validation, generation);
+                ? VisualGraphPublication.design(snapshot, snapshots, validation, generation, dependencyReport)
+                : VisualGraphPublication.from(snapshot, snapshots, validation, generation, dependencyReport);
         VisualGraphPublication publication = publicationRepository.create(candidate);
         return ResponseEntity.status(HttpStatus.CREATED)
                 .body(VisualGraphPublicationResult.published(publication));

@@ -1123,6 +1123,7 @@ function renderInputForm() {
         <div id="golden-certification-status" class="certification-status" hidden></div>
         <div id="publication-status" class="draft-status" hidden></div>
         <div id="publication-readiness" class="operator-readiness-panel publication-readiness-panel" hidden></div>
+        <div id="publication-dependencies" class="library-impact-panel" hidden></div>
       </div>
       <div class="builder-panel">
         <div class="panel-title">Run History</div>
@@ -6324,6 +6325,7 @@ function renderPublicationControls() {
   renderGoldenCertificationStatus();
   renderPublicationStatus();
   renderPublicationReadinessReview();
+  renderPublicationDependencyReport();
 }
 
 function renderGoldenCaseControls() {
@@ -6650,6 +6652,85 @@ function renderPublicationReadinessReview() {
       </div>
     ` : ''}</div>` : ''}
   `;
+}
+
+function renderPublicationDependencyReport() {
+  const target = $('publication-dependencies');
+  if (!target) return;
+  const publication = selectedPublication();
+  const report = publication?.dependencyReport || null;
+  if (!publication || !report || !Array.isArray(report.nodes)) {
+    target.hidden = true;
+    target.innerHTML = '';
+    return;
+  }
+  const level = draftDependencyReportLevel(report);
+  const stats = [
+    ['Operators', report.operatorDependencyCount || 0],
+    ['Nodes', report.nodeCount || 0],
+    ['Missing', report.missingOperatorCount || 0],
+    ['Scope', report.scopeMismatchOperatorCount || 0],
+    ['Drifted', report.driftedFingerprintCount || 0],
+    ['Unsnapshotted', report.missingFingerprintCount || 0]
+  ].map(([label, value]) => `<span><strong>${escapeHtml(value)}</strong> ${escapeHtml(label)}</span>`).join('');
+  const readinessRows = draftDependencyCountRows(report.runtimeReadinessStateCounts || {}, 'readiness');
+  const sourceRows = draftDependencyCountRows(report.sourceKindCounts || {}, 'source');
+  const operatorRows = publicationDependencyOperatorRows(report);
+  const nodeRows = publicationDependencyNodeRows(report);
+  target.hidden = false;
+  target.className = `library-impact-panel ${escapeHtml(level)}`;
+  target.innerHTML = `
+    <div class="library-impact-head">
+      <strong>Frozen Dependencies</strong>
+      <span>${escapeHtml(`${publication.publicationId || 'publication'} · ${publication.artifactKind || 'EXECUTABLE'}`)}</span>
+    </div>
+    <div class="library-impact-risk-summary">${escapeHtml(publicationDependencySummary(report))}</div>
+    <div class="library-impact-stats">${stats}</div>
+    ${readinessRows || sourceRows ? `<div class="library-impact-codes">${readinessRows}${sourceRows}</div>` : ''}
+    ${operatorRows ? `<div class="library-impact-risks">${operatorRows}</div>` : ''}
+    ${nodeRows ? `<div class="library-impact-risks">${nodeRows}</div>` : ''}
+  `;
+}
+
+function publicationDependencySummary(report) {
+  const base = draftDependencySummary(report);
+  if (base === 'Current catalog dependencies are snapshotted and aligned.') {
+    return 'Publish-time dependencies were snapshotted with this immutable artifact.';
+  }
+  return `Publish-time dependency review: ${base}`;
+}
+
+function publicationDependencyOperatorRows(report) {
+  const operators = Array.isArray(report?.operators) ? report.operators : [];
+  const sorted = [...operators].sort((left, right) =>
+    draftDependencyRowRank(right) - draftDependencyRowRank(left)
+      || String(left.operatorRef || '').localeCompare(String(right.operatorRef || '')));
+  const rows = sorted.slice(0, 6).map((operator) => `
+    <div class="library-impact-risk ${escapeHtml(draftDependencyFingerprintLevel(operator.fingerprintState, operator.runtimeReadinessState))}">
+      <strong>${escapeHtml(operator.operatorRef || 'operator')}</strong>
+      <span>${escapeHtml(draftDependencyOperatorSummary(operator))}</span>
+      <small>${escapeHtml(`nodes ${uniqueStrings(operator.nodeIds).join(', ') || 'none'}`)}</small>
+    </div>
+  `).join('');
+  const hidden = Math.max(0, sorted.length - 6);
+  return rows + (hidden ? `<div class="library-impact-more">+${hidden} more frozen operator dependencies</div>` : '');
+}
+
+function publicationDependencyNodeRows(report) {
+  const nodes = Array.isArray(report?.nodes) ? report.nodes : [];
+  const interesting = nodes
+    .filter((node) => draftDependencyRowRank(node) > 0 || (node.upstreamNodes || []).length || (node.downstreamNodes || []).length)
+    .sort((left, right) => draftDependencyRowRank(right) - draftDependencyRowRank(left)
+      || String(left.nodeId || '').localeCompare(String(right.nodeId || '')));
+  const rows = interesting.slice(0, 5).map((node) => `
+    <div class="library-impact-risk ${escapeHtml(draftDependencyFingerprintLevel(node.fingerprintState, node.runtimeReadinessState))}">
+      <strong>${escapeHtml(node.nodeId || 'node')}</strong>
+      <span>${escapeHtml(node.operatorRef || 'operator')} · ${escapeHtml(draftDependencyLineageLabel(node))}</span>
+      <small>${escapeHtml(draftDependencyNodeSummary(node))}</small>
+    </div>
+  `).join('');
+  const hidden = Math.max(0, interesting.length - 5);
+  return rows + (hidden ? `<div class="library-impact-more">+${hidden} more frozen node dependencies</div>` : '');
 }
 
 function selectedPublicationExecutable() {
