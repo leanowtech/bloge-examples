@@ -332,6 +332,7 @@ const state = {
   lastPayload: null,
   builder: createDefaultBuilder(),
   drafts: [],
+  draftHistory: [],
   currentDraftId: '',
   currentDraftRevision: 0,
   savedDraftSnapshot: null,
@@ -5665,17 +5666,18 @@ async function saveOpenApiResourceDescriptor() {
 function renderDraftControls() {
   const select = $('draft-select');
   if (!select) return;
+  const entries = draftHistoryEntries();
   const options = ['<option value="">New draft</option>']
-    .concat(state.drafts.map((draft) => {
-      const label = `${draft.graphName || draft.draftId} @${draft.revision || 0}`;
-      return `<option value="${escapeHtml(draft.draftId)}">${escapeHtml(label)}</option>`;
+    .concat(entries.map((entry) => {
+      return `<option value="${escapeHtml(entry.draftId)}">${escapeHtml(draftHistoryOptionLabel(entry))}</option>`;
     }));
   select.innerHTML = options.join('');
   select.value = state.currentDraftId || '';
   select.onchange = () => {
     state.currentDraftId = select.value;
-    const draft = state.drafts.find((item) => item.draftId === select.value);
-    state.currentDraftRevision = draft?.revision || 0;
+    const entry = currentDraftHistoryEntry();
+    const draft = entry?.active ? state.drafts.find((item) => item.draftId === select.value) : null;
+    state.currentDraftRevision = entry?.active ? (draft?.revision || entry?.currentRevision || 0) : 0;
     state.savedDraftSnapshot = draft || null;
     state.draftRevisions = [];
     state.draftRevisionDiff = null;
@@ -5695,18 +5697,19 @@ function renderDraftControls() {
   const importButton = $('import-draft');
   const bundleEditor = $('draft-bundle-json');
   if (saveButton) {
+    saveButton.disabled = Boolean(state.currentDraftId && !currentDraftIsActive());
     saveButton.onclick = saveCurrentDraft;
   }
   if (loadButton) {
-    loadButton.disabled = !state.currentDraftId;
+    loadButton.disabled = !state.currentDraftId || !currentDraftIsActive();
     loadButton.onclick = loadSelectedDraft;
   }
   if (deleteButton) {
-    deleteButton.disabled = !state.currentDraftId;
+    deleteButton.disabled = !state.currentDraftId || !currentDraftIsActive();
     deleteButton.onclick = deleteSelectedDraft;
   }
   if (exportButton) {
-    exportButton.disabled = !state.currentDraftId;
+    exportButton.disabled = !state.currentDraftId || !currentDraftIsActive();
     exportButton.onclick = exportSelectedDraft;
   }
   if (importButton) {
@@ -5725,6 +5728,50 @@ function renderDraftControls() {
   }
   renderDraftRevisionControls();
   renderDraftStatus();
+}
+
+function draftHistoryEntries() {
+  const byId = new Map();
+  for (const entry of Array.isArray(state.draftHistory) ? state.draftHistory : []) {
+    if (entry?.draftId) {
+      byId.set(entry.draftId, entry);
+    }
+  }
+  for (const draft of Array.isArray(state.drafts) ? state.drafts : []) {
+    if (draft?.draftId && !byId.has(draft.draftId)) {
+      byId.set(draft.draftId, {
+        draftId: draft.draftId,
+        graphName: draft.graphName || draft.draftId,
+        active: true,
+        currentRevision: draft.revision || 0,
+        latestRevision: draft.revision || 0,
+        revisionCount: 1,
+        changeSummary: draft.revisionMetadata?.changeSummary || 'Saved draft.'
+      });
+    }
+  }
+  return Array.from(byId.values()).sort((left, right) =>
+    Number(right.latestRevision || 0) - Number(left.latestRevision || 0)
+      || String(left.draftId || '').localeCompare(String(right.draftId || '')));
+}
+
+function currentDraftHistoryEntry() {
+  if (!state.currentDraftId) {
+    return null;
+  }
+  return draftHistoryEntries().find((entry) => entry.draftId === state.currentDraftId) || null;
+}
+
+function currentDraftIsActive() {
+  const entry = currentDraftHistoryEntry();
+  return !state.currentDraftId || entry?.active !== false;
+}
+
+function draftHistoryOptionLabel(entry) {
+  const revision = entry.active ? (entry.currentRevision || entry.latestRevision || 0) : (entry.latestRevision || 0);
+  const status = entry.active ? 'active' : 'deleted';
+  const summary = entry.changeSummary ? ` · ${entry.changeSummary}` : '';
+  return `${entry.graphName || entry.draftId} @${revision} · ${status}${summary}`;
 }
 
 function renderDraftRevisionControls() {
@@ -6963,12 +7010,19 @@ async function runSelectedPublication() {
 
 async function loadDraftList(options = {}) {
   try {
-    const response = await fetch('/api/visual/drafts');
-    if (!response.ok) {
-      throw new Error(`Draft list failed with ${response.status}`);
+    const [draftResponse, historyResponse] = await Promise.all([
+      fetch('/api/visual/drafts'),
+      fetch('/api/visual/drafts/history')
+    ]);
+    if (!draftResponse.ok) {
+      throw new Error(`Draft list failed with ${draftResponse.status}`);
     }
-    state.drafts = await response.json();
-    if (state.currentDraftId && !state.drafts.some((draft) => draft.draftId === state.currentDraftId)) {
+    if (!historyResponse.ok) {
+      throw new Error(`Draft history index failed with ${historyResponse.status}`);
+    }
+    state.drafts = await draftResponse.json();
+    state.draftHistory = await historyResponse.json();
+    if (state.currentDraftId && !draftHistoryEntries().some((entry) => entry.draftId === state.currentDraftId)) {
       state.currentDraftId = '';
       state.currentDraftRevision = 0;
       state.savedDraftSnapshot = null;
@@ -6976,6 +7030,9 @@ async function loadDraftList(options = {}) {
       state.draftRevisionDiff = null;
       state.selectedDraftRevision = 0;
       state.previewingDraftRevision = 0;
+    } else if (state.currentDraftId && !currentDraftIsActive()) {
+      state.currentDraftRevision = 0;
+      state.savedDraftSnapshot = null;
     }
     if (options.render !== false) {
       renderDraftControls();
@@ -7310,42 +7367,77 @@ async function importDraftBundle() {
 async function previewSelectedDraftRevision() {
   const draft = await selectedDraftRevisionSnapshot();
   if (!draft) return;
-  const current = await loadCurrentDraftSnapshot();
-  if (!current) return;
+  const active = currentDraftIsActive();
+  const current = active ? await loadCurrentDraftSnapshot() : null;
+  if (active && !current) return;
+  const historyEntry = currentDraftHistoryEntry();
   state.builder = builderFromVisualDraft(draft);
   clearBuilderHistory('Previewing revision; local edit history cleared.');
   await loadVisualOperatorCatalog();
-  state.currentDraftId = current.draftId || state.currentDraftId;
-  state.currentDraftRevision = current.revision || state.currentDraftRevision;
-  state.savedDraftSnapshot = current;
+  state.currentDraftId = current?.draftId || draft.draftId || state.currentDraftId;
+  state.currentDraftRevision = current?.revision || (historyEntry?.active ? historyEntry.currentRevision : 0);
+  state.savedDraftSnapshot = current || null;
   state.previewingDraftRevision = draft.revision || 0;
   state.lastPayload = null;
   state.lastGeneratedVisualDsl = '';
   syncGraphInputSchemaTextFromBuilder({ render: false });
   syncComposerFromBuilder({ render: false });
-  setDraftMessage(`Previewing revision @${state.previewingDraftRevision}. Save or Restore to create a new revision.`, 'info');
+  const action = currentDraftIsActive() ? 'Save or Restore to create a new revision.' : 'Restore to recover this deleted draft.';
+  setDraftMessage(`Previewing revision @${state.previewingDraftRevision}. ${action}`, 'info');
   renderScenario();
 }
 
 async function restoreSelectedDraftRevision() {
-  const draft = await selectedDraftRevisionSnapshot();
-  if (!draft) return;
-  const current = await loadCurrentDraftSnapshot();
-  if (!current) return;
-  state.builder = builderFromVisualDraft(draft);
-  clearBuilderHistory('Restoring revision; local edit history cleared.');
+  const revision = Number(state.selectedDraftRevision || 0);
+  if (!state.currentDraftId || !revision) return;
+  const historyEntry = currentDraftHistoryEntry();
+  const active = currentDraftIsActive();
+  const current = active ? await loadCurrentDraftSnapshot() : null;
+  if (active && !current) return;
+  const expectedRevision = current?.revision || historyEntry?.latestRevision || 0;
+
+  const response = await fetch(
+    `/api/visual/drafts/${encodeURIComponent(state.currentDraftId)}/revisions/${encodeURIComponent(revision)}/restore`,
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        expectedRevision,
+        actor: 'visual-canvas',
+        changeSource: 'gateway-browser',
+        changeSummary: `Restored draft revision @${revision}.`
+      })
+    }
+  );
+  const payload = await response.json().catch(() => null);
+  if (!response.ok) {
+    const diagnostics = normalizeDiagnostics(payload?.diagnostics);
+    if (response.status === 409 && payload?.draft) {
+      state.currentDraftRevision = currentDraftIsActive() ? (payload.draft.revision || state.currentDraftRevision) : 0;
+      state.savedDraftSnapshot = currentDraftIsActive() ? payload.draft : null;
+      await loadDraftList();
+      renderDraftControls();
+    }
+    setDraftMessage(diagnosticMessage(diagnostics, `Restore failed with ${response.status}`), 'error');
+    return;
+  }
+
+  const restored = payload?.draft || payload;
+  state.builder = builderFromVisualDraft(restored);
+  clearBuilderHistory('Restored revision; local edit history cleared.');
   await loadVisualOperatorCatalog();
-  state.currentDraftId = current.draftId || state.currentDraftId;
-  state.currentDraftRevision = current.revision || state.currentDraftRevision;
-  state.savedDraftSnapshot = current;
-  state.previewingDraftRevision = draft.revision || 0;
+  state.currentDraftId = restored.draftId || state.currentDraftId;
+  state.currentDraftRevision = restored.revision || 0;
+  state.savedDraftSnapshot = restored;
+  state.previewingDraftRevision = 0;
+  state.lastPayload = null;
+  state.lastGeneratedVisualDsl = '';
+  await loadDraftList({ render: false });
+  await loadDraftRevisions({ render: false });
   syncGraphInputSchemaTextFromBuilder({ render: false });
   syncComposerFromBuilder({ render: false });
-  const restored = await saveCurrentDraft();
-  if (restored) {
-    setDraftMessage(`Restored @${draft.revision || 0} as @${restored.revision || 0}.`, 'success');
-    renderScenario();
-  }
+  setDraftMessage(`Restored @${revision} as @${restored.revision || 0}.`, 'success');
+  renderScenario();
 }
 
 async function selectedDraftRevisionSnapshot() {
@@ -7392,8 +7484,14 @@ async function deleteSelectedDraft() {
   if (!state.currentDraftId || !confirm(`Delete draft ${state.currentDraftId}?`)) return;
   const deletedId = state.currentDraftId;
   const expectedRevision = state.currentDraftRevision || 0;
+  const deleteParams = new URLSearchParams({
+    expectedRevision: String(expectedRevision),
+    actor: 'visual-canvas',
+    changeSource: 'gateway-browser',
+    changeSummary: `Deleted draft ${deletedId}@${expectedRevision}.`
+  });
   const response = await fetch(
-    `/api/visual/drafts/${encodeURIComponent(deletedId)}?expectedRevision=${encodeURIComponent(expectedRevision)}`,
+    `/api/visual/drafts/${encodeURIComponent(deletedId)}?${deleteParams.toString()}`,
     { method: 'DELETE' }
   );
   if (!response.ok) {
@@ -7408,16 +7506,17 @@ async function deleteSelectedDraft() {
     setDraftMessage(diagnosticMessage(diagnostics, `Delete failed with ${response.status}`), 'error');
     return;
   }
-  state.currentDraftId = '';
+  state.currentDraftId = deletedId;
   state.currentDraftRevision = 0;
   state.savedDraftSnapshot = null;
   state.draftRevisions = [];
   state.draftRevisionDiff = null;
   state.selectedDraftRevision = 0;
   state.previewingDraftRevision = 0;
+  await loadDraftList({ render: false });
+  await loadDraftRevisions({ render: false });
   renderDraftControls();
-  setDraftMessage(`Deleted ${deletedId}.`, 'success');
-  await loadDraftList();
+  setDraftMessage(`Deleted ${deletedId}; history remains available for preview and restore.`, 'success');
 }
 
 function renderSelectedOperatorEditor() {

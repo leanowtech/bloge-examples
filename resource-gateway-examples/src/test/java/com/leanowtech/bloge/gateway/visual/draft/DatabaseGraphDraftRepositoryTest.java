@@ -132,13 +132,74 @@ class DatabaseGraphDraftRepositoryTest {
     }
 
     @Test
-    void deleteRemovesRevisionHistory() {
+    void deleteRemovesCurrentDraftButKeepsRevisionHistory() {
         GraphDraft stored = repository.save(simpleDraft("draft-1", 0));
 
-        repository.delete(stored.draftId());
+        repository.delete(stored.draftId(), GraphDraft.RevisionMetadata.patch(
+                "reviewer",
+                "retention-test",
+                "Deleted during audit test.",
+                List.of("/")
+        ));
 
         assertThat(repository.find(stored.draftId())).isEmpty();
-        assertThat(repository.revisions(stored.draftId())).isEmpty();
+        assertThat(repository.revisions(stored.draftId()))
+                .extracting(GraphDraft::revision)
+                .containsExactly(stored.revision() + 1, stored.revision());
+        GraphDraft deleteRevision = repository.findRevision(stored.draftId(), stored.revision() + 1).orElseThrow();
+        assertThat(deleteRevision.revisionMetadata().updatedBy()).isEqualTo("reviewer");
+        assertThat(deleteRevision.revisionMetadata().changeSource()).isEqualTo("retention-test");
+        assertThat(deleteRevision.revisionMetadata().changeSummary()).isEqualTo("Deleted during audit test.");
+    }
+
+    @Test
+    void saveAfterDeleteAdvancesPastPreservedRevisionHistory() {
+        GraphDraft stored = repository.save(simpleDraft("draft-1", 0));
+        repository.delete(stored.draftId());
+
+        GraphDraft recreated = repository.save(simpleDraft("draft-1", 0));
+
+        assertThat(recreated.revision()).isEqualTo(stored.revision() + 2);
+        assertThat(repository.revisions(stored.draftId()))
+                .extracting(GraphDraft::revision)
+                .containsExactly(recreated.revision(), stored.revision() + 1, stored.revision());
+    }
+
+    @Test
+    void historySummarizesActiveAndDeletedDrafts() {
+        GraphDraft active = repository.save(simpleDraft("active-draft", 0));
+        GraphDraft deleted = repository.save(simpleDraft("deleted-draft", 0));
+        repository.delete(deleted.draftId(), GraphDraft.RevisionMetadata.patch(
+                "auditor",
+                "history-index-test",
+                "Retain deleted draft history.",
+                List.of("/")
+        ));
+
+        List<GraphDraftHistorySummary> history = repository.history();
+
+        assertThat(history)
+                .extracting(GraphDraftHistorySummary::draftId)
+                .contains("active-draft", "deleted-draft");
+        assertThat(history)
+                .filteredOn(summary -> summary.draftId().equals(active.draftId()))
+                .singleElement()
+                .satisfies(summary -> {
+                    assertThat(summary.active()).isTrue();
+                    assertThat(summary.currentRevision()).isEqualTo(active.revision());
+                    assertThat(summary.latestRevision()).isEqualTo(active.revision());
+                });
+        assertThat(history)
+                .filteredOn(summary -> summary.draftId().equals(deleted.draftId()))
+                .singleElement()
+                .satisfies(summary -> {
+                    assertThat(summary.active()).isFalse();
+                    assertThat(summary.currentRevision()).isZero();
+                    assertThat(summary.latestRevision()).isEqualTo(deleted.revision() + 1);
+                    assertThat(summary.revisionCount()).isEqualTo(2);
+                    assertThat(summary.updatedBy()).isEqualTo("auditor");
+                    assertThat(summary.changeSource()).isEqualTo("history-index-test");
+                });
     }
 
     @Test

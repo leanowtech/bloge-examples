@@ -40,6 +40,13 @@ public interface GraphDraftRepository {
     Optional<GraphDraft> findRevision(String draftId, long revision);
 
     /**
+     * Lists active and retained draft history summaries, including deleted drafts with preserved revisions.
+     *
+     * @return history summaries ordered by latest revision descending
+     */
+    List<GraphDraftHistorySummary> history();
+
+    /**
      * Creates or updates a draft.
      *
      * @param draft draft to store
@@ -62,5 +69,15 @@ public interface GraphDraftRepository {
      *
      * @param draftId draft id
      */
-    void delete(String draftId);
+    default void delete(String draftId) {
+        delete(draftId, GraphDraft.RevisionMetadata.empty());
+    }
+
+    /**
+     * Deletes the current draft while allowing implementations to preserve revision audit history.
+     *
+     * @param draftId draft id
+     * @param metadata deletion audit metadata
+     */
+    void delete(String draftId, GraphDraft.RevisionMetadata metadata);
 }

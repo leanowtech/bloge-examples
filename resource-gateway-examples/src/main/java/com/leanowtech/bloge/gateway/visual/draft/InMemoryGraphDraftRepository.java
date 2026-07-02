@@ -43,15 +43,25 @@ public class InMemoryGraphDraftRepository implements GraphDraftRepository {
     }
 
     @Override
+    public List<GraphDraftHistorySummary> history() {
+        return revisionDraftIds().stream()
+                .map(draftId -> GraphDraftHistorySummary.from(draftId, drafts.get(draftId), revisions(draftId)))
+                .sorted(Comparator.comparingLong(GraphDraftHistorySummary::latestRevision).reversed()
+                        .thenComparing(GraphDraftHistorySummary::draftId))
+                .toList();
+    }
+
+    @Override
     public GraphDraft save(GraphDraft draft) {
         VisualSecretGuard.requireNoDraftSecrets(draft);
         String draftId = draft.draftId().isBlank() ? UUID.randomUUID().toString() : draft.draftId();
         GraphDraft current = drafts.get(draftId);
-        long nextRevision = Math.max(draft.revision(), drafts.getOrDefault(draftId,
-                draft.withIdentity(draftId, 0)).revision()) + 1;
+        GraphDraft previous = current == null ? latestRevision(draftId).orElse(null) : current;
+        long previousRevision = previous == null ? 0 : previous.revision();
+        long nextRevision = Math.max(draft.revision(), previousRevision) + 1;
         GraphDraft stored = draft.withIdentity(draftId, nextRevision)
                 .withRevisionMetadata(draft.revisionMetadata().storedFrom(
-                        current == null ? null : current.revisionMetadata(), "Saved draft."));
+                        previous == null ? null : previous.revisionMetadata(), "Saved draft."));
         drafts.put(draftId, stored);
         rememberRevision(stored);
         return stored;
@@ -73,13 +83,27 @@ public class InMemoryGraphDraftRepository implements GraphDraftRepository {
     }
 
     @Override
-    public void delete(String draftId) {
-        drafts.remove(draftId);
-        revisions.remove(draftId);
+    public synchronized void delete(String draftId, GraphDraft.RevisionMetadata metadata) {
+        GraphDraft current = drafts.remove(draftId);
+        if (current != null) {
+            rememberRevision(current.withIdentity(draftId, current.revision() + 1)
+                    .withRevisionMetadata((metadata == null ? GraphDraft.RevisionMetadata.empty() : metadata)
+                            .storedFrom(current.revisionMetadata(), "Deleted draft.")));
+        }
     }
 
     private void rememberRevision(GraphDraft draft) {
         revisions.computeIfAbsent(draft.draftId(), ignored -> new ConcurrentHashMap<>())
                 .put(draft.revision(), draft);
+    }
+
+    private Optional<GraphDraft> latestRevision(String draftId) {
+        return revisions(draftId).stream().findFirst();
+    }
+
+    private List<String> revisionDraftIds() {
+        return revisions.keySet().stream()
+                .sorted()
+                .toList();
     }
 }

@@ -547,7 +547,16 @@ class VisualAuthoringBrowserDomTest {
         useConfirm(true);
         click(wait, By.id("delete-draft"));
         waitForText(wait, By.id("draft-status"), "Deleted");
-        assertThat(valueOf(By.id("draft-select"))).isEmpty();
+        waitForText(wait, By.id("draft-status"), "history remains available for preview and restore");
+        String deletedDraftId = valueOf(By.id("draft-select"));
+        assertThat(deletedDraftId).isNotBlank();
+        assertThat(textOf(By.id("draft-select"))).contains("deleted");
+        assertThat(driver.findElement(By.id("load-draft")).isEnabled()).isFalse();
+        assertThat(driver.findElement(By.id("delete-draft")).isEnabled()).isFalse();
+        assertThat(driver.findElement(By.id("export-draft")).isEnabled()).isFalse();
+        assertThat(driver.findElement(By.id("reload-revisions")).isEnabled()).isTrue();
+        assertThat(driver.findElement(By.id("preview-revision")).isEnabled()).isTrue();
+        assertThat(driver.findElement(By.id("restore-revision")).isEnabled()).isTrue();
     }
 
     @Test

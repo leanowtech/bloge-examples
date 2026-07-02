@@ -8,12 +8,14 @@ import com.leanowtech.bloge.gateway.visual.diagnostic.VisualDiagnostic;
 import com.leanowtech.bloge.gateway.visual.draft.GraphDraft;
 import com.leanowtech.bloge.gateway.visual.draft.GraphDraftDiff;
 import com.leanowtech.bloge.gateway.visual.draft.GraphDraftExportBundle;
+import com.leanowtech.bloge.gateway.visual.draft.GraphDraftHistorySummary;
 import com.leanowtech.bloge.gateway.visual.draft.GraphDraftImportResult;
 import com.leanowtech.bloge.gateway.visual.draft.GraphDraftOperatorFingerprintRebaseRequest;
 import com.leanowtech.bloge.gateway.visual.draft.GraphDraftPatchRequest;
 import com.leanowtech.bloge.gateway.visual.draft.GraphDraftPatchResult;
 import com.leanowtech.bloge.gateway.visual.draft.GraphDraftPatchService;
 import com.leanowtech.bloge.gateway.visual.draft.GraphDraftRepository;
+import com.leanowtech.bloge.gateway.visual.draft.GraphDraftRevisionRestoreRequest;
 import com.leanowtech.bloge.gateway.visual.publication.VisualGraphPublication;
 import com.leanowtech.bloge.gateway.visual.publication.VisualGraphPublicationRepository;
 import com.leanowtech.bloge.gateway.visual.publication.VisualGraphPublicationResult;
@@ -90,6 +92,16 @@ public class VisualGraphDraftController {
     @GetMapping
     public Collection<GraphDraft> list() {
         return repository.all();
+    }
+
+    /**
+     * Lists active and retained draft history summaries.
+     *
+     * @return newest-first draft history index including deleted recoverable drafts
+     */
+    @GetMapping("/history")
+    public List<GraphDraftHistorySummary> history() {
+        return repository.history();
     }
 
     /**
@@ -217,6 +229,61 @@ public class VisualGraphDraftController {
             return ResponseEntity.notFound().build();
         }
         return ResponseEntity.ok(GraphDraftDiff.between(base.get(), target.get()));
+    }
+
+    /**
+     * Restores one stored draft revision as a new latest draft revision.
+     *
+     * @param draftId draft id
+     * @param revision immutable revision number to restore
+     * @param request optional current-revision precondition and audit metadata
+     * @return stored draft or conflict diagnostics
+     */
+    @PostMapping("/{draftId}/revisions/{revision}/restore")
+    public ResponseEntity<GraphDraftPatchResult> restoreRevision(
+            @PathVariable String draftId,
+            @PathVariable long revision,
+            @RequestBody(required = false) GraphDraftRevisionRestoreRequest request) {
+        Optional<GraphDraft> current = repository.find(draftId);
+        Optional<GraphDraft> snapshot = repository.findRevision(draftId, revision);
+        if (snapshot.isEmpty()) {
+            return ResponseEntity.notFound().build();
+        }
+        GraphDraft latestKnownDraft = current.orElseGet(() -> repository.revisions(draftId).stream()
+                .findFirst()
+                .orElse(null));
+        if (latestKnownDraft == null) {
+            return ResponseEntity.notFound().build();
+        }
+
+        GraphDraftRevisionRestoreRequest effectiveRequest = request == null
+                ? GraphDraftRevisionRestoreRequest.empty()
+                : request;
+        if (effectiveRequest.expectedRevision() > 0
+                && effectiveRequest.expectedRevision() != latestKnownDraft.revision()) {
+            return conflictResponse(draftId, effectiveRequest.expectedRevision(), latestKnownDraft);
+        }
+
+        GraphDraft candidate = withMissingCurrentOperatorSnapshotState(
+                snapshot.get().withIdentity(draftId, latestKnownDraft.revision()))
+                .withRevisionMetadata(GraphDraft.RevisionMetadata.patch(
+                        effectiveRequest.effectiveActor(),
+                        effectiveRequest.effectiveChangeSource(),
+                        effectiveRequest.effectiveChangeSummary(revision),
+                        List.of("/")
+                ));
+        List<VisualDiagnostic> contractDiagnostics = draftContractDiagnostics(candidate);
+        if (!contractDiagnostics.isEmpty()) {
+            return ResponseEntity.badRequest()
+                    .body(GraphDraftPatchResult.rejected(latestKnownDraft, contractDiagnostics));
+        }
+        if (current.isEmpty()) {
+            GraphDraft stored = repository.save(candidate);
+            return ResponseEntity.ok(GraphDraftPatchResult.patched(stored));
+        }
+        return repository.saveIfRevision(draftId, latestKnownDraft.revision(), candidate)
+                .map(stored -> ResponseEntity.ok(GraphDraftPatchResult.patched(stored)))
+                .orElseGet(() -> conflictResponse(draftId, latestKnownDraft.revision(), latestKnownDraft));
     }
 
     /**
@@ -363,14 +430,29 @@ public class VisualGraphDraftController {
      */
     @DeleteMapping("/{draftId}")
     public ResponseEntity<Object> delete(@PathVariable String draftId,
-                                         @RequestParam(defaultValue = "0") long expectedRevision) {
+                                         @RequestParam(defaultValue = "0") long expectedRevision,
+                                         @RequestParam(defaultValue = "") String actor,
+                                         @RequestParam(defaultValue = "") String changeSource,
+                                         @RequestParam(defaultValue = "") String changeSummary) {
         long revision = Math.max(0, expectedRevision);
         Optional<GraphDraft> current = repository.find(draftId);
         if (revision > 0 && current.isPresent() && current.get().revision() != revision) {
             return updateConflictResponse(draftId, revision, current.get());
         }
-        repository.delete(draftId);
+        repository.delete(draftId, GraphDraft.RevisionMetadata.patch(
+                actor,
+                changeSource.isBlank() ? "delete" : changeSource,
+                changeSummary.isBlank() ? "Deleted draft." : changeSummary,
+                List.of("/")
+        ));
         return ResponseEntity.noContent().build();
+    }
+
+    /**
+     * Backward-compatible direct-call helper for tests and non-Spring callers.
+     */
+    public ResponseEntity<Object> delete(String draftId, long expectedRevision) {
+        return delete(draftId, expectedRevision, "", "", "");
     }
 
     /**

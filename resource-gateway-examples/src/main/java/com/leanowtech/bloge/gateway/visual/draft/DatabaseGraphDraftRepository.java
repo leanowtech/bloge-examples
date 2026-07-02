@@ -9,9 +9,12 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.jdbc.core.JdbcTemplate;
 
+import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Comparator;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
@@ -51,6 +54,11 @@ public class DatabaseGraphDraftRepository implements GraphDraftRepository {
             FROM visual_graph_draft_revisions
             WHERE draft_id = ? AND revision = ?
             """;
+    private static final String SELECT_HISTORY_REVISIONS = """
+            SELECT draft_id, draft_json
+            FROM visual_graph_draft_revisions
+            ORDER BY draft_id ASC, revision DESC
+            """;
     private static final String UPSERT = "MERGE INTO visual_graph_drafts (draft_id, revision, draft_json) KEY (draft_id) VALUES (?, ?, ?)";
     private static final String UPSERT_REVISION = """
             MERGE INTO visual_graph_draft_revisions (draft_id, revision, draft_json)
@@ -63,7 +71,6 @@ public class DatabaseGraphDraftRepository implements GraphDraftRepository {
             WHERE draft_id = ? AND revision = ?
             """;
     private static final String DELETE = "DELETE FROM visual_graph_drafts WHERE draft_id = ?";
-    private static final String DELETE_REVISIONS = "DELETE FROM visual_graph_draft_revisions WHERE draft_id = ?";
 
     private final ConcurrentHashMap<String, GraphDraft> cache = new ConcurrentHashMap<>();
     private final JdbcTemplate jdbc;
@@ -130,15 +137,36 @@ public class DatabaseGraphDraftRepository implements GraphDraftRepository {
     }
 
     @Override
+    public List<GraphDraftHistorySummary> history() {
+        Map<String, List<GraphDraft>> revisionsByDraftId = new LinkedHashMap<>();
+        jdbc.query(SELECT_HISTORY_REVISIONS, rs -> {
+            String draftId = rs.getString("draft_id");
+            readDraft(rs.getString("draft_json"), draftId)
+                    .ifPresent(draft -> revisionsByDraftId.computeIfAbsent(draftId, ignored -> new ArrayList<>())
+                            .add(draft));
+        });
+        cache.keySet().stream()
+                .sorted()
+                .forEach(draftId -> revisionsByDraftId.computeIfAbsent(draftId, ignored -> new ArrayList<>()));
+        return revisionsByDraftId.entrySet().stream()
+                .map(entry -> GraphDraftHistorySummary.from(entry.getKey(), cache.get(entry.getKey()),
+                        entry.getValue()))
+                .sorted(Comparator.comparingLong(GraphDraftHistorySummary::latestRevision).reversed()
+                        .thenComparing(GraphDraftHistorySummary::draftId))
+                .toList();
+    }
+
+    @Override
     public GraphDraft save(GraphDraft draft) {
         VisualSecretGuard.requireNoDraftSecrets(draft);
         String draftId = draft.draftId().isBlank() ? UUID.randomUUID().toString() : draft.draftId();
         GraphDraft current = cache.get(draftId);
-        long currentRevision = current == null ? 0 : current.revision();
-        long nextRevision = Math.max(draft.revision(), currentRevision) + 1;
+        GraphDraft previous = current == null ? latestRevision(draftId).orElse(null) : current;
+        long previousRevision = previous == null ? 0 : previous.revision();
+        long nextRevision = Math.max(draft.revision(), previousRevision) + 1;
         GraphDraft stored = draft.withIdentity(draftId, nextRevision)
                 .withRevisionMetadata(draft.revisionMetadata().storedFrom(
-                        current == null ? null : current.revisionMetadata(), "Saved draft."));
+                        previous == null ? null : previous.revisionMetadata(), "Saved draft."));
         persist(stored);
         cache.put(draftId, stored);
         log.info("Saved visual graph draft: {}@{}", draftId, nextRevision);
@@ -170,9 +198,15 @@ public class DatabaseGraphDraftRepository implements GraphDraftRepository {
     }
 
     @Override
-    public void delete(String draftId) {
+    public synchronized void delete(String draftId, GraphDraft.RevisionMetadata metadata) {
+        GraphDraft current = cache.get(draftId);
+        if (current != null) {
+            GraphDraft deleted = current.withIdentity(draftId, current.revision() + 1)
+                    .withRevisionMetadata((metadata == null ? GraphDraft.RevisionMetadata.empty() : metadata)
+                            .storedFrom(current.revisionMetadata(), "Deleted draft."));
+            persistRevision(deleted);
+        }
         jdbc.update(DELETE, draftId);
-        jdbc.update(DELETE_REVISIONS, draftId);
         cache.remove(draftId);
         log.info("Deleted visual graph draft: {}", draftId);
     }
@@ -185,6 +219,18 @@ public class DatabaseGraphDraftRepository implements GraphDraftRepository {
         } catch (JsonProcessingException e) {
             throw new IllegalStateException("Failed to serialize visual graph draft: " + draft.draftId(), e);
         }
+    }
+
+    private void persistRevision(GraphDraft draft) {
+        try {
+            jdbc.update(UPSERT_REVISION, draft.draftId(), draft.revision(), objectMapper.writeValueAsString(draft));
+        } catch (JsonProcessingException e) {
+            throw new IllegalStateException("Failed to serialize visual graph draft revision: " + draft.draftId(), e);
+        }
+    }
+
+    private Optional<GraphDraft> latestRevision(String draftId) {
+        return revisions(draftId).stream().findFirst();
     }
 
     private Optional<GraphDraft> readDraft(String json, String draftId) {

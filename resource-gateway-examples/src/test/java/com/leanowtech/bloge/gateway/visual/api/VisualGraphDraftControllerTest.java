@@ -9,12 +9,14 @@ import com.leanowtech.bloge.gateway.visual.codegen.GraphDraftDslGenerator;
 import com.leanowtech.bloge.gateway.visual.draft.GraphDraft;
 import com.leanowtech.bloge.gateway.visual.draft.GraphDraftDiff;
 import com.leanowtech.bloge.gateway.visual.draft.GraphDraftExportBundle;
+import com.leanowtech.bloge.gateway.visual.draft.GraphDraftHistorySummary;
 import com.leanowtech.bloge.gateway.visual.draft.GraphDraftImportResult;
 import com.leanowtech.bloge.gateway.visual.draft.GraphDraftOperatorFingerprintRebaseRequest;
 import com.leanowtech.bloge.gateway.visual.draft.GraphDraftPatchRequest;
 import com.leanowtech.bloge.gateway.visual.draft.GraphDraftPatchResult;
 import com.leanowtech.bloge.gateway.visual.draft.GraphDraftPatchService;
 import com.leanowtech.bloge.gateway.visual.draft.InMemoryGraphDraftRepository;
+import com.leanowtech.bloge.gateway.visual.draft.GraphDraftRevisionRestoreRequest;
 import com.leanowtech.bloge.gateway.example.DynamicGatewayComposerService;
 import com.leanowtech.bloge.gateway.operator.HttpResourceOperator;
 import com.leanowtech.bloge.gateway.visual.publication.InMemoryVisualGraphPublicationRepository;
@@ -1103,6 +1105,154 @@ class VisualGraphDraftControllerTest {
     }
 
     @Test
+    void restoreRevisionCreatesAuditedLatestDraftRevision() {
+        VisualGraphDraftController controller = controllerWithEligibilityLibrary();
+        GraphDraft first = controller.create(eligibilityDraft(graphInputSchema(
+                Map.of(
+                        "score", Map.of("type", "integer"),
+                        "amount", Map.of("type", "number")
+                )
+        )));
+        GraphDraftPatchResult patched = controller.patch(first.draftId(), new GraphDraftPatchRequest(
+                first.revision(),
+                List.of(new GraphDraftPatchRequest.PatchOperation("replace", "/graphName", "revisionTwo"))
+        )).getBody();
+        assertThat(patched).isNotNull();
+        GraphDraft second = patched.draft();
+
+        ResponseEntity<GraphDraftPatchResult> response = controller.restoreRevision(first.draftId(),
+                first.revision(),
+                new GraphDraftRevisionRestoreRequest(second.revision(),
+                        "architect",
+                        "test-suite",
+                        "Rollback to baseline draft."));
+        ResponseEntity<GraphDraftPatchResult> stale = controller.restoreRevision(first.draftId(),
+                first.revision(),
+                new GraphDraftRevisionRestoreRequest(first.revision(), "", "", ""));
+        ResponseEntity<GraphDraftPatchResult> missingRevision = controller.restoreRevision(first.draftId(),
+                99,
+                new GraphDraftRevisionRestoreRequest(0, "", "", ""));
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat(response.getBody()).isNotNull();
+        GraphDraft restored = response.getBody().draft();
+        assertThat(response.getBody().patched()).isTrue();
+        assertThat(restored.revision()).isEqualTo(second.revision() + 1);
+        assertThat(restored.graphName()).isEqualTo(first.graphName());
+        assertThat(restored.operatorFingerprints()).isEqualTo(first.operatorFingerprints());
+        assertThat(restored.revisionMetadata().updatedBy()).isEqualTo("architect");
+        assertThat(restored.revisionMetadata().changeSource()).isEqualTo("test-suite");
+        assertThat(restored.revisionMetadata().changeSummary()).isEqualTo("Rollback to baseline draft.");
+        assertThat(restored.revisionMetadata().changedPaths()).containsExactly("/");
+        assertThat(controller.revisions(first.draftId()).getBody())
+                .extracting(GraphDraft::revision)
+                .containsExactly(restored.revision(), second.revision(), first.revision());
+        assertThat(stale.getStatusCode()).isEqualTo(HttpStatus.CONFLICT);
+        assertThat(stale.getBody()).isNotNull();
+        assertThat(stale.getBody().diagnostics())
+                .extracting("code")
+                .containsExactly("visual.draft.revisionConflict");
+        assertThat(missingRevision.getStatusCode()).isEqualTo(HttpStatus.NOT_FOUND);
+    }
+
+    @Test
+    void restoreRevisionCanRecoverDeletedDraftFromPreservedHistory() {
+        VisualGraphDraftController controller = controllerWithEligibilityLibrary();
+        GraphDraft first = controller.create(eligibilityDraft(graphInputSchema(
+                Map.of(
+                        "score", Map.of("type", "integer"),
+                        "amount", Map.of("type", "number")
+                )
+        )));
+        GraphDraftPatchResult patched = controller.patch(first.draftId(), new GraphDraftPatchRequest(
+                first.revision(),
+                List.of(new GraphDraftPatchRequest.PatchOperation("replace", "/graphName", "deletedLater"))
+        )).getBody();
+        assertThat(patched).isNotNull();
+        GraphDraft second = patched.draft();
+
+        ResponseEntity<Object> deleted = controller.delete(first.draftId(), second.revision(),
+                "reviewer",
+                "test-suite",
+                "Delete before recovery.");
+        ResponseEntity<GraphDraft> currentAfterDelete = controller.get(first.draftId());
+        List<GraphDraft> historyAfterDelete = controller.revisions(first.draftId()).getBody();
+        assertThat(historyAfterDelete).isNotNull();
+        long deleteRevision = historyAfterDelete.getFirst().revision();
+        ResponseEntity<GraphDraftPatchResult> staleRestore = controller.restoreRevision(first.draftId(),
+                first.revision(),
+                new GraphDraftRevisionRestoreRequest(second.revision(), "", "", ""));
+
+        ResponseEntity<GraphDraftPatchResult> restoredResponse = controller.restoreRevision(first.draftId(),
+                first.revision(),
+                new GraphDraftRevisionRestoreRequest(deleteRevision,
+                        "reviewer",
+                        "test-suite",
+                        "Recover deleted draft."));
+
+        assertThat(deleted.getStatusCode()).isEqualTo(HttpStatus.NO_CONTENT);
+        assertThat(currentAfterDelete.getStatusCode()).isEqualTo(HttpStatus.NOT_FOUND);
+        assertThat(historyAfterDelete)
+                .extracting(GraphDraft::revision)
+                .containsExactly(deleteRevision, second.revision(), first.revision());
+        assertThat(historyAfterDelete.getFirst().revisionMetadata().changeSummary())
+                .isEqualTo("Delete before recovery.");
+        assertThat(staleRestore.getStatusCode()).isEqualTo(HttpStatus.CONFLICT);
+        assertThat(staleRestore.getBody()).isNotNull();
+        assertThat(staleRestore.getBody().draft().revision()).isEqualTo(deleteRevision);
+        assertThat(restoredResponse.getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat(restoredResponse.getBody()).isNotNull();
+        GraphDraft restored = restoredResponse.getBody().draft();
+        assertThat(restored.revision()).isEqualTo(deleteRevision + 1);
+        assertThat(restored.graphName()).isEqualTo(first.graphName());
+        assertThat(restored.revisionMetadata().changeSummary()).isEqualTo("Recover deleted draft.");
+        assertThat(controller.get(first.draftId()).getBody()).isEqualTo(restored);
+    }
+
+    @Test
+    void historyReturnsActiveAndRecoverableDeletedDraftSummaries() {
+        VisualGraphDraftController controller = controllerWithEligibilityLibrary();
+        GraphDraft active = controller.create(eligibilityDraft(graphInputSchema(
+                Map.of(
+                        "score", Map.of("type", "integer"),
+                        "amount", Map.of("type", "number")
+                )
+        )));
+        GraphDraft deleted = controller.create(eligibilityDraft(graphInputSchema(
+                Map.of(
+                        "score", Map.of("type", "integer"),
+                        "amount", Map.of("type", "number")
+                )
+        )));
+        ResponseEntity<Object> deleteResponse = controller.delete(deleted.draftId(), deleted.revision(),
+                "reviewer",
+                "test-suite",
+                "Deleted but recoverable.");
+
+        List<GraphDraftHistorySummary> history = controller.history();
+
+        assertThat(deleteResponse.getStatusCode()).isEqualTo(HttpStatus.NO_CONTENT);
+        assertThat(history)
+                .filteredOn(summary -> summary.draftId().equals(active.draftId()))
+                .singleElement()
+                .satisfies(summary -> {
+                    assertThat(summary.active()).isTrue();
+                    assertThat(summary.currentRevision()).isEqualTo(active.revision());
+                    assertThat(summary.latestRevision()).isEqualTo(active.revision());
+                });
+        assertThat(history)
+                .filteredOn(summary -> summary.draftId().equals(deleted.draftId()))
+                .singleElement()
+                .satisfies(summary -> {
+                    assertThat(summary.active()).isFalse();
+                    assertThat(summary.currentRevision()).isZero();
+                    assertThat(summary.latestRevision()).isEqualTo(deleted.revision() + 1);
+                    assertThat(summary.revisionCount()).isEqualTo(2);
+                    assertThat(summary.changeSummary()).isEqualTo("Deleted but recoverable.");
+                });
+    }
+
+    @Test
     void deleteRejectsStaleExpectedRevisionAndKeepsCurrentDraft() {
         InMemoryGraphDraftRepository drafts = new InMemoryGraphDraftRepository();
         VisualGraphDraftController controller = controllerWithCatalog(eligibilityCatalog(), drafts);
@@ -1145,6 +1295,11 @@ class VisualGraphDraftControllerTest {
 
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.NO_CONTENT);
         assertThat(drafts.find(stored.draftId())).isEmpty();
+        assertThat(drafts.revisions(stored.draftId()))
+                .extracting(GraphDraft::revision)
+                .containsExactly(stored.revision() + 1, stored.revision());
+        assertThat(drafts.revisions(stored.draftId()).getFirst().revisionMetadata().changeSource())
+                .isEqualTo("delete");
     }
 
     @Test

@@ -1332,23 +1332,40 @@ Patch 请求还可以携带 `actor`、`changeSource`、`changeSummary`。服务�
 resource-gateway 示例还提供 revision history：
 
 ```http
+GET /api/visual/drafts/history
 GET /api/visual/drafts/{draftId}/revisions
 GET /api/visual/drafts/{draftId}/revisions/{revision}
 GET /api/visual/drafts/{draftId}/revisions/{baseRevision}/diff/{targetRevision}
+POST /api/visual/drafts/{draftId}/revisions/{revision}/restore
 ```
 
 每次保存成功后，当前 draft 写入 `visual_graph_drafts`，同时把带有
 `revisionMetadata` 的 revision 快照写入 `visual_graph_draft_revisions`，用于审计、
 对比和回滚前预览。
+`history` 端点返回轻量 `GraphDraftHistorySummary` 索引，而不是完整 draft JSON；
+每条 summary 暴露 `draftId`、`graphName`、`active`、`currentRevision`、
+`latestRevision`、`revisionCount` 以及最新 revision 的 actor/source/summary。
+它让浏览器和外部控制面可以发现 deleted-but-recoverable draft，而不要求作者记住
+已删除 draft id。
 `diff` 端点返回 `bloge.visualGraphDraftDiff.v1`，按 graph-level、node-level
 和 edge-level 分解变更，包含最高 `changeRisk`、`changeCategories`、摘要、
 added/removed/changed 节点与边计数，以及 input schema、output、operatorRef、
 binding、config、fingerprint snapshot 和 layout 变化。它的目的不是替代
 JSON diff，而是给回滚、协作审阅和 schema-only 设计制品变更确认提供机器可读
 的领域 diff。
+`restore` 端点接收 `GraphDraftRevisionRestoreRequest`，支持 `expectedRevision`
+并发前置条件以及 `actor`、`changeSource`、`changeSummary` 审计元数据。服务端
+把选中的 immutable revision 作为内容来源，保留其中与节点 operatorRef 匹配的
+历史 operator fingerprint / definition snapshot，只为缺失 snapshot 的节点补充
+当前 catalog 快照，然后通过 draft contract 校验并写成新的 latest revision。
+`DELETE /api/visual/drafts/{draftId}` 只移除当前 working draft 指针，不删除
+`visual_graph_draft_revisions` 中的 immutable history。删除动作会写入新的
+revision snapshot 和 deletion audit metadata；当 retained history 仍存在时，
+`restore` 端点可以把已删除 draft 的任意历史 revision 恢复成新的 latest
+revision，并继续沿用单调递增 revision 序列。
 浏览器 Drafts 面板已接入该 API：可以加载 revision 列表、把历史快照预览到
-画布上，查看 latest-to-selected draft diff，并通过 guarded patch 把选中
-revision 恢复成新的最新 revision。
+画布上，查看 latest-to-selected draft diff，并通过 guarded restore endpoint
+把选中 revision 恢复成新的最新 revision。
 
 resource-gateway 示例还提供 portable draft export/import：
 

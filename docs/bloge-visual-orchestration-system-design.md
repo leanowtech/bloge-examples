@@ -773,11 +773,14 @@ fingerprint snapshot；普通保存和 PATCH 仍保留既有 snapshot，避免�
 | --- | --- | --- |
 | `POST` | `/api/visual/drafts` | 创建图草稿 |
 | `GET` | `/api/visual/drafts/{draftId}` | 获取草稿 |
+| `GET` | `/api/visual/drafts/history` | 当前已实现：返回轻量 active/deleted draft history index，用于发现 retained history 和 deleted draft recovery 入口 |
 | `GET` | `/api/visual/drafts/{draftId}/export` | 当前已实现：导出 `bloge.visualGraphDraftExport.v1` 包，包含 draft snapshot、operator snapshots、export-time diagnostics 和 validation/readiness |
 | `POST` | `/api/visual/drafts/import` | 当前已实现：以新 identity 导入 export bundle，刷新当前 catalog fingerprints，存储前校验 bundle/draft contract，并返回 `bloge.visualGraphDraftImportResult.v1` 目标环境 diagnostics 和 validation/readiness |
 | `GET` | `/api/visual/drafts/{draftId}/revisions/{baseRevision}/diff/{targetRevision}` | 当前已实现：返回 `bloge.visualGraphDraftDiff.v1`，按 graph/node/edge 分解 draft revision 变化、最高风险、风险分类、摘要和节点/边增删改计数 |
+| `POST` | `/api/visual/drafts/{draftId}/revisions/{revision}/restore` | 当前已实现：把 immutable draft revision 作为内容源恢复成新的 latest revision，带 `expectedRevision` 并发门禁、审计元数据、draft contract 校验，并保留历史 operator snapshot |
 | `PATCH` | `/api/visual/drafts/{draftId}` | 保存节点、边、layout、binding patch |
 | `POST` | `/api/visual/drafts/{draftId}/operator-fingerprints/rebase` | 当前已实现：显式刷新选中节点或全部节点的 service-managed operator fingerprint snapshot，使用 `expectedRevision` 防并发覆盖，并对未知节点/当前 catalog 缺失算子返回结构化 diagnostics |
+| `DELETE` | `/api/visual/drafts/{draftId}` | 当前已实现：删除 current draft 指针但保留 immutable revision history，写入 deletion audit snapshot，并允许后续从 retained revision 恢复 |
 | `POST` | `/api/visual/connections/check` | 当前已实现：服务端权威预检候选 data/dependency/route/config/context 连接；响应的 `diagnostics` 只保留候选连接相关问题，`validation/readiness` 表达加上候选连接后的完整 candidate draft 状态 |
 | `POST` | `/api/visual/drafts/{draftId}/validate` | 增量或全量校验；当前实现的 transient `/api/visual/drafts/validate` 返回 `valid`、`diagnostics` 和 `bloge.visualGraphReadiness.v1` 图级 runtime/design readiness |
 | `POST` | `/api/visual/drafts/{draftId}/compile` | 生成 DSL 并编译；响应携带本次 draft validation/readiness，供客户端在 compiler 或 design-only blocking 后继续约束发布路径 |
