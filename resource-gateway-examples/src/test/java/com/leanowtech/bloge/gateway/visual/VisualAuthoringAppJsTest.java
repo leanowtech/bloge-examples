@@ -1172,6 +1172,17 @@ class VisualAuthoringAppJsTest {
                 };
                 const suspendableCapabilityLabels = context.operatorPaletteCapabilityLabels(suspendablePaletteSpec).join('|');
                 const suspendableCapabilityBadges = context.operatorPaletteCapabilityBadges(suspendablePaletteSpec);
+                const designOnlyPaletteSpec = {
+                  kind: 'custom',
+                  label: 'Partner Decision',
+                  operatorRef: 'partner:decision',
+                  lowering: { mode: 'design' },
+                  capabilities: { effect: 'PURE' },
+                  inputPorts: [],
+                  outputPorts: [],
+                  configSchema: { schema: { type: 'object', properties: {} } }
+                };
+                const designOnlyCapabilityLabels = context.operatorPaletteCapabilityLabels(designOnlyPaletteSpec).join('|');
                 const libraryProfile = context.operatorLibraryProfile({
                   libraryId: 'risk-profile',
                   version: '2.1.0',
@@ -1327,6 +1338,27 @@ class VisualAuthoringAppJsTest {
                   }]
                 });
                 const policyOnlyProfileHtml = context.renderLibraryProfilePanel(policyOnlyProfile);
+                const designOnlyProfile = context.operatorLibraryProfile({
+                  libraryId: 'schema-only',
+                  operators: [{
+                    operatorRef: 'partner:decision',
+                    display: { name: 'Partner Decision' },
+                    ports: {
+                      inputs: [{
+                        name: 'inputs',
+                        required: true,
+                        schema: { schema: { type: 'object', properties: { score: { type: 'integer' } } } }
+                      }],
+                      outputs: [{
+                        name: 'output',
+                        schema: { schema: { type: 'object', properties: { decision: { type: 'string' } } } }
+                      }]
+                    },
+                    capabilities: { effect: 'PURE', idempotency: 'UNKNOWN' },
+                    lowering: { mode: 'design' }
+                  }]
+                });
+                const designOnlyProfileHtml = context.renderLibraryProfilePanel(designOnlyProfile);
                 const mixedCandidateSummary = context.bindingCandidateSummary([
                   { compatibility: { ok: true, message: '' } },
                   { compatibility: { ok: false, message: 'source type string cannot feed target type integer' } }
@@ -2308,6 +2340,7 @@ class VisualAuthoringAppJsTest {
                   ['palette multi-token miss', String(paletteMultiTokenMiss), 'false'],
                   ['palette capability labels', suspendableCapabilityLabels, 'durable|suspendable|requires secret|write-external'],
                   ['palette capability badges', String(suspendableCapabilityBadges.includes('durable') && suspendableCapabilityBadges.includes('suspendable') && suspendableCapabilityBadges.includes('requires secret')), 'true'],
+                  ['palette design-only capability labels', designOnlyCapabilityLabels, 'design-only'],
                   ['palette capability search match', String(paletteCapabilitySearchMatch), 'true'],
                   ['library profile operator count', libraryProfile.operatorCount, 2],
                   ['library profile input count', libraryProfile.inputPortCount, 2],
@@ -2334,11 +2367,14 @@ class VisualAuthoringAppJsTest {
                   ['library profile policy-only level', context.libraryProfileLevel(policyOnlyProfile), 'info'],
                   ['library profile policy-only operators', policyOnlyProfile.policyRestrictedOperatorCount, 1],
                   ['library profile policy-only summary', policyOnlyProfile.operators[0].policySummary, 'tenants gold, silver, bronze +1; namespaces lending; env prod'],
+                  ['library profile design-only level', context.libraryProfileLevel(designOnlyProfile), 'info'],
+                  ['library profile design-only operators', designOnlyProfile.designOnlyOperatorCount, 1],
                   ['library profile html escapes score', String(libraryProfileHtml.includes('Risk &lt;Score&gt;')), 'true'],
                   ['library profile html streaming chip', String(libraryProfileHtml.includes('1 streaming operators')), 'true'],
                   ['library profile html durable chip', String(libraryProfileHtml.includes('1 durable operators')), 'true'],
                   ['library profile html non-idempotent chip', String(libraryProfileHtml.includes('1 non-idempotent operators')), 'true'],
                   ['library profile html policy chip', String(libraryProfileHtml.includes('1 scope-restricted operators')), 'true'],
+                  ['library profile html design-only chip', String(designOnlyProfileHtml.includes('1 design-only operators')), 'true'],
                   ['library profile html policy summary', String(libraryProfileHtml.includes('policy tenants demo-tenant; namespaces local; env browser')), 'true'],
                   ['library profile policy-only html summary', String(policyOnlyProfileHtml.includes('policy tenants gold, silver, bronze +1; namespaces lending; env prod')), 'true'],
                   ['library profile html includes required input field', String(libraryProfileHtml.includes('inputs.customer.id*')), 'true'],

@@ -2272,6 +2272,10 @@ function operatorPaletteCapabilityLabels(spec) {
   const labels = [];
   const sourceKind = String(spec?.sourceKind || '').trim().toLowerCase();
   const capabilities = spec?.capabilities || {};
+  const loweringMode = String(spec?.lowering?.mode || '').trim().toLowerCase();
+  if (loweringMode === 'design') {
+    labels.push('design-only');
+  }
   if (sourceKind === 'java-streaming-operator' || capabilities.streaming === true) {
     labels.push('streaming');
   }
@@ -2481,6 +2485,9 @@ function renderLibraryProfilePanel(profile) {
   }
   if (profile.policyRestrictedOperatorCount) {
     warningChips.push(`${profile.policyRestrictedOperatorCount} scope-restricted operators`);
+  }
+  if (profile.designOnlyOperatorCount) {
+    warningChips.push(`${profile.designOnlyOperatorCount} design-only operators`);
   }
   const warnings = warningChips.length
     ? `<div class="library-profile-flags">${warningChips
@@ -2815,6 +2822,9 @@ function libraryProfileLevel(profile) {
   if (profile.externalOperatorCount || profile.policyRestrictedOperatorCount) {
     return 'info';
   }
+  if (profile.designOnlyOperatorCount) {
+    return 'info';
+  }
   return 'success';
 }
 
@@ -2848,6 +2858,7 @@ function operatorLibraryProfile(library) {
     accumulator.nonIdempotentOperatorCount += operator.nonIdempotent ? 1 : 0;
     accumulator.secretOperatorCount += operator.requiresSecrets ? 1 : 0;
     accumulator.policyRestrictedOperatorCount += operator.policyRestricted ? 1 : 0;
+    accumulator.designOnlyOperatorCount += operator.designOnly ? 1 : 0;
     return accumulator;
   }, {
     inputPortCount: 0,
@@ -2862,7 +2873,8 @@ function operatorLibraryProfile(library) {
     externalOperatorCount: 0,
     nonIdempotentOperatorCount: 0,
     secretOperatorCount: 0,
-    policyRestrictedOperatorCount: 0
+    policyRestrictedOperatorCount: 0,
+    designOnlyOperatorCount: 0
   });
   return {
     libraryId: String(library?.libraryId || ''),
@@ -2896,11 +2908,12 @@ function operatorLibraryOperatorProfile(operator) {
   const durable = sourceKind === 'java-suspendable-operator'
     || Boolean(operator?.capabilities?.durable);
   const idempotency = String(operator?.capabilities?.idempotency || '').trim().toUpperCase();
+  const loweringMode = String(operator?.lowering?.mode || 'native').trim().toLowerCase();
   const policyProfile = operatorLibraryPolicyProfile(operator?.policy || operator?.policies);
   return {
     label: operator?.display?.name || operator?.operatorRef || 'operator',
     operatorRef: String(operator?.operatorRef || ''),
-    loweringMode: String(operator?.lowering?.mode || 'native').trim().toLowerCase(),
+    loweringMode,
     inputPortCount: inputPorts.length,
     outputPortCount: outputPorts.length,
     requiredInputCount: inputStats.requiredCount,
@@ -2915,6 +2928,7 @@ function operatorLibraryOperatorProfile(operator) {
     nonIdempotent: idempotency === 'NON_IDEMPOTENT',
     requiresSecrets: Boolean(operator?.capabilities?.requiresSecrets),
     policyRestricted: policyProfile.restricted,
+    designOnly: loweringMode === 'design',
     policySummary: policyProfile.summary,
     inputFields,
     outputFields,

@@ -218,6 +218,42 @@ class OperatorLibraryValidatorTest {
     }
 
     @Test
+    void acceptsDesignOnlyLoweringForSchemaOnlyAuthoring() {
+        VisualValidationResult result = validator.validate(
+                VisualCatalogTestSupport.designOnlyEligibilityLibrary("integer"));
+
+        assertThat(result.valid()).as(result.diagnostics().toString()).isTrue();
+        assertThat(result.diagnostics()).isEmpty();
+    }
+
+    @Test
+    void rejectsDesignOnlyLoweringWithExecutableOperatorRef() {
+        OperatorDefinition base = VisualCatalogTestSupport.designOnlyEligibilityOperator("integer");
+        OperatorDefinition operator = new OperatorDefinition(
+                base.schemaVersion(),
+                base.operatorRef(),
+                base.operatorVersion(),
+                base.display(),
+                base.source(),
+                base.ports(),
+                base.configSchema(),
+                base.capabilities(),
+                base.policy(),
+                new OperatorDefinition.Lowering("design", "riskExecutable", Map.of()),
+                base.diagnostics()
+        );
+
+        VisualValidationResult result = validator.validate(libraryWith(operator));
+
+        assertThat(result.valid()).isFalse();
+        assertThat(result.diagnostics())
+                .extracting("code", "target")
+                .containsExactly(org.assertj.core.groups.Tuple.tuple(
+                        "visual.operator.lowering.designOperatorRefUnsupported",
+                        "/operators/0/lowering/operatorRef"));
+    }
+
+    @Test
     void acceptsBranchLoweringWithoutOutputPorts() {
         VisualValidationResult result = validator.validate(VisualCatalogTestSupport.routeLibrary());
 

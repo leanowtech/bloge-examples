@@ -146,6 +146,29 @@ class VisualGraphDraftControllerTest {
     }
 
     @Test
+    void compileBlocksDesignOnlyDraftAfterSchemaValidationPasses() {
+        DefaultVisualOperatorCatalog catalog = VisualCatalogTestSupport.catalogWithLibrary(
+                VisualCatalogTestSupport.designOnlyEligibilityLibrary("integer"));
+        VisualGraphDraftController controller = controllerWithCatalog(catalog, new InMemoryGraphDraftRepository());
+        GraphDraft draft = withFingerprints(eligibilityDraft(graphInputSchema(
+                Map.of(
+                        "score", Map.of("type", "integer"),
+                        "amount", Map.of("type", "number")
+                )
+        )), catalog);
+
+        DslGenerationResult result = controller.compile(draft);
+
+        assertThat(result.generated()).isFalse();
+        assertThat(result.dsl()).isNotBlank();
+        assertThat(result.diagnostics())
+                .extracting("code", "target")
+                .containsExactly(org.assertj.core.groups.Tuple.tuple(
+                        "visual.codegen.designOnlyOperator",
+                        "/nodes/eligibility/operatorRef"));
+    }
+
+    @Test
     void createStoresCurrentOperatorFingerprintSnapshot() {
         DefaultVisualOperatorCatalog catalog = VisualCatalogTestSupport.catalogWithLibrary(
                 VisualCatalogTestSupport.eligibilityLibrary("integer"));

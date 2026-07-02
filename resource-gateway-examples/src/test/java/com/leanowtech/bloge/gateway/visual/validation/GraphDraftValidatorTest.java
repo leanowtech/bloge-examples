@@ -144,6 +144,33 @@ class GraphDraftValidatorTest {
     }
 
     @Test
+    void acceptsDesignOnlyOperatorsForSchemaConstrainedAuthoring() {
+        GraphDraftValidator validator = new GraphDraftValidator(
+                VisualCatalogTestSupport.catalogWithLibrary(
+                        VisualCatalogTestSupport.designOnlyEligibilityLibrary("integer")));
+        GraphDraft validDraft = contextEligibilityDraft(null, Map.of(
+                "score", GraphDraft.Binding.constant(720),
+                "amount", GraphDraft.Binding.constant(1000)
+        ));
+        GraphDraft invalidDraft = contextEligibilityDraft(null, Map.of(
+                "score", GraphDraft.Binding.constant("720"),
+                "amount", GraphDraft.Binding.constant(1000)
+        ));
+
+        VisualValidationResult validResult = validator.validate(validDraft);
+        VisualValidationResult invalidResult = validator.validate(invalidDraft);
+
+        assertThat(validResult.valid()).as(validResult.diagnostics().toString()).isTrue();
+        assertThat(validResult.diagnostics()).isEmpty();
+        assertThat(invalidResult.valid()).isFalse();
+        assertThat(invalidResult.diagnostics())
+                .extracting("code", "target")
+                .contains(org.assertj.core.groups.Tuple.tuple(
+                        "visual.binding.typeMismatch",
+                        "/nodes/0/inputs/score"));
+    }
+
+    @Test
     void rejectsDraftIdentifiersThatCannotRenderAsDslIdentifiers() {
         GraphDraftValidator validator = new GraphDraftValidator(
                 VisualCatalogTestSupport.catalogWithLibrary(

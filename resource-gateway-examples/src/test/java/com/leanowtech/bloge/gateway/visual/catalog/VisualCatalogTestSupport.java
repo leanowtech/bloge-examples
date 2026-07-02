@@ -168,6 +168,35 @@ public final class VisualCatalogTestSupport {
         );
     }
 
+    public static OperatorDefinition designOnlyEligibilityOperator(String scoreType) {
+        OperatorDefinition base = eligibilityOperator(scoreType);
+        return new OperatorDefinition(
+                base.schemaVersion(),
+                base.operatorRef(),
+                base.operatorVersion(),
+                base.display(),
+                base.source(),
+                base.ports(),
+                base.configSchema(),
+                base.capabilities(),
+                base.policy(),
+                new OperatorDefinition.Lowering("design", "", Map.of()),
+                base.diagnostics()
+        );
+    }
+
+    public static OperatorLibrary designOnlyEligibilityLibrary(String scoreType) {
+        return new OperatorLibrary(
+                "bloge.visualOperatorLibrary.v1",
+                "risk-policy-design",
+                "Risk policy design operators",
+                "1.0.0",
+                "risk-team",
+                "ACTIVE",
+                List.of(designOnlyEligibilityOperator(scoreType))
+        );
+    }
+
     public static OperatorDefinition scoreFactsOperator() {
         Map<String, Object> summaryProperties = new LinkedHashMap<>();
         summaryProperties.put("band", Map.of("type", "string"));

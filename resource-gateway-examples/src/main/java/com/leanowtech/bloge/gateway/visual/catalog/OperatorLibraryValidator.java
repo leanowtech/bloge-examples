@@ -58,7 +58,7 @@ public class OperatorLibraryValidator {
     private static final Set<String> SUPPORTED_OPERATOR_SCHEMA_VERSIONS = Set.of(
             "bloge.visualOperator.v1"
     );
-    private static final Set<String> SUPPORTED_LOWERING_MODES = Set.of("native", "transform", "branch");
+    private static final Set<String> SUPPORTED_LOWERING_MODES = Set.of("native", "transform", "branch", "design");
     private static final Set<String> SUPPORTED_CAPABILITY_EFFECTS = Set.of(
             "PURE",
             "EXTERNAL",
@@ -226,8 +226,10 @@ public class OperatorLibraryValidator {
         }
         validatePorts(operator, "inputs", operator.ports().inputs(), path + "/ports/inputs", diagnostics);
         validatePorts(operator, "outputs", operator.ports().outputs(), path + "/ports/outputs", diagnostics);
-        validateInputDslFieldNames(operator, path, diagnostics);
-        validateOutputDslFieldNames(operator, path, diagnostics);
+        if (!"design".equals(operator.lowering().mode())) {
+            validateInputDslFieldNames(operator, path, diagnostics);
+            validateOutputDslFieldNames(operator, path, diagnostics);
+        }
         diagnostics.addAll(VisualSchemaValidator.validateEnvelope(
                 operator.configSchema(), path + "/configSchema"));
         validateServerManagedDiagnostics(operator, path + "/diagnostics", diagnostics);
@@ -431,7 +433,22 @@ public class OperatorLibraryValidator {
             validateBranchLowering(operator, path, diagnostics);
             return;
         }
+        if ("design".equals(mode)) {
+            validateDesignLowering(operator, path, diagnostics);
+            return;
+        }
         validateTransformLowering(operator, path, diagnostics);
+    }
+
+    private static void validateDesignLowering(OperatorDefinition operator,
+                                               String path,
+                                               List<VisualDiagnostic> diagnostics) {
+        if (!operator.lowering().operatorRef().isBlank()) {
+            diagnostics.add(VisualDiagnostic.error("visual.operator.lowering.designOperatorRefUnsupported",
+                    "Design-only operator '%s' must not declare lowering.operatorRef because it has no executable binding."
+                            .formatted(operator.operatorRef()),
+                    path + "/operatorRef"));
+        }
     }
 
     private static void validateNativeLowering(OperatorDefinition operator,

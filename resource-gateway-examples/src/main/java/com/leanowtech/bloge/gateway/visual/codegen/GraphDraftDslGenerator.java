@@ -93,6 +93,13 @@ public class GraphDraftDslGenerator {
                         "Unknown operatorRef: " + node.operatorRef(), "/nodes/" + node.id()));
                 continue;
             }
+            if ("design".equals(operator.get().lowering().mode())) {
+                diagnostics.add(VisualDiagnostic.error("visual.codegen.designOnlyOperator",
+                        "Operator '%s' on node '%s' is schema-only (lowering.mode=design); it can be authored and validated, but cannot be lowered to executable BLOGE DSL until a runtime lowering is bound."
+                                .formatted(operator.get().operatorRef(), node.id()),
+                        "/nodes/" + node.id() + "/operatorRef"));
+                continue;
+            }
             String block = nodeToDsl(node, operator.get(), nodesById,
                     dependencyEdges.getOrDefault(node.id(), List.of()),
                     routeEdges.getOrDefault(node.id(), List.of()),

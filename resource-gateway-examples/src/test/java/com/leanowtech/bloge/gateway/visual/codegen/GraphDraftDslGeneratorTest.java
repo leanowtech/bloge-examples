@@ -159,6 +159,51 @@ class GraphDraftDslGeneratorTest {
     }
 
     @Test
+    void blocksDesignOnlyOperatorsDuringDslGeneration() {
+        GraphDraftDslGenerator generator = new GraphDraftDslGenerator(
+                VisualCatalogTestSupport.catalogWithLibrary(
+                        VisualCatalogTestSupport.designOnlyEligibilityLibrary("integer")));
+        GraphDraft draft = new GraphDraft(
+                "",
+                "",
+                0,
+                "schemaOnlyPolicy",
+                "",
+                "",
+                "",
+                "",
+                null,
+                List.of(new GraphDraft.DraftNode(
+                        "eligibility",
+                        "risk:eligibility",
+                        "",
+                        Map.of(
+                                "score", GraphDraft.Binding.constant(720),
+                                "amount", GraphDraft.Binding.constant(1000)
+                        ),
+                        Map.of(),
+                        null
+                )),
+                List.of(),
+                Map.of(),
+                new GraphDraft.OutputSelection("eligibility", "")
+        );
+
+        DslGenerationResult result = generator.generate(draft);
+
+        assertThat(result.generated()).isFalse();
+        assertThat(result.diagnostics())
+                .extracting("code", "target")
+                .containsExactly(org.assertj.core.groups.Tuple.tuple(
+                        "visual.codegen.designOnlyOperator",
+                        "/nodes/eligibility/operatorRef"));
+        assertThat(result.diagnostics().getFirst().message())
+                .contains("schema-only")
+                .contains("lowering.mode=design")
+                .contains("validated");
+    }
+
+    @Test
     void rejectsBindingPathsThatCannotRenderAsDslPathSegments() {
         GraphDraftDslGenerator generator = new GraphDraftDslGenerator(
                 VisualCatalogTestSupport.catalogWithLibrary(
