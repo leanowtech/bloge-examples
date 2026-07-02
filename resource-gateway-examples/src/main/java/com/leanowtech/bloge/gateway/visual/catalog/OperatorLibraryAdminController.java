@@ -87,12 +87,20 @@ public class OperatorLibraryAdminController {
      * @param library library body
      * @param force bypass stored-draft reference protection when re-importing an existing library
      * @param ackWarnings true when the caller already reviewed non-blocking replacement warnings
+     * @param actor user or system actor producing this registry revision
+     * @param changeSource UI or integration source producing this registry revision
+     * @param changeSummary human-readable change summary
+     * @param reason optional reason for audit review
      * @return stored library
      */
     @PostMapping
     public ResponseEntity<?> create(@RequestBody OperatorLibrary library,
                                     @RequestParam(defaultValue = "false") boolean force,
-                                    @RequestParam(defaultValue = "false") boolean ackWarnings) {
+                                    @RequestParam(defaultValue = "false") boolean ackWarnings,
+                                    @RequestParam(defaultValue = "") String actor,
+                                    @RequestParam(defaultValue = "") String changeSource,
+                                    @RequestParam(defaultValue = "") String changeSummary,
+                                    @RequestParam(defaultValue = "") String reason) {
         OperatorLibraryValidationResult validation = validateAgainstRegistry(library, force);
         if (!validation.valid()) {
             return ResponseEntity.status(validationFailureStatus(validation)).body(validation);
@@ -106,7 +114,8 @@ public class OperatorLibraryAdminController {
         if (impact != null) {
             return impact;
         }
-        return ResponseEntity.status(HttpStatus.CREATED).body(registry.upsert(library));
+        return ResponseEntity.status(HttpStatus.CREATED).body(registry.upsert(library,
+                revisionMetadata(actor, changeSource, changeSummary, reason)));
     }
 
     /**
@@ -171,6 +180,10 @@ public class OperatorLibraryAdminController {
      * @param force bypass stored-draft reference protection
      * @param ackWarnings true when the caller already reviewed non-blocking restore warnings
      * @param allowVersionRegression true for explicit emergency rollback to an older library version
+     * @param actor user or system actor producing this registry revision
+     * @param changeSource UI or integration source producing this registry revision
+     * @param changeSummary human-readable change summary
+     * @param reason optional reason for audit review
      * @return restored library
      */
     @PostMapping("/{libraryId}/revisions/{revision}/restore")
@@ -178,7 +191,11 @@ public class OperatorLibraryAdminController {
                                      @PathVariable long revision,
                                      @RequestParam(defaultValue = "false") boolean force,
                                      @RequestParam(defaultValue = "false") boolean ackWarnings,
-                                     @RequestParam(defaultValue = "false") boolean allowVersionRegression) {
+                                     @RequestParam(defaultValue = "false") boolean allowVersionRegression,
+                                     @RequestParam(defaultValue = "") String actor,
+                                     @RequestParam(defaultValue = "") String changeSource,
+                                     @RequestParam(defaultValue = "") String changeSummary,
+                                     @RequestParam(defaultValue = "") String reason) {
         Optional<OperatorLibraryRevision> sourceRevision = registry.findRevision(libraryId, revision);
         if (sourceRevision.isEmpty()) {
             return ResponseEntity.notFound().build();
@@ -210,7 +227,8 @@ public class OperatorLibraryAdminController {
         if (impact != null) {
             return impact;
         }
-        return ResponseEntity.ok(registry.restore(sourceRevision.get()));
+        return ResponseEntity.ok(registry.restore(sourceRevision.get(),
+                revisionMetadata(actor, changeSource, changeSummary, reason)));
     }
 
     /**
@@ -220,13 +238,21 @@ public class OperatorLibraryAdminController {
      * @param library library body
      * @param force bypass stored-draft reference protection
      * @param ackWarnings true when the caller already reviewed non-blocking replacement warnings
+     * @param actor user or system actor producing this registry revision
+     * @param changeSource UI or integration source producing this registry revision
+     * @param changeSummary human-readable change summary
+     * @param reason optional reason for audit review
      * @return stored library
      */
     @PutMapping("/{libraryId}")
     public ResponseEntity<?> update(@PathVariable String libraryId,
                                     @RequestBody OperatorLibrary library,
                                     @RequestParam(defaultValue = "false") boolean force,
-                                    @RequestParam(defaultValue = "false") boolean ackWarnings) {
+                                    @RequestParam(defaultValue = "false") boolean ackWarnings,
+                                    @RequestParam(defaultValue = "") String actor,
+                                    @RequestParam(defaultValue = "") String changeSource,
+                                    @RequestParam(defaultValue = "") String changeSummary,
+                                    @RequestParam(defaultValue = "") String reason) {
         if (!libraryId.equals(library.libraryId())) {
             throw new IllegalArgumentException("Path libraryId '%s' does not match body libraryId '%s'"
                     .formatted(libraryId, library.libraryId()));
@@ -244,7 +270,8 @@ public class OperatorLibraryAdminController {
         if (impact != null) {
             return impact;
         }
-        return ResponseEntity.ok(registry.upsert(library));
+        return ResponseEntity.ok(registry.upsert(library,
+                revisionMetadata(actor, changeSource, changeSummary, reason)));
     }
 
     /**
@@ -252,11 +279,19 @@ public class OperatorLibraryAdminController {
      *
      * @param libraryId library id
      * @param force bypass stored-draft reference protection
+     * @param actor user or system actor producing this registry revision
+     * @param changeSource UI or integration source producing this registry revision
+     * @param changeSummary human-readable change summary
+     * @param reason optional reason for audit review
      * @return empty response
      */
     @DeleteMapping("/{libraryId}")
     public ResponseEntity<?> delete(@PathVariable String libraryId,
-                                    @RequestParam(defaultValue = "false") boolean force) {
+                                    @RequestParam(defaultValue = "false") boolean force,
+                                    @RequestParam(defaultValue = "") String actor,
+                                    @RequestParam(defaultValue = "") String changeSource,
+                                    @RequestParam(defaultValue = "") String changeSummary,
+                                    @RequestParam(defaultValue = "") String reason) {
         Optional<OperatorLibrary> library = registry.find(libraryId);
         if (!force && library.isPresent()) {
             Set<String> operatorRefs = library.get().operators().stream()
@@ -271,8 +306,15 @@ public class OperatorLibraryAdminController {
                         .body(validationResult(library.get(), diagnostics));
             }
         }
-        registry.delete(libraryId);
+        registry.delete(libraryId, revisionMetadata(actor, changeSource, changeSummary, reason));
         return ResponseEntity.noContent().build();
+    }
+
+    private static OperatorLibraryRevision.RevisionMetadata revisionMetadata(String actor,
+                                                                             String changeSource,
+                                                                             String changeSummary,
+                                                                             String reason) {
+        return OperatorLibraryRevision.RevisionMetadata.of(actor, changeSource, changeSummary, reason);
     }
 
     private OperatorLibraryValidationResult validateAgainstRegistry(OperatorLibrary library, boolean force) {

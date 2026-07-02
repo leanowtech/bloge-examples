@@ -2872,7 +2872,13 @@ function operatorLibraryRevisionOptionLabel(revision) {
   const library = revision?.library || {};
   const version = library.version ? `v${library.version}` : 'no version';
   const operatorCount = Array.isArray(library.operators) ? library.operators.length : 0;
-  return `@${revision?.revision || 0} · ${action}${source} · ${version} · ${operatorCount} ops`;
+  const metadata = revision?.revisionMetadata || {};
+  const audit = [metadata.changeSummary, metadata.actor]
+    .map((value) => String(value || '').trim())
+    .filter(Boolean)
+    .join(' · ');
+  const auditLabel = audit ? ` · ${audit}` : '';
+  return `@${revision?.revision || 0} · ${action}${source} · ${version} · ${operatorCount} ops${auditLabel}`;
 }
 
 function renderLibraryStatus() {
@@ -4707,7 +4713,11 @@ async function importOperatorLibrary() {
     state.libraryImportConfirmationKey = '';
   }
   const replacing = libraryExists(library.libraryId);
-  const mutationQuery = libraryMutationQuery(hasWarningDiagnostic(validation.diagnostics));
+  const mutationQuery = libraryMutationQuery(
+    hasWarningDiagnostic(validation.diagnostics),
+    replacing ? 'Replaced' : 'Imported',
+    library.libraryId
+  );
   const endpoint = replacing
     ? `/admin/visual-operator-libraries/${encodeURIComponent(library.libraryId)}${mutationQuery}`
     : `/admin/visual-operator-libraries${mutationQuery}`;
@@ -4757,7 +4767,7 @@ async function deleteSelectedOperatorLibrary() {
   if (!confirm(prompt)) return;
   const deletedId = state.selectedLibraryId;
   const response = await fetch(
-    `/admin/visual-operator-libraries/${encodeURIComponent(deletedId)}${libraryForceQuery()}`,
+    `/admin/visual-operator-libraries/${encodeURIComponent(deletedId)}${libraryDeleteMutationQuery(deletedId)}`,
     { method: 'DELETE' }
   );
   if (!response.ok) {
@@ -4824,7 +4834,7 @@ async function restoreSelectedOperatorLibraryRevision() {
   );
   const ackWarnings = state.libraryRestoreConfirmationKey === confirmationKey;
   const response = await fetch(
-    `/admin/visual-operator-libraries/${encodeURIComponent(libraryId)}/revisions/${encodeURIComponent(revision.revision || 0)}/restore${libraryRestoreMutationQuery(ackWarnings)}`,
+    `/admin/visual-operator-libraries/${encodeURIComponent(libraryId)}/revisions/${encodeURIComponent(revision.revision || 0)}/restore${libraryRestoreMutationQuery(ackWarnings, libraryId, revision.revision)}`,
     { method: 'POST' }
   );
   const text = await response.text();
@@ -4877,7 +4887,7 @@ function libraryForceQuery() {
   return state.libraryForce ? '?force=true' : '';
 }
 
-function libraryMutationQuery(ackWarnings = false) {
+function libraryMutationQuery(ackWarnings = false, actionLabel = 'Imported', libraryId = '') {
   const params = new URLSearchParams();
   if (state.libraryForce) {
     params.set('force', 'true');
@@ -4885,11 +4895,22 @@ function libraryMutationQuery(ackWarnings = false) {
   if (ackWarnings) {
     params.set('ackWarnings', 'true');
   }
+  appendLibraryRevisionMetadataParams(params, actionLabel, libraryId);
   const query = params.toString();
   return query ? `?${query}` : '';
 }
 
-function libraryRestoreMutationQuery(ackWarnings = false) {
+function libraryDeleteMutationQuery(libraryId = '') {
+  const params = new URLSearchParams();
+  if (state.libraryForce) {
+    params.set('force', 'true');
+  }
+  appendLibraryRevisionMetadataParams(params, 'Deleted', libraryId);
+  const query = params.toString();
+  return query ? `?${query}` : '';
+}
+
+function libraryRestoreMutationQuery(ackWarnings = false, libraryId = '', revision = 0) {
   const params = new URLSearchParams();
   if (state.libraryForce) {
     params.set('force', 'true');
@@ -4900,8 +4921,22 @@ function libraryRestoreMutationQuery(ackWarnings = false) {
   if (state.libraryAllowVersionRegression) {
     params.set('allowVersionRegression', 'true');
   }
+  appendLibraryRevisionMetadataParams(
+    params,
+    'Restored',
+    libraryId,
+    `Restored operator library ${libraryId || 'unknown'} from @${Number(revision) || 0}.`
+  );
   const query = params.toString();
   return query ? `?${query}` : '';
+}
+
+function appendLibraryRevisionMetadataParams(params, actionLabel, libraryId, summary = '') {
+  const id = String(libraryId || '').trim() || 'operator library';
+  const action = String(actionLabel || 'Changed').trim() || 'Changed';
+  params.set('actor', 'visual-canvas');
+  params.set('changeSource', 'gateway-browser');
+  params.set('changeSummary', summary || `${action} operator library ${id}.`);
 }
 
 function libraryRestoreConfirmationKey(libraryId, revision, diagnostics = []) {

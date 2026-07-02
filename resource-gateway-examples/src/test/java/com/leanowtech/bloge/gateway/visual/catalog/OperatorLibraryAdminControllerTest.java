@@ -790,6 +790,48 @@ class OperatorLibraryAdminControllerTest {
     }
 
     @Test
+    void revisionEndpointsExposeControlPlaneAuditMetadata() throws Exception {
+        OperatorLibrary created = VisualCatalogTestSupport.eligibilityLibrary("integer");
+
+        mockMvc.perform(post("/admin/visual-operator-libraries")
+                        .param("actor", "alice")
+                        .param("changeSource", "catalog-admin-ui")
+                        .param("changeSummary", "Imported initial risk policy schema.")
+                        .param("reason", "initial onboarding")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(created)))
+                .andExpect(status().isCreated());
+        mockMvc.perform(delete("/admin/visual-operator-libraries/risk-policy")
+                        .param("actor", "bob")
+                        .param("changeSource", "catalog-admin-ui")
+                        .param("changeSummary", "Deleted risk policy during cleanup.")
+                        .param("reason", "tenant cleanup"))
+                .andExpect(status().isNoContent());
+        mockMvc.perform(post("/admin/visual-operator-libraries/risk-policy/revisions/1/restore")
+                        .param("actor", "carol")
+                        .param("changeSource", "catalog-admin-ui")
+                        .param("changeSummary", "Restored risk policy after accidental delete.")
+                        .param("reason", "rollback"))
+                .andExpect(status().isOk());
+
+        mockMvc.perform(get("/admin/visual-operator-libraries/risk-policy/revisions"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[0].action").value(OperatorLibraryRevision.ACTION_RESTORE))
+                .andExpect(jsonPath("$[0].revisionMetadata.actor").value("carol"))
+                .andExpect(jsonPath("$[0].revisionMetadata.changeSource").value("catalog-admin-ui"))
+                .andExpect(jsonPath("$[0].revisionMetadata.changeSummary")
+                        .value("Restored risk policy after accidental delete."))
+                .andExpect(jsonPath("$[0].revisionMetadata.reason").value("rollback"))
+                .andExpect(jsonPath("$[1].action").value(OperatorLibraryRevision.ACTION_DELETE))
+                .andExpect(jsonPath("$[1].revisionMetadata.actor").value("bob"))
+                .andExpect(jsonPath("$[1].revisionMetadata.reason").value("tenant cleanup"))
+                .andExpect(jsonPath("$[2].action").value(OperatorLibraryRevision.ACTION_CREATE))
+                .andExpect(jsonPath("$[2].revisionMetadata.actor").value("alice"))
+                .andExpect(jsonPath("$[2].revisionMetadata.changeSummary")
+                        .value("Imported initial risk policy schema."));
+    }
+
+    @Test
     void restoreRevisionWarningGatesExplicitVersionRegression() throws Exception {
         OperatorLibrary original = VisualCatalogTestSupport.eligibilityLibrary("integer");
         OperatorLibrary replacement = libraryWithVersion(

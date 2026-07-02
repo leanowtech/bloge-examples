@@ -46,7 +46,18 @@ public interface OperatorLibraryRegistry {
      * @param library library to store
      * @return stored library
      */
-    OperatorLibrary upsert(OperatorLibrary library);
+    default OperatorLibrary upsert(OperatorLibrary library) {
+        return upsert(library, OperatorLibraryRevision.RevisionMetadata.empty());
+    }
+
+    /**
+     * Registers or replaces a library with audit metadata.
+     *
+     * @param library library to store
+     * @param metadata change audit metadata
+     * @return stored library
+     */
+    OperatorLibrary upsert(OperatorLibrary library, OperatorLibraryRevision.RevisionMetadata metadata);
 
     /**
      * Restores a previously recorded library snapshot as the latest current library.
@@ -54,14 +65,35 @@ public interface OperatorLibraryRegistry {
      * @param revision revision snapshot to restore
      * @return restored library
      */
-    OperatorLibrary restore(OperatorLibraryRevision revision);
+    default OperatorLibrary restore(OperatorLibraryRevision revision) {
+        return restore(revision, OperatorLibraryRevision.RevisionMetadata.empty());
+    }
+
+    /**
+     * Restores a previously recorded library snapshot with audit metadata.
+     *
+     * @param revision revision snapshot to restore
+     * @param metadata change audit metadata
+     * @return restored library
+     */
+    OperatorLibrary restore(OperatorLibraryRevision revision, OperatorLibraryRevision.RevisionMetadata metadata);
 
     /**
      * Deletes a library.
      *
      * @param libraryId library id
      */
-    void delete(String libraryId);
+    default void delete(String libraryId) {
+        delete(libraryId, OperatorLibraryRevision.RevisionMetadata.empty());
+    }
+
+    /**
+     * Deletes a library with audit metadata.
+     *
+     * @param libraryId library id
+     * @param metadata change audit metadata
+     */
+    void delete(String libraryId, OperatorLibraryRevision.RevisionMetadata metadata);
 
     /**
      * @param includeDeprecated include deprecated libraries
@@ -107,17 +139,18 @@ public interface OperatorLibraryRegistry {
             }
 
             @Override
-            public OperatorLibrary upsert(OperatorLibrary library) {
+            public OperatorLibrary upsert(OperatorLibrary library, OperatorLibraryRevision.RevisionMetadata metadata) {
                 throw new UnsupportedOperationException("empty registry is read-only");
             }
 
             @Override
-            public OperatorLibrary restore(OperatorLibraryRevision revision) {
+            public OperatorLibrary restore(OperatorLibraryRevision revision,
+                                           OperatorLibraryRevision.RevisionMetadata metadata) {
                 throw new UnsupportedOperationException("empty registry is read-only");
             }
 
             @Override
-            public void delete(String libraryId) {
+            public void delete(String libraryId, OperatorLibraryRevision.RevisionMetadata metadata) {
                 throw new UnsupportedOperationException("empty registry is read-only");
             }
         };

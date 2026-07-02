@@ -143,8 +143,11 @@ class VisualAuthoringAppJsTest {
                 .contains("Impact Review")
                 .contains("payload?.impact")
                 .contains("Review warnings, then click ${actionLabel} again to continue.")
-                .contains("libraryMutationQuery(hasWarningDiagnostic(validation.diagnostics))")
-                .contains("params.set('ackWarnings', 'true');");
+                .contains("libraryMutationQuery(")
+                .contains("appendLibraryRevisionMetadataParams(params, actionLabel, libraryId)")
+                .contains("params.set('ackWarnings', 'true');")
+                .contains("params.set('changeSource', 'gateway-browser');")
+                .contains("params.set('changeSummary', summary || `${action} operator library ${id}.`);");
     }
 
     @Test
@@ -163,7 +166,12 @@ class VisualAuthoringAppJsTest {
                 .contains("function previewSelectedOperatorLibraryRevision()")
                 .contains("function restoreSelectedOperatorLibraryRevision()")
                 .contains("/revisions/${encodeURIComponent(revision.revision || 0)}/restore")
-                .contains("function libraryRestoreMutationQuery(ackWarnings = false)")
+                .contains("function operatorLibraryRevisionOptionLabel(revision)")
+                .contains("const metadata = revision?.revisionMetadata || {};")
+                .contains("metadata.changeSummary")
+                .contains("metadata.actor")
+                .contains("function libraryDeleteMutationQuery(libraryId = '')")
+                .contains("function libraryRestoreMutationQuery(ackWarnings = false, libraryId = '', revision = 0)")
                 .contains("params.set('allowVersionRegression', 'true');")
                 .contains("function libraryRestoreConfirmationKey(libraryId, revision, diagnostics = [])")
                 .contains("History remains available for restore.");

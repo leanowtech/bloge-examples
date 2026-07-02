@@ -727,7 +727,9 @@ replacement 还具备 SemVer 治理预检：同一 `libraryId` 的 operator cont
 version，additive 或 compatible schema 变更必须至少提升 minor version，否则进入 warning-gated
 `ackWarnings` 流程。这个 gate 不依赖是否已有草稿引用，目的是让用户导入算子库后的长期演进也受控。
 当前 registry 还会为每次 create / replace / delete / restore 写入不可变
-`bloge.visualOperatorLibraryRevision.v1` 快照，并通过
+`bloge.visualOperatorLibraryRevision.v1` 快照；每条快照固化
+`revisionMetadata.actor/changeSource/changeSummary/reason`，让算子库 schema
+控制面具备可追责的变更来源、摘要和回滚理由，而不是只保存匿名 JSON payload，并通过
 `GET /admin/visual-operator-libraries/{libraryId}/revisions` 和
 `GET /admin/visual-operator-libraries/{libraryId}/revisions/{revision}` 暴露查询面；
 `POST /admin/visual-operator-libraries/{libraryId}/revisions/{revision}/restore`

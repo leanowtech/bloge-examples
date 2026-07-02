@@ -113,6 +113,49 @@ class DatabaseOperatorLibraryRegistryTest {
     }
 
     @Test
+    void revisionMetadataPersistsAcrossRegistryActions() {
+        OperatorLibrary created = VisualCatalogTestSupport.eligibilityLibrary("integer");
+        OperatorLibrary replaced = libraryWithVersion(created, "1.1.0");
+
+        registry.upsert(created, OperatorLibraryRevision.RevisionMetadata.of(
+                "alice", "catalog-admin", "Imported initial risk policy schema.", "initial onboarding"));
+        registry.upsert(replaced, OperatorLibraryRevision.RevisionMetadata.of(
+                "bob", "catalog-admin", "Added compatible risk policy schema fields.", "model update"));
+        registry.delete("risk-policy", OperatorLibraryRevision.RevisionMetadata.of(
+                "carol", "catalog-admin", "Deleted stale risk policy library.", "tenant cleanup"));
+
+        assertThat(registry.revisions("risk-policy"))
+                .extracting(revision -> revision.revisionMetadata().actor(),
+                        revision -> revision.revisionMetadata().changeSource(),
+                        revision -> revision.revisionMetadata().changeSummary(),
+                        revision -> revision.revisionMetadata().reason())
+                .containsExactly(
+                        org.assertj.core.groups.Tuple.tuple("carol", "catalog-admin",
+                                "Deleted stale risk policy library.", "tenant cleanup"),
+                        org.assertj.core.groups.Tuple.tuple("bob", "catalog-admin",
+                                "Added compatible risk policy schema fields.", "model update"),
+                        org.assertj.core.groups.Tuple.tuple("alice", "catalog-admin",
+                                "Imported initial risk policy schema.", "initial onboarding")
+                );
+
+        DatabaseOperatorLibraryRegistry reloaded = new DatabaseOperatorLibraryRegistry(jdbc, objectMapper);
+        reloaded.init();
+
+        assertThat(reloaded.revisions("risk-policy"))
+                .extracting(revision -> revision.revisionMetadata().actor(),
+                        revision -> revision.revisionMetadata().changeSource(),
+                        revision -> revision.revisionMetadata().changeSummary())
+                .containsExactly(
+                        org.assertj.core.groups.Tuple.tuple("carol", "catalog-admin",
+                                "Deleted stale risk policy library."),
+                        org.assertj.core.groups.Tuple.tuple("bob", "catalog-admin",
+                                "Added compatible risk policy schema fields."),
+                        org.assertj.core.groups.Tuple.tuple("alice", "catalog-admin",
+                                "Imported initial risk policy schema.")
+                );
+    }
+
+    @Test
     void restorePersistsNewRevisionWithSourcePointer() {
         OperatorLibrary original = VisualCatalogTestSupport.eligibilityLibrary("integer");
         OperatorLibrary replacement = libraryWithVersion(

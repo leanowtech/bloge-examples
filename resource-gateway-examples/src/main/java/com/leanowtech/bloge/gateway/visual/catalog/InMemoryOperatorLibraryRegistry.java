@@ -42,32 +42,35 @@ public class InMemoryOperatorLibraryRegistry implements OperatorLibraryRegistry 
     }
 
     @Override
-    public synchronized OperatorLibrary upsert(OperatorLibrary library) {
+    public synchronized OperatorLibrary upsert(OperatorLibrary library,
+                                               OperatorLibraryRevision.RevisionMetadata metadata) {
         ensureNoDuplicateOperatorRefs(library);
         String action = libraries.containsKey(library.libraryId())
                 ? OperatorLibraryRevision.ACTION_REPLACE
                 : OperatorLibraryRevision.ACTION_CREATE;
         libraries.put(library.libraryId(), library);
-        rememberRevision(OperatorLibraryRevision.record(library, nextRevision(library.libraryId()), action));
+        rememberRevision(OperatorLibraryRevision.record(library, nextRevision(library.libraryId()), action,
+                metadata));
         return library;
     }
 
     @Override
-    public synchronized OperatorLibrary restore(OperatorLibraryRevision revision) {
+    public synchronized OperatorLibrary restore(OperatorLibraryRevision revision,
+                                                OperatorLibraryRevision.RevisionMetadata metadata) {
         OperatorLibrary library = requireRestorableLibrary(revision);
         ensureNoDuplicateOperatorRefs(library);
         libraries.put(library.libraryId(), library);
         rememberRevision(OperatorLibraryRevision.restore(library, nextRevision(library.libraryId()),
-                revision.revision()));
+                revision.revision(), metadata));
         return library;
     }
 
     @Override
-    public synchronized void delete(String libraryId) {
+    public synchronized void delete(String libraryId, OperatorLibraryRevision.RevisionMetadata metadata) {
         OperatorLibrary library = libraries.remove(libraryId);
         if (library != null) {
             rememberRevision(OperatorLibraryRevision.record(library, nextRevision(libraryId),
-                    OperatorLibraryRevision.ACTION_DELETE));
+                    OperatorLibraryRevision.ACTION_DELETE, metadata));
         }
     }
 

@@ -1090,11 +1090,15 @@ POST /admin/visual-operator-libraries/{libraryId}/revisions/{revision}/restore
 ```
 
 每个 revision snapshot 包含 `libraryId`、单库递增 `revision`、
-`action=CREATE|REPLACE|DELETE|RESTORE`、`storedAt` 和当时的 `OperatorLibrary`
-快照；`RESTORE` snapshot 还包含 `restoredFromRevision`。删除 library 只移除当前
-catalog entry，不删除 revision history。restore 不是覆盖历史记录，而是把目标 snapshot
-重新写成新的 latest library revision，并复用 import / replace 的结构校验、operatorRef
-归属保护、runtime collision、impact preflight 和 warning acknowledgement gate。
+`action=CREATE|REPLACE|DELETE|RESTORE`、`storedAt`、`revisionMetadata`
+和当时的 `OperatorLibrary` 快照；`RESTORE` snapshot 还包含
+`restoredFromRevision`。`revisionMetadata` 固化 `actor`、`changeSource`、
+`changeSummary` 和 `reason`，create / replace / delete / restore mutation
+端点都接受这些可选 query params；缺省时服务端会填充稳定的 visual-canvas/api
+审计默认值。删除 library 只移除当前 catalog entry，不删除 revision history。
+restore 不是覆盖历史记录，而是把目标 snapshot 重新写成新的 latest library revision，
+并复用 import / replace 的结构校验、operatorRef 归属保护、runtime collision、impact
+preflight 和 warning acknowledgement gate。
 restore 默认仍阻断 library version 回退；只有请求显式携带
 `allowVersionRegression=true` 时，版本回退才会降级为
 `visual.library.restore.versionRegressionAllowed` warning，并仍需 `ackWarnings=true`

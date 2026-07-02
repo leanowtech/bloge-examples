@@ -132,34 +132,37 @@ public class DatabaseOperatorLibraryRegistry implements OperatorLibraryRegistry 
     }
 
     @Override
-    public synchronized OperatorLibrary upsert(OperatorLibrary library) {
+    public synchronized OperatorLibrary upsert(OperatorLibrary library,
+                                               OperatorLibraryRevision.RevisionMetadata metadata) {
         ensureNoDuplicateOperatorRefs(library);
         String action = cache.containsKey(library.libraryId())
                 ? OperatorLibraryRevision.ACTION_REPLACE
                 : OperatorLibraryRevision.ACTION_CREATE;
-        persist(library, OperatorLibraryRevision.record(library, nextRevision(library.libraryId()), action));
+        persist(library, OperatorLibraryRevision.record(library, nextRevision(library.libraryId()), action,
+                metadata));
         cache.put(library.libraryId(), library);
         log.info("Upserted visual operator library: {}", library.libraryId());
         return library;
     }
 
     @Override
-    public synchronized OperatorLibrary restore(OperatorLibraryRevision revision) {
+    public synchronized OperatorLibrary restore(OperatorLibraryRevision revision,
+                                                OperatorLibraryRevision.RevisionMetadata metadata) {
         OperatorLibrary library = requireRestorableLibrary(revision);
         ensureNoDuplicateOperatorRefs(library);
         persist(library, OperatorLibraryRevision.restore(library, nextRevision(library.libraryId()),
-                revision.revision()));
+                revision.revision(), metadata));
         cache.put(library.libraryId(), library);
         log.info("Restored visual operator library: {} from revision {}", library.libraryId(), revision.revision());
         return library;
     }
 
     @Override
-    public synchronized void delete(String libraryId) {
+    public synchronized void delete(String libraryId, OperatorLibraryRevision.RevisionMetadata metadata) {
         OperatorLibrary library = cache.get(libraryId);
         if (library != null) {
             persistRevision(OperatorLibraryRevision.record(library, nextRevision(libraryId),
-                    OperatorLibraryRevision.ACTION_DELETE));
+                    OperatorLibraryRevision.ACTION_DELETE, metadata));
         }
         jdbc.update(DELETE, libraryId);
         cache.remove(libraryId);
@@ -199,7 +202,11 @@ public class DatabaseOperatorLibraryRegistry implements OperatorLibraryRegistry 
             if (currentMaxRevision(library.libraryId()) > 0) {
                 continue;
             }
-            persistRevision(OperatorLibraryRevision.record(library, 1, OperatorLibraryRevision.ACTION_CREATE));
+            persistRevision(OperatorLibraryRevision.record(library, 1, OperatorLibraryRevision.ACTION_CREATE,
+                    OperatorLibraryRevision.RevisionMetadata.of("system",
+                            "registry-backfill",
+                            "Backfilled initial operator library revision for " + library.libraryId() + ".",
+                            "Current library existed before revision history was enabled.")));
             log.info("Backfilled initial visual operator library revision: {}", library.libraryId());
         }
     }
