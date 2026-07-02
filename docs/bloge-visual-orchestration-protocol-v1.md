@@ -957,7 +957,20 @@ GET /api/visual/operators?search=score&tenantId=demo-tenant&namespace=local&envi
       "schemaVersion": "bloge.visualOperator.v1",
       "operatorRef": "resource:loan-applicant-service.getProfile",
       "display": { "name": "Get Applicant Profile" },
-      "ports": { "inputs": [], "outputs": [] }
+      "ports": { "inputs": [], "outputs": [] },
+      "runtimeReadiness": {
+        "state": "GOVERNANCE_REVIEW",
+        "level": "warning",
+        "executable": true,
+        "artifactKinds": ["EXECUTABLE"],
+        "title": "Executable with governance review",
+        "summary": "Executable metadata is present; promotion should review runtime governance risks.",
+        "details": [
+          { "label": "Authoring", "value": "Schema-constrained canvas ready" },
+          { "label": "Source", "value": "Resource Descriptor" },
+          { "label": "Governance", "value": "external effect" }
+        ]
+      }
     }
   ],
   "diagnostics": [],
@@ -974,6 +987,11 @@ GET /api/visual/operators?search=score&tenantId=demo-tenant&namespace=local&envi
   }
 }
 ```
+
+`runtimeReadiness` 由服务端按 `source`、`lowering`、`capabilities` 和 catalog
+diagnostics 派生，用户导入的算子库不能伪造。当前 request-response runtime 会返回
+`RUNTIME_EXECUTABLE`、`DESIGN_ONLY`、`RUNTIME_BLOCKED`、`GOVERNANCE_REVIEW` 或
+`CATALOG_REPAIR_REQUIRED`，浏览器优先消费该字段；缺失时才使用本地兼容推断。
 
 ### 10.1.1 查询 operator usage index
 

@@ -32,6 +32,7 @@ import java.util.TreeMap;
  * @param policy tenant, namespace, and environment availability policy
  * @param lowering lowering metadata used by code generation
  * @param diagnostics non-blocking projection diagnostics
+ * @param runtimeReadiness server-derived request-response runtime readiness summary
  */
 public record OperatorDefinition(
         String schemaVersion,
@@ -46,7 +47,8 @@ public record OperatorDefinition(
         @JsonAlias("policies")
         Policy policy,
         Lowering lowering,
-        List<VisualDiagnostic> diagnostics
+        List<VisualDiagnostic> diagnostics,
+        RuntimeReadiness runtimeReadiness
 ) {
     /**
      * Creates an operator definition.
@@ -67,6 +69,27 @@ public record OperatorDefinition(
         diagnostics = diagnostics == null ? List.of() : List.copyOf(diagnostics);
         fingerprint = computeFingerprint(operatorRef, operatorVersion, source, ports, configSchema, capabilities, policy,
                 lowering);
+        runtimeReadiness = RuntimeReadiness.derive(source, lowering, capabilities, diagnostics);
+    }
+
+    /**
+     * Backward-compatible constructor for callers that let the server derive runtime readiness.
+     */
+    public OperatorDefinition(String schemaVersion,
+                              String operatorRef,
+                              String operatorVersion,
+                              String fingerprint,
+                              Display display,
+                              Source source,
+                              Ports ports,
+                              SchemaEnvelope configSchema,
+                              Capabilities capabilities,
+                              @JsonAlias("policies")
+                              Policy policy,
+                              Lowering lowering,
+                              List<VisualDiagnostic> diagnostics) {
+        this(schemaVersion, operatorRef, operatorVersion, fingerprint, display, source, ports, configSchema,
+                capabilities, policy, lowering, diagnostics, null);
     }
 
     /**
@@ -84,7 +107,7 @@ public record OperatorDefinition(
                               Lowering lowering,
                               List<VisualDiagnostic> diagnostics) {
         this(schemaVersion, operatorRef, operatorVersion, fingerprint, display, source, ports, configSchema,
-                capabilities, Policy.unrestricted(), lowering, diagnostics);
+                capabilities, Policy.unrestricted(), lowering, diagnostics, null);
     }
 
     /**
@@ -101,7 +124,7 @@ public record OperatorDefinition(
                               Lowering lowering,
                               List<VisualDiagnostic> diagnostics) {
         this(schemaVersion, operatorRef, operatorVersion, "", display, source, ports, configSchema,
-                capabilities, Policy.unrestricted(), lowering, diagnostics);
+                capabilities, Policy.unrestricted(), lowering, diagnostics, null);
     }
 
     /**
@@ -119,7 +142,7 @@ public record OperatorDefinition(
                               Lowering lowering,
                               List<VisualDiagnostic> diagnostics) {
         this(schemaVersion, operatorRef, operatorVersion, "", display, source, ports, configSchema,
-                capabilities, policy, lowering, diagnostics);
+                capabilities, policy, lowering, diagnostics, null);
     }
 
     /**
@@ -325,6 +348,148 @@ public record OperatorDefinition(
         }
     }
 
+    /**
+     * Server-derived authoring and execution readiness for the current visual runtime.
+     *
+     * @param state stable machine-readable state
+     * @param level UI severity: success/info/warning/error
+     * @param executable whether request-response execution is available after catalog repair checks
+     * @param artifactKinds artifact kinds that can be promoted from this operator surface
+     * @param title short display title
+     * @param summary human-readable readiness summary
+     * @param details structured detail rows for browser and external control planes
+     */
+    public record RuntimeReadiness(
+            String state,
+            String level,
+            boolean executable,
+            List<String> artifactKinds,
+            String title,
+            String summary,
+            List<ReadinessDetail> details
+    ) {
+        public RuntimeReadiness {
+            state = state == null || state.isBlank()
+                    ? "UNKNOWN"
+                    : state.trim().toUpperCase(Locale.ROOT);
+            level = level == null || level.isBlank()
+                    ? "info"
+                    : level.trim().toLowerCase(Locale.ROOT);
+            artifactKinds = artifactKinds == null ? List.of() : artifactKinds.stream()
+                    .filter(value -> value != null && !value.isBlank())
+                    .map(value -> value.trim().toUpperCase(Locale.ROOT))
+                    .distinct()
+                    .toList();
+            title = title == null ? "" : title;
+            summary = summary == null ? "" : summary;
+            details = nullableElementsCopy(details);
+        }
+
+        static RuntimeReadiness derive(Source source,
+                                       Lowering lowering,
+                                       Capabilities capabilities,
+                                       List<VisualDiagnostic> diagnostics) {
+            String sourceKind = normalizeFacetValue(source.kind());
+            String loweringMode = normalizeFacetValue(lowering.mode());
+            boolean streaming = capabilities.streaming() || "java-streaming-operator".equals(sourceKind);
+            boolean durable = capabilities.durable() || "java-suspendable-operator".equals(sourceKind);
+            boolean errors = diagnostics.stream().anyMatch(VisualDiagnostic::error);
+            List<ReadinessDetail> details = new ArrayList<>();
+            details.add(new ReadinessDetail("Authoring", errors
+                    ? "Catalog diagnostics require repair"
+                    : "Schema-constrained canvas ready"));
+            details.add(new ReadinessDetail("Source", humanizeFacet(sourceKind.isBlank() ? "unknown" : sourceKind)));
+            details.add(new ReadinessDetail("Lowering", humanizeFacet(loweringMode.isBlank() ? "native" : loweringMode)));
+            if (errors) {
+                return new RuntimeReadiness(
+                        "CATALOG_REPAIR_REQUIRED",
+                        "error",
+                        false,
+                        List.of(),
+                        "Catalog repair required",
+                        "The operator is visible for review, but catalog errors must be fixed before reliable authoring.",
+                        details
+                );
+            }
+            if ("design".equals(loweringMode)) {
+                details.add(new ReadinessDetail("Publish", "DESIGN artifact only"));
+                return new RuntimeReadiness(
+                        "DESIGN_ONLY",
+                        "info",
+                        false,
+                        List.of("DESIGN"),
+                        "Design-only operator",
+                        "Authorable as a schema contract; executable lowering is not bound yet.",
+                        details
+                );
+            }
+            if (streaming || durable) {
+                String blockers = String.join(" + ", List.of(
+                                streaming ? "streaming runtime" : "",
+                                durable ? "durable runtime" : ""
+                        ).stream()
+                        .filter(value -> !value.isBlank())
+                        .toList());
+                details.add(new ReadinessDetail("Execution",
+                        blockers + " not supported by this request-response runtime"));
+                return new RuntimeReadiness(
+                        "RUNTIME_BLOCKED",
+                        "warning",
+                        false,
+                        List.of(),
+                        "Runtime blocked",
+                        "The schema can be inspected, but this visual runtime cannot execute the required runtime mode.",
+                        details
+                );
+            }
+            List<String> governance = new ArrayList<>();
+            if (capabilities.requiresSecrets()) {
+                governance.add("secret binding");
+            }
+            if ("NON_IDEMPOTENT".equals(capabilities.idempotency())) {
+                governance.add("non-idempotent side effect");
+            }
+            if (!"PURE".equals(capabilities.effect())) {
+                governance.add("external effect");
+            }
+            if (!governance.isEmpty()) {
+                details.add(new ReadinessDetail("Governance", String.join(" / ", governance)));
+                return new RuntimeReadiness(
+                        "GOVERNANCE_REVIEW",
+                        "warning",
+                        true,
+                        List.of("EXECUTABLE"),
+                        "Executable with governance review",
+                        "Executable metadata is present; promotion should review runtime governance risks.",
+                        details
+                );
+            }
+            details.add(new ReadinessDetail("Execution", "Request-response executable"));
+            return new RuntimeReadiness(
+                    "RUNTIME_EXECUTABLE",
+                    "success",
+                    true,
+                    List.of("EXECUTABLE"),
+                    "Runtime executable",
+                    "Executable lowering is present for this request-response visual runtime.",
+                    details
+            );
+        }
+    }
+
+    /**
+     * Runtime readiness detail row.
+     *
+     * @param label row label
+     * @param value row value
+     */
+    public record ReadinessDetail(String label, String value) {
+        public ReadinessDetail {
+            label = label == null ? "" : label;
+            value = value == null ? "" : value;
+        }
+    }
+
     private static String computeFingerprint(String operatorRef,
                                              String operatorVersion,
                                              Source source,
@@ -470,6 +635,29 @@ public record OperatorDefinition(
             }
         }
         return builder.append('"').toString();
+    }
+
+    private static String normalizeFacetValue(String value) {
+        return String.valueOf(value == null ? "" : value)
+                .trim()
+                .toLowerCase(Locale.ROOT)
+                .replace('_', '-');
+    }
+
+    private static String humanizeFacet(String value) {
+        String normalized = normalizeFacetValue(value);
+        if (normalized.isBlank()) {
+            return "";
+        }
+        String[] words = normalized.split("-");
+        List<String> titleWords = new ArrayList<>();
+        for (String word : words) {
+            if (word.isBlank()) {
+                continue;
+            }
+            titleWords.add(word.substring(0, 1).toUpperCase(Locale.ROOT) + word.substring(1));
+        }
+        return String.join(" ", titleWords);
     }
 
     private static <T> List<T> nullableElementsCopy(List<T> values) {

@@ -1234,12 +1234,34 @@ class VisualAuthoringAppJsTest {
                   outputPorts: [],
                   configSchema: { schema: { type: 'object', properties: {} } }
                 };
+                const serverReadinessSpec = {
+                  kind: 'custom',
+                  label: 'Server Readiness',
+                  operatorRef: 'risk:serverReady',
+                  sourceKind: 'user-library',
+                  lowering: { mode: 'native', operatorRef: 'riskServerReady' },
+                  capabilities: { effect: 'PURE' },
+                  runtimeReadiness: {
+                    state: 'GOVERNANCE_REVIEW',
+                    level: 'warning',
+                    executable: true,
+                    artifactKinds: ['EXECUTABLE'],
+                    title: 'Server authoritative readiness',
+                    summary: 'Use the catalog-provided readiness instead of browser heuristics.',
+                    details: [{ label: 'Governance', value: 'server-reviewed' }]
+                  },
+                  inputPorts: [],
+                  outputPorts: [],
+                  configSchema: { schema: { type: 'object', properties: {} } }
+                };
                 const executableReadiness = context.operatorRuntimeReadiness(paletteSearchSpec);
                 const designOnlyReadiness = context.operatorRuntimeReadiness(designOnlyPaletteSpec);
                 const designOnlyReadinessPanel = context.renderOperatorReadinessPanel(designOnlyPaletteSpec);
                 const suspendableReadiness = context.operatorRuntimeReadiness(suspendablePaletteSpec);
                 const governedReadiness = context.operatorRuntimeReadiness(governedPaletteSpec);
                 const governedReadinessPanel = context.renderOperatorReadinessPanel(governedPaletteSpec);
+                const serverReadiness = context.operatorRuntimeReadiness(serverReadinessSpec);
+                const serverReadinessPanel = context.renderOperatorReadinessPanel(serverReadinessSpec);
                 const serverCatalogFacets = context.normalizeOperatorCatalogFacets({
                   total: 6,
                   capabilities: {
@@ -2543,6 +2565,8 @@ class VisualAuthoringAppJsTest {
                   ['operator runtime readiness blocked', `${suspendableReadiness.level}|${suspendableReadiness.title}`, 'warning|Runtime blocked'],
                   ['operator runtime readiness governed', `${governedReadiness.level}|${governedReadiness.title}`, 'warning|Executable with governance review'],
                   ['operator runtime readiness governed panel', String(governedReadinessPanel.includes('secret binding') && governedReadinessPanel.includes('non-idempotent side effect')), 'true'],
+                  ['operator runtime readiness server state', `${serverReadiness.state}|${serverReadiness.title}`, 'GOVERNANCE_REVIEW|Server authoritative readiness'],
+                  ['operator runtime readiness server panel', String(serverReadinessPanel.includes('server-reviewed')), 'true'],
                   ['catalog facet summary', serverCatalogFacetSummary, 'Catalog mix: 4 Runtime executable · 2 Design only · 1 Streaming · 1 Requires secret · 1 External effect.'],
                   ['catalog facet fallback total', fallbackCatalogFacets.total, 2],
                   ['catalog facet fallback design count', fallbackCatalogFacets.capabilities['design-only'], 1],

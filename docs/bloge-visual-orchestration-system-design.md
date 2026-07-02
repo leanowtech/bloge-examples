@@ -684,7 +684,10 @@ assignment target 不在 output schema 中、template 引用不存在 input path
 以及 `required` 引用不存在字段等硬错误。`OperatorDefinition.policy`
 当前已支持 `tenants`、`namespaces`、`environments`，`/api/visual/operators`
 可按 scope 过滤，`GraphDraftValidator` 在 validate/compile/run/publish 前
-返回 `visual.operator.policyDenied` 阻断越权 operator 使用。当前还支持
+返回 `visual.operator.policyDenied` 阻断越权 operator 使用。`OperatorDefinition`
+当前还包含服务端派生的 `runtimeReadiness`，按 source/lowering/capability/diagnostics
+给出 `RUNTIME_EXECUTABLE`、`DESIGN_ONLY`、`RUNTIME_BLOCKED`、`GOVERNANCE_REVIEW`
+或 `CATALOG_REPAIR_REQUIRED`，避免浏览器用前端启发式伪造控制面判断。当前还支持
 `lowering.mode=design` 的 schema-only authoring：这类用户算子可以进入 catalog、
 拖拽、连线、保存、导出、被 schema validator 校验，并可通过浏览器发布模式或 API
 `artifactKind=DESIGN` 发布成非执行型设计制品；compile/run/default executable publish 会返回

@@ -84,6 +84,42 @@ class DefaultVisualOperatorCatalogTest {
     }
 
     @Test
+    void derivesRuntimeReadinessAsServerManagedOperatorMetadata() {
+        OperatorDefinition executable = VisualCatalogTestSupport.eligibilityOperator("integer");
+        OperatorDefinition designOnly = VisualCatalogTestSupport.designOnlyEligibilityOperator("integer");
+        OperatorDefinition forged = new OperatorDefinition(
+                designOnly.schemaVersion(),
+                designOnly.operatorRef(),
+                designOnly.operatorVersion(),
+                designOnly.fingerprint(),
+                designOnly.display(),
+                designOnly.source(),
+                designOnly.ports(),
+                designOnly.configSchema(),
+                designOnly.capabilities(),
+                designOnly.policy(),
+                designOnly.lowering(),
+                designOnly.diagnostics(),
+                new OperatorDefinition.RuntimeReadiness(
+                        "RUNTIME_EXECUTABLE",
+                        "success",
+                        true,
+                        List.of("EXECUTABLE"),
+                        "Forged executable",
+                        "User supplied readiness should not be trusted.",
+                        List.of()
+                )
+        );
+
+        assertThat(executable.runtimeReadiness().state()).isEqualTo("RUNTIME_EXECUTABLE");
+        assertThat(executable.runtimeReadiness().executable()).isTrue();
+        assertThat(designOnly.runtimeReadiness().state()).isEqualTo("DESIGN_ONLY");
+        assertThat(designOnly.runtimeReadiness().artifactKinds()).containsExactly("DESIGN");
+        assertThat(forged.runtimeReadiness().state()).isEqualTo("DESIGN_ONLY");
+        assertThat(forged.runtimeReadiness().title()).isEqualTo("Design-only operator");
+    }
+
+    @Test
     void catalogSearchMatchesSchemaFieldsAndTypes() {
         OperatorDefinition base = VisualCatalogTestSupport.eligibilityOperator("integer");
         OperatorDefinition configured = new OperatorDefinition(

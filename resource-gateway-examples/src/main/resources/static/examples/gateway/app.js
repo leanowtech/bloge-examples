@@ -537,6 +537,7 @@ function rememberCatalogOperator(operator, options = {}) {
       policy: operator.policy,
       lowering: operator.lowering,
       diagnostics,
+      runtimeReadiness: normalizeOperatorRuntimeReadiness(operator.runtimeReadiness),
       paletteVisible: options.paletteVisible !== false,
       deprecated: Boolean(options.deprecated)
     };
@@ -570,6 +571,7 @@ function rememberCatalogOperator(operator, options = {}) {
     policy: operator.policy,
     lowering: operator.lowering,
     diagnostics,
+    runtimeReadiness: normalizeOperatorRuntimeReadiness(operator.runtimeReadiness),
     paletteVisible: options.paletteVisible !== false,
     deprecated: Boolean(options.deprecated)
   };
@@ -8195,7 +8197,41 @@ function renderOperatorReadinessPanel(spec) {
   `;
 }
 
+function normalizeOperatorRuntimeReadiness(readiness) {
+  if (!readiness || typeof readiness !== 'object') {
+    return null;
+  }
+  const title = String(readiness.title || '').trim();
+  const summary = String(readiness.summary || '').trim();
+  const details = Array.isArray(readiness.details)
+    ? readiness.details.map((detail) => ({
+      label: String(detail?.label || '').trim(),
+      value: String(detail?.value || '').trim()
+    })).filter((detail) => detail.label || detail.value)
+    : [];
+  if (!title && !summary && !details.length) {
+    return null;
+  }
+  const rawLevel = String(readiness.level || '').trim().toLowerCase();
+  const level = ['success', 'info', 'warning', 'error'].includes(rawLevel) ? rawLevel : 'info';
+  return {
+    state: String(readiness.state || '').trim().toUpperCase(),
+    level,
+    executable: readiness.executable === true,
+    artifactKinds: Array.isArray(readiness.artifactKinds)
+      ? readiness.artifactKinds.map((kind) => String(kind || '').trim().toUpperCase()).filter(Boolean)
+      : [],
+    title,
+    summary,
+    details
+  };
+}
+
 function operatorRuntimeReadiness(spec) {
+  const serverReadiness = normalizeOperatorRuntimeReadiness(spec?.runtimeReadiness);
+  if (serverReadiness) {
+    return serverReadiness;
+  }
   const sourceKind = String(spec?.sourceKind || '').trim().toLowerCase();
   const loweringMode = operatorPaletteLoweringMode(spec);
   const capabilities = spec?.capabilities || {};

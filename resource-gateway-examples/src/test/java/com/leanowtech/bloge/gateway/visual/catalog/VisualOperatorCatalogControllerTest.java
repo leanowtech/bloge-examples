@@ -70,7 +70,11 @@ class VisualOperatorCatalogControllerTest {
                 .andExpect(jsonPath("$.facets.loweringModes.transform").value(1))
                 .andExpect(jsonPath("$.facets.loweringModes.design").value(1))
                 .andExpect(jsonPath("$.facets.capabilities['runtime-executable']").value(1))
-                .andExpect(jsonPath("$.facets.capabilities['design-only']").value(1));
+                .andExpect(jsonPath("$.facets.capabilities['design-only']").value(1))
+                .andExpect(jsonPath("$.operators[0].runtimeReadiness.state").value("RUNTIME_EXECUTABLE"))
+                .andExpect(jsonPath("$.operators[0].runtimeReadiness.executable").value(true))
+                .andExpect(jsonPath("$.operators[1].runtimeReadiness.state").value("DESIGN_ONLY"))
+                .andExpect(jsonPath("$.operators[1].runtimeReadiness.artifactKinds[0]").value("DESIGN"));
     }
 
     private static final class DiagnosticCatalog implements VisualOperatorCatalog {
