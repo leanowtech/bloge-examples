@@ -1022,7 +1022,7 @@ function renderInputForm() {
             <span>Rollback</span>
           </label>
         </div>
-        <textarea id="operator-library-json" class="library-editor" spellcheck="false"></textarea>
+        <textarea id="operator-library-json" class="library-editor" spellcheck="false" aria-label="Operator library JSON or YAML"></textarea>
         <div id="library-profile" class="library-profile"></div>
         <div id="library-status" class="library-status" hidden></div>
         <div id="library-revision-diff" class="library-impact-panel" hidden></div>
@@ -4775,22 +4775,15 @@ async function loadOperatorLibraryRevisionDiff(options = {}) {
 }
 
 async function validateOperatorLibrary() {
-  let library;
-  const sourceText = state.libraryImportText || '{}';
-  try {
-    library = JSON.parse(sourceText);
-  } catch (error) {
-    setLibraryMessage(`Invalid JSON: ${error.message}`, 'error');
-    return;
-  }
-  const { response, payload, diagnostics } = await validateOperatorLibraryPayload(library);
+  const sourceText = state.libraryImportText || '';
+  const { response, payload, diagnostics } = await validateOperatorLibraryTextPayload(sourceText);
   if (!response.ok) {
     setLibraryMessage(`Validation failed with ${response.status}`, 'error', diagnostics, payload?.impact,
       payload?.profile, sourceText);
     return;
   }
   state.libraryImportConfirmationKey = payload?.valid !== false && hasWarningDiagnostic(diagnostics)
-    ? libraryImportConfirmationKey(library, diagnostics)
+    ? libraryImportConfirmationKey(sourceText, diagnostics)
     : '';
   setLibraryMessage(
     validationResultMessage(payload?.valid, diagnostics, 'Operator library is valid.'),
@@ -4800,6 +4793,20 @@ async function validateOperatorLibrary() {
     payload?.profile,
     sourceText
   );
+}
+
+async function validateOperatorLibraryTextPayload(sourceText) {
+  const response = await fetch(`/admin/visual-operator-libraries/validate-text${libraryForceQuery()}`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'text/plain' },
+    body: sourceText || ''
+  });
+  const payload = await response.json().catch(() => null);
+  return {
+    response,
+    payload,
+    diagnostics: normalizeDiagnostics(payload?.diagnostics)
+  };
 }
 
 async function validateOperatorLibraryPayload(library) {
@@ -4816,10 +4823,10 @@ async function validateOperatorLibraryPayload(library) {
   };
 }
 
-function libraryImportConfirmationKey(library, diagnostics = []) {
+function libraryImportConfirmationKey(sourceText, diagnostics = []) {
   return JSON.stringify({
     force: Boolean(state.libraryForce),
-    library,
+    sourceText: String(sourceText || ''),
     warnings: normalizeDiagnostics(diagnostics)
       .filter((diagnostic) => String(diagnostic.level || '').toUpperCase() === 'WARNING')
       .map((diagnostic) => ({
@@ -4832,20 +4839,9 @@ function libraryImportConfirmationKey(library, diagnostics = []) {
 }
 
 async function importOperatorLibrary() {
-  let library;
-  const sourceText = state.libraryImportText || '{}';
-  try {
-    library = JSON.parse(sourceText);
-  } catch (error) {
-    setLibraryMessage(`Invalid JSON: ${error.message}`, 'error');
-    return;
-  }
-  if (!library.libraryId) {
-    setLibraryMessage('libraryId is required.', 'error');
-    return;
-  }
-  const validation = await validateOperatorLibraryPayload(library);
-  const confirmationKey = libraryImportConfirmationKey(library, validation.diagnostics);
+  const sourceText = state.libraryImportText || '';
+  const validation = await validateOperatorLibraryTextPayload(sourceText);
+  const confirmationKey = libraryImportConfirmationKey(sourceText, validation.diagnostics);
   if (!validation.response.ok || validation.payload?.valid === false) {
     state.libraryImportConfirmationKey = '';
     setLibraryMessage(
@@ -4882,19 +4878,17 @@ async function importOperatorLibrary() {
   if (!hasWarningDiagnostic(validation.diagnostics)) {
     state.libraryImportConfirmationKey = '';
   }
-  const replacing = libraryExists(library.libraryId);
+  const libraryId = String(validation.payload?.profile?.libraryId || operatorLibraryHistoryTargetId()).trim();
+  const replacing = libraryId ? libraryExists(libraryId) : false;
   const mutationQuery = libraryMutationQuery(
     hasWarningDiagnostic(validation.diagnostics),
     replacing ? 'Replaced' : 'Imported',
-    library.libraryId
+    libraryId
   );
-  const endpoint = replacing
-    ? `/admin/visual-operator-libraries/${encodeURIComponent(library.libraryId)}${mutationQuery}`
-    : `/admin/visual-operator-libraries${mutationQuery}`;
-  const response = await fetch(endpoint, {
-    method: replacing ? 'PUT' : 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(library)
+  const response = await fetch(`/admin/visual-operator-libraries/import-text${mutationQuery}`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'text/plain' },
+    body: sourceText
   });
   const text = await response.text();
   if (!response.ok) {
@@ -4915,6 +4909,7 @@ async function importOperatorLibrary() {
     return;
   }
   const stored = JSON.parse(text);
+  const action = response.status === 200 ? 'Replaced' : 'Imported';
   state.libraryImportConfirmationKey = '';
   state.selectedLibraryId = stored.libraryId;
   state.libraryHistoryId = stored.libraryId;
@@ -4926,7 +4921,7 @@ async function importOperatorLibrary() {
   await loadVisualOperatorCatalog();
   renderOperatorPalette();
   renderOperatorLibraryControls();
-  setLibraryMessage(`${replacing ? 'Replaced' : 'Imported'} ${stored.libraryId}.`, 'success');
+  setLibraryMessage(`${action} ${stored.libraryId}.`, 'success');
 }
 
 async function deleteSelectedOperatorLibrary() {

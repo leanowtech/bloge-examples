@@ -1,5 +1,8 @@
 package com.leanowtech.bloge.gateway.visual.catalog;
 
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.dataformat.yaml.YAMLMapper;
 import com.leanowtech.bloge.gateway.visual.diagnostic.VisualDiagnostic;
 import com.leanowtech.bloge.gateway.visual.draft.GraphDraft;
 import com.leanowtech.bloge.gateway.visual.draft.GraphDraftRepository;
@@ -37,6 +40,8 @@ import java.util.Set;
 @RestController
 @RequestMapping("/admin/visual-operator-libraries")
 public class OperatorLibraryAdminController {
+
+    private static final ObjectMapper OPERATOR_LIBRARY_TEXT_MAPPER = new YAMLMapper();
 
     private final OperatorLibraryRegistry registry;
     private final OperatorLibraryValidator validator;
@@ -101,21 +106,8 @@ public class OperatorLibraryAdminController {
                                     @RequestParam(defaultValue = "") String changeSource,
                                     @RequestParam(defaultValue = "") String changeSummary,
                                     @RequestParam(defaultValue = "") String reason) {
-        OperatorLibraryValidationResult validation = validateAgainstRegistry(library, force);
-        if (!validation.valid()) {
-            return ResponseEntity.status(validationFailureStatus(validation)).body(validation);
-        }
-        ResponseEntity<OperatorLibraryValidationResult> warningGate = warningAcknowledgementResponse(validation,
-                ackWarnings);
-        if (warningGate != null) {
-            return warningGate;
-        }
-        ResponseEntity<OperatorLibraryValidationResult> impact = replacementImpactResponse(library, force);
-        if (impact != null) {
-            return impact;
-        }
-        return ResponseEntity.status(HttpStatus.CREATED).body(registry.upsert(library,
-                revisionMetadata(actor, changeSource, changeSummary, reason)));
+        return importLibrary(library, force, ackWarnings, HttpStatus.CREATED,
+                revisionMetadata(actor, changeSource, changeSummary, reason));
     }
 
     /**
@@ -129,6 +121,55 @@ public class OperatorLibraryAdminController {
     public OperatorLibraryValidationResult validate(@RequestBody OperatorLibrary library,
                                                     @RequestParam(defaultValue = "false") boolean force) {
         return validateAgainstRegistry(library, force);
+    }
+
+    /**
+     * Validates raw operator-library source text without storing it.
+     *
+     * @param sourceText raw JSON or YAML operator-library source text
+     * @param force bypass stored-draft replacement impact diagnostics
+     * @return structured validation diagnostics
+     */
+    @PostMapping("/validate-text")
+    public ResponseEntity<OperatorLibraryValidationResult> validateText(@RequestBody(required = false) String sourceText,
+                                                                        @RequestParam(defaultValue = "false")
+                                                                        boolean force) {
+        OperatorLibraryTextParseResult parsed = parseOperatorLibrarySourceText(sourceText);
+        if (parsed.error() != null) {
+            return ResponseEntity.badRequest().body(parsed.error());
+        }
+        return ResponseEntity.ok(validateAgainstRegistry(parsed.library(), force));
+    }
+
+    /**
+     * Imports raw operator-library source text.
+     *
+     * @param sourceText raw JSON or YAML operator-library source text
+     * @param force bypass stored-draft reference protection when re-importing an existing library
+     * @param ackWarnings true when the caller already reviewed non-blocking replacement warnings
+     * @param actor user or system actor producing this registry revision
+     * @param changeSource UI or integration source producing this registry revision
+     * @param changeSummary human-readable change summary
+     * @param reason optional reason for audit review
+     * @return stored library
+     */
+    @PostMapping("/import-text")
+    public ResponseEntity<?> importText(@RequestBody(required = false) String sourceText,
+                                        @RequestParam(defaultValue = "false") boolean force,
+                                        @RequestParam(defaultValue = "false") boolean ackWarnings,
+                                        @RequestParam(defaultValue = "") String actor,
+                                        @RequestParam(defaultValue = "") String changeSource,
+                                        @RequestParam(defaultValue = "") String changeSummary,
+                                        @RequestParam(defaultValue = "") String reason) {
+        OperatorLibraryTextParseResult parsed = parseOperatorLibrarySourceText(sourceText);
+        if (parsed.error() != null) {
+            return ResponseEntity.badRequest().body(parsed.error());
+        }
+        HttpStatus successStatus = registry.find(parsed.library().libraryId()).isPresent()
+                ? HttpStatus.OK
+                : HttpStatus.CREATED;
+        return importLibrary(parsed.library(), force, ackWarnings, successStatus,
+                revisionMetadata(actor, changeSource, changeSummary, reason));
     }
 
     /**
@@ -277,6 +318,15 @@ public class OperatorLibraryAdminController {
             throw new IllegalArgumentException("Path libraryId '%s' does not match body libraryId '%s'"
                     .formatted(libraryId, library.libraryId()));
         }
+        return importLibrary(library, force, ackWarnings, HttpStatus.OK,
+                revisionMetadata(actor, changeSource, changeSummary, reason));
+    }
+
+    private ResponseEntity<?> importLibrary(OperatorLibrary library,
+                                            boolean force,
+                                            boolean ackWarnings,
+                                            HttpStatus successStatus,
+                                            OperatorLibraryRevision.RevisionMetadata revisionMetadata) {
         OperatorLibraryValidationResult validation = validateAgainstRegistry(library, force);
         if (!validation.valid()) {
             return ResponseEntity.status(validationFailureStatus(validation)).body(validation);
@@ -290,8 +340,7 @@ public class OperatorLibraryAdminController {
         if (impact != null) {
             return impact;
         }
-        return ResponseEntity.ok(registry.upsert(library,
-                revisionMetadata(actor, changeSource, changeSummary, reason)));
+        return ResponseEntity.status(successStatus).body(registry.upsert(library, revisionMetadata));
     }
 
     /**
@@ -335,6 +384,42 @@ public class OperatorLibraryAdminController {
                                                                              String changeSummary,
                                                                              String reason) {
         return OperatorLibraryRevision.RevisionMetadata.of(actor, changeSource, changeSummary, reason);
+    }
+
+    private static OperatorLibraryTextParseResult parseOperatorLibrarySourceText(String sourceText) {
+        if (sourceText == null || sourceText.isBlank()) {
+            return OperatorLibraryTextParseResult.error(VisualDiagnostic.error(
+                    "visual.library.source.missing",
+                    "Operator library source text is required as JSON or YAML.",
+                    "/sourceText"));
+        }
+        try {
+            OperatorLibrary library = OPERATOR_LIBRARY_TEXT_MAPPER.readValue(sourceText, OperatorLibrary.class);
+            if (library == null) {
+                return OperatorLibraryTextParseResult.error(VisualDiagnostic.error(
+                        "visual.library.source.missing",
+                        "Operator library source text did not contain an operator library object.",
+                        "/sourceText"));
+            }
+            return new OperatorLibraryTextParseResult(library, null);
+        } catch (JsonProcessingException ex) {
+            return OperatorLibraryTextParseResult.error(VisualDiagnostic.error(
+                    "visual.library.source.malformed",
+                    "Operator library source must be valid JSON or YAML: " + ex.getOriginalMessage(),
+                    "/sourceText"));
+        }
+    }
+
+    private record OperatorLibraryTextParseResult(
+            OperatorLibrary library,
+            OperatorLibraryValidationResult error
+    ) {
+        private static OperatorLibraryTextParseResult error(VisualDiagnostic diagnostic) {
+            return new OperatorLibraryTextParseResult(null, new OperatorLibraryValidationResult(false,
+                    List.of(diagnostic),
+                    OperatorLibraryImpactReview.empty(),
+                    OperatorLibraryProfile.empty()));
+        }
     }
 
     private OperatorLibraryValidationResult validateAgainstRegistry(OperatorLibrary library, boolean force) {

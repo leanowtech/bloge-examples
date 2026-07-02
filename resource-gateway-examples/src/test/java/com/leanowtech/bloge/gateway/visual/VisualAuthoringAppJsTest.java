@@ -135,6 +135,13 @@ class VisualAuthoringAppJsTest {
 
         assertThat(source)
                 .contains("id=\"library-impact\"")
+                .contains("aria-label=\"Operator library JSON or YAML\"")
+                .contains("async function validateOperatorLibraryTextPayload(sourceText)")
+                .contains("/admin/visual-operator-libraries/validate-text${libraryForceQuery()}")
+                .contains("/admin/visual-operator-libraries/import-text${mutationQuery}")
+                .contains("headers: { 'Content-Type': 'text/plain' }")
+                .contains("libraryImportConfirmationKey(sourceText, validation.diagnostics)")
+                .contains("sourceText: String(sourceText || '')")
                 .contains("renderLibraryImpactPanel($('library-impact'), diagnostics, state.libraryMessage?.impact)")
                 .contains("function renderLibraryImpactPanel(target, diagnostics, impact = null)")
                 .contains("function libraryImpactSummaryFromPayload(impact)")

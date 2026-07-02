@@ -1,6 +1,7 @@
 package com.leanowtech.bloge.gateway.visual.catalog;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.dataformat.yaml.YAMLMapper;
 import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 import com.leanowtech.bloge.core.operator.Operator;
 import com.leanowtech.bloge.core.operator.OperatorContext;
@@ -106,6 +107,66 @@ class OperatorLibraryAdminControllerTest {
                 .andExpect(jsonPath("$.profile.operators[0].inputFields[0].path").value("score"))
                 .andExpect(jsonPath("$.profile.operators[0].inputFields[0].required").value(true))
                 .andExpect(jsonPath("$.profile.operators[0].outputFields[0].path").value("eligible"));
+
+        assertThat(registry.all()).isEmpty();
+    }
+
+    @Test
+    void validateLibraryTextAcceptsJsonAndYamlWithoutStoring() throws Exception {
+        OperatorLibrary library = VisualCatalogTestSupport.designOnlyEligibilityLibrary("integer");
+        String json = objectMapper.writeValueAsString(library);
+        String yaml = new YAMLMapper().writeValueAsString(library);
+
+        mockMvc.perform(post("/admin/visual-operator-libraries/validate-text")
+                        .contentType(MediaType.TEXT_PLAIN)
+                        .content(json))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.valid").value(true))
+                .andExpect(jsonPath("$.profile.libraryId").value("risk-policy-design"))
+                .andExpect(jsonPath("$.profile.facets.runtimeReadinessStates['design-only']").value(1));
+
+        mockMvc.perform(post("/admin/visual-operator-libraries/validate-text")
+                        .contentType(MediaType.TEXT_PLAIN)
+                        .content(yaml))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.valid").value(true))
+                .andExpect(jsonPath("$.profile.libraryId").value("risk-policy-design"))
+                .andExpect(jsonPath("$.profile.facets.runtimeReadinessStates['design-only']").value(1));
+
+        assertThat(registry.all()).isEmpty();
+    }
+
+    @Test
+    void importLibraryTextStoresYamlThroughGovernedRegistryPath() throws Exception {
+        OperatorLibrary library = VisualCatalogTestSupport.designOnlyEligibilityLibrary("integer");
+        String yaml = new YAMLMapper().writeValueAsString(library);
+
+        mockMvc.perform(post("/admin/visual-operator-libraries/import-text")
+                        .param("actor", "visual-author")
+                        .param("changeSource", "gateway-browser")
+                        .param("changeSummary", "Imported YAML operator library.")
+                        .contentType(MediaType.TEXT_PLAIN)
+                        .content(yaml))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.libraryId").value("risk-policy-design"));
+
+        assertThat(registry.find("risk-policy-design")).isPresent();
+        OperatorLibraryRevision revision = registry.revisions("risk-policy-design").getFirst();
+        assertThat(revision.action()).isEqualTo(OperatorLibraryRevision.ACTION_CREATE);
+        assertThat(revision.revisionMetadata().actor()).isEqualTo("visual-author");
+        assertThat(revision.revisionMetadata().changeSource()).isEqualTo("gateway-browser");
+        assertThat(revision.revisionMetadata().changeSummary()).isEqualTo("Imported YAML operator library.");
+    }
+
+    @Test
+    void validateLibraryTextRejectsMalformedSourceWithStructuredDiagnostic() throws Exception {
+        mockMvc.perform(post("/admin/visual-operator-libraries/validate-text")
+                        .contentType(MediaType.TEXT_PLAIN)
+                        .content("libraryId: ["))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.valid").value(false))
+                .andExpect(jsonPath("$.diagnostics[0].code").value("visual.library.source.malformed"))
+                .andExpect(jsonPath("$.diagnostics[0].target").value("/sourceText"));
 
         assertThat(registry.all()).isEmpty();
     }

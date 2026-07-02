@@ -2,6 +2,7 @@ package com.leanowtech.bloge.gateway.visual;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.dataformat.yaml.YAMLMapper;
 import com.leanowtech.bloge.gateway.ResourceGatewayApplication;
 import com.leanowtech.bloge.gateway.gateway.GatewayProperties;
 import com.leanowtech.bloge.gateway.gateway.ResourceDescriptorBootstrap;
@@ -57,6 +58,7 @@ class VisualAuthoringBrowserDomTest {
 
     private static final Duration WAIT_TIMEOUT = Duration.ofSeconds(12);
     private static final ObjectMapper OBJECT_MAPPER = new ObjectMapper();
+    private static final YAMLMapper YAML_MAPPER = new YAMLMapper();
     private static final Path MAC_CHROME_BINARY = Path.of(
             "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"
     );
@@ -248,6 +250,36 @@ class VisualAuthoringBrowserDomTest {
         selectByValue(wait, By.id("run-history-source"), "PUBLICATION");
         waitForText(wait, By.id("run-history-list"), "PUBLICATION");
         assertThat(textOf(By.id("run-history-list"))).doesNotContain("TRANSIENT_DRAFT");
+    }
+
+    @Test
+    void composerImportsYamlOperatorLibraryAndUsesItOnCanvasInRealBrowser() throws JsonProcessingException {
+        driver = newChromeDriverOrSkip();
+        WebDriverWait wait = new WebDriverWait(driver, WAIT_TIMEOUT);
+        driver.get("http://localhost:" + port + "/examples/gateway");
+
+        waitForComposer(wait);
+        wait.until(ExpectedConditions.visibilityOfElementLocated(By.id("operator-palette")));
+
+        OperatorLibrary library = VisualCatalogTestSupport.eligibilityLibrary("integer");
+        importYamlOperatorLibrary(wait, library);
+        assertThat(valueOf(By.id("operator-library-json")))
+                .contains("\"libraryId\": \"risk-policy\"")
+                .contains("\"operatorRef\": \"risk:eligibility\"");
+
+        dragOperatorToCanvas(wait, "Eligibility", "risk:eligibility", "riskEligibility", 140, 120);
+        wait.until(ExpectedConditions.visibilityOfElementLocated(
+                By.cssSelector("#diagram [data-node-id='riskEligibility'] "
+                        + "[data-port-role='target'][data-port='inputs'][data-path='score']")
+        ));
+        wait.until(ExpectedConditions.visibilityOfElementLocated(
+                By.cssSelector("#diagram [data-node-id='riskEligibility'] "
+                        + "[data-port-role='source'][data-port='output'][data-path='eligible']")
+        ));
+        click(wait, By.cssSelector("#diagram [data-node-id='riskEligibility']"));
+        waitForText(wait, By.id("selected-operator-editor"), "Eligibility");
+        waitForText(wait, By.id("selected-operator-editor"), "2 required");
+        waitForText(wait, By.id("selected-operator-editor"), "object · 2 fields · 0 required");
     }
 
     @Test
@@ -1190,6 +1222,29 @@ class VisualAuthoringBrowserDomTest {
         waitForAnyText(wait, By.id("library-status"),
                 "Imported " + library.libraryId(),
                 "Replaced " + library.libraryId());
+    }
+
+    private void importYamlOperatorLibrary(WebDriverWait wait, OperatorLibrary library) throws JsonProcessingException {
+        WebElement editor = wait.until(ExpectedConditions.visibilityOfElementLocated(By.id("operator-library-json")));
+        setControlValue(editor, YAML_MAPPER.writeValueAsString(library));
+        click(wait, By.id("validate-library"));
+        waitForText(wait, By.id("library-status"), "Operator library is valid.");
+        waitForText(wait, By.id("library-profile"), library.libraryId());
+
+        click(wait, By.id("import-library"));
+        waitForAnyText(wait, By.id("library-status"),
+                "Imported " + library.libraryId(),
+                "Replaced " + library.libraryId(),
+                "Review warnings");
+        if (textOf(By.id("library-status")).contains("Review warnings")) {
+            click(wait, By.id("import-library"));
+        }
+        waitForAnyText(wait, By.id("library-status"),
+                "Imported " + library.libraryId(),
+                "Replaced " + library.libraryId());
+        waitForText(wait, By.id("library-profile"), "1 operators");
+        waitForText(wait, By.id("library-profile"), "2 required");
+        waitForText(wait, By.id("library-profile"), "Eligibility");
     }
 
     private void publishVisualDraft(WebDriverWait wait) {

@@ -386,7 +386,7 @@ node fetchApplicant : httpResource {
 | Subgraph | `customerRiskAssessment` | 第二阶段 | 将已发布图包装成复用算子 |
 | Remote Worker | `fraudModel.score` | 第二阶段 | 远程任务执行，适合 durable |
 | AI Tool | `llm.extractFields` | 第二阶段 | 强治理，需 structured output schema |
-| User Catalog JSON/YAML | 外部导入 | 第二阶段 | 支持非 Java 算子声明 |
+| User Catalog JSON/YAML | 外部导入 | 已落地在 resource-gateway 示例 | 支持非 Java 算子声明；raw source text 由服务端解析后进入统一治理链路 |
 
 ## 9. Graph Draft / Graph IR 设计
 
@@ -667,13 +667,17 @@ node fetchApplicant : httpResource {
 | `GET` | `/api/visual/operators` | 查询可用算子，支持 pattern、tag、tenant、namespace、environment、source/lowering/capability/runtime-readiness facets |
 | `GET` | `/api/visual/operators/{operatorRef}` | 获取单个算子定义 |
 | `GET` | `/api/visual/operators/{operatorRef}/usage` | 当前已实现：查询某个 operatorRef 被哪些 stored draft / immutable publication 节点使用，并返回 saved/frozen fingerprint 与当前 catalog fingerprint 的状态 |
-| `POST` | `/api/visual/operator-catalogs/import` | 导入用户提供的 catalog JSON/YAML |
-| `POST` | `/api/visual/operator-catalogs/validate` | 校验 catalog 定义 |
+| `POST` | `/admin/visual-operator-libraries/import-text` | 当前实现：导入用户提供的 operator library JSON/YAML source text，服务端解析后复用 impact / warning / revision 治理 |
+| `POST` | `/admin/visual-operator-libraries/validate-text` | 当前实现：校验用户提供的 operator library JSON/YAML source text，不落库，解析错误返回结构化诊断 |
 | `GET` | `/api/visual/resource-operators` | 将 resource descriptors 投影为虚拟算子 |
 
 resource-gateway 示例当前以 `/admin/visual-operator-libraries` 暴露用户库管理：
 `POST /admin/visual-operator-libraries/validate` 返回 diagnostics、impact 和服务端派生
 `bloge.visualOperatorLibraryProfile.v1`，但不落库；
+`POST /admin/visual-operator-libraries/validate-text` 和
+`POST /admin/visual-operator-libraries/import-text` 接收 raw JSON/YAML source text，
+解析错误会返回 `visual.library.source.*` 结构化诊断，解析成功后进入同一 validator、
+impact、warning acknowledgement、SemVer 和 revision audit 路径；
 `POST/PUT /admin/visual-operator-libraries` 在写入前执行同一校验，阻断空库、
 重复 `operatorRef`、跨已导入库冲突的 `operatorRef`、重复端口、
 覆盖内置算子的 `operatorRef`、占用 `resource:` 命名空间的用户算子、
@@ -1269,7 +1273,7 @@ Phase 1 的工程拆分、包结构、API、测试和 Definition of Done 见
 
 1. 目标用户到底是开发者、解决方案架构师、业务运营，还是三者都要覆盖？不同用户决定 UI 的 DSL 暴露程度。
 2. 第一版是否要求保存草稿和发布版本，还是只需要浏览器内临时 composer？
-3. 用户提供的“算子库定义”优先是哪种形态：JSON/YAML catalog、Java Operator、HTTP/OpenAPI、还是 BLOGE subgraph？
+3. 下一阶段用户提供的“算子库定义”优先补哪种形态：Java Operator 远程投影、HTTP/OpenAPI 深化、AsyncAPI/message、还是 BLOGE subgraph？
 4. 是否要把 OpenAPI 导入作为 ResourceDescriptor 生成器？如果是，schema 来源会更完整。
 5. Phase 1 是否必须支持 DSL 反向导入？如果要求无损导入，工作量会明显上升。
 6. 是否要求接入 graph-engine 的版本/部署/实例模型，还是先在 resource-gateway 内做轻量版？
@@ -1280,7 +1284,7 @@ Phase 1 的工程拆分、包结构、API、测试和 Definition of Done 见
 当前主设计和协议草案已经给出一条可实现路线。下一步不应该继续泛泛讨论“画布长什么样”，而应该收敛三个实现决策：
 
 1. **确认 Phase 1 的 canonical authoring model**：采用 `GraphDraft`，不再让前端拼 DSL 字符串。
-2. **确认算子库输入形态优先级**：先支持 `ResourceDescriptor + ResourceDesignContract -> VirtualOperator`，再支持用户导入 `operatorCatalog.json/yaml`。
+2. **确认算子库输入形态下一跳**：`ResourceDescriptor + ResourceDesignContract -> VirtualOperator` 和用户导入 JSON/YAML operator library 已落地，下一步应在 AsyncAPI/message、远程 worker、Java Operator 远程投影和 BLOGE subgraph 复用之间收敛优先级。
 3. **确认 schema 强度**：没有 `payloadSchema` 的 resource 默认不能参与类型安全连接，除非用户显式插入 opaque transform 或策略允许 warning 发布。
 
 如果这三个方向成立，下一步可以按
