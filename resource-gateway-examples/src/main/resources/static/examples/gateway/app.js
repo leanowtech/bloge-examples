@@ -9883,8 +9883,11 @@ async function importPublicationBundle() {
   await loadVisualAssetOverview({ render: false });
   const sourceLineage = payload?.sourcePublicationId ? ` from ${payload.sourcePublicationId}` : '';
   const targetReview = publicationImportTargetReviewText(payload?.targetDependencyReport);
+  const bindingReview = runtimeBindingRequirementImportReviewText(
+    payload?.targetRuntimeBindingRequirements || importedPublication?.validation?.readiness?.runtimeBindingRequirements
+  );
   setPublicationMessage(
-    `Imported ${payload?.importedPublicationId || importedPublication?.publicationId || 'publication'}${sourceLineage}.${targetReview ? ` ${targetReview}` : ''}`,
+    `Imported ${payload?.importedPublicationId || importedPublication?.publicationId || 'publication'}${sourceLineage}.${targetReview ? ` ${targetReview}` : ''}${bindingReview ? ` ${bindingReview}` : ''}`,
     'success'
   );
   renderPublicationControls();
@@ -9910,6 +9913,20 @@ function publicationImportTargetReviewText(report) {
     return `Target review: ${issues.join(', ')}.`;
   }
   return 'Target review: all frozen operator dependencies are available.';
+}
+
+function runtimeBindingRequirementImportReviewText(requirements) {
+  const normalized = Array.isArray(requirements)
+    ? requirements.map(normalizeRuntimeBindingRequirement)
+    : [];
+  if (!normalized.length) {
+    return '';
+  }
+  const lanes = [...new Set(normalized.map((requirement) => requirement.handoffLane).filter(Boolean))];
+  const kinds = [...new Set(normalized.map((requirement) => requirement.bindingKind).filter(Boolean))];
+  const laneText = lanes.length ? ` across ${lanes.slice(0, 2).join(', ')}` : '';
+  const kindText = kinds.length ? ` (${kinds.slice(0, 2).join(', ')})` : '';
+  return `Runtime binding handoff: ${normalized.length} requirement${normalized.length === 1 ? '' : 's'}${laneText}${kindText}.`;
 }
 
 async function runSelectedPublication() {
@@ -10504,9 +10521,12 @@ async function importDraftBundle() {
     ? ` from ${payload.sourceDraftId}@${payload.sourceRevision || 0}`
     : '';
   const targetReview = draftImportTargetReviewText(targetDependencyReport);
+  const bindingReview = runtimeBindingRequirementImportReviewText(
+    payload?.targetRuntimeBindingRequirements || validation?.readiness?.runtimeBindingRequirements
+  );
   const importMessage = diagnostics.length
-    ? `Imported ${state.currentDraftId}@${state.currentDraftRevision}${sourceLineage} with ${hasImportErrors ? 'errors' : 'warnings'}: ${diagnosticMessage(diagnostics, 'review diagnostics')}${targetReview ? ` ${targetReview}` : ''}`
-    : `Imported ${state.currentDraftId}@${state.currentDraftRevision}${sourceLineage}.${targetReview ? ` ${targetReview}` : ''}`;
+    ? `Imported ${state.currentDraftId}@${state.currentDraftRevision}${sourceLineage} with ${hasImportErrors ? 'errors' : 'warnings'}: ${diagnosticMessage(diagnostics, 'review diagnostics')}${targetReview ? ` ${targetReview}` : ''}${bindingReview ? ` ${bindingReview}` : ''}`
+    : `Imported ${state.currentDraftId}@${state.currentDraftRevision}${sourceLineage}.${targetReview ? ` ${targetReview}` : ''}${bindingReview ? ` ${bindingReview}` : ''}`;
   setDraftMessage(
     importMessage,
     hasImportErrors ? 'error' : 'success'

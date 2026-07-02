@@ -3,6 +3,7 @@ package com.leanowtech.bloge.gateway.visual.asset;
 import com.leanowtech.bloge.gateway.visual.draft.GraphDraftSummary;
 import com.leanowtech.bloge.gateway.visual.publication.VisualGraphPublicationSummary;
 import com.leanowtech.bloge.gateway.visual.validation.VisualGraphReadiness;
+import com.leanowtech.bloge.gateway.visual.validation.VisualRuntimeBindingRequirementKey;
 
 import java.time.Instant;
 import java.util.ArrayList;
@@ -342,7 +343,8 @@ public record VisualRuntimeBindingRequirements(
             summary = summary == null ? "" : summary;
             recommendedAction = recommendedAction == null ? "" : recommendedAction;
             requirementKey = requirementKey == null || requirementKey.isBlank()
-                    ? stableRequirementKey(targetKind, targetId, nodeId, bindingKind, bindingTarget, artifactKind)
+                    ? VisualRuntimeBindingRequirementKey.stable(
+                            targetKind, targetId, nodeId, bindingKind, bindingTarget, artifactKind)
                     : requirementKey.trim();
         }
     }
@@ -380,7 +382,7 @@ public record VisualRuntimeBindingRequirements(
                 draft.currentRevision() > 0 ? draft.currentRevision() : draft.latestRevision()
         );
         return new RequirementItem(
-                stableRequirementKey("draft", draft.draftId(), requirement.nodeId(),
+                VisualRuntimeBindingRequirementKey.stable("draft", draft.draftId(), requirement.nodeId(),
                         requirement.bindingKind(), requirement.bindingTarget(), ""),
                 "draft",
                 draft.draftId(),
@@ -417,7 +419,7 @@ public record VisualRuntimeBindingRequirements(
         );
         String artifactKind = publication.artifactKind();
         return new RequirementItem(
-                stableRequirementKey("publication", publication.publicationId(), requirement.nodeId(),
+                VisualRuntimeBindingRequirementKey.stable("publication", publication.publicationId(), requirement.nodeId(),
                         requirement.bindingKind(), requirement.bindingTarget(), artifactKind),
                 "publication",
                 publication.publicationId(),
@@ -513,20 +515,4 @@ public record VisualRuntimeBindingRequirements(
         return value == null ? "" : value.trim();
     }
 
-    private static String stableRequirementKey(String targetKind,
-                                               String targetId,
-                                               String nodeId,
-                                               String bindingKind,
-                                               String bindingTarget,
-                                               String artifactKind) {
-        return String.join("|",
-                "RUNTIME_BINDING",
-                targetKind == null ? "" : targetKind,
-                targetId == null ? "" : targetId,
-                nodeId == null ? "" : nodeId,
-                bindingKind == null ? "" : bindingKind,
-                bindingTarget == null ? "" : bindingTarget,
-                artifactKind == null ? "" : artifactKind
-        );
-    }
 }

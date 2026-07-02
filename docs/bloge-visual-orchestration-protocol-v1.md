@@ -1554,7 +1554,9 @@ snapshot、operator snapshots、export-time diagnostics、完整 `validation`，
 `dependencyReport`。`bloge.visualGraphDraftImportResult.v1` 在创建新 draft identity
 后返回 `sourceBundleSchemaVersion`、`sourceDraftId`、`sourceRevision`、
 目标环境 diagnostics、同一结构的 `validation`，以及
-`sourceDependencyReport` / `targetDependencyReport`。`dependencyReport` 作为旧客户端兼容字段保留，
+`sourceDependencyReport` / `targetDependencyReport` 和
+`targetRuntimeBindingRequirements[]` / `targetRuntimeBindingRequirementKeys[]`。
+`dependencyReport` 作为旧客户端兼容字段保留，
 语义等同于 `targetDependencyReport`。source lineage 字段在成功和拒绝响应中都保留，用于迁移审计和
 外部控制面幂等关联，而不是要求客户端从原始 request bundle 旁路保存来源。这里也不是重复字段洁癖；`diagnostics` 保持旧客户端兼容，
 `validation.readiness` 让迁移后的 schema-only、runtime-blocked、
@@ -1566,7 +1568,12 @@ governance-review 或 catalog-repair-required 图仍能被客户端按 `artifact
 `actual` 和 `expected`，让外部迁移控制面不必解析自然语言错误文案。export bundle 的 `dependencyReport` 和 import result 的 `sourceDependencyReport` 记录 source catalog 的依赖视图；
 import result 的 `targetDependencyReport` / legacy `dependencyReport` 则一次性暴露 target catalog 下的 missing operator、
 scope mismatch、fingerprint drift、source/lowering 和 runtime readiness 分布，避免外部控制面在
-导入后还必须立刻补调 `/dependencies` 才能做迁移审阅。
+导入后还必须立刻补调 `/dependencies` 才能做迁移审阅。`targetRuntimeBindingRequirements[]`
+是从目标环境 validation readiness 派生的顶层 handoff 清单，让 runtime-plane 或迁移系统不必解析
+嵌套 `validation.readiness.runtimeBindingRequirements[]` 就能领取 schema-only / runtime-blocked
+图的实现绑定工作。`targetRuntimeBindingRequirementKeys[]` 与 requirement 数组顺序对齐，使用与
+`bloge.visualRuntimeBindingRequirements.v1.items[].requirementKey` 相同的稳定 key 公式，方便外部队列
+在导入响应和后续 scope index 之间去重、关联和确认。
 
 ### 10.4 校验 draft
 
@@ -1984,6 +1991,10 @@ Content-Type: application/json
   `targetDependencyReport`。前者来自 bundle，后者基于目标环境当前 catalog
   即时计算，用于暴露 missing operator、scope mismatch、fingerprint drift 和
   target runtime-readiness 分布。
+- 成功和可审阅拒绝结果还会返回 `targetRuntimeBindingRequirements[]`，该清单来自导入 publication
+  冻结的 `validation.readiness.runtimeBindingRequirements[]`，作为目标环境接收到该 immutable
+  artifact 后可直接交给 runtime-plane 的机器可读 handoff；`targetRuntimeBindingRequirementKeys[]`
+  与该清单顺序对齐，并与 runtime-binding requirement index 的 `requirementKey` 共用稳定 key 合同。
 - unsupported bundle schemaVersion 返回
   `visual.publication.bundle.schemaVersionUnsupported`。
 - 缺失 publication snapshot 返回

@@ -2,6 +2,8 @@ package com.leanowtech.bloge.gateway.visual.publication;
 
 import com.leanowtech.bloge.gateway.visual.diagnostic.VisualDiagnostic;
 import com.leanowtech.bloge.gateway.visual.draft.GraphDraftDependencyReport;
+import com.leanowtech.bloge.gateway.visual.validation.VisualGraphReadiness;
+import com.leanowtech.bloge.gateway.visual.validation.VisualRuntimeBindingRequirementKey;
 
 import java.time.Instant;
 import java.util.List;
@@ -23,6 +25,8 @@ import java.util.Locale;
  * @param publication stored or rejected publication snapshot
  * @param sourceDependencyReport source-environment dependency report from the bundle
  * @param targetDependencyReport target-environment dependency report computed without rewriting the publication
+ * @param targetRuntimeBindingRequirements runtime binding work handed off by the imported publication
+ * @param targetRuntimeBindingRequirementKeys stable keys aligned with targetRuntimeBindingRequirements
  * @param diagnostics target-environment import diagnostics
  */
 public record VisualGraphPublicationImportResult(
@@ -39,6 +43,8 @@ public record VisualGraphPublicationImportResult(
         VisualGraphPublication publication,
         GraphDraftDependencyReport sourceDependencyReport,
         GraphDraftDependencyReport targetDependencyReport,
+        List<VisualGraphReadiness.RuntimeBindingRequirement> targetRuntimeBindingRequirements,
+        List<String> targetRuntimeBindingRequirementKeys,
         List<VisualDiagnostic> diagnostics
 ) {
     public static final String SCHEMA_VERSION = "bloge.visualGraphPublicationImportResult.v1";
@@ -74,6 +80,12 @@ public record VisualGraphPublicationImportResult(
         targetDependencyReport = targetDependencyReport == null
                 ? GraphDraftDependencyReport.empty()
                 : targetDependencyReport;
+        targetRuntimeBindingRequirements = targetRuntimeBindingRequirements == null
+                ? runtimeBindingRequirements(publication)
+                : List.copyOf(targetRuntimeBindingRequirements);
+        targetRuntimeBindingRequirementKeys = targetRuntimeBindingRequirementKeys == null
+                ? runtimeBindingRequirementKeys(publication, targetRuntimeBindingRequirements)
+                : List.copyOf(targetRuntimeBindingRequirementKeys);
         diagnostics = diagnostics == null ? List.of() : List.copyOf(diagnostics);
         imported = imported && publication != null && diagnostics.stream()
                 .noneMatch(diagnostic -> "ERROR".equalsIgnoreCase(diagnostic.level()));
@@ -136,6 +148,8 @@ public record VisualGraphPublicationImportResult(
         VisualGraphPublicationExportBundle safeBundle = bundle == null
                 ? new VisualGraphPublicationExportBundle("", null, "", "", 0, "", publication, null, null)
                 : bundle;
+        List<VisualGraphReadiness.RuntimeBindingRequirement> runtimeBindingRequirements =
+                runtimeBindingRequirements(publication);
         return new VisualGraphPublicationImportResult(
                 SCHEMA_VERSION,
                 imported,
@@ -150,7 +164,33 @@ public record VisualGraphPublicationImportResult(
                 publication,
                 safeBundle.dependencyReport(),
                 targetDependencyReport,
+                runtimeBindingRequirements,
+                runtimeBindingRequirementKeys(publication, runtimeBindingRequirements),
                 diagnostics
         );
+    }
+
+    private static List<VisualGraphReadiness.RuntimeBindingRequirement> runtimeBindingRequirements(
+            VisualGraphPublication publication) {
+        return publication == null || publication.validation() == null || publication.validation().readiness() == null
+                ? List.of()
+                : publication.validation().readiness().runtimeBindingRequirements();
+    }
+
+    private static List<String> runtimeBindingRequirementKeys(
+            VisualGraphPublication publication,
+            List<VisualGraphReadiness.RuntimeBindingRequirement> requirements) {
+        if (publication == null || requirements == null || requirements.isEmpty()) {
+            return List.of();
+        }
+        return requirements.stream()
+                .map(requirement -> VisualRuntimeBindingRequirementKey.stable(
+                        "publication",
+                        publication.publicationId(),
+                        requirement.nodeId(),
+                        requirement.bindingKind(),
+                        requirement.bindingTarget(),
+                        publication.artifactKind()))
+                .toList();
     }
 }

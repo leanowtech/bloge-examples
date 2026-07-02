@@ -203,6 +203,38 @@ class VisualGraphPublicationControllerTest {
     }
 
     @Test
+    void importBundleExposesRuntimeBindingHandoffForDesignPublication() {
+        OperatorLibrary library = VisualCatalogTestSupport.designOnlyEligibilityLibrary("integer");
+        InMemoryVisualGraphPublicationRepository sourceRepository = new InMemoryVisualGraphPublicationRepository();
+        VisualGraphPublication source = sourceRepository.create(designPublication("tenant-a", "risk", "prod"));
+        VisualGraphPublicationExportBundle bundle = VisualGraphPublicationExportBundle.from(source);
+        VisualGraphPublicationController controller = new VisualGraphPublicationController(
+                new InMemoryVisualGraphPublicationRepository(), runner(), new InMemoryVisualGraphRunRepository(),
+                VisualCatalogTestSupport.catalogWithLibrary(library));
+
+        ResponseEntity<VisualGraphPublicationImportResult> response = controller.importBundle(bundle);
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.CREATED);
+        assertThat(response.getBody()).isNotNull();
+        assertThat(response.getBody().imported()).isTrue();
+        assertThat(response.getBody().publication().artifactKind()).isEqualTo("DESIGN");
+        assertThat(response.getBody().targetDependencyReport().runtimeReadinessStateCounts())
+                .containsEntry("DESIGN_ONLY", 1);
+        assertThat(response.getBody().targetRuntimeBindingRequirements())
+                .isEqualTo(response.getBody().publication().validation().readiness().runtimeBindingRequirements());
+        assertThat(response.getBody().targetRuntimeBindingRequirements())
+                .singleElement()
+                .satisfies(requirement -> {
+                    assertThat(requirement.operatorRef()).isEqualTo("risk:eligibility");
+                    assertThat(requirement.bindingKind()).isEqualTo("executable-lowering");
+                    assertThat(requirement.handoffLane()).isEqualTo("operator-platform");
+                });
+        assertThat(response.getBody().targetRuntimeBindingRequirementKeys())
+                .containsExactly("RUNTIME_BINDING|publication|%s|eligibility|executable-lowering|risk:eligibility|DESIGN"
+                        .formatted(response.getBody().publication().publicationId()));
+    }
+
+    @Test
     void importBundleRejectsUnsupportedBundleSchemaVersion() {
         InMemoryVisualGraphPublicationRepository repository = new InMemoryVisualGraphPublicationRepository();
         VisualGraphPublication stored = repository.create(publication());
@@ -358,7 +390,43 @@ class VisualGraphPublicationControllerTest {
 
     private static VisualGraphPublication publication(String tenantId, String namespace, String environment) {
         OperatorDefinition operator = VisualCatalogTestSupport.eligibilityOperator("integer");
-        GraphDraft draft = new GraphDraft(
+        GraphDraft draft = publicationDraft(tenantId, namespace, environment, operator);
+        return VisualGraphPublication.from(
+                draft,
+                List.of(operator),
+                new VisualValidationResult(true, List.of(), VisualGraphReadiness.from(
+                        draft,
+                        Map.of("eligibility", operator),
+                        List.of()
+                )),
+                new DslGenerationResult(true, "graph visualPolicy {}", List.of()),
+                GraphDraftDependencyReport.from(draft, VisualCatalogTestSupport.catalogWithLibrary(
+                        VisualCatalogTestSupport.eligibilityLibrary("integer")))
+        );
+    }
+
+    private static VisualGraphPublication designPublication(String tenantId, String namespace, String environment) {
+        OperatorLibrary library = VisualCatalogTestSupport.designOnlyEligibilityLibrary("integer");
+        OperatorDefinition operator = library.operators().get(0);
+        GraphDraft draft = publicationDraft(tenantId, namespace, environment, operator);
+        return VisualGraphPublication.design(
+                draft,
+                List.of(operator),
+                new VisualValidationResult(true, List.of(), VisualGraphReadiness.from(
+                        draft,
+                        Map.of("eligibility", operator),
+                        List.of()
+                )),
+                new DslGenerationResult(false, "", List.of()),
+                GraphDraftDependencyReport.from(draft, VisualCatalogTestSupport.catalogWithLibrary(library))
+        );
+    }
+
+    private static GraphDraft publicationDraft(String tenantId,
+                                               String namespace,
+                                               String environment,
+                                               OperatorDefinition operator) {
+        return new GraphDraft(
                 "",
                 "draft-1",
                 1,
@@ -383,18 +451,6 @@ class VisualGraphPublicationControllerTest {
                 Map.of(),
                 new GraphDraft.OutputSelection("eligibility", ""),
                 Map.of("eligibility", operator.fingerprint())
-        );
-        return VisualGraphPublication.from(
-                draft,
-                List.of(operator),
-                new VisualValidationResult(true, List.of(), VisualGraphReadiness.from(
-                        draft,
-                        Map.of("eligibility", operator),
-                        List.of()
-                )),
-                new DslGenerationResult(true, "graph visualPolicy {}", List.of()),
-                GraphDraftDependencyReport.from(draft, VisualCatalogTestSupport.catalogWithLibrary(
-                        VisualCatalogTestSupport.eligibilityLibrary("integer")))
         );
     }
 

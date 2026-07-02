@@ -1,6 +1,8 @@
 package com.leanowtech.bloge.gateway.visual.draft;
 
 import com.leanowtech.bloge.gateway.visual.diagnostic.VisualDiagnostic;
+import com.leanowtech.bloge.gateway.visual.validation.VisualGraphReadiness;
+import com.leanowtech.bloge.gateway.visual.validation.VisualRuntimeBindingRequirementKey;
 import com.leanowtech.bloge.gateway.visual.validation.VisualValidationResult;
 
 import java.util.List;
@@ -19,6 +21,8 @@ import java.util.List;
  * @param dependencyReport target-environment dependency report for the stored draft, retained as a legacy alias
  * @param sourceDependencyReport source-environment dependency report from the export bundle
  * @param targetDependencyReport target-environment dependency report for the stored draft
+ * @param targetRuntimeBindingRequirements target-environment runtime binding work needed before executable promotion
+ * @param targetRuntimeBindingRequirementKeys stable keys aligned with targetRuntimeBindingRequirements
  */
 public record GraphDraftImportResult(
         String schemaVersion,
@@ -31,7 +35,9 @@ public record GraphDraftImportResult(
         VisualValidationResult validation,
         GraphDraftDependencyReport dependencyReport,
         GraphDraftDependencyReport sourceDependencyReport,
-        GraphDraftDependencyReport targetDependencyReport
+        GraphDraftDependencyReport targetDependencyReport,
+        List<VisualGraphReadiness.RuntimeBindingRequirement> targetRuntimeBindingRequirements,
+        List<String> targetRuntimeBindingRequirementKeys
 ) {
     public static final String SCHEMA_VERSION = "bloge.visualGraphDraftImportResult.v1";
 
@@ -53,6 +59,12 @@ public record GraphDraftImportResult(
                 : targetDependencyReport;
         targetDependencyReport = normalizedTargetDependencyReport;
         dependencyReport = normalizedTargetDependencyReport;
+        targetRuntimeBindingRequirements = targetRuntimeBindingRequirements == null
+                ? runtimeBindingRequirements(validation)
+                : List.copyOf(targetRuntimeBindingRequirements);
+        targetRuntimeBindingRequirementKeys = targetRuntimeBindingRequirementKeys == null
+                ? runtimeBindingRequirementKeys(draft, targetRuntimeBindingRequirements)
+                : List.copyOf(targetRuntimeBindingRequirementKeys);
     }
 
     /**
@@ -65,7 +77,7 @@ public record GraphDraftImportResult(
                                   VisualValidationResult validation) {
         this(schemaVersion, imported, "", "", 0, draft, diagnostics, validation,
                 GraphDraftDependencyReport.empty(), GraphDraftDependencyReport.empty(),
-                GraphDraftDependencyReport.empty());
+                GraphDraftDependencyReport.empty(), null, null);
     }
 
     /**
@@ -77,7 +89,7 @@ public record GraphDraftImportResult(
                                   List<VisualDiagnostic> diagnostics) {
         this(schemaVersion, imported, "", "", 0, draft, diagnostics, new VisualValidationResult(false, diagnostics),
                 GraphDraftDependencyReport.empty(), GraphDraftDependencyReport.empty(),
-                GraphDraftDependencyReport.empty());
+                GraphDraftDependencyReport.empty(), null, null);
     }
 
     /**
@@ -156,6 +168,8 @@ public record GraphDraftImportResult(
                                                VisualValidationResult validation,
                                                GraphDraftDependencyReport sourceDependencyReport,
                                                GraphDraftDependencyReport targetDependencyReport) {
+        List<VisualGraphReadiness.RuntimeBindingRequirement> runtimeBindingRequirements =
+                runtimeBindingRequirements(validation);
         return new GraphDraftImportResult(
                 SCHEMA_VERSION,
                 imported,
@@ -167,8 +181,34 @@ public record GraphDraftImportResult(
                 validation,
                 targetDependencyReport,
                 sourceDependencyReport,
-                targetDependencyReport
+                targetDependencyReport,
+                runtimeBindingRequirements,
+                runtimeBindingRequirementKeys(draft, runtimeBindingRequirements)
         );
+    }
+
+    private static List<VisualGraphReadiness.RuntimeBindingRequirement> runtimeBindingRequirements(
+            VisualValidationResult validation) {
+        return validation == null || validation.readiness() == null
+                ? List.of()
+                : validation.readiness().runtimeBindingRequirements();
+    }
+
+    private static List<String> runtimeBindingRequirementKeys(GraphDraft draft,
+                                                              List<VisualGraphReadiness.RuntimeBindingRequirement>
+                                                                      requirements) {
+        if (draft == null || requirements == null || requirements.isEmpty()) {
+            return List.of();
+        }
+        return requirements.stream()
+                .map(requirement -> VisualRuntimeBindingRequirementKey.stable(
+                        "draft",
+                        draft.draftId(),
+                        requirement.nodeId(),
+                        requirement.bindingKind(),
+                        requirement.bindingTarget(),
+                        ""))
+                .toList();
     }
 
     private static GraphDraftDependencyReport sourceDependencyReport(GraphDraftExportBundle bundle) {

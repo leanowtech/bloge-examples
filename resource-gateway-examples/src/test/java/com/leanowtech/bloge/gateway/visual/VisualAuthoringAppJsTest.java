@@ -96,7 +96,10 @@ class VisualAuthoringAppJsTest {
                 .contains("publicationExport: payload")
                 .contains("publicationImport: payload")
                 .contains("const targetReview = publicationImportTargetReviewText(payload?.targetDependencyReport);")
+                .contains("payload?.targetRuntimeBindingRequirements || importedPublication?.validation?.readiness?.runtimeBindingRequirements")
+                .contains("const bindingReview = runtimeBindingRequirementImportReviewText(")
                 .contains("function publicationImportTargetReviewText(report)")
+                .contains("function runtimeBindingRequirementImportReviewText(requirements)")
                 .contains("Target review: all frozen operator dependencies are available.");
     }
 
@@ -300,7 +303,9 @@ class VisualAuthoringAppJsTest {
                 .contains("function draftDependencyPolicyViolationLabel(row)")
                 .contains("payload?.dependencyReport")
                 .contains("payload?.targetDependencyReport || payload?.dependencyReport")
+                .contains("payload?.targetRuntimeBindingRequirements || validation?.readiness?.runtimeBindingRequirements")
                 .contains("function draftImportTargetReviewText(report)")
+                .contains("Runtime binding handoff:")
                 .contains("Target review: all imported draft operator dependencies are available.")
                 .contains("data-draft-dependency-node")
                 .contains("data-draft-dependency-rebase")
@@ -4030,6 +4035,23 @@ class VisualAuthoringAppJsTest {
                     runtimeBlockedNodeCount: 0,
                     governanceReviewNodeCount: 0,
                     draftRepairNodeCount: 0,
+                    runtimeBindingRequirementCount: 1,
+                    runtimeBindingRequirements: [{
+                      nodeId: 'riskNode',
+                      operatorRef: 'risk:eligibility',
+                      state: 'DESIGN_ONLY',
+                      level: 'INFO',
+                      sourceKind: 'USER_LIBRARY',
+                      loweringMode: 'DESIGN',
+                      bindingKind: 'EXECUTABLE_LOWERING',
+                      bindingTarget: 'risk:eligibility',
+                      handoffLane: 'OPERATOR_PLATFORM',
+                      handoffKind: 'OPERATOR_IMPLEMENTATION',
+                      handoffTarget: 'risk:eligibility',
+                      title: 'Executable lowering required',
+                      summary: 'No executable lowering is bound.',
+                      recommendedAction: 'Bind a runtime implementation.'
+                    }],
                     nodes: [{
                       nodeId: 'riskNode',
                       operatorRef: 'risk:eligibility',
@@ -4130,6 +4152,7 @@ class VisualAuthoringAppJsTest {
                             diagnostics: [],
                             readiness: transferReadiness
                           },
+                          targetRuntimeBindingRequirements: transferReadiness.runtimeBindingRequirements,
                           sourceDependencyReport: {
                             schemaVersion: 'bloge.visualGraphDraftDependencies.v1',
                             draftId: 'draft-risk',
@@ -4266,7 +4289,7 @@ class VisualAuthoringAppJsTest {
                     ['draft bundle carries dependency report', String(transferResult.draftBundleHasDependencyReport), 'true'],
                     ['draft export message', transferResult.transferDraftMessages[0].text, 'Exported draft-risk@4.'],
                     ['draft export visual readiness', exportVisualCheck.readiness?.state, 'design-only'],
-                    ['draft import message', transferResult.transferDraftMessages[1].text, 'Imported draft-imported@1 from draft-risk@4. Target review: all imported draft operator dependencies are available.'],
+                    ['draft import message', transferResult.transferDraftMessages[1].text, 'Imported draft-imported@1 from draft-risk@4. Target review: all imported draft operator dependencies are available. Runtime binding handoff: 1 requirement across operator-platform (executable-lowering).'],
                     ['draft import visual readiness', importVisualCheck.readiness?.state, 'design-only'],
                     ['draft import current id', transferResult.currentDraftId, 'draft-imported'],
                     ['draft import current revision', transferResult.currentDraftRevision, 1],

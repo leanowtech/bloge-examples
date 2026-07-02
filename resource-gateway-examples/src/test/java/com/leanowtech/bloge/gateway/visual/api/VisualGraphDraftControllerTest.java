@@ -797,6 +797,18 @@ class VisualGraphDraftControllerTest {
         assertThat(response.getBody().validation().readiness().state()).isEqualTo("design-only");
         assertThat(response.getBody().validation().readiness().executable()).isFalse();
         assertThat(response.getBody().validation().readiness().artifactKinds()).containsExactly("DESIGN");
+        assertThat(response.getBody().targetRuntimeBindingRequirements())
+                .isEqualTo(response.getBody().validation().readiness().runtimeBindingRequirements());
+        assertThat(response.getBody().targetRuntimeBindingRequirements())
+                .singleElement()
+                .satisfies(requirement -> {
+                    assertThat(requirement.operatorRef()).isEqualTo("risk:eligibility");
+                    assertThat(requirement.bindingKind()).isEqualTo("executable-lowering");
+                    assertThat(requirement.handoffLane()).isEqualTo("operator-platform");
+                });
+        assertThat(response.getBody().targetRuntimeBindingRequirementKeys())
+                .containsExactly("RUNTIME_BINDING|draft|%s|eligibility|executable-lowering|risk:eligibility|"
+                        .formatted(response.getBody().draft().draftId()));
         assertThat(response.getBody().validation().actionReadiness().state()).isEqualTo("design-artifact-ready");
         assertThat(response.getBody().sourceDependencyReport()).isEqualTo(bundle.dependencyReport());
         assertThat(response.getBody().targetDependencyReport()).isEqualTo(response.getBody().dependencyReport());
@@ -838,6 +850,8 @@ class VisualGraphDraftControllerTest {
         assertThat(result.sourceDependencyReport().operatorDependencyCount()).isZero();
         assertThat(result.targetDependencyReport().operatorDependencyCount()).isZero();
         assertThat(result.dependencyReport()).isEqualTo(result.targetDependencyReport());
+        assertThat(result.targetRuntimeBindingRequirements()).isEmpty();
+        assertThat(result.targetRuntimeBindingRequirementKeys()).isEmpty();
         assertThat(result.diagnostics())
                 .singleElement()
                 .satisfies(diagnostic -> {
@@ -882,6 +896,8 @@ class VisualGraphDraftControllerTest {
         assertThat(result.sourceDependencyReport().operatorDependencyCount()).isZero();
         assertThat(result.targetDependencyReport().operatorDependencyCount()).isZero();
         assertThat(result.dependencyReport()).isEqualTo(result.targetDependencyReport());
+        assertThat(result.targetRuntimeBindingRequirements()).isEmpty();
+        assertThat(result.targetRuntimeBindingRequirementKeys()).isEmpty();
         assertThat(result.diagnostics())
                 .anySatisfy(diagnostic -> {
                     assertThat(diagnostic.code()).isEqualTo("visual.draft.schemaVersion.unsupported");
