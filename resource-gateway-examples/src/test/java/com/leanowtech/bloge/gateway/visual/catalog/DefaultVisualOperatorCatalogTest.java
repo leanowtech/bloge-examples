@@ -357,6 +357,28 @@ class DefaultVisualOperatorCatalogTest {
     }
 
     @Test
+    void excludesDesignPublicationsFromReusableSubgraphOperators() {
+        InMemoryVisualGraphPublicationRepository publications = new InMemoryVisualGraphPublicationRepository();
+        VisualGraphPublication executable = publishedEligibilityGraph();
+        publications.create(VisualGraphPublication.design(
+                executable.draft(),
+                executable.operatorSnapshots(),
+                executable.validation(),
+                new DslGenerationResult(false, "", List.of(VisualDiagnostic.error(
+                        "visual.codegen.designOnlyOperator",
+                        "Schema-only operator cannot lower to executable BLOGE DSL.",
+                        "/nodes/eligibility/operatorRef"
+                )))
+        ).withIdentity("pub-design-only", null));
+        DefaultVisualOperatorCatalog catalog = publicationCatalog(publications);
+
+        assertThat(catalog.find("publication:pub-design-only")).isEmpty();
+        assertThat(catalog.list(OperatorCatalogQuery.all()))
+                .extracting(OperatorDefinition::operatorRef)
+                .doesNotContain("publication:pub-design-only");
+    }
+
+    @Test
     void projectsPublishedVisualGraphSelectedNamedOutputPathSchema() {
         InMemoryVisualGraphPublicationRepository publications = new InMemoryVisualGraphPublicationRepository();
         publications.create(publishedScoreFactsGraph("pub-score-facts", "facts.score"));

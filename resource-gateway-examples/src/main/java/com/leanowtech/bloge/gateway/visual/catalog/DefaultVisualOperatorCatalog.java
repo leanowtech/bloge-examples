@@ -98,7 +98,9 @@ public class DefaultVisualOperatorCatalog implements VisualOperatorCatalog {
             operators.addAll(javaOperatorProjector.project());
             operators.addAll(libraryRegistry.operators(effectiveQuery.includeDeprecated()));
             for (VisualGraphPublication publication : publicationRepository.all()) {
-                operators.add(publicationProjector.project(publication));
+                if (publication.executable()) {
+                    operators.add(publicationProjector.project(publication));
+                }
             }
         }
         for (ResourceDescriptor descriptor : resourceRegistry.all()) {

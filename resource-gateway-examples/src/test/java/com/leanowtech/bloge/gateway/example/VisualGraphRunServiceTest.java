@@ -596,6 +596,34 @@ class VisualGraphRunServiceTest {
     }
 
     @Test
+    void rejectsDesignPublicationBeforeDynamicRun() {
+        VisualGraphRunService service = new VisualGraphRunService(
+                null,
+                null,
+                new DynamicGatewayComposerService(MockOperator.returning(null))
+        );
+        VisualGraphPublication executable = publishedScoreGraph();
+        VisualGraphPublication design = VisualGraphPublication.design(
+                executable.draft(),
+                executable.operatorSnapshots(),
+                executable.validation(),
+                new DslGenerationResult(false, "", List.of())
+        ).withIdentity("pub-design-score", null);
+
+        VisualGraphRunResponse response = service.run(design, Map.of("score", 720), "");
+
+        assertThat(response.validated()).isTrue();
+        assertThat(response.compiled()).isFalse();
+        assertThat(response.success()).isFalse();
+        assertThat(response.errors()).contains("Design visual graph publication is not executable.");
+        assertThat(response.diagnostics())
+                .anySatisfy(diagnostic -> {
+                    assertThat(diagnostic.code()).isEqualTo("visual.publication.designNotExecutable");
+                    assertThat(diagnostic.target()).isEqualTo("/artifactKind");
+                });
+    }
+
+    @Test
     void rejectsUnknownPublishedOutputNodeOverrideBeforeDynamicRun() {
         VisualGraphRunService service = new VisualGraphRunService(
                 null,

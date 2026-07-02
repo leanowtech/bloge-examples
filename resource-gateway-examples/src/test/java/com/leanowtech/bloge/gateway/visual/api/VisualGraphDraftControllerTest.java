@@ -17,6 +17,7 @@ import com.leanowtech.bloge.gateway.visual.draft.InMemoryGraphDraftRepository;
 import com.leanowtech.bloge.gateway.example.DynamicGatewayComposerService;
 import com.leanowtech.bloge.gateway.operator.HttpResourceOperator;
 import com.leanowtech.bloge.gateway.visual.publication.InMemoryVisualGraphPublicationRepository;
+import com.leanowtech.bloge.gateway.visual.publication.VisualGraphPublication;
 import com.leanowtech.bloge.gateway.visual.publication.VisualGraphPublicationResult;
 import com.leanowtech.bloge.gateway.visual.publication.VisualGraphPublishRequest;
 import com.leanowtech.bloge.gateway.visual.model.SchemaEnvelope;
@@ -1253,6 +1254,103 @@ class VisualGraphDraftControllerTest {
                 .anySatisfy(diagnostic -> {
                     assertThat(diagnostic.code()).isEqualTo("bloge.dsl");
                     assertThat(diagnostic.message()).contains("riskMissingRuntime");
+                });
+        assertThat(publications.all()).isEmpty();
+    }
+
+    @Test
+    void publishDesignArtifactFreezesSchemaOnlyDraftWithoutExecutableDsl() {
+        DefaultVisualOperatorCatalog catalog = VisualCatalogTestSupport.catalogWithLibrary(
+                VisualCatalogTestSupport.designOnlyEligibilityLibrary("integer"));
+        InMemoryVisualGraphPublicationRepository publications = new InMemoryVisualGraphPublicationRepository();
+        VisualGraphDraftController controller = controllerWithCatalog(
+                catalog,
+                new InMemoryGraphDraftRepository(),
+                publications
+        );
+        GraphDraft stored = controller.create(eligibilityDraft(graphInputSchema(
+                Map.of(
+                        "score", Map.of("type", "integer"),
+                        "amount", Map.of("type", "number")
+                )
+        )));
+
+        ResponseEntity<VisualGraphPublicationResult> response = controller.publish(stored.draftId(),
+                new VisualGraphPublishRequest(stored.revision(), false, VisualGraphPublication.ARTIFACT_DESIGN));
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.CREATED);
+        VisualGraphPublicationResult result = response.getBody();
+        assertThat(result).isNotNull();
+        assertThat(result.published()).isTrue();
+        assertThat(result.publication().artifactKind()).isEqualTo(VisualGraphPublication.ARTIFACT_DESIGN);
+        assertThat(result.publication().designArtifact()).isTrue();
+        assertThat(result.publication().validation().valid()).isTrue();
+        assertThat(result.publication().generation().generated()).isFalse();
+        assertThat(result.publication().generation().diagnostics())
+                .anySatisfy(diagnostic ->
+                        assertThat(diagnostic.code()).isEqualTo("visual.codegen.designOnlyOperator"));
+        assertThat(result.publication().operatorSnapshots())
+                .extracting("operatorRef")
+                .containsExactly("risk:eligibility");
+        assertThat(publications.find(result.publication().publicationId())).contains(result.publication());
+    }
+
+    @Test
+    void publishExecutableStillRejectsDesignOnlyDraft() {
+        DefaultVisualOperatorCatalog catalog = VisualCatalogTestSupport.catalogWithLibrary(
+                VisualCatalogTestSupport.designOnlyEligibilityLibrary("integer"));
+        InMemoryVisualGraphPublicationRepository publications = new InMemoryVisualGraphPublicationRepository();
+        VisualGraphDraftController controller = controllerWithCatalog(
+                catalog,
+                new InMemoryGraphDraftRepository(),
+                publications
+        );
+        GraphDraft stored = controller.create(eligibilityDraft(graphInputSchema(
+                Map.of(
+                        "score", Map.of("type", "integer"),
+                        "amount", Map.of("type", "number")
+                )
+        )));
+
+        ResponseEntity<VisualGraphPublicationResult> response = controller.publish(stored.draftId(),
+                new VisualGraphPublishRequest(stored.revision()));
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+        assertThat(response.getBody()).isNotNull();
+        assertThat(response.getBody().published()).isFalse();
+        assertThat(response.getBody().diagnostics())
+                .anySatisfy(diagnostic ->
+                        assertThat(diagnostic.code()).isEqualTo("visual.codegen.designOnlyOperator"));
+        assertThat(publications.all()).isEmpty();
+    }
+
+    @Test
+    void publishRejectsUnsupportedArtifactKind() {
+        DefaultVisualOperatorCatalog catalog = VisualCatalogTestSupport.catalogWithLibrary(
+                VisualCatalogTestSupport.eligibilityLibrary("integer"));
+        InMemoryVisualGraphPublicationRepository publications = new InMemoryVisualGraphPublicationRepository();
+        VisualGraphDraftController controller = controllerWithCatalog(
+                catalog,
+                new InMemoryGraphDraftRepository(),
+                publications
+        );
+        GraphDraft stored = controller.create(eligibilityDraft(graphInputSchema(
+                Map.of(
+                        "score", Map.of("type", "integer"),
+                        "amount", Map.of("type", "number")
+                )
+        )));
+
+        ResponseEntity<VisualGraphPublicationResult> response = controller.publish(stored.draftId(),
+                new VisualGraphPublishRequest(stored.revision(), false, "prototype"));
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+        assertThat(response.getBody()).isNotNull();
+        assertThat(response.getBody().published()).isFalse();
+        assertThat(response.getBody().diagnostics())
+                .anySatisfy(diagnostic -> {
+                    assertThat(diagnostic.code()).isEqualTo("visual.publication.artifactKindUnsupported");
+                    assertThat(diagnostic.target()).isEqualTo("/artifactKind");
                 });
         assertThat(publications.all()).isEmpty();
     }

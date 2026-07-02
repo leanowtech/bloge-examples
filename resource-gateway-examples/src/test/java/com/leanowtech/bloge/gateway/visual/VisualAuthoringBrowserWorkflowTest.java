@@ -502,7 +502,7 @@ class VisualAuthoringBrowserWorkflowTest {
                         )
                 ),
                 edges,
-                Map.of("viewport", Map.of("zoom", 1)),
+                Map.of("viewport", Map.of("x", 0, "y", 0, "zoom", 1)),
                 new GraphDraft.OutputSelection("eligibility", "eligible")
         );
     }

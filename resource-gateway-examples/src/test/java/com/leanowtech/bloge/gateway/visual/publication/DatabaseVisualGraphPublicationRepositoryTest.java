@@ -64,6 +64,30 @@ class DatabaseVisualGraphPublicationRepositoryTest {
     }
 
     @Test
+    void persistsDesignPublicationArtifactKind() {
+        VisualGraphPublication executable = publication("design-publication-1");
+        VisualGraphPublication design = VisualGraphPublication.design(
+                executable.draft(),
+                executable.operatorSnapshots(),
+                executable.validation(),
+                new DslGenerationResult(false, "", List.of())
+        ).withIdentity(executable.publicationId(), null);
+
+        VisualGraphPublication stored = repository.create(design);
+
+        DatabaseVisualGraphPublicationRepository reloaded =
+                new DatabaseVisualGraphPublicationRepository(jdbc, objectMapper);
+        reloaded.init();
+
+        assertThat(stored.artifactKind()).isEqualTo(VisualGraphPublication.ARTIFACT_DESIGN);
+        assertThat(stored.designArtifact()).isTrue();
+        assertThat(reloaded.find(stored.publicationId()))
+                .get()
+                .extracting(VisualGraphPublication::artifactKind)
+                .isEqualTo(VisualGraphPublication.ARTIFACT_DESIGN);
+    }
+
+    @Test
     void createDoesNotOverwriteExistingPublication() {
         repository.create(publication("publication-1"));
 

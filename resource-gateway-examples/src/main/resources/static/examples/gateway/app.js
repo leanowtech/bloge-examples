@@ -1626,6 +1626,7 @@ function recordBuilderHistory(action = 'Edit graph') {
     return;
   }
   clearActiveRunTrace();
+  state.pendingPublishWarningKey = '';
   state.builderHistoryUndo.push({ action, snapshot });
   if (state.builderHistoryUndo.length > BUILDER_HISTORY_LIMIT) {
     state.builderHistoryUndo.shift();
@@ -1658,6 +1659,7 @@ function undoBuilderEdit() {
     action: previous.action,
     snapshot: serializeBuilderHistory(state.builder)
   });
+  state.pendingPublishWarningKey = '';
   restoreBuilderHistorySnapshot(previous.snapshot, `Undid: ${previous.action}.`);
 }
 
@@ -1672,6 +1674,7 @@ function redoBuilderEdit() {
     action: next.action,
     snapshot: serializeBuilderHistory(state.builder)
   });
+  state.pendingPublishWarningKey = '';
   restoreBuilderHistorySnapshot(next.snapshot, `Redid: ${next.action}.`);
 }
 
@@ -3521,6 +3524,11 @@ async function compileVisualDraft() {
 async function publishVisualDraft() {
   setVisualCheck('Publishing...', 'info');
   try {
+    const previousWarningKey = publishWarningAcknowledgementKey(
+      state.currentDraftId,
+      state.currentDraftRevision
+    );
+    const confirmingPublishWarnings = state.pendingPublishWarningKey === previousWarningKey;
     const stored = await saveCurrentDraft();
     if (!stored?.draftId) {
       setVisualCheck('Draft was not saved.', 'error');
@@ -3529,7 +3537,7 @@ async function publishVisualDraft() {
     const draftId = stored.draftId;
     const expectedRevision = stored.revision || state.currentDraftRevision || 0;
     const warningKey = publishWarningAcknowledgementKey(draftId, expectedRevision);
-    const ackWarnings = state.pendingPublishWarningKey === warningKey;
+    const ackWarnings = confirmingPublishWarnings || state.pendingPublishWarningKey === warningKey;
     const response = await fetch(`/api/visual/drafts/${encodeURIComponent(draftId)}/publish`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },

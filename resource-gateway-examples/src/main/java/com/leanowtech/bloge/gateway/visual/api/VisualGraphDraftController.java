@@ -420,10 +420,14 @@ public class VisualGraphDraftController {
     public ResponseEntity<VisualGraphPublicationResult> publish(@PathVariable String draftId,
                                                                 @RequestBody(required = false)
                                                                 VisualGraphPublishRequest request) {
+        VisualGraphPublishRequest effectiveRequest = request == null
+                ? new VisualGraphPublishRequest(0)
+                : request;
         return repository.find(draftId)
                 .map(draft -> publishDraft(draftId,
-                        request == null ? 0 : request.expectedRevision(),
-                        request != null && request.ackWarnings(),
+                        effectiveRequest.expectedRevision(),
+                        effectiveRequest.ackWarnings(),
+                        effectiveRequest.artifactKind(),
                         draft))
                 .orElseGet(() -> ResponseEntity.notFound().build());
     }
@@ -443,7 +447,16 @@ public class VisualGraphDraftController {
     private ResponseEntity<VisualGraphPublicationResult> publishDraft(String draftId,
                                                                       long expectedRevision,
                                                                       boolean ackWarnings,
+                                                                      String artifactKind,
                                                                       GraphDraft draft) {
+        if (!VisualGraphPublishRequest.supportedArtifactKind(artifactKind)) {
+            return ResponseEntity.badRequest()
+                    .body(VisualGraphPublicationResult.rejected(List.of(VisualDiagnostic.error(
+                            "visual.publication.artifactKindUnsupported",
+                            "Unsupported visual graph publication artifact kind: " + artifactKind,
+                            "/artifactKind"
+                    ))));
+        }
         if (expectedRevision > 0 && expectedRevision != draft.revision()) {
             return publishConflictResponse(draftId, expectedRevision, draft);
         }
@@ -457,18 +470,17 @@ public class VisualGraphDraftController {
                     .body(VisualGraphPublicationResult.rejected(validation.diagnostics()));
         }
         DslGenerationResult generation = runner.compile(draft);
-        if (!generation.generated()) {
+        if (VisualGraphPublishRequest.ARTIFACT_EXECUTABLE.equals(artifactKind) && !generation.generated()) {
             return ResponseEntity.badRequest()
                     .body(VisualGraphPublicationResult.rejected(generation.diagnostics()));
         }
 
         GraphDraft snapshot = draft.withOperatorFingerprints(fingerprintsWithMissingCurrentValues(draft));
-        VisualGraphPublication publication = publicationRepository.create(VisualGraphPublication.from(
-                snapshot,
-                operatorSnapshots(snapshot),
-                validation,
-                generation
-        ));
+        List<OperatorDefinition> snapshots = operatorSnapshots(snapshot);
+        VisualGraphPublication candidate = VisualGraphPublishRequest.ARTIFACT_DESIGN.equals(artifactKind)
+                ? VisualGraphPublication.design(snapshot, snapshots, validation, generation)
+                : VisualGraphPublication.from(snapshot, snapshots, validation, generation);
+        VisualGraphPublication publication = publicationRepository.create(candidate);
         return ResponseEntity.status(HttpStatus.CREATED)
                 .body(VisualGraphPublicationResult.published(publication));
     }

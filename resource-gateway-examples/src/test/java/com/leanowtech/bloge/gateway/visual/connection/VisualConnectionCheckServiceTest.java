@@ -149,6 +149,32 @@ class VisualConnectionCheckServiceTest {
     }
 
     @Test
+    void rejectsDecisionTableOutputConnectionUsingConfiguredOutputType() {
+        VisualConnectionCheckService service = connectionService(VisualCatalogTestSupport
+                .catalogWithLibrary(VisualCatalogTestSupport.eligibilityLibrary("integer")));
+        GraphDraft draft = decisionTableEligibilityDraft();
+
+        VisualConnectionCheckResult result = service.check(new VisualConnectionCheckRequest(
+                draft,
+                new GraphDraft.Endpoint("loanPolicy", "output", "decision"),
+                new GraphDraft.Endpoint("riskEligibility", "inputs", "score"),
+                "data"
+        ));
+
+        assertThat(result.accepted()).isFalse();
+        assertThat(result.bindingKey()).isEqualTo("score");
+        assertThat(result.diagnostics())
+                .anySatisfy(diagnostic -> {
+                    assertThat(diagnostic.code()).isEqualTo("visual.binding.typeMismatch");
+                    assertThat(diagnostic.message())
+                            .contains("string")
+                            .contains("integer")
+                            .contains("source type string cannot feed target type integer");
+                })
+                .anySatisfy(diagnostic -> assertThat(diagnostic.code()).isEqualTo("visual.edge.typeMismatch"));
+    }
+
+    @Test
     void rejectsConnectionPreviewWhenSourcePathCannotRenderAsDslPathSegment() {
         VisualConnectionCheckService service = connectionService(VisualCatalogTestSupport
                 .catalogWithLibrary(VisualCatalogTestSupport.unsafePathLibrary()));
@@ -1338,6 +1364,61 @@ class VisualConnectionCheckServiceTest {
                 edges,
                 Map.of(),
                 new GraphDraft.OutputSelection("eligibility", "")
+        );
+    }
+
+    private static GraphDraft decisionTableEligibilityDraft() {
+        return new GraphDraft(
+                "",
+                "",
+                0,
+                "decisionTableConnectionCheck",
+                "",
+                "",
+                "",
+                "",
+                SchemaEnvelope.object(Map.of(
+                        "score", Map.of("type", "integer"),
+                        "amount", Map.of("type", "number")
+                ), List.of()),
+                List.of(
+                        new GraphDraft.DraftNode(
+                                "loanPolicy",
+                                "bloge:decisionTable",
+                                "Loan Policy",
+                                Map.of(),
+                                Map.of(
+                                        "inputs", Map.of(
+                                                "score", "ctx.score",
+                                                "amount", "ctx.amount"
+                                        ),
+                                        "outputType",
+                                        "{ decision: String, rate: Decimal, maxTerm: Int, reviewLane: String, ruleId: String }",
+                                        "rules", List.of(Map.of(
+                                                "otherwise", true,
+                                                "output", Map.of(
+                                                        "decision", "approved",
+                                                        "rate", 3.5,
+                                                        "maxTerm", 360,
+                                                        "reviewLane", "auto",
+                                                        "ruleId", "R1"
+                                                )
+                                        ))
+                                ),
+                                null
+                        ),
+                        new GraphDraft.DraftNode(
+                                "riskEligibility",
+                                "risk:eligibility",
+                                "Eligibility",
+                                Map.of(),
+                                Map.of(),
+                                null
+                        )
+                ),
+                List.of(),
+                Map.of(),
+                new GraphDraft.OutputSelection("riskEligibility", "")
         );
     }
 

@@ -213,7 +213,7 @@ public class GraphDraftValidator {
             validateDataEdgeBindingConsistency(draft, nodesById, operatorsByNodeId, diagnostics);
         }
         validateAcyclic(draft, nodesById, diagnostics);
-        validateOutputSelection(draft, nodeIds, operatorsByNodeId, diagnostics);
+        validateOutputSelection(draft, nodeIds, nodesById, operatorsByNodeId, diagnostics);
         validateOutputReachability(draft, nodesById, diagnostics);
         return new VisualValidationResult(diagnostics.stream().noneMatch(VisualDiagnostic::error), diagnostics);
     }
@@ -399,6 +399,7 @@ public class GraphDraftValidator {
 
     private static void validateOutputSelection(GraphDraft draft,
                                                 Set<String> nodeIds,
+                                                Map<String, GraphDraft.DraftNode> nodesById,
                                                 Map<String, OperatorDefinition> operatorsByNodeId,
                                                 List<VisualDiagnostic> diagnostics) {
         GraphDraft.OutputSelection output = draft.output();
@@ -426,6 +427,7 @@ public class GraphDraftValidator {
         if (operator.ports().outputs().isEmpty()) {
             return;
         }
+        GraphDraft.DraftNode outputNode = nodesById.get(output.nodeId());
         if (output.path().isBlank()) {
             validateWholeOutputPortDslPathSegments(operator, diagnostics);
             return;
@@ -442,7 +444,7 @@ public class GraphDraftValidator {
         validateOutputPortDslPathSegment(outputPort.get(), "/output/path",
                 "visual.output.portSegment.invalid", diagnostics);
         validateOutputDslPathSegments(outputPort.get().schema(), outputReference.path(), "/output/path", diagnostics);
-        if (propertyAtPath(outputPort.get().schema(), outputReference.path()) == null) {
+        if (outputPropertyAtPath(outputNode, operator, outputPort.get(), outputReference.path()) == null) {
             diagnostics.add(VisualDiagnostic.error("visual.output.unknownPath",
                     "Output node '%s' port '%s' does not expose path '%s'."
                             .formatted(output.nodeId(), outputPort.get().name(), outputReference.path()),
@@ -887,7 +889,8 @@ public class GraphDraftValidator {
             return;
         }
 
-        Map<String, Object> sourceProperty = propertyAtPath(sourcePort.get().schema(), binding.path());
+        Map<String, Object> sourceProperty = outputPropertyAtPath(sourceNode, sourceOperator,
+                sourcePort.get(), binding.path());
         validateOutputPortDslPathSegment(sourcePort.get(), targetPath + "/sourcePort",
                 "visual.binding.sourcePortSegment.invalid", diagnostics);
         validateDslPathSegments(sourcePort.get().schema(), binding.path(), targetPath + "/path", diagnostics);
@@ -1362,7 +1365,8 @@ public class GraphDraftValidator {
 
         validateOutputPortDslPathSegment(sourcePort.get(), targetPath,
                 "visual.expression.sourcePortSegment.invalid", diagnostics);
-        Map<String, Object> sourceProperty = propertyAtPath(sourcePort.get().schema(), outputReference.path());
+        Map<String, Object> sourceProperty = outputPropertyAtPath(sourceNode, sourceOperator,
+                sourcePort.get(), outputReference.path());
         if (sourceProperty == null) {
             diagnostics.add(VisualDiagnostic.error("visual.binding.unknownOutputPath",
                     "Expression source node '%s' port '%s' output path does not exist: %s"
@@ -1409,6 +1413,127 @@ public class GraphDraftValidator {
             }
         }
         return result.toString();
+    }
+
+    private static Map<String, Object> outputPropertyAtPath(GraphDraft.DraftNode sourceNode,
+                                                            OperatorDefinition sourceOperator,
+                                                            OperatorDefinition.Port sourcePort,
+                                                            String path) {
+        SchemaEnvelope dynamicSchema = dynamicOutputSchema(sourceNode, sourceOperator, sourcePort)
+                .orElse(sourcePort.schema());
+        return propertyAtPath(dynamicSchema, path);
+    }
+
+    private static Optional<SchemaEnvelope> dynamicOutputSchema(GraphDraft.DraftNode sourceNode,
+                                                               OperatorDefinition sourceOperator,
+                                                               OperatorDefinition.Port sourcePort) {
+        if (sourceNode == null
+                || !"bloge:decisionTable".equals(sourceOperator.operatorRef())
+                || !"output".equals(sourcePort.name())) {
+            return Optional.empty();
+        }
+        return Optional.of(new SchemaEnvelope(SchemaEnvelope.JSON_SCHEMA, "2020-12",
+                decisionTableOutputSchema(sourceNode)));
+    }
+
+    private static Map<String, Object> decisionTableOutputSchema(GraphDraft.DraftNode node) {
+        String outputType = stringValue(node.config().get("outputType")).trim();
+        Map<String, Object> parsed = parseBlogeTypeSchema(outputType);
+        if (!parsed.isEmpty()) {
+            return parsed;
+        }
+        Map<String, Object> properties = new LinkedHashMap<>();
+        properties.put("decision", Map.of("type", "string"));
+        properties.put("ruleId", Map.of("type", "string"));
+        return objectSchemaWithResidualProperties(properties);
+    }
+
+    private static Map<String, Object> parseBlogeTypeSchema(String value) {
+        String type = value == null ? "" : value.trim();
+        if (type.isBlank()) {
+            return Map.of();
+        }
+        if (type.startsWith("{") && type.endsWith("}")) {
+            Map<String, Object> properties = new LinkedHashMap<>();
+            for (String field : splitTopLevel(type.substring(1, type.length() - 1), ',')) {
+                int colon = indexOfTopLevel(field, ':');
+                if (colon <= 0) {
+                    continue;
+                }
+                String name = field.substring(0, colon).trim();
+                if (name.isBlank()) {
+                    continue;
+                }
+                properties.put(name, parseBlogeTypeSchema(field.substring(colon + 1)));
+            }
+            return objectSchemaWithResidualProperties(properties);
+        }
+        String normalized = type.toLowerCase();
+        if ((normalized.startsWith("array<") || normalized.startsWith("list<")) && type.endsWith(">")) {
+            int start = type.indexOf('<');
+            return Map.of(
+                    "type", "array",
+                    "items", parseBlogeTypeSchema(type.substring(start + 1, type.length() - 1))
+            );
+        }
+        if (normalized.equals("string")) {
+            return Map.of("type", "string");
+        }
+        if (List.of("int", "integer", "long").contains(normalized)) {
+            return Map.of("type", "integer");
+        }
+        if (List.of("decimal", "number", "double", "float").contains(normalized)) {
+            return Map.of("type", "number");
+        }
+        if (List.of("bool", "boolean").contains(normalized)) {
+            return Map.of("type", "boolean");
+        }
+        if (List.of("object", "map").contains(normalized)) {
+            return objectSchemaWithResidualProperties(Map.of());
+        }
+        return Map.of();
+    }
+
+    private static Map<String, Object> objectSchemaWithResidualProperties(Map<String, Object> properties) {
+        Map<String, Object> schema = new LinkedHashMap<>();
+        schema.put("type", "object");
+        schema.put("properties", properties == null ? Map.of() : new LinkedHashMap<>(properties));
+        schema.put("additionalProperties", true);
+        return schema;
+    }
+
+    private static List<String> splitTopLevel(String value, char separator) {
+        List<String> parts = new ArrayList<>();
+        int depth = 0;
+        int start = 0;
+        for (int i = 0; i < value.length(); i++) {
+            char current = value.charAt(i);
+            if (current == '{' || current == '<' || current == '[' || current == '(') {
+                depth++;
+            } else if (current == '}' || current == '>' || current == ']' || current == ')') {
+                depth = Math.max(0, depth - 1);
+            } else if (current == separator && depth == 0) {
+                parts.add(value.substring(start, i).trim());
+                start = i + 1;
+            }
+        }
+        parts.add(value.substring(start).trim());
+        return parts;
+    }
+
+    private static int indexOfTopLevel(String value, char needle) {
+        int depth = 0;
+        for (int i = 0; i < value.length(); i++) {
+            char current = value.charAt(i);
+            if (current == '{' || current == '<' || current == '[' || current == '(') {
+                depth++;
+            } else if (current == '}' || current == '>' || current == ']' || current == ')') {
+                depth = Math.max(0, depth - 1);
+            } else if (current == needle && depth == 0) {
+                return i;
+            }
+        }
+        return -1;
     }
 
     private static Map<String, Object> propertyAtPath(SchemaEnvelope schema, String path) {
@@ -2284,7 +2409,8 @@ public class GraphDraftValidator {
                     diagnostics);
             validateOutputPortDslPathSegment(sourcePort.get(), edgePath + "/source/port",
                     "visual.edge.sourcePortSegment.invalid", diagnostics);
-            Map<String, Object> sourceProperty = propertyAtPath(sourcePort.get().schema(), edge.source().path());
+            Map<String, Object> sourceProperty = outputPropertyAtPath(sourceNode, sourceOperator,
+                    sourcePort.get(), edge.source().path());
             if (sourceProperty == null) {
                 diagnostics.add(VisualDiagnostic.error("visual.edge.unknownSourcePath",
                         "Source port '%s' does not expose path '%s'."
@@ -3391,9 +3517,10 @@ public class GraphDraftValidator {
         Optional<OperatorDefinition.Port> targetPort = resolveInputPort(targetOperator, binding.targetPort(),
                 inputName);
         targetPort.ifPresent(port -> {
-            validateInputPortDslPathSegment(port,
-                    binding.targetPort().isBlank() ? diagnosticPath : diagnosticPath + "/targetPort",
-                    "visual.binding.targetPortSegment.invalid", diagnostics);
+            if (!binding.targetPort().isBlank()) {
+                validateInputPortDslPathSegment(port, diagnosticPath + "/targetPort",
+                        "visual.binding.targetPortSegment.invalid", diagnostics);
+            }
             validateDslPathSegments(port.schema(), inputName, diagnosticPath,
                     "visual.binding.targetPathSegment.invalid", "Binding target path segment", diagnostics);
         });
@@ -4087,13 +4214,15 @@ public class GraphDraftValidator {
             String outputPath = matchedPath(matcher, 2, 3);
             String schemaPath = expressionPathToSchemaPath(outputPath);
             OperatorDefinition sourceOperator = operatorsByNodeId.get(nodeId);
-            if (!nodesById.containsKey(nodeId) || sourceOperator == null) {
+            GraphDraft.DraftNode sourceNode = nodesById.get(nodeId);
+            if (sourceNode == null || sourceOperator == null) {
                 continue;
             }
             OutputReference outputReference = outputReference(sourceOperator, schemaPath);
             Optional<OperatorDefinition.Port> sourcePort = resolveOutputPort(sourceOperator, outputReference.port());
             if (sourcePort.isEmpty()
-                    || propertyAtPath(sourcePort.get().schema(), outputReference.path()) == null) {
+                    || outputPropertyAtPath(sourceNode, sourceOperator, sourcePort.get(),
+                    outputReference.path()) == null) {
                 continue;
             }
             connections.add(new CanvasConnection(
@@ -4138,8 +4267,9 @@ public class GraphDraftValidator {
         Map<String, GraphDraft.UnionBranchSelection> targetBranchSelections = edgeBinding
                 .map(GraphDraft.Binding::targetUnionBranches)
                 .orElse(Map.of());
+        GraphDraft.DraftNode sourceNode = nodesById.get(edge.source().nodeId());
         if (sourcePort.isEmpty() || targetPort.isEmpty()
-                || propertyAtPath(sourcePort.get().schema(), edge.source().path()) == null
+                || outputPropertyAtPath(sourceNode, sourceOperator, sourcePort.get(), edge.source().path()) == null
                 || propertyAtPath(targetPort.get().schema(), edge.target().path(), targetBranchSelections, null,
                 new ArrayList<>()) == null) {
             return Optional.empty();
@@ -4170,8 +4300,9 @@ public class GraphDraftValidator {
         Optional<OperatorDefinition.Port> sourcePort = resolveOutputPort(sourceOperator, binding.sourcePort());
         Optional<OperatorDefinition.Port> targetPort = resolveInputPort(targetOperator, binding.targetPort(),
                 inputName);
+        GraphDraft.DraftNode sourceNode = nodesById.get(binding.nodeId());
         if (sourcePort.isEmpty() || targetPort.isEmpty()
-                || propertyAtPath(sourcePort.get().schema(), binding.path()) == null
+                || outputPropertyAtPath(sourceNode, sourceOperator, sourcePort.get(), binding.path()) == null
                 || propertyAtPath(targetPort.get().schema(), inputName, binding.targetUnionBranches(), null,
                 new ArrayList<>()) == null) {
             return Optional.empty();

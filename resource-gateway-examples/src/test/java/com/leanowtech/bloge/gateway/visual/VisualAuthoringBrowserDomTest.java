@@ -170,9 +170,7 @@ class VisualAuthoringBrowserDomTest {
         waitForText(wait, By.id("run-history-stats"), "100%");
         waitForText(wait, By.id("run-history-stats"), "P95");
 
-        click(wait, By.id("publish-visual-draft"));
-        waitForText(wait, By.id("visual-check-status"), "Published");
-        waitForText(wait, By.id("publication-status"), "Published");
+        publishVisualDraft(wait);
         String publicationId = valueOf(By.id("publication-select"));
         assertThat(publicationId).isNotBlank();
         setControlValue(driver.findElement(By.id("operator-palette-search")), "");
@@ -182,7 +180,7 @@ class VisualAuthoringBrowserDomTest {
 
         click(wait, By.cssSelector("#diagram [data-node-id='riskEligibility']"));
         waitForText(wait, By.id("selected-operator-editor"), "Eligibility");
-        waitForText(wait, By.id("selected-operator-editor"), "Usage");
+        waitForText(wait, By.id("selected-operator-editor"), "USAGE");
         waitForText(wait, By.id("selected-operator-editor"), "Snapshot current");
         WebElement rebaseButton = wait.until(ExpectedConditions.presenceOfElementLocated(
                 By.cssSelector("#selected-operator-editor [data-rebase-operator-fingerprint='riskEligibility']")
@@ -191,8 +189,8 @@ class VisualAuthoringBrowserDomTest {
         click(wait, By.cssSelector("#selected-operator-editor [data-operator-usage='risk:eligibility']"));
         waitForText(wait, By.id("selected-operator-editor"), "draft usage");
         waitForText(wait, By.id("selected-operator-editor"), "publication usage");
-        waitForText(wait, By.id("selected-operator-editor"), "Drafts");
-        waitForText(wait, By.id("selected-operator-editor"), "Publications");
+        waitForText(wait, By.id("selected-operator-editor"), "DRAFTS");
+        waitForText(wait, By.id("selected-operator-editor"), "PUBLICATIONS");
         waitForText(wait, By.id("selected-operator-editor"), "CURRENT");
 
         click(wait, By.id("run-publication"));
@@ -269,8 +267,8 @@ class VisualAuthoringBrowserDomTest {
                 "#diagram [data-node-id='loanPolicy'] [data-port-role='source'][data-port='output'][data-path='decision']",
                 "#diagram [data-node-id='riskEligibility'] [data-port-role='target'][data-port='inputs'][data-path='score']"
         );
-        waitForText(wait, By.id("connection-status"), "Type mismatch");
-        waitForText(wait, By.id("connection-status"), "string cannot feed integer");
+        waitForText(wait, By.id("connection-status"), "Cannot bind string output");
+        waitForText(wait, By.id("connection-status"), "source type string cannot feed target type integer");
         assertThat(driver.findElements(By.cssSelector("#diagram path.edge")).size()).isEqualTo(edgeCount);
         assertThat(valueOf(By.id("composer-dsl")))
                 .doesNotContain("loanPolicy.output.decision >= 700")
@@ -1128,7 +1126,32 @@ class VisualAuthoringBrowserDomTest {
         click(wait, By.id("import-library"));
         waitForAnyText(wait, By.id("library-status"),
                 "Imported " + library.libraryId(),
+                "Replaced " + library.libraryId(),
+                "Review warnings");
+        if (textOf(By.id("library-status")).contains("Review warnings")) {
+            click(wait, By.id("import-library"));
+        }
+        waitForAnyText(wait, By.id("library-status"),
+                "Imported " + library.libraryId(),
                 "Replaced " + library.libraryId());
+    }
+
+    private void publishVisualDraft(WebDriverWait wait) {
+        click(wait, By.id("publish-visual-draft"));
+        waitForPublishAttempt(wait);
+        if (textOf(By.id("publication-status")).contains("Review publish warnings")
+                && textOf(By.id("visual-check-status")).contains("Visual graph was not published.")) {
+            click(wait, By.id("publish-visual-draft"));
+            waitForPublishAttempt(wait);
+        }
+        waitForText(wait, By.id("visual-check-status"), "Published");
+        waitForText(wait, By.id("publication-status"), "Published");
+    }
+
+    private void waitForPublishAttempt(WebDriverWait wait) {
+        waitForAnyText(wait, By.id("visual-check-status"),
+                "Published",
+                "Visual graph was not published.");
     }
 
     private static OperatorLibrary optionalLoweringInputLibrary() {
@@ -1236,7 +1259,7 @@ class VisualAuthoringBrowserDomTest {
                 ),
                 SchemaEnvelope.opaque(),
                 OperatorDefinition.Capabilities.pure(),
-                new OperatorDefinition.Lowering("native", "riskUnsafeFacts", Map.of()),
+                new OperatorDefinition.Lowering("design", "", Map.of()),
                 List.of()
         );
         return new OperatorLibrary(

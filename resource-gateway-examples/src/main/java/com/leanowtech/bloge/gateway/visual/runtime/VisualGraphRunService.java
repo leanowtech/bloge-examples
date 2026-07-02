@@ -172,6 +172,14 @@ public class VisualGraphRunService {
                     List.of("Published visual validation report contains errors."), publication.dsl());
         }
         diagnostics.addAll(publication.generation().diagnostics());
+        if (publication.designArtifact()) {
+            diagnostics.add(VisualDiagnostic.error("visual.publication.designNotExecutable",
+                    "Design visual graph publication '%s' is not executable; bind runtime lowerings and publish an EXECUTABLE artifact before running."
+                            .formatted(publication.publicationId()),
+                    "/artifactKind"));
+            return blocked(publication.draft(), true, diagnostics,
+                    List.of("Design visual graph publication is not executable."), publication.dsl());
+        }
         if (!publication.generation().generated() || publication.dsl().isBlank()) {
             return blocked(publication.draft(), true, diagnostics,
                     List.of("Published visual DSL is not executable."), publication.dsl());
