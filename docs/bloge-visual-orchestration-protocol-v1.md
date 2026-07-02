@@ -1334,13 +1334,21 @@ resource-gateway 示例还提供 revision history：
 ```http
 GET /api/visual/drafts/{draftId}/revisions
 GET /api/visual/drafts/{draftId}/revisions/{revision}
+GET /api/visual/drafts/{draftId}/revisions/{baseRevision}/diff/{targetRevision}
 ```
 
 每次保存成功后，当前 draft 写入 `visual_graph_drafts`，同时把带有
 `revisionMetadata` 的 revision 快照写入 `visual_graph_draft_revisions`，用于审计、
 对比和回滚前预览。
+`diff` 端点返回 `bloge.visualGraphDraftDiff.v1`，按 graph-level、node-level
+和 edge-level 分解变更，包含最高 `changeRisk`、`changeCategories`、摘要、
+added/removed/changed 节点与边计数，以及 input schema、output、operatorRef、
+binding、config、fingerprint snapshot 和 layout 变化。它的目的不是替代
+JSON diff，而是给回滚、协作审阅和 schema-only 设计制品变更确认提供机器可读
+的领域 diff。
 浏览器 Drafts 面板已接入该 API：可以加载 revision 列表、把历史快照预览到
-画布上，并通过 guarded patch 把选中 revision 恢复成新的最新 revision。
+画布上，查看 latest-to-selected draft diff，并通过 guarded patch 把选中
+revision 恢复成新的最新 revision。
 
 resource-gateway 示例还提供 portable draft export/import：
 

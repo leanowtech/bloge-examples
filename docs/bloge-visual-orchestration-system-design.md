@@ -775,6 +775,7 @@ fingerprint snapshot；普通保存和 PATCH 仍保留既有 snapshot，避免�
 | `GET` | `/api/visual/drafts/{draftId}` | 获取草稿 |
 | `GET` | `/api/visual/drafts/{draftId}/export` | 当前已实现：导出 `bloge.visualGraphDraftExport.v1` 包，包含 draft snapshot、operator snapshots、export-time diagnostics 和 validation/readiness |
 | `POST` | `/api/visual/drafts/import` | 当前已实现：以新 identity 导入 export bundle，刷新当前 catalog fingerprints，存储前校验 bundle/draft contract，并返回 `bloge.visualGraphDraftImportResult.v1` 目标环境 diagnostics 和 validation/readiness |
+| `GET` | `/api/visual/drafts/{draftId}/revisions/{baseRevision}/diff/{targetRevision}` | 当前已实现：返回 `bloge.visualGraphDraftDiff.v1`，按 graph/node/edge 分解 draft revision 变化、最高风险、风险分类、摘要和节点/边增删改计数 |
 | `PATCH` | `/api/visual/drafts/{draftId}` | 保存节点、边、layout、binding patch |
 | `POST` | `/api/visual/drafts/{draftId}/operator-fingerprints/rebase` | 当前已实现：显式刷新选中节点或全部节点的 service-managed operator fingerprint snapshot，使用 `expectedRevision` 防并发覆盖，并对未知节点/当前 catalog 缺失算子返回结构化 diagnostics |
 | `POST` | `/api/visual/connections/check` | 当前已实现：服务端权威预检候选 data/dependency/route/config/context 连接；响应的 `diagnostics` 只保留候选连接相关问题，`validation/readiness` 表达加上候选连接后的完整 candidate draft 状态 |
@@ -1056,6 +1057,10 @@ GraphDraft、OperatorDefinition、ResourceDescriptor、Run 都必须携带：
 可以携带 actor/source/summary，repository 在写入当前 draft 与 revision history 时固化
 这些字段；未接入真实身份系统前默认 actor 为 `visual-canvas`。这不是完整审批流，
 但已经把协作、回滚、事故追踪所需的最小审计锚点放进协议和持久化快照。
+`GET /api/visual/drafts/{draftId}/revisions/{baseRevision}/diff/{targetRevision}`
+进一步把回滚前审阅从人工 JSON 对比提升为领域 diff：图级 schema/output/scope、
+节点级 operator/binding/config/fingerprint/layout，以及边级 data/dependency/route
+变化都带风险分类和摘要。
 
 ### 17.3 密钥处理
 

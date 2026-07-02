@@ -338,6 +338,7 @@ const state = {
   pendingPublishWarningKey: '',
   publishArtifactKind: 'EXECUTABLE',
   draftRevisions: [],
+  draftRevisionDiff: null,
   selectedDraftRevision: 0,
   previewingDraftRevision: 0,
   draftBundleText: '',
@@ -1084,6 +1085,7 @@ function renderInputForm() {
           <button id="preview-revision" class="secondary compact" type="button">Preview</button>
           <button id="restore-revision" class="secondary compact" type="button">Restore</button>
         </div>
+        <div id="draft-revision-diff" class="library-impact-panel" hidden></div>
         <div class="draft-transfer-controls">
           <button id="export-draft" class="secondary compact" type="button">Export</button>
           <button id="import-draft" class="secondary compact" type="button">Import Bundle</button>
@@ -1646,6 +1648,7 @@ function resetComposer() {
   state.currentDraftRevision = 0;
   state.savedDraftSnapshot = null;
   state.draftRevisions = [];
+  state.draftRevisionDiff = null;
   state.selectedDraftRevision = 0;
   state.previewingDraftRevision = 0;
   state.draftMessage = null;
@@ -5675,6 +5678,7 @@ function renderDraftControls() {
     state.currentDraftRevision = draft?.revision || 0;
     state.savedDraftSnapshot = draft || null;
     state.draftRevisions = [];
+    state.draftRevisionDiff = null;
     state.selectedDraftRevision = 0;
     state.previewingDraftRevision = 0;
     state.draftMessage = null;
@@ -5737,6 +5741,7 @@ function renderDraftRevisionControls() {
   select.disabled = !state.currentDraftId || !revisions.length;
   select.onchange = () => {
     state.selectedDraftRevision = Number(select.value || 0);
+    loadDraftRevisionDiff();
   };
 
   const reloadButton = $('reload-revisions');
@@ -5754,6 +5759,7 @@ function renderDraftRevisionControls() {
     restoreButton.disabled = !state.currentDraftId || !state.selectedDraftRevision;
     restoreButton.onclick = restoreSelectedDraftRevision;
   }
+  renderDraftRevisionDiff();
 }
 
 function revisionOptionLabel(draft) {
@@ -5762,6 +5768,78 @@ function revisionOptionLabel(draft) {
   const actor = metadata.updatedBy || metadata.createdBy || 'visual-canvas';
   const summary = metadata.changeSummary || `${nodeCount} nodes`;
   return `@${draft.revision || 0} · ${summary} · ${actor}`;
+}
+
+function renderDraftRevisionDiff() {
+  const target = $('draft-revision-diff');
+  if (!target) return;
+  const diff = state.draftRevisionDiff;
+  if (!diff || !state.selectedDraftRevision) {
+    target.hidden = true;
+    target.innerHTML = '';
+    return;
+  }
+  const level = draftRevisionDiffLevel(diff);
+  target.hidden = false;
+  target.className = `library-impact-panel ${level}`;
+  const counts = [
+    ['Nodes', `${diff.addedNodeCount || 0}+/${diff.removedNodeCount || 0}-/${diff.changedNodeCount || 0}~`],
+    ['Edges', `${diff.addedEdgeCount || 0}+/${diff.removedEdgeCount || 0}-/${diff.changedEdgeCount || 0}~`]
+  ].map(([label, value]) => `<span><strong>${escapeHtml(value)}</strong> ${escapeHtml(label)}</span>`).join('');
+  const graphChanges = Array.isArray(diff.graphChanges) ? diff.graphChanges : [];
+  const nodeChanges = Array.isArray(diff.nodeChanges) ? diff.nodeChanges : [];
+  const edgeChanges = Array.isArray(diff.edgeChanges) ? diff.edgeChanges : [];
+  const graphRows = graphChanges.slice(0, 4).map((change) => `
+    <div class="library-impact-code ${escapeHtml(draftRevisionDiffRiskLevel(change.risk))}">
+      <strong>${escapeHtml(change.field || 'graph')}</strong>
+      <span>${escapeHtml(change.summary || '')}</span>
+    </div>
+  `).join('');
+  const nodeRows = nodeChanges.slice(0, 5).map((change) => `
+    <div class="library-impact-risk">
+      <strong>${escapeHtml(change.nodeId || 'node')}</strong>
+      <span>${escapeHtml(change.changeKind || 'CHANGED')} · ${escapeHtml(changeRiskLabel(change.risk))}</span>
+      <small>${escapeHtml(change.summary || '')}</small>
+    </div>
+  `).join('');
+  const edgeRows = edgeChanges.slice(0, 4).map((change) => `
+    <div class="library-impact-risk">
+      <strong>${escapeHtml(change.edgeId || 'edge')}</strong>
+      <span>${escapeHtml(change.changeKind || 'CHANGED')} · ${escapeHtml(changeRiskLabel(change.risk))}</span>
+      <small>${escapeHtml(change.summary || '')}</small>
+    </div>
+  `).join('');
+  const hiddenRows = Math.max(0, nodeChanges.length - 5) + Math.max(0, edgeChanges.length - 4);
+  const hiddenText = hiddenRows ? `<div class="library-impact-more">+${hiddenRows} more draft changes</div>` : '';
+  target.innerHTML = `
+    <div class="library-impact-head">
+      <strong>Draft Diff</strong>
+      <span>@${escapeHtml(diff.baseRevision || 0)} -> @${escapeHtml(diff.targetRevision || 0)} · ${escapeHtml(changeRiskLabel(diff.changeRisk))}</span>
+    </div>
+    <div class="library-impact-risk-summary">${escapeHtml(diff.changeSummary || 'No graph draft surface changes.')}</div>
+    <div class="library-impact-stats">${counts}</div>
+    ${graphRows ? `<div class="library-impact-codes">${graphRows}</div>` : ''}
+    ${nodeRows || edgeRows ? `<div class="library-impact-risks">${nodeRows}${edgeRows}${hiddenText}</div>` : ''}
+  `;
+}
+
+function draftRevisionDiffLevel(diff) {
+  if (!diff?.changed) {
+    return 'success';
+  }
+  const risk = String(diff.changeRisk || '').toUpperCase();
+  if (risk === 'BREAKING_SCHEMA') {
+    return 'error';
+  }
+  return risk === 'METADATA' ? 'success' : 'warning';
+}
+
+function draftRevisionDiffRiskLevel(risk) {
+  const normalized = String(risk || '').toUpperCase();
+  if (normalized === 'BREAKING_SCHEMA') {
+    return 'error';
+  }
+  return normalized === 'METADATA' ? 'success' : 'warning';
 }
 
 function renderDraftStatus() {
@@ -6895,6 +6973,7 @@ async function loadDraftList(options = {}) {
       state.currentDraftRevision = 0;
       state.savedDraftSnapshot = null;
       state.draftRevisions = [];
+      state.draftRevisionDiff = null;
       state.selectedDraftRevision = 0;
       state.previewingDraftRevision = 0;
     }
@@ -6909,6 +6988,7 @@ async function loadDraftList(options = {}) {
 async function loadDraftRevisions(options = {}) {
   if (!state.currentDraftId) {
     state.draftRevisions = [];
+    state.draftRevisionDiff = null;
     state.selectedDraftRevision = 0;
     state.previewingDraftRevision = 0;
     if (options.render !== false) {
@@ -6925,14 +7005,56 @@ async function loadDraftRevisions(options = {}) {
     if (!state.draftRevisions.some((draft) => Number(draft.revision || 0) === Number(state.selectedDraftRevision || 0))) {
       state.selectedDraftRevision = state.currentDraftRevision || state.draftRevisions[0]?.revision || 0;
     }
+    await loadDraftRevisionDiff({ render: false, message: false });
     if (options.render !== false) {
       renderDraftControls();
     }
     return state.draftRevisions;
   } catch (error) {
+    state.draftRevisionDiff = null;
     setDraftMessage(error.message, 'error');
     return [];
   }
+}
+
+async function loadDraftRevisionDiff(options = {}) {
+  const base = latestDraftRevision();
+  const target = selectedDraftRevision();
+  state.draftRevisionDiff = null;
+  if (options.render !== false) {
+    renderDraftRevisionDiff();
+  }
+  if (!state.currentDraftId || !base || !target) {
+    return;
+  }
+  try {
+    const response = await fetch(
+      `/api/visual/drafts/${encodeURIComponent(state.currentDraftId)}/revisions/${encodeURIComponent(base.revision || 0)}/diff/${encodeURIComponent(target.revision || 0)}`
+    );
+    if (!response.ok) {
+      throw new Error(`Draft revision diff failed with ${response.status}`);
+    }
+    state.draftRevisionDiff = await response.json();
+  } catch (error) {
+    state.draftRevisionDiff = null;
+    if (options.message !== false) {
+      setDraftMessage(error.message, 'error');
+    }
+  }
+  if (options.render !== false) {
+    renderDraftRevisionDiff();
+  }
+}
+
+function latestDraftRevision() {
+  const revisions = Array.isArray(state.draftRevisions) ? state.draftRevisions : [];
+  return revisions[0] || null;
+}
+
+function selectedDraftRevision() {
+  const selected = Number(state.selectedDraftRevision || 0);
+  return (state.draftRevisions || []).find((draft) =>
+    Number(draft?.revision || 0) === selected) || null;
 }
 
 async function saveCurrentDraft() {
@@ -7290,6 +7412,7 @@ async function deleteSelectedDraft() {
   state.currentDraftRevision = 0;
   state.savedDraftSnapshot = null;
   state.draftRevisions = [];
+  state.draftRevisionDiff = null;
   state.selectedDraftRevision = 0;
   state.previewingDraftRevision = 0;
   renderDraftControls();

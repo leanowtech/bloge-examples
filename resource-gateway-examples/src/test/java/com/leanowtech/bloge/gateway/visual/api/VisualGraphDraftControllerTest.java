@@ -7,6 +7,7 @@ import com.leanowtech.bloge.gateway.visual.catalog.VisualCatalogTestSupport;
 import com.leanowtech.bloge.gateway.visual.codegen.DslGenerationResult;
 import com.leanowtech.bloge.gateway.visual.codegen.GraphDraftDslGenerator;
 import com.leanowtech.bloge.gateway.visual.draft.GraphDraft;
+import com.leanowtech.bloge.gateway.visual.draft.GraphDraftDiff;
 import com.leanowtech.bloge.gateway.visual.draft.GraphDraftExportBundle;
 import com.leanowtech.bloge.gateway.visual.draft.GraphDraftImportResult;
 import com.leanowtech.bloge.gateway.visual.draft.GraphDraftOperatorFingerprintRebaseRequest;
@@ -1032,6 +1033,73 @@ class VisualGraphDraftControllerTest {
                 .containsExactly(second.revision(), first.revision());
         assertThat(firstRevision.getStatusCode()).isEqualTo(HttpStatus.OK);
         assertThat(firstRevision.getBody()).isEqualTo(first);
+    }
+
+    @Test
+    void revisionDiffReturnsMachineReadableDraftChangeReview() {
+        VisualGraphDraftController controller = controllerWithEligibilityLibrary();
+        GraphDraft first = controller.create(eligibilityDraft(graphInputSchema(
+                Map.of(
+                        "score", Map.of("type", "integer"),
+                        "amount", Map.of("type", "number")
+                )
+        )));
+        GraphDraft.DraftNode auditNode = new GraphDraft.DraftNode(
+                "audit",
+                "risk:eligibility",
+                "Audit eligibility",
+                Map.of(
+                        "score", GraphDraft.Binding.contextPath("score"),
+                        "amount", GraphDraft.Binding.contextPath("amount")
+                ),
+                Map.of("mode", "audit"),
+                new GraphDraft.Position(260, 120)
+        );
+        GraphDraftPatchResult patched = controller.patch(first.draftId(), new GraphDraftPatchRequest(
+                first.revision(),
+                List.of(
+                        new GraphDraftPatchRequest.PatchOperation("replace", "/graphName", "revisionTwo"),
+                        new GraphDraftPatchRequest.PatchOperation("add", "/nodes/-", auditNode),
+                        new GraphDraftPatchRequest.PatchOperation("add", "/edges/-", new GraphDraft.DraftEdge(
+                                "eligibility-to-audit",
+                                "dependency",
+                                new GraphDraft.Endpoint("eligibility", "", ""),
+                                new GraphDraft.Endpoint("audit", "", "")
+                        )),
+                        new GraphDraftPatchRequest.PatchOperation("replace", "/output",
+                                new GraphDraft.OutputSelection("audit", ""))
+                )
+        )).getBody();
+        assertThat(patched).isNotNull();
+
+        ResponseEntity<GraphDraftDiff> response = controller.revisionDiff(first.draftId(),
+                first.revision(),
+                patched.draft().revision());
+        ResponseEntity<GraphDraftDiff> missingTarget = controller.revisionDiff(first.draftId(),
+                first.revision(),
+                99);
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat(response.getBody()).isNotNull();
+        GraphDraftDiff diff = response.getBody();
+        assertThat(diff.schemaVersion()).isEqualTo(GraphDraftDiff.SCHEMA_VERSION);
+        assertThat(diff.draftId()).isEqualTo(first.draftId());
+        assertThat(diff.baseRevision()).isEqualTo(first.revision());
+        assertThat(diff.targetRevision()).isEqualTo(patched.draft().revision());
+        assertThat(diff.changed()).isTrue();
+        assertThat(diff.changeRisk()).isEqualTo("RUNTIME_BINDING");
+        assertThat(diff.addedNodeCount()).isEqualTo(1);
+        assertThat(diff.addedEdgeCount()).isEqualTo(1);
+        assertThat(diff.graphChanges())
+                .extracting(GraphDraftDiff.GraphChange::field)
+                .contains("graphName", "output");
+        assertThat(diff.nodeChanges())
+                .extracting(GraphDraftDiff.NodeChange::nodeId, GraphDraftDiff.NodeChange::changeKind)
+                .contains(org.assertj.core.groups.Tuple.tuple("audit", "ADDED"));
+        assertThat(diff.edgeChanges())
+                .extracting(GraphDraftDiff.EdgeChange::edgeId, GraphDraftDiff.EdgeChange::changeKind)
+                .contains(org.assertj.core.groups.Tuple.tuple("eligibility-to-audit", "ADDED"));
+        assertThat(missingTarget.getStatusCode()).isEqualTo(HttpStatus.NOT_FOUND);
     }
 
     @Test

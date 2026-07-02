@@ -6,6 +6,7 @@ import com.leanowtech.bloge.gateway.visual.catalog.OperatorDefinition;
 import com.leanowtech.bloge.gateway.visual.catalog.VisualOperatorCatalog;
 import com.leanowtech.bloge.gateway.visual.diagnostic.VisualDiagnostic;
 import com.leanowtech.bloge.gateway.visual.draft.GraphDraft;
+import com.leanowtech.bloge.gateway.visual.draft.GraphDraftDiff;
 import com.leanowtech.bloge.gateway.visual.draft.GraphDraftExportBundle;
 import com.leanowtech.bloge.gateway.visual.draft.GraphDraftImportResult;
 import com.leanowtech.bloge.gateway.visual.draft.GraphDraftOperatorFingerprintRebaseRequest;
@@ -196,6 +197,26 @@ public class VisualGraphDraftController {
         return repository.findRevision(draftId, revision)
                 .map(ResponseEntity::ok)
                 .orElseGet(() -> ResponseEntity.notFound().build());
+    }
+
+    /**
+     * Compares two stored draft revisions.
+     *
+     * @param draftId draft id
+     * @param baseRevision base revision number
+     * @param targetRevision target revision number
+     * @return machine-readable draft diff when both revisions exist
+     */
+    @GetMapping("/{draftId}/revisions/{baseRevision}/diff/{targetRevision}")
+    public ResponseEntity<GraphDraftDiff> revisionDiff(@PathVariable String draftId,
+                                                       @PathVariable long baseRevision,
+                                                       @PathVariable long targetRevision) {
+        Optional<GraphDraft> base = repository.findRevision(draftId, baseRevision);
+        Optional<GraphDraft> target = repository.findRevision(draftId, targetRevision);
+        if (base.isEmpty() || target.isEmpty()) {
+            return ResponseEntity.notFound().build();
+        }
+        return ResponseEntity.ok(GraphDraftDiff.between(base.get(), target.get()));
     }
 
     /**

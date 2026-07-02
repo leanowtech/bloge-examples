@@ -184,6 +184,26 @@ class VisualAuthoringAppJsTest {
     }
 
     @Test
+    void surfacesDraftRevisionDiffReviewControls() throws Exception {
+        String source = appJsSource();
+
+        assertThat(source)
+                .contains("id=\"draft-revision-diff\"")
+                .contains("function loadDraftRevisionDiff(options = {})")
+                .contains("function renderDraftRevisionDiff()")
+                .contains("function latestDraftRevision()")
+                .contains("function selectedDraftRevision()")
+                .contains("/api/visual/drafts/${encodeURIComponent(state.currentDraftId)}/revisions")
+                .contains("/diff/${encodeURIComponent(target.revision || 0)}")
+                .contains("diff.nodeChanges")
+                .contains("diff.edgeChanges")
+                .contains("diff.graphChanges")
+                .contains("diff.changeSummary")
+                .contains("function draftRevisionDiffLevel(diff)")
+                .contains("function draftRevisionDiffRiskLevel(risk)");
+    }
+
+    @Test
     void surfacesSelectedNodeDiagnosticsInInspector() throws Exception {
         String source = appJsSource();
 
