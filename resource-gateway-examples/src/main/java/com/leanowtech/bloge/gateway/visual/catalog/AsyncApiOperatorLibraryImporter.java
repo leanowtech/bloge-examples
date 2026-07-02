@@ -531,7 +531,8 @@ public class AsyncApiOperatorLibraryImporter {
         if (!request.libraryId().isBlank()) {
             return request.libraryId();
         }
-        return namespaceToken(firstNonBlank(infoString(asyncApi, "title"), "asyncapi"), "-") + "-operators";
+        return namespaceToken(firstNonBlank(infoString(asyncApi, "title"), "asyncapi"), "-")
+                .toLowerCase(Locale.ROOT) + "-operators";
     }
 
     private static String displayName(AsyncApiOperatorLibraryImportRequest request, Map<String, Object> asyncApi) {

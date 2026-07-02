@@ -477,6 +477,61 @@ class VisualAuthoringBrowserDomTest {
     }
 
     @Test
+    void composerProjectsAsyncApiIntoOperatorLibraryInRealBrowser() {
+        driver = newChromeDriverOrSkip();
+        WebDriverWait wait = new WebDriverWait(driver, WAIT_TIMEOUT);
+        driver.get("http://localhost:" + port + "/examples/gateway");
+
+        waitForComposer(wait);
+        wait.until(ExpectedConditions.visibilityOfElementLocated(By.id("operator-palette")));
+
+        WebElement editor = wait.until(ExpectedConditions.visibilityOfElementLocated(By.id("operator-library-json")));
+        setControlValue(editor, """
+                asyncapi: '2.6.0'
+                info:
+                  title: Risk Events
+                  version: 1.2.3
+                  contact:
+                    name: risk-platform
+                channels:
+                  /webhooks/credit-decision:
+                    subscribe:
+                      operationId: creditDecisionWebhook
+                      x-bloge-source-kind: webhook
+                      bindings:
+                        http:
+                          method: post
+                      message:
+                        name: CreditDecision
+                        payload:
+                          type: object
+                          properties:
+                            applicationId:
+                              type: string
+                            decision:
+                              type: string
+                          required:
+                            - applicationId
+                            - decision
+                """);
+
+        click(wait, By.id("project-asyncapi-library"));
+        waitForText(wait, By.id("library-status"), "Projected AsyncAPI into risk-events-operators");
+        waitForText(wait, By.id("library-profile"), "runtime-blocked");
+        assertThat(valueOf(By.id("operator-library-json")))
+                .contains("\"schemaVersion\": \"bloge.visualOperatorLibrary.v1\"")
+                .contains("\"libraryId\": \"risk-events-operators\"")
+                .contains("\"kind\": \"webhook\"")
+                .contains("\"mode\": \"webhook\"");
+
+        click(wait, By.id("import-library"));
+        waitForAnyText(wait, By.id("library-status"),
+                "Imported risk-events-operators",
+                "Replaced risk-events-operators");
+        waitForText(wait, By.id("operator-palette"), "CreditDecision");
+    }
+
+    @Test
     void composerRejectsSchemaIncompatibleConnectionInRealBrowser() {
         driver = newChromeDriverOrSkip();
         WebDriverWait wait = new WebDriverWait(driver, WAIT_TIMEOUT);

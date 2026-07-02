@@ -207,8 +207,8 @@ class OperatorLibraryAdminControllerTest {
                         - commandId
                 """;
         AsyncApiOperatorLibraryImportRequest request = new AsyncApiOperatorLibraryImportRequest(
-                "risk-events-operators",
-                "Risk events operators",
+                "",
+                "",
                 "",
                 "",
                 "",
@@ -223,7 +223,7 @@ class OperatorLibraryAdminControllerTest {
                 .andExpect(jsonPath("$.schemaVersion")
                         .value(AsyncApiOperatorLibraryImportResult.SCHEMA_VERSION))
                 .andExpect(jsonPath("$.library.libraryId").value("risk-events-operators"))
-                .andExpect(jsonPath("$.library.displayName").value("Risk events operators"))
+                .andExpect(jsonPath("$.library.displayName").value("Risk Events operators"))
                 .andExpect(jsonPath("$.library.version").value("1.2.3"))
                 .andExpect(jsonPath("$.library.owner").value("risk-platform"))
                 .andExpect(jsonPath("$.library.operators.length()").value(2))

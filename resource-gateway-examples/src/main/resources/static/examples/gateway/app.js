@@ -1008,6 +1008,7 @@ function renderInputForm() {
           <button id="import-library" class="secondary compact" type="button">Import</button>
           <button id="reload-libraries" class="secondary compact" type="button">Reload</button>
           <button id="export-library" class="secondary compact" type="button">Export</button>
+          <button id="project-asyncapi-library" class="secondary compact" type="button">From AsyncAPI</button>
           <button id="import-library-bundle" class="secondary compact" type="button">Import Bundle</button>
           <button id="delete-library" class="secondary compact danger" type="button">Delete</button>
           <label class="config-checkbox compact">
@@ -2777,6 +2778,7 @@ function renderOperatorLibraryControls() {
   const validateButton = $('validate-library');
   const reloadButton = $('reload-libraries');
   const exportButton = $('export-library');
+  const projectAsyncApiButton = $('project-asyncapi-library');
   const importBundleButton = $('import-library-bundle');
   const deleteButton = $('delete-library');
   const forceToggle = $('library-force');
@@ -2812,6 +2814,9 @@ function renderOperatorLibraryControls() {
   if (exportButton) {
     exportButton.disabled = !state.selectedLibraryId;
     exportButton.onclick = exportSelectedOperatorLibrary;
+  }
+  if (projectAsyncApiButton) {
+    projectAsyncApiButton.onclick = projectAsyncApiOperatorLibrary;
   }
   if (importBundleButton) {
     importBundleButton.onclick = importOperatorLibraryBundle;
@@ -4877,6 +4882,56 @@ async function validateOperatorLibraryPayload(library) {
     payload,
     diagnostics: normalizeDiagnostics(payload?.diagnostics)
   };
+}
+
+async function projectAsyncApiOperatorLibrary() {
+  const sourceText = state.libraryImportText || '';
+  if (!sourceText.trim()) {
+    setLibraryMessage('Paste AsyncAPI JSON or YAML before projection.', 'error');
+    return;
+  }
+  const response = await fetch(`/admin/visual-operator-libraries/from-asyncapi${libraryForceQuery()}`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ asyncApiText: sourceText })
+  });
+  const payload = await response.json().catch(() => null);
+  const validation = payload?.validation || {};
+  const diagnostics = normalizeDiagnostics(validation?.diagnostics);
+  $('output').textContent = pretty({ status: response.status, asyncApiOperatorLibraryImportResult: payload });
+  if (!response.ok || validation?.valid === false || !payload?.library) {
+    state.libraryImportConfirmationKey = '';
+    setLibraryMessage(
+      validationResultMessage(
+        validation?.valid,
+        diagnostics,
+        `AsyncAPI projection failed with ${response.status}`
+      ),
+      visualCheckLevel(diagnostics, validation?.valid !== false && response.ok),
+      diagnostics,
+      validation?.impact,
+      validation?.profile,
+      sourceText
+    );
+    return;
+  }
+  state.libraryImportText = pretty(payload.library);
+  state.selectedLibraryId = libraryExists(payload.library.libraryId) ? payload.library.libraryId : '';
+  state.libraryHistoryId = payload.library.libraryId || state.libraryHistoryId;
+  state.libraryRevisions = [];
+  state.selectedLibraryRevision = 0;
+  state.libraryRevisionDiff = null;
+  state.libraryImportConfirmationKey = '';
+  state.libraryRestoreConfirmationKey = '';
+  renderOperatorLibraryControls();
+  setLibraryMessage(
+    `Projected AsyncAPI into ${payload.library.libraryId}. Review generated library, then Import.`,
+    visualCheckLevel(diagnostics, validation?.valid !== false),
+    diagnostics,
+    validation?.impact,
+    validation?.profile,
+    state.libraryImportText
+  );
 }
 
 function libraryImportConfirmationKey(sourceText, diagnostics = []) {
