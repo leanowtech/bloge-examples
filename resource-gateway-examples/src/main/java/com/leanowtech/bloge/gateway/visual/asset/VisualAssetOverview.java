@@ -709,6 +709,9 @@ public record VisualAssetOverview(
      * @param targetLabel human-readable target label
      * @param readinessState graph/operator readiness state when known
      * @param artifactKind publication artifact kind when known
+     * @param handoffLane runtime-plane responsibility lane when this is a binding action
+     * @param handoffKind runtime-plane work kind when this is a binding action
+     * @param handoffTarget runtime-plane routing target when this is a binding action
      * @param summary concise reason for the queue item
      * @param recommendedAction concrete next action
      */
@@ -721,6 +724,9 @@ public record VisualAssetOverview(
             String targetLabel,
             String readinessState,
             String artifactKind,
+            String handoffLane,
+            String handoffKind,
+            String handoffTarget,
             String summary,
             String recommendedAction
     ) {
@@ -742,6 +748,36 @@ public record VisualAssetOverview(
                     targetLabel,
                     readinessState,
                     artifactKind,
+                    "",
+                    "",
+                    "",
+                    summary,
+                    recommendedAction
+            );
+        }
+
+        public ActionItem(String actionKey,
+                          String severity,
+                          String actionType,
+                          String targetKind,
+                          String targetId,
+                          String targetLabel,
+                          String readinessState,
+                          String artifactKind,
+                          String summary,
+                          String recommendedAction) {
+            this(
+                    actionKey,
+                    severity,
+                    actionType,
+                    targetKind,
+                    targetId,
+                    targetLabel,
+                    readinessState,
+                    artifactKind,
+                    "",
+                    "",
+                    "",
                     summary,
                     recommendedAction
             );
@@ -757,6 +793,9 @@ public record VisualAssetOverview(
             targetLabel = targetLabel == null ? "" : targetLabel;
             readinessState = normalizeFacetValue(readinessState);
             artifactKind = artifactKind == null || artifactKind.isBlank() ? "" : artifactKind.trim().toUpperCase(Locale.ROOT);
+            handoffLane = normalizeFacetValue(handoffLane);
+            handoffKind = normalizeFacetValue(handoffKind);
+            handoffTarget = handoffTarget == null ? "" : handoffTarget;
             summary = summary == null ? "" : summary;
             recommendedAction = recommendedAction == null ? "" : recommendedAction;
             actionKey = actionKey == null || actionKey.isBlank()
@@ -986,6 +1025,9 @@ public record VisualAssetOverview(
                     runtimeBindingTargetLabel(label, requirement),
                     readinessState,
                     "",
+                    requirement.handoffLane(),
+                    requirement.handoffKind(),
+                    requirement.handoffTarget(),
                     runtimeBindingSummary("Draft", requirement),
                     runtimeBindingRecommendation(requirement, actionReadiness,
                             "Bind executable runtime implementations or keep this draft in DESIGN review.")
@@ -1016,6 +1058,9 @@ public record VisualAssetOverview(
                     runtimeBindingTargetLabel(label, requirement),
                     readinessState,
                     artifactKind,
+                    requirement.handoffLane(),
+                    requirement.handoffKind(),
+                    requirement.handoffTarget(),
                     runtimeBindingSummary("Publication", requirement),
                     runtimeBindingRecommendation(requirement, null,
                             "Bind runtime implementations, republish as EXECUTABLE, then certify.")

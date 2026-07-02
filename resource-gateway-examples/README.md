@@ -152,8 +152,9 @@ ack/force/evidence gates are not guessed from browser-only heuristics, while
 per-operator import-time `runtimeBindingRequirements` show which schema-only,
 remote-worker, AI-tool, event/message/webhook, streaming, durable, or unresolved
 native operators need runtime-plane binding before executable graph use; those
-operator-level requirement kinds and targets are derived by the same server
-planner later used by graph readiness and workspace runtime-binding indexes,
+operator-level requirement kinds, targets, and handoff lane/kind/target routing
+metadata are derived by the same server planner later used by graph readiness
+and workspace runtime-binding indexes,
 opt into `force=true` for explicit destructive operator-library replacement or
 deletion after inspecting the server-provided impact review for affected drafts,
 publications, operators, and diagnostic codes, jump from an affected draft chip
@@ -764,7 +765,7 @@ Showcase metadata APIs:
 | `GET` | `/api/visual/operators` | List native, Java registry, imported, executable publication-backed subgraph, and resource-backed visual operator definitions; supports `tenantId`, `namespace`, and `environment` policy filtering, `sourceKind` / `loweringMode` / `capability` / `runtimeReadiness` catalog facets, plus multi-term schema-aware search across input/output/config fields, field types, and readiness summaries; response includes `facets.total/sourceKinds/loweringModes/capabilities/runtimeReadinessStates` counts |
 | `GET` | `/api/visual/operators/{operatorRef}/usage` | Return stored draft and immutable-publication usage of one operatorRef, including saved/frozen fingerprint status, changed-surface drift summaries, and `changeRisk/changeCategories/changeSummary` when snapshots allow risk classification |
 | `GET` | `/api/visual/assets/overview` | Return `bloge.visualAssetOverview.v1`, an environment-level visual authoring overview that echoes the requested authoring scope while aggregating draft summaries, publication summaries, current operator catalog facets, and an action-readiness/runtime-binding-requirement-aware server-derived action queue with optional `tenantId` / `namespace` / `environment` scope filters plus `actionLimit` / `actionOffset` / `actionSeverity` / `actionType` / `actionTargetKind` queue query controls |
-| `GET` | `/api/visual/assets/runtime-binding-requirements` | Return `bloge.visualRuntimeBindingRequirements.v1`, a scope-aware, pageable runtime-binding gap index for active drafts and immutable publications, with `targetKind` / `bindingKind` / `sourceKind` / `loweringMode` / `readinessState` filters and stable requirement keys for external runtime-plane routing |
+| `GET` | `/api/visual/assets/runtime-binding-requirements` | Return `bloge.visualRuntimeBindingRequirements.v1`, a scope-aware, pageable runtime-binding gap index for active drafts and immutable publications, with `targetKind` / `bindingKind` / `handoffLane` / `sourceKind` / `loweringMode` / `readinessState` filters, stable requirement keys, and handoff lane/kind/target fields for external runtime-plane routing |
 | `GET` | `/api/visual/drafts` | List stored visual graph drafts with optional `tenantId` / `namespace` / `environment` scope filters |
 | `GET` | `/api/visual/drafts/history` | List lightweight active/deleted draft history summaries with current/latest revision, revision count, latest actor/source/summary, recovery status, and optional `tenantId` / `namespace` / `environment` scope filters |
 | `GET` | `/api/visual/drafts/summaries` | List `bloge.visualGraphDraftSummary.v1` draft asset summaries that combine history, server validation/readiness/action-readiness, diagnostic counts, and dependency counts without returning full draft JSON; supports optional `tenantId` / `namespace` / `environment` scope filters |
@@ -1092,9 +1093,9 @@ panel for these graphs, showing that save/export/`DESIGN` publication remain
 allowed while compile/run/`EXECUTABLE` publication wait for runtime binding.
 That readiness payload also lists node-scoped `runtimeBindingRequirements` for
 schema-valid but non-executable nodes, including the missing binding kind,
-declared target such as worker topic/event type/channel/webhook path, and the
-recommended promotion action, so downstream runtime-plane work can be routed
-without scraping diagnostic prose.
+declared target such as worker topic/event type/channel/webhook path, handoff
+lane/kind/target routing metadata, and the recommended promotion action, so
+downstream runtime-plane work can be routed without scraping diagnostic prose.
 The Workspace Overview action queue consumes the same requirements and emits
 per-node `PLAN_DRAFT_RUNTIME_BINDING` or `PLAN_PUBLICATION_RUNTIME_BINDING`
 items with stable keys, so runtime-plane binding work can be assigned directly
@@ -1103,9 +1104,9 @@ For external integration teams that need a factual queue rather than a
 recommendation list, `/api/visual/assets/runtime-binding-requirements` exposes
 the same gaps as `bloge.visualRuntimeBindingRequirements.v1`, scoped and
 pageable by tenant/namespace/environment and filterable by target kind, binding
-kind, source kind, lowering mode, or readiness state. The same Workspace
-Overview panel renders that index with filters, paging, and draft/publication
-Open actions, so design-time binding work is visible from the canvas without
+kind, handoff lane, source kind, lowering mode, or readiness state. The same
+Workspace Overview panel renders that index with filters, paging, and
+draft/publication Open actions, so design-time binding work is visible from the canvas without
 pretending the graph is executable.
 The Drafts panel renders a Draft Asset Index from server-side draft summaries
 for the active Authoring Scope, so active and recoverable deleted drafts expose

@@ -11,7 +11,8 @@ import java.util.Locale;
  *
  * <p>Import-time readiness and draft/publication readiness must classify missing
  * runtime bindings the same way. This planner owns the operator-level binding
- * kind, target, title, and summary so those control-plane surfaces do not drift.</p>
+ * kind, target, handoff routing, title, and summary so those control-plane
+ * surfaces do not drift.</p>
  */
 public final class VisualRuntimeBindingRequirementPlanner {
 
@@ -175,6 +176,7 @@ public final class VisualRuntimeBindingRequirementPlanner {
                                                    String bindingTarget,
                                                    String title,
                                                    String summary) {
+        Handoff handoff = handoff(bindingKind, bindingTarget, operator.operatorRef());
         return new OperatorRequirement(
                 operator.operatorRef(),
                 operator.display().name().isBlank() ? operator.operatorRef() : operator.display().name(),
@@ -184,9 +186,27 @@ public final class VisualRuntimeBindingRequirementPlanner {
                 loweringMode,
                 bindingKind,
                 bindingTarget,
+                handoff.lane(),
+                handoff.kind(),
+                handoff.target(),
                 title,
                 summary
         );
+    }
+
+    private static Handoff handoff(String bindingKind, String bindingTarget, String operatorRef) {
+        String target = firstNonBlank(bindingTarget, operatorRef);
+        return switch (normalizeFacetValue(bindingKind)) {
+            case "executable-lowering" -> new Handoff("operator-platform", "operator-implementation", target);
+            case "remote-worker-runtime" -> new Handoff("worker-runtime", "worker-dispatch", target);
+            case "ai-tool-runtime" -> new Handoff("ai-runtime", "tool-invocation", target);
+            case "event-source-runtime" -> new Handoff("event-runtime", "event-subscription", target);
+            case "message-runtime" -> new Handoff("messaging-runtime", "message-consumer", target);
+            case "webhook-ingress-runtime" -> new Handoff("ingress-runtime", "webhook-ingress", target);
+            case "streaming-runtime" -> new Handoff("streaming-runtime", "streaming-execution", target);
+            case "durable-runtime" -> new Handoff("durable-runtime", "durable-execution", target);
+            default -> new Handoff("runtime-platform", "runtime-adapter", target);
+        };
     }
 
     private static String parameter(OperatorDefinition.Lowering lowering, String key) {
@@ -222,6 +242,9 @@ public final class VisualRuntimeBindingRequirementPlanner {
                 .replace('_', '-');
     }
 
+    private record Handoff(String lane, String kind, String target) {
+    }
+
     /**
      * Operator-level runtime binding gap.
      *
@@ -233,6 +256,9 @@ public final class VisualRuntimeBindingRequirementPlanner {
      * @param loweringMode lowering mode
      * @param bindingKind missing runtime binding kind
      * @param bindingTarget runtime binding target
+     * @param handoffLane runtime-plane responsibility lane
+     * @param handoffKind runtime-plane work kind
+     * @param handoffTarget runtime-plane routing target
      * @param title title
      * @param summary summary
      */
@@ -245,6 +271,9 @@ public final class VisualRuntimeBindingRequirementPlanner {
             String loweringMode,
             String bindingKind,
             String bindingTarget,
+            String handoffLane,
+            String handoffKind,
+            String handoffTarget,
             String title,
             String summary
     ) {
@@ -257,6 +286,9 @@ public final class VisualRuntimeBindingRequirementPlanner {
             loweringMode = normalizeFacetValue(loweringMode);
             bindingKind = normalizeFacetValue(bindingKind);
             bindingTarget = bindingTarget == null ? "" : bindingTarget;
+            handoffLane = normalizeFacetValue(handoffLane);
+            handoffKind = normalizeFacetValue(handoffKind);
+            handoffTarget = handoffTarget == null ? "" : handoffTarget;
             title = title == null ? "" : title;
             summary = summary == null ? "" : summary;
         }

@@ -115,6 +115,7 @@ public class VisualAssetOverviewController {
      * @param offset zero-based requirement item offset after filtering
      * @param targetKind optional target kind filter
      * @param bindingKind optional binding kind filter
+     * @param handoffLane optional runtime-plane handoff lane filter
      * @param sourceKind optional source kind filter
      * @param loweringMode optional lowering mode filter
      * @param readinessState optional graph or node readiness state filter
@@ -129,6 +130,7 @@ public class VisualAssetOverviewController {
             @RequestParam(defaultValue = "0") int offset,
             @RequestParam(defaultValue = "") String targetKind,
             @RequestParam(defaultValue = "") String bindingKind,
+            @RequestParam(defaultValue = "") String handoffLane,
             @RequestParam(defaultValue = "") String sourceKind,
             @RequestParam(defaultValue = "") String loweringMode,
             @RequestParam(defaultValue = "") String readinessState) {
@@ -142,6 +144,7 @@ public class VisualAssetOverviewController {
                 offset,
                 targetKind,
                 bindingKind,
+                handoffLane,
                 sourceKind,
                 loweringMode,
                 readinessState
@@ -160,7 +163,7 @@ public class VisualAssetOverviewController {
                                                                 String namespace,
                                                                 String environment) {
         return runtimeBindingRequirements(tenantId, namespace, environment,
-                VisualRuntimeBindingRequirements.DEFAULT_ITEM_LIMIT, 0, "", "", "", "", "");
+                VisualRuntimeBindingRequirements.DEFAULT_ITEM_LIMIT, 0, "", "", "", "", "", "");
     }
 
     private List<GraphDraftSummary> draftSummaries(String tenantId, String namespace, String environment) {

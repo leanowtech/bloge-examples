@@ -101,6 +101,9 @@ class VisualAssetOverviewControllerTest {
                 .satisfies(item -> {
                     assertThat(item.targetLabel()).contains("eligibility");
                     assertThat(item.summary()).contains("executable-lowering").contains("risk:eligibility");
+                    assertThat(item.handoffLane()).isEqualTo("operator-platform");
+                    assertThat(item.handoffKind()).isEqualTo("operator-implementation");
+                    assertThat(item.handoffTarget()).isEqualTo("risk:eligibility");
                     assertThat(item.recommendedAction()).contains("EXECUTABLE promotion");
                 });
     }
@@ -135,6 +138,7 @@ class VisualAssetOverviewControllerTest {
                 "",
                 "",
                 "",
+                "",
                 ""
         );
         VisualRuntimeBindingRequirements draftOnly = controller.runtimeBindingRequirements(
@@ -145,6 +149,7 @@ class VisualAssetOverviewControllerTest {
                 0,
                 "draft",
                 "executable-lowering",
+                "operator-platform",
                 "",
                 "",
                 ""
@@ -163,6 +168,7 @@ class VisualAssetOverviewControllerTest {
         assertThat(firstPage.targetKindCounts()).containsEntry("draft", 1)
                 .containsEntry("publication", 1);
         assertThat(firstPage.bindingKindCounts()).containsEntry("executable-lowering", 2);
+        assertThat(firstPage.handoffLaneCounts()).containsEntry("operator-platform", 2);
         assertThat(firstPage.sourceKindCounts()).containsEntry("user-library", 2);
         assertThat(firstPage.loweringModeCounts()).containsEntry("design", 2);
         assertThat(firstPage.readinessStateCounts()).containsEntry("design-only", 2);
@@ -176,11 +182,15 @@ class VisualAssetOverviewControllerTest {
             assertThat(item.operatorRef()).isEqualTo("risk:eligibility");
             assertThat(item.bindingKind()).isEqualTo("executable-lowering");
             assertThat(item.bindingTarget()).isEqualTo("risk:eligibility");
+            assertThat(item.handoffLane()).isEqualTo("operator-platform");
+            assertThat(item.handoffKind()).isEqualTo("operator-implementation");
+            assertThat(item.handoffTarget()).isEqualTo("risk:eligibility");
             assertThat(item.recommendedAction()).contains("EXECUTABLE promotion");
         });
         assertThat(draftOnly.filter().filtered()).isTrue();
         assertThat(draftOnly.filter().targetKind()).isEqualTo("draft");
         assertThat(draftOnly.filter().bindingKind()).isEqualTo("executable-lowering");
+        assertThat(draftOnly.filter().handoffLane()).isEqualTo("operator-platform");
         assertThat(draftOnly.total()).isEqualTo(1);
         assertThat(draftOnly.unfilteredTotal()).isEqualTo(2);
         assertThat(draftOnly.items()).singleElement()

@@ -1684,18 +1684,19 @@ operator 组成的合法图可以 `valid=true`，同时 `readiness.executable=fa
 当图因为 `lowering.mode=design`、remote worker、AI tool、event source、
 message handler、webhook、streaming 或 durable capability 暂时不能运行时，
 `readiness.runtimeBindingRequirements[]` 会按节点列出
-`nodeId/operatorRef/sourceKind/loweringMode/bindingKind/bindingTarget/recommendedAction`，
+`nodeId/operatorRef/sourceKind/loweringMode/bindingKind/bindingTarget/handoffLane/handoffKind/handoffTarget/recommendedAction`，
 让外部控制面或集成团队能把“可设计但不可运行”的状态转成明确的 runtime binding
 待办，而不是解析自然语言 summary。
 `/api/visual/assets/overview` 会继续消费这些 requirement，把 draft 缺口投影为
 `PLAN_DRAFT_RUNTIME_BINDING`，把 frozen DESIGN publication 缺口投影为
 `PLAN_PUBLICATION_RUNTIME_BINDING`，并把 `nodeId/bindingKind/bindingTarget`
-固化进稳定 `actionKey`。
+固化进稳定 `actionKey`，同时透传 `handoffLane/handoffKind/handoffTarget`
+作为 runtime-plane 路由提示；这些字段不是工单状态，不引入第二套 workflow 真相源。
 如果外部 runtime-plane 团队需要事实清单而不是 overview action recommendation，
 `GET /api/visual/assets/runtime-binding-requirements` 会返回
 `bloge.visualRuntimeBindingRequirements.v1`，按 active draft 和 immutable publication
 展开同一批 requirement，并支持 `tenantId/namespace/environment`、`limit/offset`、
-`targetKind`、`bindingKind`、`sourceKind`、`loweringMode` 和 `readinessState`
+`targetKind`、`bindingKind`、`handoffLane`、`sourceKind`、`loweringMode` 和 `readinessState`
 查询。该索引不持久化待办状态，`readiness.runtimeBindingRequirements[]`
 仍是唯一事实来源。
 `actionReadiness` 则把同一批 diagnostics/readiness 压成产品动作门禁：`compileNow`、

@@ -776,6 +776,9 @@ function visualRuntimeBindingRequirementsUrl(builder = state.builder) {
   if (query.bindingKind) {
     params.set('bindingKind', query.bindingKind);
   }
+  if (query.handoffLane) {
+    params.set('handoffLane', query.handoffLane);
+  }
   if (query.sourceKind) {
     params.set('sourceKind', query.sourceKind);
   }
@@ -813,6 +816,7 @@ function normalizeVisualRuntimeBindingRequirementQuery(query = {}) {
   return {
     targetKind: String(query.targetKind || '').trim().toLowerCase(),
     bindingKind: String(query.bindingKind || '').trim().toLowerCase(),
+    handoffLane: String(query.handoffLane || '').trim().toLowerCase(),
     sourceKind: String(query.sourceKind || '').trim().toLowerCase(),
     loweringMode: String(query.loweringMode || '').trim().toLowerCase(),
     readinessState: String(query.readinessState || '').trim().toLowerCase(),
@@ -3543,7 +3547,7 @@ function renderLibraryImportReadiness(readiness) {
   const affectedText = affected.length
     ? `<span>${escapeHtml(affected.join(' · '))}</span>`
     : '';
-  const bindingRequirements = visualRuntimeBindingRequirementRows(readiness.runtimeBindingRequirements);
+  const bindingRequirements = visualRuntimeBindingRequirementCodeRows(readiness.runtimeBindingRequirements);
   const bindingOverflow = Math.max(
     0,
     Number(readiness.runtimeBindingRequirementCount || 0)
@@ -4711,7 +4715,7 @@ function renderVisualReadinessPanel(target, readiness) {
   const summary = visualReadinessPanelSummary(normalized, designAllowed);
   const stats = visualReadinessPanelStats(normalized);
   const actions = visualActionReadinessRows(actionReadiness) || visualReadinessActionRows(normalized, designAllowed);
-  const bindingRequirements = visualRuntimeBindingRequirementRows(normalized.runtimeBindingRequirements);
+  const bindingRequirements = visualRuntimeBindingRequirementCodeRows(normalized.runtimeBindingRequirements);
   const nodes = visualReadinessNodeRows(normalized.nodes);
   target.hidden = false;
   target.className = `library-impact-panel ${escapeHtml(level)}`;
@@ -4812,16 +4816,22 @@ function visualActionReadinessRows(actionReadiness) {
   `).join('');
 }
 
-function visualRuntimeBindingRequirementRows(requirements) {
+function visualRuntimeBindingRequirementCodeRows(requirements) {
   return (Array.isArray(requirements) ? requirements : [])
     .slice(0, 5)
     .map((requirement) => {
-      const target = requirement.bindingTarget ? ` · ${requirement.bindingTarget}` : '';
-      const action = requirement.recommendedAction ? ` · ${requirement.recommendedAction}` : '';
+      const details = [
+        operatorPaletteFacetLabel(requirement.bindingKind || 'runtime-binding'),
+        requirement.bindingTarget,
+        requirement.handoffLane ? operatorPaletteFacetLabel(requirement.handoffLane) : '',
+        requirement.handoffKind ? operatorPaletteFacetLabel(requirement.handoffKind) : '',
+        requirement.handoffTarget,
+        requirement.recommendedAction
+      ].filter(Boolean).join(' · ');
       return `
         <div class="library-impact-code ${escapeHtml(requirement.level || 'warning')}">
           <strong>${escapeHtml(requirement.nodeId || requirement.label || requirement.operatorRef || 'runtime binding')}</strong>
-          <span>${escapeHtml(operatorPaletteFacetLabel(requirement.bindingKind || 'runtime-binding'))}${escapeHtml(target)}${escapeHtml(action)}</span>
+          <span>${escapeHtml(details)}</span>
         </div>
       `;
     }).join('');
@@ -5181,6 +5191,9 @@ function normalizeRuntimeBindingRequirement(requirement) {
     loweringMode: normalizeReadinessState(requirement?.loweringMode),
     bindingKind: normalizeReadinessState(requirement?.bindingKind),
     bindingTarget: String(requirement?.bindingTarget || ''),
+    handoffLane: normalizeReadinessState(requirement?.handoffLane),
+    handoffKind: normalizeReadinessState(requirement?.handoffKind),
+    handoffTarget: String(requirement?.handoffTarget || ''),
     title: String(requirement?.title || ''),
     summary: String(requirement?.summary || ''),
     recommendedAction: String(requirement?.recommendedAction || '')
@@ -7251,6 +7264,7 @@ function visualRuntimeBindingRequirementsShouldShow(bindingIndex) {
   return Number(bindingIndex?.unfilteredTotal ?? bindingIndex?.total ?? 0) > 0
     || Boolean(query.targetKind
       || query.bindingKind
+      || query.handoffLane
       || query.sourceKind
       || query.loweringMode
       || query.readinessState
@@ -7328,6 +7342,7 @@ function visualRuntimeBindingRequirementControls(bindingIndex) {
   const pageSize = Number(bindingIndex?.itemLimit || query.limit || 10) || 10;
   const hasFilter = Boolean(query.targetKind
     || query.bindingKind
+    || query.handoffLane
     || query.sourceKind
     || query.loweringMode
     || query.readinessState
@@ -7351,6 +7366,12 @@ function visualRuntimeBindingRequirementControls(bindingIndex) {
         <span>${escapeHtml('Binding')}</span>
         <select id="runtime-binding-kind" aria-label="Filter runtime binding requirements by binding kind">
           ${visualRuntimeBindingDynamicOptionMarkup('All bindings', bindingIndex?.bindingKindCounts, query.bindingKind)}
+        </select>
+      </label>
+      <label>
+        <span>${escapeHtml('Lane')}</span>
+        <select id="runtime-binding-handoff-lane" aria-label="Filter runtime binding requirements by handoff lane">
+          ${visualRuntimeBindingDynamicOptionMarkup('All lanes', bindingIndex?.handoffLaneCounts, query.handoffLane)}
         </select>
       </label>
       <label>
@@ -7558,6 +7579,9 @@ function visualRuntimeBindingRequirementContext(item) {
   const binding = [operatorPaletteFacetLabel(item.bindingKind), item.bindingTarget]
     .filter(Boolean)
     .join(' ');
+  const handoff = [operatorPaletteFacetLabel(item.handoffLane), item.handoffTarget]
+    .filter(Boolean)
+    .join(' ');
   const target = [item.targetKind, item.targetLabel || item.targetId]
     .filter(Boolean)
     .join(' ');
@@ -7565,7 +7589,7 @@ function visualRuntimeBindingRequirementContext(item) {
     level: ['error', 'warning', 'info', 'success'].includes(String(item.level || '').toLowerCase())
       ? String(item.level).toLowerCase()
       : 'warning',
-    message: [binding, target, item.recommendedAction || item.summary]
+    message: [binding, handoff, target, item.recommendedAction || item.summary]
       .filter(Boolean)
       .join(' · ')
   };
@@ -7575,18 +7599,22 @@ function visualRuntimeBindingRequirementLabel(item) {
   const binding = [operatorPaletteFacetLabel(item?.bindingKind || ''), item?.bindingTarget || '']
     .filter(Boolean)
     .join(' ');
+  const handoff = item?.handoffLane ? operatorPaletteFacetLabel(item.handoffLane) : '';
   const target = [item?.targetKind, item?.targetLabel || item?.targetId]
     .filter(Boolean)
     .join(' ');
   const operator = item?.operatorRef ? `operator ${item.operatorRef}` : '';
-  return [binding, target, operator]
+  return [binding, handoff, target, operator]
     .filter(Boolean)
     .join(' · ');
 }
 
 function visualRuntimeBindingRequirementValue(item) {
   const state = item?.readinessState ? operatorPaletteFacetLabel(item.readinessState) : '';
-  return [item?.recommendedAction || item?.summary || 'Bind runtime implementation before EXECUTABLE promotion.', state]
+  const handoff = [operatorPaletteFacetLabel(item?.handoffKind || ''), item?.handoffTarget || '']
+    .filter(Boolean)
+    .join(' ');
+  return [item?.recommendedAction || item?.summary || 'Bind runtime implementation before EXECUTABLE promotion.', state, handoff]
     .filter(Boolean)
     .join(' · ');
 }
@@ -7600,11 +7628,14 @@ function visualAssetActionContext(item) {
     .join(' ');
   const readiness = item.readinessState ? operatorPaletteFacetLabel(item.readinessState) : '';
   const action = String(item.actionType || 'REVIEW_ASSET').replaceAll('_', ' ').toLowerCase();
+  const handoff = [operatorPaletteFacetLabel(item.handoffLane), item.handoffTarget]
+    .filter(Boolean)
+    .join(' ');
   return {
     level: ['error', 'warning', 'info', 'success'].includes(String(item.severity || '').toLowerCase())
       ? String(item.severity).toLowerCase()
       : 'info',
-    message: [action, target, readiness, item.recommendedAction || item.summary]
+    message: [action, target, readiness, handoff, item.recommendedAction || item.summary]
       .filter(Boolean)
       .join(' · ')
   };
@@ -7616,7 +7647,8 @@ function visualAssetOverviewActionLabel(item) {
     .join(' ');
   const readiness = item?.readinessState ? operatorPaletteFacetLabel(item.readinessState) : '';
   const action = String(item?.actionType || 'REVIEW_ASSET').replaceAll('_', ' ').toLowerCase();
-  return [action, target, readiness]
+  const handoff = item?.handoffLane ? operatorPaletteFacetLabel(item.handoffLane) : '';
+  return [action, target, readiness, handoff]
     .filter(Boolean)
     .join(' · ');
 }
@@ -7690,6 +7722,13 @@ function attachVisualRuntimeBindingRequirementQueryHandlers(bindingIndex) {
       offset: 0
     });
   }
+  const handoffLane = $('runtime-binding-handoff-lane');
+  if (handoffLane) {
+    handoffLane.onchange = () => updateVisualRuntimeBindingRequirementQuery({
+      handoffLane: handoffLane.value,
+      offset: 0
+    });
+  }
   const sourceKind = $('runtime-binding-source-kind');
   if (sourceKind) {
     sourceKind.onchange = () => updateVisualRuntimeBindingRequirementQuery({
@@ -7733,6 +7772,7 @@ function attachVisualRuntimeBindingRequirementQueryHandlers(bindingIndex) {
     reset.onclick = () => updateVisualRuntimeBindingRequirementQuery({
       targetKind: '',
       bindingKind: '',
+      handoffLane: '',
       sourceKind: '',
       loweringMode: '',
       readinessState: '',

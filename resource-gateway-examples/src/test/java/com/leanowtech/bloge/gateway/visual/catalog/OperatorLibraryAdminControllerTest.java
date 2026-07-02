@@ -133,6 +133,12 @@ class OperatorLibraryAdminControllerTest {
                         .value("executable-lowering"))
                 .andExpect(jsonPath("$.importReadiness.runtimeBindingRequirements[0].bindingTarget")
                         .value("risk:eligibility"))
+                .andExpect(jsonPath("$.importReadiness.runtimeBindingRequirements[0].handoffLane")
+                        .value("operator-platform"))
+                .andExpect(jsonPath("$.importReadiness.runtimeBindingRequirements[0].handoffKind")
+                        .value("operator-implementation"))
+                .andExpect(jsonPath("$.importReadiness.runtimeBindingRequirements[0].handoffTarget")
+                        .value("risk:eligibility"))
                 .andExpect(jsonPath("$.importReadiness.runtimeBindingRequirements[0].recommendedAction")
                         .value("Bind a native/resource/subgraph lowering before using this operator in EXECUTABLE graphs."));
 
@@ -1687,6 +1693,12 @@ class OperatorLibraryAdminControllerTest {
                 .andExpect(jsonPath("$.importReadiness.runtimeBindingRequirements[0].bindingKind")
                         .value("runtime-adapter"))
                 .andExpect(jsonPath("$.importReadiness.runtimeBindingRequirements[0].bindingTarget")
+                        .value("missingScorePolicy"))
+                .andExpect(jsonPath("$.importReadiness.runtimeBindingRequirements[0].handoffLane")
+                        .value("runtime-platform"))
+                .andExpect(jsonPath("$.importReadiness.runtimeBindingRequirements[0].handoffKind")
+                        .value("runtime-adapter"))
+                .andExpect(jsonPath("$.importReadiness.runtimeBindingRequirements[0].handoffTarget")
                         .value("missingScorePolicy"))
                 .andExpect(jsonPath("$.importReadiness.runtimeBindingRequirements[0].summary")
                         .value("Native lowering points at an executable operatorRef that is not visible in the current runtime inventory."));

@@ -178,6 +178,9 @@ class GraphDraftValidatorTest {
                     assertThat(requirement.operatorRef()).isEqualTo("risk:eligibility");
                     assertThat(requirement.bindingKind()).isEqualTo("executable-lowering");
                     assertThat(requirement.bindingTarget()).isEqualTo("risk:eligibility");
+                    assertThat(requirement.handoffLane()).isEqualTo("operator-platform");
+                    assertThat(requirement.handoffKind()).isEqualTo("operator-implementation");
+                    assertThat(requirement.handoffTarget()).isEqualTo("risk:eligibility");
                     assertThat(requirement.recommendedAction()).contains("EXECUTABLE promotion");
                 });
         assertThat(validResult.readiness().nodes())
@@ -225,6 +228,9 @@ class GraphDraftValidatorTest {
                     assertThat(requirement.operatorRef()).isEqualTo("risk:eligibility");
                     assertThat(requirement.bindingKind()).isEqualTo("remote-worker-runtime");
                     assertThat(requirement.bindingTarget()).isEqualTo("workers.risk.eligibility");
+                    assertThat(requirement.handoffLane()).isEqualTo("worker-runtime");
+                    assertThat(requirement.handoffKind()).isEqualTo("worker-dispatch");
+                    assertThat(requirement.handoffTarget()).isEqualTo("workers.risk.eligibility");
                     assertThat(requirement.sourceKind()).isEqualTo("remote-worker");
                     assertThat(requirement.loweringMode()).isEqualTo("remote-worker");
                 });
@@ -282,6 +288,9 @@ class GraphDraftValidatorTest {
                     assertThat(requirement.operatorRef()).isEqualTo("event:orderSubmitted");
                     assertThat(requirement.bindingKind()).isEqualTo("event-source-runtime");
                     assertThat(requirement.bindingTarget()).isEqualTo("order.submitted");
+                    assertThat(requirement.handoffLane()).isEqualTo("event-runtime");
+                    assertThat(requirement.handoffKind()).isEqualTo("event-subscription");
+                    assertThat(requirement.handoffTarget()).isEqualTo("order.submitted");
                 });
         assertThat(result.readiness().nodes())
                 .singleElement()

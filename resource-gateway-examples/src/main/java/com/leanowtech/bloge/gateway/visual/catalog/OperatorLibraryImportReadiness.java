@@ -397,6 +397,9 @@ public record OperatorLibraryImportReadiness(
      * @param loweringMode requested lowering mode
      * @param bindingKind stable machine-readable binding kind
      * @param bindingTarget topic/tool/channel/path/operator target when declared
+     * @param handoffLane runtime-plane responsibility lane
+     * @param handoffKind runtime-plane work kind
+     * @param handoffTarget runtime-plane routing target
      * @param title short display title
      * @param summary human-readable binding gap summary
      * @param recommendedAction human-readable next action
@@ -410,6 +413,9 @@ public record OperatorLibraryImportReadiness(
             String loweringMode,
             String bindingKind,
             String bindingTarget,
+            String handoffLane,
+            String handoffKind,
+            String handoffTarget,
             String title,
             String summary,
             String recommendedAction
@@ -423,6 +429,9 @@ public record OperatorLibraryImportReadiness(
             loweringMode = normalizeFacetValue(loweringMode);
             bindingKind = normalizeFacetValue(bindingKind);
             bindingTarget = bindingTarget == null ? "" : bindingTarget;
+            handoffLane = normalizeFacetValue(handoffLane);
+            handoffKind = normalizeFacetValue(handoffKind);
+            handoffTarget = handoffTarget == null ? "" : handoffTarget;
             title = title == null ? "" : title;
             summary = summary == null ? "" : summary;
             recommendedAction = recommendedAction == null ? "" : recommendedAction;
@@ -455,6 +464,9 @@ public record OperatorLibraryImportReadiness(
                     requirement.loweringMode(),
                     requirement.bindingKind(),
                     requirement.bindingTarget(),
+                    requirement.handoffLane(),
+                    requirement.handoffKind(),
+                    requirement.handoffTarget(),
                     requirement.title(),
                     requirement.summary(),
                     recommendedAction

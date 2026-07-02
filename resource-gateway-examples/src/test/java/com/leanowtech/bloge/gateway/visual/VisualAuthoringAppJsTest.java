@@ -208,6 +208,7 @@ class VisualAuthoringAppJsTest {
                 .contains("params.set('limit', String(query.limit))")
                 .contains("params.set('targetKind', query.targetKind)")
                 .contains("params.set('bindingKind', query.bindingKind)")
+                .contains("params.set('handoffLane', query.handoffLane)")
                 .contains("params.set('sourceKind', query.sourceKind)")
                 .contains("params.set('loweringMode', query.loweringMode)")
                 .contains("params.set('readinessState', query.readinessState)")
@@ -219,6 +220,7 @@ class VisualAuthoringAppJsTest {
                 .contains("function visualRuntimeBindingRequirementControls(bindingIndex)")
                 .contains("runtime-binding-target-kind")
                 .contains("runtime-binding-kind")
+                .contains("runtime-binding-handoff-lane")
                 .contains("runtime-binding-source-kind")
                 .contains("runtime-binding-lowering-mode")
                 .contains("runtime-binding-readiness-state")
@@ -227,6 +229,7 @@ class VisualAuthoringAppJsTest {
                 .contains("runtime-binding-next")
                 .contains("runtime-binding-reset")
                 .contains("function visualRuntimeBindingRequirementRows(bindingIndex)")
+                .contains("function visualRuntimeBindingRequirementCodeRows(requirements)")
                 .contains("function visualRuntimeBindingRequirementContext(item)")
                 .contains("function openVisualRuntimeBindingRequirement(index, requirementKey = '')")
                 .contains("data-runtime-binding-requirement")
@@ -234,6 +237,7 @@ class VisualAuthoringAppJsTest {
                 .contains("Opened runtime binding requirement:")
                 .contains("No matching runtime binding requirements")
                 .contains("more runtime binding requirements");
+        assertThat(countOccurrences(source, "function visualRuntimeBindingRequirementRows(")).isEqualTo(1);
     }
 
     @Test
@@ -599,6 +603,16 @@ class VisualAuthoringAppJsTest {
                 .getContentAsString(StandardCharsets.UTF_8);
     }
 
+    private static int countOccurrences(String source, String needle) {
+        int count = 0;
+        int index = 0;
+        while ((index = source.indexOf(needle, index)) >= 0) {
+            count++;
+            index += needle.length();
+        }
+        return count;
+    }
+
     private static void assumeNodeAvailable() throws IOException, InterruptedException {
         ProcessResult result;
         try {
@@ -863,6 +877,7 @@ class VisualAuthoringAppJsTest {
                   'visualReadinessPanelSummary',
                   'visualReadinessPanelStats',
                   'visualReadinessActionRows',
+                  'visualRuntimeBindingRequirementCodeRows',
                   'visualReadinessNodeRows',
                   'publicationReadiness',
                   'publicationReadinessStatusText',
@@ -1726,6 +1741,9 @@ class VisualAuthoringAppJsTest {
                       loweringMode: 'design',
                       bindingKind: 'executable-lowering',
                       bindingTarget: 'risk:eligibility',
+                      handoffLane: 'operator-platform',
+                      handoffKind: 'operator-implementation',
+                      handoffTarget: 'risk:eligibility',
                       title: 'Executable lowering required',
                       recommendedAction: 'Bind executable lowering before EXECUTABLE promotion.'
                     }
@@ -2142,6 +2160,9 @@ class VisualAuthoringAppJsTest {
                       loweringMode: 'native',
                       bindingKind: 'runtime-adapter',
                       bindingTarget: 'missingRuntimeBinding',
+                      handoffLane: 'runtime-platform',
+                      handoffKind: 'runtime-adapter',
+                      handoffTarget: 'missingRuntimeBinding',
                       recommendedAction: 'Bind the missing runtime adapter.'
                     }]
                   },
@@ -3291,6 +3312,7 @@ class VisualAuthoringAppJsTest {
                   ['graph readiness normalized state', graphReadiness.state, 'design-only'],
                   ['graph readiness normalized node state', graphReadiness.nodes[0].state, 'design-only'],
                   ['graph readiness binding requirement kind', graphReadiness.runtimeBindingRequirements[0].bindingKind, 'executable-lowering'],
+                  ['graph readiness binding requirement lane', graphReadiness.runtimeBindingRequirements[0].handoffLane, 'operator-platform'],
                   ['graph readiness binding requirement count', String(graphReadiness.runtimeBindingRequirementCount), '1'],
                   ['graph readiness status text', graphReadinessStatusText, 'Design-only graph · 1 executable, 1 design-only · DESIGN artifact'],
                   ['graph readiness panel visible', String(graphReadinessPanel.hidden), 'false'],
@@ -3299,6 +3321,7 @@ class VisualAuthoringAppJsTest {
                   ['graph readiness panel allowed action', String(graphReadinessPanel.innerHTML.includes('Save, export, and publish as DESIGN.')), 'true'],
                   ['graph readiness panel blocked action', String(graphReadinessPanel.innerHTML.includes('Compile, Run, and EXECUTABLE publish require executable runtime binding.')), 'true'],
                   ['graph readiness panel binding row', String(graphReadinessPanel.innerHTML.includes('Executable lowering') && graphReadinessPanel.innerHTML.includes('risk:eligibility')), 'true'],
+                  ['graph readiness panel binding handoff', String(graphReadinessPanel.innerHTML.includes('Operator platform') && graphReadinessPanel.innerHTML.includes('Operator implementation')), 'true'],
                   ['graph readiness panel node row', String(graphReadinessPanel.innerHTML.includes('eligibility') && graphReadinessPanel.innerHTML.includes('Design only')), 'true'],
                   ['publication readiness state', publicationReadiness.state, 'design-only'],
                   ['publication readiness status text', publicationReadinessStatusText, 'Design-only graph · 1 executable, 1 design-only · DESIGN artifact'],
@@ -3395,6 +3418,7 @@ class VisualAuthoringAppJsTest {
                   ['library profile html import binding heading', String(importReadinessProfileHtml.includes('Runtime binding requirements')), 'true'],
                   ['library profile html import binding label', String(importReadinessProfileHtml.includes('Native Binding')), 'true'],
                   ['library profile html import binding target', String(importReadinessProfileHtml.includes('missingRuntimeBinding')), 'true'],
+                  ['library profile html import binding handoff', String(importReadinessProfileHtml.includes('Runtime platform') && importReadinessProfileHtml.includes('Runtime adapter')), 'true'],
                   ['library profile html import binding action', String(importReadinessProfileHtml.includes('Bind the missing runtime adapter.')), 'true'],
                   ['library profile html policy summary', String(libraryProfileHtml.includes('policy tenants demo-tenant; namespaces local; env browser')), 'true'],
                   ['library profile policy-only html summary', String(policyOnlyProfileHtml.includes('policy tenants gold, silver, bronze +1; namespaces lending; env prod')), 'true'],

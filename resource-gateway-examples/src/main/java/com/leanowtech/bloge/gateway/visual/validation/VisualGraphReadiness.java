@@ -203,6 +203,9 @@ public record VisualGraphReadiness(
      * @param loweringMode requested lowering mode
      * @param bindingKind stable machine-readable binding kind
      * @param bindingTarget topic/tool/channel/path/operator target when declared
+     * @param handoffLane runtime-plane responsibility lane
+     * @param handoffKind runtime-plane work kind
+     * @param handoffTarget runtime-plane routing target
      * @param title short display title
      * @param summary human-readable binding gap summary
      * @param recommendedAction human-readable next action
@@ -216,6 +219,9 @@ public record VisualGraphReadiness(
             String loweringMode,
             String bindingKind,
             String bindingTarget,
+            String handoffLane,
+            String handoffKind,
+            String handoffTarget,
             String title,
             String summary,
             String recommendedAction
@@ -229,6 +235,9 @@ public record VisualGraphReadiness(
             loweringMode = normalizeState(loweringMode);
             bindingKind = normalizeState(bindingKind);
             bindingTarget = bindingTarget == null ? "" : bindingTarget;
+            handoffLane = normalizeState(handoffLane);
+            handoffKind = normalizeState(handoffKind);
+            handoffTarget = handoffTarget == null ? "" : handoffTarget;
             title = title == null ? "" : title;
             summary = summary == null ? "" : summary;
             recommendedAction = recommendedAction == null ? "" : recommendedAction;
@@ -258,6 +267,9 @@ public record VisualGraphReadiness(
                     requirement.loweringMode(),
                     requirement.bindingKind(),
                     requirement.bindingTarget(),
+                    requirement.handoffLane(),
+                    requirement.handoffKind(),
+                    requirement.handoffTarget(),
                     requirement.title(),
                     requirement.summary(),
                     nodeRecommendedAction(requirement)

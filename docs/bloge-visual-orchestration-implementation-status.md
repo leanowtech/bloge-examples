@@ -57,7 +57,8 @@ Operator Library / Resource Design Contract
 - Workspace Overview action queue 现在也消费 `runtimeBindingRequirements[]`，把草稿缺口路由为 per-node `PLAN_DRAFT_RUNTIME_BINDING`，把 frozen DESIGN publication 缺口路由为 per-node `PLAN_PUBLICATION_RUNTIME_BINDING`，并把 nodeId/bindingKind/bindingTarget 固化进稳定 `actionKey`，方便外部控制面直接分派 runtime plane 绑定工作。
 - `/api/visual/assets/runtime-binding-requirements` 现在把 active draft 与 immutable publication 的 runtime binding gap 暴露为 `bloge.visualRuntimeBindingRequirements.v1` 查询索引，提供 scope/filter/page/counts 和稳定 `requirementKey`；requirements 仍由 draft/publication readiness 派生，索引本身不保存状态，避免生成第二套会漂移的待办真相源。
 - 浏览器 Workspace Overview 现在同步加载 runtime binding requirement index，展示 Runtime Binding Requirements 小节，支持按 asset/binding/source/lowering/readiness 过滤、分页和打开目标 draft/publication，让 schema-only 设计资产的 runtime-plane 交接在画布工作台里可见。
-- import-time `OperatorLibraryImportReadiness.runtimeBindingRequirements[]` 与 draft/publication `VisualGraphReadiness.runtimeBindingRequirements[]` 现在共用 `VisualRuntimeBindingRequirementPlanner` 派生 operator-level binding kind/target/title/summary；导入入口和图级 readiness 只负责补充各自的 target/node/recommendedAction 语境，避免 schema-only、worker、AI tool、event/message/webhook、streaming/durable 等缺口判断在两条控制面里分叉。
+- import-time `OperatorLibraryImportReadiness.runtimeBindingRequirements[]` 与 draft/publication `VisualGraphReadiness.runtimeBindingRequirements[]` 现在共用 `VisualRuntimeBindingRequirementPlanner` 派生 operator-level binding kind/target/title/summary 以及 `handoffLane` / `handoffKind` / `handoffTarget` 路由元数据；导入入口和图级 readiness 只负责补充各自的 target/node/recommendedAction 语境，避免 schema-only、worker、AI tool、event/message/webhook、streaming/durable 等缺口判断在两条控制面里分叉。
+- `bloge.visualRuntimeBindingRequirements.v1` 与 Workspace Overview runtime-binding action item 现在透传同一组 handoff 元数据，并允许按 `handoffLane` 查询 runtime binding gap；这让外部 runtime-plane 团队可直接按 `operator-platform`、`worker-runtime`、`event-runtime`、`durable-runtime` 等责任面领取缺口，而不必解析自然语言摘要，同时索引仍不保存工单状态。
 
 ## 3. 协议命名现状
 
@@ -70,12 +71,12 @@ Operator Library / Resource Design Contract
 | 未单列 | `bloge.visualOperatorLibraryRevision.v1` | 当前实现新增用户算子库 create/replace/delete/restore 不可变审计快照。 |
 | `bloge.graphDraft.v1` | `bloge.visualGraphDraft.v1` | 当前实现明确这是 visual authoring draft，而不是 BLOGE runtime graph AST。 |
 | 未单列 | `bloge.visualGraphActionReadiness.v1` | 当前实现新增图级动作准入摘要，把 validation/readiness/diagnostics 派生成 compile/run/DESIGN publish/EXECUTABLE publish 的可执行、需复核或阻断状态。 |
-| 未单列 | `bloge.visualGraphReadiness.v1.runtimeBindingRequirements[]` | 当前实现把非执行图的运行时绑定缺口内嵌在 graph readiness 中，按节点暴露 binding kind、target 和 recommended action，作为 runtime binding gap 的唯一事实来源。 |
+| 未单列 | `bloge.visualGraphReadiness.v1.runtimeBindingRequirements[]` | 当前实现把非执行图的运行时绑定缺口内嵌在 graph readiness 中，按节点暴露 binding kind、target、handoff lane/kind/target 和 recommended action，作为 runtime binding gap 的唯一事实来源。 |
 | 未单列 | `GraphDraftHistorySummary` | 当前实现新增 active/deleted draft history index 摘要合同，用于发现 retained history 和 deleted draft recovery 入口。 |
 | 未单列 | `bloge.visualGraphDraftDiff.v1` | 当前实现新增草稿 revision-to-revision 领域 diff，按 graph/node/edge surface 而不是原始 JSON 文本暴露变更。 |
 | 未单列 | `bloge.visualGraphDraftDependencies.v1` | 当前实现新增 stored draft dependency report，用于审阅当前 catalog 依赖、节点 lineage、readiness 分布、fingerprint current/missing/drifted/scope-mismatch 状态和 scope policy violations。 |
 | 未单列 | `bloge.visualAssetOverview.v1` | 当前实现新增环境级资产健康摘要合同，聚合 draft/publication/operator catalog readiness 和 dependency health，让控制面无需拉全量资产 body。 |
-| 未单列 | `bloge.visualRuntimeBindingRequirements.v1` | 当前实现新增 runtime binding gap 查询索引，按 active draft 与 immutable publication 的 readiness requirement 派生可分页、可过滤、可路由的 requirement rows，但不复制或持久化待办状态。 |
+| 未单列 | `bloge.visualRuntimeBindingRequirements.v1` | 当前实现新增 runtime binding gap 查询索引，按 active draft 与 immutable publication 的 readiness requirement 派生可分页、可过滤、可路由的 requirement rows，支持 `handoffLane` 责任面过滤，但不复制或持久化待办状态。 |
 | 未单列 | `GraphDraftRevisionRestoreRequest` | 当前实现新增草稿 revision restore 请求合同，用于把历史 immutable revision 作为内容源恢复成新的 latest revision，并携带 expected revision guard 与审计元数据。 |
 | `bloge.resourceDesignContract.v1` | `ResourceDesignContract` record，目前 schemaVersion 由实现归一化 | 当前 API 以 resourceId 为主键管理设计时合同。 |
 | `bloge.visualDiagnostic.v1` | `VisualDiagnostic` record | 当前诊断以 `level/code/message/target/line/column` 为核心字段，并可携带非敏感 `metadata` 供 impact review 等控制面做机器聚合。 |

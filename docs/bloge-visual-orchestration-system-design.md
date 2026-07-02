@@ -709,9 +709,10 @@ publication / operator counts，避免浏览器或 CI 解析自然语言诊断�
 `lowering.mode=design` 会生成 `executable-lowering`，未解析的 native executable
 operatorRef 会生成 `runtime-adapter`，remote-worker / AI-tool / event-source /
 message-handler / webhook / streaming / durable 会生成对应 runtime binding kind、target
-和 recommendedAction。这样用户刚贴入算子库定义时就能把运行时绑定工作派给 runtime plane，
+和 recommendedAction，并同时生成 `handoffLane`、`handoffKind`、`handoffTarget`
+这组无状态路由元数据。这样用户刚贴入算子库定义时就能把运行时绑定工作派给 runtime plane，
 而不是等图已经被大量草稿引用后才从单个 draft readiness 里反推。
-这些 operator-level binding kind/target/title/summary 与后续
+这些 operator-level binding kind/target/handoff/title/summary 与后续
 `VisualGraphReadiness.runtimeBindingRequirements[]` 共用同一服务端 planner；导入面和图面只附加
 各自的目标上下文，避免同一种未绑定 runtime 在 catalog preflight、draft validate 和
 publication asset overview 中被分类成不同待办。
@@ -727,7 +728,8 @@ draft validate response 现在返回服务端派生的 `bloge.visualGraphReadine
 `draft-repair-required` 图级状态、可发布 artifact kind 和 node-level readiness 摘要。
 对于 schema-valid 但缺运行时实现的节点，`readiness.runtimeBindingRequirements[]`
 会继续把 design-only lowering、remote-worker、AI-tool、event-source、message-handler、
-webhook、streaming 或 durable 需求压成 node-scoped bindingKind/bindingTarget/recommendedAction，
+webhook、streaming 或 durable 需求压成 node-scoped bindingKind/bindingTarget、
+handoffLane/handoffKind/handoffTarget/recommendedAction，
 使 DESIGN 制品后续可以进入 runtime plane 绑定、集成排期或外部治理队列，而不是只留下
 “不能运行”的 UI 文案。
 `actionReadiness` 则表达 `compileNow`、`runNow`、`publishDesignNow`、
@@ -748,7 +750,7 @@ per-node `PLAN_DRAFT_RUNTIME_BINDING` / `PLAN_PUBLICATION_RUNTIME_BINDING` items
 而不是只凭 `design-only` readiness 做粗粒度归类。
 同一事实源还会通过 `GET /api/visual/assets/runtime-binding-requirements` 暴露为
 `bloge.visualRuntimeBindingRequirements.v1`，给外部 runtime-plane 集成团队按
-scope、targetKind、bindingKind、sourceKind、loweringMode 和 readinessState 查询、分页和计数；
+scope、targetKind、bindingKind、handoffLane、sourceKind、loweringMode 和 readinessState 查询、分页和计数；
 这个索引不保存待办状态，避免和 draft/publication readiness 形成第二套真相源。
 浏览器 Workspace Overview 会同步加载这个索引并展示 Runtime Binding Requirements 小节，
 提供同类过滤、分页和 draft/publication 打开动作，让作者和集成团队在画布工作台内看到

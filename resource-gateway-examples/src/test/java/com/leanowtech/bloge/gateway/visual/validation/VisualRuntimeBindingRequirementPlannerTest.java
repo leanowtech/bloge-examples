@@ -26,6 +26,9 @@ class VisualRuntimeBindingRequirementPlannerTest {
                     assertThat(requirement.label()).isEqualTo("Eligibility");
                     assertThat(requirement.bindingKind()).isEqualTo("executable-lowering");
                     assertThat(requirement.bindingTarget()).isEqualTo("risk:eligibility");
+                    assertThat(requirement.handoffLane()).isEqualTo("operator-platform");
+                    assertThat(requirement.handoffKind()).isEqualTo("operator-implementation");
+                    assertThat(requirement.handoffTarget()).isEqualTo("risk:eligibility");
                     assertThat(requirement.sourceKind()).isEqualTo("user-library");
                     assertThat(requirement.loweringMode()).isEqualTo("design");
                 });
@@ -43,6 +46,9 @@ class VisualRuntimeBindingRequirementPlannerTest {
                 .satisfies(requirement -> {
                     assertThat(requirement.bindingKind()).isEqualTo("remote-worker-runtime");
                     assertThat(requirement.bindingTarget()).isEqualTo("workers.risk.eligibility");
+                    assertThat(requirement.handoffLane()).isEqualTo("worker-runtime");
+                    assertThat(requirement.handoffKind()).isEqualTo("worker-dispatch");
+                    assertThat(requirement.handoffTarget()).isEqualTo("workers.risk.eligibility");
                     assertThat(requirement.title()).isEqualTo("Remote worker runtime required");
                 });
     }
@@ -75,6 +81,9 @@ class VisualRuntimeBindingRequirementPlannerTest {
                 .satisfies(requirement -> {
                     assertThat(requirement.bindingKind()).isEqualTo("webhook-ingress-runtime");
                     assertThat(requirement.bindingTarget()).isEqualTo("PUT /hooks/eligibility");
+                    assertThat(requirement.handoffLane()).isEqualTo("ingress-runtime");
+                    assertThat(requirement.handoffKind()).isEqualTo("webhook-ingress");
+                    assertThat(requirement.handoffTarget()).isEqualTo("PUT /hooks/eligibility");
                     assertThat(requirement.sourceKind()).isEqualTo("webhook");
                     assertThat(requirement.loweringMode()).isEqualTo("webhook");
                 });
@@ -103,5 +112,11 @@ class VisualRuntimeBindingRequirementPlannerTest {
         assertThat(requirements)
                 .extracting(VisualRuntimeBindingRequirementPlanner.OperatorRequirement::bindingKind)
                 .containsExactly("streaming-runtime", "durable-runtime");
+        assertThat(requirements)
+                .extracting(VisualRuntimeBindingRequirementPlanner.OperatorRequirement::handoffLane)
+                .containsExactly("streaming-runtime", "durable-runtime");
+        assertThat(requirements)
+                .extracting(VisualRuntimeBindingRequirementPlanner.OperatorRequirement::handoffTarget)
+                .containsExactly("risk:streamingDurableEligibility", "risk:streamingDurableEligibility");
     }
 }
