@@ -1687,6 +1687,10 @@ message handler、webhook、streaming 或 durable capability 暂时不能运行�
 `nodeId/operatorRef/sourceKind/loweringMode/bindingKind/bindingTarget/recommendedAction`，
 让外部控制面或集成团队能把“可设计但不可运行”的状态转成明确的 runtime binding
 待办，而不是解析自然语言 summary。
+`/api/visual/assets/overview` 会继续消费这些 requirement，把 draft 缺口投影为
+`PLAN_DRAFT_RUNTIME_BINDING`，把 frozen DESIGN publication 缺口投影为
+`PLAN_PUBLICATION_RUNTIME_BINDING`，并把 `nodeId/bindingKind/bindingTarget`
+固化进稳定 `actionKey`。
 `actionReadiness` 则把同一批 diagnostics/readiness 压成产品动作门禁：`compileNow`、
 `runNow`、`publishDesignNow`、`publishDesignAfterReview`、`publishExecutableNow`、
 `publishExecutableAfterReview`，以及 `requiresAckWarnings` /
@@ -1698,7 +1702,8 @@ message handler、webhook、streaming 或 durable capability 暂时不能运行�
 `bloge.visualGraphPublicationSummary.v1`，让 `/api/visual/assets/overview`
 这类轻量读模型不用拉取完整 draft/publication body，就能把 warning-gated draft
 路由为 warning acknowledgement，把冻结 warning publication 路由为 evidence review，
-而不是只按 `design-only` readiness 把它们当作普通设计资产跟踪。
+并把 runtime binding gap 路由为节点级 binding plan，而不是只按 `design-only`
+readiness 把它们当作普通设计资产跟踪。
 
 ### 10.5 编译 draft
 

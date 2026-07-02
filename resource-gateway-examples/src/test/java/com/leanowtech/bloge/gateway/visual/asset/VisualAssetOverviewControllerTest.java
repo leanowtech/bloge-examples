@@ -75,20 +75,34 @@ class VisualAssetOverviewControllerTest {
         assertThat(overview.actionQueue().hasMore()).isFalse();
         assertThat(overview.actionQueue().filter().filtered()).isFalse();
         assertThat(overview.actionQueue().actionTypeCounts())
+                .containsEntry("PLAN_DRAFT_RUNTIME_BINDING", 1)
                 .containsEntry("TRACK_DESIGN_DRAFT", 1)
                 .containsEntry("PLAN_PUBLICATION_RUNTIME_BINDING", 1)
                 .containsEntry("TRACK_SCHEMA_ONLY_OPERATOR", 1);
         assertThat(overview.actionQueue().items())
                 .extracting(VisualAssetOverview.ActionItem::actionType)
-                .contains("TRACK_DESIGN_DRAFT", "PLAN_PUBLICATION_RUNTIME_BINDING", "TRACK_SCHEMA_ONLY_OPERATOR");
+                .contains("PLAN_DRAFT_RUNTIME_BINDING",
+                        "TRACK_DESIGN_DRAFT",
+                        "PLAN_PUBLICATION_RUNTIME_BINDING",
+                        "TRACK_SCHEMA_ONLY_OPERATOR");
         assertThat(overview.actionQueue().items())
                 .extracting(VisualAssetOverview.ActionItem::actionKey)
                 .contains(
+                        "PLAN_DRAFT_RUNTIME_BINDING|draft|%s|eligibility|executable-lowering|risk:eligibility|"
+                                .formatted(draft.draftId()),
                         "TRACK_DESIGN_DRAFT|draft|%s|design-only|".formatted(draft.draftId()),
-                        "PLAN_PUBLICATION_RUNTIME_BINDING|publication|%s|design-only|DESIGN"
+                        "PLAN_PUBLICATION_RUNTIME_BINDING|publication|%s|eligibility|executable-lowering|risk:eligibility|DESIGN"
                                 .formatted(publication.publicationId()),
                         "TRACK_SCHEMA_ONLY_OPERATOR|operator|risk:eligibility|design-only|"
                 );
+        assertThat(overview.actionQueue().items())
+                .filteredOn(item -> item.actionType().equals("PLAN_DRAFT_RUNTIME_BINDING"))
+                .singleElement()
+                .satisfies(item -> {
+                    assertThat(item.targetLabel()).contains("eligibility");
+                    assertThat(item.summary()).contains("executable-lowering").contains("risk:eligibility");
+                    assertThat(item.recommendedAction()).contains("EXECUTABLE promotion");
+                });
     }
 
     @Test
@@ -212,6 +226,7 @@ class VisualAssetOverviewControllerTest {
         assertThat(limited.actionQueue().hasMore()).isTrue();
         assertThat(limited.actionQueue().items()).hasSize(1);
         assertThat(limited.actionQueue().actionTypeCounts())
+                .containsEntry("PLAN_DRAFT_RUNTIME_BINDING", 1)
                 .containsEntry("TRACK_DESIGN_DRAFT", 1)
                 .containsEntry("PLAN_PUBLICATION_RUNTIME_BINDING", 1)
                 .containsEntry("TRACK_SCHEMA_ONLY_OPERATOR", 1);

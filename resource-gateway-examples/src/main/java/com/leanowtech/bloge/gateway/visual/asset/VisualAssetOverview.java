@@ -809,18 +809,20 @@ public record VisualAssetOverview(
             ));
         } else if (VisualGraphActionReadiness.RUNTIME_BINDING_REQUIRED.equals(actionState)
                 || "runtime-blocked".equals(state)) {
-            items.add(new ActionItem(
-                    "warning",
-                    "BIND_DRAFT_RUNTIME",
-                    "draft",
-                    draft.draftId(),
-                    label,
-                    state,
-                    "",
-                    "Draft is schema-valid but blocked by runtime capability or binding gaps.",
-                    actionRecommendation(actionReadiness,
-                            "Bind executable runtime implementations or publish as a DESIGN artifact for review.")
-            ));
+            if (!addDraftRuntimeBindingActions(items, draft, label, state, actionReadiness, "warning")) {
+                items.add(new ActionItem(
+                        "warning",
+                        "BIND_DRAFT_RUNTIME",
+                        "draft",
+                        draft.draftId(),
+                        label,
+                        state,
+                        "",
+                        "Draft is schema-valid but blocked by runtime capability or binding gaps.",
+                        actionRecommendation(actionReadiness,
+                                "Bind executable runtime implementations or publish as a DESIGN artifact for review.")
+                ));
+            }
         } else if (VisualGraphActionReadiness.GOVERNANCE_REVIEW_REQUIRED.equals(actionState)
                 || "governance-review".equals(state)) {
             items.add(new ActionItem(
@@ -850,6 +852,7 @@ public record VisualAssetOverview(
                             "Publish with ackWarnings=true plus actor and reason after reviewing diagnostics.")
             ));
         } else if ("design-only".equals(state)) {
+            addDraftRuntimeBindingActions(items, draft, label, state, actionReadiness, "info");
             items.add(new ActionItem(
                     "info",
                     "TRACK_DESIGN_DRAFT",
@@ -906,17 +909,19 @@ public record VisualAssetOverview(
             ));
         } else if (VisualGraphActionReadiness.RUNTIME_BINDING_REQUIRED.equals(actionState)
                 || "runtime-blocked".equals(state)) {
-            items.add(new ActionItem(
-                    "warning",
-                    "BIND_PUBLICATION_RUNTIME",
-                    "publication",
-                    publication.publicationId(),
-                    label,
-                    state,
-                    artifactKind,
-                    "Publication is not executable in the current runtime.",
-                    "Bind runtime implementations, republish as EXECUTABLE, then certify."
-            ));
+            if (!addPublicationRuntimeBindingActions(items, publication, label, state, artifactKind, "warning")) {
+                items.add(new ActionItem(
+                        "warning",
+                        "BIND_PUBLICATION_RUNTIME",
+                        "publication",
+                        publication.publicationId(),
+                        label,
+                        state,
+                        artifactKind,
+                        "Publication is not executable in the current runtime.",
+                        "Bind runtime implementations, republish as EXECUTABLE, then certify."
+                ));
+            }
         } else if (VisualGraphActionReadiness.GOVERNANCE_REVIEW_REQUIRED.equals(actionState)
                 || "governance-review".equals(state)) {
             items.add(new ActionItem(
@@ -944,18 +949,79 @@ public record VisualAssetOverview(
                     "Review frozen actor/reason acknowledgement, diagnostics, and certification before promotion."
             ));
         } else if (VisualGraphPublication.ARTIFACT_DESIGN.equals(artifactKind) || "design-only".equals(state)) {
+            if (!addPublicationRuntimeBindingActions(items, publication, label, state, artifactKind, "info")) {
+                items.add(new ActionItem(
+                        "info",
+                        "PLAN_PUBLICATION_RUNTIME_BINDING",
+                        "publication",
+                        publication.publicationId(),
+                        label,
+                        state,
+                        artifactKind,
+                        "Publication is a non-executable design artifact.",
+                        "Use it for design review, or bind runtime implementations and republish later."
+                ));
+            }
+        }
+    }
+
+    private static boolean addDraftRuntimeBindingActions(List<ActionItem> items,
+                                                        GraphDraftSummary draft,
+                                                        String label,
+                                                        String readinessState,
+                                                        VisualGraphActionReadiness actionReadiness,
+                                                        String severity) {
+        List<VisualGraphReadiness.RuntimeBindingRequirement> requirements =
+                runtimeBindingRequirements(draft == null ? null : draft.readiness());
+        if (requirements.isEmpty()) {
+            return false;
+        }
+        for (VisualGraphReadiness.RuntimeBindingRequirement requirement : requirements) {
             items.add(new ActionItem(
-                    "info",
+                    runtimeBindingActionKey("PLAN_DRAFT_RUNTIME_BINDING", "draft", draft.draftId(), requirement, ""),
+                    severity,
+                    "PLAN_DRAFT_RUNTIME_BINDING",
+                    "draft",
+                    draft.draftId(),
+                    runtimeBindingTargetLabel(label, requirement),
+                    readinessState,
+                    "",
+                    runtimeBindingSummary("Draft", requirement),
+                    runtimeBindingRecommendation(requirement, actionReadiness,
+                            "Bind executable runtime implementations or keep this draft in DESIGN review.")
+            ));
+        }
+        return true;
+    }
+
+    private static boolean addPublicationRuntimeBindingActions(List<ActionItem> items,
+                                                              VisualGraphPublicationSummary publication,
+                                                              String label,
+                                                              String readinessState,
+                                                              String artifactKind,
+                                                              String severity) {
+        List<VisualGraphReadiness.RuntimeBindingRequirement> requirements =
+                runtimeBindingRequirements(publication == null ? null : publication.readiness());
+        if (requirements.isEmpty()) {
+            return false;
+        }
+        for (VisualGraphReadiness.RuntimeBindingRequirement requirement : requirements) {
+            items.add(new ActionItem(
+                    runtimeBindingActionKey("PLAN_PUBLICATION_RUNTIME_BINDING", "publication",
+                            publication.publicationId(), requirement, artifactKind),
+                    severity,
                     "PLAN_PUBLICATION_RUNTIME_BINDING",
                     "publication",
                     publication.publicationId(),
-                    label,
-                    state,
+                    runtimeBindingTargetLabel(label, requirement),
+                    readinessState,
                     artifactKind,
-                    "Publication is a non-executable design artifact.",
-                    "Use it for design review, or bind runtime implementations and republish later."
+                    runtimeBindingSummary("Publication", requirement),
+                    runtimeBindingRecommendation(requirement, null,
+                            "Bind runtime implementations, republish as EXECUTABLE, then certify.")
             ));
         }
+        return true;
     }
 
     private static void addCatalogAction(List<ActionItem> items, OperatorDefinition operator) {
@@ -1018,6 +1084,65 @@ public record VisualAssetOverview(
                 // Runtime-executable operators do not need a control-plane action.
             }
         }
+    }
+
+    private static List<VisualGraphReadiness.RuntimeBindingRequirement> runtimeBindingRequirements(
+            VisualGraphReadiness readiness) {
+        if (readiness == null || readiness.runtimeBindingRequirements() == null) {
+            return List.of();
+        }
+        return readiness.runtimeBindingRequirements().stream()
+                .filter(requirement -> requirement != null)
+                .toList();
+    }
+
+    private static String runtimeBindingActionKey(String actionType,
+                                                  String targetKind,
+                                                  String targetId,
+                                                  VisualGraphReadiness.RuntimeBindingRequirement requirement,
+                                                  String artifactKind) {
+        return String.join("|",
+                actionType,
+                targetKind,
+                targetId == null ? "" : targetId,
+                requirement == null ? "" : requirement.nodeId(),
+                requirement == null ? "" : requirement.bindingKind(),
+                requirement == null ? "" : requirement.bindingTarget(),
+                artifactKind == null ? "" : artifactKind
+        );
+    }
+
+    private static String runtimeBindingTargetLabel(String assetLabel,
+                                                    VisualGraphReadiness.RuntimeBindingRequirement requirement) {
+        if (requirement == null || requirement.nodeId().isBlank()) {
+            return assetLabel;
+        }
+        return "%s / %s".formatted(assetLabel, requirement.nodeId());
+    }
+
+    private static String runtimeBindingSummary(String assetKind,
+                                                VisualGraphReadiness.RuntimeBindingRequirement requirement) {
+        if (requirement == null) {
+            return "%s has a runtime binding gap before executable promotion.".formatted(assetKind);
+        }
+        String target = requirement.bindingTarget().isBlank()
+                ? ""
+                : " target '%s'".formatted(requirement.bindingTarget());
+        return "%s node '%s' needs %s%s before EXECUTABLE promotion.".formatted(
+                assetKind,
+                requirement.nodeId().isBlank() ? requirement.operatorRef() : requirement.nodeId(),
+                requirement.bindingKind().isBlank() ? "runtime binding" : requirement.bindingKind(),
+                target
+        );
+    }
+
+    private static String runtimeBindingRecommendation(VisualGraphReadiness.RuntimeBindingRequirement requirement,
+                                                       VisualGraphActionReadiness actionReadiness,
+                                                       String fallback) {
+        if (requirement != null && !requirement.recommendedAction().isBlank()) {
+            return requirement.recommendedAction();
+        }
+        return actionRecommendation(actionReadiness, fallback);
     }
 
     private static void mergeNormalized(Map<String, Integer> target, Map<String, Integer> source) {
