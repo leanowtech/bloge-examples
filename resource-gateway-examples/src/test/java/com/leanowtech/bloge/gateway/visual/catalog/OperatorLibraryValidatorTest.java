@@ -682,9 +682,91 @@ class OperatorLibraryValidatorTest {
         assertThat(result.diagnostics())
                 .anySatisfy(diagnostic -> {
                     assertThat(diagnostic.code()).isEqualTo("visual.operator.source.kind.unsupported");
-                    assertThat(diagnostic.message()).contains("use 'user-library'");
+                    assertThat(diagnostic.message()).contains("supported source kinds");
                     assertThat(diagnostic.target()).isEqualTo("/operators/0/source/kind");
                 });
+    }
+
+    @Test
+    void acceptsRemoteWorkerAndAiToolImportedSourceKindsAsRuntimeBlockedBindings() {
+        VisualValidationResult remoteResult = validator.validate(
+                VisualCatalogTestSupport.remoteWorkerEligibilityLibrary("integer"));
+        VisualValidationResult aiResult = validator.validate(VisualCatalogTestSupport.aiToolSummaryLibrary());
+        OperatorDefinition remoteWorker = VisualCatalogTestSupport.remoteWorkerEligibilityOperator("integer");
+        OperatorDefinition aiTool = VisualCatalogTestSupport.aiToolSummaryOperator();
+
+        assertThat(remoteResult.valid()).as(remoteResult.diagnostics().toString()).isTrue();
+        assertThat(aiResult.valid()).as(aiResult.diagnostics().toString()).isTrue();
+        assertThat(remoteWorker.source().kind()).isEqualTo("remote-worker");
+        assertThat(remoteWorker.lowering().mode()).isEqualTo("remote-worker");
+        assertThat(remoteWorker.runtimeReadiness().state()).isEqualTo("RUNTIME_BLOCKED");
+        assertThat(remoteWorker.runtimeReadiness().executable()).isFalse();
+        assertThat(aiTool.source().kind()).isEqualTo("ai-tool");
+        assertThat(aiTool.lowering().mode()).isEqualTo("ai-tool");
+        assertThat(aiTool.runtimeReadiness().state()).isEqualTo("RUNTIME_BLOCKED");
+        assertThat(aiTool.runtimeReadiness().executable()).isFalse();
+    }
+
+    @Test
+    void rejectsRuntimeBindingLoweringWithoutRequiredSourceKindAndBindingParameter() {
+        OperatorDefinition base = VisualCatalogTestSupport.eligibilityOperator("integer");
+        OperatorDefinition operator = new OperatorDefinition(
+                base.schemaVersion(),
+                base.operatorRef(),
+                base.operatorVersion(),
+                base.display(),
+                base.source(),
+                base.ports(),
+                base.configSchema(),
+                base.capabilities(),
+                base.policy(),
+                new OperatorDefinition.Lowering("remote-worker", "riskWorker", Map.of()),
+                base.diagnostics()
+        );
+
+        VisualValidationResult result = validator.validate(libraryWith(operator));
+
+        assertThat(result.valid()).isFalse();
+        assertThat(result.diagnostics())
+                .extracting("code", "target")
+                .contains(
+                        org.assertj.core.groups.Tuple.tuple(
+                                "visual.operator.lowering.sourceKindMismatch",
+                                "/operators/0/source/kind"),
+                        org.assertj.core.groups.Tuple.tuple(
+                                "visual.operator.lowering.runtimeOperatorRefUnsupported",
+                                "/operators/0/lowering/operatorRef"),
+                        org.assertj.core.groups.Tuple.tuple(
+                                "visual.operator.lowering.parameter.required",
+                                "/operators/0/lowering/parameters/workerTopic")
+                );
+    }
+
+    @Test
+    void rejectsRuntimeBindingSourceKindWithDifferentLoweringMode() {
+        OperatorDefinition base = VisualCatalogTestSupport.eligibilityOperator("integer");
+        OperatorDefinition operator = new OperatorDefinition(
+                base.schemaVersion(),
+                base.operatorRef(),
+                base.operatorVersion(),
+                base.display(),
+                new OperatorDefinition.Source("remote-worker", "", "", "", false),
+                base.ports(),
+                base.configSchema(),
+                base.capabilities(),
+                base.policy(),
+                new OperatorDefinition.Lowering("native", "riskWorker", Map.of()),
+                base.diagnostics()
+        );
+
+        VisualValidationResult result = validator.validate(libraryWith(operator));
+
+        assertThat(result.valid()).isFalse();
+        assertThat(result.diagnostics())
+                .extracting("code", "target")
+                .contains(org.assertj.core.groups.Tuple.tuple(
+                        "visual.operator.source.loweringModeMismatch",
+                        "/operators/0/source/kind"));
     }
 
     @Test
@@ -3141,7 +3223,7 @@ class OperatorLibraryValidatorTest {
                                 new OperatorDefinition.Port("output", SchemaEnvelope.object(Map.of(), List.of()),
                                         true, "Second output."))
                 ),
-                "ai-tool"
+                "partner-runtime"
         ));
 
         VisualValidationResult result = validator.validate(library);

@@ -298,7 +298,7 @@ MVP schema kind：
 | `operatorVersion` | 否 | 用户导入 catalog 时必须建议填写 |
 | `fingerprint` | 发布时是 | 可由服务端计算 |
 | `display` | 是 | 画布展示所需 |
-| `source.kind` | 是 | 当前实现支持 `java-operator`、`java-streaming-operator`、`java-suspendable-operator`、`resource-descriptor`、`visual-publication`、`user-library`；平台化草案继续预留 `subgraph`、`remote-worker`、`ai-tool` |
+| `source.kind` | 是 | 当前实现支持 `java-operator`、`java-streaming-operator`、`java-suspendable-operator`、`resource-descriptor`、`visual-publication`、`user-library`、`remote-worker`、`ai-tool`；平台化草案继续预留 `subgraph` |
 | `ports.inputs` | 是 | 至少一个输入端口，常规算子为 `input` |
 | `ports.outputs` | 是 | 至少一个输出端口，常规算子为 `output` |
 | `configSchema` | 否 | timeout/retry/fallback 之外的算子配置；导入时必须校验 schema 结构，draft 校验时必须约束 `node.config` |
@@ -316,11 +316,18 @@ MVP schema kind：
 | `java-suspendable-operator` | 是 | 可省略 | `operatorRef` 对应 runtime suspendable operator；catalog 标记 `durable=true`，当前 request-response visual runtime 会在 draft validation 阶段阻断使用，完整 suspend/resume authoring 属后续阶段 |
 | `resource-descriptor` | 否 | 必填 | lower 到 `httpResource` |
 | `visual-publication` | 否 | 必填 | lower 到 frozen visual publication executor |
-| `user-library` | 取决于 lowering | 必填 | 用户导入算子库使用的唯一可写 source kind；系统 source kind 不能由用户库伪造 |
+| `user-library` | 取决于 lowering | 必填 | 用户导入的普通 schema/transform/branch/native/design 算子；系统 source kind 不能由用户库伪造 |
 | `subgraph` | 否 | 必填 | lower 到 subgraph 调用或 inline graph |
-| `remote-worker` | 视 runtime 而定 | 通常必填 | durable 场景更合适 |
-| `ai-tool` | 视 runtime 而定 | 通常必填 | 必须有 structured output schema |
+| `remote-worker` | 当前 request-response runtime 不可执行 | 必填 | 用户库可写 source kind；`lowering.mode=remote-worker`、`lowering.operatorRef` 为空、`lowering.parameters.workerTopic` 必填；validate/save/export/design publication 允许，compile/run/executable publish 以 runtime-blocked 阻断 |
+| `ai-tool` | 当前 request-response runtime 不可执行 | 必填 | 用户库可写 source kind；`lowering.mode=ai-tool`、`lowering.operatorRef` 为空、`lowering.parameters.toolRef` 必填；必须声明 structured output schema；当前只能冻结 DESIGN artifact |
 | `user-defined` | 否 | 必填 | 仅 catalog 定义，不能凭空执行 |
+
+`remote-worker` 和 `ai-tool` 不是 `design` 的别名。`design` 表示没有 runtime
+binding；`remote-worker` / `ai-tool` 表示 source/lowering 中已经声明未来执行边界，
+但当前 resource-gateway request-response visual runtime 还不能调度 worker job 或调用
+AI tool。服务端因此派生 `runtimeReadiness.state=RUNTIME_BLOCKED`、
+`executable=false`、`artifactKinds=["DESIGN"]`，并在 DSL generation 阶段返回
+`visual.codegen.runtimeBindingUnsupported`，避免画布把尚未接入的运行时伪装成可执行图。
 
 ### 5.4 capabilities
 
@@ -943,8 +950,8 @@ GET /api/visual/operators?search=score&tenantId=demo-tenant&namespace=local&envi
 | `resourceOnly` | 只返回 resource-backed virtual operators |
 | `includeDeprecated` | 包含 deprecated library/resource contract；disabled 仍不进入公开 catalog |
 | `tenantId` / `namespace` / `environment` | authoring scope policy filtering |
-| `sourceKind` | 可重复；例如 `user-library`、`resource-descriptor`、`java-operator`、`java-streaming-operator`、`java-suspendable-operator`、`visual-publication` |
-| `loweringMode` | 可重复；例如 `native`、`transform`、`branch`、`resource-descriptor`、`design` |
+| `sourceKind` | 可重复；例如 `user-library`、`remote-worker`、`ai-tool`、`resource-descriptor`、`java-operator`、`java-streaming-operator`、`java-suspendable-operator`、`visual-publication` |
+| `loweringMode` | 可重复；例如 `native`、`transform`、`branch`、`resource-descriptor`、`design`、`remote-worker`、`ai-tool` |
 | `capability` | 可重复；例如 `design-only`、`runtime-executable`、`streaming`、`durable`、`suspendable`、`requires-secret`、`external-effect`、`non-idempotent` |
 | `runtimeReadiness` | 可重复；按服务端派生 readiness state 过滤，例如 `runtime-executable`、`design-only`、`runtime-blocked`、`governance-review`、`catalog-repair-required` |
 

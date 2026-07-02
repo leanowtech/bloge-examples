@@ -100,6 +100,13 @@ public class GraphDraftDslGenerator {
                         "/nodes/" + node.id() + "/operatorRef"));
                 continue;
             }
+            if (runtimeBindingBlocked(operator.get())) {
+                diagnostics.add(VisualDiagnostic.error("visual.codegen.runtimeBindingUnsupported",
+                        "Operator '%s' on node '%s' declares lowering.mode=%s; it can be authored and frozen as a DESIGN artifact, but this request-response visual runtime cannot execute that binding yet."
+                                .formatted(operator.get().operatorRef(), node.id(), operator.get().lowering().mode()),
+                        "/nodes/" + node.id() + "/operatorRef"));
+                continue;
+            }
             String block = nodeToDsl(node, operator.get(), nodesById,
                     dependencyEdges.getOrDefault(node.id(), List.of()),
                     routeEdges.getOrDefault(node.id(), List.of()),
@@ -111,6 +118,11 @@ public class GraphDraftDslGenerator {
         dsl.append("}");
         return new DslGenerationResult(diagnostics.stream().noneMatch(VisualDiagnostic::error),
                 dsl.toString(), diagnostics);
+    }
+
+    private static boolean runtimeBindingBlocked(OperatorDefinition operator) {
+        return operator != null && (Set.of("remote-worker", "ai-tool").contains(operator.source().kind())
+                || Set.of("remote-worker", "ai-tool").contains(operator.lowering().mode()));
     }
 
     private String nodeToDsl(GraphDraft.DraftNode node,

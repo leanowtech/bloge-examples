@@ -58,7 +58,14 @@ public class OperatorLibraryValidator {
     private static final Set<String> SUPPORTED_OPERATOR_SCHEMA_VERSIONS = Set.of(
             "bloge.visualOperator.v1"
     );
-    private static final Set<String> SUPPORTED_LOWERING_MODES = Set.of("native", "transform", "branch", "design");
+    private static final Set<String> SUPPORTED_LOWERING_MODES = Set.of(
+            "native",
+            "transform",
+            "branch",
+            "design",
+            "remote-worker",
+            "ai-tool"
+    );
     private static final Set<String> SUPPORTED_CAPABILITY_EFFECTS = Set.of(
             "PURE",
             "EXTERNAL",
@@ -79,7 +86,9 @@ public class OperatorLibraryValidator {
             "java-suspendable-operator"
     );
     private static final Set<String> SUPPORTED_IMPORTED_SOURCE_KINDS = Set.of(
-            "user-library"
+            "user-library",
+            "remote-worker",
+            "ai-tool"
     );
     private static final Set<String> EXECUTION_CONFIG_KEYS = Set.of("timeout", "retryAttempts");
     private static final Set<String> RESERVED_DSL_FIELD_NAMES = Set.of(
@@ -226,7 +235,7 @@ public class OperatorLibraryValidator {
         }
         validatePorts(operator, "inputs", operator.ports().inputs(), path + "/ports/inputs", diagnostics);
         validatePorts(operator, "outputs", operator.ports().outputs(), path + "/ports/outputs", diagnostics);
-        if (!"design".equals(operator.lowering().mode())) {
+        if (requiresExecutableDslSafeFields(operator.lowering().mode())) {
             validateInputDslFieldNames(operator, path, diagnostics);
             validateOutputDslFieldNames(operator, path, diagnostics);
         }
@@ -264,10 +273,23 @@ public class OperatorLibraryValidator {
         }
         if (!SUPPORTED_IMPORTED_SOURCE_KINDS.contains(operator.source().kind())) {
             diagnostics.add(VisualDiagnostic.error("visual.operator.source.kind.unsupported",
-                    "Operator '%s' source kind '%s' is unsupported for imported operator libraries; use 'user-library'."
-                            .formatted(operator.operatorRef(), operator.source().kind()),
+                    "Operator '%s' source kind '%s' is unsupported for imported operator libraries; supported source kinds are %s."
+                            .formatted(operator.operatorRef(), operator.source().kind(),
+                                    SUPPORTED_IMPORTED_SOURCE_KINDS),
                     path + "/kind"));
         }
+        if (Set.of("remote-worker", "ai-tool").contains(operator.source().kind())
+                && !operator.source().kind().equals(operator.lowering().mode())) {
+            diagnostics.add(VisualDiagnostic.error("visual.operator.source.loweringModeMismatch",
+                    "Operator '%s' uses source.kind='%s' but lowering.mode is '%s'; runtime-binding source kinds must use the matching lowering mode."
+                            .formatted(operator.operatorRef(), operator.source().kind(),
+                                    operator.lowering().mode()),
+                    path + "/kind"));
+        }
+    }
+
+    private static boolean requiresExecutableDslSafeFields(String loweringMode) {
+        return !Set.of("design", "remote-worker", "ai-tool").contains(loweringMode);
     }
 
     private static void validateCapabilities(OperatorDefinition operator,
@@ -437,6 +459,14 @@ public class OperatorLibraryValidator {
             validateDesignLowering(operator, path, diagnostics);
             return;
         }
+        if ("remote-worker".equals(mode)) {
+            validateRemoteWorkerLowering(operator, path, diagnostics);
+            return;
+        }
+        if ("ai-tool".equals(mode)) {
+            validateAiToolLowering(operator, path, diagnostics);
+            return;
+        }
         validateTransformLowering(operator, path, diagnostics);
     }
 
@@ -449,6 +479,64 @@ public class OperatorLibraryValidator {
                             .formatted(operator.operatorRef()),
                     path + "/operatorRef"));
         }
+    }
+
+    private static void validateRemoteWorkerLowering(OperatorDefinition operator,
+                                                     String path,
+                                                     List<VisualDiagnostic> diagnostics) {
+        validateRuntimeBindingSourceKind(operator, path, "remote-worker", diagnostics);
+        validateRuntimeBindingOperatorRefBlank(operator, path, "remote worker", diagnostics);
+        validateRequiredStringParameter(operator, path, "workerTopic", "remote worker topic", diagnostics);
+    }
+
+    private static void validateAiToolLowering(OperatorDefinition operator,
+                                               String path,
+                                               List<VisualDiagnostic> diagnostics) {
+        validateRuntimeBindingSourceKind(operator, path, "ai-tool", diagnostics);
+        validateRuntimeBindingOperatorRefBlank(operator, path, "AI tool", diagnostics);
+        validateRequiredStringParameter(operator, path, "toolRef", "AI tool reference", diagnostics);
+    }
+
+    private static void validateRuntimeBindingSourceKind(OperatorDefinition operator,
+                                                         String path,
+                                                         String expectedSourceKind,
+                                                         List<VisualDiagnostic> diagnostics) {
+        if (expectedSourceKind.equals(operator.source().kind())) {
+            return;
+        }
+        diagnostics.add(VisualDiagnostic.error("visual.operator.lowering.sourceKindMismatch",
+                "Operator '%s' uses lowering.mode=%s but source.kind is '%s'; use source.kind='%s' so catalog facets and readiness are auditable."
+                        .formatted(operator.operatorRef(), expectedSourceKind, operator.source().kind(),
+                                expectedSourceKind),
+                operatorPath(path) + "/source/kind"));
+    }
+
+    private static void validateRuntimeBindingOperatorRefBlank(OperatorDefinition operator,
+                                                               String path,
+                                                               String bindingLabel,
+                                                               List<VisualDiagnostic> diagnostics) {
+        if (operator.lowering().operatorRef().isBlank()) {
+            return;
+        }
+        diagnostics.add(VisualDiagnostic.error("visual.operator.lowering.runtimeOperatorRefUnsupported",
+                "Operator '%s' declares %s lowering; lowering.operatorRef must stay blank because this binding is not an executable BLOGE operator in the current runtime."
+                        .formatted(operator.operatorRef(), bindingLabel),
+                path + "/operatorRef"));
+    }
+
+    private static void validateRequiredStringParameter(OperatorDefinition operator,
+                                                       String path,
+                                                       String parameterName,
+                                                       String label,
+                                                       List<VisualDiagnostic> diagnostics) {
+        Object value = operator.lowering().parameters().get(parameterName);
+        if (value instanceof String string && !string.isBlank()) {
+            return;
+        }
+        diagnostics.add(VisualDiagnostic.error("visual.operator.lowering.parameter.required",
+                "Operator '%s' must declare non-empty lowering.parameters.%s for its %s binding."
+                        .formatted(operator.operatorRef(), parameterName, label),
+                path + "/parameters/" + parameterName));
     }
 
     private static void validateNativeLowering(OperatorDefinition operator,

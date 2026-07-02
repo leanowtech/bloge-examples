@@ -197,6 +197,85 @@ public final class VisualCatalogTestSupport {
         );
     }
 
+    public static OperatorDefinition remoteWorkerEligibilityOperator(String scoreType) {
+        OperatorDefinition base = eligibilityOperator(scoreType);
+        return new OperatorDefinition(
+                base.schemaVersion(),
+                base.operatorRef(),
+                base.operatorVersion(),
+                new OperatorDefinition.Display("Remote eligibility",
+                        "Evaluates eligibility through a remote worker binding.",
+                        List.of("risk", "policy", "worker")),
+                new OperatorDefinition.Source("remote-worker", "", "", "", false),
+                base.ports(),
+                base.configSchema(),
+                base.capabilities(),
+                base.policy(),
+                new OperatorDefinition.Lowering("remote-worker", "", Map.of(
+                        "workerTopic", "workers.risk.eligibility"
+                )),
+                base.diagnostics()
+        );
+    }
+
+    public static OperatorLibrary remoteWorkerEligibilityLibrary(String scoreType) {
+        return new OperatorLibrary(
+                "bloge.visualOperatorLibrary.v1",
+                "risk-policy-worker",
+                "Risk policy remote worker operators",
+                "1.0.0",
+                "risk-team",
+                "ACTIVE",
+                List.of(remoteWorkerEligibilityOperator(scoreType))
+        );
+    }
+
+    public static OperatorDefinition aiToolSummaryOperator() {
+        return new OperatorDefinition(
+                "bloge.visualOperator.v1",
+                "risk:aiSummary",
+                "1.0.0",
+                new OperatorDefinition.Display("AI risk summary",
+                        "Summarizes risk facts through an AI tool binding.",
+                        List.of("risk", "ai")),
+                new OperatorDefinition.Source("ai-tool", "", "", "", false),
+                new OperatorDefinition.Ports(
+                        List.of(new OperatorDefinition.Port("facts",
+                                SchemaEnvelope.object(Map.of(
+                                        "score", Map.of("type", "integer"),
+                                        "amount", Map.of("type", "number")
+                                ), List.of("score", "amount")),
+                                true,
+                                "Risk facts.")),
+                        List.of(new OperatorDefinition.Port("output",
+                                SchemaEnvelope.object(Map.of(
+                                        "summary", Map.of("type", "string"),
+                                        "riskLevel", Map.of("type", "string")
+                                ), List.of("summary")),
+                                true,
+                                "Structured AI summary."))
+                ),
+                SchemaEnvelope.opaque(),
+                OperatorDefinition.Capabilities.pure(),
+                new OperatorDefinition.Lowering("ai-tool", "", Map.of(
+                        "toolRef", "ai:risk-summary"
+                )),
+                List.of()
+        );
+    }
+
+    public static OperatorLibrary aiToolSummaryLibrary() {
+        return new OperatorLibrary(
+                "bloge.visualOperatorLibrary.v1",
+                "risk-ai-tools",
+                "Risk AI tool operators",
+                "1.0.0",
+                "risk-team",
+                "ACTIVE",
+                List.of(aiToolSummaryOperator())
+        );
+    }
+
     public static OperatorDefinition scoreFactsOperator() {
         Map<String, Object> summaryProperties = new LinkedHashMap<>();
         summaryProperties.put("band", Map.of("type", "string"));

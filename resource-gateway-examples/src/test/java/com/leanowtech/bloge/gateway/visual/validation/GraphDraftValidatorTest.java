@@ -190,6 +190,34 @@ class GraphDraftValidatorTest {
     }
 
     @Test
+    void acceptsRemoteWorkerOperatorsAsSchemaValidRuntimeBlockedDesignArtifacts() {
+        GraphDraftValidator validator = new GraphDraftValidator(
+                VisualCatalogTestSupport.catalogWithLibrary(
+                        VisualCatalogTestSupport.remoteWorkerEligibilityLibrary("integer")));
+        GraphDraft draft = contextEligibilityDraft(null, Map.of(
+                "score", GraphDraft.Binding.constant(720),
+                "amount", GraphDraft.Binding.constant(1000)
+        ));
+
+        VisualValidationResult result = validator.validate(draft);
+
+        assertThat(result.valid()).as(result.diagnostics().toString()).isTrue();
+        assertThat(result.diagnostics()).isEmpty();
+        assertThat(result.readiness().state()).isEqualTo("runtime-blocked");
+        assertThat(result.readiness().executable()).isFalse();
+        assertThat(result.readiness().artifactKinds()).containsExactly("DESIGN");
+        assertThat(result.readiness().runtimeBlockedNodeCount()).isEqualTo(1);
+        assertThat(result.readiness().nodes())
+                .singleElement()
+                .satisfies(node -> {
+                    assertThat(node.nodeId()).isEqualTo("eligibility");
+                    assertThat(node.operatorRef()).isEqualTo("risk:eligibility");
+                    assertThat(node.state()).isEqualTo("runtime-blocked");
+                    assertThat(node.title()).isEqualTo("Remote worker runtime blocked");
+                });
+    }
+
+    @Test
     void rejectsDraftIdentifiersThatCannotRenderAsDslIdentifiers() {
         GraphDraftValidator validator = new GraphDraftValidator(
                 VisualCatalogTestSupport.catalogWithLibrary(

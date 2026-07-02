@@ -423,6 +423,32 @@ public record OperatorDefinition(
                         details
                 );
             }
+            if ("remote-worker".equals(sourceKind) || "remote-worker".equals(loweringMode)) {
+                details.add(new ReadinessDetail("Execution", "Remote worker dispatch is not enabled"));
+                details.add(new ReadinessDetail("Publish", "DESIGN artifact only until a worker runtime is bound"));
+                return new RuntimeReadiness(
+                        "RUNTIME_BLOCKED",
+                        "warning",
+                        false,
+                        List.of("DESIGN"),
+                        "Remote worker runtime blocked",
+                        "The operator declares a remote worker binding, but this request-response visual runtime cannot dispatch worker jobs yet.",
+                        details
+                );
+            }
+            if ("ai-tool".equals(sourceKind) || "ai-tool".equals(loweringMode)) {
+                details.add(new ReadinessDetail("Execution", "AI tool invocation runtime is not enabled"));
+                details.add(new ReadinessDetail("Publish", "DESIGN artifact only until an AI tool runtime is bound"));
+                return new RuntimeReadiness(
+                        "RUNTIME_BLOCKED",
+                        "warning",
+                        false,
+                        List.of("DESIGN"),
+                        "AI tool runtime blocked",
+                        "The operator declares an AI tool binding, but this request-response visual runtime cannot invoke AI tools yet.",
+                        details
+                );
+            }
             if (streaming || durable) {
                 String blockers = String.join(" + ", List.of(
                                 streaming ? "streaming runtime" : "",

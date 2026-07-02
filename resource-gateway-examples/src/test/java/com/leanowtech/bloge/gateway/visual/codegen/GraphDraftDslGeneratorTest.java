@@ -204,6 +204,51 @@ class GraphDraftDslGeneratorTest {
     }
 
     @Test
+    void blocksRemoteWorkerOperatorsDuringDslGeneration() {
+        GraphDraftDslGenerator generator = new GraphDraftDslGenerator(
+                VisualCatalogTestSupport.catalogWithLibrary(
+                        VisualCatalogTestSupport.remoteWorkerEligibilityLibrary("integer")));
+        GraphDraft draft = new GraphDraft(
+                "",
+                "",
+                0,
+                "workerPolicy",
+                "",
+                "",
+                "",
+                "",
+                null,
+                List.of(new GraphDraft.DraftNode(
+                        "eligibility",
+                        "risk:eligibility",
+                        "",
+                        Map.of(
+                                "score", GraphDraft.Binding.constant(720),
+                                "amount", GraphDraft.Binding.constant(1000)
+                        ),
+                        Map.of(),
+                        null
+                )),
+                List.of(),
+                Map.of(),
+                new GraphDraft.OutputSelection("eligibility", "")
+        );
+
+        DslGenerationResult result = generator.generate(draft);
+
+        assertThat(result.generated()).isFalse();
+        assertThat(result.diagnostics())
+                .extracting("code", "target")
+                .containsExactly(org.assertj.core.groups.Tuple.tuple(
+                        "visual.codegen.runtimeBindingUnsupported",
+                        "/nodes/eligibility/operatorRef"));
+        assertThat(result.diagnostics().getFirst().message())
+                .contains("lowering.mode=remote-worker")
+                .contains("DESIGN artifact")
+                .contains("cannot execute");
+    }
+
+    @Test
     void rejectsBindingPathsThatCannotRenderAsDslPathSegments() {
         GraphDraftDslGenerator generator = new GraphDraftDslGenerator(
                 VisualCatalogTestSupport.catalogWithLibrary(

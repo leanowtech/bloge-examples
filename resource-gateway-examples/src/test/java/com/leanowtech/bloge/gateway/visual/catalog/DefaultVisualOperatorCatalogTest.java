@@ -87,6 +87,8 @@ class DefaultVisualOperatorCatalogTest {
     void derivesRuntimeReadinessAsServerManagedOperatorMetadata() {
         OperatorDefinition executable = VisualCatalogTestSupport.eligibilityOperator("integer");
         OperatorDefinition designOnly = VisualCatalogTestSupport.designOnlyEligibilityOperator("integer");
+        OperatorDefinition remoteWorker = VisualCatalogTestSupport.remoteWorkerEligibilityOperator("integer");
+        OperatorDefinition aiTool = VisualCatalogTestSupport.aiToolSummaryOperator();
         OperatorDefinition forged = new OperatorDefinition(
                 designOnly.schemaVersion(),
                 designOnly.operatorRef(),
@@ -115,8 +117,40 @@ class DefaultVisualOperatorCatalogTest {
         assertThat(executable.runtimeReadiness().executable()).isTrue();
         assertThat(designOnly.runtimeReadiness().state()).isEqualTo("DESIGN_ONLY");
         assertThat(designOnly.runtimeReadiness().artifactKinds()).containsExactly("DESIGN");
+        assertThat(remoteWorker.source().kind()).isEqualTo("remote-worker");
+        assertThat(remoteWorker.runtimeReadiness().state()).isEqualTo("RUNTIME_BLOCKED");
+        assertThat(remoteWorker.runtimeReadiness().title()).isEqualTo("Remote worker runtime blocked");
+        assertThat(remoteWorker.runtimeReadiness().artifactKinds()).containsExactly("DESIGN");
+        assertThat(aiTool.source().kind()).isEqualTo("ai-tool");
+        assertThat(aiTool.runtimeReadiness().state()).isEqualTo("RUNTIME_BLOCKED");
+        assertThat(aiTool.runtimeReadiness().title()).isEqualTo("AI tool runtime blocked");
+        assertThat(aiTool.runtimeReadiness().artifactKinds()).containsExactly("DESIGN");
         assertThat(forged.runtimeReadiness().state()).isEqualTo("DESIGN_ONLY");
         assertThat(forged.runtimeReadiness().title()).isEqualTo("Design-only operator");
+    }
+
+    @Test
+    void catalogFacetsIncludeRemoteWorkerAndAiToolRuntimeBindings() {
+        InMemoryOperatorLibraryRegistry libraries = new InMemoryOperatorLibraryRegistry();
+        libraries.upsert(VisualCatalogTestSupport.remoteWorkerEligibilityLibrary("integer"));
+        libraries.upsert(VisualCatalogTestSupport.aiToolSummaryLibrary());
+        DefaultVisualOperatorCatalog catalog = new DefaultVisualOperatorCatalog(
+                VisualCatalogTestSupport.emptyResourceRegistry(),
+                new InMemoryResourceDesignContractRegistry(),
+                new ResourceVirtualOperatorProjector(),
+                libraries
+        );
+
+        OperatorCatalogFacets facets = OperatorCatalogFacets.from(catalog.list(OperatorCatalogQuery.all()));
+
+        assertThat(facets.sourceKinds())
+                .containsEntry("remote-worker", 1)
+                .containsEntry("ai-tool", 1);
+        assertThat(facets.loweringModes())
+                .containsEntry("remote-worker", 1)
+                .containsEntry("ai-tool", 1);
+        assertThat(facets.runtimeReadinessStates())
+                .containsEntry("runtime-blocked", 2);
     }
 
     @Test
