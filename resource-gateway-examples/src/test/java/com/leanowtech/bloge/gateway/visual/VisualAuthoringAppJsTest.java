@@ -148,6 +148,28 @@ class VisualAuthoringAppJsTest {
     }
 
     @Test
+    void surfacesOperatorLibraryRevisionHistoryAndRestoreControls() throws Exception {
+        String source = appJsSource();
+
+        assertThat(source)
+                .contains("id=\"library-history-id\"")
+                .contains("id=\"library-revision-select\"")
+                .contains("id=\"reload-library-revisions\"")
+                .contains("id=\"preview-library-revision\"")
+                .contains("id=\"restore-library-revision\"")
+                .contains("id=\"library-allow-version-regression\"")
+                .contains("function loadOperatorLibraryRevisions(options = {})")
+                .contains("/admin/visual-operator-libraries/${encodeURIComponent(libraryId)}/revisions")
+                .contains("function previewSelectedOperatorLibraryRevision()")
+                .contains("function restoreSelectedOperatorLibraryRevision()")
+                .contains("/revisions/${encodeURIComponent(revision.revision || 0)}/restore")
+                .contains("function libraryRestoreMutationQuery(ackWarnings = false)")
+                .contains("params.set('allowVersionRegression', 'true');")
+                .contains("function libraryRestoreConfirmationKey(libraryId, revision, diagnostics = [])")
+                .contains("History remains available for restore.");
+    }
+
+    @Test
     void surfacesSelectedNodeDiagnosticsInInspector() throws Exception {
         String source = appJsSource();
 

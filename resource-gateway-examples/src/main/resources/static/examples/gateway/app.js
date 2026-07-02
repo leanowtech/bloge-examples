@@ -379,8 +379,13 @@ const state = {
   selectedLibraryId: '',
   libraryImportText: pretty(SAMPLE_OPERATOR_LIBRARY),
   libraryForce: false,
+  libraryAllowVersionRegression: false,
+  libraryHistoryId: '',
+  libraryRevisions: [],
+  selectedLibraryRevision: 0,
   libraryMessage: null,
   libraryImportConfirmationKey: '',
+  libraryRestoreConfirmationKey: '',
   resourceContractImport: createDefaultResourceContractImport(),
   paletteSearch: '',
   paletteKind: '',
@@ -1001,6 +1006,17 @@ function renderInputForm() {
           <label class="config-checkbox compact">
             <input id="library-force" type="checkbox">
             <span>Force</span>
+          </label>
+        </div>
+        <div class="library-revision-controls">
+          <input id="library-history-id" aria-label="Operator library history id" placeholder="libraryId for history">
+          <select id="library-revision-select" aria-label="Operator library revision history"></select>
+          <button id="reload-library-revisions" class="secondary compact" type="button">History</button>
+          <button id="preview-library-revision" class="secondary compact" type="button">Preview</button>
+          <button id="restore-library-revision" class="secondary compact" type="button">Restore</button>
+          <label class="config-checkbox compact">
+            <input id="library-allow-version-regression" type="checkbox">
+            <span>Rollback</span>
           </label>
         </div>
         <textarea id="operator-library-json" class="library-editor" spellcheck="false"></textarea>
@@ -2719,17 +2735,22 @@ function renderOperatorLibraryControls() {
 
   select.onchange = () => {
     state.selectedLibraryId = select.value;
+    state.libraryHistoryId = select.value || state.libraryHistoryId;
+    state.selectedLibraryRevision = 0;
+    state.libraryRevisions = [];
     const library = state.operatorLibraries.find((item) => item.libraryId === select.value);
     if (library) {
       state.libraryImportText = pretty(library);
     }
     state.libraryMessage = null;
     state.libraryImportConfirmationKey = '';
+    state.libraryRestoreConfirmationKey = '';
     renderOperatorLibraryControls();
   };
   editor.oninput = () => {
     state.libraryImportText = editor.value;
     state.libraryImportConfirmationKey = '';
+    state.libraryRestoreConfirmationKey = '';
     renderLibraryProfile();
   };
 
@@ -2738,12 +2759,23 @@ function renderOperatorLibraryControls() {
   const reloadButton = $('reload-libraries');
   const deleteButton = $('delete-library');
   const forceToggle = $('library-force');
+  const rollbackToggle = $('library-allow-version-regression');
   if (forceToggle) {
     forceToggle.checked = Boolean(state.libraryForce);
     forceToggle.onchange = () => {
       state.libraryForce = forceToggle.checked;
       state.libraryMessage = null;
       state.libraryImportConfirmationKey = '';
+      state.libraryRestoreConfirmationKey = '';
+      renderLibraryStatus();
+    };
+  }
+  if (rollbackToggle) {
+    rollbackToggle.checked = Boolean(state.libraryAllowVersionRegression);
+    rollbackToggle.onchange = () => {
+      state.libraryAllowVersionRegression = rollbackToggle.checked;
+      state.libraryMessage = null;
+      state.libraryRestoreConfirmationKey = '';
       renderLibraryStatus();
     };
   }
@@ -2760,8 +2792,87 @@ function renderOperatorLibraryControls() {
     deleteButton.disabled = !state.selectedLibraryId;
     deleteButton.onclick = deleteSelectedOperatorLibrary;
   }
+  renderOperatorLibraryRevisionControls();
   renderLibraryStatus();
   renderLibraryProfile();
+}
+
+function renderOperatorLibraryRevisionControls() {
+  const historyInput = $('library-history-id');
+  const select = $('library-revision-select');
+  if (!historyInput || !select) return;
+  const targetId = operatorLibraryHistoryTargetId();
+  historyInput.value = state.libraryHistoryId || targetId;
+  historyInput.oninput = () => {
+    state.libraryHistoryId = historyInput.value.trim();
+    state.selectedLibraryRevision = 0;
+    state.libraryRevisions = [];
+    state.libraryRestoreConfirmationKey = '';
+    renderOperatorLibraryRevisionControls();
+  };
+
+  const revisions = state.libraryRevisions || [];
+  const options = revisions.length
+    ? revisions.map((revision) => {
+      const selected = Number(revision.revision || 0) === Number(state.selectedLibraryRevision || 0)
+        ? ' selected'
+        : '';
+      return `<option value="${escapeHtml(revision.revision || 0)}"${selected}>${escapeHtml(operatorLibraryRevisionOptionLabel(revision))}</option>`;
+    })
+    : [`<option value="">${targetId ? 'No history loaded' : 'Enter libraryId'}</option>`];
+  select.innerHTML = options.join('');
+  select.disabled = !targetId || !revisions.length;
+  select.onchange = () => {
+    state.selectedLibraryRevision = Number(select.value || 0);
+    state.libraryRestoreConfirmationKey = '';
+  };
+
+  const reloadButton = $('reload-library-revisions');
+  const previewButton = $('preview-library-revision');
+  const restoreButton = $('restore-library-revision');
+  if (reloadButton) {
+    reloadButton.disabled = !targetId;
+    reloadButton.onclick = () => loadOperatorLibraryRevisions();
+  }
+  if (previewButton) {
+    previewButton.disabled = !targetId || !state.selectedLibraryRevision;
+    previewButton.onclick = previewSelectedOperatorLibraryRevision;
+  }
+  if (restoreButton) {
+    restoreButton.disabled = !targetId || !state.selectedLibraryRevision;
+    restoreButton.onclick = restoreSelectedOperatorLibraryRevision;
+  }
+}
+
+function operatorLibraryHistoryTargetId() {
+  const explicit = String(state.libraryHistoryId || '').trim();
+  if (explicit) {
+    return explicit;
+  }
+  if (state.selectedLibraryId) {
+    return state.selectedLibraryId;
+  }
+  const library = parseOperatorLibraryText(state.libraryImportText || '{}');
+  return String(library?.libraryId || '').trim();
+}
+
+function parseOperatorLibraryText(sourceText) {
+  try {
+    return JSON.parse(sourceText || '{}');
+  } catch {
+    return null;
+  }
+}
+
+function operatorLibraryRevisionOptionLabel(revision) {
+  const action = String(revision?.action || 'REVISION').toUpperCase();
+  const source = revision?.restoredFromRevision
+    ? ` from @${revision.restoredFromRevision}`
+    : '';
+  const library = revision?.library || {};
+  const version = library.version ? `v${library.version}` : 'no version';
+  const operatorCount = Array.isArray(library.operators) ? library.operators.length : 0;
+  return `@${revision?.revision || 0} · ${action}${source} · ${version} · ${operatorCount} ops`;
 }
 
 function renderLibraryStatus() {
@@ -4438,8 +4549,8 @@ async function loadOperatorLibraries(options = {}) {
     if (state.selectedLibraryId
         && !state.operatorLibraries.some((library) => library.libraryId === state.selectedLibraryId)) {
       state.selectedLibraryId = '';
-      state.libraryImportText = pretty(SAMPLE_OPERATOR_LIBRARY);
       state.libraryImportConfirmationKey = '';
+      state.libraryRestoreConfirmationKey = '';
     }
     if (options.render !== false) {
       renderOperatorLibraryControls();
@@ -4455,6 +4566,36 @@ async function reloadOperatorLibrariesAndCatalog() {
   renderOperatorPalette();
   renderOperatorLibraryControls();
   setLibraryMessage(`Loaded ${state.operatorLibraries.length} libraries.`, 'success');
+}
+
+async function loadOperatorLibraryRevisions(options = {}) {
+  const libraryId = operatorLibraryHistoryTargetId();
+  if (!libraryId) {
+    setLibraryMessage('libraryId is required to load operator library history.', 'error');
+    return;
+  }
+  try {
+    const response = await fetch(`/admin/visual-operator-libraries/${encodeURIComponent(libraryId)}/revisions`);
+    if (!response.ok) {
+      throw new Error(`Library history failed with ${response.status}`);
+    }
+    const revisions = await response.json();
+    state.libraryHistoryId = libraryId;
+    state.libraryRevisions = Array.isArray(revisions) ? revisions : [];
+    if (!state.libraryRevisions.some((revision) =>
+      Number(revision.revision || 0) === Number(state.selectedLibraryRevision || 0))) {
+      state.selectedLibraryRevision = Number(state.libraryRevisions[0]?.revision || 0);
+    }
+    if (options.render !== false) {
+      renderOperatorLibraryControls();
+      setLibraryMessage(`Loaded ${state.libraryRevisions.length} revisions for ${libraryId}.`, 'success');
+    }
+  } catch (error) {
+    state.libraryRevisions = [];
+    state.selectedLibraryRevision = 0;
+    renderOperatorLibraryControls();
+    setLibraryMessage(error.message, 'error');
+  }
 }
 
 async function validateOperatorLibrary() {
@@ -4596,6 +4737,9 @@ async function importOperatorLibrary() {
   const stored = JSON.parse(text);
   state.libraryImportConfirmationKey = '';
   state.selectedLibraryId = stored.libraryId;
+  state.libraryHistoryId = stored.libraryId;
+  state.libraryRevisions = [];
+  state.selectedLibraryRevision = 0;
   state.libraryImportText = pretty(stored);
   await loadOperatorLibraries({ render: false });
   await loadVisualOperatorCatalog();
@@ -4629,13 +4773,104 @@ async function deleteSelectedOperatorLibrary() {
     return;
   }
   state.selectedLibraryId = '';
-  state.libraryImportText = pretty(SAMPLE_OPERATOR_LIBRARY);
+  state.libraryHistoryId = deletedId;
+  state.libraryRevisions = [];
+  state.selectedLibraryRevision = 0;
   state.libraryImportConfirmationKey = '';
+  state.libraryRestoreConfirmationKey = '';
   await loadOperatorLibraries({ render: false });
   await loadVisualOperatorCatalog();
   renderOperatorPalette();
   renderOperatorLibraryControls();
-  setLibraryMessage(`Deleted ${deletedId}.`, 'success');
+  setLibraryMessage(`Deleted ${deletedId}. History remains available for restore.`, 'success');
+}
+
+function selectedOperatorLibraryRevision() {
+  const selected = Number(state.selectedLibraryRevision || 0);
+  return (state.libraryRevisions || []).find((revision) =>
+    Number(revision?.revision || 0) === selected) || null;
+}
+
+async function previewSelectedOperatorLibraryRevision() {
+  const revision = selectedOperatorLibraryRevision();
+  if (!revision) {
+    setLibraryMessage('Select an operator library revision to preview.', 'error');
+    return;
+  }
+  if (!revision.library) {
+    setLibraryMessage(`Revision @${revision.revision || 0} has no library snapshot to preview.`, 'error');
+    return;
+  }
+  state.libraryHistoryId = revision.libraryId || revision.library.libraryId || state.libraryHistoryId;
+  state.selectedLibraryId = libraryExists(revision.library.libraryId) ? revision.library.libraryId : '';
+  state.libraryImportText = pretty(revision.library);
+  state.libraryImportConfirmationKey = '';
+  state.libraryRestoreConfirmationKey = '';
+  renderOperatorLibraryControls();
+  setLibraryMessage(`Previewing ${state.libraryHistoryId}@${revision.revision || 0}.`, 'info');
+}
+
+async function restoreSelectedOperatorLibraryRevision() {
+  const libraryId = operatorLibraryHistoryTargetId();
+  const revision = selectedOperatorLibraryRevision();
+  if (!libraryId || !revision) {
+    setLibraryMessage('Select an operator library revision to restore.', 'error');
+    return;
+  }
+  const confirmationKey = libraryRestoreConfirmationKey(
+    libraryId,
+    revision.revision,
+    normalizeDiagnostics(state.libraryMessage?.diagnostics)
+  );
+  const ackWarnings = state.libraryRestoreConfirmationKey === confirmationKey;
+  const response = await fetch(
+    `/admin/visual-operator-libraries/${encodeURIComponent(libraryId)}/revisions/${encodeURIComponent(revision.revision || 0)}/restore${libraryRestoreMutationQuery(ackWarnings)}`,
+    { method: 'POST' }
+  );
+  const text = await response.text();
+  let payload = null;
+  try {
+    payload = text ? JSON.parse(text) : null;
+  } catch {
+  }
+  const diagnostics = normalizeDiagnostics(payload?.diagnostics);
+  if (!response.ok) {
+    const warningKey = libraryRestoreConfirmationKey(libraryId, revision.revision, diagnostics);
+    if (payload?.valid !== false && hasWarningDiagnostic(diagnostics)
+        && state.libraryRestoreConfirmationKey !== warningKey) {
+      state.libraryRestoreConfirmationKey = warningKey;
+      setLibraryMessage(
+        operatorLibraryWarningAcknowledgementMessage(payload?.impact, diagnostics, 'Restore'),
+        'warning',
+        diagnostics,
+        payload?.impact,
+        payload?.profile
+      );
+      return;
+    }
+    state.libraryRestoreConfirmationKey = '';
+    setLibraryMessage(
+      validationResultMessage(payload?.valid, diagnostics, text || `Restore failed with ${response.status}`),
+      visualCheckLevel(diagnostics, payload?.valid !== false && response.status < 500),
+      diagnostics,
+      payload?.impact,
+      payload?.profile
+    );
+    return;
+  }
+  const stored = payload;
+  state.libraryImportConfirmationKey = '';
+  state.libraryRestoreConfirmationKey = '';
+  state.selectedLibraryId = stored.libraryId;
+  state.libraryHistoryId = stored.libraryId;
+  state.selectedLibraryRevision = 0;
+  state.libraryImportText = pretty(stored);
+  await loadOperatorLibraries({ render: false });
+  await loadOperatorLibraryRevisions({ render: false });
+  await loadVisualOperatorCatalog();
+  renderOperatorPalette();
+  renderOperatorLibraryControls();
+  setLibraryMessage(`Restored ${stored.libraryId} from @${revision.revision || 0}.`, 'success');
 }
 
 function libraryForceQuery() {
@@ -4652,6 +4887,38 @@ function libraryMutationQuery(ackWarnings = false) {
   }
   const query = params.toString();
   return query ? `?${query}` : '';
+}
+
+function libraryRestoreMutationQuery(ackWarnings = false) {
+  const params = new URLSearchParams();
+  if (state.libraryForce) {
+    params.set('force', 'true');
+  }
+  if (ackWarnings) {
+    params.set('ackWarnings', 'true');
+  }
+  if (state.libraryAllowVersionRegression) {
+    params.set('allowVersionRegression', 'true');
+  }
+  const query = params.toString();
+  return query ? `?${query}` : '';
+}
+
+function libraryRestoreConfirmationKey(libraryId, revision, diagnostics = []) {
+  return JSON.stringify({
+    force: Boolean(state.libraryForce),
+    allowVersionRegression: Boolean(state.libraryAllowVersionRegression),
+    libraryId: String(libraryId || '').trim(),
+    revision: Number(revision || 0),
+    warnings: normalizeDiagnostics(diagnostics)
+      .filter((diagnostic) => String(diagnostic.level || '').toUpperCase() === 'WARNING')
+      .map((diagnostic) => ({
+        level: diagnostic.level || 'WARNING',
+        code: diagnostic.code || '',
+        message: diagnostic.message || '',
+        target: diagnostic.target || ''
+      }))
+  });
 }
 
 function libraryExists(libraryId) {

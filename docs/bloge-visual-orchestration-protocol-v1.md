@@ -1077,8 +1077,8 @@ operator contract 但 library version 回退，则返回 blocking
 `/version`，但 metadata 会携带 `previousVersion`、`replacementVersion`、
 `operatorRefs`、`changeRisk`、`changeCategories` 和 `changeSummary`，所以 impact
 review 可以在没有 stored draft 引用时仍然暴露 operator-level 变更风险。
-浏览器 Operator Libraries 面板也应先调用该端点，把结构化 diagnostics 以明细
-列表展示给作者，再允许作者选择是否执行 Import。
+浏览器 Operator Libraries 面板已在 Import 前调用该端点，把结构化 diagnostics、
+impact review 和 profile 以明细列表展示给作者，再允许作者选择是否执行 Import。
 
 resource-gateway 示例同时把用户算子库 registry 历史固化为
 `bloge.visualOperatorLibraryRevision.v1`：
@@ -1098,8 +1098,10 @@ catalog entry，不删除 revision history。restore 不是覆盖历史记录，
 restore 默认仍阻断 library version 回退；只有请求显式携带
 `allowVersionRegression=true` 时，版本回退才会降级为
 `visual.library.restore.versionRegressionAllowed` warning，并仍需 `ackWarnings=true`
-后才可写入。因此误删、坏版本导入、人工审计和后续 rollback UI 都能引用服务端不可变证据，
-而不是依赖浏览器本地历史。
+后才可写入。浏览器 Operator Libraries 面板已消费这些端点：可以按当前选中库或显式
+libraryId 拉取 history、在 JSON editor 中预览历史 snapshot、并通过 `Rollback` 显式开关
+触发受控 restore。删除后面板保留被删库 history id，因此误删、坏版本导入、人工审计和
+后续 rollback UI 都能引用服务端不可变证据，而不是依赖浏览器本地历史。
 
 请求体：
 

@@ -736,9 +736,11 @@ version，additive 或 compatible schema 变更必须至少提升 minor version�
 runtime collision、impact preflight 和 warning acknowledgement gate；版本回退默认仍是
 blocking error，只有显式 `allowVersionRegression=true` 时才降级为必须
 `ackWarnings=true` 的受控 rollback warning。delete 只移除当前 catalog entry，不清除
-历史 revision。这个设计把用户导入的 operator schema 当作可治理资产，而不是一次性
-JSON 配置：坏版本导入、误删、schema drift 争议和后续 rollback UI 都可以基于服务端
-历史证据处理。
+历史 revision。浏览器 Operator Libraries 面板已接入这条控制面：按当前库或显式
+libraryId 拉 history、预览历史 snapshot、通过 `Rollback` 开关触发受控 restore，并在删除后
+保留 history target 以支持误删恢复。这个设计把用户导入的 operator schema 当作可治理资产，
+而不是一次性 JSON 配置：坏版本导入、误删、schema drift 争议和 rollback UI 都可以基于
+服务端历史证据处理。
 导入阶段还会 warning-gate capability 和治理风险：streaming/durable 算子可以被显式确认后进入 catalog，
 但当前 request-response runtime 会阻断使用它们的 draft；secret-backed execution 和
 `NON_IDEMPOTENT` 外部副作用也必须经 `ackWarnings=true` 确认后才会写入。

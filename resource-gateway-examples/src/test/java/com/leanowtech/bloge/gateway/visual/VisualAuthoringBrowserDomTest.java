@@ -122,6 +122,18 @@ class VisualAuthoringBrowserDomTest {
                 "Saved loan-applicant-service.getProfile");
 
         importSampleOperatorLibrary(wait);
+        wait.until(ExpectedConditions.visibilityOfElementLocated(By.id("library-history-id")));
+        wait.until(ExpectedConditions.visibilityOfElementLocated(By.id("library-revision-select")));
+        wait.until(ExpectedConditions.elementToBeClickable(By.id("reload-library-revisions")));
+        wait.until(ExpectedConditions.visibilityOfElementLocated(By.id("preview-library-revision")));
+        wait.until(ExpectedConditions.visibilityOfElementLocated(By.id("restore-library-revision")));
+        click(wait, By.id("reload-library-revisions"));
+        waitForText(wait, By.id("library-status"), "Loaded ");
+        waitForText(wait, By.id("library-status"), "revisions for risk-policy");
+        wait.until(ExpectedConditions.elementToBeClickable(By.id("preview-library-revision")));
+        wait.until(ExpectedConditions.elementToBeClickable(By.id("restore-library-revision")));
+        click(wait, By.id("preview-library-revision"));
+        waitForText(wait, By.id("library-status"), "Previewing risk-policy@");
 
         WebElement search = wait.until(ExpectedConditions.elementToBeClickable(By.id("operator-palette-search")));
         search.clear();

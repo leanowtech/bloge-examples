@@ -1644,6 +1644,12 @@ body.dragging-operator * {
   gap: 6px;
 }
 
+.library-revision-controls {
+  display: grid;
+  grid-template-columns: minmax(0, 0.9fr) minmax(0, 1fr) auto auto auto;
+  gap: 6px;
+}
+
 .draft-transfer-controls {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -1651,7 +1657,9 @@ body.dragging-operator * {
 }
 
 .draft-controls select,
-.draft-revision-controls select {
+.draft-revision-controls select,
+.library-revision-controls input,
+.library-revision-controls select {
   min-width: 0;
   padding: 7px 8px;
   border: 1px solid var(--line);
@@ -2743,6 +2751,10 @@ body.dragging-operator * {
   min-height: 28px;
 }
 
+.library-revision-controls .config-checkbox {
+  min-height: 28px;
+}
+
 .config-checkbox {
   display: flex;
   align-items: center;
@@ -2895,6 +2907,8 @@ body.dragging-operator * {
 .run-history-controls input:focus,
 .run-history-controls select:focus,
 .library-controls select:focus,
+.library-revision-controls input:focus,
+.library-revision-controls select:focus,
 .resource-contract-controls input:focus,
 .resource-contract-controls select:focus,
 .library-editor:focus,
