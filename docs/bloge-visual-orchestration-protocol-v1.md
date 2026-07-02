@@ -1910,7 +1910,85 @@ resource-gateway 示例已提供 `POST /api/visual/connections/check`，浏览�
 drop 连线和 inspector source picker 写入 binding 前都调用它作为最终 gate；
 本地 connection hint/source picker 只负责提前收窄候选项，不能替代服务端预检。
 
-### 10.7 发布不可变 artifact
+### 10.7 连线候选发现
+
+```http
+POST /api/visual/connections/candidates
+Content-Type: application/json
+```
+
+生产画布在用户从某个 output/config/context handle 拖出连线时，不应只等 drop
+后再报错；它需要服务端返回当前 draft 中哪些目标端点可接、哪些目标端点被
+schema/DAG/policy 阻断以及阻断原因。该接口是只读候选发现：服务端从当前
+catalog 中的 target operator input/config schema 派生候选 target endpoint，
+再对每个候选复用 `/api/visual/connections/check` 的权威预检路径。它不保存
+draft，不产生新 edge，也不成为新的 schema 判断来源。
+
+请求：
+
+```json
+{
+  "kind": "data",
+  "includeRejected": true,
+  "limit": 100,
+  "draft": {
+    "schemaVersion": "bloge.visualGraphDraft.v1",
+    "graphName": "customLoanPolicy",
+    "nodes": []
+  },
+  "source": {
+    "nodeId": "fetchApplicant",
+    "port": "payload",
+    "path": "score"
+  }
+}
+```
+
+响应：
+
+```json
+{
+  "schemaVersion": "bloge.visualConnectionCandidates.v1",
+  "source": { "nodeId": "fetchApplicant", "port": "payload", "path": "score" },
+  "kind": "data",
+  "totalCandidateCount": 5,
+  "acceptedCount": 1,
+  "rejectedCount": 4,
+  "displayedCount": 5,
+  "truncated": false,
+  "diagnostics": [],
+  "candidates": [
+    {
+      "targetNodeId": "loanPolicy",
+      "targetNodeLabel": "Loan Policy",
+      "targetOperatorRef": "risk:eligibility",
+      "targetSurface": "input",
+      "target": { "nodeId": "loanPolicy", "port": "inputs", "path": "score" },
+      "accepted": true,
+      "bindingKey": "score",
+      "summary": {
+        "schemaVersion": "bloge.visualConnectionCheckSummary.v1",
+        "accepted": true,
+        "kind": "data",
+        "bindingKey": "score",
+        "diagnosticCount": 0,
+        "message": "Connection accepted."
+      },
+      "diagnostics": []
+    }
+  ]
+}
+```
+
+`includeRejected=false` 时默认只返回可接目标，但 `totalCandidateCount`、
+`acceptedCount` 和 `rejectedCount` 仍反映服务端评估过的完整候选集合。
+`includeRejected=true` 可用于 inspector、调试面板或可访问性提示，展示被阻断
+目标及其 `visual.binding.*` / `visual.edge.*` diagnostics。客户端仍必须在真正
+drop 或写入 binding 前调用 `/api/visual/connections/check`，因为候选发现结果只是
+某一时刻 draft 快照的读模型；任何本地编辑、revision rebase 或 catalog drift 都可能
+使候选结论失效。
+
+### 10.8 发布不可变 artifact
 
 ```http
 POST /api/visual/drafts/{draftId}/publish
@@ -1988,7 +2066,7 @@ diagnostic 且调用方用 `ackWarnings=true` 继续发布时，服务端要求 
 }
 ```
 
-### 10.8 发布物跨环境 Bundle
+### 10.9 发布物跨环境 Bundle
 
 不可变 publication 既可能是可执行制品，也可能是 schema-valid 但尚未 runtime-bound
 的 `DESIGN` 制品。后者如果只能停留在当前环境，就不是真正的一等资产。因此当前
@@ -2036,7 +2114,7 @@ Content-Type: application/json
 移交；后续是否具备 runtime binding 仍由 asset overview 和 runtime binding
 requirement index 审阅，不由 import 动作伪造执行能力。
 
-### 10.9 运行发布 artifact
+### 10.10 运行发布 artifact
 
 发布 artifact 的 `bloge.visualGraphPublication.v1` 会冻结 publish-time
 `dependencyReport`。这份报告使用与 stored draft dependency report 相同的
@@ -2075,7 +2153,7 @@ frozen DSL，`validation` 必须等于 publication 冻结的 validation/readines
 按当前 catalog 重新计算。若 artifact 不存在返回 `404 NOT FOUND`；artifact 本身不可被修改或
 删除。
 
-### 10.9 试运行
+### 10.11 试运行
 
 ```http
 POST /api/visual/drafts/{draftId}/run

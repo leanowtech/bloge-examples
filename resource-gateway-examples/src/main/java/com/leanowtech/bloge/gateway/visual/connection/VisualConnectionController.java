@@ -31,4 +31,15 @@ public class VisualConnectionController {
     public VisualConnectionCheckResult check(@RequestBody VisualConnectionCheckRequest request) {
         return service.check(request);
     }
+
+    /**
+     * Discovers schema-aware target candidates for one source endpoint drag.
+     *
+     * @param request candidate discovery request
+     * @return target candidates with the same preflight summary used by connection checks
+     */
+    @PostMapping("/candidates")
+    public VisualConnectionCandidatesResult candidates(@RequestBody VisualConnectionCandidatesRequest request) {
+        return service.candidates(request);
+    }
 }

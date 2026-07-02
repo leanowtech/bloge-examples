@@ -30,6 +30,8 @@ public class VisualConnectionCheckService {
     private static final String CONTEXT_SOURCE_NODE_ID = "__ctx";
     private static final String CONFIG_TARGET_PORT = "config";
     private static final Pattern ARRAY_INDEX = Pattern.compile("\\d+");
+    private static final int MAX_SCHEMA_CANDIDATE_PATHS = 64;
+    private static final int MAX_SCHEMA_CANDIDATE_DEPTH = 4;
 
     private final GraphDraftValidator validator;
     private final VisualOperatorCatalog catalog;
@@ -232,6 +234,194 @@ public class VisualConnectionCheckService {
         return new VisualConnectionCheckResult(accepted, edge, inputKey, diagnostics, validation,
                 VisualConnectionCheckResult.VisualConnectionCheckSummary.from(accepted, edge, inputKey,
                         diagnostics, validation, replacedInputKeys, List.of()));
+    }
+
+    /**
+     * Discovers target candidates for an interactive source drag by reusing the authoritative check path.
+     *
+     * @param request connection candidate discovery request
+     * @return schema-aware target candidates and preflight decisions
+     */
+    public VisualConnectionCandidatesResult candidates(VisualConnectionCandidatesRequest request) {
+        if (request == null || request.draft() == null) {
+            return new VisualConnectionCandidatesResult(
+                    VisualConnectionCandidatesResult.SCHEMA_VERSION,
+                    request == null ? GraphDraft.Endpoint.empty() : request.source(),
+                    request == null ? "data" : request.kind(),
+                    0,
+                    0,
+                    0,
+                    0,
+                    false,
+                    List.of(),
+                    List.of(VisualDiagnostic.error("visual.draft.missing",
+                            "Graph draft is required.", "/draft"))
+            );
+        }
+        if (request.source().nodeId().isBlank()) {
+            return new VisualConnectionCandidatesResult(
+                    VisualConnectionCandidatesResult.SCHEMA_VERSION,
+                    request.source(),
+                    request.kind(),
+                    0,
+                    0,
+                    0,
+                    0,
+                    false,
+                    List.of(),
+                    List.of(VisualDiagnostic.error("visual.connection.sourceMissing",
+                            "Connection source endpoint is required.", "/source"))
+            );
+        }
+        if (!CONTEXT_SOURCE_NODE_ID.equals(request.source().nodeId())
+                && request.draft().nodes().stream().noneMatch(node -> node.id().equals(request.source().nodeId()))) {
+            return new VisualConnectionCandidatesResult(
+                    VisualConnectionCandidatesResult.SCHEMA_VERSION,
+                    request.source(),
+                    request.kind(),
+                    0,
+                    0,
+                    0,
+                    0,
+                    false,
+                    List.of(),
+                    List.of(VisualDiagnostic.error("visual.edge.unknownSource",
+                            "Connection source node does not exist: " + request.source().nodeId(),
+                            "/source/nodeId"))
+            );
+        }
+
+        List<ConnectionCandidateTarget> targets = candidateTargets(request.draft(), request.kind());
+        List<VisualConnectionCandidatesResult.ConnectionCandidate> candidates = new ArrayList<>();
+        for (ConnectionCandidateTarget target : targets) {
+            VisualConnectionCheckResult check = check(new VisualConnectionCheckRequest(
+                    request.draft(),
+                    request.source(),
+                    target.endpoint(),
+                    request.kind()
+            ));
+            candidates.add(new VisualConnectionCandidatesResult.ConnectionCandidate(
+                    target.node().id(),
+                    target.node().label(),
+                    target.node().operatorRef(),
+                    target.surface(),
+                    check.edge() == null ? target.endpoint() : check.edge().target(),
+                    check.accepted(),
+                    check.bindingKey(),
+                    check.summary(),
+                    check.diagnostics()
+            ));
+        }
+
+        int acceptedCount = 0;
+        for (VisualConnectionCandidatesResult.ConnectionCandidate candidate : candidates) {
+            if (candidate.accepted()) {
+                acceptedCount++;
+            }
+        }
+        int rejectedCount = candidates.size() - acceptedCount;
+        List<VisualConnectionCandidatesResult.ConnectionCandidate> visible = candidates.stream()
+                .filter(candidate -> request.includeRejected() || candidate.accepted())
+                .toList();
+        boolean truncated = visible.size() > request.limit();
+        List<VisualConnectionCandidatesResult.ConnectionCandidate> window = visible.stream()
+                .limit(request.limit())
+                .toList();
+        return new VisualConnectionCandidatesResult(
+                VisualConnectionCandidatesResult.SCHEMA_VERSION,
+                request.source(),
+                request.kind(),
+                candidates.size(),
+                acceptedCount,
+                rejectedCount,
+                window.size(),
+                truncated,
+                window,
+                List.of()
+        );
+    }
+
+    private List<ConnectionCandidateTarget> candidateTargets(GraphDraft draft, String kind) {
+        List<ConnectionCandidateTarget> targets = new ArrayList<>();
+        if ("dependency".equals(kind) || "route".equals(kind)) {
+            for (GraphDraft.DraftNode node : draft.nodes()) {
+                targets.add(new ConnectionCandidateTarget(
+                        node,
+                        kind,
+                        new GraphDraft.Endpoint(node.id(), kind, "")
+                ));
+            }
+            return targets;
+        }
+
+        for (GraphDraft.DraftNode node : draft.nodes()) {
+            Optional<OperatorDefinition> operator = catalog.find(node.operatorRef());
+            if (operator.isEmpty()) {
+                continue;
+            }
+            for (OperatorDefinition.Port port : operator.get().ports().inputs()) {
+                for (String path : connectableSchemaPaths(port.schema())) {
+                    targets.add(new ConnectionCandidateTarget(
+                            node,
+                            "input",
+                            new GraphDraft.Endpoint(node.id(), port.name(), path)
+                    ));
+                }
+            }
+            for (String path : connectableSchemaPaths(operator.get().configSchema())) {
+                if (!path.isBlank()) {
+                    targets.add(new ConnectionCandidateTarget(
+                            node,
+                            "config",
+                            new GraphDraft.Endpoint(node.id(), CONFIG_TARGET_PORT, path)
+                    ));
+                }
+            }
+        }
+        return targets;
+    }
+
+    private static List<String> connectableSchemaPaths(SchemaEnvelope schema) {
+        List<String> paths = new ArrayList<>();
+        collectConnectableSchemaPaths(schema == null ? Map.of() : schema.schema(), "", paths, 0);
+        return paths.stream().distinct().limit(MAX_SCHEMA_CANDIDATE_PATHS).toList();
+    }
+
+    private static void collectConnectableSchemaPaths(Map<String, Object> schema,
+                                                      String path,
+                                                      List<String> paths,
+                                                      int depth) {
+        if (schema == null) {
+            return;
+        }
+        paths.add(path);
+        if (depth >= MAX_SCHEMA_CANDIDATE_DEPTH || schema.containsKey("oneOf") || schema.containsKey("anyOf")) {
+            return;
+        }
+        for (Map.Entry<String, Object> entry : propertiesOf(schema).entrySet()) {
+            Map<String, Object> child = objectSchema(entry.getValue());
+            if (child != null) {
+                collectConnectableSchemaPaths(child, appendPath(path, entry.getKey()), paths, depth + 1);
+            }
+        }
+    }
+
+    private static String appendPath(String prefix, String segment) {
+        String safeSegment = segment == null ? "" : segment.trim();
+        if (safeSegment.isBlank()) {
+            return prefix == null ? "" : prefix;
+        }
+        if (prefix == null || prefix.isBlank()) {
+            return safeSegment;
+        }
+        return prefix + "." + safeSegment;
+    }
+
+    private record ConnectionCandidateTarget(
+            GraphDraft.DraftNode node,
+            String surface,
+            GraphDraft.Endpoint endpoint
+    ) {
     }
 
     private static GraphDraft draftWithPreviewEdge(GraphDraft draft, GraphDraft.DraftEdge edge) {

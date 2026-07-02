@@ -58,6 +58,88 @@ class VisualConnectionCheckServiceTest {
     }
 
     @Test
+    void discoversAcceptedAndRejectedConnectionTargetCandidates() {
+        VisualConnectionCheckService service = connectionService(VisualCatalogTestSupport
+                .catalogWithLoanApplicantResourceAndLibrary(VisualCatalogTestSupport.eligibilityLibrary("integer")));
+        GraphDraft draft = resourceEligibilityDraft(List.of());
+
+        VisualConnectionCandidatesResult result = service.candidates(new VisualConnectionCandidatesRequest(
+                draft,
+                new GraphDraft.Endpoint("fetchApplicant", "payload", "score"),
+                "data",
+                true,
+                50
+        ));
+
+        assertThat(result.schemaVersion()).isEqualTo("bloge.visualConnectionCandidates.v1");
+        assertThat(result.source().nodeId()).isEqualTo("fetchApplicant");
+        assertThat(result.kind()).isEqualTo("data");
+        assertThat(result.totalCandidateCount()).isGreaterThan(0);
+        assertThat(result.acceptedCount()).isGreaterThan(0);
+        assertThat(result.rejectedCount()).isGreaterThan(0);
+        assertThat(result.displayedCount()).isEqualTo(result.candidates().size());
+        assertThat(result.truncated()).isFalse();
+        assertThat(result.diagnostics()).isEmpty();
+        assertThat(result.candidates())
+                .anySatisfy(candidate -> {
+                    assertThat(candidate.targetNodeId()).isEqualTo("eligibility");
+                    assertThat(candidate.targetOperatorRef()).isEqualTo("risk:eligibility");
+                    assertThat(candidate.targetSurface()).isEqualTo("input");
+                    assertThat(candidate.target().port()).isEqualTo("inputs");
+                    assertThat(candidate.target().path()).isEqualTo("score");
+                    assertThat(candidate.accepted()).isTrue();
+                    assertThat(candidate.bindingKey()).isEqualTo("score");
+                    assertThat(candidate.summary().accepted()).isTrue();
+                })
+                .anySatisfy(candidate -> {
+                    assertThat(candidate.targetNodeId()).isEqualTo("eligibility");
+                    assertThat(candidate.target().port()).isEqualTo("inputs");
+                    assertThat(candidate.target().path()).isBlank();
+                    assertThat(candidate.accepted()).isFalse();
+                    assertThat(candidate.diagnostics())
+                            .extracting("code")
+                            .contains("visual.binding.typeMismatch");
+                });
+    }
+
+    @Test
+    void connectionCandidatesReturnOnlyAcceptedRowsByDefault() {
+        VisualConnectionCheckService service = connectionService(VisualCatalogTestSupport
+                .catalogWithLoanApplicantResourceAndLibrary(VisualCatalogTestSupport.eligibilityLibrary("integer")));
+        GraphDraft draft = resourceEligibilityDraft(List.of());
+
+        VisualConnectionCandidatesResult result = service.candidates(new VisualConnectionCandidatesRequest(
+                draft,
+                new GraphDraft.Endpoint("fetchApplicant", "payload", "score")
+        ));
+
+        assertThat(result.totalCandidateCount()).isGreaterThan(result.displayedCount());
+        assertThat(result.rejectedCount()).isGreaterThan(0);
+        assertThat(result.candidates()).isNotEmpty();
+        assertThat(result.candidates()).allMatch(VisualConnectionCandidatesResult.ConnectionCandidate::accepted);
+    }
+
+    @Test
+    void connectionCandidatesRespectDisplayLimit() {
+        VisualConnectionCheckService service = connectionService(VisualCatalogTestSupport
+                .catalogWithLoanApplicantResourceAndLibrary(VisualCatalogTestSupport.eligibilityLibrary("integer")));
+        GraphDraft draft = resourceEligibilityDraft(List.of());
+
+        VisualConnectionCandidatesResult result = service.candidates(new VisualConnectionCandidatesRequest(
+                draft,
+                new GraphDraft.Endpoint("fetchApplicant", "payload", "score"),
+                "data",
+                true,
+                1
+        ));
+
+        assertThat(result.totalCandidateCount()).isGreaterThan(1);
+        assertThat(result.displayedCount()).isEqualTo(1);
+        assertThat(result.candidates()).hasSize(1);
+        assertThat(result.truncated()).isTrue();
+    }
+
+    @Test
     void acceptsConnectionPreviewWithExplicitTargetUnionBranchSelection() {
         VisualConnectionCheckService service = connectionService(VisualCatalogTestSupport
                 .catalogWithLibrary(unionBranchSelectionLibrary()));
