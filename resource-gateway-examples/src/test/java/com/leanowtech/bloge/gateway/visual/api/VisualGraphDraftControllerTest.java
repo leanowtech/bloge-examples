@@ -18,6 +18,7 @@ import com.leanowtech.bloge.gateway.visual.draft.GraphDraftPatchResult;
 import com.leanowtech.bloge.gateway.visual.draft.GraphDraftPatchService;
 import com.leanowtech.bloge.gateway.visual.draft.InMemoryGraphDraftRepository;
 import com.leanowtech.bloge.gateway.visual.draft.GraphDraftRevisionRestoreRequest;
+import com.leanowtech.bloge.gateway.visual.draft.GraphDraftSummary;
 import com.leanowtech.bloge.gateway.example.DynamicGatewayComposerService;
 import com.leanowtech.bloge.gateway.operator.HttpResourceOperator;
 import com.leanowtech.bloge.gateway.visual.publication.InMemoryVisualGraphPublicationRepository;
@@ -1633,6 +1634,61 @@ class VisualGraphDraftControllerTest {
                     assertThat(summary.revisionCount()).isEqualTo(2);
                     assertThat(summary.changeSummary()).isEqualTo("Deleted but recoverable.");
                     assertThat(summary.reason()).isEqualTo("Reviewer validated deleted draft history remains visible.");
+                });
+    }
+
+    @Test
+    void summariesExposeAuthoritativeReadinessForActiveAndRecoverableDrafts() {
+        InMemoryGraphDraftRepository drafts = new InMemoryGraphDraftRepository();
+        DefaultVisualOperatorCatalog designCatalog = VisualCatalogTestSupport.catalogWithLibrary(
+                VisualCatalogTestSupport.designOnlyEligibilityLibrary("integer"));
+        VisualGraphDraftController controller = controllerWithCatalog(designCatalog, drafts);
+        GraphDraft active = controller.create(eligibilityDraft(graphInputSchema(
+                Map.of(
+                        "score", Map.of("type", "integer"),
+                        "amount", Map.of("type", "number")
+                )
+        )));
+        GraphDraft deleted = controller.create(eligibilityDraft(graphInputSchema(
+                Map.of(
+                        "score", Map.of("type", "integer"),
+                        "amount", Map.of("type", "number")
+                )
+        )));
+
+        controller.delete(deleted.draftId(), deleted.revision(),
+                "reviewer",
+                "test-suite",
+                "Deleted but recoverable.",
+                "Verify deleted design drafts remain visible in the asset index.");
+
+        List<GraphDraftSummary> summaries = controller.summaries();
+
+        assertThat(summaries)
+                .filteredOn(summary -> summary.draftId().equals(active.draftId()))
+                .singleElement()
+                .satisfies(summary -> {
+                    assertThat(summary.schemaVersion()).isEqualTo("bloge.visualGraphDraftSummary.v1");
+                    assertThat(summary.active()).isTrue();
+                    assertThat(summary.currentRevision()).isEqualTo(active.revision());
+                    assertThat(summary.valid()).isTrue();
+                    assertThat(summary.nodeCount()).isEqualTo(1);
+                    assertThat(summary.readiness().state()).isEqualTo("design-only");
+                    assertThat(summary.readiness().artifactKinds()).containsExactly("DESIGN");
+                    assertThat(summary.operatorDependencyCount()).isEqualTo(1);
+                    assertThat(summary.runtimeReadinessStateCounts()).containsEntry("DESIGN_ONLY", 1);
+                });
+        assertThat(summaries)
+                .filteredOn(summary -> summary.draftId().equals(deleted.draftId()))
+                .singleElement()
+                .satisfies(summary -> {
+                    assertThat(summary.active()).isFalse();
+                    assertThat(summary.currentRevision()).isZero();
+                    assertThat(summary.latestRevision()).isEqualTo(deleted.revision() + 1);
+                    assertThat(summary.valid()).isTrue();
+                    assertThat(summary.readiness().state()).isEqualTo("design-only");
+                    assertThat(summary.changeSummary()).isEqualTo("Deleted but recoverable.");
+                    assertThat(summary.reason()).isEqualTo("Verify deleted design drafts remain visible in the asset index.");
                 });
     }
 

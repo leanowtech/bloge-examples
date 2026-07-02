@@ -333,6 +333,7 @@ const state = {
   builder: createDefaultBuilder(),
   drafts: [],
   draftHistory: [],
+  draftSummaries: [],
   currentDraftId: '',
   currentDraftRevision: 0,
   savedDraftSnapshot: null,
@@ -347,6 +348,8 @@ const state = {
   draftBundleText: '',
   draftMessage: null,
   publications: [],
+  publicationSummaries: [],
+  publicationDetailsById: {},
   selectedPublicationId: '',
   publicationMessage: null,
   goldenCases: [],
@@ -1101,6 +1104,7 @@ function renderInputForm() {
           <button id="load-draft" class="secondary compact" type="button">Load</button>
           <button id="delete-draft" class="secondary compact danger" type="button">Delete</button>
         </div>
+        <div id="draft-asset-summary" class="library-impact-panel" hidden></div>
         <div class="draft-revision-controls">
           <select id="draft-revision-select" aria-label="Draft revision history"></select>
           <button id="reload-revisions" class="secondary compact" type="button">History</button>
@@ -1123,6 +1127,7 @@ function renderInputForm() {
           <button id="run-publication" class="secondary compact" type="button">Run</button>
           <button id="reload-publications" class="secondary compact" type="button">Reload</button>
         </div>
+        <div id="publication-asset-summary" class="library-impact-panel" hidden></div>
         <div class="draft-controls">
           <select id="golden-case-select" aria-label="Golden regression cases"></select>
           <button id="save-golden-case" class="secondary compact" type="button">Save Golden</button>
@@ -3862,10 +3867,10 @@ async function openLibraryImpactPublicationTarget(publicationId, nodeIndex = -1)
   if (!state.publications.some((publication) => publication.publicationId === normalized)) {
     await loadPublicationList({ render: false });
   }
-  const publication = state.publications.find((entry) => entry.publicationId === normalized);
   state.selectedPublicationId = normalized;
   state.selectedGoldenCaseId = '';
   state.goldenAssertions = [];
+  const publication = await loadSelectedPublicationDetails({ render: false });
   await loadGoldenCases({ render: false });
   await loadGoldenCertificationStatus({ render: false });
   renderPublicationControls();
@@ -5117,6 +5122,7 @@ async function publishVisualDraft() {
     if (payload.published && publication.publicationId) {
       state.pendingPublishWarningKey = '';
       state.selectedPublicationId = publication.publicationId;
+      state.publicationDetailsById[publication.publicationId] = publication;
       await loadPublicationList({ render: false });
       await loadGoldenCases({ render: false });
       await loadGoldenCertificationStatus({ render: false });
@@ -6560,6 +6566,7 @@ function renderDraftControls() {
       }
     };
   }
+  renderDraftAssetSummary();
   renderDraftRevisionControls();
   renderDraftDependencyReport();
   renderDraftStatus();
@@ -6606,9 +6613,160 @@ function currentDraftIsActive() {
 function draftHistoryOptionLabel(entry) {
   const revision = entry.active ? (entry.currentRevision || entry.latestRevision || 0) : (entry.latestRevision || 0);
   const status = entry.active ? 'active' : 'deleted';
+  const readiness = draftSummaryReadinessLabel(draftSummaryFor(entry.draftId));
+  const readinessText = readiness ? ` · ${readiness}` : '';
   const summary = entry.changeSummary ? ` · ${entry.changeSummary}` : '';
   const reason = entry.reason ? ` · ${entry.reason}` : '';
-  return `${entry.graphName || entry.draftId} @${revision} · ${status}${summary}${reason}`;
+  return `${entry.graphName || entry.draftId} @${revision} · ${status}${readinessText}${summary}${reason}`;
+}
+
+function draftSummaryFor(draftId) {
+  return (Array.isArray(state.draftSummaries) ? state.draftSummaries : [])
+    .find((summary) => summary?.draftId === draftId) || null;
+}
+
+function draftSummaryReadinessState(summary) {
+  return normalizeReadinessState(summary?.readiness?.state);
+}
+
+function draftSummaryReadinessLabel(summary) {
+  const state = draftSummaryReadinessState(summary);
+  return state ? operatorPaletteFacetLabel(state) : '';
+}
+
+function draftAssetSummary(summaries) {
+  const result = {
+    total: 0,
+    activeCount: 0,
+    recoverableDeletedCount: 0,
+    validCount: 0,
+    invalidCount: 0,
+    runtimeExecutableCount: 0,
+    designOnlyCount: 0,
+    runtimeBlockedCount: 0,
+    governanceReviewCount: 0,
+    repairRequiredCount: 0,
+    unknownReadinessCount: 0
+  };
+  for (const summary of Array.isArray(summaries) ? summaries : []) {
+    result.total += 1;
+    if (summary?.active === false) {
+      result.recoverableDeletedCount += 1;
+    } else {
+      result.activeCount += 1;
+    }
+    if (summary?.valid === false) {
+      result.invalidCount += 1;
+    } else {
+      result.validCount += 1;
+    }
+    switch (draftSummaryReadinessState(summary)) {
+      case 'runtime-executable':
+        result.runtimeExecutableCount += 1;
+        break;
+      case 'design-only':
+        result.designOnlyCount += 1;
+        break;
+      case 'runtime-blocked':
+        result.runtimeBlockedCount += 1;
+        break;
+      case 'governance-review':
+        result.governanceReviewCount += 1;
+        break;
+      case 'draft-repair-required':
+      case 'catalog-repair-required':
+        result.repairRequiredCount += 1;
+        break;
+      default:
+        result.unknownReadinessCount += 1;
+        break;
+    }
+  }
+  return result;
+}
+
+function draftAssetSummaryLevel(summary) {
+  if (!summary || !summary.total) return 'info';
+  if (summary.invalidCount || summary.repairRequiredCount) return 'error';
+  if (summary.runtimeBlockedCount || summary.governanceReviewCount) return 'warning';
+  if (summary.designOnlyCount || summary.recoverableDeletedCount) return 'info';
+  return 'success';
+}
+
+function draftAssetInterestingSummaries(summaries) {
+  return (Array.isArray(summaries) ? summaries : [])
+    .filter(Boolean)
+    .filter((summary) => summary?.active === false
+      || summary?.valid === false
+      || draftSummaryReadinessState(summary) !== 'runtime-executable');
+}
+
+function draftAssetSummaryRows(summaries, limit = 5) {
+  return draftAssetInterestingSummaries(summaries)
+    .map((summary) => {
+      const revision = summary.active ? (summary.currentRevision || summary.latestRevision || 0) : (summary.latestRevision || 0);
+      const status = summary.active === false ? 'deleted' : 'active';
+      const readiness = draftSummaryReadinessLabel(summary);
+      const label = [`${summary.graphName || summary.draftId} @${revision}`, status, readiness]
+        .filter(Boolean)
+        .join(' · ');
+      const value = visualGraphReadinessStatusText(summary.readiness)
+        || (summary.active === false ? 'Recoverable deleted draft' : 'No readiness snapshot');
+      return { label, value, active: summary.active !== false };
+    })
+    .slice(0, Math.max(0, Number(limit) || 0));
+}
+
+function renderDraftAssetSummary() {
+  const target = $('draft-asset-summary');
+  if (!target) return;
+  const summaries = Array.isArray(state.draftSummaries) ? state.draftSummaries : [];
+  if (!summaries.length) {
+    target.hidden = true;
+    target.innerHTML = '';
+    return;
+  }
+  const summary = draftAssetSummary(summaries);
+  const interestingCount = draftAssetInterestingSummaries(summaries).length;
+  const rows = draftAssetSummaryRows(summaries);
+  const overflow = Math.max(0, interestingCount - rows.length);
+  const stats = [
+    ['Total', summary.total],
+    ['Active', summary.activeCount],
+    ['Recoverable', summary.recoverableDeletedCount],
+    ['Valid', summary.validCount],
+    ['Invalid', summary.invalidCount],
+    ['Runtime executable', summary.runtimeExecutableCount],
+    ['Design only', summary.designOnlyCount],
+    ['Runtime blocked', summary.runtimeBlockedCount],
+    ['Governance review', summary.governanceReviewCount],
+    ['Repair required', summary.repairRequiredCount]
+  ].filter(([, value], index) => index < 4 || value)
+    .map(([label, value]) => `<span><strong>${escapeHtml(value)}</strong> ${escapeHtml(label)}</span>`)
+    .join('');
+  target.hidden = false;
+  target.className = `library-impact-panel ${escapeHtml(draftAssetSummaryLevel(summary))}`;
+  target.innerHTML = `
+    <div class="library-impact-head">
+      <strong>Draft Asset Index</strong>
+      <span>${escapeHtml(`${summary.designOnlyCount} design / ${summary.runtimeExecutableCount} executable`)}</span>
+    </div>
+    <div class="library-impact-risk-summary">${escapeHtml('Server-derived draft readiness is visible before loading a draft.')}</div>
+    <div class="library-impact-stats">${stats}</div>
+    ${rows.length ? `<div class="library-impact-risks">${rows.map((row) => `
+      <div class="library-impact-risk ${escapeHtml(draftAssetRowLevel(row))}">
+        <strong>${escapeHtml(row.label)}</strong>
+        <span>${escapeHtml(row.value)}</span>
+      </div>
+    `).join('')}${overflow ? `<div class="library-impact-more">+${overflow} more non-executable, deleted, or review-required drafts</div>` : ''}</div>` : ''}
+  `;
+}
+
+function draftAssetRowLevel(row) {
+  const text = String(row?.value || '').toLowerCase();
+  if (text.includes('repair')) return 'error';
+  if (text.includes('blocked') || text.includes('governance')) return 'warning';
+  return row?.active === false ? 'warning' : 'info';
 }
 
 function renderDraftRevisionControls() {
@@ -7053,6 +7211,7 @@ function renderPublicationControls() {
     state.publicationMessage = null;
     state.selectedGoldenCaseId = '';
     state.goldenAssertions = [];
+    await loadSelectedPublicationDetails({ render: false });
     await loadGoldenCases({ render: false });
     await loadGoldenCertificationStatus({ render: false });
     renderPublicationControls();
@@ -7071,11 +7230,13 @@ function renderPublicationControls() {
   if (reloadButton) {
     reloadButton.onclick = async () => {
       await loadPublicationList({ render: false });
+      await loadSelectedPublicationDetails({ render: false });
       await loadGoldenCases({ render: false });
       await loadGoldenCertificationStatus({ render: false });
       renderPublicationControls();
     };
   }
+  renderPublicationAssetSummary();
   renderGoldenCaseControls();
   renderGoldenCertificationStatus();
   renderPublicationStatus();
@@ -7330,11 +7491,143 @@ function publicationOptionLabel(publication) {
   const revision = publication.draftRevision || publication.draft?.revision || 0;
   const graph = publication.graphName || publication.draft?.graphName || publication.publicationId;
   const artifactKind = normalizePublishArtifactKind(publication.artifactKind || 'EXECUTABLE');
-  return `${graph} @${revision} · ${artifactKind} · ${publication.publicationId}`;
+  const readiness = publicationListReadinessLabel(publication);
+  return [`${graph} @${revision}`, artifactKind, readiness, publication.publicationId]
+    .filter(Boolean)
+    .join(' · ');
+}
+
+function publicationListReadinessLabel(publication) {
+  const readiness = publicationReadiness(publication);
+  return readiness?.state ? operatorPaletteFacetLabel(readiness.state) : '';
+}
+
+function publicationAssetSummary(publications) {
+  const summary = {
+    total: 0,
+    executableArtifactCount: 0,
+    designArtifactCount: 0,
+    runtimeExecutableCount: 0,
+    designOnlyCount: 0,
+    runtimeBlockedCount: 0,
+    governanceReviewCount: 0,
+    repairRequiredCount: 0,
+    unknownReadinessCount: 0
+  };
+  for (const publication of Array.isArray(publications) ? publications : []) {
+    summary.total += 1;
+    const artifactKind = normalizePublishArtifactKind(publication?.artifactKind || 'EXECUTABLE');
+    if (artifactKind === 'DESIGN') {
+      summary.designArtifactCount += 1;
+    } else {
+      summary.executableArtifactCount += 1;
+    }
+    const state = publicationReadiness(publication)?.state || '';
+    switch (state) {
+      case 'runtime-executable':
+        summary.runtimeExecutableCount += 1;
+        break;
+      case 'design-only':
+        summary.designOnlyCount += 1;
+        break;
+      case 'runtime-blocked':
+        summary.runtimeBlockedCount += 1;
+        break;
+      case 'governance-review':
+        summary.governanceReviewCount += 1;
+        break;
+      case 'draft-repair-required':
+      case 'catalog-repair-required':
+        summary.repairRequiredCount += 1;
+        break;
+      default:
+        summary.unknownReadinessCount += 1;
+        break;
+    }
+  }
+  return summary;
+}
+
+function publicationAssetSummaryLevel(summary) {
+  if (!summary || !summary.total) {
+    return 'info';
+  }
+  if (summary.repairRequiredCount) {
+    return 'error';
+  }
+  if (summary.runtimeBlockedCount || summary.governanceReviewCount) {
+    return 'warning';
+  }
+  return 'success';
+}
+
+function publicationAssetSummaryRows(publications, limit = 5) {
+  const rows = publicationAssetInterestingPublications(publications)
+    .map((publication) => ({
+      label: publicationOptionLabel(publication),
+      value: publicationReadinessStatusText(publication) || 'No frozen readiness snapshot'
+    }));
+  return rows.slice(0, Math.max(0, Number(limit) || 0));
+}
+
+function publicationAssetInterestingPublications(publications) {
+  return (Array.isArray(publications) ? publications : [])
+    .filter((publication) => normalizePublishArtifactKind(publication?.artifactKind || 'EXECUTABLE') === 'DESIGN'
+      || (publicationReadiness(publication)?.state || '') !== 'runtime-executable');
+}
+
+function renderPublicationAssetSummary() {
+  const target = $('publication-asset-summary');
+  if (!target) return;
+  const publications = Array.isArray(state.publications) ? state.publications : [];
+  if (!publications.length) {
+    target.hidden = true;
+    target.innerHTML = '';
+    return;
+  }
+  const summary = publicationAssetSummary(publications);
+  const interestingPublicationCount = publicationAssetInterestingPublications(publications).length;
+  const rows = publicationAssetSummaryRows(publications);
+  const overflow = Math.max(0, interestingPublicationCount - rows.length);
+  const stats = [
+    ['Total', summary.total],
+    ['EXECUTABLE', summary.executableArtifactCount],
+    ['DESIGN', summary.designArtifactCount],
+    ['Runtime executable', summary.runtimeExecutableCount],
+    ['Design only', summary.designOnlyCount],
+    ['Runtime blocked', summary.runtimeBlockedCount],
+    ['Governance review', summary.governanceReviewCount],
+    ['Repair required', summary.repairRequiredCount]
+  ].filter(([, value], index) => index < 3 || value)
+    .map(([label, value]) => `<span><strong>${escapeHtml(value)}</strong> ${escapeHtml(label)}</span>`)
+    .join('');
+  target.hidden = false;
+  target.className = `library-impact-panel ${escapeHtml(publicationAssetSummaryLevel(summary))}`;
+  target.innerHTML = `
+    <div class="library-impact-head">
+      <strong>Published Artifact Index</strong>
+      <span>${escapeHtml(`${summary.designArtifactCount} design / ${summary.executableArtifactCount} executable`)}</span>
+    </div>
+    <div class="library-impact-risk-summary">${escapeHtml('Frozen publication readiness is visible before selecting an artifact.')}</div>
+    <div class="library-impact-stats">${stats}</div>
+    ${rows.length ? `<div class="library-impact-risks">${rows.map((row) => `
+      <div class="library-impact-risk ${escapeHtml(publicationAssetRowLevel(row.value))}">
+        <strong>${escapeHtml(row.label)}</strong>
+        <span>${escapeHtml(row.value)}</span>
+      </div>
+    `).join('')}${overflow ? `<div class="library-impact-more">+${overflow} more non-executable or review-required artifacts</div>` : ''}</div>` : ''}
+  `;
+}
+
+function publicationAssetRowLevel(value) {
+  const text = String(value || '').toLowerCase();
+  if (text.includes('repair')) return 'error';
+  if (text.includes('blocked') || text.includes('governance')) return 'warning';
+  return 'info';
 }
 
 function publicationReadiness(publication) {
-  return normalizeVisualGraphReadiness(publication?.validation?.readiness);
+  return normalizeVisualGraphReadiness(publication?.validation?.readiness || publication?.readiness);
 }
 
 function publicationReadinessStatusText(publication) {
@@ -7795,11 +8088,18 @@ function runHistoryUrlFor(path) {
 
 async function loadPublicationList(options = {}) {
   try {
-    const response = await fetch('/api/visual/publications');
+    const response = await fetch('/api/visual/publications/summaries');
     if (!response.ok) {
       throw new Error(`Publication list failed with ${response.status}`);
     }
-    state.publications = await response.json();
+    state.publicationSummaries = await response.json();
+    state.publications = state.publicationSummaries;
+    const listedPublicationIds = new Set(state.publications.map((publication) => publication.publicationId));
+    for (const publicationId of Object.keys(state.publicationDetailsById)) {
+      if (!listedPublicationIds.has(publicationId)) {
+        delete state.publicationDetailsById[publicationId];
+      }
+    }
     if (state.selectedPublicationId
         && !state.publications.some((publication) => publication.publicationId === state.selectedPublicationId)) {
       state.selectedPublicationId = '';
@@ -7807,6 +8107,7 @@ async function loadPublicationList(options = {}) {
     if (!state.selectedPublicationId && state.publications.length) {
       state.selectedPublicationId = state.publications[0].publicationId;
     }
+    await loadSelectedPublicationDetails({ render: false });
     if (options.render !== false) {
       renderPublicationControls();
     }
@@ -7815,6 +8116,34 @@ async function loadPublicationList(options = {}) {
     setPublicationMessage(error.message, 'error');
     return [];
   }
+}
+
+async function loadSelectedPublicationDetails(options = {}) {
+  if (!state.selectedPublicationId) {
+    return null;
+  }
+  const detail = await loadPublicationDetails(state.selectedPublicationId);
+  if (options.render !== false) {
+    renderPublicationControls();
+  }
+  return detail;
+}
+
+async function loadPublicationDetails(publicationId) {
+  const id = String(publicationId || '').trim();
+  if (!id) {
+    return null;
+  }
+  if (state.publicationDetailsById[id]) {
+    return state.publicationDetailsById[id];
+  }
+  const response = await fetch(`/api/visual/publications/${encodeURIComponent(id)}`);
+  if (!response.ok) {
+    throw new Error(`Publication detail failed with ${response.status}`);
+  }
+  const publication = await response.json();
+  state.publicationDetailsById[id] = publication;
+  return publication;
 }
 
 async function loadGoldenCases(options = {}) {
@@ -7893,8 +8222,9 @@ async function loadGoldenCertificationStatus(options = {}) {
 }
 
 function selectedPublication() {
-  return state.publications.find((publication) =>
-    publication.publicationId === state.selectedPublicationId) || null;
+  return state.publicationDetailsById[state.selectedPublicationId]
+    || state.publications.find((publication) => publication.publicationId === state.selectedPublicationId)
+    || null;
 }
 
 function selectedGoldenCase() {
@@ -8177,7 +8507,7 @@ async function runSelectedPublication() {
     return;
   }
 
-  const readinessBeforeRun = publication.validation?.readiness || state.visualCheck?.readiness || null;
+  const readinessBeforeRun = publicationReadiness(publication) || state.visualCheck?.readiness || null;
   setPublicationMessage(`Running ${publication.publicationId}...`, 'info');
   setVisualCheck(`Running published ${publication.publicationId}...`, 'info', [], readinessBeforeRun);
   clearActiveRunTrace();
@@ -8219,9 +8549,10 @@ async function runSelectedPublication() {
 
 async function loadDraftList(options = {}) {
   try {
-    const [draftResponse, historyResponse] = await Promise.all([
+    const [draftResponse, historyResponse, summaryResponse] = await Promise.all([
       fetch('/api/visual/drafts'),
-      fetch('/api/visual/drafts/history')
+      fetch('/api/visual/drafts/history'),
+      fetch('/api/visual/drafts/summaries')
     ]);
     if (!draftResponse.ok) {
       throw new Error(`Draft list failed with ${draftResponse.status}`);
@@ -8229,8 +8560,12 @@ async function loadDraftList(options = {}) {
     if (!historyResponse.ok) {
       throw new Error(`Draft history index failed with ${historyResponse.status}`);
     }
+    if (!summaryResponse.ok) {
+      throw new Error(`Draft summary index failed with ${summaryResponse.status}`);
+    }
     state.drafts = await draftResponse.json();
     state.draftHistory = await historyResponse.json();
+    state.draftSummaries = await summaryResponse.json();
     if (state.currentDraftId && !draftHistoryEntries().some((entry) => entry.draftId === state.currentDraftId)) {
       state.currentDraftId = '';
       state.currentDraftRevision = 0;

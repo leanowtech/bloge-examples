@@ -979,6 +979,9 @@ class VisualAuthoringBrowserDomTest {
 
         click(wait, By.id("save-draft"));
         waitForText(wait, By.id("draft-status"), "Saved");
+        waitForText(wait, By.id("draft-asset-summary"), "Draft Asset Index");
+        waitForText(wait, By.id("draft-asset-summary"), "Design only");
+        waitForText(wait, By.id("draft-asset-summary"), "Server-derived draft readiness is visible before loading a draft.");
         click(wait, By.id("export-draft"));
         wait.until(ignored -> valueOf(By.id("draft-bundle-json"))
                 .contains("\"schemaVersion\": \"bloge.visualGraphDraftExport.v1\""));
@@ -991,6 +994,10 @@ class VisualAuthoringBrowserDomTest {
         String publicationId = valueOf(By.id("publication-select"));
         assertThat(publicationId).isNotBlank();
         waitForText(wait, By.id("publication-select"), "DESIGN");
+        waitForText(wait, By.id("publication-asset-summary"), "Published Artifact Index");
+        waitForText(wait, By.id("publication-asset-summary"), "DESIGN");
+        waitForText(wait, By.id("publication-asset-summary"), "Design only");
+        waitForText(wait, By.id("publication-asset-summary"), "Frozen publication readiness is visible before selecting an artifact.");
         assertThat(driver.findElement(By.id("run-publication")).isEnabled()).isFalse();
         assertThat(driver.findElement(By.id("save-golden-case")).isEnabled()).isFalse();
         assertThat(driver.findElement(By.id("run-golden-case")).isEnabled()).isFalse();

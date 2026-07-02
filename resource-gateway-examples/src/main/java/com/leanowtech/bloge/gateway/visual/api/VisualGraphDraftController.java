@@ -17,6 +17,7 @@ import com.leanowtech.bloge.gateway.visual.draft.GraphDraftPatchResult;
 import com.leanowtech.bloge.gateway.visual.draft.GraphDraftPatchService;
 import com.leanowtech.bloge.gateway.visual.draft.GraphDraftRepository;
 import com.leanowtech.bloge.gateway.visual.draft.GraphDraftRevisionRestoreRequest;
+import com.leanowtech.bloge.gateway.visual.draft.GraphDraftSummary;
 import com.leanowtech.bloge.gateway.visual.publication.VisualGraphPublication;
 import com.leanowtech.bloge.gateway.visual.publication.VisualGraphPublicationRepository;
 import com.leanowtech.bloge.gateway.visual.publication.VisualGraphPublicationResult;
@@ -106,6 +107,18 @@ public class VisualGraphDraftController {
     }
 
     /**
+     * Lists active and retained draft summaries with server-derived validation/readiness.
+     *
+     * @return newest-first draft asset summaries for browser and control-plane indexes
+     */
+    @GetMapping("/summaries")
+    public List<GraphDraftSummary> summaries() {
+        return repository.history().stream()
+                .map(this::draftSummary)
+                .toList();
+    }
+
+    /**
      * Creates a draft.
      *
      * @param draft draft body
@@ -137,6 +150,19 @@ public class VisualGraphDraftController {
      */
     public GraphDraft create(GraphDraft draft) {
         return create(draft, "", "", "", "");
+    }
+
+    private GraphDraftSummary draftSummary(GraphDraftHistorySummary history) {
+        GraphDraft draft = repository.find(history.draftId())
+                .orElseGet(() -> repository.revisions(history.draftId()).stream()
+                        .findFirst()
+                        .orElse(null));
+        if (draft == null) {
+            return GraphDraftSummary.from(history, null, null, null);
+        }
+        VisualValidationResult validation = validator.validate(draft);
+        GraphDraftDependencyReport dependencies = GraphDraftDependencyReport.from(draft, catalog);
+        return GraphDraftSummary.from(history, draft, validation, dependencies);
     }
 
     /**

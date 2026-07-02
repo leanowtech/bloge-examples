@@ -84,7 +84,21 @@ class VisualAuthoringAppJsTest {
 
         assertThat(source)
                 .contains("id=\"visual-readiness-panel\"")
+                .contains("id=\"draft-asset-summary\"")
+                .contains("id=\"publication-asset-summary\"")
+                .contains("publicationSummaries: []")
+                .contains("publicationDetailsById: {}")
                 .contains("function renderVisualReadinessPanel(target, readiness)")
+                .contains("function renderDraftAssetSummary()")
+                .contains("Draft Asset Index")
+                .contains("Server-derived draft readiness is visible before loading a draft.")
+                .contains("function renderPublicationAssetSummary()")
+                .contains("Published Artifact Index")
+                .contains("Frozen publication readiness is visible before selecting an artifact.")
+                .contains("fetch('/api/visual/publications/summaries')")
+                .contains("async function loadSelectedPublicationDetails(options = {})")
+                .contains("async function loadPublicationDetails(publicationId)")
+                .contains("state.publicationDetailsById[publication.publicationId] = publication")
                 .contains("Design Artifact Path")
                 .contains("Save, export, and publish as DESIGN.")
                 .contains("Compile, Run, and EXECUTABLE publish require executable runtime binding.")
@@ -101,7 +115,7 @@ class VisualAuthoringAppJsTest {
                 .contains("setVisualCheck('Compiling...', 'info', [], readinessBeforeCompile);")
                 .contains("payload.validation?.readiness || readinessBeforeCompile")
                 .contains("setVisualCheck(error.message, 'error', [], readinessBeforeCompile);")
-                .contains("const readinessBeforeRun = publication.validation?.readiness || state.visualCheck?.readiness || null;")
+                .contains("const readinessBeforeRun = publicationReadiness(publication) || state.visualCheck?.readiness || null;")
                 .contains("payload.validation?.readiness || readinessBeforeRun")
                 .contains("setVisualCheck(error.message, 'error', [], readinessBeforeRun);")
                 .contains("const validation = payload.validation || null;")
@@ -116,7 +130,9 @@ class VisualAuthoringAppJsTest {
 
         assertThat(source)
                 .contains("draftDependencyReport: null")
+                .contains("draftSummaries: []")
                 .contains("id=\"draft-dependencies\"")
+                .contains("/api/visual/drafts/summaries")
                 .contains("async function loadDraftDependencies(options = {})")
                 .contains("/api/visual/drafts/${encodeURIComponent(state.currentDraftId)}/dependencies")
                 .contains("function renderDraftDependencyReport()")
@@ -709,6 +725,15 @@ class VisualAuthoringAppJsTest {
                   'normalizeVisualGraphReadiness',
                   'visualGraphReadinessStatusText',
                   'visualGraphReadinessNodeSummary',
+                  'draftSummaryFor',
+                  'draftSummaryReadinessState',
+                  'draftSummaryReadinessLabel',
+                  'draftAssetSummary',
+                  'draftAssetSummaryLevel',
+                  'draftAssetInterestingSummaries',
+                  'draftAssetSummaryRows',
+                  'draftAssetRowLevel',
+                  'draftHistoryOptionLabel',
                   'renderVisualReadinessPanel',
                   'visualReadinessPanelSummary',
                   'visualReadinessPanelStats',
@@ -719,6 +744,13 @@ class VisualAuthoringAppJsTest {
                   'publicationReadinessReviewRows',
                   'publicationReadinessNodeLabel',
                   'publicationReadinessNodeSummary',
+                  'publicationOptionLabel',
+                  'publicationListReadinessLabel',
+                  'publicationAssetSummary',
+                  'publicationAssetSummaryLevel',
+                  'publicationAssetSummaryRows',
+                  'publicationAssetInterestingPublications',
+                  'publicationAssetRowLevel',
                   'publishArtifactKindsForReadiness',
                   'preferredPublishArtifactKind',
                   'publishArtifactKindControlState',
@@ -916,6 +948,7 @@ class VisualAuthoringAppJsTest {
                 context.CONTEXT_SOURCE_ID = '__ctx';
                 context.NODE_SIZE = { width: 170, height: 74 };
                 context.PUBLISH_ARTIFACT_KINDS = ['EXECUTABLE', 'DESIGN'];
+                context.state = { draftSummaries: [] };
                 context.elements = {};
                 context.$ = (id) => context.elements[id] || null;
                 context.syncGraphInputSchemaTextFromBuilder = () => {};
@@ -1586,6 +1619,111 @@ class VisualAuthoringAppJsTest {
                 const publicationReadiness = context.publicationReadiness(designPublication);
                 const publicationReadinessStatusText = context.publicationReadinessStatusText(designPublication);
                 const publicationReadinessRows = context.publicationReadinessReviewRows(designPublication);
+                const executablePublication = {
+                  publicationId: 'pub-executable',
+                  artifactKind: 'EXECUTABLE',
+                  graphName: 'Executable Risk',
+                  draftRevision: 3,
+                  validation: {
+                    readiness: context.normalizeVisualGraphReadiness({
+                      schemaVersion: 'bloge.visualGraphReadiness.v1',
+                      state: 'RUNTIME_EXECUTABLE',
+                      level: 'SUCCESS',
+                      executable: true,
+                      artifactKinds: ['EXECUTABLE', 'DESIGN'],
+                      title: 'Runtime executable',
+                      runtimeExecutableNodeCount: 2
+                    })
+                  }
+                };
+                const blockedPublication = {
+                  publicationId: 'pub-blocked',
+                  artifactKind: 'DESIGN',
+                  graphName: 'Blocked Risk',
+                  draftRevision: 4,
+                  validation: {
+                    readiness: context.normalizeVisualGraphReadiness({
+                      schemaVersion: 'bloge.visualGraphReadiness.v1',
+                      state: 'RUNTIME_BLOCKED',
+                      level: 'WARNING',
+                      executable: false,
+                      artifactKinds: ['DESIGN'],
+                      title: 'Runtime blocked',
+                      runtimeBlockedNodeCount: 1
+                    })
+                  }
+                };
+                const publicationOptionLabel = context.publicationOptionLabel(designPublication);
+                const publicationListReadinessLabel = context.publicationListReadinessLabel(designPublication);
+                const publicationSummaryReadinessLabel = context.publicationListReadinessLabel({
+                  publicationId: 'pub-summary',
+                  artifactKind: 'DESIGN',
+                  graphName: 'Summary Risk',
+                  draftRevision: 5,
+                  readiness: graphReadiness
+                });
+                const publicationAssetSummary = context.publicationAssetSummary([
+                  designPublication,
+                  executablePublication,
+                  blockedPublication
+                ]);
+                const publicationAssetSummaryLevel = context.publicationAssetSummaryLevel(publicationAssetSummary);
+                const publicationAssetSummaryRows = context.publicationAssetSummaryRows([
+                  designPublication,
+                  executablePublication,
+                  blockedPublication
+                ]);
+                const publicationAssetInterestingPublications = context.publicationAssetInterestingPublications([
+                  designPublication,
+                  executablePublication,
+                  blockedPublication
+                ]);
+                const publicationAssetRowLevel = context.publicationAssetRowLevel(publicationAssetSummaryRows[1].value);
+                const draftSummaries = [
+                  {
+                    draftId: 'draft-design',
+                    graphName: 'Design Draft',
+                    active: true,
+                    currentRevision: 2,
+                    latestRevision: 2,
+                    valid: true,
+                    readiness: graphReadiness
+                  },
+                  {
+                    draftId: 'draft-blocked',
+                    graphName: 'Blocked Draft',
+                    active: true,
+                    currentRevision: 4,
+                    latestRevision: 4,
+                    valid: true,
+                    readiness: blockedPublication.validation.readiness
+                  },
+                  {
+                    draftId: 'draft-deleted',
+                    graphName: 'Deleted Draft',
+                    active: false,
+                    currentRevision: 0,
+                    latestRevision: 5,
+                    valid: true,
+                    readiness: graphReadiness
+                  }
+                ];
+                context.state.draftSummaries = draftSummaries;
+                const draftSummaryReadinessLabel = context.draftSummaryReadinessLabel(draftSummaries[0]);
+                const draftAssetSummary = context.draftAssetSummary(draftSummaries);
+                const draftAssetSummaryLevel = context.draftAssetSummaryLevel(draftAssetSummary);
+                const draftAssetInterestingSummaries = context.draftAssetInterestingSummaries(draftSummaries);
+                const draftAssetSummaryRows = context.draftAssetSummaryRows(draftSummaries);
+                const draftAssetBlockedRowLevel = context.draftAssetRowLevel(draftAssetSummaryRows[1]);
+                const draftHistoryOptionLabel = context.draftHistoryOptionLabel({
+                  draftId: 'draft-design',
+                  graphName: 'Design Draft',
+                  active: true,
+                  currentRevision: 2,
+                  latestRevision: 2,
+                  changeSummary: 'Saved design draft.',
+                  reason: ''
+                });
                 const designOnlyPublishControl = context.publishArtifactKindControlState(graphReadiness, 'EXECUTABLE');
                 const designOnlyAllowedKinds = context.publishArtifactKindsForReadiness(graphReadiness).join('|');
                 const repairPublishControl = context.publishArtifactKindControlState({
@@ -2979,6 +3117,29 @@ class VisualAuthoringAppJsTest {
                   ['publication readiness review row count', publicationReadinessRows.length, 1],
                   ['publication readiness review row label', publicationReadinessRows[0].label, 'Eligibility Draft · Design only'],
                   ['publication readiness review row value', publicationReadinessRows[0].value, 'risk:eligibility · Design-only operator'],
+                  ['publication option readiness label', publicationOptionLabel, 'pub-design @0 · DESIGN · Design only · pub-design'],
+                  ['publication list readiness label', publicationListReadinessLabel, 'Design only'],
+                  ['publication summary readiness label', publicationSummaryReadinessLabel, 'Design only'],
+                  ['publication asset summary design artifacts', publicationAssetSummary.designArtifactCount, 2],
+                  ['publication asset summary executable artifacts', publicationAssetSummary.executableArtifactCount, 1],
+                  ['publication asset summary design-only readiness', publicationAssetSummary.designOnlyCount, 1],
+                  ['publication asset summary runtime-blocked readiness', publicationAssetSummary.runtimeBlockedCount, 1],
+                  ['publication asset summary runtime-executable readiness', publicationAssetSummary.runtimeExecutableCount, 1],
+                  ['publication asset summary level', publicationAssetSummaryLevel, 'warning'],
+                  ['publication asset interesting count', publicationAssetInterestingPublications.length, 2],
+                  ['publication asset first row label', publicationAssetSummaryRows[0].label, 'pub-design @0 · DESIGN · Design only · pub-design'],
+                  ['publication asset blocked row level', publicationAssetRowLevel, 'warning'],
+                  ['draft summary readiness label', draftSummaryReadinessLabel, 'Design only'],
+                  ['draft history readiness label', draftHistoryOptionLabel, 'Design Draft @2 · active · Design only · Saved design draft.'],
+                  ['draft asset summary total', draftAssetSummary.total, 3],
+                  ['draft asset summary active count', draftAssetSummary.activeCount, 2],
+                  ['draft asset summary recoverable count', draftAssetSummary.recoverableDeletedCount, 1],
+                  ['draft asset summary design-only readiness', draftAssetSummary.designOnlyCount, 2],
+                  ['draft asset summary runtime-blocked readiness', draftAssetSummary.runtimeBlockedCount, 1],
+                  ['draft asset summary level', draftAssetSummaryLevel, 'warning'],
+                  ['draft asset interesting count', draftAssetInterestingSummaries.length, 3],
+                  ['draft asset first row label', draftAssetSummaryRows[0].label, 'Design Draft @2 · active · Design only'],
+                  ['draft asset blocked row level', draftAssetBlockedRowLevel, 'warning'],
                   ['graph readiness publish allowed kinds', designOnlyAllowedKinds, 'DESIGN'],
                   ['graph readiness publish selected kind', designOnlyPublishControl.selected, 'DESIGN'],
                   ['graph readiness publish select disabled', String(designOnlyPublishControl.selectDisabled), 'true'],

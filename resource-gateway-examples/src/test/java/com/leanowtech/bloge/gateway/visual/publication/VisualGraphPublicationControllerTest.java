@@ -10,6 +10,7 @@ import com.leanowtech.bloge.gateway.visual.runtime.VisualGraphRunResponse;
 import com.leanowtech.bloge.gateway.visual.runtime.VisualGraphRunRecord;
 import com.leanowtech.bloge.gateway.visual.runtime.VisualGraphRunService;
 import com.leanowtech.bloge.gateway.visual.runtime.VisualStoredDraftRunRequest;
+import com.leanowtech.bloge.gateway.visual.validation.VisualGraphReadiness;
 import com.leanowtech.bloge.gateway.visual.validation.VisualValidationResult;
 
 import org.junit.jupiter.api.Test;
@@ -37,6 +38,32 @@ class VisualGraphPublicationControllerTest {
         assertThat(controller.get(stored.publicationId()))
                 .extracting(ResponseEntity::getBody)
                 .isEqualTo(stored);
+    }
+
+    @Test
+    void summariesExposeFrozenReadinessWithoutFullPublicationPayload() {
+        InMemoryVisualGraphPublicationRepository repository = new InMemoryVisualGraphPublicationRepository();
+        VisualGraphPublication stored = repository.create(publication());
+        VisualGraphPublicationController controller = new VisualGraphPublicationController(repository, runner(),
+                new InMemoryVisualGraphRunRepository());
+
+        List<VisualGraphPublicationSummary> summaries = controller.summaries();
+
+        assertThat(summaries)
+                .singleElement()
+                .satisfies(summary -> {
+                    assertThat(summary.schemaVersion()).isEqualTo("bloge.visualGraphPublicationSummary.v1");
+                    assertThat(summary.publicationId()).isEqualTo(stored.publicationId());
+                    assertThat(summary.draftId()).isEqualTo(stored.draftId());
+                    assertThat(summary.draftRevision()).isEqualTo(stored.draftRevision());
+                    assertThat(summary.graphName()).isEqualTo(stored.graphName());
+                    assertThat(summary.artifactKind()).isEqualTo("EXECUTABLE");
+                    assertThat(summary.valid()).isTrue();
+                    assertThat(summary.nodeCount()).isEqualTo(1);
+                    assertThat(summary.operatorDependencyCount()).isEqualTo(1);
+                    assertThat(summary.runtimeReadinessStateCounts()).containsEntry("RUNTIME_EXECUTABLE", 1);
+                    assertThat(summary.readiness().state()).isEqualTo("runtime-executable");
+                });
     }
 
     @Test
@@ -128,7 +155,11 @@ class VisualGraphPublicationControllerTest {
         return VisualGraphPublication.from(
                 draft,
                 List.of(operator),
-                new VisualValidationResult(true, List.of()),
+                new VisualValidationResult(true, List.of(), VisualGraphReadiness.from(
+                        draft,
+                        Map.of("eligibility", operator),
+                        List.of()
+                )),
                 new DslGenerationResult(true, "graph visualPolicy {}", List.of()),
                 GraphDraftDependencyReport.from(draft, VisualCatalogTestSupport.catalogWithLibrary(
                         VisualCatalogTestSupport.eligibilityLibrary("integer")))

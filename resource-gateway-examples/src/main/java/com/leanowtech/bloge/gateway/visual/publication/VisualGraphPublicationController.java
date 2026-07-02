@@ -16,6 +16,7 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.util.Collection;
+import java.util.List;
 
 /**
  * Public API for immutable visual graph publications.
@@ -46,6 +47,18 @@ public class VisualGraphPublicationController {
     @GetMapping
     public Collection<VisualGraphPublication> list() {
         return repository.all();
+    }
+
+    /**
+     * Lists lightweight publication summaries for asset indexes.
+     *
+     * @return publication summaries newest first
+     */
+    @GetMapping("/summaries")
+    public List<VisualGraphPublicationSummary> summaries() {
+        return repository.all().stream()
+                .map(VisualGraphPublicationSummary::from)
+                .toList();
     }
 
     /**
