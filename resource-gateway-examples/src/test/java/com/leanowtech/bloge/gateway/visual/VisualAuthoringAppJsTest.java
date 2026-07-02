@@ -124,6 +124,18 @@ class VisualAuthoringAppJsTest {
                 .contains("rebaseOperatorFingerprint(button.dataset.draftDependencyRebase)")
                 .contains("function draftDependencyCanRebase(row)")
                 .contains("readiness !== 'CATALOG_MISSING'")
+                .contains("function currentDraftHasUnsavedGraphChanges()")
+                .contains("!state.builderHistoryUndo.length")
+                .contains("function operatorFingerprintRebaseBlockReason()")
+                .contains("function draftLocalEditOperations(baseDraft, nextDraft)")
+                .contains("function normalizeDraftForLocalEditGuard(draft)")
+                .contains("function refreshSelectedOperatorFingerprintPanel()")
+                .contains("data-operator-fingerprint-snapshot-panel")
+                .contains("save or reload local changes before rebasing")
+                .contains("async function refreshDraftConflictState(payload, options = {})")
+                .contains("const reloadBuilder = options.reloadBuilder === true")
+                .contains("await refreshDraftConflictState(payload, { reloadBuilder: true })")
+                .contains("Review the latest draft dependencies before rebasing.")
                 .contains("async function refreshCatalogDependentAuthoringViews()")
                 .contains("status.status === 'OPERATOR_MISSING'")
                 .contains("restore the operator library first")
@@ -646,6 +658,20 @@ class VisualAuthoringAppJsTest {
                   'defaultOutputNodeForBuilder',
                   'defaultOutputPathForNode',
                   'ensureBuilderOutput',
+                  'builderToVisualDraft',
+                  'operatorFingerprintsForBuilder',
+                  'builderNodeToDraftNode',
+                  'visualDraftEdgeFromBuilderEdge',
+                  'builderScope',
+                  'currentGraphInputSchema',
+                  'currentSavedDraftSnapshot',
+                  'draftPatchOperations',
+                  'draftLocalEditOperations',
+                  'normalizeDraftForPatch',
+                  'normalizeDraftForLocalEditGuard',
+                  'normalizeVisualLayoutForLocalEditGuard',
+                  'jsonPatchDiff',
+                  'jsonPointerEscape',
                   'builderEdges',
                   'canonicalEdgeKind',
                   'builderConfigBindings',
@@ -699,9 +725,13 @@ class VisualAuthoringAppJsTest {
                   'expressionReferencesNode',
                   'fallbackContextExpression',
                   'operatorUsageRefForNode',
+                  'currentDraftHasUnsavedGraphChanges',
+                  'operatorFingerprintRebaseBlockReason',
+                  'refreshDraftConflictState',
                   'rebaseOperatorFingerprint',
                   'renderOperatorUsagePanel',
                   'renderOperatorFingerprintSnapshotPanel',
+                  'refreshSelectedOperatorFingerprintPanel',
                   'operatorFingerprintSnapshotStatus',
                   'renderOperatorUsageContent',
                   'renderOperatorUsageSection',
@@ -1879,6 +1909,11 @@ class VisualAuthoringAppJsTest {
                     ]
                   }
                 };
+                context.state.savedDraftSnapshot = {
+                  ...context.builderToVisualDraft(context.state.builder),
+                  draftId: 'draft-risk',
+                  revision: 3
+                };
                 const normalizedPaletteTokens = context.paletteSearchTokens('  Risk   SCORE  ').join('|');
                 context.state.paletteSearch = 'risk inputs.customer.id config.threshold number';
                 const paletteMultiTokenMatch = context.operatorMatchesPaletteFilter('risk:eligibility', paletteSearchSpec);
@@ -2295,6 +2330,20 @@ class VisualAuthoringAppJsTest {
                 const riskUsagePanel = context.renderOperatorUsagePanel(context.state.builder.nodes[1]);
                 const riskFingerprintStatus = context.operatorFingerprintSnapshotStatus(context.state.builder.nodes[1]);
                 const riskFingerprintPanel = context.renderOperatorFingerprintSnapshotPanel(context.state.builder.nodes[1]);
+                const cleanRebaseBlockReason = context.operatorFingerprintRebaseBlockReason();
+                const cleanDraftDirty = context.currentDraftHasUnsavedGraphChanges();
+                const originalRiskScoreInput = context.state.builder.nodes[1].customInputs.score;
+                context.state.builderHistoryUndo = [{
+                  action: 'Edit binding riskNode.score',
+                  snapshot: context.serializeBuilderHistory(context.state.builder)
+                }];
+                context.state.builder.nodes[1].customInputs.score = 'ctx.changedScore';
+                const dirtyDraftDirty = context.currentDraftHasUnsavedGraphChanges();
+                const dirtyRebaseBlockReason = context.operatorFingerprintRebaseBlockReason();
+                const dirtyFingerprintStatus = context.operatorFingerprintSnapshotStatus(context.state.builder.nodes[1]);
+                const dirtyFingerprintPanel = context.renderOperatorFingerprintSnapshotPanel(context.state.builder.nodes[1]);
+                context.state.builder.nodes[1].customInputs.score = originalRiskScoreInput;
+                context.state.builderHistoryUndo = [];
                 const riskUsageDraftEntry = context.operatorUsageDraftEntryForNode(context.state.builder.nodes[1]);
                 const riskUsageChange = context.operatorUsageChangeLine(riskUsageDraftEntry);
                 const riskUsageAction = context.operatorUsageRiskActionLine(riskUsageDraftEntry, 'draft');
@@ -3051,10 +3100,18 @@ class VisualAuthoringAppJsTest {
                   ['risk fingerprint status', riskFingerprintStatus.status, 'DRIFTED'],
                   ['risk fingerprint level', riskFingerprintStatus.level, 'warning'],
                   ['risk fingerprint risk', riskFingerprintStatus.changeRisk, 'BREAKING_SCHEMA'],
+                  ['clean draft dirty', cleanDraftDirty, false],
+                  ['clean rebase block reason', cleanRebaseBlockReason, ''],
                   ['risk fingerprint can rebase', riskFingerprintStatus.canRebase, true],
                   ['risk fingerprint panel includes rebase action', String(riskFingerprintPanel.includes('data-rebase-operator-fingerprint="riskNode"')), 'true'],
                   ['risk fingerprint panel includes drift label', String(riskFingerprintPanel.includes('Snapshot drifted')), 'true'],
                   ['risk fingerprint panel includes risk guidance', String(riskFingerprintPanel.includes('Repair affected bindings')), 'true'],
+                  ['dirty draft dirty', dirtyDraftDirty, true],
+                  ['dirty rebase block reason', dirtyRebaseBlockReason, 'save or reload local changes before rebasing'],
+                  ['dirty fingerprint can rebase', dirtyFingerprintStatus.canRebase, false],
+                  ['dirty fingerprint reason', dirtyFingerprintStatus.rebaseReason, 'save or reload local changes before rebasing'],
+                  ['dirty fingerprint panel disables rebase', String(dirtyFingerprintPanel.includes('disabled')), 'true'],
+                  ['dirty fingerprint panel includes reason', String(dirtyFingerprintPanel.includes('save or reload local changes before rebasing')), 'true'],
                   ['risk usage panel includes rebase action', String(riskUsagePanel.includes('data-rebase-operator-fingerprint="riskNode"')), 'true'],
                   ['library impact diagnostics', libraryImpact.diagnosticCount, 4],
                   ['library impact errors', libraryImpact.errorCount, 2],
@@ -3251,6 +3308,8 @@ class VisualAuthoringAppJsTest {
                   let rebaseDraftMessageLevel = '';
                   let rebaseDraftListCalls = 0;
                   let rebaseRevisionCalls = 0;
+                  let rebaseDependencyCalls = 0;
+                  let rebaseDependencyRenders = 0;
                   let rebaseUsageRef = '';
                   let rebaseDraftControlRenders = 0;
                   let rebaseEditorRenders = 0;
@@ -3287,6 +3346,13 @@ class VisualAuthoringAppJsTest {
                     rebaseRevisionCalls += 1;
                     return [];
                   };
+                  context.loadDraftDependencies = async () => {
+                    rebaseDependencyCalls += 1;
+                    return { draftId: 'draft-risk', revision: context.state.currentDraftRevision };
+                  };
+                  context.renderDraftDependencyReport = () => {
+                    rebaseDependencyRenders += 1;
+                  };
                   context.renderDraftControls = () => {
                     rebaseDraftControlRenders += 1;
                   };
@@ -3307,6 +3373,8 @@ class VisualAuthoringAppJsTest {
                     rebaseDraftMessageLevel,
                     rebaseDraftListCalls,
                     rebaseRevisionCalls,
+                    rebaseDependencyCalls,
+                    rebaseDependencyRenders,
                     rebaseUsageRef,
                     rebaseDraftControlRenders,
                     rebaseEditorRenders,
@@ -3325,6 +3393,8 @@ class VisualAuthoringAppJsTest {
                     ['rebase message text', rebaseResult.rebaseDraftMessage, 'Rebased riskNode operator fingerprint at draft-risk@4.'],
                     ['rebase draft list calls', rebaseResult.rebaseDraftListCalls, 1],
                     ['rebase revision calls', rebaseResult.rebaseRevisionCalls, 1],
+                    ['rebase dependency calls', rebaseResult.rebaseDependencyCalls, 1],
+                    ['rebase dependency renders', rebaseResult.rebaseDependencyRenders, 0],
                     ['rebase usage ref', rebaseResult.rebaseUsageRef, 'risk:eligibility'],
                     ['rebase draft controls rendered', rebaseResult.rebaseDraftControlRenders, 2],
                     ['rebase editor renders', rebaseResult.rebaseEditorRenders, 2],
@@ -3332,6 +3402,88 @@ class VisualAuthoringAppJsTest {
                     ['rebase loading cleared', context.state.operatorFingerprintRebaseNodeId, '']
                   ];
                   for (const [label, actual, expected] of rebaseChecks) {
+                    if (actual !== expected) {
+                      throw new Error(`${label}: expected ${expected}, got ${actual}`);
+                    }
+                  }
+                  rebaseFetchUrl = '';
+                  rebaseFetchBody = '';
+                  rebaseDraftMessage = '';
+                  rebaseDraftMessageLevel = '';
+                  rebaseDraftListCalls = 0;
+                  rebaseRevisionCalls = 0;
+                  rebaseDependencyCalls = 0;
+                  rebaseDependencyRenders = 0;
+                  rebaseUsageRef = '';
+                  rebaseDraftControlRenders = 0;
+                  rebaseEditorRenders = 0;
+                  rebaseDiagramRenders = 0;
+                  context.fetch = async (url, options = {}) => {
+                    rebaseFetchUrl = url;
+                    rebaseFetchBody = options.body || '';
+                    return {
+                      ok: false,
+                      status: 409,
+                      json: async () => ({
+                        patched: false,
+                        draft: {
+                          draftId: 'draft-risk',
+                          revision: 5,
+                          graphName: 'serverAdvancedPolicy',
+                          operatorFingerprints: {
+                            riskNode: 'server-still-drifted-fingerprint'
+                          }
+                        },
+                        diagnostics: [{
+                          level: 'ERROR',
+                          code: 'visual.draft.revisionConflict',
+                          message: 'Draft revision conflict: expected 4 but current revision is 5.',
+                          target: '/expectedRevision'
+                        }]
+                      })
+                    };
+                  };
+                  return context.rebaseOperatorFingerprint('riskNode').then((conflictDraft) => ({
+                    conflictDraft,
+                    rebaseFetchUrl,
+                    rebaseFetchBody,
+                    rebaseDraftMessage,
+                    rebaseDraftMessageLevel,
+                    rebaseDraftListCalls,
+                    rebaseRevisionCalls,
+                    rebaseDependencyCalls,
+                    rebaseDependencyRenders,
+                    rebaseUsageRef,
+                    rebaseDraftControlRenders,
+                    rebaseEditorRenders,
+                    rebaseDiagramRenders,
+                    currentDraftRevision: context.state.currentDraftRevision,
+                    savedDraftRevision: context.state.savedDraftSnapshot.revision,
+                    builderGraphName: context.state.builder.graphName,
+                    loadingNodeId: context.state.operatorFingerprintRebaseNodeId
+                  }));
+                }).then((rebaseConflict) => {
+                  const conflictBody = JSON.parse(rebaseConflict.rebaseFetchBody);
+                  const conflictChecks = [
+                    ['rebase conflict endpoint', rebaseConflict.rebaseFetchUrl, '/api/visual/drafts/draft-risk/operator-fingerprints/rebase'],
+                    ['rebase conflict expected revision', conflictBody.expectedRevision, 4],
+                    ['rebase conflict result', rebaseConflict.conflictDraft, null],
+                    ['rebase conflict state revision', rebaseConflict.currentDraftRevision, 5],
+                    ['rebase conflict saved revision', rebaseConflict.savedDraftRevision, 5],
+                    ['rebase conflict builder graph', rebaseConflict.builderGraphName, 'serverAdvancedPolicy'],
+                    ['rebase conflict message level', rebaseConflict.rebaseDraftMessageLevel, 'error'],
+                    ['rebase conflict message text', rebaseConflict.rebaseDraftMessage, 'Draft revision conflict: expected 4 but current revision is 5. Review the latest draft dependencies before rebasing.'],
+                    ['rebase conflict draft list calls', rebaseConflict.rebaseDraftListCalls, 1],
+                    ['rebase conflict revision calls', rebaseConflict.rebaseRevisionCalls, 1],
+                    ['rebase conflict dependency calls', rebaseConflict.rebaseDependencyCalls, 1],
+                    ['rebase conflict dependency renders', rebaseConflict.rebaseDependencyRenders, 1],
+                    ['rebase conflict usage ref', rebaseConflict.rebaseUsageRef, ''],
+                    ['rebase conflict draft controls rendered', rebaseConflict.rebaseDraftControlRenders, 3],
+                    ['rebase conflict editor renders', rebaseConflict.rebaseEditorRenders, 2],
+                    ['rebase conflict diagram renders', rebaseConflict.rebaseDiagramRenders, 1],
+                    ['rebase conflict loading cleared', rebaseConflict.loadingNodeId, '']
+                  ];
+                  for (const [label, actual, expected] of conflictChecks) {
                     if (actual !== expected) {
                       throw new Error(`${label}: expected ${expected}, got ${actual}`);
                     }

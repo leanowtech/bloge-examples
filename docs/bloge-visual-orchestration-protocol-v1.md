@@ -1387,6 +1387,13 @@ snapshot 提供 source/lowering 审阅上下文，但仍把运行状态标记为
 浏览器 Drafts 依赖面板消费该报告时可以把 `drifted` 和 `missing-snapshot`
 节点行映射为受控 rebase 动作，但必须继续使用 draft revision guard，并且不得为
 `catalog-missing` 节点提供 rebase 假动作；catalog 缺失需要先修复目标环境算子库。
+如果当前画布相对已保存 draft revision 存在未保存的图结构、binding、config 或 output
+变更，客户端必须先要求作者保存或重新加载，再允许 rebase；rebase 不应把本地未保存编辑
+和服务端托管的 operator fingerprint snapshot 更新混在一个隐式动作里。
+如果 rebase 因 `visual.draft.revisionConflict` 被拒绝，浏览器必须采用响应中的最新
+draft revision，把最新 draft 重新加载到画布并清理本地编辑历史，刷新 revision list 和
+dependency report，并要求作者基于最新依赖视图复核后再重试；不能在过期画布状态下
+静默继续 rebase。
 任何成功改变 current catalog 的 operator-library import、delete 或 restore 都应刷新当前
 active draft 的 dependency report，避免作者在 stale catalog 视图下做错误 rebase 或发布判断。
 当 operator library 被强制删除导致 stored draft 出现 `catalog-missing` 时，控制面仍应保留

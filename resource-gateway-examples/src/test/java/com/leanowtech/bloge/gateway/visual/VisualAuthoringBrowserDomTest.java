@@ -9,7 +9,9 @@ import com.leanowtech.bloge.gateway.gateway.ResourceDescriptorBootstrap;
 import com.leanowtech.bloge.gateway.resource.WritableResourceRegistry;
 import com.leanowtech.bloge.gateway.visual.catalog.OperatorDefinition;
 import com.leanowtech.bloge.gateway.visual.catalog.OperatorLibrary;
+import com.leanowtech.bloge.gateway.visual.catalog.OperatorLibraryRegistry;
 import com.leanowtech.bloge.gateway.visual.catalog.VisualCatalogTestSupport;
+import com.leanowtech.bloge.gateway.visual.draft.GraphDraftRepository;
 import com.leanowtech.bloge.gateway.visual.model.SchemaEnvelope;
 
 import org.junit.jupiter.api.AfterEach;
@@ -69,6 +71,12 @@ class VisualAuthoringBrowserDomTest {
     @Autowired
     private WritableResourceRegistry resourceRegistry;
 
+    @Autowired
+    private OperatorLibraryRegistry operatorLibraryRegistry;
+
+    @Autowired
+    private GraphDraftRepository graphDraftRepository;
+
     @LocalServerPort
     private int port;
 
@@ -78,6 +86,14 @@ class VisualAuthoringBrowserDomTest {
 
     @BeforeEach
     void seedDemoDescriptorsForRandomPort() {
+        graphDraftRepository.all().stream()
+                .map(draft -> draft.draftId())
+                .toList()
+                .forEach(graphDraftRepository::delete);
+        operatorLibraryRegistry.all().stream()
+                .map(OperatorLibrary::libraryId)
+                .toList()
+                .forEach(operatorLibraryRegistry::delete);
         resourceRegistry.all().stream()
                 .map(descriptor -> descriptor.resourceId())
                 .toList()
@@ -282,6 +298,28 @@ class VisualAuthoringBrowserDomTest {
         waitForText(wait, By.id("draft-dependencies"), "fingerprint drifted");
         waitForText(wait, By.id("draft-dependencies"), "Rebase");
 
+        click(wait, By.cssSelector("#diagram [data-node-id='riskEligibility']"));
+        setControlValue(driver.findElement(By.cssSelector("[data-binding-expression][data-binding-path='score']")),
+                "ctx.changedScore");
+        waitForValue(wait, By.id("composer-dsl"), "ctx.changedScore");
+        waitForText(wait, By.id("draft-dependencies"), "save or reload local changes before rebasing");
+        WebElement dirtyDependencyRebaseButton = wait.until(ExpectedConditions.presenceOfElementLocated(
+                By.cssSelector("#draft-dependencies [data-draft-dependency-rebase='riskEligibility']")
+        ));
+        assertThat(dirtyDependencyRebaseButton.isEnabled()).isFalse();
+        WebElement dirtyInspectorRebaseButton = wait.until(ExpectedConditions.presenceOfElementLocated(
+                By.cssSelector("#selected-operator-editor [data-rebase-operator-fingerprint='riskEligibility']")
+        ));
+        assertThat(dirtyInspectorRebaseButton.isEnabled()).isFalse();
+        waitForText(wait, By.id("selected-operator-editor"), "save or reload local changes before rebasing");
+
+        click(wait, By.id("save-draft"));
+        waitForText(wait, By.id("draft-status"), "Saved");
+        waitForText(wait, By.id("draft-dependencies"), "fingerprint drifted");
+        wait.until(ExpectedConditions.elementToBeClickable(
+                By.cssSelector("#draft-dependencies [data-draft-dependency-rebase='riskEligibility']")
+        ));
+
         click(wait, By.cssSelector("#draft-dependencies [data-draft-dependency-rebase='riskEligibility']"));
         waitForText(wait, By.id("draft-status"), "Rebased riskEligibility operator fingerprint");
         waitForText(wait, By.id("draft-dependencies"), "fingerprint current");
@@ -292,6 +330,45 @@ class VisualAuthoringBrowserDomTest {
         click(wait, By.cssSelector("#draft-dependencies [data-draft-dependency-node='riskEligibility']"));
         waitForText(wait, By.id("selected-operator-editor"), "riskEligibility");
         waitForText(wait, By.id("selected-operator-editor"), "Snapshot current");
+    }
+
+    @Test
+    void composerRecoversFromDependencyPanelRebaseRevisionConflictInRealBrowser() throws JsonProcessingException {
+        driver = newChromeDriverOrSkip();
+        WebDriverWait wait = new WebDriverWait(driver, WAIT_TIMEOUT);
+        driver.get("http://localhost:" + port + "/examples/gateway");
+
+        waitForComposer(wait);
+        wait.until(ExpectedConditions.visibilityOfElementLocated(By.id("operator-palette")));
+
+        importOperatorLibrary(wait, VisualCatalogTestSupport.eligibilityLibrary("integer"));
+        dragOperatorToCanvas(wait, "Eligibility", "risk:eligibility", "riskEligibility", 140, 120);
+        click(wait, By.id("save-draft"));
+        waitForText(wait, By.id("draft-status"), "Saved");
+        waitForText(wait, By.id("draft-dependencies"), "fingerprint current");
+
+        String draftId = valueOf(By.id("draft-select"));
+        long savedRevision = currentDraftRevisionFromStatus();
+
+        importOperatorLibrary(wait, eligibilityLibraryWithAdditionalOutput());
+        waitForText(wait, By.id("draft-dependencies"), "fingerprint drifted");
+        waitForText(wait, By.id("draft-dependencies"), "Rebase");
+
+        patchDraftGraphNameInBrowser(draftId, savedRevision, "serverAdvancedPolicy");
+
+        click(wait, By.cssSelector("#draft-dependencies [data-draft-dependency-rebase='riskEligibility']"));
+        waitForText(wait, By.id("draft-status"), "Draft revision conflict");
+        waitForText(wait, By.id("draft-status"), "Review the latest draft dependencies before rebasing.");
+        waitForValue(wait, By.id("composer-dsl"), "graph serverAdvancedPolicy");
+        waitForText(wait, By.id("draft-dependencies"), draftId + "@" + (savedRevision + 1));
+        waitForText(wait, By.id("draft-dependencies"), "fingerprint drifted");
+        waitForText(wait, By.id("draft-dependencies"), "Rebase");
+
+        click(wait, By.cssSelector("#draft-dependencies [data-draft-dependency-rebase='riskEligibility']"));
+        waitForText(wait, By.id("draft-status"), "Rebased riskEligibility operator fingerprint");
+        waitForValue(wait, By.id("composer-dsl"), "graph serverAdvancedPolicy");
+        waitForText(wait, By.id("draft-dependencies"), draftId + "@" + (savedRevision + 2));
+        waitForText(wait, By.id("draft-dependencies"), "fingerprint current");
     }
 
     @Test
@@ -1478,6 +1555,39 @@ class VisualAuthoringBrowserDomTest {
                 port,
                 path
         ));
+    }
+
+    private long currentDraftRevisionFromStatus() {
+        String status = textOf(By.id("draft-status"));
+        String revision = status.replaceFirst(".*@(\\d+).*", "$1");
+        assertThat(revision).as(status).matches("\\d+");
+        return Long.parseLong(revision);
+    }
+
+    @SuppressWarnings("unchecked")
+    private void patchDraftGraphNameInBrowser(String draftId, long expectedRevision, String graphName) {
+        Map<String, Object> result = (Map<String, Object>) ((JavascriptExecutor) driver).executeAsyncScript("""
+                const draftId = arguments[0];
+                const expectedRevision = arguments[1];
+                const graphName = arguments[2];
+                const done = arguments[arguments.length - 1];
+                fetch(`/api/visual/drafts/${encodeURIComponent(draftId)}`, {
+                  method: 'PATCH',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({
+                    expectedRevision,
+                    actor: 'browser-test',
+                    changeSource: 'concurrent-browser-test',
+                    changeSummary: 'Simulated concurrent graph rename.',
+                    patch: [{ op: 'replace', path: '/graphName', value: graphName }]
+                  })
+                })
+                  .then(async (response) => done({ status: response.status, body: await response.text() }))
+                  .catch((error) => done({ status: 0, body: error.message }));
+                """, draftId, expectedRevision, graphName);
+        assertThat(((Number) result.get("status")).intValue())
+                .as(String.valueOf(result.get("body")))
+                .isEqualTo(200);
     }
 
     private void addDynamicInputBinding(WebDriverWait wait, String port, String path) {

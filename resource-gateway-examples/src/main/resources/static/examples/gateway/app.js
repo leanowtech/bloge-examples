@@ -6145,14 +6145,20 @@ function draftDependencyNodeButton(nodeId) {
 
 function draftDependencyRebaseButton(node) {
   const nodeId = String(node?.nodeId || '').trim();
-  if (!nodeId || !draftDependencyCanRebase(node)) {
+  if (!nodeId || !draftDependencyHasRebaseState(node)) {
     return '';
   }
   const loading = state.operatorFingerprintRebaseNodeId === nodeId;
-  return ` <button class="secondary compact" type="button" data-draft-dependency-rebase="${escapeHtml(nodeId)}" ${loading ? 'disabled' : ''}>${loading ? 'Rebasing' : 'Rebase'}</button>`;
+  const reason = operatorFingerprintRebaseBlockReason();
+  const disabled = loading || Boolean(reason);
+  return ` <button class="secondary compact" type="button" data-draft-dependency-rebase="${escapeHtml(nodeId)}" ${disabled ? 'disabled' : ''} title="${escapeHtml(reason || `Rebase ${nodeId} to the current operator fingerprint`)}">${loading ? 'Rebasing' : 'Rebase'}</button>${reason ? ` <em>${escapeHtml(reason)}</em>` : ''}`;
 }
 
 function draftDependencyCanRebase(row) {
+  return draftDependencyHasRebaseState(row) && !operatorFingerprintRebaseBlockReason();
+}
+
+function draftDependencyHasRebaseState(row) {
   if (!state.currentDraftId || !state.currentDraftRevision) {
     return false;
   }
@@ -7475,6 +7481,40 @@ async function loadDraftDependencies(options = {}) {
   }
 }
 
+async function refreshDraftConflictState(payload, options = {}) {
+  const current = payload?.draft;
+  if (!current || current.revision === undefined) {
+    return false;
+  }
+  const render = options.render !== false;
+  const reloadBuilder = options.reloadBuilder === true;
+  state.currentDraftId = current.draftId || state.currentDraftId;
+  state.currentDraftRevision = current.revision || 0;
+  state.savedDraftSnapshot = current;
+  state.previewingDraftRevision = 0;
+  if (reloadBuilder) {
+    state.builder = builderFromVisualDraft(current);
+    clearBuilderHistory('Reloaded latest draft after revision conflict; local edit history cleared.');
+    state.lastPayload = null;
+    state.lastGeneratedVisualDsl = '';
+    syncGraphInputSchemaTextFromBuilder({ render: false });
+    syncComposerFromBuilder({ render: false });
+  }
+  await loadDraftList({ render: false });
+  await loadDraftRevisions({ render: false });
+  if (options.dependencies !== false) {
+    await loadDraftDependencies({ render: false });
+  }
+  if (render) {
+    renderDraftControls();
+    renderDraftDependencyReport();
+    if (reloadBuilder) {
+      renderScenario();
+    }
+  }
+  return true;
+}
+
 function latestDraftRevision() {
   const revisions = Array.isArray(state.draftRevisions) ? state.draftRevisions : [];
   return revisions[0] || null;
@@ -7514,6 +7554,7 @@ async function saveCurrentDraft() {
     if (!patch.length) {
       const current = baseDraft || draft;
       state.savedDraftSnapshot = current;
+      clearBuilderHistory('No unsaved draft changes remain.');
       await loadDraftDependencies({ render: false });
       setDraftMessage(`No changes in ${draftId}@${state.currentDraftRevision || 0}.`, 'success');
       renderDraftControls();
@@ -7540,11 +7581,8 @@ async function saveCurrentDraft() {
   const payload = await response.json().catch(() => null);
   if (!response.ok) {
     const diagnostics = normalizeDiagnostics(payload?.diagnostics);
-    const current = payload?.draft;
-    if (response.status === 409 && current?.revision !== undefined) {
-      state.currentDraftRevision = current.revision || 0;
-      state.savedDraftSnapshot = current;
-      await loadDraftList();
+    if (response.status === 409) {
+      await refreshDraftConflictState(payload);
     }
     setDraftMessage(diagnosticMessage(diagnostics, `Save failed with ${response.status}`), 'error');
     return null;
@@ -7556,6 +7594,7 @@ async function saveCurrentDraft() {
   state.builder.operatorFingerprints = { ...(stored.operatorFingerprints || {}) };
   state.builder.operatorSnapshots = { ...(stored.operatorSnapshots || {}) };
   state.previewingDraftRevision = 0;
+  clearBuilderHistory('Saved draft; local edit history cleared.');
   setDraftMessage(`Saved ${state.currentDraftId}@${state.currentDraftRevision}.`, 'success');
   await loadDraftList({ render: false });
   await loadDraftRevisions({ render: false });
@@ -7575,11 +7614,46 @@ function currentSavedDraftSnapshot(draftId = state.currentDraftId) {
   return listed || null;
 }
 
+function currentDraftHasUnsavedGraphChanges() {
+  if (!state.currentDraftId || !state.currentDraftRevision) {
+    return false;
+  }
+  if (!state.builderHistoryUndo.length) {
+    return false;
+  }
+  const baseDraft = currentSavedDraftSnapshot();
+  if (!baseDraft) {
+    return true;
+  }
+  try {
+    return draftLocalEditOperations(baseDraft, builderToVisualDraft(state.builder)).length > 0;
+  } catch {
+    return true;
+  }
+}
+
+function operatorFingerprintRebaseBlockReason() {
+  if (!state.currentDraftId || !state.currentDraftRevision) {
+    return 'save draft first';
+  }
+  if (currentDraftHasUnsavedGraphChanges()) {
+    return 'save or reload local changes before rebasing';
+  }
+  return '';
+}
+
 function draftPatchOperations(baseDraft, nextDraft) {
   if (!baseDraft) {
     throw new Error('Current draft snapshot is required before patching.');
   }
   return jsonPatchDiff(normalizeDraftForPatch(baseDraft), normalizeDraftForPatch(nextDraft), '');
+}
+
+function draftLocalEditOperations(baseDraft, nextDraft) {
+  if (!baseDraft) {
+    throw new Error('Current draft snapshot is required before comparing local edits.');
+  }
+  return jsonPatchDiff(normalizeDraftForLocalEditGuard(baseDraft), normalizeDraftForLocalEditGuard(nextDraft), '');
 }
 
 function draftPatchSummary(patch) {
@@ -7602,6 +7676,56 @@ function normalizeDraftForPatch(draft) {
     ...patchableDraft
   } = draft;
   return patchableDraft;
+}
+
+function normalizeDraftForLocalEditGuard(draft) {
+  const normalized = normalizeDraftForPatch(draft);
+  if (!normalized || typeof normalized !== 'object') {
+    return normalized;
+  }
+  return {
+    schemaVersion: normalized.schemaVersion || 'bloge.visualGraphDraft.v1',
+    graphName: normalized.graphName || '',
+    tenantId: normalized.tenantId || '',
+    namespace: normalized.namespace || '',
+    environment: normalized.environment || '',
+    status: normalized.status || 'DRAFT',
+    inputSchema: normalized.inputSchema || null,
+    nodes: (normalized.nodes || []).map((node) => ({
+      id: node.id || '',
+      operatorRef: node.operatorRef || '',
+      label: node.label || '',
+      inputs: node.inputs || {},
+      config: node.config || {},
+      position: node.position || {}
+    })),
+    edges: normalized.edges || [],
+    output: normalized.output || {},
+    visualLayout: normalizeVisualLayoutForLocalEditGuard(normalized.visualLayout)
+  };
+}
+
+function normalizeVisualLayoutForLocalEditGuard(layout) {
+  if (!layout || typeof layout !== 'object') {
+    return layout || null;
+  }
+  return {
+    schemaVersion: layout.schemaVersion || 'bloge.visualLayout.v1',
+    rootId: layout.rootId || '',
+    nodes: (layout.nodes || []).map((node) => {
+      const configUnionBranches = normalizedUnionBranchSelections(node.annotations?.configUnionBranches);
+      return {
+        id: node.id || '',
+        position: node.position || {},
+        size: node.size || {},
+        group: node.group || null,
+        annotations: Object.keys(configUnionBranches).length ? { configUnionBranches } : {}
+      };
+    }),
+    edges: layout.edges || [],
+    groups: layout.groups || [],
+    viewport: layout.viewport || null
+  };
 }
 
 function jsonPatchDiff(before, after, path) {
@@ -8929,10 +9053,15 @@ async function rebaseOperatorFingerprint(nodeId) {
     renderSelectedOperatorEditor();
     return null;
   }
-  if (!state.currentDraftId || !state.currentDraftRevision) {
-    setDraftMessage('Save the draft before rebasing operator fingerprint snapshots.', 'error');
+  const blockReason = operatorFingerprintRebaseBlockReason();
+  if (blockReason) {
+    const message = blockReason === 'save draft first'
+      ? 'Save the draft before rebasing operator fingerprint snapshots.'
+      : 'Save or reload local changes before rebasing operator fingerprint snapshots.';
+    setDraftMessage(message, 'error');
     renderDraftControls();
     renderSelectedOperatorEditor();
+    renderDraftDependencyReport();
     return null;
   }
 
@@ -8956,12 +9085,10 @@ async function rebaseOperatorFingerprint(nodeId) {
     const payload = await response.json().catch(() => null);
     if (!response.ok || !payload?.draft) {
       const diagnostics = normalizeDiagnostics(payload?.diagnostics);
-      if (response.status === 409 && payload?.draft?.revision !== undefined) {
-        state.currentDraftRevision = payload.draft.revision || 0;
-        state.savedDraftSnapshot = payload.draft;
-        await loadDraftList({ render: false });
-        await loadDraftRevisions({ render: false });
-        renderDraftControls();
+      if (response.status === 409 && await refreshDraftConflictState(payload, { reloadBuilder: true })) {
+        const conflictMessage = diagnosticMessage(diagnostics, `Rebase failed with ${response.status}`);
+        setDraftMessage(`${conflictMessage} Review the latest draft dependencies before rebasing.`, 'error');
+        return null;
       }
       setDraftMessage(diagnosticMessage(diagnostics, `Rebase failed with ${response.status}`), 'error');
       return null;
@@ -9039,6 +9166,9 @@ function renderOperatorFingerprintSnapshotPanel(node) {
   const reason = status.rebaseReason ? ` · ${status.rebaseReason}` : '';
   const risk = status.changeRisk ? changeRiskLabel(status.changeRisk) : '';
   const riskText = risk ? `${risk}: ${operatorUsageRiskActionText(status.changeRisk, 'draft')}` : '';
+  const rebaseReasonText = status.rebaseReason && status.status !== 'OPERATOR_MISSING'
+    ? `<small>${escapeHtml(status.rebaseReason)}</small>`
+    : '';
   const rebaseControl = status.status === 'OPERATOR_MISSING'
     ? `<small>${escapeHtml(status.rebaseReason || 'restore the operator library first')}</small>`
     : `<button
@@ -9049,15 +9179,35 @@ function renderOperatorFingerprintSnapshotPanel(node) {
         title="${escapeHtml(`Rebase ${node.id} to the current operator fingerprint${reason}`)}"
       >${loading ? 'Rebasing' : 'Rebase snapshot'}</button>`;
   return `
-    <div class="operator-fingerprint-snapshot ${escapeHtml(status.level)}">
+    <div data-operator-fingerprint-snapshot-panel>
+      <div class="operator-fingerprint-snapshot ${escapeHtml(status.level)}">
       <div>
         <strong>${escapeHtml(status.label)}</strong>
         <span>${escapeHtml(operatorUsageFingerprintPair(status.savedFingerprint, status.currentFingerprint, 'saved'))}</span>
         ${riskText ? `<small class="operator-usage-risk">${escapeHtml(riskText)}</small>` : ''}
+        ${rebaseReasonText}
       </div>
       ${rebaseControl}
+      </div>
     </div>
   `;
+}
+
+function refreshSelectedOperatorFingerprintPanel() {
+  const target = $('selected-operator-editor');
+  const panel = target?.querySelector('[data-operator-fingerprint-snapshot-panel]');
+  const node = selectedBuilderNode();
+  if (!target || !panel || !node) {
+    return;
+  }
+  panel.outerHTML = renderOperatorFingerprintSnapshotPanel(node);
+  const refreshed = target.querySelector('[data-operator-fingerprint-snapshot-panel]');
+  const button = refreshed?.querySelector('[data-rebase-operator-fingerprint]');
+  if (button) {
+    button.addEventListener('click', () => {
+      rebaseOperatorFingerprint(button.dataset.rebaseOperatorFingerprint);
+    });
+  }
 }
 
 function operatorFingerprintSnapshotStatus(node) {
@@ -9068,6 +9218,7 @@ function operatorFingerprintSnapshotStatus(node) {
   const operatorRef = operatorUsageRefForNode(node);
   const savedFingerprint = state.builder.operatorFingerprints?.[node.id] || '';
   const currentFingerprint = spec.fingerprint || '';
+  const blockReason = operatorFingerprintRebaseBlockReason();
   if (!currentFingerprint) {
     return {
       operatorRef,
@@ -9088,8 +9239,8 @@ function operatorFingerprintSnapshotStatus(node) {
       status: 'SNAPSHOT_MISSING',
       label: 'Snapshot missing',
       level: 'warning',
-      canRebase: Boolean(state.currentDraftId && state.currentDraftRevision),
-      rebaseReason: state.currentDraftId && state.currentDraftRevision ? '' : 'save draft first'
+      canRebase: !blockReason,
+      rebaseReason: blockReason
     };
   }
   if (savedFingerprint === currentFingerprint) {
@@ -9112,8 +9263,8 @@ function operatorFingerprintSnapshotStatus(node) {
     status: 'DRIFTED',
     label: 'Snapshot drifted',
     level: 'warning',
-    canRebase: Boolean(state.currentDraftId && state.currentDraftRevision),
-    rebaseReason: state.currentDraftId && state.currentDraftRevision ? '' : 'save draft first',
+    canRebase: !blockReason,
+    rebaseReason: blockReason,
     changeRisk,
     changeSummary: usageEntry?.changeSummary || usageEntry?.changedSurface || ''
   };
@@ -11717,6 +11868,8 @@ function syncComposerFromBuilder(options = {}) {
     graphInputSchemaBox.value = state.graphInputSchemaText;
   }
   renderGraphInputSchemaStatus();
+  renderDraftDependencyReport();
+  refreshSelectedOperatorFingerprintPanel();
   if (render && isComposerSelected()) {
     renderDecisionTable();
     renderNodeDetails(selectedBuilderNode() || state.layout.nodes[0]);
