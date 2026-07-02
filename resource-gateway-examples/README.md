@@ -486,7 +486,11 @@ only the `bloge.visualGraphDraft.v1` graph-draft contract and the supported
 draft lifecycle status `DRAFT`; field-level patches re-check those contract
 fields before saving and treat `schemaVersion` as a service-managed root.
 `POST` creates a new draft identity even when the request body carries a stale
-or existing `draftId`, so it cannot be used as an unguarded overwrite path. The browser loads the
+or existing `draftId`, so it cannot be used as an unguarded overwrite path.
+Draft create, full `PUT` save, field-level `PATCH`, restore, delete, import,
+and operator-fingerprint rebase accept actor/source/summary/reason audit
+metadata, and create/full save mark the root draft path as changed so revision
+history can distinguish whole-asset lifecycle events from field-level edits. The browser loads the
 current server snapshot before patching when its local base revision is missing,
 stops instead of saving if that snapshot proves the draft changed on the server,
 and excludes service-managed schema version, identity, revision, audit,
@@ -522,9 +526,8 @@ bundle or draft contracts before storage, and returns a
 `bloge.visualGraphDraftImportResult.v1` payload with target-environment
 diagnostics plus validation/readiness and a dependency report for repairable
 issues such as missing operators, scope-mismatched operators, or schema-only
-design graphs. The import endpoint accepts `actor`, `changeSource`,
-`changeSummary`, and `reason` query metadata, and the browser Drafts panel sends
-`visual-canvas`/`gateway-browser` evidence for bundle imports. The Drafts panel
+design graphs. The browser Drafts panel sends
+`visual-canvas`/`gateway-browser` evidence for new draft saves and bundle imports. The Drafts panel
 exposes this flow through Export/Import Bundle controls and a JSON bundle editor,
 feeds the returned readiness back into Server Check, and consumes the returned dependency report so imported
 design-only or dependency-repair graphs can be reviewed without an immediate
@@ -1371,7 +1374,7 @@ Seven `.bloge` graphs live in `src/main/resources/bloge/gateway/`:
 | `GraphDraft` | Editable canvas graph model: input schema, nodes, port-aware bindings, edges, layout, output selection, operator fingerprint snapshots, and node-level operator definition snapshots |
 | `GraphDraftHistorySummary` | Lightweight active/deleted draft history index entry for browser and external recovery control planes, including latest revision actor/source/summary/reason |
 | `GraphDraftDiff` | Machine-readable graph draft revision diff with graph/node/edge change surfaces, node and edge add/remove/change counts, and risk-classified review summaries |
-| `GraphDraftDependencyReport` | Machine-readable dependency report used for stored drafts, migration bundles, import results, and frozen publications, with distinct operatorRef usage, per-node upstream/downstream lineage, source/lowering/readiness counts, saved-vs-current/scope-mismatch fingerprint state, and scope policy diagnostics |
+| `GraphDraftDependencyReport` | Machine-readable dependency report used for stored drafts, migration bundles, import results, and frozen publications, with distinct operatorRef usage, per-node binding/edge upstream and downstream lineage, source/lowering/readiness counts, saved-vs-current/scope-mismatch fingerprint state, and scope policy diagnostics |
 | `GraphDraftRevisionRestoreRequest` | Governed restore request for turning one immutable draft revision into a new latest revision with optimistic locking and actor/source/summary/reason audit metadata |
 | `GraphDraftExportBundle` | Portable draft package with source identity, draft snapshot, operator snapshots, export-time diagnostics, validation/readiness, and source dependency report |
 | `GraphDraftImportResult` | Import response contract with stored draft identity, target-environment compatibility diagnostics, validation/readiness, and dependency report |

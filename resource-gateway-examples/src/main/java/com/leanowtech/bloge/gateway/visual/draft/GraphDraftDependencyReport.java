@@ -95,12 +95,24 @@ public record GraphDraftDependencyReport(
         }
         Map<String, Set<String>> edgeSourcesByTarget = new LinkedHashMap<>();
         Map<String, Set<String>> edgeTargetsBySource = new LinkedHashMap<>();
+        Map<String, Set<String>> bindingSourcesByTarget = new LinkedHashMap<>();
+        Map<String, Set<String>> bindingTargetsBySource = new LinkedHashMap<>();
         for (GraphDraft.DraftEdge edge : draft.edges()) {
             String source = edge.source().nodeId();
             String target = edge.target().nodeId();
             if (!source.isBlank() && !target.isBlank()) {
                 edgeSourcesByTarget.computeIfAbsent(target, ignored -> new LinkedHashSet<>()).add(source);
                 edgeTargetsBySource.computeIfAbsent(source, ignored -> new LinkedHashSet<>()).add(target);
+            }
+        }
+        for (GraphDraft.DraftNode node : draft.nodes()) {
+            Set<String> sourceNodes = GraphDraftDependencies.nodeDependencies(node);
+            bindingSourcesByTarget.put(node.id(), sourceNodes);
+            for (String sourceNode : sourceNodes) {
+                if (!sourceNode.isBlank()) {
+                    bindingTargetsBySource.computeIfAbsent(sourceNode, ignored -> new LinkedHashSet<>())
+                            .add(node.id());
+                }
             }
         }
 
@@ -160,12 +172,16 @@ public record GraphDraftDependencyReport(
             increment(loweringModeCounts, loweringMode);
             increment(runtimeReadinessStateCounts, readinessState);
 
-            Set<String> bindingSourceNodes = GraphDraftDependencies.nodeDependencies(node);
+            Set<String> bindingSourceNodes = bindingSourcesByTarget.getOrDefault(node.id(), Set.of());
             Set<String> edgeSourceNodes = edgeSourcesByTarget.getOrDefault(node.id(), Set.of());
             Set<String> upstreamNodes = new LinkedHashSet<>();
             upstreamNodes.addAll(edgeSourceNodes);
             upstreamNodes.addAll(bindingSourceNodes);
-            Set<String> downstreamNodes = edgeTargetsBySource.getOrDefault(node.id(), Set.of());
+            Set<String> bindingTargetNodes = bindingTargetsBySource.getOrDefault(node.id(), Set.of());
+            Set<String> edgeTargetNodes = edgeTargetsBySource.getOrDefault(node.id(), Set.of());
+            Set<String> downstreamNodes = new LinkedHashSet<>();
+            downstreamNodes.addAll(edgeTargetNodes);
+            downstreamNodes.addAll(bindingTargetNodes);
 
             NodeDependency nodeRow = new NodeDependency(
                     node.id(),
@@ -181,6 +197,8 @@ public record GraphDraftDependencyReport(
                     List.copyOf(bindingSourceNodes),
                     List.copyOf(edgeSourceNodes),
                     List.copyOf(upstreamNodes),
+                    List.copyOf(bindingTargetNodes),
+                    List.copyOf(edgeTargetNodes),
                     List.copyOf(downstreamNodes),
                     scopeAllowed,
                     policyViolations
@@ -395,7 +413,9 @@ public record GraphDraftDependencyReport(
      * @param bindingSourceNodes node ids referenced by input/config bindings
      * @param edgeSourceNodes node ids referenced by incoming visual edges
      * @param upstreamNodes union of binding and edge source nodes
-     * @param downstreamNodes outgoing visual edge targets
+     * @param bindingTargetNodes nodes whose input/config bindings reference this node
+     * @param edgeTargetNodes outgoing visual edge targets
+     * @param downstreamNodes union of binding target nodes and outgoing visual edge targets
      * @param scopeAllowed whether this node's operator is available in the draft tenant/namespace/environment
      * @param policyViolations scope policy violations for the draft context
      */
@@ -413,6 +433,8 @@ public record GraphDraftDependencyReport(
             List<String> bindingSourceNodes,
             List<String> edgeSourceNodes,
             List<String> upstreamNodes,
+            List<String> bindingTargetNodes,
+            List<String> edgeTargetNodes,
             List<String> downstreamNodes,
             boolean scopeAllowed,
             List<String> policyViolations
@@ -430,6 +452,8 @@ public record GraphDraftDependencyReport(
             bindingSourceNodes = bindingSourceNodes == null ? List.of() : List.copyOf(bindingSourceNodes);
             edgeSourceNodes = edgeSourceNodes == null ? List.of() : List.copyOf(edgeSourceNodes);
             upstreamNodes = upstreamNodes == null ? List.of() : List.copyOf(upstreamNodes);
+            bindingTargetNodes = bindingTargetNodes == null ? List.of() : List.copyOf(bindingTargetNodes);
+            edgeTargetNodes = edgeTargetNodes == null ? List.of() : List.copyOf(edgeTargetNodes);
             downstreamNodes = downstreamNodes == null ? List.of() : List.copyOf(downstreamNodes);
             policyViolations = policyViolations == null ? List.of() : List.copyOf(policyViolations);
         }

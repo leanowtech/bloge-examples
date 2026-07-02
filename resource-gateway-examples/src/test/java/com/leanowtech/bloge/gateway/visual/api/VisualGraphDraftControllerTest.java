@@ -255,6 +255,8 @@ class VisualGraphDraftControllerTest {
                     assertThat(node.bindingSourceNodes()).containsExactly("eligibility");
                     assertThat(node.edgeSourceNodes()).containsExactly("eligibility");
                     assertThat(node.upstreamNodes()).containsExactly("eligibility");
+                    assertThat(node.bindingTargetNodes()).isEmpty();
+                    assertThat(node.edgeTargetNodes()).isEmpty();
                     assertThat(node.downstreamNodes()).isEmpty();
                     assertThat(node.fingerprintState()).isEqualTo("current");
                     assertThat(node.scopeAllowed()).isTrue();
@@ -263,7 +265,42 @@ class VisualGraphDraftControllerTest {
         assertThat(report.nodes())
                 .filteredOn(node -> node.nodeId().equals("eligibility"))
                 .singleElement()
-                .satisfies(node -> assertThat(node.downstreamNodes()).containsExactly("audit"));
+                .satisfies(node -> {
+                    assertThat(node.bindingTargetNodes()).containsExactly("audit");
+                    assertThat(node.edgeTargetNodes()).containsExactly("audit");
+                    assertThat(node.downstreamNodes()).containsExactly("audit");
+                });
+    }
+
+    @Test
+    void dependenciesReportBindingOnlyDownstreamLineage() {
+        DefaultVisualOperatorCatalog catalog = eligibilityCatalog();
+        VisualGraphDraftController controller = controllerWithCatalog(catalog, new InMemoryGraphDraftRepository());
+        GraphDraft stored = controller.create(twoNodeBindingOnlyEligibilityDraft());
+
+        ResponseEntity<GraphDraftDependencyReport> response = controller.dependencies(stored.draftId());
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat(response.getBody()).isNotNull();
+        GraphDraftDependencyReport report = response.getBody();
+        assertThat(report.edgeCount()).isZero();
+        assertThat(report.nodes())
+                .filteredOn(node -> node.nodeId().equals("audit"))
+                .singleElement()
+                .satisfies(node -> {
+                    assertThat(node.bindingSourceNodes()).containsExactly("eligibility");
+                    assertThat(node.edgeSourceNodes()).isEmpty();
+                    assertThat(node.upstreamNodes()).containsExactly("eligibility");
+                    assertThat(node.downstreamNodes()).isEmpty();
+                });
+        assertThat(report.nodes())
+                .filteredOn(node -> node.nodeId().equals("eligibility"))
+                .singleElement()
+                .satisfies(node -> {
+                    assertThat(node.bindingTargetNodes()).containsExactly("audit");
+                    assertThat(node.edgeTargetNodes()).isEmpty();
+                    assertThat(node.downstreamNodes()).containsExactly("audit");
+                });
     }
 
     @Test
@@ -423,7 +460,34 @@ class VisualGraphDraftControllerTest {
         assertThat(stored.revisionMetadata().createdBy()).isEqualTo("visual-canvas");
         assertThat(stored.revisionMetadata().updatedBy()).isEqualTo("visual-canvas");
         assertThat(stored.revisionMetadata().changeSource()).isEqualTo("api");
-        assertThat(stored.revisionMetadata().changeSummary()).isEqualTo("Saved draft.");
+        assertThat(stored.revisionMetadata().changeSummary()).isEqualTo("Created draft.");
+        assertThat(stored.revisionMetadata().changedPaths()).containsExactly("/");
+        assertThat(stored.revisionMetadata().reason()).isEmpty();
+    }
+
+    @Test
+    void createStoresProvidedRevisionMetadataSnapshot() {
+        VisualGraphDraftController controller = controllerWithEligibilityLibrary();
+
+        GraphDraft stored = controller.create(
+                eligibilityDraft(graphInputSchema(
+                        Map.of(
+                                "score", Map.of("type", "integer"),
+                                "amount", Map.of("type", "number")
+                        )
+                )),
+                "architect@example.com",
+                "browser-canvas",
+                "Created onboarding policy draft.",
+                "Initial schema-only business design session."
+        );
+
+        assertThat(stored.revisionMetadata().createdBy()).isEqualTo("architect@example.com");
+        assertThat(stored.revisionMetadata().updatedBy()).isEqualTo("architect@example.com");
+        assertThat(stored.revisionMetadata().changeSource()).isEqualTo("browser-canvas");
+        assertThat(stored.revisionMetadata().changeSummary()).isEqualTo("Created onboarding policy draft.");
+        assertThat(stored.revisionMetadata().changedPaths()).containsExactly("/");
+        assertThat(stored.revisionMetadata().reason()).isEqualTo("Initial schema-only business design session.");
     }
 
     @Test
@@ -902,7 +966,14 @@ class VisualGraphDraftControllerTest {
         String initialFingerprint = initialCatalog.find("risk:eligibility").orElseThrow().fingerprint();
         String evolvedFingerprint = evolvedCatalog.find("risk:eligibility").orElseThrow().fingerprint();
 
-        ResponseEntity<Object> response = evolvedController.update(stored.draftId(), renameDraft(stored, "renamedPolicy"));
+        ResponseEntity<Object> response = evolvedController.update(
+                stored.draftId(),
+                renameDraft(stored, "renamedPolicy"),
+                "architect",
+                "test-suite",
+                "Full-save draft rename.",
+                "Verified full-save audit metadata propagation."
+        );
 
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
         assertThat(response.getBody()).isInstanceOf(GraphDraft.class);
@@ -910,6 +981,12 @@ class VisualGraphDraftControllerTest {
         assertThat(updated.operatorFingerprints())
                 .containsEntry("eligibility", initialFingerprint)
                 .doesNotContainEntry("eligibility", evolvedFingerprint);
+        assertThat(updated.revisionMetadata().updatedBy()).isEqualTo("architect");
+        assertThat(updated.revisionMetadata().changeSource()).isEqualTo("test-suite");
+        assertThat(updated.revisionMetadata().changeSummary()).isEqualTo("Full-save draft rename.");
+        assertThat(updated.revisionMetadata().changedPaths()).containsExactly("/");
+        assertThat(updated.revisionMetadata().reason())
+                .isEqualTo("Verified full-save audit metadata propagation.");
         assertThat(validator(evolvedCatalog).validate(updated).diagnostics())
                 .extracting("code")
                 .contains("visual.operator.fingerprintMismatch");
@@ -2220,6 +2297,27 @@ class VisualGraphDraftControllerTest {
                 )),
                 Map.of(),
                 new GraphDraft.OutputSelection("audit", "")
+        );
+    }
+
+    private static GraphDraft twoNodeBindingOnlyEligibilityDraft() {
+        GraphDraft draft = twoNodeEligibilityDraft();
+        return new GraphDraft(
+                draft.schemaVersion(),
+                draft.draftId(),
+                draft.revision(),
+                draft.graphName(),
+                draft.tenantId(),
+                draft.namespace(),
+                draft.environment(),
+                draft.status(),
+                draft.inputSchema(),
+                draft.nodes(),
+                List.of(),
+                draft.visualLayout(),
+                draft.output(),
+                draft.operatorFingerprints(),
+                draft.revisionMetadata()
         );
     }
 

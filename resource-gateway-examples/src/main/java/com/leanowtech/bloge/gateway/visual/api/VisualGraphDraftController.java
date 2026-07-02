@@ -109,18 +109,34 @@ public class VisualGraphDraftController {
      * Creates a draft.
      *
      * @param draft draft body
+     * @param actor user or system actor creating the draft
+     * @param changeSource UI surface or integration source creating the draft
+     * @param changeSummary human-readable creation summary
+     * @param reason operator-facing reason for creating the draft
      * @return stored draft
      */
     @PostMapping
-    public GraphDraft create(@RequestBody GraphDraft draft) {
+    public GraphDraft create(@RequestBody GraphDraft draft,
+                             @RequestParam(defaultValue = "") String actor,
+                             @RequestParam(defaultValue = "") String changeSource,
+                             @RequestParam(defaultValue = "") String changeSummary,
+                             @RequestParam(defaultValue = "") String reason) {
         requireSupportedDraftContract(draft);
         return repository.save(withCurrentOperatorSnapshotState(draft.withIdentity("", 0))
                 .withRevisionMetadata(GraphDraft.RevisionMetadata.patch(
-                        "visual-canvas",
-                        "api",
-                        "Saved draft.",
-                        List.of()
+                        actor,
+                        changeSource.isBlank() ? "api" : changeSource,
+                        changeSummary.isBlank() ? "Created draft." : changeSummary,
+                        List.of("/"),
+                        reason
                 )));
+    }
+
+    /**
+     * Backward-compatible direct-call helper for tests and non-Spring callers.
+     */
+    public GraphDraft create(GraphDraft draft) {
+        return create(draft, "", "", "", "");
     }
 
     /**
@@ -325,10 +341,19 @@ public class VisualGraphDraftController {
      *
      * @param draftId draft id
      * @param draft draft body
+     * @param actor user or system actor saving the draft
+     * @param changeSource UI surface or integration source saving the draft
+     * @param changeSummary human-readable save summary
+     * @param reason operator-facing reason for saving the draft
      * @return stored draft
      */
     @PutMapping("/{draftId}")
-    public ResponseEntity<Object> update(@PathVariable String draftId, @RequestBody GraphDraft draft) {
+    public ResponseEntity<Object> update(@PathVariable String draftId,
+                                         @RequestBody GraphDraft draft,
+                                         @RequestParam(defaultValue = "") String actor,
+                                         @RequestParam(defaultValue = "") String changeSource,
+                                         @RequestParam(defaultValue = "") String changeSummary,
+                                         @RequestParam(defaultValue = "") String reason) {
         Optional<GraphDraft> current = repository.find(draftId);
         if (current.isEmpty()) {
             return ResponseEntity.notFound().build();
@@ -344,14 +369,22 @@ public class VisualGraphDraftController {
         }
         GraphDraft candidate = withExistingOrCurrentOperatorSnapshotState(current.get(),
                 draft.withIdentity(draftId, expectedRevision).withRevisionMetadata(GraphDraft.RevisionMetadata.patch(
-                        "visual-canvas",
-                        "api",
-                        "Saved draft.",
-                        List.of()
+                        actor,
+                        changeSource.isBlank() ? "api" : changeSource,
+                        changeSummary.isBlank() ? "Saved draft." : changeSummary,
+                        List.of("/"),
+                        reason
                 )));
         return repository.saveIfRevision(draftId, expectedRevision, candidate)
                 .<ResponseEntity<Object>>map(ResponseEntity::ok)
                 .orElseGet(() -> updateConflictResponse(draftId, expectedRevision, current.get()));
+    }
+
+    /**
+     * Backward-compatible direct-call helper for tests and non-Spring callers.
+     */
+    public ResponseEntity<Object> update(String draftId, GraphDraft draft) {
+        return update(draftId, draft, "", "", "", "");
     }
 
     /**

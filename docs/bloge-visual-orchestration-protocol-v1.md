@@ -1307,7 +1307,23 @@ MVP 至少阻断：
 导入后的 `policy` 不只是展示字段：catalog 查询会按 scope 过滤，draft
 validate/compile/run/publish 会再次以服务端 validator 阻断越权使用。
 
-### 10.3 保存 draft patch
+### 10.3 创建、整图保存和 draft patch
+
+```http
+POST /api/visual/drafts?actor=alice@example.com&changeSource=gateway-browser&changeSummary=Created%20draft&reason=Initial%20design%20session
+PUT /api/visual/drafts/{draftId}?actor=alice@example.com&changeSource=gateway-browser&changeSummary=Saved%20draft&reason=Reviewed%20full%20canvas%20state
+Content-Type: application/json
+```
+
+`POST /api/visual/drafts` 会忽略请求体中的旧 `draftId` / `revision`，
+创建新的 draft identity，并把当前 catalog 可解析的 operator fingerprint /
+definition snapshot 固化到 draft。`PUT /api/visual/drafts/{draftId}` 是整图覆盖保存，
+必须携带调用方看到的 `revision`；revision 不匹配返回 `409 CONFLICT`。
+这两个 mutation 都可通过 query params 携带 `actor`、`changeSource`、
+`changeSummary` 和 `reason`，服务端会把它们写入新 revision 的
+`GraphDraft.revisionMetadata`，并把 `changedPaths` 记为 `/`。浏览器创建新 draft 时
+默认写入 `visual-canvas` / `gateway-browser` 来源和新建设计图原因；已存在 draft 则优先走
+字段级 PATCH，只有外部控制面需要整图覆盖语义时才使用 `PUT`。
 
 ```http
 PATCH /api/visual/drafts/{draftId}
@@ -1410,7 +1426,7 @@ GET /api/visual/drafts/{draftId}/dependencies
 该端点返回 `bloge.visualGraphDraftDependencies.v1`，用于外部控制面、迁移审阅和
 后续浏览器依赖面板。报告按当前 catalog 解析 draft 中的 operatorRef，输出
 distinct operator dependencies、每个节点的 binding/edge upstream lineage、
-downstream edge targets、source kind / lowering mode / runtime readiness 计数，
+binding/edge downstream lineage、source kind / lowering mode / runtime readiness 计数，
 以及每个节点 saved fingerprint 与 current catalog fingerprint 的状态：
 `current`、`missing-snapshot`、`drifted`、`catalog-missing` 或
 `scope-mismatch`。报告同时输出 `missingOperatorCount`、

@@ -6399,9 +6399,13 @@ function draftDependencyLineageLabel(node) {
 function draftDependencyNodeSummary(node) {
   const binding = uniqueStrings(node?.bindingSourceNodes);
   const edges = uniqueStrings(node?.edgeSourceNodes);
+  const bindingTargets = uniqueStrings(node?.bindingTargetNodes);
+  const edgeTargets = uniqueStrings(node?.edgeTargetNodes);
   const parts = [
-    binding.length ? `binding: ${binding.join(', ')}` : '',
-    edges.length ? `edge: ${edges.join(', ')}` : '',
+    binding.length ? `binding from: ${binding.join(', ')}` : '',
+    edges.length ? `edge from: ${edges.join(', ')}` : '',
+    bindingTargets.length ? `binding to: ${bindingTargets.join(', ')}` : '',
+    edgeTargets.length ? `edge to: ${edgeTargets.join(', ')}` : '',
     draftDependencyFingerprintLabel(node?.fingerprintState),
     draftDependencyPolicyViolationLabel(node)
   ].filter(Boolean);
@@ -7837,7 +7841,7 @@ async function saveCurrentDraft() {
       })
     });
   } else {
-    response = await fetch('/api/visual/drafts', {
+    response = await fetch(`/api/visual/drafts${draftCreateMutationQuery()}`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(draft)
@@ -7926,6 +7930,15 @@ function draftPatchSummary(patch) {
   const preview = paths.slice(0, 3).join(', ');
   const suffix = paths.length > 3 ? `, +${paths.length - 3} more` : '';
   return `${patch.length} draft field change${patch.length === 1 ? '' : 's'}${preview ? `: ${preview}${suffix}` : ''}`;
+}
+
+function draftCreateMutationQuery() {
+  const params = new URLSearchParams();
+  params.set('actor', 'visual-canvas');
+  params.set('changeSource', 'gateway-browser');
+  params.set('changeSummary', 'Created visual draft from browser canvas.');
+  params.set('reason', 'User saved a new schema-constrained visual graph draft from the browser canvas.');
+  return `?${params.toString()}`;
 }
 
 function normalizeDraftForPatch(draft) {
