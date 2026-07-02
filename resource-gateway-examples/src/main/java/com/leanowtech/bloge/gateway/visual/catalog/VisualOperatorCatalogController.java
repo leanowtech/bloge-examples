@@ -33,6 +33,9 @@ public class VisualOperatorCatalogController {
      * @param tenantId tenant scope
      * @param namespace namespace scope
      * @param environment authoring environment scope
+     * @param sourceKinds source kind filters
+     * @param loweringModes lowering mode filters
+     * @param capabilities capability facet filters
      * @return catalog response
      */
     @GetMapping
@@ -42,9 +45,15 @@ public class VisualOperatorCatalogController {
                                         @RequestParam(defaultValue = "false") boolean includeDeprecated,
                                         @RequestParam(defaultValue = "") String tenantId,
                                         @RequestParam(defaultValue = "") String namespace,
-                                        @RequestParam(defaultValue = "") String environment) {
+                                        @RequestParam(defaultValue = "") String environment,
+                                        @RequestParam(name = "sourceKind", defaultValue = "")
+                                        List<String> sourceKinds,
+                                        @RequestParam(name = "loweringMode", defaultValue = "")
+                                        List<String> loweringModes,
+                                        @RequestParam(name = "capability", defaultValue = "")
+                                        List<String> capabilities) {
         OperatorCatalogQuery query = new OperatorCatalogQuery(search, tags, resourceOnly, includeDeprecated,
-                tenantId, namespace, environment);
+                tenantId, namespace, environment, sourceKinds, loweringModes, capabilities);
         return new OperatorCatalogResponse(
                 "bloge.visualOperatorCatalog.v1",
                 catalog.list(query),

@@ -323,6 +323,7 @@ const SCHEMA_DECLARATION_KEYS = new Set([
 const state = {
   scenarios: [],
   visualOperators: [],
+  visualOperatorCatalogFacets: null,
   selected: null,
   layout: null,
   selectedNodeId: null,
@@ -382,6 +383,9 @@ const state = {
   paletteSearch: '',
   paletteKind: '',
   paletteTag: '',
+  paletteSourceKind: '',
+  paletteCapability: '',
+  paletteLoweringMode: '',
   draggingOperatorType: null,
   paletteDrag: null,
   nodeDrag: null,
@@ -464,6 +468,7 @@ async function loadVisualOperatorCatalog() {
     const operators = Array.isArray(payload.operators) ? payload.operators : [];
     const diagnostics = normalizeDiagnostics(payload.diagnostics);
     state.visualOperators = operators;
+    state.visualOperatorCatalogFacets = normalizeOperatorCatalogFacets(payload.facets, operators);
     if (diagnostics.length) {
       setVisualCheck(
         'Catalog loaded with diagnostics.',
@@ -971,6 +976,9 @@ function renderInputForm() {
           <input id="operator-palette-search" type="search" value="${escapeHtml(state.paletteSearch)}" aria-label="Search operators">
           <select id="operator-palette-kind" aria-label="Filter operators by type"></select>
           <select id="operator-palette-tag" aria-label="Filter operators by tag"></select>
+          <select id="operator-palette-source-kind" aria-label="Filter operators by source"></select>
+          <select id="operator-palette-capability" aria-label="Filter operators by capability"></select>
+          <select id="operator-palette-lowering-mode" aria-label="Filter operators by lowering mode"></select>
         </div>
         <div id="operator-palette-summary" class="palette-summary"></div>
         <div id="operator-palette" class="operator-palette"></div>
@@ -2201,6 +2209,62 @@ function renderOperatorPaletteFilters(entries) {
       renderOperatorPalette();
     };
   }
+
+  const sourceKinds = [...new Set(entries
+    .map(([, spec]) => String(spec.sourceKind || '').trim())
+    .filter(Boolean))]
+    .sort();
+  const sourceSelect = $('operator-palette-source-kind');
+  if (sourceSelect) {
+    const selected = sourceKinds.includes(state.paletteSourceKind) ? state.paletteSourceKind : '';
+    state.paletteSourceKind = selected;
+    sourceSelect.innerHTML = ['<option value="">All sources</option>']
+      .concat(sourceKinds.map((sourceKind) =>
+        `<option value="${escapeHtml(sourceKind)}">${escapeHtml(operatorPaletteFacetLabel(sourceKind))}</option>`))
+      .join('');
+    sourceSelect.value = selected;
+    sourceSelect.onchange = (event) => {
+      state.paletteSourceKind = event.target.value;
+      renderOperatorPalette();
+    };
+  }
+
+  const capabilities = [...new Set(entries.flatMap(([, spec]) =>
+    operatorPaletteCapabilityFacetValues(spec)))]
+    .sort();
+  const capabilitySelect = $('operator-palette-capability');
+  if (capabilitySelect) {
+    const selected = capabilities.includes(state.paletteCapability) ? state.paletteCapability : '';
+    state.paletteCapability = selected;
+    capabilitySelect.innerHTML = ['<option value="">All capabilities</option>']
+      .concat(capabilities.map((capability) =>
+        `<option value="${escapeHtml(capability)}">${escapeHtml(operatorPaletteFacetLabel(capability))}</option>`))
+      .join('');
+    capabilitySelect.value = selected;
+    capabilitySelect.onchange = (event) => {
+      state.paletteCapability = event.target.value;
+      renderOperatorPalette();
+    };
+  }
+
+  const loweringModes = [...new Set(entries
+    .map(([, spec]) => operatorPaletteLoweringMode(spec))
+    .filter(Boolean))]
+    .sort();
+  const loweringSelect = $('operator-palette-lowering-mode');
+  if (loweringSelect) {
+    const selected = loweringModes.includes(state.paletteLoweringMode) ? state.paletteLoweringMode : '';
+    state.paletteLoweringMode = selected;
+    loweringSelect.innerHTML = ['<option value="">All lowering</option>']
+      .concat(loweringModes.map((loweringMode) =>
+        `<option value="${escapeHtml(loweringMode)}">${escapeHtml(operatorPaletteFacetLabel(loweringMode))}</option>`))
+      .join('');
+    loweringSelect.value = selected;
+    loweringSelect.onchange = (event) => {
+      state.paletteLoweringMode = event.target.value;
+      renderOperatorPalette();
+    };
+  }
 }
 
 function renderOperatorPaletteSummary(visible, total) {
@@ -2209,11 +2273,94 @@ function renderOperatorPaletteSummary(visible, total) {
   const filters = [
     state.paletteSearch ? `search "${state.paletteSearch.trim()}"` : '',
     state.paletteKind ? `type ${state.paletteKind}` : '',
-    state.paletteTag ? `tag ${state.paletteTag}` : ''
+    state.paletteTag ? `tag ${state.paletteTag}` : '',
+    state.paletteSourceKind ? `source ${operatorPaletteFacetLabel(state.paletteSourceKind)}` : '',
+    state.paletteCapability ? `capability ${operatorPaletteFacetLabel(state.paletteCapability)}` : '',
+    state.paletteLoweringMode ? `lowering ${operatorPaletteFacetLabel(state.paletteLoweringMode)}` : ''
   ].filter(Boolean);
-  target.textContent = filters.length
+  const matchSummary = filters.length
     ? `${visible} of ${total} operators match ${filters.join(', ')}.`
     : `${total} operators available.`;
+  const facetSummary = operatorCatalogFacetSummary(state.visualOperatorCatalogFacets);
+  target.textContent = facetSummary
+    ? `${matchSummary} ${facetSummary}`
+    : matchSummary;
+}
+
+function normalizeOperatorCatalogFacets(facets, operators = []) {
+  const payload = facets && typeof facets === 'object' ? facets : {};
+  const normalized = {
+    total: Number(payload.total) || 0,
+    sourceKinds: normalizeFacetCountMap(payload.sourceKinds),
+    loweringModes: normalizeFacetCountMap(payload.loweringModes),
+    capabilities: normalizeFacetCountMap(payload.capabilities)
+  };
+  if (normalized.total
+      || Object.keys(normalized.sourceKinds).length
+      || Object.keys(normalized.loweringModes).length
+      || Object.keys(normalized.capabilities).length) {
+    return normalized;
+  }
+  const sourceKinds = {};
+  const loweringModes = {};
+  const capabilities = {};
+  for (const operator of Array.isArray(operators) ? operators : []) {
+    const spec = {
+      sourceKind: operator?.source?.kind || '',
+      lowering: operator?.lowering || {},
+      capabilities: operator?.capabilities || {}
+    };
+    incrementFacetCount(sourceKinds, spec.sourceKind);
+    incrementFacetCount(loweringModes, operatorPaletteLoweringMode(spec));
+    for (const capability of operatorPaletteCapabilityFacetValues(spec)) {
+      incrementFacetCount(capabilities, capability);
+    }
+  }
+  return {
+    total: Array.isArray(operators) ? operators.length : 0,
+    sourceKinds,
+    loweringModes,
+    capabilities
+  };
+}
+
+function normalizeFacetCountMap(value) {
+  if (!value || typeof value !== 'object') {
+    return {};
+  }
+  return Object.fromEntries(Object.entries(value)
+    .map(([key, count]) => [String(key || '').trim(), Number(count) || 0])
+    .filter(([key, count]) => key && count > 0)
+    .sort(([left], [right]) => left.localeCompare(right)));
+}
+
+function incrementFacetCount(counts, value) {
+  const key = String(value || '').trim();
+  if (!key) {
+    return;
+  }
+  counts[key] = (counts[key] || 0) + 1;
+}
+
+function operatorCatalogFacetSummary(facets) {
+  if (!facets || typeof facets !== 'object') {
+    return '';
+  }
+  const capabilities = facets.capabilities || {};
+  const parts = [
+    facetSummaryPart(capabilities, 'runtime-executable'),
+    facetSummaryPart(capabilities, 'design-only'),
+    facetSummaryPart(capabilities, 'streaming'),
+    facetSummaryPart(capabilities, 'durable'),
+    facetSummaryPart(capabilities, 'requires-secret'),
+    facetSummaryPart(capabilities, 'external-effect')
+  ].filter(Boolean);
+  return parts.length ? `Catalog mix: ${parts.join(' · ')}.` : '';
+}
+
+function facetSummaryPart(counts, key) {
+  const count = Number(counts?.[key]) || 0;
+  return count > 0 ? `${count} ${operatorPaletteFacetLabel(key)}` : '';
 }
 
 function operatorMatchesPaletteFilter(type, spec) {
@@ -2222,6 +2369,16 @@ function operatorMatchesPaletteFilter(type, spec) {
   }
   const tags = spec.tags || [];
   if (state.paletteTag && !tags.includes(state.paletteTag)) {
+    return false;
+  }
+  if (state.paletteSourceKind && String(spec.sourceKind || '') !== state.paletteSourceKind) {
+    return false;
+  }
+  if (state.paletteCapability
+      && !operatorPaletteCapabilityFacetValues(spec).includes(state.paletteCapability)) {
+    return false;
+  }
+  if (state.paletteLoweringMode && operatorPaletteLoweringMode(spec) !== state.paletteLoweringMode) {
     return false;
   }
   const tokens = paletteSearchTokens(state.paletteSearch);
@@ -2237,8 +2394,10 @@ function operatorMatchesPaletteFilter(type, spec) {
     spec.resourceId,
     spec.description,
     spec.sourceKind,
+    operatorPaletteLoweringMode(spec),
     ...operatorPaletteSearchValues(spec),
     ...operatorPaletteCapabilityLabels(spec),
+    ...operatorPaletteCapabilityFacetValues(spec).map(operatorPaletteFacetLabel),
     ...tags
   ]
     .filter(Boolean)
@@ -2305,6 +2464,79 @@ function operatorPaletteCapabilityLabels(spec) {
     labels.push(effect.toLowerCase().replaceAll('_', '-'));
   }
   return [...new Set(labels)];
+}
+
+function operatorPaletteCapabilityFacetValues(spec) {
+  const facets = [];
+  const sourceKind = String(spec?.sourceKind || '').trim().toLowerCase();
+  const capabilities = spec?.capabilities || {};
+  const loweringMode = operatorPaletteLoweringMode(spec);
+  const streaming = sourceKind === 'java-streaming-operator' || capabilities.streaming === true;
+  const durable = sourceKind === 'java-suspendable-operator' || capabilities.durable === true;
+  if (loweringMode === 'design') {
+    facets.push('design-only');
+  } else if (!streaming && !durable) {
+    facets.push('runtime-executable');
+  }
+  if (streaming) {
+    facets.push('streaming');
+  }
+  if (durable) {
+    facets.push('durable');
+  }
+  if (sourceKind === 'java-suspendable-operator') {
+    facets.push('suspendable');
+  }
+  if (capabilities.requiresSecrets === true) {
+    facets.push('requires-secret');
+  }
+  const effect = String(capabilities.effect || '').trim().toUpperCase();
+  if (effect && effect !== 'PURE') {
+    facets.push('external-effect');
+    facets.push(effect.toLowerCase().replaceAll('_', '-'));
+  }
+  const idempotency = String(capabilities.idempotency || '').trim().toUpperCase();
+  if (idempotency === 'NON_IDEMPOTENT') {
+    facets.push('non-idempotent');
+  } else if (idempotency === 'IDEMPOTENT' || idempotency === 'DETERMINISTIC') {
+    facets.push('idempotent');
+  }
+  return [...new Set(facets)];
+}
+
+function operatorPaletteLoweringMode(spec) {
+  return String(spec?.lowering?.mode || '').trim().toLowerCase();
+}
+
+function operatorPaletteFacetLabel(value) {
+  const normalized = String(value || '').trim();
+  const labels = {
+    'java-operator': 'Java operator',
+    'java-streaming-operator': 'Java streaming',
+    'java-suspendable-operator': 'Java suspendable',
+    'resource-descriptor': 'Resource descriptor',
+    'user-library': 'User library',
+    'visual-publication': 'Visual publication',
+    'runtime-executable': 'Runtime executable',
+    'design-only': 'Design only',
+    streaming: 'Streaming',
+    durable: 'Durable',
+    suspendable: 'Suspendable',
+    'requires-secret': 'Requires secret',
+    'external-effect': 'External effect',
+    'non-idempotent': 'Non-idempotent',
+    idempotent: 'Idempotent',
+    native: 'Native',
+    transform: 'Transform',
+    branch: 'Branch',
+    design: 'Design'
+  };
+  if (labels[normalized]) {
+    return labels[normalized];
+  }
+  return normalized
+    .replaceAll('-', ' ')
+    .replace(/\b\w/g, (letter) => letter.toUpperCase());
 }
 
 function operatorPaletteDiagnosticBadges(spec) {
@@ -6508,6 +6740,7 @@ function renderOperatorContractPanel(node) {
         <span>Contract</span>
         <small>${bound}/${targets.length} inputs bound · ${requiredValid}/${requiredTargets.length} required valid · ${errors} issues</small>
       </div>
+      ${renderOperatorReadinessPanel(spec)}
       ${renderOperatorDiagnosticsPanel(spec)}
       <div class="contract-port-groups">
         ${renderContractPortGroup('Inputs', inputPortsForSpec(spec))}
@@ -7659,6 +7892,99 @@ function nodeImpactActionLabel(action) {
     return `${action.kind}:${action.sourceNodeId}->${action.targetNodeId}`;
   }
   return `${action.kind}:${target}`;
+}
+
+function renderOperatorReadinessPanel(spec) {
+  const readiness = operatorRuntimeReadiness(spec);
+  if (!readiness.title) {
+    return '';
+  }
+  const details = readiness.details.map((detail) => `
+    <div class="operator-readiness-row">
+      <strong>${escapeHtml(detail.label)}</strong>
+      <span>${escapeHtml(detail.value)}</span>
+    </div>
+  `).join('');
+  return `
+    <div class="operator-readiness-panel ${escapeHtml(readiness.level)}">
+      <div>
+        <strong>${escapeHtml(readiness.title)}</strong>
+        <span>${escapeHtml(readiness.summary)}</span>
+      </div>
+      ${details ? `<div class="operator-readiness-rows">${details}</div>` : ''}
+    </div>
+  `;
+}
+
+function operatorRuntimeReadiness(spec) {
+  const sourceKind = String(spec?.sourceKind || '').trim().toLowerCase();
+  const loweringMode = operatorPaletteLoweringMode(spec);
+  const capabilities = spec?.capabilities || {};
+  const capabilityFacets = operatorPaletteCapabilityFacetValues(spec);
+  const diagnostics = operatorDiagnosticsForSpec(spec);
+  const errors = diagnostics.filter((diagnostic) =>
+    String(diagnostic.level || '').toUpperCase() === 'ERROR').length;
+  const details = [
+    { label: 'Authoring', value: errors ? 'Catalog diagnostics require repair' : 'Schema-constrained canvas ready' },
+    { label: 'Source', value: operatorPaletteFacetLabel(sourceKind || spec?.kind || 'unknown') },
+    { label: 'Lowering', value: operatorPaletteFacetLabel(loweringMode || 'native') }
+  ];
+  if (capabilityFacets.includes('design-only')) {
+    details.push({ label: 'Publish', value: 'DESIGN artifact only' });
+    return {
+      level: errors ? 'error' : 'info',
+      title: errors ? 'Catalog repair required' : 'Design-only operator',
+      summary: errors
+        ? 'The operator is visible for review, but catalog errors must be fixed before reliable authoring.'
+        : 'Authorable as a schema contract; executable lowering is not bound yet.',
+      details
+    };
+  }
+  if (capabilityFacets.includes('streaming') || capabilityFacets.includes('durable')) {
+    const blockers = [
+      capabilityFacets.includes('streaming') ? 'streaming runtime' : '',
+      capabilityFacets.includes('durable') ? 'durable runtime' : ''
+    ].filter(Boolean).join(' + ');
+    details.push({ label: 'Execution', value: `${blockers} not supported by this request-response runtime` });
+    return {
+      level: errors ? 'error' : 'warning',
+      title: errors ? 'Catalog repair required' : 'Runtime blocked',
+      summary: errors
+        ? 'The operator is visible for review, but catalog errors must be fixed before reliable authoring.'
+        : 'The schema can be inspected, but this visual runtime cannot execute the required runtime mode.',
+      details
+    };
+  }
+  const governance = [];
+  if (capabilityFacets.includes('requires-secret')) {
+    governance.push('secret binding');
+  }
+  if (capabilityFacets.includes('non-idempotent')) {
+    governance.push('non-idempotent side effect');
+  }
+  if (capabilityFacets.includes('external-effect')) {
+    governance.push('external effect');
+  }
+  if (governance.length) {
+    details.push({ label: 'Governance', value: governance.join(' · ') });
+    return {
+      level: errors ? 'error' : 'warning',
+      title: errors ? 'Catalog repair required' : 'Executable with governance review',
+      summary: errors
+        ? 'The operator is visible for review, but catalog errors must be fixed before reliable authoring.'
+        : 'Executable metadata is present; promotion should review runtime governance risks.',
+      details
+    };
+  }
+  details.push({ label: 'Execution', value: 'Request-response executable' });
+  return {
+    level: errors ? 'error' : 'success',
+    title: errors ? 'Catalog repair required' : 'Runtime executable',
+    summary: errors
+      ? 'The operator is visible for review, but catalog errors must be fixed before reliable authoring.'
+      : 'Executable lowering is present for this request-response visual runtime.',
+    details
+  };
 }
 
 function renderOperatorDiagnosticsPanel(spec) {

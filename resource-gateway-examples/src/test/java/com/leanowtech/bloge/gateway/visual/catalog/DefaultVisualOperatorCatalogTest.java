@@ -130,6 +130,54 @@ class DefaultVisualOperatorCatalogTest {
     }
 
     @Test
+    void filtersOperatorsBySourceLoweringAndCapabilityFacets() {
+        InMemoryOperatorLibraryRegistry libraries = new InMemoryOperatorLibraryRegistry();
+        libraries.upsert(library("risk-executable", "ACTIVE",
+                VisualCatalogTestSupport.eligibilityOperator("integer")));
+        libraries.upsert(library("risk-design", "ACTIVE", schemaOnlyIntakeOperator()));
+        libraries.upsert(library("risk-governed", "ACTIVE", secretMutationOperator()));
+        DefaultOperatorRegistry registry = new DefaultOperatorRegistry();
+        registry.register("normalizeText", new NormalizeTextOperator());
+        DefaultVisualOperatorCatalog catalog = new DefaultVisualOperatorCatalog(
+                new SingleResourceRegistry(VisualCatalogTestSupport.loanApplicantDescriptor()),
+                new InMemoryResourceDesignContractRegistry(),
+                new ResourceVirtualOperatorProjector(),
+                libraries,
+                JavaOperatorInventoryProjector.forRegistry(registry)
+        );
+
+        assertThat(catalog.list(facetQuery(List.of("user-library"), List.of(), List.of())))
+                .extracting(OperatorDefinition::operatorRef)
+                .contains("risk:eligibility", "risk:designIntake", "risk:writeAudit")
+                .doesNotContain("normalizeText", "resource:" + VisualCatalogTestSupport.RESOURCE_ID);
+        assertThat(catalog.list(facetQuery(List.of("resource-descriptor"), List.of(), List.of())))
+                .extracting(OperatorDefinition::operatorRef)
+                .containsExactly("resource:" + VisualCatalogTestSupport.RESOURCE_ID);
+        assertThat(catalog.list(facetQuery(List.of("java-operator"), List.of(), List.of())))
+                .extracting(OperatorDefinition::operatorRef)
+                .contains("normalizeText")
+                .doesNotContain("risk:eligibility");
+        assertThat(catalog.list(facetQuery(List.of(), List.of("design"), List.of())))
+                .extracting(OperatorDefinition::operatorRef)
+                .containsExactly("risk:designIntake");
+        assertThat(catalog.list(facetQuery(List.of("user-library"), List.of("transform"), List.of())))
+                .extracting(OperatorDefinition::operatorRef)
+                .containsExactly("risk:eligibility", "risk:writeAudit");
+        assertThat(catalog.list(facetQuery(List.of(), List.of(), List.of("design-only"))))
+                .extracting(OperatorDefinition::operatorRef)
+                .containsExactly("risk:designIntake");
+        assertThat(catalog.list(facetQuery(List.of(), List.of(), List.of("runtime-executable"))))
+                .extracting(OperatorDefinition::operatorRef)
+                .contains("risk:eligibility", "risk:writeAudit", "normalizeText",
+                        "resource:" + VisualCatalogTestSupport.RESOURCE_ID)
+                .doesNotContain("risk:designIntake");
+        assertThat(catalog.list(facetQuery(List.of(), List.of(), List.of("requires-secret", "external-effect",
+                "non-idempotent"))))
+                .extracting(OperatorDefinition::operatorRef)
+                .containsExactly("risk:writeAudit");
+    }
+
+    @Test
     void skipsNullOperatorsFromStoredLibraryDefinitions() {
         InMemoryOperatorLibraryRegistry libraries = new InMemoryOperatorLibraryRegistry();
         libraries.upsert(new OperatorLibrary(
@@ -306,6 +354,13 @@ class DefaultVisualOperatorCatalogTest {
 
     private static OperatorCatalogQuery search(String value) {
         return new OperatorCatalogQuery(value, List.of(), false, false);
+    }
+
+    private static OperatorCatalogQuery facetQuery(List<String> sourceKinds,
+                                                   List<String> loweringModes,
+                                                   List<String> capabilities) {
+        return new OperatorCatalogQuery("", List.of(), false, false, "", "", "",
+                sourceKinds, loweringModes, capabilities);
     }
 
     @Test
@@ -549,6 +604,43 @@ class DefaultVisualOperatorCatalogTest {
                 "risk-team",
                 status,
                 List.of(operator)
+        );
+    }
+
+    private static OperatorDefinition schemaOnlyIntakeOperator() {
+        OperatorDefinition base = VisualCatalogTestSupport.eligibilityOperator("integer");
+        return new OperatorDefinition(
+                base.schemaVersion(),
+                "risk:designIntake",
+                base.operatorVersion(),
+                new OperatorDefinition.Display("Design intake", "Schema-only intake contract.",
+                        List.of("risk", "design")),
+                base.source(),
+                base.ports(),
+                base.configSchema(),
+                base.capabilities(),
+                base.policy(),
+                new OperatorDefinition.Lowering("design", "", Map.of()),
+                base.diagnostics()
+        );
+    }
+
+    private static OperatorDefinition secretMutationOperator() {
+        OperatorDefinition base = VisualCatalogTestSupport.numericPassOperator();
+        return new OperatorDefinition(
+                base.schemaVersion(),
+                "risk:writeAudit",
+                base.operatorVersion(),
+                new OperatorDefinition.Display("Write audit", "Writes an external audit event.",
+                        List.of("risk", "audit")),
+                base.source(),
+                base.ports(),
+                base.configSchema(),
+                new OperatorDefinition.Capabilities("WRITE_EXTERNAL", "NON_IDEMPOTENT",
+                        false, false, true),
+                base.policy(),
+                base.lowering(),
+                base.diagnostics()
         );
     }
 

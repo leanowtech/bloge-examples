@@ -159,7 +159,11 @@ public class DefaultVisualOperatorCatalog implements VisualOperatorCatalog {
     }
 
     private static boolean queryCanMatchNullOperator(OperatorCatalogQuery query) {
-        return query.search().isBlank() && query.tags().isEmpty();
+        return query.search().isBlank()
+                && query.tags().isEmpty()
+                && query.sourceKinds().isEmpty()
+                && query.loweringModes().isEmpty()
+                && query.capabilities().isEmpty();
     }
 
     private static Optional<VisualDiagnostic> hiddenMalformedPortDiagnostic(OperatorLibrary library,
@@ -257,6 +261,18 @@ public class DefaultVisualOperatorCatalog implements VisualOperatorCatalog {
         if (!query.tags().isEmpty() && !operator.display().tags().containsAll(query.tags())) {
             return false;
         }
+        if (!query.sourceKinds().isEmpty()
+                && !query.sourceKinds().contains(normalizeFacetValue(operator.source().kind()))) {
+            return false;
+        }
+        if (!query.loweringModes().isEmpty()
+                && !query.loweringModes().contains(normalizeFacetValue(operator.lowering().mode()))) {
+            return false;
+        }
+        if (!query.capabilities().isEmpty()
+                && query.capabilities().stream().anyMatch(capability -> !matchesCapability(operator, capability))) {
+            return false;
+        }
         if (!query.tenantId().isBlank() && !operator.policy().allowsTenant(query.tenantId())) {
             return false;
         }
@@ -267,6 +283,26 @@ public class DefaultVisualOperatorCatalog implements VisualOperatorCatalog {
             return false;
         }
         return true;
+    }
+
+    private static boolean matchesCapability(OperatorDefinition operator, String capability) {
+        String normalized = normalizeFacetValue(capability);
+        if ("design".equals(normalized) || "schema-only".equals(normalized)) {
+            normalized = "design-only";
+        } else if ("executable".equals(normalized)) {
+            normalized = "runtime-executable";
+        } else if ("requires-secrets".equals(normalized)
+                || "secret".equals(normalized)
+                || "secret-bound".equals(normalized)) {
+            normalized = "requires-secret";
+        } else if ("external".equals(normalized)) {
+            normalized = "external-effect";
+        }
+        return OperatorCatalogFacets.capabilityValues(operator).contains(normalized);
+    }
+
+    private static String normalizeFacetValue(String value) {
+        return OperatorCatalogFacets.normalizeFacetValue(value);
     }
 
     private static List<String> searchTokens(String search) {

@@ -12,6 +12,9 @@ import java.util.List;
  * @param tenantId tenant scope for availability filtering
  * @param namespace namespace scope for availability filtering
  * @param environment environment scope for availability filtering
+ * @param sourceKinds required operator source kinds
+ * @param loweringModes required lowering modes
+ * @param capabilities required catalog capability facets
  */
 public record OperatorCatalogQuery(
         String search,
@@ -20,7 +23,10 @@ public record OperatorCatalogQuery(
         boolean includeDeprecated,
         String tenantId,
         String namespace,
-        String environment
+        String environment,
+        List<String> sourceKinds,
+        List<String> loweringModes,
+        List<String> capabilities
 ) {
     /**
      * Creates a query object.
@@ -34,6 +40,9 @@ public record OperatorCatalogQuery(
         tenantId = tenantId == null ? "" : tenantId.trim();
         namespace = namespace == null ? "" : namespace.trim();
         environment = environment == null ? "" : environment.trim();
+        sourceKinds = normalizeFacetValues(sourceKinds);
+        loweringModes = normalizeFacetValues(loweringModes);
+        capabilities = normalizeFacetValues(capabilities);
     }
 
     /**
@@ -47,9 +56,34 @@ public record OperatorCatalogQuery(
     }
 
     /**
+     * Backward-compatible constructor for callers that do not filter by catalog facets.
+     */
+    public OperatorCatalogQuery(String search,
+                                List<String> tags,
+                                boolean resourceOnly,
+                                boolean includeDeprecated,
+                                String tenantId,
+                                String namespace,
+                                String environment) {
+        this(search, tags, resourceOnly, includeDeprecated, tenantId, namespace, environment,
+                List.of(), List.of(), List.of());
+    }
+
+    /**
      * @return default query
      */
     public static OperatorCatalogQuery all() {
         return new OperatorCatalogQuery("", List.of(), false, false, "", "", "");
+    }
+
+    private static List<String> normalizeFacetValues(List<String> values) {
+        if (values == null) {
+            return List.of();
+        }
+        return values.stream()
+                .filter(value -> value != null && !value.isBlank())
+                .map(value -> value.trim().toLowerCase(java.util.Locale.ROOT).replace('_', '-'))
+                .distinct()
+                .toList();
     }
 }

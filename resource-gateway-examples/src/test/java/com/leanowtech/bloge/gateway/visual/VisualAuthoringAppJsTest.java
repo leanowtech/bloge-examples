@@ -454,6 +454,13 @@ class VisualAuthoringAppJsTest {
                   'operatorDiagnosticsForSpec',
                   'operatorPaletteCapabilityBadges',
                   'operatorPaletteCapabilityLabels',
+                  'operatorPaletteCapabilityFacetValues',
+                  'operatorPaletteLoweringMode',
+                  'operatorPaletteFacetLabel',
+                  'normalizeOperatorCatalogFacets',
+                  'operatorCatalogFacetSummary',
+                  'operatorRuntimeReadiness',
+                  'renderOperatorReadinessPanel',
                   'operatorPaletteDiagnosticBadges',
                   'operatorMatchesPaletteFilter',
                   'paletteSearchTokens',
@@ -1116,7 +1123,10 @@ class VisualAuthoringAppJsTest {
                   kind: 'custom',
                   label: 'Eligibility',
                   operatorRef: 'risk:eligibility',
+                  sourceKind: 'user-library',
                   tags: ['risk', 'policy'],
+                  capabilities: { effect: 'PURE', idempotency: 'DETERMINISTIC' },
+                  lowering: { mode: 'transform' },
                   inputPorts: [{
                     name: 'inputs',
                     schema: {
@@ -1176,6 +1186,7 @@ class VisualAuthoringAppJsTest {
                   kind: 'custom',
                   label: 'Partner Decision',
                   operatorRef: 'partner:decision',
+                  sourceKind: 'user-library',
                   lowering: { mode: 'design' },
                   capabilities: { effect: 'PURE' },
                   inputPorts: [],
@@ -1183,6 +1194,56 @@ class VisualAuthoringAppJsTest {
                   configSchema: { schema: { type: 'object', properties: {} } }
                 };
                 const designOnlyCapabilityLabels = context.operatorPaletteCapabilityLabels(designOnlyPaletteSpec).join('|');
+                const designOnlyCapabilityFacets = context.operatorPaletteCapabilityFacetValues(designOnlyPaletteSpec).join('|');
+                const executableCapabilityFacets = context.operatorPaletteCapabilityFacetValues(paletteSearchSpec).join('|');
+                const governedPaletteSpec = {
+                  kind: 'custom',
+                  label: 'Write Audit',
+                  operatorRef: 'risk:writeAudit',
+                  sourceKind: 'user-library',
+                  lowering: { mode: 'native', operatorRef: 'riskWriteAudit' },
+                  capabilities: {
+                    effect: 'WRITE_EXTERNAL',
+                    idempotency: 'NON_IDEMPOTENT',
+                    streaming: false,
+                    durable: false,
+                    requiresSecrets: true
+                  },
+                  inputPorts: [],
+                  outputPorts: [],
+                  configSchema: { schema: { type: 'object', properties: {} } }
+                };
+                const executableReadiness = context.operatorRuntimeReadiness(paletteSearchSpec);
+                const designOnlyReadiness = context.operatorRuntimeReadiness(designOnlyPaletteSpec);
+                const designOnlyReadinessPanel = context.renderOperatorReadinessPanel(designOnlyPaletteSpec);
+                const suspendableReadiness = context.operatorRuntimeReadiness(suspendablePaletteSpec);
+                const governedReadiness = context.operatorRuntimeReadiness(governedPaletteSpec);
+                const governedReadinessPanel = context.renderOperatorReadinessPanel(governedPaletteSpec);
+                const serverCatalogFacets = context.normalizeOperatorCatalogFacets({
+                  total: 6,
+                  capabilities: {
+                    'runtime-executable': 4,
+                    'design-only': 2,
+                    streaming: 1,
+                    'requires-secret': 1,
+                    'external-effect': 1
+                  },
+                  sourceKinds: { 'user-library': 3 },
+                  loweringModes: { transform: 2, design: 1 }
+                });
+                const serverCatalogFacetSummary = context.operatorCatalogFacetSummary(serverCatalogFacets);
+                const fallbackCatalogFacets = context.normalizeOperatorCatalogFacets(null, [
+                  {
+                    source: { kind: 'user-library' },
+                    lowering: { mode: 'design' },
+                    capabilities: { effect: 'PURE' }
+                  },
+                  {
+                    source: { kind: 'java-suspendable-operator' },
+                    lowering: { mode: 'native' },
+                    capabilities: { effect: 'WRITE_EXTERNAL', durable: true, requiresSecrets: true }
+                  }
+                ]);
                 const libraryProfile = context.operatorLibraryProfile({
                   libraryId: 'risk-profile',
                   version: '2.1.0',
@@ -1541,6 +1602,21 @@ class VisualAuthoringAppJsTest {
                 context.state.paletteSearch = 'durable suspendable write-external secret';
                 const paletteCapabilitySearchMatch = context.operatorMatchesPaletteFilter('awaitApproval', suspendablePaletteSpec);
                 context.state.paletteSearch = '';
+                context.state.paletteSourceKind = 'user-library';
+                const paletteSourceFilterMatch = context.operatorMatchesPaletteFilter('risk:eligibility', paletteSearchSpec);
+                context.state.paletteSourceKind = 'resource-descriptor';
+                const paletteSourceFilterMiss = context.operatorMatchesPaletteFilter('risk:eligibility', paletteSearchSpec);
+                context.state.paletteSourceKind = '';
+                context.state.paletteCapability = 'requires-secret';
+                const paletteCapabilityFilterMatch = context.operatorMatchesPaletteFilter('awaitApproval', suspendablePaletteSpec);
+                context.state.paletteCapability = 'runtime-executable';
+                const paletteCapabilityFilterMiss = context.operatorMatchesPaletteFilter('awaitApproval', suspendablePaletteSpec);
+                context.state.paletteCapability = '';
+                context.state.paletteLoweringMode = 'transform';
+                const paletteLoweringFilterMatch = context.operatorMatchesPaletteFilter('risk:eligibility', paletteSearchSpec);
+                context.state.paletteLoweringMode = 'design';
+                const paletteLoweringFilterMiss = context.operatorMatchesPaletteFilter('risk:eligibility', paletteSearchSpec);
+                context.state.paletteLoweringMode = '';
                 const unsafeOutputNode = { id: 'unsafeOutputNode', type: 'customOperator' };
                 const unsafeOutputHandleCount = context.actualSourceHandlesForNode(unsafeOutputNode).length;
                 const unsafeOutputOptionCount = context.actualOutputPathOptionsForNode(unsafeOutputNode).length;
@@ -2341,7 +2417,25 @@ class VisualAuthoringAppJsTest {
                   ['palette capability labels', suspendableCapabilityLabels, 'durable|suspendable|requires secret|write-external'],
                   ['palette capability badges', String(suspendableCapabilityBadges.includes('durable') && suspendableCapabilityBadges.includes('suspendable') && suspendableCapabilityBadges.includes('requires secret')), 'true'],
                   ['palette design-only capability labels', designOnlyCapabilityLabels, 'design-only'],
+                  ['palette design-only capability facets', designOnlyCapabilityFacets, 'design-only'],
+                  ['palette executable capability facets', executableCapabilityFacets, 'runtime-executable|idempotent'],
+                  ['operator runtime readiness executable', `${executableReadiness.level}|${executableReadiness.title}`, 'success|Runtime executable'],
+                  ['operator runtime readiness design-only', `${designOnlyReadiness.level}|${designOnlyReadiness.title}`, 'info|Design-only operator'],
+                  ['operator runtime readiness design-only panel', String(designOnlyReadinessPanel.includes('DESIGN artifact only') && designOnlyReadinessPanel.includes('executable lowering is not bound yet')), 'true'],
+                  ['operator runtime readiness blocked', `${suspendableReadiness.level}|${suspendableReadiness.title}`, 'warning|Runtime blocked'],
+                  ['operator runtime readiness governed', `${governedReadiness.level}|${governedReadiness.title}`, 'warning|Executable with governance review'],
+                  ['operator runtime readiness governed panel', String(governedReadinessPanel.includes('secret binding') && governedReadinessPanel.includes('non-idempotent side effect')), 'true'],
+                  ['catalog facet summary', serverCatalogFacetSummary, 'Catalog mix: 4 Runtime executable · 2 Design only · 1 Streaming · 1 Requires secret · 1 External effect.'],
+                  ['catalog facet fallback total', fallbackCatalogFacets.total, 2],
+                  ['catalog facet fallback design count', fallbackCatalogFacets.capabilities['design-only'], 1],
+                  ['catalog facet fallback durable count', fallbackCatalogFacets.capabilities.durable, 1],
                   ['palette capability search match', String(paletteCapabilitySearchMatch), 'true'],
+                  ['palette source filter match', String(paletteSourceFilterMatch), 'true'],
+                  ['palette source filter miss', String(paletteSourceFilterMiss), 'false'],
+                  ['palette capability filter match', String(paletteCapabilityFilterMatch), 'true'],
+                  ['palette capability filter miss', String(paletteCapabilityFilterMiss), 'false'],
+                  ['palette lowering filter match', String(paletteLoweringFilterMatch), 'true'],
+                  ['palette lowering filter miss', String(paletteLoweringFilterMiss), 'false'],
                   ['library profile operator count', libraryProfile.operatorCount, 2],
                   ['library profile input count', libraryProfile.inputPortCount, 2],
                   ['library profile output count', libraryProfile.outputPortCount, 1],

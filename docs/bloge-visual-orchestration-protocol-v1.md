@@ -903,22 +903,47 @@ transform assemble {
 ### 10.1 查询 catalog
 
 ```http
-GET /api/visual/operators?pattern=resource:*&tenantId=demo-tenant&namespace=local&environment=dev
+GET /api/visual/operators?search=score&tenantId=demo-tenant&namespace=local&environment=dev&sourceKind=user-library&loweringMode=design&capability=design-only
 ```
+
+当前 `resource-gateway-examples` 的查询面支持：
+
+| 参数 | 说明 |
+| --- | --- |
+| `search` | 多词搜索，匹配 operatorRef、展示名、描述、source kind、resourceId、input/output/config schema 字段路径和类型 |
+| `tags` | 要求 operator display tags 包含这些标签 |
+| `resourceOnly` | 只返回 resource-backed virtual operators |
+| `includeDeprecated` | 包含 deprecated library/resource contract；disabled 仍不进入公开 catalog |
+| `tenantId` / `namespace` / `environment` | authoring scope policy filtering |
+| `sourceKind` | 可重复；例如 `user-library`、`resource-descriptor`、`java-operator`、`java-streaming-operator`、`java-suspendable-operator`、`visual-publication` |
+| `loweringMode` | 可重复；例如 `native`、`transform`、`branch`、`resource-descriptor`、`design` |
+| `capability` | 可重复；例如 `design-only`、`runtime-executable`、`streaming`、`durable`、`suspendable`、`requires-secret`、`external-effect`、`non-idempotent` |
 
 响应：
 
 ```json
 {
-  "items": [
+  "schemaVersion": "bloge.visualOperatorCatalog.v1",
+  "operators": [
     {
-      "schemaVersion": "bloge.operatorCatalog.v1",
+      "schemaVersion": "bloge.visualOperator.v1",
       "operatorRef": "resource:loan-applicant-service.getProfile",
       "display": { "name": "Get Applicant Profile" },
       "ports": { "inputs": [], "outputs": [] }
     }
   ],
-  "diagnostics": []
+  "diagnostics": [],
+  "facets": {
+    "total": 1,
+    "sourceKinds": { "resource-descriptor": 1 },
+    "loweringModes": { "resource-descriptor": 1 },
+    "capabilities": {
+      "runtime-executable": 1,
+      "external-effect": 1,
+      "read-external": 1,
+      "idempotent": 1
+    }
+  }
 }
 ```
 

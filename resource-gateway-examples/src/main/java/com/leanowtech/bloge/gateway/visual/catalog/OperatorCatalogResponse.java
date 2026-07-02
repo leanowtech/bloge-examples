@@ -10,12 +10,27 @@ import java.util.List;
  * @param schemaVersion response schema version
  * @param operators matching operators
  * @param diagnostics catalog diagnostics
+ * @param facets count summary for matching operators
  */
 public record OperatorCatalogResponse(
         String schemaVersion,
         List<OperatorDefinition> operators,
-        List<VisualDiagnostic> diagnostics
+        List<VisualDiagnostic> diagnostics,
+        OperatorCatalogFacets facets
 ) {
+    /**
+     * Backward-compatible response constructor.
+     *
+     * @param schemaVersion response schema version
+     * @param operators matching operators
+     * @param diagnostics catalog diagnostics
+     */
+    public OperatorCatalogResponse(String schemaVersion,
+                                   List<OperatorDefinition> operators,
+                                   List<VisualDiagnostic> diagnostics) {
+        this(schemaVersion, operators, diagnostics, OperatorCatalogFacets.from(operators));
+    }
+
     /**
      * Creates a response envelope.
      */
@@ -25,5 +40,6 @@ public record OperatorCatalogResponse(
                 : schemaVersion;
         operators = operators == null ? List.of() : List.copyOf(operators);
         diagnostics = diagnostics == null ? List.of() : List.copyOf(diagnostics);
+        facets = facets == null ? OperatorCatalogFacets.from(operators) : facets;
     }
 }
