@@ -16,7 +16,9 @@ import java.util.List;
  * @param draft stored draft when import succeeded
  * @param diagnostics import contract or target-environment compatibility diagnostics
  * @param validation target-environment validation and readiness when available
- * @param dependencyReport target-environment dependency report for the stored draft
+ * @param dependencyReport target-environment dependency report for the stored draft, retained as a legacy alias
+ * @param sourceDependencyReport source-environment dependency report from the export bundle
+ * @param targetDependencyReport target-environment dependency report for the stored draft
  */
 public record GraphDraftImportResult(
         String schemaVersion,
@@ -27,7 +29,9 @@ public record GraphDraftImportResult(
         GraphDraft draft,
         List<VisualDiagnostic> diagnostics,
         VisualValidationResult validation,
-        GraphDraftDependencyReport dependencyReport
+        GraphDraftDependencyReport dependencyReport,
+        GraphDraftDependencyReport sourceDependencyReport,
+        GraphDraftDependencyReport targetDependencyReport
 ) {
     public static final String SCHEMA_VERSION = "bloge.visualGraphDraftImportResult.v1";
 
@@ -41,7 +45,14 @@ public record GraphDraftImportResult(
         sourceRevision = Math.max(0, sourceRevision);
         diagnostics = diagnostics == null ? List.of() : List.copyOf(diagnostics);
         validation = validation == null ? new VisualValidationResult(false, diagnostics) : validation;
-        dependencyReport = dependencyReport == null ? GraphDraftDependencyReport.empty() : dependencyReport;
+        sourceDependencyReport = sourceDependencyReport == null
+                ? GraphDraftDependencyReport.empty()
+                : sourceDependencyReport;
+        GraphDraftDependencyReport normalizedTargetDependencyReport = targetDependencyReport == null
+                ? dependencyReport == null ? GraphDraftDependencyReport.empty() : dependencyReport
+                : targetDependencyReport;
+        targetDependencyReport = normalizedTargetDependencyReport;
+        dependencyReport = normalizedTargetDependencyReport;
     }
 
     /**
@@ -53,6 +64,7 @@ public record GraphDraftImportResult(
                                   List<VisualDiagnostic> diagnostics,
                                   VisualValidationResult validation) {
         this(schemaVersion, imported, "", "", 0, draft, diagnostics, validation,
+                GraphDraftDependencyReport.empty(), GraphDraftDependencyReport.empty(),
                 GraphDraftDependencyReport.empty());
     }
 
@@ -64,6 +76,7 @@ public record GraphDraftImportResult(
                                   GraphDraft draft,
                                   List<VisualDiagnostic> diagnostics) {
         this(schemaVersion, imported, "", "", 0, draft, diagnostics, new VisualValidationResult(false, diagnostics),
+                GraphDraftDependencyReport.empty(), GraphDraftDependencyReport.empty(),
                 GraphDraftDependencyReport.empty());
     }
 
@@ -114,7 +127,8 @@ public record GraphDraftImportResult(
         VisualValidationResult safeValidation = validation == null
                 ? new VisualValidationResult(false, List.of())
                 : validation;
-        return from(bundle, true, draft, safeValidation.diagnostics(), safeValidation, dependencyReport);
+        return from(bundle, true, draft, safeValidation.diagnostics(), safeValidation,
+                sourceDependencyReport(bundle), dependencyReport);
     }
 
     /**
@@ -132,7 +146,7 @@ public record GraphDraftImportResult(
      */
     public static GraphDraftImportResult rejected(GraphDraftExportBundle bundle, List<VisualDiagnostic> diagnostics) {
         return from(bundle, false, null, diagnostics, new VisualValidationResult(false, diagnostics),
-                GraphDraftDependencyReport.empty());
+                sourceDependencyReport(bundle), GraphDraftDependencyReport.empty());
     }
 
     private static GraphDraftImportResult from(GraphDraftExportBundle bundle,
@@ -140,7 +154,8 @@ public record GraphDraftImportResult(
                                                GraphDraft draft,
                                                List<VisualDiagnostic> diagnostics,
                                                VisualValidationResult validation,
-                                               GraphDraftDependencyReport dependencyReport) {
+                                               GraphDraftDependencyReport sourceDependencyReport,
+                                               GraphDraftDependencyReport targetDependencyReport) {
         return new GraphDraftImportResult(
                 SCHEMA_VERSION,
                 imported,
@@ -150,7 +165,15 @@ public record GraphDraftImportResult(
                 draft,
                 diagnostics,
                 validation,
-                dependencyReport
+                targetDependencyReport,
+                sourceDependencyReport,
+                targetDependencyReport
         );
+    }
+
+    private static GraphDraftDependencyReport sourceDependencyReport(GraphDraftExportBundle bundle) {
+        return bundle == null || bundle.dependencyReport() == null
+                ? GraphDraftDependencyReport.empty()
+                : bundle.dependencyReport();
     }
 }

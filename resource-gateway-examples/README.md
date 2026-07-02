@@ -532,12 +532,13 @@ operator, rejects unsupported
 bundle or draft contracts before storage with `actual`/`expected` diagnostic
 metadata for schemaVersion mismatches, and returns a
 `bloge.visualGraphDraftImportResult.v1` payload with source bundle schema,
-source draft id/revision, target-environment diagnostics plus validation/readiness/action-readiness, and a dependency report for repairable
+source draft id/revision, target-environment diagnostics plus validation/readiness/action-readiness,
+source dependency report, target dependency report, and a legacy `dependencyReport` target alias for repairable
 issues such as missing operators, scope-mismatched operators, or schema-only
 design graphs. The browser Drafts panel sends
 `visual-canvas`/`gateway-browser` evidence for new draft saves and bundle imports. The Drafts panel
 exposes this flow through Export/Import Bundle controls and a JSON bundle editor,
-feeds the returned readiness and action gates back into Server Check, and consumes the returned dependency report so imported
+feeds the returned readiness and action gates back into Server Check, and consumes the returned target dependency report so imported
 design-only or dependency-repair graphs can be reviewed without an immediate
 manual validate/dependency refresh.
 Complex canvas compositions can therefore be copied into another environment
@@ -781,7 +782,7 @@ Showcase metadata APIs:
 | `GET` | `/api/visual/drafts/{draftId}` | Load a stored visual graph draft |
 | `GET` | `/api/visual/drafts/{draftId}/dependencies` | Summarize a stored draft as `bloge.visualGraphDraftDependencies.v1`, including distinct operator dependencies, per-node binding/edge lineage, source/lowering/runtime-readiness counts, current/missing/drifted/scope-mismatch fingerprint state, and scope policy diagnostics |
 | `GET` | `/api/visual/drafts/{draftId}/export` | Export a portable draft bundle with operator snapshots, export-time diagnostics, validation/readiness/action-readiness, and source-environment dependency report |
-| `POST` | `/api/visual/drafts/import` | Import a portable draft bundle as a new draft identity with current operator fingerprints/snapshots plus target-environment diagnostics, validation/readiness/action-readiness, dependency report, and optional `actor` / `changeSource` / `changeSummary` / `reason` revision audit metadata |
+| `POST` | `/api/visual/drafts/import` | Import a portable draft bundle as a new draft identity with current operator fingerprints/snapshots plus target-environment diagnostics, validation/readiness/action-readiness, source and target dependency reports, legacy target `dependencyReport`, and optional `actor` / `changeSource` / `changeSummary` / `reason` revision audit metadata |
 | `GET` | `/api/visual/drafts/{draftId}/revisions` | List immutable draft revision snapshots, newest first; retained history remains queryable after current draft deletion |
 | `GET` | `/api/visual/drafts/{draftId}/revisions/{revision}` | Load one immutable draft revision snapshot, including retained history for deleted drafts |
 | `GET` | `/api/visual/drafts/{draftId}/revisions/{baseRevision}/diff/{targetRevision}` | Compare two immutable draft snapshots as `bloge.visualGraphDraftDiff.v1`, including highest change risk, risk categories, summary, graph-level changes, node-level added/removed/changed surface, edge-level added/removed/changed surface, and node/edge change counts |
@@ -1518,7 +1519,7 @@ Seven `.bloge` graphs live in `src/main/resources/bloge/gateway/`:
 | `VisualGraphReadiness` | Server-derived graph runtime/design readiness (`bloge.visualGraphReadiness.v1`) with node readiness rows and runtime binding requirements for schema-valid but non-executable design artifacts |
 | `VisualGraphActionReadiness` | Server-derived graph action gate summary (`bloge.visualGraphActionReadiness.v1`) for compile, run, DESIGN publication, EXECUTABLE publication, warning acknowledgement, and governance evidence requirements |
 | `GraphDraftExportBundle` | Portable draft package with source identity, draft snapshot, operator snapshots, export-time diagnostics, validation/readiness/action-readiness, and source dependency report |
-| `GraphDraftImportResult` | Import response contract with source bundle/draft identity, stored draft identity, target-environment compatibility diagnostics, validation/readiness/action-readiness, and dependency report |
+| `GraphDraftImportResult` | Import response contract with source bundle/draft identity, stored draft identity, target-environment compatibility diagnostics, validation/readiness/action-readiness, source dependency report, target dependency report, and legacy target `dependencyReport` |
 | `DatabaseGraphDraftRepository` | H2-backed graph draft repository with revision assignment, immutable revision history, expected-revision guarded updates, deletion audit snapshots, and retained history for deleted-draft recovery |
 | `GraphDraftValidator` | Validates the `bloge.visualGraphDraft.v1` draft contract, `bloge.visualLayout.v1` presentation contract including node/edge coverage, operator references, operator fingerprint drift, operator scope policy, request-response runtime capability gates for streaming/durable/remote-worker/AI-tool/event-source/message-handler/webhook operators, schema-only design operator authoring, non-idempotent side-effect and secret-backed execution governance warnings, graph input `contextPath` bindings, binding kind and edge kind allow-lists, literal constants, expression references, required schema inputs, node config against `configSchema`, port-aware node bindings, DSL-safe source/target/output port segments, typed data edges, explicit dependency edges, branch route edges, edge identity/connection uniqueness, data edge/semantic dependency consistency, DAG shape, output schema selection, and output-reachability warnings for dangling nodes |
 | `VisualConnectionCheckService` | Reuses draft validation to accept or reject one proposed canvas edge before the browser writes a binding, including schema, source/target port-segment, path diagnostics, a stable decision/replacement summary, and candidate draft validation/readiness/action-readiness |

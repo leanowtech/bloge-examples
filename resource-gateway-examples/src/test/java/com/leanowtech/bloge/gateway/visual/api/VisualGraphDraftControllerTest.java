@@ -599,11 +599,16 @@ class VisualGraphDraftControllerTest {
         assertThat(response.getBody().validation().readiness().state()).isEqualTo("runtime-executable");
         assertThat(response.getBody().validation().readiness().artifactKinds())
                 .containsExactly("EXECUTABLE", "DESIGN");
+        assertThat(response.getBody().sourceDependencyReport()).isEqualTo(bundle.dependencyReport());
+        assertThat(response.getBody().sourceDependencyReport().draftId()).isEqualTo(stored.draftId());
+        assertThat(response.getBody().sourceDependencyReport().missingOperatorCount()).isZero();
         assertThat(response.getBody().dependencyReport().missingOperatorCount()).isZero();
         assertThat(response.getBody().dependencyReport().scopeMismatchOperatorCount()).isZero();
         assertThat(response.getBody().dependencyReport().runtimeReadinessStateCounts())
                 .containsEntry("RUNTIME_EXECUTABLE", 1);
         GraphDraft imported = response.getBody().draft();
+        assertThat(response.getBody().targetDependencyReport()).isEqualTo(response.getBody().dependencyReport());
+        assertThat(response.getBody().targetDependencyReport().draftId()).isEqualTo(imported.draftId());
         assertThat(imported.draftId()).isNotBlank().isNotEqualTo(stored.draftId());
         assertThat(imported.revision()).isEqualTo(1);
         assertThat(imported.graphName()).isEqualTo(stored.graphName());
@@ -691,6 +696,10 @@ class VisualGraphDraftControllerTest {
         assertThat(response.getBody().validation().valid()).isFalse();
         assertThat(response.getBody().validation().diagnostics()).isEqualTo(response.getBody().diagnostics());
         assertThat(response.getBody().validation().readiness().state()).isEqualTo("draft-repair-required");
+        assertThat(response.getBody().sourceDependencyReport()).isEqualTo(bundle.dependencyReport());
+        assertThat(response.getBody().sourceDependencyReport().draftId()).isEqualTo(stored.draftId());
+        assertThat(response.getBody().sourceDependencyReport().missingOperatorCount()).isZero();
+        assertThat(response.getBody().targetDependencyReport()).isEqualTo(response.getBody().dependencyReport());
         assertThat(response.getBody().dependencyReport().draftId()).isEqualTo(response.getBody().draft().draftId());
         assertThat(response.getBody().dependencyReport().missingOperatorCount()).isEqualTo(1);
         assertThat(response.getBody().dependencyReport().scopeMismatchOperatorCount()).isZero();
@@ -735,6 +744,9 @@ class VisualGraphDraftControllerTest {
                 .contains("visual.operator.policyDenied");
         assertThat(response.getBody().validation().valid()).isFalse();
         assertThat(response.getBody().validation().readiness().state()).isEqualTo("draft-repair-required");
+        assertThat(response.getBody().sourceDependencyReport()).isEqualTo(bundle.dependencyReport());
+        assertThat(response.getBody().sourceDependencyReport().scopeMismatchOperatorCount()).isZero();
+        assertThat(response.getBody().targetDependencyReport()).isEqualTo(response.getBody().dependencyReport());
         assertThat(response.getBody().dependencyReport().draftId()).isEqualTo(response.getBody().draft().draftId());
         assertThat(response.getBody().dependencyReport().missingOperatorCount()).isZero();
         assertThat(response.getBody().dependencyReport().scopeMismatchOperatorCount()).isEqualTo(1);
@@ -786,6 +798,10 @@ class VisualGraphDraftControllerTest {
         assertThat(response.getBody().validation().readiness().executable()).isFalse();
         assertThat(response.getBody().validation().readiness().artifactKinds()).containsExactly("DESIGN");
         assertThat(response.getBody().validation().actionReadiness().state()).isEqualTo("design-artifact-ready");
+        assertThat(response.getBody().sourceDependencyReport()).isEqualTo(bundle.dependencyReport());
+        assertThat(response.getBody().targetDependencyReport()).isEqualTo(response.getBody().dependencyReport());
+        assertThat(response.getBody().targetDependencyReport().runtimeReadinessStateCounts())
+                .containsEntry("DESIGN_ONLY", 1);
         assertThat(targetRepository.all()).containsExactly(response.getBody().draft());
     }
 
@@ -819,6 +835,9 @@ class VisualGraphDraftControllerTest {
         assertThat(result.sourceDraftId()).isEqualTo("source-draft");
         assertThat(result.sourceRevision()).isEqualTo(7);
         assertThat(result.draft()).isNull();
+        assertThat(result.sourceDependencyReport().operatorDependencyCount()).isZero();
+        assertThat(result.targetDependencyReport().operatorDependencyCount()).isZero();
+        assertThat(result.dependencyReport()).isEqualTo(result.targetDependencyReport());
         assertThat(result.diagnostics())
                 .singleElement()
                 .satisfies(diagnostic -> {
@@ -860,6 +879,9 @@ class VisualGraphDraftControllerTest {
         assertThat(result.sourceDraftId()).isEqualTo("source-draft");
         assertThat(result.sourceRevision()).isEqualTo(7);
         assertThat(result.draft()).isNull();
+        assertThat(result.sourceDependencyReport().operatorDependencyCount()).isZero();
+        assertThat(result.targetDependencyReport().operatorDependencyCount()).isZero();
+        assertThat(result.dependencyReport()).isEqualTo(result.targetDependencyReport());
         assertThat(result.diagnostics())
                 .anySatisfy(diagnostic -> {
                     assertThat(diagnostic.code()).isEqualTo("visual.draft.schemaVersion.unsupported");

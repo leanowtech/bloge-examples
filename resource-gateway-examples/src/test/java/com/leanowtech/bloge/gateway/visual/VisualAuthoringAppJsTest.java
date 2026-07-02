@@ -299,6 +299,9 @@ class VisualAuthoringAppJsTest {
                 .contains("SCOPE_MISMATCH")
                 .contains("function draftDependencyPolicyViolationLabel(row)")
                 .contains("payload?.dependencyReport")
+                .contains("payload?.targetDependencyReport || payload?.dependencyReport")
+                .contains("function draftImportTargetReviewText(report)")
+                .contains("Target review: all imported draft operator dependencies are available.")
                 .contains("data-draft-dependency-node")
                 .contains("data-draft-dependency-rebase")
                 .contains("focusCanvasNode(button.dataset.draftDependencyNode)")
@@ -4127,10 +4130,52 @@ class VisualAuthoringAppJsTest {
                             diagnostics: [],
                             readiness: transferReadiness
                           },
-                          dependencyReport: {
+                          sourceDependencyReport: {
                             schemaVersion: 'bloge.visualGraphDraftDependencies.v1',
                             draftId: 'draft-risk',
                             revision: 4,
+                            graphName: 'importedGraph',
+                            tenantId: 'demo-tenant',
+                            namespace: 'local',
+                            environment: 'browser',
+                            nodeCount: 0,
+                            edgeCount: 0,
+                            operatorDependencyCount: 0,
+                            missingOperatorCount: 0,
+                            scopeMismatchOperatorCount: 0,
+                            driftedFingerprintCount: 0,
+                            missingFingerprintCount: 0,
+                            sourceKindCounts: {},
+                            loweringModeCounts: {},
+                            runtimeReadinessStateCounts: {},
+                            operators: [],
+                            nodes: []
+                          },
+                          targetDependencyReport: {
+                            schemaVersion: 'bloge.visualGraphDraftDependencies.v1',
+                            draftId: 'draft-imported',
+                            revision: 1,
+                            graphName: 'importedGraph',
+                            tenantId: 'demo-tenant',
+                            namespace: 'local',
+                            environment: 'browser',
+                            nodeCount: 0,
+                            edgeCount: 0,
+                            operatorDependencyCount: 0,
+                            missingOperatorCount: 0,
+                            scopeMismatchOperatorCount: 0,
+                            driftedFingerprintCount: 0,
+                            missingFingerprintCount: 0,
+                            sourceKindCounts: {},
+                            loweringModeCounts: {},
+                            runtimeReadinessStateCounts: {},
+                            operators: [],
+                            nodes: []
+                          },
+                          dependencyReport: {
+                            schemaVersion: 'bloge.visualGraphDraftDependencies.v1',
+                            draftId: 'draft-imported',
+                            revision: 1,
                             graphName: 'importedGraph',
                             tenantId: 'demo-tenant',
                             namespace: 'local',
@@ -4221,7 +4266,7 @@ class VisualAuthoringAppJsTest {
                     ['draft bundle carries dependency report', String(transferResult.draftBundleHasDependencyReport), 'true'],
                     ['draft export message', transferResult.transferDraftMessages[0].text, 'Exported draft-risk@4.'],
                     ['draft export visual readiness', exportVisualCheck.readiness?.state, 'design-only'],
-                    ['draft import message', transferResult.transferDraftMessages[1].text, 'Imported draft-imported@1 from draft-risk@4.'],
+                    ['draft import message', transferResult.transferDraftMessages[1].text, 'Imported draft-imported@1 from draft-risk@4. Target review: all imported draft operator dependencies are available.'],
                     ['draft import visual readiness', importVisualCheck.readiness?.state, 'design-only'],
                     ['draft import current id', transferResult.currentDraftId, 'draft-imported'],
                     ['draft import current revision', transferResult.currentDraftRevision, 1],

@@ -10489,8 +10489,9 @@ async function importDraftBundle() {
   state.lastGeneratedVisualDsl = '';
   await loadDraftList({ render: false });
   await loadDraftRevisions({ render: false });
-  if (payload?.dependencyReport) {
-    state.draftDependencyReport = payload.dependencyReport;
+  const targetDependencyReport = payload?.targetDependencyReport || payload?.dependencyReport;
+  if (targetDependencyReport) {
+    state.draftDependencyReport = targetDependencyReport;
     state.draftDependencyMessage = null;
   } else {
     await loadDraftDependencies({ render: false });
@@ -10502,9 +10503,10 @@ async function importDraftBundle() {
   const sourceLineage = payload?.sourceDraftId
     ? ` from ${payload.sourceDraftId}@${payload.sourceRevision || 0}`
     : '';
+  const targetReview = draftImportTargetReviewText(targetDependencyReport);
   const importMessage = diagnostics.length
-    ? `Imported ${state.currentDraftId}@${state.currentDraftRevision}${sourceLineage} with ${hasImportErrors ? 'errors' : 'warnings'}: ${diagnosticMessage(diagnostics, 'review diagnostics')}`
-    : `Imported ${state.currentDraftId}@${state.currentDraftRevision}${sourceLineage}.`;
+    ? `Imported ${state.currentDraftId}@${state.currentDraftRevision}${sourceLineage} with ${hasImportErrors ? 'errors' : 'warnings'}: ${diagnosticMessage(diagnostics, 'review diagnostics')}${targetReview ? ` ${targetReview}` : ''}`
+    : `Imported ${state.currentDraftId}@${state.currentDraftRevision}${sourceLineage}.${targetReview ? ` ${targetReview}` : ''}`;
   setDraftMessage(
     importMessage,
     hasImportErrors ? 'error' : 'success'
@@ -10519,6 +10521,22 @@ async function importDraftBundle() {
   renderScenario();
   renderVisualAssetOverview();
   $('output').textContent = pretty({ status: response.status, draftImport: payload, importedDraft });
+}
+
+function draftImportTargetReviewText(report) {
+  if (!report) return '';
+  const missing = Number(report.missingOperatorCount || 0);
+  const scopeMismatch = Number(report.scopeMismatchOperatorCount || 0);
+  const drifted = Number(report.driftedFingerprintCount || 0);
+  const missingSnapshot = Number(report.missingFingerprintCount || 0);
+  const issues = [
+    missing ? `${missing} missing operator${missing === 1 ? '' : 's'}` : '',
+    scopeMismatch ? `${scopeMismatch} scope mismatch${scopeMismatch === 1 ? '' : 'es'}` : '',
+    drifted ? `${drifted} fingerprint drift${drifted === 1 ? '' : 's'}` : '',
+    missingSnapshot ? `${missingSnapshot} missing fingerprint snapshot${missingSnapshot === 1 ? '' : 's'}` : ''
+  ].filter(Boolean);
+  if (issues.length) return `Target review: ${issues.join(', ')}.`;
+  return 'Target review: all imported draft operator dependencies are available.';
 }
 
 function draftImportMutationQuery() {
