@@ -282,9 +282,12 @@ class VisualAuthoringAppJsTest {
                 .contains("/restore")
                 .contains("const expectedRevision = current?.revision || historyEntry?.latestRevision || 0")
                 .contains("expectedRevision,")
+                .contains("reason: 'User saved schema-constrained visual draft changes from the browser canvas.'")
                 .contains("changeSummary: `Restored draft revision @${revision}.`")
+                .contains("reason: 'User reviewed draft revision history before restoring this version in the browser.'")
                 .contains("const deleteParams = new URLSearchParams")
                 .contains("changeSummary: `Deleted draft ${deletedId}@${expectedRevision}.`")
+                .contains("reason: 'User deleted the visual draft from the browser Drafts panel.'")
                 .contains("diff.nodeChanges")
                 .contains("diff.edgeChanges")
                 .contains("diff.graphChanges")
@@ -3411,6 +3414,10 @@ class VisualAuthoringAppJsTest {
                     ['rebase endpoint', rebaseResult.rebaseFetchUrl, '/api/visual/drafts/draft-risk/operator-fingerprints/rebase'],
                     ['rebase expected revision', rebaseBody.expectedRevision, 3],
                     ['rebase node id', rebaseBody.nodeIds.join('|'), 'riskNode'],
+                    ['rebase actor', rebaseBody.actor, 'visual-canvas'],
+                    ['rebase change source', rebaseBody.changeSource, 'gateway-browser'],
+                    ['rebase change summary', rebaseBody.changeSummary, 'Rebased operator fingerprint snapshot for riskNode.'],
+                    ['rebase reason', rebaseBody.reason, 'User reviewed operator drift before rebasing the saved fingerprint snapshot in the browser.'],
                     ['rebase returned revision', rebaseResult.rebasedDraft.revision, 4],
                     ['rebase state revision', context.state.currentDraftRevision, 4],
                     ['rebase state fingerprint', context.state.builder.operatorFingerprints.riskNode, 'current-fingerprint-123456'],

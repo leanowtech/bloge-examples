@@ -166,8 +166,8 @@ registry, and refresh the palette without leaving the browser,
 save/load/delete H2-backed graph drafts with
 revision-guarded field-level `PATCH` updates and per-revision audit metadata,
 export/import portable draft bundles with operator snapshots and export-time
-diagnostics for cross-environment review while preserving import actor/source/summary/reason evidence in
-the new draft revision metadata,
+diagnostics for cross-environment review while preserving draft save, restore, delete, and import
+actor/source/summary/reason evidence in revision metadata,
 validate and compile the draft through the server-side visual graph APIs, inspect the
 generated BLOGE DSL, run it with JSON context, and see diagnostics, output, graph
 highlighting, graph-level runtime/design readiness, and the decision-table matrix update together. Node-path bindings
@@ -660,7 +660,9 @@ The Drafts panel can also load revision history, preview an old snapshot on the
 canvas, and restore it as a new latest revision through a first-class guarded
 restore API. Each stored revision carries `revisionMetadata` with created/updated
 actor, change source, change summary, reason, and touched JSON pointer paths, giving the
-example a concrete audit anchor for collaborative authoring and rollback. Draft
+example a concrete audit anchor for collaborative authoring and rollback. Browser
+save, restore, delete, and import mutations provide default reason text so routine
+design-asset changes are not stored as anonymous mechanical revisions. Draft
 delete removes the current working draft but preserves immutable revision
 history, so a deleted draft can still be recovered from a retained revision
 through the same guarded restore API. The panel consumes a lightweight draft
@@ -687,7 +689,9 @@ repair work on the graph without pretending a catalog-missing or scope-mismatche
 operator can be rebased. Rebase is disabled while the local
 canvas has unsaved graph changes against the current draft revision, so authors
 must save or reload those edits before mutating the service-managed fingerprint
-snapshot. If a rebase hits a draft revision conflict, the browser reloads the
+snapshot. The browser sends actor/source/summary/reason audit metadata with each
+rebase so compatible drift refreshes are reviewable as explicit governance
+revisions rather than anonymous mechanical repairs. If a rebase hits a draft revision conflict, the browser reloads the
 server's latest draft onto the canvas, clears local edit history for that
 governance action, refreshes the revision list and dependency report, and asks
 the author to review the latest dependency view before retrying.
@@ -754,7 +758,7 @@ Showcase metadata APIs:
 | `POST` | `/api/visual/drafts/{draftId}/revisions/{revision}/restore` | Restore one immutable draft snapshot as a new latest revision with `expectedRevision` concurrency guard, audit metadata, contract validation, and historical operator snapshot preservation; can recover a deleted draft when retained history exists |
 | `PUT` | `/api/visual/drafts/{draftId}` | Replace a stored visual graph draft when the submitted `revision` matches; stale full saves return `409 CONFLICT` with current draft diagnostics |
 | `PATCH` | `/api/visual/drafts/{draftId}` | Apply an `expectedRevision` JSON patch, reject stale edits with `409 CONFLICT`, and reject patches to service-managed identity/revision/fingerprint/snapshot fields |
-| `POST` | `/api/visual/drafts/{draftId}/operator-fingerprints/rebase` | Explicitly refresh selected or all service-managed node fingerprint/operator snapshots against the current operator catalog using an `expectedRevision` guard |
+| `POST` | `/api/visual/drafts/{draftId}/operator-fingerprints/rebase` | Explicitly refresh selected or all service-managed node fingerprint/operator snapshots against the current operator catalog using an `expectedRevision` guard plus optional actor/source/summary/reason revision audit metadata |
 | `DELETE` | `/api/visual/drafts/{draftId}` | Delete the current visual graph draft pointer while preserving immutable revision history; optional `expectedRevision`, `actor`, `changeSource`, and `changeSummary` query parameters reject stale deletes and write deletion audit metadata |
 | `POST` | `/api/visual/drafts/validate` | Validate a visual graph draft against operator schemas, typed port edges, and DAG constraints; response includes `bloge.visualGraphReadiness.v1` so callers can distinguish runtime-executable, design-only, runtime-blocked, governance-review, and draft-repair-required graphs |
 | `POST` | `/api/visual/drafts/compile` | Validate a visual graph draft, lower it to BLOGE DSL, then compile the DSL; response includes validation/readiness so clients keep publish guidance after compile diagnostics |
@@ -1368,7 +1372,7 @@ Seven `.bloge` graphs live in `src/main/resources/bloge/gateway/`:
 | `GraphDraftHistorySummary` | Lightweight active/deleted draft history index entry for browser and external recovery control planes, including latest revision actor/source/summary/reason |
 | `GraphDraftDiff` | Machine-readable graph draft revision diff with graph/node/edge change surfaces, node and edge add/remove/change counts, and risk-classified review summaries |
 | `GraphDraftDependencyReport` | Machine-readable dependency report used for stored drafts, migration bundles, import results, and frozen publications, with distinct operatorRef usage, per-node upstream/downstream lineage, source/lowering/readiness counts, saved-vs-current/scope-mismatch fingerprint state, and scope policy diagnostics |
-| `GraphDraftRevisionRestoreRequest` | Governed restore request for turning one immutable draft revision into a new latest revision with optimistic locking and audit metadata |
+| `GraphDraftRevisionRestoreRequest` | Governed restore request for turning one immutable draft revision into a new latest revision with optimistic locking and actor/source/summary/reason audit metadata |
 | `GraphDraftExportBundle` | Portable draft package with source identity, draft snapshot, operator snapshots, export-time diagnostics, validation/readiness, and source dependency report |
 | `GraphDraftImportResult` | Import response contract with stored draft identity, target-environment compatibility diagnostics, validation/readiness, and dependency report |
 | `DatabaseGraphDraftRepository` | H2-backed graph draft repository with revision assignment, immutable revision history, expected-revision guarded updates, deletion audit snapshots, and retained history for deleted-draft recovery |

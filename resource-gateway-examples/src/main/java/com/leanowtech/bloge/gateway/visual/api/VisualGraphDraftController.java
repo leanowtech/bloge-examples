@@ -303,7 +303,8 @@ public class VisualGraphDraftController {
                         effectiveRequest.effectiveActor(),
                         effectiveRequest.effectiveChangeSource(),
                         effectiveRequest.effectiveChangeSummary(revision),
-                        List.of("/")
+                        List.of("/"),
+                        effectiveRequest.effectiveReason()
                 ));
         List<VisualDiagnostic> contractDiagnostics = draftContractDiagnostics(candidate);
         if (!contractDiagnostics.isEmpty()) {
@@ -382,7 +383,8 @@ public class VisualGraphDraftController {
                             request.actor(),
                             request.changeSource(),
                             request.changeSummary(),
-                            request.changedPaths()
+                            request.changedPaths(),
+                            request.reason()
                     ));
             List<VisualDiagnostic> contractDiagnostics = draftContractDiagnostics(patched);
             if (!contractDiagnostics.isEmpty()) {
@@ -416,12 +418,15 @@ public class VisualGraphDraftController {
             return ResponseEntity.notFound().build();
         }
         GraphDraft draft = current.get();
-        long expectedRevision = request == null ? 0 : request.expectedRevision();
+        GraphDraftOperatorFingerprintRebaseRequest effectiveRequest = request == null
+                ? new GraphDraftOperatorFingerprintRebaseRequest(0, List.of())
+                : request;
+        long expectedRevision = effectiveRequest.expectedRevision();
         if (expectedRevision > 0 && expectedRevision != draft.revision()) {
             return conflictResponse(draftId, expectedRevision, draft);
         }
 
-        List<String> requestedNodeIds = request == null ? List.of() : request.nodeIds();
+        List<String> requestedNodeIds = effectiveRequest.nodeIds();
         Map<String, String> activeFingerprints = currentOperatorFingerprints(draft);
         Map<String, OperatorDefinition> activeSnapshots = currentOperatorSnapshots(draft);
         List<VisualDiagnostic> diagnostics = operatorFingerprintRebaseDiagnostics(
@@ -444,10 +449,11 @@ public class VisualGraphDraftController {
 
         GraphDraft candidate = draft.withOperatorSnapshotState(nextFingerprints, nextSnapshots)
                 .withRevisionMetadata(GraphDraft.RevisionMetadata.patch(
-                        "visual-canvas",
-                        "operator-fingerprint-rebase",
-                        "Rebased operator fingerprint snapshot(s).",
-                        operatorSnapshotRebaseChangedPaths(targetNodes)
+                        effectiveRequest.effectiveActor(),
+                        effectiveRequest.effectiveChangeSource(),
+                        effectiveRequest.effectiveChangeSummary(),
+                        operatorSnapshotRebaseChangedPaths(targetNodes),
+                        effectiveRequest.reason()
                 ));
         return repository.saveIfRevision(draftId, draft.revision(), candidate)
                 .map(stored -> ResponseEntity.ok(GraphDraftPatchResult.patched(stored)))
@@ -466,7 +472,8 @@ public class VisualGraphDraftController {
                                          @RequestParam(defaultValue = "0") long expectedRevision,
                                          @RequestParam(defaultValue = "") String actor,
                                          @RequestParam(defaultValue = "") String changeSource,
-                                         @RequestParam(defaultValue = "") String changeSummary) {
+                                         @RequestParam(defaultValue = "") String changeSummary,
+                                         @RequestParam(defaultValue = "") String reason) {
         long revision = Math.max(0, expectedRevision);
         Optional<GraphDraft> current = repository.find(draftId);
         if (revision > 0 && current.isPresent() && current.get().revision() != revision) {
@@ -476,7 +483,8 @@ public class VisualGraphDraftController {
                 actor,
                 changeSource.isBlank() ? "delete" : changeSource,
                 changeSummary.isBlank() ? "Deleted draft." : changeSummary,
-                List.of("/")
+                List.of("/"),
+                reason
         ));
         return ResponseEntity.noContent().build();
     }
@@ -484,8 +492,19 @@ public class VisualGraphDraftController {
     /**
      * Backward-compatible direct-call helper for tests and non-Spring callers.
      */
+    public ResponseEntity<Object> delete(String draftId,
+                                         long expectedRevision,
+                                         String actor,
+                                         String changeSource,
+                                         String changeSummary) {
+        return delete(draftId, expectedRevision, actor, changeSource, changeSummary, "");
+    }
+
+    /**
+     * Backward-compatible direct-call helper for tests and non-Spring callers.
+     */
     public ResponseEntity<Object> delete(String draftId, long expectedRevision) {
-        return delete(draftId, expectedRevision, "", "", "");
+        return delete(draftId, expectedRevision, "", "", "", "");
     }
 
     /**

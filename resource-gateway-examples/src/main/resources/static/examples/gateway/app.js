@@ -7832,6 +7832,7 @@ async function saveCurrentDraft() {
         actor: 'visual-canvas',
         changeSource: 'gateway-browser',
         changeSummary: draftPatchSummary(patch),
+        reason: 'User saved schema-constrained visual draft changes from the browser canvas.',
         patch
       })
     });
@@ -8191,7 +8192,8 @@ async function restoreSelectedDraftRevision() {
         expectedRevision,
         actor: 'visual-canvas',
         changeSource: 'gateway-browser',
-        changeSummary: `Restored draft revision @${revision}.`
+        changeSummary: `Restored draft revision @${revision}.`,
+        reason: 'User reviewed draft revision history before restoring this version in the browser.'
       })
     }
   );
@@ -8275,7 +8277,8 @@ async function deleteSelectedDraft() {
     expectedRevision: String(expectedRevision),
     actor: 'visual-canvas',
     changeSource: 'gateway-browser',
-    changeSummary: `Deleted draft ${deletedId}@${expectedRevision}.`
+    changeSummary: `Deleted draft ${deletedId}@${expectedRevision}.`,
+    reason: 'User deleted the visual draft from the browser Drafts panel.'
   });
   const response = await fetch(
     `/api/visual/drafts/${encodeURIComponent(deletedId)}?${deleteParams.toString()}`,
@@ -9361,7 +9364,11 @@ async function rebaseOperatorFingerprint(nodeId) {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           expectedRevision: state.currentDraftRevision || 0,
-          nodeIds: [node.id]
+          nodeIds: [node.id],
+          actor: 'visual-canvas',
+          changeSource: 'gateway-browser',
+          changeSummary: `Rebased operator fingerprint snapshot for ${node.id}.`,
+          reason: 'User reviewed operator drift before rebasing the saved fingerprint snapshot in the browser.'
         })
       }
     );

@@ -142,7 +142,8 @@ class DatabaseGraphDraftRepositoryTest {
                 "reviewer",
                 "retention-test",
                 "Deleted during audit test.",
-                List.of("/")
+                List.of("/"),
+                "Repository delete path records an auditable delete reason."
         ));
 
         assertThat(repository.find(stored.draftId())).isEmpty();
@@ -153,6 +154,8 @@ class DatabaseGraphDraftRepositoryTest {
         assertThat(deleteRevision.revisionMetadata().updatedBy()).isEqualTo("reviewer");
         assertThat(deleteRevision.revisionMetadata().changeSource()).isEqualTo("retention-test");
         assertThat(deleteRevision.revisionMetadata().changeSummary()).isEqualTo("Deleted during audit test.");
+        assertThat(deleteRevision.revisionMetadata().reason())
+                .isEqualTo("Repository delete path records an auditable delete reason.");
     }
 
     @Test

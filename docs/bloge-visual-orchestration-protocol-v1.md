@@ -1322,6 +1322,7 @@ Content-Type: application/json
   "actor": "alice@example.com",
   "changeSource": "gateway-browser",
   "changeSummary": "Added applicant fetch node",
+  "reason": "Reviewed schema-constrained visual draft changes before saving.",
   "patch": [
     {
       "op": "add",
@@ -1356,8 +1357,8 @@ resource-gateway 示例支持 `add`、`replace`、`remove` 三类 JSON patch 操
 若没有可用本地快照，才降级使用 `path=""` 的 root `replace`。服务端会在
 repository 层执行 `expectedRevision` guarded update，避免 check/save 两步之间
 覆盖其他编辑。
-Patch 请求还可以携带 `actor`、`changeSource`、`changeSummary`。服务端会把它们
-固化到最新 `GraphDraft.revisionMetadata`，并从 patch path 生成 `changedPaths`；
+Patch 请求还可以携带 `actor`、`changeSource`、`changeSummary` 和 `reason`。
+服务端会把它们固化到最新 `GraphDraft.revisionMetadata`，并从 patch path 生成 `changedPaths`；
 未传 actor 时 resource-gateway 示例使用 `visual-canvas` 作为默认作者。
 
 resource-gateway 示例还提供 revision history：
@@ -1386,13 +1387,14 @@ binding、config、fingerprint snapshot 和 layout 变化。它的目的不是�
 JSON diff，而是给回滚、协作审阅和 schema-only 设计制品变更确认提供机器可读
 的领域 diff。
 `restore` 端点接收 `GraphDraftRevisionRestoreRequest`，支持 `expectedRevision`
-并发前置条件以及 `actor`、`changeSource`、`changeSummary` 审计元数据。服务端
+并发前置条件以及 `actor`、`changeSource`、`changeSummary`、`reason` 审计元数据。服务端
 把选中的 immutable revision 作为内容来源，保留其中与节点 operatorRef 匹配的
 历史 operator fingerprint / definition snapshot，只为缺失 snapshot 的节点补充
 当前 catalog 快照，然后通过 draft contract 校验并写成新的 latest revision。
 `DELETE /api/visual/drafts/{draftId}` 只移除当前 working draft 指针，不删除
 `visual_graph_draft_revisions` 中的 immutable history。删除动作会写入新的
-revision snapshot 和 deletion audit metadata；当 retained history 仍存在时，
+revision snapshot 和 deletion audit metadata，可通过 query param 携带
+`expectedRevision`、`actor`、`changeSource`、`changeSummary` 和 `reason`；当 retained history 仍存在时，
 `restore` 端点可以把已删除 draft 的任意历史 revision 恢复成新的 latest
 revision，并继续沿用单调递增 revision 序列。
 浏览器 Drafts 面板已接入该 API：可以加载 revision 列表、把历史快照预览到
@@ -1425,6 +1427,11 @@ draft 的 tenant/namespace/environment policy 排除时，报告会标记
 节点行映射为受控 rebase 动作，但必须继续使用 draft revision guard，并且不得为
 `catalog-missing` 或 `scope-mismatch` 节点提供 rebase 假动作；catalog 缺失需要先修复目标
 环境算子库，scope mismatch 需要先修复草稿 scope 或算子 policy。
+`POST /api/visual/drafts/{draftId}/operator-fingerprints/rebase` 请求体支持
+`expectedRevision`、`nodeIds` 以及 `actor`、`changeSource`、`changeSummary`、`reason`
+审计元数据；成功产生新 revision 时，这些字段会固化进
+`GraphDraft.revisionMetadata`。这很重要：rebase 不是普通保存，而是作者审阅
+catalog drift 后显式刷新服务端托管 snapshot 的治理动作。
 如果当前画布相对已保存 draft revision 存在未保存的图结构、binding、config 或 output
 变更，客户端必须先要求作者保存或重新加载，再允许 rebase；rebase 不应把本地未保存编辑
 和服务端托管的 operator fingerprint snapshot 更新混在一个隐式动作里。

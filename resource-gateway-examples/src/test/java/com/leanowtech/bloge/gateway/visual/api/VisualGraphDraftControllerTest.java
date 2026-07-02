@@ -834,6 +834,7 @@ class VisualGraphDraftControllerTest {
                         "alice@example.com",
                         "browser-save",
                         "Rename graph",
+                        "Operator reviewed schema-constrained canvas changes before saving.",
                         List.of(new GraphDraftPatchRequest.PatchOperation("replace", "/graphName", "patchedPolicy"))
                 ));
 
@@ -846,6 +847,8 @@ class VisualGraphDraftControllerTest {
         assertThat(patched.revisionMetadata().changeSource()).isEqualTo("browser-save");
         assertThat(patched.revisionMetadata().changeSummary()).isEqualTo("Rename graph");
         assertThat(patched.revisionMetadata().changedPaths()).containsExactly("/graphName");
+        assertThat(patched.revisionMetadata().reason())
+                .isEqualTo("Operator reviewed schema-constrained canvas changes before saving.");
     }
 
     @Test
@@ -962,7 +965,13 @@ class VisualGraphDraftControllerTest {
 
         ResponseEntity<GraphDraftPatchResult> response = evolvedController.rebaseOperatorFingerprints(
                 stored.draftId(),
-                new GraphDraftOperatorFingerprintRebaseRequest(stored.revision(), List.of("eligibility")));
+                new GraphDraftOperatorFingerprintRebaseRequest(
+                        stored.revision(),
+                        List.of("eligibility"),
+                        "architect",
+                        "test-suite",
+                        "Refresh eligibility fingerprint after catalog drift review.",
+                        "Architect approved the compatible eligibility schema drift rebase."));
 
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
         assertThat(response.getBody()).isNotNull();
@@ -974,7 +983,12 @@ class VisualGraphDraftControllerTest {
                 .doesNotContainEntry("eligibility", initialFingerprint);
         assertThat(rebased.operatorSnapshots().get("eligibility").fingerprint()).isEqualTo(evolvedFingerprint);
         assertThat(rebased.graphName()).isEqualTo(stored.graphName());
-        assertThat(rebased.revisionMetadata().changeSource()).isEqualTo("operator-fingerprint-rebase");
+        assertThat(rebased.revisionMetadata().updatedBy()).isEqualTo("architect");
+        assertThat(rebased.revisionMetadata().changeSource()).isEqualTo("test-suite");
+        assertThat(rebased.revisionMetadata().changeSummary())
+                .isEqualTo("Refresh eligibility fingerprint after catalog drift review.");
+        assertThat(rebased.revisionMetadata().reason())
+                .isEqualTo("Architect approved the compatible eligibility schema drift rebase.");
         assertThat(rebased.revisionMetadata().changedPaths())
                 .containsExactly("/operatorFingerprints/eligibility", "/operatorSnapshots/eligibility");
         assertThat(validator(evolvedCatalog).validate(rebased).diagnostics())
@@ -1381,7 +1395,8 @@ class VisualGraphDraftControllerTest {
                 new GraphDraftRevisionRestoreRequest(second.revision(),
                         "architect",
                         "test-suite",
-                        "Rollback to baseline draft."));
+                        "Rollback to baseline draft.",
+                        "Architect approved restore after comparing revision diff."));
         ResponseEntity<GraphDraftPatchResult> stale = controller.restoreRevision(first.draftId(),
                 first.revision(),
                 new GraphDraftRevisionRestoreRequest(first.revision(), "", "", ""));
@@ -1400,6 +1415,8 @@ class VisualGraphDraftControllerTest {
         assertThat(restored.revisionMetadata().changeSource()).isEqualTo("test-suite");
         assertThat(restored.revisionMetadata().changeSummary()).isEqualTo("Rollback to baseline draft.");
         assertThat(restored.revisionMetadata().changedPaths()).containsExactly("/");
+        assertThat(restored.revisionMetadata().reason())
+                .isEqualTo("Architect approved restore after comparing revision diff.");
         assertThat(controller.revisions(first.draftId()).getBody())
                 .extracting(GraphDraft::revision)
                 .containsExactly(restored.revision(), second.revision(), first.revision());
@@ -1430,7 +1447,8 @@ class VisualGraphDraftControllerTest {
         ResponseEntity<Object> deleted = controller.delete(first.draftId(), second.revision(),
                 "reviewer",
                 "test-suite",
-                "Delete before recovery.");
+                "Delete before recovery.",
+                "Reviewer confirmed deleted drafts remain recoverable from history.");
         ResponseEntity<GraphDraft> currentAfterDelete = controller.get(first.draftId());
         List<GraphDraft> historyAfterDelete = controller.revisions(first.draftId()).getBody();
         assertThat(historyAfterDelete).isNotNull();
@@ -1444,7 +1462,8 @@ class VisualGraphDraftControllerTest {
                 new GraphDraftRevisionRestoreRequest(deleteRevision,
                         "reviewer",
                         "test-suite",
-                        "Recover deleted draft."));
+                        "Recover deleted draft.",
+                        "Reviewer approved recovery from retained delete revision."));
 
         assertThat(deleted.getStatusCode()).isEqualTo(HttpStatus.NO_CONTENT);
         assertThat(currentAfterDelete.getStatusCode()).isEqualTo(HttpStatus.NOT_FOUND);
@@ -1453,6 +1472,8 @@ class VisualGraphDraftControllerTest {
                 .containsExactly(deleteRevision, second.revision(), first.revision());
         assertThat(historyAfterDelete.getFirst().revisionMetadata().changeSummary())
                 .isEqualTo("Delete before recovery.");
+        assertThat(historyAfterDelete.getFirst().revisionMetadata().reason())
+                .isEqualTo("Reviewer confirmed deleted drafts remain recoverable from history.");
         assertThat(staleRestore.getStatusCode()).isEqualTo(HttpStatus.CONFLICT);
         assertThat(staleRestore.getBody()).isNotNull();
         assertThat(staleRestore.getBody().draft().revision()).isEqualTo(deleteRevision);
@@ -1462,6 +1483,8 @@ class VisualGraphDraftControllerTest {
         assertThat(restored.revision()).isEqualTo(deleteRevision + 1);
         assertThat(restored.graphName()).isEqualTo(first.graphName());
         assertThat(restored.revisionMetadata().changeSummary()).isEqualTo("Recover deleted draft.");
+        assertThat(restored.revisionMetadata().reason())
+                .isEqualTo("Reviewer approved recovery from retained delete revision.");
         assertThat(controller.get(first.draftId()).getBody()).isEqualTo(restored);
     }
 
@@ -1483,7 +1506,8 @@ class VisualGraphDraftControllerTest {
         ResponseEntity<Object> deleteResponse = controller.delete(deleted.draftId(), deleted.revision(),
                 "reviewer",
                 "test-suite",
-                "Deleted but recoverable.");
+                "Deleted but recoverable.",
+                "Reviewer validated deleted draft history remains visible.");
 
         List<GraphDraftHistorySummary> history = controller.history();
 
@@ -1505,6 +1529,7 @@ class VisualGraphDraftControllerTest {
                     assertThat(summary.latestRevision()).isEqualTo(deleted.revision() + 1);
                     assertThat(summary.revisionCount()).isEqualTo(2);
                     assertThat(summary.changeSummary()).isEqualTo("Deleted but recoverable.");
+                    assertThat(summary.reason()).isEqualTo("Reviewer validated deleted draft history remains visible.");
                 });
     }
 

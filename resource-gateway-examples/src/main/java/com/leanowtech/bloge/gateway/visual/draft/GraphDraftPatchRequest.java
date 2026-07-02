@@ -11,6 +11,7 @@ import java.util.List;
  * @param actor user or system actor producing this patch
  * @param changeSource UI surface or integration source producing this patch
  * @param changeSummary human-readable change reason
+ * @param reason operator-facing reason for audit and migration review
  * @param patch JSON patch operations
  */
 public record GraphDraftPatchRequest(
@@ -18,6 +19,7 @@ public record GraphDraftPatchRequest(
         String actor,
         String changeSource,
         String changeSummary,
+        String reason,
         List<PatchOperation> patch
 ) {
     /**
@@ -28,14 +30,26 @@ public record GraphDraftPatchRequest(
         actor = actor == null ? "" : actor;
         changeSource = changeSource == null ? "" : changeSource;
         changeSummary = changeSummary == null ? "" : changeSummary;
+        reason = reason == null ? "" : reason.trim();
         patch = patch == null ? List.of() : Collections.unmodifiableList(new ArrayList<>(patch));
+    }
+
+    /**
+     * Backward-compatible constructor for callers created before reason was first-class.
+     */
+    public GraphDraftPatchRequest(long expectedRevision,
+                                  String actor,
+                                  String changeSource,
+                                  String changeSummary,
+                                  List<PatchOperation> patch) {
+        this(expectedRevision, actor, changeSource, changeSummary, "", patch);
     }
 
     /**
      * Backward-compatible constructor for callers that only send patch operations.
      */
     public GraphDraftPatchRequest(long expectedRevision, List<PatchOperation> patch) {
-        this(expectedRevision, "", "", "", patch);
+        this(expectedRevision, "", "", "", "", patch);
     }
 
     /**
