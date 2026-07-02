@@ -173,6 +173,66 @@ public class OperatorLibraryAdminController {
     }
 
     /**
+     * Imports a portable operator-library export bundle into the target environment.
+     *
+     * @param bundle portable export bundle
+     * @param force bypass stored-draft reference protection when replacing an existing library
+     * @param ackWarnings true when the caller already reviewed non-blocking target warnings
+     * @param actor user or system actor producing this registry revision
+     * @param changeSource UI or integration source producing this registry revision
+     * @param changeSummary human-readable change summary
+     * @param reason optional reason for audit review
+     * @return target-environment import result
+     */
+    @PostMapping("/import-bundle")
+    public ResponseEntity<OperatorLibraryImportResult> importBundle(
+            @RequestBody(required = false) OperatorLibraryExportBundle bundle,
+            @RequestParam(defaultValue = "false") boolean force,
+            @RequestParam(defaultValue = "false") boolean ackWarnings,
+            @RequestParam(defaultValue = "") String actor,
+            @RequestParam(defaultValue = "") String changeSource,
+            @RequestParam(defaultValue = "") String changeSummary,
+            @RequestParam(defaultValue = "") String reason) {
+        if (bundle != null && !OperatorLibraryExportBundle.SCHEMA_VERSION.equals(bundle.schemaVersion())) {
+            OperatorLibraryValidationResult validation = operatorLibraryBundleSchemaVersionValidation(bundle);
+            return ResponseEntity.badRequest().body(OperatorLibraryImportResult.rejected(bundle,
+                    bundle.library(), OperatorLibraryImportResult.ACTION_REJECTED, validation));
+        }
+        OperatorLibrary library = bundle == null ? null : bundle.library();
+        if (library == null) {
+            OperatorLibraryValidationResult validation = operatorLibraryBundleMissingSnapshotValidation();
+            return ResponseEntity.badRequest().body(OperatorLibraryImportResult.rejected(bundle, validation));
+        }
+
+        boolean replacing = registry.find(library.libraryId()).isPresent();
+        String mutationAction = replacing
+                ? OperatorLibraryRevision.ACTION_REPLACE
+                : OperatorLibraryRevision.ACTION_CREATE;
+        OperatorLibraryValidationResult validation = validateAgainstRegistry(library, force);
+        if (!validation.valid()) {
+            return ResponseEntity.status(validationFailureStatus(validation))
+                    .body(OperatorLibraryImportResult.rejected(bundle, library, mutationAction, validation));
+        }
+        if (hasWarningDiagnostic(validation) && !ackWarnings) {
+            return ResponseEntity.status(HttpStatus.CONFLICT)
+                    .body(OperatorLibraryImportResult.rejected(bundle, library, mutationAction, validation));
+        }
+        ResponseEntity<OperatorLibraryValidationResult> impact = replacementImpactResponse(library, force);
+        if (impact != null) {
+            return ResponseEntity.status(impact.getStatusCode())
+                    .body(OperatorLibraryImportResult.rejected(bundle, library, mutationAction, impact.getBody()));
+        }
+
+        OperatorLibrary stored = registry.upsert(library, revisionMetadata(actor, changeSource, changeSummary,
+                reason));
+        OperatorLibraryRevision latestRevision = registry.revisions(stored.libraryId()).stream()
+                .findFirst()
+                .orElse(null);
+        return ResponseEntity.status(replacing ? HttpStatus.OK : HttpStatus.CREATED)
+                .body(OperatorLibraryImportResult.imported(bundle, stored, latestRevision, validation));
+    }
+
+    /**
      * @param libraryId library id
      * @return matching library
      */
@@ -620,6 +680,31 @@ public class OperatorLibraryAdminController {
                         || "visual.library.inUse".equals(diagnostic.code()))
                 ? HttpStatus.CONFLICT
                 : HttpStatus.BAD_REQUEST;
+    }
+
+    private static boolean hasWarningDiagnostic(OperatorLibraryValidationResult validation) {
+        return validation != null && validation.diagnostics().stream()
+                .anyMatch(diagnostic -> "WARNING".equalsIgnoreCase(diagnostic.level()));
+    }
+
+    private static OperatorLibraryValidationResult operatorLibraryBundleMissingSnapshotValidation() {
+        return new OperatorLibraryValidationResult(false, List.of(VisualDiagnostic.error(
+                "visual.library.bundle.snapshotMissing",
+                "Operator library import bundle must include a library snapshot.",
+                "/library"
+        )), OperatorLibraryImpactReview.empty(), OperatorLibraryProfile.empty());
+    }
+
+    private static OperatorLibraryValidationResult operatorLibraryBundleSchemaVersionValidation(
+            OperatorLibraryExportBundle bundle) {
+        String actual = bundle == null ? "" : bundle.schemaVersion();
+        return new OperatorLibraryValidationResult(false, List.of(VisualDiagnostic.error(
+                "visual.library.bundle.schemaVersionUnsupported",
+                "Operator library import bundle schemaVersion '%s' is not supported; expected '%s'."
+                        .formatted(actual, OperatorLibraryExportBundle.SCHEMA_VERSION),
+                "/schemaVersion",
+                Map.of("actual", actual, "expected", OperatorLibraryExportBundle.SCHEMA_VERSION)
+        )), OperatorLibraryImpactReview.empty(), OperatorLibraryProfile.empty());
     }
 
     private ResponseEntity<OperatorLibraryValidationResult> replacementImpactResponse(OperatorLibrary replacement,

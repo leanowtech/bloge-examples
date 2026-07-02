@@ -1008,6 +1008,7 @@ function renderInputForm() {
           <button id="import-library" class="secondary compact" type="button">Import</button>
           <button id="reload-libraries" class="secondary compact" type="button">Reload</button>
           <button id="export-library" class="secondary compact" type="button">Export</button>
+          <button id="import-library-bundle" class="secondary compact" type="button">Import Bundle</button>
           <button id="delete-library" class="secondary compact danger" type="button">Delete</button>
           <label class="config-checkbox compact">
             <input id="library-force" type="checkbox">
@@ -2776,6 +2777,7 @@ function renderOperatorLibraryControls() {
   const validateButton = $('validate-library');
   const reloadButton = $('reload-libraries');
   const exportButton = $('export-library');
+  const importBundleButton = $('import-library-bundle');
   const deleteButton = $('delete-library');
   const forceToggle = $('library-force');
   const rollbackToggle = $('library-allow-version-regression');
@@ -2810,6 +2812,9 @@ function renderOperatorLibraryControls() {
   if (exportButton) {
     exportButton.disabled = !state.selectedLibraryId;
     exportButton.onclick = exportSelectedOperatorLibrary;
+  }
+  if (importBundleButton) {
+    importBundleButton.onclick = importOperatorLibraryBundle;
   }
   if (deleteButton) {
     deleteButton.disabled = !state.selectedLibraryId;
@@ -4964,6 +4969,103 @@ async function importOperatorLibrary() {
   renderOperatorPalette();
   renderOperatorLibraryControls();
   setLibraryMessage(`${action} ${stored.libraryId}.`, 'success');
+}
+
+async function importOperatorLibraryBundle() {
+  const sourceText = state.libraryImportText || '';
+  let bundle = null;
+  try {
+    bundle = JSON.parse(sourceText || '{}');
+  } catch {
+    state.libraryImportConfirmationKey = '';
+    setLibraryMessage('Operator library export bundle must be pasted as JSON before import.', 'error');
+    return;
+  }
+  const libraryId = String(bundle?.library?.libraryId || bundle?.sourceLibraryId
+    || operatorLibraryHistoryTargetId()).trim();
+  const existingDiagnostics = normalizeDiagnostics(state.libraryMessage?.diagnostics);
+  const confirmationKey = libraryImportConfirmationKey(sourceText, existingDiagnostics);
+  const ackWarnings = state.libraryImportConfirmationKey === confirmationKey;
+  const replacing = libraryId ? libraryExists(libraryId) : false;
+  const mutationQuery = libraryMutationQuery(
+    ackWarnings,
+    replacing ? 'Replaced bundle' : 'Imported bundle',
+    libraryId
+  );
+  const response = await fetch(`/admin/visual-operator-libraries/import-bundle${mutationQuery}`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(bundle)
+  });
+  const text = await response.text();
+  let payload = null;
+  try {
+    payload = text ? JSON.parse(text) : null;
+  } catch {
+  }
+  const validation = payload?.validation || payload || {};
+  const diagnostics = normalizeDiagnostics(validation?.diagnostics || payload?.diagnostics);
+  if (!response.ok) {
+    const warningKey = libraryImportConfirmationKey(sourceText, diagnostics);
+    if (validation?.valid !== false && hasWarningDiagnostic(diagnostics)
+        && state.libraryImportConfirmationKey !== warningKey) {
+      state.libraryImportConfirmationKey = warningKey;
+      setLibraryMessage(
+        operatorLibraryWarningAcknowledgementMessage(
+          validation?.impact,
+          diagnostics,
+          'Import Bundle'
+        ),
+        'warning',
+        diagnostics,
+        validation?.impact,
+        validation?.profile,
+        sourceText
+      );
+      return;
+    }
+    state.libraryImportConfirmationKey = '';
+    setLibraryMessage(
+      validationResultMessage(validation?.valid, diagnostics, text || `Import bundle failed with ${response.status}`),
+      visualCheckLevel(diagnostics, validation?.valid !== false && response.status < 500),
+      diagnostics,
+      validation?.impact,
+      validation?.profile,
+      sourceText
+    );
+    return;
+  }
+  const stored = payload?.library;
+  if (!stored?.libraryId) {
+    state.libraryImportConfirmationKey = '';
+    setLibraryMessage('Import bundle response did not include a stored operator library.', 'error',
+      diagnostics, validation?.impact, validation?.profile, sourceText);
+    return;
+  }
+  state.libraryImportConfirmationKey = '';
+  state.selectedLibraryId = stored.libraryId;
+  state.libraryHistoryId = stored.libraryId;
+  state.libraryRevisions = [];
+  state.selectedLibraryRevision = 0;
+  state.libraryRevisionDiff = null;
+  state.libraryImportText = pretty(stored);
+  await loadOperatorLibraries({ render: false });
+  await loadOperatorLibraryRevisions({ render: false, message: false });
+  await loadVisualOperatorCatalog();
+  await refreshCatalogDependentAuthoringViews();
+  renderOperatorPalette();
+  renderOperatorLibraryControls();
+  $('output').textContent = pretty({ status: response.status, operatorLibraryImportResult: payload });
+  const action = payload?.mutationAction === 'REPLACE' || response.status === 200
+    ? 'Replaced from bundle'
+    : 'Imported bundle';
+  setLibraryMessage(
+    `${action} ${stored.libraryId}@${payload?.latestRevision?.revision || 0}.`,
+    visualCheckLevel(diagnostics, true),
+    diagnostics,
+    validation?.impact,
+    validation?.profile
+  );
 }
 
 async function deleteSelectedOperatorLibrary() {

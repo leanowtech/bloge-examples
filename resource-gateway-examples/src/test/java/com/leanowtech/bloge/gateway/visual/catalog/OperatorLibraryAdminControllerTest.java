@@ -200,6 +200,126 @@ class OperatorLibraryAdminControllerTest {
     }
 
     @Test
+    void importBundleStoresLibraryWithTargetValidationAndRevisionEvidence() throws Exception {
+        OperatorLibrary library = VisualCatalogTestSupport.designOnlyEligibilityLibrary("integer");
+        OperatorLibraryExportBundle bundle = new OperatorLibraryExportBundle(
+                "",
+                "",
+                "",
+                "",
+                7,
+                null,
+                library,
+                null,
+                null
+        );
+
+        mockMvc.perform(post("/admin/visual-operator-libraries/import-bundle")
+                        .param("actor", "stage-sync")
+                        .param("changeSource", "catalog-bundle")
+                        .param("changeSummary", "Imported portable risk policy bundle.")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(bundle)))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.schemaVersion").value(OperatorLibraryImportResult.SCHEMA_VERSION))
+                .andExpect(jsonPath("$.imported").value(true))
+                .andExpect(jsonPath("$.sourceBundleSchemaVersion")
+                        .value(OperatorLibraryExportBundle.SCHEMA_VERSION))
+                .andExpect(jsonPath("$.sourceLibraryId").value("risk-policy-design"))
+                .andExpect(jsonPath("$.sourceVersion").value("1.0.0"))
+                .andExpect(jsonPath("$.sourceStatus").value("ACTIVE"))
+                .andExpect(jsonPath("$.sourceRevision").value(7))
+                .andExpect(jsonPath("$.importedAt").exists())
+                .andExpect(jsonPath("$.importedLibraryId").value("risk-policy-design"))
+                .andExpect(jsonPath("$.mutationAction").value(OperatorLibraryRevision.ACTION_CREATE))
+                .andExpect(jsonPath("$.library.libraryId").value("risk-policy-design"))
+                .andExpect(jsonPath("$.latestRevision.action").value(OperatorLibraryRevision.ACTION_CREATE))
+                .andExpect(jsonPath("$.latestRevision.revisionMetadata.actor").value("stage-sync"))
+                .andExpect(jsonPath("$.latestRevision.revisionMetadata.changeSource")
+                        .value("catalog-bundle"))
+                .andExpect(jsonPath("$.validation.valid").value(true))
+                .andExpect(jsonPath("$.validation.profile.schemaVersion")
+                        .value(OperatorLibraryProfile.SCHEMA_VERSION))
+                .andExpect(jsonPath("$.validation.profile.libraryId").value("risk-policy-design"))
+                .andExpect(jsonPath("$.validation.profile.designOnlyOperatorCount").value(1))
+                .andExpect(jsonPath("$.validation.profile.facets.runtimeReadinessStates['design-only']")
+                        .value(1));
+
+        assertThat(registry.find("risk-policy-design")).contains(library);
+        assertThat(registry.revisions("risk-policy-design").getFirst().revisionMetadata().changeSummary())
+                .isEqualTo("Imported portable risk policy bundle.");
+    }
+
+    @Test
+    void importBundleRejectsUnsupportedExportBundleSchemaVersion() throws Exception {
+        OperatorLibrary library = VisualCatalogTestSupport.designOnlyEligibilityLibrary("integer");
+        OperatorLibraryExportBundle bundle = new OperatorLibraryExportBundle(
+                "bloge.visualOperatorLibraryExport.v2",
+                "",
+                "",
+                "",
+                9,
+                null,
+                library,
+                null,
+                null
+        );
+
+        mockMvc.perform(post("/admin/visual-operator-libraries/import-bundle")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(bundle)))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.schemaVersion").value(OperatorLibraryImportResult.SCHEMA_VERSION))
+                .andExpect(jsonPath("$.imported").value(false))
+                .andExpect(jsonPath("$.sourceBundleSchemaVersion")
+                        .value("bloge.visualOperatorLibraryExport.v2"))
+                .andExpect(jsonPath("$.sourceLibraryId").value("risk-policy-design"))
+                .andExpect(jsonPath("$.sourceRevision").value(9))
+                .andExpect(jsonPath("$.mutationAction").value(OperatorLibraryImportResult.ACTION_REJECTED))
+                .andExpect(jsonPath("$.validation.valid").value(false))
+                .andExpect(jsonPath("$.validation.diagnostics[0].code")
+                        .value("visual.library.bundle.schemaVersionUnsupported"))
+                .andExpect(jsonPath("$.validation.diagnostics[0].target").value("/schemaVersion"))
+                .andExpect(jsonPath("$.validation.diagnostics[0].metadata.actual")
+                        .value("bloge.visualOperatorLibraryExport.v2"))
+                .andExpect(jsonPath("$.validation.diagnostics[0].metadata.expected")
+                        .value(OperatorLibraryExportBundle.SCHEMA_VERSION));
+
+        assertThat(registry.all()).isEmpty();
+    }
+
+    @Test
+    void importBundleRejectsMissingLibrarySnapshotWithStructuredResult() throws Exception {
+        OperatorLibraryExportBundle bundle = new OperatorLibraryExportBundle(
+                "",
+                "risk-policy-design",
+                "1.0.0",
+                "ACTIVE",
+                3,
+                null,
+                null,
+                null,
+                null
+        );
+
+        mockMvc.perform(post("/admin/visual-operator-libraries/import-bundle")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(bundle)))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.schemaVersion").value(OperatorLibraryImportResult.SCHEMA_VERSION))
+                .andExpect(jsonPath("$.imported").value(false))
+                .andExpect(jsonPath("$.sourceLibraryId").value("risk-policy-design"))
+                .andExpect(jsonPath("$.sourceRevision").value(3))
+                .andExpect(jsonPath("$.mutationAction").value(OperatorLibraryImportResult.ACTION_REJECTED))
+                .andExpect(jsonPath("$.validation.valid").value(false))
+                .andExpect(jsonPath("$.validation.diagnostics[0].code")
+                        .value("visual.library.bundle.snapshotMissing"))
+                .andExpect(jsonPath("$.validation.diagnostics[0].target").value("/library"));
+
+        assertThat(registry.all()).isEmpty();
+    }
+
+    @Test
     void validateLibraryTextRejectsMalformedSourceWithStructuredDiagnostic() throws Exception {
         mockMvc.perform(post("/admin/visual-operator-libraries/validate-text")
                         .contentType(MediaType.TEXT_PLAIN)
