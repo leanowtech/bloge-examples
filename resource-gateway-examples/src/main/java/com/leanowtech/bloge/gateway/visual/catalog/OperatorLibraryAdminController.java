@@ -173,6 +173,26 @@ public class OperatorLibraryAdminController {
     }
 
     /**
+     * Compares two immutable registry snapshots.
+     *
+     * @param libraryId library id
+     * @param baseRevision base revision number
+     * @param targetRevision target revision number
+     * @return machine-readable diff
+     */
+    @GetMapping("/{libraryId}/revisions/{baseRevision}/diff/{targetRevision}")
+    public ResponseEntity<OperatorLibraryDiff> revisionDiff(@PathVariable String libraryId,
+                                                            @PathVariable long baseRevision,
+                                                            @PathVariable long targetRevision) {
+        Optional<OperatorLibraryRevision> base = registry.findRevision(libraryId, baseRevision);
+        Optional<OperatorLibraryRevision> target = registry.findRevision(libraryId, targetRevision);
+        if (base.isEmpty() || target.isEmpty()) {
+            return ResponseEntity.notFound().build();
+        }
+        return ResponseEntity.ok(OperatorLibraryDiff.between(base.get(), target.get()));
+    }
+
+    /**
      * Restores an immutable registry snapshot as a new latest library revision.
      *
      * @param libraryId library id

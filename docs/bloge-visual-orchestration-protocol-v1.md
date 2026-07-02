@@ -1086,6 +1086,7 @@ resource-gateway 示例同时把用户算子库 registry 历史固化为
 ```http
 GET /admin/visual-operator-libraries/{libraryId}/revisions
 GET /admin/visual-operator-libraries/{libraryId}/revisions/{revision}
+GET /admin/visual-operator-libraries/{libraryId}/revisions/{baseRevision}/diff/{targetRevision}
 POST /admin/visual-operator-libraries/{libraryId}/revisions/{revision}/restore
 ```
 
@@ -1099,6 +1100,12 @@ POST /admin/visual-operator-libraries/{libraryId}/revisions/{revision}/restore
 restore 不是覆盖历史记录，而是把目标 snapshot 重新写成新的 latest library revision，
 并复用 import / replace 的结构校验、operatorRef 归属保护、runtime collision、impact
 preflight 和 warning acknowledgement gate。
+`diff` 端点返回 `bloge.visualOperatorLibraryDiff.v1`，包含
+`baseRevision`、`targetRevision`、`changeRisk`、`changeCategories`、`changeSummary`、
+`libraryChanges`、`operatorChanges` 以及 added/removed/changed operator 计数，用于
+restore / rollback 前的机器审阅。operator-level diff 复用
+`OperatorDefinitionChangeSummary` 的风险分类，因此 schema-only operator 的 input/output/config
+schema、lowering、capability、policy 和 metadata 变化可以在不运行图的情况下被控制面识别。
 restore 默认仍阻断 library version 回退；只有请求显式携带
 `allowVersionRegression=true` 时，版本回退才会降级为
 `visual.library.restore.versionRegressionAllowed` warning，并仍需 `ackWarnings=true`

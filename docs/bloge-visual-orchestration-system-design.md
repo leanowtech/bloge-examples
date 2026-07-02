@@ -732,6 +732,9 @@ version，additive 或 compatible schema 变更必须至少提升 minor version�
 控制面具备可追责的变更来源、摘要和回滚理由，而不是只保存匿名 JSON payload，并通过
 `GET /admin/visual-operator-libraries/{libraryId}/revisions` 和
 `GET /admin/visual-operator-libraries/{libraryId}/revisions/{revision}` 暴露查询面；
+`GET /admin/visual-operator-libraries/{libraryId}/revisions/{baseRevision}/diff/{targetRevision}`
+返回 `bloge.visualOperatorLibraryDiff.v1`，按 library-level 与 operator-level 分解
+added / removed / changed surface、最高风险、风险分类和摘要，供 restore / rollback 前审阅；
 `POST /admin/visual-operator-libraries/{libraryId}/revisions/{revision}/restore`
 会把历史快照作为新的 latest library 写回，并记录 `action=RESTORE` 与
 `restoredFromRevision`。restore 复用 replacement 的结构校验、operatorRef 归属保护、

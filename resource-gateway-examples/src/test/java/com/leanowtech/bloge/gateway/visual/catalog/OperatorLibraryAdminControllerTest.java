@@ -755,6 +755,43 @@ class OperatorLibraryAdminControllerTest {
     }
 
     @Test
+    void revisionDiffEndpointReturnsMachineReadableSchemaChangeReview() throws Exception {
+        OperatorLibrary created = VisualCatalogTestSupport.eligibilityLibrary("integer");
+        OperatorLibrary replaced = libraryWithVersion(
+                VisualCatalogTestSupport.eligibilityLibrary("string"), "2.0.0");
+
+        mockMvc.perform(post("/admin/visual-operator-libraries")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(created)))
+                .andExpect(status().isCreated());
+        mockMvc.perform(put("/admin/visual-operator-libraries/risk-policy")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(replaced)))
+                .andExpect(status().isOk());
+
+        mockMvc.perform(get("/admin/visual-operator-libraries/risk-policy/revisions/1/diff/2"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.schemaVersion").value(OperatorLibraryDiff.SCHEMA_VERSION))
+                .andExpect(jsonPath("$.libraryId").value("risk-policy"))
+                .andExpect(jsonPath("$.baseRevision").value(1))
+                .andExpect(jsonPath("$.targetRevision").value(2))
+                .andExpect(jsonPath("$.baseVersion").value("1.0.0"))
+                .andExpect(jsonPath("$.targetVersion").value("2.0.0"))
+                .andExpect(jsonPath("$.changed").value(true))
+                .andExpect(jsonPath("$.changeRisk").value("BREAKING_SCHEMA"))
+                .andExpect(jsonPath("$.changedOperatorCount").value(1))
+                .andExpect(jsonPath("$.libraryChanges[0].field").value("revisionAction"))
+                .andExpect(jsonPath("$.libraryChanges[1].field").value("version"))
+                .andExpect(jsonPath("$.operatorChanges[0].operatorRef").value("risk:eligibility"))
+                .andExpect(jsonPath("$.operatorChanges[0].changeKind").value("CHANGED"))
+                .andExpect(jsonPath("$.operatorChanges[0].risk").value("BREAKING_SCHEMA"))
+                .andExpect(jsonPath("$.operatorChanges[0].summary")
+                        .value(org.hamcrest.Matchers.containsString("input port 'inputs' schema changed")));
+        mockMvc.perform(get("/admin/visual-operator-libraries/risk-policy/revisions/1/diff/99"))
+                .andExpect(status().isNotFound());
+    }
+
+    @Test
     void restoreRevisionWritesNewLatestAuditSnapshotAfterDelete() throws Exception {
         OperatorLibrary created = VisualCatalogTestSupport.eligibilityLibrary("integer");
         OperatorLibrary replaced = libraryWithVersion(created, "1.1.0");

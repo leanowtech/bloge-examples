@@ -383,6 +383,7 @@ const state = {
   libraryHistoryId: '',
   libraryRevisions: [],
   selectedLibraryRevision: 0,
+  libraryRevisionDiff: null,
   libraryMessage: null,
   libraryImportConfirmationKey: '',
   libraryRestoreConfirmationKey: '',
@@ -1022,6 +1023,7 @@ function renderInputForm() {
         <textarea id="operator-library-json" class="library-editor" spellcheck="false"></textarea>
         <div id="library-profile" class="library-profile"></div>
         <div id="library-status" class="library-status" hidden></div>
+        <div id="library-revision-diff" class="library-impact-panel" hidden></div>
         <div id="library-impact" class="library-impact-panel" hidden></div>
         <div id="library-diagnostics" class="visual-diagnostics"></div>
       </div>
@@ -2738,6 +2740,7 @@ function renderOperatorLibraryControls() {
     state.libraryHistoryId = select.value || state.libraryHistoryId;
     state.selectedLibraryRevision = 0;
     state.libraryRevisions = [];
+    state.libraryRevisionDiff = null;
     const library = state.operatorLibraries.find((item) => item.libraryId === select.value);
     if (library) {
       state.libraryImportText = pretty(library);
@@ -2807,6 +2810,7 @@ function renderOperatorLibraryRevisionControls() {
     state.libraryHistoryId = historyInput.value.trim();
     state.selectedLibraryRevision = 0;
     state.libraryRevisions = [];
+    state.libraryRevisionDiff = null;
     state.libraryRestoreConfirmationKey = '';
     renderOperatorLibraryRevisionControls();
   };
@@ -2825,6 +2829,7 @@ function renderOperatorLibraryRevisionControls() {
   select.onchange = () => {
     state.selectedLibraryRevision = Number(select.value || 0);
     state.libraryRestoreConfirmationKey = '';
+    loadOperatorLibraryRevisionDiff();
   };
 
   const reloadButton = $('reload-library-revisions');
@@ -2842,6 +2847,7 @@ function renderOperatorLibraryRevisionControls() {
     restoreButton.disabled = !targetId || !state.selectedLibraryRevision;
     restoreButton.onclick = restoreSelectedOperatorLibraryRevision;
   }
+  renderLibraryRevisionDiff();
 }
 
 function operatorLibraryHistoryTargetId() {
@@ -2879,6 +2885,65 @@ function operatorLibraryRevisionOptionLabel(revision) {
     .join(' · ');
   const auditLabel = audit ? ` · ${audit}` : '';
   return `@${revision?.revision || 0} · ${action}${source} · ${version} · ${operatorCount} ops${auditLabel}`;
+}
+
+function renderLibraryRevisionDiff() {
+  const target = $('library-revision-diff');
+  if (!target) return;
+  const diff = state.libraryRevisionDiff;
+  if (!diff || !state.selectedLibraryRevision) {
+    target.hidden = true;
+    target.innerHTML = '';
+    return;
+  }
+  const level = operatorLibraryDiffLevel(diff);
+  target.hidden = false;
+  target.className = `library-impact-panel ${level}`;
+  const counts = [
+    ['Added', diff.addedOperatorCount || 0],
+    ['Removed', diff.removedOperatorCount || 0],
+    ['Changed', diff.changedOperatorCount || 0]
+  ].map(([label, value]) => `<span><strong>${escapeHtml(value)}</strong> ${escapeHtml(label)}</span>`).join('');
+  const libraryChanges = Array.isArray(diff.libraryChanges) ? diff.libraryChanges : [];
+  const operatorChanges = Array.isArray(diff.operatorChanges) ? diff.operatorChanges : [];
+  const libraryRows = libraryChanges.slice(0, 4).map((change) => `
+    <div class="library-impact-code ${escapeHtml(operatorLibraryDiffRiskLevel(change.risk))}">
+      <strong>${escapeHtml(change.field || 'library')}</strong>
+      <span>${escapeHtml(change.summary || '')}</span>
+    </div>
+  `).join('');
+  const operatorRows = operatorChanges.slice(0, 5).map((change) => `
+    <div class="library-impact-risk">
+      <strong>${escapeHtml(change.operatorRef || 'operator')}</strong>
+      <span>${escapeHtml(change.changeKind || 'CHANGED')} · ${escapeHtml(changeRiskLabel(change.risk))}</span>
+      <small>${escapeHtml(change.summary || '')}</small>
+    </div>
+  `).join('');
+  const remainingOperators = operatorChanges.length > 5
+    ? `<div class="library-impact-more">+${operatorChanges.length - 5} more operator changes</div>`
+    : '';
+  target.innerHTML = `
+    <div class="library-impact-head">
+      <strong>Revision Diff</strong>
+      <span>@${escapeHtml(diff.baseRevision || 0)} -> @${escapeHtml(diff.targetRevision || 0)} · ${escapeHtml(changeRiskLabel(diff.changeRisk))}</span>
+    </div>
+    <div class="library-impact-risk-summary">${escapeHtml(diff.changeSummary || 'No library or operator surface changes.')}</div>
+    <div class="library-impact-stats">${counts}</div>
+    ${libraryRows ? `<div class="library-impact-codes">${libraryRows}</div>` : ''}
+    ${operatorRows ? `<div class="library-impact-risks">${operatorRows}${remainingOperators}</div>` : ''}
+  `;
+}
+
+function operatorLibraryDiffLevel(diff) {
+  if (!diff?.changed) {
+    return 'success';
+  }
+  const risk = String(diff.changeRisk || '').toUpperCase();
+  return risk === 'BREAKING_SCHEMA' ? 'error' : 'warning';
+}
+
+function operatorLibraryDiffRiskLevel(risk) {
+  return String(risk || '').toUpperCase() === 'BREAKING_SCHEMA' ? 'error' : 'warning';
 }
 
 function renderLibraryStatus() {
@@ -4592,6 +4657,7 @@ async function loadOperatorLibraryRevisions(options = {}) {
       Number(revision.revision || 0) === Number(state.selectedLibraryRevision || 0))) {
       state.selectedLibraryRevision = Number(state.libraryRevisions[0]?.revision || 0);
     }
+    await loadOperatorLibraryRevisionDiff({ render: false, message: false });
     if (options.render !== false) {
       renderOperatorLibraryControls();
       setLibraryMessage(`Loaded ${state.libraryRevisions.length} revisions for ${libraryId}.`, 'success');
@@ -4599,8 +4665,39 @@ async function loadOperatorLibraryRevisions(options = {}) {
   } catch (error) {
     state.libraryRevisions = [];
     state.selectedLibraryRevision = 0;
+    state.libraryRevisionDiff = null;
     renderOperatorLibraryControls();
     setLibraryMessage(error.message, 'error');
+  }
+}
+
+async function loadOperatorLibraryRevisionDiff(options = {}) {
+  const libraryId = operatorLibraryHistoryTargetId();
+  const base = latestOperatorLibraryRevision();
+  const target = selectedOperatorLibraryRevision();
+  state.libraryRevisionDiff = null;
+  if (options.render !== false) {
+    renderLibraryRevisionDiff();
+  }
+  if (!libraryId || !base || !target) {
+    return;
+  }
+  try {
+    const response = await fetch(
+      `/admin/visual-operator-libraries/${encodeURIComponent(libraryId)}/revisions/${encodeURIComponent(base.revision || 0)}/diff/${encodeURIComponent(target.revision || 0)}`
+    );
+    if (!response.ok) {
+      throw new Error(`Library revision diff failed with ${response.status}`);
+    }
+    state.libraryRevisionDiff = await response.json();
+  } catch (error) {
+    state.libraryRevisionDiff = null;
+    if (options.message !== false) {
+      setLibraryMessage(error.message, 'error');
+    }
+  }
+  if (options.render !== false) {
+    renderLibraryRevisionDiff();
   }
 }
 
@@ -4750,6 +4847,7 @@ async function importOperatorLibrary() {
   state.libraryHistoryId = stored.libraryId;
   state.libraryRevisions = [];
   state.selectedLibraryRevision = 0;
+  state.libraryRevisionDiff = null;
   state.libraryImportText = pretty(stored);
   await loadOperatorLibraries({ render: false });
   await loadVisualOperatorCatalog();
@@ -4786,6 +4884,7 @@ async function deleteSelectedOperatorLibrary() {
   state.libraryHistoryId = deletedId;
   state.libraryRevisions = [];
   state.selectedLibraryRevision = 0;
+  state.libraryRevisionDiff = null;
   state.libraryImportConfirmationKey = '';
   state.libraryRestoreConfirmationKey = '';
   await loadOperatorLibraries({ render: false });
@@ -4793,6 +4892,11 @@ async function deleteSelectedOperatorLibrary() {
   renderOperatorPalette();
   renderOperatorLibraryControls();
   setLibraryMessage(`Deleted ${deletedId}. History remains available for restore.`, 'success');
+}
+
+function latestOperatorLibraryRevision() {
+  const revisions = Array.isArray(state.libraryRevisions) ? state.libraryRevisions : [];
+  return revisions[0] || null;
 }
 
 function selectedOperatorLibraryRevision() {
@@ -4874,6 +4978,7 @@ async function restoreSelectedOperatorLibraryRevision() {
   state.selectedLibraryId = stored.libraryId;
   state.libraryHistoryId = stored.libraryId;
   state.selectedLibraryRevision = 0;
+  state.libraryRevisionDiff = null;
   state.libraryImportText = pretty(stored);
   await loadOperatorLibraries({ render: false });
   await loadOperatorLibraryRevisions({ render: false });
