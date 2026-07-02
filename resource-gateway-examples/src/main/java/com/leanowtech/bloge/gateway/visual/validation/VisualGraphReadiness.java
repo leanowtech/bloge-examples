@@ -240,183 +240,51 @@ public record VisualGraphReadiness(
             if (node == null || operator == null || readiness == null) {
                 return List.of();
             }
-            OperatorDefinition.Source source = operator.source();
-            OperatorDefinition.Lowering lowering = operator.lowering();
-            OperatorDefinition.Capabilities capabilities = operator.capabilities();
-            String sourceKind = normalizeState(source.kind());
-            String loweringMode = normalizeState(lowering.mode());
-            boolean streaming = capabilities.streaming() || "java-streaming-operator".equals(sourceKind);
-            boolean durable = capabilities.durable() || "java-suspendable-operator".equals(sourceKind);
-            List<RuntimeBindingRequirement> requirements = new ArrayList<>();
-            if (DESIGN_ONLY.equals(readiness.state())) {
-                requirements.add(requirement(
-                        node,
-                        readiness,
-                        sourceKind,
-                        loweringMode,
-                        "executable-lowering",
-                        firstNonBlank(lowering.operatorRef(), operator.operatorRef()),
-                        "Executable lowering required",
-                        "This operator is schema-authorable only; no executable lowering is bound.",
-                        "Bind a native/resource/subgraph lowering or replace the node with an executable operator before EXECUTABLE promotion."
-                ));
-                return List.copyOf(requirements);
-            }
-            if (!RUNTIME_BLOCKED.equals(readiness.state())) {
-                return List.of();
-            }
-            if ("remote-worker".equals(sourceKind) || "remote-worker".equals(loweringMode)) {
-                requirements.add(requirement(
-                        node,
-                        readiness,
-                        sourceKind,
-                        loweringMode,
-                        "remote-worker-runtime",
-                        parameter(lowering, "workerTopic"),
-                        "Remote worker runtime required",
-                        "A remote worker dispatcher is required before this node can execute.",
-                        "Bind worker dispatch for this topic or replace the node before EXECUTABLE promotion."
-                ));
-            }
-            if ("ai-tool".equals(sourceKind) || "ai-tool".equals(loweringMode)) {
-                requirements.add(requirement(
-                        node,
-                        readiness,
-                        sourceKind,
-                        loweringMode,
-                        "ai-tool-runtime",
-                        parameter(lowering, "toolRef"),
-                        "AI tool runtime required",
-                        "An AI tool invocation runtime is required before this node can execute.",
-                        "Bind tool invocation for this toolRef or replace the node before EXECUTABLE promotion."
-                ));
-            }
-            if ("event-source".equals(sourceKind) || "event-source".equals(loweringMode)) {
-                requirements.add(requirement(
-                        node,
-                        readiness,
-                        sourceKind,
-                        loweringMode,
-                        "event-source-runtime",
-                        parameter(lowering, "eventType"),
-                        "Event source runtime required",
-                        "An event subscription runtime is required before this node can execute.",
-                        "Bind event subscription for this event type or replace the node before EXECUTABLE promotion."
-                ));
-            }
-            if ("message-handler".equals(sourceKind) || "message-handler".equals(loweringMode)) {
-                requirements.add(requirement(
-                        node,
-                        readiness,
-                        sourceKind,
-                        loweringMode,
-                        "message-runtime",
-                        parameter(lowering, "channel"),
-                        "Message runtime required",
-                        "A message consumer runtime is required before this node can execute.",
-                        "Bind message consumption for this channel or replace the node before EXECUTABLE promotion."
-                ));
-            }
-            if ("webhook".equals(sourceKind) || "webhook".equals(loweringMode)) {
-                requirements.add(requirement(
-                        node,
-                        readiness,
-                        sourceKind,
-                        loweringMode,
-                        "webhook-ingress-runtime",
-                        webhookTarget(source, lowering),
-                        "Webhook ingress runtime required",
-                        "A webhook ingress runtime is required before this node can execute.",
-                        "Bind webhook ingress for this endpoint or replace the node before EXECUTABLE promotion."
-                ));
-            }
-            if (streaming) {
-                requirements.add(requirement(
-                        node,
-                        readiness,
-                        sourceKind,
-                        loweringMode,
-                        "streaming-runtime",
-                        "",
-                        "Streaming runtime required",
-                        "This node requires streaming execution, which the request-response runtime cannot provide.",
-                        "Bind a streaming runtime or replace the node before EXECUTABLE promotion."
-                ));
-            }
-            if (durable) {
-                requirements.add(requirement(
-                        node,
-                        readiness,
-                        sourceKind,
-                        loweringMode,
-                        "durable-runtime",
-                        "",
-                        "Durable runtime required",
-                        "This node requires durable/suspendable execution, which the request-response runtime cannot provide.",
-                        "Bind a durable runtime or replace the node before EXECUTABLE promotion."
-                ));
-            }
-            if (requirements.isEmpty()) {
-                requirements.add(requirement(
-                        node,
-                        readiness,
-                        sourceKind,
-                        loweringMode,
-                        "runtime-adapter",
-                        firstNonBlank(lowering.operatorRef(), operator.operatorRef()),
-                        "Runtime adapter required",
-                        readiness.summary(),
-                        "Bind the missing runtime adapter or replace the node before EXECUTABLE promotion."
-                ));
-            }
-            return List.copyOf(requirements);
+            return VisualRuntimeBindingRequirementPlanner.from(operator, readiness.state(), readiness.level(),
+                            readiness.summary()).stream()
+                    .map(requirement -> requirement(node, requirement))
+                    .toList();
         }
 
-        private static RuntimeBindingRequirement requirement(GraphDraft.DraftNode node,
-                                                             NodeReadiness readiness,
-                                                             String sourceKind,
-                                                             String loweringMode,
-                                                             String bindingKind,
-                                                             String bindingTarget,
-                                                             String title,
-                                                             String summary,
-                                                             String recommendedAction) {
+        private static RuntimeBindingRequirement requirement(
+                GraphDraft.DraftNode node,
+                VisualRuntimeBindingRequirementPlanner.OperatorRequirement requirement) {
             return new RuntimeBindingRequirement(
                     node.id(),
                     node.operatorRef(),
-                    readiness.state(),
-                    readiness.level(),
-                    sourceKind,
-                    loweringMode,
-                    bindingKind,
-                    bindingTarget,
-                    title,
-                    summary,
-                    recommendedAction
+                    requirement.state(),
+                    requirement.level(),
+                    requirement.sourceKind(),
+                    requirement.loweringMode(),
+                    requirement.bindingKind(),
+                    requirement.bindingTarget(),
+                    requirement.title(),
+                    requirement.summary(),
+                    nodeRecommendedAction(requirement)
             );
         }
 
-        private static String parameter(OperatorDefinition.Lowering lowering, String key) {
-            if (lowering == null || lowering.parameters() == null) {
-                return "";
-            }
-            Object value = lowering.parameters().get(key);
-            return value == null ? "" : String.valueOf(value);
-        }
-
-        private static String webhookTarget(OperatorDefinition.Source source, OperatorDefinition.Lowering lowering) {
-            String method = firstNonBlank(parameter(lowering, "method"), source == null ? "" : source.method());
-            String path = firstNonBlank(parameter(lowering, "path"), source == null ? "" : source.urlTemplate());
-            return firstNonBlank("%s %s".formatted(method, path).trim(), path, method);
-        }
-
-        private static String firstNonBlank(String... values) {
-            for (String value : values == null ? new String[0] : values) {
-                if (value != null && !value.isBlank()) {
-                    return value.trim();
-                }
-            }
-            return "";
+        private static String nodeRecommendedAction(
+                VisualRuntimeBindingRequirementPlanner.OperatorRequirement requirement) {
+            return switch (requirement.bindingKind()) {
+                case "executable-lowering" ->
+                        "Bind a native/resource/subgraph lowering or replace the node with an executable operator before EXECUTABLE promotion.";
+                case "remote-worker-runtime" ->
+                        "Bind worker dispatch for this topic or replace the node before EXECUTABLE promotion.";
+                case "ai-tool-runtime" ->
+                        "Bind tool invocation for this toolRef or replace the node before EXECUTABLE promotion.";
+                case "event-source-runtime" ->
+                        "Bind event subscription for this event type or replace the node before EXECUTABLE promotion.";
+                case "message-runtime" ->
+                        "Bind message consumption for this channel or replace the node before EXECUTABLE promotion.";
+                case "webhook-ingress-runtime" ->
+                        "Bind webhook ingress for this endpoint or replace the node before EXECUTABLE promotion.";
+                case "streaming-runtime" ->
+                        "Bind a streaming runtime or replace the node before EXECUTABLE promotion.";
+                case "durable-runtime" ->
+                        "Bind a durable runtime or replace the node before EXECUTABLE promotion.";
+                default -> "Bind the missing runtime adapter or replace the node before EXECUTABLE promotion.";
+            };
         }
     }
 

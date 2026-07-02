@@ -1,6 +1,7 @@
 package com.leanowtech.bloge.gateway.visual.catalog;
 
 import com.leanowtech.bloge.gateway.visual.diagnostic.VisualDiagnostic;
+import com.leanowtech.bloge.gateway.visual.validation.VisualRuntimeBindingRequirementPlanner;
 
 import java.util.ArrayList;
 import java.util.Collections;
@@ -436,195 +437,49 @@ public record OperatorLibraryImportReadiness(
             String level = operatorProfile == null
                     ? operator.runtimeReadiness().level()
                     : operatorProfile.runtimeReadinessLevel();
-            String sourceKind = normalizeFacetValue(operator.source().kind());
-            String loweringMode = normalizeFacetValue(operator.lowering().mode());
-            boolean streaming = operator.capabilities().streaming()
-                    || "java-streaming-operator".equals(sourceKind);
-            boolean durable = operator.capabilities().durable()
-                    || "java-suspendable-operator".equals(sourceKind);
-            List<RuntimeBindingRequirement> requirements = new ArrayList<>();
-            if ("design-only".equals(state)) {
-                requirements.add(requirement(
-                        operator,
-                        state,
-                        level,
-                        sourceKind,
-                        loweringMode,
-                        "executable-lowering",
-                        firstNonBlank(operator.lowering().operatorRef(), operator.operatorRef()),
-                        "Executable lowering required",
-                        "This operator is schema-authorable only; no executable lowering is bound.",
-                        "Bind a native/resource/subgraph lowering before using this operator in EXECUTABLE graphs."
-                ));
-                return List.copyOf(requirements);
-            }
-            if (!"runtime-blocked".equals(state)) {
-                return List.of();
-            }
-            if ("remote-worker".equals(sourceKind) || "remote-worker".equals(loweringMode)) {
-                requirements.add(requirement(
-                        operator,
-                        state,
-                        level,
-                        sourceKind,
-                        loweringMode,
-                        "remote-worker-runtime",
-                        parameter(operator.lowering(), "workerTopic"),
-                        "Remote worker runtime required",
-                        "A remote worker dispatcher is required before this operator can execute.",
-                        "Bind worker dispatch for this topic before EXECUTABLE graph publication."
-                ));
-            }
-            if ("ai-tool".equals(sourceKind) || "ai-tool".equals(loweringMode)) {
-                requirements.add(requirement(
-                        operator,
-                        state,
-                        level,
-                        sourceKind,
-                        loweringMode,
-                        "ai-tool-runtime",
-                        parameter(operator.lowering(), "toolRef"),
-                        "AI tool runtime required",
-                        "An AI tool invocation runtime is required before this operator can execute.",
-                        "Bind tool invocation for this toolRef before EXECUTABLE graph publication."
-                ));
-            }
-            if ("event-source".equals(sourceKind) || "event-source".equals(loweringMode)) {
-                requirements.add(requirement(
-                        operator,
-                        state,
-                        level,
-                        sourceKind,
-                        loweringMode,
-                        "event-source-runtime",
-                        parameter(operator.lowering(), "eventType"),
-                        "Event source runtime required",
-                        "An event subscription runtime is required before this operator can execute.",
-                        "Bind event subscription for this event type before EXECUTABLE graph publication."
-                ));
-            }
-            if ("message-handler".equals(sourceKind) || "message-handler".equals(loweringMode)) {
-                requirements.add(requirement(
-                        operator,
-                        state,
-                        level,
-                        sourceKind,
-                        loweringMode,
-                        "message-runtime",
-                        parameter(operator.lowering(), "channel"),
-                        "Message runtime required",
-                        "A message consumer runtime is required before this operator can execute.",
-                        "Bind message consumption for this channel before EXECUTABLE graph publication."
-                ));
-            }
-            if ("webhook".equals(sourceKind) || "webhook".equals(loweringMode)) {
-                requirements.add(requirement(
-                        operator,
-                        state,
-                        level,
-                        sourceKind,
-                        loweringMode,
-                        "webhook-ingress-runtime",
-                        webhookTarget(operator.source(), operator.lowering()),
-                        "Webhook ingress runtime required",
-                        "A webhook ingress runtime is required before this operator can execute.",
-                        "Bind webhook ingress for this endpoint before EXECUTABLE graph publication."
-                ));
-            }
-            if (streaming) {
-                requirements.add(requirement(
-                        operator,
-                        state,
-                        level,
-                        sourceKind,
-                        loweringMode,
-                        "streaming-runtime",
-                        "",
-                        "Streaming runtime required",
-                        "This operator requires streaming execution, which the request-response runtime cannot provide.",
-                        "Bind a streaming runtime before EXECUTABLE graph publication."
-                ));
-            }
-            if (durable) {
-                requirements.add(requirement(
-                        operator,
-                        state,
-                        level,
-                        sourceKind,
-                        loweringMode,
-                        "durable-runtime",
-                        "",
-                        "Durable runtime required",
-                        "This operator requires durable/suspendable execution, which the request-response runtime cannot provide.",
-                        "Bind a durable runtime before EXECUTABLE graph publication."
-                ));
-            }
-            if (requirements.isEmpty()) {
-                requirements.add(requirement(
-                        operator,
-                        state,
-                        level,
-                        sourceKind,
-                        loweringMode,
-                        "runtime-adapter",
-                        firstNonBlank(operator.lowering().operatorRef(), operator.operatorRef()),
-                        "Runtime adapter required",
-                        operatorProfile == null ? "" : operatorProfile.runtimeReadinessSummary(),
-                        "Bind the missing runtime adapter before EXECUTABLE graph publication."
-                ));
-            }
-            return List.copyOf(requirements);
+            String fallbackSummary = operatorProfile == null ? "" : operatorProfile.runtimeReadinessSummary();
+            return VisualRuntimeBindingRequirementPlanner.from(operator, state, level, fallbackSummary).stream()
+                    .map(requirement -> requirement(requirement, importRecommendedAction(requirement)))
+                    .toList();
         }
 
-        private static RuntimeBindingRequirement requirement(OperatorDefinition operator,
-                                                             String state,
-                                                             String level,
-                                                             String sourceKind,
-                                                             String loweringMode,
-                                                             String bindingKind,
-                                                             String bindingTarget,
-                                                             String title,
-                                                             String summary,
-                                                             String recommendedAction) {
+        private static RuntimeBindingRequirement requirement(
+                VisualRuntimeBindingRequirementPlanner.OperatorRequirement requirement,
+                String recommendedAction) {
             return new RuntimeBindingRequirement(
-                    operator.operatorRef(),
-                    operator.display().name().isBlank() ? operator.operatorRef() : operator.display().name(),
-                    state,
-                    level,
-                    sourceKind,
-                    loweringMode,
-                    bindingKind,
-                    bindingTarget,
-                    title,
-                    summary,
+                    requirement.operatorRef(),
+                    requirement.label(),
+                    requirement.state(),
+                    requirement.level(),
+                    requirement.sourceKind(),
+                    requirement.loweringMode(),
+                    requirement.bindingKind(),
+                    requirement.bindingTarget(),
+                    requirement.title(),
+                    requirement.summary(),
                     recommendedAction
             );
         }
 
-        private static String parameter(OperatorDefinition.Lowering lowering, String key) {
-            if (lowering == null || lowering.parameters() == null) {
-                return "";
-            }
-            Object value = lowering.parameters().get(key);
-            return value == null ? "" : String.valueOf(value);
-        }
-
-        private static String webhookTarget(OperatorDefinition.Source source, OperatorDefinition.Lowering lowering) {
-            String method = firstNonBlank(parameter(lowering, "method"), source == null ? "" : source.method());
-            String path = firstNonBlank(parameter(lowering, "path"), source == null ? "" : source.urlTemplate());
-            return firstNonBlank("%s %s".formatted(method, path).trim(), path, method);
-        }
-
-        private static String firstNonBlank(String... values) {
-            if (values == null) {
-                return "";
-            }
-            for (String value : values) {
-                if (value != null && !value.isBlank()) {
-                    return value;
-                }
-            }
-            return "";
+        private static String importRecommendedAction(
+                VisualRuntimeBindingRequirementPlanner.OperatorRequirement requirement) {
+            return switch (requirement.bindingKind()) {
+                case "executable-lowering" ->
+                        "Bind a native/resource/subgraph lowering before using this operator in EXECUTABLE graphs.";
+                case "remote-worker-runtime" ->
+                        "Bind worker dispatch for this topic before EXECUTABLE graph publication.";
+                case "ai-tool-runtime" ->
+                        "Bind tool invocation for this toolRef before EXECUTABLE graph publication.";
+                case "event-source-runtime" ->
+                        "Bind event subscription for this event type before EXECUTABLE graph publication.";
+                case "message-runtime" ->
+                        "Bind message consumption for this channel before EXECUTABLE graph publication.";
+                case "webhook-ingress-runtime" ->
+                        "Bind webhook ingress for this endpoint before EXECUTABLE graph publication.";
+                case "streaming-runtime" -> "Bind a streaming runtime before EXECUTABLE graph publication.";
+                case "durable-runtime" -> "Bind a durable runtime before EXECUTABLE graph publication.";
+                default -> "Bind the missing runtime adapter before EXECUTABLE graph publication.";
+            };
         }
     }
 

@@ -57,6 +57,7 @@ Operator Library / Resource Design Contract
 - Workspace Overview action queue 现在也消费 `runtimeBindingRequirements[]`，把草稿缺口路由为 per-node `PLAN_DRAFT_RUNTIME_BINDING`，把 frozen DESIGN publication 缺口路由为 per-node `PLAN_PUBLICATION_RUNTIME_BINDING`，并把 nodeId/bindingKind/bindingTarget 固化进稳定 `actionKey`，方便外部控制面直接分派 runtime plane 绑定工作。
 - `/api/visual/assets/runtime-binding-requirements` 现在把 active draft 与 immutable publication 的 runtime binding gap 暴露为 `bloge.visualRuntimeBindingRequirements.v1` 查询索引，提供 scope/filter/page/counts 和稳定 `requirementKey`；requirements 仍由 draft/publication readiness 派生，索引本身不保存状态，避免生成第二套会漂移的待办真相源。
 - 浏览器 Workspace Overview 现在同步加载 runtime binding requirement index，展示 Runtime Binding Requirements 小节，支持按 asset/binding/source/lowering/readiness 过滤、分页和打开目标 draft/publication，让 schema-only 设计资产的 runtime-plane 交接在画布工作台里可见。
+- import-time `OperatorLibraryImportReadiness.runtimeBindingRequirements[]` 与 draft/publication `VisualGraphReadiness.runtimeBindingRequirements[]` 现在共用 `VisualRuntimeBindingRequirementPlanner` 派生 operator-level binding kind/target/title/summary；导入入口和图级 readiness 只负责补充各自的 target/node/recommendedAction 语境，避免 schema-only、worker、AI tool、event/message/webhook、streaming/durable 等缺口判断在两条控制面里分叉。
 
 ## 3. 协议命名现状
 

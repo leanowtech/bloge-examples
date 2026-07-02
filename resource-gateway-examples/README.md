@@ -151,7 +151,9 @@ so catalog repair, runtime-blocked, governance-review, design-only counts, and
 ack/force/evidence gates are not guessed from browser-only heuristics, while
 per-operator import-time `runtimeBindingRequirements` show which schema-only,
 remote-worker, AI-tool, event/message/webhook, streaming, durable, or unresolved
-native operators need runtime-plane binding before executable graph use,
+native operators need runtime-plane binding before executable graph use; those
+operator-level requirement kinds and targets are derived by the same server
+planner later used by graph readiness and workspace runtime-binding indexes,
 opt into `force=true` for explicit destructive operator-library replacement or
 deletion after inspecting the server-provided impact review for affected drafts,
 publications, operators, and diagnostic codes, jump from an affected draft chip

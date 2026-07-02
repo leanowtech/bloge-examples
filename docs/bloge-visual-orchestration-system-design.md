@@ -711,6 +711,10 @@ operatorRef 会生成 `runtime-adapter`，remote-worker / AI-tool / event-source
 message-handler / webhook / streaming / durable 会生成对应 runtime binding kind、target
 和 recommendedAction。这样用户刚贴入算子库定义时就能把运行时绑定工作派给 runtime plane，
 而不是等图已经被大量草稿引用后才从单个 draft readiness 里反推。
+这些 operator-level binding kind/target/title/summary 与后续
+`VisualGraphReadiness.runtimeBindingRequirements[]` 共用同一服务端 planner；导入面和图面只附加
+各自的目标上下文，避免同一种未绑定 runtime 在 catalog preflight、draft validate 和
+publication asset overview 中被分类成不同待办。
 当前还支持
 `lowering.mode=design` 的 schema-only authoring：这类用户算子可以进入 catalog、
 拖拽、连线、保存、导出、被 schema validator 校验，并可通过浏览器发布模式或 API
