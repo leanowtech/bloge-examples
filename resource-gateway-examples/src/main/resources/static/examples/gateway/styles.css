@@ -2029,14 +2029,25 @@ body.dragging-operator * {
 }
 
 .library-impact-head span,
+.library-impact-risk-summary,
 .library-impact-more {
   min-width: 0;
   color: var(--muted);
   overflow-wrap: anywhere;
 }
 
+.library-impact-risk-summary {
+  padding: 6px 8px;
+  border: 1px solid #bfdbfe;
+  border-radius: 5px;
+  background: #eff6ff;
+  color: #1d4ed8;
+  line-height: 1.35;
+}
+
 .library-impact-stats,
 .library-impact-codes,
+.library-impact-risks,
 .library-impact-refs,
 .library-impact-ref-group div {
   display: flex;
@@ -2046,6 +2057,7 @@ body.dragging-operator * {
 
 .library-impact-stats span,
 .library-impact-code,
+.library-impact-risk,
 .library-impact-ref-group span,
 .library-impact-ref-group button,
 .library-impact-ref-group small {
@@ -2075,8 +2087,15 @@ body.dragging-operator * {
 
 .library-impact-stats strong,
 .library-impact-code strong,
+.library-impact-risk strong,
 .library-impact-ref-group strong {
   color: var(--text);
+}
+
+.library-impact-risk {
+  border-color: #bfdbfe;
+  background: #eff6ff;
+  color: #1d4ed8;
 }
 
 .library-impact-code.error {

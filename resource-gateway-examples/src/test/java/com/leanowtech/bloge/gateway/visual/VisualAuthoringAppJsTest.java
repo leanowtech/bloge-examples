@@ -108,13 +108,16 @@ class VisualAuthoringAppJsTest {
                 .contains("function libraryImpactSummaryFromPayload(impact)")
                 .contains("function libraryImpactSummary(diagnostics)")
                 .contains("function libraryImpactRefsFromDiagnostic(diagnostic)")
+                .contains("function changeRiskLabel(risk)")
+                .contains("function libraryImpactRiskSummaryText(summary)")
+                .contains("function operatorLibraryWarningAcknowledgementMessage(impact, diagnostics, actionLabel = 'Import')")
                 .contains("data-library-impact-draft")
                 .contains("data-library-impact-node-index")
                 .contains("function openLibraryImpactDraft(draftId)")
                 .contains("function openLibraryImpactDraftTarget(draftId, nodeIndex = -1)")
                 .contains("Impact Review")
                 .contains("payload?.impact")
-                .contains("Review warnings, then click Import again to continue.")
+                .contains("Review warnings, then click ${actionLabel} again to continue.")
                 .contains("libraryMutationQuery(hasWarningDiagnostic(validation.diagnostics))")
                 .contains("params.set('ackWarnings', 'true');");
     }
@@ -431,6 +434,10 @@ class VisualAuthoringAppJsTest {
                   'libraryImpactHighestLevel',
                   'libraryImpactSummaryLabel',
                   'libraryImpactRefGroup',
+                  'changeRiskLabel',
+                  'libraryImpactRiskSummaryText',
+                  'operatorLibraryWarningAcknowledgementMessage',
+                  'changeRiskRank',
                   'openLibraryImpactDraft',
                   'openLibraryImpactDraftTarget',
                   'uniqueStrings',
@@ -2008,13 +2015,15 @@ class VisualAuthoringAppJsTest {
                     level: 'WARNING',
                     code: 'visual.library.operatorFingerprintDrift',
                     target: '/drafts/draft-risk/nodes/0/operatorRef',
-                    message: "Operator library 'risk-policy' changes operatorRef 'risk:eligibility' used by draft 'draft-risk@3' node 'riskNode' from saved fingerprint 'old' to 'new'; changed surface: output schema changed."
+                    message: "Operator library 'risk-policy' changes operatorRef 'risk:eligibility' used by draft 'draft-risk@3' node 'riskNode' from saved fingerprint 'old' to 'new'; changed surface: change risk: BREAKING_SCHEMA; output schema changed.",
+                    metadata: { changeRisk: 'BREAKING_SCHEMA' }
                   },
                   {
                     level: 'WARNING',
                     code: 'visual.library.publicationOperatorFingerprintDrift',
                     target: '/publications/pub-risk/nodes/0/operatorRef',
-                    message: "Operator library 'risk-policy' changes operatorRef 'risk:eligibility' used by publication 'pub-risk' node 'riskNode' from frozen fingerprint 'old' to 'new'; changed surface: output schema changed."
+                    message: "Operator library 'risk-policy' changes operatorRef 'risk:eligibility' used by publication 'pub-risk' node 'riskNode' from frozen fingerprint 'old' to 'new'; changed surface: change risk: GOVERNANCE; effect capability changed.",
+                    metadata: { changeRisk: 'GOVERNANCE' }
                   },
                   {
                     level: 'ERROR',
@@ -2038,8 +2047,21 @@ class VisualAuthoringAppJsTest {
                   codeCounts: [
                     { code: 'visual.library.operatorFingerprintDrift', level: 'WARNING', count: 2 },
                     { code: 'visual.library.inUse', level: 'ERROR', count: 1 }
+                  ],
+                  changeRiskCounts: [
+                    { risk: 'BREAKING_SCHEMA', count: 2 }
                   ]
                 });
+                const libraryImpactRiskText = context.libraryImpactRiskSummaryText(libraryImpact);
+                const libraryPayloadRiskText = context.libraryImpactRiskSummaryText(libraryImpactFromPayload);
+                const libraryWarningAcknowledgement = context.operatorLibraryWarningAcknowledgementMessage({
+                  diagnosticCount: 1,
+                  errorCount: 0,
+                  warningCount: 1,
+                  changeRiskCounts: [
+                    { risk: 'BREAKING_SCHEMA', count: 1 }
+                  ]
+                }, libraryImpactDiagnostics, 'Import');
                 const libraryImpactPanel = (() => {
                   const target = { hidden: false, innerHTML: '', className: '' };
                   context.renderLibraryImpactPanel(target, libraryImpactDiagnostics, {
@@ -2052,6 +2074,9 @@ class VisualAuthoringAppJsTest {
                     draftTargets: [{ draftId: 'draft-from-payload', nodeIndex: 2 }],
                     codeCounts: [
                       { code: 'visual.library.payloadImpact', level: 'WARNING', count: 2 }
+                    ],
+                    changeRiskCounts: [
+                      { risk: 'RUNTIME_BINDING', count: 1 }
                     ]
                   });
                   return target;
@@ -2647,17 +2672,25 @@ class VisualAuthoringAppJsTest {
                   ['library impact drafts', libraryImpact.draftIds.join('|'), 'draft-risk'],
                   ['library impact publications', libraryImpact.publicationIds.join('|'), 'pub-risk'],
                   ['library impact operators', libraryImpact.operatorRefs.join('|'), 'risk:audit|risk:eligibility'],
+                  ['library impact risk counts', libraryImpact.changeRiskCounts.map((entry) => `${entry.risk}:${entry.count}`).join('|'), 'BREAKING_SCHEMA:1|GOVERNANCE:1'],
+                  ['library impact risk text', libraryImpactRiskText, 'Breaking schema change: affected drafts need repair or explicit rebase review. Breaking Schema 1 · Governance 1.'],
                   ['library impact label', context.libraryImpactSummaryLabel(libraryImpact), '2 errors · 2 warnings · 1 draft · 1 publication · 2 operators'],
                   ['library payload impact diagnostics', libraryImpactFromPayload.diagnosticCount, 3],
                   ['library payload impact drafts deduped', libraryImpactFromPayload.draftIds.join('|'), 'draft-risk'],
                   ['library payload impact node index', libraryImpactFromPayload.draftTargets[0].nodeIndex, 1],
                   ['library payload impact code', libraryImpactFromPayload.codeCounts[0].code, 'visual.library.operatorFingerprintDrift'],
+                  ['library payload impact risk', libraryImpactFromPayload.changeRiskCounts[0].risk, 'BREAKING_SCHEMA'],
+                  ['library payload risk text', libraryPayloadRiskText, 'Breaking schema change: affected drafts need repair or explicit rebase review. Breaking Schema 2.'],
+                  ['library warning acknowledgement risk', String(libraryWarningAcknowledgement.includes('Breaking schema change')), 'true'],
+                  ['library warning acknowledgement click', String(libraryWarningAcknowledgement.includes('click Import again')), 'true'],
                   ['library impact panel visible', libraryImpactPanel.hidden, false],
                   ['library impact panel level', libraryImpactPanel.className, 'library-impact-panel error'],
                   ['library impact panel prefers payload draft', String(libraryImpactPanel.innerHTML.includes('draft-from-payload')), 'true'],
                   ['library impact panel ignores fallback draft', String(libraryImpactPanel.innerHTML.includes('draft-risk')), 'false'],
                   ['library impact panel includes node index', String(libraryImpactPanel.innerHTML.includes('data-library-impact-node-index="2"')), 'true'],
                   ['library impact panel includes payload code', String(libraryImpactPanel.innerHTML.includes('visual.library.payloadImpact')), 'true'],
+                  ['library impact panel includes risk label', String(libraryImpactPanel.innerHTML.includes('Runtime Binding')), 'true'],
+                  ['library impact panel includes risk summary', String(libraryImpactPanel.innerHTML.includes('Runtime binding change')), 'true'],
                   ['library impact draft group action', String(libraryImpactDraftGroup.includes('data-library-impact-draft="draft-risk"')), 'true'],
                   ['full output contract type', fullOutputContract.type, 'object'],
                   ['full output contract fields', fullOutputContract.fieldCount, 4],

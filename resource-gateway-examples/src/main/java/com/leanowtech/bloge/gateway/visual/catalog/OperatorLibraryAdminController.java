@@ -389,14 +389,16 @@ public class OperatorLibraryAdminController {
                 if (savedFingerprint.equals(change.replacement().fingerprint())) {
                     continue;
                 }
+                OperatorDefinitionChangeSummary.ChangeReport report = OperatorDefinitionChangeSummary.analyze(
+                        change.previous(), change.replacement());
                 diagnostics.add(VisualDiagnostic.warning("visual.library.operatorFingerprintDrift",
                         "Operator library '%s' changes operatorRef '%s' used by draft '%s@%d' node '%s' from saved fingerprint '%s' to '%s'; changed surface: %s; review and resave the draft before execution."
                                 .formatted(replacement.libraryId(), node.operatorRef(), draft.draftId(),
                                         draft.revision(), node.id(), savedFingerprint,
                                         change.replacement().fingerprint(),
-                                        OperatorDefinitionChangeSummary.describe(change.previous(),
-                                                change.replacement())),
-                        "/drafts/%s/nodes/%d/operatorRef".formatted(draft.draftId(), i)));
+                                        "change risk: " + report.risk() + "; " + report.summary()),
+                        "/drafts/%s/nodes/%d/operatorRef".formatted(draft.draftId(), i),
+                        changeMetadata(report)));
             }
         }
         for (VisualGraphPublication publication : publicationRepository.all()) {
@@ -422,19 +424,32 @@ public class OperatorLibraryAdminController {
                 if (publishedFingerprint.equals(change.replacement().fingerprint())) {
                     continue;
                 }
+                OperatorDefinitionChangeSummary.ChangeReport report = OperatorDefinitionChangeSummary.analyze(
+                        change.previous(), change.replacement());
                 diagnostics.add(VisualDiagnostic.warning("visual.library.publicationOperatorFingerprintDrift",
                         "Operator library '%s' changes operatorRef '%s' used by publication '%s' node '%s' from frozen fingerprint '%s' to '%s'; changed surface: %s; existing publication keeps its frozen DSL, but review before replaying, recertifying, or republishing."
                                 .formatted(replacement.libraryId(), node.operatorRef(), publication.publicationId(),
                                         node.id(), publishedFingerprint, change.replacement().fingerprint(),
-                                        OperatorDefinitionChangeSummary.describe(change.previous(),
-                                                change.replacement())),
-                        "/publications/%s/nodes/%d/operatorRef".formatted(publication.publicationId(), i)));
+                                        "change risk: " + report.risk() + "; " + report.summary()),
+                        "/publications/%s/nodes/%d/operatorRef".formatted(publication.publicationId(), i),
+                        changeMetadata(report)));
             }
         }
         return diagnostics;
     }
 
     private record OperatorDefinitionChange(OperatorDefinition previous, OperatorDefinition replacement) {
+    }
+
+    private static Map<String, Object> changeMetadata(OperatorDefinitionChangeSummary.ChangeReport report) {
+        if (report == null) {
+            return Map.of();
+        }
+        return Map.of(
+                "changeRisk", report.risk(),
+                "changeCategories", report.categories(),
+                "changeSummary", report.summary()
+        );
     }
 
     private List<VisualDiagnostic> replacementPublicationRemovalDiagnostics(OperatorLibrary replacement) {

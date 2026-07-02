@@ -2802,16 +2802,25 @@ function renderLibraryImpactPanel(target, diagnostics, impact = null) {
       <span>${escapeHtml(entry.count)}</span>
     </div>
   `).join('');
+  const risks = summary.changeRiskCounts.slice(0, 5).map((entry) => `
+    <div class="library-impact-risk">
+      <strong>${escapeHtml(changeRiskLabel(entry.risk))}</strong>
+      <span>${escapeHtml(entry.count)}</span>
+    </div>
+  `).join('');
   const remainingCodes = summary.codeCounts.length > 5
     ? `<div class="library-impact-more">+${summary.codeCounts.length - 5} more codes</div>`
     : '';
+  const riskSummary = libraryImpactRiskSummaryText(summary);
   target.innerHTML = `
     <div class="library-impact-head">
       <strong>Impact Review</strong>
       <span>${escapeHtml(libraryImpactSummaryLabel(summary))}</span>
     </div>
+    ${riskSummary ? `<div class="library-impact-risk-summary">${escapeHtml(riskSummary)}</div>` : ''}
     <div class="library-impact-stats">${stats}</div>
     ${refs ? `<div class="library-impact-refs">${refs}</div>` : ''}
+    ${risks ? `<div class="library-impact-risks">${risks}</div>` : ''}
     ${codes ? `<div class="library-impact-codes">${codes}${remainingCodes}</div>` : ''}
   `;
   if (typeof target.querySelectorAll === 'function') {
@@ -2844,6 +2853,12 @@ function libraryImpactSummaryFromPayload(impact) {
       count: Number(entry?.count) || 0
     })).filter((entry) => entry.count > 0)
     : [];
+  const changeRiskCounts = Array.isArray(impact.changeRiskCounts)
+    ? impact.changeRiskCounts.map((entry) => ({
+      risk: String(entry?.risk || '').trim().toUpperCase(),
+      count: Number(entry?.count) || 0
+    })).filter((entry) => entry.risk && entry.count > 0)
+    : [];
   return {
     diagnosticCount,
     errorCount,
@@ -2853,6 +2868,7 @@ function libraryImpactSummaryFromPayload(impact) {
     publicationIds,
     operatorRefs,
     draftTargets,
+    changeRiskCounts,
     codeCounts,
     level: errorCount ? 'error' : (warningCount ? 'warning' : 'success')
   };
@@ -2877,6 +2893,7 @@ function libraryImpactSummary(diagnostics) {
   const publicationIds = new Set();
   const operatorRefs = new Set();
   const codeCounts = new Map();
+  const changeRiskCounts = new Map();
   let errorCount = 0;
   let warningCount = 0;
   for (const diagnostic of normalized) {
@@ -2891,6 +2908,10 @@ function libraryImpactSummary(diagnostics) {
     existing.count += 1;
     existing.level = libraryImpactHighestLevel(existing.level, level.toLowerCase());
     codeCounts.set(code, existing);
+    const changeRisk = String(diagnostic?.metadata?.changeRisk || '').trim().toUpperCase();
+    if (changeRisk) {
+      changeRiskCounts.set(changeRisk, (changeRiskCounts.get(changeRisk) || 0) + 1);
+    }
 
     const refs = libraryImpactRefsFromDiagnostic(diagnostic);
     refs.draftIds.forEach((draftId) => draftIds.add(draftId));
@@ -2900,6 +2921,10 @@ function libraryImpactSummary(diagnostics) {
   }
   const codeEntries = Array.from(codeCounts.values())
     .sort((left, right) => right.count - left.count || left.code.localeCompare(right.code));
+  const riskEntries = Array.from(changeRiskCounts.entries())
+    .map(([risk, count]) => ({ risk, count }))
+    .sort((left, right) => changeRiskRank(right.risk) - changeRiskRank(left.risk)
+      || left.risk.localeCompare(right.risk));
   return {
     diagnosticCount: normalized.length,
     errorCount,
@@ -2909,9 +2934,61 @@ function libraryImpactSummary(diagnostics) {
     publicationIds: Array.from(publicationIds).sort(),
     operatorRefs: Array.from(operatorRefs).sort(),
     draftTargets: uniqueLibraryImpactDraftTargets(draftTargets),
+    changeRiskCounts: riskEntries,
     codeCounts: codeEntries,
     level: errorCount ? 'error' : (warningCount ? 'warning' : 'success')
   };
+}
+
+function changeRiskLabel(risk) {
+  return String(risk || 'METADATA')
+    .trim()
+    .toLowerCase()
+    .split(/[_\s-]+/)
+    .filter(Boolean)
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(' ');
+}
+
+function libraryImpactRiskSummaryText(summary) {
+  const risks = Array.isArray(summary?.changeRiskCounts) ? summary.changeRiskCounts : [];
+  if (!risks.length) {
+    return '';
+  }
+  const highest = String(risks[0]?.risk || '').toUpperCase();
+  const counts = risks.slice(0, 3)
+    .map((entry) => `${changeRiskLabel(entry.risk)} ${Number(entry.count) || 0}`)
+    .join(' · ');
+  const tail = risks.length > 3 ? ` · +${risks.length - 3} more` : '';
+  const lead = {
+    BREAKING_SCHEMA: 'Breaking schema change: affected drafts need repair or explicit rebase review.',
+    RUNTIME_BINDING: 'Runtime binding change: verify executable availability before publishing.',
+    GOVERNANCE: 'Governance change: review secrets, effects, retry, and approval policy.',
+    POLICY: 'Policy change: review tenant, namespace, and environment availability.',
+    COMPATIBLE_SCHEMA: 'Compatible schema growth: affected drafts can usually be reviewed and rebased.',
+    METADATA: 'Metadata drift: review before rebasing affected drafts.'
+  }[highest] || 'Operator surface drift: review affected drafts before rebasing.';
+  return `${lead} ${counts}${tail}.`;
+}
+
+function operatorLibraryWarningAcknowledgementMessage(impact, diagnostics, actionLabel = 'Import') {
+  const summary = libraryImpactSummaryFromPayload(impact) || libraryImpactSummary(diagnostics);
+  const risk = libraryImpactRiskSummaryText(summary);
+  const warningReview = risk
+    ? `${risk} Review warnings, then click ${actionLabel} again to continue.`
+    : `Review warnings, then click ${actionLabel} again to continue.`;
+  return `${validationResultMessage(true, normalizeDiagnostics(diagnostics), 'Operator library is valid.')} ${warningReview}`;
+}
+
+function changeRiskRank(risk) {
+  return {
+    BREAKING_SCHEMA: 6,
+    RUNTIME_BINDING: 5,
+    GOVERNANCE: 4,
+    POLICY: 3,
+    COMPATIBLE_SCHEMA: 2,
+    METADATA: 1
+  }[String(risk || '').toUpperCase()] || 0;
 }
 
 function uniqueStrings(values) {
@@ -3949,7 +4026,11 @@ async function importOperatorLibrary() {
       && state.libraryImportConfirmationKey !== confirmationKey) {
     state.libraryImportConfirmationKey = confirmationKey;
     setLibraryMessage(
-      `${validationResultMessage(true, validation.diagnostics, 'Operator library is valid.')} Review warnings, then click Import again to continue.`,
+      operatorLibraryWarningAcknowledgementMessage(
+        validation.payload?.impact,
+        validation.diagnostics,
+        'Import'
+      ),
       'warning',
       validation.diagnostics,
       validation.payload?.impact

@@ -21,6 +21,7 @@ import java.util.Set;
  * @param publicationIds affected immutable publication ids
  * @param operatorRefs affected operator refs
  * @param draftTargets affected stored draft node targets
+ * @param changeRiskCounts operator definition change-risk counts grouped by risk category
  * @param codeCounts diagnostic counts grouped by code
  */
 public record OperatorLibraryImpactReview(
@@ -33,6 +34,7 @@ public record OperatorLibraryImpactReview(
         List<String> publicationIds,
         List<String> operatorRefs,
         List<DraftTarget> draftTargets,
+        List<ChangeRiskCount> changeRiskCounts,
         List<DiagnosticCodeCount> codeCounts
 ) {
     public static final String SCHEMA_VERSION = "bloge.visualOperatorLibraryImpact.v1";
@@ -49,6 +51,11 @@ public record OperatorLibraryImpactReview(
                 .filter(target -> target != null && !target.draftId().isBlank() && target.nodeIndex() >= 0)
                 .distinct()
                 .sorted(Comparator.comparing(DraftTarget::draftId).thenComparingInt(DraftTarget::nodeIndex))
+                .toList();
+        changeRiskCounts = changeRiskCounts == null ? List.of() : changeRiskCounts.stream()
+                .filter(entry -> entry != null && !entry.risk().isBlank() && entry.count() > 0)
+                .sorted(Comparator.comparingInt((ChangeRiskCount entry) -> riskRank(entry.risk())).reversed()
+                        .thenComparing(ChangeRiskCount::risk))
                 .toList();
         codeCounts = codeCounts == null ? List.of() : List.copyOf(codeCounts);
     }
@@ -72,6 +79,7 @@ public record OperatorLibraryImpactReview(
         Set<String> publicationIds = new LinkedHashSet<>();
         Set<String> refs = new LinkedHashSet<>();
         Set<DraftTarget> draftTargets = new LinkedHashSet<>();
+        Map<String, Integer> changeRisks = new LinkedHashMap<>();
         if (operatorRefs != null) {
             for (String operatorRef : operatorRefs) {
                 if (operatorRef != null && !operatorRef.isBlank()) {
@@ -97,6 +105,7 @@ public record OperatorLibraryImpactReview(
                     : diagnostic.code();
             counts.computeIfAbsent(code, key -> new DiagnosticCodeCountBuilder(code))
                     .increment(level);
+            changeRisk(diagnostic).ifPresent(risk -> changeRisks.merge(risk, 1, Integer::sum));
             List<String> target = targetSegments(diagnostic.target());
             if (target.size() > 1 && "drafts".equals(target.getFirst())) {
                 draftIds.add(target.get(1));
@@ -114,6 +123,9 @@ public record OperatorLibraryImpactReview(
                 .sorted(Comparator.comparingInt(DiagnosticCodeCount::count).reversed()
                         .thenComparing(DiagnosticCodeCount::code))
                 .toList();
+        List<ChangeRiskCount> changeRiskCounts = changeRisks.entrySet().stream()
+                .map(entry -> new ChangeRiskCount(entry.getKey(), entry.getValue()))
+                .toList();
         int total = normalized.size();
         return new OperatorLibraryImpactReview(
                 SCHEMA_VERSION,
@@ -125,8 +137,17 @@ public record OperatorLibraryImpactReview(
                 List.copyOf(publicationIds),
                 List.copyOf(refs),
                 List.copyOf(draftTargets),
+                changeRiskCounts,
                 codeCounts
         );
+    }
+
+    private static java.util.Optional<String> changeRisk(VisualDiagnostic diagnostic) {
+        Object raw = diagnostic.metadata().get("changeRisk");
+        if (!(raw instanceof String risk) || risk.isBlank()) {
+            return java.util.Optional.empty();
+        }
+        return java.util.Optional.of(risk.trim().toUpperCase(java.util.Locale.ROOT));
     }
 
     private static List<String> sortedCopy(List<String> values) {
@@ -177,6 +198,21 @@ public record OperatorLibraryImpactReview(
     }
 
     /**
+     * Count of operator-definition drift diagnostics grouped by change-risk category.
+     *
+     * @param risk risk category such as BREAKING_SCHEMA or GOVERNANCE
+     * @param count occurrence count
+     */
+    public record ChangeRiskCount(String risk, int count) {
+        public ChangeRiskCount {
+            risk = risk == null || risk.isBlank()
+                    ? OperatorDefinitionChangeSummary.RISK_METADATA
+                    : risk.trim().toUpperCase(java.util.Locale.ROOT);
+            count = Math.max(0, count);
+        }
+    }
+
+    /**
      * Diagnostic count by code.
      *
      * @param code diagnostic code
@@ -219,5 +255,9 @@ public record OperatorLibraryImpactReview(
                 default -> 0;
             };
         }
+    }
+
+    private static int riskRank(String risk) {
+        return OperatorDefinitionChangeSummary.riskRank(risk);
     }
 }

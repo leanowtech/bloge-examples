@@ -851,6 +851,11 @@ transform assemble {
     "endColumn": 42
   },
   "blocking": true,
+  "metadata": {
+    "changeRisk": "BREAKING_SCHEMA",
+    "changeCategories": ["BREAKING_SCHEMA"],
+    "changeSummary": "input port 'inputs' schema changed"
+  },
   "suggestions": [
     {
       "kind": "insert-transform",
@@ -860,6 +865,13 @@ transform assemble {
   ]
 }
 ```
+
+当前 `resource-gateway-examples` 的 `VisualDiagnostic` wire record 比上面的
+长期草案更收敛：核心字段是 `level/code/message/target/line/column`，并允许
+可选 `metadata`。`metadata` 只用于机器可读、非敏感的控制面聚合信息，不能
+携带 secret、用户输入原文或大 payload。operator library replacement drift
+当前会使用 `metadata.changeRisk`、`metadata.changeCategories` 和
+`metadata.changeSummary` 表达同一 `operatorRef` 升级的风险分类。
 
 ### 9.3 source
 
@@ -1021,6 +1033,19 @@ resource-gateway 示例阶段已落地等价管理端点：
 ```json
 {
   "valid": false,
+  "impact": {
+    "schemaVersion": "bloge.visualOperatorLibraryImpact.v1",
+    "diagnosticCount": 1,
+    "warningCount": 1,
+    "draftIds": ["draft-1"],
+    "publicationIds": [],
+    "operatorRefs": ["risk:eligibility"],
+    "draftTargets": [{ "draftId": "draft-1", "nodeIndex": 0 }],
+    "changeRiskCounts": [{ "risk": "BREAKING_SCHEMA", "count": 1 }],
+    "codeCounts": [
+      { "code": "visual.library.operatorFingerprintDrift", "level": "WARNING", "count": 1 }
+    ]
+  },
   "diagnostics": [
     {
       "schemaVersion": "bloge.visualDiagnostic.v1",
@@ -1032,6 +1057,16 @@ resource-gateway 示例阶段已落地等价管理端点：
   ]
 }
 ```
+
+`bloge.visualOperatorLibraryImpact.v1` 是导入/替换/删除前的机器可读影响面。
+当前实现会聚合 affected draft、publication、operatorRef、draft node target、
+diagnostic code counts，并在 same-ref replacement drift 时返回
+`changeRiskCounts`。`changeRisk` 当前取值包括：
+`BREAKING_SCHEMA`、`COMPATIBLE_SCHEMA`、`RUNTIME_BINDING`、`GOVERNANCE`、
+`POLICY`、`METADATA`。其中 schema 兼容判断按真实编排方向计算：input/config
+使用“旧绑定值是否还能喂新 schema”，output 使用“新输出是否还能喂旧消费者”。
+浏览器确认写入前应优先展示这个风险分类，而不是只显示 generic warning，
+让作者能区分“可审阅后 rebase 的兼容增长”和“需要修图/治理复核的破坏性变化”。
 
 MVP 至少阻断：
 

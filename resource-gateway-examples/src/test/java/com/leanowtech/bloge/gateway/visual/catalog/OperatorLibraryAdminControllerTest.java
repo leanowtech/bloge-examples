@@ -1194,9 +1194,13 @@ class OperatorLibraryAdminControllerTest {
                         .value(org.hamcrest.Matchers.containsString("'" + replacementFingerprint + "'")))
                 .andExpect(jsonPath("$.diagnostics[0].message")
                         .value(org.hamcrest.Matchers.containsString(
-                                "changed surface: input port 'inputs' schema changed")))
+                                "changed surface: change risk: BREAKING_SCHEMA; input port 'inputs' schema changed")))
+                .andExpect(jsonPath("$.diagnostics[0].metadata.changeRisk").value("BREAKING_SCHEMA"))
+                .andExpect(jsonPath("$.diagnostics[0].metadata.changeCategories[0]").value("BREAKING_SCHEMA"))
                 .andExpect(jsonPath("$.diagnostics[0].target").value("/drafts/draft-1/nodes/0/operatorRef"))
                 .andExpect(jsonPath("$.impact.warningCount").value(1))
+                .andExpect(jsonPath("$.impact.changeRiskCounts[0].risk").value("BREAKING_SCHEMA"))
+                .andExpect(jsonPath("$.impact.changeRiskCounts[0].count").value(1))
                 .andExpect(jsonPath("$.impact.draftIds[0]").value("draft-1"))
                 .andExpect(jsonPath("$.impact.operatorRefs[0]").value("risk:eligibility"))
                 .andExpect(jsonPath("$.impact.draftTargets[0].draftId").value("draft-1"))
@@ -1204,6 +1208,33 @@ class OperatorLibraryAdminControllerTest {
                 .andExpect(jsonPath("$.impact.codeCounts[0].level").value("WARNING"));
 
         assertThat(replacementFingerprint).isNotEqualTo(originalFingerprint);
+        assertThat(registry.find("risk-policy")).contains(original);
+    }
+
+    @Test
+    void validateClassifiesCompatibleSchemaDriftWhenReplacingUsedOperatorRef() throws Exception {
+        OperatorLibrary original = VisualCatalogTestSupport.eligibilityLibrary("integer");
+        OperatorLibrary replacement = eligibilityLibraryWithOptionalRegionInput();
+        registry.upsert(original);
+        drafts.save(draftUsingOperator("risk:eligibility", original.operators().getFirst().fingerprint()));
+
+        mockMvc.perform(post("/admin/visual-operator-libraries/validate")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(replacement)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.valid").value(true))
+                .andExpect(jsonPath("$.diagnostics[0].level").value("WARNING"))
+                .andExpect(jsonPath("$.diagnostics[0].code").value("visual.library.operatorFingerprintDrift"))
+                .andExpect(jsonPath("$.diagnostics[0].message")
+                        .value(org.hamcrest.Matchers.containsString(
+                                "changed surface: change risk: COMPATIBLE_SCHEMA; input port 'inputs' schema changed")))
+                .andExpect(jsonPath("$.diagnostics[0].metadata.changeRisk").value("COMPATIBLE_SCHEMA"))
+                .andExpect(jsonPath("$.diagnostics[0].metadata.changeCategories[0]").value("COMPATIBLE_SCHEMA"))
+                .andExpect(jsonPath("$.impact.changeRiskCounts[0].risk").value("COMPATIBLE_SCHEMA"))
+                .andExpect(jsonPath("$.impact.changeRiskCounts[0].count").value(1));
+
+        assertThat(replacement.operators().getFirst().fingerprint())
+                .isNotEqualTo(original.operators().getFirst().fingerprint());
         assertThat(registry.find("risk-policy")).contains(original);
     }
 
@@ -1285,13 +1316,15 @@ class OperatorLibraryAdminControllerTest {
                         .value(org.hamcrest.Matchers.containsString("publication 'publication-1'")))
                 .andExpect(jsonPath("$.diagnostics[0].message")
                         .value(org.hamcrest.Matchers.containsString(
-                                "changed surface: input port 'inputs' schema changed")))
+                                "changed surface: change risk: BREAKING_SCHEMA; input port 'inputs' schema changed")))
+                .andExpect(jsonPath("$.diagnostics[0].metadata.changeRisk").value("BREAKING_SCHEMA"))
                 .andExpect(jsonPath("$.diagnostics[0].message")
                         .value(org.hamcrest.Matchers.containsString("frozen DSL")))
                 .andExpect(jsonPath("$.diagnostics[0].target")
                         .value("/publications/publication-1/nodes/0/operatorRef"))
                 .andExpect(jsonPath("$.impact.publicationIds[0]").value("publication-1"))
                 .andExpect(jsonPath("$.impact.operatorRefs[0]").value("risk:eligibility"))
+                .andExpect(jsonPath("$.impact.changeRiskCounts[0].risk").value("BREAKING_SCHEMA"))
                 .andExpect(jsonPath("$.impact.codeCounts[0].code")
                         .value("visual.library.publicationOperatorFingerprintDrift"));
 
@@ -1472,6 +1505,45 @@ class OperatorLibraryAdminControllerTest {
                 "risk-team",
                 "ACTIVE",
                 List.of(VisualCatalogTestSupport.scoreFactsOperator())
+        );
+    }
+
+    private static OperatorLibrary eligibilityLibraryWithOptionalRegionInput() {
+        OperatorDefinition base = VisualCatalogTestSupport.eligibilityOperator("integer");
+        Map<String, Object> properties = new java.util.LinkedHashMap<>(
+                base.ports().inputs().getFirst().schema().schema());
+        @SuppressWarnings("unchecked")
+        Map<String, Object> inputProperties = new java.util.LinkedHashMap<>(
+                (Map<String, Object>) properties.get("properties"));
+        inputProperties.put("region", Map.of("type", "string"));
+        properties.put("properties", inputProperties);
+        OperatorDefinition.Port input = new OperatorDefinition.Port(
+                base.ports().inputs().getFirst().name(),
+                new SchemaEnvelope("json-schema", "2020-12", properties),
+                base.ports().inputs().getFirst().required(),
+                base.ports().inputs().getFirst().description()
+        );
+        OperatorDefinition operator = new OperatorDefinition(
+                base.schemaVersion(),
+                base.operatorRef(),
+                base.operatorVersion(),
+                base.display(),
+                base.source(),
+                new OperatorDefinition.Ports(List.of(input), base.ports().outputs()),
+                base.configSchema(),
+                base.capabilities(),
+                base.policy(),
+                base.lowering(),
+                base.diagnostics()
+        );
+        return new OperatorLibrary(
+                "bloge.visualOperatorLibrary.v1",
+                "risk-policy",
+                "Risk policy operators",
+                "1.1.0",
+                "risk-team",
+                "ACTIVE",
+                List.of(operator)
         );
     }
 
