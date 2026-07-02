@@ -6703,6 +6703,7 @@ function renderVisualAssetOverview() {
   const actionRows = visualAssetOverviewActionRows(actionQueue);
   const actionOverflow = Math.max(0, Number(actionQueue.total || 0) - actionRows.length);
   const activeAction = visualAssetActionContext(state.activeVisualAssetAction);
+  const scopeLabel = visualAssetOverviewScopeLabel(overview);
   const stats = [
     ['Drafts', drafts.total],
     ['Active', drafts.activeCount],
@@ -6724,6 +6725,10 @@ function renderVisualAssetOverview() {
       <span>${escapeHtml(`${drafts.total || 0} drafts / ${publications.total || 0} artifacts`)}</span>
     </div>
     <div class="library-impact-risk-summary">${escapeHtml('Server-derived readiness across drafts, publications, and catalog.')}</div>
+    <div class="library-impact-risk info">
+      <strong>${escapeHtml('Authoring Scope')}</strong>
+      <span>${escapeHtml(scopeLabel)}</span>
+    </div>
     ${activeAction ? `<div class="library-impact-risk ${escapeHtml(activeAction.level)}">
       <strong>${escapeHtml('Current action')}</strong>
       <span>${escapeHtml(activeAction.message)}</span>
@@ -6746,6 +6751,7 @@ function renderVisualAssetOverview() {
           <span>${escapeHtml(row.value)}</span>
           ${row.openable ? `<button type="button" class="secondary compact"
             data-visual-asset-action="${escapeHtml(row.index)}"
+            data-visual-asset-action-key="${escapeHtml(row.actionKey)}"
             data-visual-asset-action-target-kind="${escapeHtml(row.targetKind)}"
             data-visual-asset-action-target-id="${escapeHtml(row.targetId)}">Open</button>` : ''}
         </div>
@@ -6754,6 +6760,16 @@ function renderVisualAssetOverview() {
     </div>` : ''}
   `;
   attachVisualAssetOverviewActionHandlers();
+}
+
+function visualAssetOverviewScopeLabel(overview) {
+  const fallback = builderScope(state.builder);
+  const hasServerScope = Boolean(overview?.scope);
+  const scope = hasServerScope ? overview.scope : fallback;
+  const tenantId = scope.tenantId || (hasServerScope ? 'all' : fallback.tenantId) || 'all';
+  const namespace = scope.namespace || (hasServerScope ? 'all' : fallback.namespace) || 'all';
+  const environment = scope.environment || (hasServerScope ? 'all' : fallback.environment) || 'all';
+  return `${tenantId} / ${namespace} / ${environment}`;
 }
 
 function visualAssetOverviewRows(overview) {
@@ -6864,6 +6880,7 @@ function visualAssetOverviewActionRows(actionQueue) {
         : 'info',
       label: visualAssetOverviewActionLabel(item),
       value: item?.recommendedAction || item?.summary || 'Review this server-derived action.',
+      actionKey: item?.actionKey || '',
       targetKind: String(item?.targetKind || '').toLowerCase(),
       targetId: item?.targetId || '',
       openable: ['draft', 'publication', 'operator'].includes(String(item?.targetKind || '').toLowerCase())
@@ -6903,13 +6920,15 @@ function visualAssetOverviewActionLabel(item) {
 
 function attachVisualAssetOverviewActionHandlers() {
   document.querySelectorAll('[data-visual-asset-action]').forEach((button) => {
-    button.onclick = () => openVisualAssetAction(button.dataset.visualAssetAction);
+    button.onclick = () => openVisualAssetAction(button.dataset.visualAssetAction, button.dataset.visualAssetActionKey);
   });
 }
 
-async function openVisualAssetAction(index) {
+async function openVisualAssetAction(index, actionKey = '') {
   const items = state.visualAssetOverview?.actionQueue?.items || [];
-  const item = items[Number(index)];
+  const item = actionKey
+    ? items.find((candidate) => candidate?.actionKey === actionKey) || items[Number(index)]
+    : items[Number(index)];
   if (!item?.targetId) {
     return null;
   }

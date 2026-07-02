@@ -25,6 +25,7 @@ import java.util.Map;
  *
  * @param schemaVersion overview contract version
  * @param generatedAt server timestamp when this overview was derived
+ * @param scope authoring scope used to derive this overview
  * @param drafts draft asset aggregate
  * @param publications publication asset aggregate
  * @param catalog operator catalog aggregate
@@ -33,6 +34,7 @@ import java.util.Map;
 public record VisualAssetOverview(
         String schemaVersion,
         Instant generatedAt,
+        AuthoringScope scope,
         DraftAssets drafts,
         PublicationAssets publications,
         CatalogAssets catalog,
@@ -47,6 +49,7 @@ public record VisualAssetOverview(
     public VisualAssetOverview {
         schemaVersion = schemaVersion == null || schemaVersion.isBlank() ? SCHEMA_VERSION : schemaVersion;
         generatedAt = generatedAt == null ? Instant.now() : generatedAt;
+        scope = scope == null ? AuthoringScope.all() : scope;
         drafts = drafts == null ? DraftAssets.empty() : drafts;
         publications = publications == null ? PublicationAssets.empty() : publications;
         catalog = catalog == null ? CatalogAssets.empty() : catalog;
@@ -66,14 +69,76 @@ public record VisualAssetOverview(
                                            List<VisualGraphPublicationSummary> publications,
                                            List<OperatorDefinition> operators,
                                            List<VisualDiagnostic> catalogDiagnostics) {
+        return from(drafts, publications, operators, catalogDiagnostics, "", "", "");
+    }
+
+    /**
+     * Builds an overview from already-derived asset summaries, catalog rows, and request scope.
+     *
+     * @param drafts draft summaries in scope
+     * @param publications publication summaries in scope
+     * @param operators catalog operators in scope
+     * @param catalogDiagnostics catalog diagnostics in scope
+     * @param tenantId tenant scope used for the read model, empty for all
+     * @param namespace namespace scope used for the read model, empty for all
+     * @param environment environment scope used for the read model, empty for all
+     * @return visual asset overview
+     */
+    public static VisualAssetOverview from(List<GraphDraftSummary> drafts,
+                                           List<VisualGraphPublicationSummary> publications,
+                                           List<OperatorDefinition> operators,
+                                           List<VisualDiagnostic> catalogDiagnostics,
+                                           String tenantId,
+                                           String namespace,
+                                           String environment) {
         return new VisualAssetOverview(
                 SCHEMA_VERSION,
                 Instant.now(),
+                new AuthoringScope(tenantId, namespace, environment),
                 DraftAssets.from(drafts),
                 PublicationAssets.from(publications),
                 CatalogAssets.from(operators, catalogDiagnostics),
                 ActionQueue.from(drafts, publications, operators)
         );
+    }
+
+    /**
+     * Authoring scope used to derive an overview.
+     *
+     * @param tenantId tenant filter, empty when unfiltered
+     * @param namespace namespace filter, empty when unfiltered
+     * @param environment environment filter, empty when unfiltered
+     * @param filtered true when at least one scope dimension was requested
+     */
+    public record AuthoringScope(
+            String tenantId,
+            String namespace,
+            String environment,
+            boolean filtered
+    ) {
+        public AuthoringScope(String tenantId, String namespace, String environment) {
+            this(
+                    tenantId == null ? "" : tenantId.trim(),
+                    namespace == null ? "" : namespace.trim(),
+                    environment == null ? "" : environment.trim(),
+                    !isBlank(tenantId) || !isBlank(namespace) || !isBlank(environment)
+            );
+        }
+
+        public AuthoringScope {
+            tenantId = tenantId == null ? "" : tenantId.trim();
+            namespace = namespace == null ? "" : namespace.trim();
+            environment = environment == null ? "" : environment.trim();
+            filtered = !tenantId.isBlank() || !namespace.isBlank() || !environment.isBlank();
+        }
+
+        static AuthoringScope all() {
+            return new AuthoringScope("", "", "");
+        }
+
+        private static boolean isBlank(String value) {
+            return value == null || value.isBlank();
+        }
     }
 
     /**
@@ -426,6 +491,7 @@ public record VisualAssetOverview(
     /**
      * One server-derived action suggestion.
      *
+     * @param actionKey stable machine-readable key for deduplication and audit
      * @param severity normalized UI severity
      * @param actionType stable machine-readable action type
      * @param targetKind target asset kind
@@ -437,6 +503,7 @@ public record VisualAssetOverview(
      * @param recommendedAction concrete next action
      */
     public record ActionItem(
+            String actionKey,
             String severity,
             String actionType,
             String targetKind,
@@ -447,6 +514,29 @@ public record VisualAssetOverview(
             String summary,
             String recommendedAction
     ) {
+        public ActionItem(String severity,
+                          String actionType,
+                          String targetKind,
+                          String targetId,
+                          String targetLabel,
+                          String readinessState,
+                          String artifactKind,
+                          String summary,
+                          String recommendedAction) {
+            this(
+                    "",
+                    severity,
+                    actionType,
+                    targetKind,
+                    targetId,
+                    targetLabel,
+                    readinessState,
+                    artifactKind,
+                    summary,
+                    recommendedAction
+            );
+        }
+
         public ActionItem {
             severity = normalizeSeverity(severity);
             actionType = actionType == null || actionType.isBlank()
@@ -459,6 +549,9 @@ public record VisualAssetOverview(
             artifactKind = artifactKind == null || artifactKind.isBlank() ? "" : artifactKind.trim().toUpperCase(Locale.ROOT);
             summary = summary == null ? "" : summary;
             recommendedAction = recommendedAction == null ? "" : recommendedAction;
+            actionKey = actionKey == null || actionKey.isBlank()
+                    ? stableActionKey(actionType, targetKind, targetId, readinessState, artifactKind)
+                    : actionKey.trim();
         }
     }
 
@@ -723,6 +816,14 @@ public record VisualAssetOverview(
             case "success" -> 3;
             default -> 2;
         };
+    }
+
+    private static String stableActionKey(String actionType,
+                                          String targetKind,
+                                          String targetId,
+                                          String readinessState,
+                                          String artifactKind) {
+        return String.join("|", actionType, targetKind, targetId, readinessState, artifactKind);
     }
 
     private static String normalizeArtifactKind(String value) {

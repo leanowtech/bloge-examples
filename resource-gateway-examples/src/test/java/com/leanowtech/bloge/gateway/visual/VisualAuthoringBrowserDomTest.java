@@ -20,6 +20,8 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.openqa.selenium.By;
 import org.openqa.selenium.JavascriptExecutor;
+import org.openqa.selenium.NoSuchElementException;
+import org.openqa.selenium.StaleElementReferenceException;
 import org.openqa.selenium.TimeoutException;
 import org.openqa.selenium.WebDriver;
 import org.openqa.selenium.WebDriverException;
@@ -1978,12 +1980,22 @@ class VisualAuthoringBrowserDomTest {
     }
 
     private void selectByValue(WebDriverWait wait, By locator, String value) {
-        wait.until(ignored -> driver.findElement(locator)
-                .findElements(By.cssSelector("option[value=\"" + value + "\"]"))
-                .size() > 0);
-        WebElement element = wait.until(ExpectedConditions.elementToBeClickable(locator));
-        scrollIntoView(element);
-        new Select(element).selectByValue(value);
+        wait.until(ignored -> {
+            try {
+                WebElement element = driver.findElement(locator);
+                if (!element.isDisplayed() || !element.isEnabled()) {
+                    return false;
+                }
+                if (element.findElements(By.cssSelector("option[value=\"" + value + "\"]")).isEmpty()) {
+                    return false;
+                }
+                scrollIntoView(element);
+                new Select(element).selectByValue(value);
+                return true;
+            } catch (NoSuchElementException | StaleElementReferenceException ex) {
+                return false;
+            }
+        });
     }
 
     private void waitForValue(WebDriverWait wait, By locator, String expected) {

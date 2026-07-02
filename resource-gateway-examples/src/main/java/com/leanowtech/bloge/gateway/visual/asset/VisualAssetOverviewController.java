@@ -84,7 +84,15 @@ public class VisualAssetOverviewController {
         );
         List<OperatorDefinition> operators = catalog.list(query);
         List<VisualDiagnostic> diagnostics = catalog.diagnostics(query);
-        return VisualAssetOverview.from(draftSummaries, publicationSummaries, operators, diagnostics);
+        return VisualAssetOverview.from(
+                draftSummaries,
+                publicationSummaries,
+                operators,
+                diagnostics,
+                tenantId,
+                namespace,
+                environment
+        );
     }
 
     private GraphDraftSummary draftSummary(GraphDraftHistorySummary history) {

@@ -36,7 +36,7 @@ class VisualAssetOverviewControllerTest {
         GraphDraft draft = drafts.save(draftWithFingerprint(operator));
         VisualValidationResult validation = validator.validate(draft);
         GraphDraftDependencyReport dependencyReport = GraphDraftDependencyReport.from(draft, catalog);
-        publications.create(VisualGraphPublication.design(
+        VisualGraphPublication publication = publications.create(VisualGraphPublication.design(
                 draft,
                 List.of(operator),
                 validation,
@@ -49,6 +49,7 @@ class VisualAssetOverviewControllerTest {
         VisualAssetOverview overview = controller.overview("", "", "");
 
         assertThat(overview.schemaVersion()).isEqualTo("bloge.visualAssetOverview.v1");
+        assertThat(overview.scope().filtered()).isFalse();
         assertThat(overview.drafts().total()).isEqualTo(1);
         assertThat(overview.drafts().activeCount()).isEqualTo(1);
         assertThat(overview.drafts().validCount()).isEqualTo(1);
@@ -68,6 +69,14 @@ class VisualAssetOverviewControllerTest {
         assertThat(overview.actionQueue().items())
                 .extracting(VisualAssetOverview.ActionItem::actionType)
                 .contains("TRACK_DESIGN_DRAFT", "PLAN_PUBLICATION_RUNTIME_BINDING", "TRACK_SCHEMA_ONLY_OPERATOR");
+        assertThat(overview.actionQueue().items())
+                .extracting(VisualAssetOverview.ActionItem::actionKey)
+                .contains(
+                        "TRACK_DESIGN_DRAFT|draft|%s|design-only|".formatted(draft.draftId()),
+                        "PLAN_PUBLICATION_RUNTIME_BINDING|publication|%s|design-only|DESIGN"
+                                .formatted(publication.publicationId()),
+                        "TRACK_SCHEMA_ONLY_OPERATOR|operator|risk:eligibility|design-only|"
+                );
     }
 
     @Test
@@ -94,8 +103,16 @@ class VisualAssetOverviewControllerTest {
         VisualAssetOverview excluded = controller.overview("tenant-b", "risk", "dev");
 
         assertThat(included.drafts().total()).isEqualTo(1);
+        assertThat(included.scope().tenantId()).isEqualTo("tenant-a");
+        assertThat(included.scope().namespace()).isEqualTo("risk");
+        assertThat(included.scope().environment()).isEqualTo("dev");
+        assertThat(included.scope().filtered()).isTrue();
         assertThat(included.publications().total()).isEqualTo(1);
         assertThat(excluded.drafts().total()).isZero();
+        assertThat(excluded.scope().tenantId()).isEqualTo("tenant-b");
+        assertThat(excluded.scope().namespace()).isEqualTo("risk");
+        assertThat(excluded.scope().environment()).isEqualTo("dev");
+        assertThat(excluded.scope().filtered()).isTrue();
         assertThat(excluded.publications().total()).isZero();
     }
 
