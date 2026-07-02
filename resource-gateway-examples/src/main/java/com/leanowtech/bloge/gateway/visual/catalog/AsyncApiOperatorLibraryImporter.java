@@ -64,22 +64,26 @@ public class AsyncApiOperatorLibraryImporter {
         List<ProjectionCandidate> candidates = projectionCandidates(asyncApi, diagnostics);
         List<AsyncApiOperationSummary> availableOperations = operationSummaries(candidates, asyncApi);
         boolean selectionApplied = hasSelection(request);
+        List<AsyncApiSelectionMatch> selectionMatches = selectionApplied
+                ? selectionMatches(request, candidates, asyncApi)
+                : List.of();
         if (candidates.isEmpty()) {
             diagnostics.add(VisualDiagnostic.error("visual.library.asyncapi.operationsMissing",
                     "AsyncAPI document must declare channels with publish/subscribe operations or root operations.",
                     "/asyncApi"));
         }
         if (hasErrors(diagnostics)) {
-            return result(null, diagnostics, availableOperations, List.of(), selectionApplied);
+            return result(null, diagnostics, availableOperations, List.of(), selectionApplied, selectionMatches);
         }
 
         candidates = selectedCandidates(request, candidates);
         List<AsyncApiOperationSummary> selectedOperations = operationSummaries(candidates, asyncApi);
+        addMissingSelectionDiagnostics(selectionMatches, diagnostics);
         if (candidates.isEmpty()) {
-            diagnostics.add(VisualDiagnostic.error("visual.library.asyncapi.selectionMissing",
-                    "No AsyncAPI operation/message matched the requested selector.",
-                    selectionTarget(request)));
-            return result(null, diagnostics, availableOperations, selectedOperations, selectionApplied);
+            return result(null, diagnostics, availableOperations, selectedOperations, selectionApplied, selectionMatches);
+        }
+        if (hasErrors(diagnostics)) {
+            return result(null, diagnostics, availableOperations, selectedOperations, selectionApplied, selectionMatches);
         }
 
         String libraryVersion = libraryVersion(request, asyncApi);
@@ -89,7 +93,7 @@ public class AsyncApiOperatorLibraryImporter {
             operators.add(operatorFrom(candidate, asyncApi, libraryVersion, operatorRefs, diagnostics));
         }
         if (hasErrors(diagnostics)) {
-            return result(null, diagnostics, availableOperations, selectedOperations, selectionApplied);
+            return result(null, diagnostics, availableOperations, selectedOperations, selectionApplied, selectionMatches);
         }
         OperatorLibrary library = new OperatorLibrary(
                 "bloge.visualOperatorLibrary.v1",
@@ -100,7 +104,7 @@ public class AsyncApiOperatorLibraryImporter {
                 request.status(),
                 operators
         );
-        return result(library, diagnostics, availableOperations, selectedOperations, selectionApplied);
+        return result(library, diagnostics, availableOperations, selectedOperations, selectionApplied, selectionMatches);
     }
 
     /**
@@ -148,17 +152,29 @@ public class AsyncApiOperatorLibraryImporter {
                                                               List<AsyncApiOperationSummary> availableOperations,
                                                               List<AsyncApiOperationSummary> selectedOperations,
                                                               boolean selectionApplied) {
+        return result(library, diagnostics, availableOperations, selectedOperations, selectionApplied, List.of());
+    }
+
+    private static AsyncApiOperatorLibraryImportResult result(OperatorLibrary library,
+                                                              List<VisualDiagnostic> diagnostics,
+                                                              List<AsyncApiOperationSummary> availableOperations,
+                                                              List<AsyncApiOperationSummary> selectedOperations,
+                                                              boolean selectionApplied,
+                                                              List<AsyncApiSelectionMatch> selectionMatches) {
         OperatorLibraryValidationResult validation = new OperatorLibraryValidationResult(
                 diagnostics.stream().noneMatch(VisualDiagnostic::error),
                 diagnostics,
                 OperatorLibraryImpactReview.empty(),
                 library == null ? OperatorLibraryProfile.empty() : OperatorLibraryProfile.from(library, diagnostics)
         );
+        AsyncApiProjectionReview projectionReview = projectionReview(availableOperations, selectedOperations,
+                selectionApplied, selectionMatches);
         return new AsyncApiOperatorLibraryImportResult(library, validation,
                 availableOperations,
                 selectedOperations,
                 Math.max(0, availableOperations.size() - selectedOperations.size()),
-                selectionApplied);
+                selectionApplied,
+                projectionReview);
     }
 
     private static AsyncApiOperationDiscoveryResult operationResult(List<AsyncApiOperationSummary> operations,
@@ -174,6 +190,76 @@ public class AsyncApiOperatorLibraryImporter {
         return candidates.stream()
                 .map(candidate -> operationSummary(candidate, asyncApi))
                 .toList();
+    }
+
+    private static AsyncApiProjectionReview projectionReview(List<AsyncApiOperationSummary> availableOperations,
+                                                             List<AsyncApiOperationSummary> selectedOperations,
+                                                             boolean selectionApplied,
+                                                             List<AsyncApiSelectionMatch> selectionMatches) {
+        List<AsyncApiOperationSummary> available = availableOperations == null ? List.of() : availableOperations;
+        List<AsyncApiOperationSummary> selected = selectedOperations == null ? List.of() : selectedOperations;
+        int omittedCount = Math.max(0, available.size() - selected.size());
+        return new AsyncApiProjectionReview(
+                AsyncApiProjectionReview.SCHEMA_VERSION,
+                available.size(),
+                selected.size(),
+                omittedCount,
+                selectionApplied,
+                coverageStatus(available.size(), selected.size()),
+                unmatchedSelectionCount(selectionMatches),
+                selectionMatches,
+                omittedOperations(available, selected),
+                countByProjectionLevel(available),
+                countByProjectionLevel(selected),
+                countBySourceKind(selected)
+        );
+    }
+
+    private static String coverageStatus(int availableCount, int selectedCount) {
+        if (availableCount == 0 || selectedCount == 0) {
+            return "NO_MATCH";
+        }
+        return selectedCount >= availableCount ? "FULL" : "PARTIAL";
+    }
+
+    private static int unmatchedSelectionCount(List<AsyncApiSelectionMatch> selectionMatches) {
+        return (int) selectionMatches.stream()
+                .filter(match -> "NO_MATCH".equals(match.status()))
+                .count();
+    }
+
+    private static List<AsyncApiOmittedOperation> omittedOperations(List<AsyncApiOperationSummary> available,
+                                                                    List<AsyncApiOperationSummary> selected) {
+        Set<OperationIdentity> selectedIdentities = selected.stream()
+                .map(AsyncApiOperatorLibraryImporter::operationIdentity)
+                .collect(java.util.stream.Collectors.toCollection(LinkedHashSet::new));
+        return available.stream()
+                .filter(operation -> !selectedIdentities.contains(operationIdentity(operation)))
+                .map(operation -> new AsyncApiOmittedOperation(operation, "not-selected"))
+                .toList();
+    }
+
+    private static Map<String, Integer> countByProjectionLevel(List<AsyncApiOperationSummary> operations) {
+        Map<String, Integer> counts = new LinkedHashMap<>();
+        for (AsyncApiOperationSummary operation : operations) {
+            String key = operation.projectionLevel().isBlank() ? "READY" : operation.projectionLevel();
+            counts.merge(key, 1, Integer::sum);
+        }
+        return counts;
+    }
+
+    private static Map<String, Integer> countBySourceKind(List<AsyncApiOperationSummary> operations) {
+        Map<String, Integer> counts = new LinkedHashMap<>();
+        for (AsyncApiOperationSummary operation : operations) {
+            String key = operation.sourceKind().isBlank() ? "unknown" : operation.sourceKind();
+            counts.merge(key, 1, Integer::sum);
+        }
+        return counts;
+    }
+
+    private static OperationIdentity operationIdentity(AsyncApiOperationSummary operation) {
+        return new OperationIdentity(operation.operationId(), operation.channelName(), operation.address(),
+                operation.action(), operation.messageName(), operation.title());
     }
 
     private static AsyncApiOperationSummary operationSummary(ProjectionCandidate candidate,
@@ -271,6 +357,40 @@ public class AsyncApiOperatorLibraryImporter {
                 request.messageName()
         );
         return hasSelection(legacy) ? List.of(legacy) : List.of();
+    }
+
+    private static List<AsyncApiSelectionMatch> selectionMatches(AsyncApiOperatorLibraryImportRequest request,
+                                                                 List<ProjectionCandidate> candidates,
+                                                                 Map<String, Object> asyncApi) {
+        List<AsyncApiOperationSelection> selections = selections(request);
+        List<AsyncApiSelectionMatch> matches = new ArrayList<>();
+        boolean explicitBatch = request.selections().stream().anyMatch(AsyncApiOperatorLibraryImporter::hasSelection);
+        for (int i = 0; i < selections.size(); i++) {
+            AsyncApiOperationSelection selection = selections.get(i);
+            List<AsyncApiOperationSummary> matchedOperations = operationSummaries(
+                    candidates.stream()
+                            .filter(candidate -> matchesSelection(candidate, selection))
+                            .toList(),
+                    asyncApi);
+            String status = matchedOperations.isEmpty()
+                    ? "NO_MATCH"
+                    : matchedOperations.size() == 1 ? "MATCHED" : "AMBIGUOUS";
+            String target = explicitBatch ? "/selections/" + i : selectionTarget(request);
+            matches.add(new AsyncApiSelectionMatch(target, status, selection,
+                    matchedOperations.size(), matchedOperations));
+        }
+        return matches;
+    }
+
+    private static void addMissingSelectionDiagnostics(List<AsyncApiSelectionMatch> selectionMatches,
+                                                       List<VisualDiagnostic> diagnostics) {
+        for (AsyncApiSelectionMatch match : selectionMatches) {
+            if ("NO_MATCH".equals(match.status())) {
+                diagnostics.add(VisualDiagnostic.error("visual.library.asyncapi.selectionMissing",
+                        "AsyncAPI selector did not match any discovered operation/message candidate.",
+                        match.target()));
+            }
+        }
     }
 
     private static boolean matchesSelection(ProjectionCandidate candidate, AsyncApiOperationSelection selection) {
@@ -972,6 +1092,16 @@ public class AsyncApiOperatorLibraryImporter {
             String payloadType,
             String level,
             String message
+    ) {
+    }
+
+    private record OperationIdentity(
+            String operationId,
+            String channelName,
+            String address,
+            String action,
+            String messageName,
+            String title
     ) {
     }
 }

@@ -501,7 +501,12 @@ JSON/YAML `asyncApiText`，可指定 `libraryId/displayName/version/owner/status
 `bloge.asyncApiOperatorLibraryImportResult.v1`，包含生成的
 `bloge.visualOperatorLibrary.v1` 草案、`OperatorLibraryValidationResult`，以及
 `availableOperations`、`selectedOperations`、`omittedOperationCount` 和
-`selectionApplied` 投影审计证据。
+`selectionApplied` 投影审计证据；同时返回
+`bloge.asyncApiProjectionReview.v1`，用 `coverageStatus`、
+`selectionMatches[]`、`unmatchedSelectionCount`、`omittedOperations[]` 和
+projection/source-kind counts 表达 selector 覆盖率、未命中 selector、被省略候选和
+省略原因。批量 `selections[]` 中任何 selector 未命中都会返回
+`visual.library.asyncapi.selectionMissing` blocking diagnostic，避免大型协议导入时静默生成半截 operator library。
 该 importer 把 AsyncAPI channel/root operation 的 message payload 投影为
 `event-source`、`message-handler` 或 `webhook` runtime-blocked operator，并继续复用
 operator-library validator、profile 和 impact review；它不直接写入 registry。

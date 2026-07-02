@@ -210,7 +210,8 @@ public class OperatorLibraryAdminController {
                 projected.availableOperations(),
                 projected.selectedOperations(),
                 projected.omittedOperationCount(),
-                projected.selectionApplied());
+                projected.selectionApplied(),
+                projected.projectionReview());
     }
 
     /**

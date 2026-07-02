@@ -12,6 +12,7 @@ import java.util.List;
  * @param selectedOperations operation/message candidates used to generate this preview library
  * @param omittedOperationCount number of discovered candidates intentionally omitted by selector-based projection
  * @param selectionApplied true when the request used a single or batch operation/message selector
+ * @param projectionReview machine-readable coverage, selector-match, and omission evidence
  */
 public record AsyncApiOperatorLibraryImportResult(
         String schemaVersion,
@@ -20,7 +21,8 @@ public record AsyncApiOperatorLibraryImportResult(
         List<AsyncApiOperationSummary> availableOperations,
         List<AsyncApiOperationSummary> selectedOperations,
         int omittedOperationCount,
-        boolean selectionApplied
+        boolean selectionApplied,
+        AsyncApiProjectionReview projectionReview
 ) {
     public static final String SCHEMA_VERSION = "bloge.asyncApiOperatorLibraryImportResult.v1";
 
@@ -36,6 +38,7 @@ public record AsyncApiOperatorLibraryImportResult(
         availableOperations = availableOperations == null ? List.of() : List.copyOf(availableOperations);
         selectedOperations = selectedOperations == null ? List.of() : List.copyOf(selectedOperations);
         omittedOperationCount = Math.max(0, omittedOperationCount);
+        projectionReview = projectionReview == null ? AsyncApiProjectionReview.empty() : projectionReview;
     }
 
     /**
@@ -43,7 +46,8 @@ public record AsyncApiOperatorLibraryImportResult(
      */
     public AsyncApiOperatorLibraryImportResult(OperatorLibrary library,
                                                OperatorLibraryValidationResult validation) {
-        this(SCHEMA_VERSION, library, validation, List.of(), List.of(), 0, false);
+        this(SCHEMA_VERSION, library, validation, List.of(), List.of(), 0, false,
+                AsyncApiProjectionReview.empty());
     }
 
     /**
@@ -56,6 +60,20 @@ public record AsyncApiOperatorLibraryImportResult(
                                                int omittedOperationCount,
                                                boolean selectionApplied) {
         this(SCHEMA_VERSION, library, validation, availableOperations, selectedOperations,
-                omittedOperationCount, selectionApplied);
+                omittedOperationCount, selectionApplied, null);
+    }
+
+    /**
+     * Creates a result with projection review using the current schema version.
+     */
+    public AsyncApiOperatorLibraryImportResult(OperatorLibrary library,
+                                               OperatorLibraryValidationResult validation,
+                                               List<AsyncApiOperationSummary> availableOperations,
+                                               List<AsyncApiOperationSummary> selectedOperations,
+                                               int omittedOperationCount,
+                                               boolean selectionApplied,
+                                               AsyncApiProjectionReview projectionReview) {
+        this(SCHEMA_VERSION, library, validation, availableOperations, selectedOperations,
+                omittedOperationCount, selectionApplied, projectionReview);
     }
 }

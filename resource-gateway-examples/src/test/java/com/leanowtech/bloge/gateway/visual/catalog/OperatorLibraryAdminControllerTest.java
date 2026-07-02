@@ -250,6 +250,16 @@ class OperatorLibraryAdminControllerTest {
                 .andExpect(jsonPath("$.availableOperations.length()").value(2))
                 .andExpect(jsonPath("$.selectedOperations.length()").value(2))
                 .andExpect(jsonPath("$.omittedOperationCount").value(0))
+                .andExpect(jsonPath("$.projectionReview.schemaVersion")
+                        .value(AsyncApiProjectionReview.SCHEMA_VERSION))
+                .andExpect(jsonPath("$.projectionReview.coverageStatus").value("FULL"))
+                .andExpect(jsonPath("$.projectionReview.availableOperationCount").value(2))
+                .andExpect(jsonPath("$.projectionReview.selectedOperationCount").value(2))
+                .andExpect(jsonPath("$.projectionReview.omittedOperationCount").value(0))
+                .andExpect(jsonPath("$.projectionReview.unmatchedSelectionCount").value(0))
+                .andExpect(jsonPath("$.projectionReview.availableProjectionLevelCounts.READY").value(2))
+                .andExpect(jsonPath("$.projectionReview.selectedSourceKindCounts.webhook").value(1))
+                .andExpect(jsonPath("$.projectionReview.selectedSourceKindCounts['message-handler']").value(1))
                 .andExpect(jsonPath("$.validation.valid").value(true))
                 .andExpect(jsonPath("$.validation.diagnostics").isEmpty())
                 .andExpect(jsonPath("$.validation.profile.libraryId")
@@ -325,6 +335,14 @@ class OperatorLibraryAdminControllerTest {
                 .andExpect(jsonPath("$.selectedOperations.length()").value(1))
                 .andExpect(jsonPath("$.selectedOperations[0].operationId").value("sendRiskCommand"))
                 .andExpect(jsonPath("$.omittedOperationCount").value(1))
+                .andExpect(jsonPath("$.projectionReview.coverageStatus").value("PARTIAL"))
+                .andExpect(jsonPath("$.projectionReview.selectionApplied").value(true))
+                .andExpect(jsonPath("$.projectionReview.selectionMatches[0].status").value("MATCHED"))
+                .andExpect(jsonPath("$.projectionReview.selectionMatches[0].target").value("/operationId"))
+                .andExpect(jsonPath("$.projectionReview.omittedOperations.length()").value(1))
+                .andExpect(jsonPath("$.projectionReview.omittedOperations[0].reason").value("not-selected"))
+                .andExpect(jsonPath("$.projectionReview.omittedOperations[0].operation.operationId")
+                        .value("creditDecisionWebhook"))
                 .andExpect(jsonPath("$.validation.valid").value(true))
                 .andExpect(jsonPath("$.validation.profile.operatorCount").value(1))
                 .andExpect(jsonPath("$.validation.profile.runtimeBlockedOperatorCount").value(1));
@@ -370,9 +388,72 @@ class OperatorLibraryAdminControllerTest {
                 .andExpect(jsonPath("$.selectedOperations[0].operationId").value("creditDecisionWebhook"))
                 .andExpect(jsonPath("$.selectedOperations[1].operationId").value("sendRiskCommand"))
                 .andExpect(jsonPath("$.omittedOperationCount").value(1))
+                .andExpect(jsonPath("$.projectionReview.coverageStatus").value("PARTIAL"))
+                .andExpect(jsonPath("$.projectionReview.availableOperationCount").value(3))
+                .andExpect(jsonPath("$.projectionReview.selectedOperationCount").value(2))
+                .andExpect(jsonPath("$.projectionReview.omittedOperationCount").value(1))
+                .andExpect(jsonPath("$.projectionReview.unmatchedSelectionCount").value(0))
+                .andExpect(jsonPath("$.projectionReview.selectionMatches.length()").value(2))
+                .andExpect(jsonPath("$.projectionReview.selectionMatches[0].target").value("/selections/0"))
+                .andExpect(jsonPath("$.projectionReview.selectionMatches[0].status").value("MATCHED"))
+                .andExpect(jsonPath("$.projectionReview.selectionMatches[1].target").value("/selections/1"))
+                .andExpect(jsonPath("$.projectionReview.selectionMatches[1].status").value("MATCHED"))
+                .andExpect(jsonPath("$.projectionReview.omittedOperations.length()").value(1))
+                .andExpect(jsonPath("$.projectionReview.omittedOperations[0].operation.operationId")
+                        .value("riskAuditEvent"))
+                .andExpect(jsonPath("$.projectionReview.availableProjectionLevelCounts.READY").value(3))
+                .andExpect(jsonPath("$.projectionReview.selectedProjectionLevelCounts.READY").value(2))
                 .andExpect(jsonPath("$.validation.valid").value(true))
                 .andExpect(jsonPath("$.validation.profile.operatorCount").value(2))
                 .andExpect(jsonPath("$.validation.profile.runtimeBlockedOperatorCount").value(2));
+
+        assertThat(registry.all()).isEmpty();
+    }
+
+    @Test
+    void fromAsyncApiRejectsPartiallyMissingBatchSelectionWithoutSilentOmission() throws Exception {
+        AsyncApiOperatorLibraryImportRequest request = new AsyncApiOperatorLibraryImportRequest(
+                "",
+                "",
+                "",
+                "",
+                "",
+                "",
+                "",
+                "",
+                "",
+                List.of(
+                        new AsyncApiOperationSelection("creditDecisionWebhook",
+                                "/webhooks/credit-decision", "subscribe", "CreditDecision"),
+                        new AsyncApiOperationSelection("missingOperation",
+                                "risk.commands", "publish", "RiskCommand")
+                ),
+                Map.of(),
+                asyncApiBatchProjectionFixture()
+        );
+
+        mockMvc.perform(post("/admin/visual-operator-libraries/from-asyncapi")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(request)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.library").doesNotExist())
+                .andExpect(jsonPath("$.selectionApplied").value(true))
+                .andExpect(jsonPath("$.availableOperations.length()").value(3))
+                .andExpect(jsonPath("$.selectedOperations.length()").value(1))
+                .andExpect(jsonPath("$.selectedOperations[0].operationId").value("creditDecisionWebhook"))
+                .andExpect(jsonPath("$.omittedOperationCount").value(2))
+                .andExpect(jsonPath("$.projectionReview.coverageStatus").value("PARTIAL"))
+                .andExpect(jsonPath("$.projectionReview.unmatchedSelectionCount").value(1))
+                .andExpect(jsonPath("$.projectionReview.selectionMatches.length()").value(2))
+                .andExpect(jsonPath("$.projectionReview.selectionMatches[0].status").value("MATCHED"))
+                .andExpect(jsonPath("$.projectionReview.selectionMatches[1].status").value("NO_MATCH"))
+                .andExpect(jsonPath("$.projectionReview.selectionMatches[1].target").value("/selections/1"))
+                .andExpect(jsonPath("$.projectionReview.selectionMatches[1].matchedOperationCount").value(0))
+                .andExpect(jsonPath("$.projectionReview.omittedOperations.length()").value(2))
+                .andExpect(jsonPath("$.validation.valid").value(false))
+                .andExpect(jsonPath("$.validation.diagnostics[0].code")
+                        .value("visual.library.asyncapi.selectionMissing"))
+                .andExpect(jsonPath("$.validation.diagnostics[0].target").value("/selections/1"));
 
         assertThat(registry.all()).isEmpty();
     }
@@ -402,6 +483,11 @@ class OperatorLibraryAdminControllerTest {
                 .andExpect(jsonPath("$.availableOperations.length()").value(2))
                 .andExpect(jsonPath("$.selectedOperations").isEmpty())
                 .andExpect(jsonPath("$.omittedOperationCount").value(2))
+                .andExpect(jsonPath("$.projectionReview.coverageStatus").value("NO_MATCH"))
+                .andExpect(jsonPath("$.projectionReview.unmatchedSelectionCount").value(1))
+                .andExpect(jsonPath("$.projectionReview.selectionMatches[0].status").value("NO_MATCH"))
+                .andExpect(jsonPath("$.projectionReview.selectionMatches[0].target").value("/operationId"))
+                .andExpect(jsonPath("$.projectionReview.omittedOperations.length()").value(2))
                 .andExpect(jsonPath("$.validation.valid").value(false))
                 .andExpect(jsonPath("$.validation.diagnostics[0].code")
                         .value("visual.library.asyncapi.selectionMissing"))

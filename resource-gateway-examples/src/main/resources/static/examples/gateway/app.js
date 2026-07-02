@@ -5141,18 +5141,38 @@ function asyncApiProjectionRequest(sourceText) {
 }
 
 function asyncApiProjectionAuditMessage(payload) {
+  const review = payload?.projectionReview || {};
   const available = normalizeAsyncApiOperations(payload?.availableOperations);
   const selected = normalizeAsyncApiOperations(payload?.selectedOperations);
   const operatorCount = Array.isArray(payload?.library?.operators) ? payload.library.operators.length : 0;
-  const selectedCount = selected.length || operatorCount;
-  const availableCount = available.length;
+  const selectedCount = Number.isFinite(Number(review.selectedOperationCount))
+    ? Number(review.selectedOperationCount)
+    : selected.length || operatorCount;
+  const availableCount = Number.isFinite(Number(review.availableOperationCount))
+    ? Number(review.availableOperationCount)
+    : available.length;
   if (!availableCount) {
     return '';
   }
-  const omitted = Number.isFinite(Number(payload?.omittedOperationCount))
-    ? Number(payload.omittedOperationCount)
-    : Math.max(0, availableCount - selectedCount);
-  const suffix = omitted > 0 ? ` (${omitted} omitted)` : '';
+  const omitted = Number.isFinite(Number(review.omittedOperationCount))
+    ? Number(review.omittedOperationCount)
+    : Number.isFinite(Number(payload?.omittedOperationCount))
+      ? Number(payload.omittedOperationCount)
+      : Math.max(0, availableCount - selectedCount);
+  const unmatched = Number.isFinite(Number(review.unmatchedSelectionCount))
+    ? Number(review.unmatchedSelectionCount)
+    : 0;
+  const coverageStatus = String(review.coverageStatus || '').toLowerCase();
+  const details = [];
+  if (omitted > 0) {
+    details.push(`${omitted} omitted`);
+  }
+  if (unmatched > 0) {
+    details.push(`${unmatched} selector${unmatched === 1 ? '' : 's'} unmatched`);
+  } else if (coverageStatus && coverageStatus !== 'full') {
+    details.push(`${coverageStatus} coverage`);
+  }
+  const suffix = details.length ? ` (${details.join(', ')})` : '';
   return `Projected ${selectedCount} of ${availableCount} AsyncAPI operation${availableCount === 1 ? '' : 's'}${suffix}.`;
 }
 

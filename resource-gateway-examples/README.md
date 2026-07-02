@@ -1096,13 +1096,19 @@ and readiness summaries; the projection request can then provide
 `operationId`, `channel`, `action`, and `messageName` selectors or a batch
 `selections[]` list to generate only the reviewed subset. The projection result
 returns `availableOperations`, `selectedOperations`, `omittedOperationCount`,
-and `selectionApplied`, so browser and external control planes can audit exactly
-which large-spec candidates were projected or skipped. The browser Operator
+`selectionApplied`, and a `bloge.asyncApiProjectionReview.v1`
+`projectionReview` with coverage status, per-selector match evidence, unmatched
+selector count, omitted operation reasons, and projection/source-kind counts, so
+browser and external control planes can audit exactly which large-spec
+candidates were projected or skipped. A batch selector that no longer matches any
+candidate is rejected with `visual.library.asyncapi.selectionMissing` instead of
+silently generating a partial operator library. The browser Operator
 Libraries panel exposes this as a `Discover AsyncAPI` -> operation
 multi-selection -> `From AsyncAPI` preview action: authors paste AsyncAPI into
 the same source editor, choose one or more candidates when needed, preview the
-generated library with projected/available/omitted counts, then reuse the
-existing Validate/Import path and warning acknowledgement flow.
+generated library with projected/available/omitted counts and selector-match
+warnings, then reuse the existing Validate/Import path and warning
+acknowledgement flow.
 The same validation warning-gates imported operators that declare
 streaming/durable runtime requirements, secret-backed execution, or
 non-idempotent external side effects; these warnings keep high-risk operators
@@ -1153,7 +1159,7 @@ schema drift, and bindings before choosing a rebase or repair path.
 | `POST` | `/admin/visual-operator-libraries/validate-text` | Parse raw JSON or YAML operator-library source text on the server and then run the same validation/profile/impact review path without storing it; malformed source returns structured `visual.library.source.*` diagnostics | 200 / 400 |
 | `POST` | `/admin/visual-operator-libraries/import-text` | Parse raw JSON or YAML operator-library source text on the server and store it through the same governed import/replace path, including `force`, `ackWarnings`, impact review, SemVer governance, and revision audit metadata; high-risk writes using `force=true` or `ackWarnings=true` require non-empty `actor` and `reason` evidence | 201 / 200 / 400 / 409 |
 | `POST` | `/admin/visual-operator-libraries/from-asyncapi/operations` | Discover AsyncAPI channel/root-operation/message candidates from parsed `asyncApi` or raw JSON/YAML `asyncApiText` before projection; returns source-kind, payload, tags, and projection readiness summaries so browser or external control planes can select a reviewed subset | 200 |
-| `POST` | `/admin/visual-operator-libraries/from-asyncapi` | Preview-project parsed `asyncApi` or raw JSON/YAML `asyncApiText` into a `bloge.visualOperatorLibrary.v1` draft using runtime-blocked `event-source`, `message-handler`, or `webhook` operators, optionally narrowed by single `operationId` / `channel` / `action` / `messageName` selectors or batch `selections[]`, then return `bloge.asyncApiOperatorLibraryImportResult.v1` with the generated library, validation/profile/impact evidence, and `availableOperations` / `selectedOperations` / `omittedOperationCount` / `selectionApplied` projection-audit evidence; this endpoint does not store the generated library | 200 |
+| `POST` | `/admin/visual-operator-libraries/from-asyncapi` | Preview-project parsed `asyncApi` or raw JSON/YAML `asyncApiText` into a `bloge.visualOperatorLibrary.v1` draft using runtime-blocked `event-source`, `message-handler`, or `webhook` operators, optionally narrowed by single `operationId` / `channel` / `action` / `messageName` selectors or batch `selections[]`, then return `bloge.asyncApiOperatorLibraryImportResult.v1` with the generated library, validation/profile/impact evidence, `availableOperations` / `selectedOperations` / `omittedOperationCount` / `selectionApplied` projection-audit evidence, and `bloge.asyncApiProjectionReview.v1` coverage / selector-match / omitted-operation review; unmatched batch selectors are rejected with structured diagnostics instead of silently producing a partial library; this endpoint does not store the generated library | 200 |
 | `POST` | `/admin/visual-operator-libraries/import-bundle` | Import a `bloge.visualOperatorLibraryExport.v1` bundle into the target registry through the same governed validation, warning acknowledgement, impact, SemVer, and revision audit path; unsupported export bundle schema versions are rejected before the library snapshot enters registry preflight; responses use `bloge.visualOperatorLibraryImportResult.v1` with source bundle identity, target mutation action, target latest revision, and target preflight validation/profile/impact evidence; high-risk writes using `force=true` or `ackWarnings=true` require non-empty `actor` and `reason` evidence | 201 / 200 / 400 / 409 |
 | `POST` | `/admin/visual-operator-libraries` | Import or re-import an operator library; rejected or warning-gated responses include `bloge.visualOperatorLibraryProfile.v1` and `bloge.visualOperatorLibraryImpact.v1`, reject removal or disablement of stored-draft operator refs unless `force=true`, require `ackWarnings=true` before storing warning-level runtime-capability, governance, executable-resolution, SemVer, or replacement impact, and accept optional `actor` / `changeSource` / `changeSummary` / `reason` query params for the stored registry revision audit metadata; high-risk writes using `force=true` or `ackWarnings=true` require non-empty `actor` and `reason` evidence | 201 / 400 / 409 |
 | `GET` | `/admin/visual-operator-libraries/{libraryId}` | Get one imported library | 200 / 404 |
