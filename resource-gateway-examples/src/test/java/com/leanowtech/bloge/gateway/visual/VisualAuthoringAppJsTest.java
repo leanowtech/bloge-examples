@@ -83,7 +83,16 @@ class VisualAuthoringAppJsTest {
         String source = appJsSource();
 
         assertThat(source)
+                .contains("function visualDraftExecutableActionState(")
+                .contains("function composerDslUsesVisualDraft()")
+                .contains("function renderExecutableAuthoringControls()")
+                .contains("compileButton.disabled = compileState.disabled;")
+                .contains("runButton.disabled = usesVisualDraft && runState.disabled;")
+                .contains("renderExecutableAuthoringControls();")
+                .contains("This graph can be saved, exported, or published as a Design artifact, but it cannot be compiled or run.")
+                .contains("status: 'not_executable'")
                 .contains("const readinessBeforeCompile = state.visualCheck?.readiness || null;")
+                .contains("const executableState = visualDraftExecutableActionState(readinessBeforeCompile);")
                 .contains("setVisualCheck('Compiling...', 'info', [], readinessBeforeCompile);")
                 .contains("payload.validation?.readiness || readinessBeforeCompile")
                 .contains("setVisualCheck(error.message, 'error', [], readinessBeforeCompile);")

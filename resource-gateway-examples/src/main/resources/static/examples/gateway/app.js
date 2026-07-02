@@ -1188,6 +1188,7 @@ function renderInputForm() {
     renderBuilderHistoryControls();
     $('composer-dsl').addEventListener('input', (event) => {
       state.customDsl = event.target.value;
+      renderExecutableAuthoringControls();
     });
     $('graph-input-schema').addEventListener('input', (event) => {
       updateGraphInputSchemaFromText(event.target.value);
@@ -1675,6 +1676,7 @@ function recordBuilderHistory(action = 'Edit graph') {
   }
   clearActiveRunTrace();
   state.pendingPublishWarningKey = '';
+  state.visualCheck = { message: 'Not checked', level: 'info', diagnostics: [] };
   state.builderHistoryUndo.push({ action, snapshot });
   if (state.builderHistoryUndo.length > BUILDER_HISTORY_LIMIT) {
     state.builderHistoryUndo.shift();
@@ -3964,6 +3966,7 @@ function renderVisualCheck() {
   status.textContent = [check.message || 'Not checked', readinessText].filter(Boolean).join(' · ');
   status.className = `visual-check-status ${visualCheckStatusLevel(check)}`;
   renderPublishArtifactKindControls();
+  renderExecutableAuthoringControls();
   renderDiagnosticList(list, visibleDiagnostics, {
     headerHtml: renderVisualDiagnosticSummary(diagnostics, state.visualDiagnosticNodeFilter),
     noticeHtml: renderVisualDiagnosticFilterNotice(visibleDiagnostics.length, state.visualDiagnosticNodeFilter)
@@ -4431,6 +4434,61 @@ function renderPublishArtifactKindControls() {
   return control;
 }
 
+function visualDraftExecutableActionState(readiness = state.visualCheck?.readiness) {
+  const normalized = normalizeVisualGraphReadiness(readiness);
+  if (!normalized || normalized.executable) {
+    return {
+      disabled: false,
+      level: normalized?.level || 'info',
+      message: '',
+      title: ''
+    };
+  }
+  const designAllowed = normalized.artifactKinds.includes('DESIGN');
+  const message = normalized.summary || (designAllowed
+    ? 'This graph can be saved, exported, or published as a Design artifact, but it cannot be compiled or run.'
+    : 'Resolve graph validation errors before compiling or running.');
+  return {
+    disabled: true,
+    level: normalized.level || (designAllowed ? 'warning' : 'error'),
+    message,
+    title: normalized.title ? `${normalized.title}: ${message}` : message
+  };
+}
+
+function composerDslUsesVisualDraft() {
+  if (!isComposerSelected()) {
+    return false;
+  }
+  const dslBox = $('composer-dsl');
+  const currentDsl = dslBox ? dslBox.value : state.customDsl;
+  const builderDsl = builderToDsl(state.builder);
+  return currentDsl === builderDsl || currentDsl === state.lastGeneratedVisualDsl;
+}
+
+function renderExecutableAuthoringControls() {
+  const compileButton = $('compile-visual-draft');
+  const compileState = visualDraftExecutableActionState();
+  if (compileButton) {
+    compileButton.disabled = compileState.disabled;
+    compileButton.title = compileState.disabled ? compileState.title : '';
+  }
+
+  const runButton = $('run-scenario');
+  if (!runButton) {
+    return;
+  }
+  if (!isComposerSelected()) {
+    runButton.disabled = false;
+    runButton.title = '';
+    return;
+  }
+  const runState = visualDraftExecutableActionState();
+  const usesVisualDraft = composerDslUsesVisualDraft();
+  runButton.disabled = usesVisualDraft && runState.disabled;
+  runButton.title = usesVisualDraft && runState.disabled ? runState.title : '';
+}
+
 function normalizeDiagnostics(diagnostics) {
   return Array.isArray(diagnostics) ? diagnostics : [];
 }
@@ -4497,6 +4555,17 @@ async function validateVisualDraft() {
 
 async function compileVisualDraft() {
   const readinessBeforeCompile = state.visualCheck?.readiness || null;
+  const executableState = visualDraftExecutableActionState(readinessBeforeCompile);
+  if (executableState.disabled) {
+    setVisualCheck(
+      executableState.message || 'Visual graph is not executable.',
+      executableState.level || 'warning',
+      normalizeDiagnostics(state.visualCheck?.diagnostics),
+      readinessBeforeCompile
+    );
+    $('output').textContent = pretty({ status: 'not_executable', readiness: readinessBeforeCompile });
+    return;
+  }
   setVisualCheck('Compiling...', 'info', [], readinessBeforeCompile);
   try {
     const response = await fetch('/api/visual/drafts/compile', {
@@ -17413,6 +17482,17 @@ async function runCustomGraph() {
   const outputNode = composerOutputNode();
   const builderDsl = builderToDsl(state.builder);
   const useVisualDraft = state.customDsl === builderDsl || state.customDsl === state.lastGeneratedVisualDsl;
+  const executableState = visualDraftExecutableActionState(state.visualCheck?.readiness || null);
+  if (useVisualDraft && executableState.disabled) {
+    setVisualCheck(
+      executableState.message || 'Visual graph is not executable.',
+      executableState.level || 'warning',
+      normalizeDiagnostics(state.visualCheck?.diagnostics),
+      state.visualCheck?.readiness || null
+    );
+    $('output').textContent = pretty({ status: 'not_executable', readiness: state.visualCheck?.readiness || null });
+    return;
+  }
   const response = await fetch(useVisualDraft ? '/api/visual/drafts/run' : '/api/gateway/examples/compose/run', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },

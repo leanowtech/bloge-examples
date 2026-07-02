@@ -633,7 +633,12 @@ class VisualAuthoringBrowserDomTest {
         ));
         selectByValue(wait, By.id("graph-output-node"), "riskUnsafeFacts");
         selectByValue(wait, By.id("graph-output-path"), "safeId");
-        selectByValue(wait, By.id("publish-artifact-kind"), "DESIGN");
+
+        click(wait, By.id("validate-visual-draft"));
+        waitForText(wait, By.id("visual-check-status"), "DESIGN artifact");
+        assertThat(valueOf(By.id("publish-artifact-kind"))).isEqualTo("DESIGN");
+        assertThat(driver.findElement(By.id("compile-visual-draft")).isEnabled()).isFalse();
+        assertThat(driver.findElement(By.id("run-scenario")).isEnabled()).isFalse();
 
         publishVisualDraft(wait);
         String publicationId = valueOf(By.id("publication-select"));

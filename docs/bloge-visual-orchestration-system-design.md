@@ -706,14 +706,14 @@ draft validate response 现在返回服务端派生的 `bloge.visualGraphReadine
 这保证 schema-only 图可以是 `valid=true`，同时明确 `executable=false` 且只能冻结为
 `DESIGN` artifact，而不是被误解成系统运行失败。
 publication result 也会在成功或拒绝响应中携带同一份 validation/readiness；
-浏览器因此可以把 Server Check 的 readiness 反向施加到发布控件上：只允许
-`DESIGN` 的图会自动切到设计制品发布，`draft-repair-required` 这类没有
-publishable artifact kind 的图则禁用发布入口。
+浏览器因此可以把 Server Check 的 readiness 反向施加到画布动作上：只允许
+`DESIGN` 的图会自动切到设计制品发布，并禁用 visual draft Compile / Run Custom
+Graph；`draft-repair-required` 这类没有 publishable artifact kind 的图则禁用发布入口。
 connection preflight 会返回候选连接相关的局部 diagnostics，同时携带应用 preview
 edge/binding/config expression 后的完整 candidate draft validation/readiness；compile 和 run 响应同样携带本次服务端门禁使用的 validation/readiness；
 publication run 则回传 artifact 冻结时的 validation/readiness，不能按当前 catalog
 重新解释历史发布物。这样浏览器在 compile/run/connection preflight 之后不会丢失
-design-only、runtime-blocked、governance-review 或 draft-repair-required 的发布引导。
+design-only、runtime-blocked、governance-review 或 draft-repair-required 的发布和执行引导。
 选中已发布 artifact 时，浏览器展示 publication 冻结的 readiness 和非执行节点清单；
 这是审阅历史设计制品的依据，不依赖当前 catalog 重新推断。
 同一 admin API 已具备 registry-aware impact preflight：删除、禁用或替换仍被 stored draft 引用的
