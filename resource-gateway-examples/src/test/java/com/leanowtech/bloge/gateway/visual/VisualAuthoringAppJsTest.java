@@ -2119,6 +2119,15 @@ class VisualAuthoringAppJsTest {
                 });
                 const libraryProfileHtml = context.renderLibraryProfilePanel(libraryProfile);
                 const invalidLibraryProfile = context.libraryProfileFromText('{broken');
+                """, """
+                const yamlLibraryProfile = context.libraryProfileFromText(`
+schemaVersion: bloge.visualOperatorLibrary.v1
+libraryId: risk-yaml
+version: 1.2.3
+operators:
+  - operatorRef: risk:score
+`);
+                const yamlLibraryProfileHtml = context.renderLibraryProfilePanel(yamlLibraryProfile);
                 const runtimeRiskProfile = context.operatorLibraryProfile({
                   libraryId: 'runtime-risk',
                   operators: [{
@@ -3643,6 +3652,9 @@ class VisualAuthoringAppJsTest {
                   ['library profile html includes config field', String(libraryProfileHtml.includes('config threshold')), 'true'],
                   ['library profile html includes dynamic flag', String(libraryProfileHtml.includes('2 dynamic schema surfaces')), 'true'],
                   ['library profile invalid json', String(Boolean(invalidLibraryProfile.parseError)), 'true'],
+                  ['library profile yaml pending', String(Boolean(yamlLibraryProfile.awaitingServerValidation)), 'true'],
+                  ['library profile yaml id', yamlLibraryProfile.libraryId, 'risk-yaml'],
+                  ['library profile yaml html validation required', String(yamlLibraryProfileHtml.includes('Click Validate to load the server-reviewed profile.')), 'true'],
                   ['mixed binding candidate summary', mixedCandidateSummary, '1 compatible · 1 blocked · source type string cannot feed target type integer'],
                   ['mixed binding candidate level', mixedCandidateLevel, 'success'],
                   ['blocked binding candidate summary', blockedCandidateSummary, '0 compatible · 1 blocked · Target path is not accepted.'],

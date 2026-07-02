@@ -3461,8 +3461,7 @@ function operatorLibraryHistoryTargetId() {
   if (state.selectedLibraryId) {
     return state.selectedLibraryId;
   }
-  const library = parseOperatorLibraryText(state.libraryImportText || '{}');
-  return String(library?.libraryId || '').trim();
+  return operatorLibrarySourceLibraryId(state.libraryImportText || '{}');
 }
 
 function parseOperatorLibraryText(sourceText) {
@@ -3471,6 +3470,28 @@ function parseOperatorLibraryText(sourceText) {
   } catch {
     return null;
   }
+}
+
+function operatorLibrarySourceLibraryId(sourceText) {
+  const library = parseOperatorLibraryText(sourceText);
+  if (library?.libraryId) {
+    return String(library.libraryId || '').trim();
+  }
+  return operatorLibraryYamlScalar(sourceText, 'libraryId');
+}
+
+function operatorLibraryYamlScalar(sourceText, key) {
+  const lines = String(sourceText || '').split(/\r?\n/);
+  const escapedKey = key.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const pattern = new RegExp(`^\\s*${escapedKey}\\s*:\\s*(.*?)\\s*$`);
+  for (const line of lines) {
+    const match = pattern.exec(line);
+    if (!match) {
+      continue;
+    }
+    return match[1].replace(/^['"]|['"]$/g, '').trim();
+  }
+  return '';
 }
 
 function operatorLibraryRevisionOptionLabel(revision) {
@@ -3577,6 +3598,21 @@ function renderLibraryProfile() {
 }
 
 function renderLibraryProfilePanel(profile) {
+  if (profile.awaitingServerValidation) {
+    return `
+      <div class="library-profile-head info">
+        <strong>${escapeHtml(profile.libraryId || 'YAML operator library')}</strong>
+        <span>YAML source detected</span>
+      </div>
+      <div class="library-profile-rows">
+        <div class="library-profile-row">
+          <strong>Server validation required</strong>
+          <span>Click Validate to load the server-reviewed profile.</span>
+          <small>Local preview only parses JSON; YAML is parsed by the gateway validator.</small>
+        </div>
+      </div>
+    `;
+  }
   if (profile.parseError) {
     return `
       <div class="library-profile-head error">
@@ -4336,14 +4372,48 @@ function libraryProfileLevel(profile) {
 }
 
 function libraryProfileFromText(text) {
+  const sourceText = String(text || '').trim();
   try {
-    return operatorLibraryProfile(JSON.parse(text || '{}'));
+    return operatorLibraryProfile(JSON.parse(sourceText || '{}'));
   } catch (error) {
+    const yamlPreview = operatorLibraryYamlProfilePreview(sourceText);
+    if (yamlPreview) {
+      return yamlPreview;
+    }
     return {
       parseError: error.message,
       operators: []
     };
   }
+}
+
+function operatorLibraryYamlProfilePreview(sourceText) {
+  if (!operatorLibraryLooksLikeYaml(sourceText)) {
+    return null;
+  }
+  return {
+    awaitingServerValidation: true,
+    libraryId: operatorLibraryYamlScalar(sourceText, 'libraryId') || 'YAML operator library',
+    version: operatorLibraryYamlScalar(sourceText, 'version') || '',
+    status: 'SERVER_VALIDATION_REQUIRED',
+    operatorCount: 0,
+    operators: [],
+    inputPortCount: 0,
+    outputPortCount: 0,
+    requiredInputCount: 0,
+    configFieldCount: 0,
+    outputFieldCount: 0
+  };
+}
+
+function operatorLibraryLooksLikeYaml(sourceText) {
+  const text = String(sourceText || '').trim();
+  if (!text || text.startsWith('{') || text.startsWith('[')) {
+    return false;
+  }
+  return /^schemaVersion\s*:/m.test(text)
+    || /^libraryId\s*:/m.test(text)
+    || /^operators\s*:/m.test(text);
 }
 
 function operatorLibraryServerProfileForCurrentText() {

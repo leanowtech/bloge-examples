@@ -699,6 +699,8 @@ filter 与 `facets.runtimeReadinessStates` 聚合维度返回，避免浏览器�
 validation diagnostics 和 runtime inventory warning 计算 operator count、schema field count、
 DSL-unsafe/dynamic schema 计数、facets、catalog-repair、runtime-blocked、governance-review 与
 design-only 摘要；浏览器只有在用户继续编辑 JSON 或服务端 profile 缺失时才回退到本地即时预览。
+如果用户粘贴 YAML，浏览器只做轻量格式识别和 `libraryId` 摘要提示，并明确要求点击
+Validate 加载服务端解析后的 profile，避免把后端可接受的 YAML 误报为 Invalid JSON。
 `importReadiness` 则把 diagnostics、profile 和 impact 压成外部控制面可直接路由的准入状态，
 例如 `runtime-executable-importable`、`design-only-importable`、
 `runtime-binding-required`、`governance-review-required`、`force-required`、
