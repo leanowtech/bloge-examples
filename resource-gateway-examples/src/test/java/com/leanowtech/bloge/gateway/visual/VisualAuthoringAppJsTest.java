@@ -471,6 +471,16 @@ class VisualAuthoringAppJsTest {
                   'normalizeVisualGraphReadiness',
                   'visualGraphReadinessStatusText',
                   'visualGraphReadinessNodeSummary',
+                  'publicationReadiness',
+                  'publicationReadinessStatusText',
+                  'publicationReadinessReviewRows',
+                  'publicationReadinessNodeLabel',
+                  'publicationReadinessNodeSummary',
+                  'publishArtifactKindsForReadiness',
+                  'preferredPublishArtifactKind',
+                  'publishArtifactKindControlState',
+                  'renderPublishArtifactKindControls',
+                  'visualCheckStatusLevel',
                   'operatorDiagnosticsForSpec',
                   'operatorPaletteCapabilityBadges',
                   'operatorPaletteCapabilityLabels',
@@ -644,6 +654,7 @@ class VisualAuthoringAppJsTest {
                 context.BUILDER_HISTORY_LIMIT = 50;
                 context.CONTEXT_SOURCE_ID = '__ctx';
                 context.NODE_SIZE = { width: 170, height: 74 };
+                context.PUBLISH_ARTIFACT_KINDS = ['EXECUTABLE', 'DESIGN'];
                 context.elements = {};
                 context.$ = (id) => context.elements[id] || null;
                 context.syncGraphInputSchemaTextFromBuilder = () => {};
@@ -1298,6 +1309,38 @@ class VisualAuthoringAppJsTest {
                   ]
                 });
                 const graphReadinessStatusText = context.visualGraphReadinessStatusText(graphReadiness);
+                const designPublication = {
+                  publicationId: 'pub-design',
+                  artifactKind: 'DESIGN',
+                  draft: {
+                    nodes: [
+                      { id: 'eligibility', label: 'Eligibility Draft' },
+                      { id: 'policy', label: 'Policy Table' }
+                    ]
+                  },
+                  validation: { readiness: graphReadiness }
+                };
+                const publicationReadiness = context.publicationReadiness(designPublication);
+                const publicationReadinessStatusText = context.publicationReadinessStatusText(designPublication);
+                const publicationReadinessRows = context.publicationReadinessReviewRows(designPublication);
+                const designOnlyPublishControl = context.publishArtifactKindControlState(graphReadiness, 'EXECUTABLE');
+                const designOnlyAllowedKinds = context.publishArtifactKindsForReadiness(graphReadiness).join('|');
+                const repairPublishControl = context.publishArtifactKindControlState({
+                  schemaVersion: 'bloge.visualGraphReadiness.v1',
+                  state: 'DRAFT_REPAIR_REQUIRED',
+                  level: 'ERROR',
+                  executable: false,
+                  artifactKinds: [],
+                  title: 'Draft repair required',
+                  summary: 'Fix schema errors before publishing.',
+                  nodeCount: 1,
+                  draftRepairNodeCount: 1
+                }, 'EXECUTABLE');
+                const unconstrainedPublishControl = context.publishArtifactKindControlState(null, 'EXECUTABLE');
+                const publishErrorStatusLevel = context.visualCheckStatusLevel({
+                  level: 'error',
+                  readiness: graphReadiness
+                });
                 const serverCatalogFacets = context.normalizeOperatorCatalogFacets({
                   total: 6,
                   capabilities: {
@@ -2643,6 +2686,19 @@ class VisualAuthoringAppJsTest {
                   ['graph readiness normalized state', graphReadiness.state, 'design-only'],
                   ['graph readiness normalized node state', graphReadiness.nodes[0].state, 'design-only'],
                   ['graph readiness status text', graphReadinessStatusText, 'Design-only graph · 1 executable, 1 design-only · DESIGN artifact'],
+                  ['publication readiness state', publicationReadiness.state, 'design-only'],
+                  ['publication readiness status text', publicationReadinessStatusText, 'Design-only graph · 1 executable, 1 design-only · DESIGN artifact'],
+                  ['publication readiness review row count', publicationReadinessRows.length, 1],
+                  ['publication readiness review row label', publicationReadinessRows[0].label, 'Eligibility Draft · Design only'],
+                  ['publication readiness review row value', publicationReadinessRows[0].value, 'risk:eligibility · Design-only operator'],
+                  ['graph readiness publish allowed kinds', designOnlyAllowedKinds, 'DESIGN'],
+                  ['graph readiness publish selected kind', designOnlyPublishControl.selected, 'DESIGN'],
+                  ['graph readiness publish select disabled', String(designOnlyPublishControl.selectDisabled), 'true'],
+                  ['graph readiness publish button enabled', String(designOnlyPublishControl.publishDisabled), 'false'],
+                  ['draft repair publish disabled', String(repairPublishControl.publishDisabled), 'true'],
+                  ['draft repair publish level', repairPublishControl.level, 'error'],
+                  ['unconstrained publish kinds', unconstrainedPublishControl.allowedKinds.join('|'), 'EXECUTABLE|DESIGN'],
+                  ['publish error status beats readiness info', publishErrorStatusLevel, 'error'],
                   ['catalog facet summary', serverCatalogFacetSummary, 'Catalog mix: 3 Runtime executable · 2 Design only · 1 Runtime blocked · 1 Governance review · 1 Streaming · 1 Requires secret · 1 External effect.'],
                   ['catalog facet fallback total', fallbackCatalogFacets.total, 2],
                   ['catalog facet fallback design count', fallbackCatalogFacets.capabilities['design-only'], 1],
@@ -3183,7 +3239,18 @@ class VisualAuthoringAppJsTest {
                             level: 'WARNING',
                             code: 'visual.operator.governance.nonIdempotent',
                             message: 'Operator requires production promotion review.'
-                          }]
+                          }],
+                          validation: {
+                            readiness: {
+                              schemaVersion: 'bloge.visualGraphReadiness.v1',
+                              state: 'GOVERNANCE_REVIEW',
+                              level: 'WARNING',
+                              executable: true,
+                              artifactKinds: ['EXECUTABLE', 'DESIGN'],
+                              title: 'Governance review graph',
+                              summary: 'Executable after promotion review.'
+                            }
+                          }
                         })
                       };
                     }
@@ -3228,8 +3295,13 @@ class VisualAuthoringAppJsTest {
                   context.setPublicationMessage = (text, level) => {
                     publishMessages.push({ text, level });
                   };
-                  context.setVisualCheck = (message, level, diagnostics = []) => {
-                    context.state.visualCheck = { message, level, diagnostics };
+                  context.setVisualCheck = (message, level, diagnostics = [], readiness = null) => {
+                    context.state.visualCheck = {
+                      message,
+                      level,
+                      diagnostics,
+                      readiness: context.normalizeVisualGraphReadiness(readiness)
+                    };
                   };
                   context.$ = (id) => {
                     context.elements[id] = context.elements[id] || { textContent: '', value: '' };
@@ -3240,6 +3312,7 @@ class VisualAuthoringAppJsTest {
                       const firstWarningKey = context.state.pendingPublishWarningKey;
                       const firstVisualLevel = context.state.visualCheck.level;
                       const firstVisualMessage = context.state.visualCheck.message;
+                      const firstVisualReadinessState = context.state.visualCheck.readiness?.state || '';
                       const warningMessage = publishMessages[0] || {};
                       return context.publishVisualDraft().then(() => ({
                         firstBody: publishBodies[0],
@@ -3248,6 +3321,7 @@ class VisualAuthoringAppJsTest {
                         firstWarningKey,
                         firstVisualLevel,
                         firstVisualMessage,
+                        firstVisualReadinessState,
                         warningMessage,
                         finalWarningKey: context.state.pendingPublishWarningKey,
                         finalPublicationId: context.state.selectedPublicationId,
@@ -3276,6 +3350,7 @@ class VisualAuthoringAppJsTest {
                     ['publish warning message text', publishResult.warningMessage.text, 'Review publish warnings, then click Publish again to continue.'],
                     ['publish first visual level', publishResult.firstVisualLevel, 'warning'],
                     ['publish first visual message', publishResult.firstVisualMessage, 'Visual graph was not published.'],
+                    ['publish first visual readiness state', publishResult.firstVisualReadinessState, 'governance-review'],
                     ['publish warning draft snapshot load', publishResult.publishDraftSnapshotLoads, 1],
                     ['publish warning draft list load', publishResult.publishDraftListLoads, 1],
                     ['publish second expected revision', publishResult.secondBody.expectedRevision, 4],

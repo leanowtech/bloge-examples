@@ -1355,6 +1355,11 @@ class VisualGraphDraftControllerTest {
         assertThat(response.getBody().diagnostics())
                 .anySatisfy(diagnostic ->
                         assertThat(diagnostic.code()).isEqualTo("visual.codegen.designOnlyOperator"));
+        assertThat(response.getBody().validation()).isNotNull();
+        assertThat(response.getBody().validation().valid()).isTrue();
+        assertThat(response.getBody().validation().readiness().state()).isEqualTo("design-only");
+        assertThat(response.getBody().validation().readiness().executable()).isFalse();
+        assertThat(response.getBody().validation().readiness().artifactKinds()).containsExactly("DESIGN");
         assertThat(publications.all()).isEmpty();
     }
 

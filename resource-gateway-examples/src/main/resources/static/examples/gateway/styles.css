@@ -1104,6 +1104,10 @@ body.dragging-operator * {
   background: #eff6ff;
 }
 
+.publication-readiness-panel {
+  margin-top: 6px;
+}
+
 .operator-readiness-rows {
   display: grid;
   gap: 4px;

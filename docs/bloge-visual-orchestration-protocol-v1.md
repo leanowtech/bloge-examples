@@ -1504,6 +1504,10 @@ artifact。发布成功后 artifact 必须不可变，
 
 resource-gateway 示例将 artifact 存入 `visual_graph_publications`，提供 list/get/run，
 不提供 update/delete。
+当前实现的 publication result 会在成功和失败响应中暴露 `validation`；即使
+`artifactKind=EXECUTABLE` 因 schema-only/design-only operator 无法 codegen 而被拒，
+调用方仍可读取 `validation.readiness.artifactKinds`，把 UI 或外部控制面纠偏到
+`DESIGN` artifact 发布路径，而不是把“尚未绑定 runtime 实现”误判为普通故障。
 
 响应：
 
@@ -1521,10 +1525,26 @@ resource-gateway 示例将 artifact 存入 `visual_graph_publications`，提供 
     },
     "validation": {
       "valid": true,
-      "diagnostics": []
+      "diagnostics": [],
+      "readiness": {
+        "schemaVersion": "bloge.visualGraphReadiness.v1",
+        "state": "runtime-executable",
+        "executable": true,
+        "artifactKinds": ["EXECUTABLE", "DESIGN"]
+      }
     }
   },
-  "diagnostics": []
+  "diagnostics": [],
+  "validation": {
+    "valid": true,
+    "diagnostics": [],
+    "readiness": {
+      "schemaVersion": "bloge.visualGraphReadiness.v1",
+      "state": "runtime-executable",
+      "executable": true,
+      "artifactKinds": ["EXECUTABLE", "DESIGN"]
+    }
+  }
 }
 ```
 

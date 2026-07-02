@@ -500,16 +500,16 @@ public class VisualGraphDraftController {
         VisualValidationResult validation = validator.validate(draft);
         if (!validation.valid()) {
             return ResponseEntity.badRequest()
-                    .body(VisualGraphPublicationResult.rejected(validation.diagnostics()));
+                    .body(VisualGraphPublicationResult.rejected(validation));
         }
         if (!ackWarnings && containsWarnings(validation.diagnostics())) {
             return ResponseEntity.status(HttpStatus.CONFLICT)
-                    .body(VisualGraphPublicationResult.rejected(validation.diagnostics()));
+                    .body(VisualGraphPublicationResult.rejected(validation));
         }
         DslGenerationResult generation = runner.compile(draft);
         if (VisualGraphPublishRequest.ARTIFACT_EXECUTABLE.equals(artifactKind) && !generation.generated()) {
             return ResponseEntity.badRequest()
-                    .body(VisualGraphPublicationResult.rejected(generation.diagnostics()));
+                    .body(VisualGraphPublicationResult.rejected(generation.diagnostics(), validation));
         }
 
         GraphDraft snapshot = withMissingCurrentOperatorSnapshotState(draft);

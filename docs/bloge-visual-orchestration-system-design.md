@@ -705,6 +705,12 @@ draft validate response 现在返回服务端派生的 `bloge.visualGraphReadine
 `draft-repair-required` 图级状态、可发布 artifact kind 和 node-level readiness 摘要。
 这保证 schema-only 图可以是 `valid=true`，同时明确 `executable=false` 且只能冻结为
 `DESIGN` artifact，而不是被误解成系统运行失败。
+publication result 也会在成功或拒绝响应中携带同一份 validation/readiness；
+浏览器因此可以把 Server Check 的 readiness 反向施加到发布控件上：只允许
+`DESIGN` 的图会自动切到设计制品发布，`draft-repair-required` 这类没有
+publishable artifact kind 的图则禁用发布入口。
+选中已发布 artifact 时，浏览器展示 publication 冻结的 readiness 和非执行节点清单；
+这是审阅历史设计制品的依据，不依赖当前 catalog 重新推断。
 同一 admin API 已具备 registry-aware impact preflight：删除、禁用或替换仍被 stored draft 引用的
 operatorRef 会被阻断，same-ref fingerprint drift 会作为 warning 暴露；对于 immutable publication，
 当前 executable artifact 运行不依赖最新 catalog，因为 publication 持有 frozen DSL 和 operator snapshots；
@@ -745,7 +751,7 @@ fingerprint snapshot；普通保存和 PATCH 仍保留既有 snapshot，避免�
 | `POST` | `/api/visual/drafts/{draftId}/validate` | 增量或全量校验；当前实现的 transient `/api/visual/drafts/validate` 返回 `valid`、`diagnostics` 和 `bloge.visualGraphReadiness.v1` 图级 runtime/design readiness |
 | `POST` | `/api/visual/drafts/{draftId}/compile` | 生成 DSL 并编译 |
 | `POST` | `/api/visual/drafts/{draftId}/run` | 使用测试 context 运行 |
-| `POST` | `/api/visual/drafts/{draftId}/publish` | 发布为 graph version；浏览器和 API 默认 `artifactKind=EXECUTABLE`，也支持 `artifactKind=DESIGN` 冻结非执行型设计制品；warning-level diagnostics 需 `ackWarnings=true` 后才写入 |
+| `POST` | `/api/visual/drafts/{draftId}/publish` | 发布为 graph version；浏览器和 API 默认 `artifactKind=EXECUTABLE`，也支持 `artifactKind=DESIGN` 冻结非执行型设计制品；warning-level diagnostics 需 `ackWarnings=true` 后才写入；响应在成功和拒绝时都保留 validation/readiness，供客户端按 artifact kind 纠偏 |
 
 ### 12.3 Runtime / Trace API
 

@@ -319,6 +319,7 @@ const SCHEMA_ANNOTATION_KEYS = new Set([
 const SCHEMA_DECLARATION_KEYS = new Set([
   '$defs'
 ]);
+const PUBLISH_ARTIFACT_KINDS = ['EXECUTABLE', 'DESIGN'];
 
 const state = {
   scenarios: [],
@@ -1097,6 +1098,7 @@ function renderInputForm() {
         </div>
         <div id="golden-certification-status" class="certification-status" hidden></div>
         <div id="publication-status" class="draft-status" hidden></div>
+        <div id="publication-readiness" class="operator-readiness-panel publication-readiness-panel" hidden></div>
       </div>
       <div class="builder-panel">
         <div class="panel-title">Run History</div>
@@ -1183,6 +1185,7 @@ function renderInputForm() {
     $('publish-artifact-kind').addEventListener('change', (event) => {
       state.publishArtifactKind = normalizePublishArtifactKind(event.target.value);
       state.pendingPublishWarningKey = '';
+      renderPublishArtifactKindControls();
     });
     $('publish-visual-draft').addEventListener('click', publishVisualDraft);
     return;
@@ -3773,11 +3776,24 @@ function renderVisualCheck() {
     : diagnostics;
   const readinessText = visualGraphReadinessStatusText(check.readiness);
   status.textContent = [check.message || 'Not checked', readinessText].filter(Boolean).join(' · ');
-  status.className = `visual-check-status ${check.readiness?.level || check.level || 'info'}`;
+  status.className = `visual-check-status ${visualCheckStatusLevel(check)}`;
+  renderPublishArtifactKindControls();
   renderDiagnosticList(list, visibleDiagnostics, {
     headerHtml: renderVisualDiagnosticSummary(diagnostics, state.visualDiagnosticNodeFilter),
     noticeHtml: renderVisualDiagnosticFilterNotice(visibleDiagnostics.length, state.visualDiagnosticNodeFilter)
   });
+}
+
+function visualCheckStatusLevel(check = {}) {
+  const checkLevel = String(check.level || '').trim().toLowerCase();
+  const readinessLevel = String(check.readiness?.level || '').trim().toLowerCase();
+  if (checkLevel === 'error' || checkLevel === 'warning') {
+    return checkLevel;
+  }
+  if (readinessLevel === 'error' || readinessLevel === 'warning') {
+    return readinessLevel;
+  }
+  return readinessLevel || checkLevel || 'info';
 }
 
 function renderDiagnosticList(list, diagnostics, options = {}) {
@@ -4153,6 +4169,82 @@ function visualGraphReadinessNodeSummary(readiness) {
   return parts.join(', ');
 }
 
+function publishArtifactKindsForReadiness(readiness) {
+  const normalized = normalizeVisualGraphReadiness(readiness);
+  if (!normalized) {
+    return PUBLISH_ARTIFACT_KINDS.slice();
+  }
+  return uniqueStrings(normalized.artifactKinds
+    .map((kind) => String(kind || '').trim().toUpperCase())
+    .filter((kind) => PUBLISH_ARTIFACT_KINDS.includes(kind)));
+}
+
+function preferredPublishArtifactKind(allowedKinds, readiness = state.visualCheck?.readiness, current = state.publishArtifactKind) {
+  const allowed = Array.isArray(allowedKinds) ? allowedKinds : [];
+  const requested = normalizePublishArtifactKind(current);
+  if (allowed.includes(requested)) {
+    return requested;
+  }
+  const normalized = normalizeVisualGraphReadiness(readiness);
+  if (allowed.includes('EXECUTABLE') && normalized?.executable) {
+    return 'EXECUTABLE';
+  }
+  if (allowed.includes('DESIGN')) {
+    return 'DESIGN';
+  }
+  return allowed[0] || requested;
+}
+
+function publishArtifactKindControlState(readiness = state.visualCheck?.readiness, current = state.publishArtifactKind) {
+  const normalized = normalizeVisualGraphReadiness(readiness);
+  const allowedKinds = publishArtifactKindsForReadiness(normalized);
+  const selected = preferredPublishArtifactKind(allowedKinds, normalized, current);
+  const constrainedByReadiness = Boolean(normalized);
+  const publishDisabled = constrainedByReadiness && allowedKinds.length === 0;
+  const selectDisabled = constrainedByReadiness && allowedKinds.length <= 1;
+  const fallbackMessage = publishDisabled
+    ? 'Resolve graph validation errors before publishing.'
+    : '';
+  const message = normalized?.summary || fallbackMessage;
+  const title = publishDisabled
+    ? (normalized?.title ? `${normalized.title}: ${message}` : message)
+    : selectDisabled && selected === 'DESIGN'
+      ? 'Server readiness allows DESIGN publication only.'
+      : selectDisabled && selected === 'EXECUTABLE'
+        ? 'Server readiness allows EXECUTABLE publication only.'
+        : '';
+  return {
+    allowedKinds,
+    selected,
+    selectDisabled,
+    publishDisabled,
+    level: normalized?.level || (publishDisabled ? 'error' : 'info'),
+    message,
+    title
+  };
+}
+
+function renderPublishArtifactKindControls() {
+  const select = $('publish-artifact-kind');
+  const button = $('publish-visual-draft');
+  const control = publishArtifactKindControlState();
+  state.publishArtifactKind = control.selected;
+  if (select) {
+    for (const option of select.options || []) {
+      const optionKind = String(option.value || '').trim().toUpperCase();
+      option.disabled = !control.allowedKinds.includes(optionKind);
+    }
+    select.value = control.selected;
+    select.disabled = control.selectDisabled;
+    select.title = control.title || '';
+  }
+  if (button) {
+    button.disabled = control.publishDisabled;
+    button.title = control.publishDisabled ? control.title : '';
+  }
+  return control;
+}
+
 function normalizeDiagnostics(diagnostics) {
   return Array.isArray(diagnostics) ? diagnostics : [];
 }
@@ -4247,9 +4339,23 @@ async function compileVisualDraft() {
 }
 
 async function publishVisualDraft() {
-  setVisualCheck('Publishing...', 'info');
+  const readinessBeforePublish = state.visualCheck?.readiness || null;
+  const diagnosticsBeforePublish = normalizeDiagnostics(state.visualCheck?.diagnostics);
+  const publishControl = publishArtifactKindControlState(readinessBeforePublish, state.publishArtifactKind);
+  state.publishArtifactKind = publishControl.selected;
+  renderPublishArtifactKindControls();
+  if (publishControl.publishDisabled) {
+    setVisualCheck(
+      publishControl.message || 'Visual graph is not publishable.',
+      publishControl.level || 'error',
+      diagnosticsBeforePublish,
+      readinessBeforePublish
+    );
+    return;
+  }
+  setVisualCheck('Publishing...', 'info', [], readinessBeforePublish);
   try {
-    const artifactKind = normalizePublishArtifactKind(state.publishArtifactKind);
+    const artifactKind = publishControl.selected;
     state.publishArtifactKind = artifactKind;
     const previousWarningKey = publishWarningAcknowledgementKey(
       state.currentDraftId,
@@ -4304,7 +4410,7 @@ async function publishVisualDraft() {
       payload.published ? `Published ${publication.publicationId || ''}.` : 'Visual graph was not published.',
       visualCheckLevel(diagnostics, payload.published),
       diagnostics,
-      publication.validation?.readiness
+      payload.validation?.readiness || publication.validation?.readiness
     );
     $('output').textContent = pretty({ status: response.status, publication: payload });
   } catch (error) {
@@ -5310,6 +5416,7 @@ function renderPublicationControls() {
   renderGoldenCaseControls();
   renderGoldenCertificationStatus();
   renderPublicationStatus();
+  renderPublicationReadinessReview();
 }
 
 function renderGoldenCaseControls() {
@@ -5562,6 +5669,82 @@ function publicationOptionLabel(publication) {
   return `${graph} @${revision} · ${artifactKind} · ${publication.publicationId}`;
 }
 
+function publicationReadiness(publication) {
+  return normalizeVisualGraphReadiness(publication?.validation?.readiness);
+}
+
+function publicationReadinessStatusText(publication) {
+  return visualGraphReadinessStatusText(publicationReadiness(publication));
+}
+
+function publicationReadinessReviewRows(publication, limit = 6) {
+  const readiness = publicationReadiness(publication);
+  if (!readiness) {
+    return [];
+  }
+  const nodes = readiness.nodes.filter((node) =>
+    (node.state && node.state !== 'runtime-executable')
+      || node.diagnosticCount > 0
+      || node.warningCount > 0
+      || node.errorCount > 0);
+  return nodes.slice(0, Math.max(0, Number(limit) || 0)).map((node) => ({
+    label: publicationReadinessNodeLabel(publication, node),
+    value: publicationReadinessNodeSummary(node)
+  }));
+}
+
+function publicationReadinessNodeLabel(publication, node) {
+  const draftNode = publication?.draft?.nodes?.find((candidate) => candidate.id === node.nodeId);
+  const label = draftNode?.label || node.nodeId || node.operatorRef || 'node';
+  const state = node.state ? operatorPaletteFacetLabel(node.state) : 'Readiness';
+  return `${label} · ${state}`;
+}
+
+function publicationReadinessNodeSummary(node) {
+  const parts = [
+    node.operatorRef || '',
+    node.summary || node.title || '',
+    node.errorCount ? `${node.errorCount} error` : '',
+    node.warningCount ? `${node.warningCount} warning` : ''
+  ].filter(Boolean);
+  return parts.join(' · ');
+}
+
+function renderPublicationReadinessReview() {
+  const target = $('publication-readiness');
+  if (!target) return;
+  const publication = selectedPublication();
+  const readiness = publicationReadiness(publication);
+  if (!publication || !readiness) {
+    target.hidden = true;
+    target.innerHTML = '';
+    return;
+  }
+  const reviewRows = publicationReadinessReviewRows(publication, Number.MAX_SAFE_INTEGER);
+  const rows = reviewRows.slice(0, 6);
+  const overflow = Math.max(0, reviewRows.length - rows.length);
+  const status = publicationReadinessStatusText(publication) || readiness.summary || readiness.title;
+  target.hidden = false;
+  target.className = `operator-readiness-panel publication-readiness-panel ${escapeHtml(readiness.level || 'info')}`;
+  target.innerHTML = `
+    <div>
+      <strong>${escapeHtml(readiness.title || operatorPaletteFacetLabel(readiness.state) || 'Publication readiness')}</strong>
+      <span>${escapeHtml(status)}</span>
+    </div>
+    ${rows.length ? `<div class="operator-readiness-rows">${rows.map((row) => `
+      <div class="operator-readiness-row">
+        <strong>${escapeHtml(row.label)}</strong>
+        <span>${escapeHtml(row.value)}</span>
+      </div>
+    `).join('')}${overflow ? `
+      <div class="operator-readiness-row">
+        <strong>${escapeHtml(`${overflow} more`)}</strong>
+        <span>${escapeHtml('See frozen validation for the full node readiness list.')}</span>
+      </div>
+    ` : ''}</div>` : ''}
+  `;
+}
+
 function selectedPublicationExecutable() {
   const publication = selectedPublication();
   return Boolean(publication)
@@ -5585,6 +5768,7 @@ function renderPublicationStatus() {
 function setPublicationMessage(text, level = 'info') {
   state.publicationMessage = text ? { text, level } : null;
   renderPublicationStatus();
+  renderPublicationReadinessReview();
 }
 
 function renderRunHistoryControls() {
