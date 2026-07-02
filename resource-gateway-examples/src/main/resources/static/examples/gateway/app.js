@@ -5985,7 +5985,8 @@ function draftHistoryEntries() {
         currentRevision: draft.revision || 0,
         latestRevision: draft.revision || 0,
         revisionCount: 1,
-        changeSummary: draft.revisionMetadata?.changeSummary || 'Saved draft.'
+        changeSummary: draft.revisionMetadata?.changeSummary || 'Saved draft.',
+        reason: draft.revisionMetadata?.reason || ''
       });
     }
   }
@@ -6010,7 +6011,8 @@ function draftHistoryOptionLabel(entry) {
   const revision = entry.active ? (entry.currentRevision || entry.latestRevision || 0) : (entry.latestRevision || 0);
   const status = entry.active ? 'active' : 'deleted';
   const summary = entry.changeSummary ? ` · ${entry.changeSummary}` : '';
-  return `${entry.graphName || entry.draftId} @${revision} · ${status}${summary}`;
+  const reason = entry.reason ? ` · ${entry.reason}` : '';
+  return `${entry.graphName || entry.draftId} @${revision} · ${status}${summary}${reason}`;
 }
 
 function renderDraftRevisionControls() {
@@ -8086,7 +8088,7 @@ async function importDraftBundle() {
     setDraftMessage(`Invalid draft bundle JSON: ${error.message}`, 'error');
     return;
   }
-  const response = await fetch('/api/visual/drafts/import', {
+  const response = await fetch(`/api/visual/drafts/import${draftImportMutationQuery()}`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(bundle)
@@ -8135,6 +8137,15 @@ async function importDraftBundle() {
   );
   renderScenario();
   $('output').textContent = pretty({ status: response.status, draftImport: payload, importedDraft });
+}
+
+function draftImportMutationQuery() {
+  const params = new URLSearchParams();
+  params.set('actor', 'visual-canvas');
+  params.set('changeSource', 'gateway-browser');
+  params.set('changeSummary', 'Imported visual draft package from Drafts panel.');
+  params.set('reason', 'User imported a portable visual graph draft bundle in the browser.');
+  return `?${params.toString()}`;
 }
 
 async function previewSelectedDraftRevision() {

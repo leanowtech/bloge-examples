@@ -524,6 +524,7 @@ public record GraphDraft(
      * @param changeSource source system or UI surface that produced this revision
      * @param changeSummary human-readable change summary
      * @param changedPaths JSON pointer paths touched by this revision when known
+     * @param reason operator-facing reason for audit and migration review
      */
     public record RevisionMetadata(
             String createdAt,
@@ -532,7 +533,8 @@ public record GraphDraft(
             String updatedBy,
             String changeSource,
             String changeSummary,
-            List<String> changedPaths
+            List<String> changedPaths,
+            String reason
     ) {
         /**
          * Creates revision metadata.
@@ -548,18 +550,41 @@ public record GraphDraft(
                     .filter(path -> path != null && !path.isBlank())
                     .distinct()
                     .toList();
+            reason = reason == null ? "" : reason.trim();
+        }
+
+        /**
+         * Backward-compatible constructor for revision metadata created before reason was first-class.
+         */
+        public RevisionMetadata(String createdAt,
+                                String createdBy,
+                                String updatedAt,
+                                String updatedBy,
+                                String changeSource,
+                                String changeSummary,
+                                List<String> changedPaths) {
+            this(createdAt, createdBy, updatedAt, updatedBy, changeSource, changeSummary, changedPaths, "");
         }
 
         public static RevisionMetadata empty() {
-            return new RevisionMetadata("", "", "", "", "", "", List.of());
+            return new RevisionMetadata("", "", "", "", "", "", List.of(), "");
         }
 
         public static RevisionMetadata patch(String actor,
                                              String source,
                                              String summary,
                                              List<String> changedPaths) {
+            return patch(actor, source, summary, changedPaths, "");
+        }
+
+        public static RevisionMetadata patch(String actor,
+                                             String source,
+                                             String summary,
+                                             List<String> changedPaths,
+                                             String reason) {
             return new RevisionMetadata("", "", "", normalize(actor, "visual-canvas"),
-                    normalize(source, "patch"), normalize(summary, "Patched draft."), changedPaths);
+                    normalize(source, "patch"), normalize(summary, "Patched draft."), changedPaths,
+                    normalize(reason, ""));
         }
 
         public RevisionMetadata storedFrom(RevisionMetadata previous, String defaultSummary) {
@@ -570,7 +595,8 @@ public record GraphDraft(
             String summary = normalize(changeSummary, defaultSummary);
             String firstAt = normalize(base.createdAt, normalize(createdAt, now));
             String firstBy = normalize(base.createdBy, normalize(createdBy, actor));
-            return new RevisionMetadata(firstAt, firstBy, now, actor, source, summary, changedPaths);
+            return new RevisionMetadata(firstAt, firstBy, now, actor, source, summary, changedPaths,
+                    normalize(reason, ""));
         }
 
         private static String normalize(String value, String fallback) {

@@ -175,10 +175,18 @@ public class VisualGraphDraftController {
      * Imports a portable draft package as a new stored draft.
      *
      * @param bundle exported draft package
+     * @param actor user or system actor importing the draft package
+     * @param changeSource UI surface or integration source importing the package
+     * @param changeSummary human-readable import summary
+     * @param reason operator-facing reason for importing the package
      * @return import result with a stored draft or contract diagnostics
      */
     @PostMapping("/import")
-    public ResponseEntity<GraphDraftImportResult> importDraft(@RequestBody GraphDraftExportBundle bundle) {
+    public ResponseEntity<GraphDraftImportResult> importDraft(@RequestBody GraphDraftExportBundle bundle,
+                                                              @RequestParam(defaultValue = "") String actor,
+                                                              @RequestParam(defaultValue = "") String changeSource,
+                                                              @RequestParam(defaultValue = "") String changeSummary,
+                                                              @RequestParam(defaultValue = "") String reason) {
         List<VisualDiagnostic> diagnostics = exportBundleContractDiagnostics(bundle);
         if (!diagnostics.isEmpty()) {
             return ResponseEntity.badRequest()
@@ -187,16 +195,24 @@ public class VisualGraphDraftController {
         GraphDraft imported = withBundleOperatorSnapshots(bundle.draft(), bundle.operatorSnapshots())
                 .withIdentity("", 0)
                 .withRevisionMetadata(GraphDraft.RevisionMetadata.patch(
-                        "visual-canvas",
-                        "import",
-                        "Imported draft from export bundle.",
-                        List.of()
+                        actor,
+                        changeSource.isBlank() ? "import" : changeSource,
+                        changeSummary.isBlank() ? "Imported draft from export bundle." : changeSummary,
+                        List.of("/"),
+                        reason
                 ));
         GraphDraft stored = repository.save(withCurrentOrProvidedOperatorSnapshotState(imported));
         VisualValidationResult validation = validator.validate(stored);
         GraphDraftDependencyReport dependencyReport = GraphDraftDependencyReport.from(stored, catalog);
         return ResponseEntity.status(HttpStatus.CREATED)
                 .body(GraphDraftImportResult.imported(stored, validation, dependencyReport));
+    }
+
+    /**
+     * Backward-compatible direct-call helper for tests and non-Spring callers.
+     */
+    public ResponseEntity<GraphDraftImportResult> importDraft(GraphDraftExportBundle bundle) {
+        return importDraft(bundle, "", "", "", "");
     }
 
     /**

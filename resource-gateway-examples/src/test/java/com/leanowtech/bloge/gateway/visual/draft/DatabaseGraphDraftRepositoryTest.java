@@ -84,7 +84,8 @@ class DatabaseGraphDraftRepositoryTest {
                         "bob@example.com",
                         "browser-save",
                         "Tune policy node",
-                        List.of("/nodes/0/config/mode")
+                        List.of("/nodes/0/config/mode"),
+                        "Reviewed imported design draft before saving."
                 ))).orElseThrow();
 
         DatabaseGraphDraftRepository reloaded = new DatabaseGraphDraftRepository(jdbc, objectMapper);
@@ -97,6 +98,8 @@ class DatabaseGraphDraftRepositoryTest {
         assertThat(reloadedSecond.revisionMetadata().changeSource()).isEqualTo("browser-save");
         assertThat(reloadedSecond.revisionMetadata().changeSummary()).isEqualTo("Tune policy node");
         assertThat(reloadedSecond.revisionMetadata().changedPaths()).containsExactly("/nodes/0/config/mode");
+        assertThat(reloadedSecond.revisionMetadata().reason())
+                .isEqualTo("Reviewed imported design draft before saving.");
     }
 
     @Test
@@ -173,7 +176,8 @@ class DatabaseGraphDraftRepositoryTest {
                 "auditor",
                 "history-index-test",
                 "Retain deleted draft history.",
-                List.of("/")
+                List.of("/"),
+                "Confirm retained history remains auditable."
         ));
 
         List<GraphDraftHistorySummary> history = repository.history();
@@ -199,6 +203,7 @@ class DatabaseGraphDraftRepositoryTest {
                     assertThat(summary.revisionCount()).isEqualTo(2);
                     assertThat(summary.updatedBy()).isEqualTo("auditor");
                     assertThat(summary.changeSource()).isEqualTo("history-index-test");
+                    assertThat(summary.reason()).isEqualTo("Confirm retained history remains auditable.");
                 });
     }
 

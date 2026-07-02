@@ -537,6 +537,49 @@ class VisualGraphDraftControllerTest {
     }
 
     @Test
+    void importDraftBundleStoresCallerProvidedRevisionMetadata() {
+        DefaultVisualOperatorCatalog catalog = VisualCatalogTestSupport.catalogWithLibrary(
+                VisualCatalogTestSupport.eligibilityLibrary("integer"));
+        VisualGraphDraftController sourceController =
+                controllerWithCatalog(catalog, new InMemoryGraphDraftRepository());
+        VisualGraphDraftController importController =
+                controllerWithCatalog(catalog, new InMemoryGraphDraftRepository());
+        GraphDraft stored = sourceController.create(eligibilityDraft(graphInputSchema(
+                Map.of(
+                        "score", Map.of("type", "integer"),
+                        "amount", Map.of("type", "number")
+                )
+        )));
+        GraphDraftExportBundle bundle = sourceController.exportDraft(stored.draftId()).getBody();
+
+        ResponseEntity<GraphDraftImportResult> response = importController.importDraft(
+                bundle,
+                "migration-bot",
+                "portfolio-migration",
+                "Imported draft from staging export.",
+                "Preserve a reviewed design-only graph across environments.");
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.CREATED);
+        assertThat(response.getBody()).isNotNull();
+        GraphDraft imported = response.getBody().draft();
+        assertThat(imported.revisionMetadata().createdBy()).isEqualTo("migration-bot");
+        assertThat(imported.revisionMetadata().updatedBy()).isEqualTo("migration-bot");
+        assertThat(imported.revisionMetadata().changeSource()).isEqualTo("portfolio-migration");
+        assertThat(imported.revisionMetadata().changeSummary()).isEqualTo("Imported draft from staging export.");
+        assertThat(imported.revisionMetadata().changedPaths()).containsExactly("/");
+        assertThat(imported.revisionMetadata().reason())
+                .isEqualTo("Preserve a reviewed design-only graph across environments.");
+        assertThat(importController.history())
+                .filteredOn(summary -> summary.draftId().equals(imported.draftId()))
+                .singleElement()
+                .satisfies(summary -> {
+                    assertThat(summary.changeSummary()).isEqualTo("Imported draft from staging export.");
+                    assertThat(summary.reason())
+                            .isEqualTo("Preserve a reviewed design-only graph across environments.");
+                });
+    }
+
+    @Test
     void importDraftBundleReturnsTargetEnvironmentDiagnosticsForMissingOperators() {
         DefaultVisualOperatorCatalog sourceCatalog = VisualCatalogTestSupport.catalogWithLibrary(
                 VisualCatalogTestSupport.eligibilityLibrary("integer"));

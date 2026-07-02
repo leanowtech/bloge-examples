@@ -275,6 +275,8 @@ class VisualAuthoringAppJsTest {
                 .contains("function draftHistoryEntries()")
                 .contains("function currentDraftIsActive()")
                 .contains("entry.active ? 'active' : 'deleted'")
+                .contains("draft.revisionMetadata?.reason")
+                .contains("entry.reason")
                 .contains("/api/visual/drafts/${encodeURIComponent(state.currentDraftId)}/revisions")
                 .contains("/diff/${encodeURIComponent(target.revision || 0)}")
                 .contains("/restore")
@@ -3609,7 +3611,7 @@ class VisualAuthoringAppJsTest {
                         })
                       };
                     }
-                    if (url === '/api/visual/drafts/import') {
+                    if (String(url).startsWith('/api/visual/drafts/import')) {
                       return {
                         ok: true,
                         status: 201,
@@ -3701,11 +3703,17 @@ class VisualAuthoringAppJsTest {
                     }));
                 }).then((transferResult) => {
                   const importBody = JSON.parse(transferResult.transferFetches[1].body || '{}');
+                  const importUrl = transferResult.transferFetches[1].url;
+                  const importQuery = new URLSearchParams(importUrl.split('?')[1] || '');
                   const exportVisualCheck = transferResult.transferVisualChecks[0] || {};
                   const importVisualCheck = transferResult.transferVisualChecks[1] || {};
                   const transferChecks = [
                     ['draft export endpoint', transferResult.transferFetches[0].url, '/api/visual/drafts/draft-risk/export'],
-                    ['draft import endpoint', transferResult.transferFetches[1].url, '/api/visual/drafts/import'],
+                    ['draft import endpoint', String(importUrl.startsWith('/api/visual/drafts/import?')), 'true'],
+                    ['draft import actor', importQuery.get('actor'), 'visual-canvas'],
+                    ['draft import source', importQuery.get('changeSource'), 'gateway-browser'],
+                    ['draft import summary', importQuery.get('changeSummary'), 'Imported visual draft package from Drafts panel.'],
+                    ['draft import reason', importQuery.get('reason'), 'User imported a portable visual graph draft bundle in the browser.'],
                     ['draft import body schema', importBody.schemaVersion, 'bloge.visualGraphDraftExport.v1'],
                     ['draft bundle carries validation', String(transferResult.draftBundleHasValidation), 'true'],
                     ['draft bundle carries dependency report', String(transferResult.draftBundleHasDependencyReport), 'true'],

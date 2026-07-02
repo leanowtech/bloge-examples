@@ -15,6 +15,7 @@ import java.util.List;
  * @param updatedBy latest revision actor
  * @param changeSource latest revision change source
  * @param changeSummary latest revision summary
+ * @param reason latest revision reason for audit and migration review
  */
 public record GraphDraftHistorySummary(
         String draftId,
@@ -26,7 +27,8 @@ public record GraphDraftHistorySummary(
         String updatedAt,
         String updatedBy,
         String changeSource,
-        String changeSummary
+        String changeSummary,
+        String reason
 ) {
     /**
      * Builds a summary from a current draft pointer and retained revisions.
@@ -56,7 +58,8 @@ public record GraphDraftHistorySummary(
                 metadata.updatedAt(),
                 metadata.updatedBy(),
                 metadata.changeSource(),
-                metadata.changeSummary()
+                metadata.changeSummary(),
+                metadata.reason()
         );
     }
 }

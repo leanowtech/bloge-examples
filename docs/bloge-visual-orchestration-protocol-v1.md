@@ -1375,9 +1375,10 @@ POST /api/visual/drafts/{draftId}/revisions/{revision}/restore
 对比和回滚前预览。
 `history` 端点返回轻量 `GraphDraftHistorySummary` 索引，而不是完整 draft JSON；
 每条 summary 暴露 `draftId`、`graphName`、`active`、`currentRevision`、
-`latestRevision`、`revisionCount` 以及最新 revision 的 actor/source/summary。
+`latestRevision`、`revisionCount` 以及最新 revision 的 actor/source/summary/reason。
 它让浏览器和外部控制面可以发现 deleted-but-recoverable draft，而不要求作者记住
-已删除 draft id。
+已删除 draft id；也让跨环境导入的设计资产原因可以被列表级控制面直接审阅，而不必
+再拉完整 revision JSON。
 `diff` 端点返回 `bloge.visualGraphDraftDiff.v1`，按 graph-level、node-level
 和 edge-level 分解变更，包含最高 `changeRisk`、`changeCategories`、摘要、
 added/removed/changed 节点与边计数，以及 input schema、output、operatorRef、
@@ -1443,6 +1444,12 @@ resource-gateway 示例还提供 portable draft export/import：
 GET /api/visual/drafts/{draftId}/export
 POST /api/visual/drafts/import
 ```
+
+`POST /api/visual/drafts/import` 可带 `actor`、`changeSource`、`changeSummary`
+和 `reason` query metadata；这些字段会进入新 draft revision 的
+`GraphDraft.revisionMetadata`。导入是新设计资产创建，不是覆盖原 draft identity，
+因此这组元数据用于跨环境 lineage、迁移审计和人工复核，而不是把
+schema-only 或 catalog-repair-required 图误提升为可执行制品。
 
 `bloge.visualGraphDraftExport.v1` 包含 source draft identity、revision、draft
 snapshot、operator snapshots、export-time diagnostics、完整 `validation`，以及源环境
