@@ -8136,9 +8136,12 @@ async function importDraftBundle() {
   syncGraphInputSchemaTextFromBuilder({ render: false });
   syncComposerFromBuilder({ render: false });
   const hasImportErrors = diagnostics.some((diagnostic) => String(diagnostic.level || '').toUpperCase() === 'ERROR');
+  const sourceLineage = payload?.sourceDraftId
+    ? ` from ${payload.sourceDraftId}@${payload.sourceRevision || 0}`
+    : '';
   const importMessage = diagnostics.length
-    ? `Imported ${state.currentDraftId}@${state.currentDraftRevision} with ${hasImportErrors ? 'errors' : 'warnings'}: ${diagnosticMessage(diagnostics, 'review diagnostics')}`
-    : `Imported ${state.currentDraftId}@${state.currentDraftRevision}.`;
+    ? `Imported ${state.currentDraftId}@${state.currentDraftRevision}${sourceLineage} with ${hasImportErrors ? 'errors' : 'warnings'}: ${diagnosticMessage(diagnostics, 'review diagnostics')}`
+    : `Imported ${state.currentDraftId}@${state.currentDraftRevision}${sourceLineage}.`;
   setDraftMessage(
     importMessage,
     hasImportErrors ? 'error' : 'success'

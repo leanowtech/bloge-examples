@@ -96,6 +96,9 @@ class GraphDraftValidatorTest {
                 .anySatisfy(diagnostic -> {
                     assertThat(diagnostic.code()).isEqualTo("visual.draft.schemaVersion.unsupported");
                     assertThat(diagnostic.target()).isEqualTo("/schemaVersion");
+                    assertThat(diagnostic.metadata())
+                            .containsEntry("actual", "bloge.visualGraphDraft.v2")
+                            .containsEntry("expected", GraphDraft.SCHEMA_VERSION);
                 });
     }
 

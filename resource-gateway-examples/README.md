@@ -522,9 +522,10 @@ bundle creates a new draft identity and revision, refreshes node fingerprints
 and operator snapshots from the active catalog for the imported draft's scope,
 falls back to bundle-provided snapshots when the target catalog cannot resolve an
 operator, rejects unsupported
-bundle or draft contracts before storage, and returns a
-`bloge.visualGraphDraftImportResult.v1` payload with target-environment
-diagnostics plus validation/readiness and a dependency report for repairable
+bundle or draft contracts before storage with `actual`/`expected` diagnostic
+metadata for schemaVersion mismatches, and returns a
+`bloge.visualGraphDraftImportResult.v1` payload with source bundle schema,
+source draft id/revision, target-environment diagnostics plus validation/readiness, and a dependency report for repairable
 issues such as missing operators, scope-mismatched operators, or schema-only
 design graphs. The browser Drafts panel sends
 `visual-canvas`/`gateway-browser` evidence for new draft saves and bundle imports. The Drafts panel
@@ -1377,7 +1378,7 @@ Seven `.bloge` graphs live in `src/main/resources/bloge/gateway/`:
 | `GraphDraftDependencyReport` | Machine-readable dependency report used for stored drafts, migration bundles, import results, and frozen publications, with distinct operatorRef usage, per-node binding/edge upstream and downstream lineage, source/lowering/readiness counts, saved-vs-current/scope-mismatch fingerprint state, and scope policy diagnostics |
 | `GraphDraftRevisionRestoreRequest` | Governed restore request for turning one immutable draft revision into a new latest revision with optimistic locking and actor/source/summary/reason audit metadata |
 | `GraphDraftExportBundle` | Portable draft package with source identity, draft snapshot, operator snapshots, export-time diagnostics, validation/readiness, and source dependency report |
-| `GraphDraftImportResult` | Import response contract with stored draft identity, target-environment compatibility diagnostics, validation/readiness, and dependency report |
+| `GraphDraftImportResult` | Import response contract with source bundle/draft identity, stored draft identity, target-environment compatibility diagnostics, validation/readiness, and dependency report |
 | `DatabaseGraphDraftRepository` | H2-backed graph draft repository with revision assignment, immutable revision history, expected-revision guarded updates, deletion audit snapshots, and retained history for deleted-draft recovery |
 | `GraphDraftValidator` | Validates the `bloge.visualGraphDraft.v1` draft contract, `bloge.visualLayout.v1` presentation contract including node/edge coverage, operator references, operator fingerprint drift, operator scope policy, request-response runtime capability gates for streaming/durable operators, schema-only design operator authoring, non-idempotent side-effect and secret-backed execution governance warnings, graph input `contextPath` bindings, binding kind and edge kind allow-lists, literal constants, expression references, required schema inputs, node config against `configSchema`, port-aware node bindings, DSL-safe source/target/output port segments, typed data edges, explicit dependency edges, branch route edges, edge identity/connection uniqueness, data edge/semantic dependency consistency, DAG shape, output schema selection, and output-reachability warnings for dangling nodes |
 | `VisualConnectionCheckService` | Reuses draft validation to accept or reject one proposed canvas edge before the browser writes a binding, including schema, source/target port-segment, path diagnostics, and candidate draft validation/readiness |

@@ -206,7 +206,7 @@ public class VisualGraphDraftController {
         List<VisualDiagnostic> diagnostics = exportBundleContractDiagnostics(bundle);
         if (!diagnostics.isEmpty()) {
             return ResponseEntity.badRequest()
-                    .body(GraphDraftImportResult.rejected(diagnostics));
+                    .body(GraphDraftImportResult.rejected(bundle, diagnostics));
         }
         GraphDraft imported = withBundleOperatorSnapshots(bundle.draft(), bundle.operatorSnapshots())
                 .withIdentity("", 0)
@@ -221,7 +221,7 @@ public class VisualGraphDraftController {
         VisualValidationResult validation = validator.validate(stored);
         GraphDraftDependencyReport dependencyReport = GraphDraftDependencyReport.from(stored, catalog);
         return ResponseEntity.status(HttpStatus.CREATED)
-                .body(GraphDraftImportResult.imported(stored, validation, dependencyReport));
+                .body(GraphDraftImportResult.imported(bundle, stored, validation, dependencyReport));
     }
 
     /**
@@ -970,10 +970,12 @@ public class VisualGraphDraftController {
         }
         List<VisualDiagnostic> diagnostics = new ArrayList<>();
         if (!GraphDraft.SCHEMA_VERSION.equals(draft.schemaVersion())) {
+            String actual = draft.schemaVersion();
             diagnostics.add(VisualDiagnostic.error("visual.draft.schemaVersion.unsupported",
                     "Graph draft schemaVersion '%s' is unsupported; visual authoring supports [%s]."
-                            .formatted(draft.schemaVersion(), GraphDraft.SCHEMA_VERSION),
-                    "/schemaVersion"));
+                            .formatted(actual, GraphDraft.SCHEMA_VERSION),
+                    "/schemaVersion",
+                    Map.of("actual", actual, "expected", GraphDraft.SCHEMA_VERSION)));
         }
         if (!GraphDraft.isSupportedStatus(draft.status())) {
             diagnostics.add(VisualDiagnostic.error("visual.draft.status.unsupported",
@@ -991,10 +993,12 @@ public class VisualGraphDraftController {
         }
         List<VisualDiagnostic> diagnostics = new ArrayList<>();
         if (!GraphDraftExportBundle.SCHEMA_VERSION.equals(bundle.schemaVersion())) {
+            String actual = bundle.schemaVersion();
             diagnostics.add(VisualDiagnostic.error("visual.draftExport.schemaVersion.unsupported",
                     "Graph draft export schemaVersion '%s' is unsupported; visual authoring supports [%s]."
-                            .formatted(bundle.schemaVersion(), GraphDraftExportBundle.SCHEMA_VERSION),
-                    "/schemaVersion"));
+                            .formatted(actual, GraphDraftExportBundle.SCHEMA_VERSION),
+                    "/schemaVersion",
+                    Map.of("actual", actual, "expected", GraphDraftExportBundle.SCHEMA_VERSION)));
         }
         if (bundle.draft() == null) {
             diagnostics.add(VisualDiagnostic.error("visual.draftExport.draftMissing",
@@ -1012,7 +1016,7 @@ public class VisualGraphDraftController {
                 ? "/draft" + diagnostic.target()
                 : "/draft/" + diagnostic.target();
         return new VisualDiagnostic(diagnostic.level(), diagnostic.code(), diagnostic.message(), target,
-                diagnostic.line(), diagnostic.column());
+                diagnostic.line(), diagnostic.column(), diagnostic.metadata());
     }
 
     private ResponseEntity<GraphDraftPatchResult> conflictResponse(String draftId,

@@ -136,7 +136,10 @@ class VisualAuthoringBrowserWorkflowTest {
         Map<String, Object> draftImport = postMap("/api/visual/drafts/import", draftExport, HttpStatus.CREATED);
         assertThat(draftImport)
                 .containsEntry("schemaVersion", "bloge.visualGraphDraftImportResult.v1")
-                .containsEntry("imported", true);
+                .containsEntry("imported", true)
+                .containsEntry("sourceBundleSchemaVersion", "bloge.visualGraphDraftExport.v1")
+                .containsEntry("sourceDraftId", storedDraft.draftId())
+                .containsEntry("sourceRevision", 1);
         assertThat((List<Map<String, Object>>) draftImport.get("diagnostics")).isEmpty();
         Map<String, Object> importedDraft = (Map<String, Object>) draftImport.get("draft");
         assertThat(importedDraft)

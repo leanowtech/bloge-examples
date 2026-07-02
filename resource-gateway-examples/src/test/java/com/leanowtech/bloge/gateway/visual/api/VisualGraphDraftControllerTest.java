@@ -93,6 +93,9 @@ class VisualGraphDraftControllerTest {
                 .anySatisfy(diagnostic -> {
                     assertThat(diagnostic.code()).isEqualTo("visual.draft.schemaVersion.unsupported");
                     assertThat(diagnostic.target()).isEqualTo("/schemaVersion");
+                    assertThat(diagnostic.metadata())
+                            .containsEntry("actual", "bloge.visualGraphDraft.v2")
+                            .containsEntry("expected", GraphDraft.SCHEMA_VERSION);
                 });
     }
 
@@ -578,6 +581,9 @@ class VisualGraphDraftControllerTest {
         assertThat(response.getBody()).isNotNull();
         assertThat(response.getBody().schemaVersion()).isEqualTo(GraphDraftImportResult.SCHEMA_VERSION);
         assertThat(response.getBody().imported()).isTrue();
+        assertThat(response.getBody().sourceBundleSchemaVersion()).isEqualTo(GraphDraftExportBundle.SCHEMA_VERSION);
+        assertThat(response.getBody().sourceDraftId()).isEqualTo(stored.draftId());
+        assertThat(response.getBody().sourceRevision()).isEqualTo(stored.revision());
         assertThat(response.getBody().diagnostics()).isEmpty();
         assertThat(response.getBody().validation().valid()).isTrue();
         assertThat(response.getBody().validation().readiness().state()).isEqualTo("runtime-executable");
@@ -665,6 +671,8 @@ class VisualGraphDraftControllerTest {
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.CREATED);
         assertThat(response.getBody()).isNotNull();
         assertThat(response.getBody().imported()).isTrue();
+        assertThat(response.getBody().sourceDraftId()).isEqualTo(stored.draftId());
+        assertThat(response.getBody().sourceRevision()).isEqualTo(stored.revision());
         assertThat(response.getBody().draft().draftId()).isNotBlank();
         assertThat(targetRepository.all()).containsExactly(response.getBody().draft());
         assertThat(response.getBody().diagnostics())
@@ -791,10 +799,19 @@ class VisualGraphDraftControllerTest {
         assertThat(response.getBody()).isNotNull();
         GraphDraftImportResult result = response.getBody();
         assertThat(result.imported()).isFalse();
+        assertThat(result.sourceBundleSchemaVersion()).isEqualTo("bloge.visualGraphDraftExport.v2");
+        assertThat(result.sourceDraftId()).isEqualTo("source-draft");
+        assertThat(result.sourceRevision()).isEqualTo(7);
         assertThat(result.draft()).isNull();
         assertThat(result.diagnostics())
-                .extracting("code")
-                .containsExactly("visual.draftExport.schemaVersion.unsupported");
+                .singleElement()
+                .satisfies(diagnostic -> {
+                    assertThat(diagnostic.code()).isEqualTo("visual.draftExport.schemaVersion.unsupported");
+                    assertThat(diagnostic.target()).isEqualTo("/schemaVersion");
+                    assertThat(diagnostic.metadata())
+                            .containsEntry("actual", "bloge.visualGraphDraftExport.v2")
+                            .containsEntry("expected", GraphDraftExportBundle.SCHEMA_VERSION);
+                });
         assertThat(repository.all()).isEmpty();
     }
 
@@ -823,11 +840,17 @@ class VisualGraphDraftControllerTest {
         assertThat(response.getBody()).isNotNull();
         GraphDraftImportResult result = response.getBody();
         assertThat(result.imported()).isFalse();
+        assertThat(result.sourceBundleSchemaVersion()).isEqualTo(GraphDraftExportBundle.SCHEMA_VERSION);
+        assertThat(result.sourceDraftId()).isEqualTo("source-draft");
+        assertThat(result.sourceRevision()).isEqualTo(7);
         assertThat(result.draft()).isNull();
         assertThat(result.diagnostics())
                 .anySatisfy(diagnostic -> {
                     assertThat(diagnostic.code()).isEqualTo("visual.draft.schemaVersion.unsupported");
                     assertThat(diagnostic.target()).isEqualTo("/draft/schemaVersion");
+                    assertThat(diagnostic.metadata())
+                            .containsEntry("actual", "bloge.visualGraphDraft.v2")
+                            .containsEntry("expected", GraphDraft.SCHEMA_VERSION);
                 });
         assertThat(repository.all()).isEmpty();
     }
@@ -1186,6 +1209,9 @@ class VisualGraphDraftControllerTest {
                 .anySatisfy(diagnostic -> {
                     assertThat(diagnostic.code()).isEqualTo("visual.draft.schemaVersion.unsupported");
                     assertThat(diagnostic.target()).isEqualTo("/schemaVersion");
+                    assertThat(diagnostic.metadata())
+                            .containsEntry("actual", "bloge.visualGraphDraft.v2")
+                            .containsEntry("expected", GraphDraft.SCHEMA_VERSION);
                 });
         assertThat(controller.get(stored.draftId()).getBody().schemaVersion()).isEqualTo(GraphDraft.SCHEMA_VERSION);
         assertThat(controller.get(stored.draftId()).getBody().graphName()).isEqualTo(stored.graphName());

@@ -3633,6 +3633,9 @@ class VisualAuthoringAppJsTest {
                         json: async () => ({
                           schemaVersion: 'bloge.visualGraphDraftImportResult.v1',
                           imported: true,
+                          sourceBundleSchemaVersion: 'bloge.visualGraphDraftExport.v1',
+                          sourceDraftId: 'draft-risk',
+                          sourceRevision: 4,
                           draft: transferDraft,
                           diagnostics: [],
                           validation: {
@@ -3734,7 +3737,7 @@ class VisualAuthoringAppJsTest {
                     ['draft bundle carries dependency report', String(transferResult.draftBundleHasDependencyReport), 'true'],
                     ['draft export message', transferResult.transferDraftMessages[0].text, 'Exported draft-risk@4.'],
                     ['draft export visual readiness', exportVisualCheck.readiness?.state, 'design-only'],
-                    ['draft import message', transferResult.transferDraftMessages[1].text, 'Imported draft-imported@1.'],
+                    ['draft import message', transferResult.transferDraftMessages[1].text, 'Imported draft-imported@1 from draft-risk@4.'],
                     ['draft import visual readiness', importVisualCheck.readiness?.state, 'design-only'],
                     ['draft import current id', transferResult.currentDraftId, 'draft-imported'],
                     ['draft import current revision', transferResult.currentDraftRevision, 1],

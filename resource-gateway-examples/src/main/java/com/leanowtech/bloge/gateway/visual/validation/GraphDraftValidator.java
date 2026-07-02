@@ -153,10 +153,12 @@ public class GraphDraftValidator {
                     diagnostics));
         }
         if (!SUPPORTED_DRAFT_SCHEMA_VERSIONS.contains(draft.schemaVersion())) {
+            String actual = draft.schemaVersion();
             diagnostics.add(VisualDiagnostic.error("visual.draft.schemaVersion.unsupported",
                     "Graph draft schemaVersion '%s' is unsupported; visual authoring supports %s."
-                            .formatted(draft.schemaVersion(), SUPPORTED_DRAFT_SCHEMA_VERSIONS),
-                    "/schemaVersion"));
+                            .formatted(actual, SUPPORTED_DRAFT_SCHEMA_VERSIONS),
+                    "/schemaVersion",
+                    Map.of("actual", actual, "expected", GraphDraft.SCHEMA_VERSION)));
         }
         if (!GraphDraft.isSupportedStatus(draft.status())) {
             diagnostics.add(VisualDiagnostic.error("visual.draft.status.unsupported",
