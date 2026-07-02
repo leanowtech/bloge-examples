@@ -1473,6 +1473,29 @@ class VisualAuthoringAppJsTest {
                   }]
                 });
                 const designOnlyProfileHtml = context.renderLibraryProfilePanel(designOnlyProfile);
+                const serverRuntimeBlockedProfileHtml = context.renderLibraryProfilePanel({
+                  libraryId: 'server-reviewed',
+                  version: '1.0.0',
+                  status: 'ACTIVE',
+                  operatorCount: 1,
+                  inputPortCount: 1,
+                  outputPortCount: 1,
+                  requiredInputCount: 1,
+                  configFieldCount: 0,
+                  outputFieldCount: 1,
+                  runtimeBlockedOperatorCount: 1,
+                  operators: [{
+                    label: 'Native Binding',
+                    loweringMode: 'native',
+                    inputPortCount: 1,
+                    outputPortCount: 1,
+                    requiredInputCount: 1,
+                    inputFields: [{ port: 'inputs', path: 'score', required: true, dslPathSafe: true }],
+                    outputFields: [{ port: 'output', path: 'decision', required: false, dslPathSafe: true }],
+                    configFields: [],
+                    runtimeReadinessTitle: 'Runtime binding unresolved'
+                  }]
+                });
                 const mixedCandidateSummary = context.bindingCandidateSummary([
                   { compatibility: { ok: true, message: '' } },
                   { compatibility: { ok: false, message: 'source type string cannot feed target type integer' } }
@@ -2615,13 +2638,15 @@ class VisualAuthoringAppJsTest {
                   ['library profile non-idempotent operators', libraryProfile.nonIdempotentOperatorCount, 1],
                   ['library profile secret operators', libraryProfile.secretOperatorCount, 1],
                   ['library profile policy-restricted operators', libraryProfile.policyRestrictedOperatorCount, 1],
+                  ['library profile runtime-blocked operators', libraryProfile.runtimeBlockedOperatorCount, 1],
+                  ['library profile governance-review operators', governanceRiskProfile.governanceReviewOperatorCount, 1],
                   ['library profile operator input field count', libraryProfile.operators[0].inputFields.length, 3],
                   ['library profile operator output field count', libraryProfile.operators[0].outputFields.length, 2],
                   ['library profile operator config field count', libraryProfile.operators[0].configFields.length, 1],
                   ['library profile level', context.libraryProfileLevel(libraryProfile), 'warning'],
                   ['library profile runtime risk level', context.libraryProfileLevel(runtimeRiskProfile), 'warning'],
                   ['library profile governance risk level', context.libraryProfileLevel(governanceRiskProfile), 'warning'],
-                  ['library profile external-only level', context.libraryProfileLevel(externalOnlyProfile), 'info'],
+                  ['library profile external-only level', context.libraryProfileLevel(externalOnlyProfile), 'warning'],
                   ['library profile policy-only level', context.libraryProfileLevel(policyOnlyProfile), 'info'],
                   ['library profile policy-only operators', policyOnlyProfile.policyRestrictedOperatorCount, 1],
                   ['library profile policy-only summary', policyOnlyProfile.operators[0].policySummary, 'tenants gold, silver, bronze +1; namespaces lending; env prod'],
@@ -2633,6 +2658,8 @@ class VisualAuthoringAppJsTest {
                   ['library profile html non-idempotent chip', String(libraryProfileHtml.includes('1 non-idempotent operators')), 'true'],
                   ['library profile html policy chip', String(libraryProfileHtml.includes('1 scope-restricted operators')), 'true'],
                   ['library profile html design-only chip', String(designOnlyProfileHtml.includes('1 design-only operators')), 'true'],
+                  ['library profile html server runtime-blocked chip', String(serverRuntimeBlockedProfileHtml.includes('1 runtime-blocked operators')), 'true'],
+                  ['library profile html server readiness title', String(serverRuntimeBlockedProfileHtml.includes('readiness Runtime binding unresolved')), 'true'],
                   ['library profile html policy summary', String(libraryProfileHtml.includes('policy tenants demo-tenant; namespaces local; env browser')), 'true'],
                   ['library profile policy-only html summary', String(policyOnlyProfileHtml.includes('policy tenants gold, silver, bronze +1; namespaces lending; env prod')), 'true'],
                   ['library profile html includes required input field', String(libraryProfileHtml.includes('inputs.customer.id*')), 'true'],

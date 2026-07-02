@@ -2779,7 +2779,8 @@ function renderLibraryProfile() {
   const target = $('library-profile');
   if (!target) return;
   target.hidden = false;
-  target.innerHTML = renderLibraryProfilePanel(libraryProfileFromText(state.libraryImportText || '{}'));
+  const serverProfile = operatorLibraryServerProfileForCurrentText();
+  target.innerHTML = renderLibraryProfilePanel(serverProfile || libraryProfileFromText(state.libraryImportText || '{}'));
 }
 
 function renderLibraryProfilePanel(profile) {
@@ -2816,6 +2817,15 @@ function renderLibraryProfilePanel(profile) {
   if (profile.policyRestrictedOperatorCount) {
     warningChips.push(`${profile.policyRestrictedOperatorCount} scope-restricted operators`);
   }
+  if (profile.catalogRepairOperatorCount) {
+    warningChips.push(`${profile.catalogRepairOperatorCount} catalog-repair operators`);
+  }
+  if (profile.runtimeBlockedOperatorCount) {
+    warningChips.push(`${profile.runtimeBlockedOperatorCount} runtime-blocked operators`);
+  }
+  if (profile.governanceReviewOperatorCount) {
+    warningChips.push(`${profile.governanceReviewOperatorCount} governance-review operators`);
+  }
   if (profile.designOnlyOperatorCount) {
     warningChips.push(`${profile.designOnlyOperatorCount} design-only operators`);
   }
@@ -2835,6 +2845,7 @@ function renderLibraryProfilePanel(profile) {
       ${operator.outputUnionSummary ? `<small class="schema-union-summary">out union ${escapeHtml(operator.outputUnionSummary)}</small>` : ''}
       ${operator.configUnionSummary ? `<small class="schema-union-summary">config union ${escapeHtml(operator.configUnionSummary)}</small>` : ''}
       ${operator.policySummary ? `<small class="schema-union-summary">policy ${escapeHtml(operator.policySummary)}</small>` : ''}
+      ${operator.runtimeReadinessTitle ? `<small class="schema-union-summary">readiness ${escapeHtml(operator.runtimeReadinessTitle)}</small>` : ''}
     </div>
   `).join('');
   const remaining = profile.operators.length > 5
@@ -3323,13 +3334,18 @@ async function openLibraryImpactPublicationTarget(publicationId, nodeIndex = -1)
 }
 
 function libraryProfileLevel(profile) {
+  if (profile.catalogRepairOperatorCount) {
+    return 'error';
+  }
   if (profile.dslUnsafeFieldCount || !profile.operatorCount) {
     return 'warning';
   }
   if (profile.streamingOperatorCount
       || profile.durableOperatorCount
       || profile.nonIdempotentOperatorCount
-      || profile.secretOperatorCount) {
+      || profile.secretOperatorCount
+      || profile.runtimeBlockedOperatorCount
+      || profile.governanceReviewOperatorCount) {
     return 'warning';
   }
   if (profile.externalOperatorCount || profile.policyRestrictedOperatorCount) {
@@ -3352,6 +3368,55 @@ function libraryProfileFromText(text) {
   }
 }
 
+function operatorLibraryServerProfileForCurrentText() {
+  const message = state.libraryMessage || {};
+  const profile = normalizeOperatorLibraryServerProfile(message.profile);
+  if (!profile) {
+    return null;
+  }
+  return message.profileSourceText === (state.libraryImportText || '') ? profile : null;
+}
+
+function normalizeOperatorLibraryServerProfile(profile) {
+  if (!profile || typeof profile !== 'object' || Array.isArray(profile)) {
+    return null;
+  }
+  const normalizedOperators = Array.isArray(profile.operators)
+    ? profile.operators.filter((operator) => operator && typeof operator === 'object').map((operator) => ({
+      ...operator,
+      inputFields: Array.isArray(operator.inputFields) ? operator.inputFields : [],
+      outputFields: Array.isArray(operator.outputFields) ? operator.outputFields : [],
+      configFields: Array.isArray(operator.configFields) ? operator.configFields : []
+    }))
+    : [];
+  return {
+    ...profile,
+    libraryId: String(profile.libraryId || ''),
+    version: String(profile.version || ''),
+    status: String(profile.status || ''),
+    operators: normalizedOperators,
+    operatorCount: Number(profile.operatorCount || normalizedOperators.length),
+    inputPortCount: Number(profile.inputPortCount || 0),
+    outputPortCount: Number(profile.outputPortCount || 0),
+    requiredInputCount: Number(profile.requiredInputCount || 0),
+    configFieldCount: Number(profile.configFieldCount || 0),
+    outputFieldCount: Number(profile.outputFieldCount || 0),
+    dslUnsafeFieldCount: Number(profile.dslUnsafeFieldCount || 0),
+    dynamicSchemaCount: Number(profile.dynamicSchemaCount || 0),
+    streamingOperatorCount: Number(profile.streamingOperatorCount || 0),
+    durableOperatorCount: Number(profile.durableOperatorCount || 0),
+    externalOperatorCount: Number(profile.externalOperatorCount || 0),
+    nonIdempotentOperatorCount: Number(profile.nonIdempotentOperatorCount || 0),
+    secretOperatorCount: Number(profile.secretOperatorCount || 0),
+    policyRestrictedOperatorCount: Number(profile.policyRestrictedOperatorCount || 0),
+    designOnlyOperatorCount: Number(profile.designOnlyOperatorCount || 0),
+    runtimeExecutableOperatorCount: Number(profile.runtimeExecutableOperatorCount || 0),
+    runtimeBlockedOperatorCount: Number(profile.runtimeBlockedOperatorCount || 0),
+    governanceReviewOperatorCount: Number(profile.governanceReviewOperatorCount || 0),
+    catalogRepairOperatorCount: Number(profile.catalogRepairOperatorCount || 0)
+  };
+}
+
 function operatorLibraryProfile(library) {
   const operators = Array.isArray(library?.operators)
     ? library.operators.filter((operator) => operator && typeof operator === 'object')
@@ -3372,6 +3437,10 @@ function operatorLibraryProfile(library) {
     accumulator.secretOperatorCount += operator.requiresSecrets ? 1 : 0;
     accumulator.policyRestrictedOperatorCount += operator.policyRestricted ? 1 : 0;
     accumulator.designOnlyOperatorCount += operator.designOnly ? 1 : 0;
+    accumulator.runtimeExecutableOperatorCount += operator.runtimeReadinessState === 'runtime-executable' ? 1 : 0;
+    accumulator.runtimeBlockedOperatorCount += operator.runtimeReadinessState === 'runtime-blocked' ? 1 : 0;
+    accumulator.governanceReviewOperatorCount += operator.runtimeReadinessState === 'governance-review' ? 1 : 0;
+    accumulator.catalogRepairOperatorCount += operator.runtimeReadinessState === 'catalog-repair-required' ? 1 : 0;
     return accumulator;
   }, {
     inputPortCount: 0,
@@ -3387,7 +3456,11 @@ function operatorLibraryProfile(library) {
     nonIdempotentOperatorCount: 0,
     secretOperatorCount: 0,
     policyRestrictedOperatorCount: 0,
-    designOnlyOperatorCount: 0
+    designOnlyOperatorCount: 0,
+    runtimeExecutableOperatorCount: 0,
+    runtimeBlockedOperatorCount: 0,
+    governanceReviewOperatorCount: 0,
+    catalogRepairOperatorCount: 0
   });
   return {
     libraryId: String(library?.libraryId || ''),
@@ -3423,6 +3496,14 @@ function operatorLibraryOperatorProfile(operator) {
   const idempotency = String(operator?.capabilities?.idempotency || '').trim().toUpperCase();
   const loweringMode = String(operator?.lowering?.mode || 'native').trim().toLowerCase();
   const policyProfile = operatorLibraryPolicyProfile(operator?.policy || operator?.policies);
+  const runtimeReadiness = operatorLibraryRuntimeReadiness(operator, {
+    streaming,
+    durable,
+    effect,
+    idempotency,
+    loweringMode,
+    requiresSecrets: Boolean(operator?.capabilities?.requiresSecrets)
+  });
   return {
     label: operator?.display?.name || operator?.operatorRef || 'operator',
     operatorRef: String(operator?.operatorRef || ''),
@@ -3442,6 +3523,10 @@ function operatorLibraryOperatorProfile(operator) {
     requiresSecrets: Boolean(operator?.capabilities?.requiresSecrets),
     policyRestricted: policyProfile.restricted,
     designOnly: loweringMode === 'design',
+    runtimeReadinessState: runtimeReadiness.state,
+    runtimeReadinessLevel: runtimeReadiness.level,
+    runtimeReadinessTitle: runtimeReadiness.title,
+    runtimeReadinessSummary: runtimeReadiness.summary,
     policySummary: policyProfile.summary,
     inputFields,
     outputFields,
@@ -3449,6 +3534,48 @@ function operatorLibraryOperatorProfile(operator) {
     inputUnionSummary,
     outputUnionSummary,
     configUnionSummary
+  };
+}
+
+function operatorLibraryRuntimeReadiness(operator, facts) {
+  const serverReadiness = normalizeOperatorRuntimeReadiness(operator?.runtimeReadiness);
+  if (serverReadiness?.state) {
+    return {
+      state: String(serverReadiness.state).trim().toLowerCase().replaceAll('_', '-'),
+      level: serverReadiness.level || 'info',
+      title: serverReadiness.title || '',
+      summary: serverReadiness.summary || ''
+    };
+  }
+  if (facts.loweringMode === 'design') {
+    return {
+      state: 'design-only',
+      level: 'info',
+      title: 'Design-only operator',
+      summary: 'Authorable as a schema contract; executable lowering is not bound yet.'
+    };
+  }
+  if (facts.streaming || facts.durable) {
+    return {
+      state: 'runtime-blocked',
+      level: 'warning',
+      title: 'Runtime blocked',
+      summary: 'The schema can be inspected, but this visual runtime cannot execute the required runtime mode.'
+    };
+  }
+  if (facts.requiresSecrets || facts.idempotency === 'NON_IDEMPOTENT' || facts.effect !== 'PURE') {
+    return {
+      state: 'governance-review',
+      level: 'warning',
+      title: 'Executable with governance review',
+      summary: 'Executable metadata is present; promotion should review runtime governance risks.'
+    };
+  }
+  return {
+    state: 'runtime-executable',
+    level: 'success',
+    title: 'Runtime executable',
+    summary: 'Executable lowering is present for this request-response visual runtime.'
   };
 }
 
@@ -3614,11 +3741,20 @@ function schemaDynamicSurfaceCount(schema) {
   return count;
 }
 
-function setLibraryMessage(text, level = 'info', diagnostics = [], impact = null) {
+function setLibraryMessage(text, level = 'info', diagnostics = [], impact = null, profile = null,
+    profileSourceText = state.libraryImportText || '') {
   state.libraryMessage = text
-    ? { text, level, diagnostics: normalizeDiagnostics(diagnostics), impact: impact || null }
+    ? {
+        text,
+        level,
+        diagnostics: normalizeDiagnostics(diagnostics),
+        impact: impact || null,
+        profile: profile || null,
+        profileSourceText
+      }
     : null;
   renderLibraryStatus();
+  renderLibraryProfile();
 }
 
 function renderVisualCheck() {
@@ -4135,15 +4271,17 @@ async function reloadOperatorLibrariesAndCatalog() {
 
 async function validateOperatorLibrary() {
   let library;
+  const sourceText = state.libraryImportText || '{}';
   try {
-    library = JSON.parse(state.libraryImportText || '{}');
+    library = JSON.parse(sourceText);
   } catch (error) {
     setLibraryMessage(`Invalid JSON: ${error.message}`, 'error');
     return;
   }
   const { response, payload, diagnostics } = await validateOperatorLibraryPayload(library);
   if (!response.ok) {
-    setLibraryMessage(`Validation failed with ${response.status}`, 'error');
+    setLibraryMessage(`Validation failed with ${response.status}`, 'error', diagnostics, payload?.impact,
+      payload?.profile, sourceText);
     return;
   }
   state.libraryImportConfirmationKey = payload?.valid !== false && hasWarningDiagnostic(diagnostics)
@@ -4153,7 +4291,9 @@ async function validateOperatorLibrary() {
     validationResultMessage(payload?.valid, diagnostics, 'Operator library is valid.'),
     visualCheckLevel(diagnostics, payload?.valid !== false),
     diagnostics,
-    payload?.impact
+    payload?.impact,
+    payload?.profile,
+    sourceText
   );
 }
 
@@ -4188,8 +4328,9 @@ function libraryImportConfirmationKey(library, diagnostics = []) {
 
 async function importOperatorLibrary() {
   let library;
+  const sourceText = state.libraryImportText || '{}';
   try {
-    library = JSON.parse(state.libraryImportText || '{}');
+    library = JSON.parse(sourceText);
   } catch (error) {
     setLibraryMessage(`Invalid JSON: ${error.message}`, 'error');
     return;
@@ -4210,7 +4351,9 @@ async function importOperatorLibrary() {
       ),
       'error',
       validation.diagnostics,
-      validation.payload?.impact
+      validation.payload?.impact,
+      validation.payload?.profile,
+      sourceText
     );
     return;
   }
@@ -4225,7 +4368,9 @@ async function importOperatorLibrary() {
       ),
       'warning',
       validation.diagnostics,
-      validation.payload?.impact
+      validation.payload?.impact,
+      validation.payload?.profile,
+      sourceText
     );
     return;
   }
@@ -4254,7 +4399,9 @@ async function importOperatorLibrary() {
       validationResultMessage(payload?.valid, diagnostics, text || `Import failed with ${response.status}`),
       'error',
       diagnostics,
-      payload?.impact
+      payload?.impact,
+      payload?.profile,
+      sourceText
     );
     return;
   }
@@ -4288,7 +4435,8 @@ async function deleteSelectedOperatorLibrary() {
       validationResultMessage(payload?.valid, diagnostics, `Delete failed with ${response.status}`),
       'error',
       diagnostics,
-      payload?.impact
+      payload?.impact,
+      payload?.profile
     );
     return;
   }

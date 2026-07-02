@@ -1085,6 +1085,45 @@ resource-gateway 示例阶段已落地等价管理端点：
 ```json
 {
   "valid": false,
+  "profile": {
+    "schemaVersion": "bloge.visualOperatorLibraryProfile.v1",
+    "librarySchemaVersion": "bloge.visualOperatorLibrary.v1",
+    "libraryId": "risk-policy",
+    "version": "1.2.0",
+    "status": "ACTIVE",
+    "operatorCount": 3,
+    "inputPortCount": 3,
+    "outputPortCount": 3,
+    "requiredInputCount": 4,
+    "configFieldCount": 2,
+    "dslUnsafeFieldCount": 1,
+    "dynamicSchemaCount": 1,
+    "designOnlyOperatorCount": 1,
+    "runtimeBlockedOperatorCount": 1,
+    "governanceReviewOperatorCount": 1,
+    "facets": {
+      "total": 3,
+      "sourceKinds": { "user-library": 3 },
+      "loweringModes": { "design": 1, "native": 2 },
+      "capabilities": { "design-only": 1, "streaming": 1, "external-effect": 1 },
+      "runtimeReadinessStates": {
+        "design-only": 1,
+        "runtime-blocked": 1,
+        "governance-review": 1
+      }
+    },
+    "operators": [
+      {
+        "operatorRef": "risk:eligibility",
+        "label": "Eligibility",
+        "runtimeReadinessState": "design-only",
+        "runtimeReadinessTitle": "Design-only operator",
+        "inputFields": [{ "port": "inputs", "path": "score", "required": true, "dslPathSafe": true }],
+        "outputFields": [{ "port": "output", "path": "eligible", "required": false, "dslPathSafe": true }],
+        "configFields": []
+      }
+    ]
+  },
   "impact": {
     "schemaVersion": "bloge.visualOperatorLibraryImpact.v1",
     "diagnosticCount": 1,
@@ -1110,6 +1149,14 @@ resource-gateway 示例阶段已落地等价管理端点：
   ]
 }
 ```
+
+`bloge.visualOperatorLibraryProfile.v1` 是导入前审阅的服务端权威摘要。
+它在 Jackson 反序列化、operator normalization、validation diagnostics 和 runtime
+inventory warning 之后生成，包含 operator/schema 字段计数、DSL-unsafe 与 dynamic schema
+计数、catalog-style facets、`runtimeReadinessStates`、catalog-repair/runtime-blocked/
+governance-review/design-only 计数，以及用于浏览器 profile 面板的前几个 operator 行。
+浏览器可在用户编辑 JSON 时给出本地即时预览，但 validate/import 返回后应优先展示该 `profile`；
+如果用户继续改动 JSON，则本地预览不能继续伪装成服务端审阅结果。
 
 `bloge.visualOperatorLibraryImpact.v1` 是导入/替换/删除前的机器可读影响面。
 当前实现会聚合 affected draft、publication、operatorRef、draft node target、

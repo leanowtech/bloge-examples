@@ -672,7 +672,8 @@ node fetchApplicant : httpResource {
 | `GET` | `/api/visual/resource-operators` | 将 resource descriptors 投影为虚拟算子 |
 
 resource-gateway 示例当前以 `/admin/visual-operator-libraries` 暴露用户库管理：
-`POST /admin/visual-operator-libraries/validate` 只返回 diagnostics 不落库；
+`POST /admin/visual-operator-libraries/validate` 返回 diagnostics、impact 和服务端派生
+`bloge.visualOperatorLibraryProfile.v1`，但不落库；
 `POST/PUT /admin/visual-operator-libraries` 在写入前执行同一校验，阻断空库、
 重复 `operatorRef`、跨已导入库冲突的 `operatorRef`、重复端口、
 覆盖内置算子的 `operatorRef`、占用 `resource:` 命名空间的用户算子、
@@ -688,7 +689,12 @@ assignment target 不在 output schema 中、template 引用不存在 input path
 当前还包含服务端派生的 `runtimeReadiness`，按 source/lowering/capability/diagnostics
 给出 `RUNTIME_EXECUTABLE`、`DESIGN_ONLY`、`RUNTIME_BLOCKED`、`GOVERNANCE_REVIEW`
 或 `CATALOG_REPAIR_REQUIRED`，并作为 `/api/visual/operators` 的 `runtimeReadiness`
-filter 与 `facets.runtimeReadinessStates` 聚合维度返回，避免浏览器用前端启发式伪造控制面判断。当前还支持
+filter 与 `facets.runtimeReadinessStates` 聚合维度返回，避免浏览器用前端启发式伪造控制面判断。
+同一口径也进入 operator-library validate/import 的 `profile`：服务端按规范化后的 operator、
+validation diagnostics 和 runtime inventory warning 计算 operator count、schema field count、
+DSL-unsafe/dynamic schema 计数、facets、catalog-repair、runtime-blocked、governance-review 与
+design-only 摘要；浏览器只有在用户继续编辑 JSON 或服务端 profile 缺失时才回退到本地即时预览。
+当前还支持
 `lowering.mode=design` 的 schema-only authoring：这类用户算子可以进入 catalog、
 拖拽、连线、保存、导出、被 schema validator 校验，并可通过浏览器发布模式或 API
 `artifactKind=DESIGN` 发布成非执行型设计制品；compile/run/default executable publish 会返回

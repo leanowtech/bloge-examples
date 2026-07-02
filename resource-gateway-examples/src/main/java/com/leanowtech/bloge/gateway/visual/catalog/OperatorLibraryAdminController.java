@@ -615,11 +615,14 @@ public class OperatorLibraryAdminController {
 
     private OperatorLibraryValidationResult validationResult(OperatorLibrary library,
                                                              List<VisualDiagnostic> diagnostics) {
+        OperatorLibraryProfile profile = OperatorLibraryProfile.from(library, diagnostics);
         if (diagnostics == null || diagnostics.isEmpty()) {
-            return new OperatorLibraryValidationResult(false, diagnostics, OperatorLibraryImpactReview.empty());
+            return new OperatorLibraryValidationResult(false, diagnostics, OperatorLibraryImpactReview.empty(),
+                    profile);
         }
         return new OperatorLibraryValidationResult(false, diagnostics,
-                OperatorLibraryImpactReview.fromDiagnostics(diagnostics, impactOperatorRefs(library, diagnostics)));
+                OperatorLibraryImpactReview.fromDiagnostics(diagnostics, impactOperatorRefs(library, diagnostics)),
+                profile);
     }
 
     private Set<String> impactOperatorRefs(OperatorLibrary library, List<VisualDiagnostic> diagnostics) {

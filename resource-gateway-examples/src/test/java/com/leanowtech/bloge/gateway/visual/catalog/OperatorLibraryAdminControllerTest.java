@@ -66,7 +66,46 @@ class OperatorLibraryAdminControllerTest {
                 .andExpect(status().isOk())
                 .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_JSON))
                 .andExpect(jsonPath("$.valid").value(false))
-                .andExpect(jsonPath("$.diagnostics[0].code").value("visual.schema.arrayItemsMissing"));
+                .andExpect(jsonPath("$.diagnostics[0].code").value("visual.schema.arrayItemsMissing"))
+                .andExpect(jsonPath("$.profile.schemaVersion").value(OperatorLibraryProfile.SCHEMA_VERSION))
+                .andExpect(jsonPath("$.profile.operatorCount").value(1))
+                .andExpect(jsonPath("$.profile.catalogRepairOperatorCount").value(1))
+                .andExpect(jsonPath("$.profile.facets.runtimeReadinessStates['catalog-repair-required']")
+                        .value(1))
+                .andExpect(jsonPath("$.profile.operators[0].runtimeReadinessState")
+                        .value("catalog-repair-required"));
+
+        assertThat(registry.all()).isEmpty();
+    }
+
+    @Test
+    void validateLibraryReturnsServerDerivedProfileWithoutStoring() throws Exception {
+        OperatorLibrary library = VisualCatalogTestSupport.designOnlyEligibilityLibrary("integer");
+
+        mockMvc.perform(post("/admin/visual-operator-libraries/validate")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(library)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.valid").value(true))
+                .andExpect(jsonPath("$.diagnostics").isEmpty())
+                .andExpect(jsonPath("$.profile.schemaVersion").value(OperatorLibraryProfile.SCHEMA_VERSION))
+                .andExpect(jsonPath("$.profile.librarySchemaVersion").value("bloge.visualOperatorLibrary.v1"))
+                .andExpect(jsonPath("$.profile.libraryId").value("risk-policy-design"))
+                .andExpect(jsonPath("$.profile.operatorCount").value(1))
+                .andExpect(jsonPath("$.profile.inputPortCount").value(1))
+                .andExpect(jsonPath("$.profile.outputPortCount").value(1))
+                .andExpect(jsonPath("$.profile.inputFieldCount").value(2))
+                .andExpect(jsonPath("$.profile.outputFieldCount").value(2))
+                .andExpect(jsonPath("$.profile.requiredInputCount").value(2))
+                .andExpect(jsonPath("$.profile.designOnlyOperatorCount").value(1))
+                .andExpect(jsonPath("$.profile.runtimeExecutableOperatorCount").value(0))
+                .andExpect(jsonPath("$.profile.facets.runtimeReadinessStates['design-only']").value(1))
+                .andExpect(jsonPath("$.profile.operators[0].runtimeReadinessState").value("design-only"))
+                .andExpect(jsonPath("$.profile.operators[0].runtimeReadinessTitle")
+                        .value("Design-only operator"))
+                .andExpect(jsonPath("$.profile.operators[0].inputFields[0].path").value("score"))
+                .andExpect(jsonPath("$.profile.operators[0].inputFields[0].required").value(true))
+                .andExpect(jsonPath("$.profile.operators[0].outputFields[0].path").value("eligible"));
 
         assertThat(registry.all()).isEmpty();
     }
@@ -80,7 +119,8 @@ class OperatorLibraryAdminControllerTest {
                         .content(objectMapper.writeValueAsString(invalid)))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.valid").value(false))
-                .andExpect(jsonPath("$.diagnostics[0].code").value("visual.schema.arrayItemsMissing"));
+                .andExpect(jsonPath("$.diagnostics[0].code").value("visual.schema.arrayItemsMissing"))
+                .andExpect(jsonPath("$.profile.catalogRepairOperatorCount").value(1));
 
         assertThat(registry.all()).isEmpty();
     }
@@ -761,7 +801,14 @@ class OperatorLibraryAdminControllerTest {
                 .andExpect(jsonPath("$.impact.operatorRefs[0]").value("risk:visualScorePolicy"))
                 .andExpect(jsonPath("$.impact.codeCounts[0].code")
                         .value("visual.operator.lowering.operatorRefUnresolved"))
-                .andExpect(jsonPath("$.impact.codeCounts[0].level").value("WARNING"));
+                .andExpect(jsonPath("$.impact.codeCounts[0].level").value("WARNING"))
+                .andExpect(jsonPath("$.profile.runtimeBlockedOperatorCount").value(1))
+                .andExpect(jsonPath("$.profile.facets.runtimeReadinessStates['runtime-blocked']")
+                        .value(1))
+                .andExpect(jsonPath("$.profile.operators[0].runtimeReadinessState")
+                        .value("runtime-blocked"))
+                .andExpect(jsonPath("$.profile.operators[0].runtimeReadinessTitle")
+                        .value("Runtime binding unresolved"));
 
         assertThat(registry.find("native-missing")).isEmpty();
     }
@@ -779,7 +826,8 @@ class OperatorLibraryAdminControllerTest {
                 .andExpect(jsonPath("$.valid").value(true))
                 .andExpect(jsonPath("$.diagnostics[0].code")
                         .value("visual.operator.lowering.operatorRefUnresolved"))
-                .andExpect(jsonPath("$.impact.operatorRefs[0]").value("risk:visualScorePolicy"));
+                .andExpect(jsonPath("$.impact.operatorRefs[0]").value("risk:visualScorePolicy"))
+                .andExpect(jsonPath("$.profile.runtimeBlockedOperatorCount").value(1));
 
         assertThat(registry.find("native-missing")).isEmpty();
     }
@@ -835,7 +883,12 @@ class OperatorLibraryAdminControllerTest {
                 .andExpect(jsonPath("$.diagnostics[1].target")
                         .value("/operators/0/capabilities/durable"))
                 .andExpect(jsonPath("$.impact.warningCount").value(2))
-                .andExpect(jsonPath("$.impact.operatorRefs[0]").value("risk:eligibility"));
+                .andExpect(jsonPath("$.impact.operatorRefs[0]").value("risk:eligibility"))
+                .andExpect(jsonPath("$.profile.streamingOperatorCount").value(1))
+                .andExpect(jsonPath("$.profile.durableOperatorCount").value(1))
+                .andExpect(jsonPath("$.profile.runtimeBlockedOperatorCount").value(1))
+                .andExpect(jsonPath("$.profile.operators[0].runtimeReadinessState")
+                        .value("runtime-blocked"));
 
         assertThat(registry.find("capability-risk")).isEmpty();
     }

@@ -10,11 +10,13 @@ import java.util.List;
  * @param valid whether validation has no blocking errors
  * @param diagnostics detailed diagnostics
  * @param impact machine-readable impact review
+ * @param profile server-derived library review profile
  */
 public record OperatorLibraryValidationResult(
         boolean valid,
         List<VisualDiagnostic> diagnostics,
-        OperatorLibraryImpactReview impact
+        OperatorLibraryImpactReview impact,
+        OperatorLibraryProfile profile
 ) {
     /**
      * Creates a validation result.
@@ -23,5 +25,15 @@ public record OperatorLibraryValidationResult(
         diagnostics = diagnostics == null ? List.of() : List.copyOf(diagnostics);
         valid = diagnostics.stream().noneMatch(VisualDiagnostic::error);
         impact = impact == null ? OperatorLibraryImpactReview.fromDiagnostics(diagnostics, List.of()) : impact;
+        profile = profile == null ? OperatorLibraryProfile.empty() : profile;
+    }
+
+    /**
+     * Backward-compatible constructor for callers that do not provide a profile.
+     */
+    public OperatorLibraryValidationResult(boolean valid,
+                                           List<VisualDiagnostic> diagnostics,
+                                           OperatorLibraryImpactReview impact) {
+        this(valid, diagnostics, impact, OperatorLibraryProfile.empty());
     }
 }
