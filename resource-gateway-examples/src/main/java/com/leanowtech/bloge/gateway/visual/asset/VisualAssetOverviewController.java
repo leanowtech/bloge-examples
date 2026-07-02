@@ -15,11 +15,17 @@ import com.leanowtech.bloge.gateway.visual.validation.GraphDraftValidator;
 import com.leanowtech.bloge.gateway.visual.validation.VisualValidationResult;
 
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.http.HttpStatus;
+import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 
 /**
  * Public API for environment-level visual authoring asset health.
@@ -216,6 +222,96 @@ public class VisualAssetOverviewController {
                 requirementKey
         );
         return VisualRuntimeBindingHandoffBundle.from(index);
+    }
+
+    /**
+     * Reviews an exported runtime-binding handoff bundle against the current read model.
+     *
+     * <p>This endpoint is intentionally read-only. It lets runtime-plane teams or
+     * browser users verify whether a portable handoff snapshot is still current,
+     * stale, drifted, or already resolved without creating a second source of
+     * workflow truth.</p>
+     *
+     * @param bundle portable runtime-binding handoff bundle
+     * @return current-environment handoff review
+     */
+    @PostMapping("/runtime-binding-requirements/handoff-review")
+    public ResponseEntity<VisualRuntimeBindingHandoffReview> reviewRuntimeBindingHandoffBundle(
+            @RequestBody(required = false) VisualRuntimeBindingHandoffBundle bundle) {
+        if (bundle == null) {
+            return ResponseEntity.badRequest().body(VisualRuntimeBindingHandoffReview.rejected(
+                    null,
+                    List.of(VisualDiagnostic.error(
+                            "visual.runtimeBindingHandoff.bundleMissing",
+                            "Runtime binding handoff review requires a handoff bundle body.",
+                            "/"))
+            ));
+        }
+        if (!VisualRuntimeBindingHandoffBundle.SCHEMA_VERSION.equals(bundle.schemaVersion())) {
+            return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(VisualRuntimeBindingHandoffReview.rejected(
+                    bundle,
+                    List.of(VisualDiagnostic.error(
+                            "visual.runtimeBindingHandoff.schemaVersionUnsupported",
+                            "Runtime binding handoff bundle schemaVersion '%s' is not supported; expected '%s'."
+                                    .formatted(bundle.schemaVersion(), VisualRuntimeBindingHandoffBundle.SCHEMA_VERSION),
+                            "/schemaVersion",
+                            Map.of(
+                                    "actual", bundle.schemaVersion(),
+                                    "expected", VisualRuntimeBindingHandoffBundle.SCHEMA_VERSION
+                            )))
+            ));
+        }
+
+        VisualAssetOverview.AuthoringScope scope = bundle.scope() == null
+                ? VisualAssetOverview.AuthoringScope.all()
+                : bundle.scope();
+        VisualRuntimeBindingRequirements.RequirementFilter filter = bundle.filter() == null
+                ? VisualRuntimeBindingRequirements.RequirementFilter.all()
+                : bundle.filter();
+        VisualRuntimeBindingRequirements currentWindow = runtimeBindingRequirements(
+                scope.tenantId(),
+                scope.namespace(),
+                scope.environment(),
+                bundle.itemLimit(),
+                bundle.offset(),
+                filter.targetKind(),
+                filter.bindingKind(),
+                filter.handoffLane(),
+                filter.handoffKind(),
+                filter.handoffTarget(),
+                filter.sourceKind(),
+                filter.loweringMode(),
+                filter.readinessState(),
+                filter.requirementKey()
+        );
+        Map<String, VisualRuntimeBindingRequirements.RequirementItem> currentByRequirementKey =
+                new LinkedHashMap<>();
+        for (String requirementKey : VisualRuntimeBindingHandoffReview.requirementKeys(bundle)) {
+            VisualRuntimeBindingRequirements currentRequirement = runtimeBindingRequirements(
+                    scope.tenantId(),
+                    scope.namespace(),
+                    scope.environment(),
+                    1,
+                    0,
+                    "",
+                    "",
+                    "",
+                    "",
+                    "",
+                    "",
+                    "",
+                    "",
+                    requirementKey
+            );
+            currentRequirement.items().stream()
+                    .findFirst()
+                    .ifPresent(item -> currentByRequirementKey.put(requirementKey, item));
+        }
+        return ResponseEntity.ok(VisualRuntimeBindingHandoffReview.from(
+                bundle,
+                currentByRequirementKey,
+                currentWindow
+        ));
     }
 
     VisualAssetOverview overview(String tenantId, String namespace, String environment) {

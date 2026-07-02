@@ -1738,6 +1738,14 @@ message handler、webhook、streaming 或 durable capability 暂时不能运行�
 查询。`requirementKey` 用于让 draft/publication import result 或 workspace item
 直接回查同一条 runtime binding gap，而不是分页扫描索引。该索引不持久化待办状态，`readiness.runtimeBindingRequirements[]`
 仍是唯一事实来源。
+`GET /api/visual/assets/runtime-binding-requirements/handoff-bundle` 会把当前查询窗口导出为
+`bloge.visualRuntimeBindingHandoff.v1`，携带 source index lineage、scope/filter、
+stable requirement keys、路由计数和 requirement rows，用于把 schema-only/design-only
+资产移交给 runtime-plane 团队。`POST /api/visual/assets/runtime-binding-requirements/handoff-review`
+接收该 bundle 并返回 `bloge.visualRuntimeBindingHandoffReview.v1`，按 stable key
+对比当前 read model，标记 current、drifted、missing 和 current window 新增项。review
+是快照新鲜度校验，不是状态写入；runtime binding 的完成情况仍应通过真正的 operator
+implementation / runtime binding 控制面改变 catalog/readiness 后再被派生出来。
 `actionReadiness` 则把同一批 diagnostics/readiness 压成产品动作门禁：`compileNow`、
 `runNow`、`publishDesignNow`、`publishDesignAfterReview`、`publishExecutableNow`、
 `publishExecutableAfterReview`，以及 `requiresAckWarnings` /

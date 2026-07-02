@@ -408,6 +408,8 @@ const state = {
   activeVisualAssetAction: null,
   visualRuntimeBindingRequirements: null,
   visualRuntimeBindingRequirementsMessage: null,
+  visualRuntimeBindingHandoffBundle: null,
+  visualRuntimeBindingHandoffReview: null,
   visualRuntimeBindingHandoffBundleMessage: null,
   visualRuntimeBindingRequirementQuery: {
     targetKind: '',
@@ -777,6 +779,10 @@ function visualRuntimeBindingHandoffBundleUrl(builder = state.builder) {
   return `/api/visual/assets/runtime-binding-requirements/handoff-bundle?${params.toString()}`;
 }
 
+function visualRuntimeBindingHandoffReviewUrl() {
+  return '/api/visual/assets/runtime-binding-requirements/handoff-review';
+}
+
 function visualRuntimeBindingRequirementParams(builder = state.builder) {
   const scope = builderScope(builder);
   const params = new URLSearchParams();
@@ -861,11 +867,15 @@ async function updateVisualRuntimeBindingRequirementQuery(patch = {}) {
     ...patch
   });
   state.activeVisualRuntimeBindingRequirement = null;
+  state.visualRuntimeBindingHandoffBundle = null;
+  state.visualRuntimeBindingHandoffReview = null;
   state.visualRuntimeBindingHandoffBundleMessage = null;
   await loadVisualRuntimeBindingRequirements();
 }
 
 async function exportVisualRuntimeBindingHandoffBundle() {
+  state.visualRuntimeBindingHandoffBundle = null;
+  state.visualRuntimeBindingHandoffReview = null;
   try {
     const response = await fetch(visualRuntimeBindingHandoffBundleUrl());
     const payload = await response.json().catch(() => null);
@@ -875,6 +885,8 @@ async function exportVisualRuntimeBindingHandoffBundle() {
     const displayed = Number(payload?.displayedCount ?? payload?.requirements?.length ?? 0) || 0;
     const total = Number(payload?.total || 0) || 0;
     const hasMore = payload?.hasMore ? ' Current query has more matching requirements after this window.' : '';
+    state.visualRuntimeBindingHandoffBundle = payload;
+    state.visualRuntimeBindingHandoffReview = null;
     state.visualRuntimeBindingHandoffBundleMessage = {
       text: `Exported ${displayed} of ${total} runtime binding requirement(s).${hasMore}`,
       level: 'success'
@@ -887,6 +899,54 @@ async function exportVisualRuntimeBindingHandoffBundle() {
     };
   }
   renderVisualAssetOverview();
+}
+
+async function reviewVisualRuntimeBindingHandoffBundle() {
+  const bundle = state.visualRuntimeBindingHandoffBundle;
+  if (!bundle) {
+    state.visualRuntimeBindingHandoffBundleMessage = {
+      text: 'Export a runtime binding handoff bundle before reviewing it.',
+      level: 'warning'
+    };
+    renderVisualAssetOverview();
+    return;
+  }
+  try {
+    const response = await fetch(visualRuntimeBindingHandoffReviewUrl(), {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(bundle)
+    });
+    const payload = await response.json().catch(() => null);
+    if (!response.ok) {
+      throw new Error(`Runtime binding handoff review failed with ${response.status}`);
+    }
+    state.visualRuntimeBindingHandoffReview = payload;
+    state.visualRuntimeBindingHandoffBundleMessage = {
+      text: visualRuntimeBindingHandoffReviewMessage(payload),
+      level: payload?.level || 'info'
+    };
+    $('output').textContent = pretty({ status: response.status, runtimeBindingHandoffReview: payload });
+  } catch (error) {
+    state.visualRuntimeBindingHandoffReview = null;
+    state.visualRuntimeBindingHandoffBundleMessage = {
+      text: error.message,
+      level: 'error'
+    };
+  }
+  renderVisualAssetOverview();
+}
+
+function visualRuntimeBindingHandoffReviewMessage(review) {
+  if (!review) {
+    return 'Runtime binding handoff review returned no payload.';
+  }
+  const stateLabel = operatorPaletteFacetLabel(review.state || 'reviewed');
+  const matched = Number(review.matchedCount || 0) || 0;
+  const drifted = Number(review.driftedCount || 0) || 0;
+  const missing = Number(review.missingCount || 0) || 0;
+  const fresh = Number(review.newCurrentWindowCount || 0) || 0;
+  return `Handoff review ${stateLabel}: ${matched} current, ${drifted} drifted, ${missing} missing, ${fresh} new in current window.`;
 }
 
 function visualDraftsUrl(builder = state.builder) {
@@ -7489,6 +7549,7 @@ function visualRuntimeBindingRequirementControls(bindingIndex) {
       <button type="button" class="secondary compact" id="runtime-binding-prev" ${canPrevious ? '' : 'disabled'}>Prev</button>
       <button type="button" class="secondary compact" id="runtime-binding-next" ${canNext ? '' : 'disabled'}>Next</button>
       <button type="button" class="secondary compact" id="runtime-binding-export" ${bindingIndex ? '' : 'disabled'}>Export Handoff</button>
+      <button type="button" class="secondary compact" id="runtime-binding-review" ${state.visualRuntimeBindingHandoffBundle ? '' : 'disabled'}>Review Handoff</button>
       <button type="button" class="secondary compact" id="runtime-binding-reset" ${hasFilter ? '' : 'disabled'}>Reset</button>
     </div>
   `;
@@ -7882,6 +7943,10 @@ function attachVisualRuntimeBindingRequirementQueryHandlers(bindingIndex) {
   const exportButton = $('runtime-binding-export');
   if (exportButton) {
     exportButton.onclick = exportVisualRuntimeBindingHandoffBundle;
+  }
+  const reviewButton = $('runtime-binding-review');
+  if (reviewButton) {
+    reviewButton.onclick = reviewVisualRuntimeBindingHandoffBundle;
   }
   const reset = $('runtime-binding-reset');
   if (reset) {

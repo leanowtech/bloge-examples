@@ -762,9 +762,15 @@ scope、targetKind、bindingKind、handoffLane、handoffKind、handoffTarget、s
 stable requirementKeys、handoff lane/kind/target 计数和 requirement 明细。
 它是便携交接快照，不是工单系统；后续执行状态仍应回写到真正的 runtime binding /
 operator implementation 控制面，再由 catalog/readiness 重新派生。
+`POST /api/visual/assets/runtime-binding-requirements/handoff-review` 则把交接快照带回
+当前环境做只读对账，返回 `bloge.visualRuntimeBindingHandoffReview.v1`：
+服务端按 bundle 的 scope/filter/page-window 重算当前索引，并按 stable requirementKey
+标记 current、drifted、missing 和 current window 新增项。这个 review 只判断快照是否
+仍可用于交接排期，不记录外部工单进度，也不替代 draft/publication readiness。
 浏览器 Workspace Overview 会同步加载这个索引并展示 Runtime Binding Requirements 小节，
-提供同类过滤、分页、draft/publication 打开动作和当前窗口 handoff bundle 导出，让作者和集成团队在画布工作台内看到
-并携带“可设计但不可执行”的具体 runtime-plane 交接项。
+提供同类过滤、分页、draft/publication 打开动作、当前窗口 handoff bundle 导出和最近导出
+bundle 的 handoff review，让作者和集成团队在画布工作台内看到、携带并回放审阅
+“可设计但不可执行”的具体 runtime-plane 交接项。
 connection preflight 会返回候选连接相关的局部 diagnostics，同时携带应用 preview
 edge/binding/config expression 后的完整 candidate draft validation/readiness/actionReadiness；compile 和 run 响应同样携带本次服务端门禁使用的 validation/readiness/actionReadiness；
 publication run 则回传 artifact 冻结时的 validation/readiness/actionReadiness，不能按当前 catalog
@@ -856,6 +862,7 @@ fingerprint snapshot；普通保存和 PATCH 仍保留既有 snapshot，避免�
 | `GET` | `/api/visual/assets/overview` | 当前已实现：返回 `bloge.visualAssetOverview.v1`，聚合 draft/publication/operator catalog readiness，并用 summary actionReadiness 和 runtimeBindingRequirements 派生可分页 action queue |
 | `GET` | `/api/visual/assets/runtime-binding-requirements` | 当前已实现：返回 `bloge.visualRuntimeBindingRequirements.v1`，把 active draft 和 immutable publication 的 runtime binding gaps 暴露为 scope-aware/filterable/pageable 事实索引，并支持 `requirementKey` 精确回查 |
 | `GET` | `/api/visual/assets/runtime-binding-requirements/handoff-bundle` | 当前已实现：返回 `bloge.visualRuntimeBindingHandoff.v1`，把当前 runtime-binding 查询窗口导出为 portable handoff bundle，包含 source index lineage、scope/filter、stable requirement keys、路由计数和 requirement 明细 |
+| `POST` | `/api/visual/assets/runtime-binding-requirements/handoff-review` | 当前已实现：接收 `bloge.visualRuntimeBindingHandoff.v1` 并返回 `bloge.visualRuntimeBindingHandoffReview.v1`，按当前 runtime-binding read model 对账导出快照的 current/drifted/missing/new-current-window 状态 |
 
 ### 12.3 Runtime / Trace API
 

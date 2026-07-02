@@ -194,6 +194,8 @@ class VisualAssetOverviewControllerTest {
                 "",
                 ""
         );
+        VisualRuntimeBindingHandoffReview currentReview = controller.reviewRuntimeBindingHandoffBundle(handoffBundle)
+                .getBody();
         VisualRuntimeBindingRequirements excludedScope =
                 controller.runtimeBindingRequirements("tenant-b", "risk", "dev");
 
@@ -268,10 +270,132 @@ class VisualAssetOverviewControllerTest {
             assertThat(item.targetId()).isEqualTo(draft.draftId());
             assertThat(item.operatorRef()).isEqualTo("risk:eligibility");
         });
+        assertThat(currentReview).isNotNull();
+        assertThat(currentReview.schemaVersion()).isEqualTo(VisualRuntimeBindingHandoffReview.SCHEMA_VERSION);
+        assertThat(currentReview.reviewable()).isTrue();
+        assertThat(currentReview.state()).isEqualTo("current");
+        assertThat(currentReview.level()).isEqualTo("success");
+        assertThat(currentReview.sourceBundleSchemaVersion())
+                .isEqualTo(VisualRuntimeBindingHandoffBundle.SCHEMA_VERSION);
+        assertThat(currentReview.exportedRequirementCount()).isEqualTo(1);
+        assertThat(currentReview.currentWindowTotal()).isEqualTo(1);
+        assertThat(currentReview.currentWindowDisplayedCount()).isEqualTo(1);
+        assertThat(currentReview.matchedCount()).isEqualTo(1);
+        assertThat(currentReview.driftedCount()).isZero();
+        assertThat(currentReview.missingCount()).isZero();
+        assertThat(currentReview.newCurrentWindowCount()).isZero();
+        assertThat(currentReview.exportedRequirementKeys()).containsExactly(draftRequirementKey);
+        assertThat(currentReview.currentWindowRequirementKeys()).containsExactly(draftRequirementKey);
+        assertThat(currentReview.statusCounts()).containsEntry("current", 1);
+        assertThat(currentReview.items()).singleElement().satisfies(item -> {
+            assertThat(item.requirementKey()).isEqualTo(draftRequirementKey);
+            assertThat(item.status()).isEqualTo("current");
+            assertThat(item.changedFields()).isEmpty();
+            assertThat(item.currentRequirement()).isNotNull();
+        });
         assertThat(firstPage.items()).noneMatch(item -> item.targetId().equals(publication.publicationId()));
         assertThat(excludedScope.scope().filtered()).isTrue();
         assertThat(excludedScope.total()).isZero();
         assertThat(excludedScope.unfilteredTotal()).isZero();
+    }
+
+    @Test
+    void runtimeBindingHandoffReviewDetectsMissingRequirementKeys() {
+        DefaultVisualOperatorCatalog catalog = VisualCatalogTestSupport.catalogWithLibrary(
+                VisualCatalogTestSupport.designOnlyEligibilityLibrary("integer"));
+        GraphDraftValidator validator = new GraphDraftValidator(catalog);
+        InMemoryGraphDraftRepository drafts = new InMemoryGraphDraftRepository();
+        InMemoryVisualGraphPublicationRepository publications = new InMemoryVisualGraphPublicationRepository();
+        OperatorDefinition operator = catalog.find("risk:eligibility").orElseThrow();
+        GraphDraft draft = drafts.save(draftWithFingerprint(operator));
+        VisualAssetOverviewController controller =
+                new VisualAssetOverviewController(drafts, validator, catalog, publications);
+        VisualRuntimeBindingHandoffBundle handoffBundle = controller.runtimeBindingHandoffBundle(
+                "",
+                "",
+                "",
+                10,
+                0,
+                "draft",
+                "executable-lowering",
+                "operator-platform",
+                "operator-implementation",
+                "risk:eligibility",
+                "",
+                "",
+                "",
+                ""
+        );
+
+        drafts.delete(draft.draftId());
+        VisualRuntimeBindingHandoffReview staleReview = controller.reviewRuntimeBindingHandoffBundle(handoffBundle)
+                .getBody();
+
+        assertThat(staleReview).isNotNull();
+        assertThat(staleReview.reviewable()).isTrue();
+        assertThat(staleReview.state()).isEqualTo("stale");
+        assertThat(staleReview.level()).isEqualTo("warning");
+        assertThat(staleReview.exportedRequirementCount()).isEqualTo(1);
+        assertThat(staleReview.currentWindowTotal()).isZero();
+        assertThat(staleReview.matchedCount()).isZero();
+        assertThat(staleReview.driftedCount()).isZero();
+        assertThat(staleReview.missingCount()).isEqualTo(1);
+        assertThat(staleReview.statusCounts()).containsEntry("missing", 1);
+        assertThat(staleReview.items()).singleElement().satisfies(item -> {
+            assertThat(item.status()).isEqualTo("missing");
+            assertThat(item.exportedRequirement()).isNotNull();
+            assertThat(item.currentRequirement()).isNull();
+            assertThat(item.message()).contains("no longer present");
+        });
+    }
+
+    @Test
+    void runtimeBindingHandoffReviewRejectsUnsupportedBundleVersion() {
+        VisualRuntimeBindingHandoffBundle unsupported = new VisualRuntimeBindingHandoffBundle(
+                "bloge.visualRuntimeBindingHandoff.future",
+                null,
+                "",
+                null,
+                VisualAssetOverview.AuthoringScope.all(),
+                VisualRuntimeBindingRequirements.RequirementFilter.all(),
+                0,
+                0,
+                0,
+                10,
+                0,
+                false,
+                List.of("RUNTIME_BINDING|draft|missing|node|executable-lowering|risk:eligibility|"),
+                Map.of(),
+                Map.of(),
+                Map.of(),
+                Map.of(),
+                Map.of(),
+                Map.of(),
+                Map.of(),
+                Map.of(),
+                Map.of(),
+                List.of()
+        );
+        VisualAssetOverviewController controller = new VisualAssetOverviewController(
+                new InMemoryGraphDraftRepository(),
+                new GraphDraftValidator(VisualCatalogTestSupport.catalogWithLibrary(
+                        VisualCatalogTestSupport.designOnlyEligibilityLibrary("integer"))),
+                VisualCatalogTestSupport.catalogWithLibrary(
+                        VisualCatalogTestSupport.designOnlyEligibilityLibrary("integer")),
+                new InMemoryVisualGraphPublicationRepository()
+        );
+
+        var response = controller.reviewRuntimeBindingHandoffBundle(unsupported);
+
+        assertThat(response.getStatusCode().value()).isEqualTo(400);
+        assertThat(response.getBody()).isNotNull();
+        assertThat(response.getBody().reviewable()).isFalse();
+        assertThat(response.getBody().state()).isEqualTo("invalid-bundle");
+        assertThat(response.getBody().diagnostics()).singleElement().satisfies(diagnostic -> {
+            assertThat(diagnostic.error()).isTrue();
+            assertThat(diagnostic.code()).isEqualTo("visual.runtimeBindingHandoff.schemaVersionUnsupported");
+            assertThat(diagnostic.metadata()).containsEntry("expected", VisualRuntimeBindingHandoffBundle.SCHEMA_VERSION);
+        });
     }
 
     @Test

@@ -788,6 +788,7 @@ Showcase metadata APIs:
 | `GET` | `/api/visual/assets/overview` | Return `bloge.visualAssetOverview.v1`, an environment-level visual authoring overview that echoes the requested authoring scope while aggregating draft summaries, publication summaries, current operator catalog facets, and an action-readiness/runtime-binding-requirement-aware server-derived action queue with optional `tenantId` / `namespace` / `environment` scope filters plus `actionLimit` / `actionOffset` / `actionSeverity` / `actionType` / `actionTargetKind` queue query controls |
 | `GET` | `/api/visual/assets/runtime-binding-requirements` | Return `bloge.visualRuntimeBindingRequirements.v1`, a scope-aware, pageable runtime-binding gap index for active drafts and immutable publications, with `targetKind` / `bindingKind` / `handoffLane` / `handoffKind` / `handoffTarget` / `sourceKind` / `loweringMode` / `readinessState` / `requirementKey` filters, stable requirement keys, and handoff lane/kind/target fields for external runtime-plane routing |
 | `GET` | `/api/visual/assets/runtime-binding-requirements/handoff-bundle` | Export the current runtime-binding gap query window as `bloge.visualRuntimeBindingHandoff.v1`, preserving source index lineage, normalized scope/filter, stable requirement keys, routing counts, and requirement rows for runtime-plane handoff without creating workflow state |
+| `POST` | `/api/visual/assets/runtime-binding-requirements/handoff-review` | Review a `bloge.visualRuntimeBindingHandoff.v1` bundle against the current runtime-binding read model and return `bloge.visualRuntimeBindingHandoffReview.v1` with current, drifted, missing, and new-current-window reconciliation status |
 | `GET` | `/api/visual/drafts` | List stored visual graph drafts with optional `tenantId` / `namespace` / `environment` scope filters |
 | `GET` | `/api/visual/drafts/history` | List lightweight active/deleted draft history summaries with current/latest revision, revision count, latest actor/source/summary, recovery status, and optional `tenantId` / `namespace` / `environment` scope filters |
 | `GET` | `/api/visual/drafts/summaries` | List `bloge.visualGraphDraftSummary.v1` draft asset summaries that combine history, server validation/readiness/action-readiness, diagnostic counts, and dependency counts without returning full draft JSON; supports optional `tenantId` / `namespace` / `environment` scope filters |
@@ -1134,9 +1135,10 @@ lowering mode, readiness state, or stable requirement key. The same
 Workspace Overview panel renders that index with filters, paging, and
 draft/publication Open actions, and can export the current filtered window as a
 `bloge.visualRuntimeBindingHandoff.v1` bundle with source-index lineage,
-scope/filter, stable requirement keys, routing counts, and requirement rows, so
-design-time binding work is visible and portable from the canvas without
-pretending the graph is executable.
+scope/filter, stable requirement keys, routing counts, and requirement rows. It
+can also review the latest exported handoff bundle against the current read
+model, so design-time binding work is visible, portable, and replay-checkable
+from the canvas without pretending the graph is executable.
 The Drafts panel renders a Draft Asset Index from server-side draft summaries
 for the active Authoring Scope, so active and recoverable deleted drafts expose
 design-only, runtime-blocked, governance-review, repair-required readiness, and
@@ -1536,6 +1538,7 @@ Seven `.bloge` graphs live in `src/main/resources/bloge/gateway/`:
 | `VisualGraphReadiness` | Server-derived graph runtime/design readiness (`bloge.visualGraphReadiness.v1`) with node readiness rows and runtime binding requirements for schema-valid but non-executable design artifacts |
 | `VisualGraphActionReadiness` | Server-derived graph action gate summary (`bloge.visualGraphActionReadiness.v1`) for compile, run, DESIGN publication, EXECUTABLE publication, warning acknowledgement, and governance evidence requirements |
 | `VisualRuntimeBindingHandoffBundle` | Portable `bloge.visualRuntimeBindingHandoff.v1` snapshot derived from the runtime-binding requirement index for assigning schema-only/design-only runtime implementation gaps to external runtime-plane teams |
+| `VisualRuntimeBindingHandoffReview` | Read-only `bloge.visualRuntimeBindingHandoffReview.v1` reconciliation report that compares a handoff bundle with the current runtime-binding requirement read model by stable key |
 | `GraphDraftExportBundle` | Portable draft package with source identity, draft snapshot, operator snapshots, export-time diagnostics, validation/readiness/action-readiness, and source dependency report |
 | `GraphDraftImportResult` | Import response contract with source bundle/draft identity, stored draft identity, target-environment compatibility diagnostics, validation/readiness/action-readiness, source dependency report, target dependency report, target runtime-binding handoff requirements and stable keys, and legacy target `dependencyReport` |
 | `DatabaseGraphDraftRepository` | H2-backed graph draft repository with revision assignment, immutable revision history, expected-revision guarded updates, deletion audit snapshots, and retained history for deleted-draft recovery |
