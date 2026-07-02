@@ -750,9 +750,9 @@ Showcase metadata APIs:
 | `GET` | `/api/visual/operators` | List native, Java registry, imported, executable publication-backed subgraph, and resource-backed visual operator definitions; supports `tenantId`, `namespace`, and `environment` policy filtering, `sourceKind` / `loweringMode` / `capability` / `runtimeReadiness` catalog facets, plus multi-term schema-aware search across input/output/config fields, field types, and readiness summaries; response includes `facets.total/sourceKinds/loweringModes/capabilities/runtimeReadinessStates` counts |
 | `GET` | `/api/visual/operators/{operatorRef}/usage` | Return stored draft and immutable-publication usage of one operatorRef, including saved/frozen fingerprint status, changed-surface drift summaries, and `changeRisk/changeCategories/changeSummary` when snapshots allow risk classification |
 | `GET` | `/api/visual/assets/overview` | Return `bloge.visualAssetOverview.v1`, an environment-level visual authoring overview aggregating draft summaries, publication summaries, current operator catalog facets, and a server-derived action queue with optional `tenantId` / `namespace` / `environment` scope filters |
-| `GET` | `/api/visual/drafts` | List stored visual graph drafts |
-| `GET` | `/api/visual/drafts/history` | List lightweight active/deleted draft history summaries with current/latest revision, revision count, latest actor/source/summary, and recovery status |
-| `GET` | `/api/visual/drafts/summaries` | List `bloge.visualGraphDraftSummary.v1` draft asset summaries that combine history, server validation/readiness, diagnostic counts, and dependency counts without returning full draft JSON |
+| `GET` | `/api/visual/drafts` | List stored visual graph drafts with optional `tenantId` / `namespace` / `environment` scope filters |
+| `GET` | `/api/visual/drafts/history` | List lightweight active/deleted draft history summaries with current/latest revision, revision count, latest actor/source/summary, recovery status, and optional `tenantId` / `namespace` / `environment` scope filters |
+| `GET` | `/api/visual/drafts/summaries` | List `bloge.visualGraphDraftSummary.v1` draft asset summaries that combine history, server validation/readiness, diagnostic counts, and dependency counts without returning full draft JSON; supports optional `tenantId` / `namespace` / `environment` scope filters |
 | `POST` | `/api/visual/drafts` | Save a new visual graph draft with server-assigned id/revision, ignoring submitted draft identity fields |
 | `GET` | `/api/visual/drafts/{draftId}` | Load a stored visual graph draft |
 | `GET` | `/api/visual/drafts/{draftId}/dependencies` | Summarize a stored draft as `bloge.visualGraphDraftDependencies.v1`, including distinct operator dependencies, per-node binding/edge lineage, source/lowering/runtime-readiness counts, current/missing/drifted/scope-mismatch fingerprint state, and scope policy diagnostics |
@@ -773,7 +773,7 @@ Showcase metadata APIs:
 | `POST` | `/api/visual/drafts/{draftId}/run` | Execute a stored visual graph draft with submitted context; response includes validation/readiness, and optional `expectedRevision` rejects stale runs with `409 CONFLICT` |
 | `POST` | `/api/visual/drafts/{draftId}/publish` | Publish an immutable visual graph artifact; default `artifactKind=EXECUTABLE` validates, compiles, and stores frozen DSL, while `artifactKind=DESIGN` freezes a schema-valid non-executable design artifact with generation diagnostics; response includes validation/readiness on accepted and rejected attempts so clients can constrain publish artifact kinds; optional `expectedRevision` rejects stale publishes with `409 CONFLICT`; warning-level validation diagnostics require `ackWarnings=true`, and warning-acknowledged storage also requires non-empty `actor` and `reason` evidence that is frozen as publication metadata |
 | `GET` | `/api/visual/publications` | List immutable visual graph publications |
-| `GET` | `/api/visual/publications/summaries` | List `bloge.visualGraphPublicationSummary.v1` publication asset summaries with frozen artifact kind, readiness, diagnostic counts, dependency counts, and source/runtime-readiness distributions without returning full publication payloads |
+| `GET` | `/api/visual/publications/summaries` | List `bloge.visualGraphPublicationSummary.v1` publication asset summaries with frozen artifact kind, readiness, diagnostic counts, dependency counts, and source/runtime-readiness distributions without returning full publication payloads; supports optional `tenantId` / `namespace` / `environment` scope filters |
 | `GET` | `/api/visual/publications/{publicationId}` | Load a published visual graph artifact |
 | `GET` | `/api/visual/publications/{publicationId}/dependencies` | Load the publish-time dependency report frozen with an immutable visual graph artifact |
 | `POST` | `/api/visual/publications/{publicationId}/run` | Execute a published artifact from its frozen DSL and return the artifact's frozen validation/readiness |
@@ -1067,23 +1067,25 @@ author back to the `DESIGN` artifact path instead of treating the composition as
 broken. The Browser Composer's Server Check area renders a dedicated readiness
 panel for these graphs, showing that save/export/`DESIGN` publication remain
 allowed while compile/run/`EXECUTABLE` publication wait for runtime binding.
-The Drafts panel renders a Draft Asset Index from server-side draft summaries,
-so active and recoverable deleted drafts expose design-only, runtime-blocked,
-governance-review, and repair-required readiness before the author loads a
-specific draft.
+The Drafts panel renders a Draft Asset Index from server-side draft summaries
+for the active Authoring Scope, so active and recoverable deleted drafts expose
+design-only, runtime-blocked, governance-review, and repair-required readiness
+before the author loads a specific draft.
 After publication, the Publications panel also renders a Published Artifact
-Index from `bloge.visualGraphPublicationSummary.v1`, counting `EXECUTABLE`
-versus `DESIGN` artifacts and surfacing frozen readiness states such as
-design-only, runtime-blocked, governance-review, and repair-required before the
-author loads a full immutable publication payload.
+Index from `bloge.visualGraphPublicationSummary.v1` for the active Authoring
+Scope, counting `EXECUTABLE` versus `DESIGN` artifacts and surfacing frozen
+readiness states such as design-only, runtime-blocked, governance-review, and
+repair-required before the author loads a full immutable publication payload.
 The Workspace Overview panel consumes `bloge.visualAssetOverview.v1` to show the
 same readiness distribution across drafts, immutable publications, and the
-current operator catalog, plus a server-derived action queue for repair,
-runtime-binding, governance-review, and design-asset tracking work. Large
-schema-only workspaces can therefore be triaged without pulling every graph or
-artifact body. Queue items include navigation targets, so the browser can open
-the affected draft or publication, or focus the relevant operator in the palette,
-without treating the queue itself as a stateful workflow engine.
+current operator catalog for the active Authoring Scope, plus a server-derived
+action queue for repair, runtime-binding, governance-review, and design-asset
+tracking work. Large schema-only workspaces can therefore be triaged without
+pulling every graph or artifact body, and without mixing assets from another
+tenant, namespace, or environment. Queue items include navigation targets, so
+the browser can open the affected draft or publication, or focus the relevant
+operator in the palette, without treating the queue itself as a stateful workflow
+engine.
 Authors can still publish the draft as a non-executable
 `artifactKind=DESIGN` artifact to freeze the schema-valid composition for
 review and later runtime binding. Design-only

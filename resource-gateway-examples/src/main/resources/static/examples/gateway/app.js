@@ -540,7 +540,7 @@ async function loadVisualOperatorCatalog() {
 
 async function loadVisualAssetOverview(options = {}) {
   try {
-    const response = await fetch('/api/visual/assets/overview');
+    const response = await fetch(visualAssetOverviewUrl());
     if (!response.ok) {
       throw new Error(`Asset overview failed with ${response.status}`);
     }
@@ -654,6 +654,35 @@ function operatorCatalogUrl(builder = state.builder, options = {}) {
     params.set('includeDeprecated', 'true');
   }
   return `/api/visual/operators?${params.toString()}`;
+}
+
+function visualAssetOverviewUrl(builder = state.builder) {
+  return scopedVisualAuthoringUrl('/api/visual/assets/overview', builder);
+}
+
+function visualDraftsUrl(builder = state.builder) {
+  return scopedVisualAuthoringUrl('/api/visual/drafts', builder);
+}
+
+function visualDraftHistoryUrl(builder = state.builder) {
+  return scopedVisualAuthoringUrl('/api/visual/drafts/history', builder);
+}
+
+function visualDraftSummariesUrl(builder = state.builder) {
+  return scopedVisualAuthoringUrl('/api/visual/drafts/summaries', builder);
+}
+
+function visualPublicationSummariesUrl(builder = state.builder) {
+  return scopedVisualAuthoringUrl('/api/visual/publications/summaries', builder);
+}
+
+function scopedVisualAuthoringUrl(path, builder = state.builder) {
+  const scope = builderScope(builder);
+  const params = new URLSearchParams();
+  params.set('tenantId', scope.tenantId);
+  params.set('namespace', scope.namespace);
+  params.set('environment', scope.environment);
+  return `${path}?${params.toString()}`;
 }
 
 function builderScope(builder = state.builder) {
@@ -8413,7 +8442,7 @@ function runHistoryUrlFor(path) {
 
 async function loadPublicationList(options = {}) {
   try {
-    const response = await fetch('/api/visual/publications/summaries');
+    const response = await fetch(visualPublicationSummariesUrl());
     if (!response.ok) {
       throw new Error(`Publication list failed with ${response.status}`);
     }
@@ -8875,9 +8904,9 @@ async function runSelectedPublication() {
 async function loadDraftList(options = {}) {
   try {
     const [draftResponse, historyResponse, summaryResponse] = await Promise.all([
-      fetch('/api/visual/drafts'),
-      fetch('/api/visual/drafts/history'),
-      fetch('/api/visual/drafts/summaries')
+      fetch(visualDraftsUrl()),
+      fetch(visualDraftHistoryUrl()),
+      fetch(visualDraftSummariesUrl())
     ]);
     if (!draftResponse.ok) {
       throw new Error(`Draft list failed with ${draftResponse.status}`);

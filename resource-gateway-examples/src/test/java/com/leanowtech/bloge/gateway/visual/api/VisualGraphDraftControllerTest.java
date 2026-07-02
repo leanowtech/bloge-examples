@@ -1696,6 +1696,51 @@ class VisualGraphDraftControllerTest {
     }
 
     @Test
+    void assetIndexesFilterDraftsAndRetainedHistoryByAuthoringScope() {
+        InMemoryGraphDraftRepository drafts = new InMemoryGraphDraftRepository();
+        DefaultVisualOperatorCatalog designCatalog = VisualCatalogTestSupport.catalogWithLibrary(
+                VisualCatalogTestSupport.designOnlyEligibilityLibrary("integer"));
+        VisualGraphDraftController controller = controllerWithCatalog(designCatalog, drafts);
+        GraphDraft activeIncluded = controller.create(withScope(eligibilityDraft(graphInputSchema(
+                Map.of(
+                        "score", Map.of("type", "integer"),
+                        "amount", Map.of("type", "number")
+                )
+        )), "tenant-a", "risk", "dev"));
+        GraphDraft deletedIncluded = controller.create(withScope(eligibilityDraft(graphInputSchema(
+                Map.of(
+                        "score", Map.of("type", "integer"),
+                        "amount", Map.of("type", "number")
+                )
+        )), "tenant-a", "risk", "dev"));
+        GraphDraft excluded = controller.create(withScope(eligibilityDraft(graphInputSchema(
+                Map.of(
+                        "score", Map.of("type", "integer"),
+                        "amount", Map.of("type", "number")
+                )
+        )), "tenant-b", "risk", "dev"));
+
+        controller.delete(deletedIncluded.draftId(), deletedIncluded.revision(),
+                "reviewer",
+                "test-suite",
+                "Deleted but recoverable.",
+                "Verify retained history remains scope-filtered.");
+
+        assertThat(controller.list("tenant-a", "risk", "dev"))
+                .extracting(GraphDraft::draftId)
+                .containsExactly(activeIncluded.draftId());
+        assertThat(controller.history("tenant-a", "risk", "dev"))
+                .extracting(GraphDraftHistorySummary::draftId)
+                .containsExactlyInAnyOrder(activeIncluded.draftId(), deletedIncluded.draftId());
+        assertThat(controller.summaries("tenant-a", "risk", "dev"))
+                .extracting(GraphDraftSummary::draftId)
+                .containsExactlyInAnyOrder(activeIncluded.draftId(), deletedIncluded.draftId());
+        assertThat(controller.summaries("tenant-b", "risk", "dev"))
+                .extracting(GraphDraftSummary::draftId)
+                .containsExactly(excluded.draftId());
+    }
+
+    @Test
     void deleteRejectsStaleExpectedRevisionAndKeepsCurrentDraft() {
         InMemoryGraphDraftRepository drafts = new InMemoryGraphDraftRepository();
         VisualGraphDraftController controller = controllerWithCatalog(eligibilityCatalog(), drafts);
@@ -2333,6 +2378,27 @@ class VisualGraphDraftControllerTest {
                 List.of(),
                 Map.of(),
                 new GraphDraft.OutputSelection("eligibility", "")
+        );
+    }
+
+    private static GraphDraft withScope(GraphDraft draft, String tenantId, String namespace, String environment) {
+        return new GraphDraft(
+                draft.schemaVersion(),
+                draft.draftId(),
+                draft.revision(),
+                draft.graphName(),
+                tenantId,
+                namespace,
+                environment,
+                draft.status(),
+                draft.inputSchema(),
+                draft.nodes(),
+                draft.edges(),
+                draft.visualLayout(),
+                draft.output(),
+                draft.operatorFingerprints(),
+                draft.operatorSnapshots(),
+                draft.revisionMetadata()
         );
     }
 

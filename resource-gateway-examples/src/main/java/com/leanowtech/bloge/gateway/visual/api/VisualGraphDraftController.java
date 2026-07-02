@@ -89,33 +89,74 @@ public class VisualGraphDraftController {
     }
 
     /**
-     * @return all stored drafts
+     * @param tenantId tenant scope, empty for all
+     * @param namespace namespace scope, empty for all
+     * @param environment environment scope, empty for all
+     * @return stored drafts in scope
      */
     @GetMapping
+    public Collection<GraphDraft> list(@RequestParam(defaultValue = "") String tenantId,
+                                       @RequestParam(defaultValue = "") String namespace,
+                                       @RequestParam(defaultValue = "") String environment) {
+        return repository.all().stream()
+                .filter(draft -> matchesDraftScope(draft, tenantId, namespace, environment))
+                .toList();
+    }
+
+    /**
+     * Backward-compatible direct-call helper for tests and non-Spring callers.
+     */
     public Collection<GraphDraft> list() {
-        return repository.all();
+        return list("", "", "");
     }
 
     /**
      * Lists active and retained draft history summaries.
      *
-     * @return newest-first draft history index including deleted recoverable drafts
+     * @param tenantId tenant scope, empty for all
+     * @param namespace namespace scope, empty for all
+     * @param environment environment scope, empty for all
+     * @return newest-first draft history index including deleted recoverable drafts in scope
      */
     @GetMapping("/history")
+    public List<GraphDraftHistorySummary> history(@RequestParam(defaultValue = "") String tenantId,
+                                                  @RequestParam(defaultValue = "") String namespace,
+                                                  @RequestParam(defaultValue = "") String environment) {
+        return repository.history().stream()
+                .filter(history -> matchesDraftScope(draftForHistory(history), tenantId, namespace, environment))
+                .toList();
+    }
+
+    /**
+     * Backward-compatible direct-call helper for tests and non-Spring callers.
+     */
     public List<GraphDraftHistorySummary> history() {
-        return repository.history();
+        return history("", "", "");
     }
 
     /**
      * Lists active and retained draft summaries with server-derived validation/readiness.
      *
-     * @return newest-first draft asset summaries for browser and control-plane indexes
+     * @param tenantId tenant scope, empty for all
+     * @param namespace namespace scope, empty for all
+     * @param environment environment scope, empty for all
+     * @return newest-first draft asset summaries for browser and control-plane indexes in scope
      */
     @GetMapping("/summaries")
-    public List<GraphDraftSummary> summaries() {
+    public List<GraphDraftSummary> summaries(@RequestParam(defaultValue = "") String tenantId,
+                                             @RequestParam(defaultValue = "") String namespace,
+                                             @RequestParam(defaultValue = "") String environment) {
         return repository.history().stream()
                 .map(this::draftSummary)
+                .filter(summary -> matchesDraftSummaryScope(summary, tenantId, namespace, environment))
                 .toList();
+    }
+
+    /**
+     * Backward-compatible direct-call helper for tests and non-Spring callers.
+     */
+    public List<GraphDraftSummary> summaries() {
+        return summaries("", "", "");
     }
 
     /**
@@ -153,16 +194,47 @@ public class VisualGraphDraftController {
     }
 
     private GraphDraftSummary draftSummary(GraphDraftHistorySummary history) {
-        GraphDraft draft = repository.find(history.draftId())
-                .orElseGet(() -> repository.revisions(history.draftId()).stream()
-                        .findFirst()
-                        .orElse(null));
+        GraphDraft draft = draftForHistory(history);
         if (draft == null) {
             return GraphDraftSummary.from(history, null, null, null);
         }
         VisualValidationResult validation = validator.validate(draft);
         GraphDraftDependencyReport dependencies = GraphDraftDependencyReport.from(draft, catalog);
         return GraphDraftSummary.from(history, draft, validation, dependencies);
+    }
+
+    private GraphDraft draftForHistory(GraphDraftHistorySummary history) {
+        if (history == null) {
+            return null;
+        }
+        return repository.find(history.draftId())
+                .orElseGet(() -> repository.revisions(history.draftId()).stream()
+                        .findFirst()
+                        .orElse(null));
+    }
+
+    private static boolean matchesDraftSummaryScope(GraphDraftSummary summary,
+                                                    String tenantId,
+                                                    String namespace,
+                                                    String environment) {
+        return summary != null
+                && matchesScope(summary.tenantId(), tenantId)
+                && matchesScope(summary.namespace(), namespace)
+                && matchesScope(summary.environment(), environment);
+    }
+
+    private static boolean matchesDraftScope(GraphDraft draft,
+                                             String tenantId,
+                                             String namespace,
+                                             String environment) {
+        return draft != null
+                && matchesScope(draft.tenantId(), tenantId)
+                && matchesScope(draft.namespace(), namespace)
+                && matchesScope(draft.environment(), environment);
+    }
+
+    private static boolean matchesScope(String actual, String expected) {
+        return expected == null || expected.isBlank() || String.valueOf(actual).equals(expected);
     }
 
     /**

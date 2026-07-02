@@ -67,6 +67,25 @@ class VisualGraphPublicationControllerTest {
     }
 
     @Test
+    void listAndSummariesFilterPublicationsByAuthoringScope() {
+        InMemoryVisualGraphPublicationRepository repository = new InMemoryVisualGraphPublicationRepository();
+        VisualGraphPublication included = repository.create(publication("tenant-a", "risk", "dev"));
+        VisualGraphPublication excluded = repository.create(publication("tenant-b", "risk", "dev"));
+        VisualGraphPublicationController controller = new VisualGraphPublicationController(repository, runner(),
+                new InMemoryVisualGraphRunRepository());
+
+        assertThat(controller.list("tenant-a", "risk", "dev"))
+                .extracting(VisualGraphPublication::publicationId)
+                .containsExactly(included.publicationId());
+        assertThat(controller.summaries("tenant-a", "risk", "dev"))
+                .extracting(VisualGraphPublicationSummary::publicationId)
+                .containsExactly(included.publicationId());
+        assertThat(controller.summaries("tenant-b", "risk", "dev"))
+                .extracting(VisualGraphPublicationSummary::publicationId)
+                .containsExactly(excluded.publicationId());
+    }
+
+    @Test
     void getReturnsNotFoundForUnknownPublication() {
         VisualGraphPublicationController controller =
                 new VisualGraphPublicationController(new InMemoryVisualGraphPublicationRepository(), runner(),
@@ -125,15 +144,19 @@ class VisualGraphPublicationControllerTest {
     }
 
     private static VisualGraphPublication publication() {
+        return publication("demo-tenant", "local", "local");
+    }
+
+    private static VisualGraphPublication publication(String tenantId, String namespace, String environment) {
         OperatorDefinition operator = VisualCatalogTestSupport.eligibilityOperator("integer");
         GraphDraft draft = new GraphDraft(
                 "",
                 "draft-1",
                 1,
                 "visualPolicy",
-                "",
-                "",
-                "",
+                tenantId,
+                namespace,
+                environment,
                 "",
                 null,
                 List.of(new GraphDraft.DraftNode(

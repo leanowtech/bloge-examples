@@ -13,6 +13,7 @@ import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.util.Collection;
@@ -42,23 +43,74 @@ public class VisualGraphPublicationController {
     }
 
     /**
-     * @return all publications
+     * @param tenantId tenant scope, empty for all
+     * @param namespace namespace scope, empty for all
+     * @param environment environment scope, empty for all
+     * @return publications in scope
      */
     @GetMapping
+    public Collection<VisualGraphPublication> list(@RequestParam(defaultValue = "") String tenantId,
+                                                   @RequestParam(defaultValue = "") String namespace,
+                                                   @RequestParam(defaultValue = "") String environment) {
+        return repository.all().stream()
+                .filter(publication -> matchesPublicationScope(publication, tenantId, namespace, environment))
+                .toList();
+    }
+
+    /**
+     * Backward-compatible direct-call helper for tests and non-Spring callers.
+     */
     public Collection<VisualGraphPublication> list() {
-        return repository.all();
+        return list("", "", "");
     }
 
     /**
      * Lists lightweight publication summaries for asset indexes.
      *
-     * @return publication summaries newest first
+     * @param tenantId tenant scope, empty for all
+     * @param namespace namespace scope, empty for all
+     * @param environment environment scope, empty for all
+     * @return publication summaries newest first in scope
      */
     @GetMapping("/summaries")
-    public List<VisualGraphPublicationSummary> summaries() {
+    public List<VisualGraphPublicationSummary> summaries(@RequestParam(defaultValue = "") String tenantId,
+                                                         @RequestParam(defaultValue = "") String namespace,
+                                                         @RequestParam(defaultValue = "") String environment) {
         return repository.all().stream()
                 .map(VisualGraphPublicationSummary::from)
+                .filter(summary -> matchesPublicationSummaryScope(summary, tenantId, namespace, environment))
                 .toList();
+    }
+
+    /**
+     * Backward-compatible direct-call helper for tests and non-Spring callers.
+     */
+    public List<VisualGraphPublicationSummary> summaries() {
+        return summaries("", "", "");
+    }
+
+    private static boolean matchesPublicationScope(VisualGraphPublication publication,
+                                                   String tenantId,
+                                                   String namespace,
+                                                   String environment) {
+        return publication != null
+                && matchesScope(publication.tenantId(), tenantId)
+                && matchesScope(publication.namespace(), namespace)
+                && matchesScope(publication.environment(), environment);
+    }
+
+    private static boolean matchesPublicationSummaryScope(VisualGraphPublicationSummary summary,
+                                                          String tenantId,
+                                                          String namespace,
+                                                          String environment) {
+        return summary != null
+                && matchesScope(summary.tenantId(), tenantId)
+                && matchesScope(summary.namespace(), namespace)
+                && matchesScope(summary.environment(), environment);
+    }
+
+    private static boolean matchesScope(String actual, String expected) {
+        return expected == null || expected.isBlank() || String.valueOf(actual).equals(expected);
     }
 
     /**
