@@ -10,6 +10,7 @@ import com.leanowtech.bloge.gateway.visual.draft.GraphDraft;
 import com.leanowtech.bloge.gateway.visual.model.SchemaEnvelope;
 import com.leanowtech.bloge.gateway.visual.publication.VisualGraphPublication;
 import com.leanowtech.bloge.gateway.visual.validation.GraphDraftValidator;
+import com.leanowtech.bloge.gateway.visual.validation.VisualGraphReadiness;
 import com.leanowtech.bloge.gateway.visual.validation.VisualSchemaValidator;
 import com.leanowtech.bloge.gateway.visual.validation.VisualValidationResult;
 
@@ -56,21 +57,22 @@ public class VisualGraphRunService {
     public DslGenerationResult compile(GraphDraft draft) {
         List<VisualDiagnostic> fingerprintDiagnostics = requireOperatorFingerprintSnapshot(draft);
         if (!fingerprintDiagnostics.isEmpty()) {
-            return new DslGenerationResult(false, "", fingerprintDiagnostics);
+            return new DslGenerationResult(false, "", fingerprintDiagnostics,
+                    repairValidation(draft, fingerprintDiagnostics));
         }
         VisualValidationResult validation = validator.validate(draft);
         if (!validation.valid()) {
-            return new DslGenerationResult(false, "", validation.diagnostics());
+            return new DslGenerationResult(false, "", validation.diagnostics(), validation);
         }
         DslGenerationResult generated = generator.generate(draft);
         if (!generated.generated()) {
-            return generated;
+            return new DslGenerationResult(false, generated.dsl(), generated.diagnostics(), validation);
         }
         List<VisualDiagnostic> diagnostics = new ArrayList<>(generated.diagnostics());
         diagnostics.addAll(dynamicRunner.compileDiagnostics(generated.dsl()).stream()
                 .map(VisualGraphRunService::fromCompilerDiagnostic)
                 .toList());
-        return new DslGenerationResult(true, generated.dsl(), diagnostics);
+        return new DslGenerationResult(true, generated.dsl(), diagnostics, validation);
     }
 
     /**
@@ -87,23 +89,26 @@ public class VisualGraphRunService {
         List<VisualDiagnostic> fingerprintDiagnostics = requireOperatorFingerprintSnapshot(draft);
         if (!fingerprintDiagnostics.isEmpty()) {
             return blocked(draft, false, fingerprintDiagnostics,
-                    List.of("Operator fingerprint snapshot is required."), "");
+                    List.of("Operator fingerprint snapshot is required."), "",
+                    repairValidation(draft, fingerprintDiagnostics));
         }
         VisualValidationResult validation = validator.validate(draft);
         List<VisualDiagnostic> diagnostics = new ArrayList<>(validation.diagnostics());
         if (!validation.valid()) {
-            return blocked(draft, false, diagnostics, List.of("Visual validation failed."), "");
+            return blocked(draft, false, diagnostics, List.of("Visual validation failed."), "", validation);
         }
         List<VisualDiagnostic> contextDiagnostics = validateRuntimeContext(draft, context);
         diagnostics.addAll(contextDiagnostics);
         if (!contextDiagnostics.isEmpty()) {
-            return blocked(draft, true, diagnostics, List.of("Runtime context validation failed."), "");
+            return blocked(draft, true, diagnostics, List.of("Runtime context validation failed."), "",
+                    validation);
         }
 
         DslGenerationResult generated = generator.generate(draft);
         diagnostics.addAll(generated.diagnostics());
         if (!generated.generated()) {
-            return blocked(draft, true, diagnostics, List.of("Visual DSL generation failed."), generated.dsl());
+            return blocked(draft, true, diagnostics, List.of("Visual DSL generation failed."), generated.dsl(),
+                    validation);
         }
 
         Map<String, Object> effectiveContext = new LinkedHashMap<>(context == null ? Map.of() : context);
@@ -115,7 +120,8 @@ public class VisualGraphRunService {
         List<VisualDiagnostic> outputDiagnostics = validateOutputNodeOverride(draft, outputNode);
         diagnostics.addAll(outputDiagnostics);
         if (!outputDiagnostics.isEmpty()) {
-            return blocked(draft, true, diagnostics, List.of("Output node override validation failed."), generated.dsl());
+            return blocked(draft, true, diagnostics, List.of("Output node override validation failed."),
+                    generated.dsl(), validation);
         }
 
         DynamicGraphRunResponse dynamic = dynamicRunner.run(new DynamicGraphRunRequest(
@@ -145,7 +151,8 @@ public class VisualGraphRunService {
                 dynamic.errors(),
                 dynamic.layout(),
                 dynamic.decisionTable(),
-                generated.dsl()
+                generated.dsl(),
+                validation
         );
     }
 
@@ -166,10 +173,11 @@ public class VisualGraphRunService {
                     List.of("Visual graph publication is required."), "");
         }
 
+        VisualValidationResult validation = publication.validation();
         List<VisualDiagnostic> diagnostics = new ArrayList<>(publication.validation().diagnostics());
         if (!publication.validation().valid()) {
             return blocked(publication.draft(), false, diagnostics,
-                    List.of("Published visual validation report contains errors."), publication.dsl());
+                    List.of("Published visual validation report contains errors."), publication.dsl(), validation);
         }
         diagnostics.addAll(publication.generation().diagnostics());
         if (publication.designArtifact()) {
@@ -178,17 +186,17 @@ public class VisualGraphRunService {
                             .formatted(publication.publicationId()),
                     "/artifactKind"));
             return blocked(publication.draft(), true, diagnostics,
-                    List.of("Design visual graph publication is not executable."), publication.dsl());
+                    List.of("Design visual graph publication is not executable."), publication.dsl(), validation);
         }
         if (!publication.generation().generated() || publication.dsl().isBlank()) {
             return blocked(publication.draft(), true, diagnostics,
-                    List.of("Published visual DSL is not executable."), publication.dsl());
+                    List.of("Published visual DSL is not executable."), publication.dsl(), validation);
         }
         List<VisualDiagnostic> contextDiagnostics = validateRuntimeContext(publication.draft(), context);
         diagnostics.addAll(contextDiagnostics);
         if (!contextDiagnostics.isEmpty()) {
             return blocked(publication.draft(), true, diagnostics,
-                    List.of("Runtime context validation failed."), publication.dsl());
+                    List.of("Runtime context validation failed."), publication.dsl(), validation);
         }
 
         Map<String, Object> effectiveContext = new LinkedHashMap<>(context == null ? Map.of() : context);
@@ -202,7 +210,7 @@ public class VisualGraphRunService {
         diagnostics.addAll(outputDiagnostics);
         if (!outputDiagnostics.isEmpty()) {
             return blocked(draft, true, diagnostics, List.of("Output node override validation failed."),
-                    publication.dsl());
+                    publication.dsl(), validation);
         }
 
         DynamicGraphRunResponse dynamic = dynamicRunner.run(new DynamicGraphRunRequest(
@@ -232,8 +240,15 @@ public class VisualGraphRunService {
                 dynamic.errors(),
                 dynamic.layout(),
                 dynamic.decisionTable(),
-                publication.dsl()
+                publication.dsl(),
+                validation
         );
+    }
+
+    private static VisualValidationResult repairValidation(GraphDraft draft, List<VisualDiagnostic> diagnostics) {
+        List<VisualDiagnostic> safeDiagnostics = diagnostics == null ? List.of() : diagnostics;
+        return new VisualValidationResult(false, safeDiagnostics,
+                VisualGraphReadiness.from(draft, Map.of(), safeDiagnostics));
     }
 
     private static List<VisualDiagnostic> requireOperatorFingerprintSnapshot(GraphDraft draft) {
@@ -303,6 +318,16 @@ public class VisualGraphRunService {
                                                   List<VisualDiagnostic> diagnostics,
                                                   List<String> errors,
                                                   String generatedDsl) {
+        return blocked(draft, validated, diagnostics, errors, generatedDsl, new VisualValidationResult(false,
+                diagnostics));
+    }
+
+    private static VisualGraphRunResponse blocked(GraphDraft draft,
+                                                  boolean validated,
+                                                  List<VisualDiagnostic> diagnostics,
+                                                  List<String> errors,
+                                                  String generatedDsl,
+                                                  VisualValidationResult validation) {
         return new VisualGraphRunResponse(
                 validated,
                 false,
@@ -313,11 +338,13 @@ public class VisualGraphRunService {
                 Map.of(),
                 Map.of(),
                 0,
+                Map.of(),
                 diagnostics,
                 errors,
                 null,
                 null,
-                generatedDsl
+                generatedDsl,
+                validation
         );
     }
 

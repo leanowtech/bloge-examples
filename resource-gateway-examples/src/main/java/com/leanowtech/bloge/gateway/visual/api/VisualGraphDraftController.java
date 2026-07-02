@@ -131,11 +131,14 @@ public class VisualGraphDraftController {
     @GetMapping("/{draftId}/export")
     public ResponseEntity<GraphDraftExportBundle> exportDraft(@PathVariable String draftId) {
         return repository.find(draftId)
-                .map(draft -> ResponseEntity.ok(GraphDraftExportBundle.from(
-                        draft,
-                        operatorSnapshots(draft),
-                        validator.validate(draft).diagnostics()
-                )))
+                .map(draft -> {
+                    VisualValidationResult validation = validator.validate(draft);
+                    return ResponseEntity.ok(GraphDraftExportBundle.from(
+                            draft,
+                            operatorSnapshots(draft),
+                            validation
+                    ));
+                })
                 .orElseGet(() -> ResponseEntity.notFound().build());
     }
 
@@ -161,8 +164,9 @@ public class VisualGraphDraftController {
                         List.of()
                 ));
         GraphDraft stored = repository.save(withCurrentOrProvidedOperatorSnapshotState(imported));
+        VisualValidationResult validation = validator.validate(stored);
         return ResponseEntity.status(HttpStatus.CREATED)
-                .body(GraphDraftImportResult.imported(stored, validator.validate(stored).diagnostics()));
+                .body(GraphDraftImportResult.imported(stored, validation));
     }
 
     /**

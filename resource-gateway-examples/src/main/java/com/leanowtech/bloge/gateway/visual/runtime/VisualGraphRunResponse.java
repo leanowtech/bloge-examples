@@ -3,6 +3,7 @@ package com.leanowtech.bloge.gateway.visual.runtime;
 import com.leanowtech.bloge.gateway.example.ExampleVisualLayout;
 import com.leanowtech.bloge.gateway.example.GatewayDecisionTable;
 import com.leanowtech.bloge.gateway.visual.diagnostic.VisualDiagnostic;
+import com.leanowtech.bloge.gateway.visual.validation.VisualValidationResult;
 
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -26,6 +27,7 @@ import java.util.Map;
  * @param layout generated layout
  * @param decisionTable extracted decision table view
  * @param generatedDsl generated BLOGE DSL
+ * @param validation draft or frozen publication validation/readiness used before execution
  * @param runId persisted run history id when the run was recorded
  */
 public record VisualGraphRunResponse(
@@ -44,6 +46,7 @@ public record VisualGraphRunResponse(
         ExampleVisualLayout layout,
         GatewayDecisionTable decisionTable,
         String generatedDsl,
+        VisualValidationResult validation,
         String runId
 ) {
     /**
@@ -58,6 +61,7 @@ public record VisualGraphRunResponse(
         diagnostics = diagnostics == null ? List.of() : List.copyOf(diagnostics);
         errors = errors == null ? List.of() : List.copyOf(errors);
         generatedDsl = generatedDsl == null ? "" : generatedDsl;
+        validation = validation == null ? new VisualValidationResult(false, diagnostics) : validation;
         runId = runId == null ? "" : runId;
     }
 
@@ -79,7 +83,8 @@ public record VisualGraphRunResponse(
                                   GatewayDecisionTable decisionTable,
                                   String generatedDsl) {
         this(validated, compiled, success, graphName, outputNode, output, results, statusMap, elapsedMs,
-                Map.of(), diagnostics, errors, layout, decisionTable, generatedDsl, "");
+                Map.of(), diagnostics, errors, layout, decisionTable, generatedDsl,
+                new VisualValidationResult(false, diagnostics), "");
     }
 
     /**
@@ -101,7 +106,31 @@ public record VisualGraphRunResponse(
                                   GatewayDecisionTable decisionTable,
                                   String generatedDsl) {
         this(validated, compiled, success, graphName, outputNode, output, results, statusMap, elapsedMs,
-                nodeElapsedMs, diagnostics, errors, layout, decisionTable, generatedDsl, "");
+                nodeElapsedMs, diagnostics, errors, layout, decisionTable, generatedDsl,
+                new VisualValidationResult(false, diagnostics), "");
+    }
+
+    /**
+     * Backward-compatible constructor for callers that know validation but do not yet know a run history id.
+     */
+    public VisualGraphRunResponse(boolean validated,
+                                  boolean compiled,
+                                  boolean success,
+                                  String graphName,
+                                  String outputNode,
+                                  Object output,
+                                  Map<String, Object> results,
+                                  Map<String, String> statusMap,
+                                  long elapsedMs,
+                                  Map<String, Long> nodeElapsedMs,
+                                  List<VisualDiagnostic> diagnostics,
+                                  List<String> errors,
+                                  ExampleVisualLayout layout,
+                                  GatewayDecisionTable decisionTable,
+                                  String generatedDsl,
+                                  VisualValidationResult validation) {
+        this(validated, compiled, success, graphName, outputNode, output, results, statusMap, elapsedMs,
+                nodeElapsedMs, diagnostics, errors, layout, decisionTable, generatedDsl, validation, "");
     }
 
     /**
@@ -111,6 +140,6 @@ public record VisualGraphRunResponse(
     public VisualGraphRunResponse withRunId(String newRunId) {
         return new VisualGraphRunResponse(validated, compiled, success, graphName, outputNode, output,
                 results, statusMap, elapsedMs, nodeElapsedMs, diagnostics, errors, layout, decisionTable,
-                generatedDsl, newRunId);
+                generatedDsl, validation, newRunId);
     }
 }

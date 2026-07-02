@@ -77,6 +77,8 @@ class VisualGraphRunServiceTest {
         assertThat(response.compiled()).isTrue();
         assertThat(response.errors()).isEmpty();
         assertThat(response.success()).isTrue();
+        assertThat(response.validation().valid()).isTrue();
+        assertThat(response.validation().readiness().state()).isEqualTo("runtime-executable");
         assertThat(response.generatedDsl()).contains("transform response");
         assertThat(response.output()).isEqualTo(Map.of("score", 720));
         assertThat(response.nodeElapsedMs()).containsKey("response");
@@ -311,6 +313,8 @@ class VisualGraphRunServiceTest {
         assertThat(response.validated()).isTrue();
         assertThat(response.compiled()).isFalse();
         assertThat(response.success()).isFalse();
+        assertThat(response.validation().valid()).isTrue();
+        assertThat(response.validation().readiness().state()).isEqualTo("runtime-executable");
         assertThat(response.errors()).contains("Runtime context validation failed.");
         assertThat(response.diagnostics())
                 .anySatisfy(diagnostic -> {
@@ -521,6 +525,8 @@ class VisualGraphRunServiceTest {
         assertThat(response.validated()).isTrue();
         assertThat(response.compiled()).isFalse();
         assertThat(response.success()).isFalse();
+        assertThat(response.validation().valid()).isTrue();
+        assertThat(response.validation().readiness().state()).isEqualTo("runtime-executable");
         assertThat(response.errors()).contains("Output node override validation failed.");
         assertThat(response.diagnostics())
                 .anySatisfy(diagnostic -> {
@@ -593,6 +599,7 @@ class VisualGraphRunServiceTest {
         assertThat(response.outputNode()).isEqualTo("response");
         assertThat(response.output()).isEqualTo(720);
         assertThat(response.generatedDsl()).isEqualTo(frozenDsl);
+        assertThat(response.validation()).isEqualTo(publication.validation());
     }
 
     @Test
@@ -616,6 +623,7 @@ class VisualGraphRunServiceTest {
         assertThat(response.compiled()).isFalse();
         assertThat(response.success()).isFalse();
         assertThat(response.errors()).contains("Design visual graph publication is not executable.");
+        assertThat(response.validation()).isEqualTo(design.validation());
         assertThat(response.diagnostics())
                 .anySatisfy(diagnostic -> {
                     assertThat(diagnostic.code()).isEqualTo("visual.publication.designNotExecutable");
@@ -638,6 +646,7 @@ class VisualGraphRunServiceTest {
         assertThat(response.compiled()).isFalse();
         assertThat(response.success()).isFalse();
         assertThat(response.generatedDsl()).isEqualTo(publication.dsl());
+        assertThat(response.validation()).isEqualTo(publication.validation());
         assertThat(response.errors()).contains("Output node override validation failed.");
         assertThat(response.diagnostics())
                 .anySatisfy(diagnostic -> {
@@ -839,6 +848,7 @@ class VisualGraphRunServiceTest {
         assertThat(response.compiled()).isFalse();
         assertThat(response.success()).isFalse();
         assertThat(response.generatedDsl()).isEqualTo(frozenDsl);
+        assertThat(response.validation()).isEqualTo(publication.validation());
         assertThat(response.diagnostics())
                 .anySatisfy(diagnostic -> assertThat(diagnostic.code())
                         .isEqualTo("visual.context.requiredMissing"));

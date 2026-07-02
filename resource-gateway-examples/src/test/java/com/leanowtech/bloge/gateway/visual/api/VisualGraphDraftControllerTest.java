@@ -63,6 +63,8 @@ class VisualGraphDraftControllerTest {
 
         assertThat(result.generated()).isFalse();
         assertThat(result.dsl()).isBlank();
+        assertThat(result.validation().valid()).isFalse();
+        assertThat(result.validation().readiness().state()).isEqualTo("draft-repair-required");
         assertThat(result.diagnostics())
                 .anySatisfy(diagnostic -> {
                     assertThat(diagnostic.code()).isEqualTo("visual.binding.typeMismatch");
@@ -134,6 +136,9 @@ class VisualGraphDraftControllerTest {
         assertThat(result.generated()).isTrue();
         assertThat(result.diagnostics()).isEmpty();
         assertThat(result.dsl()).contains("transform eligibility");
+        assertThat(result.validation().valid()).isTrue();
+        assertThat(result.validation().readiness().state()).isEqualTo("runtime-executable");
+        assertThat(result.validation().readiness().artifactKinds()).containsExactly("EXECUTABLE", "DESIGN");
     }
 
     @Test
@@ -150,6 +155,8 @@ class VisualGraphDraftControllerTest {
 
         assertThat(result.generated()).isFalse();
         assertThat(result.dsl()).isBlank();
+        assertThat(result.validation().valid()).isFalse();
+        assertThat(result.validation().readiness().state()).isEqualTo("draft-repair-required");
         assertThat(result.diagnostics())
                 .anySatisfy(diagnostic -> {
                     assertThat(diagnostic.code()).isEqualTo("visual.operator.fingerprintMissing");
@@ -167,6 +174,8 @@ class VisualGraphDraftControllerTest {
 
         assertThat(result.generated()).isFalse();
         assertThat(result.dsl()).contains("node policy : riskMissingRuntime");
+        assertThat(result.validation().valid()).isTrue();
+        assertThat(result.validation().readiness().state()).isEqualTo("runtime-executable");
         assertThat(result.diagnostics())
                 .anySatisfy(diagnostic -> {
                     assertThat(diagnostic.code()).isEqualTo("bloge.dsl");
@@ -190,6 +199,9 @@ class VisualGraphDraftControllerTest {
 
         assertThat(result.generated()).isFalse();
         assertThat(result.dsl()).isNotBlank();
+        assertThat(result.validation().valid()).isTrue();
+        assertThat(result.validation().readiness().state()).isEqualTo("design-only");
+        assertThat(result.validation().readiness().artifactKinds()).containsExactly("DESIGN");
         assertThat(result.diagnostics())
                 .extracting("code", "target")
                 .containsExactly(org.assertj.core.groups.Tuple.tuple(
@@ -316,6 +328,9 @@ class VisualGraphDraftControllerTest {
         assertThat(bundle.diagnostics())
                 .extracting("code")
                 .contains("visual.binding.typeMismatch");
+        assertThat(bundle.validation().valid()).isFalse();
+        assertThat(bundle.validation().diagnostics()).isEqualTo(bundle.diagnostics());
+        assertThat(bundle.validation().readiness().state()).isEqualTo("draft-repair-required");
     }
 
     @Test
@@ -345,6 +360,10 @@ class VisualGraphDraftControllerTest {
         assertThat(response.getBody().schemaVersion()).isEqualTo(GraphDraftImportResult.SCHEMA_VERSION);
         assertThat(response.getBody().imported()).isTrue();
         assertThat(response.getBody().diagnostics()).isEmpty();
+        assertThat(response.getBody().validation().valid()).isTrue();
+        assertThat(response.getBody().validation().readiness().state()).isEqualTo("runtime-executable");
+        assertThat(response.getBody().validation().readiness().artifactKinds())
+                .containsExactly("EXECUTABLE", "DESIGN");
         GraphDraft imported = response.getBody().draft();
         assertThat(imported.draftId()).isNotBlank().isNotEqualTo(stored.draftId());
         assertThat(imported.revision()).isEqualTo(1);
@@ -385,6 +404,42 @@ class VisualGraphDraftControllerTest {
         assertThat(response.getBody().diagnostics())
                 .extracting("code")
                 .contains("visual.operator.unknown");
+        assertThat(response.getBody().validation().valid()).isFalse();
+        assertThat(response.getBody().validation().diagnostics()).isEqualTo(response.getBody().diagnostics());
+        assertThat(response.getBody().validation().readiness().state()).isEqualTo("draft-repair-required");
+    }
+
+    @Test
+    void exportAndImportDraftBundleCarryDesignOnlyReadiness() {
+        DefaultVisualOperatorCatalog catalog = VisualCatalogTestSupport.catalogWithLibrary(
+                VisualCatalogTestSupport.designOnlyEligibilityLibrary("integer"));
+        InMemoryGraphDraftRepository sourceRepository = new InMemoryGraphDraftRepository();
+        InMemoryGraphDraftRepository targetRepository = new InMemoryGraphDraftRepository();
+        VisualGraphDraftController sourceController = controllerWithCatalog(catalog, sourceRepository);
+        VisualGraphDraftController targetController = controllerWithCatalog(catalog, targetRepository);
+        GraphDraft stored = sourceController.create(eligibilityDraft(graphInputSchema(
+                Map.of(
+                        "score", Map.of("type", "integer"),
+                        "amount", Map.of("type", "number")
+                )
+        )));
+
+        GraphDraftExportBundle bundle = sourceController.exportDraft(stored.draftId()).getBody();
+        ResponseEntity<GraphDraftImportResult> response = targetController.importDraft(bundle);
+
+        assertThat(bundle).isNotNull();
+        assertThat(bundle.validation().valid()).isTrue();
+        assertThat(bundle.validation().readiness().state()).isEqualTo("design-only");
+        assertThat(bundle.validation().readiness().executable()).isFalse();
+        assertThat(bundle.validation().readiness().artifactKinds()).containsExactly("DESIGN");
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.CREATED);
+        assertThat(response.getBody()).isNotNull();
+        assertThat(response.getBody().imported()).isTrue();
+        assertThat(response.getBody().validation().valid()).isTrue();
+        assertThat(response.getBody().validation().readiness().state()).isEqualTo("design-only");
+        assertThat(response.getBody().validation().readiness().executable()).isFalse();
+        assertThat(response.getBody().validation().readiness().artifactKinds()).containsExactly("DESIGN");
+        assertThat(targetRepository.all()).containsExactly(response.getBody().draft());
     }
 
     @Test

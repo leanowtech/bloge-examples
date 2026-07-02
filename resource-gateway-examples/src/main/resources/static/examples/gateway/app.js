@@ -4310,7 +4310,8 @@ async function validateVisualDraft() {
 }
 
 async function compileVisualDraft() {
-  setVisualCheck('Compiling...', 'info');
+  const readinessBeforeCompile = state.visualCheck?.readiness || null;
+  setVisualCheck('Compiling...', 'info', [], readinessBeforeCompile);
   try {
     const response = await fetch('/api/visual/drafts/compile', {
       method: 'POST',
@@ -4330,11 +4331,12 @@ async function compileVisualDraft() {
     setVisualCheck(
       payload.generated ? 'Compiled visual graph.' : 'Visual graph did not compile.',
       visualCheckLevel(diagnostics, payload.generated),
-      diagnostics
+      diagnostics,
+      payload.validation?.readiness || readinessBeforeCompile
     );
     $('output').textContent = pretty({ status: response.status, compile: payload });
   } catch (error) {
-    setVisualCheck(error.message, 'error');
+    setVisualCheck(error.message, 'error', [], readinessBeforeCompile);
   }
 }
 
@@ -4364,7 +4366,7 @@ async function publishVisualDraft() {
     const confirmingPublishWarnings = state.pendingPublishWarningKey === previousWarningKey;
     const stored = await saveCurrentDraft();
     if (!stored?.draftId) {
-      setVisualCheck('Draft was not saved.', 'error');
+      setVisualCheck('Draft was not saved.', 'error', [], readinessBeforePublish);
       return;
     }
     const draftId = stored.draftId;
@@ -4414,7 +4416,7 @@ async function publishVisualDraft() {
     );
     $('output').textContent = pretty({ status: response.status, publication: payload });
   } catch (error) {
-    setVisualCheck(error.message, 'error');
+    setVisualCheck(error.message, 'error', [], readinessBeforePublish);
   }
 }
 
@@ -6434,8 +6436,9 @@ async function runSelectedPublication() {
     return;
   }
 
+  const readinessBeforeRun = publication.validation?.readiness || state.visualCheck?.readiness || null;
   setPublicationMessage(`Running ${publication.publicationId}...`, 'info');
-  setVisualCheck(`Running published ${publication.publicationId}...`, 'info');
+  setVisualCheck(`Running published ${publication.publicationId}...`, 'info', [], readinessBeforeRun);
   clearActiveRunTrace();
   try {
     const response = await fetch(`/api/visual/publications/${encodeURIComponent(publication.publicationId)}/run`, {
@@ -6450,7 +6453,8 @@ async function runSelectedPublication() {
     setVisualCheck(
       ok ? 'Published run completed.' : 'Published run returned errors.',
       level,
-      diagnostics
+      diagnostics,
+      payload.validation?.readiness || readinessBeforeRun
     );
     setPublicationMessage(
       ok ? `Ran ${publication.publicationId}.` : `Run returned errors for ${publication.publicationId}.`,
@@ -6468,7 +6472,7 @@ async function runSelectedPublication() {
     await loadRunHistory();
   } catch (error) {
     setPublicationMessage(error.message, 'error');
-    setVisualCheck(error.message, 'error');
+    setVisualCheck(error.message, 'error', [], readinessBeforeRun);
   }
 }
 
@@ -6707,8 +6711,16 @@ async function exportSelectedDraft() {
     setDraftMessage(`Export failed with ${response.status}`, 'error');
     return;
   }
+  const validation = payload?.validation || null;
+  const diagnostics = normalizeDiagnostics(validation?.diagnostics || payload?.diagnostics);
   state.draftBundleText = pretty(payload);
   setDraftMessage(`Exported ${payload.sourceDraftId}@${payload.sourceRevision || 0}.`, 'success');
+  setVisualCheck(
+    'Exported visual draft package.',
+    visualCheckLevel(diagnostics, validation?.valid !== false),
+    diagnostics,
+    validation?.readiness
+  );
   $('output').textContent = pretty({ status: response.status, draftExport: payload });
   renderDraftControls();
 }
@@ -6733,7 +6745,8 @@ async function importDraftBundle() {
     return;
   }
   const importedDraft = payload?.draft || payload;
-  const diagnostics = normalizeDiagnostics(payload?.diagnostics);
+  const validation = payload?.validation || null;
+  const diagnostics = normalizeDiagnostics(validation?.diagnostics || payload?.diagnostics);
   state.builder = builderFromVisualDraft(importedDraft);
   clearBuilderHistory('Imported draft; local edit history cleared.');
   await loadVisualOperatorCatalog();
@@ -6754,6 +6767,12 @@ async function importDraftBundle() {
   setDraftMessage(
     importMessage,
     hasImportErrors ? 'error' : 'success'
+  );
+  setVisualCheck(
+    payload?.imported ? 'Imported visual draft package.' : 'Visual draft package was not imported.',
+    visualCheckLevel(diagnostics, payload?.imported !== false && !hasImportErrors),
+    diagnostics,
+    validation?.readiness
   );
   renderScenario();
   $('output').textContent = pretty({ status: response.status, draftImport: payload, importedDraft });
@@ -16390,7 +16409,8 @@ async function checkVisualConnectionOnServer(source, target) {
     setVisualCheck(
       payload.accepted ? 'Connection accepted with diagnostics.' : 'Connection rejected.',
       visualCheckLevel(diagnostics, Boolean(payload.accepted)),
-      diagnostics
+      diagnostics,
+      payload.validation?.readiness || state.visualCheck?.readiness || null
     );
   }
   return {
@@ -16777,7 +16797,8 @@ async function runCustomGraph() {
     setVisualCheck(
       ok ? 'Run completed.' : (payload.validated === false ? 'Visual validation failed.' : 'Run returned errors.'),
       visualCheckLevel(diagnostics, ok),
-      diagnostics
+      diagnostics,
+      payload.validation?.readiness || state.visualCheck?.readiness || null
     );
   }
   if (payload.generatedDsl) {

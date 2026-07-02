@@ -79,6 +79,21 @@ class VisualAuthoringAppJsTest {
     }
 
     @Test
+    void keepsVisualReadinessAcrossCompileRunAndConnectionPreflightStatusUpdates() throws Exception {
+        String source = appJsSource();
+
+        assertThat(source)
+                .contains("const readinessBeforeCompile = state.visualCheck?.readiness || null;")
+                .contains("setVisualCheck('Compiling...', 'info', [], readinessBeforeCompile);")
+                .contains("payload.validation?.readiness || readinessBeforeCompile")
+                .contains("setVisualCheck(error.message, 'error', [], readinessBeforeCompile);")
+                .contains("const readinessBeforeRun = publication.validation?.readiness || state.visualCheck?.readiness || null;")
+                .contains("payload.validation?.readiness || readinessBeforeRun")
+                .contains("setVisualCheck(error.message, 'error', [], readinessBeforeRun);")
+                .contains("payload.validation?.readiness || state.visualCheck?.readiness || null");
+    }
+
+    @Test
     void requiresResourceContractWarningAcknowledgementBeforeSaving() throws Exception {
         String source = appJsSource();
 
@@ -3205,6 +3220,176 @@ class VisualAuthoringAppJsTest {
                     ['rebase loading cleared', context.state.operatorFingerprintRebaseNodeId, '']
                   ];
                   for (const [label, actual, expected] of rebaseChecks) {
+                    if (actual !== expected) {
+                      throw new Error(`${label}: expected ${expected}, got ${actual}`);
+                    }
+                  }
+                  """, """
+                  const transferReadiness = {
+                    schemaVersion: 'bloge.visualGraphReadiness.v1',
+                    state: 'DESIGN_ONLY',
+                    level: 'INFO',
+                    executable: false,
+                    artifactKinds: ['DESIGN'],
+                    title: 'Design-only graph',
+                    summary: 'Imported as a design artifact.',
+                    nodeCount: 1,
+                    runtimeExecutableNodeCount: 0,
+                    designOnlyNodeCount: 1,
+                    runtimeBlockedNodeCount: 0,
+                    governanceReviewNodeCount: 0,
+                    draftRepairNodeCount: 0,
+                    nodes: [{
+                      nodeId: 'riskNode',
+                      operatorRef: 'risk:eligibility',
+                      state: 'DESIGN_ONLY',
+                      level: 'INFO',
+                      executable: false,
+                      title: 'Design-only operator',
+                      summary: 'No runtime lowering yet.',
+                      diagnosticCount: 0,
+                      errorCount: 0,
+                      warningCount: 0
+                    }]
+                  };
+                  const transferDraft = {
+                    schemaVersion: 'bloge.visualGraphDraft.v1',
+                    draftId: 'draft-imported',
+                    revision: 1,
+                    graphName: 'importedGraph',
+                    tenantId: 'demo-tenant',
+                    namespace: 'local',
+                    environment: 'browser',
+                    status: 'DRAFT',
+                    inputSchema: { schemaVersion: 'json-schema-draft-2020-12', schema: { type: 'object' } },
+                    nodes: [],
+                    edges: [],
+                    output: { nodeId: '', path: '' },
+                    visualLayout: { schemaVersion: 'bloge.visualLayout.v1', rootId: 'importedGraph', nodes: [], edges: [] },
+                    operatorFingerprints: {},
+                    operatorSnapshots: {}
+                  };
+                  const transferFetches = [];
+                  const transferDraftMessages = [];
+                  const transferVisualChecks = [];
+                  let transferDraftControlRenders = 0;
+                  let transferDraftListLoads = 0;
+                  let transferRevisionLoads = 0;
+                  let transferCatalogLoads = 0;
+                  let transferScenarioRenders = 0;
+                  context.state.currentDraftId = 'draft-risk';
+                  context.state.currentDraftRevision = 4;
+                  context.state.draftBundleText = '';
+                  context.fetch = async (url, options = {}) => {
+                    transferFetches.push({ url, method: options.method || 'GET', body: options.body || '' });
+                    if (url === '/api/visual/drafts/draft-risk/export') {
+                      return {
+                        ok: true,
+                        status: 200,
+                        json: async () => ({
+                          schemaVersion: 'bloge.visualGraphDraftExport.v1',
+                          sourceDraftId: 'draft-risk',
+                          sourceRevision: 4,
+                          draft: transferDraft,
+                          operatorSnapshots: [],
+                          diagnostics: [],
+                          validation: {
+                            valid: true,
+                            diagnostics: [],
+                            readiness: transferReadiness
+                          }
+                        })
+                      };
+                    }
+                    if (url === '/api/visual/drafts/import') {
+                      return {
+                        ok: true,
+                        status: 201,
+                        json: async () => ({
+                          schemaVersion: 'bloge.visualGraphDraftImportResult.v1',
+                          imported: true,
+                          draft: transferDraft,
+                          diagnostics: [],
+                          validation: {
+                            valid: true,
+                            diagnostics: [],
+                            readiness: transferReadiness
+                          }
+                        })
+                      };
+                    }
+                    throw new Error(`unexpected transfer fetch ${url}`);
+                  };
+                  context.$ = (id) => {
+                    context.elements[id] = context.elements[id] || { textContent: '', value: '' };
+                    return context.elements[id];
+                  };
+                  context.setDraftMessage = (text, level) => {
+                    transferDraftMessages.push({ text, level });
+                  };
+                  context.setVisualCheck = (message, level, diagnostics = [], readiness = null) => {
+                    const normalized = context.normalizeVisualGraphReadiness(readiness);
+                    context.state.visualCheck = { message, level, diagnostics, readiness: normalized };
+                    transferVisualChecks.push({ message, level, readiness: normalized });
+                  };
+                  context.renderDraftControls = () => {
+                    transferDraftControlRenders += 1;
+                  };
+                  context.clearBuilderHistory = () => {};
+                  context.loadVisualOperatorCatalog = async () => {
+                    transferCatalogLoads += 1;
+                    return [];
+                  };
+                  context.loadDraftList = async () => {
+                    transferDraftListLoads += 1;
+                    return [];
+                  };
+                  context.loadDraftRevisions = async () => {
+                    transferRevisionLoads += 1;
+                    return [];
+                  };
+                  context.syncGraphInputSchemaTextFromBuilder = () => {};
+                  context.syncComposerFromBuilder = () => {};
+                  context.renderScenario = () => {
+                    transferScenarioRenders += 1;
+                  };
+                  return context.exportSelectedDraft()
+                    .then(() => context.importDraftBundle())
+                    .then(() => ({
+                      transferFetches,
+                      transferDraftMessages,
+                      transferVisualChecks,
+                      transferDraftControlRenders,
+                      transferDraftListLoads,
+                      transferRevisionLoads,
+                      transferCatalogLoads,
+                      transferScenarioRenders,
+                      currentDraftId: context.state.currentDraftId,
+                      currentDraftRevision: context.state.currentDraftRevision,
+                      draftBundleHasValidation: context.state.draftBundleText.includes('"validation"')
+                    }));
+                }).then((transferResult) => {
+                  const importBody = JSON.parse(transferResult.transferFetches[1].body || '{}');
+                  const exportVisualCheck = transferResult.transferVisualChecks[0] || {};
+                  const importVisualCheck = transferResult.transferVisualChecks[1] || {};
+                  const transferChecks = [
+                    ['draft export endpoint', transferResult.transferFetches[0].url, '/api/visual/drafts/draft-risk/export'],
+                    ['draft import endpoint', transferResult.transferFetches[1].url, '/api/visual/drafts/import'],
+                    ['draft import body schema', importBody.schemaVersion, 'bloge.visualGraphDraftExport.v1'],
+                    ['draft bundle carries validation', String(transferResult.draftBundleHasValidation), 'true'],
+                    ['draft export message', transferResult.transferDraftMessages[0].text, 'Exported draft-risk@4.'],
+                    ['draft export visual readiness', exportVisualCheck.readiness?.state, 'design-only'],
+                    ['draft import message', transferResult.transferDraftMessages[1].text, 'Imported draft-imported@1.'],
+                    ['draft import visual readiness', importVisualCheck.readiness?.state, 'design-only'],
+                    ['draft import current id', transferResult.currentDraftId, 'draft-imported'],
+                    ['draft import current revision', transferResult.currentDraftRevision, 1],
+                    ['draft transfer catalog loads', transferResult.transferCatalogLoads, 1],
+                    ['draft transfer draft list loads', transferResult.transferDraftListLoads, 1],
+                    ['draft transfer revision loads', transferResult.transferRevisionLoads, 1],
+                    ['draft transfer controls render', transferResult.transferDraftControlRenders, 1],
+                    ['draft transfer scenario render', transferResult.transferScenarioRenders, 1]
+                  ];
+                  for (const [label, actual, expected] of transferChecks) {
                     if (actual !== expected) {
                       throw new Error(`${label}: expected ${expected}, got ${actual}`);
                     }

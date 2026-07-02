@@ -1298,6 +1298,22 @@ GET /api/visual/drafts/{draftId}/revisions/{revision}
 浏览器 Drafts 面板已接入该 API：可以加载 revision 列表、把历史快照预览到
 画布上，并通过 guarded patch 把选中 revision 恢复成新的最新 revision。
 
+resource-gateway 示例还提供 portable draft export/import：
+
+```http
+GET /api/visual/drafts/{draftId}/export
+POST /api/visual/drafts/import
+```
+
+`bloge.visualGraphDraftExport.v1` 包含 source draft identity、revision、draft
+snapshot、operator snapshots、export-time diagnostics，以及完整
+`validation`。`bloge.visualGraphDraftImportResult.v1` 在创建新 draft identity
+后返回目标环境 diagnostics 和同一结构的 `validation`。这不是重复字段洁癖；
+`diagnostics` 保持旧客户端兼容，`validation.readiness` 让迁移后的
+schema-only、runtime-blocked、governance-review 或 catalog-repair-required 图仍
+能被客户端按 `artifactKinds` 正确引导到 `DESIGN`、`EXECUTABLE` 或修复路径，而不
+需要用户再次手动 validate 才知道它是什么状态。
+
 ### 10.4 校验 draft
 
 ```http
@@ -1403,23 +1419,27 @@ POST /api/visual/drafts/{draftId}/compile
 必须把生成的 DSL 交给 BLOGE compiler；若 compiler 返回 error，响应仍必须
 `compiled/generated=false`，但可以返回生成的 DSL 和 compiler diagnostics，便于
 画布定位 lowering 与 runtime registry 问题。
+当前 resource-gateway 实现的 `DslGenerationResult` 会同时返回本次 compile 使用的
+`validation`，因此浏览器在 compile 失败、compiler error 或 design-only blocking
+diagnostic 后仍能用 `validation.readiness` 约束发布模式和修复路径。
 
 响应：
 
 ```json
 {
-  "compiled": true,
+  "generated": true,
   "dsl": "graph customLoanPolicy { ... }",
-  "operatorFingerprints": {
-    "fetchApplicant": "sha256:..."
-  },
-  "pathMappings": [
-    {
-      "draftPath": "fetchApplicant.output.score",
-      "dslPath": "fetchApplicant.output.payload.score"
+  "diagnostics": [],
+  "validation": {
+    "valid": true,
+    "diagnostics": [],
+    "readiness": {
+      "schemaVersion": "bloge.visualGraphReadiness.v1",
+      "state": "runtime-executable",
+      "executable": true,
+      "artifactKinds": ["EXECUTABLE", "DESIGN"]
     }
-  ],
-  "diagnostics": []
+  }
 }
 ```
 
@@ -1570,7 +1590,8 @@ lower draft。这样 operator library 后续变更不会影响已经发布的业
 ```
 
 响应沿用 `VisualGraphRunResponse`，但 `generatedDsl` 必须等于 publication 内的
-frozen DSL。若 artifact 不存在返回 `404 NOT FOUND`；artifact 本身不可被修改或
+frozen DSL，`validation` 必须等于 publication 冻结的 validation/readiness，而不是
+按当前 catalog 重新计算。若 artifact 不存在返回 `404 NOT FOUND`；artifact 本身不可被修改或
 删除。
 
 ### 10.9 试运行
@@ -1601,17 +1622,28 @@ Content-Type: application/json
 ```json
 {
   "runId": "run-01H...",
+  "validated": true,
   "compiled": true,
   "success": true,
   "outputNode": "assembleLoanDecision",
   "output": {},
-  "nodeStates": {
+  "statusMap": {
     "fetchApplicant": "COMPLETED",
     "loanPolicy": "COMPLETED"
   },
   "results": {},
   "elapsedMs": 42,
-  "diagnostics": []
+  "diagnostics": [],
+  "validation": {
+    "valid": true,
+    "diagnostics": [],
+    "readiness": {
+      "schemaVersion": "bloge.visualGraphReadiness.v1",
+      "state": "runtime-executable",
+      "executable": true,
+      "artifactKinds": ["EXECUTABLE", "DESIGN"]
+    }
+  }
 }
 ```
 
