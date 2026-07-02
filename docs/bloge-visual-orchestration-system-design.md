@@ -715,6 +715,11 @@ draft validate response 现在返回服务端派生的 `bloge.visualGraphReadine
 `valid` 只表达 draft contract 是否有 blocking error，`readiness` 单独表达
 `runtime-executable`、`design-only`、`runtime-blocked`、`governance-review` 或
 `draft-repair-required` 图级状态、可发布 artifact kind 和 node-level readiness 摘要。
+对于 schema-valid 但缺运行时实现的节点，`readiness.runtimeBindingRequirements[]`
+会继续把 design-only lowering、remote-worker、AI-tool、event-source、message-handler、
+webhook、streaming 或 durable 需求压成 node-scoped bindingKind/bindingTarget/recommendedAction，
+使 DESIGN 制品后续可以进入 runtime plane 绑定、集成排期或外部治理队列，而不是只留下
+“不能运行”的 UI 文案。
 `actionReadiness` 则表达 `compileNow`、`runNow`、`publishDesignNow`、
 `publishDesignAfterReview`、`publishExecutableNow`、`publishExecutableAfterReview`、
 `requiresAckWarnings` 和 `requiresGovernanceEvidence`，让浏览器和外部控制面不需要从
@@ -802,7 +807,7 @@ fingerprint snapshot；普通保存和 PATCH 仍保留既有 snapshot，避免�
 | `POST` | `/api/visual/drafts/{draftId}/operator-fingerprints/rebase` | 当前已实现：显式刷新选中节点或全部节点的 service-managed operator fingerprint snapshot，使用 `expectedRevision` 防并发覆盖，并对未知节点/当前 catalog 缺失算子返回结构化 diagnostics |
 | `DELETE` | `/api/visual/drafts/{draftId}` | 当前已实现：删除 current draft 指针但保留 immutable revision history，写入 deletion audit snapshot，并允许后续从 retained revision 恢复 |
 | `POST` | `/api/visual/connections/check` | 当前已实现：服务端权威预检候选 data/dependency/route/config/context 连接；响应的 `diagnostics` 只保留候选连接相关问题，`summary` 以 `bloge.visualConnectionCheckSummary.v1` 暴露 accepted、binding key、diagnostic counts、replacement effects 和 candidate readiness 摘要，`validation/readiness/actionReadiness` 表达加上候选连接后的完整 candidate draft 状态 |
-| `POST` | `/api/visual/drafts/{draftId}/validate` | 增量或全量校验；当前实现的 transient `/api/visual/drafts/validate` 返回 `valid`、`diagnostics`、`bloge.visualGraphReadiness.v1` 图级 runtime/design readiness 和 `bloge.visualGraphActionReadiness.v1` 动作准入 |
+| `POST` | `/api/visual/drafts/{draftId}/validate` | 增量或全量校验；当前实现的 transient `/api/visual/drafts/validate` 返回 `valid`、`diagnostics`、`bloge.visualGraphReadiness.v1` 图级 runtime/design readiness、节点级 runtime binding requirements 和 `bloge.visualGraphActionReadiness.v1` 动作准入 |
 | `POST` | `/api/visual/drafts/{draftId}/compile` | 生成 DSL 并编译；响应携带本次 draft validation/readiness/actionReadiness，供客户端在 compiler 或 design-only blocking 后继续约束发布路径 |
 | `POST` | `/api/visual/drafts/{draftId}/run` | 使用测试 context 运行；响应携带本次 draft validation/readiness/actionReadiness、diagnostics 和 run history id |
 | `POST` | `/api/visual/drafts/{draftId}/publish` | 发布为 graph version；浏览器和 API 默认 `artifactKind=EXECUTABLE`，也支持 `artifactKind=DESIGN` 冻结非执行型设计制品；warning-level diagnostics 需 `ackWarnings=true` 后才写入；响应在成功和拒绝时都保留 validation/readiness/actionReadiness，供客户端按 artifact kind 和 warning gate 纠偏 |

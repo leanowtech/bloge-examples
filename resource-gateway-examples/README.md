@@ -1081,6 +1081,11 @@ author back to the `DESIGN` artifact path instead of treating the composition as
 broken. The Browser Composer's Server Check area renders a dedicated readiness
 panel for these graphs, showing that save/export/`DESIGN` publication remain
 allowed while compile/run/`EXECUTABLE` publication wait for runtime binding.
+That readiness payload also lists node-scoped `runtimeBindingRequirements` for
+schema-valid but non-executable nodes, including the missing binding kind,
+declared target such as worker topic/event type/channel/webhook path, and the
+recommended promotion action, so downstream runtime-plane work can be routed
+without scraping diagnostic prose.
 The Drafts panel renders a Draft Asset Index from server-side draft summaries
 for the active Authoring Scope, so active and recoverable deleted drafts expose
 design-only, runtime-blocked, governance-review, repair-required readiness, and
@@ -1477,6 +1482,7 @@ Seven `.bloge` graphs live in `src/main/resources/bloge/gateway/`:
 | `GraphDraftDiff` | Machine-readable graph draft revision diff with graph/node/edge change surfaces, node and edge add/remove/change counts, and risk-classified review summaries |
 | `GraphDraftDependencyReport` | Machine-readable dependency report used for stored drafts, migration bundles, import results, and frozen publications, with distinct operatorRef usage, per-node binding/edge upstream and downstream lineage, source/lowering/readiness counts, saved-vs-current/scope-mismatch fingerprint state, and scope policy diagnostics |
 | `GraphDraftRevisionRestoreRequest` | Governed restore request for turning one immutable draft revision into a new latest revision with optimistic locking and actor/source/summary/reason audit metadata |
+| `VisualGraphReadiness` | Server-derived graph runtime/design readiness (`bloge.visualGraphReadiness.v1`) with node readiness rows and runtime binding requirements for schema-valid but non-executable design artifacts |
 | `VisualGraphActionReadiness` | Server-derived graph action gate summary (`bloge.visualGraphActionReadiness.v1`) for compile, run, DESIGN publication, EXECUTABLE publication, warning acknowledgement, and governance evidence requirements |
 | `GraphDraftExportBundle` | Portable draft package with source identity, draft snapshot, operator snapshots, export-time diagnostics, validation/readiness/action-readiness, and source dependency report |
 | `GraphDraftImportResult` | Import response contract with source bundle/draft identity, stored draft identity, target-environment compatibility diagnostics, validation/readiness/action-readiness, and dependency report |

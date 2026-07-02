@@ -33,6 +33,8 @@ import java.util.Set;
  * @param runtimeBlockedNodeCount runtime-blocked node count
  * @param governanceReviewNodeCount governance-review node count
  * @param draftRepairNodeCount node count requiring draft/catalog repair
+ * @param runtimeBindingRequirementCount runtime binding requirement count
+ * @param runtimeBindingRequirements machine-readable runtime bindings needed before executable promotion
  * @param nodes per-node readiness rows
  */
 public record VisualGraphReadiness(
@@ -49,6 +51,8 @@ public record VisualGraphReadiness(
         int runtimeBlockedNodeCount,
         int governanceReviewNodeCount,
         int draftRepairNodeCount,
+        int runtimeBindingRequirementCount,
+        List<RuntimeBindingRequirement> runtimeBindingRequirements,
         List<NodeReadiness> nodes
 ) {
     public static final String SCHEMA_VERSION = "bloge.visualGraphReadiness.v1";
@@ -78,6 +82,10 @@ public record VisualGraphReadiness(
                 .toList();
         title = title == null ? "" : title;
         summary = summary == null ? "" : summary;
+        runtimeBindingRequirements = runtimeBindingRequirements == null
+                ? List.of()
+                : Collections.unmodifiableList(new ArrayList<>(runtimeBindingRequirements));
+        runtimeBindingRequirementCount = runtimeBindingRequirements.size();
         nodes = nodes == null ? List.of() : Collections.unmodifiableList(new ArrayList<>(nodes));
     }
 
@@ -99,6 +107,8 @@ public record VisualGraphReadiness(
                 0,
                 0,
                 0,
+                0,
+                List.of(),
                 List.of()
         );
     }
@@ -121,6 +131,8 @@ public record VisualGraphReadiness(
                 0,
                 0,
                 0,
+                0,
+                List.of(),
                 List.of()
         );
     }
@@ -142,12 +154,14 @@ public record VisualGraphReadiness(
         List<VisualDiagnostic> safeDiagnostics = diagnostics == null ? List.of() : diagnostics;
         Map<String, List<VisualDiagnostic>> diagnosticsByNodeId = diagnosticsByNodeId(draft, safeDiagnostics);
         List<NodeReadiness> nodes = new ArrayList<>();
+        List<RuntimeBindingRequirement> runtimeBindingRequirements = new ArrayList<>();
         Totals totals = new Totals();
         for (GraphDraft.DraftNode node : draft.nodes()) {
             OperatorDefinition operator = operatorsByNodeId == null ? null : operatorsByNodeId.get(node.id());
             NodeReadiness readiness = NodeReadiness.from(node, operator,
                     diagnosticsByNodeId.getOrDefault(node.id(), List.of()));
             nodes.add(readiness);
+            runtimeBindingRequirements.addAll(RuntimeBindingRequirement.from(node, operator, readiness));
             totals.add(readiness);
         }
         boolean hasGlobalRepairError = safeDiagnostics.stream()
@@ -172,8 +186,238 @@ public record VisualGraphReadiness(
                 totals.runtimeBlockedNodeCount,
                 totals.governanceReviewNodeCount,
                 totals.draftRepairNodeCount,
+                runtimeBindingRequirements.size(),
+                runtimeBindingRequirements,
                 nodes
         );
+    }
+
+    /**
+     * Runtime binding required before a schema-valid design can be promoted to an executable artifact.
+     *
+     * @param nodeId draft node id that needs the binding
+     * @param operatorRef operator reference used by the node
+     * @param state readiness state that produced the requirement
+     * @param level UI severity
+     * @param sourceKind operator source kind
+     * @param loweringMode requested lowering mode
+     * @param bindingKind stable machine-readable binding kind
+     * @param bindingTarget topic/tool/channel/path/operator target when declared
+     * @param title short display title
+     * @param summary human-readable binding gap summary
+     * @param recommendedAction human-readable next action
+     */
+    public record RuntimeBindingRequirement(
+            String nodeId,
+            String operatorRef,
+            String state,
+            String level,
+            String sourceKind,
+            String loweringMode,
+            String bindingKind,
+            String bindingTarget,
+            String title,
+            String summary,
+            String recommendedAction
+    ) {
+        public RuntimeBindingRequirement {
+            nodeId = nodeId == null ? "" : nodeId;
+            operatorRef = operatorRef == null ? "" : operatorRef;
+            state = normalizeState(state);
+            level = level == null || level.isBlank() ? "warning" : level.trim().toLowerCase(Locale.ROOT);
+            sourceKind = normalizeState(sourceKind);
+            loweringMode = normalizeState(loweringMode);
+            bindingKind = normalizeState(bindingKind);
+            bindingTarget = bindingTarget == null ? "" : bindingTarget;
+            title = title == null ? "" : title;
+            summary = summary == null ? "" : summary;
+            recommendedAction = recommendedAction == null ? "" : recommendedAction;
+        }
+
+        private static List<RuntimeBindingRequirement> from(GraphDraft.DraftNode node,
+                                                            OperatorDefinition operator,
+                                                            NodeReadiness readiness) {
+            if (node == null || operator == null || readiness == null) {
+                return List.of();
+            }
+            OperatorDefinition.Source source = operator.source();
+            OperatorDefinition.Lowering lowering = operator.lowering();
+            OperatorDefinition.Capabilities capabilities = operator.capabilities();
+            String sourceKind = normalizeState(source.kind());
+            String loweringMode = normalizeState(lowering.mode());
+            boolean streaming = capabilities.streaming() || "java-streaming-operator".equals(sourceKind);
+            boolean durable = capabilities.durable() || "java-suspendable-operator".equals(sourceKind);
+            List<RuntimeBindingRequirement> requirements = new ArrayList<>();
+            if (DESIGN_ONLY.equals(readiness.state())) {
+                requirements.add(requirement(
+                        node,
+                        readiness,
+                        sourceKind,
+                        loweringMode,
+                        "executable-lowering",
+                        firstNonBlank(lowering.operatorRef(), operator.operatorRef()),
+                        "Executable lowering required",
+                        "This operator is schema-authorable only; no executable lowering is bound.",
+                        "Bind a native/resource/subgraph lowering or replace the node with an executable operator before EXECUTABLE promotion."
+                ));
+                return List.copyOf(requirements);
+            }
+            if (!RUNTIME_BLOCKED.equals(readiness.state())) {
+                return List.of();
+            }
+            if ("remote-worker".equals(sourceKind) || "remote-worker".equals(loweringMode)) {
+                requirements.add(requirement(
+                        node,
+                        readiness,
+                        sourceKind,
+                        loweringMode,
+                        "remote-worker-runtime",
+                        parameter(lowering, "workerTopic"),
+                        "Remote worker runtime required",
+                        "A remote worker dispatcher is required before this node can execute.",
+                        "Bind worker dispatch for this topic or replace the node before EXECUTABLE promotion."
+                ));
+            }
+            if ("ai-tool".equals(sourceKind) || "ai-tool".equals(loweringMode)) {
+                requirements.add(requirement(
+                        node,
+                        readiness,
+                        sourceKind,
+                        loweringMode,
+                        "ai-tool-runtime",
+                        parameter(lowering, "toolRef"),
+                        "AI tool runtime required",
+                        "An AI tool invocation runtime is required before this node can execute.",
+                        "Bind tool invocation for this toolRef or replace the node before EXECUTABLE promotion."
+                ));
+            }
+            if ("event-source".equals(sourceKind) || "event-source".equals(loweringMode)) {
+                requirements.add(requirement(
+                        node,
+                        readiness,
+                        sourceKind,
+                        loweringMode,
+                        "event-source-runtime",
+                        parameter(lowering, "eventType"),
+                        "Event source runtime required",
+                        "An event subscription runtime is required before this node can execute.",
+                        "Bind event subscription for this event type or replace the node before EXECUTABLE promotion."
+                ));
+            }
+            if ("message-handler".equals(sourceKind) || "message-handler".equals(loweringMode)) {
+                requirements.add(requirement(
+                        node,
+                        readiness,
+                        sourceKind,
+                        loweringMode,
+                        "message-runtime",
+                        parameter(lowering, "channel"),
+                        "Message runtime required",
+                        "A message consumer runtime is required before this node can execute.",
+                        "Bind message consumption for this channel or replace the node before EXECUTABLE promotion."
+                ));
+            }
+            if ("webhook".equals(sourceKind) || "webhook".equals(loweringMode)) {
+                requirements.add(requirement(
+                        node,
+                        readiness,
+                        sourceKind,
+                        loweringMode,
+                        "webhook-ingress-runtime",
+                        webhookTarget(source, lowering),
+                        "Webhook ingress runtime required",
+                        "A webhook ingress runtime is required before this node can execute.",
+                        "Bind webhook ingress for this endpoint or replace the node before EXECUTABLE promotion."
+                ));
+            }
+            if (streaming) {
+                requirements.add(requirement(
+                        node,
+                        readiness,
+                        sourceKind,
+                        loweringMode,
+                        "streaming-runtime",
+                        "",
+                        "Streaming runtime required",
+                        "This node requires streaming execution, which the request-response runtime cannot provide.",
+                        "Bind a streaming runtime or replace the node before EXECUTABLE promotion."
+                ));
+            }
+            if (durable) {
+                requirements.add(requirement(
+                        node,
+                        readiness,
+                        sourceKind,
+                        loweringMode,
+                        "durable-runtime",
+                        "",
+                        "Durable runtime required",
+                        "This node requires durable/suspendable execution, which the request-response runtime cannot provide.",
+                        "Bind a durable runtime or replace the node before EXECUTABLE promotion."
+                ));
+            }
+            if (requirements.isEmpty()) {
+                requirements.add(requirement(
+                        node,
+                        readiness,
+                        sourceKind,
+                        loweringMode,
+                        "runtime-adapter",
+                        firstNonBlank(lowering.operatorRef(), operator.operatorRef()),
+                        "Runtime adapter required",
+                        readiness.summary(),
+                        "Bind the missing runtime adapter or replace the node before EXECUTABLE promotion."
+                ));
+            }
+            return List.copyOf(requirements);
+        }
+
+        private static RuntimeBindingRequirement requirement(GraphDraft.DraftNode node,
+                                                             NodeReadiness readiness,
+                                                             String sourceKind,
+                                                             String loweringMode,
+                                                             String bindingKind,
+                                                             String bindingTarget,
+                                                             String title,
+                                                             String summary,
+                                                             String recommendedAction) {
+            return new RuntimeBindingRequirement(
+                    node.id(),
+                    node.operatorRef(),
+                    readiness.state(),
+                    readiness.level(),
+                    sourceKind,
+                    loweringMode,
+                    bindingKind,
+                    bindingTarget,
+                    title,
+                    summary,
+                    recommendedAction
+            );
+        }
+
+        private static String parameter(OperatorDefinition.Lowering lowering, String key) {
+            if (lowering == null || lowering.parameters() == null) {
+                return "";
+            }
+            Object value = lowering.parameters().get(key);
+            return value == null ? "" : String.valueOf(value);
+        }
+
+        private static String webhookTarget(OperatorDefinition.Source source, OperatorDefinition.Lowering lowering) {
+            String method = firstNonBlank(parameter(lowering, "method"), source == null ? "" : source.method());
+            String path = firstNonBlank(parameter(lowering, "path"), source == null ? "" : source.urlTemplate());
+            return firstNonBlank("%s %s".formatted(method, path).trim(), path, method);
+        }
+
+        private static String firstNonBlank(String... values) {
+            for (String value : values == null ? new String[0] : values) {
+                if (value != null && !value.isBlank()) {
+                    return value.trim();
+                }
+            }
+            return "";
+        }
     }
 
     /**

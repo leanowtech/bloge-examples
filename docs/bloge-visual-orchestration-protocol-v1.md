@@ -1619,6 +1619,8 @@ DSL generator 或编译器兜底。
     "runtimeBlockedNodeCount": 0,
     "governanceReviewNodeCount": 1,
     "draftRepairNodeCount": 0,
+    "runtimeBindingRequirementCount": 0,
+    "runtimeBindingRequirements": [],
     "nodes": [
       {
         "nodeId": "eligibility",
@@ -1679,6 +1681,12 @@ request-response runtime 是否能执行该图，以及它是否只能作为 `DE
 `governance-review` 和 `draft-repair-required`。这条边界必须保持：schema-only
 operator 组成的合法图可以 `valid=true`，同时 `readiness.executable=false` 且
 `artifactKinds=["DESIGN"]`。
+当图因为 `lowering.mode=design`、remote worker、AI tool、event source、
+message handler、webhook、streaming 或 durable capability 暂时不能运行时，
+`readiness.runtimeBindingRequirements[]` 会按节点列出
+`nodeId/operatorRef/sourceKind/loweringMode/bindingKind/bindingTarget/recommendedAction`，
+让外部控制面或集成团队能把“可设计但不可运行”的状态转成明确的 runtime binding
+待办，而不是解析自然语言 summary。
 `actionReadiness` 则把同一批 diagnostics/readiness 压成产品动作门禁：`compileNow`、
 `runNow`、`publishDesignNow`、`publishDesignAfterReview`、`publishExecutableNow`、
 `publishExecutableAfterReview`，以及 `requiresAckWarnings` /

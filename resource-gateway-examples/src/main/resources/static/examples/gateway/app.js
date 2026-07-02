@@ -4587,6 +4587,7 @@ function renderVisualReadinessPanel(target, readiness) {
     || normalized.runtimeBlockedNodeCount > 0
     || normalized.governanceReviewNodeCount > 0
     || normalized.draftRepairNodeCount > 0
+    || normalized.runtimeBindingRequirementCount > 0
     || (actionReadiness && !['runtime-executable-ready', 'not-assessed'].includes(actionReadiness.state));
   if (!shouldShow) {
     target.hidden = true;
@@ -4599,6 +4600,7 @@ function renderVisualReadinessPanel(target, readiness) {
   const summary = visualReadinessPanelSummary(normalized, designAllowed);
   const stats = visualReadinessPanelStats(normalized);
   const actions = visualActionReadinessRows(actionReadiness) || visualReadinessActionRows(normalized, designAllowed);
+  const bindingRequirements = visualRuntimeBindingRequirementRows(normalized.runtimeBindingRequirements);
   const nodes = visualReadinessNodeRows(normalized.nodes);
   target.hidden = false;
   target.className = `library-impact-panel ${escapeHtml(level)}`;
@@ -4610,6 +4612,7 @@ function renderVisualReadinessPanel(target, readiness) {
     ${summary ? `<div class="library-impact-risk-summary">${escapeHtml(summary)}</div>` : ''}
     ${stats ? `<div class="library-impact-stats">${stats}</div>` : ''}
     ${actions ? `<div class="library-impact-risks">${actions}</div>` : ''}
+    ${bindingRequirements ? `<div class="library-impact-codes">${bindingRequirements}</div>` : ''}
     ${nodes ? `<div class="library-impact-codes">${nodes}</div>` : ''}
   `;
 }
@@ -4634,6 +4637,7 @@ function visualReadinessPanelStats(readiness) {
     ['Runtime-blocked', readiness.runtimeBlockedNodeCount],
     ['Governance-review', readiness.governanceReviewNodeCount],
     ['Repair-required', readiness.draftRepairNodeCount],
+    ['Binding-required', readiness.runtimeBindingRequirementCount],
     ['Artifacts', readiness.artifactKinds.join('/')]
   ].filter(([, value]) => value)
     .map(([label, value]) => `<span><strong>${escapeHtml(value)}</strong>${escapeHtml(label)}</span>`)
@@ -4695,6 +4699,21 @@ function visualActionReadinessRows(actionReadiness) {
       <span>${escapeHtml(value)}</span>
     </div>
   `).join('');
+}
+
+function visualRuntimeBindingRequirementRows(requirements) {
+  return (Array.isArray(requirements) ? requirements : [])
+    .slice(0, 5)
+    .map((requirement) => {
+      const target = requirement.bindingTarget ? ` · ${requirement.bindingTarget}` : '';
+      const action = requirement.recommendedAction ? ` · ${requirement.recommendedAction}` : '';
+      return `
+        <div class="library-impact-code ${escapeHtml(requirement.level || 'warning')}">
+          <strong>${escapeHtml(requirement.nodeId || requirement.operatorRef || 'runtime binding')}</strong>
+          <span>${escapeHtml(operatorPaletteFacetLabel(requirement.bindingKind || 'runtime-binding'))}${escapeHtml(target)}${escapeHtml(action)}</span>
+        </div>
+      `;
+    }).join('');
 }
 
 function visualReadinessNodeRows(nodes) {
@@ -5031,7 +5050,28 @@ function normalizeVisualGraphReadiness(readiness) {
     runtimeBlockedNodeCount: Number(readiness.runtimeBlockedNodeCount || 0),
     governanceReviewNodeCount: Number(readiness.governanceReviewNodeCount || 0),
     draftRepairNodeCount: Number(readiness.draftRepairNodeCount || 0),
+    runtimeBindingRequirements: Array.isArray(readiness.runtimeBindingRequirements)
+      ? readiness.runtimeBindingRequirements.map(normalizeRuntimeBindingRequirement)
+      : [],
+    runtimeBindingRequirementCount: Number(readiness.runtimeBindingRequirementCount
+      || (Array.isArray(readiness.runtimeBindingRequirements) ? readiness.runtimeBindingRequirements.length : 0)),
     nodes: Array.isArray(readiness.nodes) ? readiness.nodes.map(normalizeVisualGraphNodeReadiness) : []
+  };
+}
+
+function normalizeRuntimeBindingRequirement(requirement) {
+  return {
+    nodeId: String(requirement?.nodeId || ''),
+    operatorRef: String(requirement?.operatorRef || ''),
+    state: normalizeReadinessState(requirement?.state),
+    level: String(requirement?.level || 'warning').trim().toLowerCase(),
+    sourceKind: normalizeReadinessState(requirement?.sourceKind),
+    loweringMode: normalizeReadinessState(requirement?.loweringMode),
+    bindingKind: normalizeReadinessState(requirement?.bindingKind),
+    bindingTarget: String(requirement?.bindingTarget || ''),
+    title: String(requirement?.title || ''),
+    summary: String(requirement?.summary || ''),
+    recommendedAction: String(requirement?.recommendedAction || '')
   };
 }
 

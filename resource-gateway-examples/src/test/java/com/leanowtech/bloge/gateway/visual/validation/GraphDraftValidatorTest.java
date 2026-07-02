@@ -170,6 +170,16 @@ class GraphDraftValidatorTest {
         assertThat(validResult.readiness().executable()).isFalse();
         assertThat(validResult.readiness().artifactKinds()).containsExactly("DESIGN");
         assertThat(validResult.readiness().designOnlyNodeCount()).isEqualTo(1);
+        assertThat(validResult.readiness().runtimeBindingRequirementCount()).isEqualTo(1);
+        assertThat(validResult.readiness().runtimeBindingRequirements())
+                .singleElement()
+                .satisfies(requirement -> {
+                    assertThat(requirement.nodeId()).isEqualTo("eligibility");
+                    assertThat(requirement.operatorRef()).isEqualTo("risk:eligibility");
+                    assertThat(requirement.bindingKind()).isEqualTo("executable-lowering");
+                    assertThat(requirement.bindingTarget()).isEqualTo("risk:eligibility");
+                    assertThat(requirement.recommendedAction()).contains("EXECUTABLE promotion");
+                });
         assertThat(validResult.readiness().nodes())
                 .singleElement()
                 .satisfies(node -> {
@@ -207,6 +217,17 @@ class GraphDraftValidatorTest {
         assertThat(result.readiness().executable()).isFalse();
         assertThat(result.readiness().artifactKinds()).containsExactly("DESIGN");
         assertThat(result.readiness().runtimeBlockedNodeCount()).isEqualTo(1);
+        assertThat(result.readiness().runtimeBindingRequirementCount()).isEqualTo(1);
+        assertThat(result.readiness().runtimeBindingRequirements())
+                .singleElement()
+                .satisfies(requirement -> {
+                    assertThat(requirement.nodeId()).isEqualTo("eligibility");
+                    assertThat(requirement.operatorRef()).isEqualTo("risk:eligibility");
+                    assertThat(requirement.bindingKind()).isEqualTo("remote-worker-runtime");
+                    assertThat(requirement.bindingTarget()).isEqualTo("workers.risk.eligibility");
+                    assertThat(requirement.sourceKind()).isEqualTo("remote-worker");
+                    assertThat(requirement.loweringMode()).isEqualTo("remote-worker");
+                });
         assertThat(result.readiness().nodes())
                 .singleElement()
                 .satisfies(node -> {
@@ -253,6 +274,15 @@ class GraphDraftValidatorTest {
         assertThat(result.readiness().executable()).isFalse();
         assertThat(result.readiness().artifactKinds()).containsExactly("DESIGN");
         assertThat(result.readiness().runtimeBlockedNodeCount()).isEqualTo(1);
+        assertThat(result.readiness().runtimeBindingRequirementCount()).isEqualTo(1);
+        assertThat(result.readiness().runtimeBindingRequirements())
+                .singleElement()
+                .satisfies(requirement -> {
+                    assertThat(requirement.nodeId()).isEqualTo("orderEvent");
+                    assertThat(requirement.operatorRef()).isEqualTo("event:orderSubmitted");
+                    assertThat(requirement.bindingKind()).isEqualTo("event-source-runtime");
+                    assertThat(requirement.bindingTarget()).isEqualTo("order.submitted");
+                });
         assertThat(result.readiness().nodes())
                 .singleElement()
                 .satisfies(node -> {
