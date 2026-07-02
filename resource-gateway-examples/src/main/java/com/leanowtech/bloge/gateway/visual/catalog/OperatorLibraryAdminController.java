@@ -184,6 +184,25 @@ public class OperatorLibraryAdminController {
     }
 
     /**
+     * Exports the current library as a portable, reviewable operator-library artifact.
+     *
+     * @param libraryId library id
+     * @return current library snapshot, latest revision evidence, and export-time validation
+     */
+    @GetMapping("/{libraryId}/export")
+    public ResponseEntity<OperatorLibraryExportBundle> export(@PathVariable String libraryId) {
+        return registry.find(libraryId)
+                .map(library -> {
+                    OperatorLibraryRevision latestRevision = registry.revisions(libraryId).stream()
+                            .findFirst()
+                            .orElse(null);
+                    OperatorLibraryValidationResult validation = validateAgainstRegistry(library, true);
+                    return ResponseEntity.ok(OperatorLibraryExportBundle.from(library, latestRevision, validation));
+                })
+                .orElseGet(() -> ResponseEntity.notFound().build());
+    }
+
+    /**
      * Lists immutable registry snapshots for a library.
      *
      * @param libraryId library id

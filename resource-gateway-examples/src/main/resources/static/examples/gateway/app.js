@@ -1007,6 +1007,7 @@ function renderInputForm() {
           <button id="validate-library" class="secondary compact" type="button">Validate</button>
           <button id="import-library" class="secondary compact" type="button">Import</button>
           <button id="reload-libraries" class="secondary compact" type="button">Reload</button>
+          <button id="export-library" class="secondary compact" type="button">Export</button>
           <button id="delete-library" class="secondary compact danger" type="button">Delete</button>
           <label class="config-checkbox compact">
             <input id="library-force" type="checkbox">
@@ -2774,6 +2775,7 @@ function renderOperatorLibraryControls() {
   const importButton = $('import-library');
   const validateButton = $('validate-library');
   const reloadButton = $('reload-libraries');
+  const exportButton = $('export-library');
   const deleteButton = $('delete-library');
   const forceToggle = $('library-force');
   const rollbackToggle = $('library-allow-version-regression');
@@ -2804,6 +2806,10 @@ function renderOperatorLibraryControls() {
   }
   if (reloadButton) {
     reloadButton.onclick = reloadOperatorLibrariesAndCatalog;
+  }
+  if (exportButton) {
+    exportButton.disabled = !state.selectedLibraryId;
+    exportButton.onclick = exportSelectedOperatorLibrary;
   }
   if (deleteButton) {
     deleteButton.disabled = !state.selectedLibraryId;
@@ -4718,6 +4724,33 @@ async function reloadOperatorLibrariesAndCatalog() {
   renderOperatorPalette();
   renderOperatorLibraryControls();
   setLibraryMessage(`Loaded ${state.operatorLibraries.length} libraries.`, 'success');
+}
+
+async function exportSelectedOperatorLibrary() {
+  const libraryId = String(state.selectedLibraryId || '').trim();
+  if (!libraryId) {
+    setLibraryMessage('Select an operator library before exporting.', 'error');
+    return;
+  }
+  try {
+    const response = await fetch(`/admin/visual-operator-libraries/${encodeURIComponent(libraryId)}/export`);
+    const payload = await response.json().catch(() => null);
+    if (!response.ok) {
+      throw new Error(`Library export failed with ${response.status}`);
+    }
+    const validation = payload?.validation || null;
+    const diagnostics = normalizeDiagnostics(validation?.diagnostics);
+    $('output').textContent = pretty({ status: response.status, operatorLibraryExport: payload });
+    setLibraryMessage(
+      `Exported ${payload?.sourceLibraryId || libraryId}@${payload?.sourceRevision || 0}.`,
+      visualCheckLevel(diagnostics, validation?.valid !== false),
+      diagnostics,
+      validation?.impact,
+      validation?.profile
+    );
+  } catch (error) {
+    setLibraryMessage(error.message, 'error');
+  }
 }
 
 async function loadOperatorLibraryRevisions(options = {}) {

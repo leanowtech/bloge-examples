@@ -1081,14 +1081,24 @@ review 可以在没有 stored draft 引用时仍然暴露 operator-level 变更�
 impact review 和 profile 以明细列表展示给作者，再允许作者选择是否执行 Import。
 
 resource-gateway 示例同时把用户算子库 registry 历史固化为
-`bloge.visualOperatorLibraryRevision.v1`：
+`bloge.visualOperatorLibraryRevision.v1`，并把当前库导出为
+`bloge.visualOperatorLibraryExport.v1`：
 
 ```http
+GET /admin/visual-operator-libraries/{libraryId}/export
 GET /admin/visual-operator-libraries/{libraryId}/revisions
 GET /admin/visual-operator-libraries/{libraryId}/revisions/{revision}
 GET /admin/visual-operator-libraries/{libraryId}/revisions/{baseRevision}/diff/{targetRevision}
 POST /admin/visual-operator-libraries/{libraryId}/revisions/{revision}/restore
 ```
+
+`export` 端点只面向当前存在的 library；删除后的历史证据继续通过 revision API
+读取。导出包包含 source library identity、version、status、latest revision number、
+server export timestamp、当前 `OperatorLibrary` snapshot、latest immutable
+`OperatorLibraryRevision` evidence，以及 export-time `OperatorLibraryValidationResult`
+（其中包含 `bloge.visualOperatorLibraryProfile.v1` 与
+`bloge.visualOperatorLibraryImpact.v1`）。这个包用于跨环境迁移、PR 审阅、catalog
+归档和外部控制面同步；它是只读 artifact，不触发 replacement impact mutation。
 
 每个 revision snapshot 包含 `libraryId`、单库递增 `revision`、
 `action=CREATE|REPLACE|DELETE|RESTORE`、`storedAt`、`revisionMetadata`

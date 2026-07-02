@@ -159,6 +159,47 @@ class OperatorLibraryAdminControllerTest {
     }
 
     @Test
+    void exportLibraryReturnsPortableBundleWithRevisionEvidenceAndValidationProfile() throws Exception {
+        OperatorLibrary library = VisualCatalogTestSupport.designOnlyEligibilityLibrary("integer");
+
+        mockMvc.perform(post("/admin/visual-operator-libraries")
+                        .param("actor", "alice")
+                        .param("changeSource", "catalog-admin")
+                        .param("changeSummary", "Imported design-only risk policy schema.")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(library)))
+                .andExpect(status().isCreated());
+
+        mockMvc.perform(get("/admin/visual-operator-libraries/risk-policy-design/export"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.schemaVersion").value(OperatorLibraryExportBundle.SCHEMA_VERSION))
+                .andExpect(jsonPath("$.sourceLibraryId").value("risk-policy-design"))
+                .andExpect(jsonPath("$.sourceVersion").value("1.0.0"))
+                .andExpect(jsonPath("$.sourceStatus").value("ACTIVE"))
+                .andExpect(jsonPath("$.sourceRevision").value(1))
+                .andExpect(jsonPath("$.exportedAt").exists())
+                .andExpect(jsonPath("$.library.libraryId").value("risk-policy-design"))
+                .andExpect(jsonPath("$.latestRevision.action").value(OperatorLibraryRevision.ACTION_CREATE))
+                .andExpect(jsonPath("$.latestRevision.revisionMetadata.actor").value("alice"))
+                .andExpect(jsonPath("$.latestRevision.revisionMetadata.changeSource").value("catalog-admin"))
+                .andExpect(jsonPath("$.validation.valid").value(true))
+                .andExpect(jsonPath("$.validation.impact.schemaVersion")
+                        .value(OperatorLibraryImpactReview.SCHEMA_VERSION))
+                .andExpect(jsonPath("$.validation.profile.schemaVersion")
+                        .value(OperatorLibraryProfile.SCHEMA_VERSION))
+                .andExpect(jsonPath("$.validation.profile.libraryId").value("risk-policy-design"))
+                .andExpect(jsonPath("$.validation.profile.designOnlyOperatorCount").value(1))
+                .andExpect(jsonPath("$.validation.profile.facets.runtimeReadinessStates['design-only']")
+                        .value(1));
+    }
+
+    @Test
+    void exportLibraryReturnsNotFoundForMissingCurrentLibrary() throws Exception {
+        mockMvc.perform(get("/admin/visual-operator-libraries/missing/export"))
+                .andExpect(status().isNotFound());
+    }
+
+    @Test
     void validateLibraryTextRejectsMalformedSourceWithStructuredDiagnostic() throws Exception {
         mockMvc.perform(post("/admin/visual-operator-libraries/validate-text")
                         .contentType(MediaType.TEXT_PLAIN)
