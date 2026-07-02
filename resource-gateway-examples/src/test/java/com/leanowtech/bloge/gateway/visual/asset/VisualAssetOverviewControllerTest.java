@@ -62,6 +62,11 @@ class VisualAssetOverviewControllerTest {
         assertThat(overview.publications().graphReadinessStateCounts()).containsEntry("design-only", 1);
         assertThat(overview.catalog().totalOperators()).isGreaterThanOrEqualTo(1);
         assertThat(overview.catalog().facets().runtimeReadinessStates()).containsEntry("design-only", 1);
+        assertThat(overview.actionQueue().itemLimit()).isEqualTo(VisualAssetOverview.DEFAULT_ACTION_ITEM_LIMIT);
+        assertThat(overview.actionQueue().unfilteredTotal()).isEqualTo(overview.actionQueue().total());
+        assertThat(overview.actionQueue().offset()).isZero();
+        assertThat(overview.actionQueue().hasMore()).isFalse();
+        assertThat(overview.actionQueue().filter().filtered()).isFalse();
         assertThat(overview.actionQueue().actionTypeCounts())
                 .containsEntry("TRACK_DESIGN_DRAFT", 1)
                 .containsEntry("PLAN_PUBLICATION_RUNTIME_BINDING", 1)
@@ -114,6 +119,128 @@ class VisualAssetOverviewControllerTest {
         assertThat(excluded.scope().environment()).isEqualTo("dev");
         assertThat(excluded.scope().filtered()).isTrue();
         assertThat(excluded.publications().total()).isZero();
+    }
+
+    @Test
+    void overviewBoundsActionItemWindowWithoutChangingAggregateCounts() {
+        DefaultVisualOperatorCatalog catalog = VisualCatalogTestSupport.catalogWithLibrary(
+                VisualCatalogTestSupport.designOnlyEligibilityLibrary("integer"));
+        GraphDraftValidator validator = new GraphDraftValidator(catalog);
+        InMemoryGraphDraftRepository drafts = new InMemoryGraphDraftRepository();
+        InMemoryVisualGraphPublicationRepository publications = new InMemoryVisualGraphPublicationRepository();
+        OperatorDefinition operator = catalog.find("risk:eligibility").orElseThrow();
+        GraphDraft draft = drafts.save(draftWithFingerprint(operator));
+        VisualValidationResult validation = validator.validate(draft);
+        publications.create(VisualGraphPublication.design(
+                draft,
+                List.of(operator),
+                validation,
+                new DslGenerationResult(false, "", List.of()),
+                GraphDraftDependencyReport.from(draft, catalog)
+        ));
+        VisualAssetOverviewController controller =
+                new VisualAssetOverviewController(drafts, validator, catalog, publications);
+
+        VisualAssetOverview limited = controller.overview("", "", "", 1);
+        VisualAssetOverview aggregateOnly = controller.overview("", "", "", 0);
+        VisualAssetOverview capped = controller.overview("", "", "", 1_000);
+        int actionTotal = totalActionTypes(limited.actionQueue());
+
+        assertThat(actionTotal).isGreaterThanOrEqualTo(3);
+        assertThat(limited.actionQueue().total()).isEqualTo(actionTotal);
+        assertThat(limited.actionQueue().unfilteredTotal()).isEqualTo(actionTotal);
+        assertThat(limited.actionQueue().displayedCount()).isEqualTo(1);
+        assertThat(limited.actionQueue().itemLimit()).isEqualTo(1);
+        assertThat(limited.actionQueue().offset()).isZero();
+        assertThat(limited.actionQueue().hasMore()).isTrue();
+        assertThat(limited.actionQueue().items()).hasSize(1);
+        assertThat(limited.actionQueue().actionTypeCounts())
+                .containsEntry("TRACK_DESIGN_DRAFT", 1)
+                .containsEntry("PLAN_PUBLICATION_RUNTIME_BINDING", 1)
+                .containsEntry("TRACK_SCHEMA_ONLY_OPERATOR", 1);
+        assertThat(aggregateOnly.actionQueue().total()).isEqualTo(actionTotal);
+        assertThat(aggregateOnly.actionQueue().actionTypeCounts()).isEqualTo(limited.actionQueue().actionTypeCounts());
+        assertThat(aggregateOnly.actionQueue().displayedCount()).isZero();
+        assertThat(aggregateOnly.actionQueue().itemLimit()).isZero();
+        assertThat(aggregateOnly.actionQueue().hasMore()).isTrue();
+        assertThat(aggregateOnly.actionQueue().items()).isEmpty();
+        assertThat(capped.actionQueue().total()).isEqualTo(actionTotal);
+        assertThat(capped.actionQueue().itemLimit()).isEqualTo(VisualAssetOverview.MAX_ACTION_ITEM_LIMIT);
+        assertThat(capped.actionQueue().displayedCount()).isEqualTo(actionTotal);
+        assertThat(capped.actionQueue().hasMore()).isFalse();
+    }
+
+    @Test
+    void overviewFiltersAndOffsetsActionQueueForControlPlaneQueries() {
+        DefaultVisualOperatorCatalog catalog = VisualCatalogTestSupport.catalogWithLibrary(
+                VisualCatalogTestSupport.designOnlyEligibilityLibrary("integer"));
+        GraphDraftValidator validator = new GraphDraftValidator(catalog);
+        InMemoryGraphDraftRepository drafts = new InMemoryGraphDraftRepository();
+        InMemoryVisualGraphPublicationRepository publications = new InMemoryVisualGraphPublicationRepository();
+        OperatorDefinition operator = catalog.find("risk:eligibility").orElseThrow();
+        GraphDraft draft = drafts.save(draftWithFingerprint(operator));
+        VisualValidationResult validation = validator.validate(draft);
+        publications.create(VisualGraphPublication.design(
+                draft,
+                List.of(operator),
+                validation,
+                new DslGenerationResult(false, "", List.of()),
+                GraphDraftDependencyReport.from(draft, catalog)
+        ));
+        VisualAssetOverviewController controller =
+                new VisualAssetOverviewController(drafts, validator, catalog, publications);
+        int unfilteredTotal = controller.overview("", "", "").actionQueue().total();
+
+        VisualAssetOverview operatorOnly = controller.overview(
+                "",
+                "",
+                "",
+                10,
+                0,
+                "info",
+                "track_schema_only_operator",
+                "operator"
+        );
+        VisualAssetOverview secondAction = controller.overview("", "", "", 1, 1, "", "", "");
+        VisualAssetOverview beyondOperator = controller.overview(
+                "",
+                "",
+                "",
+                10,
+                1,
+                "",
+                "TRACK_SCHEMA_ONLY_OPERATOR",
+                "operator"
+        );
+
+        assertThat(operatorOnly.actionQueue().unfilteredTotal()).isEqualTo(unfilteredTotal);
+        assertThat(operatorOnly.actionQueue().total()).isEqualTo(1);
+        assertThat(operatorOnly.actionQueue().displayedCount()).isEqualTo(1);
+        assertThat(operatorOnly.actionQueue().hasMore()).isFalse();
+        assertThat(operatorOnly.actionQueue().filter().filtered()).isTrue();
+        assertThat(operatorOnly.actionQueue().filter().severity()).isEqualTo("info");
+        assertThat(operatorOnly.actionQueue().filter().actionType()).isEqualTo("TRACK_SCHEMA_ONLY_OPERATOR");
+        assertThat(operatorOnly.actionQueue().filter().targetKind()).isEqualTo("operator");
+        assertThat(operatorOnly.actionQueue().items())
+                .extracting(VisualAssetOverview.ActionItem::actionType)
+                .containsExactly("TRACK_SCHEMA_ONLY_OPERATOR");
+        assertThat(secondAction.actionQueue().unfilteredTotal()).isEqualTo(unfilteredTotal);
+        assertThat(secondAction.actionQueue().total()).isEqualTo(unfilteredTotal);
+        assertThat(secondAction.actionQueue().offset()).isEqualTo(1);
+        assertThat(secondAction.actionQueue().displayedCount()).isEqualTo(1);
+        assertThat(secondAction.actionQueue().hasMore()).isEqualTo(unfilteredTotal > 2);
+        assertThat(beyondOperator.actionQueue().unfilteredTotal()).isEqualTo(unfilteredTotal);
+        assertThat(beyondOperator.actionQueue().total()).isEqualTo(1);
+        assertThat(beyondOperator.actionQueue().offset()).isEqualTo(1);
+        assertThat(beyondOperator.actionQueue().displayedCount()).isZero();
+        assertThat(beyondOperator.actionQueue().hasMore()).isFalse();
+        assertThat(beyondOperator.actionQueue().items()).isEmpty();
+    }
+
+    private static int totalActionTypes(VisualAssetOverview.ActionQueue actionQueue) {
+        return actionQueue.actionTypeCounts().values().stream()
+                .mapToInt(Integer::intValue)
+                .sum();
     }
 
     private static GraphDraft draftWithFingerprint(OperatorDefinition operator) {

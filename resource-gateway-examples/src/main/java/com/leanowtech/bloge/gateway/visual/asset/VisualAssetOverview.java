@@ -41,7 +41,8 @@ public record VisualAssetOverview(
         ActionQueue actionQueue
 ) {
     public static final String SCHEMA_VERSION = "bloge.visualAssetOverview.v1";
-    private static final int ACTION_ITEM_LIMIT = 12;
+    public static final int DEFAULT_ACTION_ITEM_LIMIT = 12;
+    public static final int MAX_ACTION_ITEM_LIMIT = 100;
 
     /**
      * Creates an overview.
@@ -91,6 +92,84 @@ public record VisualAssetOverview(
                                            String tenantId,
                                            String namespace,
                                            String environment) {
+        return from(
+                drafts,
+                publications,
+                operators,
+                catalogDiagnostics,
+                tenantId,
+                namespace,
+                environment,
+                DEFAULT_ACTION_ITEM_LIMIT
+        );
+    }
+
+    /**
+     * Builds an overview from asset summaries and catalog rows with a bounded action item window.
+     *
+     * @param drafts draft summaries in scope
+     * @param publications publication summaries in scope
+     * @param operators catalog operators in scope
+     * @param catalogDiagnostics catalog diagnostics in scope
+     * @param tenantId tenant scope used for the read model, empty for all
+     * @param namespace namespace scope used for the read model, empty for all
+     * @param environment environment scope used for the read model, empty for all
+     * @param actionItemLimit requested number of action item details, clamped to the overview contract bounds
+     * @return visual asset overview
+     */
+    public static VisualAssetOverview from(List<GraphDraftSummary> drafts,
+                                           List<VisualGraphPublicationSummary> publications,
+                                           List<OperatorDefinition> operators,
+                                           List<VisualDiagnostic> catalogDiagnostics,
+                                           String tenantId,
+                                           String namespace,
+                                           String environment,
+                                           int actionItemLimit) {
+        return from(
+                drafts,
+                publications,
+                operators,
+                catalogDiagnostics,
+                tenantId,
+                namespace,
+                environment,
+                actionItemLimit,
+                0,
+                "",
+                "",
+                ""
+        );
+    }
+
+    /**
+     * Builds an overview from asset summaries and catalog rows with a queryable action item window.
+     *
+     * @param drafts draft summaries in scope
+     * @param publications publication summaries in scope
+     * @param operators catalog operators in scope
+     * @param catalogDiagnostics catalog diagnostics in scope
+     * @param tenantId tenant scope used for the read model, empty for all
+     * @param namespace namespace scope used for the read model, empty for all
+     * @param environment environment scope used for the read model, empty for all
+     * @param actionItemLimit requested number of action item details, clamped to the overview contract bounds
+     * @param actionOffset zero-based action item offset after filtering
+     * @param actionSeverity optional severity filter
+     * @param actionType optional action type filter
+     * @param actionTargetKind optional target kind filter
+     * @return visual asset overview
+     */
+    public static VisualAssetOverview from(List<GraphDraftSummary> drafts,
+                                           List<VisualGraphPublicationSummary> publications,
+                                           List<OperatorDefinition> operators,
+                                           List<VisualDiagnostic> catalogDiagnostics,
+                                           String tenantId,
+                                           String namespace,
+                                           String environment,
+                                           int actionItemLimit,
+                                           int actionOffset,
+                                           String actionSeverity,
+                                           String actionType,
+                                           String actionTargetKind) {
         return new VisualAssetOverview(
                 SCHEMA_VERSION,
                 Instant.now(),
@@ -98,7 +177,16 @@ public record VisualAssetOverview(
                 DraftAssets.from(drafts),
                 PublicationAssets.from(publications),
                 CatalogAssets.from(operators, catalogDiagnostics),
-                ActionQueue.from(drafts, publications, operators)
+                ActionQueue.from(
+                        drafts,
+                        publications,
+                        operators,
+                        actionItemLimit,
+                        actionOffset,
+                        actionSeverity,
+                        actionType,
+                        actionTargetKind
+                )
         );
     }
 
@@ -411,8 +499,13 @@ public record VisualAssetOverview(
     /**
      * Server-derived next-action queue for the visual control plane.
      *
-     * @param total total action items before display limiting
+     * @param total action items after query filtering and before display limiting
+     * @param unfilteredTotal total action items in the authoring scope before action filters
      * @param displayedCount returned action item count
+     * @param itemLimit normalized maximum number of action item details returned
+     * @param offset zero-based offset after query filtering
+     * @param hasMore true when more filtered action items exist after the returned window
+     * @param filter normalized query filter applied to the action queue
      * @param errorCount error-severity action count
      * @param warningCount warning-severity action count
      * @param infoCount info-severity action count
@@ -421,22 +514,75 @@ public record VisualAssetOverview(
      */
     public record ActionQueue(
             int total,
+            int unfilteredTotal,
             int displayedCount,
+            int itemLimit,
+            int offset,
+            boolean hasMore,
+            ActionFilter filter,
             int errorCount,
             int warningCount,
             int infoCount,
             Map<String, Integer> actionTypeCounts,
             List<ActionItem> items
     ) {
+        public ActionQueue(int total,
+                           int displayedCount,
+                           int itemLimit,
+                           int errorCount,
+                           int warningCount,
+                           int infoCount,
+                           Map<String, Integer> actionTypeCounts,
+                           List<ActionItem> items) {
+            this(
+                    total,
+                    total,
+                    displayedCount,
+                    itemLimit,
+                    0,
+                    false,
+                    ActionFilter.all(),
+                    errorCount,
+                    warningCount,
+                    infoCount,
+                    actionTypeCounts,
+                    items
+            );
+        }
+
         public ActionQueue {
+            total = Math.max(0, total);
+            unfilteredTotal = Math.max(total, unfilteredTotal);
+            offset = Math.max(0, offset);
+            itemLimit = normalizeActionItemLimit(itemLimit);
+            filter = filter == null ? ActionFilter.all() : filter;
             actionTypeCounts = immutableCounts(actionTypeCounts);
             items = items == null ? List.of() : List.copyOf(items);
             displayedCount = items.size();
+            hasMore = offset + displayedCount < total;
         }
 
         static ActionQueue from(List<GraphDraftSummary> drafts,
                                 List<VisualGraphPublicationSummary> publications,
                                 List<OperatorDefinition> operators) {
+            return from(drafts, publications, operators, DEFAULT_ACTION_ITEM_LIMIT);
+        }
+
+        static ActionQueue from(List<GraphDraftSummary> drafts,
+                                List<VisualGraphPublicationSummary> publications,
+                                List<OperatorDefinition> operators,
+                                int actionItemLimit) {
+            return from(drafts, publications, operators, actionItemLimit, 0, "", "", "");
+        }
+
+        static ActionQueue from(List<GraphDraftSummary> drafts,
+                                List<VisualGraphPublicationSummary> publications,
+                                List<OperatorDefinition> operators,
+                                int actionItemLimit,
+                                int actionOffset,
+                                String actionSeverity,
+                                String actionType,
+                                String actionTargetKind) {
             List<ActionItem> generated = new ArrayList<>();
             for (GraphDraftSummary draft : drafts == null ? List.<GraphDraftSummary>of() : drafts) {
                 addDraftAction(generated, draft);
@@ -460,11 +606,15 @@ public record VisualAssetOverview(
                 }
                 return left.targetId().compareTo(right.targetId());
             });
+            ActionFilter filter = new ActionFilter(actionSeverity, actionType, actionTargetKind);
+            List<ActionItem> filtered = generated.stream()
+                    .filter(filter::matches)
+                    .toList();
             Map<String, Integer> actionTypes = new LinkedHashMap<>();
             int errorCount = 0;
             int warningCount = 0;
             int infoCount = 0;
-            for (ActionItem item : generated) {
+            for (ActionItem item : filtered) {
                 actionTypes.merge(item.actionType(), 1, Integer::sum);
                 switch (item.severity()) {
                     case "error" -> errorCount++;
@@ -472,20 +622,79 @@ public record VisualAssetOverview(
                     default -> infoCount++;
                 }
             }
+            int normalizedLimit = normalizeActionItemLimit(actionItemLimit);
+            int normalizedOffset = normalizeActionOffset(actionOffset);
             return new ActionQueue(
+                    filtered.size(),
                     generated.size(),
-                    Math.min(generated.size(), ACTION_ITEM_LIMIT),
+                    Math.min(Math.max(0, filtered.size() - normalizedOffset), normalizedLimit),
+                    normalizedLimit,
+                    normalizedOffset,
+                    false,
+                    filter,
                     errorCount,
                     warningCount,
                     infoCount,
                     actionTypes,
-                    generated.stream().limit(ACTION_ITEM_LIMIT).toList()
+                    filtered.stream().skip(normalizedOffset).limit(normalizedLimit).toList()
             );
         }
 
         static ActionQueue empty() {
-            return new ActionQueue(0, 0, 0, 0, 0, Map.of(), List.of());
+            return new ActionQueue(0, 0, DEFAULT_ACTION_ITEM_LIMIT, 0, 0, 0, Map.of(), List.of());
         }
+    }
+
+    /**
+     * Normalized action queue query filter.
+     *
+     * @param severity severity filter, empty when not filtered
+     * @param actionType action type filter, empty when not filtered
+     * @param targetKind target kind filter, empty when not filtered
+     * @param filtered true when at least one action filter is active
+     */
+    public record ActionFilter(
+            String severity,
+            String actionType,
+            String targetKind,
+            boolean filtered
+    ) {
+        public ActionFilter(String severity, String actionType, String targetKind) {
+            this(
+                    normalizeSeverityFilter(severity),
+                    normalizeActionTypeFilter(actionType),
+                    normalizeTargetKindFilter(targetKind),
+                    !normalizeSeverityFilter(severity).isBlank()
+                            || !normalizeActionTypeFilter(actionType).isBlank()
+                            || !normalizeTargetKindFilter(targetKind).isBlank()
+            );
+        }
+
+        public ActionFilter {
+            severity = normalizeSeverityFilter(severity);
+            actionType = normalizeActionTypeFilter(actionType);
+            targetKind = normalizeTargetKindFilter(targetKind);
+            filtered = !severity.isBlank() || !actionType.isBlank() || !targetKind.isBlank();
+        }
+
+        static ActionFilter all() {
+            return new ActionFilter("", "", "");
+        }
+
+        boolean matches(ActionItem item) {
+            return item != null
+                    && (severity.isBlank() || severity.equals(item.severity()))
+                    && (actionType.isBlank() || actionType.equals(item.actionType()))
+                    && (targetKind.isBlank() || targetKind.equals(item.targetKind()));
+        }
+    }
+
+    private static int normalizeActionItemLimit(int actionItemLimit) {
+        return Math.max(0, Math.min(actionItemLimit, MAX_ACTION_ITEM_LIMIT));
+    }
+
+    private static int normalizeActionOffset(int actionOffset) {
+        return Math.max(0, actionOffset);
     }
 
     /**
@@ -807,6 +1016,18 @@ public record VisualAssetOverview(
             case "error", "warning", "info", "success" -> severity;
             default -> "info";
         };
+    }
+
+    private static String normalizeSeverityFilter(String value) {
+        return String.valueOf(value == null ? "" : value).trim().toLowerCase(Locale.ROOT);
+    }
+
+    private static String normalizeActionTypeFilter(String value) {
+        return String.valueOf(value == null ? "" : value).trim().toUpperCase(Locale.ROOT);
+    }
+
+    private static String normalizeTargetKindFilter(String value) {
+        return String.valueOf(value == null ? "" : value).trim().toLowerCase(Locale.ROOT);
     }
 
     private static int severityRank(String value) {

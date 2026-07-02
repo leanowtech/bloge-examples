@@ -2077,11 +2077,29 @@ body.dragging-operator * {
 .library-impact-stats,
 .library-impact-codes,
 .library-impact-risks,
+.library-impact-controls,
 .library-impact-refs,
 .library-impact-ref-group div {
   display: flex;
   flex-wrap: wrap;
   gap: 5px;
+}
+
+.library-impact-controls {
+  align-items: center;
+}
+
+.library-impact-controls label {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+  color: var(--muted);
+}
+
+.library-impact-controls select {
+  max-width: 160px;
+  min-height: 26px;
 }
 
 .library-impact-stats span,

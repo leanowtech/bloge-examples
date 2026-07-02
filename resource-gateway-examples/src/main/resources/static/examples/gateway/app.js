@@ -320,6 +320,36 @@ const SCHEMA_DECLARATION_KEYS = new Set([
   '$defs'
 ]);
 const PUBLISH_ARTIFACT_KINDS = ['EXECUTABLE', 'DESIGN'];
+const VISUAL_ASSET_ACTION_SEVERITIES = [
+  ['', 'All severities'],
+  ['error', 'Error'],
+  ['warning', 'Warning'],
+  ['info', 'Info']
+];
+const VISUAL_ASSET_ACTION_TARGET_KINDS = [
+  ['', 'All targets'],
+  ['draft', 'Draft'],
+  ['publication', 'Publication'],
+  ['operator', 'Operator']
+];
+const VISUAL_ASSET_ACTION_TYPES = [
+  ['', 'All action types'],
+  ['REPAIR_DRAFT', 'Repair draft'],
+  ['REVIEW_DRAFT_DEPENDENCIES', 'Review draft dependencies'],
+  ['BIND_DRAFT_RUNTIME', 'Bind draft runtime'],
+  ['REVIEW_DRAFT_GOVERNANCE', 'Review draft governance'],
+  ['TRACK_DESIGN_DRAFT', 'Track design draft'],
+  ['RECERTIFY_PUBLICATION', 'Recertify publication'],
+  ['REVIEW_PUBLICATION_DEPENDENCIES', 'Review publication dependencies'],
+  ['BIND_PUBLICATION_RUNTIME', 'Bind publication runtime'],
+  ['REVIEW_PUBLICATION_GOVERNANCE', 'Review publication governance'],
+  ['PLAN_PUBLICATION_RUNTIME_BINDING', 'Plan publication runtime binding'],
+  ['REPAIR_OPERATOR_CATALOG', 'Repair operator catalog'],
+  ['BIND_OPERATOR_RUNTIME', 'Bind operator runtime'],
+  ['REVIEW_OPERATOR_GOVERNANCE', 'Review operator governance'],
+  ['TRACK_SCHEMA_ONLY_OPERATOR', 'Track schema-only operator']
+];
+const VISUAL_ASSET_ACTION_LIMITS = [12, 24, 48];
 
 const state = {
   scenarios: [],
@@ -358,6 +388,13 @@ const state = {
   goldenCertificationStatus: null,
   visualAssetOverview: null,
   visualAssetOverviewMessage: null,
+  visualAssetOverviewActionQuery: {
+    severity: '',
+    actionType: '',
+    targetKind: '',
+    offset: 0,
+    limit: 12
+  },
   activeVisualAssetAction: null,
   goldenAssertionMode: 'EXACT_OUTPUT',
   goldenAssertionPath: '',
@@ -657,7 +694,46 @@ function operatorCatalogUrl(builder = state.builder, options = {}) {
 }
 
 function visualAssetOverviewUrl(builder = state.builder) {
-  return scopedVisualAuthoringUrl('/api/visual/assets/overview', builder);
+  const scope = builderScope(builder);
+  const params = new URLSearchParams();
+  params.set('tenantId', scope.tenantId);
+  params.set('namespace', scope.namespace);
+  params.set('environment', scope.environment);
+  const actionQuery = normalizeVisualAssetActionQuery(state.visualAssetOverviewActionQuery);
+  params.set('actionLimit', String(actionQuery.limit));
+  if (actionQuery.offset > 0) {
+    params.set('actionOffset', String(actionQuery.offset));
+  }
+  if (actionQuery.severity) {
+    params.set('actionSeverity', actionQuery.severity);
+  }
+  if (actionQuery.actionType) {
+    params.set('actionType', actionQuery.actionType);
+  }
+  if (actionQuery.targetKind) {
+    params.set('actionTargetKind', actionQuery.targetKind);
+  }
+  return `/api/visual/assets/overview?${params.toString()}`;
+}
+
+function normalizeVisualAssetActionQuery(query = {}) {
+  const limit = Math.max(1, Math.min(Number(query.limit || 12) || 12, 100));
+  return {
+    severity: String(query.severity || '').trim().toLowerCase(),
+    actionType: String(query.actionType || '').trim().toUpperCase(),
+    targetKind: String(query.targetKind || '').trim().toLowerCase(),
+    offset: Math.max(0, Number(query.offset || 0) || 0),
+    limit
+  };
+}
+
+async function updateVisualAssetActionQuery(patch = {}) {
+  state.visualAssetOverviewActionQuery = normalizeVisualAssetActionQuery({
+    ...state.visualAssetOverviewActionQuery,
+    ...patch
+  });
+  state.activeVisualAssetAction = null;
+  await loadVisualAssetOverview();
 }
 
 function visualDraftsUrl(builder = state.builder) {
@@ -6701,9 +6777,13 @@ function renderVisualAssetOverview() {
   const actionQueue = overview.actionQueue || {};
   const rows = visualAssetOverviewRows(overview);
   const actionRows = visualAssetOverviewActionRows(actionQueue);
-  const actionOverflow = Math.max(0, Number(actionQueue.total || 0) - actionRows.length);
+  const actionOverflow = Math.max(
+    0,
+    Number(actionQueue.total || 0) - Number(actionQueue.offset || 0) - actionRows.length
+  );
   const activeAction = visualAssetActionContext(state.activeVisualAssetAction);
   const scopeLabel = visualAssetOverviewScopeLabel(overview);
+  const actionQueueVisible = visualAssetOverviewShouldShowActionQueue(actionQueue);
   const stats = [
     ['Drafts', drafts.total],
     ['Active', drafts.activeCount],
@@ -6711,7 +6791,7 @@ function renderVisualAssetOverview() {
     ['Publications', publications.total],
     ['DESIGN artifacts', publications.designArtifactCount],
     ['Operators', catalog.totalOperators],
-    ['Actions', actionQueue.total],
+    ['Actions', actionQueue.unfilteredTotal ?? actionQueue.total],
     ['Design-only operators', visualAssetOverviewCatalogReadiness(catalog, 'design-only')],
     ['Runtime-blocked operators', visualAssetOverviewCatalogReadiness(catalog, 'runtime-blocked')]
   ].filter(([, value], index) => index < 7 || Number(value || 0) > 0)
@@ -6740,11 +6820,12 @@ function renderVisualAssetOverview() {
         <span>${escapeHtml(row.value)}</span>
       </div>
     `).join('')}</div>` : ''}
-    ${actionRows.length ? `<div class="library-impact-risks">
+    ${actionQueueVisible ? `<div class="library-impact-risks">
       <div class="library-impact-head">
         <strong>Action Queue</strong>
-        <span>${escapeHtml(`${actionQueue.total || actionRows.length} suggested actions`)}</span>
+        <span>${escapeHtml(visualAssetOverviewActionWindowSummary(actionQueue, actionRows))}</span>
       </div>
+      ${visualAssetOverviewActionControls(actionQueue)}
       ${actionRows.map((row) => `
         <div class="library-impact-risk ${escapeHtml(row.level)}">
           <strong>${escapeHtml(row.label)}</strong>
@@ -6756,10 +6837,12 @@ function renderVisualAssetOverview() {
             data-visual-asset-action-target-id="${escapeHtml(row.targetId)}">Open</button>` : ''}
         </div>
       `).join('')}
+      ${actionRows.length ? '' : `<div class="library-impact-more">${escapeHtml('No matching server-derived actions')}</div>`}
       ${actionOverflow ? `<div class="library-impact-more">+${actionOverflow} more server-derived actions</div>` : ''}
     </div>` : ''}
   `;
   attachVisualAssetOverviewActionHandlers();
+  attachVisualAssetOverviewActionQueryHandlers(actionQueue);
 }
 
 function visualAssetOverviewScopeLabel(overview) {
@@ -6770,6 +6853,73 @@ function visualAssetOverviewScopeLabel(overview) {
   const namespace = scope.namespace || (hasServerScope ? 'all' : fallback.namespace) || 'all';
   const environment = scope.environment || (hasServerScope ? 'all' : fallback.environment) || 'all';
   return `${tenantId} / ${namespace} / ${environment}`;
+}
+
+function visualAssetOverviewShouldShowActionQueue(actionQueue) {
+  const query = normalizeVisualAssetActionQuery(state.visualAssetOverviewActionQuery);
+  return Number(actionQueue?.unfilteredTotal ?? actionQueue?.total ?? 0) > 0
+    || Boolean(query.severity || query.actionType || query.targetKind || query.offset);
+}
+
+function visualAssetOverviewActionWindowSummary(actionQueue, actionRows) {
+  const total = Number(actionQueue?.total ?? actionRows.length ?? 0) || 0;
+  const unfilteredTotal = Number(actionQueue?.unfilteredTotal ?? total) || 0;
+  const offset = Number(actionQueue?.offset || 0) || 0;
+  const displayed = Number(actionQueue?.displayedCount ?? actionRows.length) || 0;
+  const range = displayed ? `${offset + 1}-${offset + displayed} of ${total}` : `0 of ${total}`;
+  return unfilteredTotal !== total
+    ? `${range} / ${unfilteredTotal} total`
+    : `${range} suggested actions`;
+}
+
+function visualAssetOverviewActionControls(actionQueue) {
+  const query = normalizeVisualAssetActionQuery(state.visualAssetOverviewActionQuery);
+  const offset = Number(actionQueue?.offset ?? query.offset) || 0;
+  const pageSize = Number(actionQueue?.itemLimit || query.limit || 12) || 12;
+  const hasFilter = Boolean(query.severity || query.actionType || query.targetKind || offset || pageSize !== 12);
+  const canPrevious = offset > 0;
+  const canNext = Boolean(actionQueue?.hasMore);
+  return `
+    <div class="library-impact-controls">
+      <label>
+        <span>${escapeHtml('Severity')}</span>
+        <select id="visual-asset-action-severity" aria-label="Filter asset actions by severity">
+          ${visualAssetActionOptionMarkup(VISUAL_ASSET_ACTION_SEVERITIES, query.severity)}
+        </select>
+      </label>
+      <label>
+        <span>${escapeHtml('Type')}</span>
+        <select id="visual-asset-action-type" aria-label="Filter asset actions by type">
+          ${visualAssetActionOptionMarkup(VISUAL_ASSET_ACTION_TYPES, query.actionType)}
+        </select>
+      </label>
+      <label>
+        <span>${escapeHtml('Target')}</span>
+        <select id="visual-asset-action-target-kind" aria-label="Filter asset actions by target kind">
+          ${visualAssetActionOptionMarkup(VISUAL_ASSET_ACTION_TARGET_KINDS, query.targetKind)}
+        </select>
+      </label>
+      <label>
+        <span>${escapeHtml('Size')}</span>
+        <select id="visual-asset-action-limit" aria-label="Asset action page size">
+          ${VISUAL_ASSET_ACTION_LIMITS.map((limit) => {
+            const selected = pageSize === limit ? ' selected' : '';
+            return `<option value="${escapeHtml(limit)}"${selected}>${escapeHtml(limit)}</option>`;
+          }).join('')}
+        </select>
+      </label>
+      <button type="button" class="secondary compact" id="visual-asset-action-prev" ${canPrevious ? '' : 'disabled'}>Prev</button>
+      <button type="button" class="secondary compact" id="visual-asset-action-next" ${canNext ? '' : 'disabled'}>Next</button>
+      <button type="button" class="secondary compact" id="visual-asset-action-reset" ${hasFilter ? '' : 'disabled'}>Reset</button>
+    </div>
+  `;
+}
+
+function visualAssetActionOptionMarkup(options, selectedValue) {
+  return options.map(([value, label]) => {
+    const selected = String(value) === String(selectedValue || '') ? ' selected' : '';
+    return `<option value="${escapeHtml(value)}"${selected}>${escapeHtml(label)}</option>`;
+  }).join('');
 }
 
 function visualAssetOverviewRows(overview) {
@@ -6922,6 +7072,45 @@ function attachVisualAssetOverviewActionHandlers() {
   document.querySelectorAll('[data-visual-asset-action]').forEach((button) => {
     button.onclick = () => openVisualAssetAction(button.dataset.visualAssetAction, button.dataset.visualAssetActionKey);
   });
+}
+
+function attachVisualAssetOverviewActionQueryHandlers(actionQueue) {
+  const severity = $('visual-asset-action-severity');
+  if (severity) {
+    severity.onchange = () => updateVisualAssetActionQuery({ severity: severity.value, offset: 0 });
+  }
+  const actionType = $('visual-asset-action-type');
+  if (actionType) {
+    actionType.onchange = () => updateVisualAssetActionQuery({ actionType: actionType.value, offset: 0 });
+  }
+  const targetKind = $('visual-asset-action-target-kind');
+  if (targetKind) {
+    targetKind.onchange = () => updateVisualAssetActionQuery({ targetKind: targetKind.value, offset: 0 });
+  }
+  const limit = $('visual-asset-action-limit');
+  if (limit) {
+    limit.onchange = () => updateVisualAssetActionQuery({ limit: Number(limit.value || 12), offset: 0 });
+  }
+  const pageSize = Number(actionQueue?.itemLimit || state.visualAssetOverviewActionQuery.limit || 12) || 12;
+  const offset = Number(actionQueue?.offset || 0) || 0;
+  const previous = $('visual-asset-action-prev');
+  if (previous) {
+    previous.onclick = () => updateVisualAssetActionQuery({ offset: Math.max(0, offset - pageSize) });
+  }
+  const next = $('visual-asset-action-next');
+  if (next) {
+    next.onclick = () => updateVisualAssetActionQuery({ offset: offset + pageSize });
+  }
+  const reset = $('visual-asset-action-reset');
+  if (reset) {
+    reset.onclick = () => updateVisualAssetActionQuery({
+      severity: '',
+      actionType: '',
+      targetKind: '',
+      offset: 0,
+      limit: 12
+    });
+  }
 }
 
 async function openVisualAssetAction(index, actionKey = '') {

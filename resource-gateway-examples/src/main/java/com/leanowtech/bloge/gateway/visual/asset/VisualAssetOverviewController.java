@@ -55,12 +55,22 @@ public class VisualAssetOverviewController {
      * @param tenantId tenant scope, empty for all
      * @param namespace namespace scope, empty for all
      * @param environment environment scope, empty for all
+     * @param actionLimit requested number of action item details
+     * @param actionOffset zero-based action item offset after filtering
+     * @param actionSeverity optional action severity filter
+     * @param actionType optional action type filter
+     * @param actionTargetKind optional action target kind filter
      * @return visual asset overview
      */
     @GetMapping("/overview")
     public VisualAssetOverview overview(@RequestParam(defaultValue = "") String tenantId,
                                         @RequestParam(defaultValue = "") String namespace,
-                                        @RequestParam(defaultValue = "") String environment) {
+                                        @RequestParam(defaultValue = "") String environment,
+                                        @RequestParam(defaultValue = "12") int actionLimit,
+                                        @RequestParam(defaultValue = "0") int actionOffset,
+                                        @RequestParam(defaultValue = "") String actionSeverity,
+                                        @RequestParam(defaultValue = "") String actionType,
+                                        @RequestParam(defaultValue = "") String actionTargetKind) {
         List<GraphDraftSummary> draftSummaries = draftRepository.history().stream()
                 .map(this::draftSummary)
                 .filter(summary -> matchesDraftScope(summary, tenantId, namespace, environment))
@@ -91,8 +101,21 @@ public class VisualAssetOverviewController {
                 diagnostics,
                 tenantId,
                 namespace,
-                environment
+                environment,
+                actionLimit,
+                actionOffset,
+                actionSeverity,
+                actionType,
+                actionTargetKind
         );
+    }
+
+    VisualAssetOverview overview(String tenantId, String namespace, String environment) {
+        return overview(tenantId, namespace, environment, VisualAssetOverview.DEFAULT_ACTION_ITEM_LIMIT);
+    }
+
+    VisualAssetOverview overview(String tenantId, String namespace, String environment, int actionLimit) {
+        return overview(tenantId, namespace, environment, actionLimit, 0, "", "", "");
     }
 
     private GraphDraftSummary draftSummary(GraphDraftHistorySummary history) {
