@@ -410,6 +410,43 @@ class VisualAuthoringBrowserDomTest {
     }
 
     @Test
+    void composerShowsScopeMismatchInDraftDependencyPanelWithoutRebaseActionInRealBrowser()
+            throws JsonProcessingException {
+        driver = newChromeDriverOrSkip();
+        WebDriverWait wait = new WebDriverWait(driver, WAIT_TIMEOUT);
+        driver.get("http://localhost:" + port + "/examples/gateway");
+
+        waitForComposer(wait);
+        wait.until(ExpectedConditions.visibilityOfElementLocated(By.id("operator-palette")));
+
+        importOperatorLibrary(wait, VisualCatalogTestSupport.eligibilityLibrary("integer",
+                new OperatorDefinition.Policy(List.of("demo-tenant"), List.of("local"), List.of("prod"))));
+        assertThat(driver.findElements(By.cssSelector(
+                "#operator-palette [data-operator-type='risk:eligibility']"
+        ))).isEmpty();
+
+        setControlValue(driver.findElement(By.id("scope-environment")), "prod");
+        click(wait, By.id("apply-scope"));
+        waitForText(wait, By.id("scope-status"), "demo-tenant / local / prod");
+        waitForText(wait, By.id("operator-palette"), "Eligibility");
+
+        dragOperatorToCanvas(wait, "Eligibility", "risk:eligibility", "riskEligibility", 140, 120);
+
+        setControlValue(driver.findElement(By.id("scope-environment")), "browser");
+        click(wait, By.id("apply-scope"));
+        waitForText(wait, By.id("scope-status"), "demo-tenant / local / browser");
+        waitForText(wait, By.id("selected-operator-editor"), "Operator unavailable");
+
+        click(wait, By.id("save-draft"));
+        waitForText(wait, By.id("draft-status"), "Saved");
+        waitForText(wait, By.id("draft-dependencies"), "scope mismatch");
+        waitForText(wait, By.id("draft-dependencies"), "scope environment 'browser' is not in [prod]");
+        assertThat(driver.findElements(By.cssSelector(
+                "#draft-dependencies [data-draft-dependency-rebase='riskEligibility']"
+        ))).isEmpty();
+    }
+
+    @Test
     void composerImportsYamlOperatorLibraryAndUsesItOnCanvasInRealBrowser() throws JsonProcessingException {
         driver = newChromeDriverOrSkip();
         WebDriverWait wait = new WebDriverWait(driver, WAIT_TIMEOUT);

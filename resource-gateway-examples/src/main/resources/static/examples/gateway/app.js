@@ -6000,6 +6000,7 @@ function renderDraftDependencyReport() {
     ['Operators', report.operatorDependencyCount || 0],
     ['Nodes', report.nodeCount || 0],
     ['Missing', report.missingOperatorCount || 0],
+    ['Scope', report.scopeMismatchOperatorCount || 0],
     ['Drifted', report.driftedFingerprintCount || 0],
     ['Unsnapshotted', report.missingFingerprintCount || 0]
   ].map(([label, value]) => `<span><strong>${escapeHtml(value)}</strong> ${escapeHtml(label)}</span>`).join('');
@@ -6031,7 +6032,8 @@ function renderDraftDependencyReport() {
 }
 
 function draftDependencyReportLevel(report) {
-  if ((Number(report?.missingOperatorCount) || 0) > 0) {
+  if ((Number(report?.missingOperatorCount) || 0) > 0
+      || (Number(report?.scopeMismatchOperatorCount) || 0) > 0) {
     return 'error';
   }
   if ((Number(report?.driftedFingerprintCount) || 0) > 0
@@ -6039,7 +6041,8 @@ function draftDependencyReportLevel(report) {
     return 'warning';
   }
   const readinessCounts = report?.runtimeReadinessStateCounts || {};
-  if (Number(readinessCounts.CATALOG_MISSING || readinessCounts.catalog_missing || 0) > 0) {
+  if (Number(readinessCounts.CATALOG_MISSING || readinessCounts.catalog_missing || 0) > 0
+      || Number(readinessCounts.SCOPE_MISMATCH || readinessCounts.scope_mismatch || 0) > 0) {
     return 'error';
   }
   if (Object.keys(readinessCounts).some((key) =>
@@ -6053,10 +6056,14 @@ function draftDependencyReportLevel(report) {
 function draftDependencySummary(report) {
   const parts = [];
   const missing = Number(report?.missingOperatorCount) || 0;
+  const scopeMismatch = Number(report?.scopeMismatchOperatorCount) || 0;
   const drifted = Number(report?.driftedFingerprintCount) || 0;
   const unsnapshotted = Number(report?.missingFingerprintCount) || 0;
   if (missing) {
     parts.push(`${missing} catalog-missing node${missing === 1 ? '' : 's'}`);
+  }
+  if (scopeMismatch) {
+    parts.push(`${scopeMismatch} scope-mismatched node${scopeMismatch === 1 ? '' : 's'}`);
   }
   if (drifted) {
     parts.push(`${drifted} drifted fingerprint${drifted === 1 ? '' : 's'}`);
@@ -6083,7 +6090,9 @@ function draftDependencyCountRows(counts, label) {
 
 function draftDependencyCountLevel(label, key) {
   const normalized = String(key || '').trim().toUpperCase().replaceAll('-', '_');
-  if (normalized === 'CATALOG_MISSING' || normalized === 'CATALOG_REPAIR_REQUIRED') {
+  if (normalized === 'CATALOG_MISSING'
+      || normalized === 'SCOPE_MISMATCH'
+      || normalized === 'CATALOG_REPAIR_REQUIRED') {
     return 'error';
   }
   if (label === 'readiness' && normalized !== 'RUNTIME_EXECUTABLE') {
@@ -6165,13 +6174,16 @@ function draftDependencyHasRebaseState(row) {
   const fingerprintState = String(row?.fingerprintState || '').toLowerCase();
   const readiness = String(row?.runtimeReadinessState || '').toUpperCase();
   return ['drifted', 'missing-snapshot'].includes(fingerprintState)
-    && readiness !== 'CATALOG_MISSING';
+    && !['CATALOG_MISSING', 'SCOPE_MISMATCH'].includes(readiness);
 }
 
 function draftDependencyRowRank(row) {
   const fingerprintState = String(row?.fingerprintState || '').toLowerCase();
   const readiness = String(row?.runtimeReadinessState || '').toUpperCase();
-  if (fingerprintState === 'catalog-missing' || readiness === 'CATALOG_MISSING'
+  if (fingerprintState === 'catalog-missing'
+      || fingerprintState === 'scope-mismatch'
+      || readiness === 'CATALOG_MISSING'
+      || readiness === 'SCOPE_MISMATCH'
       || readiness === 'CATALOG_REPAIR_REQUIRED') {
     return 4;
   }
@@ -6188,7 +6200,10 @@ function draftDependencyRowRank(row) {
 function draftDependencyFingerprintLevel(fingerprintState, runtimeReadinessState) {
   const stateLabel = String(fingerprintState || '').toLowerCase();
   const readiness = String(runtimeReadinessState || '').toUpperCase();
-  if (stateLabel === 'catalog-missing' || readiness === 'CATALOG_MISSING'
+  if (stateLabel === 'catalog-missing'
+      || stateLabel === 'scope-mismatch'
+      || readiness === 'CATALOG_MISSING'
+      || readiness === 'SCOPE_MISMATCH'
       || readiness === 'CATALOG_REPAIR_REQUIRED') {
     return 'error';
   }
@@ -6204,13 +6219,15 @@ function draftDependencyOperatorSummary(operator) {
     operatorPaletteFacetLabel(operator.sourceKind || 'unknown'),
     operatorPaletteFacetLabel(operator.loweringMode || 'native'),
     operatorPaletteFacetLabel(operator.runtimeReadinessState || 'UNKNOWN'),
-    draftDependencyFingerprintLabel(operator.fingerprintState)
+    draftDependencyFingerprintLabel(operator.fingerprintState),
+    draftDependencyPolicyViolationLabel(operator)
   ].filter(Boolean).join(' · ');
 }
 
 function draftDependencyFingerprintLabel(value) {
   return {
     'catalog-missing': 'catalog missing',
+    'scope-mismatch': 'scope mismatch',
     'missing-snapshot': 'missing snapshot',
     drifted: 'fingerprint drifted',
     current: 'fingerprint current'
@@ -6229,9 +6246,20 @@ function draftDependencyNodeSummary(node) {
   const parts = [
     binding.length ? `binding: ${binding.join(', ')}` : '',
     edges.length ? `edge: ${edges.join(', ')}` : '',
-    draftDependencyFingerprintLabel(node?.fingerprintState)
+    draftDependencyFingerprintLabel(node?.fingerprintState),
+    draftDependencyPolicyViolationLabel(node)
   ].filter(Boolean);
   return parts.join(' · ');
+}
+
+function draftDependencyPolicyViolationLabel(row) {
+  const violations = uniqueStrings(row?.policyViolations);
+  if (!violations.length) {
+    return '';
+  }
+  const visible = violations.slice(0, 2).join('; ');
+  const hidden = Math.max(0, violations.length - 2);
+  return `scope ${visible}${hidden ? `; +${hidden} more` : ''}`;
 }
 
 function renderDraftStatus() {

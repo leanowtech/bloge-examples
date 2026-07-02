@@ -231,6 +231,7 @@ class VisualGraphDraftControllerTest {
         assertThat(report.edgeCount()).isEqualTo(1);
         assertThat(report.operatorDependencyCount()).isEqualTo(1);
         assertThat(report.missingOperatorCount()).isZero();
+        assertThat(report.scopeMismatchOperatorCount()).isZero();
         assertThat(report.driftedFingerprintCount()).isZero();
         assertThat(report.missingFingerprintCount()).isZero();
         assertThat(report.sourceKindCounts()).containsEntry("user-library", 2);
@@ -241,6 +242,8 @@ class VisualGraphDraftControllerTest {
                 .satisfies(operator -> {
                     assertThat(operator.operatorRef()).isEqualTo("risk:eligibility");
                     assertThat(operator.executable()).isTrue();
+                    assertThat(operator.scopeAllowed()).isTrue();
+                    assertThat(operator.policyViolations()).isEmpty();
                     assertThat(operator.artifactKinds()).containsExactly("EXECUTABLE");
                     assertThat(operator.fingerprintState()).isEqualTo("current");
                     assertThat(operator.nodeIds()).containsExactly("eligibility", "audit");
@@ -254,6 +257,8 @@ class VisualGraphDraftControllerTest {
                     assertThat(node.upstreamNodes()).containsExactly("eligibility");
                     assertThat(node.downstreamNodes()).isEmpty();
                     assertThat(node.fingerprintState()).isEqualTo("current");
+                    assertThat(node.scopeAllowed()).isTrue();
+                    assertThat(node.policyViolations()).isEmpty();
                 });
         assertThat(report.nodes())
                 .filteredOn(node -> node.nodeId().equals("eligibility"))
@@ -279,6 +284,7 @@ class VisualGraphDraftControllerTest {
         assertThat(response.getBody()).isNotNull();
         GraphDraftDependencyReport report = response.getBody();
         assertThat(report.missingOperatorCount()).isEqualTo(1);
+        assertThat(report.scopeMismatchOperatorCount()).isZero();
         assertThat(report.sourceKindCounts()).containsEntry("user-library", 1);
         assertThat(report.runtimeReadinessStateCounts()).containsEntry("CATALOG_MISSING", 1);
         assertThat(report.operators())
@@ -287,6 +293,8 @@ class VisualGraphDraftControllerTest {
                     assertThat(operator.operatorRef()).isEqualTo("risk:eligibility");
                     assertThat(operator.currentFingerprint()).isBlank();
                     assertThat(operator.fingerprintState()).isEqualTo("catalog-missing");
+                    assertThat(operator.scopeAllowed()).isFalse();
+                    assertThat(operator.policyViolations()).isEmpty();
                     assertThat(operator.executable()).isFalse();
                     assertThat(operator.nodeIds()).containsExactly("eligibility");
                 });
@@ -297,6 +305,51 @@ class VisualGraphDraftControllerTest {
                     assertThat(node.currentFingerprint()).isBlank();
                     assertThat(node.fingerprintState()).isEqualTo("catalog-missing");
                     assertThat(node.runtimeReadinessState()).isEqualTo("CATALOG_MISSING");
+                    assertThat(node.scopeAllowed()).isFalse();
+                    assertThat(node.policyViolations()).isEmpty();
+                });
+    }
+
+    @Test
+    void dependenciesReportScopeMismatchWhenOperatorExistsOutsideDraftScope() {
+        DefaultVisualOperatorCatalog catalog = VisualCatalogTestSupport.catalogWithLibrary(
+                VisualCatalogTestSupport.eligibilityLibrary("integer",
+                        new OperatorDefinition.Policy(List.of("demo-tenant"), List.of("local"), List.of("prod"))));
+        VisualGraphDraftController controller = controllerWithCatalog(catalog, new InMemoryGraphDraftRepository());
+        GraphDraft stored = controller.create(eligibilityDraft(graphInputSchema(
+                Map.of(
+                        "score", Map.of("type", "integer"),
+                        "amount", Map.of("type", "number")
+                )
+        )));
+
+        ResponseEntity<GraphDraftDependencyReport> response = controller.dependencies(stored.draftId());
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat(response.getBody()).isNotNull();
+        GraphDraftDependencyReport report = response.getBody();
+        assertThat(report.missingOperatorCount()).isZero();
+        assertThat(report.scopeMismatchOperatorCount()).isEqualTo(1);
+        assertThat(report.runtimeReadinessStateCounts()).containsEntry("SCOPE_MISMATCH", 1);
+        assertThat(report.operators())
+                .singleElement()
+                .satisfies(operator -> {
+                    assertThat(operator.operatorRef()).isEqualTo("risk:eligibility");
+                    assertThat(operator.currentFingerprint()).startsWith("sha256:");
+                    assertThat(operator.fingerprintState()).isEqualTo("scope-mismatch");
+                    assertThat(operator.scopeAllowed()).isFalse();
+                    assertThat(operator.policyViolations()).containsExactly("environment 'local' is not in [prod]");
+                    assertThat(operator.executable()).isFalse();
+                });
+        assertThat(report.nodes())
+                .singleElement()
+                .satisfies(node -> {
+                    assertThat(node.fingerprintState()).isEqualTo("scope-mismatch");
+                    assertThat(node.runtimeReadinessState()).isEqualTo("SCOPE_MISMATCH");
+                    assertThat(node.currentFingerprint()).startsWith("sha256:");
+                    assertThat(node.scopeAllowed()).isFalse();
+                    assertThat(node.policyViolations()).containsExactly("environment 'local' is not in [prod]");
+                    assertThat(node.executable()).isFalse();
                 });
     }
 

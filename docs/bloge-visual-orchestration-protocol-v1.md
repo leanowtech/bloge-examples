@@ -1378,15 +1378,21 @@ GET /api/visual/drafts/{draftId}/dependencies
 distinct operator dependencies、每个节点的 binding/edge upstream lineage、
 downstream edge targets、source kind / lowering mode / runtime readiness 计数，
 以及每个节点 saved fingerprint 与 current catalog fingerprint 的状态：
-`current`、`missing-snapshot`、`drifted` 或 `catalog-missing`。当目标环境 catalog
-缺少当前 operatorRef 时，报告会回退到 draft 保存时冻结的 operator definition
-snapshot 提供 source/lowering 审阅上下文，但仍把运行状态标记为
-`CATALOG_MISSING`，避免跨环境迁移或坏版本导入时把 schema-only 设计资产误判为
-可执行图。
+`current`、`missing-snapshot`、`drifted`、`catalog-missing` 或
+`scope-mismatch`。报告同时输出 `missingOperatorCount`、
+`scopeMismatchOperatorCount`，并在 operator/node 行暴露 `scopeAllowed` 和
+`policyViolations`。当目标环境 catalog 缺少当前 operatorRef 时，报告会回退到
+draft 保存时冻结的 operator definition snapshot 提供 source/lowering 审阅上下文，
+但仍把运行状态标记为 `CATALOG_MISSING`，避免跨环境迁移或坏版本导入时把
+schema-only 设计资产误判为可执行图。当 operatorRef 在全局 catalog 存在、但被
+draft 的 tenant/namespace/environment policy 排除时，报告会标记
+`scope-mismatch` / `SCOPE_MISMATCH`；这表示需要修复草稿 scope 或算子库 policy，
+不是 fingerprint drift，不能通过 rebase 解决。
 
 浏览器 Drafts 依赖面板消费该报告时可以把 `drifted` 和 `missing-snapshot`
 节点行映射为受控 rebase 动作，但必须继续使用 draft revision guard，并且不得为
-`catalog-missing` 节点提供 rebase 假动作；catalog 缺失需要先修复目标环境算子库。
+`catalog-missing` 或 `scope-mismatch` 节点提供 rebase 假动作；catalog 缺失需要先修复目标
+环境算子库，scope mismatch 需要先修复草稿 scope 或算子 policy。
 如果当前画布相对已保存 draft revision 存在未保存的图结构、binding、config 或 output
 变更，客户端必须先要求作者保存或重新加载，再允许 rebase；rebase 不应把本地未保存编辑
 和服务端托管的 operator fingerprint snapshot 更新混在一个隐式动作里。

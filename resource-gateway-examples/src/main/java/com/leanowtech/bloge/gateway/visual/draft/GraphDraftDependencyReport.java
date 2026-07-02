@@ -1,6 +1,7 @@
 package com.leanowtech.bloge.gateway.visual.draft;
 
 import com.leanowtech.bloge.gateway.visual.catalog.OperatorDefinition;
+import com.leanowtech.bloge.gateway.visual.catalog.OperatorCatalogQuery;
 import com.leanowtech.bloge.gateway.visual.catalog.VisualOperatorCatalog;
 
 import java.util.ArrayList;
@@ -30,6 +31,7 @@ import java.util.Set;
  * @param edgeCount number of edges
  * @param operatorDependencyCount number of distinct operator references
  * @param missingOperatorCount number of nodes whose current operator is absent from the catalog
+ * @param scopeMismatchOperatorCount number of nodes whose operator exists but is unavailable in the draft scope
  * @param driftedFingerprintCount number of nodes whose saved fingerprint differs from the current catalog
  * @param missingFingerprintCount number of nodes without a saved fingerprint
  * @param sourceKindCounts node counts by operator source kind
@@ -50,6 +52,7 @@ public record GraphDraftDependencyReport(
         int edgeCount,
         int operatorDependencyCount,
         int missingOperatorCount,
+        int scopeMismatchOperatorCount,
         int driftedFingerprintCount,
         int missingFingerprintCount,
         Map<String, Integer> sourceKindCounts,
@@ -107,19 +110,33 @@ public record GraphDraftDependencyReport(
         Map<String, OperatorAggregate> operatorAggregates = new LinkedHashMap<>();
         List<NodeDependency> nodeRows = new ArrayList<>();
         int missingOperators = 0;
+        int scopeMismatchOperators = 0;
         int driftedFingerprints = 0;
         int missingFingerprints = 0;
+        Map<String, OperatorDefinition> scopedOperators = scopedOperators(draft, catalog);
 
         for (GraphDraft.DraftNode node : draft.nodes()) {
-            Optional<OperatorDefinition> currentOperator = catalog == null
+            Optional<OperatorDefinition> catalogOperator = catalog == null
                     ? Optional.empty()
                     : catalog.find(node.operatorRef());
-            OperatorDefinition reviewOperator = currentOperator.orElseGet(() -> snapshotForNode(draft, node));
+            OperatorDefinition scopedOperator = scopedOperators.get(node.operatorRef());
+            boolean currentOperatorPresent = catalogOperator.isPresent();
+            boolean scopeAllowed = scopedOperator != null;
+            OperatorDefinition reviewOperator = scopeAllowed
+                    ? scopedOperator
+                    : catalogOperator.orElseGet(() -> snapshotForNode(draft, node));
             String savedFingerprint = draft.operatorFingerprints().getOrDefault(node.id(), "");
-            String currentFingerprint = currentOperator.map(OperatorDefinition::fingerprint).orElse("");
-            String fingerprintState = fingerprintState(savedFingerprint, currentFingerprint, currentOperator.isPresent());
-            if (currentOperator.isEmpty()) {
+            String currentFingerprint = catalogOperator.map(OperatorDefinition::fingerprint).orElse("");
+            String fingerprintState = fingerprintState(savedFingerprint, currentFingerprint,
+                    currentOperatorPresent, scopeAllowed);
+            if (!currentOperatorPresent) {
                 missingOperators++;
+            }
+            List<String> policyViolations = currentOperatorPresent
+                    ? catalogOperator.get().policy().violations(draft.tenantId(), draft.namespace(), draft.environment())
+                    : List.of();
+            if (currentOperatorPresent && !scopeAllowed) {
+                scopeMismatchOperators++;
             }
             if ("drifted".equals(fingerprintState)) {
                 driftedFingerprints++;
@@ -128,13 +145,13 @@ public record GraphDraftDependencyReport(
                 missingFingerprints++;
             }
 
-            String sourceKind = sourceKind(reviewOperator, currentOperator.isPresent());
+            String sourceKind = sourceKind(reviewOperator, currentOperatorPresent);
             String loweringMode = loweringMode(reviewOperator);
-            String readinessState = runtimeReadinessState(reviewOperator, currentOperator.isPresent());
+            String readinessState = runtimeReadinessState(reviewOperator, currentOperatorPresent, scopeAllowed);
             boolean executable = reviewOperator != null
                     && reviewOperator.runtimeReadiness() != null
                     && reviewOperator.runtimeReadiness().executable()
-                    && currentOperator.isPresent();
+                    && scopeAllowed;
             List<String> artifactKinds = reviewOperator == null || reviewOperator.runtimeReadiness() == null
                     ? List.of()
                     : reviewOperator.runtimeReadiness().artifactKinds();
@@ -164,7 +181,9 @@ public record GraphDraftDependencyReport(
                     List.copyOf(bindingSourceNodes),
                     List.copyOf(edgeSourceNodes),
                     List.copyOf(upstreamNodes),
-                    List.copyOf(downstreamNodes)
+                    List.copyOf(downstreamNodes),
+                    scopeAllowed,
+                    policyViolations
             );
             nodeRows.add(nodeRow);
 
@@ -176,7 +195,9 @@ public record GraphDraftDependencyReport(
                             readinessState,
                             executable,
                             artifactKinds,
-                            currentFingerprint
+                            currentFingerprint,
+                            scopeAllowed,
+                            policyViolations
                     ))
                     .add(node.id(), fingerprintState);
         }
@@ -196,6 +217,7 @@ public record GraphDraftDependencyReport(
                 draft.edges().size(),
                 operators.size(),
                 missingOperators,
+                scopeMismatchOperators,
                 driftedFingerprints,
                 missingFingerprints,
                 sourceKindCounts,
@@ -221,6 +243,7 @@ public record GraphDraftDependencyReport(
                 0,
                 0,
                 0,
+                0,
                 Map.of(),
                 Map.of(),
                 Map.of(),
@@ -237,11 +260,28 @@ public record GraphDraftDependencyReport(
         return null;
     }
 
+    private static Map<String, OperatorDefinition> scopedOperators(GraphDraft draft, VisualOperatorCatalog catalog) {
+        if (catalog == null) {
+            return Map.of();
+        }
+        OperatorCatalogQuery query = new OperatorCatalogQuery("", List.of(), false, true,
+                draft.tenantId(), draft.namespace(), draft.environment());
+        Map<String, OperatorDefinition> operators = new LinkedHashMap<>();
+        for (OperatorDefinition operator : catalog.list(query)) {
+            operators.putIfAbsent(operator.operatorRef(), operator);
+        }
+        return operators;
+    }
+
     private static String fingerprintState(String savedFingerprint,
                                            String currentFingerprint,
-                                           boolean currentOperatorPresent) {
+                                           boolean currentOperatorPresent,
+                                           boolean scopeAllowed) {
         if (!currentOperatorPresent) {
             return "catalog-missing";
+        }
+        if (!scopeAllowed) {
+            return "scope-mismatch";
         }
         if (savedFingerprint == null || savedFingerprint.isBlank()) {
             return "missing-snapshot";
@@ -266,9 +306,14 @@ public record GraphDraftDependencyReport(
         return normalizeFacet(operator.lowering().mode(), "native");
     }
 
-    private static String runtimeReadinessState(OperatorDefinition operator, boolean currentOperatorPresent) {
+    private static String runtimeReadinessState(OperatorDefinition operator,
+                                                boolean currentOperatorPresent,
+                                                boolean scopeAllowed) {
         if (!currentOperatorPresent) {
             return "CATALOG_MISSING";
+        }
+        if (!scopeAllowed) {
+            return "SCOPE_MISMATCH";
         }
         if (operator == null || operator.runtimeReadiness() == null) {
             return "UNKNOWN";
@@ -301,6 +346,8 @@ public record GraphDraftDependencyReport(
      * @param artifactKinds supported artifact kinds from the operator contract
      * @param currentFingerprint current catalog fingerprint, when present
      * @param fingerprintState aggregate fingerprint state across using nodes
+     * @param scopeAllowed whether the operator is available in the draft tenant/namespace/environment
+     * @param policyViolations scope policy violations for the draft context
      * @param nodeIds draft nodes using the operator
      */
     public record OperatorDependency(
@@ -312,6 +359,8 @@ public record GraphDraftDependencyReport(
             List<String> artifactKinds,
             String currentFingerprint,
             String fingerprintState,
+            boolean scopeAllowed,
+            List<String> policyViolations,
             List<String> nodeIds
     ) {
         public OperatorDependency {
@@ -322,6 +371,7 @@ public record GraphDraftDependencyReport(
             artifactKinds = artifactKinds == null ? List.of() : List.copyOf(artifactKinds);
             currentFingerprint = currentFingerprint == null ? "" : currentFingerprint;
             fingerprintState = fingerprintState == null ? "" : fingerprintState;
+            policyViolations = policyViolations == null ? List.of() : List.copyOf(policyViolations);
             nodeIds = nodeIds == null ? List.of() : List.copyOf(nodeIds);
         }
     }
@@ -343,6 +393,8 @@ public record GraphDraftDependencyReport(
      * @param edgeSourceNodes node ids referenced by incoming visual edges
      * @param upstreamNodes union of binding and edge source nodes
      * @param downstreamNodes outgoing visual edge targets
+     * @param scopeAllowed whether this node's operator is available in the draft tenant/namespace/environment
+     * @param policyViolations scope policy violations for the draft context
      */
     public record NodeDependency(
             String nodeId,
@@ -358,7 +410,9 @@ public record GraphDraftDependencyReport(
             List<String> bindingSourceNodes,
             List<String> edgeSourceNodes,
             List<String> upstreamNodes,
-            List<String> downstreamNodes
+            List<String> downstreamNodes,
+            boolean scopeAllowed,
+            List<String> policyViolations
     ) {
         public NodeDependency {
             nodeId = nodeId == null ? "" : nodeId;
@@ -374,6 +428,7 @@ public record GraphDraftDependencyReport(
             edgeSourceNodes = edgeSourceNodes == null ? List.of() : List.copyOf(edgeSourceNodes);
             upstreamNodes = upstreamNodes == null ? List.of() : List.copyOf(upstreamNodes);
             downstreamNodes = downstreamNodes == null ? List.of() : List.copyOf(downstreamNodes);
+            policyViolations = policyViolations == null ? List.of() : List.copyOf(policyViolations);
         }
     }
 
@@ -385,6 +440,8 @@ public record GraphDraftDependencyReport(
         private final boolean executable;
         private final List<String> artifactKinds;
         private final String currentFingerprint;
+        private final boolean scopeAllowed;
+        private final Set<String> policyViolations = new LinkedHashSet<>();
         private final Set<String> nodeIds = new LinkedHashSet<>();
         private final Set<String> fingerprintStates = new LinkedHashSet<>();
 
@@ -394,7 +451,9 @@ public record GraphDraftDependencyReport(
                                   String runtimeReadinessState,
                                   boolean executable,
                                   List<String> artifactKinds,
-                                  String currentFingerprint) {
+                                  String currentFingerprint,
+                                  boolean scopeAllowed,
+                                  List<String> policyViolations) {
             this.operatorRef = operatorRef;
             this.sourceKind = sourceKind;
             this.loweringMode = loweringMode;
@@ -402,6 +461,8 @@ public record GraphDraftDependencyReport(
             this.executable = executable;
             this.artifactKinds = artifactKinds == null ? List.of() : List.copyOf(artifactKinds);
             this.currentFingerprint = currentFingerprint == null ? "" : currentFingerprint;
+            this.scopeAllowed = scopeAllowed;
+            this.policyViolations.addAll(policyViolations == null ? List.of() : policyViolations);
         }
 
         private OperatorAggregate add(String nodeId, String fingerprintState) {
@@ -420,6 +481,8 @@ public record GraphDraftDependencyReport(
                     artifactKinds,
                     currentFingerprint,
                     aggregateFingerprintState(fingerprintStates),
+                    scopeAllowed,
+                    List.copyOf(policyViolations),
                     List.copyOf(nodeIds)
             );
         }
@@ -428,6 +491,9 @@ public record GraphDraftDependencyReport(
     private static String aggregateFingerprintState(Set<String> states) {
         if (states.contains("catalog-missing")) {
             return "catalog-missing";
+        }
+        if (states.contains("scope-mismatch")) {
+            return "scope-mismatch";
         }
         if (states.contains("drifted")) {
             return "drifted";
