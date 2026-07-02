@@ -443,6 +443,8 @@ const state = {
   operatorUsageByRef: {},
   operatorUsageMessagesByRef: {},
   operatorUsageLoadingRef: '',
+  operatorDefinitionMessagesByRef: {},
+  operatorDefinitionLoadingRef: '',
   operatorFingerprintRebaseNodeId: '',
   visualCheck: {
     message: 'Not checked',
@@ -744,6 +746,21 @@ function operatorCatalogUrl(builder = state.builder, options = {}) {
     params.set('includeDeprecated', 'true');
   }
   return `/api/visual/operators?${params.toString()}`;
+}
+
+function operatorDefinitionUrl(operatorRef, builder = state.builder, options = {}) {
+  const scope = builderScope(builder);
+  const params = new URLSearchParams();
+  params.set('tenantId', scope.tenantId);
+  params.set('namespace', scope.namespace);
+  params.set('environment', scope.environment);
+  if (options.includeDeprecated) {
+    params.set('includeDeprecated', 'true');
+  }
+  if (options.resourceOnly) {
+    params.set('resourceOnly', 'true');
+  }
+  return `/api/visual/operators/${encodeURIComponent(operatorRef)}?${params.toString()}`;
 }
 
 function visualAssetOverviewUrl(builder = state.builder) {
@@ -10922,6 +10939,12 @@ function renderSelectedOperatorEditor() {
     });
   }
 
+  for (const button of target.querySelectorAll('[data-load-operator-definition]')) {
+    button.addEventListener('click', () => {
+      loadVisualOperatorDefinition(button.dataset.loadOperatorDefinition);
+    });
+  }
+
   for (const button of target.querySelectorAll('[data-rebase-operator-fingerprint]')) {
     button.addEventListener('click', () => {
       rebaseOperatorFingerprint(button.dataset.rebaseOperatorFingerprint);
@@ -11405,6 +11428,9 @@ function renderOperatorContractPanel(node) {
   if (spec.unavailable) {
     return '';
   }
+  const operatorRef = operatorDefinitionRefForNode(node);
+  const definitionMessage = operatorRef ? (state.operatorDefinitionMessagesByRef || {})[operatorRef] || null : null;
+  const definitionLoading = operatorRef && state.operatorDefinitionLoadingRef === operatorRef;
   const targets = targetHandlesForNode(node);
   const configFields = configFieldDescriptors(spec.configSchema);
   const requiredTargets = targets.filter((target) => target.required);
@@ -11425,6 +11451,18 @@ function renderOperatorContractPanel(node) {
         <span>Contract</span>
         <small>${bound}/${targets.length} inputs bound · ${requiredValid}/${requiredTargets.length} required valid · ${errors} issues</small>
       </div>
+      ${operatorRef ? `
+        <div class="operator-usage-toolbar">
+          <code>${escapeHtml(operatorRef)}</code>
+          <button
+            type="button"
+            class="secondary compact"
+            data-load-operator-definition="${escapeHtml(operatorRef)}"
+            ${definitionLoading ? 'disabled' : ''}
+          >${definitionLoading ? 'Loading' : 'Refresh definition'}</button>
+        </div>
+        ${definitionMessage ? `<div class="operator-usage-message ${escapeHtml(definitionMessage.level || 'info')}">${escapeHtml(definitionMessage.text)}</div>` : ''}
+      ` : ''}
       ${renderOperatorReadinessPanel(spec)}
       ${renderOperatorDiagnosticsPanel(spec)}
       <div class="contract-port-groups">
@@ -11979,6 +12017,14 @@ function operatorUsageRefForNode(node) {
   return spec.visualOperatorRef || spec.operatorRef || node.paletteType || node.operatorRef || node.type || '';
 }
 
+function operatorDefinitionRefForNode(node) {
+  const operatorRef = operatorUsageRefForNode(node);
+  if (!operatorRef || operatorRef === 'httpResource' || operatorRef === 'bloge:decisionTable' || operatorRef === 'bloge:transform') {
+    return '';
+  }
+  return operatorRef;
+}
+
 async function loadOperatorUsage(operatorRef) {
   if (!operatorRef) {
     return;
@@ -12019,6 +12065,82 @@ async function loadOperatorUsage(operatorRef) {
     }
     renderSelectedOperatorEditor();
     renderDiagram();
+  }
+}
+
+async function loadVisualOperatorDefinition(operatorRef, options = {}) {
+  const normalized = String(operatorRef || '').trim();
+  if (!normalized) {
+    return null;
+  }
+  let query = {
+    includeDeprecated: Boolean(options.includeDeprecated),
+    resourceOnly: Boolean(options.resourceOnly)
+  };
+  state.operatorDefinitionLoadingRef = normalized;
+  state.operatorDefinitionMessagesByRef = {
+    ...(state.operatorDefinitionMessagesByRef || {}),
+    [normalized]: { text: 'Loading operator definition...', level: 'info' }
+  };
+  if (options.render !== false) {
+    renderSelectedOperatorEditor();
+  }
+  try {
+    let response = await fetch(operatorDefinitionUrl(normalized, state.builder, query));
+    if (response.status === 404 && !query.includeDeprecated && options.includeDeprecatedFallback !== false) {
+      query = { ...query, includeDeprecated: true };
+      state.operatorDefinitionMessagesByRef = {
+        ...(state.operatorDefinitionMessagesByRef || {}),
+        [normalized]: { text: 'Operator hidden in active catalog. Retrying with deprecated visibility...', level: 'warning' }
+      };
+      if (options.render !== false) {
+        renderSelectedOperatorEditor();
+      }
+      response = await fetch(operatorDefinitionUrl(normalized, state.builder, query));
+    }
+    const payload = await response.json().catch(() => null);
+    if (!response.ok || !payload?.operatorRef) {
+      const message = response.status === 404
+        ? 'Operator not visible in current authoring scope.'
+        : `Operator definition failed with ${response.status}.`;
+      throw new Error(payload?.message || message);
+    }
+    const deprecated = Boolean(query.includeDeprecated);
+    const paletteVisible = Object.prototype.hasOwnProperty.call(options, 'paletteVisible')
+      ? Boolean(options.paletteVisible)
+      : !deprecated;
+    rememberCatalogOperator(payload, { paletteVisible, deprecated });
+    state.visualOperators = [
+      ...(state.visualOperators || []).filter((operator) => operator?.operatorRef !== payload.operatorRef),
+      payload
+    ];
+    state.operatorDefinitionMessagesByRef = {
+      ...(state.operatorDefinitionMessagesByRef || {}),
+      [normalized]: {
+        text: deprecated
+          ? 'Operator definition loaded with deprecated visibility.'
+          : 'Operator definition refreshed.',
+        level: deprecated ? 'warning' : 'success'
+      }
+    };
+    if (options.render !== false) {
+      renderOperatorPalette();
+    }
+    return payload;
+  } catch (error) {
+    state.operatorDefinitionMessagesByRef = {
+      ...(state.operatorDefinitionMessagesByRef || {}),
+      [normalized]: { text: error.message, level: 'error' }
+    };
+    return null;
+  } finally {
+    if (state.operatorDefinitionLoadingRef === normalized) {
+      state.operatorDefinitionLoadingRef = '';
+    }
+    if (options.render !== false) {
+      renderSelectedOperatorEditor();
+      renderDiagram();
+    }
   }
 }
 
@@ -13014,6 +13136,9 @@ function renderContractPortGroup(label, ports) {
 
 function renderUnavailableOperatorPanel(node, spec) {
   const scope = builderScope();
+  const operatorRef = operatorDefinitionRefForNode(node);
+  const definitionMessage = operatorRef ? (state.operatorDefinitionMessagesByRef || {})[operatorRef] || null : null;
+  const definitionLoading = operatorRef && state.operatorDefinitionLoadingRef === operatorRef;
   const inputs = Object.entries(node.customInputs || {});
   const inputRows = inputs.length
     ? inputs.map(([key, expression]) => `
@@ -13033,6 +13158,18 @@ function renderUnavailableOperatorPanel(node, spec) {
       <span>${escapeHtml(scope.tenantId)} / ${escapeHtml(scope.namespace)} / ${escapeHtml(scope.environment)}</span>
       <span>Reload the library or switch scope, then validate to get the server diagnostic.</span>
     </div>
+    ${operatorRef ? `
+      <div class="operator-usage-toolbar">
+        <code>${escapeHtml(operatorRef)}</code>
+        <button
+          type="button"
+          class="secondary compact"
+          data-load-operator-definition="${escapeHtml(operatorRef)}"
+          ${definitionLoading ? 'disabled' : ''}
+        >${definitionLoading ? 'Loading' : 'Refresh definition'}</button>
+      </div>
+      ${definitionMessage ? `<div class="operator-usage-message ${escapeHtml(definitionMessage.level || 'info')}">${escapeHtml(definitionMessage.text)}</div>` : ''}
+    ` : ''}
     <div class="unavailable-inputs">
       ${inputRows}
     </div>

@@ -1034,7 +1034,37 @@ diagnostics 派生，用户导入的算子库不能伪造。当前 request-respo
 `CATALOG_REPAIR_REQUIRED`，并作为 `runtimeReadiness` query filter 与
 `facets.runtimeReadinessStates` 聚合维度暴露。浏览器优先消费该字段；缺失时才使用本地兼容推断。
 
-### 10.1.1 查询 operator usage index
+### 10.1.1 获取单个 operator 定义
+
+```http
+GET /api/visual/operators/resource:loan-applicant-service.getProfile?tenantId=demo-tenant&namespace=local&environment=dev&includeDeprecated=false
+```
+
+响应为单个 `bloge.visualOperator.v1`：
+
+```json
+{
+  "schemaVersion": "bloge.visualOperator.v1",
+  "operatorRef": "resource:loan-applicant-service.getProfile",
+  "operatorVersion": "1.0.0",
+  "display": { "name": "Get Applicant Profile" },
+  "ports": { "inputs": [], "outputs": [] },
+  "runtimeReadiness": {
+    "state": "GOVERNANCE_REVIEW",
+    "executable": true,
+    "artifactKinds": ["EXECUTABLE"]
+  }
+}
+```
+
+该端点不是绕过 catalog 的内部查找口，而是用同一套 catalog visibility query
+精确读取单个 operator。当前实现支持 `tenantId`、`namespace`、`environment`、
+`includeDeprecated`、`resourceOnly`、`sourceKind`、`loweringMode`、`capability`
+和 `runtimeReadiness` 参数；当 operator 不存在、被 scope policy 隐藏、deprecated
+但未显式 `includeDeprecated=true`，或被 facet 条件排除时，返回 `404`。外部控制面
+可用它为 inspector、schema cache 或 operator detail 页面按需加载定义，而不必拉取完整目录。
+
+### 10.1.2 查询 operator usage index
 
 ```http
 GET /api/visual/operators/risk:eligibility/usage

@@ -665,7 +665,7 @@ node fetchApplicant : httpResource {
 | Method | Path | 说明 |
 | --- | --- | --- |
 | `GET` | `/api/visual/operators` | 查询可用算子，支持 pattern、tag、tenant、namespace、environment、source/lowering/capability/runtime-readiness facets |
-| `GET` | `/api/visual/operators/{operatorRef}` | 获取单个算子定义 |
+| `GET` | `/api/visual/operators/{operatorRef}` | 当前已实现：按 catalog 可见性门禁获取单个算子定义，支持 `tenantId`、`namespace`、`environment`、`includeDeprecated`、`resourceOnly` 和 source/lowering/capability/runtime-readiness filters，不可见或不存在返回 404 |
 | `GET` | `/api/visual/operators/{operatorRef}/usage` | 当前已实现：查询某个 operatorRef 被哪些 stored draft / immutable publication 节点使用，并返回 saved/frozen fingerprint 与当前 catalog fingerprint 的状态 |
 | `POST` | `/admin/visual-operator-libraries/import-text` | 当前实现：导入用户提供的 operator library JSON/YAML source text，服务端解析后复用 impact / warning / revision 治理 |
 | `POST` | `/admin/visual-operator-libraries/validate-text` | 当前实现：校验用户提供的 operator library JSON/YAML source text，不落库，解析错误返回结构化诊断 |

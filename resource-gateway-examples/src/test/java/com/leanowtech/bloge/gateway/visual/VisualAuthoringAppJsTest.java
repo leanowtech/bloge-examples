@@ -87,6 +87,25 @@ class VisualAuthoringAppJsTest {
     }
 
     @Test
+    void selectedInspectorCanRefreshSingleOperatorDefinition() throws Exception {
+        String source = appJsSource();
+
+        assertThat(source)
+                .contains("operatorDefinitionMessagesByRef: {}")
+                .contains("operatorDefinitionLoadingRef: ''")
+                .contains("function operatorDefinitionUrl(operatorRef, builder = state.builder, options = {})")
+                .contains("return `/api/visual/operators/${encodeURIComponent(operatorRef)}?${params.toString()}`")
+                .contains("async function loadVisualOperatorDefinition(operatorRef, options = {})")
+                .contains("fetch(operatorDefinitionUrl(normalized, state.builder, query))")
+                .contains("Operator hidden in active catalog. Retrying with deprecated visibility...")
+                .contains("rememberCatalogOperator(payload, { paletteVisible, deprecated })")
+                .contains("Operator definition refreshed.")
+                .contains("function operatorDefinitionRefForNode(node)")
+                .contains("data-load-operator-definition")
+                .contains("loadVisualOperatorDefinition(button.dataset.loadOperatorDefinition)");
+    }
+
+    @Test
     void surfacesPortablePublicationBundlesInBrowserControls() throws Exception {
         String source = appJsSource();
 

@@ -787,6 +787,7 @@ Showcase metadata APIs:
 | `GET` | `/api/gateway/examples/scenarios/{graphName}/diagram` | Load the `bloge.visualLayout.v1` diagram for a scenario |
 | `POST` | `/api/gateway/examples/compose/run` | Compile and run submitted DSL with JSON context, returning diagnostics, output, layout, and decision-table metadata |
 | `GET` | `/api/visual/operators` | List native, Java registry, imported, executable publication-backed subgraph, and resource-backed visual operator definitions; supports `tenantId`, `namespace`, and `environment` policy filtering, `sourceKind` / `loweringMode` / `capability` / `runtimeReadiness` catalog facets, plus multi-term schema-aware search across input/output/config fields, field types, and readiness summaries; response includes `facets.total/sourceKinds/loweringModes/capabilities/runtimeReadinessStates` counts |
+| `GET` | `/api/visual/operators/{operatorRef}` | Return one visible `bloge.visualOperator.v1` definition under the same `tenantId` / `namespace` / `environment`, `includeDeprecated`, `resourceOnly`, and catalog facet visibility gates used by the operator catalog; returns `404` when the operator is hidden or missing |
 | `GET` | `/api/visual/operators/{operatorRef}/usage` | Return stored draft and immutable-publication usage of one operatorRef, including saved/frozen fingerprint status, changed-surface drift summaries, and `changeRisk/changeCategories/changeSummary` when snapshots allow risk classification |
 | `GET` | `/api/visual/assets/overview` | Return `bloge.visualAssetOverview.v1`, an environment-level visual authoring overview that echoes the requested authoring scope while aggregating draft summaries, publication summaries, current operator catalog facets, and an action-readiness/runtime-binding-requirement-aware server-derived action queue with optional `tenantId` / `namespace` / `environment` scope filters plus `actionLimit` / `actionOffset` / `actionSeverity` / `actionType` / `actionTargetKind` queue query controls |
 | `GET` | `/api/visual/assets/runtime-binding-requirements` | Return `bloge.visualRuntimeBindingRequirements.v1`, a scope-aware, pageable runtime-binding gap index for active drafts and immutable publications, with `targetKind` / `bindingKind` / `handoffLane` / `handoffKind` / `handoffTarget` / `sourceKind` / `loweringMode` / `readinessState` / `requirementKey` filters, stable requirement keys, and handoff lane/kind/target fields for external runtime-plane routing |
@@ -844,7 +845,10 @@ node's full output instead of reusing the saved `output.path`.
 The selected-node inspector can load the operator usage index for the node's
 `operatorRef`, showing stored draft usage, immutable publication usage,
 fingerprint status, changed-surface summaries, and classified replacement risk
-next to the local canvas impact view. Draft rows use the saved node-level
+next to the local canvas impact view. It can also refresh the current
+single-operator definition through `GET /api/visual/operators/{operatorRef}` under
+the active authoring scope, falling back to deprecated visibility for imported
+or restored draft nodes that are no longer in the active palette. Draft rows use the saved node-level
 operator snapshot when available; publication rows use the frozen publication
 snapshot, so both mutable drafts and immutable releases can explain whether
 drift is a breaking schema change, runtime binding change, governance/policy
