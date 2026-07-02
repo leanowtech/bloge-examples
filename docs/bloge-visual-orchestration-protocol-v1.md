@@ -1691,6 +1691,13 @@ message handler、webhook、streaming 或 durable capability 暂时不能运行�
 `PLAN_DRAFT_RUNTIME_BINDING`，把 frozen DESIGN publication 缺口投影为
 `PLAN_PUBLICATION_RUNTIME_BINDING`，并把 `nodeId/bindingKind/bindingTarget`
 固化进稳定 `actionKey`。
+如果外部 runtime-plane 团队需要事实清单而不是 overview action recommendation，
+`GET /api/visual/assets/runtime-binding-requirements` 会返回
+`bloge.visualRuntimeBindingRequirements.v1`，按 active draft 和 immutable publication
+展开同一批 requirement，并支持 `tenantId/namespace/environment`、`limit/offset`、
+`targetKind`、`bindingKind`、`sourceKind`、`loweringMode` 和 `readinessState`
+查询。该索引不持久化待办状态，`readiness.runtimeBindingRequirements[]`
+仍是唯一事实来源。
 `actionReadiness` 则把同一批 diagnostics/readiness 压成产品动作门禁：`compileNow`、
 `runNow`、`publishDesignNow`、`publishDesignAfterReview`、`publishExecutableNow`、
 `publishExecutableAfterReview`，以及 `requiresAckWarnings` /

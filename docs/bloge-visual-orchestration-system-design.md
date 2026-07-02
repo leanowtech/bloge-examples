@@ -736,6 +736,10 @@ runtime binding、repair 和 design tracking。它还会消费
 `readiness.runtimeBindingRequirements[]`，把草稿和 frozen DESIGN publication 的缺口拆成
 per-node `PLAN_DRAFT_RUNTIME_BINDING` / `PLAN_PUBLICATION_RUNTIME_BINDING` items，
 而不是只凭 `design-only` readiness 做粗粒度归类。
+同一事实源还会通过 `GET /api/visual/assets/runtime-binding-requirements` 暴露为
+`bloge.visualRuntimeBindingRequirements.v1`，给外部 runtime-plane 集成团队按
+scope、targetKind、bindingKind、sourceKind、loweringMode 和 readinessState 查询、分页和计数；
+这个索引不保存待办状态，避免和 draft/publication readiness 形成第二套真相源。
 connection preflight 会返回候选连接相关的局部 diagnostics，同时携带应用 preview
 edge/binding/config expression 后的完整 candidate draft validation/readiness/actionReadiness；compile 和 run 响应同样携带本次服务端门禁使用的 validation/readiness/actionReadiness；
 publication run 则回传 artifact 冻结时的 validation/readiness/actionReadiness，不能按当前 catalog
@@ -815,6 +819,7 @@ fingerprint snapshot；普通保存和 PATCH 仍保留既有 snapshot，避免�
 | `POST` | `/api/visual/drafts/{draftId}/run` | 使用测试 context 运行；响应携带本次 draft validation/readiness/actionReadiness、diagnostics 和 run history id |
 | `POST` | `/api/visual/drafts/{draftId}/publish` | 发布为 graph version；浏览器和 API 默认 `artifactKind=EXECUTABLE`，也支持 `artifactKind=DESIGN` 冻结非执行型设计制品；warning-level diagnostics 需 `ackWarnings=true` 后才写入；响应在成功和拒绝时都保留 validation/readiness/actionReadiness，供客户端按 artifact kind 和 warning gate 纠偏 |
 | `GET` | `/api/visual/assets/overview` | 当前已实现：返回 `bloge.visualAssetOverview.v1`，聚合 draft/publication/operator catalog readiness，并用 summary actionReadiness 和 runtimeBindingRequirements 派生可分页 action queue |
+| `GET` | `/api/visual/assets/runtime-binding-requirements` | 当前已实现：返回 `bloge.visualRuntimeBindingRequirements.v1`，把 active draft 和 immutable publication 的 runtime binding gaps 暴露为 scope-aware/filterable/pageable 事实索引 |
 
 ### 12.3 Runtime / Trace API
 

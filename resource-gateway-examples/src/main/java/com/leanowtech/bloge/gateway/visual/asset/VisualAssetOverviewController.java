@@ -71,14 +71,9 @@ public class VisualAssetOverviewController {
                                         @RequestParam(defaultValue = "") String actionSeverity,
                                         @RequestParam(defaultValue = "") String actionType,
                                         @RequestParam(defaultValue = "") String actionTargetKind) {
-        List<GraphDraftSummary> draftSummaries = draftRepository.history().stream()
-                .map(this::draftSummary)
-                .filter(summary -> matchesDraftScope(summary, tenantId, namespace, environment))
-                .toList();
-        List<VisualGraphPublicationSummary> publicationSummaries = publicationRepository.all().stream()
-                .map(VisualGraphPublicationSummary::from)
-                .filter(summary -> matchesPublicationScope(summary, tenantId, namespace, environment))
-                .toList();
+        List<GraphDraftSummary> draftSummaries = draftSummaries(tenantId, namespace, environment);
+        List<VisualGraphPublicationSummary> publicationSummaries =
+                publicationSummaries(tenantId, namespace, environment);
         OperatorCatalogQuery query = new OperatorCatalogQuery(
                 "",
                 List.of(),
@@ -110,12 +105,78 @@ public class VisualAssetOverviewController {
         );
     }
 
+    /**
+     * Lists node-scoped runtime binding gaps for design-capable but non-executable graph assets.
+     *
+     * @param tenantId tenant scope, empty for all
+     * @param namespace namespace scope, empty for all
+     * @param environment environment scope, empty for all
+     * @param limit requested number of requirement item details
+     * @param offset zero-based requirement item offset after filtering
+     * @param targetKind optional target kind filter
+     * @param bindingKind optional binding kind filter
+     * @param sourceKind optional source kind filter
+     * @param loweringMode optional lowering mode filter
+     * @param readinessState optional graph or node readiness state filter
+     * @return runtime binding requirement index
+     */
+    @GetMapping("/runtime-binding-requirements")
+    public VisualRuntimeBindingRequirements runtimeBindingRequirements(
+            @RequestParam(defaultValue = "") String tenantId,
+            @RequestParam(defaultValue = "") String namespace,
+            @RequestParam(defaultValue = "") String environment,
+            @RequestParam(defaultValue = "50") int limit,
+            @RequestParam(defaultValue = "0") int offset,
+            @RequestParam(defaultValue = "") String targetKind,
+            @RequestParam(defaultValue = "") String bindingKind,
+            @RequestParam(defaultValue = "") String sourceKind,
+            @RequestParam(defaultValue = "") String loweringMode,
+            @RequestParam(defaultValue = "") String readinessState) {
+        return VisualRuntimeBindingRequirements.from(
+                draftSummaries(tenantId, namespace, environment),
+                publicationSummaries(tenantId, namespace, environment),
+                tenantId,
+                namespace,
+                environment,
+                limit,
+                offset,
+                targetKind,
+                bindingKind,
+                sourceKind,
+                loweringMode,
+                readinessState
+        );
+    }
+
     VisualAssetOverview overview(String tenantId, String namespace, String environment) {
         return overview(tenantId, namespace, environment, VisualAssetOverview.DEFAULT_ACTION_ITEM_LIMIT);
     }
 
     VisualAssetOverview overview(String tenantId, String namespace, String environment, int actionLimit) {
         return overview(tenantId, namespace, environment, actionLimit, 0, "", "", "");
+    }
+
+    VisualRuntimeBindingRequirements runtimeBindingRequirements(String tenantId,
+                                                                String namespace,
+                                                                String environment) {
+        return runtimeBindingRequirements(tenantId, namespace, environment,
+                VisualRuntimeBindingRequirements.DEFAULT_ITEM_LIMIT, 0, "", "", "", "", "");
+    }
+
+    private List<GraphDraftSummary> draftSummaries(String tenantId, String namespace, String environment) {
+        return draftRepository.history().stream()
+                .map(this::draftSummary)
+                .filter(summary -> matchesDraftScope(summary, tenantId, namespace, environment))
+                .toList();
+    }
+
+    private List<VisualGraphPublicationSummary> publicationSummaries(String tenantId,
+                                                                     String namespace,
+                                                                     String environment) {
+        return publicationRepository.all().stream()
+                .map(VisualGraphPublicationSummary::from)
+                .filter(summary -> matchesPublicationScope(summary, tenantId, namespace, environment))
+                .toList();
     }
 
     private GraphDraftSummary draftSummary(GraphDraftHistorySummary history) {

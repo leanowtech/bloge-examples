@@ -106,6 +106,93 @@ class VisualAssetOverviewControllerTest {
     }
 
     @Test
+    void runtimeBindingRequirementsIndexesDraftAndPublicationGapsForControlPlanes() {
+        DefaultVisualOperatorCatalog catalog = VisualCatalogTestSupport.catalogWithLibrary(
+                VisualCatalogTestSupport.designOnlyEligibilityLibrary("integer"));
+        GraphDraftValidator validator = new GraphDraftValidator(catalog);
+        InMemoryGraphDraftRepository drafts = new InMemoryGraphDraftRepository();
+        InMemoryVisualGraphPublicationRepository publications = new InMemoryVisualGraphPublicationRepository();
+        OperatorDefinition operator = catalog.find("risk:eligibility").orElseThrow();
+        GraphDraft draft = drafts.save(draftWithFingerprint(operator));
+        VisualValidationResult validation = validator.validate(draft);
+        VisualGraphPublication publication = publications.create(VisualGraphPublication.design(
+                draft,
+                List.of(operator),
+                validation,
+                new DslGenerationResult(false, "", List.of()),
+                GraphDraftDependencyReport.from(draft, catalog)
+        ));
+        VisualAssetOverviewController controller =
+                new VisualAssetOverviewController(drafts, validator, catalog, publications);
+
+        VisualRuntimeBindingRequirements firstPage = controller.runtimeBindingRequirements(
+                "",
+                "",
+                "",
+                1,
+                0,
+                "",
+                "",
+                "",
+                "",
+                ""
+        );
+        VisualRuntimeBindingRequirements draftOnly = controller.runtimeBindingRequirements(
+                "",
+                "",
+                "",
+                10,
+                0,
+                "draft",
+                "executable-lowering",
+                "",
+                "",
+                ""
+        );
+        VisualRuntimeBindingRequirements excludedScope =
+                controller.runtimeBindingRequirements("tenant-b", "risk", "dev");
+
+        assertThat(firstPage.schemaVersion()).isEqualTo(VisualRuntimeBindingRequirements.SCHEMA_VERSION);
+        assertThat(firstPage.scope().filtered()).isFalse();
+        assertThat(firstPage.total()).isEqualTo(2);
+        assertThat(firstPage.unfilteredTotal()).isEqualTo(2);
+        assertThat(firstPage.displayedCount()).isEqualTo(1);
+        assertThat(firstPage.itemLimit()).isEqualTo(1);
+        assertThat(firstPage.offset()).isZero();
+        assertThat(firstPage.hasMore()).isTrue();
+        assertThat(firstPage.targetKindCounts()).containsEntry("draft", 1)
+                .containsEntry("publication", 1);
+        assertThat(firstPage.bindingKindCounts()).containsEntry("executable-lowering", 2);
+        assertThat(firstPage.sourceKindCounts()).containsEntry("user-library", 2);
+        assertThat(firstPage.loweringModeCounts()).containsEntry("design", 2);
+        assertThat(firstPage.readinessStateCounts()).containsEntry("design-only", 2);
+        assertThat(firstPage.artifactKindCounts()).containsEntry("DESIGN", 1);
+        assertThat(firstPage.items()).singleElement().satisfies(item -> {
+            assertThat(item.requirementKey()).isEqualTo(
+                    "RUNTIME_BINDING|draft|%s|eligibility|executable-lowering|risk:eligibility|"
+                            .formatted(draft.draftId()));
+            assertThat(item.targetKind()).isEqualTo("draft");
+            assertThat(item.targetLabel()).contains("visualPolicy").contains("eligibility");
+            assertThat(item.operatorRef()).isEqualTo("risk:eligibility");
+            assertThat(item.bindingKind()).isEqualTo("executable-lowering");
+            assertThat(item.bindingTarget()).isEqualTo("risk:eligibility");
+            assertThat(item.recommendedAction()).contains("EXECUTABLE promotion");
+        });
+        assertThat(draftOnly.filter().filtered()).isTrue();
+        assertThat(draftOnly.filter().targetKind()).isEqualTo("draft");
+        assertThat(draftOnly.filter().bindingKind()).isEqualTo("executable-lowering");
+        assertThat(draftOnly.total()).isEqualTo(1);
+        assertThat(draftOnly.unfilteredTotal()).isEqualTo(2);
+        assertThat(draftOnly.items()).singleElement()
+                .extracting(VisualRuntimeBindingRequirements.RequirementItem::targetId)
+                .isEqualTo(draft.draftId());
+        assertThat(firstPage.items()).noneMatch(item -> item.targetId().equals(publication.publicationId()));
+        assertThat(excludedScope.scope().filtered()).isTrue();
+        assertThat(excludedScope.total()).isZero();
+        assertThat(excludedScope.unfilteredTotal()).isZero();
+    }
+
+    @Test
     void overviewQueuesWarningAcknowledgementFromGraphActionReadiness() {
         DefaultVisualOperatorCatalog catalog = VisualCatalogTestSupport.catalogWithLibrary(
                 VisualCatalogTestSupport.designOnlyEligibilityLibrary("integer"));
