@@ -2,10 +2,13 @@ package com.leanowtech.bloge.gateway.visual.catalog;
 
 import com.leanowtech.bloge.gateway.visual.diagnostic.VisualDiagnostic;
 
+import java.util.ArrayList;
 import java.util.Collections;
+import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 import java.util.Set;
 
 /**
@@ -42,6 +45,8 @@ import java.util.Set;
  * @param warningCodes unique warning diagnostic codes
  * @param message human-readable decision summary
  * @param recommendedAction concise next action for UI or automation
+ * @param runtimeBindingRequirementCount runtime binding requirement count for submitted operators
+ * @param runtimeBindingRequirements per-operator runtime binding requirements before executable use
  */
 public record OperatorLibraryImportReadiness(
         String schemaVersion,
@@ -69,7 +74,9 @@ public record OperatorLibraryImportReadiness(
         List<String> blockingCodes,
         List<String> warningCodes,
         String message,
-        String recommendedAction
+        String recommendedAction,
+        int runtimeBindingRequirementCount,
+        List<RuntimeBindingRequirement> runtimeBindingRequirements
 ) {
     public static final String SCHEMA_VERSION = "bloge.visualOperatorLibraryImportReadiness.v1";
 
@@ -119,6 +126,8 @@ public record OperatorLibraryImportReadiness(
         warningCodes = immutableCodeList(warningCodes);
         message = message == null ? "" : message;
         recommendedAction = recommendedAction == null ? "" : recommendedAction;
+        runtimeBindingRequirements = immutableRuntimeBindingRequirements(runtimeBindingRequirements);
+        runtimeBindingRequirementCount = runtimeBindingRequirements.size();
     }
 
     /**
@@ -141,11 +150,31 @@ public record OperatorLibraryImportReadiness(
                                                       List<VisualDiagnostic> diagnostics,
                                                       OperatorLibraryImpactReview impact,
                                                       OperatorLibraryProfile profile) {
+        return from(valid, diagnostics, impact, profile, null);
+    }
+
+    /**
+     * Builds readiness from the same evidence used by validation responses.
+     *
+     * @param valid validation validity
+     * @param diagnostics validation diagnostics
+     * @param impact impact review
+     * @param profile server-derived operator-library profile
+     * @param library submitted library snapshot used to derive per-operator binding targets
+     * @return import readiness summary
+     */
+    public static OperatorLibraryImportReadiness from(boolean valid,
+                                                      List<VisualDiagnostic> diagnostics,
+                                                      OperatorLibraryImpactReview impact,
+                                                      OperatorLibraryProfile profile,
+                                                      OperatorLibrary library) {
         List<VisualDiagnostic> safeDiagnostics = diagnostics == null ? List.of() : diagnostics.stream()
                 .filter(diagnostic -> diagnostic != null)
                 .toList();
         OperatorLibraryImpactReview safeImpact = impact == null ? OperatorLibraryImpactReview.empty() : impact;
         OperatorLibraryProfile safeProfile = profile == null ? OperatorLibraryProfile.empty() : profile;
+        List<RuntimeBindingRequirement> runtimeBindingRequirements =
+                runtimeBindingRequirements(library, safeProfile);
         int errors = 0;
         int warnings = 0;
         Set<String> blockingCodes = new LinkedHashSet<>();
@@ -209,7 +238,9 @@ public record OperatorLibraryImportReadiness(
                 List.copyOf(blockingCodes),
                 List.copyOf(warningCodes),
                 message,
-                recommendedAction
+                recommendedAction,
+                runtimeBindingRequirements.size(),
+                runtimeBindingRequirements
         );
     }
 
@@ -320,5 +351,287 @@ public record OperatorLibraryImportReadiness(
                 .filter(code -> code != null && !code.isBlank())
                 .distinct()
                 .toList());
+    }
+
+    private static List<RuntimeBindingRequirement> runtimeBindingRequirements(OperatorLibrary library,
+                                                                              OperatorLibraryProfile profile) {
+        if (library == null || library.operators().isEmpty()) {
+            return List.of();
+        }
+        Map<String, OperatorLibraryProfile.OperatorProfile> profilesByOperatorRef = new LinkedHashMap<>();
+        for (OperatorLibraryProfile.OperatorProfile operatorProfile : profile.operators()) {
+            if (operatorProfile != null && !operatorProfile.operatorRef().isBlank()) {
+                profilesByOperatorRef.put(operatorProfile.operatorRef(), operatorProfile);
+            }
+        }
+        List<RuntimeBindingRequirement> requirements = new ArrayList<>();
+        for (OperatorDefinition operator : library.operators()) {
+            if (operator == null || operator.operatorRef().isBlank()) {
+                continue;
+            }
+            OperatorLibraryProfile.OperatorProfile operatorProfile = profilesByOperatorRef.get(operator.operatorRef());
+            requirements.addAll(RuntimeBindingRequirement.from(operator, operatorProfile));
+        }
+        return List.copyOf(requirements);
+    }
+
+    private static List<RuntimeBindingRequirement> immutableRuntimeBindingRequirements(
+            List<RuntimeBindingRequirement> requirements) {
+        if (requirements == null || requirements.isEmpty()) {
+            return List.of();
+        }
+        return Collections.unmodifiableList(requirements.stream()
+                .filter(requirement -> requirement != null)
+                .toList());
+    }
+
+    /**
+     * Runtime binding required for an imported operator before executable graph use.
+     *
+     * @param operatorRef operator reference that needs runtime binding
+     * @param label display label
+     * @param state readiness state that produced the requirement
+     * @param level UI/control-plane severity
+     * @param sourceKind operator source kind
+     * @param loweringMode requested lowering mode
+     * @param bindingKind stable machine-readable binding kind
+     * @param bindingTarget topic/tool/channel/path/operator target when declared
+     * @param title short display title
+     * @param summary human-readable binding gap summary
+     * @param recommendedAction human-readable next action
+     */
+    public record RuntimeBindingRequirement(
+            String operatorRef,
+            String label,
+            String state,
+            String level,
+            String sourceKind,
+            String loweringMode,
+            String bindingKind,
+            String bindingTarget,
+            String title,
+            String summary,
+            String recommendedAction
+    ) {
+        public RuntimeBindingRequirement {
+            operatorRef = operatorRef == null ? "" : operatorRef;
+            label = label == null ? "" : label;
+            state = normalizeFacetValue(state);
+            level = level == null || level.isBlank() ? "warning" : level.trim().toLowerCase(Locale.ROOT);
+            sourceKind = normalizeFacetValue(sourceKind);
+            loweringMode = normalizeFacetValue(loweringMode);
+            bindingKind = normalizeFacetValue(bindingKind);
+            bindingTarget = bindingTarget == null ? "" : bindingTarget;
+            title = title == null ? "" : title;
+            summary = summary == null ? "" : summary;
+            recommendedAction = recommendedAction == null ? "" : recommendedAction;
+        }
+
+        private static List<RuntimeBindingRequirement> from(
+                OperatorDefinition operator,
+                OperatorLibraryProfile.OperatorProfile operatorProfile) {
+            String state = operatorProfile == null
+                    ? normalizeFacetValue(operator.runtimeReadiness().state())
+                    : operatorProfile.runtimeReadinessState();
+            String level = operatorProfile == null
+                    ? operator.runtimeReadiness().level()
+                    : operatorProfile.runtimeReadinessLevel();
+            String sourceKind = normalizeFacetValue(operator.source().kind());
+            String loweringMode = normalizeFacetValue(operator.lowering().mode());
+            boolean streaming = operator.capabilities().streaming()
+                    || "java-streaming-operator".equals(sourceKind);
+            boolean durable = operator.capabilities().durable()
+                    || "java-suspendable-operator".equals(sourceKind);
+            List<RuntimeBindingRequirement> requirements = new ArrayList<>();
+            if ("design-only".equals(state)) {
+                requirements.add(requirement(
+                        operator,
+                        state,
+                        level,
+                        sourceKind,
+                        loweringMode,
+                        "executable-lowering",
+                        firstNonBlank(operator.lowering().operatorRef(), operator.operatorRef()),
+                        "Executable lowering required",
+                        "This operator is schema-authorable only; no executable lowering is bound.",
+                        "Bind a native/resource/subgraph lowering before using this operator in EXECUTABLE graphs."
+                ));
+                return List.copyOf(requirements);
+            }
+            if (!"runtime-blocked".equals(state)) {
+                return List.of();
+            }
+            if ("remote-worker".equals(sourceKind) || "remote-worker".equals(loweringMode)) {
+                requirements.add(requirement(
+                        operator,
+                        state,
+                        level,
+                        sourceKind,
+                        loweringMode,
+                        "remote-worker-runtime",
+                        parameter(operator.lowering(), "workerTopic"),
+                        "Remote worker runtime required",
+                        "A remote worker dispatcher is required before this operator can execute.",
+                        "Bind worker dispatch for this topic before EXECUTABLE graph publication."
+                ));
+            }
+            if ("ai-tool".equals(sourceKind) || "ai-tool".equals(loweringMode)) {
+                requirements.add(requirement(
+                        operator,
+                        state,
+                        level,
+                        sourceKind,
+                        loweringMode,
+                        "ai-tool-runtime",
+                        parameter(operator.lowering(), "toolRef"),
+                        "AI tool runtime required",
+                        "An AI tool invocation runtime is required before this operator can execute.",
+                        "Bind tool invocation for this toolRef before EXECUTABLE graph publication."
+                ));
+            }
+            if ("event-source".equals(sourceKind) || "event-source".equals(loweringMode)) {
+                requirements.add(requirement(
+                        operator,
+                        state,
+                        level,
+                        sourceKind,
+                        loweringMode,
+                        "event-source-runtime",
+                        parameter(operator.lowering(), "eventType"),
+                        "Event source runtime required",
+                        "An event subscription runtime is required before this operator can execute.",
+                        "Bind event subscription for this event type before EXECUTABLE graph publication."
+                ));
+            }
+            if ("message-handler".equals(sourceKind) || "message-handler".equals(loweringMode)) {
+                requirements.add(requirement(
+                        operator,
+                        state,
+                        level,
+                        sourceKind,
+                        loweringMode,
+                        "message-runtime",
+                        parameter(operator.lowering(), "channel"),
+                        "Message runtime required",
+                        "A message consumer runtime is required before this operator can execute.",
+                        "Bind message consumption for this channel before EXECUTABLE graph publication."
+                ));
+            }
+            if ("webhook".equals(sourceKind) || "webhook".equals(loweringMode)) {
+                requirements.add(requirement(
+                        operator,
+                        state,
+                        level,
+                        sourceKind,
+                        loweringMode,
+                        "webhook-ingress-runtime",
+                        webhookTarget(operator.source(), operator.lowering()),
+                        "Webhook ingress runtime required",
+                        "A webhook ingress runtime is required before this operator can execute.",
+                        "Bind webhook ingress for this endpoint before EXECUTABLE graph publication."
+                ));
+            }
+            if (streaming) {
+                requirements.add(requirement(
+                        operator,
+                        state,
+                        level,
+                        sourceKind,
+                        loweringMode,
+                        "streaming-runtime",
+                        "",
+                        "Streaming runtime required",
+                        "This operator requires streaming execution, which the request-response runtime cannot provide.",
+                        "Bind a streaming runtime before EXECUTABLE graph publication."
+                ));
+            }
+            if (durable) {
+                requirements.add(requirement(
+                        operator,
+                        state,
+                        level,
+                        sourceKind,
+                        loweringMode,
+                        "durable-runtime",
+                        "",
+                        "Durable runtime required",
+                        "This operator requires durable/suspendable execution, which the request-response runtime cannot provide.",
+                        "Bind a durable runtime before EXECUTABLE graph publication."
+                ));
+            }
+            if (requirements.isEmpty()) {
+                requirements.add(requirement(
+                        operator,
+                        state,
+                        level,
+                        sourceKind,
+                        loweringMode,
+                        "runtime-adapter",
+                        firstNonBlank(operator.lowering().operatorRef(), operator.operatorRef()),
+                        "Runtime adapter required",
+                        operatorProfile == null ? "" : operatorProfile.runtimeReadinessSummary(),
+                        "Bind the missing runtime adapter before EXECUTABLE graph publication."
+                ));
+            }
+            return List.copyOf(requirements);
+        }
+
+        private static RuntimeBindingRequirement requirement(OperatorDefinition operator,
+                                                             String state,
+                                                             String level,
+                                                             String sourceKind,
+                                                             String loweringMode,
+                                                             String bindingKind,
+                                                             String bindingTarget,
+                                                             String title,
+                                                             String summary,
+                                                             String recommendedAction) {
+            return new RuntimeBindingRequirement(
+                    operator.operatorRef(),
+                    operator.display().name().isBlank() ? operator.operatorRef() : operator.display().name(),
+                    state,
+                    level,
+                    sourceKind,
+                    loweringMode,
+                    bindingKind,
+                    bindingTarget,
+                    title,
+                    summary,
+                    recommendedAction
+            );
+        }
+
+        private static String parameter(OperatorDefinition.Lowering lowering, String key) {
+            if (lowering == null || lowering.parameters() == null) {
+                return "";
+            }
+            Object value = lowering.parameters().get(key);
+            return value == null ? "" : String.valueOf(value);
+        }
+
+        private static String webhookTarget(OperatorDefinition.Source source, OperatorDefinition.Lowering lowering) {
+            String method = firstNonBlank(parameter(lowering, "method"), source == null ? "" : source.method());
+            String path = firstNonBlank(parameter(lowering, "path"), source == null ? "" : source.urlTemplate());
+            return firstNonBlank("%s %s".formatted(method, path).trim(), path, method);
+        }
+
+        private static String firstNonBlank(String... values) {
+            if (values == null) {
+                return "";
+            }
+            for (String value : values) {
+                if (value != null && !value.isBlank()) {
+                    return value;
+                }
+            }
+            return "";
+        }
+    }
+
+    private static String normalizeFacetValue(String value) {
+        return String.valueOf(value == null ? "" : value)
+                .trim()
+                .toLowerCase(Locale.ROOT)
+                .replace('_', '-');
     }
 }

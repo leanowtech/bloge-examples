@@ -3543,6 +3543,14 @@ function renderLibraryImportReadiness(readiness) {
   const affectedText = affected.length
     ? `<span>${escapeHtml(affected.join(' · '))}</span>`
     : '';
+  const bindingRequirements = visualRuntimeBindingRequirementRows(readiness.runtimeBindingRequirements);
+  const bindingOverflow = Math.max(
+    0,
+    Number(readiness.runtimeBindingRequirementCount || 0)
+      - (Array.isArray(readiness.runtimeBindingRequirements)
+        ? readiness.runtimeBindingRequirements.slice(0, 5).length
+        : 0)
+  );
   return `
     <div class="library-import-readiness ${escapeHtml(readiness.level || 'info')}">
       <strong>${escapeHtml(operatorPaletteFacetLabel(readiness.state || 'import readiness'))}</strong>
@@ -3550,6 +3558,9 @@ function renderLibraryImportReadiness(readiness) {
       ${gateText}
       ${affectedText}
       ${readiness.recommendedAction ? `<small>${escapeHtml(readiness.recommendedAction)}</small>` : ''}
+      ${bindingRequirements ? `<small>${escapeHtml('Runtime binding requirements')}</small>
+        <div class="library-impact-codes">${bindingRequirements}</div>` : ''}
+      ${bindingOverflow ? `<small>+${escapeHtml(bindingOverflow)} more runtime binding requirements</small>` : ''}
     </div>
   `;
 }
@@ -4283,7 +4294,14 @@ function normalizeOperatorLibraryImportReadiness(importReadiness) {
     blockingCodes: normalizeStringArray(importReadiness.blockingCodes),
     warningCodes: normalizeStringArray(importReadiness.warningCodes),
     message: String(importReadiness.message || ''),
-    recommendedAction: String(importReadiness.recommendedAction || '')
+    recommendedAction: String(importReadiness.recommendedAction || ''),
+    runtimeBindingRequirements: Array.isArray(importReadiness.runtimeBindingRequirements)
+      ? importReadiness.runtimeBindingRequirements.map(normalizeRuntimeBindingRequirement)
+      : [],
+    runtimeBindingRequirementCount: Number(importReadiness.runtimeBindingRequirementCount
+      || (Array.isArray(importReadiness.runtimeBindingRequirements)
+        ? importReadiness.runtimeBindingRequirements.length
+        : 0))
   };
 }
 
@@ -4802,7 +4820,7 @@ function visualRuntimeBindingRequirementRows(requirements) {
       const action = requirement.recommendedAction ? ` · ${requirement.recommendedAction}` : '';
       return `
         <div class="library-impact-code ${escapeHtml(requirement.level || 'warning')}">
-          <strong>${escapeHtml(requirement.nodeId || requirement.operatorRef || 'runtime binding')}</strong>
+          <strong>${escapeHtml(requirement.nodeId || requirement.label || requirement.operatorRef || 'runtime binding')}</strong>
           <span>${escapeHtml(operatorPaletteFacetLabel(requirement.bindingKind || 'runtime-binding'))}${escapeHtml(target)}${escapeHtml(action)}</span>
         </div>
       `;
@@ -5156,6 +5174,7 @@ function normalizeRuntimeBindingRequirement(requirement) {
   return {
     nodeId: String(requirement?.nodeId || ''),
     operatorRef: String(requirement?.operatorRef || ''),
+    label: String(requirement?.label || ''),
     state: normalizeReadinessState(requirement?.state),
     level: String(requirement?.level || 'warning').trim().toLowerCase(),
     sourceKind: normalizeReadinessState(requirement?.sourceKind),

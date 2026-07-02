@@ -165,7 +165,8 @@ public class AsyncApiOperatorLibraryImporter {
                 diagnostics.stream().noneMatch(VisualDiagnostic::error),
                 diagnostics,
                 OperatorLibraryImpactReview.empty(),
-                library == null ? OperatorLibraryProfile.empty() : OperatorLibraryProfile.from(library, diagnostics)
+                library == null ? OperatorLibraryProfile.empty() : OperatorLibraryProfile.from(library, diagnostics),
+                library
         );
         AsyncApiProjectionReview projectionReview = projectionReview(availableOperations, selectedOperations,
                 selectionApplied, selectionMatches);

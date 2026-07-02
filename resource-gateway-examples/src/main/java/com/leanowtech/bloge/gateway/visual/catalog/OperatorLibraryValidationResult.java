@@ -40,7 +40,21 @@ public record OperatorLibraryValidationResult(
                                            List<VisualDiagnostic> diagnostics,
                                            OperatorLibraryImpactReview impact,
                                            OperatorLibraryProfile profile) {
-        this(valid, diagnostics, impact, profile, null);
+        this(valid, diagnostics, impact, profile, (OperatorLibraryImportReadiness) null);
+    }
+
+    /**
+     * Constructor for callers that have the submitted library snapshot available for
+     * per-operator import readiness evidence.
+     */
+    public OperatorLibraryValidationResult(boolean valid,
+                                           List<VisualDiagnostic> diagnostics,
+                                           OperatorLibraryImpactReview impact,
+                                           OperatorLibraryProfile profile,
+                                           OperatorLibrary library) {
+        this(validFromDiagnostics(diagnostics), diagnostics, impact, profile,
+                OperatorLibraryImportReadiness.from(validFromDiagnostics(diagnostics), diagnostics, impact, profile,
+                        library));
     }
 
     /**
@@ -50,5 +64,9 @@ public record OperatorLibraryValidationResult(
                                            List<VisualDiagnostic> diagnostics,
                                            OperatorLibraryImpactReview impact) {
         this(valid, diagnostics, impact, OperatorLibraryProfile.empty());
+    }
+
+    private static boolean validFromDiagnostics(List<VisualDiagnostic> diagnostics) {
+        return diagnostics == null || diagnostics.stream().noneMatch(VisualDiagnostic::error);
     }
 }

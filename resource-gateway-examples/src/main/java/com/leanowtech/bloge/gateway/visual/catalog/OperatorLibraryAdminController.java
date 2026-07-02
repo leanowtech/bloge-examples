@@ -1233,11 +1233,11 @@ public class OperatorLibraryAdminController {
         OperatorLibraryProfile profile = OperatorLibraryProfile.from(library, diagnostics);
         if (diagnostics == null || diagnostics.isEmpty()) {
             return new OperatorLibraryValidationResult(false, diagnostics, OperatorLibraryImpactReview.empty(),
-                    profile);
+                    profile, library);
         }
         return new OperatorLibraryValidationResult(false, diagnostics,
                 OperatorLibraryImpactReview.fromDiagnostics(diagnostics, impactOperatorRefs(library, diagnostics)),
-                profile);
+                profile, library);
     }
 
     private OperatorLibraryValidationResult governanceEvidenceResult(

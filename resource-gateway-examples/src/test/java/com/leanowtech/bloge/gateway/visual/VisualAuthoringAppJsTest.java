@@ -365,6 +365,8 @@ class VisualAuthoringAppJsTest {
                 .contains("function normalizeOperatorLibraryImportReadiness(importReadiness)")
                 .contains("bloge.visualOperatorLibraryImportReadiness.v1")
                 .contains("requiresAckWarnings: Boolean(importReadiness.requiresAckWarnings)")
+                .contains("runtimeBindingRequirements: Array.isArray(importReadiness.runtimeBindingRequirements)")
+                .contains("Runtime binding requirements")
                 .contains("request.operationId = current.operationId")
                 .contains("request.channel = current.channel")
                 .contains("request.action = current.action")
@@ -2129,7 +2131,19 @@ class VisualAuthoringAppJsTest {
                     requiresAckWarnings: true,
                     requiresGovernanceEvidence: true,
                     affectedDraftCount: 2,
-                    affectedOperatorCount: 1
+                    affectedOperatorCount: 1,
+                    runtimeBindingRequirementCount: 1,
+                    runtimeBindingRequirements: [{
+                      operatorRef: 'risk:nativeBinding',
+                      label: 'Native Binding',
+                      state: 'runtime-blocked',
+                      level: 'warning',
+                      sourceKind: 'user-library',
+                      loweringMode: 'native',
+                      bindingKind: 'runtime-adapter',
+                      bindingTarget: 'missingRuntimeBinding',
+                      recommendedAction: 'Bind the missing runtime adapter.'
+                    }]
                   },
                   operators: [{
                     label: 'Native Binding',
@@ -3378,6 +3392,10 @@ class VisualAuthoringAppJsTest {
                   ['library profile html import readiness gates', String(importReadinessProfileHtml.includes('ackWarnings + actor/reason')), 'true'],
                   ['library profile html import readiness affected', String(importReadinessProfileHtml.includes('2 drafts · 1 operators')), 'true'],
                   ['library profile html import readiness action', String(importReadinessProfileHtml.includes('bind the missing runtime')), 'true'],
+                  ['library profile html import binding heading', String(importReadinessProfileHtml.includes('Runtime binding requirements')), 'true'],
+                  ['library profile html import binding label', String(importReadinessProfileHtml.includes('Native Binding')), 'true'],
+                  ['library profile html import binding target', String(importReadinessProfileHtml.includes('missingRuntimeBinding')), 'true'],
+                  ['library profile html import binding action', String(importReadinessProfileHtml.includes('Bind the missing runtime adapter.')), 'true'],
                   ['library profile html policy summary', String(libraryProfileHtml.includes('policy tenants demo-tenant; namespaces local; env browser')), 'true'],
                   ['library profile policy-only html summary', String(policyOnlyProfileHtml.includes('policy tenants gold, silver, bronze +1; namespaces lending; env prod')), 'true'],
                   ['library profile html includes required input field', String(libraryProfileHtml.includes('inputs.customer.id*')), 'true'],

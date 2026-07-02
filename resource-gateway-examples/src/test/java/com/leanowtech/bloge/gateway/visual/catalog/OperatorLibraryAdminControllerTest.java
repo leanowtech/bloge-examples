@@ -123,7 +123,18 @@ class OperatorLibraryAdminControllerTest {
                 .andExpect(jsonPath("$.importReadiness.importableNow").value(true))
                 .andExpect(jsonPath("$.importReadiness.designOnlyOperatorCount").value(1))
                 .andExpect(jsonPath("$.importReadiness.message")
-                        .value("Schema-only library is ready for design-time authoring and DESIGN publications."));
+                        .value("Schema-only library is ready for design-time authoring and DESIGN publications."))
+                .andExpect(jsonPath("$.importReadiness.runtimeBindingRequirementCount").value(1))
+                .andExpect(jsonPath("$.importReadiness.runtimeBindingRequirements[0].operatorRef")
+                        .value("risk:eligibility"))
+                .andExpect(jsonPath("$.importReadiness.runtimeBindingRequirements[0].label")
+                        .value("Eligibility"))
+                .andExpect(jsonPath("$.importReadiness.runtimeBindingRequirements[0].bindingKind")
+                        .value("executable-lowering"))
+                .andExpect(jsonPath("$.importReadiness.runtimeBindingRequirements[0].bindingTarget")
+                        .value("risk:eligibility"))
+                .andExpect(jsonPath("$.importReadiness.runtimeBindingRequirements[0].recommendedAction")
+                        .value("Bind a native/resource/subgraph lowering before using this operator in EXECUTABLE graphs."));
 
         assertThat(registry.all()).isEmpty();
     }
@@ -1669,7 +1680,16 @@ class OperatorLibraryAdminControllerTest {
                 .andExpect(jsonPath("$.importReadiness.requiresAckWarnings").value(true))
                 .andExpect(jsonPath("$.importReadiness.requiresGovernanceEvidence").value(true))
                 .andExpect(jsonPath("$.importReadiness.warningCodes[0]")
-                        .value("visual.operator.lowering.operatorRefUnresolved"));
+                        .value("visual.operator.lowering.operatorRefUnresolved"))
+                .andExpect(jsonPath("$.importReadiness.runtimeBindingRequirementCount").value(1))
+                .andExpect(jsonPath("$.importReadiness.runtimeBindingRequirements[0].operatorRef")
+                        .value("risk:visualScorePolicy"))
+                .andExpect(jsonPath("$.importReadiness.runtimeBindingRequirements[0].bindingKind")
+                        .value("runtime-adapter"))
+                .andExpect(jsonPath("$.importReadiness.runtimeBindingRequirements[0].bindingTarget")
+                        .value("missingScorePolicy"))
+                .andExpect(jsonPath("$.importReadiness.runtimeBindingRequirements[0].summary")
+                        .value("Native lowering points at an executable operatorRef that is not visible in the current runtime inventory."));
 
         assertThat(registry.find("native-missing")).isEmpty();
     }

@@ -705,6 +705,12 @@ design-only 摘要；浏览器只有在用户继续编辑 JSON 或服务端 prof
 `governance-evidence-required` 或 `catalog-repair-required`，并显式暴露
 `requiresAckWarnings`、`requiresForce`、`requiresGovernanceEvidence` 以及 affected draft /
 publication / operator counts，避免浏览器或 CI 解析自然语言诊断来决定下一步动作。
+同一准入摘要还会在导入前输出 per-operator `runtimeBindingRequirements[]`：
+`lowering.mode=design` 会生成 `executable-lowering`，未解析的 native executable
+operatorRef 会生成 `runtime-adapter`，remote-worker / AI-tool / event-source /
+message-handler / webhook / streaming / durable 会生成对应 runtime binding kind、target
+和 recommendedAction。这样用户刚贴入算子库定义时就能把运行时绑定工作派给 runtime plane，
+而不是等图已经被大量草稿引用后才从单个 draft readiness 里反推。
 当前还支持
 `lowering.mode=design` 的 schema-only authoring：这类用户算子可以进入 catalog、
 拖拽、连线、保存、导出、被 schema validator 校验，并可通过浏览器发布模式或 API

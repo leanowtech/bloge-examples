@@ -49,8 +49,8 @@ Operator Library / Resource Design Contract
 
 ### 2.1 本轮增量状态
 
-- 用户算子库 validate/import/export/import-bundle 的 `OperatorLibraryValidationResult` 现在派生 `bloge.visualOperatorLibraryImportReadiness.v1`，把 diagnostics、profile 和 impact 压成 `runtime-executable-importable`、`design-only-importable`、`mixed-importable`、`runtime-binding-required`、`governance-review-required`、`warning-ack-required`、`force-required`、`governance-evidence-required` 或 `catalog-repair-required` 等准入状态，并显式返回 `requiresAckWarnings`、`requiresForce`、`requiresGovernanceEvidence`、blocking/warning diagnostic codes 和 affected draft/publication/operator counts。
-- 浏览器 Operator Libraries 面板在服务端 validate/import 响应仍匹配当前 source text 时展示 import readiness 行；用户继续编辑 JSON/YAML 后仍回退到本地 profile 预览，避免把过期的服务端准入结论当成当前文本事实。
+- 用户算子库 validate/import/export/import-bundle 的 `OperatorLibraryValidationResult` 现在派生 `bloge.visualOperatorLibraryImportReadiness.v1`，把 diagnostics、profile 和 impact 压成 `runtime-executable-importable`、`design-only-importable`、`mixed-importable`、`runtime-binding-required`、`governance-review-required`、`warning-ack-required`、`force-required`、`governance-evidence-required` 或 `catalog-repair-required` 等准入状态，并显式返回 `requiresAckWarnings`、`requiresForce`、`requiresGovernanceEvidence`、blocking/warning diagnostic codes、affected draft/publication/operator counts，以及导入前 per-operator `runtimeBindingRequirements[]`，把 design-only executable-lowering、unresolved native runtime-adapter、remote-worker、AI-tool、event/message/webhook、streaming 和 durable 缺口在进入 catalog 前就变成可路由 binding work。
+- 浏览器 Operator Libraries 面板在服务端 validate/import 响应仍匹配当前 source text 时展示 import readiness 行，并渲染导入前 Runtime Binding Requirements 明细；用户继续编辑 JSON/YAML 后仍回退到本地 profile 预览，避免把过期的服务端准入结论当成当前文本事实。
 - draft validate/export/import/compile/run/publish 复用 `VisualValidationResult` 派生 `bloge.visualGraphActionReadiness.v1`，把 graph readiness 和 diagnostics 压成 `compileNow`、`runNow`、`publishDesignNow`、`publishDesignAfterReview`、`publishExecutableNow`、`publishExecutableAfterReview`、`requiresAckWarnings` 和 `requiresGovernanceEvidence` 等动作准入字段；浏览器 Server Check 面板优先展示服务端动作门禁，旧的 readiness 推断只作为 fallback。
 - `bloge.visualGraphDraftSummary.v1` 和 `bloge.visualGraphPublicationSummary.v1` 现在也携带 graph action-readiness；`bloge.visualAssetOverview.v1` 的 action queue 优先消费该字段，把 warning-gated draft 路由为 `ACK_DRAFT_WARNINGS`，把冻结 warning publication 路由为 `REVIEW_PUBLICATION_WARNING_EVIDENCE`，避免资产总览把需要治理证据的 DESIGN 路径误归类为普通 design tracking。
 - `bloge.visualGraphReadiness.v1` 现在为 schema-valid 但不可执行的节点派生 `runtimeBindingRequirements[]`，把 design-only、remote-worker、AI-tool、event-source、message-handler、webhook、streaming 和 durable 缺口转成 node-scoped bindingKind/bindingTarget/recommendedAction；浏览器 readiness panel 会展示这些待办，让 DESIGN 制品能进入后续 runtime plane 绑定流程，而不是停在“不能运行”的文本状态。
@@ -65,7 +65,7 @@ Operator Library / Resource Design Contract
 | 早期草案名 | 当前实现名 | 说明 |
 | --- | --- | --- |
 | `bloge.operatorCatalog.v1` | `bloge.visualOperator.v1` / `bloge.visualOperatorLibrary.v1` / `bloge.visualOperatorCatalog.v1` | 当前实现把单个算子、用户算子库、catalog response 拆成三个显式合同。 |
-| 未单列 | `bloge.visualOperatorLibraryImportReadiness.v1` | 当前实现新增用户算子库导入准入摘要，把 profile/impact/diagnostics 派生成控制面可路由的 ack/force/evidence/readiness 状态。 |
+| 未单列 | `bloge.visualOperatorLibraryImportReadiness.v1` | 当前实现新增用户算子库导入准入摘要，把 profile/impact/diagnostics 派生成控制面可路由的 ack/force/evidence/readiness 状态，并在导入前暴露 per-operator runtime binding requirement 明细。 |
 | 未单列 | `bloge.visualOperatorLibraryRevision.v1` | 当前实现新增用户算子库 create/replace/delete/restore 不可变审计快照。 |
 | `bloge.graphDraft.v1` | `bloge.visualGraphDraft.v1` | 当前实现明确这是 visual authoring draft，而不是 BLOGE runtime graph AST。 |
 | 未单列 | `bloge.visualGraphActionReadiness.v1` | 当前实现新增图级动作准入摘要，把 validation/readiness/diagnostics 派生成 compile/run/DESIGN publish/EXECUTABLE publish 的可执行、需复核或阻断状态。 |
