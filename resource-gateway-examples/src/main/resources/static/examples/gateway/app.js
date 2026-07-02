@@ -474,6 +474,8 @@ const state = {
   paletteDrag: null,
   nodeDrag: null,
   connectionDrag: null,
+  connectionCandidatePreview: null,
+  nodeConnectabilityServer: null,
   connectionMessage: null,
   builderHistoryUndo: [],
   builderHistoryRedo: [],
@@ -11333,12 +11335,22 @@ function renderNodeConnectabilityPanel(node) {
   if (!summary.sourceCount) {
     return '';
   }
+  if (typeof ensureNodeConnectabilityServerCandidates === 'function') {
+    ensureNodeConnectabilityServerCandidates(node, summary);
+  }
+  const serverState = typeof nodeConnectabilityServerStateFor === 'function'
+    ? nodeConnectabilityServerStateFor(node)
+    : null;
+  const serverStatus = typeof renderNodeConnectabilityServerStatus === 'function'
+    ? renderNodeConnectabilityServerStatus(serverState)
+    : '';
   return `
     <div class="node-connectability-panel">
       <div class="binding-panel-title">
         <span>Connectability</span>
         <small>${escapeHtml(nodeConnectabilityTotalsLabel(summary))}</small>
       </div>
+      ${serverStatus}
       ${summary.sources.map((source) => renderNodeConnectabilityRow(source)).join('')}
     </div>
   `;
@@ -11530,6 +11542,7 @@ function nodeConnectabilitySourceSummaryFor(source, builder = state.builder) {
 
 function nodeConnectabilityTargetsForSource(source, builder = state.builder) {
   const entries = [];
+  const serverCandidates = nodeConnectabilityServerCandidatesForSource(source, builder);
   for (const targetNode of builder.nodes || []) {
     if (targetNode.id === source.nodeId) {
       continue;
@@ -11538,18 +11551,141 @@ function nodeConnectabilityTargetsForSource(source, builder = state.builder) {
       if (!nodeConnectabilityTargetAppliesToSource(source, target)) {
         continue;
       }
-      const compatibility = connectionCompatibility(source, target);
+      const kind = nodeConnectabilityTargetKind(target);
+      const serverCandidate = serverCandidates?.[connectionCandidateTargetKey(kind, target)] || null;
+      const compatibility = serverCandidate
+        ? {
+            ok: serverCandidate.accepted,
+            message: serverCandidate.message || (serverCandidate.accepted ? '' : 'Connection rejected by server.')
+          }
+        : connectionCompatibility(source, target);
       entries.push({
         target,
         targetNodeId: targetNode.id,
         targetLabel: `${labelForNode(targetNode)} (${targetNode.id})`,
-        kind: nodeConnectabilityTargetKind(target),
+        kind,
         compatibility,
+        serverCandidate,
+        decisionSource: serverCandidate ? 'server' : 'local',
         alreadyConnected: compatibility.ok && connectionAlreadyApplied(source, target, builder)
       });
     }
   }
   return entries;
+}
+
+function ensureNodeConnectabilityServerCandidates(node, summary) {
+  if (!node?.id || !summary?.sourceCount || typeof fetch !== 'function') {
+    return;
+  }
+  const requestKey = nodeConnectabilityServerRequestKey(node);
+  const current = state.nodeConnectabilityServer;
+  if (current?.requestKey === requestKey && (current.status === 'loading' || current.status === 'ready')) {
+    return;
+  }
+  const sources = (summary.sources || [])
+    .map((entry) => entry.source)
+    .filter((source) => source?.nodeId && source.nodeId !== CONTEXT_SOURCE_ID);
+  if (!sources.length) {
+    state.nodeConnectabilityServer = null;
+    return;
+  }
+  state.nodeConnectabilityServer = {
+    nodeId: node.id,
+    requestKey,
+    status: 'loading',
+    resultsBySourceKey: {},
+    error: ''
+  };
+  Promise.all(sources.map((source) => {
+    const kind = connectionCandidateKindForSource(source);
+    const sourceKey = connectionCandidatePreviewSourceKey(source, kind);
+    return discoverVisualConnectionCandidatesOnServer(source, {
+      kind,
+      includeRejected: true,
+      limit: 250
+    })
+      .then((result) => ({ sourceKey, result, error: '' }))
+      .catch((error) => ({ sourceKey, result: null, error: error.message || 'Connection candidates unavailable.' }));
+  }))
+    .then((rows) => {
+      const currentState = state.nodeConnectabilityServer;
+      if (!currentState || currentState.requestKey !== requestKey) {
+        return;
+      }
+      const resultsBySourceKey = {};
+      const errors = [];
+      for (const row of rows) {
+        if (row.result) {
+          resultsBySourceKey[row.sourceKey] = row.result;
+        } else if (row.error) {
+          errors.push(row.error);
+        }
+      }
+      state.nodeConnectabilityServer = {
+        nodeId: node.id,
+        requestKey,
+        status: Object.keys(resultsBySourceKey).length ? 'ready' : 'error',
+        resultsBySourceKey,
+        error: uniqueStrings(errors).join(' | ')
+      };
+      if (selectedBuilderNode()?.id === node.id) {
+        renderSelectedOperatorEditor();
+      }
+    });
+}
+
+function nodeConnectabilityServerCandidatesForSource(source, builder = state.builder) {
+  const stateForNode = state.nodeConnectabilityServer;
+  if (!stateForNode || stateForNode.status !== 'ready') {
+    return null;
+  }
+  const node = (builder.nodes || []).find((item) => item.id === source?.nodeId);
+  if (!node || stateForNode.requestKey !== nodeConnectabilityServerRequestKey(node, builder)) {
+    return null;
+  }
+  const kind = connectionCandidateKindForSource(source);
+  const sourceKey = connectionCandidatePreviewSourceKey(source, kind);
+  return stateForNode.resultsBySourceKey?.[sourceKey]?.candidatesByTargetKey || null;
+}
+
+function nodeConnectabilityServerStateFor(node, builder = state.builder) {
+  const stateForNode = state.nodeConnectabilityServer;
+  if (!node?.id || !stateForNode || stateForNode.nodeId !== node.id) {
+    return null;
+  }
+  if (stateForNode.requestKey !== nodeConnectabilityServerRequestKey(node, builder)) {
+    return null;
+  }
+  return stateForNode;
+}
+
+function renderNodeConnectabilityServerStatus(serverState) {
+  if (!serverState) {
+    return '';
+  }
+  if (serverState.status === 'loading') {
+    return '<span class="node-connectability-chip info">Server candidates loading</span>';
+  }
+  if (serverState.status === 'error') {
+    return `<span class="node-connectability-chip error" title="${escapeHtml(serverState.error || 'Server candidates unavailable')}">Server candidates unavailable</span>`;
+  }
+  const resultCount = Object.keys(serverState.resultsBySourceKey || {}).length;
+  return `<span class="node-connectability-chip success">Server candidates synced · ${escapeHtml(resultCount)} source${resultCount === 1 ? '' : 's'}</span>`;
+}
+
+function nodeConnectabilityServerRequestKey(nodeOrId, builder = state.builder) {
+  const nodeId = typeof nodeOrId === 'string' ? nodeOrId : nodeOrId?.id;
+  return `${nodeId || ''}:${compactStringHash(JSON.stringify(builderToVisualDraft(builder)))}`;
+}
+
+function compactStringHash(value) {
+  let hash = 0;
+  const text = String(value || '');
+  for (let i = 0; i < text.length; i += 1) {
+    hash = ((hash << 5) - hash + text.charCodeAt(i)) | 0;
+  }
+  return (hash >>> 0).toString(36);
 }
 
 function nodeConnectabilityTargetAppliesToSource(source, target) {
@@ -15873,9 +16009,9 @@ function renderPortHandles(group, visualNode) {
     const circle = createPortCircle(point, 'target', builderNode, handle);
     circle.addEventListener('pointerdown', (event) => event.stopPropagation());
     if (state.connectionDrag) {
-      const compatibility = connectionCompatibility(state.connectionDrag.source, handle);
-      circle.classList.toggle('compatible', compatibility.ok);
-      circle.classList.toggle('incompatible', !compatibility.ok);
+      const decision = connectionDragTargetDecision(state.connectionDrag.source, handle);
+      circle.classList.toggle('compatible', decision.ok);
+      circle.classList.toggle('incompatible', !decision.ok);
     }
     group.appendChild(circle);
   });
@@ -20190,6 +20326,7 @@ function startConnectionDrag(event, source) {
     source: { ...source },
     current: svgPointFromClient(svg, event.clientX, event.clientY)
   };
+  startConnectionCandidatePreview(source);
   setConnectionMessage('', 'info');
   document.body.classList.add('connecting-edge');
   renderDiagram();
@@ -20204,13 +20341,11 @@ function moveConnectionDrag(event) {
   const target = connectionTargetAtPoint(event);
   drag.hoverTarget = target ? { ...target } : null;
   if (target) {
-    const compatibility = connectionCompatibility(drag.source, target);
-    setConnectionMessage(compatibility.ok
-      ? (connectionAlreadyApplied(drag.source, target)
-        ? 'Connection already exists.'
-        : `${endpointLabel(drag.source)} -> ${endpointLabel(target)}`)
-      : compatibility.message,
-      compatibility.ok ? 'info' : 'error');
+    const decision = connectionDragTargetDecision(drag.source, target);
+    setConnectionMessage(
+      connectionDragTargetMessage(drag.source, target, decision),
+      decision.ok ? 'info' : 'error'
+    );
   } else {
     renderConnectionStatus();
   }
@@ -20223,6 +20358,7 @@ function finishConnectionDrag(event) {
   event.preventDefault();
   let target = connectionTargetAtPoint(event) || drag.hoverTarget || null;
   state.connectionDrag = null;
+  state.connectionCandidatePreview = null;
   document.body.classList.remove('connecting-edge');
   if (target) {
     if (target.kind === 'route') {
@@ -20265,6 +20401,239 @@ function finishConnectionDrag(event) {
     return;
   }
   renderDiagram();
+}
+
+function startConnectionCandidatePreview(source) {
+  const kind = connectionCandidateKindForSource(source);
+  const sourceKey = connectionCandidatePreviewSourceKey(source, kind);
+  state.connectionCandidatePreview = {
+    sourceKey,
+    kind,
+    status: 'loading',
+    result: null,
+    candidatesByTargetKey: {},
+    error: ''
+  };
+  discoverVisualConnectionCandidatesOnServer(source, {
+    kind,
+    includeRejected: true,
+    limit: 250
+  })
+    .then((result) => {
+      const preview = state.connectionCandidatePreview;
+      if (!preview || preview.sourceKey !== sourceKey) {
+        return;
+      }
+      state.connectionCandidatePreview = {
+        sourceKey,
+        kind: result.kind,
+        status: 'ready',
+        result,
+        candidatesByTargetKey: result.candidatesByTargetKey || {},
+        error: ''
+      };
+      refreshConnectionCandidatePreview();
+    })
+    .catch((error) => {
+      const preview = state.connectionCandidatePreview;
+      if (!preview || preview.sourceKey !== sourceKey) {
+        return;
+      }
+      state.connectionCandidatePreview = {
+        ...preview,
+        status: 'error',
+        error: error.message || 'Connection candidates unavailable.'
+      };
+      refreshConnectionCandidatePreview();
+    });
+}
+
+function refreshConnectionCandidatePreview() {
+  const drag = state.connectionDrag;
+  if (!drag) {
+    return;
+  }
+  if (drag.hoverTarget) {
+    const decision = connectionDragTargetDecision(drag.source, drag.hoverTarget);
+    setConnectionMessage(
+      connectionDragTargetMessage(drag.source, drag.hoverTarget, decision),
+      decision.ok ? 'info' : 'error'
+    );
+  }
+  renderDiagram();
+}
+
+async function discoverVisualConnectionCandidatesOnServer(source, options = {}) {
+  const kind = canonicalEdgeKind(options.kind || connectionCandidateKindForSource(source));
+  const response = await fetch('/api/visual/connections/candidates', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      draft: builderToVisualDraft(state.builder),
+      kind,
+      includeRejected: options.includeRejected !== false,
+      limit: Number.isFinite(Number(options.limit)) ? Number(options.limit) : 250,
+      source: {
+        nodeId: source.nodeId,
+        port: source.port || '',
+        path: source.path || ''
+      }
+    })
+  });
+  if (!response.ok) {
+    throw new Error(`Connection candidates failed with ${response.status}`);
+  }
+  const payload = await response.json();
+  return normalizeConnectionCandidatesResult(payload, source);
+}
+
+function normalizeConnectionCandidatesResult(payload, source = null) {
+  const kind = canonicalEdgeKind(payload?.kind || 'data');
+  const candidates = Array.isArray(payload?.candidates)
+    ? payload.candidates.map((candidate) => normalizeConnectionCandidate(candidate, kind))
+    : [];
+  const candidatesByTargetKey = Object.fromEntries(candidates
+    .map((candidate) => [connectionCandidateTargetKey(kind, candidate.target), candidate])
+    .filter(([key]) => Boolean(key)));
+  return {
+    schemaVersion: payload?.schemaVersion || 'bloge.visualConnectionCandidates.v1',
+    source: payload?.source || source || null,
+    kind,
+    totalCandidateCount: numericCount(payload?.totalCandidateCount, 0),
+    acceptedCount: numericCount(
+      payload?.acceptedCount,
+      candidates.filter((candidate) => candidate.accepted).length
+    ),
+    rejectedCount: numericCount(
+      payload?.rejectedCount,
+      candidates.filter((candidate) => !candidate.accepted).length
+    ),
+    displayedCount: numericCount(payload?.displayedCount, candidates.length),
+    truncated: Boolean(payload?.truncated),
+    candidates,
+    candidatesByTargetKey,
+    diagnostics: normalizeDiagnostics(payload?.diagnostics)
+  };
+}
+
+function numericCount(value, fallback = 0) {
+  const number = Number(value);
+  return Number.isFinite(number) && number >= 0 ? number : fallback;
+}
+
+function normalizeConnectionCandidate(candidate, kind = 'data') {
+  const diagnostics = normalizeDiagnostics(candidate?.diagnostics);
+  const payload = {
+    accepted: Boolean(candidate?.accepted),
+    bindingKey: candidate?.bindingKey || ''
+  };
+  const summary = normalizeConnectionCheckSummary(candidate?.summary, payload, diagnostics, null);
+  const target = candidate?.target || {};
+  return {
+    targetNodeId: candidate?.targetNodeId || target.nodeId || '',
+    targetNodeLabel: candidate?.targetNodeLabel || target.nodeId || '',
+    targetOperatorRef: candidate?.targetOperatorRef || '',
+    targetSurface: candidate?.targetSurface || 'input',
+    target: {
+      nodeId: target.nodeId || '',
+      port: target.port || '',
+      path: target.path || ''
+    },
+    kind: canonicalEdgeKind(kind),
+    accepted: Boolean(candidate?.accepted),
+    bindingKey: candidate?.bindingKey || '',
+    summary,
+    diagnostics,
+    message: candidate?.accepted
+      ? (summary.message || 'Connection accepted.')
+      : diagnosticMessage(diagnostics, summary.message || 'Connection rejected by server.')
+  };
+}
+
+function connectionCandidateKindForSource(source) {
+  return source?.kind === 'route' ? 'route' : 'data';
+}
+
+function connectionCandidateKindForTarget(target) {
+  if (target?.kind === 'dependency') {
+    return 'dependency';
+  }
+  if (target?.kind === 'route') {
+    return 'route';
+  }
+  return 'data';
+}
+
+function connectionCandidatePreviewSourceKey(source, kind = 'data') {
+  return [
+    canonicalEdgeKind(kind),
+    source?.nodeId || '',
+    source?.port || '',
+    source?.path || ''
+  ].map((item) => String(item || '').trim()).join(':');
+}
+
+function connectionCandidateTargetKey(kind, target) {
+  const edgeKind = canonicalEdgeKind(kind);
+  if (!target?.nodeId) {
+    return '';
+  }
+  if (edgeKind === 'dependency') {
+    return [edgeKind, target.nodeId].join(':');
+  }
+  if (edgeKind === 'route') {
+    return [edgeKind, target.nodeId, routeConditionKey(target.condition || 'otherwise')].join(':');
+  }
+  return [
+    edgeKind,
+    target.nodeId,
+    target.port || '',
+    target.path || ''
+  ].map((item) => String(item || '').trim()).join(':');
+}
+
+function connectionCandidatePreviewForTarget(source, target) {
+  const preview = state.connectionCandidatePreview;
+  const targetKind = connectionCandidateKindForTarget(target);
+  if (!preview || preview.status !== 'ready' || preview.kind !== targetKind) {
+    return null;
+  }
+  if (preview.sourceKey !== connectionCandidatePreviewSourceKey(source, preview.kind)) {
+    return null;
+  }
+  return preview.candidatesByTargetKey?.[connectionCandidateTargetKey(preview.kind, target)] || null;
+}
+
+function connectionDragTargetDecision(source, target) {
+  const candidate = connectionCandidatePreviewForTarget(source, target);
+  if (candidate) {
+    return {
+      ok: candidate.accepted,
+      message: candidate.message,
+      source: 'server',
+      candidate
+    };
+  }
+  const compatibility = connectionCompatibility(source, target);
+  return {
+    ok: compatibility.ok,
+    message: compatibility.message,
+    source: 'local',
+    compatibility
+  };
+}
+
+function connectionDragTargetMessage(source, target, decision) {
+  if (!decision.ok) {
+    return decision.message || 'Connection rejected.';
+  }
+  if (connectionAlreadyApplied(source, target)) {
+    return 'Connection already exists.';
+  }
+  if (decision.source === 'server' && decision.message && decision.message !== 'Connection accepted.') {
+    return decision.message;
+  }
+  return `${endpointLabel(source)} -> ${endpointLabel(target)}`;
 }
 
 async function checkVisualConnectionOnServer(source, target) {

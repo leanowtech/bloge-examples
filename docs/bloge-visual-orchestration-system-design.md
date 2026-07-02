@@ -764,6 +764,13 @@ edge/binding/config expression 后的完整 candidate draft validation/readiness
 publication run 则回传 artifact 冻结时的 validation/readiness/actionReadiness，不能按当前 catalog
 重新解释历史发布物。这样浏览器在 compile/run/connection preflight 之后不会丢失
 design-only、runtime-blocked、governance-review 或 draft-repair-required 的发布和执行引导。
+拖拽连线的 hover 提示使用 `/api/visual/connections/candidates` 作为 source-scoped
+读模型：普通 data/config 拖拽开始时预取 accepted 与 blocked target，命中时优先展示服务端
+summary/diagnostic，未命中或读模型失败时回退本地 schema hint；真正 drop 写入前仍必须调用
+`/api/visual/connections/check`，避免把候选发现误用成 mutation gate。
+selected-node connectability inspector 复用同一读模型为当前节点 source handles 建立短期快照，
+用服务端 candidate summary/diagnostic 覆盖本地推断；但 quick-connect 点击前仍再次调用
+connection check，保证 inspector 建议和实际写入之间不存在第二套权威。
 选中已发布 artifact 时，浏览器展示 publication 冻结的 readiness 和非执行节点清单；
 这是审阅历史设计制品的依据，不依赖当前 catalog 重新推断。
 同一 admin API 已具备 registry-aware impact preflight：删除、禁用或替换仍被 stored draft 引用的
@@ -885,6 +892,8 @@ fingerprint snapshot；普通保存和 PATCH 仍保留既有 snapshot，避免�
 - schema-aware 连线。
 - 嵌套 object schema 展开为可连接字段 path。
 - 连线时高亮可连接字段。
+- 拖拽连线时优先消费服务端候选读模型展示可接目标和 blocked reason，读模型不可用时保留本地 hint。
+- selected-node connectability 摘要优先消费服务端候选读模型，避免 inspector 和拖拽 hover 给出两套结论。
 - 不兼容连接给出错误原因和可选修复动作。
 - 运行后叠加节点状态：`NOT_STARTED`、`RUNNING`、`COMPLETED`、`FAILED`、`SKIPPED`、`CANCELLED`、`WAITING`。
 - 对分支、foreach、parallel、stream 使用 group 或泳道表达。

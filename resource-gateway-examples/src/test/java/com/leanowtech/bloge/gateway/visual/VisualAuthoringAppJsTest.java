@@ -70,6 +70,11 @@ class VisualAuthoringAppJsTest {
 
         assertThat(source)
                 .contains("connectionServerPreflightMessage(")
+                .contains("connectionCandidatePreview: null")
+                .contains("startConnectionCandidatePreview(source);")
+                .contains("fetch('/api/visual/connections/candidates'")
+                .contains("normalizeConnectionCandidatesResult(payload, source)")
+                .contains("connectionDragTargetDecision(state.connectionDrag.source, handle)")
                 .contains("Asking server for final decision...")
                 .contains("Server validation is authoritative.");
         assertThat(source)
@@ -960,6 +965,18 @@ class VisualAuthoringAppJsTest {
                   'renderSourceCandidateOption',
                   'sourceCandidatesForTarget',
                   'sourceCandidateComparator',
+                  'normalizeConnectionCheckSummary',
+                  'normalizeStringArray',
+                  'numericCount',
+                  'normalizeConnectionCandidate',
+                  'normalizeConnectionCandidatesResult',
+                  'connectionCandidateKindForSource',
+                  'connectionCandidateKindForTarget',
+                  'connectionCandidatePreviewSourceKey',
+                  'connectionCandidateTargetKey',
+                  'connectionCandidatePreviewForTarget',
+                  'connectionDragTargetDecision',
+                  'connectionDragTargetMessage',
                   'connectionServerPreflightMessage',
                   'targetWithServerBindingKey',
                   'connectionLocalHeuristicStatus',
@@ -1005,6 +1022,11 @@ class VisualAuthoringAppJsTest {
                   'nodeConnectabilitySummary',
                   'nodeConnectabilitySourceSummaryFor',
                   'nodeConnectabilityTargetsForSource',
+                  'nodeConnectabilityServerCandidatesForSource',
+                  'nodeConnectabilityServerStateFor',
+                  'renderNodeConnectabilityServerStatus',
+                  'nodeConnectabilityServerRequestKey',
+                  'compactStringHash',
                   'nodeConnectabilityTargetAppliesToSource',
                   'nodeConnectabilityTargetKind',
                   'nodeConnectabilityTotalsLabel',
@@ -3092,6 +3114,91 @@ class VisualAuthoringAppJsTest {
                 };
                 const quickConnectSource = context.nodeConnectabilitySourceFromButton(quickConnectButton);
                 const quickConnectTarget = context.nodeConnectabilityTargetFromButton(quickConnectButton);
+                const serverCandidateResult = context.normalizeConnectionCandidatesResult({
+                  schemaVersion: 'bloge.visualConnectionCandidates.v1',
+                  kind: 'data',
+                  source: {
+                    nodeId: scoreConnectability.source.nodeId,
+                    port: scoreConnectability.source.port,
+                    path: scoreConnectability.source.path
+                  },
+                  totalCandidateCount: 3,
+                  acceptedCount: 1,
+                  rejectedCount: 2,
+                  displayedCount: 2,
+                  candidates: [{
+                    targetNodeId: 'auditNode',
+                    targetNodeLabel: 'Audit',
+                    targetOperatorRef: 'risk:audit',
+                    targetSurface: 'input',
+                    target: { nodeId: 'auditNode', port: 'inputs', path: 'score' },
+                    accepted: true,
+                    bindingKey: 'inputs.score',
+                    summary: { message: 'Server schema accepts score.' },
+                    diagnostics: []
+                  }, {
+                    targetNodeId: 'auditNode',
+                    targetNodeLabel: 'Audit',
+                    targetOperatorRef: 'risk:audit',
+                    targetSurface: 'input',
+                    target: { nodeId: 'auditNode', port: 'inputs', path: 'risk' },
+                    accepted: false,
+                    bindingKey: '',
+                    summary: { message: '' },
+                    diagnostics: [{ level: 'ERROR', message: 'Server schema rejects root risk.' }]
+                  }]
+                }, scoreConnectability.source);
+                context.state.nodeConnectabilityServer = {
+                  nodeId: 'riskNode',
+                  requestKey: context.nodeConnectabilityServerRequestKey('riskNode', context.state.builder),
+                  status: 'ready',
+                  resultsBySourceKey: {
+                    [context.connectionCandidatePreviewSourceKey(scoreConnectability.source, 'data')]: serverCandidateResult
+                  },
+                  error: ''
+                };
+                const serverConnectability = context.nodeConnectabilitySummary('riskNode', context.state.builder);
+                const serverScoreConnectability = serverConnectability.sources.find((entry) => entry.source.path === 'score');
+                const serverRiskTarget = serverScoreConnectability.blockedTargets
+                  .find((entry) => entry.target.nodeId === 'auditNode' && entry.target.path === 'risk');
+                const serverReadyTarget = serverScoreConnectability.availableTargets
+                  .find((entry) => entry.target.nodeId === 'auditNode' && entry.target.path === 'score');
+                const serverConnectabilityPanel = context.renderNodeConnectabilityPanel(context.state.builder.nodes[1]);
+                context.state.connectionCandidatePreview = {
+                  sourceKey: context.connectionCandidatePreviewSourceKey(scoreConnectability.source, 'data'),
+                  kind: serverCandidateResult.kind,
+                  status: 'ready',
+                  result: serverCandidateResult,
+                  candidatesByTargetKey: serverCandidateResult.candidatesByTargetKey,
+                  error: ''
+                };
+                const serverAcceptedDecision = context.connectionDragTargetDecision(scoreConnectability.source, scoreReadyTarget.target);
+                const serverAcceptedMessage = context.connectionDragTargetMessage(
+                  scoreConnectability.source,
+                  scoreReadyTarget.target,
+                  serverAcceptedDecision
+                );
+                const serverRejectedTarget = {
+                  nodeId: 'auditNode',
+                  port: 'inputs',
+                  path: 'risk',
+                  type: 'object',
+                  schema: { type: 'object' }
+                };
+                const serverRejectedDecision = context.connectionDragTargetDecision(scoreConnectability.source, serverRejectedTarget);
+                const serverRejectedMessage = context.connectionDragTargetMessage(
+                  scoreConnectability.source,
+                  serverRejectedTarget,
+                  serverRejectedDecision
+                );
+                const localFallbackTarget = {
+                  nodeId: 'auditNode',
+                  port: 'inputs',
+                  path: 'approved',
+                  type: 'boolean',
+                  schema: { type: 'boolean' }
+                };
+                const localFallbackDecision = context.connectionDragTargetDecision(scoreConnectability.source, localFallbackTarget);
                 let quickConnectServerCall = '';
                 let quickConnectApplied = '';
                 let quickConnectMessage = '';
@@ -3735,6 +3842,25 @@ class VisualAuthoringAppJsTest {
                   ['connectability panel includes connect action', String(connectabilityPanel.includes('data-connectability-action="connect"')), 'true'],
                   ['connectability quick source', context.endpointLabel(quickConnectSource), 'riskNode.payload.score'],
                   ['connectability quick target', context.endpointLabel(quickConnectTarget), 'auditNode.inputs.score'],
+                  ['connection candidates schema', serverCandidateResult.schemaVersion, 'bloge.visualConnectionCandidates.v1'],
+                  ['connection candidates target keys', Object.keys(serverCandidateResult.candidatesByTargetKey).sort().join('|'), 'data:auditNode:inputs:risk|data:auditNode:inputs:score'],
+                  ['connection candidates accepted count', serverCandidateResult.acceptedCount, 1],
+                  ['connection candidates rejected count', serverCandidateResult.rejectedCount, 2],
+                  ['server candidate decision source', serverAcceptedDecision.source, 'server'],
+                  ['server candidate accepted', serverAcceptedDecision.ok, true],
+                  ['server candidate accepted message', serverAcceptedMessage, 'Server schema accepts score.'],
+                  ['server candidate rejected source', serverRejectedDecision.source, 'server'],
+                  ['server candidate rejected', serverRejectedDecision.ok, false],
+                  ['server candidate rejected message', serverRejectedMessage, 'Server schema rejects root risk.'],
+                  ['server candidate local fallback source', localFallbackDecision.source, 'local'],
+                  ['server candidate local fallback message', localFallbackDecision.message, 'Type mismatch: integer cannot feed boolean.'],
+                  ['server connectability source count', serverConnectability.sourceCount, 3],
+                  ['server connectability score available', serverScoreConnectability.availableCount, 3],
+                  ['server connectability score blocked', serverScoreConnectability.blockedCount, 2],
+                  ['server connectability ready source', serverReadyTarget.decisionSource, 'server'],
+                  ['server connectability blocked source', serverRiskTarget.decisionSource, 'server'],
+                  ['server connectability blocked title', context.nodeConnectabilityTargetTitle(serverRiskTarget), 'Audit (auditNode) · data -> inputs.risk · blocked · Server schema rejects root risk.'],
+                  ['server connectability panel synced', String(serverConnectabilityPanel.includes('Server candidates synced')), 'true'],
                   ['auto bind required unbound count', autoBindPlan.requiredUnboundCount, 2],
                   ['auto bind item count', autoBindPlan.items.length, 1],
                   ['auto bind skipped count', autoBindPlan.skippedCount, 1],
