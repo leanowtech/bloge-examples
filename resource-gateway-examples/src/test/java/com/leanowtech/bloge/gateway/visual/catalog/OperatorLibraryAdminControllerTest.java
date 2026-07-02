@@ -258,6 +258,140 @@ class OperatorLibraryAdminControllerTest {
     }
 
     @Test
+    void fromAsyncApiDiscoversProjectionCandidatesBeforeImport() throws Exception {
+        AsyncApiOperatorLibraryImportRequest request = new AsyncApiOperatorLibraryImportRequest(
+                "",
+                "",
+                "",
+                "",
+                "",
+                Map.of(),
+                asyncApiProjectionFixture()
+        );
+
+        mockMvc.perform(post("/admin/visual-operator-libraries/from-asyncapi/operations")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(request)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.operations.length()").value(2))
+                .andExpect(jsonPath("$.operations[0].operationId").value("creditDecisionWebhook"))
+                .andExpect(jsonPath("$.operations[0].channelName").value("/webhooks/credit-decision"))
+                .andExpect(jsonPath("$.operations[0].action").value("subscribe"))
+                .andExpect(jsonPath("$.operations[0].messageName").value("CreditDecision"))
+                .andExpect(jsonPath("$.operations[0].sourceKind").value("webhook"))
+                .andExpect(jsonPath("$.operations[0].payloadType").value("object"))
+                .andExpect(jsonPath("$.operations[0].projectionLevel").value("READY"))
+                .andExpect(jsonPath("$.operations[1].operationId").value("sendRiskCommand"))
+                .andExpect(jsonPath("$.operations[1].channelName").value("risk.commands"))
+                .andExpect(jsonPath("$.operations[1].action").value("publish"))
+                .andExpect(jsonPath("$.operations[1].sourceKind").value("message-handler"))
+                .andExpect(jsonPath("$.validation.valid").value(true));
+
+        assertThat(registry.all()).isEmpty();
+    }
+
+    @Test
+    void fromAsyncApiProjectsSelectedOperationSubsetWithoutStoring() throws Exception {
+        AsyncApiOperatorLibraryImportRequest request = new AsyncApiOperatorLibraryImportRequest(
+                "",
+                "",
+                "",
+                "",
+                "",
+                "sendRiskCommand",
+                "risk.commands",
+                "publish",
+                "RiskCommand",
+                Map.of(),
+                asyncApiProjectionFixture()
+        );
+
+        mockMvc.perform(post("/admin/visual-operator-libraries/from-asyncapi")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(request)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.library.libraryId").value("risk-events-operators"))
+                .andExpect(jsonPath("$.library.operators.length()").value(1))
+                .andExpect(jsonPath("$.library.operators[0].operatorRef").value("asyncapi:RiskCommand"))
+                .andExpect(jsonPath("$.library.operators[0].source.kind").value("message-handler"))
+                .andExpect(jsonPath("$.library.operators[0].ports.inputs[0].name").value("message"))
+                .andExpect(jsonPath("$.library.operators[0].ports.outputs[0].name").value("ack"))
+                .andExpect(jsonPath("$.validation.valid").value(true))
+                .andExpect(jsonPath("$.validation.profile.operatorCount").value(1))
+                .andExpect(jsonPath("$.validation.profile.runtimeBlockedOperatorCount").value(1));
+
+        assertThat(registry.all()).isEmpty();
+    }
+
+    @Test
+    void fromAsyncApiProjectsSelectedOperationBatchWithoutStoring() throws Exception {
+        AsyncApiOperatorLibraryImportRequest request = new AsyncApiOperatorLibraryImportRequest(
+                "",
+                "",
+                "",
+                "",
+                "",
+                "",
+                "",
+                "",
+                "",
+                List.of(
+                        new AsyncApiOperationSelection("creditDecisionWebhook",
+                                "/webhooks/credit-decision", "subscribe", "CreditDecision"),
+                        new AsyncApiOperationSelection("sendRiskCommand",
+                                "risk.commands", "publish", "RiskCommand")
+                ),
+                Map.of(),
+                asyncApiBatchProjectionFixture()
+        );
+
+        mockMvc.perform(post("/admin/visual-operator-libraries/from-asyncapi")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(request)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.library.libraryId").value("risk-events-operators"))
+                .andExpect(jsonPath("$.library.operators.length()").value(2))
+                .andExpect(jsonPath("$.library.operators[0].operatorRef").value("asyncapi:CreditDecision"))
+                .andExpect(jsonPath("$.library.operators[1].operatorRef").value("asyncapi:RiskCommand"))
+                .andExpect(jsonPath("$.library.operators[?(@.operatorRef == 'asyncapi:RiskAudit')].operatorRef")
+                        .isEmpty())
+                .andExpect(jsonPath("$.validation.valid").value(true))
+                .andExpect(jsonPath("$.validation.profile.operatorCount").value(2))
+                .andExpect(jsonPath("$.validation.profile.runtimeBlockedOperatorCount").value(2));
+
+        assertThat(registry.all()).isEmpty();
+    }
+
+    @Test
+    void fromAsyncApiRejectsMissingSelectedOperation() throws Exception {
+        AsyncApiOperatorLibraryImportRequest request = new AsyncApiOperatorLibraryImportRequest(
+                "",
+                "",
+                "",
+                "",
+                "",
+                "missingOperation",
+                "",
+                "",
+                "",
+                Map.of(),
+                asyncApiProjectionFixture()
+        );
+
+        mockMvc.perform(post("/admin/visual-operator-libraries/from-asyncapi")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(request)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.library").doesNotExist())
+                .andExpect(jsonPath("$.validation.valid").value(false))
+                .andExpect(jsonPath("$.validation.diagnostics[0].code")
+                        .value("visual.library.asyncapi.selectionMissing"))
+                .andExpect(jsonPath("$.validation.diagnostics[0].target").value("/operationId"));
+
+        assertThat(registry.all()).isEmpty();
+    }
+
+    @Test
     void fromAsyncApiRejectsUnsupportedSourceKind() throws Exception {
         String asyncApi = """
                 asyncapi: '2.6.0'
@@ -2517,6 +2651,101 @@ class OperatorLibraryAdminControllerTest {
                 "ACTIVE",
                 List.of(operator)
         );
+    }
+
+    private static String asyncApiProjectionFixture() {
+        return """
+                asyncapi: '2.6.0'
+                info:
+                  title: Risk Events
+                  version: 1.2.3
+                  contact:
+                    name: risk-platform
+                channels:
+                  /webhooks/credit-decision:
+                    subscribe:
+                      operationId: creditDecisionWebhook
+                      x-bloge-source-kind: webhook
+                      bindings:
+                        http:
+                          method: post
+                      message:
+                        name: CreditDecision
+                        payload:
+                          type: object
+                          properties:
+                            applicationId:
+                              type: string
+                            decision:
+                              type: string
+                          required:
+                            - applicationId
+                            - decision
+                  risk.commands:
+                    publish:
+                      operationId: sendRiskCommand
+                      message:
+                        name: RiskCommand
+                        payload:
+                          $ref: '#/components/schemas/RiskCommand'
+                components:
+                  schemas:
+                    RiskCommand:
+                      type: object
+                      properties:
+                        commandId:
+                          type: string
+                        score:
+                          type: integer
+                      required:
+                        - commandId
+                """;
+    }
+
+    private static String asyncApiBatchProjectionFixture() {
+        return """
+                asyncapi: '2.6.0'
+                info:
+                  title: Risk Events
+                  version: 1.2.3
+                channels:
+                  /webhooks/credit-decision:
+                    subscribe:
+                      operationId: creditDecisionWebhook
+                      x-bloge-source-kind: webhook
+                      bindings:
+                        http:
+                          method: post
+                      message:
+                        name: CreditDecision
+                        payload:
+                          type: object
+                          properties:
+                            applicationId:
+                              type: string
+                            decision:
+                              type: string
+                  risk.commands:
+                    publish:
+                      operationId: sendRiskCommand
+                      message:
+                        name: RiskCommand
+                        payload:
+                          type: object
+                          properties:
+                            commandId:
+                              type: string
+                  risk.audit:
+                    subscribe:
+                      operationId: riskAuditEvent
+                      message:
+                        name: RiskAudit
+                        payload:
+                          type: object
+                          properties:
+                            auditId:
+                              type: string
+                """;
     }
 
     private static final class EchoRuntimeOperator implements Operator<Object, Object> {

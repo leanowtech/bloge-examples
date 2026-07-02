@@ -513,7 +513,40 @@ class VisualAuthoringBrowserDomTest {
                           required:
                             - applicationId
                             - decision
+                  risk.commands:
+                    publish:
+                      operationId: sendRiskCommand
+                      message:
+                        name: RiskCommand
+                        payload:
+                          type: object
+                          properties:
+                            commandId:
+                              type: string
+                            score:
+                              type: integer
+                          required:
+                            - commandId
+                  risk.audit:
+                    subscribe:
+                      operationId: riskAuditEvent
+                      message:
+                        name: RiskAudit
+                        payload:
+                          type: object
+                          properties:
+                            auditId:
+                              type: string
                 """);
+
+        click(wait, By.id("discover-asyncapi-library"));
+        waitForText(wait, By.id("library-status"), "Discovered 3 AsyncAPI operations");
+        Select asyncApiSelect = new Select(
+                wait.until(ExpectedConditions.elementToBeClickable(By.id("asyncapi-operation-select")))
+        );
+        asyncApiSelect.selectByValue("0");
+        asyncApiSelect.selectByValue("1");
+        waitForText(wait, By.id("asyncapi-operation-summary"), "2 AsyncAPI operations selected");
 
         click(wait, By.id("project-asyncapi-library"));
         waitForText(wait, By.id("library-status"), "Projected AsyncAPI into risk-events-operators");
@@ -521,14 +554,21 @@ class VisualAuthoringBrowserDomTest {
         assertThat(valueOf(By.id("operator-library-json")))
                 .contains("\"schemaVersion\": \"bloge.visualOperatorLibrary.v1\"")
                 .contains("\"libraryId\": \"risk-events-operators\"")
+                .contains("\"CreditDecision\"")
+                .contains("\"RiskCommand\"")
                 .contains("\"kind\": \"webhook\"")
-                .contains("\"mode\": \"webhook\"");
+                .contains("\"kind\": \"message-handler\"")
+                .contains("\"mode\": \"message-handler\"")
+                .doesNotContain("RiskAudit");
 
         click(wait, By.id("import-library"));
         waitForAnyText(wait, By.id("library-status"),
                 "Imported risk-events-operators",
                 "Replaced risk-events-operators");
         waitForText(wait, By.id("operator-palette"), "CreditDecision");
+        waitForText(wait, By.id("operator-palette"), "RiskCommand");
+        assertThat(driver.findElement(By.id("operator-palette")).getText())
+                .doesNotContain("RiskAudit");
     }
 
     @Test

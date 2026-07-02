@@ -210,6 +210,18 @@ public class OperatorLibraryAdminController {
     }
 
     /**
+     * Discovers AsyncAPI operation/message projection candidates before building an operator-library draft.
+     *
+     * @param request discovery request
+     * @return operation/message summaries and parse/discovery diagnostics
+     */
+    @PostMapping("/from-asyncapi/operations")
+    public AsyncApiOperationDiscoveryResult fromAsyncApiOperations(
+            @RequestBody(required = false) AsyncApiOperatorLibraryImportRequest request) {
+        return asyncApiImporter.discoverOperations(request);
+    }
+
+    /**
      * Imports a portable operator-library export bundle into the target environment.
      *
      * @param bundle portable export bundle

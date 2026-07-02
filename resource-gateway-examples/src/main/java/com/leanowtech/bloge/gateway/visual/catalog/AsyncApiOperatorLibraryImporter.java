@@ -6,6 +6,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.dataformat.yaml.YAMLMapper;
 import com.leanowtech.bloge.gateway.visual.diagnostic.VisualDiagnostic;
 import com.leanowtech.bloge.gateway.visual.model.SchemaEnvelope;
+import com.leanowtech.bloge.gateway.visual.validation.VisualValidationResult;
 
 import org.springframework.stereotype.Service;
 
@@ -70,6 +71,14 @@ public class AsyncApiOperatorLibraryImporter {
             return result(null, diagnostics);
         }
 
+        candidates = selectedCandidates(request, candidates);
+        if (candidates.isEmpty()) {
+            diagnostics.add(VisualDiagnostic.error("visual.library.asyncapi.selectionMissing",
+                    "No AsyncAPI operation/message matched the requested selector.",
+                    selectionTarget(request)));
+            return result(null, diagnostics);
+        }
+
         String libraryVersion = libraryVersion(request, asyncApi);
         List<OperatorDefinition> operators = new ArrayList<>();
         Set<String> operatorRefs = new LinkedHashSet<>();
@@ -91,6 +100,46 @@ public class AsyncApiOperatorLibraryImporter {
         return result(library, diagnostics);
     }
 
+    /**
+     * Discovers importable operations/messages in an AsyncAPI document without storing or projecting a library.
+     *
+     * @param request discovery request containing {@code asyncApi} or {@code asyncApiText}
+     * @return operation/message summaries and parse/discovery diagnostics
+     */
+    public AsyncApiOperationDiscoveryResult discoverOperations(AsyncApiOperatorLibraryImportRequest request) {
+        List<VisualDiagnostic> diagnostics = new ArrayList<>();
+        if (request == null) {
+            diagnostics.add(VisualDiagnostic.error("visual.library.asyncapi.requestMissing",
+                    "AsyncAPI operator-library discovery request is required.",
+                    "/"));
+            return operationResult(List.of(), diagnostics);
+        }
+        Map<String, Object> asyncApi = asyncApiDocument(request, diagnostics);
+        if (asyncApi.isEmpty() && !hasErrors(diagnostics)) {
+            diagnostics.add(VisualDiagnostic.error("visual.library.asyncapi.documentMissing",
+                    "AsyncAPI document is required as asyncApi or asyncApiText.",
+                    request.asyncApiText().isBlank() ? "/asyncApi" : "/asyncApiText"));
+        }
+        if (hasErrors(diagnostics)) {
+            return operationResult(List.of(), diagnostics);
+        }
+
+        List<ProjectionCandidate> candidates = projectionCandidates(asyncApi, diagnostics);
+        if (candidates.isEmpty()) {
+            diagnostics.add(VisualDiagnostic.error("visual.library.asyncapi.operationsMissing",
+                    "AsyncAPI document must declare channels with publish/subscribe operations or root operations.",
+                    "/asyncApi"));
+            return operationResult(List.of(), diagnostics);
+        }
+
+        return operationResult(
+                candidates.stream()
+                        .map(candidate -> operationSummary(candidate, asyncApi))
+                        .toList(),
+                diagnostics
+        );
+    }
+
     private static AsyncApiOperatorLibraryImportResult result(OperatorLibrary library,
                                                               List<VisualDiagnostic> diagnostics) {
         OperatorLibraryValidationResult validation = new OperatorLibraryValidationResult(
@@ -100,6 +149,40 @@ public class AsyncApiOperatorLibraryImporter {
                 library == null ? OperatorLibraryProfile.empty() : OperatorLibraryProfile.from(library, diagnostics)
         );
         return new AsyncApiOperatorLibraryImportResult(library, validation);
+    }
+
+    private static AsyncApiOperationDiscoveryResult operationResult(List<AsyncApiOperationSummary> operations,
+                                                                    List<VisualDiagnostic> diagnostics) {
+        return new AsyncApiOperationDiscoveryResult(
+                operations,
+                new VisualValidationResult(diagnostics.stream().noneMatch(VisualDiagnostic::error), diagnostics)
+        );
+    }
+
+    private static AsyncApiOperationSummary operationSummary(ProjectionCandidate candidate,
+                                                             Map<String, Object> asyncApi) {
+        SourceKindProjection sourceKind = sourceKindProjection(candidate);
+        PayloadProjection payload = payloadProjection(candidate, asyncApi);
+        String projectionLevel = "BLOCKED".equals(sourceKind.level())
+                ? "BLOCKED"
+                : payload.level();
+        String projectionMessage = "BLOCKED".equals(sourceKind.level())
+                ? sourceKind.message()
+                : payload.message();
+        return new AsyncApiOperationSummary(
+                operationId(candidate),
+                candidate.channelName(),
+                candidate.address(),
+                candidate.operationKind(),
+                messageName(candidate),
+                displayName(candidate),
+                sourceKind.sourceKind(),
+                payload.hasPayload(),
+                payload.payloadType(),
+                tags(candidate, sourceKind.sourceKind()),
+                projectionLevel,
+                projectionMessage
+        );
     }
 
     private static Map<String, Object> asyncApiDocument(AsyncApiOperatorLibraryImportRequest request,
@@ -127,6 +210,82 @@ public class AsyncApiOperatorLibraryImporter {
         candidates.addAll(channelOperationCandidates(asyncApi, diagnostics));
         candidates.addAll(rootOperationCandidates(asyncApi, diagnostics));
         return candidates;
+    }
+
+    private static List<ProjectionCandidate> selectedCandidates(AsyncApiOperatorLibraryImportRequest request,
+                                                                List<ProjectionCandidate> candidates) {
+        if (!hasSelection(request)) {
+            return candidates;
+        }
+        List<AsyncApiOperationSelection> selections = selections(request);
+        return candidates.stream()
+                .filter(candidate -> selections.stream().anyMatch(selection -> matchesSelection(candidate, selection)))
+                .toList();
+    }
+
+    private static boolean hasSelection(AsyncApiOperatorLibraryImportRequest request) {
+        if (request.selections().stream().anyMatch(AsyncApiOperatorLibraryImporter::hasSelection)) {
+            return true;
+        }
+        return !normalizedSelector(request.operationId()).isBlank()
+                || !normalizedSelector(request.channel()).isBlank()
+                || !normalizedAction(request.action()).isBlank()
+                || !normalizedSelector(request.messageName()).isBlank();
+    }
+
+    private static boolean hasSelection(AsyncApiOperationSelection selection) {
+        return !normalizedSelector(selection.operationId()).isBlank()
+                || !normalizedSelector(selection.channel()).isBlank()
+                || !normalizedAction(selection.action()).isBlank()
+                || !normalizedSelector(selection.messageName()).isBlank();
+    }
+
+    private static List<AsyncApiOperationSelection> selections(AsyncApiOperatorLibraryImportRequest request) {
+        List<AsyncApiOperationSelection> explicit = request.selections().stream()
+                .filter(AsyncApiOperatorLibraryImporter::hasSelection)
+                .toList();
+        if (!explicit.isEmpty()) {
+            return explicit;
+        }
+        AsyncApiOperationSelection legacy = new AsyncApiOperationSelection(
+                request.operationId(),
+                request.channel(),
+                request.action(),
+                request.messageName()
+        );
+        return hasSelection(legacy) ? List.of(legacy) : List.of();
+    }
+
+    private static boolean matchesSelection(ProjectionCandidate candidate, AsyncApiOperationSelection selection) {
+        String operationId = normalizedSelector(selection.operationId());
+        String channel = normalizedSelector(selection.channel());
+        String action = normalizedAction(selection.action());
+        String messageName = normalizedSelector(selection.messageName());
+        return (operationId.isBlank() || normalizedSelector(operationId(candidate)).equals(operationId))
+                && (channel.isBlank()
+                || normalizedSelector(candidate.channelName()).equals(channel)
+                || normalizedSelector(candidate.address()).equals(channel))
+                && (action.isBlank() || normalizedAction(candidate.operationKind()).equals(action))
+                && (messageName.isBlank() || normalizedSelector(messageName(candidate)).equals(messageName));
+    }
+
+    private static String selectionTarget(AsyncApiOperatorLibraryImportRequest request) {
+        if (request.selections().stream().anyMatch(AsyncApiOperatorLibraryImporter::hasSelection)) {
+            return "/selections";
+        }
+        if (!normalizedSelector(request.operationId()).isBlank()) {
+            return "/operationId";
+        }
+        if (!normalizedSelector(request.channel()).isBlank()) {
+            return "/channel";
+        }
+        if (!normalizedAction(request.action()).isBlank()) {
+            return "/action";
+        }
+        if (!normalizedSelector(request.messageName()).isBlank()) {
+            return "/messageName";
+        }
+        return "/asyncApi";
     }
 
     private static List<ProjectionCandidate> channelOperationCandidates(Map<String, Object> asyncApi,
@@ -336,6 +495,16 @@ public class AsyncApiOperatorLibraryImporter {
     }
 
     private static String sourceKind(ProjectionCandidate candidate, List<VisualDiagnostic> diagnostics) {
+        SourceKindProjection projection = sourceKindProjection(candidate);
+        if ("BLOCKED".equals(projection.level())) {
+            diagnostics.add(VisualDiagnostic.error("visual.library.asyncapi.sourceKindUnsupported",
+                    projection.message(),
+                    candidate.target() + "/x-bloge-source-kind"));
+        }
+        return projection.sourceKind();
+    }
+
+    private static SourceKindProjection sourceKindProjection(ProjectionCandidate candidate) {
         String explicit = firstNonBlank(
                 string(candidate.operation().get("x-bloge-source-kind")),
                 string(candidate.message().get("x-bloge-source-kind")),
@@ -343,21 +512,24 @@ public class AsyncApiOperatorLibraryImporter {
         ).trim().toLowerCase(Locale.ROOT).replace('_', '-');
         if (!explicit.isBlank()) {
             if (SUPPORTED_SOURCE_KINDS.contains(explicit)) {
-                return explicit;
+                return new SourceKindProjection(explicit, "READY",
+                        "Ready to project as a runtime-blocked %s operator.".formatted(explicit));
             }
-            diagnostics.add(VisualDiagnostic.error("visual.library.asyncapi.sourceKindUnsupported",
+            return new SourceKindProjection(explicit, "BLOCKED",
                     "AsyncAPI x-bloge-source-kind '%s' is unsupported; use one of %s."
-                            .formatted(explicit, SUPPORTED_SOURCE_KINDS),
-                    candidate.target() + "/x-bloge-source-kind"));
+                            .formatted(explicit, SUPPORTED_SOURCE_KINDS));
         }
         if (hasHttpBinding(candidate.operation()) || hasHttpBinding(candidate.channel())) {
-            return "webhook";
+            return new SourceKindProjection("webhook", "READY",
+                    "Ready to project as a runtime-blocked webhook operator.");
         }
         if ("publish".equalsIgnoreCase(candidate.operationKind())
                 || "send".equalsIgnoreCase(candidate.operationKind())) {
-            return "message-handler";
+            return new SourceKindProjection("message-handler", "READY",
+                    "Ready to project as a runtime-blocked message-handler operator.");
         }
-        return "event-source";
+        return new SourceKindProjection("event-source", "READY",
+                "Ready to project as a runtime-blocked event-source operator.");
     }
 
     private static boolean hasHttpBinding(Map<String, Object> value) {
@@ -456,6 +628,22 @@ public class AsyncApiOperatorLibraryImporter {
         return new SchemaEnvelope(SchemaEnvelope.JSON_SCHEMA, "2020-12", normalizeSchema(objectMap(schema)));
     }
 
+    private static PayloadProjection payloadProjection(ProjectionCandidate candidate,
+                                                       Map<String, Object> asyncApi) {
+        Object rawPayload = candidate.message().get("payload");
+        if (rawPayload == null) {
+            return new PayloadProjection(false, "opaque", "WARNING",
+                    "Message has no payload schema; projection will use an opaque object schema.");
+        }
+        Object resolved = resolveMaybeRef(asyncApi, rawPayload, new ArrayList<>());
+        if (!(resolved instanceof Map<?, ?> schema)) {
+            return new PayloadProjection(true, "opaque", "WARNING",
+                    "Message payload schema is not an object; projection will use an opaque object schema.");
+        }
+        return new PayloadProjection(true, schemaType(objectMap(schema)), "READY",
+                "Ready to project into a runtime-blocked operator-library draft.");
+    }
+
     private static Map<String, Object> normalizeSchema(Map<String, Object> schema) {
         Map<String, Object> copy = new LinkedHashMap<>();
         schema.forEach((key, value) -> copy.put(key, deepCopyValue(value)));
@@ -479,6 +667,17 @@ public class AsyncApiOperatorLibraryImporter {
                 string(candidate.operation().get("summary")),
                 string(candidate.operation().get("operationId")),
                 candidate.channelName()
+        );
+    }
+
+    private static String operationId(ProjectionCandidate candidate) {
+        return string(candidate.operation().get("operationId"));
+    }
+
+    private static String messageName(ProjectionCandidate candidate) {
+        return firstNonBlank(
+                string(candidate.message().get("name")),
+                string(candidate.message().get("title"))
         );
     }
 
@@ -660,6 +859,28 @@ public class AsyncApiOperatorLibraryImporter {
         return value;
     }
 
+    private static String schemaType(Map<String, Object> schema) {
+        Object rawType = schema.get("type");
+        if (rawType instanceof List<?> types) {
+            return types.stream()
+                    .map(AsyncApiOperatorLibraryImporter::string)
+                    .filter(value -> !value.isBlank() && !"null".equals(value))
+                    .findFirst()
+                    .orElse("opaque");
+        }
+        String type = string(rawType);
+        if (!type.isBlank()) {
+            return type;
+        }
+        if (schema.containsKey("properties")) {
+            return "object";
+        }
+        if (schema.containsKey("items") || schema.containsKey("prefixItems")) {
+            return "array";
+        }
+        return "opaque";
+    }
+
     private static String firstNonBlank(String... values) {
         if (values == null) {
             return "";
@@ -674,6 +895,18 @@ public class AsyncApiOperatorLibraryImporter {
 
     private static String string(Object value) {
         return value == null ? "" : String.valueOf(value).trim();
+    }
+
+    private static String normalizedSelector(String value) {
+        return value == null ? "" : value.trim().toLowerCase(Locale.ROOT);
+    }
+
+    private static String normalizedAction(String value) {
+        return switch (normalizedSelector(value)) {
+            case "receive" -> "subscribe";
+            case "send" -> "publish";
+            default -> normalizedSelector(value);
+        };
     }
 
     private static boolean hasErrors(List<VisualDiagnostic> diagnostics) {
@@ -707,6 +940,21 @@ public class AsyncApiOperatorLibraryImporter {
             Map<String, Object> channel,
             Map<String, Object> message,
             String target
+    ) {
+    }
+
+    private record SourceKindProjection(
+            String sourceKind,
+            String level,
+            String message
+    ) {
+    }
+
+    private record PayloadProjection(
+            boolean hasPayload,
+            String payloadType,
+            String level,
+            String message
     ) {
     }
 }

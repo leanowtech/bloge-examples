@@ -391,6 +391,7 @@ const state = {
   libraryMessage: null,
   libraryImportConfirmationKey: '',
   libraryRestoreConfirmationKey: '',
+  asyncApiImport: createDefaultAsyncApiOperatorImport(),
   resourceContractImport: createDefaultResourceContractImport(),
   paletteSearch: '',
   paletteKind: '',
@@ -450,6 +451,17 @@ function createDefaultResourceContractImport() {
     descriptorText: '',
     saveConfirmationKey: '',
     message: null
+  };
+}
+
+function createDefaultAsyncApiOperatorImport() {
+  return {
+    operations: [],
+    selections: [],
+    operationId: '',
+    channel: '',
+    action: '',
+    messageName: ''
   };
 }
 
@@ -1008,6 +1020,8 @@ function renderInputForm() {
           <button id="import-library" class="secondary compact" type="button">Import</button>
           <button id="reload-libraries" class="secondary compact" type="button">Reload</button>
           <button id="export-library" class="secondary compact" type="button">Export</button>
+          <button id="discover-asyncapi-library" class="secondary compact" type="button">Discover AsyncAPI</button>
+          <select id="asyncapi-operation-select" multiple size="4" aria-label="Discovered AsyncAPI operations"></select>
           <button id="project-asyncapi-library" class="secondary compact" type="button">From AsyncAPI</button>
           <button id="import-library-bundle" class="secondary compact" type="button">Import Bundle</button>
           <button id="delete-library" class="secondary compact danger" type="button">Delete</button>
@@ -1027,6 +1041,7 @@ function renderInputForm() {
             <span>Rollback</span>
           </label>
         </div>
+        <div id="asyncapi-operation-summary" class="resource-operation-summary" hidden></div>
         <textarea id="operator-library-json" class="library-editor" spellcheck="false" aria-label="Operator library JSON or YAML"></textarea>
         <div id="library-profile" class="library-profile"></div>
         <div id="library-status" class="library-status" hidden></div>
@@ -2738,10 +2753,174 @@ function setConnectionMessage(text, level = 'info') {
   renderConnectionStatus();
 }
 
+function normalizeAsyncApiOperations(operations) {
+  return Array.isArray(operations)
+    ? operations.map((operation) => ({
+      operationId: String(operation?.operationId || ''),
+      channelName: String(operation?.channelName || ''),
+      address: String(operation?.address || ''),
+      action: String(operation?.action || ''),
+      messageName: String(operation?.messageName || ''),
+      title: String(operation?.title || ''),
+      sourceKind: String(operation?.sourceKind || ''),
+      hasPayload: Boolean(operation?.hasPayload),
+      payloadType: String(operation?.payloadType || 'opaque'),
+      tags: Array.isArray(operation?.tags) ? operation.tags.map((tag) => String(tag || '')) : [],
+      projectionLevel: String(operation?.projectionLevel || 'READY').toUpperCase(),
+      projectionMessage: String(operation?.projectionMessage || '')
+    }))
+    : [];
+}
+
+function renderAsyncApiOperationControls(select, summaryTarget, operations) {
+  if (!select) return;
+  const hasSelection = operations.some((operation) => asyncApiOperationMatchesSelection(operation));
+  const options = [`<option value=""${hasSelection ? '' : ' selected'}>All AsyncAPI operations</option>`]
+    .concat(operations.map((operation, index) => {
+      const selected = asyncApiOperationMatchesSelection(operation) ? ' selected' : '';
+      return `<option value="${index}"${selected}>${escapeHtml(asyncApiOperationOptionLabel(operation))}</option>`;
+    }));
+  select.innerHTML = options.join('');
+  select.disabled = !operations.length;
+  select.onchange = () => {
+    const selectedValues = Array.from(select.selectedOptions || [])
+      .map((option) => option.value)
+      .filter((value) => value !== '');
+    const selectedOperations = selectedValues
+      .map((value) => operations[Number(value)])
+      .filter(Boolean);
+    if (selectedOperations.length) {
+      applyAsyncApiOperationSelections(selectedOperations);
+    } else {
+      state.asyncApiImport = {
+        ...(state.asyncApiImport || createDefaultAsyncApiOperatorImport()),
+        selections: [],
+        operationId: '',
+        channel: '',
+        action: '',
+        messageName: ''
+      };
+    }
+    renderAsyncApiOperationSummary(summaryTarget, operations);
+  };
+  renderAsyncApiOperationSummary(summaryTarget, operations);
+}
+
+function asyncApiOperationOptionLabel(operation) {
+  const action = operation.action || 'operation';
+  const channel = operation.channelName || operation.address || 'channel';
+  const identity = operation.operationId || operation.messageName || operation.title || 'message';
+  const source = operation.sourceKind ? ` · ${operation.sourceKind}` : '';
+  return `${action} ${channel} · ${identity}${source}`;
+}
+
+function asyncApiOperationMatchesSelection(operation) {
+  const current = state.asyncApiImport || createDefaultAsyncApiOperatorImport();
+  const selections = normalizeAsyncApiSelections(current.selections);
+  if (!selections.length && (current.operationId || current.channel || current.action || current.messageName)) {
+    selections.push({
+      operationId: current.operationId || '',
+      channel: current.channel || '',
+      action: current.action || '',
+      messageName: current.messageName || ''
+    });
+  }
+  return selections.some((selection) => asyncApiOperationMatchesSelector(operation, selection));
+}
+
+function asyncApiOperationMatchesSelector(operation, selection) {
+  return normalizedUiSelector(selection.operationId) === normalizedUiSelector(operation.operationId)
+    && normalizedUiSelector(selection.channel) === normalizedUiSelector(operation.channelName || operation.address)
+    && normalizedUiSelector(selection.action) === normalizedUiSelector(operation.action)
+    && normalizedUiSelector(selection.messageName) === normalizedUiSelector(operation.messageName);
+}
+
+function normalizeAsyncApiSelections(selections) {
+  return Array.isArray(selections)
+    ? selections.map((selection) => ({
+      operationId: String(selection?.operationId || ''),
+      channel: String(selection?.channel || ''),
+      action: String(selection?.action || ''),
+      messageName: String(selection?.messageName || '')
+    })).filter((selection) => selection.operationId || selection.channel || selection.action || selection.messageName)
+    : [];
+}
+
+function asyncApiSelectionForOperation(operation) {
+  return {
+    operationId: operation.operationId || '',
+    channel: operation.channelName || operation.address || '',
+    action: operation.action || '',
+    messageName: operation.messageName || ''
+  };
+}
+
+function applyAsyncApiOperationSelections(operations) {
+  const selections = operations.map(asyncApiSelectionForOperation);
+  const first = selections[0] || {};
+  state.asyncApiImport = {
+    ...(state.asyncApiImport || createDefaultAsyncApiOperatorImport()),
+    selections,
+    operationId: first.operationId || '',
+    channel: first.channel || '',
+    action: first.action || '',
+    messageName: first.messageName || ''
+  };
+}
+
+function applyAsyncApiOperationSelection(operation) {
+  applyAsyncApiOperationSelections([operation]);
+}
+
+function renderAsyncApiOperationSummary(target, operations) {
+  if (!target) return;
+  const selected = operations.filter((operation) => asyncApiOperationMatchesSelection(operation));
+  if (!selected.length) {
+    target.hidden = !operations.length;
+    target.className = 'resource-operation-summary';
+    target.textContent = operations.length
+      ? `${operations.length} AsyncAPI operations discovered.`
+      : '';
+    return;
+  }
+  const level = asyncApiSelectionSummaryLevel(selected);
+  target.hidden = false;
+  target.className = `resource-operation-summary ${level}`;
+  if (selected.length === 1) {
+    const operation = selected[0];
+    const payload = operation.hasPayload ? operation.payloadType : 'opaque';
+    target.textContent = `${operation.projectionLevel} · ${asyncApiOperationOptionLabel(operation)} · payload ${payload}: ${operation.projectionMessage}`;
+    return;
+  }
+  const blocked = selected.filter((operation) => operation.projectionLevel === 'BLOCKED').length;
+  const warnings = selected.filter((operation) => operation.projectionLevel === 'WARNING').length;
+  const runtimeKinds = Array.from(new Set(selected.map((operation) => operation.sourceKind).filter(Boolean)));
+  target.textContent = `${selected.length} AsyncAPI operations selected · ${blocked} blocked · ${warnings} warning · ${runtimeKinds.join(', ') || 'external-boundary'}`;
+}
+
+function asyncApiSelectionSummaryLevel(operations) {
+  if (operations.some((operation) => operation.projectionLevel === 'BLOCKED')) {
+    return 'blocked';
+  }
+  if (operations.some((operation) => operation.projectionLevel === 'WARNING')) {
+    return 'warning';
+  }
+  return 'ready';
+}
+
+function normalizedUiSelector(value) {
+  return String(value || '').trim().toLowerCase();
+}
+
 function renderOperatorLibraryControls() {
   const select = $('library-select');
   const editor = $('operator-library-json');
   if (!select || !editor) return;
+  const asyncApiSelect = $('asyncapi-operation-select');
+  const asyncApiSummary = $('asyncapi-operation-summary');
+  const asyncApiImport = state.asyncApiImport || createDefaultAsyncApiOperatorImport();
+  state.asyncApiImport = asyncApiImport;
+  const asyncApiOperations = normalizeAsyncApiOperations(asyncApiImport.operations);
   const options = ['<option value="">New library</option>']
     .concat(state.operatorLibraries.map((library) => {
       const count = Array.isArray(library.operators) ? library.operators.length : 0;
@@ -2763,21 +2942,26 @@ function renderOperatorLibraryControls() {
       state.libraryImportText = pretty(library);
     }
     state.libraryMessage = null;
+    state.asyncApiImport = createDefaultAsyncApiOperatorImport();
     state.libraryImportConfirmationKey = '';
     state.libraryRestoreConfirmationKey = '';
     renderOperatorLibraryControls();
   };
   editor.oninput = () => {
     state.libraryImportText = editor.value;
+    state.asyncApiImport = createDefaultAsyncApiOperatorImport();
     state.libraryImportConfirmationKey = '';
     state.libraryRestoreConfirmationKey = '';
     renderLibraryProfile();
+    renderAsyncApiOperationControls(asyncApiSelect, asyncApiSummary, []);
   };
+  renderAsyncApiOperationControls(asyncApiSelect, asyncApiSummary, asyncApiOperations);
 
   const importButton = $('import-library');
   const validateButton = $('validate-library');
   const reloadButton = $('reload-libraries');
   const exportButton = $('export-library');
+  const discoverAsyncApiButton = $('discover-asyncapi-library');
   const projectAsyncApiButton = $('project-asyncapi-library');
   const importBundleButton = $('import-library-bundle');
   const deleteButton = $('delete-library');
@@ -2814,6 +2998,9 @@ function renderOperatorLibraryControls() {
   if (exportButton) {
     exportButton.disabled = !state.selectedLibraryId;
     exportButton.onclick = exportSelectedOperatorLibrary;
+  }
+  if (discoverAsyncApiButton) {
+    discoverAsyncApiButton.onclick = discoverAsyncApiOperatorOperations;
   }
   if (projectAsyncApiButton) {
     projectAsyncApiButton.onclick = projectAsyncApiOperatorLibrary;
@@ -4884,6 +5071,75 @@ async function validateOperatorLibraryPayload(library) {
   };
 }
 
+async function discoverAsyncApiOperatorOperations() {
+  const sourceText = state.libraryImportText || '';
+  if (!sourceText.trim()) {
+    setLibraryMessage('Paste AsyncAPI JSON or YAML before discovery.', 'error');
+    return;
+  }
+  setLibraryMessage('Discovering AsyncAPI operations...', 'info');
+  try {
+    const response = await fetch('/admin/visual-operator-libraries/from-asyncapi/operations', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ asyncApiText: sourceText })
+    });
+    const payload = await response.json().catch(() => null);
+    const validation = payload?.validation || {};
+    const diagnostics = normalizeDiagnostics(validation?.diagnostics);
+    const operations = normalizeAsyncApiOperations(payload?.operations);
+    state.asyncApiImport = {
+      ...(state.asyncApiImport || createDefaultAsyncApiOperatorImport()),
+      operations,
+      selections: [],
+      operationId: '',
+      channel: '',
+      action: '',
+      messageName: ''
+    };
+    if (operations.length === 1) {
+      applyAsyncApiOperationSelection(operations[0]);
+    }
+    renderOperatorLibraryControls();
+    setLibraryMessage(
+      operations.length
+        ? `Discovered ${operations.length} AsyncAPI operation${operations.length === 1 ? '' : 's'}.`
+        : validationResultMessage(validation?.valid, diagnostics, `AsyncAPI discovery failed with ${response.status}`),
+      visualCheckLevel(diagnostics, response.ok && validation?.valid !== false),
+      diagnostics,
+      null,
+      null,
+      sourceText
+    );
+    $('output').textContent = pretty({ status: response.status, asyncApiOperations: payload });
+  } catch (error) {
+    setLibraryMessage(error.message, 'error');
+  }
+}
+
+function asyncApiProjectionRequest(sourceText) {
+  const current = state.asyncApiImport || createDefaultAsyncApiOperatorImport();
+  const request = { asyncApiText: sourceText };
+  const selections = normalizeAsyncApiSelections(current.selections);
+  if (selections.length) {
+    request.selections = selections;
+    return request;
+  }
+  if (current.operationId) {
+    request.operationId = current.operationId;
+  }
+  if (current.channel) {
+    request.channel = current.channel;
+  }
+  if (current.action) {
+    request.action = current.action;
+  }
+  if (current.messageName) {
+    request.messageName = current.messageName;
+  }
+  return request;
+}
+
 async function projectAsyncApiOperatorLibrary() {
   const sourceText = state.libraryImportText || '';
   if (!sourceText.trim()) {
@@ -4893,7 +5149,7 @@ async function projectAsyncApiOperatorLibrary() {
   const response = await fetch(`/admin/visual-operator-libraries/from-asyncapi${libraryForceQuery()}`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ asyncApiText: sourceText })
+    body: JSON.stringify(asyncApiProjectionRequest(sourceText))
   });
   const payload = await response.json().catch(() => null);
   const validation = payload?.validation || {};
@@ -4921,6 +5177,7 @@ async function projectAsyncApiOperatorLibrary() {
   state.libraryRevisions = [];
   state.selectedLibraryRevision = 0;
   state.libraryRevisionDiff = null;
+  state.asyncApiImport = createDefaultAsyncApiOperatorImport();
   state.libraryImportConfirmationKey = '';
   state.libraryRestoreConfirmationKey = '';
   renderOperatorLibraryControls();
