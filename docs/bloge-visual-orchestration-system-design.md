@@ -722,6 +722,10 @@ operatorRef 会被阻断，same-ref fingerprint drift 会作为 warning 暴露�
 DESIGN artifact 可审阅但不可运行，浏览器会禁用 run/golden 动作，也不会投影成 `publication:*` 子图算子。validate 会返回
 publication 级 warning，提示 replay、recertification 或 republish 前需要重新审计。直接删除 library 时，
 如果已有 published artifact 引用了该库内 operatorRef，服务端要求 `force=true` 才允许删除。
+replacement 还具备 SemVer 治理预检：同一 `libraryId` 的 operator contract 发生变化时，
+版本回退是 blocking error；breaking schema / operator removal / disablement 必须提升 major
+version，additive 或 compatible schema 变更必须至少提升 minor version，否则进入 warning-gated
+`ackWarnings` 流程。这个 gate 不依赖是否已有草稿引用，目的是让用户导入算子库后的长期演进也受控。
 导入阶段还会 warning-gate capability 和治理风险：streaming/durable 算子可以被显式确认后进入 catalog，
 但当前 request-response runtime 会阻断使用它们的 draft；secret-backed execution 和
 `NON_IDEMPOTENT` 外部副作用也必须经 `ackWarnings=true` 确认后才会写入。

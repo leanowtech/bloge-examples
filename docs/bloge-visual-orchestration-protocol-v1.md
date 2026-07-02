@@ -1067,6 +1067,16 @@ resource-gateway 示例阶段已落地等价管理端点：
 跨库冲突必须返回结构化 409 diagnostics，而不能让浏览器看到多个同名算子。
 用户库也不能占用系统保留 ref：内置算子 `httpResource`、`bloge:decisionTable`、
 `bloge:transform` 和资源投影使用的 `resource:` 命名空间都必须由平台保留。
+同一 `libraryId` 的 replacement 还会执行 SemVer 治理预检：如果替换内容改变
+operator contract 但 library version 回退，则返回 blocking
+`visual.library.version.regressed`；如果 breaking schema 变更、operator removal
+或 disablement 没有提升 major version，则返回 warning
+`visual.library.version.breakingRequiresMajor`；如果 additive / compatible schema
+变更没有至少提升 minor version，则返回 warning
+`visual.library.version.compatibleRequiresMinor`。这些 diagnostics 的 target 是
+`/version`，但 metadata 会携带 `previousVersion`、`replacementVersion`、
+`operatorRefs`、`changeRisk`、`changeCategories` 和 `changeSummary`，所以 impact
+review 可以在没有 stored draft 引用时仍然暴露 operator-level 变更风险。
 浏览器 Operator Libraries 面板也应先调用该端点，把结构化 diagnostics 以明细
 列表展示给作者，再允许作者选择是否执行 Import。
 

@@ -1264,7 +1264,7 @@ class OperatorLibraryAdminControllerTest {
     @Test
     void validateForceBypassesStoredDraftReferenceImpact() throws Exception {
         OperatorLibrary original = VisualCatalogTestSupport.multiOutputEligibilityLibrary("integer");
-        OperatorLibrary replacement = libraryWithScoreFactsOnly();
+        OperatorLibrary replacement = libraryWithScoreFactsOnly("2.0.0");
         registry.upsert(original);
         drafts.save(draftUsingOperator("risk:eligibility"));
 
@@ -1307,9 +1307,9 @@ class OperatorLibraryAdminControllerTest {
                 .andExpect(jsonPath("$.diagnostics[0].metadata.changeRisk").value("BREAKING_SCHEMA"))
                 .andExpect(jsonPath("$.diagnostics[0].metadata.changeCategories[0]").value("BREAKING_SCHEMA"))
                 .andExpect(jsonPath("$.diagnostics[0].target").value("/drafts/draft-1/nodes/0/operatorRef"))
-                .andExpect(jsonPath("$.impact.warningCount").value(1))
+                .andExpect(jsonPath("$.impact.warningCount").value(2))
                 .andExpect(jsonPath("$.impact.changeRiskCounts[0].risk").value("BREAKING_SCHEMA"))
-                .andExpect(jsonPath("$.impact.changeRiskCounts[0].count").value(1))
+                .andExpect(jsonPath("$.impact.changeRiskCounts[0].count").value(2))
                 .andExpect(jsonPath("$.impact.draftIds[0]").value("draft-1"))
                 .andExpect(jsonPath("$.impact.operatorRefs[0]").value("risk:eligibility"))
                 .andExpect(jsonPath("$.impact.draftTargets[0].draftId").value("draft-1"))
@@ -1344,6 +1344,74 @@ class OperatorLibraryAdminControllerTest {
 
         assertThat(replacement.operators().getFirst().fingerprint())
                 .isNotEqualTo(original.operators().getFirst().fingerprint());
+        assertThat(registry.find("risk-policy")).contains(original);
+    }
+
+    @Test
+    void validateWarnsWhenBreakingReplacementDoesNotAdvanceMajorVersionWithoutStoredUsage() throws Exception {
+        OperatorLibrary original = VisualCatalogTestSupport.eligibilityLibrary("integer");
+        OperatorLibrary replacement = libraryWithVersion(
+                VisualCatalogTestSupport.eligibilityLibrary("string"), "1.1.0");
+        registry.upsert(original);
+
+        mockMvc.perform(post("/admin/visual-operator-libraries/validate")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(replacement)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.valid").value(true))
+                .andExpect(jsonPath("$.diagnostics[0].level").value("WARNING"))
+                .andExpect(jsonPath("$.diagnostics[0].code")
+                        .value("visual.library.version.breakingRequiresMajor"))
+                .andExpect(jsonPath("$.diagnostics[0].target").value("/version"))
+                .andExpect(jsonPath("$.diagnostics[0].metadata.previousVersion").value("1.0.0"))
+                .andExpect(jsonPath("$.diagnostics[0].metadata.replacementVersion").value("1.1.0"))
+                .andExpect(jsonPath("$.diagnostics[0].metadata.changeRisk").value("BREAKING_SCHEMA"))
+                .andExpect(jsonPath("$.diagnostics[0].metadata.operatorRefs[0]").value("risk:eligibility"))
+                .andExpect(jsonPath("$.impact.warningCount").value(1))
+                .andExpect(jsonPath("$.impact.operatorRefs[0]").value("risk:eligibility"))
+                .andExpect(jsonPath("$.impact.changeRiskCounts[0].risk").value("BREAKING_SCHEMA"));
+
+        assertThat(registry.find("risk-policy")).contains(original);
+    }
+
+    @Test
+    void updateRejectsVersionRegressionForChangedReplacement() throws Exception {
+        OperatorLibrary original = libraryWithVersion(
+                VisualCatalogTestSupport.eligibilityLibrary("integer"), "2.0.0");
+        OperatorLibrary replacement = libraryWithVersion(
+                VisualCatalogTestSupport.eligibilityLibrary("string"), "1.9.0");
+        registry.upsert(original);
+
+        mockMvc.perform(put("/admin/visual-operator-libraries/risk-policy")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(replacement)))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.valid").value(false))
+                .andExpect(jsonPath("$.diagnostics[0].level").value("ERROR"))
+                .andExpect(jsonPath("$.diagnostics[0].code").value("visual.library.version.regressed"))
+                .andExpect(jsonPath("$.diagnostics[0].metadata.previousVersion").value("2.0.0"))
+                .andExpect(jsonPath("$.diagnostics[0].metadata.replacementVersion").value("1.9.0"))
+                .andExpect(jsonPath("$.impact.errorCount").value(1))
+                .andExpect(jsonPath("$.impact.operatorRefs[0]").value("risk:eligibility"));
+
+        assertThat(registry.find("risk-policy")).contains(original);
+    }
+
+    @Test
+    void validateAllowsBreakingReplacementWhenMajorVersionAdvances() throws Exception {
+        OperatorLibrary original = VisualCatalogTestSupport.eligibilityLibrary("integer");
+        OperatorLibrary replacement = libraryWithVersion(
+                VisualCatalogTestSupport.eligibilityLibrary("string"), "2.0.0");
+        registry.upsert(original);
+
+        mockMvc.perform(post("/admin/visual-operator-libraries/validate")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(replacement)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.valid").value(true))
+                .andExpect(jsonPath("$.diagnostics").isEmpty())
+                .andExpect(jsonPath("$.impact.diagnosticCount").value(0));
+
         assertThat(registry.find("risk-policy")).contains(original);
     }
 
@@ -1497,7 +1565,7 @@ class OperatorLibraryAdminControllerTest {
 
     @Test
     void updateForceBypassesRemovedOperatorRefGuard() throws Exception {
-        OperatorLibrary replacement = libraryWithScoreFactsOnly();
+        OperatorLibrary replacement = libraryWithScoreFactsOnly("2.0.0");
         registry.upsert(VisualCatalogTestSupport.multiOutputEligibilityLibrary("integer"));
         drafts.save(draftUsingOperator("risk:eligibility"));
 
@@ -1513,7 +1581,8 @@ class OperatorLibraryAdminControllerTest {
 
     @Test
     void updateForceBypassesDisabledLibraryReferenceGuard() throws Exception {
-        OperatorLibrary disabled = eligibilityLibraryWithStatus(OperatorLibrary.STATUS_DISABLED);
+        OperatorLibrary disabled = libraryWithVersion(
+                eligibilityLibraryWithStatus(OperatorLibrary.STATUS_DISABLED), "2.0.0");
         registry.upsert(VisualCatalogTestSupport.eligibilityLibrary("integer"));
         drafts.save(draftUsingOperator("risk:eligibility"));
 
@@ -1637,14 +1706,30 @@ class OperatorLibraryAdminControllerTest {
     }
 
     private static OperatorLibrary libraryWithScoreFactsOnly() {
+        return libraryWithScoreFactsOnly("1.0.0");
+    }
+
+    private static OperatorLibrary libraryWithScoreFactsOnly(String version) {
         return new OperatorLibrary(
                 "bloge.visualOperatorLibrary.v1",
                 "risk-policy",
                 "Risk policy operators",
-                "1.0.0",
+                version,
                 "risk-team",
                 "ACTIVE",
                 List.of(VisualCatalogTestSupport.scoreFactsOperator())
+        );
+    }
+
+    private static OperatorLibrary libraryWithVersion(OperatorLibrary library, String version) {
+        return new OperatorLibrary(
+                library.schemaVersion(),
+                library.libraryId(),
+                library.displayName(),
+                version,
+                library.owner(),
+                library.status(),
+                library.operators()
         );
     }
 

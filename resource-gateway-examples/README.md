@@ -998,6 +998,14 @@ replacement risk as `BREAKING_SCHEMA`, `COMPATIBLE_SCHEMA`, `RUNTIME_BINDING`,
 schema growth from schema-breaking or runtime/governance changes before runtime
 validation blocks execution. Drafts missing the affected node's fingerprint
 snapshot are warned as legacy/unsafe-to-assume-compatible drafts.
+Replacement validation also applies SemVer governance to the library version
+itself, even when no stored draft currently references the changed operator:
+version regression is a blocking error, breaking schema/removal changes require
+a major bump unless acknowledged, and additive or compatible schema changes
+require at least a minor bump unless acknowledged. The SemVer diagnostics carry
+the same `changeRisk`, `changeCategories`, `changeSummary`, and `operatorRefs`
+metadata as drift warnings, so the impact review can surface version-discipline
+violations beside draft/publication impact.
 The same validation warns when a replacement or removal touches immutable
 publications that were authored with the affected operatorRef, also including
 the changed-surface summary and affected publication node target for same-ref replacements. Existing publications
@@ -1023,10 +1031,10 @@ schema drift, and bindings before choosing a rebase or repair path.
 | Method | Path | Description | Status |
 |--------|------|-------------|--------|
 | `GET` | `/admin/visual-operator-libraries` | List imported operator libraries | 200 |
-| `POST` | `/admin/visual-operator-libraries/validate` | Validate an operator library without storing it and return `valid`, `diagnostics`, server-derived `bloge.visualOperatorLibraryProfile.v1`, and `bloge.visualOperatorLibraryImpact.v1` with affected draft targets and replacement `changeRiskCounts`; use `force=true` to suppress stored-draft removal/disablement impact diagnostics; runtime-capability, governance, unresolved native lowering executable, same-ref fingerprint drift, and immutable-publication impact risks are reported as warnings | 200 |
-| `POST` | `/admin/visual-operator-libraries` | Import or re-import an operator library; rejected or warning-gated responses include `bloge.visualOperatorLibraryProfile.v1` and `bloge.visualOperatorLibraryImpact.v1`, reject removal or disablement of stored-draft operator refs unless `force=true`, and require `ackWarnings=true` before storing warning-level runtime-capability, governance, executable-resolution, or replacement impact | 201 / 400 / 409 |
+| `POST` | `/admin/visual-operator-libraries/validate` | Validate an operator library without storing it and return `valid`, `diagnostics`, server-derived `bloge.visualOperatorLibraryProfile.v1`, and `bloge.visualOperatorLibraryImpact.v1` with affected draft targets and replacement `changeRiskCounts`; use `force=true` to suppress stored-draft removal/disablement impact diagnostics; runtime-capability, governance, unresolved native lowering executable, same-ref fingerprint drift, replacement SemVer governance, and immutable-publication impact risks are reported as warnings unless they are blocking errors such as version regression | 200 |
+| `POST` | `/admin/visual-operator-libraries` | Import or re-import an operator library; rejected or warning-gated responses include `bloge.visualOperatorLibraryProfile.v1` and `bloge.visualOperatorLibraryImpact.v1`, reject removal or disablement of stored-draft operator refs unless `force=true`, and require `ackWarnings=true` before storing warning-level runtime-capability, governance, executable-resolution, SemVer, or replacement impact | 201 / 400 / 409 |
 | `GET` | `/admin/visual-operator-libraries/{libraryId}` | Get one imported library | 200 / 404 |
-| `PUT` | `/admin/visual-operator-libraries/{libraryId}` | Replace an imported library; rejected or warning-gated responses include `bloge.visualOperatorLibraryProfile.v1` and `bloge.visualOperatorLibraryImpact.v1`, reject removal or disablement of stored-draft operator refs unless `force=true`, and require `ackWarnings=true` before storing warning-level runtime-capability, governance, executable-resolution, or replacement impact | 200 / 400 / 409 |
+| `PUT` | `/admin/visual-operator-libraries/{libraryId}` | Replace an imported library; rejected or warning-gated responses include `bloge.visualOperatorLibraryProfile.v1` and `bloge.visualOperatorLibraryImpact.v1`, reject removal or disablement of stored-draft operator refs unless `force=true`, reject SemVer regression, and require `ackWarnings=true` before storing warning-level runtime-capability, governance, executable-resolution, SemVer, or replacement impact | 200 / 400 / 409 |
 | `DELETE` | `/admin/visual-operator-libraries/{libraryId}` | Delete an imported library; rejects stored-draft references and published-artifact references unless `force=true`, returning `bloge.visualOperatorLibraryProfile.v1` and `bloge.visualOperatorLibraryImpact.v1` on conflict | 204 / 409 |
 
 Create and update run the same validator before storage. The validator accepts
@@ -1329,7 +1337,7 @@ compiled graphs, and evaluates them against arbitrary data contexts. Used by
 | `DatabaseOperatorLibraryRegistry` | Persists imported visual operator libraries in H2 as JSON blobs with cache-backed reads |
 | `DatabaseGraphDraftRepository` | Persists visual graph drafts and revision numbers in H2 |
 | `ResourceRegistryAdminController` | REST CRUD at `/admin/resources` |
-| `OperatorLibraryAdminController` | REST import/update/delete at `/admin/visual-operator-libraries`, including warning-gated runtime capability and governance preflight |
+| `OperatorLibraryAdminController` | REST import/update/delete at `/admin/visual-operator-libraries`, including warning-gated runtime capability, SemVer, and governance preflight |
 
 ### Interceptor chain (`gateway.interceptor`)
 

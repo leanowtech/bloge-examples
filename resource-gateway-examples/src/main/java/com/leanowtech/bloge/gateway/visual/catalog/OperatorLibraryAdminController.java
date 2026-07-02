@@ -207,6 +207,7 @@ public class OperatorLibraryAdminController {
         if (!force) {
             diagnostics.addAll(replacementImpactDiagnostics(library, "replaced without force=true"));
         }
+        diagnostics.addAll(replacementVersionGovernanceDiagnostics(library));
         return validationResult(library, diagnostics);
     }
 
@@ -563,6 +564,198 @@ public class OperatorLibraryAdminController {
         return diagnostics;
     }
 
+    private List<VisualDiagnostic> replacementVersionGovernanceDiagnostics(OperatorLibrary replacement) {
+        if (replacement == null) {
+            return List.of();
+        }
+        Optional<OperatorLibrary> existing = registry.find(replacement.libraryId());
+        if (existing.isEmpty()) {
+            return List.of();
+        }
+        Optional<SemanticVersion> previousVersion = SemanticVersion.parse(existing.get().version());
+        Optional<SemanticVersion> replacementVersion = SemanticVersion.parse(replacement.version());
+        if (previousVersion.isEmpty() || replacementVersion.isEmpty()) {
+            return List.of();
+        }
+
+        LibraryReplacementChange change = LibraryReplacementChange.from(existing.get(), replacement);
+        if (!change.changed()) {
+            return List.of();
+        }
+
+        SemanticVersion previous = previousVersion.get();
+        SemanticVersion next = replacementVersion.get();
+        if (next.compareCore(previous) < 0) {
+            return List.of(VisualDiagnostic.error("visual.library.version.regressed",
+                    "Operator library '%s' replacement changes catalog surface but regresses version from '%s' to '%s'; publish a forward semantic version instead."
+                            .formatted(replacement.libraryId(), existing.get().version(), replacement.version()),
+                    "/version",
+                    changeMetadata(existing.get().version(), replacement.version(), change)));
+        }
+        if (change.breaking() && next.major() <= previous.major()) {
+            return List.of(VisualDiagnostic.warning("visual.library.version.breakingRequiresMajor",
+                    "Operator library '%s' replacement contains breaking operator contract changes but version moves from '%s' to '%s'; use a new major version or acknowledge the governance warning after review."
+                            .formatted(replacement.libraryId(), existing.get().version(), replacement.version()),
+                    "/version",
+                    changeMetadata(existing.get().version(), replacement.version(), change)));
+        }
+        if (change.compatible() && !next.hasMinorOrMajorBumpFrom(previous)) {
+            return List.of(VisualDiagnostic.warning("visual.library.version.compatibleRequiresMinor",
+                    "Operator library '%s' replacement adds or compatibly changes operator contracts but version moves from '%s' to '%s'; use a minor version bump or acknowledge the governance warning after review."
+                            .formatted(replacement.libraryId(), existing.get().version(), replacement.version()),
+                    "/version",
+                    changeMetadata(existing.get().version(), replacement.version(), change)));
+        }
+        if (next.compareCore(previous) == 0) {
+            return List.of(VisualDiagnostic.warning("visual.library.version.unchangedForReplacement",
+                    "Operator library '%s' replacement changes catalog surface without advancing version '%s'; acknowledge only for non-contract metadata repairs."
+                            .formatted(replacement.libraryId(), replacement.version()),
+                    "/version",
+                    changeMetadata(existing.get().version(), replacement.version(), change)));
+        }
+        return List.of();
+    }
+
+    private static Map<String, Object> changeMetadata(String previousVersion,
+                                                      String replacementVersion,
+                                                      LibraryReplacementChange change) {
+        Map<String, Object> metadata = new LinkedHashMap<>();
+        metadata.put("previousVersion", previousVersion);
+        metadata.put("replacementVersion", replacementVersion);
+        metadata.put("changeRisk", change.risk());
+        metadata.put("changeCategories", change.categories());
+        metadata.put("changeSummary", change.summary());
+        metadata.put("operatorRefs", change.operatorRefs());
+        return metadata;
+    }
+
+    private record SemanticVersion(int major, int minor, int patch) {
+        private static Optional<SemanticVersion> parse(String value) {
+            if (value == null || value.isBlank()) {
+                return Optional.empty();
+            }
+            String core = value.trim().split("[-+]", 2)[0];
+            String[] parts = core.split("\\.");
+            if (parts.length != 3) {
+                return Optional.empty();
+            }
+            try {
+                return Optional.of(new SemanticVersion(
+                        Integer.parseInt(parts[0]),
+                        Integer.parseInt(parts[1]),
+                        Integer.parseInt(parts[2])
+                ));
+            } catch (NumberFormatException ignored) {
+                return Optional.empty();
+            }
+        }
+
+        private int compareCore(SemanticVersion other) {
+            int majorCompare = Integer.compare(major, other.major);
+            if (majorCompare != 0) {
+                return majorCompare;
+            }
+            int minorCompare = Integer.compare(minor, other.minor);
+            if (minorCompare != 0) {
+                return minorCompare;
+            }
+            return Integer.compare(patch, other.patch);
+        }
+
+        private boolean hasMinorOrMajorBumpFrom(SemanticVersion previous) {
+            return major > previous.major || major == previous.major && minor > previous.minor;
+        }
+    }
+
+    private record LibraryReplacementChange(
+            Set<String> operatorRefs,
+            List<String> categories,
+            String risk,
+            String summary
+    ) {
+        private static LibraryReplacementChange from(OperatorLibrary existing, OperatorLibrary replacement) {
+            Map<String, OperatorDefinition> existingByRef = operatorsByRef(existing);
+            Map<String, OperatorDefinition> replacementByRef = replacement.visibleInCatalog(true)
+                    ? operatorsByRef(replacement)
+                    : Map.of();
+            Set<String> refs = new LinkedHashSet<>();
+            Set<String> categories = new LinkedHashSet<>();
+            List<String> changes = new ArrayList<>();
+
+            existingByRef.keySet().stream()
+                    .filter(operatorRef -> !replacementByRef.containsKey(operatorRef))
+                    .forEach(operatorRef -> {
+                        refs.add(operatorRef);
+                        categories.add(OperatorDefinitionChangeSummary.RISK_BREAKING_SCHEMA);
+                        changes.add("operatorRef '" + operatorRef + "' removed");
+                    });
+            replacementByRef.keySet().stream()
+                    .filter(operatorRef -> !existingByRef.containsKey(operatorRef))
+                    .forEach(operatorRef -> {
+                        refs.add(operatorRef);
+                        categories.add(OperatorDefinitionChangeSummary.RISK_COMPATIBLE_SCHEMA);
+                        changes.add("operatorRef '" + operatorRef + "' added");
+                    });
+            replacementByRef.forEach((operatorRef, operator) -> {
+                OperatorDefinition previous = existingByRef.get(operatorRef);
+                if (previous == null || previous.fingerprint().equals(operator.fingerprint())) {
+                    return;
+                }
+                OperatorDefinitionChangeSummary.ChangeReport report = OperatorDefinitionChangeSummary.analyze(
+                        previous, operator);
+                refs.add(operatorRef);
+                categories.addAll(report.categories());
+                changes.add("operatorRef '" + operatorRef + "' changed: " + report.summary());
+            });
+            List<String> sortedCategories = categories.stream()
+                    .sorted((left, right) -> Integer.compare(
+                            OperatorDefinitionChangeSummary.riskRank(right),
+                            OperatorDefinitionChangeSummary.riskRank(left)))
+                    .toList();
+            String risk = sortedCategories.isEmpty()
+                    ? OperatorDefinitionChangeSummary.RISK_METADATA
+                    : sortedCategories.getFirst();
+            return new LibraryReplacementChange(
+                    java.util.Collections.unmodifiableSet(new LinkedHashSet<>(refs)),
+                    sortedCategories,
+                    risk,
+                    summarize(changes)
+            );
+        }
+
+        private boolean changed() {
+            return !categories.isEmpty();
+        }
+
+        private boolean breaking() {
+            return categories.contains(OperatorDefinitionChangeSummary.RISK_BREAKING_SCHEMA);
+        }
+
+        private boolean compatible() {
+            return categories.contains(OperatorDefinitionChangeSummary.RISK_COMPATIBLE_SCHEMA);
+        }
+
+        private static Map<String, OperatorDefinition> operatorsByRef(OperatorLibrary library) {
+            Map<String, OperatorDefinition> byRef = new LinkedHashMap<>();
+            for (OperatorDefinition operator : library.operators()) {
+                if (operator != null && !operator.operatorRef().isBlank()) {
+                    byRef.putIfAbsent(operator.operatorRef(), operator);
+                }
+            }
+            return byRef;
+        }
+
+        private static String summarize(List<String> changes) {
+            if (changes.isEmpty()) {
+                return "";
+            }
+            int visible = Math.min(5, changes.size());
+            String summary = String.join("; ", changes.subList(0, visible));
+            int remaining = changes.size() - visible;
+            return remaining > 0 ? summary + "; +" + remaining + " more" : summary;
+        }
+    }
+
     private List<VisualDiagnostic> storedDraftReferenceDiagnostics(String libraryId,
                                                                    Collection<String> operatorRefs,
                                                                    String action) {
@@ -628,6 +821,7 @@ public class OperatorLibraryAdminController {
     private Set<String> impactOperatorRefs(OperatorLibrary library, List<VisualDiagnostic> diagnostics) {
         Set<String> operatorRefs = new LinkedHashSet<>();
         operatorRefs.addAll(operatorRefsFromOperatorDiagnosticTargets(library, diagnostics));
+        operatorRefs.addAll(operatorRefsFromDiagnosticMetadata(diagnostics));
         operatorRefs.addAll(referencedReplacementOperatorRefs(library));
         return operatorRefs;
     }
@@ -646,6 +840,25 @@ public class OperatorLibraryAdminController {
             OperatorDefinition operator = library.operators().get(index);
             if (operator != null && !operator.operatorRef().isBlank()) {
                 operatorRefs.add(operator.operatorRef());
+            }
+        }
+        return operatorRefs;
+    }
+
+    private Set<String> operatorRefsFromDiagnosticMetadata(List<VisualDiagnostic> diagnostics) {
+        if (diagnostics == null || diagnostics.isEmpty()) {
+            return Set.of();
+        }
+        Set<String> operatorRefs = new LinkedHashSet<>();
+        for (VisualDiagnostic diagnostic : diagnostics) {
+            Object refs = diagnostic == null ? null : diagnostic.metadata().get("operatorRefs");
+            if (!(refs instanceof Iterable<?> iterable)) {
+                continue;
+            }
+            for (Object ref : iterable) {
+                if (ref != null && !ref.toString().isBlank()) {
+                    operatorRefs.add(ref.toString());
+                }
             }
         }
         return operatorRefs;
