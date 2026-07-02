@@ -1327,24 +1327,69 @@ DSL generator 或编译器兜底。
 
 ```json
 {
-  "valid": false,
-  "blocking": true,
+  "valid": true,
   "diagnostics": [
     {
-      "source": "schema",
-      "code": "SCHEMA_REQUIRED_INPUT_MISSING",
-      "severity": "ERROR",
-      "message": "Required input applicantId is missing.",
-      "target": {
-        "kind": "node",
-        "nodeId": "fetchApplicant",
-        "fieldPath": "inputs.applicantId"
-      },
-      "blocking": true
+      "level": "WARNING",
+      "code": "visual.operator.governance.nonIdempotent",
+      "message": "Operator 'risk:writeAudit' on node 'writeAudit' declares non-idempotent side effects; add an explicit review or audit control before production promotion.",
+      "target": "/nodes/1/operatorRef",
+      "line": -1,
+      "column": -1
     }
-  ]
+  ],
+  "readiness": {
+    "schemaVersion": "bloge.visualGraphReadiness.v1",
+    "state": "governance-review",
+    "level": "warning",
+    "executable": true,
+    "artifactKinds": ["EXECUTABLE", "DESIGN"],
+    "title": "Executable with governance review",
+    "summary": "The graph can execute, but promotion should review external effects, secrets, or idempotency risks.",
+    "nodeCount": 2,
+    "runtimeExecutableNodeCount": 1,
+    "designOnlyNodeCount": 0,
+    "runtimeBlockedNodeCount": 0,
+    "governanceReviewNodeCount": 1,
+    "draftRepairNodeCount": 0,
+    "nodes": [
+      {
+        "nodeId": "eligibility",
+        "operatorRef": "risk:eligibility",
+        "state": "runtime-executable",
+        "level": "success",
+        "executable": true,
+        "title": "Runtime executable",
+        "summary": "Executable lowering is present for this request-response visual runtime.",
+        "diagnosticCount": 0,
+        "errorCount": 0,
+        "warningCount": 0
+      },
+      {
+        "nodeId": "writeAudit",
+        "operatorRef": "risk:writeAudit",
+        "state": "governance-review",
+        "level": "warning",
+        "executable": true,
+        "title": "Executable with governance review",
+        "summary": "Executable metadata is present; promotion should review runtime governance risks.",
+        "diagnosticCount": 1,
+        "errorCount": 0,
+        "warningCount": 1
+      }
+    ]
+  }
 }
 ```
+
+当前 `resource-gateway-examples` 的 validate response 会额外返回
+`bloge.visualGraphReadiness.v1`。`valid` 只表达 schema、policy、fingerprint、
+edge/DAG 等 draft contract 是否有 blocking error；`readiness` 单独表达当前
+request-response runtime 是否能执行该图，以及它是否只能作为 `DESIGN` artifact
+冻结。典型 state 包括 `runtime-executable`、`design-only`、`runtime-blocked`、
+`governance-review` 和 `draft-repair-required`。这条边界必须保持：schema-only
+operator 组成的合法图可以 `valid=true`，同时 `readiness.executable=false` 且
+`artifactKinds=["DESIGN"]`。
 
 ### 10.5 编译 draft
 

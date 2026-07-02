@@ -466,6 +466,11 @@ class VisualAuthoringAppJsTest {
                   'operatorLibrarySchemaSummary',
                   'operatorLibraryFieldLabel',
                   'schemaDynamicSurfaceCount',
+                  'normalizeReadinessState',
+                  'normalizeVisualGraphNodeReadiness',
+                  'normalizeVisualGraphReadiness',
+                  'visualGraphReadinessStatusText',
+                  'visualGraphReadinessNodeSummary',
                   'operatorDiagnosticsForSpec',
                   'operatorPaletteCapabilityBadges',
                   'operatorPaletteCapabilityLabels',
@@ -1266,6 +1271,33 @@ class VisualAuthoringAppJsTest {
                 const serverReadiness = context.operatorRuntimeReadiness(serverReadinessSpec);
                 const serverReadinessPanel = context.renderOperatorReadinessPanel(serverReadinessSpec);
                 const serverReadinessFacet = context.operatorPaletteReadinessState(serverReadinessSpec);
+                const graphReadiness = context.normalizeVisualGraphReadiness({
+                  schemaVersion: 'bloge.visualGraphReadiness.v1',
+                  state: 'DESIGN_ONLY',
+                  level: 'INFO',
+                  executable: false,
+                  artifactKinds: ['design'],
+                  title: 'Design-only graph',
+                  summary: 'Freeze as design artifact.',
+                  nodeCount: 2,
+                  runtimeExecutableNodeCount: 1,
+                  designOnlyNodeCount: 1,
+                  runtimeBlockedNodeCount: 0,
+                  governanceReviewNodeCount: 0,
+                  draftRepairNodeCount: 0,
+                  nodes: [
+                    {
+                      nodeId: 'eligibility',
+                      operatorRef: 'risk:eligibility',
+                      state: 'DESIGN_ONLY',
+                      level: 'INFO',
+                      executable: false,
+                      title: 'Design-only operator',
+                      diagnosticCount: 0
+                    }
+                  ]
+                });
+                const graphReadinessStatusText = context.visualGraphReadinessStatusText(graphReadiness);
                 const serverCatalogFacets = context.normalizeOperatorCatalogFacets({
                   total: 6,
                   capabilities: {
@@ -2608,6 +2640,9 @@ class VisualAuthoringAppJsTest {
                   ['operator runtime readiness server state', `${serverReadiness.state}|${serverReadiness.title}`, 'GOVERNANCE_REVIEW|Server authoritative readiness'],
                   ['operator runtime readiness server panel', String(serverReadinessPanel.includes('server-reviewed')), 'true'],
                   ['operator runtime readiness server facet', serverReadinessFacet, 'governance-review'],
+                  ['graph readiness normalized state', graphReadiness.state, 'design-only'],
+                  ['graph readiness normalized node state', graphReadiness.nodes[0].state, 'design-only'],
+                  ['graph readiness status text', graphReadinessStatusText, 'Design-only graph · 1 executable, 1 design-only · DESIGN artifact'],
                   ['catalog facet summary', serverCatalogFacetSummary, 'Catalog mix: 3 Runtime executable · 2 Design only · 1 Runtime blocked · 1 Governance review · 1 Streaming · 1 Requires secret · 1 External effect.'],
                   ['catalog facet fallback total', fallbackCatalogFacets.total, 2],
                   ['catalog facet fallback design count', fallbackCatalogFacets.capabilities['design-only'], 1],

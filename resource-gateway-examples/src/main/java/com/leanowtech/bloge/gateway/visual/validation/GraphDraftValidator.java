@@ -149,7 +149,8 @@ public class GraphDraftValidator {
         List<VisualDiagnostic> diagnostics = new ArrayList<>();
         if (draft == null) {
             diagnostics.add(VisualDiagnostic.error("visual.draft.missing", "Graph draft is required.", "/"));
-            return new VisualValidationResult(false, diagnostics);
+            return new VisualValidationResult(false, diagnostics, VisualGraphReadiness.from(null, Map.of(),
+                    diagnostics));
         }
         if (!SUPPORTED_DRAFT_SCHEMA_VERSIONS.contains(draft.schemaVersion())) {
             diagnostics.add(VisualDiagnostic.error("visual.draft.schemaVersion.unsupported",
@@ -216,7 +217,8 @@ public class GraphDraftValidator {
         validateAcyclic(draft, nodesById, diagnostics);
         validateOutputSelection(draft, nodeIds, nodesById, operatorsByNodeId, diagnostics);
         validateOutputReachability(draft, nodesById, diagnostics);
-        return new VisualValidationResult(diagnostics.stream().noneMatch(VisualDiagnostic::error), diagnostics);
+        return new VisualValidationResult(diagnostics.stream().noneMatch(VisualDiagnostic::error), diagnostics,
+                VisualGraphReadiness.from(draft, operatorsByNodeId, diagnostics));
     }
 
     private static void validateGraphIdentifier(String graphName, List<VisualDiagnostic> diagnostics) {

@@ -370,7 +370,8 @@ const state = {
   visualCheck: {
     message: 'Not checked',
     level: 'info',
-    diagnostics: []
+    diagnostics: [],
+    readiness: null
   },
   visualDiagnosticNodeFilter: '',
   operatorLibraries: [],
@@ -3770,8 +3771,9 @@ function renderVisualCheck() {
   const visibleDiagnostics = state.visualDiagnosticNodeFilter
     ? diagnostics.filter((diagnostic) => diagnosticTargetNodeId(diagnostic) === state.visualDiagnosticNodeFilter)
     : diagnostics;
-  status.textContent = check.message || 'Not checked';
-  status.className = `visual-check-status ${check.level || 'info'}`;
+  const readinessText = visualGraphReadinessStatusText(check.readiness);
+  status.textContent = [check.message || 'Not checked', readinessText].filter(Boolean).join(' · ');
+  status.className = `visual-check-status ${check.readiness?.level || check.level || 'info'}`;
   renderDiagnosticList(list, visibleDiagnostics, {
     headerHtml: renderVisualDiagnosticSummary(diagnostics, state.visualDiagnosticNodeFilter),
     noticeHtml: renderVisualDiagnosticFilterNotice(visibleDiagnostics.length, state.visualDiagnosticNodeFilter)
@@ -4065,14 +4067,90 @@ function visualDiagnosticNodeSummaryText(entry) {
   return parts.join(' · ');
 }
 
-function setVisualCheck(message, level = 'info', diagnostics = []) {
+function setVisualCheck(message, level = 'info', diagnostics = [], readiness = null) {
   state.visualCheck = {
     message,
     level,
-    diagnostics: normalizeDiagnostics(diagnostics)
+    diagnostics: normalizeDiagnostics(diagnostics),
+    readiness: normalizeVisualGraphReadiness(readiness)
   };
   renderVisualCheck();
   renderCanvasNavigator();
+}
+
+function normalizeVisualGraphReadiness(readiness) {
+  if (!readiness || typeof readiness !== 'object') {
+    return null;
+  }
+  return {
+    schemaVersion: String(readiness.schemaVersion || ''),
+    state: normalizeReadinessState(readiness.state),
+    level: String(readiness.level || 'info').trim().toLowerCase(),
+    executable: Boolean(readiness.executable),
+    artifactKinds: Array.isArray(readiness.artifactKinds)
+      ? readiness.artifactKinds.map((kind) => String(kind || '').trim().toUpperCase()).filter(Boolean)
+      : [],
+    title: String(readiness.title || ''),
+    summary: String(readiness.summary || ''),
+    nodeCount: Number(readiness.nodeCount || 0),
+    runtimeExecutableNodeCount: Number(readiness.runtimeExecutableNodeCount || 0),
+    designOnlyNodeCount: Number(readiness.designOnlyNodeCount || 0),
+    runtimeBlockedNodeCount: Number(readiness.runtimeBlockedNodeCount || 0),
+    governanceReviewNodeCount: Number(readiness.governanceReviewNodeCount || 0),
+    draftRepairNodeCount: Number(readiness.draftRepairNodeCount || 0),
+    nodes: Array.isArray(readiness.nodes) ? readiness.nodes.map(normalizeVisualGraphNodeReadiness) : []
+  };
+}
+
+function normalizeVisualGraphNodeReadiness(node) {
+  return {
+    nodeId: String(node?.nodeId || ''),
+    operatorRef: String(node?.operatorRef || ''),
+    state: normalizeReadinessState(node?.state),
+    level: String(node?.level || 'info').trim().toLowerCase(),
+    executable: Boolean(node?.executable),
+    title: String(node?.title || ''),
+    summary: String(node?.summary || ''),
+    diagnosticCount: Number(node?.diagnosticCount || 0),
+    errorCount: Number(node?.errorCount || 0),
+    warningCount: Number(node?.warningCount || 0)
+  };
+}
+
+function normalizeReadinessState(value) {
+  return String(value || '').trim().toLowerCase().replace(/_/g, '-');
+}
+
+function visualGraphReadinessStatusText(readiness) {
+  const normalized = normalizeVisualGraphReadiness(readiness);
+  if (!normalized) {
+    return '';
+  }
+  const parts = [];
+  if (normalized.title) {
+    parts.push(normalized.title);
+  } else if (normalized.state) {
+    parts.push(operatorPaletteFacetLabel(normalized.state));
+  }
+  const nodeSummary = visualGraphReadinessNodeSummary(normalized);
+  if (nodeSummary) {
+    parts.push(nodeSummary);
+  }
+  if (normalized.artifactKinds.length) {
+    parts.push(`${normalized.artifactKinds.join('/')} artifact`);
+  }
+  return parts.join(' · ');
+}
+
+function visualGraphReadinessNodeSummary(readiness) {
+  const parts = [
+    readiness.runtimeExecutableNodeCount ? `${readiness.runtimeExecutableNodeCount} executable` : '',
+    readiness.designOnlyNodeCount ? `${readiness.designOnlyNodeCount} design-only` : '',
+    readiness.runtimeBlockedNodeCount ? `${readiness.runtimeBlockedNodeCount} runtime-blocked` : '',
+    readiness.governanceReviewNodeCount ? `${readiness.governanceReviewNodeCount} governance-review` : '',
+    readiness.draftRepairNodeCount ? `${readiness.draftRepairNodeCount} repair-required` : ''
+  ].filter(Boolean);
+  return parts.join(', ');
 }
 
 function normalizeDiagnostics(diagnostics) {
@@ -4130,7 +4208,8 @@ async function validateVisualDraft() {
     setVisualCheck(
       payload.valid ? 'Valid visual graph.' : 'Visual graph has errors.',
       visualCheckLevel(diagnostics, payload.valid),
-      diagnostics
+      diagnostics,
+      payload.readiness
     );
     $('output').textContent = pretty({ status: response.status, validation: payload });
   } catch (error) {
@@ -4224,7 +4303,8 @@ async function publishVisualDraft() {
     setVisualCheck(
       payload.published ? `Published ${publication.publicationId || ''}.` : 'Visual graph was not published.',
       visualCheckLevel(diagnostics, payload.published),
-      diagnostics
+      diagnostics,
+      publication.validation?.readiness
     );
     $('output').textContent = pretty({ status: response.status, publication: payload });
   } catch (error) {

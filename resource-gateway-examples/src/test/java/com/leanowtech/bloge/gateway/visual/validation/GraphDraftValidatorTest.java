@@ -162,7 +162,23 @@ class GraphDraftValidatorTest {
 
         assertThat(validResult.valid()).as(validResult.diagnostics().toString()).isTrue();
         assertThat(validResult.diagnostics()).isEmpty();
+        assertThat(validResult.readiness().schemaVersion()).isEqualTo(VisualGraphReadiness.SCHEMA_VERSION);
+        assertThat(validResult.readiness().state()).isEqualTo("design-only");
+        assertThat(validResult.readiness().executable()).isFalse();
+        assertThat(validResult.readiness().artifactKinds()).containsExactly("DESIGN");
+        assertThat(validResult.readiness().designOnlyNodeCount()).isEqualTo(1);
+        assertThat(validResult.readiness().nodes())
+                .singleElement()
+                .satisfies(node -> {
+                    assertThat(node.nodeId()).isEqualTo("eligibility");
+                    assertThat(node.operatorRef()).isEqualTo("risk:eligibility");
+                    assertThat(node.state()).isEqualTo("design-only");
+                    assertThat(node.title()).isEqualTo("Design-only operator");
+                });
         assertThat(invalidResult.valid()).isFalse();
+        assertThat(invalidResult.readiness().state()).isEqualTo("draft-repair-required");
+        assertThat(invalidResult.readiness().artifactKinds()).isEmpty();
+        assertThat(invalidResult.readiness().draftRepairNodeCount()).isEqualTo(1);
         assertThat(invalidResult.diagnostics())
                 .extracting("code", "target")
                 .contains(org.assertj.core.groups.Tuple.tuple(

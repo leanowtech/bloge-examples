@@ -91,6 +91,34 @@ class VisualGraphDraftControllerTest {
     }
 
     @Test
+    void validateReturnsGraphRuntimeReadiness() {
+        DefaultVisualOperatorCatalog catalog = eligibilityCatalog();
+        VisualGraphDraftController controller = controllerWithCatalog(catalog, null);
+        GraphDraft draft = withFingerprints(eligibilityDraft(graphInputSchema(
+                Map.of(
+                        "score", Map.of("type", "integer"),
+                        "amount", Map.of("type", "number")
+                )
+        )), catalog);
+
+        VisualValidationResult result = controller.validate(draft);
+
+        assertThat(result.valid()).isTrue();
+        assertThat(result.readiness().schemaVersion()).isEqualTo("bloge.visualGraphReadiness.v1");
+        assertThat(result.readiness().state()).isEqualTo("runtime-executable");
+        assertThat(result.readiness().executable()).isTrue();
+        assertThat(result.readiness().artifactKinds()).containsExactly("EXECUTABLE", "DESIGN");
+        assertThat(result.readiness().runtimeExecutableNodeCount()).isEqualTo(1);
+        assertThat(result.readiness().nodes())
+                .singleElement()
+                .satisfies(node -> {
+                    assertThat(node.nodeId()).isEqualTo("eligibility");
+                    assertThat(node.state()).isEqualTo("runtime-executable");
+                    assertThat(node.executable()).isTrue();
+                });
+    }
+
+    @Test
     void compileGeneratesDslAfterVisualValidationPasses() {
         DefaultVisualOperatorCatalog catalog = eligibilityCatalog();
         VisualGraphDraftController controller = controllerWithCatalog(catalog, null);
