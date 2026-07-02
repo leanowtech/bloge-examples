@@ -1043,6 +1043,7 @@ function renderInputForm() {
         <textarea id="resource-contract-json" class="library-editor resource-contract-editor" spellcheck="false"></textarea>
         <textarea id="resource-descriptor-json" class="library-editor resource-contract-editor" spellcheck="false"></textarea>
         <div id="resource-contract-status-message" class="library-status" hidden></div>
+        <div id="resource-contract-impact" class="library-impact-panel" hidden></div>
         <div id="resource-contract-diagnostics" class="visual-diagnostics"></div>
       </div>
       <div class="builder-panel">
@@ -2787,13 +2788,16 @@ function renderLibraryImpactPanel(target, diagnostics, impact = null) {
     ['Warnings', summary.warningCount],
     ['Drafts', summary.draftIds.length],
     ['Publications', summary.publicationIds.length],
+    ['Resources', summary.resourceIds?.length || 0],
     ['Operators', summary.operatorRefs.length]
-  ].map(([label, value]) => `
+  ].filter(([label, value]) => label !== 'Resources' || value > 0)
+    .map(([label, value]) => `
     <span><strong>${escapeHtml(value)}</strong>${escapeHtml(label)}</span>
   `).join('');
   const refs = [
     libraryImpactRefGroup('Drafts', summary.draftIds, 'draft', summary.draftTargets),
     libraryImpactRefGroup('Publications', summary.publicationIds),
+    libraryImpactRefGroup('Resources', summary.resourceIds || []),
     libraryImpactRefGroup('Operators', summary.operatorRefs)
   ].filter(Boolean).join('');
   const codes = summary.codeCounts.slice(0, 5).map((entry) => `
@@ -2844,6 +2848,7 @@ function libraryImpactSummaryFromPayload(impact) {
   const warningCount = Number(impact.warningCount) || 0;
   const draftIds = uniqueStrings(impact.draftIds).sort();
   const publicationIds = uniqueStrings(impact.publicationIds).sort();
+  const resourceIds = uniqueStrings(impact.resourceIds).sort();
   const operatorRefs = uniqueStrings(impact.operatorRefs).sort();
   const draftTargets = libraryImpactDraftTargetsFromPayload(impact);
   const codeCounts = Array.isArray(impact.codeCounts)
@@ -2866,6 +2871,7 @@ function libraryImpactSummaryFromPayload(impact) {
     infoCount: Number(impact.infoCount) || Math.max(0, diagnosticCount - errorCount - warningCount),
     draftIds,
     publicationIds,
+    resourceIds,
     operatorRefs,
     draftTargets,
     changeRiskCounts,
@@ -2891,6 +2897,7 @@ function libraryImpactSummary(diagnostics) {
   const draftIds = new Set();
   const draftTargets = [];
   const publicationIds = new Set();
+  const resourceIds = new Set();
   const operatorRefs = new Set();
   const codeCounts = new Map();
   const changeRiskCounts = new Map();
@@ -2917,6 +2924,7 @@ function libraryImpactSummary(diagnostics) {
     refs.draftIds.forEach((draftId) => draftIds.add(draftId));
     draftTargets.push(...refs.draftTargets);
     refs.publicationIds.forEach((publicationId) => publicationIds.add(publicationId));
+    refs.resourceIds.forEach((resourceId) => resourceIds.add(resourceId));
     refs.operatorRefs.forEach((operatorRef) => operatorRefs.add(operatorRef));
   }
   const codeEntries = Array.from(codeCounts.values())
@@ -2932,6 +2940,7 @@ function libraryImpactSummary(diagnostics) {
     infoCount: Math.max(0, normalized.length - errorCount - warningCount),
     draftIds: Array.from(draftIds).sort(),
     publicationIds: Array.from(publicationIds).sort(),
+    resourceIds: Array.from(resourceIds).sort(),
     operatorRefs: Array.from(operatorRefs).sort(),
     draftTargets: uniqueLibraryImpactDraftTargets(draftTargets),
     changeRiskCounts: riskEntries,
@@ -2980,6 +2989,15 @@ function operatorLibraryWarningAcknowledgementMessage(impact, diagnostics, actio
   return `${validationResultMessage(true, normalizeDiagnostics(diagnostics), 'Operator library is valid.')} ${warningReview}`;
 }
 
+function resourceContractWarningAcknowledgementMessage(impact, diagnostics, actionLabel = 'Save contract') {
+  const summary = libraryImpactSummaryFromPayload(impact) || libraryImpactSummary(diagnostics);
+  const risk = libraryImpactRiskSummaryText(summary);
+  const warningReview = risk
+    ? `${risk} Review warnings, then click ${actionLabel} again to continue.`
+    : `Review warnings, then click ${actionLabel} again to continue.`;
+  return `${validationResultMessage(true, normalizeDiagnostics(diagnostics), 'Resource contract is valid.')} ${warningReview}`;
+}
+
 function changeRiskRank(risk) {
   return {
     BREAKING_SCHEMA: 6,
@@ -3008,6 +3026,7 @@ function libraryImpactRefsFromDiagnostic(diagnostic) {
   const draftIds = [];
   const draftTargets = [];
   const publicationIds = [];
+  const resourceIds = [];
   const operatorRefs = [];
   if (segments[0] === 'drafts' && segments[1]) {
     draftIds.push(segments[1]);
@@ -3017,6 +3036,12 @@ function libraryImpactRefsFromDiagnostic(diagnostic) {
   }
   if (segments[0] === 'publications' && segments[1]) {
     publicationIds.push(segments[1]);
+  }
+  if (typeof diagnostic?.metadata?.resourceId === 'string' && diagnostic.metadata.resourceId.trim()) {
+    resourceIds.push(diagnostic.metadata.resourceId.trim());
+  }
+  if (typeof diagnostic?.metadata?.operatorRef === 'string' && diagnostic.metadata.operatorRef.trim()) {
+    operatorRefs.push(diagnostic.metadata.operatorRef.trim());
   }
   const message = String(diagnostic?.message || '');
   for (const match of message.matchAll(/operatorRef '([^']+)'/g)) {
@@ -3029,6 +3054,7 @@ function libraryImpactRefsFromDiagnostic(diagnostic) {
   return {
     draftIds,
     publicationIds,
+    resourceIds,
     operatorRefs,
     draftTargets
   };
@@ -3069,6 +3095,9 @@ function libraryImpactSummaryLabel(summary) {
   }
   if (summary.publicationIds.length) {
     parts.push(`${summary.publicationIds.length} ${summary.publicationIds.length === 1 ? 'publication' : 'publications'}`);
+  }
+  if (summary.resourceIds?.length) {
+    parts.push(`${summary.resourceIds.length} ${summary.resourceIds.length === 1 ? 'resource' : 'resources'}`);
   }
   if (summary.operatorRefs.length) {
     parts.push(`${summary.operatorRefs.length} ${summary.operatorRefs.length === 1 ? 'operator' : 'operators'}`);
@@ -4429,15 +4458,17 @@ function renderResourceContractImportStatus() {
   target.hidden = false;
   target.textContent = message;
   target.className = `library-status ${current.message?.level || 'info'}`;
+  const diagnostics = normalizeDiagnostics(current.message?.diagnostics);
+  renderLibraryImpactPanel($('resource-contract-impact'), diagnostics, current.message?.impact);
   renderDiagnosticList(
     $('resource-contract-diagnostics'),
-    normalizeDiagnostics(current.message?.diagnostics)
+    diagnostics
   );
 }
 
-function setResourceContractImportMessage(text, level = 'info', diagnostics = []) {
+function setResourceContractImportMessage(text, level = 'info', diagnostics = [], impact = null) {
   state.resourceContractImport.message = text
-    ? { text, level, diagnostics: normalizeDiagnostics(diagnostics) }
+    ? { text, level, diagnostics: normalizeDiagnostics(diagnostics), impact }
     : null;
   renderResourceContractImportStatus();
 }
@@ -4514,7 +4545,8 @@ async function previewOpenApiResourceContract() {
       setResourceContractImportMessage(
         validationResultMessage(payload?.validation?.valid, diagnostics, `OpenAPI preview failed with ${response.status}`),
         'error',
-        diagnostics
+        diagnostics,
+        payload?.validation?.impact
       );
       return;
     }
@@ -4530,7 +4562,8 @@ async function previewOpenApiResourceContract() {
         ? `Projected contract ${payload.contract.resourceId}. Review contract and descriptor drafts before saving.`
         : validationResultMessage(valid, diagnostics, 'OpenAPI projection completed.'),
       visualCheckLevel(diagnostics, valid),
-      diagnostics
+      diagnostics,
+      payload?.validation?.impact
     );
     $('output').textContent = pretty({ status: response.status, openApiContract: payload });
     renderResourceContractImportControls();
@@ -4549,7 +4582,8 @@ async function validateResourceContractPayload(contract) {
   return {
     response,
     payload,
-    diagnostics: normalizeDiagnostics(payload?.diagnostics)
+    diagnostics: normalizeDiagnostics(payload?.diagnostics),
+    impact: payload?.impact || null
   };
 }
 
@@ -4602,7 +4636,8 @@ async function saveOpenApiResourceContract() {
         `Validation failed with ${validation.response.status}`
       ),
       'error',
-      validation.diagnostics
+      validation.diagnostics,
+      validation.impact
     );
     return;
   }
@@ -4610,9 +4645,14 @@ async function saveOpenApiResourceContract() {
       && current.saveConfirmationKey !== confirmationKey) {
     current.saveConfirmationKey = confirmationKey;
     setResourceContractImportMessage(
-      `${validationResultMessage(true, validation.diagnostics, 'Resource contract is valid.')} Review warnings, then click Save contract again to continue.`,
+      resourceContractWarningAcknowledgementMessage(
+        validation.impact,
+        validation.diagnostics,
+        'Save contract'
+      ),
       'warning',
-      validation.diagnostics
+      validation.diagnostics,
+      validation.impact
     );
     return;
   }
@@ -4639,7 +4679,8 @@ async function saveOpenApiResourceContract() {
       setResourceContractImportMessage(
         validationResultMessage(payload?.valid, diagnostics, text || `Save failed with ${response.status}`),
         'error',
-        diagnostics
+        diagnostics,
+        payload?.impact
       );
       return;
     }

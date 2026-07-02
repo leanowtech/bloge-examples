@@ -811,11 +811,11 @@ operator catalog:
 |--------|------|-------------|--------|
 | `GET` | `/admin/resource-design-contracts` | List all visual resource contracts | 200 |
 | `GET` | `/admin/resource-design-contracts/{resourceId}` | Get one visual contract | 200 / 404 |
-| `POST` | `/admin/resource-design-contracts/validate` | Validate a visual resource contract without storing it; use `force=true` to suppress stored-draft disablement impact diagnostics; same-resource fingerprint drift is reported as a warning | 200 |
+| `POST` | `/admin/resource-design-contracts/validate` | Validate a visual resource contract without storing it and return `bloge.resourceDesignContractImpact.v1`; use `force=true` to suppress stored-draft disablement impact diagnostics; same-resource fingerprint drift is reported as a warning with changed-surface risk counts | 200 |
 | `POST` | `/admin/resource-design-contracts/from-openapi/operations` | Discover HTTP operations from parsed `openApi` or raw JSON/YAML `openApiText` before selecting one for projection; returns path, method, operationId, tags, request/response media summaries, projection readiness, and structured diagnostics without storing anything | 200 |
-| `POST` | `/admin/resource-design-contracts/from-openapi` | Project one OpenAPI operation from parsed `openApi` or raw JSON/YAML `openApiText` into a visual resource contract draft and reviewable runtime descriptor suggestion without storing either; returns the draft plus the same structured validation diagnostics | 200 |
-| `PUT` | `/admin/resource-design-contracts/{resourceId}` | Create or replace a visual contract; rejects disablement of stored-draft `resource:<resourceId>` references unless `force=true`, and requires `ackWarnings=true` before storing warning-level fingerprint drift | 200 / 400 / 409 |
-| `DELETE` | `/admin/resource-design-contracts/{resourceId}` | Delete a visual contract; rejects stored-draft `resource:<resourceId>` references unless `force=true` | 204 / 409 |
+| `POST` | `/admin/resource-design-contracts/from-openapi` | Project one OpenAPI operation from parsed `openApi` or raw JSON/YAML `openApiText` into a visual resource contract draft and reviewable runtime descriptor suggestion without storing either; returns the draft plus structured validation diagnostics and `bloge.resourceDesignContractImpact.v1` | 200 |
+| `PUT` | `/admin/resource-design-contracts/{resourceId}` | Create or replace a visual contract; warning/error responses include `bloge.resourceDesignContractImpact.v1`, reject disablement of stored-draft `resource:<resourceId>` references unless `force=true`, and require `ackWarnings=true` before storing warning-level lifecycle or fingerprint drift | 200 / 400 / 409 |
+| `DELETE` | `/admin/resource-design-contracts/{resourceId}` | Delete a visual contract; rejects stored-draft `resource:<resourceId>` references unless `force=true`, returning `bloge.resourceDesignContractImpact.v1` on conflict | 204 / 409 |
 
 Validate and upsert run the same resource-contract validator before storage.
 The OpenAPI operation discovery and projection endpoints accept either a parsed OpenAPI 3 document in
@@ -901,7 +901,15 @@ a concise changed-surface summary such as the affected input/output/config
 schema, capability, policy, or lowering area, and warns when an affected legacy
 draft lacks a saved node fingerprint snapshot. Direct replacement requires
 `ackWarnings=true` before warning-level drift is stored; the browser OpenAPI
-panel mirrors this with a second Save click after warnings are shown.
+panel mirrors this with a second Save click after warnings are shown, renders
+the server-provided impact review, and uses its change-risk summary in the
+acknowledgement copy.
+Resource contract preflight responses also carry
+`bloge.resourceDesignContractImpact.v1`, with affected resource ids,
+`resource:<resourceId>` operator refs, stored draft ids, draft node targets,
+diagnostic code counts, and `changeRiskCounts` derived from the same
+`BREAKING_SCHEMA` / `COMPATIBLE_SCHEMA` / `RUNTIME_BINDING` / `GOVERNANCE` /
+`POLICY` / `METADATA` categories used by imported operator libraries.
 
 User-provided visual operator libraries are imported through a separate admin API.
 Imported operators join the same `/api/visual/operators` catalog as built-ins and

@@ -12,7 +12,7 @@ import com.leanowtech.bloge.gateway.visual.validation.VisualValidationResult;
  */
 public record OpenApiResourceDesignContractImportResult(
         ResourceDesignContract contract,
-        VisualValidationResult validation,
+        ResourceDesignContractValidationResult validation,
         ResourceDescriptor descriptorSuggestion
 ) {
     /**
@@ -21,5 +21,14 @@ public record OpenApiResourceDesignContractImportResult(
     public OpenApiResourceDesignContractImportResult(ResourceDesignContract contract,
                                                     VisualValidationResult validation) {
         this(contract, validation, null);
+    }
+
+    /**
+     * Backward-compatible constructor for callers that still produce generic validation results.
+     */
+    public OpenApiResourceDesignContractImportResult(ResourceDesignContract contract,
+                                                    VisualValidationResult validation,
+                                                    ResourceDescriptor descriptorSuggestion) {
+        this(contract, ResourceDesignContractValidationResult.from(validation), descriptorSuggestion);
     }
 }

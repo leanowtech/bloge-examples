@@ -94,6 +94,12 @@ class ResourceDesignContractAdminControllerTest {
                 .andExpect(jsonPath("$.validation.diagnostics[0].level").value("WARNING"))
                 .andExpect(jsonPath("$.validation.diagnostics[0].code")
                         .value("visual.resourceContract.openapi.descriptorDiff"))
+                .andExpect(jsonPath("$.validation.impact.schemaVersion")
+                        .value(ResourceDesignContractImpactReview.SCHEMA_VERSION))
+                .andExpect(jsonPath("$.validation.impact.warningCount").value(1))
+                .andExpect(jsonPath("$.validation.impact.resourceIds[0]").value("order-service.listOrders"))
+                .andExpect(jsonPath("$.validation.impact.operatorRefs[0]")
+                        .value("resource:order-service.listOrders"))
                 .andExpect(jsonPath("$.contract.resourceId").value("order-service.listOrders"))
                 .andExpect(jsonPath("$.contract.displayName").value("List orders"))
                 .andExpect(jsonPath("$.contract.requestSchema.schema.required[0]").value("userId"))
@@ -360,7 +366,17 @@ class ResourceDesignContractAdminControllerTest {
                 .andExpect(jsonPath("$.diagnostics[0].target").value("/drafts/draft-1/nodes/0/operatorRef"))
                 .andExpect(jsonPath("$.diagnostics[0].metadata.resourceId").value("order-service.listOrders"))
                 .andExpect(jsonPath("$.diagnostics[0].metadata.previousStatus").value("ACTIVE"))
-                .andExpect(jsonPath("$.diagnostics[0].metadata.contractStatus").value("DEPRECATED"));
+                .andExpect(jsonPath("$.diagnostics[0].metadata.contractStatus").value("DEPRECATED"))
+                .andExpect(jsonPath("$.impact.schemaVersion")
+                        .value(ResourceDesignContractImpactReview.SCHEMA_VERSION))
+                .andExpect(jsonPath("$.impact.warningCount").value(1))
+                .andExpect(jsonPath("$.impact.resourceIds[0]").value("order-service.listOrders"))
+                .andExpect(jsonPath("$.impact.operatorRefs[0]").value("resource:order-service.listOrders"))
+                .andExpect(jsonPath("$.impact.draftIds[0]").value("draft-1"))
+                .andExpect(jsonPath("$.impact.draftTargets[0].draftId").value("draft-1"))
+                .andExpect(jsonPath("$.impact.draftTargets[0].nodeIndex").value(0))
+                .andExpect(jsonPath("$.impact.codeCounts[0].code")
+                        .value("visual.resourceContract.lifecycle.deprecated"));
 
         assertThat(registry.findByResourceId("order-service.listOrders")).contains(original);
     }
@@ -418,7 +434,13 @@ class ResourceDesignContractAdminControllerTest {
                 .andExpect(jsonPath("$.diagnostics[0].message")
                         .value(org.hamcrest.Matchers.containsString(
                                 "changed surface: output port 'payload' schema changed")))
-                .andExpect(jsonPath("$.diagnostics[0].target").value("/drafts/draft-1/nodes/0/operatorRef"));
+                .andExpect(jsonPath("$.diagnostics[0].target").value("/drafts/draft-1/nodes/0/operatorRef"))
+                .andExpect(jsonPath("$.diagnostics[0].metadata.changeRisk").value("BREAKING_SCHEMA"))
+                .andExpect(jsonPath("$.diagnostics[0].metadata.changeCategories[0]").value("BREAKING_SCHEMA"))
+                .andExpect(jsonPath("$.diagnostics[0].metadata.resourceId").value("order-service.listOrders"))
+                .andExpect(jsonPath("$.impact.changeRiskCounts[0].risk").value("BREAKING_SCHEMA"))
+                .andExpect(jsonPath("$.impact.changeRiskCounts[0].count").value(1))
+                .andExpect(jsonPath("$.impact.operatorRefs[0]").value("resource:order-service.listOrders"));
 
         assertThat(replacementFingerprint).isNotEqualTo(originalFingerprint);
         assertThat(registry.findByResourceId("order-service.listOrders")).contains(original);
@@ -441,7 +463,9 @@ class ResourceDesignContractAdminControllerTest {
                         .value("visual.resourceContract.operatorFingerprintSnapshotMissing"))
                 .andExpect(jsonPath("$.diagnostics[0].message").value(
                         "Resource design contract 'order-service.listOrders' changes operatorRef 'resource:order-service.listOrders' used by draft 'draft-1@1' node 'orders', but the draft has no saved operator fingerprint; review and resave the draft before execution."))
-                .andExpect(jsonPath("$.diagnostics[0].target").value("/drafts/draft-1/nodes/0/operatorRef"));
+                .andExpect(jsonPath("$.diagnostics[0].target").value("/drafts/draft-1/nodes/0/operatorRef"))
+                .andExpect(jsonPath("$.diagnostics[0].metadata.changeRisk").value("BREAKING_SCHEMA"))
+                .andExpect(jsonPath("$.impact.changeRiskCounts[0].risk").value("BREAKING_SCHEMA"));
 
         assertThat(registry.findByResourceId("order-service.listOrders")).contains(original);
     }
@@ -510,7 +534,12 @@ class ResourceDesignContractAdminControllerTest {
                 .andExpect(status().isConflict())
                 .andExpect(jsonPath("$.valid").value(false))
                 .andExpect(jsonPath("$.diagnostics[0].code").value("visual.resourceContract.inUse"))
-                .andExpect(jsonPath("$.diagnostics[0].target").value("/drafts/draft-1/nodes/0/operatorRef"));
+                .andExpect(jsonPath("$.diagnostics[0].target").value("/drafts/draft-1/nodes/0/operatorRef"))
+                .andExpect(jsonPath("$.impact.errorCount").value(1))
+                .andExpect(jsonPath("$.impact.resourceIds[0]").value("order-service.listOrders"))
+                .andExpect(jsonPath("$.impact.operatorRefs[0]").value("resource:order-service.listOrders"))
+                .andExpect(jsonPath("$.impact.draftTargets[0].nodeIndex").value(0))
+                .andExpect(jsonPath("$.impact.codeCounts[0].code").value("visual.resourceContract.inUse"));
 
         assertThat(registry.findByResourceId("order-service.listOrders")).contains(contract);
     }

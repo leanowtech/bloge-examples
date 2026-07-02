@@ -94,8 +94,8 @@ public class ResourceDesignContractAdminController {
      * @return structured validation diagnostics
      */
     @PostMapping("/validate")
-    public VisualValidationResult validate(@RequestBody ResourceDesignContract contract,
-                                           @RequestParam(defaultValue = "false") boolean force) {
+    public ResourceDesignContractValidationResult validate(@RequestBody ResourceDesignContract contract,
+                                                           @RequestParam(defaultValue = "false") boolean force) {
         return validateAgainstRegistry(contract, force);
     }
 
@@ -121,7 +121,7 @@ public class ResourceDesignContractAdminController {
         }
         return new OpenApiResourceDesignContractImportResult(
                 importResult.contract(),
-                new VisualValidationResult(false, diagnostics),
+                ResourceDesignContractValidationResult.from(importResult.contract(), diagnostics),
                 importResult.descriptorSuggestion()
         );
     }
@@ -216,7 +216,7 @@ public class ResourceDesignContractAdminController {
                                     @RequestBody ResourceDesignContract contract,
                                     @RequestParam(defaultValue = "false") boolean force,
                                     @RequestParam(defaultValue = "false") boolean ackWarnings) {
-        VisualValidationResult validation = validateAgainstRegistry(contract, force);
+        ResourceDesignContractValidationResult validation = validateAgainstRegistry(contract, force);
         if (!validation.valid()) {
             return ResponseEntity.status(validationFailureStatus(validation)).body(validation);
         }
@@ -224,7 +224,8 @@ public class ResourceDesignContractAdminController {
             throw new IllegalArgumentException("Path resourceId '%s' does not match body resourceId '%s'"
                     .formatted(resourceId, contract.resourceId()));
         }
-        ResponseEntity<VisualValidationResult> warningGate = warningAcknowledgementResponse(validation, ackWarnings);
+        ResponseEntity<ResourceDesignContractValidationResult> warningGate = warningAcknowledgementResponse(
+                validation, ackWarnings);
         if (warningGate != null) {
             return warningGate;
         }
@@ -245,14 +246,15 @@ public class ResourceDesignContractAdminController {
             List<VisualDiagnostic> diagnostics = storedDraftReferenceDiagnostics(resourceId, "deleted");
             if (!diagnostics.isEmpty()) {
                 return ResponseEntity.status(HttpStatus.CONFLICT)
-                        .body(new VisualValidationResult(false, diagnostics));
+                        .body(validationResult(registry.findByResourceId(resourceId).orElse(null), diagnostics));
             }
         }
         registry.deleteByResourceId(resourceId);
         return ResponseEntity.noContent().build();
     }
 
-    private VisualValidationResult validateAgainstRegistry(ResourceDesignContract contract, boolean force) {
+    private ResourceDesignContractValidationResult validateAgainstRegistry(ResourceDesignContract contract,
+                                                                          boolean force) {
         VisualValidationResult structural = validator.validate(contract);
         List<VisualDiagnostic> diagnostics = new ArrayList<>(structural.diagnostics());
         diagnostics.addAll(deprecationImpactDiagnostics(contract));
@@ -260,18 +262,18 @@ public class ResourceDesignContractAdminController {
         if (!force) {
             diagnostics.addAll(disablementImpactDiagnostics(contract));
         }
-        return new VisualValidationResult(false, diagnostics);
+        return validationResult(contract, diagnostics);
     }
 
-    private static HttpStatus validationFailureStatus(VisualValidationResult validation) {
+    private static HttpStatus validationFailureStatus(ResourceDesignContractValidationResult validation) {
         return validation.diagnostics().stream()
                 .anyMatch(diagnostic -> "visual.resourceContract.inUse".equals(diagnostic.code()))
                 ? HttpStatus.CONFLICT
                 : HttpStatus.BAD_REQUEST;
     }
 
-    private static ResponseEntity<VisualValidationResult> warningAcknowledgementResponse(
-            VisualValidationResult validation,
+    private static ResponseEntity<ResourceDesignContractValidationResult> warningAcknowledgementResponse(
+            ResourceDesignContractValidationResult validation,
             boolean ackWarnings) {
         if (ackWarnings || validation.diagnostics().stream()
                 .noneMatch(diagnostic -> "WARNING".equalsIgnoreCase(diagnostic.level()))) {
@@ -356,13 +358,16 @@ public class ResourceDesignContractAdminController {
                 if (!operatorRef.equals(node.operatorRef())) {
                     continue;
                 }
+                OperatorDefinitionChangeSummary.ChangeReport report = OperatorDefinitionChangeSummary.analyze(
+                        previousOperator, replacementOperator);
                 String savedFingerprint = draft.operatorFingerprints().get(node.id());
                 if (savedFingerprint == null || savedFingerprint.isBlank()) {
                     diagnostics.add(VisualDiagnostic.warning("visual.resourceContract.operatorFingerprintSnapshotMissing",
                             "Resource design contract '%s' changes operatorRef '%s' used by draft '%s@%d' node '%s', but the draft has no saved operator fingerprint; review and resave the draft before execution."
                                     .formatted(replacement.resourceId(), operatorRef, draft.draftId(),
                                             draft.revision(), node.id()),
-                            "/drafts/%s/nodes/%d/operatorRef".formatted(draft.draftId(), i)));
+                            "/drafts/%s/nodes/%d/operatorRef".formatted(draft.draftId(), i),
+                            changeMetadata(replacement, operatorRef, node.id(), report)));
                     continue;
                 }
                 if (savedFingerprint.equals(replacementOperator.fingerprint())) {
@@ -373,12 +378,31 @@ public class ResourceDesignContractAdminController {
                                 .formatted(replacement.resourceId(), operatorRef, draft.draftId(),
                                         draft.revision(), node.id(), savedFingerprint,
                                         replacementOperator.fingerprint(),
-                                        OperatorDefinitionChangeSummary.describe(previousOperator,
-                                                replacementOperator)),
-                        "/drafts/%s/nodes/%d/operatorRef".formatted(draft.draftId(), i)));
+                                        report.summary()),
+                        "/drafts/%s/nodes/%d/operatorRef".formatted(draft.draftId(), i),
+                        changeMetadata(replacement, operatorRef, node.id(), report)));
             }
         }
         return diagnostics;
+    }
+
+    private static Map<String, Object> changeMetadata(ResourceDesignContract replacement,
+                                                      String operatorRef,
+                                                      String nodeId,
+                                                      OperatorDefinitionChangeSummary.ChangeReport report) {
+        Map<String, Object> metadata = new LinkedHashMap<>();
+        metadata.put("resourceId", replacement.resourceId());
+        metadata.put("contractId", replacement.contractId());
+        metadata.put("operatorRef", operatorRef);
+        if (nodeId != null && !nodeId.isBlank()) {
+            metadata.put("nodeId", nodeId);
+        }
+        if (report != null) {
+            metadata.put("changeRisk", report.risk());
+            metadata.put("changeCategories", report.categories());
+            metadata.put("changeSummary", report.summary());
+        }
+        return metadata;
     }
 
     private List<VisualDiagnostic> storedDraftReferenceDiagnostics(String resourceId, String action) {
@@ -399,13 +423,19 @@ public class ResourceDesignContractAdminController {
         return diagnostics;
     }
 
+    private static ResourceDesignContractValidationResult validationResult(ResourceDesignContract contract,
+                                                                           List<VisualDiagnostic> diagnostics) {
+        return ResourceDesignContractValidationResult.from(contract, diagnostics);
+    }
+
     /**
      * @param ex invalid contract payload
      * @return structured 400 response
      */
     @ExceptionHandler(HttpMessageNotReadableException.class)
-    public ResponseEntity<VisualValidationResult> handleUnreadablePayload(HttpMessageNotReadableException ex) {
-        return ResponseEntity.badRequest().body(new VisualValidationResult(false, List.of(
+    public ResponseEntity<ResourceDesignContractValidationResult> handleUnreadablePayload(
+            HttpMessageNotReadableException ex) {
+        return ResponseEntity.badRequest().body(validationResult(null, List.of(
                 VisualDiagnostic.error("visual.resourceContract.unreadable",
                         ex.getMostSpecificCause().getMessage(),
                         "/")
@@ -417,8 +447,8 @@ public class ResourceDesignContractAdminController {
      * @return structured 400 response
      */
     @ExceptionHandler(IllegalArgumentException.class)
-    public ResponseEntity<VisualValidationResult> handleBadRequest(IllegalArgumentException ex) {
-        return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(new VisualValidationResult(false, List.of(
+    public ResponseEntity<ResourceDesignContractValidationResult> handleBadRequest(IllegalArgumentException ex) {
+        return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(validationResult(null, List.of(
                 VisualDiagnostic.error("visual.resourceContract.invalid", ex.getMessage(), "/")
         )));
     }

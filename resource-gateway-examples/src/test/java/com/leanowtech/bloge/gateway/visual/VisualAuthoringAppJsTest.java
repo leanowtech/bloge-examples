@@ -88,11 +88,16 @@ class VisualAuthoringAppJsTest {
                 .contains("/admin/resource-design-contracts/from-openapi/operations")
                 .contains("id=\"resource-contract-operation-select\"")
                 .contains("id=\"resource-operation-summary\"")
+                .contains("id=\"resource-contract-impact\"")
                 .contains("function renderOpenApiOperationSummary(operations, current)")
                 .contains("function openApiOperationStatusMessage(operation)")
                 .contains("function resourceContractSaveConfirmationKey(contract, diagnostics = [])")
+                .contains("function resourceContractWarningAcknowledgementMessage(impact, diagnostics, actionLabel = 'Save contract')")
+                .contains("renderLibraryImpactPanel($('resource-contract-impact'), diagnostics, current.message?.impact)")
                 .contains("current.saveConfirmationKey !== confirmationKey")
-                .contains("Review warnings, then click Save contract again to continue.")
+                .contains("Review warnings, then click ${actionLabel} again to continue.")
+                .contains("payload?.validation?.impact")
+                .contains("validation.impact")
                 .contains("resourceContractMutationQuery(hasWarningDiagnostic(validation.diagnostics))")
                 .contains("return ackWarnings ? '?ackWarnings=true' : '';");
     }
@@ -2087,6 +2092,47 @@ class VisualAuthoringAppJsTest {
                     { risk: 'BREAKING_SCHEMA', count: 1 }
                   ]
                 }, libraryImpactDiagnostics, 'Import');
+                const resourceImpactFromPayload = context.libraryImpactSummaryFromPayload({
+                  schemaVersion: 'bloge.resourceDesignContractImpact.v1',
+                  diagnosticCount: 2,
+                  errorCount: 0,
+                  warningCount: 2,
+                  resourceIds: ['order-service.listOrders', 'order-service.listOrders'],
+                  operatorRefs: ['resource:order-service.listOrders'],
+                  draftIds: ['draft-orders'],
+                  draftTargets: [{ draftId: 'draft-orders', nodeIndex: 3 }],
+                  codeCounts: [
+                    { code: 'visual.resourceContract.operatorFingerprintDrift', level: 'WARNING', count: 1 },
+                    { code: 'visual.resourceContract.lifecycle.deprecated', level: 'WARNING', count: 1 }
+                  ],
+                  changeRiskCounts: [
+                    { risk: 'BREAKING_SCHEMA', count: 1 }
+                  ]
+                });
+                const resourceImpactDiagnostics = [
+                  {
+                    level: 'WARNING',
+                    code: 'visual.resourceContract.operatorFingerprintDrift',
+                    target: '/drafts/draft-orders/nodes/3/operatorRef',
+                    message: "Resource design contract 'order-service.listOrders' changes operatorRef 'resource:order-service.listOrders' used by draft 'draft-orders@2' node 'orders' from saved fingerprint 'old' to 'new'; changed surface: output schema changed.",
+                    metadata: {
+                      resourceId: 'order-service.listOrders',
+                      operatorRef: 'resource:order-service.listOrders',
+                      changeRisk: 'BREAKING_SCHEMA'
+                    }
+                  }
+                ];
+                const resourceImpactFromDiagnostics = context.libraryImpactSummary(resourceImpactDiagnostics);
+                const resourceWarningAcknowledgement = context.resourceContractWarningAcknowledgementMessage(
+                  resourceImpactFromPayload,
+                  resourceImpactDiagnostics,
+                  'Save contract'
+                );
+                const resourceImpactPanel = (() => {
+                  const target = { hidden: false, innerHTML: '', className: '' };
+                  context.renderLibraryImpactPanel(target, resourceImpactDiagnostics, resourceImpactFromPayload);
+                  return target;
+                })();
                 const libraryImpactPanel = (() => {
                   const target = { hidden: false, innerHTML: '', className: '' };
                   context.renderLibraryImpactPanel(target, libraryImpactDiagnostics, {
@@ -2724,6 +2770,18 @@ class VisualAuthoringAppJsTest {
                   ['library impact panel includes risk label', String(libraryImpactPanel.innerHTML.includes('Runtime Binding')), 'true'],
                   ['library impact panel includes risk summary', String(libraryImpactPanel.innerHTML.includes('Runtime binding change')), 'true'],
                   ['library impact draft group action', String(libraryImpactDraftGroup.includes('data-library-impact-draft="draft-risk"')), 'true'],
+                  ['resource payload impact resources deduped', resourceImpactFromPayload.resourceIds.join('|'), 'order-service.listOrders'],
+                  ['resource payload impact operators', resourceImpactFromPayload.operatorRefs.join('|'), 'resource:order-service.listOrders'],
+                  ['resource payload impact draft target', resourceImpactFromPayload.draftTargets[0].nodeIndex, 3],
+                  ['resource diagnostic impact resources', resourceImpactFromDiagnostics.resourceIds.join('|'), 'order-service.listOrders'],
+                  ['resource diagnostic impact risk', resourceImpactFromDiagnostics.changeRiskCounts[0].risk, 'BREAKING_SCHEMA'],
+                  ['resource warning acknowledgement risk', String(resourceWarningAcknowledgement.includes('Breaking schema change')), 'true'],
+                  ['resource warning acknowledgement click', String(resourceWarningAcknowledgement.includes('click Save contract again')), 'true'],
+                  ['resource impact panel visible', resourceImpactPanel.hidden, false],
+                  ['resource impact panel level', resourceImpactPanel.className, 'library-impact-panel warning'],
+                  ['resource impact panel includes resource', String(resourceImpactPanel.innerHTML.includes('order-service.listOrders')), 'true'],
+                  ['resource impact panel includes resource code', String(resourceImpactPanel.innerHTML.includes('visual.resourceContract.operatorFingerprintDrift')), 'true'],
+                  ['resource impact panel includes node index', String(resourceImpactPanel.innerHTML.includes('data-library-impact-node-index="3"')), 'true'],
                   ['full output contract type', fullOutputContract.type, 'object'],
                   ['full output contract fields', fullOutputContract.fieldCount, 4],
                   ['full output contract required', fullOutputContract.requiredCount, 2],

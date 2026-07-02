@@ -1097,6 +1097,43 @@ diagnostic code counts，并在 same-ref replacement drift 时返回
 浏览器确认写入前应优先展示这个风险分类，而不是只显示 generic warning，
 让作者能区分“可审阅后 rebase 的兼容增长”和“需要修图/治理复核的破坏性变化”。
 
+Resource design contract 也有对应的
+`bloge.resourceDesignContractImpact.v1`。`POST
+/admin/resource-design-contracts/validate`、OpenAPI preview、warning-gated
+upsert 和 delete conflict 响应会在原有 `valid/diagnostics` 旁返回：
+
+```json
+{
+  "valid": true,
+  "impact": {
+    "schemaVersion": "bloge.resourceDesignContractImpact.v1",
+    "diagnosticCount": 1,
+    "warningCount": 1,
+    "resourceIds": ["order-service.listOrders"],
+    "operatorRefs": ["resource:order-service.listOrders"],
+    "draftIds": ["draft-1"],
+    "draftTargets": [{ "draftId": "draft-1", "nodeIndex": 0 }],
+    "changeRiskCounts": [{ "risk": "BREAKING_SCHEMA", "count": 1 }],
+    "codeCounts": [
+      { "code": "visual.resourceContract.operatorFingerprintDrift", "level": "WARNING", "count": 1 }
+    ]
+  },
+  "diagnostics": [
+    {
+      "level": "WARNING",
+      "code": "visual.resourceContract.operatorFingerprintDrift",
+      "target": "/drafts/draft-1/nodes/0/operatorRef"
+    }
+  ]
+}
+```
+
+这个合同用于让 resource-backed 虚拟算子的 schema drift、lifecycle
+downgrade、disable/delete impact 和 OpenAPI re-import preview 与用户算子库
+具备同等的机器可审阅能力。当前浏览器 OpenAPI Resource Contract 面板会渲染该
+impact review，并在 warning-gated Save Contract 二次确认文案中使用
+`changeRiskCounts`。旧客户端仍可只读取 `valid/diagnostics`。
+
 MVP 至少阻断：
 
 - 空 operator library。
