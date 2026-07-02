@@ -221,7 +221,9 @@ public class ResourceDesignContractAdminController {
     public ResponseEntity<?> upsert(@PathVariable String resourceId,
                                     @RequestBody ResourceDesignContract contract,
                                     @RequestParam(defaultValue = "false") boolean force,
-                                    @RequestParam(defaultValue = "false") boolean ackWarnings) {
+                                    @RequestParam(defaultValue = "false") boolean ackWarnings,
+                                    @RequestParam(defaultValue = "") String actor,
+                                    @RequestParam(defaultValue = "") String reason) {
         ResourceDesignContractValidationResult validation = validateAgainstRegistry(contract, force);
         if (!validation.valid()) {
             return ResponseEntity.status(validationFailureStatus(validation)).body(validation);
@@ -229,6 +231,12 @@ public class ResourceDesignContractAdminController {
         if (!resourceId.equals(contract.resourceId())) {
             throw new IllegalArgumentException("Path resourceId '%s' does not match body resourceId '%s'"
                     .formatted(resourceId, contract.resourceId()));
+        }
+        List<VisualDiagnostic> governanceEvidence = governanceEvidenceDiagnostics(
+                contract.resourceId(), force, ackWarnings, actor, reason);
+        if (!governanceEvidence.isEmpty()) {
+            return ResponseEntity.status(HttpStatus.BAD_REQUEST)
+                    .body(validationResult(contract, governanceEvidence));
         }
         ResponseEntity<ResourceDesignContractValidationResult> warningGate = warningAcknowledgementResponse(
                 validation, ackWarnings);
@@ -247,7 +255,9 @@ public class ResourceDesignContractAdminController {
      */
     @DeleteMapping("/{resourceId:.+}")
     public ResponseEntity<?> delete(@PathVariable String resourceId,
-                                    @RequestParam(defaultValue = "false") boolean force) {
+                                    @RequestParam(defaultValue = "false") boolean force,
+                                    @RequestParam(defaultValue = "") String actor,
+                                    @RequestParam(defaultValue = "") String reason) {
         if (!force && registry.findByResourceId(resourceId).isPresent()) {
             List<VisualDiagnostic> diagnostics = new ArrayList<>();
             diagnostics.addAll(storedDraftReferenceDiagnostics(resourceId, "deleted"));
@@ -257,8 +267,54 @@ public class ResourceDesignContractAdminController {
                         .body(validationResult(registry.findByResourceId(resourceId).orElse(null), diagnostics));
             }
         }
+        List<VisualDiagnostic> governanceEvidence = governanceEvidenceDiagnostics(
+                resourceId, force, false, actor, reason);
+        if (!governanceEvidence.isEmpty()) {
+            return ResponseEntity.status(HttpStatus.BAD_REQUEST)
+                    .body(validationResult(registry.findByResourceId(resourceId).orElse(null), governanceEvidence));
+        }
         registry.deleteByResourceId(resourceId);
         return ResponseEntity.noContent().build();
+    }
+
+    private static List<VisualDiagnostic> governanceEvidenceDiagnostics(String resourceId,
+                                                                        boolean force,
+                                                                        boolean ackWarnings,
+                                                                        String actor,
+                                                                        String reason) {
+        if (!force && !ackWarnings) {
+            return List.of();
+        }
+        Map<String, Object> metadata = new LinkedHashMap<>();
+        metadata.put("requiredFor", requiredFor(force, ackWarnings));
+        metadata.put("resourceId", resourceId == null ? "" : resourceId);
+        List<VisualDiagnostic> diagnostics = new ArrayList<>();
+        if (actor == null || actor.isBlank()) {
+            diagnostics.add(VisualDiagnostic.error(
+                    "visual.resourceContract.governanceEvidenceMissing",
+                    "Resource design contract high-risk mutation requires actor.",
+                    "/actor",
+                    metadata));
+        }
+        if (reason == null || reason.isBlank()) {
+            diagnostics.add(VisualDiagnostic.error(
+                    "visual.resourceContract.governanceEvidenceMissing",
+                    "Resource design contract high-risk mutation requires reason.",
+                    "/reason",
+                    metadata));
+        }
+        return diagnostics;
+    }
+
+    private static List<String> requiredFor(boolean force, boolean ackWarnings) {
+        List<String> requiredFor = new ArrayList<>();
+        if (force) {
+            requiredFor.add("force");
+        }
+        if (ackWarnings) {
+            requiredFor.add("ackWarnings");
+        }
+        return List.copyOf(requiredFor);
     }
 
     private ResourceDesignContractValidationResult validateAgainstRegistry(ResourceDesignContract contract,

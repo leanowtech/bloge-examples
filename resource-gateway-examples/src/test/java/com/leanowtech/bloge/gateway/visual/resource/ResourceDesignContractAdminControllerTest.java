@@ -308,6 +308,8 @@ class ResourceDesignContractAdminControllerTest {
 
         mockMvc.perform(put("/admin/resource-design-contracts/order-service.listOrders")
                         .param("force", "true")
+                        .param("actor", "resource-admin")
+                        .param("reason", "Stored-draft reference was reviewed before disabling the contract.")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(disabled)))
                 .andExpect(status().isOk())
@@ -348,6 +350,30 @@ class ResourceDesignContractAdminControllerTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.valid").value(true))
                 .andExpect(jsonPath("$.diagnostics").isEmpty());
+
+        assertThat(registry.findByResourceId("order-service.listOrders")).contains(original);
+    }
+
+    @Test
+    void upsertForceRequiresGovernanceEvidenceBeforeMutation() throws Exception {
+        ResourceDesignContract original = validContract(Map.of());
+        ResourceDesignContract disabled = validContract(Map.of(), ResourceDesignContract.STATUS_DISABLED);
+        registry.upsert(original);
+        drafts.save(draftUsingResource("order-service.listOrders"));
+
+        mockMvc.perform(put("/admin/resource-design-contracts/order-service.listOrders")
+                        .param("force", "true")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(disabled)))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.valid").value(false))
+                .andExpect(jsonPath("$.diagnostics[*].code")
+                        .value(org.hamcrest.Matchers.everyItem(
+                                org.hamcrest.Matchers.is("visual.resourceContract.governanceEvidenceMissing"))))
+                .andExpect(jsonPath("$.diagnostics[*].target")
+                        .value(org.hamcrest.Matchers.hasItems("/actor", "/reason")))
+                .andExpect(jsonPath("$.diagnostics[0].metadata.requiredFor[0]").value("force"))
+                .andExpect(jsonPath("$.diagnostics[0].metadata.resourceId").value("order-service.listOrders"));
 
         assertThat(registry.findByResourceId("order-service.listOrders")).contains(original);
     }
@@ -439,12 +465,38 @@ class ResourceDesignContractAdminControllerTest {
 
         mockMvc.perform(put("/admin/resource-design-contracts/order-service.listOrders")
                         .param("ackWarnings", "true")
+                        .param("actor", "resource-admin")
+                        .param("reason", "Draft references were reviewed before deprecating the contract.")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(deprecated)))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.status").value("DEPRECATED"));
 
         assertThat(registry.findByResourceId("order-service.listOrders")).contains(deprecated);
+    }
+
+    @Test
+    void upsertRequiresGovernanceEvidenceWhenWarningsAreAcknowledged() throws Exception {
+        ResourceDesignContract original = validContract(Map.of());
+        ResourceDesignContract deprecated = validContract(Map.of(), ResourceDesignContract.STATUS_DEPRECATED);
+        registry.upsert(original);
+        drafts.save(draftUsingResource("order-service.listOrders"));
+
+        mockMvc.perform(put("/admin/resource-design-contracts/order-service.listOrders")
+                        .param("ackWarnings", "true")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(deprecated)))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.valid").value(false))
+                .andExpect(jsonPath("$.diagnostics[*].code")
+                        .value(org.hamcrest.Matchers.everyItem(
+                                org.hamcrest.Matchers.is("visual.resourceContract.governanceEvidenceMissing"))))
+                .andExpect(jsonPath("$.diagnostics[*].target")
+                        .value(org.hamcrest.Matchers.hasItems("/actor", "/reason")))
+                .andExpect(jsonPath("$.diagnostics[0].metadata.requiredFor[0]").value("ackWarnings"))
+                .andExpect(jsonPath("$.diagnostics[0].metadata.resourceId").value("order-service.listOrders"));
+
+        assertThat(registry.findByResourceId("order-service.listOrders")).contains(original);
     }
 
     @Test
@@ -470,6 +522,8 @@ class ResourceDesignContractAdminControllerTest {
 
         mockMvc.perform(put("/admin/resource-design-contracts/order-service.listOrders")
                         .param("ackWarnings", "true")
+                        .param("actor", "resource-admin")
+                        .param("reason", "Published artifact references were reviewed before disabling the contract.")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(disabled)))
                 .andExpect(status().isOk())
@@ -608,6 +662,8 @@ class ResourceDesignContractAdminControllerTest {
 
         mockMvc.perform(put("/admin/resource-design-contracts/order-service.listOrders")
                         .param("ackWarnings", "true")
+                        .param("actor", "resource-admin")
+                        .param("reason", "Fingerprint drift was reviewed before replacing the contract.")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(replacement)))
                 .andExpect(status().isOk())
@@ -682,10 +738,33 @@ class ResourceDesignContractAdminControllerTest {
         drafts.save(draftUsingResource("order-service.listOrders"));
 
         mockMvc.perform(delete("/admin/resource-design-contracts/order-service.listOrders")
-                        .param("force", "true"))
+                        .param("force", "true")
+                        .param("actor", "resource-admin")
+                        .param("reason", "Stored-draft reference was reviewed before deleting the contract."))
                 .andExpect(status().isNoContent());
 
         assertThat(registry.findByResourceId("order-service.listOrders")).isEmpty();
+    }
+
+    @Test
+    void deleteForceRequiresGovernanceEvidenceBeforeMutation() throws Exception {
+        ResourceDesignContract contract = validContract(Map.of());
+        registry.upsert(contract);
+        drafts.save(draftUsingResource("order-service.listOrders"));
+
+        mockMvc.perform(delete("/admin/resource-design-contracts/order-service.listOrders")
+                        .param("force", "true"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.valid").value(false))
+                .andExpect(jsonPath("$.diagnostics[*].code")
+                        .value(org.hamcrest.Matchers.everyItem(
+                                org.hamcrest.Matchers.is("visual.resourceContract.governanceEvidenceMissing"))))
+                .andExpect(jsonPath("$.diagnostics[*].target")
+                        .value(org.hamcrest.Matchers.hasItems("/actor", "/reason")))
+                .andExpect(jsonPath("$.diagnostics[0].metadata.requiredFor[0]").value("force"))
+                .andExpect(jsonPath("$.diagnostics[0].metadata.resourceId").value("order-service.listOrders"));
+
+        assertThat(registry.findByResourceId("order-service.listOrders")).contains(contract);
     }
 
     private static ResourceDesignContract invalidArrayContract() {

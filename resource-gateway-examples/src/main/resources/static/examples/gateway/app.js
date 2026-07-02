@@ -5739,8 +5739,15 @@ function resourceContractSaveConfirmationKey(contract, diagnostics = []) {
   });
 }
 
-function resourceContractMutationQuery(ackWarnings = false) {
-  return ackWarnings ? '?ackWarnings=true' : '';
+function resourceContractMutationQuery(ackWarnings = false, resourceId = '') {
+  if (!ackWarnings) {
+    return '';
+  }
+  const params = new URLSearchParams();
+  params.set('ackWarnings', 'true');
+  params.set('actor', 'visual-canvas');
+  params.set('reason', `Warnings reviewed in the visual resource contract panel for ${resourceId || 'resource contract'}.`);
+  return `?${params.toString()}`;
 }
 
 async function saveOpenApiResourceContract() {
@@ -5800,7 +5807,7 @@ async function saveOpenApiResourceContract() {
   setResourceContractImportMessage('Saving resource contract...', 'info');
   try {
     const response = await fetch(
-      `/admin/resource-design-contracts/${encodeURIComponent(contract.resourceId)}${resourceContractMutationQuery(hasWarningDiagnostic(validation.diagnostics))}`,
+      `/admin/resource-design-contracts/${encodeURIComponent(contract.resourceId)}${resourceContractMutationQuery(hasWarningDiagnostic(validation.diagnostics), contract.resourceId)}`,
       {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },

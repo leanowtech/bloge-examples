@@ -1268,6 +1268,14 @@ upsert 和 delete conflict 响应会在原有 `valid/diagnostics` 旁返回：
 }
 ```
 
+Resource design contract 写入入口必须保持和 operator library / publication
+promotion 同等级的审计约束：`PUT /admin/resource-design-contracts/{resourceId}`
+一旦使用 `force=true` 或 `ackWarnings=true`，以及
+`DELETE /admin/resource-design-contracts/{resourceId}` 一旦使用 `force=true`，
+都要求非空 `actor` 和 `reason` query params；否则返回 `400` 与
+`visual.resourceContract.governanceEvidenceMissing`。这条规则只约束实际写入，
+`validate` 和 OpenAPI preview 仍保持无副作用预检。
+
 这个合同用于让 resource-backed 虚拟算子的 schema drift、lifecycle
 downgrade、disable/delete impact 和 OpenAPI re-import preview 与用户算子库
 具备同等的机器可审阅能力。`publicationIds` 表示已有 immutable publication

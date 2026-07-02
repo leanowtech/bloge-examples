@@ -173,8 +173,10 @@ class VisualAuthoringAppJsTest {
                 .contains("Review warnings, then click ${actionLabel} again to continue.")
                 .contains("payload?.validation?.impact")
                 .contains("validation.impact")
-                .contains("resourceContractMutationQuery(hasWarningDiagnostic(validation.diagnostics))")
-                .contains("return ackWarnings ? '?ackWarnings=true' : '';");
+                .contains("resourceContractMutationQuery(hasWarningDiagnostic(validation.diagnostics), contract.resourceId)")
+                .contains("params.set('ackWarnings', 'true');")
+                .contains("params.set('actor', 'visual-canvas');")
+                .contains("Warnings reviewed in the visual resource contract panel");
     }
 
     @Test
