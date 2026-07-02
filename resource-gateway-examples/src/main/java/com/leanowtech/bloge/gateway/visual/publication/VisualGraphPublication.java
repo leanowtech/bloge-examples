@@ -33,6 +33,7 @@ import java.util.Map;
  * @param validation validation report captured at publish time
  * @param generation DSL generation result captured at publish time
  * @param dependencyReport publish-time dependency report frozen with the artifact
+ * @param publicationMetadata audit metadata explaining this publication
  */
 public record VisualGraphPublication(
         String schemaVersion,
@@ -52,7 +53,8 @@ public record VisualGraphPublication(
         String dsl,
         VisualValidationResult validation,
         DslGenerationResult generation,
-        GraphDraftDependencyReport dependencyReport
+        GraphDraftDependencyReport dependencyReport,
+        PublicationMetadata publicationMetadata
 ) {
     public static final String ARTIFACT_EXECUTABLE = "EXECUTABLE";
     public static final String ARTIFACT_DESIGN = "DESIGN";
@@ -80,6 +82,34 @@ public record VisualGraphPublication(
         validation = validation == null ? new VisualValidationResult(true, List.of()) : validation;
         generation = generation == null ? new DslGenerationResult(true, dsl, List.of()) : generation;
         dependencyReport = dependencyReport == null ? GraphDraftDependencyReport.empty() : dependencyReport;
+        publicationMetadata = (publicationMetadata == null ? PublicationMetadata.empty() : publicationMetadata)
+                .storedFor(artifactKind, draftId, draftRevision);
+    }
+
+    /**
+     * Backward-compatible constructor for callers that do not freeze publication metadata.
+     */
+    public VisualGraphPublication(String schemaVersion,
+                                  String publicationId,
+                                  String draftId,
+                                  long draftRevision,
+                                  String graphName,
+                                  String tenantId,
+                                  String namespace,
+                                  String environment,
+                                  Instant createdAt,
+                                  String artifactKind,
+                                  GraphDraft draft,
+                                  List<OperatorDefinition> operatorSnapshots,
+                                  Map<String, String> operatorFingerprints,
+                                  Map<String, Object> visualLayout,
+                                  String dsl,
+                                  VisualValidationResult validation,
+                                  DslGenerationResult generation,
+                                  GraphDraftDependencyReport dependencyReport) {
+        this(schemaVersion, publicationId, draftId, draftRevision, graphName, tenantId, namespace, environment,
+                createdAt, artifactKind, draft, operatorSnapshots, operatorFingerprints, visualLayout, dsl,
+                validation, generation, dependencyReport, PublicationMetadata.empty());
     }
 
     /**
@@ -156,6 +186,26 @@ public record VisualGraphPublication(
                                               VisualValidationResult validation,
                                               DslGenerationResult generation,
                                               GraphDraftDependencyReport dependencyReport) {
+        return from(draft, operatorSnapshots, validation, generation, dependencyReport, PublicationMetadata.empty());
+    }
+
+    /**
+     * Builds a publication from validated/generated draft state.
+     *
+     * @param draft stored draft snapshot
+     * @param operatorSnapshots frozen operator snapshots
+     * @param validation publish-time validation and readiness
+     * @param generation publish-time DSL generation result
+     * @param dependencyReport publish-time dependency report
+     * @param publicationMetadata publication audit metadata
+     * @return immutable publication artifact
+     */
+    public static VisualGraphPublication from(GraphDraft draft,
+                                              List<OperatorDefinition> operatorSnapshots,
+                                              VisualValidationResult validation,
+                                              DslGenerationResult generation,
+                                              GraphDraftDependencyReport dependencyReport,
+                                              PublicationMetadata publicationMetadata) {
         return new VisualGraphPublication(
                 "",
                 "",
@@ -174,7 +224,8 @@ public record VisualGraphPublication(
                 generation.dsl(),
                 validation,
                 generation,
-                dependencyReport
+                dependencyReport,
+                publicationMetadata
         );
     }
 
@@ -203,6 +254,27 @@ public record VisualGraphPublication(
                                                 VisualValidationResult validation,
                                                 DslGenerationResult generation,
                                                 GraphDraftDependencyReport dependencyReport) {
+        return design(draft, operatorSnapshots, validation, generation, dependencyReport,
+                PublicationMetadata.empty());
+    }
+
+    /**
+     * Builds a non-executable design publication from validated draft state.
+     *
+     * @param draft stored draft snapshot
+     * @param operatorSnapshots frozen operator snapshots
+     * @param validation publish-time validation and readiness
+     * @param generation publish-time generation diagnostics
+     * @param dependencyReport publish-time dependency report
+     * @param publicationMetadata publication audit metadata
+     * @return immutable design artifact
+     */
+    public static VisualGraphPublication design(GraphDraft draft,
+                                                List<OperatorDefinition> operatorSnapshots,
+                                                VisualValidationResult validation,
+                                                DslGenerationResult generation,
+                                                GraphDraftDependencyReport dependencyReport,
+                                                PublicationMetadata publicationMetadata) {
         return new VisualGraphPublication(
                 "",
                 "",
@@ -221,7 +293,8 @@ public record VisualGraphPublication(
                 generation == null ? "" : generation.dsl(),
                 validation,
                 generation == null ? new DslGenerationResult(false, "", List.of()) : generation,
-                dependencyReport
+                dependencyReport,
+                publicationMetadata
         );
     }
 
@@ -245,7 +318,8 @@ public record VisualGraphPublication(
     public VisualGraphPublication withIdentity(String newPublicationId, Instant newCreatedAt) {
         return new VisualGraphPublication(schemaVersion, newPublicationId, draftId, draftRevision, graphName,
                 tenantId, namespace, environment, newCreatedAt, artifactKind, draft, operatorSnapshots,
-                operatorFingerprints, visualLayout, dsl, validation, generation, dependencyReport);
+                operatorFingerprints, visualLayout, dsl, validation, generation, dependencyReport,
+                publicationMetadata);
     }
 
     private static String normalizeArtifactKind(String value) {
@@ -253,5 +327,61 @@ public record VisualGraphPublication(
             return ARTIFACT_EXECUTABLE;
         }
         return value.trim().toUpperCase(Locale.ROOT);
+    }
+
+    /**
+     * Audit metadata supplied by the control-plane caller for one publication.
+     *
+     * @param actor user or system actor that initiated publication
+     * @param changeSource UI, API, import, or promotion source
+     * @param changeSummary concise human-readable summary
+     * @param reason optional operator-facing reason for publication or warning acknowledgement
+     */
+    public record PublicationMetadata(
+            String actor,
+            String changeSource,
+            String changeSummary,
+            String reason
+    ) {
+        /**
+         * Creates normalized metadata.
+         */
+        public PublicationMetadata {
+            actor = actor == null ? "" : actor.trim();
+            changeSource = changeSource == null ? "" : changeSource.trim();
+            changeSummary = changeSummary == null ? "" : changeSummary.trim();
+            reason = reason == null ? "" : reason.trim();
+        }
+
+        public static PublicationMetadata empty() {
+            return new PublicationMetadata("", "", "", "");
+        }
+
+        public static PublicationMetadata of(String actor,
+                                             String changeSource,
+                                             String changeSummary,
+                                             String reason) {
+            return new PublicationMetadata(actor, changeSource, changeSummary, reason);
+        }
+
+        PublicationMetadata storedFor(String artifactKind, String draftId, long draftRevision) {
+            String kind = artifactKind == null || artifactKind.isBlank()
+                    ? ARTIFACT_EXECUTABLE
+                    : artifactKind.trim().toUpperCase(Locale.ROOT);
+            String source = draftId == null || draftId.isBlank()
+                    ? "visual draft"
+                    : "%s@%d".formatted(draftId.trim(), Math.max(0, draftRevision));
+            return new PublicationMetadata(
+                    defaultString(actor, "visual-canvas"),
+                    defaultString(changeSource, "api"),
+                    defaultString(changeSummary, "Published %s visual graph artifact from %s."
+                            .formatted(kind, source)),
+                    reason
+            );
+        }
+
+        private static String defaultString(String value, String fallback) {
+            return value == null || value.isBlank() ? fallback : value.trim();
+        }
     }
 }

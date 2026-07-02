@@ -553,6 +553,7 @@ public class VisualGraphDraftController {
                         effectiveRequest.expectedRevision(),
                         effectiveRequest.ackWarnings(),
                         effectiveRequest.artifactKind(),
+                        effectiveRequest,
                         draft))
                 .orElseGet(() -> ResponseEntity.notFound().build());
     }
@@ -609,6 +610,7 @@ public class VisualGraphDraftController {
                                                                       long expectedRevision,
                                                                       boolean ackWarnings,
                                                                       String artifactKind,
+                                                                      VisualGraphPublishRequest request,
                                                                       GraphDraft draft) {
         if (!VisualGraphPublishRequest.supportedArtifactKind(artifactKind)) {
             return ResponseEntity.badRequest()
@@ -626,9 +628,17 @@ public class VisualGraphDraftController {
             return ResponseEntity.badRequest()
                     .body(VisualGraphPublicationResult.rejected(validation));
         }
-        if (!ackWarnings && containsWarnings(validation.diagnostics())) {
+        boolean hasWarnings = containsWarnings(validation.diagnostics());
+        if (!ackWarnings && hasWarnings) {
             return ResponseEntity.status(HttpStatus.CONFLICT)
                     .body(VisualGraphPublicationResult.rejected(validation));
+        }
+        if (ackWarnings && hasWarnings) {
+            List<VisualDiagnostic> governanceEvidence = publishGovernanceEvidenceDiagnostics(request);
+            if (!governanceEvidence.isEmpty()) {
+                return ResponseEntity.badRequest()
+                        .body(VisualGraphPublicationResult.rejected(governanceEvidence, validation));
+            }
         }
         DslGenerationResult generation = runner.compile(draft);
         if (VisualGraphPublishRequest.ARTIFACT_EXECUTABLE.equals(artifactKind) && !generation.generated()) {
@@ -640,11 +650,33 @@ public class VisualGraphDraftController {
         List<OperatorDefinition> snapshots = operatorSnapshots(snapshot);
         GraphDraftDependencyReport dependencyReport = GraphDraftDependencyReport.from(snapshot, catalog);
         VisualGraphPublication candidate = VisualGraphPublishRequest.ARTIFACT_DESIGN.equals(artifactKind)
-                ? VisualGraphPublication.design(snapshot, snapshots, validation, generation, dependencyReport)
-                : VisualGraphPublication.from(snapshot, snapshots, validation, generation, dependencyReport);
+                ? VisualGraphPublication.design(snapshot, snapshots, validation, generation, dependencyReport,
+                        request.publicationMetadata())
+                : VisualGraphPublication.from(snapshot, snapshots, validation, generation, dependencyReport,
+                        request.publicationMetadata());
         VisualGraphPublication publication = publicationRepository.create(candidate);
         return ResponseEntity.status(HttpStatus.CREATED)
                 .body(VisualGraphPublicationResult.published(publication));
+    }
+
+    private static List<VisualDiagnostic> publishGovernanceEvidenceDiagnostics(VisualGraphPublishRequest request) {
+        VisualGraphPublishRequest safeRequest = request == null ? new VisualGraphPublishRequest(0) : request;
+        List<VisualDiagnostic> diagnostics = new ArrayList<>();
+        Map<String, Object> metadata = Map.of("requiredFor", List.of("ackWarnings"),
+                "artifactKind", safeRequest.artifactKind());
+        if (safeRequest.actor().isBlank()) {
+            diagnostics.add(VisualDiagnostic.error("visual.publication.governanceEvidenceMissing",
+                    "Visual graph publication warning acknowledgement requires actor.",
+                    "/actor",
+                    metadata));
+        }
+        if (safeRequest.reason().isBlank()) {
+            diagnostics.add(VisualDiagnostic.error("visual.publication.governanceEvidenceMissing",
+                    "Visual graph publication warning acknowledgement requires reason.",
+                    "/reason",
+                    metadata));
+        }
+        return diagnostics;
     }
 
     private static boolean containsWarnings(List<VisualDiagnostic> diagnostics) {

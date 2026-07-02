@@ -1117,7 +1117,9 @@ target `imported` decision、`mutationAction=CREATE|REPLACE|REJECTED`、目标
 `restoredFromRevision`。`revisionMetadata` 固化 `actor`、`changeSource`、
 `changeSummary` 和 `reason`，create / replace / delete / restore mutation
 端点都接受这些可选 query params；缺省时服务端会填充稳定的 visual-canvas/api
-审计默认值。删除 library 只移除当前 catalog entry，不删除 revision history。
+审计默认值。写入型 mutation 一旦使用 `force=true` 或 `ackWarnings=true`，服务端会要求
+`actor` 与 `reason` 非空；否则返回 `visual.library.governanceEvidenceMissing`，避免高风险
+确认只留下匿名布尔开关。删除 library 只移除当前 catalog entry，不删除 revision history。
 restore 不是覆盖历史记录，而是把目标 snapshot 重新写成新的 latest library revision，
 并复用 import / replace 的结构校验、operatorRef 归属保护、runtime collision、impact
 preflight 和 warning acknowledgement gate。
@@ -1676,6 +1678,8 @@ artifact。发布成功后 artifact 必须不可变，
 - visual layout。
 - generated BLOGE DSL。
 - validation/generation report。
+- publish-time dependency report。
+- publication metadata：`actor`、`changeSource`、`changeSummary`、`reason`。
 
 resource-gateway 示例将 artifact 存入 `visual_graph_publications`，提供 list/get/run，
 不提供 update/delete。
@@ -1683,6 +1687,12 @@ resource-gateway 示例将 artifact 存入 `visual_graph_publications`，提供 
 `artifactKind=EXECUTABLE` 因 schema-only/design-only operator 无法 codegen 而被拒，
 调用方仍可读取 `validation.readiness.artifactKinds`，把 UI 或外部控制面纠偏到
 `DESIGN` artifact 发布路径，而不是把“尚未绑定 runtime 实现”误判为普通故障。
+publish request 可携带 `expectedRevision`、`ackWarnings`、`artifactKind` 以及
+`actor/changeSource/changeSummary/reason`。当 validation 存在 warning-level
+diagnostic 且调用方用 `ackWarnings=true` 继续发布时，服务端要求 `actor` 和
+`reason` 非空；否则返回 `400` 与 `visual.publication.governanceEvidenceMissing`，
+避免生产 promotion 只留下匿名布尔开关。成功创建的 artifact 会冻结
+`publicationMetadata`，供后续审计、迁移复核和 golden promotion 使用。
 
 响应：
 
@@ -1707,6 +1717,12 @@ resource-gateway 示例将 artifact 存入 `visual_graph_publications`，提供 
         "executable": true,
         "artifactKinds": ["EXECUTABLE", "DESIGN"]
       }
+    },
+    "publicationMetadata": {
+      "actor": "visual-canvas",
+      "changeSource": "gateway-browser",
+      "changeSummary": "Published EXECUTABLE visual graph artifact from draft-01H...@7.",
+      "reason": "Warnings reviewed in the visual publication panel."
     }
   },
   "diagnostics": [],

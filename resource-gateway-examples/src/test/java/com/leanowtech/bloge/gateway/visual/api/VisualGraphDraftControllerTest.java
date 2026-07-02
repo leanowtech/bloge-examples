@@ -1696,7 +1696,12 @@ class VisualGraphDraftControllerTest {
         )));
 
         ResponseEntity<VisualGraphPublicationResult> response = controller.publish(stored.draftId(),
-                new VisualGraphPublishRequest(stored.revision(), true));
+                new VisualGraphPublishRequest(stored.revision(), true,
+                        VisualGraphPublication.ARTIFACT_EXECUTABLE,
+                        "publisher",
+                        "promotion-review",
+                        "Published non-idempotent risk policy.",
+                        "Business owner reviewed non-idempotent side effects."));
 
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.CREATED);
         VisualGraphPublicationResult result = response.getBody();
@@ -1705,7 +1710,51 @@ class VisualGraphDraftControllerTest {
         assertThat(result.publication().validation().diagnostics())
                 .anySatisfy(diagnostic ->
                         assertThat(diagnostic.code()).isEqualTo("visual.operator.governance.nonIdempotent"));
+        assertThat(result.publication().publicationMetadata().actor()).isEqualTo("publisher");
+        assertThat(result.publication().publicationMetadata().changeSource()).isEqualTo("promotion-review");
+        assertThat(result.publication().publicationMetadata().changeSummary())
+                .isEqualTo("Published non-idempotent risk policy.");
+        assertThat(result.publication().publicationMetadata().reason())
+                .isEqualTo("Business owner reviewed non-idempotent side effects.");
         assertThat(publications.find(result.publication().publicationId())).contains(result.publication());
+    }
+
+    @Test
+    void publishRequiresGovernanceEvidenceWhenWarningsAreAcknowledged() {
+        DefaultVisualOperatorCatalog catalog = VisualCatalogTestSupport.catalogWithLibrary(
+                eligibilityLibraryWithCapabilities(new OperatorDefinition.Capabilities(
+                        "WRITE_EXTERNAL", "NON_IDEMPOTENT", false, false, false)));
+        InMemoryGraphDraftRepository drafts = new InMemoryGraphDraftRepository();
+        InMemoryVisualGraphPublicationRepository publications = new InMemoryVisualGraphPublicationRepository();
+        VisualGraphDraftController controller = controllerWithCatalog(catalog, drafts, publications);
+        GraphDraft stored = controller.create(eligibilityDraft(graphInputSchema(
+                Map.of(
+                        "score", Map.of("type", "integer"),
+                        "amount", Map.of("type", "number")
+                )
+        )));
+
+        ResponseEntity<VisualGraphPublicationResult> response = controller.publish(stored.draftId(),
+                new VisualGraphPublishRequest(stored.revision(), true));
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+        assertThat(response.getBody()).isNotNull();
+        assertThat(response.getBody().published()).isFalse();
+        assertThat(response.getBody().diagnostics())
+                .anySatisfy(diagnostic -> {
+                    assertThat(diagnostic.code()).isEqualTo("visual.publication.governanceEvidenceMissing");
+                    assertThat(diagnostic.target()).isEqualTo("/actor");
+                    assertThat(diagnostic.metadata()).containsEntry("artifactKind",
+                            VisualGraphPublication.ARTIFACT_EXECUTABLE);
+                })
+                .anySatisfy(diagnostic -> {
+                    assertThat(diagnostic.code()).isEqualTo("visual.publication.governanceEvidenceMissing");
+                    assertThat(diagnostic.target()).isEqualTo("/reason");
+                });
+        assertThat(response.getBody().validation().diagnostics())
+                .anySatisfy(diagnostic ->
+                        assertThat(diagnostic.code()).isEqualTo("visual.operator.governance.nonIdempotent"));
+        assertThat(publications.all()).isEmpty();
     }
 
     @Test

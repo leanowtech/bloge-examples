@@ -4650,7 +4650,17 @@ async function publishVisualDraft() {
     const response = await fetch(`/api/visual/drafts/${encodeURIComponent(draftId)}/publish`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ expectedRevision, ackWarnings, artifactKind })
+      body: JSON.stringify({
+        expectedRevision,
+        ackWarnings,
+        artifactKind,
+        actor: 'visual-canvas',
+        changeSource: 'gateway-browser',
+        changeSummary: `Published ${artifactKind} visual draft ${draftId}@${expectedRevision}.`,
+        reason: ackWarnings
+          ? 'Warnings reviewed in the visual publication panel.'
+          : 'Published from the visual publication panel.'
+      })
     });
     const payload = await response.json();
     const diagnostics = normalizeDiagnostics(payload.diagnostics);
@@ -5263,6 +5273,7 @@ function appendLibraryRevisionMetadataParams(params, actionLabel, libraryId, sum
   params.set('actor', 'visual-canvas');
   params.set('changeSource', 'gateway-browser');
   params.set('changeSummary', summary || `${action} operator library ${id}.`);
+  params.set('reason', `${action} requested from the visual operator-library governance panel.`);
 }
 
 function libraryRestoreConfirmationKey(libraryId, revision, diagnostics = []) {

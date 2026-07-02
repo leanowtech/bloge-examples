@@ -213,6 +213,13 @@ public class OperatorLibraryAdminController {
             return ResponseEntity.status(validationFailureStatus(validation))
                     .body(OperatorLibraryImportResult.rejected(bundle, library, mutationAction, validation));
         }
+        OperatorLibraryValidationResult governanceEvidence = governanceEvidenceResult(library,
+                revisionMetadata(actor, changeSource, changeSummary, reason), force, ackWarnings);
+        if (governanceEvidence != null) {
+            return ResponseEntity.badRequest()
+                    .body(OperatorLibraryImportResult.rejected(bundle, library, mutationAction,
+                            governanceEvidence));
+        }
         if (hasWarningDiagnostic(validation) && !ackWarnings) {
             return ResponseEntity.status(HttpStatus.CONFLICT)
                     .body(OperatorLibraryImportResult.rejected(bundle, library, mutationAction, validation));
@@ -358,6 +365,13 @@ public class OperatorLibraryAdminController {
         if (!validation.valid()) {
             return ResponseEntity.status(validationFailureStatus(validation)).body(validation);
         }
+        OperatorLibraryRevision.RevisionMetadata revisionMetadata = revisionMetadata(actor, changeSource,
+                changeSummary, reason);
+        OperatorLibraryValidationResult governanceEvidence = governanceEvidenceResult(library, revisionMetadata,
+                force, ackWarnings);
+        if (governanceEvidence != null) {
+            return ResponseEntity.badRequest().body(governanceEvidence);
+        }
         ResponseEntity<OperatorLibraryValidationResult> warningGate = warningAcknowledgementResponse(validation,
                 ackWarnings);
         if (warningGate != null) {
@@ -367,8 +381,7 @@ public class OperatorLibraryAdminController {
         if (impact != null) {
             return impact;
         }
-        return ResponseEntity.ok(registry.restore(sourceRevision.get(),
-                revisionMetadata(actor, changeSource, changeSummary, reason)));
+        return ResponseEntity.ok(registry.restore(sourceRevision.get(), revisionMetadata));
     }
 
     /**
@@ -409,6 +422,11 @@ public class OperatorLibraryAdminController {
         OperatorLibraryValidationResult validation = validateAgainstRegistry(library, force);
         if (!validation.valid()) {
             return ResponseEntity.status(validationFailureStatus(validation)).body(validation);
+        }
+        OperatorLibraryValidationResult governanceEvidence = governanceEvidenceResult(library, revisionMetadata,
+                force, ackWarnings);
+        if (governanceEvidence != null) {
+            return ResponseEntity.badRequest().body(governanceEvidence);
         }
         ResponseEntity<OperatorLibraryValidationResult> warningGate = warningAcknowledgementResponse(validation,
                 ackWarnings);
@@ -453,6 +471,11 @@ public class OperatorLibraryAdminController {
                 return ResponseEntity.status(HttpStatus.CONFLICT)
                         .body(validationResult(library.get(), diagnostics));
             }
+        }
+        OperatorLibraryValidationResult governanceEvidence = governanceEvidenceResult(library.orElse(null),
+                revisionMetadata(actor, changeSource, changeSummary, reason), force, false);
+        if (governanceEvidence != null) {
+            return ResponseEntity.badRequest().body(governanceEvidence);
         }
         registry.delete(libraryId, revisionMetadata(actor, changeSource, changeSummary, reason));
         return ResponseEntity.noContent().build();
@@ -1161,6 +1184,44 @@ public class OperatorLibraryAdminController {
         return new OperatorLibraryValidationResult(false, diagnostics,
                 OperatorLibraryImpactReview.fromDiagnostics(diagnostics, impactOperatorRefs(library, diagnostics)),
                 profile);
+    }
+
+    private OperatorLibraryValidationResult governanceEvidenceResult(
+            OperatorLibrary library,
+            OperatorLibraryRevision.RevisionMetadata metadata,
+            boolean force,
+            boolean ackWarnings) {
+        if (!force && !ackWarnings) {
+            return null;
+        }
+        OperatorLibraryRevision.RevisionMetadata safeMetadata = metadata == null
+                ? OperatorLibraryRevision.RevisionMetadata.empty()
+                : metadata;
+        List<String> requiredFor = new ArrayList<>();
+        if (force) {
+            requiredFor.add("force");
+        }
+        if (ackWarnings) {
+            requiredFor.add("ackWarnings");
+        }
+
+        List<VisualDiagnostic> diagnostics = new ArrayList<>();
+        Map<String, Object> metadataPayload = Map.of("requiredFor", List.copyOf(requiredFor));
+        if (safeMetadata.actor().isBlank()) {
+            diagnostics.add(VisualDiagnostic.error("visual.library.governanceEvidenceMissing",
+                    "Operator library high-risk mutation requires actor when using "
+                            + String.join(", ", requiredFor) + ".",
+                    "/actor",
+                    metadataPayload));
+        }
+        if (safeMetadata.reason().isBlank()) {
+            diagnostics.add(VisualDiagnostic.error("visual.library.governanceEvidenceMissing",
+                    "Operator library high-risk mutation requires reason when using "
+                            + String.join(", ", requiredFor) + ".",
+                    "/reason",
+                    metadataPayload));
+        }
+        return diagnostics.isEmpty() ? null : validationResult(library, diagnostics);
     }
 
     private Set<String> impactOperatorRefs(OperatorLibrary library, List<VisualDiagnostic> diagnostics) {

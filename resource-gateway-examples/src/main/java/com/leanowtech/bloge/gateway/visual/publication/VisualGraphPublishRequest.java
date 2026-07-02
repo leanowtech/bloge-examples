@@ -10,8 +10,18 @@ import java.util.Locale;
  * @param ackWarnings true when the publisher already reviewed non-blocking validation warnings
  * @param artifactKind publication artifact kind; EXECUTABLE keeps legacy semantics,
  *                     DESIGN freezes a non-executable design artifact
+ * @param actor user or system actor producing this publication
+ * @param changeSource UI or integration source producing this publication
+ * @param changeSummary human-readable publication summary
+ * @param reason optional publication or warning-review reason
  */
-public record VisualGraphPublishRequest(long expectedRevision, boolean ackWarnings, String artifactKind) {
+public record VisualGraphPublishRequest(long expectedRevision,
+                                        boolean ackWarnings,
+                                        String artifactKind,
+                                        String actor,
+                                        String changeSource,
+                                        String changeSummary,
+                                        String reason) {
     public static final String ARTIFACT_EXECUTABLE = "EXECUTABLE";
     public static final String ARTIFACT_DESIGN = "DESIGN";
 
@@ -21,6 +31,21 @@ public record VisualGraphPublishRequest(long expectedRevision, boolean ackWarnin
     public VisualGraphPublishRequest {
         expectedRevision = Math.max(0, expectedRevision);
         artifactKind = normalizeArtifactKind(artifactKind);
+        actor = actor == null ? "" : actor.trim();
+        changeSource = changeSource == null ? "" : changeSource.trim();
+        changeSummary = changeSummary == null ? "" : changeSummary.trim();
+        reason = reason == null ? "" : reason.trim();
+    }
+
+    /**
+     * Backward-compatible constructor for callers that specify artifact kind but no audit metadata.
+     *
+     * @param expectedRevision draft revision observed by the publisher
+     * @param ackWarnings true when non-blocking validation warnings were reviewed
+     * @param artifactKind publication artifact kind
+     */
+    public VisualGraphPublishRequest(long expectedRevision, boolean ackWarnings, String artifactKind) {
+        this(expectedRevision, ackWarnings, artifactKind, "", "", "", "");
     }
 
     /**
@@ -54,6 +79,13 @@ public record VisualGraphPublishRequest(long expectedRevision, boolean ackWarnin
      */
     public boolean executableArtifact() {
         return ARTIFACT_EXECUTABLE.equals(artifactKind);
+    }
+
+    /**
+     * @return normalized publication audit metadata
+     */
+    public VisualGraphPublication.PublicationMetadata publicationMetadata() {
+        return VisualGraphPublication.PublicationMetadata.of(actor, changeSource, changeSummary, reason);
     }
 
     /**

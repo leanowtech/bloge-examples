@@ -211,7 +211,8 @@ class VisualAuthoringAppJsTest {
                 .contains("appendLibraryRevisionMetadataParams(params, actionLabel, libraryId)")
                 .contains("params.set('ackWarnings', 'true');")
                 .contains("params.set('changeSource', 'gateway-browser');")
-                .contains("params.set('changeSummary', summary || `${action} operator library ${id}.`);");
+                .contains("params.set('changeSummary', summary || `${action} operator library ${id}.`);")
+                .contains("params.set('reason', `${action} requested from the visual operator-library governance panel.`);");
     }
 
     @Test
@@ -3860,6 +3861,9 @@ class VisualAuthoringAppJsTest {
                     ['publish first expected revision', publishResult.firstBody.expectedRevision, 4],
                     ['publish first warning ack', publishResult.firstBody.ackWarnings, false],
                     ['publish first artifact kind', publishResult.firstBody.artifactKind, 'DESIGN'],
+                    ['publish first actor', publishResult.firstBody.actor, 'visual-canvas'],
+                    ['publish first change source', publishResult.firstBody.changeSource, 'gateway-browser'],
+                    ['publish first reason', publishResult.firstBody.reason, 'Published from the visual publication panel.'],
                     ['publish pending warning key', publishResult.firstWarningKey, 'draft-risk@4'],
                     ['publish warning message level', publishResult.warningMessage.level, 'warning'],
                     ['publish warning message text', publishResult.warningMessage.text, 'Review publish warnings, then click Publish again to continue.'],
@@ -3871,6 +3875,10 @@ class VisualAuthoringAppJsTest {
                     ['publish second expected revision', publishResult.secondBody.expectedRevision, 4],
                     ['publish second warning ack', publishResult.secondBody.ackWarnings, true],
                     ['publish second artifact kind', publishResult.secondBody.artifactKind, 'DESIGN'],
+                    ['publish second actor', publishResult.secondBody.actor, 'visual-canvas'],
+                    ['publish second change source', publishResult.secondBody.changeSource, 'gateway-browser'],
+                    ['publish second change summary', publishResult.secondBody.changeSummary, 'Published DESIGN visual draft draft-risk@4.'],
+                    ['publish second reason', publishResult.secondBody.reason, 'Warnings reviewed in the visual publication panel.'],
                     ['publish final warning key cleared', publishResult.finalWarningKey, ''],
                     ['publish state artifact kind', publishResult.finalPublishArtifactKind, 'DESIGN'],
                     ['publish selected publication', publishResult.finalPublicationId, 'pub-risk'],

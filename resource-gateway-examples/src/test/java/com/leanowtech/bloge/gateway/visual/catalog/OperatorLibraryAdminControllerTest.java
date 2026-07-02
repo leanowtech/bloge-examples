@@ -251,6 +251,43 @@ class OperatorLibraryAdminControllerTest {
     }
 
     @Test
+    void importBundleRequiresGovernanceEvidenceWhenWarningsAreAcknowledged() throws Exception {
+        OperatorLibrary library = libraryWithCapabilities("bundle-risk",
+                new OperatorDefinition.Capabilities("WRITE_EXTERNAL", "NON_IDEMPOTENT", false, false, true));
+        OperatorLibraryExportBundle bundle = new OperatorLibraryExportBundle(
+                "",
+                "",
+                "",
+                "",
+                7,
+                null,
+                library,
+                null,
+                null
+        );
+
+        mockMvc.perform(post("/admin/visual-operator-libraries/import-bundle")
+                        .param("ackWarnings", "true")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(bundle)))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.schemaVersion").value(OperatorLibraryImportResult.SCHEMA_VERSION))
+                .andExpect(jsonPath("$.imported").value(false))
+                .andExpect(jsonPath("$.mutationAction").value(OperatorLibraryRevision.ACTION_CREATE))
+                .andExpect(jsonPath("$.validation.valid").value(false))
+                .andExpect(jsonPath("$.validation.diagnostics[0].code")
+                        .value("visual.library.governanceEvidenceMissing"))
+                .andExpect(jsonPath("$.validation.diagnostics[0].target").value("/actor"))
+                .andExpect(jsonPath("$.validation.diagnostics[0].metadata.requiredFor[0]")
+                        .value("ackWarnings"))
+                .andExpect(jsonPath("$.validation.diagnostics[1].code")
+                        .value("visual.library.governanceEvidenceMissing"))
+                .andExpect(jsonPath("$.validation.diagnostics[1].target").value("/reason"));
+
+        assertThat(registry.all()).isEmpty();
+    }
+
+    @Test
     void importBundleRejectsUnsupportedExportBundleSchemaVersion() throws Exception {
         OperatorLibrary library = VisualCatalogTestSupport.designOnlyEligibilityLibrary("integer");
         OperatorLibraryExportBundle bundle = new OperatorLibraryExportBundle(
@@ -1120,7 +1157,9 @@ class OperatorLibraryAdminControllerTest {
                         .value("visual.library.restore.versionRegressionAllowed"));
         mockMvc.perform(post("/admin/visual-operator-libraries/risk-policy/revisions/1/restore")
                         .param("allowVersionRegression", "true")
-                        .param("ackWarnings", "true"))
+                        .param("ackWarnings", "true")
+                        .param("actor", "catalog-reviewer")
+                        .param("reason", "Approved controlled rollback after reviewing affected drafts."))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.version").value("1.0.0"));
 
@@ -1257,12 +1296,35 @@ class OperatorLibraryAdminControllerTest {
 
         mockMvc.perform(post("/admin/visual-operator-libraries")
                         .param("ackWarnings", "true")
+                        .param("actor", "catalog-reviewer")
+                        .param("reason", "External runtime binding is reviewed for this operator.")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(library)))
                 .andExpect(status().isCreated())
                 .andExpect(jsonPath("$.libraryId").value("native-missing"));
 
         assertThat(registry.find("native-missing")).contains(library);
+    }
+
+    @Test
+    void createRequiresGovernanceEvidenceWhenWarningsAreAcknowledged() throws Exception {
+        OperatorLibrary library = libraryWithCapabilities("governance-risk",
+                new OperatorDefinition.Capabilities("WRITE_EXTERNAL", "NON_IDEMPOTENT", false, false, true));
+
+        mockMvc.perform(post("/admin/visual-operator-libraries")
+                        .param("ackWarnings", "true")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(library)))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.valid").value(false))
+                .andExpect(jsonPath("$.diagnostics[0].code")
+                        .value("visual.library.governanceEvidenceMissing"))
+                .andExpect(jsonPath("$.diagnostics[0].target").value("/actor"))
+                .andExpect(jsonPath("$.diagnostics[1].code")
+                        .value("visual.library.governanceEvidenceMissing"))
+                .andExpect(jsonPath("$.diagnostics[1].target").value("/reason"));
+
+        assertThat(registry.find("governance-risk")).isEmpty();
     }
 
     @Test
@@ -1317,6 +1379,8 @@ class OperatorLibraryAdminControllerTest {
 
         mockMvc.perform(post("/admin/visual-operator-libraries")
                         .param("ackWarnings", "true")
+                        .param("actor", "catalog-reviewer")
+                        .param("reason", "External side-effect governance review completed.")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(library)))
                 .andExpect(status().isCreated())
@@ -1425,10 +1489,31 @@ class OperatorLibraryAdminControllerTest {
         drafts.save(draftUsingOperator("risk:eligibility"));
 
         mockMvc.perform(delete("/admin/visual-operator-libraries/risk-policy")
-                        .param("force", "true"))
+                        .param("force", "true")
+                        .param("actor", "catalog-reviewer")
+                        .param("reason", "Approved deleting library despite draft references."))
                 .andExpect(status().isNoContent());
 
         assertThat(registry.find("risk-policy")).isEmpty();
+    }
+
+    @Test
+    void deleteForceRequiresGovernanceEvidenceBeforeMutation() throws Exception {
+        OperatorLibrary library = VisualCatalogTestSupport.eligibilityLibrary("integer");
+        registry.upsert(library);
+        drafts.save(draftUsingOperator("risk:eligibility"));
+
+        mockMvc.perform(delete("/admin/visual-operator-libraries/risk-policy")
+                        .param("force", "true"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.valid").value(false))
+                .andExpect(jsonPath("$.diagnostics[0].code")
+                        .value("visual.library.governanceEvidenceMissing"))
+                .andExpect(jsonPath("$.diagnostics[0].target").value("/actor"))
+                .andExpect(jsonPath("$.diagnostics[0].metadata.requiredFor[0]").value("force"))
+                .andExpect(jsonPath("$.diagnostics[1].target").value("/reason"));
+
+        assertThat(registry.find("risk-policy")).contains(library);
     }
 
     @Test
@@ -1457,7 +1542,9 @@ class OperatorLibraryAdminControllerTest {
         publications.create(publicationUsingOperator("risk:eligibility", "published-fingerprint"));
 
         mockMvc.perform(delete("/admin/visual-operator-libraries/risk-policy")
-                        .param("force", "true"))
+                        .param("force", "true")
+                        .param("actor", "catalog-reviewer")
+                        .param("reason", "Approved deleting library despite frozen publication references."))
                 .andExpect(status().isNoContent());
 
         assertThat(registry.find("risk-policy")).isEmpty();
@@ -1670,6 +1757,8 @@ class OperatorLibraryAdminControllerTest {
 
         mockMvc.perform(put("/admin/visual-operator-libraries/risk-policy")
                         .param("ackWarnings", "true")
+                        .param("actor", "catalog-reviewer")
+                        .param("reason", "Approved deprecation after reviewing affected drafts.")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(deprecated)))
                 .andExpect(status().isOk())
@@ -1881,6 +1970,8 @@ class OperatorLibraryAdminControllerTest {
 
         mockMvc.perform(post("/admin/visual-operator-libraries")
                         .param("ackWarnings", "true")
+                        .param("actor", "catalog-reviewer")
+                        .param("reason", "Approved fingerprint drift after impact review.")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(replacement)))
                 .andExpect(status().isCreated())
@@ -1988,6 +2079,8 @@ class OperatorLibraryAdminControllerTest {
 
         mockMvc.perform(put("/admin/visual-operator-libraries/risk-policy")
                         .param("force", "true")
+                        .param("actor", "catalog-reviewer")
+                        .param("reason", "Approved removing referenced operator after migration review.")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(replacement)))
                 .andExpect(status().isOk())
@@ -2005,6 +2098,8 @@ class OperatorLibraryAdminControllerTest {
 
         mockMvc.perform(put("/admin/visual-operator-libraries/risk-policy")
                         .param("force", "true")
+                        .param("actor", "catalog-reviewer")
+                        .param("reason", "Approved disabling referenced library after migration review.")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(disabled)))
                 .andExpect(status().isOk())
