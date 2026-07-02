@@ -146,8 +146,9 @@ user-provided operator library JSON or YAML source text before importing it, whi
 validate/import path warning-gates streaming/durable runtime requirements,
 secret-backed execution, and non-idempotent external effects before storage, and
 the browser profile prefers the server-derived `bloge.visualOperatorLibraryProfile.v1`
-returned by validate/import so catalog repair, runtime-blocked,
-governance-review, and design-only counts are not guessed from browser-only heuristics,
+and `bloge.visualOperatorLibraryImportReadiness.v1` returned by validate/import
+so catalog repair, runtime-blocked, governance-review, design-only counts, and
+ack/force/evidence gates are not guessed from browser-only heuristics,
 opt into `force=true` for explicit destructive operator-library replacement or
 deletion after inspecting the server-provided impact review for affected drafts,
 publications, operators, and diagnostic codes, jump from an affected draft chip
@@ -525,29 +526,29 @@ operator, rejects unsupported
 bundle or draft contracts before storage with `actual`/`expected` diagnostic
 metadata for schemaVersion mismatches, and returns a
 `bloge.visualGraphDraftImportResult.v1` payload with source bundle schema,
-source draft id/revision, target-environment diagnostics plus validation/readiness, and a dependency report for repairable
+source draft id/revision, target-environment diagnostics plus validation/readiness/action-readiness, and a dependency report for repairable
 issues such as missing operators, scope-mismatched operators, or schema-only
 design graphs. The browser Drafts panel sends
 `visual-canvas`/`gateway-browser` evidence for new draft saves and bundle imports. The Drafts panel
 exposes this flow through Export/Import Bundle controls and a JSON bundle editor,
-feeds the returned readiness back into Server Check, and consumes the returned dependency report so imported
+feeds the returned readiness and action gates back into Server Check, and consumes the returned dependency report so imported
 design-only or dependency-repair graphs can be reviewed without an immediate
 manual validate/dependency refresh.
 Complex canvas compositions can therefore be copied into another environment
 without using a stale `draftId` as an overwrite path or losing their executable
 versus design-artifact meaning.
-Compile and run responses now also carry the server-side validation/readiness
+Compile and run responses now also carry the server-side validation/readiness/action-readiness
 used for that operation. Draft compile/run returns the current draft readiness,
 while publication run returns the frozen publication readiness from the immutable
-artifact. The browser keeps that readiness in Server Check after compile, run,
+artifact. The browser keeps that readiness and the derived action gates in Server Check after compile, run,
 publication run, and connection preflight diagnostics, so a design-only or
 runtime-blocked graph does not lose its publish guidance just because the author
 clicked another server action. Once Server Check has returned a non-executable
 readiness, the browser also disables visual-draft Compile and Run Custom Graph
-actions while keeping save, export, and `DESIGN` publication available; graph
+actions while keeping save, export, and `DESIGN` publication available through the server-derived `bloge.visualGraphActionReadiness.v1` gates; graph
 edits reset the readiness snapshot back to "Not checked" so stale server
 readiness does not lock a repaired draft.
-Connection preflight also returns the candidate draft validation/readiness after
+Connection preflight also returns the candidate draft validation/readiness/action-readiness after
 the preview edge, binding, or config expression is applied. Its top-level
 diagnostics stay scoped to the proposed connection, so an unrelated draft issue
 does not reject a drag/drop action, while the readiness still tells the author
@@ -587,7 +588,7 @@ for design artifacts. It also renders the selected artifact's frozen graph
 readiness, non-executable node rows, and frozen dependency summary from the
 publication snapshot, so a design artifact can be reviewed without depending on
 the current catalog.
-Publish requests return validation/readiness on both accepted and rejected
+Publish requests return validation/readiness/action-readiness on both accepted and rejected
 attempts, then reject warning-level validation diagnostics
 until the caller repeats the request with `ackWarnings=true`, so non-idempotent
 side effects and similar promotion risks are explicitly reviewed before an
@@ -757,15 +758,15 @@ Showcase metadata APIs:
 | `POST` | `/api/gateway/examples/compose/run` | Compile and run submitted DSL with JSON context, returning diagnostics, output, layout, and decision-table metadata |
 | `GET` | `/api/visual/operators` | List native, Java registry, imported, executable publication-backed subgraph, and resource-backed visual operator definitions; supports `tenantId`, `namespace`, and `environment` policy filtering, `sourceKind` / `loweringMode` / `capability` / `runtimeReadiness` catalog facets, plus multi-term schema-aware search across input/output/config fields, field types, and readiness summaries; response includes `facets.total/sourceKinds/loweringModes/capabilities/runtimeReadinessStates` counts |
 | `GET` | `/api/visual/operators/{operatorRef}/usage` | Return stored draft and immutable-publication usage of one operatorRef, including saved/frozen fingerprint status, changed-surface drift summaries, and `changeRisk/changeCategories/changeSummary` when snapshots allow risk classification |
-| `GET` | `/api/visual/assets/overview` | Return `bloge.visualAssetOverview.v1`, an environment-level visual authoring overview that echoes the requested authoring scope while aggregating draft summaries, publication summaries, current operator catalog facets, and a server-derived action queue with optional `tenantId` / `namespace` / `environment` scope filters plus `actionLimit` / `actionOffset` / `actionSeverity` / `actionType` / `actionTargetKind` queue query controls |
+| `GET` | `/api/visual/assets/overview` | Return `bloge.visualAssetOverview.v1`, an environment-level visual authoring overview that echoes the requested authoring scope while aggregating draft summaries, publication summaries, current operator catalog facets, and an action-readiness-aware server-derived action queue with optional `tenantId` / `namespace` / `environment` scope filters plus `actionLimit` / `actionOffset` / `actionSeverity` / `actionType` / `actionTargetKind` queue query controls |
 | `GET` | `/api/visual/drafts` | List stored visual graph drafts with optional `tenantId` / `namespace` / `environment` scope filters |
 | `GET` | `/api/visual/drafts/history` | List lightweight active/deleted draft history summaries with current/latest revision, revision count, latest actor/source/summary, recovery status, and optional `tenantId` / `namespace` / `environment` scope filters |
-| `GET` | `/api/visual/drafts/summaries` | List `bloge.visualGraphDraftSummary.v1` draft asset summaries that combine history, server validation/readiness, diagnostic counts, and dependency counts without returning full draft JSON; supports optional `tenantId` / `namespace` / `environment` scope filters |
+| `GET` | `/api/visual/drafts/summaries` | List `bloge.visualGraphDraftSummary.v1` draft asset summaries that combine history, server validation/readiness/action-readiness, diagnostic counts, and dependency counts without returning full draft JSON; supports optional `tenantId` / `namespace` / `environment` scope filters |
 | `POST` | `/api/visual/drafts` | Save a new visual graph draft with server-assigned id/revision, ignoring submitted draft identity fields |
 | `GET` | `/api/visual/drafts/{draftId}` | Load a stored visual graph draft |
 | `GET` | `/api/visual/drafts/{draftId}/dependencies` | Summarize a stored draft as `bloge.visualGraphDraftDependencies.v1`, including distinct operator dependencies, per-node binding/edge lineage, source/lowering/runtime-readiness counts, current/missing/drifted/scope-mismatch fingerprint state, and scope policy diagnostics |
-| `GET` | `/api/visual/drafts/{draftId}/export` | Export a portable draft bundle with operator snapshots, export-time diagnostics, validation/readiness, and source-environment dependency report |
-| `POST` | `/api/visual/drafts/import` | Import a portable draft bundle as a new draft identity with current operator fingerprints/snapshots plus target-environment diagnostics, validation/readiness, dependency report, and optional `actor` / `changeSource` / `changeSummary` / `reason` revision audit metadata |
+| `GET` | `/api/visual/drafts/{draftId}/export` | Export a portable draft bundle with operator snapshots, export-time diagnostics, validation/readiness/action-readiness, and source-environment dependency report |
+| `POST` | `/api/visual/drafts/import` | Import a portable draft bundle as a new draft identity with current operator fingerprints/snapshots plus target-environment diagnostics, validation/readiness/action-readiness, dependency report, and optional `actor` / `changeSource` / `changeSummary` / `reason` revision audit metadata |
 | `GET` | `/api/visual/drafts/{draftId}/revisions` | List immutable draft revision snapshots, newest first; retained history remains queryable after current draft deletion |
 | `GET` | `/api/visual/drafts/{draftId}/revisions/{revision}` | Load one immutable draft revision snapshot, including retained history for deleted drafts |
 | `GET` | `/api/visual/drafts/{draftId}/revisions/{baseRevision}/diff/{targetRevision}` | Compare two immutable draft snapshots as `bloge.visualGraphDraftDiff.v1`, including highest change risk, risk categories, summary, graph-level changes, node-level added/removed/changed surface, edge-level added/removed/changed surface, and node/edge change counts |
@@ -774,17 +775,17 @@ Showcase metadata APIs:
 | `PATCH` | `/api/visual/drafts/{draftId}` | Apply an `expectedRevision` JSON patch, reject stale edits with `409 CONFLICT`, and reject patches to service-managed identity/revision/fingerprint/snapshot fields |
 | `POST` | `/api/visual/drafts/{draftId}/operator-fingerprints/rebase` | Explicitly refresh selected or all service-managed node fingerprint/operator snapshots against the current operator catalog using an `expectedRevision` guard plus optional actor/source/summary/reason revision audit metadata |
 | `DELETE` | `/api/visual/drafts/{draftId}` | Delete the current visual graph draft pointer while preserving immutable revision history; optional `expectedRevision`, `actor`, `changeSource`, and `changeSummary` query parameters reject stale deletes and write deletion audit metadata |
-| `POST` | `/api/visual/drafts/validate` | Validate a visual graph draft against operator schemas, typed port edges, and DAG constraints; response includes `bloge.visualGraphReadiness.v1` so callers can distinguish runtime-executable, design-only, runtime-blocked, governance-review, and draft-repair-required graphs |
-| `POST` | `/api/visual/drafts/compile` | Validate a visual graph draft, lower it to BLOGE DSL, then compile the DSL; response includes validation/readiness so clients keep publish guidance after compile diagnostics |
-| `POST` | `/api/visual/connections/check` | Check a proposed source-to-target canvas connection against the same schema and DAG rules used by draft validation, returning connection-scoped diagnostics, a machine-readable decision/replacement summary, the canonical binding key for data/input bindings, and candidate draft validation/readiness |
-| `POST` | `/api/visual/drafts/run` | Validate, compile, and execute a transient visual graph draft; response includes validation/readiness and a run history id |
-| `POST` | `/api/visual/drafts/{draftId}/run` | Execute a stored visual graph draft with submitted context; response includes validation/readiness, and optional `expectedRevision` rejects stale runs with `409 CONFLICT` |
-| `POST` | `/api/visual/drafts/{draftId}/publish` | Publish an immutable visual graph artifact; default `artifactKind=EXECUTABLE` validates, compiles, and stores frozen DSL, while `artifactKind=DESIGN` freezes a schema-valid non-executable design artifact with generation diagnostics; response includes validation/readiness on accepted and rejected attempts so clients can constrain publish artifact kinds; optional `expectedRevision` rejects stale publishes with `409 CONFLICT`; warning-level validation diagnostics require `ackWarnings=true`, and warning-acknowledged storage also requires non-empty `actor` and `reason` evidence that is frozen as publication metadata |
+| `POST` | `/api/visual/drafts/validate` | Validate a visual graph draft against operator schemas, typed port edges, and DAG constraints; response includes `bloge.visualGraphReadiness.v1` and `bloge.visualGraphActionReadiness.v1` so callers can distinguish runtime-executable, design-only, runtime-blocked, governance-review, draft-repair-required graphs and the allowed compile/run/DESIGN publish/EXECUTABLE publish actions |
+| `POST` | `/api/visual/drafts/compile` | Validate a visual graph draft, lower it to BLOGE DSL, then compile the DSL; response includes validation/readiness/action-readiness so clients keep publish and action guidance after compile diagnostics |
+| `POST` | `/api/visual/connections/check` | Check a proposed source-to-target canvas connection against the same schema and DAG rules used by draft validation, returning connection-scoped diagnostics, a machine-readable decision/replacement summary, the canonical binding key for data/input bindings, and candidate draft validation/readiness/action-readiness |
+| `POST` | `/api/visual/drafts/run` | Validate, compile, and execute a transient visual graph draft; response includes validation/readiness/action-readiness and a run history id |
+| `POST` | `/api/visual/drafts/{draftId}/run` | Execute a stored visual graph draft with submitted context; response includes validation/readiness/action-readiness, and optional `expectedRevision` rejects stale runs with `409 CONFLICT` |
+| `POST` | `/api/visual/drafts/{draftId}/publish` | Publish an immutable visual graph artifact; default `artifactKind=EXECUTABLE` validates, compiles, and stores frozen DSL, while `artifactKind=DESIGN` freezes a schema-valid non-executable design artifact with generation diagnostics; response includes validation/readiness/action-readiness on accepted and rejected attempts so clients can constrain publish artifact kinds and warning review gates; optional `expectedRevision` rejects stale publishes with `409 CONFLICT`; warning-level validation diagnostics require `ackWarnings=true`, and warning-acknowledged storage also requires non-empty `actor` and `reason` evidence that is frozen as publication metadata |
 | `GET` | `/api/visual/publications` | List immutable visual graph publications |
-| `GET` | `/api/visual/publications/summaries` | List `bloge.visualGraphPublicationSummary.v1` publication asset summaries with frozen artifact kind, readiness, diagnostic counts, dependency counts, and source/runtime-readiness distributions without returning full publication payloads; supports optional `tenantId` / `namespace` / `environment` scope filters |
+| `GET` | `/api/visual/publications/summaries` | List `bloge.visualGraphPublicationSummary.v1` publication asset summaries with frozen artifact kind, readiness/action-readiness, diagnostic counts, dependency counts, and source/runtime-readiness distributions without returning full publication payloads; supports optional `tenantId` / `namespace` / `environment` scope filters |
 | `GET` | `/api/visual/publications/{publicationId}` | Load a published visual graph artifact |
 | `GET` | `/api/visual/publications/{publicationId}/dependencies` | Load the publish-time dependency report frozen with an immutable visual graph artifact |
-| `POST` | `/api/visual/publications/{publicationId}/run` | Execute a published artifact from its frozen DSL and return the artifact's frozen validation/readiness |
+| `POST` | `/api/visual/publications/{publicationId}/run` | Execute a published artifact from its frozen DSL and return the artifact's frozen validation/readiness/action-readiness |
 | `GET` | `/api/visual/golden-cases?publicationId=...` | List golden regression cases bound to an immutable publication |
 | `GET` | `/api/visual/golden-cases/{caseId}` | Load one golden regression case |
 | `POST` | `/api/visual/golden-cases` | Save a golden regression case for an existing publication, with save-time schema-version/context/output-node/assertion validation, exact-output fallback, explicit output assertions, numeric tolerance assertions, or output-schema assertions |
@@ -1048,9 +1049,14 @@ node operator snapshot or a publication's frozen operator snapshot differs from
 the current catalog definition.
 The browser Operator Libraries panel calls
 the validate endpoint directly, so authors can inspect an inline structured
-diagnostic list and server-derived library profile before storing a library.
+diagnostic list, server-derived library profile, and machine-readable import
+readiness summary before storing a library.
 That profile reports operator/schema field counts, runtime readiness facets,
 catalog-repair, runtime-blocked, governance-review, and design-only summaries;
+the readiness summary collapses diagnostics, profile, and impact into states
+such as `design-only-importable`, `runtime-binding-required`,
+`force-required`, or `catalog-repair-required`, including whether
+`ackWarnings`, `force=true`, and actor/reason governance evidence are needed.
 if authors keep editing the JSON after validation, the panel falls back to a local
 instant preview until the next server validation refreshes the authoritative profile.
 That validation is registry-aware:
@@ -1077,19 +1083,22 @@ panel for these graphs, showing that save/export/`DESIGN` publication remain
 allowed while compile/run/`EXECUTABLE` publication wait for runtime binding.
 The Drafts panel renders a Draft Asset Index from server-side draft summaries
 for the active Authoring Scope, so active and recoverable deleted drafts expose
-design-only, runtime-blocked, governance-review, and repair-required readiness
-before the author loads a specific draft.
+design-only, runtime-blocked, governance-review, repair-required readiness, and
+the derived action gates for warning acknowledgement before the author loads a
+specific draft.
 After publication, the Publications panel also renders a Published Artifact
 Index from `bloge.visualGraphPublicationSummary.v1` for the active Authoring
 Scope, counting `EXECUTABLE` versus `DESIGN` artifacts and surfacing frozen
-readiness states such as design-only, runtime-blocked, governance-review, and
-repair-required before the author loads a full immutable publication payload.
+readiness/action-readiness states such as design-only, runtime-blocked,
+governance-review, warning-evidence review, and repair-required before the
+author loads a full immutable publication payload.
 The Workspace Overview panel consumes `bloge.visualAssetOverview.v1` to show the
 same readiness distribution across drafts, immutable publications, and the
 current operator catalog for the active Authoring Scope. The overview response
 echoes the authoring scope used to derive the read model, then adds a
-server-derived action queue for repair, runtime-binding, governance-review, and
-design-asset tracking work. Large schema-only workspaces can therefore be
+server-derived action queue for repair, runtime-binding, governance-review,
+warning acknowledgement/evidence review, and design-asset tracking work. Large
+schema-only workspaces can therefore be
 triaged without pulling every graph or artifact body, and without mixing assets
 from another tenant, namespace, or environment. Queue items include navigation
 targets and stable `actionKey` values, so the browser or an external governance
@@ -1197,13 +1206,13 @@ schema drift, and bindings before choosing a rebase or repair path.
 | Method | Path | Description | Status |
 |--------|------|-------------|--------|
 | `GET` | `/admin/visual-operator-libraries` | List imported operator libraries | 200 |
-| `POST` | `/admin/visual-operator-libraries/validate` | Validate an operator library without storing it and return `valid`, `diagnostics`, server-derived `bloge.visualOperatorLibraryProfile.v1`, and `bloge.visualOperatorLibraryImpact.v1` with affected draft targets and replacement `changeRiskCounts`; use `force=true` to suppress stored-draft removal/disablement impact diagnostics; runtime-capability, governance, unresolved native lowering executable, same-ref fingerprint drift, replacement SemVer governance, and immutable-publication impact risks are reported as warnings unless they are blocking errors such as version regression | 200 |
-| `POST` | `/admin/visual-operator-libraries/validate-text` | Parse raw JSON or YAML operator-library source text on the server and then run the same validation/profile/impact review path without storing it; malformed source returns structured `visual.library.source.*` diagnostics | 200 / 400 |
+| `POST` | `/admin/visual-operator-libraries/validate` | Validate an operator library without storing it and return `valid`, `diagnostics`, server-derived `bloge.visualOperatorLibraryProfile.v1`, `bloge.visualOperatorLibraryImpact.v1`, and `bloge.visualOperatorLibraryImportReadiness.v1` with importable/design-only/runtime-binding/force/ack/evidence state; use `force=true` to suppress stored-draft removal/disablement impact diagnostics; runtime-capability, governance, unresolved native lowering executable, same-ref fingerprint drift, replacement SemVer governance, and immutable-publication impact risks are reported as warnings unless they are blocking errors such as version regression | 200 |
+| `POST` | `/admin/visual-operator-libraries/validate-text` | Parse raw JSON or YAML operator-library source text on the server and then run the same validation/profile/impact/readiness review path without storing it; malformed source returns structured `visual.library.source.*` diagnostics | 200 / 400 |
 | `POST` | `/admin/visual-operator-libraries/import-text` | Parse raw JSON or YAML operator-library source text on the server and store it through the same governed import/replace path, including `force`, `ackWarnings`, impact review, SemVer governance, and revision audit metadata; high-risk writes using `force=true` or `ackWarnings=true` require non-empty `actor` and `reason` evidence | 201 / 200 / 400 / 409 |
 | `POST` | `/admin/visual-operator-libraries/from-asyncapi/operations` | Discover AsyncAPI channel/root-operation/message candidates from parsed `asyncApi` or raw JSON/YAML `asyncApiText` before projection; returns source-kind, payload, tags, and projection readiness summaries so browser or external control planes can select a reviewed subset | 200 |
 | `POST` | `/admin/visual-operator-libraries/from-asyncapi` | Preview-project parsed `asyncApi` or raw JSON/YAML `asyncApiText` into a `bloge.visualOperatorLibrary.v1` draft using runtime-blocked `event-source`, `message-handler`, or `webhook` operators, optionally narrowed by single `operationId` / `channel` / `action` / `messageName` selectors or batch `selections[]`, then return `bloge.asyncApiOperatorLibraryImportResult.v1` with the generated library, validation/profile/impact evidence, `availableOperations` / `selectedOperations` / `omittedOperationCount` / `selectionApplied` projection-audit evidence, and `bloge.asyncApiProjectionReview.v1` coverage / selector-match / omitted-operation review; unmatched batch selectors are rejected with structured diagnostics instead of silently producing a partial library; this endpoint does not store the generated library | 200 |
-| `POST` | `/admin/visual-operator-libraries/import-bundle` | Import a `bloge.visualOperatorLibraryExport.v1` bundle into the target registry through the same governed validation, warning acknowledgement, impact, SemVer, and revision audit path; unsupported export bundle schema versions are rejected before the library snapshot enters registry preflight; responses use `bloge.visualOperatorLibraryImportResult.v1` with source bundle identity, target mutation action, target latest revision, and target preflight validation/profile/impact evidence; high-risk writes using `force=true` or `ackWarnings=true` require non-empty `actor` and `reason` evidence | 201 / 200 / 400 / 409 |
-| `POST` | `/admin/visual-operator-libraries` | Import or re-import an operator library; rejected or warning-gated responses include `bloge.visualOperatorLibraryProfile.v1` and `bloge.visualOperatorLibraryImpact.v1`, reject removal or disablement of stored-draft operator refs unless `force=true`, require `ackWarnings=true` before storing warning-level runtime-capability, governance, executable-resolution, SemVer, or replacement impact, and accept optional `actor` / `changeSource` / `changeSummary` / `reason` query params for the stored registry revision audit metadata; high-risk writes using `force=true` or `ackWarnings=true` require non-empty `actor` and `reason` evidence | 201 / 400 / 409 |
+| `POST` | `/admin/visual-operator-libraries/import-bundle` | Import a `bloge.visualOperatorLibraryExport.v1` bundle into the target registry through the same governed validation, warning acknowledgement, impact, SemVer, readiness, and revision audit path; unsupported export bundle schema versions are rejected before the library snapshot enters registry preflight; responses use `bloge.visualOperatorLibraryImportResult.v1` with source bundle identity, target mutation action, target latest revision, and target preflight validation/profile/impact/readiness evidence; high-risk writes using `force=true` or `ackWarnings=true` require non-empty `actor` and `reason` evidence | 201 / 200 / 400 / 409 |
+| `POST` | `/admin/visual-operator-libraries` | Import or re-import an operator library; rejected or warning-gated responses include `bloge.visualOperatorLibraryProfile.v1`, `bloge.visualOperatorLibraryImpact.v1`, and `bloge.visualOperatorLibraryImportReadiness.v1`, reject removal or disablement of stored-draft operator refs unless `force=true`, require `ackWarnings=true` before storing warning-level runtime-capability, governance, executable-resolution, SemVer, or replacement impact, and accept optional `actor` / `changeSource` / `changeSummary` / `reason` query params for the stored registry revision audit metadata; high-risk writes using `force=true` or `ackWarnings=true` require non-empty `actor` and `reason` evidence | 201 / 400 / 409 |
 | `GET` | `/admin/visual-operator-libraries/{libraryId}` | Get one imported library | 200 / 404 |
 | `GET` | `/admin/visual-operator-libraries/{libraryId}/export` | Export the current library as `bloge.visualOperatorLibraryExport.v1`, including normalized library snapshot, latest registry revision evidence, and export-time validation/profile/impact result | 200 / 404 |
 | `GET` | `/admin/visual-operator-libraries/{libraryId}/revisions` | List immutable create/replace/delete/restore registry snapshots for an imported library, newest first, including `revisionMetadata` audit fields; delete snapshots remain queryable after the current library is removed | 200 / 404 |
@@ -1455,8 +1464,9 @@ Seven `.bloge` graphs live in `src/main/resources/bloge/gateway/`:
 | `DatabaseResourceDesignContractRegistry` | H2-backed visual resource contract registry, so resource-backed operator schemas survive restart |
 | `ResourceDesignContractValidator` | Blocks invalid resource authoring schemas and raw secret examples before resource contracts enter the virtual operator catalog |
 | `OperatorLibrary` | User-provided operator catalog bundle with schema-aware `OperatorDefinition` entries |
-| `OperatorLibraryExportBundle` | Portable operator-library package with source identity, current library snapshot, latest registry revision evidence, and export-time validation/profile/impact result |
-| `OperatorLibraryImportResult` | Target-environment result for importing an operator-library export bundle, including source identity, import decision, target latest revision, and target preflight validation/profile/impact evidence |
+| `OperatorLibraryExportBundle` | Portable operator-library package with source identity, current library snapshot, latest registry revision evidence, and export-time validation/profile/impact/readiness result |
+| `OperatorLibraryImportReadiness` | Server-derived operator-library import decision summary, separating importable/design-only/runtime-binding/governance/force/catalog-repair states from raw diagnostics |
+| `OperatorLibraryImportResult` | Target-environment result for importing an operator-library export bundle, including source identity, import decision, target latest revision, and target preflight validation/profile/impact/readiness evidence |
 | `OperatorLibraryRevision` | Immutable create/replace/delete/restore audit snapshot for user-provided operator-library registry changes |
 | `DatabaseOperatorLibraryRegistry` | H2-backed user operator-library registry with current catalog storage plus immutable revision snapshots, so imported operator catalogs and their governance history survive restart |
 | `JavaOperatorInventoryProjector` | Projects registered BLOGE Java operators into visual operator definitions using registry metadata, schemas, annotations, and capabilities |
@@ -1467,13 +1477,14 @@ Seven `.bloge` graphs live in `src/main/resources/bloge/gateway/`:
 | `GraphDraftDiff` | Machine-readable graph draft revision diff with graph/node/edge change surfaces, node and edge add/remove/change counts, and risk-classified review summaries |
 | `GraphDraftDependencyReport` | Machine-readable dependency report used for stored drafts, migration bundles, import results, and frozen publications, with distinct operatorRef usage, per-node binding/edge upstream and downstream lineage, source/lowering/readiness counts, saved-vs-current/scope-mismatch fingerprint state, and scope policy diagnostics |
 | `GraphDraftRevisionRestoreRequest` | Governed restore request for turning one immutable draft revision into a new latest revision with optimistic locking and actor/source/summary/reason audit metadata |
-| `GraphDraftExportBundle` | Portable draft package with source identity, draft snapshot, operator snapshots, export-time diagnostics, validation/readiness, and source dependency report |
-| `GraphDraftImportResult` | Import response contract with source bundle/draft identity, stored draft identity, target-environment compatibility diagnostics, validation/readiness, and dependency report |
+| `VisualGraphActionReadiness` | Server-derived graph action gate summary (`bloge.visualGraphActionReadiness.v1`) for compile, run, DESIGN publication, EXECUTABLE publication, warning acknowledgement, and governance evidence requirements |
+| `GraphDraftExportBundle` | Portable draft package with source identity, draft snapshot, operator snapshots, export-time diagnostics, validation/readiness/action-readiness, and source dependency report |
+| `GraphDraftImportResult` | Import response contract with source bundle/draft identity, stored draft identity, target-environment compatibility diagnostics, validation/readiness/action-readiness, and dependency report |
 | `DatabaseGraphDraftRepository` | H2-backed graph draft repository with revision assignment, immutable revision history, expected-revision guarded updates, deletion audit snapshots, and retained history for deleted-draft recovery |
 | `GraphDraftValidator` | Validates the `bloge.visualGraphDraft.v1` draft contract, `bloge.visualLayout.v1` presentation contract including node/edge coverage, operator references, operator fingerprint drift, operator scope policy, request-response runtime capability gates for streaming/durable/remote-worker/AI-tool/event-source/message-handler/webhook operators, schema-only design operator authoring, non-idempotent side-effect and secret-backed execution governance warnings, graph input `contextPath` bindings, binding kind and edge kind allow-lists, literal constants, expression references, required schema inputs, node config against `configSchema`, port-aware node bindings, DSL-safe source/target/output port segments, typed data edges, explicit dependency edges, branch route edges, edge identity/connection uniqueness, data edge/semantic dependency consistency, DAG shape, output schema selection, and output-reachability warnings for dangling nodes |
-| `VisualConnectionCheckService` | Reuses draft validation to accept or reject one proposed canvas edge before the browser writes a binding, including schema, source/target port-segment, path diagnostics, a stable decision/replacement summary, and candidate draft validation/readiness |
+| `VisualConnectionCheckService` | Reuses draft validation to accept or reject one proposed canvas edge before the browser writes a binding, including schema, source/target port-segment, path diagnostics, a stable decision/replacement summary, and candidate draft validation/readiness/action-readiness |
 | `GraphDraftDslGenerator` | Lowers visual drafts into executable BLOGE DSL, and deterministically blocks schema-only design operators until runtime lowering is bound |
-| `VisualGraphRunService` | Reuses the dynamic BLOGE runner to validate draft input context, compile, and execute visual drafts or frozen publications while returning draft or frozen-publication validation/readiness |
+| `VisualGraphRunService` | Reuses the dynamic BLOGE runner to validate draft input context, compile, and execute visual drafts or frozen publications while returning draft or frozen-publication validation/readiness/action-readiness |
 | `InputCoercingOperatorRegistry` | Runtime adapter used by the dynamic runner to coerce visual DSL map inputs into Java DTO/record operator inputs before execution |
 | `VisualGraphPublicationOperator` | Reserved runtime executor for publication-backed subgraph operators; resolves the immutable publication and executes its frozen DSL with recursion-depth protection |
 | `VisualGraphPublication` | Immutable published visual graph artifact with DSL, draft, operator schema snapshots, fingerprints, layout, validation reports, publication metadata, and frozen dependency report |

@@ -90,6 +90,7 @@ class VisualAuthoringAppJsTest {
                 .contains("visualAssetOverview: null")
                 .contains("activeVisualAssetAction: null")
                 .contains("visualAssetOverviewActionQuery: {")
+                .contains("actionReadiness: null")
                 .contains("publicationSummaries: []")
                 .contains("publicationDetailsById: {}")
                 .contains("fetch(visualAssetOverviewUrl())")
@@ -131,6 +132,7 @@ class VisualAuthoringAppJsTest {
                 .contains("suggested actions")
                 .contains("Server-derived readiness across drafts, publications, and catalog.")
                 .contains("function renderVisualReadinessPanel(target, readiness)")
+                .contains("function visualActionReadinessRows(actionReadiness)")
                 .contains("function renderDraftAssetSummary()")
                 .contains("Draft Asset Index")
                 .contains("Server-derived draft readiness is visible before loading a draft.")
@@ -146,6 +148,12 @@ class VisualAuthoringAppJsTest {
                 .contains("Save, export, and publish as DESIGN.")
                 .contains("Compile, Run, and EXECUTABLE publish require executable runtime binding.")
                 .contains("function visualDraftExecutableActionState(")
+                .contains("function normalizeVisualGraphActionReadiness(actionReadiness)")
+                .contains("bloge.visualGraphActionReadiness.v1")
+                .contains("payload.actionReadiness")
+                .contains("payload.validation?.actionReadiness")
+                .contains("Publish EXECUTABLE after ackWarnings plus actor/reason.")
+                .contains("Publish DESIGN after ackWarnings plus actor/reason.")
                 .contains("function composerDslUsesVisualDraft()")
                 .contains("function renderExecutableAuthoringControls()")
                 .contains("compileButton.disabled = compileState.disabled;")
@@ -154,13 +162,16 @@ class VisualAuthoringAppJsTest {
                 .contains("This graph can be saved, exported, or published as a Design artifact, but it cannot be compiled or run.")
                 .contains("status: 'not_executable'")
                 .contains("const readinessBeforeCompile = state.visualCheck?.readiness || null;")
+                .contains("const actionReadinessBeforeCompile = state.visualCheck?.actionReadiness || null;")
                 .contains("const executableState = visualDraftExecutableActionState(readinessBeforeCompile);")
-                .contains("setVisualCheck('Compiling...', 'info', [], readinessBeforeCompile);")
+                .contains("setVisualCheck('Compiling...', 'info', [], readinessBeforeCompile, actionReadinessBeforeCompile);")
                 .contains("payload.validation?.readiness || readinessBeforeCompile")
-                .contains("setVisualCheck(error.message, 'error', [], readinessBeforeCompile);")
+                .contains("payload.validation?.actionReadiness || actionReadinessBeforeCompile")
+                .contains("setVisualCheck(error.message, 'error', [], readinessBeforeCompile, actionReadinessBeforeCompile);")
                 .contains("const readinessBeforeRun = publicationReadiness(publication) || state.visualCheck?.readiness || null;")
                 .contains("payload.validation?.readiness || readinessBeforeRun")
-                .contains("setVisualCheck(error.message, 'error', [], readinessBeforeRun);")
+                .contains("payload.validation?.actionReadiness || actionReadinessBeforeRun")
+                .contains("setVisualCheck(error.message, 'error', [], readinessBeforeRun, actionReadinessBeforeRun);")
                 .contains("const validation = payload.validation || null;")
                 .contains("const summary = normalizeConnectionCheckSummary(payload.summary, payload, diagnostics, validation);")
                 .contains("const readiness = validation?.readiness || state.visualCheck?.readiness || null;")
@@ -287,6 +298,8 @@ class VisualAuthoringAppJsTest {
                 .contains("function normalizeAsyncApiSelections(selections)")
                 .contains("function asyncApiProjectionAuditMessage(payload)")
                 .contains("payload?.projectionReview")
+                .contains("payload?.importReadiness")
+                .contains("validation?.importReadiness")
                 .contains("payload?.availableOperations")
                 .contains("payload?.selectedOperations")
                 .contains("payload?.omittedOperationCount")
@@ -301,7 +314,12 @@ class VisualAuthoringAppJsTest {
                 .contains("omitted operation")
                 .contains("function asyncApiProjectionOperationLabel(operation)")
                 .contains("projectionReview: projectionReview || null")
+                .contains("importReadiness: importReadiness || null")
                 .contains("renderAsyncApiProjectionReviewPanel($('asyncapi-projection-review'), state.libraryMessage?.projectionReview)")
+                .contains("function renderLibraryImportReadiness(readiness)")
+                .contains("function normalizeOperatorLibraryImportReadiness(importReadiness)")
+                .contains("bloge.visualOperatorLibraryImportReadiness.v1")
+                .contains("requiresAckWarnings: Boolean(importReadiness.requiresAckWarnings)")
                 .contains("request.operationId = current.operationId")
                 .contains("request.channel = current.channel")
                 .contains("request.action = current.action")
@@ -747,6 +765,7 @@ class VisualAuthoringAppJsTest {
                   'openApiOperationStatusMessage',
                   'applyOpenApiOperationSelection',
                   'renderLibraryProfilePanel',
+                  'renderLibraryImportReadiness',
                   'renderLibraryImpactPanel',
                   'libraryImpactSummaryFromPayload',
                   'libraryImpactDraftTargetsFromPayload',
@@ -2031,6 +2050,39 @@ class VisualAuthoringAppJsTest {
                     runtimeReadinessTitle: 'Runtime binding unresolved'
                   }]
                 });
+                const importReadinessProfileHtml = context.renderLibraryProfilePanel({
+                  libraryId: 'server-reviewed',
+                  version: '1.0.0',
+                  status: 'ACTIVE',
+                  operatorCount: 1,
+                  inputPortCount: 1,
+                  outputPortCount: 1,
+                  requiredInputCount: 1,
+                  configFieldCount: 0,
+                  outputFieldCount: 1,
+                  runtimeBlockedOperatorCount: 1,
+                  importReadiness: {
+                    state: 'runtime-binding-required',
+                    level: 'warning',
+                    message: 'The library can support authoring, but runtime binding is incomplete for executable graphs.',
+                    recommendedAction: 'Import for design work or bind the missing runtime before executable publication.',
+                    requiresAckWarnings: true,
+                    requiresGovernanceEvidence: true,
+                    affectedDraftCount: 2,
+                    affectedOperatorCount: 1
+                  },
+                  operators: [{
+                    label: 'Native Binding',
+                    loweringMode: 'native',
+                    inputPortCount: 1,
+                    outputPortCount: 1,
+                    requiredInputCount: 1,
+                    inputFields: [{ port: 'inputs', path: 'score', required: true, dslPathSafe: true }],
+                    outputFields: [{ port: 'output', path: 'decision', required: false, dslPathSafe: true }],
+                    configFields: [],
+                    runtimeReadinessTitle: 'Runtime binding unresolved'
+                  }]
+                });
                 const mixedCandidateSummary = context.bindingCandidateSummary([
                   { compatibility: { ok: true, message: '' } },
                   { compatibility: { ok: false, message: 'source type string cannot feed target type integer' } }
@@ -3259,6 +3311,10 @@ class VisualAuthoringAppJsTest {
                   ['library profile html design-only chip', String(designOnlyProfileHtml.includes('1 design-only operators')), 'true'],
                   ['library profile html server runtime-blocked chip', String(serverRuntimeBlockedProfileHtml.includes('1 runtime-blocked operators')), 'true'],
                   ['library profile html server readiness title', String(serverRuntimeBlockedProfileHtml.includes('readiness Runtime binding unresolved')), 'true'],
+                  ['library profile html import readiness state', String(importReadinessProfileHtml.includes('Runtime binding required')), 'true'],
+                  ['library profile html import readiness gates', String(importReadinessProfileHtml.includes('ackWarnings + actor/reason')), 'true'],
+                  ['library profile html import readiness affected', String(importReadinessProfileHtml.includes('2 drafts · 1 operators')), 'true'],
+                  ['library profile html import readiness action', String(importReadinessProfileHtml.includes('bind the missing runtime')), 'true'],
                   ['library profile html policy summary', String(libraryProfileHtml.includes('policy tenants demo-tenant; namespaces local; env browser')), 'true'],
                   ['library profile policy-only html summary', String(policyOnlyProfileHtml.includes('policy tenants gold, silver, bronze +1; namespaces lending; env prod')), 'true'],
                   ['library profile html includes required input field', String(libraryProfileHtml.includes('inputs.customer.id*')), 'true'],
@@ -4331,6 +4387,7 @@ class VisualAuthoringAppJsTest {
                   'valueDomainLabel',
                   'renderContractPortGroup',
                   'renderLibraryProfilePanel',
+                  'renderLibraryImportReadiness',
                   'libraryProfileLevel',
                   'operatorLibraryProfile',
                   'operatorLibraryOperatorProfile',

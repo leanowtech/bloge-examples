@@ -74,7 +74,15 @@ class OperatorLibraryAdminControllerTest {
                 .andExpect(jsonPath("$.profile.facets.runtimeReadinessStates['catalog-repair-required']")
                         .value(1))
                 .andExpect(jsonPath("$.profile.operators[0].runtimeReadinessState")
-                        .value("catalog-repair-required"));
+                        .value("catalog-repair-required"))
+                .andExpect(jsonPath("$.importReadiness.schemaVersion")
+                        .value(OperatorLibraryImportReadiness.SCHEMA_VERSION))
+                .andExpect(jsonPath("$.importReadiness.state").value("catalog-repair-required"))
+                .andExpect(jsonPath("$.importReadiness.level").value("error"))
+                .andExpect(jsonPath("$.importReadiness.importableNow").value(false))
+                .andExpect(jsonPath("$.importReadiness.importableAfterReview").value(false))
+                .andExpect(jsonPath("$.importReadiness.blockingCodes[0]")
+                        .value("visual.schema.arrayItemsMissing"));
 
         assertThat(registry.all()).isEmpty();
     }
@@ -106,7 +114,16 @@ class OperatorLibraryAdminControllerTest {
                         .value("Design-only operator"))
                 .andExpect(jsonPath("$.profile.operators[0].inputFields[0].path").value("score"))
                 .andExpect(jsonPath("$.profile.operators[0].inputFields[0].required").value(true))
-                .andExpect(jsonPath("$.profile.operators[0].outputFields[0].path").value("eligible"));
+                .andExpect(jsonPath("$.profile.operators[0].outputFields[0].path").value("eligible"))
+                .andExpect(jsonPath("$.importReadiness.schemaVersion")
+                        .value(OperatorLibraryImportReadiness.SCHEMA_VERSION))
+                .andExpect(jsonPath("$.importReadiness.state").value("design-only-importable"))
+                .andExpect(jsonPath("$.importReadiness.level").value("info"))
+                .andExpect(jsonPath("$.importReadiness.valid").value(true))
+                .andExpect(jsonPath("$.importReadiness.importableNow").value(true))
+                .andExpect(jsonPath("$.importReadiness.designOnlyOperatorCount").value(1))
+                .andExpect(jsonPath("$.importReadiness.message")
+                        .value("Schema-only library is ready for design-time authoring and DESIGN publications."));
 
         assertThat(registry.all()).isEmpty();
     }
@@ -1644,7 +1661,15 @@ class OperatorLibraryAdminControllerTest {
                 .andExpect(jsonPath("$.profile.operators[0].runtimeReadinessState")
                         .value("runtime-blocked"))
                 .andExpect(jsonPath("$.profile.operators[0].runtimeReadinessTitle")
-                        .value("Runtime binding unresolved"));
+                        .value("Runtime binding unresolved"))
+                .andExpect(jsonPath("$.importReadiness.state").value("runtime-binding-required"))
+                .andExpect(jsonPath("$.importReadiness.level").value("warning"))
+                .andExpect(jsonPath("$.importReadiness.importableNow").value(false))
+                .andExpect(jsonPath("$.importReadiness.importableAfterReview").value(true))
+                .andExpect(jsonPath("$.importReadiness.requiresAckWarnings").value(true))
+                .andExpect(jsonPath("$.importReadiness.requiresGovernanceEvidence").value(true))
+                .andExpect(jsonPath("$.importReadiness.warningCodes[0]")
+                        .value("visual.operator.lowering.operatorRefUnresolved"));
 
         assertThat(registry.find("native-missing")).isEmpty();
     }
@@ -1702,7 +1727,11 @@ class OperatorLibraryAdminControllerTest {
                 .andExpect(jsonPath("$.diagnostics[0].target").value("/actor"))
                 .andExpect(jsonPath("$.diagnostics[1].code")
                         .value("visual.library.governanceEvidenceMissing"))
-                .andExpect(jsonPath("$.diagnostics[1].target").value("/reason"));
+                .andExpect(jsonPath("$.diagnostics[1].target").value("/reason"))
+                .andExpect(jsonPath("$.importReadiness.state").value("governance-evidence-required"))
+                .andExpect(jsonPath("$.importReadiness.requiresGovernanceEvidence").value(true))
+                .andExpect(jsonPath("$.importReadiness.blockingCodes[0]")
+                        .value("visual.library.governanceEvidenceMissing"));
 
         assertThat(registry.find("governance-risk")).isEmpty();
     }

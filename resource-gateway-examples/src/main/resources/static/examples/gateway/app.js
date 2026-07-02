@@ -419,7 +419,8 @@ const state = {
     message: 'Not checked',
     level: 'info',
     diagnostics: [],
-    readiness: null
+    readiness: null,
+    actionReadiness: null
   },
   visualDiagnosticNodeFilter: '',
   operatorLibraries: [],
@@ -2802,6 +2803,14 @@ function operatorPaletteFacetLabel(value) {
     'runtime-blocked': 'Runtime blocked',
     'governance-review': 'Governance review',
     'catalog-repair-required': 'Catalog repair required',
+    'runtime-executable-importable': 'Executable import ready',
+    'design-only-importable': 'Design-only import ready',
+    'mixed-importable': 'Mixed import ready',
+    'runtime-binding-required': 'Runtime binding required',
+    'governance-review-required': 'Governance review required',
+    'warning-ack-required': 'Warning acknowledgement required',
+    'force-required': 'Force review required',
+    'governance-evidence-required': 'Governance evidence required',
     streaming: 'Streaming',
     durable: 'Durable',
     suspendable: 'Suspendable',
@@ -3327,7 +3336,10 @@ function renderLibraryProfile() {
   if (!target) return;
   target.hidden = false;
   const serverProfile = operatorLibraryServerProfileForCurrentText();
-  target.innerHTML = renderLibraryProfilePanel(serverProfile || libraryProfileFromText(state.libraryImportText || '{}'));
+  const serverImportReadiness = serverProfile ? operatorLibraryServerImportReadinessForCurrentText() : null;
+  target.innerHTML = renderLibraryProfilePanel(serverProfile
+    ? { ...serverProfile, importReadiness: serverImportReadiness }
+    : libraryProfileFromText(state.libraryImportText || '{}'));
 }
 
 function renderLibraryProfilePanel(profile) {
@@ -3381,6 +3393,7 @@ function renderLibraryProfilePanel(profile) {
       .map((item) => `<span>${escapeHtml(item)}</span>`)
       .join('')}</div>`
     : '';
+  const importReadiness = renderLibraryImportReadiness(profile.importReadiness);
   const rows = profile.operators.slice(0, 5).map((operator) => `
     <div class="library-profile-row">
       <strong>${escapeHtml(operator.label)}</strong>
@@ -3403,6 +3416,7 @@ function renderLibraryProfilePanel(profile) {
       <strong>${escapeHtml(profile.libraryId || 'Unidentified library')}</strong>
       <span>${escapeHtml(profile.status)} · v${escapeHtml(profile.version || '')}</span>
     </div>
+    ${importReadiness}
     <div class="library-profile-stats">
       <span><strong>${profile.operatorCount}</strong> operators</span>
       <span><strong>${profile.inputPortCount}</strong> inputs</span>
@@ -3413,6 +3427,37 @@ function renderLibraryProfilePanel(profile) {
     </div>
     ${warnings}
     <div class="library-profile-rows">${rows}${remaining}</div>
+  `;
+}
+
+function renderLibraryImportReadiness(readiness) {
+  if (!readiness) {
+    return '';
+  }
+  const gates = [
+    readiness.requiresAckWarnings ? 'ackWarnings' : '',
+    readiness.requiresForce ? 'force=true' : '',
+    readiness.requiresGovernanceEvidence ? 'actor/reason' : ''
+  ].filter(Boolean);
+  const gateText = gates.length
+    ? `<span>${escapeHtml(gates.join(' + '))}</span>`
+    : '';
+  const affected = [
+    readiness.affectedDraftCount ? `${readiness.affectedDraftCount} drafts` : '',
+    readiness.affectedPublicationCount ? `${readiness.affectedPublicationCount} publications` : '',
+    readiness.affectedOperatorCount ? `${readiness.affectedOperatorCount} operators` : ''
+  ].filter(Boolean);
+  const affectedText = affected.length
+    ? `<span>${escapeHtml(affected.join(' · '))}</span>`
+    : '';
+  return `
+    <div class="library-import-readiness ${escapeHtml(readiness.level || 'info')}">
+      <strong>${escapeHtml(operatorPaletteFacetLabel(readiness.state || 'import readiness'))}</strong>
+      <span>${escapeHtml(readiness.message || '')}</span>
+      ${gateText}
+      ${affectedText}
+      ${readiness.recommendedAction ? `<small>${escapeHtml(readiness.recommendedAction)}</small>` : ''}
+    </div>
   `;
 }
 
@@ -4065,6 +4110,15 @@ function operatorLibraryServerProfileForCurrentText() {
   return message.profileSourceText === (state.libraryImportText || '') ? profile : null;
 }
 
+function operatorLibraryServerImportReadinessForCurrentText() {
+  const message = state.libraryMessage || {};
+  const importReadiness = normalizeOperatorLibraryImportReadiness(message.importReadiness);
+  if (!importReadiness) {
+    return null;
+  }
+  return message.profileSourceText === (state.libraryImportText || '') ? importReadiness : null;
+}
+
 function normalizeOperatorLibraryServerProfile(profile) {
   if (!profile || typeof profile !== 'object' || Array.isArray(profile)) {
     return null;
@@ -4102,6 +4156,41 @@ function normalizeOperatorLibraryServerProfile(profile) {
     runtimeBlockedOperatorCount: Number(profile.runtimeBlockedOperatorCount || 0),
     governanceReviewOperatorCount: Number(profile.governanceReviewOperatorCount || 0),
     catalogRepairOperatorCount: Number(profile.catalogRepairOperatorCount || 0)
+  };
+}
+
+function normalizeOperatorLibraryImportReadiness(importReadiness) {
+  if (!importReadiness || typeof importReadiness !== 'object' || Array.isArray(importReadiness)) {
+    return null;
+  }
+  return {
+    ...importReadiness,
+    schemaVersion: String(importReadiness.schemaVersion || 'bloge.visualOperatorLibraryImportReadiness.v1'),
+    valid: Boolean(importReadiness.valid),
+    importableNow: Boolean(importReadiness.importableNow),
+    importableAfterReview: Boolean(importReadiness.importableAfterReview),
+    state: String(importReadiness.state || '').trim().toLowerCase().replaceAll('_', '-'),
+    level: String(importReadiness.level || 'info').trim().toLowerCase(),
+    operatorCount: Number(importReadiness.operatorCount || 0),
+    runtimeExecutableOperatorCount: Number(importReadiness.runtimeExecutableOperatorCount || 0),
+    designOnlyOperatorCount: Number(importReadiness.designOnlyOperatorCount || 0),
+    runtimeBlockedOperatorCount: Number(importReadiness.runtimeBlockedOperatorCount || 0),
+    governanceReviewOperatorCount: Number(importReadiness.governanceReviewOperatorCount || 0),
+    catalogRepairOperatorCount: Number(importReadiness.catalogRepairOperatorCount || 0),
+    diagnosticCount: Number(importReadiness.diagnosticCount || 0),
+    errorCount: Number(importReadiness.errorCount || 0),
+    warningCount: Number(importReadiness.warningCount || 0),
+    requiresAckWarnings: Boolean(importReadiness.requiresAckWarnings),
+    requiresForce: Boolean(importReadiness.requiresForce),
+    requiresGovernanceEvidence: Boolean(importReadiness.requiresGovernanceEvidence),
+    affectedDraftCount: Number(importReadiness.affectedDraftCount || 0),
+    affectedPublicationCount: Number(importReadiness.affectedPublicationCount || 0),
+    affectedOperatorCount: Number(importReadiness.affectedOperatorCount || 0),
+    changeRiskCount: Number(importReadiness.changeRiskCount || 0),
+    blockingCodes: normalizeStringArray(importReadiness.blockingCodes),
+    warningCodes: normalizeStringArray(importReadiness.warningCodes),
+    message: String(importReadiness.message || ''),
+    recommendedAction: String(importReadiness.recommendedAction || '')
   };
 }
 
@@ -4430,7 +4519,7 @@ function schemaDynamicSurfaceCount(schema) {
 }
 
 function setLibraryMessage(text, level = 'info', diagnostics = [], impact = null, profile = null,
-    profileSourceText = state.libraryImportText || '', projectionReview = null) {
+    profileSourceText = state.libraryImportText || '', projectionReview = null, importReadiness = null) {
   state.libraryMessage = text
     ? {
         text,
@@ -4439,7 +4528,8 @@ function setLibraryMessage(text, level = 'info', diagnostics = [], impact = null
         impact: impact || null,
         profile: profile || null,
         profileSourceText,
-        projectionReview: projectionReview || null
+        projectionReview: projectionReview || null,
+        importReadiness: importReadiness || null
       }
     : null;
   renderLibraryStatus();
@@ -4491,11 +4581,13 @@ function renderVisualReadinessPanel(target, readiness) {
     target.innerHTML = '';
     return;
   }
+  const actionReadiness = normalizeVisualGraphActionReadiness(state.visualCheck?.actionReadiness);
   const shouldShow = !normalized.executable
     || normalized.designOnlyNodeCount > 0
     || normalized.runtimeBlockedNodeCount > 0
     || normalized.governanceReviewNodeCount > 0
-    || normalized.draftRepairNodeCount > 0;
+    || normalized.draftRepairNodeCount > 0
+    || (actionReadiness && !['runtime-executable-ready', 'not-assessed'].includes(actionReadiness.state));
   if (!shouldShow) {
     target.hidden = true;
     target.innerHTML = '';
@@ -4506,7 +4598,7 @@ function renderVisualReadinessPanel(target, readiness) {
   const heading = !normalized.executable && designAllowed ? 'Design Artifact Path' : 'Visual Graph Readiness';
   const summary = visualReadinessPanelSummary(normalized, designAllowed);
   const stats = visualReadinessPanelStats(normalized);
-  const actions = visualReadinessActionRows(normalized, designAllowed);
+  const actions = visualActionReadinessRows(actionReadiness) || visualReadinessActionRows(normalized, designAllowed);
   const nodes = visualReadinessNodeRows(normalized.nodes);
   target.hidden = false;
   target.className = `library-impact-panel ${escapeHtml(level)}`;
@@ -4557,6 +4649,45 @@ function visualReadinessActionRows(readiness, designAllowed) {
     rows.push(['Blocked', 'Compile, Run, and Publish are blocked until repair is complete.']);
   } else if (readiness.governanceReviewNodeCount > 0) {
     rows.push(['Review', 'Executable path is available after governance warnings are acknowledged.']);
+  }
+  return rows.map(([label, value]) => `
+    <div class="library-impact-risk">
+      <strong>${escapeHtml(label)}</strong>
+      <span>${escapeHtml(value)}</span>
+    </div>
+  `).join('');
+}
+
+function visualActionReadinessRows(actionReadiness) {
+  const readiness = normalizeVisualGraphActionReadiness(actionReadiness);
+  if (!readiness) {
+    return '';
+  }
+  const rows = [];
+  if (readiness.compileNow || readiness.runNow) {
+    rows.push(['Allowed', ['Compile', 'Run'].filter((label) =>
+      label === 'Compile' ? readiness.compileNow : readiness.runNow).join(' and ')]);
+  }
+  if (readiness.publishExecutableNow) {
+    rows.push(['Allowed', 'Publish EXECUTABLE.']);
+  } else if (readiness.publishExecutableAfterReview) {
+    rows.push(['Review', 'Publish EXECUTABLE after ackWarnings plus actor/reason.']);
+  }
+  if (readiness.publishDesignNow) {
+    rows.push(['Allowed', 'Publish DESIGN.']);
+  } else if (readiness.publishDesignAfterReview) {
+    rows.push(['Review', 'Publish DESIGN after ackWarnings plus actor/reason.']);
+  }
+  if (!rows.length) {
+    rows.push(['Blocked', readiness.recommendedAction || readiness.message || 'Resolve server action gates before promotion.']);
+  } else if (readiness.requiresAckWarnings || readiness.requiresGovernanceEvidence) {
+    rows.push(['Gate', [
+      readiness.requiresAckWarnings ? 'ackWarnings' : '',
+      readiness.requiresGovernanceEvidence ? 'actor/reason' : ''
+    ].filter(Boolean).join(' + ')]);
+  }
+  if (readiness.message && !rows.some(([, value]) => value === readiness.message)) {
+    rows.push(['State', readiness.message]);
   }
   return rows.map(([label, value]) => `
     <div class="library-impact-risk">
@@ -4865,12 +4996,16 @@ function visualDiagnosticNodeSummaryText(entry) {
   return parts.join(' · ');
 }
 
-function setVisualCheck(message, level = 'info', diagnostics = [], readiness = null) {
+function setVisualCheck(message, level = 'info', diagnostics = [], readiness = null, actionReadiness = undefined) {
+  const normalizedActionReadiness = actionReadiness === undefined
+    ? (readiness ? state.visualCheck?.actionReadiness || null : null)
+    : normalizeVisualGraphActionReadiness(actionReadiness);
   state.visualCheck = {
     message,
     level,
     diagnostics: normalizeDiagnostics(diagnostics),
-    readiness: normalizeVisualGraphReadiness(readiness)
+    readiness: normalizeVisualGraphReadiness(readiness),
+    actionReadiness: normalizedActionReadiness
   };
   renderVisualCheck();
   renderCanvasNavigator();
@@ -4912,6 +5047,36 @@ function normalizeVisualGraphNodeReadiness(node) {
     diagnosticCount: Number(node?.diagnosticCount || 0),
     errorCount: Number(node?.errorCount || 0),
     warningCount: Number(node?.warningCount || 0)
+  };
+}
+
+function normalizeVisualGraphActionReadiness(actionReadiness) {
+  if (!actionReadiness || typeof actionReadiness !== 'object') {
+    return null;
+  }
+  return {
+    schemaVersion: String(actionReadiness.schemaVersion || 'bloge.visualGraphActionReadiness.v1'),
+    valid: Boolean(actionReadiness.valid),
+    state: normalizeReadinessState(actionReadiness.state),
+    level: String(actionReadiness.level || 'info').trim().toLowerCase(),
+    compileNow: Boolean(actionReadiness.compileNow),
+    runNow: Boolean(actionReadiness.runNow),
+    publishDesignNow: Boolean(actionReadiness.publishDesignNow),
+    publishDesignAfterReview: Boolean(actionReadiness.publishDesignAfterReview),
+    publishExecutableNow: Boolean(actionReadiness.publishExecutableNow),
+    publishExecutableAfterReview: Boolean(actionReadiness.publishExecutableAfterReview),
+    requiresAckWarnings: Boolean(actionReadiness.requiresAckWarnings),
+    requiresGovernanceEvidence: Boolean(actionReadiness.requiresGovernanceEvidence),
+    diagnosticCount: Number(actionReadiness.diagnosticCount || 0),
+    errorCount: Number(actionReadiness.errorCount || 0),
+    warningCount: Number(actionReadiness.warningCount || 0),
+    artifactKinds: Array.isArray(actionReadiness.artifactKinds)
+      ? actionReadiness.artifactKinds.map((kind) => String(kind || '').trim().toUpperCase()).filter(Boolean)
+      : [],
+    blockingCodes: normalizeStringArray(actionReadiness.blockingCodes),
+    warningCodes: normalizeStringArray(actionReadiness.warningCodes),
+    message: String(actionReadiness.message || ''),
+    recommendedAction: String(actionReadiness.recommendedAction || '')
   };
 }
 
@@ -5138,7 +5303,8 @@ async function validateVisualDraft() {
       payload.valid ? 'Valid visual graph.' : 'Visual graph has errors.',
       visualCheckLevel(diagnostics, payload.valid),
       diagnostics,
-      payload.readiness
+      payload.readiness,
+      payload.actionReadiness
     );
     $('output').textContent = pretty({ status: response.status, validation: payload });
   } catch (error) {
@@ -5148,18 +5314,20 @@ async function validateVisualDraft() {
 
 async function compileVisualDraft() {
   const readinessBeforeCompile = state.visualCheck?.readiness || null;
+  const actionReadinessBeforeCompile = state.visualCheck?.actionReadiness || null;
   const executableState = visualDraftExecutableActionState(readinessBeforeCompile);
   if (executableState.disabled) {
     setVisualCheck(
       executableState.message || 'Visual graph is not executable.',
       executableState.level || 'warning',
       normalizeDiagnostics(state.visualCheck?.diagnostics),
-      readinessBeforeCompile
+      readinessBeforeCompile,
+      actionReadinessBeforeCompile
     );
     $('output').textContent = pretty({ status: 'not_executable', readiness: readinessBeforeCompile });
     return;
   }
-  setVisualCheck('Compiling...', 'info', [], readinessBeforeCompile);
+  setVisualCheck('Compiling...', 'info', [], readinessBeforeCompile, actionReadinessBeforeCompile);
   try {
     const response = await fetch('/api/visual/drafts/compile', {
       method: 'POST',
@@ -5180,16 +5348,18 @@ async function compileVisualDraft() {
       payload.generated ? 'Compiled visual graph.' : 'Visual graph did not compile.',
       visualCheckLevel(diagnostics, payload.generated),
       diagnostics,
-      payload.validation?.readiness || readinessBeforeCompile
+      payload.validation?.readiness || readinessBeforeCompile,
+      payload.validation?.actionReadiness || actionReadinessBeforeCompile
     );
     $('output').textContent = pretty({ status: response.status, compile: payload });
   } catch (error) {
-    setVisualCheck(error.message, 'error', [], readinessBeforeCompile);
+    setVisualCheck(error.message, 'error', [], readinessBeforeCompile, actionReadinessBeforeCompile);
   }
 }
 
 async function publishVisualDraft() {
   const readinessBeforePublish = state.visualCheck?.readiness || null;
+  const actionReadinessBeforePublish = state.visualCheck?.actionReadiness || null;
   const diagnosticsBeforePublish = normalizeDiagnostics(state.visualCheck?.diagnostics);
   const publishControl = publishArtifactKindControlState(readinessBeforePublish, state.publishArtifactKind);
   state.publishArtifactKind = publishControl.selected;
@@ -5199,11 +5369,12 @@ async function publishVisualDraft() {
       publishControl.message || 'Visual graph is not publishable.',
       publishControl.level || 'error',
       diagnosticsBeforePublish,
-      readinessBeforePublish
+      readinessBeforePublish,
+      actionReadinessBeforePublish
     );
     return;
   }
-  setVisualCheck('Publishing...', 'info', [], readinessBeforePublish);
+  setVisualCheck('Publishing...', 'info', [], readinessBeforePublish, actionReadinessBeforePublish);
   try {
     const artifactKind = publishControl.selected;
     state.publishArtifactKind = artifactKind;
@@ -5214,7 +5385,7 @@ async function publishVisualDraft() {
     const confirmingPublishWarnings = state.pendingPublishWarningKey === previousWarningKey;
     const stored = await saveCurrentDraft();
     if (!stored?.draftId) {
-      setVisualCheck('Draft was not saved.', 'error', [], readinessBeforePublish);
+      setVisualCheck('Draft was not saved.', 'error', [], readinessBeforePublish, actionReadinessBeforePublish);
       return;
     }
     const draftId = stored.draftId;
@@ -5271,11 +5442,12 @@ async function publishVisualDraft() {
       payload.published ? `Published ${publication.publicationId || ''}.` : 'Visual graph was not published.',
       visualCheckLevel(diagnostics, payload.published),
       diagnostics,
-      payload.validation?.readiness || publication.validation?.readiness
+      payload.validation?.readiness || publication.validation?.readiness,
+      payload.validation?.actionReadiness || publication.validation?.actionReadiness || actionReadinessBeforePublish
     );
     $('output').textContent = pretty({ status: response.status, publication: payload });
   } catch (error) {
-    setVisualCheck(error.message, 'error', [], readinessBeforePublish);
+    setVisualCheck(error.message, 'error', [], readinessBeforePublish, actionReadinessBeforePublish);
   }
 }
 
@@ -5410,7 +5582,7 @@ async function validateOperatorLibrary() {
   const { response, payload, diagnostics } = await validateOperatorLibraryTextPayload(sourceText);
   if (!response.ok) {
     setLibraryMessage(`Validation failed with ${response.status}`, 'error', diagnostics, payload?.impact,
-      payload?.profile, sourceText);
+      payload?.profile, sourceText, null, payload?.importReadiness);
     return;
   }
   state.libraryImportConfirmationKey = payload?.valid !== false && hasWarningDiagnostic(diagnostics)
@@ -5422,7 +5594,9 @@ async function validateOperatorLibrary() {
     diagnostics,
     payload?.impact,
     payload?.profile,
-    sourceText
+    sourceText,
+    null,
+    payload?.importReadiness
   );
 }
 
@@ -5587,7 +5761,8 @@ async function projectAsyncApiOperatorLibrary() {
       validation?.impact,
       validation?.profile,
       sourceText,
-      payload?.projectionReview
+      payload?.projectionReview,
+      validation?.importReadiness
     );
     return;
   }
@@ -5613,7 +5788,8 @@ async function projectAsyncApiOperatorLibrary() {
     validation?.impact,
     validation?.profile,
     state.libraryImportText,
-    payload?.projectionReview
+    payload?.projectionReview,
+    validation?.importReadiness
   );
 }
 
@@ -5648,7 +5824,9 @@ async function importOperatorLibrary() {
       validation.diagnostics,
       validation.payload?.impact,
       validation.payload?.profile,
-      sourceText
+      sourceText,
+      null,
+      validation.payload?.importReadiness
     );
     return;
   }
@@ -5665,7 +5843,9 @@ async function importOperatorLibrary() {
       validation.diagnostics,
       validation.payload?.impact,
       validation.payload?.profile,
-      sourceText
+      sourceText,
+      null,
+      validation.payload?.importReadiness
     );
     return;
   }
@@ -5698,7 +5878,9 @@ async function importOperatorLibrary() {
       diagnostics,
       payload?.impact,
       payload?.profile,
-      sourceText
+      sourceText,
+      null,
+      payload?.importReadiness
     );
     return;
   }
@@ -5768,7 +5950,9 @@ async function importOperatorLibraryBundle() {
         diagnostics,
         validation?.impact,
         validation?.profile,
-        sourceText
+        sourceText,
+        null,
+        validation?.importReadiness
       );
       return;
     }
@@ -5779,7 +5963,9 @@ async function importOperatorLibraryBundle() {
       diagnostics,
       validation?.impact,
       validation?.profile,
-      sourceText
+      sourceText,
+      null,
+      validation?.importReadiness
     );
     return;
   }
@@ -5787,7 +5973,7 @@ async function importOperatorLibraryBundle() {
   if (!stored?.libraryId) {
     state.libraryImportConfirmationKey = '';
     setLibraryMessage('Import bundle response did not include a stored operator library.', 'error',
-      diagnostics, validation?.impact, validation?.profile, sourceText);
+      diagnostics, validation?.impact, validation?.profile, sourceText, null, validation?.importReadiness);
     return;
   }
   state.libraryImportConfirmationKey = '';
@@ -5812,7 +5998,10 @@ async function importOperatorLibraryBundle() {
     visualCheckLevel(diagnostics, true),
     diagnostics,
     validation?.impact,
-    validation?.profile
+    validation?.profile,
+    sourceText,
+    null,
+    validation?.importReadiness
   );
 }
 
@@ -5919,7 +6108,10 @@ async function restoreSelectedOperatorLibraryRevision() {
         'warning',
         diagnostics,
         payload?.impact,
-        payload?.profile
+        payload?.profile,
+        state.libraryImportText || '',
+        null,
+        payload?.importReadiness
       );
       return;
     }
@@ -5929,7 +6121,10 @@ async function restoreSelectedOperatorLibraryRevision() {
       visualCheckLevel(diagnostics, payload?.valid !== false && response.status < 500),
       diagnostics,
       payload?.impact,
-      payload?.profile
+      payload?.profile,
+      state.libraryImportText || '',
+      null,
+      payload?.importReadiness
     );
     return;
   }
@@ -7167,7 +7362,8 @@ async function focusOperatorPaletteRef(operatorRef, context = null) {
     context ? `Opened overview action: ${context.message}` : `Focused operator ${normalized} in the palette.`,
     context?.level || 'info',
     state.visualCheck?.diagnostics || [],
-    state.visualCheck?.readiness || null
+    state.visualCheck?.readiness || null,
+    state.visualCheck?.actionReadiness || null
   );
   return normalized;
 }
@@ -9070,8 +9266,10 @@ async function runSelectedPublication() {
   }
 
   const readinessBeforeRun = publicationReadiness(publication) || state.visualCheck?.readiness || null;
+  const actionReadinessBeforeRun = publication?.validation?.actionReadiness || state.visualCheck?.actionReadiness || null;
   setPublicationMessage(`Running ${publication.publicationId}...`, 'info');
-  setVisualCheck(`Running published ${publication.publicationId}...`, 'info', [], readinessBeforeRun);
+  setVisualCheck(`Running published ${publication.publicationId}...`, 'info', [], readinessBeforeRun,
+    actionReadinessBeforeRun);
   clearActiveRunTrace();
   try {
     const response = await fetch(`/api/visual/publications/${encodeURIComponent(publication.publicationId)}/run`, {
@@ -9087,7 +9285,8 @@ async function runSelectedPublication() {
       ok ? 'Published run completed.' : 'Published run returned errors.',
       level,
       diagnostics,
-      payload.validation?.readiness || readinessBeforeRun
+      payload.validation?.readiness || readinessBeforeRun,
+      payload.validation?.actionReadiness || actionReadinessBeforeRun
     );
     setPublicationMessage(
       ok ? `Ran ${publication.publicationId}.` : `Run returned errors for ${publication.publicationId}.`,
@@ -9105,7 +9304,7 @@ async function runSelectedPublication() {
     await loadRunHistory();
   } catch (error) {
     setPublicationMessage(error.message, 'error');
-    setVisualCheck(error.message, 'error', [], readinessBeforeRun);
+    setVisualCheck(error.message, 'error', [], readinessBeforeRun, actionReadinessBeforeRun);
   }
 }
 
@@ -9583,7 +9782,8 @@ async function exportSelectedDraft() {
     'Exported visual draft package.',
     visualCheckLevel(diagnostics, validation?.valid !== false),
     diagnostics,
-    validation?.readiness
+    validation?.readiness,
+    validation?.actionReadiness
   );
   $('output').textContent = pretty({ status: response.status, draftExport: payload });
   renderDraftControls();
@@ -9646,7 +9846,8 @@ async function importDraftBundle() {
     payload?.imported ? 'Imported visual draft package.' : 'Visual draft package was not imported.',
     visualCheckLevel(diagnostics, payload?.imported !== false && !hasImportErrors),
     diagnostics,
-    validation?.readiness
+    validation?.readiness,
+    validation?.actionReadiness
   );
   renderScenario();
   renderVisualAssetOverview();
@@ -19383,7 +19584,8 @@ async function checkVisualConnectionOnServer(source, target) {
   const diagnostics = normalizeDiagnostics(payload.diagnostics);
   const validation = payload.validation || null;
   const summary = normalizeConnectionCheckSummary(payload.summary, payload, diagnostics, validation);
-  const readiness = validation?.readiness || state.visualCheck?.readiness || null;
+    const readiness = validation?.readiness || state.visualCheck?.readiness || null;
+    const actionReadiness = validation?.actionReadiness || state.visualCheck?.actionReadiness || null;
   if (diagnostics.length || readiness) {
     const graphDiagnostics = normalizeDiagnostics(validation?.diagnostics);
     const visualDiagnostics = diagnostics.length ? diagnostics : graphDiagnostics;
@@ -19397,7 +19599,8 @@ async function checkVisualConnectionOnServer(source, target) {
       visualMessage,
       visualCheckLevel(visualDiagnostics, Boolean(payload.accepted) && !graphStillInvalid),
       visualDiagnostics,
-      readiness
+      readiness,
+      actionReadiness
     );
   }
   return {
@@ -19874,7 +20077,8 @@ async function runCustomGraph() {
       executableState.message || 'Visual graph is not executable.',
       executableState.level || 'warning',
       normalizeDiagnostics(state.visualCheck?.diagnostics),
-      state.visualCheck?.readiness || null
+      state.visualCheck?.readiness || null,
+      state.visualCheck?.actionReadiness || null
     );
     $('output').textContent = pretty({ status: 'not_executable', readiness: state.visualCheck?.readiness || null });
     return;
@@ -19902,7 +20106,8 @@ async function runCustomGraph() {
       ok ? 'Run completed.' : (payload.validated === false ? 'Visual validation failed.' : 'Run returned errors.'),
       visualCheckLevel(diagnostics, ok),
       diagnostics,
-      payload.validation?.readiness || state.visualCheck?.readiness || null
+      payload.validation?.readiness || state.visualCheck?.readiness || null,
+      payload.validation?.actionReadiness || state.visualCheck?.actionReadiness || null
     );
   }
   if (payload.generatedDsl) {

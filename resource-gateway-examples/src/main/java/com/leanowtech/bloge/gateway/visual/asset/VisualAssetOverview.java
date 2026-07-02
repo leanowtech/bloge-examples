@@ -6,6 +6,7 @@ import com.leanowtech.bloge.gateway.visual.diagnostic.VisualDiagnostic;
 import com.leanowtech.bloge.gateway.visual.draft.GraphDraftSummary;
 import com.leanowtech.bloge.gateway.visual.publication.VisualGraphPublication;
 import com.leanowtech.bloge.gateway.visual.publication.VisualGraphPublicationSummary;
+import com.leanowtech.bloge.gateway.visual.validation.VisualGraphActionReadiness;
 import com.leanowtech.bloge.gateway.visual.validation.VisualGraphReadiness;
 
 import java.time.Instant;
@@ -773,11 +774,14 @@ public record VisualAssetOverview(
             return;
         }
         String state = readinessState(draft.readiness());
+        VisualGraphActionReadiness actionReadiness = draft.actionReadiness();
+        String actionState = actionReadinessState(actionReadiness);
         String label = "%s @%d".formatted(
                 draft.graphName().isBlank() ? draft.draftId() : draft.graphName(),
                 draft.currentRevision() > 0 ? draft.currentRevision() : draft.latestRevision()
         );
-        if (!draft.valid() || "draft-repair-required".equals(state) || "catalog-repair-required".equals(state)
+        if (VisualGraphActionReadiness.DRAFT_REPAIR_REQUIRED.equals(actionState)
+                || "draft-repair-required".equals(state) || "catalog-repair-required".equals(state)
                 || draft.missingOperatorCount() > 0) {
             items.add(new ActionItem(
                     "error",
@@ -803,7 +807,8 @@ public record VisualAssetOverview(
                     "Draft dependency snapshots need review.",
                     "Review dependency report, then rebase fingerprints or repair catalog scope intentionally."
             ));
-        } else if ("runtime-blocked".equals(state)) {
+        } else if (VisualGraphActionReadiness.RUNTIME_BINDING_REQUIRED.equals(actionState)
+                || "runtime-blocked".equals(state)) {
             items.add(new ActionItem(
                     "warning",
                     "BIND_DRAFT_RUNTIME",
@@ -813,9 +818,11 @@ public record VisualAssetOverview(
                     state,
                     "",
                     "Draft is schema-valid but blocked by runtime capability or binding gaps.",
-                    "Bind executable runtime implementations or publish as a DESIGN artifact for review."
+                    actionRecommendation(actionReadiness,
+                            "Bind executable runtime implementations or publish as a DESIGN artifact for review.")
             ));
-        } else if ("governance-review".equals(state)) {
+        } else if (VisualGraphActionReadiness.GOVERNANCE_REVIEW_REQUIRED.equals(actionState)
+                || "governance-review".equals(state)) {
             items.add(new ActionItem(
                     "warning",
                     "REVIEW_DRAFT_GOVERNANCE",
@@ -825,7 +832,22 @@ public record VisualAssetOverview(
                     state,
                     "",
                     "Draft requires governance review before production promotion.",
-                    "Review warnings, provide actor/reason evidence, then publish when accepted."
+                    actionRecommendation(actionReadiness,
+                            "Review warnings, provide actor/reason evidence, then publish when accepted.")
+            ));
+        } else if (VisualGraphActionReadiness.WARNING_ACK_REQUIRED.equals(actionState)) {
+            items.add(new ActionItem(
+                    "warning",
+                    "ACK_DRAFT_WARNINGS",
+                    "draft",
+                    draft.draftId(),
+                    label,
+                    state,
+                    "",
+                    actionMessage(actionReadiness,
+                            "Draft publication requires warning acknowledgement and governance evidence."),
+                    actionRecommendation(actionReadiness,
+                            "Publish with ackWarnings=true plus actor and reason after reviewing diagnostics.")
             ));
         } else if ("design-only".equals(state)) {
             items.add(new ActionItem(
@@ -837,7 +859,8 @@ public record VisualAssetOverview(
                     state,
                     "",
                     "Draft is a valid schema-only design asset.",
-                    "Publish as DESIGN or keep tracking until runtime implementation is bound."
+                    actionRecommendation(actionReadiness,
+                            "Publish as DESIGN or keep tracking until runtime implementation is bound.")
             ));
         }
     }
@@ -847,12 +870,15 @@ public record VisualAssetOverview(
             return;
         }
         String state = readinessState(publication.readiness());
+        VisualGraphActionReadiness actionReadiness = publication.actionReadiness();
+        String actionState = actionReadinessState(actionReadiness);
         String artifactKind = normalizeArtifactKind(publication.artifactKind());
         String label = "%s @%d".formatted(
                 publication.graphName().isBlank() ? publication.publicationId() : publication.graphName(),
                 publication.draftRevision()
         );
-        if (!publication.valid() || "draft-repair-required".equals(state) || "catalog-repair-required".equals(state)
+        if (VisualGraphActionReadiness.DRAFT_REPAIR_REQUIRED.equals(actionState)
+                || "draft-repair-required".equals(state) || "catalog-repair-required".equals(state)
                 || publication.missingOperatorCount() > 0) {
             items.add(new ActionItem(
                     "error",
@@ -878,7 +904,8 @@ public record VisualAssetOverview(
                     "Publication dependency evidence should be reviewed before reuse.",
                     "Review frozen dependency report and recertify before promotion or reuse."
             ));
-        } else if ("runtime-blocked".equals(state)) {
+        } else if (VisualGraphActionReadiness.RUNTIME_BINDING_REQUIRED.equals(actionState)
+                || "runtime-blocked".equals(state)) {
             items.add(new ActionItem(
                     "warning",
                     "BIND_PUBLICATION_RUNTIME",
@@ -890,7 +917,8 @@ public record VisualAssetOverview(
                     "Publication is not executable in the current runtime.",
                     "Bind runtime implementations, republish as EXECUTABLE, then certify."
             ));
-        } else if ("governance-review".equals(state)) {
+        } else if (VisualGraphActionReadiness.GOVERNANCE_REVIEW_REQUIRED.equals(actionState)
+                || "governance-review".equals(state)) {
             items.add(new ActionItem(
                     "warning",
                     "REVIEW_PUBLICATION_GOVERNANCE",
@@ -901,6 +929,19 @@ public record VisualAssetOverview(
                     artifactKind,
                     "Publication freezes governance-review warnings.",
                     "Review promotion evidence and certification status before production use."
+            ));
+        } else if (VisualGraphActionReadiness.WARNING_ACK_REQUIRED.equals(actionState)) {
+            items.add(new ActionItem(
+                    "warning",
+                    "REVIEW_PUBLICATION_WARNING_EVIDENCE",
+                    "publication",
+                    publication.publicationId(),
+                    label,
+                    state,
+                    artifactKind,
+                    actionMessage(actionReadiness,
+                            "Publication freezes warning-level validation evidence."),
+                    "Review frozen actor/reason acknowledgement, diagnostics, and certification before promotion."
             ));
         } else if (VisualGraphPublication.ARTIFACT_DESIGN.equals(artifactKind) || "design-only".equals(state)) {
             items.add(new ActionItem(
@@ -1008,6 +1049,24 @@ public record VisualAssetOverview(
 
     private static String readinessState(VisualGraphReadiness readiness) {
         return normalizeFacetValue(readiness == null ? "" : readiness.state());
+    }
+
+    private static String actionReadinessState(VisualGraphActionReadiness actionReadiness) {
+        return normalizeFacetValue(actionReadiness == null ? "" : actionReadiness.state());
+    }
+
+    private static String actionMessage(VisualGraphActionReadiness actionReadiness, String fallback) {
+        if (actionReadiness == null || actionReadiness.message().isBlank()) {
+            return fallback;
+        }
+        return actionReadiness.message();
+    }
+
+    private static String actionRecommendation(VisualGraphActionReadiness actionReadiness, String fallback) {
+        if (actionReadiness == null || actionReadiness.recommendedAction().isBlank()) {
+            return fallback;
+        }
+        return actionReadiness.recommendedAction();
     }
 
     private static String normalizeSeverity(String value) {

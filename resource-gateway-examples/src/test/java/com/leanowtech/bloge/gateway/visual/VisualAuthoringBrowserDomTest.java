@@ -970,8 +970,10 @@ class VisualAuthoringBrowserDomTest {
         click(wait, By.id("validate-visual-draft"));
         waitForText(wait, By.id("visual-check-status"), "DESIGN artifact");
         waitForText(wait, By.id("visual-readiness-panel"), "Design Artifact Path");
-        waitForText(wait, By.id("visual-readiness-panel"), "Save, export, and publish as DESIGN.");
-        waitForText(wait, By.id("visual-readiness-panel"), "Compile, Run, and EXECUTABLE publish require executable runtime binding.");
+        waitForText(wait, By.id("visual-readiness-panel"), "Publish DESIGN after ackWarnings plus actor/reason.");
+        waitForText(wait, By.id("visual-readiness-panel"), "ackWarnings + actor/reason");
+        waitForText(wait, By.id("visual-readiness-panel"),
+                "Graph is publishable, but publication requires warning acknowledgement and governance evidence.");
         assertThat(valueOf(By.id("publish-artifact-kind"))).isEqualTo("DESIGN");
         assertThat(driver.findElement(By.cssSelector(
                 "#publish-artifact-kind option[value='EXECUTABLE']"

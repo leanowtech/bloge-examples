@@ -11,12 +11,14 @@ import java.util.List;
  * @param diagnostics detailed diagnostics
  * @param impact machine-readable impact review
  * @param profile server-derived library review profile
+ * @param importReadiness server-derived import readiness summary
  */
 public record OperatorLibraryValidationResult(
         boolean valid,
         List<VisualDiagnostic> diagnostics,
         OperatorLibraryImpactReview impact,
-        OperatorLibraryProfile profile
+        OperatorLibraryProfile profile,
+        OperatorLibraryImportReadiness importReadiness
 ) {
     /**
      * Creates a validation result.
@@ -26,6 +28,19 @@ public record OperatorLibraryValidationResult(
         valid = diagnostics.stream().noneMatch(VisualDiagnostic::error);
         impact = impact == null ? OperatorLibraryImpactReview.fromDiagnostics(diagnostics, List.of()) : impact;
         profile = profile == null ? OperatorLibraryProfile.empty() : profile;
+        importReadiness = importReadiness == null
+                ? OperatorLibraryImportReadiness.from(valid, diagnostics, impact, profile)
+                : importReadiness;
+    }
+
+    /**
+     * Backward-compatible constructor for callers that do not provide import readiness.
+     */
+    public OperatorLibraryValidationResult(boolean valid,
+                                           List<VisualDiagnostic> diagnostics,
+                                           OperatorLibraryImpactReview impact,
+                                           OperatorLibraryProfile profile) {
+        this(valid, diagnostics, impact, profile, null);
     }
 
     /**

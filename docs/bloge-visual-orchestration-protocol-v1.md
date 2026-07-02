@@ -14,6 +14,7 @@
 > `resource-gateway-examples` 的 wire contract 已收敛为
 > `bloge.visualOperator.v1`、`bloge.visualOperatorLibrary.v1`、
 > `bloge.visualOperatorCatalog.v1`、`bloge.visualGraphDraft.v1`、
+> `bloge.visualGraphReadiness.v1`、`bloge.visualGraphActionReadiness.v1`、
 > `bloge.visualGraphDraftDependencies.v1` 和 `bloge.visualGraphPublication.v1`；operator usage index 当前为
 > `bloge.visualOperatorUsage.v1`。继续实现时以代码和实现状态审计为准，
 > 不要把早期草案名误认为当前 API 字段。
@@ -23,7 +24,7 @@
 这份文档把“可视化编排画布”从产品愿景压成可实现合同。它定义四个核心协议：
 
 1. `bloge.visualOperator.v1` / `bloge.visualOperatorLibrary.v1` / `bloge.visualOperatorCatalog.v1` / `bloge.visualOperatorUsage.v1`：用户、运行时或 resource gateway 暴露给画布的算子定义、算子库、catalog response 和 operatorRef usage index。
-2. `bloge.visualGraphDraft.v1` / `bloge.visualGraphDraftDependencies.v1`：画布编辑中的图草稿模型，以及 stored draft 的当前 catalog 依赖审阅报告。
+2. `bloge.visualGraphDraft.v1` / `bloge.visualGraphReadiness.v1` / `bloge.visualGraphActionReadiness.v1` / `bloge.visualGraphDraftDependencies.v1`：画布编辑中的图草稿模型、图级 runtime/design readiness、compile/run/publication 动作准入，以及 stored draft 的当前 catalog 依赖审阅报告。
 3. `VisualDiagnostic`：校验、编译、策略和运行错误如何定位回画布。
 4. `ResourceDesignContract`：`ResourceDescriptor` 如何补足设计时 schema，投影成虚拟算子。
 5. `bloge.visualGraphPublication.v1`：冻结 DSL、draft、operator snapshots、fingerprints、layout 和报告的不可变发布物。
@@ -1111,7 +1112,7 @@ operator contract 但 library version 回退，则返回 blocking
 `operatorRefs`、`changeRisk`、`changeCategories` 和 `changeSummary`，所以 impact
 review 可以在没有 stored draft 引用时仍然暴露 operator-level 变更风险。
 浏览器 Operator Libraries 面板已在 Import 前调用该端点，把结构化 diagnostics、
-impact review 和 profile 以明细列表展示给作者，再允许作者选择是否执行 Import。
+impact review、profile 和 import readiness 以明细列表展示给作者，再允许作者选择是否执行 Import。
 
 resource-gateway 示例同时把用户算子库 registry 历史固化为
 `bloge.visualOperatorLibraryRevision.v1`，并把当前库导出为
@@ -1131,7 +1132,8 @@ POST /admin/visual-operator-libraries/{libraryId}/revisions/{revision}/restore
 server export timestamp、当前 `OperatorLibrary` snapshot、latest immutable
 `OperatorLibraryRevision` evidence，以及 export-time `OperatorLibraryValidationResult`
 （其中包含 `bloge.visualOperatorLibraryProfile.v1` 与
-`bloge.visualOperatorLibraryImpact.v1`）。这个包用于跨环境迁移、PR 审阅、catalog
+`bloge.visualOperatorLibraryImpact.v1`，并派生
+`bloge.visualOperatorLibraryImportReadiness.v1`）。这个包用于跨环境迁移、PR 审阅、catalog
 归档和外部控制面同步；它是只读 artifact，不触发 replacement impact mutation。
 `import-bundle` 是目标环境 mutation：请求体必须是当前支持的
 `bloge.visualOperatorLibraryExport.v1`；future/unknown bundle schemaVersion 会在读取
@@ -1224,6 +1226,34 @@ libraryId 拉取 history、在 JSON editor 中预览历史 snapshot、并通过 
       }
     ]
   },
+  "importReadiness": {
+    "schemaVersion": "bloge.visualOperatorLibraryImportReadiness.v1",
+    "valid": true,
+    "importableNow": false,
+    "importableAfterReview": true,
+    "state": "runtime-binding-required",
+    "level": "warning",
+    "operatorCount": 3,
+    "runtimeExecutableOperatorCount": 1,
+    "designOnlyOperatorCount": 1,
+    "runtimeBlockedOperatorCount": 1,
+    "governanceReviewOperatorCount": 0,
+    "catalogRepairOperatorCount": 0,
+    "diagnosticCount": 1,
+    "errorCount": 0,
+    "warningCount": 1,
+    "requiresAckWarnings": true,
+    "requiresForce": false,
+    "requiresGovernanceEvidence": true,
+    "affectedDraftCount": 1,
+    "affectedPublicationCount": 0,
+    "affectedOperatorCount": 1,
+    "changeRiskCount": 1,
+    "blockingCodes": [],
+    "warningCodes": ["visual.operator.lowering.operatorRefUnresolved"],
+    "message": "The library can support authoring, but runtime binding is incomplete for executable graphs.",
+    "recommendedAction": "Import for design work or bind the missing runtime before executable publication."
+  },
   "impact": {
     "schemaVersion": "bloge.visualOperatorLibraryImpact.v1",
     "diagnosticCount": 1,
@@ -1257,6 +1287,16 @@ inventory warning 之后生成，包含 operator/schema 字段计数、DSL-unsaf
 governance-review/design-only 计数，以及用于浏览器 profile 面板的前几个 operator 行。
 浏览器可在用户编辑 JSON 时给出本地即时预览，但 validate/import 返回后应优先展示该 `profile`；
 如果用户继续改动 JSON，则本地预览不能继续伪装成服务端审阅结果。
+
+`bloge.visualOperatorLibraryImportReadiness.v1` 是导入准入决策摘要，不替代 profile
+或 impact。它把 diagnostics、profile 和 impact 压成稳定的 `state`、`level`、
+`message`、`recommendedAction` 与 gate flags。当前状态包括
+`runtime-executable-importable`、`design-only-importable`、`mixed-importable`、
+`runtime-binding-required`、`governance-review-required`、`warning-ack-required`、
+`force-required`、`governance-evidence-required` 和 `catalog-repair-required`。
+浏览器、CI 或外部控制面应使用 `requiresAckWarnings`、`requiresForce`、
+`requiresGovernanceEvidence`、`blockingCodes`、`warningCodes` 和 affected counts
+路由下一步动作，而不是解析自然语言 diagnostic message。
 
 `bloge.visualOperatorLibraryImpact.v1` 是导入/替换/删除前的机器可读影响面。
 当前实现会聚合 affected draft、publication、operatorRef、draft node target、
@@ -1605,18 +1645,52 @@ DSL generator 或编译器兜底。
         "warningCount": 1
       }
     ]
+  },
+  "actionReadiness": {
+    "schemaVersion": "bloge.visualGraphActionReadiness.v1",
+    "valid": true,
+    "state": "governance-review-required",
+    "level": "warning",
+    "compileNow": true,
+    "runNow": true,
+    "publishDesignNow": false,
+    "publishDesignAfterReview": true,
+    "publishExecutableNow": false,
+    "publishExecutableAfterReview": true,
+    "requiresAckWarnings": true,
+    "requiresGovernanceEvidence": true,
+    "diagnosticCount": 1,
+    "errorCount": 0,
+    "warningCount": 1,
+    "artifactKinds": ["EXECUTABLE", "DESIGN"],
+    "blockingCodes": [],
+    "warningCodes": ["visual.operator.governance.nonIdempotent"],
+    "message": "Graph is executable, but publication requires warning acknowledgement and governance evidence.",
+    "recommendedAction": "Review warning diagnostics, then publish with ackWarnings=true plus actor and reason."
   }
 }
 ```
 
 当前 `resource-gateway-examples` 的 validate response 会额外返回
-`bloge.visualGraphReadiness.v1`。`valid` 只表达 schema、policy、fingerprint、
+`bloge.visualGraphReadiness.v1` 和 `bloge.visualGraphActionReadiness.v1`。`valid` 只表达 schema、policy、fingerprint、
 edge/DAG 等 draft contract 是否有 blocking error；`readiness` 单独表达当前
 request-response runtime 是否能执行该图，以及它是否只能作为 `DESIGN` artifact
 冻结。典型 state 包括 `runtime-executable`、`design-only`、`runtime-blocked`、
 `governance-review` 和 `draft-repair-required`。这条边界必须保持：schema-only
 operator 组成的合法图可以 `valid=true`，同时 `readiness.executable=false` 且
 `artifactKinds=["DESIGN"]`。
+`actionReadiness` 则把同一批 diagnostics/readiness 压成产品动作门禁：`compileNow`、
+`runNow`、`publishDesignNow`、`publishDesignAfterReview`、`publishExecutableNow`、
+`publishExecutableAfterReview`，以及 `requiresAckWarnings` /
+`requiresGovernanceEvidence`。它不替代 diagnostics，也不替代 graph readiness；它只回答
+控制面当前是否可以执行某个动作。典型 state 包括 `runtime-executable-ready`、
+`design-artifact-ready`、`governance-review-required`、`warning-ack-required`、
+`runtime-binding-required`、`draft-repair-required` 和 `not-assessed`。
+同一合同也会进入 `bloge.visualGraphDraftSummary.v1` 和
+`bloge.visualGraphPublicationSummary.v1`，让 `/api/visual/assets/overview`
+这类轻量读模型不用拉取完整 draft/publication body，就能把 warning-gated draft
+路由为 warning acknowledgement，把冻结 warning publication 路由为 evidence review，
+而不是只按 `design-only` readiness 把它们当作普通设计资产跟踪。
 
 ### 10.5 编译 draft
 
@@ -1632,7 +1706,8 @@ POST /api/visual/drafts/{draftId}/compile
 画布定位 lowering 与 runtime registry 问题。
 当前 resource-gateway 实现的 `DslGenerationResult` 会同时返回本次 compile 使用的
 `validation`，因此浏览器在 compile 失败、compiler error 或 design-only blocking
-diagnostic 后仍能用 `validation.readiness` 约束发布模式和修复路径。
+diagnostic 后仍能用 `validation.readiness` 和 `validation.actionReadiness` 约束发布模式、
+compile/run 按钮和修复路径。
 
 响应：
 
@@ -1649,6 +1724,14 @@ diagnostic 后仍能用 `validation.readiness` 约束发布模式和修复路径
       "state": "runtime-executable",
       "executable": true,
       "artifactKinds": ["EXECUTABLE", "DESIGN"]
+    },
+    "actionReadiness": {
+      "schemaVersion": "bloge.visualGraphActionReadiness.v1",
+      "state": "runtime-executable-ready",
+      "compileNow": true,
+      "runNow": true,
+      "publishExecutableNow": true,
+      "publishDesignNow": true
     }
   }
 }

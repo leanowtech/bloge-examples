@@ -2208,6 +2208,43 @@ body.dragging-operator * {
   color: var(--red);
 }
 
+.library-import-readiness {
+  display: grid;
+  gap: 3px;
+  padding: 7px;
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  background: var(--surface-subtle);
+}
+
+.library-import-readiness strong {
+  color: var(--text);
+}
+
+.library-import-readiness span,
+.library-import-readiness small {
+  color: var(--muted);
+  line-height: 1.35;
+}
+
+.library-import-readiness.success {
+  border-color: #86efac;
+}
+
+.library-import-readiness.warning {
+  border-color: #f8d18d;
+  background: var(--amber-soft);
+}
+
+.library-import-readiness.error {
+  border-color: #fca5a5;
+  background: var(--red-soft);
+}
+
+.library-import-readiness.error strong {
+  color: var(--red);
+}
+
 .library-profile-stats,
 .library-profile-flags {
   display: flex;

@@ -33,6 +33,7 @@ import com.leanowtech.bloge.gateway.visual.runtime.VisualGraphRunRequest;
 import com.leanowtech.bloge.gateway.visual.runtime.VisualGraphRunService;
 import com.leanowtech.bloge.gateway.visual.runtime.VisualStoredDraftRunRequest;
 import com.leanowtech.bloge.gateway.visual.validation.GraphDraftValidator;
+import com.leanowtech.bloge.gateway.visual.validation.VisualGraphActionReadiness;
 import com.leanowtech.bloge.gateway.visual.validation.VisualValidationResult;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -126,6 +127,14 @@ class VisualGraphDraftControllerTest {
                     assertThat(node.state()).isEqualTo("runtime-executable");
                     assertThat(node.executable()).isTrue();
                 });
+        assertThat(result.actionReadiness().schemaVersion())
+                .isEqualTo(VisualGraphActionReadiness.SCHEMA_VERSION);
+        assertThat(result.actionReadiness().state()).isEqualTo("runtime-executable-ready");
+        assertThat(result.actionReadiness().compileNow()).isTrue();
+        assertThat(result.actionReadiness().runNow()).isTrue();
+        assertThat(result.actionReadiness().publishExecutableNow()).isTrue();
+        assertThat(result.actionReadiness().publishDesignNow()).isTrue();
+        assertThat(result.actionReadiness().requiresAckWarnings()).isFalse();
     }
 
     @Test
@@ -764,6 +773,11 @@ class VisualGraphDraftControllerTest {
         assertThat(bundle.validation().readiness().state()).isEqualTo("design-only");
         assertThat(bundle.validation().readiness().executable()).isFalse();
         assertThat(bundle.validation().readiness().artifactKinds()).containsExactly("DESIGN");
+        assertThat(bundle.validation().actionReadiness().state()).isEqualTo("design-artifact-ready");
+        assertThat(bundle.validation().actionReadiness().compileNow()).isFalse();
+        assertThat(bundle.validation().actionReadiness().runNow()).isFalse();
+        assertThat(bundle.validation().actionReadiness().publishDesignNow()).isTrue();
+        assertThat(bundle.validation().actionReadiness().publishExecutableNow()).isFalse();
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.CREATED);
         assertThat(response.getBody()).isNotNull();
         assertThat(response.getBody().imported()).isTrue();
@@ -771,6 +785,7 @@ class VisualGraphDraftControllerTest {
         assertThat(response.getBody().validation().readiness().state()).isEqualTo("design-only");
         assertThat(response.getBody().validation().readiness().executable()).isFalse();
         assertThat(response.getBody().validation().readiness().artifactKinds()).containsExactly("DESIGN");
+        assertThat(response.getBody().validation().actionReadiness().state()).isEqualTo("design-artifact-ready");
         assertThat(targetRepository.all()).containsExactly(response.getBody().draft());
     }
 
@@ -1952,6 +1967,14 @@ class VisualGraphDraftControllerTest {
                     assertThat(diagnostic.code()).isEqualTo("visual.operator.governance.nonIdempotent");
                     assertThat(diagnostic.message()).contains("production promotion");
                 });
+        assertThat(response.getBody().validation().actionReadiness().state())
+                .isEqualTo("governance-review-required");
+        assertThat(response.getBody().validation().actionReadiness().compileNow()).isTrue();
+        assertThat(response.getBody().validation().actionReadiness().runNow()).isTrue();
+        assertThat(response.getBody().validation().actionReadiness().publishExecutableNow()).isFalse();
+        assertThat(response.getBody().validation().actionReadiness().publishExecutableAfterReview()).isTrue();
+        assertThat(response.getBody().validation().actionReadiness().requiresAckWarnings()).isTrue();
+        assertThat(response.getBody().validation().actionReadiness().requiresGovernanceEvidence()).isTrue();
         assertThat(publications.all()).isEmpty();
     }
 
@@ -2197,6 +2220,11 @@ class VisualGraphDraftControllerTest {
         assertThat(response.getBody().validation().readiness().state()).isEqualTo("design-only");
         assertThat(response.getBody().validation().readiness().executable()).isFalse();
         assertThat(response.getBody().validation().readiness().artifactKinds()).containsExactly("DESIGN");
+        assertThat(response.getBody().validation().actionReadiness().state()).isEqualTo("design-artifact-ready");
+        assertThat(response.getBody().validation().actionReadiness().compileNow()).isFalse();
+        assertThat(response.getBody().validation().actionReadiness().runNow()).isFalse();
+        assertThat(response.getBody().validation().actionReadiness().publishDesignNow()).isTrue();
+        assertThat(response.getBody().validation().actionReadiness().publishExecutableNow()).isFalse();
         assertThat(publications.all()).isEmpty();
     }
 

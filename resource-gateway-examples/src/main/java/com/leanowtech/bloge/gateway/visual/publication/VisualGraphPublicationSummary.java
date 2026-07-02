@@ -2,10 +2,12 @@ package com.leanowtech.bloge.gateway.visual.publication;
 
 import com.leanowtech.bloge.gateway.visual.diagnostic.VisualDiagnostic;
 import com.leanowtech.bloge.gateway.visual.draft.GraphDraftDependencyReport;
+import com.leanowtech.bloge.gateway.visual.validation.VisualGraphActionReadiness;
 import com.leanowtech.bloge.gateway.visual.validation.VisualGraphReadiness;
 import com.leanowtech.bloge.gateway.visual.validation.VisualValidationResult;
 
 import java.time.Instant;
+import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
@@ -33,6 +35,7 @@ import java.util.Map;
  * @param errorCount frozen blocking diagnostic count
  * @param warningCount frozen warning diagnostic count
  * @param readiness frozen graph runtime/design readiness
+ * @param actionReadiness frozen compile/run/publication action gates
  * @param nodeCount number of frozen draft nodes
  * @param edgeCount number of frozen draft edges
  * @param operatorDependencyCount distinct operator references used by the publication
@@ -60,6 +63,7 @@ public record VisualGraphPublicationSummary(
         int errorCount,
         int warningCount,
         VisualGraphReadiness readiness,
+        VisualGraphActionReadiness actionReadiness,
         int nodeCount,
         int edgeCount,
         int operatorDependencyCount,
@@ -89,6 +93,9 @@ public record VisualGraphPublicationSummary(
                 ? VisualGraphPublication.ARTIFACT_EXECUTABLE
                 : artifactKind.trim().toUpperCase(Locale.ROOT);
         readiness = readiness == null ? VisualGraphReadiness.notAssessed() : readiness;
+        actionReadiness = actionReadiness == null
+                ? derivedActionReadiness(valid, diagnosticCount, errorCount, warningCount, readiness)
+                : actionReadiness;
         sourceKindCounts = sourceKindCounts == null ? Map.of() : new LinkedHashMap<>(sourceKindCounts);
         loweringModeCounts = loweringModeCounts == null ? Map.of() : new LinkedHashMap<>(loweringModeCounts);
         runtimeReadinessStateCounts = runtimeReadinessStateCounts == null
@@ -131,6 +138,7 @@ public record VisualGraphPublicationSummary(
                 errorCount,
                 warningCount,
                 validation == null ? VisualGraphReadiness.notAssessed() : validation.readiness(),
+                validation == null ? null : validation.actionReadiness(),
                 publication.draft() == null ? 0 : publication.draft().nodes().size(),
                 publication.draft() == null ? 0 : publication.draft().edges().size(),
                 dependencies.operatorDependencyCount(),
@@ -164,6 +172,7 @@ public record VisualGraphPublicationSummary(
                 0,
                 0,
                 VisualGraphReadiness.notAssessed(),
+                null,
                 0,
                 0,
                 0,
@@ -175,5 +184,29 @@ public record VisualGraphPublicationSummary(
                 Map.of(),
                 Map.of()
         );
+    }
+
+    private static VisualGraphActionReadiness derivedActionReadiness(boolean valid,
+                                                                     int diagnosticCount,
+                                                                     int errorCount,
+                                                                     int warningCount,
+                                                                     VisualGraphReadiness readiness) {
+        List<VisualDiagnostic> diagnostics = new ArrayList<>();
+        int safeErrorCount = Math.max(0, errorCount);
+        int safeWarningCount = Math.max(0, warningCount);
+        int safeDiagnosticCount = Math.max(0, diagnosticCount);
+        for (int i = 0; i < safeErrorCount; i++) {
+            diagnostics.add(VisualDiagnostic.error("visual.summary.error",
+                    "Summary contains blocking validation diagnostics.", ""));
+        }
+        for (int i = 0; i < safeWarningCount; i++) {
+            diagnostics.add(VisualDiagnostic.warning("visual.summary.warning",
+                    "Summary contains warning validation diagnostics.", ""));
+        }
+        for (int i = diagnostics.size(); i < safeDiagnosticCount; i++) {
+            diagnostics.add(new VisualDiagnostic("INFO", "visual.summary.info",
+                    "Summary contains informational validation diagnostics.", "", -1, -1));
+        }
+        return VisualGraphActionReadiness.from(valid, diagnostics, readiness);
     }
 }

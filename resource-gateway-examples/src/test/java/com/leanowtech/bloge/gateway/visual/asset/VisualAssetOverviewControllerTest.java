@@ -6,10 +6,12 @@ import com.leanowtech.bloge.gateway.visual.catalog.VisualCatalogTestSupport;
 import com.leanowtech.bloge.gateway.visual.codegen.DslGenerationResult;
 import com.leanowtech.bloge.gateway.visual.draft.GraphDraft;
 import com.leanowtech.bloge.gateway.visual.draft.GraphDraftDependencyReport;
+import com.leanowtech.bloge.gateway.visual.draft.GraphDraftSummary;
 import com.leanowtech.bloge.gateway.visual.draft.InMemoryGraphDraftRepository;
 import com.leanowtech.bloge.gateway.visual.model.SchemaEnvelope;
 import com.leanowtech.bloge.gateway.visual.publication.InMemoryVisualGraphPublicationRepository;
 import com.leanowtech.bloge.gateway.visual.publication.VisualGraphPublication;
+import com.leanowtech.bloge.gateway.visual.publication.VisualGraphPublicationSummary;
 import com.leanowtech.bloge.gateway.visual.validation.GraphDraftValidator;
 import com.leanowtech.bloge.gateway.visual.validation.VisualValidationResult;
 
@@ -56,10 +58,15 @@ class VisualAssetOverviewControllerTest {
         assertThat(overview.drafts().graphReadinessStateCounts()).containsEntry("design-only", 1);
         assertThat(overview.drafts().publishableArtifactKindCounts()).containsEntry("DESIGN", 1);
         assertThat(overview.drafts().operatorRuntimeReadinessStateCounts()).containsEntry("design-only", 1);
+        assertThat(GraphDraftSummary.from(drafts.history().getFirst(), draft, validation, dependencyReport)
+                .actionReadiness().state())
+                .isEqualTo("design-artifact-ready");
         assertThat(overview.publications().total()).isEqualTo(1);
         assertThat(overview.publications().designArtifactCount()).isEqualTo(1);
         assertThat(overview.publications().artifactKindCounts()).containsEntry("DESIGN", 1);
         assertThat(overview.publications().graphReadinessStateCounts()).containsEntry("design-only", 1);
+        assertThat(VisualGraphPublicationSummary.from(publication).actionReadiness().state())
+                .isEqualTo("design-artifact-ready");
         assertThat(overview.catalog().totalOperators()).isGreaterThanOrEqualTo(1);
         assertThat(overview.catalog().facets().runtimeReadinessStates()).containsEntry("design-only", 1);
         assertThat(overview.actionQueue().itemLimit()).isEqualTo(VisualAssetOverview.DEFAULT_ACTION_ITEM_LIMIT);
@@ -82,6 +89,56 @@ class VisualAssetOverviewControllerTest {
                                 .formatted(publication.publicationId()),
                         "TRACK_SCHEMA_ONLY_OPERATOR|operator|risk:eligibility|design-only|"
                 );
+    }
+
+    @Test
+    void overviewQueuesWarningAcknowledgementFromGraphActionReadiness() {
+        DefaultVisualOperatorCatalog catalog = VisualCatalogTestSupport.catalogWithLibrary(
+                VisualCatalogTestSupport.designOnlyEligibilityLibrary("integer"));
+        GraphDraftValidator validator = new GraphDraftValidator(catalog);
+        InMemoryGraphDraftRepository drafts = new InMemoryGraphDraftRepository();
+        InMemoryVisualGraphPublicationRepository publications = new InMemoryVisualGraphPublicationRepository();
+        OperatorDefinition operator = catalog.find("risk:eligibility").orElseThrow();
+        GraphDraft draft = drafts.save(draftWithUnreachableDesignNode(operator));
+        VisualValidationResult validation = validator.validate(draft);
+        GraphDraftDependencyReport dependencyReport = GraphDraftDependencyReport.from(draft, catalog);
+        VisualGraphPublication publication = publications.create(VisualGraphPublication.design(
+                draft,
+                List.of(operator),
+                validation,
+                new DslGenerationResult(false, "", List.of()),
+                dependencyReport
+        ));
+        VisualAssetOverviewController controller =
+                new VisualAssetOverviewController(drafts, validator, catalog, publications);
+
+        VisualAssetOverview overview = controller.overview("", "", "");
+
+        assertThat(validation.valid()).isTrue();
+        assertThat(validation.actionReadiness().state()).isEqualTo("warning-ack-required");
+        assertThat(GraphDraftSummary.from(drafts.history().getFirst(), draft, validation, dependencyReport)
+                .actionReadiness().requiresAckWarnings()).isTrue();
+        assertThat(VisualGraphPublicationSummary.from(publication).actionReadiness().requiresAckWarnings()).isTrue();
+        assertThat(overview.actionQueue().actionTypeCounts())
+                .containsEntry("ACK_DRAFT_WARNINGS", 1)
+                .containsEntry("REVIEW_PUBLICATION_WARNING_EVIDENCE", 1);
+        assertThat(overview.actionQueue().items())
+                .filteredOn(item -> item.targetId().equals(draft.draftId()))
+                .singleElement()
+                .satisfies(item -> {
+                    assertThat(item.actionType()).isEqualTo("ACK_DRAFT_WARNINGS");
+                    assertThat(item.severity()).isEqualTo("warning");
+                    assertThat(item.summary()).contains("publication requires warning acknowledgement");
+                    assertThat(item.recommendedAction()).contains("Acknowledge warnings");
+                });
+        assertThat(overview.actionQueue().items())
+                .filteredOn(item -> item.targetId().equals(publication.publicationId()))
+                .singleElement()
+                .satisfies(item -> {
+                    assertThat(item.actionType()).isEqualTo("REVIEW_PUBLICATION_WARNING_EVIDENCE");
+                    assertThat(item.severity()).isEqualTo("warning");
+                    assertThat(item.artifactKind()).isEqualTo("DESIGN");
+                });
     }
 
     @Test
@@ -272,6 +329,54 @@ class VisualAssetOverviewControllerTest {
                 Map.of(),
                 new GraphDraft.OutputSelection("eligibility", ""),
                 Map.of("eligibility", operator.fingerprint())
+        );
+    }
+
+    private static GraphDraft draftWithUnreachableDesignNode(OperatorDefinition operator) {
+        return new GraphDraft(
+                "",
+                "",
+                0,
+                "visualPolicy",
+                "tenant-a",
+                "risk",
+                "dev",
+                "",
+                SchemaEnvelope.object(Map.of(
+                        "score", Map.of("type", "integer"),
+                        "amount", Map.of("type", "number")
+                ), List.of("score", "amount")),
+                List.of(
+                        new GraphDraft.DraftNode(
+                                "eligibility",
+                                "risk:eligibility",
+                                "Eligibility",
+                                Map.of(
+                                        "score", GraphDraft.Binding.contextPath("score"),
+                                        "amount", GraphDraft.Binding.contextPath("amount")
+                                ),
+                                Map.of(),
+                                null
+                        ),
+                        new GraphDraft.DraftNode(
+                                "unusedEligibility",
+                                "risk:eligibility",
+                                "Unused Eligibility",
+                                Map.of(
+                                        "score", GraphDraft.Binding.contextPath("score"),
+                                        "amount", GraphDraft.Binding.contextPath("amount")
+                                ),
+                                Map.of(),
+                                null
+                        )
+                ),
+                List.of(),
+                Map.of(),
+                new GraphDraft.OutputSelection("eligibility", ""),
+                Map.of(
+                        "eligibility", operator.fingerprint(),
+                        "unusedEligibility", operator.fingerprint()
+                )
         );
     }
 }

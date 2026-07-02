@@ -672,8 +672,9 @@ node fetchApplicant : httpResource {
 | `GET` | `/api/visual/resource-operators` | 将 resource descriptors 投影为虚拟算子 |
 
 resource-gateway 示例当前以 `/admin/visual-operator-libraries` 暴露用户库管理：
-`POST /admin/visual-operator-libraries/validate` 返回 diagnostics、impact 和服务端派生
-`bloge.visualOperatorLibraryProfile.v1`，但不落库；
+`POST /admin/visual-operator-libraries/validate` 返回 diagnostics、impact、服务端派生
+`bloge.visualOperatorLibraryProfile.v1` 和
+`bloge.visualOperatorLibraryImportReadiness.v1`，但不落库；
 `POST /admin/visual-operator-libraries/validate-text` 和
 `POST /admin/visual-operator-libraries/import-text` 接收 raw JSON/YAML source text，
 解析错误会返回 `visual.library.source.*` 结构化诊断，解析成功后进入同一 validator、
@@ -698,24 +699,38 @@ filter 与 `facets.runtimeReadinessStates` 聚合维度返回，避免浏览器�
 validation diagnostics 和 runtime inventory warning 计算 operator count、schema field count、
 DSL-unsafe/dynamic schema 计数、facets、catalog-repair、runtime-blocked、governance-review 与
 design-only 摘要；浏览器只有在用户继续编辑 JSON 或服务端 profile 缺失时才回退到本地即时预览。
+`importReadiness` 则把 diagnostics、profile 和 impact 压成外部控制面可直接路由的准入状态，
+例如 `runtime-executable-importable`、`design-only-importable`、
+`runtime-binding-required`、`governance-review-required`、`force-required`、
+`governance-evidence-required` 或 `catalog-repair-required`，并显式暴露
+`requiresAckWarnings`、`requiresForce`、`requiresGovernanceEvidence` 以及 affected draft /
+publication / operator counts，避免浏览器或 CI 解析自然语言诊断来决定下一步动作。
 当前还支持
 `lowering.mode=design` 的 schema-only authoring：这类用户算子可以进入 catalog、
 拖拽、连线、保存、导出、被 schema validator 校验，并可通过浏览器发布模式或 API
 `artifactKind=DESIGN` 发布成非执行型设计制品；compile/run/default executable publish 会返回
 `visual.codegen.designOnlyOperator`，直到后续绑定 native / transform / branch 等可执行 lowering。
-draft validate response 现在返回服务端派生的 `bloge.visualGraphReadiness.v1`：
+draft validate response 现在返回服务端派生的 `bloge.visualGraphReadiness.v1` 和
+`bloge.visualGraphActionReadiness.v1`：
 `valid` 只表达 draft contract 是否有 blocking error，`readiness` 单独表达
 `runtime-executable`、`design-only`、`runtime-blocked`、`governance-review` 或
 `draft-repair-required` 图级状态、可发布 artifact kind 和 node-level readiness 摘要。
+`actionReadiness` 则表达 `compileNow`、`runNow`、`publishDesignNow`、
+`publishDesignAfterReview`、`publishExecutableNow`、`publishExecutableAfterReview`、
+`requiresAckWarnings` 和 `requiresGovernanceEvidence`，让浏览器和外部控制面不需要从
+diagnostics 文案推断动作准入。
 这保证 schema-only 图可以是 `valid=true`，同时明确 `executable=false` 且只能冻结为
 `DESIGN` artifact，而不是被误解成系统运行失败。
-publication result 也会在成功或拒绝响应中携带同一份 validation/readiness；
+publication result 也会在成功或拒绝响应中携带同一份 validation/readiness/actionReadiness；
 浏览器因此可以把 Server Check 的 readiness 反向施加到画布动作上：只允许
 `DESIGN` 的图会自动切到设计制品发布，并禁用 visual draft Compile / Run Custom
 Graph；`draft-repair-required` 这类没有 publishable artifact kind 的图则禁用发布入口。
+draft/publication summary 读模型也携带同一份 actionReadiness，所以 Workspace Overview
+的 action queue 可以直接区分 `ACK_DRAFT_WARNINGS`、`REVIEW_PUBLICATION_WARNING_EVIDENCE`、
+runtime binding、repair 和 design tracking，而不是只凭 `design-only` readiness 做粗粒度归类。
 connection preflight 会返回候选连接相关的局部 diagnostics，同时携带应用 preview
-edge/binding/config expression 后的完整 candidate draft validation/readiness；compile 和 run 响应同样携带本次服务端门禁使用的 validation/readiness；
-publication run 则回传 artifact 冻结时的 validation/readiness，不能按当前 catalog
+edge/binding/config expression 后的完整 candidate draft validation/readiness/actionReadiness；compile 和 run 响应同样携带本次服务端门禁使用的 validation/readiness/actionReadiness；
+publication run 则回传 artifact 冻结时的 validation/readiness/actionReadiness，不能按当前 catalog
 重新解释历史发布物。这样浏览器在 compile/run/connection preflight 之后不会丢失
 design-only、runtime-blocked、governance-review 或 draft-repair-required 的发布和执行引导。
 选中已发布 artifact 时，浏览器展示 publication 冻结的 readiness 和非执行节点清单；
@@ -778,18 +793,20 @@ fingerprint snapshot；普通保存和 PATCH 仍保留既有 snapshot，避免�
 | `POST` | `/api/visual/drafts` | 创建图草稿 |
 | `GET` | `/api/visual/drafts/{draftId}` | 获取草稿 |
 | `GET` | `/api/visual/drafts/history` | 当前已实现：返回轻量 active/deleted draft history index，用于发现 retained history 和 deleted draft recovery 入口 |
-| `GET` | `/api/visual/drafts/{draftId}/export` | 当前已实现：导出 `bloge.visualGraphDraftExport.v1` 包，包含 draft snapshot、operator snapshots、export-time diagnostics 和 validation/readiness |
-| `POST` | `/api/visual/drafts/import` | 当前已实现：以新 identity 导入 export bundle，刷新当前 catalog fingerprints，存储前校验 bundle/draft contract，并返回 `bloge.visualGraphDraftImportResult.v1` 目标环境 diagnostics 和 validation/readiness |
+| `GET` | `/api/visual/drafts/summaries` | 当前已实现：返回 `bloge.visualGraphDraftSummary.v1`，列表层暴露 validation/readiness/actionReadiness、diagnostic counts 和 dependency counts |
+| `GET` | `/api/visual/drafts/{draftId}/export` | 当前已实现：导出 `bloge.visualGraphDraftExport.v1` 包，包含 draft snapshot、operator snapshots、export-time diagnostics 和 validation/readiness/actionReadiness |
+| `POST` | `/api/visual/drafts/import` | 当前已实现：以新 identity 导入 export bundle，刷新当前 catalog fingerprints，存储前校验 bundle/draft contract，并返回 `bloge.visualGraphDraftImportResult.v1` 目标环境 diagnostics 和 validation/readiness/actionReadiness |
 | `GET` | `/api/visual/drafts/{draftId}/revisions/{baseRevision}/diff/{targetRevision}` | 当前已实现：返回 `bloge.visualGraphDraftDiff.v1`，按 graph/node/edge 分解 draft revision 变化、最高风险、风险分类、摘要和节点/边增删改计数 |
 | `POST` | `/api/visual/drafts/{draftId}/revisions/{revision}/restore` | 当前已实现：把 immutable draft revision 作为内容源恢复成新的 latest revision，带 `expectedRevision` 并发门禁、审计元数据、draft contract 校验，并保留历史 operator snapshot |
 | `PATCH` | `/api/visual/drafts/{draftId}` | 保存节点、边、layout、binding patch |
 | `POST` | `/api/visual/drafts/{draftId}/operator-fingerprints/rebase` | 当前已实现：显式刷新选中节点或全部节点的 service-managed operator fingerprint snapshot，使用 `expectedRevision` 防并发覆盖，并对未知节点/当前 catalog 缺失算子返回结构化 diagnostics |
 | `DELETE` | `/api/visual/drafts/{draftId}` | 当前已实现：删除 current draft 指针但保留 immutable revision history，写入 deletion audit snapshot，并允许后续从 retained revision 恢复 |
-| `POST` | `/api/visual/connections/check` | 当前已实现：服务端权威预检候选 data/dependency/route/config/context 连接；响应的 `diagnostics` 只保留候选连接相关问题，`summary` 以 `bloge.visualConnectionCheckSummary.v1` 暴露 accepted、binding key、diagnostic counts、replacement effects 和 candidate readiness 摘要，`validation/readiness` 表达加上候选连接后的完整 candidate draft 状态 |
-| `POST` | `/api/visual/drafts/{draftId}/validate` | 增量或全量校验；当前实现的 transient `/api/visual/drafts/validate` 返回 `valid`、`diagnostics` 和 `bloge.visualGraphReadiness.v1` 图级 runtime/design readiness |
-| `POST` | `/api/visual/drafts/{draftId}/compile` | 生成 DSL 并编译；响应携带本次 draft validation/readiness，供客户端在 compiler 或 design-only blocking 后继续约束发布路径 |
-| `POST` | `/api/visual/drafts/{draftId}/run` | 使用测试 context 运行；响应携带本次 draft validation/readiness、diagnostics 和 run history id |
-| `POST` | `/api/visual/drafts/{draftId}/publish` | 发布为 graph version；浏览器和 API 默认 `artifactKind=EXECUTABLE`，也支持 `artifactKind=DESIGN` 冻结非执行型设计制品；warning-level diagnostics 需 `ackWarnings=true` 后才写入；响应在成功和拒绝时都保留 validation/readiness，供客户端按 artifact kind 纠偏 |
+| `POST` | `/api/visual/connections/check` | 当前已实现：服务端权威预检候选 data/dependency/route/config/context 连接；响应的 `diagnostics` 只保留候选连接相关问题，`summary` 以 `bloge.visualConnectionCheckSummary.v1` 暴露 accepted、binding key、diagnostic counts、replacement effects 和 candidate readiness 摘要，`validation/readiness/actionReadiness` 表达加上候选连接后的完整 candidate draft 状态 |
+| `POST` | `/api/visual/drafts/{draftId}/validate` | 增量或全量校验；当前实现的 transient `/api/visual/drafts/validate` 返回 `valid`、`diagnostics`、`bloge.visualGraphReadiness.v1` 图级 runtime/design readiness 和 `bloge.visualGraphActionReadiness.v1` 动作准入 |
+| `POST` | `/api/visual/drafts/{draftId}/compile` | 生成 DSL 并编译；响应携带本次 draft validation/readiness/actionReadiness，供客户端在 compiler 或 design-only blocking 后继续约束发布路径 |
+| `POST` | `/api/visual/drafts/{draftId}/run` | 使用测试 context 运行；响应携带本次 draft validation/readiness/actionReadiness、diagnostics 和 run history id |
+| `POST` | `/api/visual/drafts/{draftId}/publish` | 发布为 graph version；浏览器和 API 默认 `artifactKind=EXECUTABLE`，也支持 `artifactKind=DESIGN` 冻结非执行型设计制品；warning-level diagnostics 需 `ackWarnings=true` 后才写入；响应在成功和拒绝时都保留 validation/readiness/actionReadiness，供客户端按 artifact kind 和 warning gate 纠偏 |
+| `GET` | `/api/visual/assets/overview` | 当前已实现：返回 `bloge.visualAssetOverview.v1`，聚合 draft/publication/operator catalog readiness，并用 summary actionReadiness 派生可分页 action queue |
 
 ### 12.3 Runtime / Trace API
 

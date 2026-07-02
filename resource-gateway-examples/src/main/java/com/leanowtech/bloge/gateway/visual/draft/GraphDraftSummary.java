@@ -1,9 +1,11 @@
 package com.leanowtech.bloge.gateway.visual.draft;
 
 import com.leanowtech.bloge.gateway.visual.diagnostic.VisualDiagnostic;
+import com.leanowtech.bloge.gateway.visual.validation.VisualGraphActionReadiness;
 import com.leanowtech.bloge.gateway.visual.validation.VisualGraphReadiness;
 import com.leanowtech.bloge.gateway.visual.validation.VisualValidationResult;
 
+import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -37,6 +39,7 @@ import java.util.Map;
  * @param errorCount blocking validation diagnostic count
  * @param warningCount warning validation diagnostic count
  * @param readiness server-derived runtime/design readiness for the summarized snapshot
+ * @param actionReadiness server-derived compile/run/publication action gates for the summarized snapshot
  * @param operatorDependencyCount distinct operator references used by the draft
  * @param missingOperatorCount number of nodes whose current operator is absent
  * @param scopeMismatchOperatorCount number of nodes unavailable in draft scope
@@ -69,6 +72,7 @@ public record GraphDraftSummary(
         int errorCount,
         int warningCount,
         VisualGraphReadiness readiness,
+        VisualGraphActionReadiness actionReadiness,
         int operatorDependencyCount,
         int missingOperatorCount,
         int scopeMismatchOperatorCount,
@@ -96,6 +100,9 @@ public record GraphDraftSummary(
         changeSummary = changeSummary == null ? "" : changeSummary;
         reason = reason == null ? "" : reason;
         readiness = readiness == null ? VisualGraphReadiness.notAssessed() : readiness;
+        actionReadiness = actionReadiness == null
+                ? derivedActionReadiness(valid, diagnosticCount, errorCount, warningCount, readiness)
+                : actionReadiness;
         sourceKindCounts = sourceKindCounts == null ? Map.of() : new LinkedHashMap<>(sourceKindCounts);
         loweringModeCounts = loweringModeCounts == null ? Map.of() : new LinkedHashMap<>(loweringModeCounts);
         runtimeReadinessStateCounts = runtimeReadinessStateCounts == null
@@ -150,6 +157,7 @@ public record GraphDraftSummary(
                 errorCount,
                 warningCount,
                 safeValidation.readiness(),
+                safeValidation.actionReadiness(),
                 safeDependencies.operatorDependencyCount(),
                 safeDependencies.missingOperatorCount(),
                 safeDependencies.scopeMismatchOperatorCount(),
@@ -159,5 +167,29 @@ public record GraphDraftSummary(
                 safeDependencies.loweringModeCounts(),
                 safeDependencies.runtimeReadinessStateCounts()
         );
+    }
+
+    private static VisualGraphActionReadiness derivedActionReadiness(boolean valid,
+                                                                     int diagnosticCount,
+                                                                     int errorCount,
+                                                                     int warningCount,
+                                                                     VisualGraphReadiness readiness) {
+        List<VisualDiagnostic> diagnostics = new ArrayList<>();
+        int safeErrorCount = Math.max(0, errorCount);
+        int safeWarningCount = Math.max(0, warningCount);
+        int safeDiagnosticCount = Math.max(0, diagnosticCount);
+        for (int i = 0; i < safeErrorCount; i++) {
+            diagnostics.add(VisualDiagnostic.error("visual.summary.error",
+                    "Summary contains blocking validation diagnostics.", ""));
+        }
+        for (int i = 0; i < safeWarningCount; i++) {
+            diagnostics.add(VisualDiagnostic.warning("visual.summary.warning",
+                    "Summary contains warning validation diagnostics.", ""));
+        }
+        for (int i = diagnostics.size(); i < safeDiagnosticCount; i++) {
+            diagnostics.add(new VisualDiagnostic("INFO", "visual.summary.info",
+                    "Summary contains informational validation diagnostics.", "", -1, -1));
+        }
+        return VisualGraphActionReadiness.from(valid, diagnostics, readiness);
     }
 }
