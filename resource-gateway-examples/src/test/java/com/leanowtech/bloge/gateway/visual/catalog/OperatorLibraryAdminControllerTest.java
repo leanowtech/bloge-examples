@@ -717,6 +717,122 @@ class OperatorLibraryAdminControllerTest {
     }
 
     @Test
+    void revisionEndpointsReturnLibraryRegistryHistoryAfterDelete() throws Exception {
+        OperatorLibrary created = VisualCatalogTestSupport.eligibilityLibrary("integer");
+        OperatorLibrary replaced = libraryWithVersion(created, "1.1.0");
+
+        mockMvc.perform(post("/admin/visual-operator-libraries")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(created)))
+                .andExpect(status().isCreated());
+        mockMvc.perform(put("/admin/visual-operator-libraries/risk-policy")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(replaced)))
+                .andExpect(status().isOk());
+        mockMvc.perform(delete("/admin/visual-operator-libraries/risk-policy"))
+                .andExpect(status().isNoContent());
+
+        mockMvc.perform(get("/admin/visual-operator-libraries/risk-policy"))
+                .andExpect(status().isNotFound());
+        mockMvc.perform(get("/admin/visual-operator-libraries/risk-policy/revisions"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[0].schemaVersion")
+                        .value(OperatorLibraryRevision.SCHEMA_VERSION))
+                .andExpect(jsonPath("$[0].revision").value(3))
+                .andExpect(jsonPath("$[0].action").value(OperatorLibraryRevision.ACTION_DELETE))
+                .andExpect(jsonPath("$[0].library.version").value("1.1.0"))
+                .andExpect(jsonPath("$[1].revision").value(2))
+                .andExpect(jsonPath("$[1].action").value(OperatorLibraryRevision.ACTION_REPLACE))
+                .andExpect(jsonPath("$[2].revision").value(1))
+                .andExpect(jsonPath("$[2].action").value(OperatorLibraryRevision.ACTION_CREATE));
+        mockMvc.perform(get("/admin/visual-operator-libraries/risk-policy/revisions/2"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.revision").value(2))
+                .andExpect(jsonPath("$.library.libraryId").value("risk-policy"))
+                .andExpect(jsonPath("$.library.version").value("1.1.0"));
+        mockMvc.perform(get("/admin/visual-operator-libraries/missing/revisions"))
+                .andExpect(status().isNotFound());
+    }
+
+    @Test
+    void restoreRevisionWritesNewLatestAuditSnapshotAfterDelete() throws Exception {
+        OperatorLibrary created = VisualCatalogTestSupport.eligibilityLibrary("integer");
+        OperatorLibrary replaced = libraryWithVersion(created, "1.1.0");
+
+        mockMvc.perform(post("/admin/visual-operator-libraries")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(created)))
+                .andExpect(status().isCreated());
+        mockMvc.perform(put("/admin/visual-operator-libraries/risk-policy")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(replaced)))
+                .andExpect(status().isOk());
+        mockMvc.perform(delete("/admin/visual-operator-libraries/risk-policy"))
+                .andExpect(status().isNoContent());
+
+        mockMvc.perform(post("/admin/visual-operator-libraries/risk-policy/revisions/1/restore"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.libraryId").value("risk-policy"))
+                .andExpect(jsonPath("$.version").value("1.0.0"));
+
+        mockMvc.perform(get("/admin/visual-operator-libraries/risk-policy"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.version").value("1.0.0"));
+        mockMvc.perform(get("/admin/visual-operator-libraries/risk-policy/revisions"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[0].revision").value(4))
+                .andExpect(jsonPath("$[0].action").value(OperatorLibraryRevision.ACTION_RESTORE))
+                .andExpect(jsonPath("$[0].restoredFromRevision").value(1))
+                .andExpect(jsonPath("$[0].library.version").value("1.0.0"))
+                .andExpect(jsonPath("$[1].action").value(OperatorLibraryRevision.ACTION_DELETE))
+                .andExpect(jsonPath("$[2].action").value(OperatorLibraryRevision.ACTION_REPLACE))
+                .andExpect(jsonPath("$[3].action").value(OperatorLibraryRevision.ACTION_CREATE));
+    }
+
+    @Test
+    void restoreRevisionWarningGatesExplicitVersionRegression() throws Exception {
+        OperatorLibrary original = VisualCatalogTestSupport.eligibilityLibrary("integer");
+        OperatorLibrary replacement = libraryWithVersion(
+                VisualCatalogTestSupport.eligibilityLibrary("string"), "2.0.0");
+
+        mockMvc.perform(post("/admin/visual-operator-libraries")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(original)))
+                .andExpect(status().isCreated());
+        mockMvc.perform(put("/admin/visual-operator-libraries/risk-policy")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(replacement)))
+                .andExpect(status().isOk());
+
+        mockMvc.perform(post("/admin/visual-operator-libraries/risk-policy/revisions/1/restore"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.valid").value(false))
+                .andExpect(jsonPath("$.diagnostics[0].code").value("visual.library.version.regressed"))
+                .andExpect(jsonPath("$.diagnostics[0].metadata.previousVersion").value("2.0.0"))
+                .andExpect(jsonPath("$.diagnostics[0].metadata.replacementVersion").value("1.0.0"));
+        mockMvc.perform(post("/admin/visual-operator-libraries/risk-policy/revisions/1/restore")
+                        .param("allowVersionRegression", "true"))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.valid").value(true))
+                .andExpect(jsonPath("$.diagnostics[0].level").value("WARNING"))
+                .andExpect(jsonPath("$.diagnostics[0].code")
+                        .value("visual.library.restore.versionRegressionAllowed"));
+        mockMvc.perform(post("/admin/visual-operator-libraries/risk-policy/revisions/1/restore")
+                        .param("allowVersionRegression", "true")
+                        .param("ackWarnings", "true"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.version").value("1.0.0"));
+
+        mockMvc.perform(get("/admin/visual-operator-libraries/risk-policy/revisions"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[0].action").value(OperatorLibraryRevision.ACTION_RESTORE))
+                .andExpect(jsonPath("$[0].restoredFromRevision").value(1));
+        assertThat(registry.find("risk-policy"))
+                .map(OperatorLibrary::version)
+                .contains("1.0.0");
+    }
+
+    @Test
     void createRejectsOperatorRefAlreadyOwnedByAnotherLibrary() throws Exception {
         OperatorLibrary original = VisualCatalogTestSupport.eligibilityLibrary("integer");
         OperatorLibrary duplicate = new OperatorLibrary(

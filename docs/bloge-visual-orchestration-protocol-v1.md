@@ -1080,6 +1080,27 @@ review 可以在没有 stored draft 引用时仍然暴露 operator-level 变更�
 浏览器 Operator Libraries 面板也应先调用该端点，把结构化 diagnostics 以明细
 列表展示给作者，再允许作者选择是否执行 Import。
 
+resource-gateway 示例同时把用户算子库 registry 历史固化为
+`bloge.visualOperatorLibraryRevision.v1`：
+
+```http
+GET /admin/visual-operator-libraries/{libraryId}/revisions
+GET /admin/visual-operator-libraries/{libraryId}/revisions/{revision}
+POST /admin/visual-operator-libraries/{libraryId}/revisions/{revision}/restore
+```
+
+每个 revision snapshot 包含 `libraryId`、单库递增 `revision`、
+`action=CREATE|REPLACE|DELETE|RESTORE`、`storedAt` 和当时的 `OperatorLibrary`
+快照；`RESTORE` snapshot 还包含 `restoredFromRevision`。删除 library 只移除当前
+catalog entry，不删除 revision history。restore 不是覆盖历史记录，而是把目标 snapshot
+重新写成新的 latest library revision，并复用 import / replace 的结构校验、operatorRef
+归属保护、runtime collision、impact preflight 和 warning acknowledgement gate。
+restore 默认仍阻断 library version 回退；只有请求显式携带
+`allowVersionRegression=true` 时，版本回退才会降级为
+`visual.library.restore.versionRegressionAllowed` warning，并仍需 `ackWarnings=true`
+后才可写入。因此误删、坏版本导入、人工审计和后续 rollback UI 都能引用服务端不可变证据，
+而不是依赖浏览器本地历史。
+
 请求体：
 
 ```json
@@ -1794,6 +1815,7 @@ MVP 可以用 H2，但模型要按未来迁移设计。
 | 表 | 说明 |
 | --- | --- |
 | `visual_operator_catalog` | 用户导入或投影后的 operator definitions |
+| `visual_operator_library_revisions` | 用户导入算子库的 create / replace / delete / restore 不可变审计快照 |
 | `visual_resource_design_contract` | resourceId 到设计时 schema 的合同 |
 | `visual_graph_draft` | graph draft 当前版本 |
 | `visual_graph_draft_revision` | draft 历史 revision |

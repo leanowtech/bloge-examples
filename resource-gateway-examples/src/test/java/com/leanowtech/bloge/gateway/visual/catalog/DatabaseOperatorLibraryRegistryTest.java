@@ -59,6 +59,100 @@ class DatabaseOperatorLibraryRegistryTest {
     }
 
     @Test
+    void initBackfillsRevisionForLegacyCurrentLibraryWithoutHistory() throws Exception {
+        OperatorLibrary library = VisualCatalogTestSupport.eligibilityLibrary("integer");
+        jdbc.update("""
+                        MERGE INTO visual_operator_libraries (library_id, library_json)
+                        KEY (library_id)
+                        VALUES (?, ?)
+                        """,
+                library.libraryId(),
+                objectMapper.writeValueAsString(library));
+
+        DatabaseOperatorLibraryRegistry reloaded = new DatabaseOperatorLibraryRegistry(jdbc, objectMapper);
+        reloaded.init();
+
+        assertThat(reloaded.find("risk-policy")).contains(library);
+        assertThat(reloaded.revisions("risk-policy"))
+                .extracting(OperatorLibraryRevision::revision, OperatorLibraryRevision::action)
+                .containsExactly(org.assertj.core.groups.Tuple.tuple(1L, OperatorLibraryRevision.ACTION_CREATE));
+    }
+
+    @Test
+    void revisionsPersistCreateReplaceAndDeleteSnapshots() {
+        OperatorLibrary created = VisualCatalogTestSupport.eligibilityLibrary("integer");
+        OperatorLibrary replaced = libraryWithVersion(created, "1.1.0");
+
+        registry.upsert(created);
+        registry.upsert(replaced);
+        registry.delete("risk-policy");
+
+        assertThat(registry.find("risk-policy")).isEmpty();
+        assertThat(registry.revisions("risk-policy"))
+                .extracting(OperatorLibraryRevision::revision, OperatorLibraryRevision::action)
+                .containsExactly(
+                        org.assertj.core.groups.Tuple.tuple(3L, OperatorLibraryRevision.ACTION_DELETE),
+                        org.assertj.core.groups.Tuple.tuple(2L, OperatorLibraryRevision.ACTION_REPLACE),
+                        org.assertj.core.groups.Tuple.tuple(1L, OperatorLibraryRevision.ACTION_CREATE)
+                );
+        assertThat(registry.findRevision("risk-policy", 2))
+                .map(revision -> revision.library().version())
+                .contains("1.1.0");
+
+        DatabaseOperatorLibraryRegistry reloaded = new DatabaseOperatorLibraryRegistry(jdbc, objectMapper);
+        reloaded.init();
+
+        assertThat(reloaded.find("risk-policy")).isEmpty();
+        assertThat(reloaded.revisions("risk-policy"))
+                .extracting(OperatorLibraryRevision::revision, OperatorLibraryRevision::action)
+                .containsExactly(
+                        org.assertj.core.groups.Tuple.tuple(3L, OperatorLibraryRevision.ACTION_DELETE),
+                        org.assertj.core.groups.Tuple.tuple(2L, OperatorLibraryRevision.ACTION_REPLACE),
+                        org.assertj.core.groups.Tuple.tuple(1L, OperatorLibraryRevision.ACTION_CREATE)
+                );
+    }
+
+    @Test
+    void restorePersistsNewRevisionWithSourcePointer() {
+        OperatorLibrary original = VisualCatalogTestSupport.eligibilityLibrary("integer");
+        OperatorLibrary replacement = libraryWithVersion(
+                VisualCatalogTestSupport.eligibilityLibrary("string"), "2.0.0");
+
+        registry.upsert(original);
+        registry.upsert(replacement);
+        registry.restore(registry.findRevision("risk-policy", 1).orElseThrow());
+
+        assertThat(registry.find("risk-policy"))
+                .map(OperatorLibrary::version)
+                .contains("1.0.0");
+        assertThat(registry.revisions("risk-policy"))
+                .extracting(OperatorLibraryRevision::revision,
+                        OperatorLibraryRevision::action,
+                        OperatorLibraryRevision::restoredFromRevision)
+                .containsExactly(
+                        org.assertj.core.groups.Tuple.tuple(3L, OperatorLibraryRevision.ACTION_RESTORE, 1L),
+                        org.assertj.core.groups.Tuple.tuple(2L, OperatorLibraryRevision.ACTION_REPLACE, null),
+                        org.assertj.core.groups.Tuple.tuple(1L, OperatorLibraryRevision.ACTION_CREATE, null)
+                );
+
+        DatabaseOperatorLibraryRegistry reloaded = new DatabaseOperatorLibraryRegistry(jdbc, objectMapper);
+        reloaded.init();
+
+        assertThat(reloaded.find("risk-policy"))
+                .map(OperatorLibrary::version)
+                .contains("1.0.0");
+        assertThat(reloaded.revisions("risk-policy"))
+                .extracting(OperatorLibraryRevision::revision,
+                        OperatorLibraryRevision::action,
+                        OperatorLibraryRevision::restoredFromRevision)
+                .containsExactly(
+                        org.assertj.core.groups.Tuple.tuple(3L, OperatorLibraryRevision.ACTION_RESTORE, 1L),
+                        org.assertj.core.groups.Tuple.tuple(2L, OperatorLibraryRevision.ACTION_REPLACE, null),
+                        org.assertj.core.groups.Tuple.tuple(1L, OperatorLibraryRevision.ACTION_CREATE, null)
+                );
+    }
+
+    @Test
     void operatorsSkipNullEntriesFromPersistedLibrary() {
         registry.upsert(libraryWithNullEntry("risk-policy", VisualCatalogTestSupport.eligibilityOperator("integer")));
 
@@ -131,6 +225,18 @@ class DatabaseOperatorLibraryRegistryTest {
                 "risk-team",
                 "ACTIVE",
                 java.util.Arrays.asList(null, operator)
+        );
+    }
+
+    private static OperatorLibrary libraryWithVersion(OperatorLibrary library, String version) {
+        return new OperatorLibrary(
+                library.schemaVersion(),
+                library.libraryId(),
+                library.displayName(),
+                version,
+                library.owner(),
+                library.status(),
+                library.operators()
         );
     }
 

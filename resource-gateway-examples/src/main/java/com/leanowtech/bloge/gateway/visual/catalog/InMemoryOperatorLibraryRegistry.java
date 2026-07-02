@@ -3,6 +3,7 @@ package com.leanowtech.bloge.gateway.visual.catalog;
 import java.util.Collection;
 import java.util.Comparator;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
@@ -14,6 +15,7 @@ import java.util.concurrent.ConcurrentHashMap;
 public class InMemoryOperatorLibraryRegistry implements OperatorLibraryRegistry {
 
     private final Map<String, OperatorLibrary> libraries = new ConcurrentHashMap<>();
+    private final Map<String, ConcurrentHashMap<Long, OperatorLibraryRevision>> revisions = new ConcurrentHashMap<>();
 
     @Override
     public Collection<OperatorLibrary> all() {
@@ -28,15 +30,45 @@ public class InMemoryOperatorLibraryRegistry implements OperatorLibraryRegistry 
     }
 
     @Override
-    public OperatorLibrary upsert(OperatorLibrary library) {
+    public List<OperatorLibraryRevision> revisions(String libraryId) {
+        return revisions.getOrDefault(libraryId, new ConcurrentHashMap<>()).values().stream()
+                .sorted(Comparator.comparingLong(OperatorLibraryRevision::revision).reversed())
+                .toList();
+    }
+
+    @Override
+    public Optional<OperatorLibraryRevision> findRevision(String libraryId, long revision) {
+        return Optional.ofNullable(revisions.getOrDefault(libraryId, new ConcurrentHashMap<>()).get(revision));
+    }
+
+    @Override
+    public synchronized OperatorLibrary upsert(OperatorLibrary library) {
         ensureNoDuplicateOperatorRefs(library);
+        String action = libraries.containsKey(library.libraryId())
+                ? OperatorLibraryRevision.ACTION_REPLACE
+                : OperatorLibraryRevision.ACTION_CREATE;
         libraries.put(library.libraryId(), library);
+        rememberRevision(OperatorLibraryRevision.record(library, nextRevision(library.libraryId()), action));
         return library;
     }
 
     @Override
-    public void delete(String libraryId) {
-        libraries.remove(libraryId);
+    public synchronized OperatorLibrary restore(OperatorLibraryRevision revision) {
+        OperatorLibrary library = requireRestorableLibrary(revision);
+        ensureNoDuplicateOperatorRefs(library);
+        libraries.put(library.libraryId(), library);
+        rememberRevision(OperatorLibraryRevision.restore(library, nextRevision(library.libraryId()),
+                revision.revision()));
+        return library;
+    }
+
+    @Override
+    public synchronized void delete(String libraryId) {
+        OperatorLibrary library = libraries.remove(libraryId);
+        if (library != null) {
+            rememberRevision(OperatorLibraryRevision.record(library, nextRevision(libraryId),
+                    OperatorLibraryRevision.ACTION_DELETE));
+        }
     }
 
     private void ensureNoDuplicateOperatorRefs(OperatorLibrary library) {
@@ -56,5 +88,24 @@ public class InMemoryOperatorLibraryRegistry implements OperatorLibraryRegistry 
                         .formatted(operator.operatorRef(), existingOwner));
             }
         }
+    }
+
+    private long nextRevision(String libraryId) {
+        return revisions.getOrDefault(libraryId, new ConcurrentHashMap<>()).keySet().stream()
+                .mapToLong(Long::longValue)
+                .max()
+                .orElse(0L) + 1;
+    }
+
+    private void rememberRevision(OperatorLibraryRevision revision) {
+        revisions.computeIfAbsent(revision.libraryId(), ignored -> new ConcurrentHashMap<>())
+                .put(revision.revision(), revision);
+    }
+
+    private static OperatorLibrary requireRestorableLibrary(OperatorLibraryRevision revision) {
+        if (revision == null || revision.library() == null) {
+            throw new IllegalArgumentException("Operator library revision cannot be restored because it has no library snapshot");
+        }
+        return revision.library();
     }
 }

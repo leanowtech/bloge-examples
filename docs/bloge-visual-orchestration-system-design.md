@@ -726,6 +726,19 @@ replacement 还具备 SemVer 治理预检：同一 `libraryId` 的 operator cont
 版本回退是 blocking error；breaking schema / operator removal / disablement 必须提升 major
 version，additive 或 compatible schema 变更必须至少提升 minor version，否则进入 warning-gated
 `ackWarnings` 流程。这个 gate 不依赖是否已有草稿引用，目的是让用户导入算子库后的长期演进也受控。
+当前 registry 还会为每次 create / replace / delete / restore 写入不可变
+`bloge.visualOperatorLibraryRevision.v1` 快照，并通过
+`GET /admin/visual-operator-libraries/{libraryId}/revisions` 和
+`GET /admin/visual-operator-libraries/{libraryId}/revisions/{revision}` 暴露查询面；
+`POST /admin/visual-operator-libraries/{libraryId}/revisions/{revision}/restore`
+会把历史快照作为新的 latest library 写回，并记录 `action=RESTORE` 与
+`restoredFromRevision`。restore 复用 replacement 的结构校验、operatorRef 归属保护、
+runtime collision、impact preflight 和 warning acknowledgement gate；版本回退默认仍是
+blocking error，只有显式 `allowVersionRegression=true` 时才降级为必须
+`ackWarnings=true` 的受控 rollback warning。delete 只移除当前 catalog entry，不清除
+历史 revision。这个设计把用户导入的 operator schema 当作可治理资产，而不是一次性
+JSON 配置：坏版本导入、误删、schema drift 争议和后续 rollback UI 都可以基于服务端
+历史证据处理。
 导入阶段还会 warning-gate capability 和治理风险：streaming/durable 算子可以被显式确认后进入 catalog，
 但当前 request-response runtime 会阻断使用它们的 draft；secret-backed execution 和
 `NON_IDEMPOTENT` 外部副作用也必须经 `ackWarnings=true` 确认后才会写入。

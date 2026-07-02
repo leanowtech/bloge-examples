@@ -24,12 +24,37 @@ public interface OperatorLibraryRegistry {
     Optional<OperatorLibrary> find(String libraryId);
 
     /**
+     * Lists immutable registry snapshots for a library, newest first.
+     *
+     * @param libraryId library id
+     * @return recorded revision snapshots
+     */
+    List<OperatorLibraryRevision> revisions(String libraryId);
+
+    /**
+     * Finds one immutable registry snapshot.
+     *
+     * @param libraryId library id
+     * @param revision revision number
+     * @return matching revision when present
+     */
+    Optional<OperatorLibraryRevision> findRevision(String libraryId, long revision);
+
+    /**
      * Registers or replaces a library.
      *
      * @param library library to store
      * @return stored library
      */
     OperatorLibrary upsert(OperatorLibrary library);
+
+    /**
+     * Restores a previously recorded library snapshot as the latest current library.
+     *
+     * @param revision revision snapshot to restore
+     * @return restored library
+     */
+    OperatorLibrary restore(OperatorLibraryRevision revision);
 
     /**
      * Deletes a library.
@@ -72,7 +97,22 @@ public interface OperatorLibraryRegistry {
             }
 
             @Override
+            public List<OperatorLibraryRevision> revisions(String libraryId) {
+                return List.of();
+            }
+
+            @Override
+            public Optional<OperatorLibraryRevision> findRevision(String libraryId, long revision) {
+                return Optional.empty();
+            }
+
+            @Override
             public OperatorLibrary upsert(OperatorLibrary library) {
+                throw new UnsupportedOperationException("empty registry is read-only");
+            }
+
+            @Override
+            public OperatorLibrary restore(OperatorLibraryRevision revision) {
                 throw new UnsupportedOperationException("empty registry is read-only");
             }
 

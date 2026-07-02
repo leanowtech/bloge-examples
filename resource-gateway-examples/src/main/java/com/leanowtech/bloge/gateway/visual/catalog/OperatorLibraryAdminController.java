@@ -134,6 +134,86 @@ public class OperatorLibraryAdminController {
     }
 
     /**
+     * Lists immutable registry snapshots for a library.
+     *
+     * @param libraryId library id
+     * @return newest snapshots first
+     */
+    @GetMapping("/{libraryId}/revisions")
+    public ResponseEntity<List<OperatorLibraryRevision>> revisions(@PathVariable String libraryId) {
+        List<OperatorLibraryRevision> revisions = registry.revisions(libraryId);
+        if (revisions.isEmpty() && registry.find(libraryId).isEmpty()) {
+            return ResponseEntity.notFound().build();
+        }
+        return ResponseEntity.ok(revisions);
+    }
+
+    /**
+     * Loads one immutable registry snapshot.
+     *
+     * @param libraryId library id
+     * @param revision revision number
+     * @return matching snapshot
+     */
+    @GetMapping("/{libraryId}/revisions/{revision}")
+    public ResponseEntity<OperatorLibraryRevision> revision(@PathVariable String libraryId,
+                                                            @PathVariable long revision) {
+        return registry.findRevision(libraryId, revision)
+                .map(ResponseEntity::ok)
+                .orElseGet(() -> ResponseEntity.notFound().build());
+    }
+
+    /**
+     * Restores an immutable registry snapshot as a new latest library revision.
+     *
+     * @param libraryId library id
+     * @param revision source revision number
+     * @param force bypass stored-draft reference protection
+     * @param ackWarnings true when the caller already reviewed non-blocking restore warnings
+     * @param allowVersionRegression true for explicit emergency rollback to an older library version
+     * @return restored library
+     */
+    @PostMapping("/{libraryId}/revisions/{revision}/restore")
+    public ResponseEntity<?> restore(@PathVariable String libraryId,
+                                     @PathVariable long revision,
+                                     @RequestParam(defaultValue = "false") boolean force,
+                                     @RequestParam(defaultValue = "false") boolean ackWarnings,
+                                     @RequestParam(defaultValue = "false") boolean allowVersionRegression) {
+        Optional<OperatorLibraryRevision> sourceRevision = registry.findRevision(libraryId, revision);
+        if (sourceRevision.isEmpty()) {
+            return ResponseEntity.notFound().build();
+        }
+        OperatorLibrary library = sourceRevision.get().library();
+        if (library == null) {
+            return ResponseEntity.badRequest().body(new VisualValidationResult(false, List.of(
+                    VisualDiagnostic.error("visual.library.revisionSnapshotMissing",
+                            "Operator library revision '%s@%d' cannot be restored because it has no library snapshot."
+                                    .formatted(libraryId, revision),
+                            "/library")
+            )));
+        }
+        if (!libraryId.equals(library.libraryId())) {
+            throw new IllegalArgumentException("Path libraryId '%s' does not match revision libraryId '%s'"
+                    .formatted(libraryId, library.libraryId()));
+        }
+        OperatorLibraryValidationResult validation = validateAgainstRegistry(library, force,
+                allowVersionRegression);
+        if (!validation.valid()) {
+            return ResponseEntity.status(validationFailureStatus(validation)).body(validation);
+        }
+        ResponseEntity<OperatorLibraryValidationResult> warningGate = warningAcknowledgementResponse(validation,
+                ackWarnings);
+        if (warningGate != null) {
+            return warningGate;
+        }
+        ResponseEntity<OperatorLibraryValidationResult> impact = replacementImpactResponse(library, force);
+        if (impact != null) {
+            return impact;
+        }
+        return ResponseEntity.ok(registry.restore(sourceRevision.get()));
+    }
+
+    /**
      * Replaces a library.
      *
      * @param libraryId library id
@@ -196,6 +276,12 @@ public class OperatorLibraryAdminController {
     }
 
     private OperatorLibraryValidationResult validateAgainstRegistry(OperatorLibrary library, boolean force) {
+        return validateAgainstRegistry(library, force, false);
+    }
+
+    private OperatorLibraryValidationResult validateAgainstRegistry(OperatorLibrary library,
+                                                                    boolean force,
+                                                                    boolean allowVersionRegression) {
         VisualValidationResult structural = validator.validate(library);
         List<VisualDiagnostic> diagnostics = new ArrayList<>(structural.diagnostics());
         diagnostics.addAll(operatorRefOwnershipDiagnostics(library));
@@ -207,7 +293,7 @@ public class OperatorLibraryAdminController {
         if (!force) {
             diagnostics.addAll(replacementImpactDiagnostics(library, "replaced without force=true"));
         }
-        diagnostics.addAll(replacementVersionGovernanceDiagnostics(library));
+        diagnostics.addAll(replacementVersionGovernanceDiagnostics(library, allowVersionRegression));
         return validationResult(library, diagnostics);
     }
 
@@ -564,7 +650,8 @@ public class OperatorLibraryAdminController {
         return diagnostics;
     }
 
-    private List<VisualDiagnostic> replacementVersionGovernanceDiagnostics(OperatorLibrary replacement) {
+    private List<VisualDiagnostic> replacementVersionGovernanceDiagnostics(OperatorLibrary replacement,
+                                                                           boolean allowVersionRegression) {
         if (replacement == null) {
             return List.of();
         }
@@ -586,6 +673,13 @@ public class OperatorLibraryAdminController {
         SemanticVersion previous = previousVersion.get();
         SemanticVersion next = replacementVersion.get();
         if (next.compareCore(previous) < 0) {
+            if (allowVersionRegression) {
+                return List.of(VisualDiagnostic.warning("visual.library.restore.versionRegressionAllowed",
+                        "Operator library '%s' restore changes catalog surface and regresses version from '%s' to '%s'; acknowledge only for controlled rollback after reviewing affected drafts and publications."
+                                .formatted(replacement.libraryId(), existing.get().version(), replacement.version()),
+                        "/version",
+                        changeMetadata(existing.get().version(), replacement.version(), change)));
+            }
             return List.of(VisualDiagnostic.error("visual.library.version.regressed",
                     "Operator library '%s' replacement changes catalog surface but regresses version from '%s' to '%s'; publish a forward semantic version instead."
                             .formatted(replacement.libraryId(), existing.get().version(), replacement.version()),
