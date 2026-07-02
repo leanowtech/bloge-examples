@@ -551,6 +551,10 @@ class VisualAuthoringBrowserDomTest {
         click(wait, By.id("project-asyncapi-library"));
         waitForText(wait, By.id("library-status"), "Projected AsyncAPI into risk-events-operators");
         waitForText(wait, By.id("library-status"), "Projected 2 of 3 AsyncAPI operations");
+        waitForText(wait, By.id("asyncapi-projection-review"), "AsyncAPI Projection Review");
+        waitForText(wait, By.id("asyncapi-projection-review"), "partial coverage");
+        waitForText(wait, By.id("asyncapi-projection-review"), "omitted operation");
+        waitForText(wait, By.id("asyncapi-projection-review"), "RiskAudit");
         waitForText(wait, By.id("library-profile"), "runtime-blocked");
         assertThat(valueOf(By.id("operator-library-json")))
                 .contains("\"schemaVersion\": \"bloge.visualOperatorLibrary.v1\"")
@@ -963,6 +967,9 @@ class VisualAuthoringBrowserDomTest {
 
         click(wait, By.id("validate-visual-draft"));
         waitForText(wait, By.id("visual-check-status"), "DESIGN artifact");
+        waitForText(wait, By.id("visual-readiness-panel"), "Design Artifact Path");
+        waitForText(wait, By.id("visual-readiness-panel"), "Save, export, and publish as DESIGN.");
+        waitForText(wait, By.id("visual-readiness-panel"), "Compile, Run, and EXECUTABLE publish require executable runtime binding.");
         assertThat(valueOf(By.id("publish-artifact-kind"))).isEqualTo("DESIGN");
         assertThat(driver.findElement(By.cssSelector(
                 "#publish-artifact-kind option[value='EXECUTABLE']"

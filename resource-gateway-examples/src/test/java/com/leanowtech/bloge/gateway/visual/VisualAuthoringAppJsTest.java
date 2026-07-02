@@ -83,6 +83,11 @@ class VisualAuthoringAppJsTest {
         String source = appJsSource();
 
         assertThat(source)
+                .contains("id=\"visual-readiness-panel\"")
+                .contains("function renderVisualReadinessPanel(target, readiness)")
+                .contains("Design Artifact Path")
+                .contains("Save, export, and publish as DESIGN.")
+                .contains("Compile, Run, and EXECUTABLE publish require executable runtime binding.")
                 .contains("function visualDraftExecutableActionState(")
                 .contains("function composerDslUsesVisualDraft()")
                 .contains("function renderExecutableAuthoringControls()")
@@ -195,6 +200,7 @@ class VisualAuthoringAppJsTest {
                 .contains("multiple size=\"4\"")
                 .contains("id=\"asyncapi-operation-summary\"")
                 .contains("id=\"project-asyncapi-library\"")
+                .contains("id=\"asyncapi-projection-review\"")
                 .contains("async function validateOperatorLibraryTextPayload(sourceText)")
                 .contains("/admin/visual-operator-libraries/validate-text${libraryForceQuery()}")
                 .contains("/admin/visual-operator-libraries/import-text${mutationQuery}")
@@ -212,6 +218,15 @@ class VisualAuthoringAppJsTest {
                 .contains("review.selectedOperationCount")
                 .contains("review.unmatchedSelectionCount")
                 .contains("selector${unmatched === 1 ? '' : 's'} unmatched")
+                .contains("function renderAsyncApiProjectionReviewPanel(target, review)")
+                .contains("AsyncAPI Projection Review")
+                .contains("availableProjectionLevelCounts")
+                .contains("selectedSourceKindCounts")
+                .contains("unmatched selector")
+                .contains("omitted operation")
+                .contains("function asyncApiProjectionOperationLabel(operation)")
+                .contains("projectionReview: projectionReview || null")
+                .contains("renderAsyncApiProjectionReviewPanel($('asyncapi-projection-review'), state.libraryMessage?.projectionReview)")
                 .contains("request.operationId = current.operationId")
                 .contains("request.channel = current.channel")
                 .contains("request.action = current.action")
@@ -222,6 +237,7 @@ class VisualAuthoringAppJsTest {
                 .contains("asyncApiOperatorLibraryImportResult: payload")
                 .contains("state.libraryImportText = pretty(payload.library)")
                 .contains("Projected AsyncAPI into ${payload.library.libraryId}.")
+                .contains("payload?.projectionReview")
                 .contains("Review generated library, then Import.")
                 .contains("headers: { 'Content-Type': 'text/plain' }")
                 .contains("libraryImportConfirmationKey(sourceText, validation.diagnostics)")
@@ -249,6 +265,23 @@ class VisualAuthoringAppJsTest {
                 .contains("params.set('changeSource', 'gateway-browser');")
                 .contains("params.set('changeSummary', summary || `${action} operator library ${id}.`);")
                 .contains("params.set('reason', `${action} requested from the visual operator-library governance panel.`);");
+    }
+
+    @Test
+    void surfacesAsyncApiProjectionReviewNegativeEvidence() throws Exception {
+        String source = appJsSource();
+
+        assertThat(source)
+                .contains("function asyncApiProjectionSelectorReviewRows(matches)")
+                .contains("status === 'AMBIGUOUS' ? 'ambiguous selector' : 'unmatched selector'")
+                .contains("const matchedCount = numericReviewField(match?.matchedOperationCount)")
+                .contains("const countLabel = `${matchedCount} match${matchedCount === 1 ? '' : 'es'}`")
+                .contains("${escapeHtml(match?.target || '/')} · ${escapeHtml(countLabel)}")
+                .contains("review.unmatchedSelectionCount")
+                .contains("review.coverageStatus")
+                .contains("review.coverage === 'NO_MATCH'")
+                .contains("payload?.projectionReview")
+                .contains("AsyncAPI projection failed with ${response.status}");
     }
 
     @Test
@@ -676,6 +709,11 @@ class VisualAuthoringAppJsTest {
                   'normalizeVisualGraphReadiness',
                   'visualGraphReadinessStatusText',
                   'visualGraphReadinessNodeSummary',
+                  'renderVisualReadinessPanel',
+                  'visualReadinessPanelSummary',
+                  'visualReadinessPanelStats',
+                  'visualReadinessActionRows',
+                  'visualReadinessNodeRows',
                   'publicationReadiness',
                   'publicationReadinessStatusText',
                   'publicationReadinessReviewRows',
@@ -1532,6 +1570,8 @@ class VisualAuthoringAppJsTest {
                   ]
                 });
                 const graphReadinessStatusText = context.visualGraphReadinessStatusText(graphReadiness);
+                const graphReadinessPanel = { hidden: true, innerHTML: '', className: '' };
+                context.renderVisualReadinessPanel(graphReadinessPanel, graphReadiness);
                 const designPublication = {
                   publicationId: 'pub-design',
                   artifactKind: 'DESIGN',
@@ -2928,6 +2968,12 @@ class VisualAuthoringAppJsTest {
                   ['graph readiness normalized state', graphReadiness.state, 'design-only'],
                   ['graph readiness normalized node state', graphReadiness.nodes[0].state, 'design-only'],
                   ['graph readiness status text', graphReadinessStatusText, 'Design-only graph · 1 executable, 1 design-only · DESIGN artifact'],
+                  ['graph readiness panel visible', String(graphReadinessPanel.hidden), 'false'],
+                  ['graph readiness panel class', graphReadinessPanel.className, 'library-impact-panel info'],
+                  ['graph readiness panel heading', String(graphReadinessPanel.innerHTML.includes('Design Artifact Path')), 'true'],
+                  ['graph readiness panel allowed action', String(graphReadinessPanel.innerHTML.includes('Save, export, and publish as DESIGN.')), 'true'],
+                  ['graph readiness panel blocked action', String(graphReadinessPanel.innerHTML.includes('Compile, Run, and EXECUTABLE publish require executable runtime binding.')), 'true'],
+                  ['graph readiness panel node row', String(graphReadinessPanel.innerHTML.includes('eligibility') && graphReadinessPanel.innerHTML.includes('Design only')), 'true'],
                   ['publication readiness state', publicationReadiness.state, 'design-only'],
                   ['publication readiness status text', publicationReadinessStatusText, 'Design-only graph · 1 executable, 1 design-only · DESIGN artifact'],
                   ['publication readiness review row count', publicationReadinessRows.length, 1],

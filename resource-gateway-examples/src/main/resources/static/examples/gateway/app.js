@@ -1045,6 +1045,7 @@ function renderInputForm() {
         <textarea id="operator-library-json" class="library-editor" spellcheck="false" aria-label="Operator library JSON or YAML"></textarea>
         <div id="library-profile" class="library-profile"></div>
         <div id="library-status" class="library-status" hidden></div>
+        <div id="asyncapi-projection-review" class="library-impact-panel" hidden></div>
         <div id="library-revision-diff" class="library-impact-panel" hidden></div>
         <div id="library-impact" class="library-impact-panel" hidden></div>
         <div id="library-diagnostics" class="visual-diagnostics"></div>
@@ -1170,6 +1171,7 @@ function renderInputForm() {
           <button id="publish-visual-draft" class="secondary compact" type="button">Publish</button>
         </div>
         <div id="visual-check-status" class="visual-check-status"></div>
+        <div id="visual-readiness-panel" class="library-impact-panel" hidden></div>
         <div id="visual-diagnostics" class="visual-diagnostics"></div>
       </div>
       <div class="field">
@@ -3174,6 +3176,7 @@ function renderLibraryStatus() {
   target.hidden = false;
   target.textContent = message;
   target.className = `library-status ${state.libraryMessage?.level || 'info'}`;
+  renderAsyncApiProjectionReviewPanel($('asyncapi-projection-review'), state.libraryMessage?.projectionReview);
   renderLibraryImpactPanel($('library-impact'), diagnostics, state.libraryMessage?.impact);
   renderDiagnosticList($('library-diagnostics'), diagnostics);
 }
@@ -3344,6 +3347,147 @@ function renderLibraryImpactPanel(target, diagnostics, impact = null) {
       });
     }
   }
+}
+
+function renderAsyncApiProjectionReviewPanel(target, review) {
+  if (!target) return;
+  if (!review || typeof review !== 'object') {
+    target.hidden = true;
+    target.innerHTML = '';
+    return;
+  }
+  const available = numericReviewField(review.availableOperationCount);
+  const selected = numericReviewField(review.selectedOperationCount);
+  const omitted = numericReviewField(review.omittedOperationCount);
+  const unmatched = numericReviewField(review.unmatchedSelectionCount);
+  if (!available && !selected && !omitted && !unmatched) {
+    target.hidden = true;
+    target.innerHTML = '';
+    return;
+  }
+  const coverage = String(review.coverageStatus || 'FULL').toUpperCase();
+  const level = asyncApiProjectionReviewLevel({ coverage, omitted, unmatched });
+  const selectorState = review.selectionApplied ? 'selectors applied' : 'full projection';
+  const stats = [
+    ['Available', available],
+    ['Selected', selected],
+    ['Omitted', omitted],
+    ['Unmatched selectors', unmatched]
+  ].filter(([label, value]) => value > 0 || label !== 'Unmatched selectors')
+    .map(([label, value]) => `<span><strong>${escapeHtml(value)}</strong>${escapeHtml(label)}</span>`)
+    .join('');
+  const countRows = [
+    ...asyncApiProjectionCountRows('available projection', review.availableProjectionLevelCounts),
+    ...asyncApiProjectionCountRows('selected projection', review.selectedProjectionLevelCounts),
+    ...asyncApiProjectionCountRows('selected source', review.selectedSourceKindCounts)
+  ];
+  const selectorRows = asyncApiProjectionSelectorReviewRows(review.selectionMatches);
+  const omittedRows = asyncApiProjectionOmittedRows(review.omittedOperations);
+  const evidenceRows = selectorRows.concat(omittedRows);
+  const remainingEvidence = asyncApiProjectionRemainingEvidence(review, selectorRows.length, omittedRows.length);
+  target.hidden = false;
+  target.className = `library-impact-panel ${escapeHtml(level)}`;
+  target.innerHTML = `
+    <div class="library-impact-head">
+      <strong>AsyncAPI Projection Review</strong>
+      <span>${escapeHtml(coverage.toLowerCase())} coverage · ${escapeHtml(selectorState)}</span>
+    </div>
+    <div class="library-impact-stats">${stats}</div>
+    ${countRows.length ? `<div class="library-impact-codes">${countRows.join('')}</div>` : ''}
+    ${evidenceRows.length ? `<div class="library-impact-risks">${evidenceRows.join('')}${remainingEvidence}</div>` : ''}
+  `;
+}
+
+function numericReviewField(value) {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : 0;
+}
+
+function asyncApiProjectionReviewLevel(review) {
+  if (review.unmatched > 0 || review.coverage === 'NO_MATCH') {
+    return 'error';
+  }
+  if (review.omitted > 0 || review.coverage === 'PARTIAL') {
+    return 'warning';
+  }
+  return 'success';
+}
+
+function asyncApiProjectionCountRows(title, counts) {
+  if (!counts || typeof counts !== 'object' || Array.isArray(counts)) {
+    return [];
+  }
+  return Object.entries(counts)
+    .map(([name, count]) => [String(name || '').trim(), numericReviewField(count)])
+    .filter(([name, count]) => name && count > 0)
+    .sort(([left], [right]) => left.localeCompare(right))
+    .map(([name, count]) => `
+      <div class="library-impact-code">
+        <strong>${escapeHtml(title)}</strong>
+        <span>${escapeHtml(name)}: ${escapeHtml(count)}</span>
+      </div>
+    `);
+}
+
+function asyncApiProjectionSelectorReviewRows(matches) {
+  return (Array.isArray(matches) ? matches : [])
+    .filter((match) => String(match?.status || '').toUpperCase() !== 'MATCHED')
+    .slice(0, 5)
+    .map((match) => {
+      const status = String(match?.status || 'NO_MATCH').toUpperCase();
+      const label = status === 'AMBIGUOUS' ? 'ambiguous selector' : 'unmatched selector';
+      const matchedCount = numericReviewField(match?.matchedOperationCount);
+      const countLabel = `${matchedCount} match${matchedCount === 1 ? '' : 'es'}`;
+      return `
+        <div class="library-impact-risk">
+          <strong>${escapeHtml(label)}</strong>
+          <span>${escapeHtml(asyncApiSelectorSummary(match?.selection))}</span>
+          <small>${escapeHtml(match?.target || '/')} · ${escapeHtml(countLabel)}</small>
+        </div>
+      `;
+    });
+}
+
+function asyncApiProjectionOmittedRows(omittedOperations) {
+  return (Array.isArray(omittedOperations) ? omittedOperations : [])
+    .slice(0, 5)
+    .map((entry) => `
+      <div class="library-impact-risk">
+        <strong>omitted operation</strong>
+        <span>${escapeHtml(asyncApiProjectionOperationLabel(entry?.operation || {}))}</span>
+        <small>${escapeHtml(entry?.reason || 'omitted')}</small>
+      </div>
+    `);
+}
+
+function asyncApiProjectionOperationLabel(operation) {
+  const action = operation?.action || 'operation';
+  const channel = operation?.channelName || operation?.address || 'channel';
+  const identity = operation?.title || operation?.messageName || operation?.operationId || 'message';
+  const operationId = operation?.operationId && operation.operationId !== identity ? ` · ${operation.operationId}` : '';
+  const source = operation?.sourceKind ? ` · ${operation.sourceKind}` : '';
+  return `${action} ${channel} · ${identity}${operationId}${source}`;
+}
+
+function asyncApiProjectionRemainingEvidence(review, renderedSelectorCount, renderedOmittedCount) {
+  const selectorCount = (Array.isArray(review?.selectionMatches) ? review.selectionMatches : [])
+    .filter((match) => String(match?.status || '').toUpperCase() !== 'MATCHED')
+    .length;
+  const omittedCount = Array.isArray(review?.omittedOperations) ? review.omittedOperations.length : 0;
+  const remaining = Math.max(0, selectorCount - renderedSelectorCount)
+    + Math.max(0, omittedCount - renderedOmittedCount);
+  return remaining ? `<div class="library-impact-more">+${remaining} more projection evidence</div>` : '';
+}
+
+function asyncApiSelectorSummary(selection) {
+  const parts = [
+    ['operationId', selection?.operationId],
+    ['channel', selection?.channel],
+    ['action', selection?.action],
+    ['messageName', selection?.messageName]
+  ].filter(([, value]) => String(value || '').trim())
+    .map(([label, value]) => `${label}=${String(value || '').trim()}`);
+  return parts.length ? parts.join(', ') : 'empty selector';
 }
 
 function libraryImpactSummaryFromPayload(impact) {
@@ -4145,7 +4289,7 @@ function schemaDynamicSurfaceCount(schema) {
 }
 
 function setLibraryMessage(text, level = 'info', diagnostics = [], impact = null, profile = null,
-    profileSourceText = state.libraryImportText || '') {
+    profileSourceText = state.libraryImportText || '', projectionReview = null) {
   state.libraryMessage = text
     ? {
         text,
@@ -4153,7 +4297,8 @@ function setLibraryMessage(text, level = 'info', diagnostics = [], impact = null
         diagnostics: normalizeDiagnostics(diagnostics),
         impact: impact || null,
         profile: profile || null,
-        profileSourceText
+        profileSourceText,
+        projectionReview: projectionReview || null
       }
     : null;
   renderLibraryStatus();
@@ -4176,6 +4321,7 @@ function renderVisualCheck() {
   const readinessText = visualGraphReadinessStatusText(check.readiness);
   status.textContent = [check.message || 'Not checked', readinessText].filter(Boolean).join(' · ');
   status.className = `visual-check-status ${visualCheckStatusLevel(check)}`;
+  renderVisualReadinessPanel($('visual-readiness-panel'), check.readiness);
   renderPublishArtifactKindControls();
   renderExecutableAuthoringControls();
   renderDiagnosticList(list, visibleDiagnostics, {
@@ -4194,6 +4340,101 @@ function visualCheckStatusLevel(check = {}) {
     return readinessLevel;
   }
   return readinessLevel || checkLevel || 'info';
+}
+
+function renderVisualReadinessPanel(target, readiness) {
+  if (!target) return;
+  const normalized = normalizeVisualGraphReadiness(readiness);
+  if (!normalized) {
+    target.hidden = true;
+    target.innerHTML = '';
+    return;
+  }
+  const shouldShow = !normalized.executable
+    || normalized.designOnlyNodeCount > 0
+    || normalized.runtimeBlockedNodeCount > 0
+    || normalized.governanceReviewNodeCount > 0
+    || normalized.draftRepairNodeCount > 0;
+  if (!shouldShow) {
+    target.hidden = true;
+    target.innerHTML = '';
+    return;
+  }
+  const designAllowed = normalized.artifactKinds.includes('DESIGN');
+  const level = ['success', 'warning', 'error'].includes(normalized.level) ? normalized.level : 'info';
+  const heading = !normalized.executable && designAllowed ? 'Design Artifact Path' : 'Visual Graph Readiness';
+  const summary = visualReadinessPanelSummary(normalized, designAllowed);
+  const stats = visualReadinessPanelStats(normalized);
+  const actions = visualReadinessActionRows(normalized, designAllowed);
+  const nodes = visualReadinessNodeRows(normalized.nodes);
+  target.hidden = false;
+  target.className = `library-impact-panel ${escapeHtml(level)}`;
+  target.innerHTML = `
+    <div class="library-impact-head">
+      <strong>${escapeHtml(heading)}</strong>
+      <span>${escapeHtml(visualGraphReadinessStatusText(normalized) || normalized.state || 'readiness')}</span>
+    </div>
+    ${summary ? `<div class="library-impact-risk-summary">${escapeHtml(summary)}</div>` : ''}
+    ${stats ? `<div class="library-impact-stats">${stats}</div>` : ''}
+    ${actions ? `<div class="library-impact-risks">${actions}</div>` : ''}
+    ${nodes ? `<div class="library-impact-codes">${nodes}</div>` : ''}
+  `;
+}
+
+function visualReadinessPanelSummary(readiness, designAllowed) {
+  if (readiness.summary) {
+    return readiness.summary;
+  }
+  if (!readiness.executable && designAllowed) {
+    return 'Schema-valid design can be saved, exported, and published as DESIGN until runtime binding is attached.';
+  }
+  if (!readiness.executable) {
+    return 'Graph is not executable until blocking validation or runtime-readiness issues are resolved.';
+  }
+  return '';
+}
+
+function visualReadinessPanelStats(readiness) {
+  return [
+    ['Executable', readiness.runtimeExecutableNodeCount],
+    ['Design-only', readiness.designOnlyNodeCount],
+    ['Runtime-blocked', readiness.runtimeBlockedNodeCount],
+    ['Governance-review', readiness.governanceReviewNodeCount],
+    ['Repair-required', readiness.draftRepairNodeCount],
+    ['Artifacts', readiness.artifactKinds.join('/')]
+  ].filter(([, value]) => value)
+    .map(([label, value]) => `<span><strong>${escapeHtml(value)}</strong>${escapeHtml(label)}</span>`)
+    .join('');
+}
+
+function visualReadinessActionRows(readiness, designAllowed) {
+  const rows = [];
+  if (!readiness.executable && designAllowed) {
+    rows.push(['Allowed', 'Save, export, and publish as DESIGN.']);
+    rows.push(['Blocked', 'Compile, Run, and EXECUTABLE publish require executable runtime binding.']);
+  } else if (!readiness.executable) {
+    rows.push(['Blocked', 'Compile, Run, and Publish are blocked until repair is complete.']);
+  } else if (readiness.governanceReviewNodeCount > 0) {
+    rows.push(['Review', 'Executable path is available after governance warnings are acknowledged.']);
+  }
+  return rows.map(([label, value]) => `
+    <div class="library-impact-risk">
+      <strong>${escapeHtml(label)}</strong>
+      <span>${escapeHtml(value)}</span>
+    </div>
+  `).join('');
+}
+
+function visualReadinessNodeRows(nodes) {
+  return (Array.isArray(nodes) ? nodes : [])
+    .filter((node) => node.state && node.state !== 'runtime-executable')
+    .slice(0, 5)
+    .map((node) => `
+      <div class="library-impact-code ${escapeHtml(node.level || 'info')}">
+        <strong>${escapeHtml(node.nodeId || node.operatorRef || 'node')}</strong>
+        <span>${escapeHtml(operatorPaletteFacetLabel(node.state))}${node.summary ? ` · ${escapeHtml(node.summary)}` : ''}</span>
+      </div>
+    `).join('');
 }
 
 function renderDiagnosticList(list, diagnostics, options = {}) {
@@ -5203,7 +5444,8 @@ async function projectAsyncApiOperatorLibrary() {
       diagnostics,
       validation?.impact,
       validation?.profile,
-      sourceText
+      sourceText,
+      payload?.projectionReview
     );
     return;
   }
@@ -5228,7 +5470,8 @@ async function projectAsyncApiOperatorLibrary() {
     diagnostics,
     validation?.impact,
     validation?.profile,
-    state.libraryImportText
+    state.libraryImportText,
+    payload?.projectionReview
   );
 }
 

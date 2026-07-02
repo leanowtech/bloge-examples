@@ -1061,7 +1061,10 @@ deterministic `visual.codegen.designOnlyOperator` diagnostic until the operator
 is rebound to an executable native/transform/branch lowering. That publish
 rejection still includes validation readiness, so the browser can move the
 author back to the `DESIGN` artifact path instead of treating the composition as
-broken. Authors can still publish the draft as a non-executable
+broken. The Browser Composer's Server Check area renders a dedicated readiness
+panel for these graphs, showing that save/export/`DESIGN` publication remain
+allowed while compile/run/`EXECUTABLE` publication wait for runtime binding.
+Authors can still publish the draft as a non-executable
 `artifactKind=DESIGN` artifact to freeze the schema-valid composition for
 review and later runtime binding. Design-only
 operators do not declare `lowering.operatorRef`, and their schema surface is not
@@ -1106,8 +1109,12 @@ silently generating a partial operator library. The browser Operator
 Libraries panel exposes this as a `Discover AsyncAPI` -> operation
 multi-selection -> `From AsyncAPI` preview action: authors paste AsyncAPI into
 the same source editor, choose one or more candidates when needed, preview the
-generated library with projected/available/omitted counts and selector-match
-warnings, then reuse the existing Validate/Import path and warning
+generated library with projected/available/omitted counts plus a structured
+AsyncAPI Projection Review panel for coverage, selector match failures, omitted
+operation reasons, projection level counts, and selected source-kind mix. When a
+selector is unmatched or ambiguous, the panel shows the selector target and match
+count so large-spec imports cannot hide a stale selection behind generic
+diagnostics. Authors then reuse the existing Validate/Import path and warning
 acknowledgement flow.
 The same validation warning-gates imported operators that declare
 streaming/durable runtime requirements, secret-backed execution, or
