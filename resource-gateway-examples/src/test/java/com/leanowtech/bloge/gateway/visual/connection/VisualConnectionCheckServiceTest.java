@@ -39,6 +39,19 @@ class VisualConnectionCheckServiceTest {
         assertThat(result.edge().target().path()).isEqualTo("score");
         assertThat(result.validation().valid()).isFalse();
         assertThat(result.validation().readiness().state()).isEqualTo("draft-repair-required");
+        assertThat(result.summary().schemaVersion()).isEqualTo("bloge.visualConnectionCheckSummary.v1");
+        assertThat(result.summary().accepted()).isTrue();
+        assertThat(result.summary().kind()).isEqualTo("data");
+        assertThat(result.summary().bindingKey()).isEqualTo("score");
+        assertThat(result.summary().createsBinding()).isTrue();
+        assertThat(result.summary().diagnosticCount()).isZero();
+        assertThat(result.summary().candidateValid()).isFalse();
+        assertThat(result.summary().graphStillInvalid()).isTrue();
+        assertThat(result.summary().validationDiagnosticCount()).isGreaterThan(0);
+        assertThat(result.summary().readinessState()).isEqualTo("draft-repair-required");
+        assertThat(result.summary().readinessExecutable()).isFalse();
+        assertThat(result.summary().message()).isEqualTo(
+                "Connection accepted; graph still has validation issues.");
         assertThat(result.validation().diagnostics())
                 .extracting("code")
                 .contains("visual.input.required");
@@ -103,6 +116,10 @@ class VisualConnectionCheckServiceTest {
 
         assertThat(result.accepted()).isTrue();
         assertThat(result.bindingKey()).isEqualTo("score");
+        assertThat(result.summary().replacedInputKeys()).containsExactly("score");
+        assertThat(result.summary().replacedBindingCount()).isEqualTo(1);
+        assertThat(result.summary().replacedEdgeIds()).isEmpty();
+        assertThat(result.summary().replacedEdgeCount()).isZero();
         assertThat(result.diagnostics()).isEmpty();
     }
 
@@ -124,6 +141,10 @@ class VisualConnectionCheckServiceTest {
 
         assertThat(result.accepted()).isTrue();
         assertThat(result.bindingKey()).isEqualTo("score");
+        assertThat(result.summary().replacedInputKeys()).containsExactly("inputs");
+        assertThat(result.summary().replacedBindingCount()).isEqualTo(1);
+        assertThat(result.summary().replacedEdgeIds()).isEmpty();
+        assertThat(result.summary().replacedEdgeCount()).isZero();
         assertThat(result.diagnostics()).isEmpty();
     }
 
@@ -172,6 +193,26 @@ class VisualConnectionCheckServiceTest {
     }
 
     @Test
+    void reportsExistingDataEdgeReplacedForSameTargetEndpoint() {
+        VisualConnectionCheckService service = connectionService(VisualCatalogTestSupport
+                .catalogWithLoanApplicantResourceAndLibrary(VisualCatalogTestSupport.eligibilityLibrary("integer")));
+        GraphDraft draft = resourceEligibilityDraft(List.of(new GraphDraft.DraftEdge("old-score-edge", "data",
+                new GraphDraft.Endpoint("fetchApplicant", "payload", "segment"),
+                new GraphDraft.Endpoint("eligibility", "inputs", "score"))));
+
+        VisualConnectionCheckResult result = service.check(new VisualConnectionCheckRequest(
+                draft,
+                new GraphDraft.Endpoint("fetchApplicant", "payload", "score"),
+                new GraphDraft.Endpoint("eligibility", "inputs", "score"),
+                "data"
+        ));
+
+        assertThat(result.accepted()).isTrue();
+        assertThat(result.summary().replacedEdgeIds()).containsExactly("old-score-edge");
+        assertThat(result.summary().replacedEdgeCount()).isEqualTo(1);
+    }
+
+    @Test
     void rejectsSchemaIncompatibleConnection() {
         VisualConnectionCheckService service = connectionService(VisualCatalogTestSupport
                 .catalogWithLoanApplicantResourceAndLibrary(VisualCatalogTestSupport.eligibilityLibrary("integer")));
@@ -210,6 +251,20 @@ class VisualConnectionCheckServiceTest {
 
         assertThat(result.accepted()).isFalse();
         assertThat(result.bindingKey()).isEqualTo("score");
+        assertThat(result.summary().accepted()).isFalse();
+        assertThat(result.summary().kind()).isEqualTo("data");
+        assertThat(result.summary().bindingKey()).isEqualTo("score");
+        assertThat(result.summary().createsBinding()).isTrue();
+        assertThat(result.summary().diagnosticCount()).isEqualTo(result.diagnostics().size());
+        assertThat(result.summary().errorCount()).isEqualTo(result.diagnostics().size());
+        assertThat(result.summary().warningCount()).isZero();
+        assertThat(result.summary().diagnosticCodeCounts())
+                .containsEntry("visual.binding.typeMismatch", 1)
+                .containsEntry("visual.edge.typeMismatch", 1);
+        assertThat(result.summary().candidateValid()).isFalse();
+        assertThat(result.summary().graphStillInvalid()).isFalse();
+        assertThat(result.summary().readinessState()).isEqualTo("draft-repair-required");
+        assertThat(result.summary().message()).isEqualTo("Connection rejected by server.");
         assertThat(result.diagnostics())
                 .anySatisfy(diagnostic -> {
                     assertThat(diagnostic.code()).isEqualTo("visual.binding.typeMismatch");

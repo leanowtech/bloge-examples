@@ -1707,7 +1707,32 @@ binding 必须有可见 data edge。
     "source": { "nodeId": "fetchApplicant", "port": "payload", "path": "score" },
     "target": { "nodeId": "loanPolicy", "port": "inputs", "path": "score" }
   },
+  "bindingKey": "score",
   "diagnostics": [],
+  "summary": {
+    "schemaVersion": "bloge.visualConnectionCheckSummary.v1",
+    "accepted": true,
+    "kind": "data",
+    "source": { "nodeId": "fetchApplicant", "port": "payload", "path": "score" },
+    "target": { "nodeId": "loanPolicy", "port": "inputs", "path": "score" },
+    "bindingKey": "score",
+    "createsBinding": true,
+    "diagnosticCount": 0,
+    "errorCount": 0,
+    "warningCount": 0,
+    "diagnosticCodeCounts": {},
+    "replacedBindingCount": 0,
+    "replacedInputKeys": [],
+    "replacedEdgeCount": 0,
+    "replacedEdgeIds": [],
+    "candidateValid": false,
+    "graphStillInvalid": true,
+    "validationDiagnosticCount": 1,
+    "readinessState": "draft-repair-required",
+    "readinessLevel": "error",
+    "readinessExecutable": false,
+    "message": "Connection accepted; graph still has validation issues."
+  },
   "validation": {
     "valid": false,
     "diagnostics": [
@@ -1731,7 +1756,12 @@ binding 必须有可见 data edge。
 ```
 
 若 source path、target path、port 或类型不兼容，`accepted=false`，并返回
-`visual.edge.*` diagnostics；若会形成环，返回 `visual.edge.cycle`。
+`visual.edge.*` diagnostics；若会形成环，返回 `visual.edge.cycle`。客户端应优先
+消费 `summary` 做列表、审计、指标和控制面路由，再用 `diagnostics` 展示具体原因；
+不要解析自然语言 message 来判断连接类型、错误数量或 candidate readiness。若
+`accepted=true` 且 `replacedInputKeys` / `replacedEdgeIds` 非空，客户端应用连接前
+必须先按这些 key 清理本地旧 binding / edge 表现，保证最终画布状态与服务端 preview
+candidate 一致。
 
 resource-gateway 示例已提供 `POST /api/visual/connections/check`，浏览器画布在
 drop 连线和 inspector source picker 写入 binding 前都调用它作为最终 gate；

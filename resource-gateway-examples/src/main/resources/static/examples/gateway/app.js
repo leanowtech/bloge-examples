@@ -10049,9 +10049,9 @@ function renderSelectedOperatorEditor() {
         const serverCheck = await checkVisualConnectionOnServer(source, bindingTarget);
         if (serverCheck.accepted) {
           const checkedTarget = targetWithServerBindingKey(bindingTarget, serverCheck);
-          applyConnection(source, checkedTarget);
+          applyConnection(source, checkedTarget, serverCheck);
           setConnectionMessage(
-            `Connected ${endpointLabel(source)} -> ${endpointLabel(checkedTarget)}.`,
+            connectionAppliedMessage(source, checkedTarget, serverCheck),
             'success'
           );
           renderDiagram();
@@ -10511,9 +10511,9 @@ function connectNodeConnectabilityFromButton(button) {
     .then((serverCheck) => {
       if (serverCheck.accepted) {
         const checkedTarget = targetWithServerBindingKey(target, serverCheck);
-        applyConnection(source, checkedTarget);
+        applyConnection(source, checkedTarget, serverCheck);
         setConnectionMessage(
-          `Connected ${endpointLabel(source)} -> ${endpointLabel(checkedTarget)}.`,
+          connectionAppliedMessage(source, checkedTarget, serverCheck),
           'success'
         );
         return true;
@@ -12533,7 +12533,7 @@ function applyRequiredInputAutoBindPlan(plan, index = 0, result = { accepted: 0,
   return checkVisualConnectionOnServer(item.source, item.target)
     .then((serverCheck) => {
       if (serverCheck.accepted) {
-        applyConnection(item.source, targetWithServerBindingKey(item.target, serverCheck));
+        applyConnection(item.source, targetWithServerBindingKey(item.target, serverCheck), serverCheck);
         result.accepted += 1;
       } else {
         result.rejected.push({
@@ -19332,9 +19332,9 @@ function finishConnectionDrag(event) {
       .then((serverCheck) => {
         if (serverCheck.accepted) {
           const checkedTarget = targetWithServerBindingKey(target, serverCheck);
-          applyConnection(drag.source, checkedTarget);
+          applyConnection(drag.source, checkedTarget, serverCheck);
           setConnectionMessage(
-            `Connected ${endpointLabel(drag.source)} -> ${endpointLabel(checkedTarget)}.`,
+            connectionAppliedMessage(drag.source, checkedTarget, serverCheck),
             'success'
           );
         } else {
@@ -19382,15 +19382,17 @@ async function checkVisualConnectionOnServer(source, target) {
   const payload = await response.json();
   const diagnostics = normalizeDiagnostics(payload.diagnostics);
   const validation = payload.validation || null;
+  const summary = normalizeConnectionCheckSummary(payload.summary, payload, diagnostics, validation);
   const readiness = validation?.readiness || state.visualCheck?.readiness || null;
   if (diagnostics.length || readiness) {
     const graphDiagnostics = normalizeDiagnostics(validation?.diagnostics);
     const visualDiagnostics = diagnostics.length ? diagnostics : graphDiagnostics;
-    const graphStillInvalid = !diagnostics.length && validation?.valid === false;
-    const visualMessage = diagnostics.length
+    const graphStillInvalid = summary.graphStillInvalid
+      || (!diagnostics.length && validation?.valid === false);
+    const visualMessage = summary.message || (diagnostics.length
       ? (payload.accepted ? 'Connection accepted with diagnostics.' : 'Connection rejected.')
       : (!payload.accepted ? 'Connection rejected.'
-          : (graphStillInvalid ? 'Connection accepted; graph still has validation issues.' : 'Connection accepted.'));
+          : (graphStillInvalid ? 'Connection accepted; graph still has validation issues.' : 'Connection accepted.')));
     setVisualCheck(
       visualMessage,
       visualCheckLevel(visualDiagnostics, Boolean(payload.accepted) && !graphStillInvalid),
@@ -19402,9 +19404,70 @@ async function checkVisualConnectionOnServer(source, target) {
     accepted: Boolean(payload.accepted),
     bindingKey: payload.bindingKey || '',
     diagnostics,
-    message: diagnosticMessage(diagnostics, 'Connection rejected by server.'),
+    summary,
+    message: payload.accepted
+      ? (summary.message || 'Connection accepted.')
+      : diagnosticMessage(diagnostics, summary.message || 'Connection rejected by server.'),
     payload
   };
+}
+
+function normalizeConnectionCheckSummary(summary, payload, diagnostics, validation) {
+  const source = summary && typeof summary === 'object' ? summary : {};
+  const normalizedDiagnostics = normalizeDiagnostics(diagnostics);
+  const errorCount = normalizedDiagnostics
+    .filter((diagnostic) => String(diagnostic.level || '').toUpperCase() === 'ERROR')
+    .length;
+  const warningCount = normalizedDiagnostics
+    .filter((diagnostic) => String(diagnostic.level || '').toUpperCase() === 'WARNING')
+    .length;
+  const accepted = Boolean(payload?.accepted);
+  const candidateValid = source.candidateValid ?? validation?.valid ?? false;
+  const graphStillInvalid = source.graphStillInvalid ?? (accepted && candidateValid === false);
+  return {
+    schemaVersion: source.schemaVersion || 'bloge.visualConnectionCheckSummary.v1',
+    accepted,
+    kind: source.kind || payload?.edge?.kind || '',
+    bindingKey: source.bindingKey || payload?.bindingKey || '',
+    createsBinding: Boolean(source.createsBinding),
+    diagnosticCount: Number.isFinite(Number(source.diagnosticCount))
+      ? Number(source.diagnosticCount)
+      : normalizedDiagnostics.length,
+    errorCount: Number.isFinite(Number(source.errorCount)) ? Number(source.errorCount) : errorCount,
+    warningCount: Number.isFinite(Number(source.warningCount)) ? Number(source.warningCount) : warningCount,
+    replacedInputKeys: normalizeStringArray(source.replacedInputKeys),
+    replacedBindingCount: Number.isFinite(Number(source.replacedBindingCount))
+      ? Number(source.replacedBindingCount)
+      : normalizeStringArray(source.replacedInputKeys).length,
+    replacedEdgeIds: normalizeStringArray(source.replacedEdgeIds),
+    replacedEdgeCount: Number.isFinite(Number(source.replacedEdgeCount))
+      ? Number(source.replacedEdgeCount)
+      : normalizeStringArray(source.replacedEdgeIds).length,
+    candidateValid: Boolean(candidateValid),
+    graphStillInvalid: Boolean(graphStillInvalid),
+    validationDiagnosticCount: Number.isFinite(Number(source.validationDiagnosticCount))
+      ? Number(source.validationDiagnosticCount)
+      : normalizeDiagnostics(validation?.diagnostics).length,
+    readinessState: source.readinessState || validation?.readiness?.state || '',
+    readinessLevel: source.readinessLevel || validation?.readiness?.level || '',
+    readinessExecutable: Boolean(source.readinessExecutable ?? validation?.readiness?.executable),
+    message: source.message || ''
+  };
+}
+
+function normalizeStringArray(value) {
+  return Array.isArray(value)
+    ? value.map((item) => String(item || '').trim()).filter(Boolean)
+    : [];
+}
+
+function connectionAppliedMessage(source, target, serverCheck = null) {
+  const summary = serverCheck?.summary || {};
+  const replaced = (summary.replacedBindingCount || 0) + (summary.replacedEdgeCount || 0);
+  const suffix = replaced > 0
+    ? ` Replaced ${replaced} existing connection artifact${replaced === 1 ? '' : 's'}.`
+    : '';
+  return `Connected ${endpointLabel(source)} -> ${endpointLabel(target)}.${suffix}`;
 }
 
 function targetWithServerBindingKey(target, serverCheck) {
@@ -19456,7 +19519,7 @@ function connectionTargetAtPoint(event) {
   return candidate || null;
 }
 
-function applyConnection(source, target) {
+function applyConnection(source, target, serverCheck = null) {
   const node = state.builder.nodes.find((item) => item.id === target.nodeId);
   if (!node) return;
   recordBuilderHistory(`Connect ${endpointLabel(source)} to ${endpointLabel(target)}`);
@@ -19476,6 +19539,7 @@ function applyConnection(source, target) {
     renderInputForm();
     return;
   }
+  clearConnectionReplacementInputs(node, serverCheck?.summary);
   const expression = expressionForConnectionSource(source);
   if (target.port === 'config') {
     node.config = node.config || {};
@@ -19513,6 +19577,50 @@ function applyConnection(source, target) {
   state.selectedNodeId = node.id;
   syncComposerFromBuilder({ render: false });
   renderInputForm();
+}
+
+function clearConnectionReplacementInputs(node, summary = null) {
+  const keys = normalizeStringArray(summary?.replacedInputKeys);
+  if (!keys.length) {
+    return;
+  }
+  if (node.type === 'httpResource') {
+    for (const key of keys) {
+      if (node.paramInputs) {
+        delete node.paramInputs[key];
+      }
+      if (node.paramInputUnionBranches) {
+        delete node.paramInputUnionBranches[key];
+      }
+    }
+    return;
+  }
+  if (node.type === 'decisionTable') {
+    if (keys.includes('score')) {
+      node.scoreSource = '';
+    }
+    if (keys.includes('amount')) {
+      node.amountSource = '';
+    }
+    return;
+  }
+  if (node.type !== 'customOperator') {
+    return;
+  }
+  for (const key of keys) {
+    if (node.customInputs) {
+      delete node.customInputs[key];
+    }
+    if (node.customInputPorts) {
+      delete node.customInputPorts[key];
+    }
+    if (node.customInputPaths) {
+      delete node.customInputPaths[key];
+    }
+    if (node.customInputUnionBranches) {
+      delete node.customInputUnionBranches[key];
+    }
+  }
 }
 
 function addDependencyEdge(source, target) {

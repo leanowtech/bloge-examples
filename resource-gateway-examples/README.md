@@ -552,6 +552,14 @@ the preview edge, binding, or config expression is applied. Its top-level
 diagnostics stay scoped to the proposed connection, so an unrelated draft issue
 does not reject a drag/drop action, while the readiness still tells the author
 whether the graph as a whole remains repair-required, design-only, or executable.
+The same response includes a `bloge.visualConnectionCheckSummary.v1` summary
+with the canonical binding key, binding/write shape, connection-scoped
+diagnostic counts, replaced input binding keys, replaced edge ids, candidate
+readiness state, and `graphStillInvalid`, so large canvases and external
+governance consoles can route connection decisions without parsing diagnostic
+prose. The browser applies those replacement keys before writing the accepted
+connection, which keeps root/field rebinding behavior aligned with the
+server-side preview instead of leaving stale overlapping inputs behind.
 Operator availability is also enforced by policy: imported operator definitions
 may declare allowed `tenants`, `namespaces`, and `environments`; the browser
 queries the active catalog with the current draft scope from the Authoring Scope
@@ -768,7 +776,7 @@ Showcase metadata APIs:
 | `DELETE` | `/api/visual/drafts/{draftId}` | Delete the current visual graph draft pointer while preserving immutable revision history; optional `expectedRevision`, `actor`, `changeSource`, and `changeSummary` query parameters reject stale deletes and write deletion audit metadata |
 | `POST` | `/api/visual/drafts/validate` | Validate a visual graph draft against operator schemas, typed port edges, and DAG constraints; response includes `bloge.visualGraphReadiness.v1` so callers can distinguish runtime-executable, design-only, runtime-blocked, governance-review, and draft-repair-required graphs |
 | `POST` | `/api/visual/drafts/compile` | Validate a visual graph draft, lower it to BLOGE DSL, then compile the DSL; response includes validation/readiness so clients keep publish guidance after compile diagnostics |
-| `POST` | `/api/visual/connections/check` | Check a proposed source-to-target canvas connection against the same schema and DAG rules used by draft validation, returning connection-scoped diagnostics, the canonical binding key for data/input bindings, and candidate draft validation/readiness |
+| `POST` | `/api/visual/connections/check` | Check a proposed source-to-target canvas connection against the same schema and DAG rules used by draft validation, returning connection-scoped diagnostics, a machine-readable decision/replacement summary, the canonical binding key for data/input bindings, and candidate draft validation/readiness |
 | `POST` | `/api/visual/drafts/run` | Validate, compile, and execute a transient visual graph draft; response includes validation/readiness and a run history id |
 | `POST` | `/api/visual/drafts/{draftId}/run` | Execute a stored visual graph draft with submitted context; response includes validation/readiness, and optional `expectedRevision` rejects stale runs with `409 CONFLICT` |
 | `POST` | `/api/visual/drafts/{draftId}/publish` | Publish an immutable visual graph artifact; default `artifactKind=EXECUTABLE` validates, compiles, and stores frozen DSL, while `artifactKind=DESIGN` freezes a schema-valid non-executable design artifact with generation diagnostics; response includes validation/readiness on accepted and rejected attempts so clients can constrain publish artifact kinds; optional `expectedRevision` rejects stale publishes with `409 CONFLICT`; warning-level validation diagnostics require `ackWarnings=true`, and warning-acknowledged storage also requires non-empty `actor` and `reason` evidence that is frozen as publication metadata |
@@ -1463,7 +1471,7 @@ Seven `.bloge` graphs live in `src/main/resources/bloge/gateway/`:
 | `GraphDraftImportResult` | Import response contract with source bundle/draft identity, stored draft identity, target-environment compatibility diagnostics, validation/readiness, and dependency report |
 | `DatabaseGraphDraftRepository` | H2-backed graph draft repository with revision assignment, immutable revision history, expected-revision guarded updates, deletion audit snapshots, and retained history for deleted-draft recovery |
 | `GraphDraftValidator` | Validates the `bloge.visualGraphDraft.v1` draft contract, `bloge.visualLayout.v1` presentation contract including node/edge coverage, operator references, operator fingerprint drift, operator scope policy, request-response runtime capability gates for streaming/durable/remote-worker/AI-tool/event-source/message-handler/webhook operators, schema-only design operator authoring, non-idempotent side-effect and secret-backed execution governance warnings, graph input `contextPath` bindings, binding kind and edge kind allow-lists, literal constants, expression references, required schema inputs, node config against `configSchema`, port-aware node bindings, DSL-safe source/target/output port segments, typed data edges, explicit dependency edges, branch route edges, edge identity/connection uniqueness, data edge/semantic dependency consistency, DAG shape, output schema selection, and output-reachability warnings for dangling nodes |
-| `VisualConnectionCheckService` | Reuses draft validation to accept or reject one proposed canvas edge before the browser writes a binding, including schema, source/target port-segment, path diagnostics, and candidate draft validation/readiness |
+| `VisualConnectionCheckService` | Reuses draft validation to accept or reject one proposed canvas edge before the browser writes a binding, including schema, source/target port-segment, path diagnostics, a stable decision/replacement summary, and candidate draft validation/readiness |
 | `GraphDraftDslGenerator` | Lowers visual drafts into executable BLOGE DSL, and deterministically blocks schema-only design operators until runtime lowering is bound |
 | `VisualGraphRunService` | Reuses the dynamic BLOGE runner to validate draft input context, compile, and execute visual drafts or frozen publications while returning draft or frozen-publication validation/readiness |
 | `InputCoercingOperatorRegistry` | Runtime adapter used by the dynamic runner to coerce visual DSL map inputs into Java DTO/record operator inputs before execution |

@@ -96,8 +96,12 @@ public class VisualConnectionCheckService {
                 request.target().port(),
                 request.target().path()
         ));
+        Optional<OperatorDefinition> targetOperator = targetOperator(request.draft(), request.target().nodeId());
+        List<String> replacedInputKeys = replacedInputKeys(request.draft(), targetIndex, inputKey, binding,
+                targetOperator);
+        List<String> replacedEdgeIds = replacedEdgeIds(request.draft(), edge);
         GraphDraft candidate = draftWithPreviewBindingAndEdge(request.draft(), targetIndex, inputKey, binding, edge,
-                targetOperator(request.draft(), request.target().nodeId()));
+                targetOperator);
         int previewIndex = candidate.edges().size() - 1;
         String bindingPath = "/nodes/" + targetIndex + "/inputs/" + inputKey;
         String operatorPath = "/nodes/" + targetIndex + "/operatorRef";
@@ -107,8 +111,10 @@ public class VisualConnectionCheckService {
         List<VisualDiagnostic> diagnostics = preflightDiagnostics(validation,
                 diagnostic -> relevantToConnection(diagnostic, previewIndex, bindingPath, operatorPath,
                         request, nodeIndexes));
-        return new VisualConnectionCheckResult(diagnostics.stream().noneMatch(VisualDiagnostic::error),
-                edge, inputKey, diagnostics, validation);
+        boolean accepted = diagnostics.stream().noneMatch(VisualDiagnostic::error);
+        return new VisualConnectionCheckResult(accepted, edge, inputKey, diagnostics, validation,
+                VisualConnectionCheckResult.VisualConnectionCheckSummary.from(accepted, edge, inputKey,
+                        diagnostics, validation, replacedInputKeys, replacedEdgeIds));
     }
 
     private VisualConnectionCheckResult checkDependencyEdge(VisualConnectionCheckRequest request,
@@ -211,16 +217,21 @@ public class VisualConnectionCheckService {
                 request.target().port(),
                 request.target().path()
         ));
+        Optional<OperatorDefinition> targetOperator = targetOperator(request.draft(), request.target().nodeId());
+        List<String> replacedInputKeys = replacedInputKeys(request.draft(), targetIndex, inputKey, binding,
+                targetOperator);
         GraphDraft candidate = draftWithPreviewBinding(request.draft(), targetIndex, inputKey, binding,
-                targetOperator(request.draft(), request.target().nodeId()));
+                targetOperator);
         String bindingPath = "/nodes/" + targetIndex + "/inputs/" + inputKey;
         String operatorPath = "/nodes/" + targetIndex + "/operatorRef";
 
         VisualValidationResult validation = validator.validate(candidate);
         List<VisualDiagnostic> diagnostics = preflightDiagnostics(validation,
                 diagnostic -> relevantToContextBinding(diagnostic, bindingPath, operatorPath));
-        return new VisualConnectionCheckResult(diagnostics.stream().noneMatch(VisualDiagnostic::error),
-                edge, inputKey, diagnostics, validation);
+        boolean accepted = diagnostics.stream().noneMatch(VisualDiagnostic::error);
+        return new VisualConnectionCheckResult(accepted, edge, inputKey, diagnostics, validation,
+                VisualConnectionCheckResult.VisualConnectionCheckSummary.from(accepted, edge, inputKey,
+                        diagnostics, validation, replacedInputKeys, List.of()));
     }
 
     private static GraphDraft draftWithPreviewEdge(GraphDraft draft, GraphDraft.DraftEdge edge) {
@@ -432,6 +443,22 @@ public class VisualConnectionCheckService {
         );
     }
 
+    private static List<String> replacedInputKeys(GraphDraft draft,
+                                                  int targetIndex,
+                                                  String inputKey,
+                                                  GraphDraft.Binding binding,
+                                                  Optional<OperatorDefinition> targetOperator) {
+        if (targetIndex < 0 || targetIndex >= draft.nodes().size()) {
+            return List.of();
+        }
+        return draft.nodes().get(targetIndex).inputs().entrySet().stream()
+                .filter(entry -> entry.getKey().equals(inputKey)
+                        || sameBindingTarget(entry.getKey(), entry.getValue(), inputKey, binding, targetOperator))
+                .map(Map.Entry::getKey)
+                .distinct()
+                .toList();
+    }
+
     private static boolean sameBindingTarget(String leftKey,
                                              GraphDraft.Binding left,
                                              String rightKey,
@@ -543,6 +570,14 @@ public class VisualConnectionCheckService {
                 withBinding.operatorSnapshots(),
                 withBinding.revisionMetadata()
         );
+    }
+
+    private static List<String> replacedEdgeIds(GraphDraft draft, GraphDraft.DraftEdge edge) {
+        return draft.edges().stream()
+                .filter(existing -> sameTargetEndpoint(existing.target(), edge.target()))
+                .map(GraphDraft.DraftEdge::id)
+                .distinct()
+                .toList();
     }
 
     private record BindingTarget(String port, String path) {
