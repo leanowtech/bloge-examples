@@ -196,6 +196,7 @@ public class GraphDraftValidator {
             validateOperatorPolicy(draft, node, operator.get(), nodePath, diagnostics);
             validateOperatorRuntimeCapabilities(node, operator.get(), nodePath, diagnostics);
             validateOperatorGovernanceWarnings(node, operator.get(), nodePath, diagnostics);
+            validateOperatorLifecycleWarnings(node, operator.get(), nodePath, diagnostics);
             validateDuplicateInputTargets(node, operator.get(), nodePath, diagnostics);
             validateRequiredInputs(node, operator.get(), nodePath, diagnostics);
             validateUnknownInputs(node, operator.get(), nodePath, diagnostics);
@@ -395,6 +396,43 @@ public class GraphDraftValidator {
                 "Operator '%s' on node '%s' declares non-idempotent side effects; add an explicit review or audit control before production promotion."
                         .formatted(operator.operatorRef(), node.id()),
                 nodePath + "/operatorRef"));
+    }
+
+    private static void validateOperatorLifecycleWarnings(GraphDraft.DraftNode node,
+                                                          OperatorDefinition operator,
+                                                          String nodePath,
+                                                          List<VisualDiagnostic> diagnostics) {
+        operator.diagnostics().stream()
+                .filter(GraphDraftValidator::isCatalogLifecycleDiagnostic)
+                .map(diagnostic -> nodeScopedOperatorDiagnostic(node, operator, nodePath, diagnostic))
+                .forEach(diagnostics::add);
+    }
+
+    private static boolean isCatalogLifecycleDiagnostic(VisualDiagnostic diagnostic) {
+        return diagnostic != null && diagnostic.code() != null
+                && diagnostic.code().startsWith("visual.operator.lifecycle.");
+    }
+
+    private static VisualDiagnostic nodeScopedOperatorDiagnostic(GraphDraft.DraftNode node,
+                                                                 OperatorDefinition operator,
+                                                                 String nodePath,
+                                                                 VisualDiagnostic diagnostic) {
+        Map<String, Object> metadata = new LinkedHashMap<>(diagnostic.metadata());
+        metadata.put("nodeId", node.id());
+        metadata.put("operatorRef", operator.operatorRef());
+        if (!diagnostic.target().isBlank()) {
+            metadata.put("catalogDiagnosticTarget", diagnostic.target());
+        }
+        return new VisualDiagnostic(
+                diagnostic.level(),
+                diagnostic.code(),
+                "Node '%s' uses operator '%s': %s"
+                        .formatted(node.id(), operator.operatorRef(), diagnostic.message()),
+                nodePath + "/operatorRef",
+                -1,
+                -1,
+                metadata
+        );
     }
 
     private static void validateOutputSelection(GraphDraft draft,

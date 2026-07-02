@@ -556,6 +556,16 @@ class DefaultVisualOperatorCatalogTest {
                 .extracting(OperatorDefinition::operatorRef)
                 .contains("risk:eligibility", "risk:numericPass")
                 .doesNotContain("risk:scoreFacts");
+        assertThat(catalog.find("risk:numericPass").orElseThrow().diagnostics())
+                .anySatisfy(diagnostic -> {
+                    assertThat(diagnostic.level()).isEqualTo("WARNING");
+                    assertThat(diagnostic.code()).isEqualTo("visual.operator.lifecycle.deprecated");
+                    assertThat(diagnostic.message()).contains("deprecated operator library 'deprecated-policy'");
+                    assertThat(diagnostic.metadata())
+                            .containsEntry("libraryId", "deprecated-policy")
+                            .containsEntry("libraryStatus", "DEPRECATED")
+                            .containsEntry("operatorRef", "risk:numericPass");
+                });
         assertThat(catalog.find("risk:scoreFacts")).isEmpty();
     }
 
@@ -571,6 +581,18 @@ class DefaultVisualOperatorCatalogTest {
                 .extracting(OperatorDefinition::operatorRef)
                 .contains("resource:" + VisualCatalogTestSupport.RESOURCE_ID);
         assertThat(deprecatedCatalog.find("resource:" + VisualCatalogTestSupport.RESOURCE_ID)).isPresent();
+        assertThat(deprecatedCatalog.find("resource:" + VisualCatalogTestSupport.RESOURCE_ID)
+                .orElseThrow()
+                .diagnostics())
+                .anySatisfy(diagnostic -> {
+                    assertThat(diagnostic.level()).isEqualTo("WARNING");
+                    assertThat(diagnostic.code()).isEqualTo("visual.operator.lifecycle.deprecated");
+                    assertThat(diagnostic.message()).contains("Resource design contract")
+                            .contains("deprecated");
+                    assertThat(diagnostic.metadata())
+                            .containsEntry("resourceId", VisualCatalogTestSupport.RESOURCE_ID)
+                            .containsEntry("contractStatus", "DEPRECATED");
+                });
 
         assertThat(disabledCatalog.list(new OperatorCatalogQuery("", List.of(), true, true)))
                 .extracting(OperatorDefinition::operatorRef)

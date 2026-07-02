@@ -48,10 +48,16 @@
 | I6 | 服务端校验结果高于前端即时校验 | 前端约束只做体验优化 |
 | I7 | 发布 artifact 必须不可变 | 包括 DSL、operator fingerprints、schemas、layout、validation report |
 | I8 | 真实 secret 不能进入 catalog、draft、layout 或 diagnostics | 只能保存 secret ref |
+| I9 | Deprecated 设计时合同必须可审阅但不可静默 promotion | 默认 palette 可隐藏 deprecated operator/resource contract；stored draft resolution 必须能通过 includeDeprecated 找回，并把 lifecycle warning 归因到节点 |
 
 resource-gateway 示例通过 `VisualSecretGuard` 在 operator library 校验、draft
 校验和 draft 持久化入口阻断明显明文 secret；diagnostic 只返回固定错误文案和
 artifact path，不回显 secret value。
+`DEPRECATED` operator library 和 `DEPRECATED` resource design contract 会投影
+`visual.operator.lifecycle.deprecated`，draft validation 会把该 warning 映射到
+`/nodes/{index}/operatorRef`，publish 阶段沿用 warning acknowledgement gate。
+把已有 ACTIVE 合同降级为 DEPRECATED 时，admin validate/import/replace 也必须返回
+引用影响 warning，并在 mutation 入口要求 `ackWarnings=true`。
 
 ## 3. 命名与版本
 

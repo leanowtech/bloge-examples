@@ -149,7 +149,14 @@ the browser profile marks those same runtime/governance risks as review-level wa
 opt into `force=true` for explicit destructive operator-library replacement or
 deletion after inspecting the server-provided impact review for affected drafts,
 publications, operators, and diagnostic codes, jump from an affected draft chip
-into that draft and focus the affected node for review and repair,
+into that draft and focus the affected node for review and repair, keep
+deprecated operator libraries and deprecated resource design contracts hidden
+from the default palette while still resolving them for stored draft review via
+`includeDeprecated`, and surface `visual.operator.lifecycle.deprecated` as a
+node-scoped warning so publish requires explicit `ackWarnings` before production
+promotion; downgrading an in-use operator library or resource design contract to
+`DEPRECATED` is also warning-gated at validate/import/replace time so authors see
+affected drafts or publications before storing the lifecycle change,
 discover OpenAPI operations from JSON or YAML text, select one, project it into a visual resource contract draft, review the
 generated request/response schema, save it back to the resource-contract
 registry, and refresh the palette without leaving the browser,

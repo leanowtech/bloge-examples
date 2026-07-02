@@ -1709,6 +1709,48 @@ class GraphDraftValidatorTest {
     }
 
     @Test
+    void warnsWhenOperatorComesFromDeprecatedLibrary() {
+        GraphDraftValidator validator = new GraphDraftValidator(
+                VisualCatalogTestSupport.catalogWithLibrary(new OperatorLibrary(
+                        "bloge.visualOperatorLibrary.v1",
+                        "risk-policy-legacy",
+                        "Legacy risk policy operators",
+                        "1.0.0",
+                        "risk-team",
+                        "DEPRECATED",
+                        List.of(VisualCatalogTestSupport.eligibilityOperator("integer"))
+                )));
+        GraphDraft draft = contextEligibilityDraft(graphInputSchema(
+                Map.of(
+                        "score", Map.of("type", "integer"),
+                        "amount", Map.of("type", "number")
+                ),
+                List.of("score", "amount")
+        ), Map.of(
+                "score", GraphDraft.Binding.contextPath("score"),
+                "amount", GraphDraft.Binding.contextPath("amount")
+        ));
+
+        VisualValidationResult result = validator.validate(draft);
+
+        assertThat(result.valid()).isTrue();
+        assertThat(result.diagnostics())
+                .anySatisfy(diagnostic -> {
+                    assertThat(diagnostic.level()).isEqualTo("WARNING");
+                    assertThat(diagnostic.code()).isEqualTo("visual.operator.lifecycle.deprecated");
+                    assertThat(diagnostic.message()).contains("Node 'eligibility'")
+                            .contains("deprecated operator library");
+                    assertThat(diagnostic.target()).isEqualTo("/nodes/0/operatorRef");
+                    assertThat(diagnostic.metadata())
+                            .containsEntry("libraryId", "risk-policy-legacy")
+                            .containsEntry("nodeId", "eligibility")
+                            .containsEntry("operatorRef", "risk:eligibility")
+                            .containsEntry("catalogDiagnosticTarget",
+                                    "/libraries/risk-policy-legacy/operators/0");
+                });
+    }
+
+    @Test
     void rejectsDraftWhenOperatorFingerprintSnapshotHasDrifted() {
         GraphDraftValidator validator = new GraphDraftValidator(
                 VisualCatalogTestSupport.catalogWithLibrary(

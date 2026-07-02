@@ -341,6 +341,59 @@ class ResourceDesignContractAdminControllerTest {
     }
 
     @Test
+    void validateWarnsWhenDeprecatingContractReferencedByStoredDraft() throws Exception {
+        ResourceDesignContract original = validContract(Map.of());
+        ResourceDesignContract deprecated = validContract(Map.of(), ResourceDesignContract.STATUS_DEPRECATED);
+        registry.upsert(original);
+        drafts.save(draftUsingResource("order-service.listOrders"));
+
+        mockMvc.perform(post("/admin/resource-design-contracts/validate")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(deprecated)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.valid").value(true))
+                .andExpect(jsonPath("$.diagnostics[0].level").value("WARNING"))
+                .andExpect(jsonPath("$.diagnostics[0].code")
+                        .value("visual.resourceContract.lifecycle.deprecated"))
+                .andExpect(jsonPath("$.diagnostics[0].message").value(
+                        "Resource design contract for 'order-service.listOrders' is being deprecated; draft 'draft-1@1' node 'orders' still uses operatorRef 'resource:order-service.listOrders'. Review migration before production promotion."))
+                .andExpect(jsonPath("$.diagnostics[0].target").value("/drafts/draft-1/nodes/0/operatorRef"))
+                .andExpect(jsonPath("$.diagnostics[0].metadata.resourceId").value("order-service.listOrders"))
+                .andExpect(jsonPath("$.diagnostics[0].metadata.previousStatus").value("ACTIVE"))
+                .andExpect(jsonPath("$.diagnostics[0].metadata.contractStatus").value("DEPRECATED"));
+
+        assertThat(registry.findByResourceId("order-service.listOrders")).contains(original);
+    }
+
+    @Test
+    void upsertRequiresWarningAcknowledgementBeforeDeprecatingUsedContract() throws Exception {
+        ResourceDesignContract original = validContract(Map.of());
+        ResourceDesignContract deprecated = validContract(Map.of(), ResourceDesignContract.STATUS_DEPRECATED);
+        registry.upsert(original);
+        drafts.save(draftUsingResource("order-service.listOrders"));
+
+        mockMvc.perform(put("/admin/resource-design-contracts/order-service.listOrders")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(deprecated)))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.valid").value(true))
+                .andExpect(jsonPath("$.diagnostics[0].level").value("WARNING"))
+                .andExpect(jsonPath("$.diagnostics[0].code")
+                        .value("visual.resourceContract.lifecycle.deprecated"));
+
+        assertThat(registry.findByResourceId("order-service.listOrders")).contains(original);
+
+        mockMvc.perform(put("/admin/resource-design-contracts/order-service.listOrders")
+                        .param("ackWarnings", "true")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(deprecated)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("DEPRECATED"));
+
+        assertThat(registry.findByResourceId("order-service.listOrders")).contains(deprecated);
+    }
+
+    @Test
     void validateWarnsWhenReplacingUsedContractWithDifferentFingerprint() throws Exception {
         ResourceDesignContract original = validContract(Map.of());
         ResourceDesignContract replacement = contractWithCountResponse();

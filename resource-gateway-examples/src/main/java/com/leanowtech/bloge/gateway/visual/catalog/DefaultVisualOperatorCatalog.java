@@ -96,7 +96,7 @@ public class DefaultVisualOperatorCatalog implements VisualOperatorCatalog {
         if (!effectiveQuery.resourceOnly()) {
             operators.addAll(nativeOperators());
             operators.addAll(javaOperatorProjector.project());
-            operators.addAll(libraryRegistry.operators(effectiveQuery.includeDeprecated()));
+            operators.addAll(libraryOperators(effectiveQuery.includeDeprecated()));
             for (VisualGraphPublication publication : publicationRepository.all()) {
                 if (publication.executable()) {
                     operators.add(publicationProjector.project(publication));
@@ -164,6 +164,47 @@ public class DefaultVisualOperatorCatalog implements VisualOperatorCatalog {
                 && query.sourceKinds().isEmpty()
                 && query.loweringModes().isEmpty()
                 && query.capabilities().isEmpty();
+    }
+
+    private List<OperatorDefinition> libraryOperators(boolean includeDeprecated) {
+        List<OperatorDefinition> operators = new ArrayList<>();
+        for (OperatorLibrary library : libraryRegistry.all()) {
+            if (!library.visibleInCatalog(includeDeprecated)) {
+                continue;
+            }
+            for (int i = 0; i < library.operators().size(); i++) {
+                OperatorDefinition operator = library.operators().get(i);
+                if (operator == null || !hasConcretePorts(operator)) {
+                    continue;
+                }
+                operators.add(withLibraryLifecycleDiagnostic(library, operator, i));
+            }
+        }
+        return operators;
+    }
+
+    private static boolean hasConcretePorts(OperatorDefinition operator) {
+        return operator.ports().inputs().stream().allMatch(java.util.Objects::nonNull)
+                && operator.ports().outputs().stream().allMatch(java.util.Objects::nonNull);
+    }
+
+    private static OperatorDefinition withLibraryLifecycleDiagnostic(OperatorLibrary library,
+                                                                     OperatorDefinition operator,
+                                                                     int operatorIndex) {
+        if (!OperatorLibrary.STATUS_DEPRECATED.equals(library.status())) {
+            return operator;
+        }
+        return withDiagnostic(operator, VisualDiagnostic.warning(
+                "visual.operator.lifecycle.deprecated",
+                "Operator '%s' comes from deprecated operator library '%s'; existing drafts can still be reviewed, but production promotion should migrate to an active operator definition."
+                        .formatted(operator.operatorRef(), library.libraryId()),
+                "/libraries/%s/operators/%d".formatted(library.libraryId(), operatorIndex),
+                Map.of(
+                        "libraryId", library.libraryId(),
+                        "libraryStatus", library.status(),
+                        "operatorRef", operator.operatorRef()
+                )
+        ));
     }
 
     private static Optional<VisualDiagnostic> hiddenMalformedPortDiagnostic(OperatorLibrary library,

@@ -26,7 +26,9 @@ import org.springframework.web.bind.annotation.RestController;
 
 import java.util.ArrayList;
 import java.util.Collection;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
 
@@ -253,6 +255,7 @@ public class ResourceDesignContractAdminController {
     private VisualValidationResult validateAgainstRegistry(ResourceDesignContract contract, boolean force) {
         VisualValidationResult structural = validator.validate(contract);
         List<VisualDiagnostic> diagnostics = new ArrayList<>(structural.diagnostics());
+        diagnostics.addAll(deprecationImpactDiagnostics(contract));
         diagnostics.addAll(replacementFingerprintDriftDiagnostics(contract));
         if (!force) {
             diagnostics.addAll(disablementImpactDiagnostics(contract));
@@ -284,6 +287,49 @@ public class ResourceDesignContractAdminController {
             return List.of();
         }
         return storedDraftReferenceDiagnostics(contract.resourceId(), "disabled without force=true");
+    }
+
+    private List<VisualDiagnostic> deprecationImpactDiagnostics(ResourceDesignContract contract) {
+        if (contract == null || !ResourceDesignContract.STATUS_DEPRECATED.equals(contract.status())) {
+            return List.of();
+        }
+        Optional<ResourceDesignContract> existing = registry.findByResourceId(contract.resourceId());
+        if (existing.isEmpty() || ResourceDesignContract.STATUS_DEPRECATED.equals(existing.get().status())) {
+            return List.of();
+        }
+        String operatorRef = "resource:" + contract.resourceId();
+        List<VisualDiagnostic> diagnostics = new ArrayList<>();
+        for (GraphDraft draft : draftRepository.all()) {
+            for (int i = 0; i < draft.nodes().size(); i++) {
+                GraphDraft.DraftNode node = draft.nodes().get(i);
+                if (!operatorRef.equals(node.operatorRef())) {
+                    continue;
+                }
+                diagnostics.add(VisualDiagnostic.warning("visual.resourceContract.lifecycle.deprecated",
+                        "Resource design contract for '%s' is being deprecated; draft '%s@%d' node '%s' still uses operatorRef '%s'. Review migration before production promotion."
+                                .formatted(contract.resourceId(), draft.draftId(), draft.revision(),
+                                        node.id(), node.operatorRef()),
+                        "/drafts/%s/nodes/%d/operatorRef".formatted(draft.draftId(), i),
+                        lifecycleMetadata(contract, existing.get(), node.id(), operatorRef)));
+            }
+        }
+        return diagnostics;
+    }
+
+    private static Map<String, Object> lifecycleMetadata(ResourceDesignContract replacement,
+                                                         ResourceDesignContract existing,
+                                                         String nodeId,
+                                                         String operatorRef) {
+        Map<String, Object> metadata = new LinkedHashMap<>();
+        metadata.put("resourceId", replacement.resourceId());
+        metadata.put("contractId", replacement.contractId());
+        metadata.put("previousStatus", existing.status());
+        metadata.put("contractStatus", replacement.status());
+        metadata.put("operatorRef", operatorRef);
+        if (nodeId != null && !nodeId.isBlank()) {
+            metadata.put("nodeId", nodeId);
+        }
+        return metadata;
     }
 
     private List<VisualDiagnostic> replacementFingerprintDriftDiagnostics(ResourceDesignContract replacement) {

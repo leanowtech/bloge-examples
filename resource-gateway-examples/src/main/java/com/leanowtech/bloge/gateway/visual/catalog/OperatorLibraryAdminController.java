@@ -201,6 +201,7 @@ public class OperatorLibraryAdminController {
         diagnostics.addAll(operatorRefOwnershipDiagnostics(library));
         diagnostics.addAll(runtimeOperatorRefDiagnostics(library));
         diagnostics.addAll(unresolvedNativeLoweringDiagnostics(library));
+        diagnostics.addAll(replacementLifecycleDowngradeDiagnostics(library));
         diagnostics.addAll(replacementFingerprintDriftDiagnostics(library));
         diagnostics.addAll(replacementPublicationRemovalDiagnostics(library));
         if (!force) {
@@ -290,6 +291,73 @@ public class OperatorLibraryAdminController {
                     "/operators/%d/lowering/operatorRef".formatted(i)));
         }
         return diagnostics;
+    }
+
+    private List<VisualDiagnostic> replacementLifecycleDowngradeDiagnostics(OperatorLibrary replacement) {
+        if (replacement == null || !OperatorLibrary.STATUS_DEPRECATED.equals(replacement.status())) {
+            return List.of();
+        }
+        Optional<OperatorLibrary> existing = registry.find(replacement.libraryId());
+        if (existing.isEmpty() || OperatorLibrary.STATUS_DEPRECATED.equals(existing.get().status())) {
+            return List.of();
+        }
+        Set<String> operatorRefs = replacement.operators().stream()
+                .filter(java.util.Objects::nonNull)
+                .map(OperatorDefinition::operatorRef)
+                .collect(java.util.stream.Collectors.toCollection(LinkedHashSet::new));
+        if (operatorRefs.isEmpty()) {
+            return List.of();
+        }
+
+        List<VisualDiagnostic> diagnostics = new ArrayList<>();
+        for (GraphDraft draft : draftRepository.all()) {
+            for (int i = 0; i < draft.nodes().size(); i++) {
+                GraphDraft.DraftNode node = draft.nodes().get(i);
+                if (!operatorRefs.contains(node.operatorRef())) {
+                    continue;
+                }
+                diagnostics.add(VisualDiagnostic.warning("visual.library.lifecycle.deprecated",
+                        "Operator library '%s' is being deprecated; draft '%s@%d' node '%s' still uses operatorRef '%s'. Review migration before production promotion."
+                                .formatted(replacement.libraryId(), draft.draftId(), draft.revision(),
+                                        node.id(), node.operatorRef()),
+                        "/drafts/%s/nodes/%d/operatorRef".formatted(draft.draftId(), i),
+                        lifecycleMetadata(replacement, existing.get(), node.operatorRef(), node.id())));
+            }
+        }
+        for (VisualGraphPublication publication : publicationRepository.all()) {
+            GraphDraft draft = publication.draft();
+            if (draft == null) {
+                continue;
+            }
+            for (int i = 0; i < draft.nodes().size(); i++) {
+                GraphDraft.DraftNode node = draft.nodes().get(i);
+                if (!operatorRefs.contains(node.operatorRef())) {
+                    continue;
+                }
+                diagnostics.add(VisualDiagnostic.warning("visual.library.publicationLifecycleDeprecated",
+                        "Operator library '%s' is being deprecated while publication '%s' node '%s' was authored with operatorRef '%s'. Existing publication keeps its frozen DSL, but replay, recertification, or republishing should be reviewed."
+                                .formatted(replacement.libraryId(), publication.publicationId(),
+                                        node.id(), node.operatorRef()),
+                        "/publications/%s/nodes/%d/operatorRef".formatted(publication.publicationId(), i),
+                        lifecycleMetadata(replacement, existing.get(), node.operatorRef(), node.id())));
+            }
+        }
+        return diagnostics;
+    }
+
+    private static Map<String, Object> lifecycleMetadata(OperatorLibrary replacement,
+                                                         OperatorLibrary existing,
+                                                         String operatorRef,
+                                                         String nodeId) {
+        Map<String, Object> metadata = new LinkedHashMap<>();
+        metadata.put("libraryId", replacement.libraryId());
+        metadata.put("previousStatus", existing.status());
+        metadata.put("libraryStatus", replacement.status());
+        metadata.put("operatorRef", operatorRef);
+        if (nodeId != null && !nodeId.isBlank()) {
+            metadata.put("nodeId", nodeId);
+        }
+        return metadata;
     }
 
     private static HttpStatus validationFailureStatus(OperatorLibraryValidationResult validation) {
@@ -611,6 +679,13 @@ public class OperatorLibraryAdminController {
             if (previous != null && !previous.fingerprint().equals(operator.fingerprint())) {
                 affectedRefs.add(operator.operatorRef());
             }
+        }
+        if (OperatorLibrary.STATUS_DEPRECATED.equals(replacement.status())
+                && !OperatorLibrary.STATUS_DEPRECATED.equals(existing.get().status())) {
+            replacement.operators().stream()
+                    .filter(java.util.Objects::nonNull)
+                    .map(OperatorDefinition::operatorRef)
+                    .forEach(affectedRefs::add);
         }
         if (affectedRefs.isEmpty()) {
             return Set.of();

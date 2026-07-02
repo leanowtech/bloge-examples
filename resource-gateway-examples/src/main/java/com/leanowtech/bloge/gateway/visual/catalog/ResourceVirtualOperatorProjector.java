@@ -7,6 +7,7 @@ import com.leanowtech.bloge.gateway.visual.resource.ResourceDesignContract;
 
 import org.springframework.stereotype.Component;
 
+import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -28,12 +29,24 @@ public class ResourceVirtualOperatorProjector {
     public OperatorDefinition project(ResourceDescriptor descriptor,
                                       Optional<ResourceDesignContract> contract) {
         ResourceDesignContract design = contract.orElse(null);
-        List<VisualDiagnostic> diagnostics = design == null
-                ? List.of(VisualDiagnostic.warning(
-                        "visual.resource.contractMissing",
-                        "Resource has no visual design contract; schema constraints are opaque.",
-                        "/operators/resource:" + descriptor.resourceId()))
-                : List.of();
+        List<VisualDiagnostic> diagnostics = new ArrayList<>();
+        if (design == null) {
+            diagnostics.add(VisualDiagnostic.warning(
+                    "visual.resource.contractMissing",
+                    "Resource has no visual design contract; schema constraints are opaque.",
+                    "/operators/resource:" + descriptor.resourceId()));
+        } else if (ResourceDesignContract.STATUS_DEPRECATED.equals(design.status())) {
+            diagnostics.add(VisualDiagnostic.warning(
+                    "visual.operator.lifecycle.deprecated",
+                    "Resource design contract '%s' for resource '%s' is deprecated; existing drafts can still be reviewed, but production promotion should migrate to an active resource contract."
+                            .formatted(design.contractId(), descriptor.resourceId()),
+                    "/resource-design-contracts/" + design.contractId(),
+                    Map.of(
+                            "contractId", design.contractId(),
+                            "resourceId", descriptor.resourceId(),
+                            "contractStatus", design.status()
+                    )));
+        }
 
         SchemaEnvelope requestSchema = design == null ? SchemaEnvelope.opaque() : design.requestSchema();
         SchemaEnvelope responseSchema = design == null ? SchemaEnvelope.opaque() : design.responseSchema();

@@ -1153,6 +1153,62 @@ class OperatorLibraryAdminControllerTest {
     }
 
     @Test
+    void validateWarnsWhenDeprecatingLibraryReferencedByStoredDraft() throws Exception {
+        OperatorLibrary original = VisualCatalogTestSupport.eligibilityLibrary("integer");
+        OperatorLibrary deprecated = eligibilityLibraryWithStatus(OperatorLibrary.STATUS_DEPRECATED);
+        registry.upsert(original);
+        drafts.save(draftUsingOperator("risk:eligibility"));
+
+        mockMvc.perform(post("/admin/visual-operator-libraries/validate")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(deprecated)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.valid").value(true))
+                .andExpect(jsonPath("$.diagnostics[0].level").value("WARNING"))
+                .andExpect(jsonPath("$.diagnostics[0].code").value("visual.library.lifecycle.deprecated"))
+                .andExpect(jsonPath("$.diagnostics[0].message").value(
+                        "Operator library 'risk-policy' is being deprecated; draft 'draft-1@1' node 'eligibility' still uses operatorRef 'risk:eligibility'. Review migration before production promotion."))
+                .andExpect(jsonPath("$.diagnostics[0].target").value("/drafts/draft-1/nodes/0/operatorRef"))
+                .andExpect(jsonPath("$.diagnostics[0].metadata.libraryId").value("risk-policy"))
+                .andExpect(jsonPath("$.diagnostics[0].metadata.previousStatus").value("ACTIVE"))
+                .andExpect(jsonPath("$.diagnostics[0].metadata.libraryStatus").value("DEPRECATED"))
+                .andExpect(jsonPath("$.impact.warningCount").value(1))
+                .andExpect(jsonPath("$.impact.draftIds[0]").value("draft-1"))
+                .andExpect(jsonPath("$.impact.operatorRefs[0]").value("risk:eligibility"))
+                .andExpect(jsonPath("$.impact.codeCounts[0].code")
+                        .value("visual.library.lifecycle.deprecated"));
+
+        assertThat(registry.find("risk-policy")).contains(original);
+    }
+
+    @Test
+    void updateRequiresWarningAcknowledgementBeforeDeprecatingUsedLibrary() throws Exception {
+        OperatorLibrary original = VisualCatalogTestSupport.eligibilityLibrary("integer");
+        OperatorLibrary deprecated = eligibilityLibraryWithStatus(OperatorLibrary.STATUS_DEPRECATED);
+        registry.upsert(original);
+        drafts.save(draftUsingOperator("risk:eligibility"));
+
+        mockMvc.perform(put("/admin/visual-operator-libraries/risk-policy")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(deprecated)))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.valid").value(true))
+                .andExpect(jsonPath("$.diagnostics[0].level").value("WARNING"))
+                .andExpect(jsonPath("$.diagnostics[0].code").value("visual.library.lifecycle.deprecated"));
+
+        assertThat(registry.find("risk-policy")).contains(original);
+
+        mockMvc.perform(put("/admin/visual-operator-libraries/risk-policy")
+                        .param("ackWarnings", "true")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(deprecated)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("DEPRECATED"));
+
+        assertThat(registry.find("risk-policy")).contains(deprecated);
+    }
+
+    @Test
     void validateForceBypassesStoredDraftReferenceImpact() throws Exception {
         OperatorLibrary original = VisualCatalogTestSupport.multiOutputEligibilityLibrary("integer");
         OperatorLibrary replacement = libraryWithScoreFactsOnly();
@@ -1329,6 +1385,33 @@ class OperatorLibraryAdminControllerTest {
                         .value("visual.library.publicationOperatorFingerprintDrift"));
 
         assertThat(replacementFingerprint).isNotEqualTo(originalFingerprint);
+        assertThat(registry.find("risk-policy")).contains(original);
+    }
+
+    @Test
+    void validateWarnsWhenDeprecatingLibraryReferencedByPublishedArtifact() throws Exception {
+        OperatorLibrary original = VisualCatalogTestSupport.eligibilityLibrary("integer");
+        OperatorLibrary deprecated = eligibilityLibraryWithStatus(OperatorLibrary.STATUS_DEPRECATED);
+        registry.upsert(original);
+        publications.create(publicationUsingOperator("risk:eligibility", original.operators().getFirst().fingerprint()));
+
+        mockMvc.perform(post("/admin/visual-operator-libraries/validate")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(deprecated)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.valid").value(true))
+                .andExpect(jsonPath("$.diagnostics[0].level").value("WARNING"))
+                .andExpect(jsonPath("$.diagnostics[0].code")
+                        .value("visual.library.publicationLifecycleDeprecated"))
+                .andExpect(jsonPath("$.diagnostics[0].message").value(
+                        "Operator library 'risk-policy' is being deprecated while publication 'publication-1' node 'eligibility' was authored with operatorRef 'risk:eligibility'. Existing publication keeps its frozen DSL, but replay, recertification, or republishing should be reviewed."))
+                .andExpect(jsonPath("$.diagnostics[0].target")
+                        .value("/publications/publication-1/nodes/0/operatorRef"))
+                .andExpect(jsonPath("$.impact.publicationIds[0]").value("publication-1"))
+                .andExpect(jsonPath("$.impact.operatorRefs[0]").value("risk:eligibility"))
+                .andExpect(jsonPath("$.impact.codeCounts[0].code")
+                        .value("visual.library.publicationLifecycleDeprecated"));
+
         assertThat(registry.find("risk-policy")).contains(original);
     }
 
