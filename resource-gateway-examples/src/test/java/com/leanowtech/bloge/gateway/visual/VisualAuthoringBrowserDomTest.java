@@ -597,6 +597,36 @@ class VisualAuthoringBrowserDomTest {
     }
 
     @Test
+    void composerPublishesSchemaOnlyOperatorAsDesignArtifactInRealBrowser() throws JsonProcessingException {
+        driver = newChromeDriverOrSkip();
+        WebDriverWait wait = new WebDriverWait(driver, WAIT_TIMEOUT);
+        driver.get("http://localhost:" + port + "/examples/gateway");
+
+        waitForComposer(wait);
+        wait.until(ExpectedConditions.visibilityOfElementLocated(By.id("operator-palette")));
+
+        importOperatorLibrary(wait, unsafeOutputLibrary());
+        dragOperatorToCanvas(wait, "Unsafe facts", "risk:unsafeFacts", "riskUnsafeFacts", 140, 120);
+        wait.until(ExpectedConditions.visibilityOfElementLocated(
+                By.cssSelector("#diagram [data-node-id='riskUnsafeFacts']")
+        ));
+        selectByValue(wait, By.id("graph-output-node"), "riskUnsafeFacts");
+        selectByValue(wait, By.id("graph-output-path"), "safeId");
+        selectByValue(wait, By.id("publish-artifact-kind"), "DESIGN");
+
+        publishVisualDraft(wait);
+        String publicationId = valueOf(By.id("publication-select"));
+        assertThat(publicationId).isNotBlank();
+        waitForText(wait, By.id("publication-select"), "DESIGN");
+        assertThat(driver.findElement(By.id("run-publication")).isEnabled()).isFalse();
+
+        setControlValue(driver.findElement(By.id("operator-palette-search")), "");
+        assertThat(driver.findElements(By.cssSelector(
+                "#operator-palette [data-operator-type='publication:" + publicationId + "']")))
+                .isEmpty();
+    }
+
+    @Test
     void composerExposesSchemaArrayIndexOutputPathsInRealBrowser() throws JsonProcessingException {
         driver = newChromeDriverOrSkip();
         WebDriverWait wait = new WebDriverWait(driver, WAIT_TIMEOUT);

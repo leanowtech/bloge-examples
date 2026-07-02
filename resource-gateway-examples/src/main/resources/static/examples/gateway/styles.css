@@ -2255,8 +2255,17 @@ body.dragging-operator * {
 
 .visual-check-actions {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 6px;
+}
+
+.visual-check-actions select {
+  min-width: 0;
+  padding: 7px 8px;
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  background: var(--surface-subtle);
+  color: var(--text);
 }
 
 .visual-check-status {
@@ -2784,6 +2793,7 @@ body.dragging-operator * {
 .binding-row input:focus,
 .draft-controls select:focus,
 .draft-revision-controls select:focus,
+.visual-check-actions select:focus,
 .run-history-controls input:focus,
 .run-history-controls select:focus,
 .library-controls select:focus,

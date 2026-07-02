@@ -686,13 +686,13 @@ assignment target 不在 output schema 中、template 引用不存在 input path
 可按 scope 过滤，`GraphDraftValidator` 在 validate/compile/run/publish 前
 返回 `visual.operator.policyDenied` 阻断越权 operator 使用。当前还支持
 `lowering.mode=design` 的 schema-only authoring：这类用户算子可以进入 catalog、
-拖拽、连线、保存、导出、被 schema validator 校验，并可通过
+拖拽、连线、保存、导出、被 schema validator 校验，并可通过浏览器发布模式或 API
 `artifactKind=DESIGN` 发布成非执行型设计制品；compile/run/default executable publish 会返回
 `visual.codegen.designOnlyOperator`，直到后续绑定 native / transform / branch 等可执行 lowering。
 同一 admin API 已具备 registry-aware impact preflight：删除、禁用或替换仍被 stored draft 引用的
 operatorRef 会被阻断，same-ref fingerprint drift 会作为 warning 暴露；对于 immutable publication，
 当前 executable artifact 运行不依赖最新 catalog，因为 publication 持有 frozen DSL 和 operator snapshots；
-DESIGN artifact 可审阅但不可运行，也不会投影成 `publication:*` 子图算子。validate 会返回
+DESIGN artifact 可审阅但不可运行，浏览器会禁用 run/golden 动作，也不会投影成 `publication:*` 子图算子。validate 会返回
 publication 级 warning，提示 replay、recertification 或 republish 前需要重新审计。直接删除 library 时，
 如果已有 published artifact 引用了该库内 operatorRef，服务端要求 `force=true` 才允许删除。
 导入阶段还会 warning-gate capability 和治理风险：streaming/durable 算子可以被显式确认后进入 catalog，
@@ -729,7 +729,7 @@ fingerprint snapshot；普通保存和 PATCH 仍保留既有 snapshot，避免�
 | `POST` | `/api/visual/drafts/{draftId}/validate` | 增量或全量校验 |
 | `POST` | `/api/visual/drafts/{draftId}/compile` | 生成 DSL 并编译 |
 | `POST` | `/api/visual/drafts/{draftId}/run` | 使用测试 context 运行 |
-| `POST` | `/api/visual/drafts/{draftId}/publish` | 发布为 graph version；默认 `artifactKind=EXECUTABLE`，也支持 `artifactKind=DESIGN` 冻结非执行型设计制品；warning-level diagnostics 需 `ackWarnings=true` 后才写入 |
+| `POST` | `/api/visual/drafts/{draftId}/publish` | 发布为 graph version；浏览器和 API 默认 `artifactKind=EXECUTABLE`，也支持 `artifactKind=DESIGN` 冻结非执行型设计制品；warning-level diagnostics 需 `ackWarnings=true` 后才写入 |
 
 ### 12.3 Runtime / Trace API
 

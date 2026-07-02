@@ -2812,6 +2812,7 @@ class VisualAuthoringAppJsTest {
                   let publishControlRenders = 0;
                   context.state.currentDraftRevision = 4;
                   context.state.pendingPublishWarningKey = '';
+                  context.state.publishArtifactKind = 'DESIGN';
                   context.saveCurrentDraft = async () => ({ draftId: 'draft-risk', revision: 4 });
                   context.fetch = async (url, options = {}) => {
                     publishCallCount += 1;
@@ -2904,7 +2905,8 @@ class VisualAuthoringAppJsTest {
                         publishCertificationLoads,
                         publishCatalogLoads,
                         publishPaletteRenders,
-                        publishControlRenders
+                        publishControlRenders,
+                        finalPublishArtifactKind: context.state.publishArtifactKind
                       }));
                     });
                 }).then((publishResult) => {
@@ -2912,6 +2914,7 @@ class VisualAuthoringAppJsTest {
                     ['publish endpoint', publishResult.endpoint, '/api/visual/drafts/draft-risk/publish'],
                     ['publish first expected revision', publishResult.firstBody.expectedRevision, 4],
                     ['publish first warning ack', publishResult.firstBody.ackWarnings, false],
+                    ['publish first artifact kind', publishResult.firstBody.artifactKind, 'DESIGN'],
                     ['publish pending warning key', publishResult.firstWarningKey, 'draft-risk@4'],
                     ['publish warning message level', publishResult.warningMessage.level, 'warning'],
                     ['publish warning message text', publishResult.warningMessage.text, 'Review publish warnings, then click Publish again to continue.'],
@@ -2921,7 +2924,9 @@ class VisualAuthoringAppJsTest {
                     ['publish warning draft list load', publishResult.publishDraftListLoads, 1],
                     ['publish second expected revision', publishResult.secondBody.expectedRevision, 4],
                     ['publish second warning ack', publishResult.secondBody.ackWarnings, true],
+                    ['publish second artifact kind', publishResult.secondBody.artifactKind, 'DESIGN'],
                     ['publish final warning key cleared', publishResult.finalWarningKey, ''],
+                    ['publish state artifact kind', publishResult.finalPublishArtifactKind, 'DESIGN'],
                     ['publish selected publication', publishResult.finalPublicationId, 'pub-risk'],
                     ['publish success message level', publishResult.successMessage.level, 'success'],
                     ['publish success message text', publishResult.successMessage.text, 'Published pub-risk.'],

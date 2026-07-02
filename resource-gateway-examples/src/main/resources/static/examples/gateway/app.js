@@ -334,6 +334,7 @@ const state = {
   currentDraftRevision: 0,
   savedDraftSnapshot: null,
   pendingPublishWarningKey: '',
+  publishArtifactKind: 'EXECUTABLE',
   draftRevisions: [],
   selectedDraftRevision: 0,
   previewingDraftRevision: 0,
@@ -1103,6 +1104,10 @@ function renderInputForm() {
         <div class="visual-check-actions">
           <button id="validate-visual-draft" class="secondary compact" type="button">Validate</button>
           <button id="compile-visual-draft" class="secondary compact" type="button">Compile</button>
+          <select id="publish-artifact-kind" aria-label="Publication artifact kind">
+            <option value="EXECUTABLE"${state.publishArtifactKind === 'DESIGN' ? '' : ' selected'}>Executable</option>
+            <option value="DESIGN"${state.publishArtifactKind === 'DESIGN' ? ' selected' : ''}>Design artifact</option>
+          </select>
           <button id="publish-visual-draft" class="secondary compact" type="button">Publish</button>
         </div>
         <div id="visual-check-status" class="visual-check-status"></div>
@@ -1161,6 +1166,10 @@ function renderInputForm() {
     $('apply-scope').addEventListener('click', applyBuilderScopeFromControls);
     $('validate-visual-draft').addEventListener('click', validateVisualDraft);
     $('compile-visual-draft').addEventListener('click', compileVisualDraft);
+    $('publish-artifact-kind').addEventListener('change', (event) => {
+      state.publishArtifactKind = normalizePublishArtifactKind(event.target.value);
+      state.pendingPublishWarningKey = '';
+    });
     $('publish-visual-draft').addEventListener('click', publishVisualDraft);
     return;
   }
@@ -3524,6 +3533,8 @@ async function compileVisualDraft() {
 async function publishVisualDraft() {
   setVisualCheck('Publishing...', 'info');
   try {
+    const artifactKind = normalizePublishArtifactKind(state.publishArtifactKind);
+    state.publishArtifactKind = artifactKind;
     const previousWarningKey = publishWarningAcknowledgementKey(
       state.currentDraftId,
       state.currentDraftRevision
@@ -3541,7 +3552,7 @@ async function publishVisualDraft() {
     const response = await fetch(`/api/visual/drafts/${encodeURIComponent(draftId)}/publish`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ expectedRevision, ackWarnings })
+      body: JSON.stringify({ expectedRevision, ackWarnings, artifactKind })
     });
     const payload = await response.json();
     const diagnostics = normalizeDiagnostics(payload.diagnostics);
@@ -3586,6 +3597,10 @@ async function publishVisualDraft() {
 
 function publishWarningAcknowledgementKey(draftId, revision) {
   return `${String(draftId || '').trim()}@${Number(revision) || 0}`;
+}
+
+function normalizePublishArtifactKind(value) {
+  return String(value || '').trim().toUpperCase() === 'DESIGN' ? 'DESIGN' : 'EXECUTABLE';
 }
 
 async function loadOperatorLibraries(options = {}) {
@@ -4531,9 +4546,13 @@ function renderPublicationControls() {
 
   const runButton = $('run-publication');
   const reloadButton = $('reload-publications');
+  const executablePublicationSelected = selectedPublicationExecutable();
   if (runButton) {
-    runButton.disabled = !state.selectedPublicationId;
+    runButton.disabled = !executablePublicationSelected;
     runButton.onclick = runSelectedPublication;
+    runButton.title = state.selectedPublicationId && !executablePublicationSelected
+      ? 'Design artifacts are schema snapshots and cannot be run.'
+      : '';
   }
   if (reloadButton) {
     reloadButton.onclick = async () => {
@@ -4567,15 +4586,16 @@ function renderGoldenCaseControls() {
   select.onchange = () => {
     state.selectedGoldenCaseId = select.value;
   };
-  saveButton.disabled = !state.selectedPublicationId;
+  const executablePublicationSelected = selectedPublicationExecutable();
+  saveButton.disabled = !executablePublicationSelected;
   saveButton.onclick = saveGoldenCaseFromCurrentOutput;
-  runButton.disabled = !state.selectedGoldenCaseId;
+  runButton.disabled = !executablePublicationSelected || !state.selectedGoldenCaseId;
   runButton.onclick = runSelectedGoldenCase;
   deleteButton.disabled = !state.selectedGoldenCaseId;
   deleteButton.onclick = deleteSelectedGoldenCase;
-  suiteButton.disabled = !state.selectedPublicationId;
+  suiteButton.disabled = !executablePublicationSelected;
   suiteButton.onclick = runPublicationGoldenSuite;
-  certifyButton.disabled = !state.selectedPublicationId;
+  certifyButton.disabled = !executablePublicationSelected;
   certifyButton.onclick = certifyPublicationGoldenSuite;
   renderGoldenAssertionControls();
 }
@@ -4601,7 +4621,8 @@ function renderGoldenAssertionControls() {
     const selected = state.goldenAssertionMode === value ? ' selected' : '';
     return `<option value="${escapeHtml(value)}"${selected}>${escapeHtml(label)}</option>`;
   }).join('');
-  modeSelect.disabled = !state.selectedPublicationId;
+  const executablePublicationSelected = selectedPublicationExecutable();
+  modeSelect.disabled = !executablePublicationSelected;
   modeSelect.onchange = () => {
     state.goldenAssertionMode = modeSelect.value || 'EXACT_OUTPUT';
     renderGoldenAssertionControls();
@@ -4616,12 +4637,12 @@ function renderGoldenAssertionControls() {
     || state.goldenAssertionMode === 'PATH_APPROX_EQUALS'
     || state.goldenAssertionMode === 'PATH_EQUALS';
   pathInput.value = state.goldenAssertionPath;
-  pathInput.disabled = !state.selectedPublicationId || !pathMode;
+  pathInput.disabled = !executablePublicationSelected || !pathMode;
   pathInput.oninput = () => {
     state.goldenAssertionPath = pathInput.value;
   };
   valueInput.value = state.goldenAssertionValueText;
-  valueInput.disabled = !state.selectedPublicationId || !valueMode;
+  valueInput.disabled = !executablePublicationSelected || !valueMode;
   valueInput.placeholder = state.goldenAssertionMode === 'OUTPUT_MATCHES_SCHEMA'
     ? 'JSON schema, blank infers from last output'
     : state.goldenAssertionMode === 'PATH_APPROX_EQUALS'
@@ -4631,7 +4652,7 @@ function renderGoldenAssertionControls() {
     state.goldenAssertionValueText = valueInput.value;
   };
   const queuedAssertions = Array.isArray(state.goldenAssertions) ? state.goldenAssertions : [];
-  addButton.disabled = !state.selectedPublicationId || state.goldenAssertionMode === 'EXACT_OUTPUT';
+  addButton.disabled = !executablePublicationSelected || state.goldenAssertionMode === 'EXACT_OUTPUT';
   addButton.onclick = appendGoldenAssertionFromControls;
   clearButton.disabled = !queuedAssertions.length;
   clearButton.onclick = clearGoldenAssertions;
@@ -4792,7 +4813,14 @@ function goldenCertificationStatusClass(status) {
 function publicationOptionLabel(publication) {
   const revision = publication.draftRevision || publication.draft?.revision || 0;
   const graph = publication.graphName || publication.draft?.graphName || publication.publicationId;
-  return `${graph} @${revision} · ${publication.publicationId}`;
+  const artifactKind = normalizePublishArtifactKind(publication.artifactKind || 'EXECUTABLE');
+  return `${graph} @${revision} · ${artifactKind} · ${publication.publicationId}`;
+}
+
+function selectedPublicationExecutable() {
+  const publication = selectedPublication();
+  return Boolean(publication)
+    && normalizePublishArtifactKind(publication.artifactKind || 'EXECUTABLE') === 'EXECUTABLE';
 }
 
 function renderPublicationStatus() {
@@ -4801,7 +4829,7 @@ function renderPublicationStatus() {
   const selected = state.publications.find((publication) =>
     publication.publicationId === state.selectedPublicationId);
   const current = selected
-    ? `Selected ${selected.publicationId}`
+    ? `Selected ${selected.publicationId} (${normalizePublishArtifactKind(selected.artifactKind || 'EXECUTABLE')})`
     : `${state.publications.length} published artifacts`;
   const message = state.publicationMessage?.text || current;
   target.hidden = false;
