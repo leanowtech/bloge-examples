@@ -1696,7 +1696,8 @@ message handler、webhook、streaming 或 durable capability 暂时不能运行�
 `GET /api/visual/assets/runtime-binding-requirements` 会返回
 `bloge.visualRuntimeBindingRequirements.v1`，按 active draft 和 immutable publication
 展开同一批 requirement，并支持 `tenantId/namespace/environment`、`limit/offset`、
-`targetKind`、`bindingKind`、`handoffLane`、`sourceKind`、`loweringMode` 和 `readinessState`
+`targetKind`、`bindingKind`、`handoffLane`、`handoffKind`、`handoffTarget`、
+`sourceKind`、`loweringMode` 和 `readinessState`
 查询。该索引不持久化待办状态，`readiness.runtimeBindingRequirements[]`
 仍是唯一事实来源。
 `actionReadiness` 则把同一批 diagnostics/readiness 压成产品动作门禁：`compileNow`、

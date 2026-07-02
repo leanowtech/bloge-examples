@@ -410,6 +410,9 @@ const state = {
   visualRuntimeBindingRequirementQuery: {
     targetKind: '',
     bindingKind: '',
+    handoffLane: '',
+    handoffKind: '',
+    handoffTarget: '',
     sourceKind: '',
     loweringMode: '',
     readinessState: '',
@@ -779,6 +782,12 @@ function visualRuntimeBindingRequirementsUrl(builder = state.builder) {
   if (query.handoffLane) {
     params.set('handoffLane', query.handoffLane);
   }
+  if (query.handoffKind) {
+    params.set('handoffKind', query.handoffKind);
+  }
+  if (query.handoffTarget) {
+    params.set('handoffTarget', query.handoffTarget);
+  }
   if (query.sourceKind) {
     params.set('sourceKind', query.sourceKind);
   }
@@ -817,6 +826,8 @@ function normalizeVisualRuntimeBindingRequirementQuery(query = {}) {
     targetKind: String(query.targetKind || '').trim().toLowerCase(),
     bindingKind: String(query.bindingKind || '').trim().toLowerCase(),
     handoffLane: String(query.handoffLane || '').trim().toLowerCase(),
+    handoffKind: String(query.handoffKind || '').trim().toLowerCase(),
+    handoffTarget: String(query.handoffTarget || '').trim(),
     sourceKind: String(query.sourceKind || '').trim().toLowerCase(),
     loweringMode: String(query.loweringMode || '').trim().toLowerCase(),
     readinessState: String(query.readinessState || '').trim().toLowerCase(),
@@ -7265,6 +7276,8 @@ function visualRuntimeBindingRequirementsShouldShow(bindingIndex) {
     || Boolean(query.targetKind
       || query.bindingKind
       || query.handoffLane
+      || query.handoffKind
+      || query.handoffTarget
       || query.sourceKind
       || query.loweringMode
       || query.readinessState
@@ -7343,6 +7356,8 @@ function visualRuntimeBindingRequirementControls(bindingIndex) {
   const hasFilter = Boolean(query.targetKind
     || query.bindingKind
     || query.handoffLane
+    || query.handoffKind
+    || query.handoffTarget
     || query.sourceKind
     || query.loweringMode
     || query.readinessState
@@ -7372,6 +7387,18 @@ function visualRuntimeBindingRequirementControls(bindingIndex) {
         <span>${escapeHtml('Lane')}</span>
         <select id="runtime-binding-handoff-lane" aria-label="Filter runtime binding requirements by handoff lane">
           ${visualRuntimeBindingDynamicOptionMarkup('All lanes', bindingIndex?.handoffLaneCounts, query.handoffLane)}
+        </select>
+      </label>
+      <label>
+        <span>${escapeHtml('Work')}</span>
+        <select id="runtime-binding-handoff-kind" aria-label="Filter runtime binding requirements by handoff work kind">
+          ${visualRuntimeBindingDynamicOptionMarkup('All work', bindingIndex?.handoffKindCounts, query.handoffKind)}
+        </select>
+      </label>
+      <label>
+        <span>${escapeHtml('Route')}</span>
+        <select id="runtime-binding-handoff-target" aria-label="Filter runtime binding requirements by handoff target">
+          ${visualRuntimeBindingRawOptionMarkup('All routes', bindingIndex?.handoffTargetCounts, query.handoffTarget)}
         </select>
       </label>
       <label>
@@ -7428,6 +7455,18 @@ function visualRuntimeBindingDynamicOptionMarkup(emptyLabel, counts = {}, select
     .forEach((value) => options.push([value, operatorPaletteFacetLabel(value)]));
   if (selected && !options.some(([value]) => value === selected)) {
     options.push([selected, operatorPaletteFacetLabel(selected)]);
+  }
+  return visualAssetActionOptionMarkup(options, selected);
+}
+
+function visualRuntimeBindingRawOptionMarkup(emptyLabel, counts = {}, selectedValue = '') {
+  const selected = String(selectedValue || '');
+  const options = [['', emptyLabel]];
+  Object.keys(counts || {})
+    .sort()
+    .forEach((value) => options.push([value, value]));
+  if (selected && !options.some(([value]) => value === selected)) {
+    options.push([selected, selected]);
   }
   return visualAssetActionOptionMarkup(options, selected);
 }
@@ -7729,6 +7768,20 @@ function attachVisualRuntimeBindingRequirementQueryHandlers(bindingIndex) {
       offset: 0
     });
   }
+  const handoffKind = $('runtime-binding-handoff-kind');
+  if (handoffKind) {
+    handoffKind.onchange = () => updateVisualRuntimeBindingRequirementQuery({
+      handoffKind: handoffKind.value,
+      offset: 0
+    });
+  }
+  const handoffTarget = $('runtime-binding-handoff-target');
+  if (handoffTarget) {
+    handoffTarget.onchange = () => updateVisualRuntimeBindingRequirementQuery({
+      handoffTarget: handoffTarget.value,
+      offset: 0
+    });
+  }
   const sourceKind = $('runtime-binding-source-kind');
   if (sourceKind) {
     sourceKind.onchange = () => updateVisualRuntimeBindingRequirementQuery({
@@ -7773,6 +7826,8 @@ function attachVisualRuntimeBindingRequirementQueryHandlers(bindingIndex) {
       targetKind: '',
       bindingKind: '',
       handoffLane: '',
+      handoffKind: '',
+      handoffTarget: '',
       sourceKind: '',
       loweringMode: '',
       readinessState: '',

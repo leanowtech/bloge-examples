@@ -33,6 +33,8 @@ import java.util.function.Function;
  * @param targetKindCounts filtered requirement counts by target asset kind
  * @param bindingKindCounts filtered requirement counts by binding kind
  * @param handoffLaneCounts filtered requirement counts by runtime-plane handoff lane
+ * @param handoffKindCounts filtered requirement counts by runtime-plane handoff work kind
+ * @param handoffTargetCounts filtered requirement counts by runtime-plane routing target
  * @param sourceKindCounts filtered requirement counts by operator source kind
  * @param loweringModeCounts filtered requirement counts by lowering mode
  * @param readinessStateCounts filtered requirement counts by graph/node readiness state
@@ -53,6 +55,8 @@ public record VisualRuntimeBindingRequirements(
         Map<String, Integer> targetKindCounts,
         Map<String, Integer> bindingKindCounts,
         Map<String, Integer> handoffLaneCounts,
+        Map<String, Integer> handoffKindCounts,
+        Map<String, Integer> handoffTargetCounts,
         Map<String, Integer> sourceKindCounts,
         Map<String, Integer> loweringModeCounts,
         Map<String, Integer> readinessStateCounts,
@@ -78,6 +82,8 @@ public record VisualRuntimeBindingRequirements(
         targetKindCounts = immutableCounts(targetKindCounts);
         bindingKindCounts = immutableCounts(bindingKindCounts);
         handoffLaneCounts = immutableCounts(handoffLaneCounts);
+        handoffKindCounts = immutableCounts(handoffKindCounts);
+        handoffTargetCounts = immutableCounts(handoffTargetCounts);
         sourceKindCounts = immutableCounts(sourceKindCounts);
         loweringModeCounts = immutableCounts(loweringModeCounts);
         readinessStateCounts = immutableCounts(readinessStateCounts);
@@ -100,6 +106,8 @@ public record VisualRuntimeBindingRequirements(
      * @param targetKind optional target kind filter
      * @param bindingKind optional binding kind filter
      * @param handoffLane optional runtime-plane handoff lane filter
+     * @param handoffKind optional runtime-plane handoff work kind filter
+     * @param handoffTarget optional runtime-plane routing target filter
      * @param sourceKind optional source kind filter
      * @param loweringMode optional lowering mode filter
      * @param readinessState optional graph/node readiness state filter
@@ -115,12 +123,14 @@ public record VisualRuntimeBindingRequirements(
                                                         String targetKind,
                                                         String bindingKind,
                                                         String handoffLane,
+                                                        String handoffKind,
+                                                        String handoffTarget,
                                                         String sourceKind,
                                                         String loweringMode,
                                                         String readinessState) {
         List<RequirementItem> generated = generate(drafts, publications);
-        RequirementFilter filter = new RequirementFilter(targetKind, bindingKind, handoffLane, sourceKind, loweringMode,
-                readinessState);
+        RequirementFilter filter = new RequirementFilter(targetKind, bindingKind, handoffLane, handoffKind,
+                handoffTarget, sourceKind, loweringMode, readinessState);
         List<RequirementItem> filtered = generated.stream()
                 .filter(filter::matches)
                 .sorted(VisualRuntimeBindingRequirements::compareItems)
@@ -141,6 +151,8 @@ public record VisualRuntimeBindingRequirements(
                 countBy(filtered, RequirementItem::targetKind),
                 countBy(filtered, RequirementItem::bindingKind),
                 countBy(filtered, RequirementItem::handoffLane),
+                countBy(filtered, RequirementItem::handoffKind),
+                countBy(filtered, RequirementItem::handoffTarget),
                 countBy(filtered, RequirementItem::sourceKind),
                 countBy(filtered, RequirementItem::loweringMode),
                 countBy(filtered, RequirementItem::readinessState),
@@ -153,7 +165,7 @@ public record VisualRuntimeBindingRequirements(
      * @return an empty index
      */
     public static VisualRuntimeBindingRequirements empty() {
-        return from(List.of(), List.of(), "", "", "", DEFAULT_ITEM_LIMIT, 0, "", "", "", "", "", "");
+        return from(List.of(), List.of(), "", "", "", DEFAULT_ITEM_LIMIT, 0, "", "", "", "", "", "", "", "");
     }
 
     /**
@@ -162,6 +174,8 @@ public record VisualRuntimeBindingRequirements(
      * @param targetKind draft or publication, empty when unfiltered
      * @param bindingKind binding kind, empty when unfiltered
      * @param handoffLane runtime-plane handoff lane, empty when unfiltered
+     * @param handoffKind runtime-plane handoff work kind, empty when unfiltered
+     * @param handoffTarget runtime-plane routing target, empty when unfiltered
      * @param sourceKind operator source kind, empty when unfiltered
      * @param loweringMode lowering mode, empty when unfiltered
      * @param readinessState graph/node readiness state, empty when unfiltered
@@ -171,6 +185,8 @@ public record VisualRuntimeBindingRequirements(
             String targetKind,
             String bindingKind,
             String handoffLane,
+            String handoffKind,
+            String handoffTarget,
             String sourceKind,
             String loweringMode,
             String readinessState,
@@ -179,6 +195,8 @@ public record VisualRuntimeBindingRequirements(
         public RequirementFilter(String targetKind,
                                  String bindingKind,
                                  String handoffLane,
+                                 String handoffKind,
+                                 String handoffTarget,
                                  String sourceKind,
                                  String loweringMode,
                                  String readinessState) {
@@ -186,12 +204,16 @@ public record VisualRuntimeBindingRequirements(
                     normalizeFacetValue(targetKind),
                     normalizeFacetValue(bindingKind),
                     normalizeFacetValue(handoffLane),
+                    normalizeFacetValue(handoffKind),
+                    normalizeTextValue(handoffTarget),
                     normalizeFacetValue(sourceKind),
                     normalizeFacetValue(loweringMode),
                     normalizeFacetValue(readinessState),
                     !normalizeFacetValue(targetKind).isBlank()
                             || !normalizeFacetValue(bindingKind).isBlank()
                             || !normalizeFacetValue(handoffLane).isBlank()
+                            || !normalizeFacetValue(handoffKind).isBlank()
+                            || !normalizeTextValue(handoffTarget).isBlank()
                             || !normalizeFacetValue(sourceKind).isBlank()
                             || !normalizeFacetValue(loweringMode).isBlank()
                             || !normalizeFacetValue(readinessState).isBlank()
@@ -202,19 +224,23 @@ public record VisualRuntimeBindingRequirements(
             targetKind = normalizeFacetValue(targetKind);
             bindingKind = normalizeFacetValue(bindingKind);
             handoffLane = normalizeFacetValue(handoffLane);
+            handoffKind = normalizeFacetValue(handoffKind);
+            handoffTarget = normalizeTextValue(handoffTarget);
             sourceKind = normalizeFacetValue(sourceKind);
             loweringMode = normalizeFacetValue(loweringMode);
             readinessState = normalizeFacetValue(readinessState);
             filtered = !targetKind.isBlank()
                     || !bindingKind.isBlank()
                     || !handoffLane.isBlank()
+                    || !handoffKind.isBlank()
+                    || !handoffTarget.isBlank()
                     || !sourceKind.isBlank()
                     || !loweringMode.isBlank()
                     || !readinessState.isBlank();
         }
 
         static RequirementFilter all() {
-            return new RequirementFilter("", "", "", "", "", "");
+            return new RequirementFilter("", "", "", "", "", "", "", "");
         }
 
         boolean matches(RequirementItem item) {
@@ -222,6 +248,8 @@ public record VisualRuntimeBindingRequirements(
                     && (targetKind.isBlank() || targetKind.equals(item.targetKind()))
                     && (bindingKind.isBlank() || bindingKind.equals(item.bindingKind()))
                     && (handoffLane.isBlank() || handoffLane.equals(item.handoffLane()))
+                    && (handoffKind.isBlank() || handoffKind.equals(item.handoffKind()))
+                    && (handoffTarget.isBlank() || handoffTarget.equals(item.handoffTarget()))
                     && (sourceKind.isBlank() || sourceKind.equals(item.sourceKind()))
                     && (loweringMode.isBlank() || loweringMode.equals(item.loweringMode()))
                     && (readinessState.isBlank()
@@ -309,7 +337,7 @@ public record VisualRuntimeBindingRequirements(
             bindingTarget = bindingTarget == null ? "" : bindingTarget;
             handoffLane = normalizeFacetValue(handoffLane);
             handoffKind = normalizeFacetValue(handoffKind);
-            handoffTarget = handoffTarget == null ? "" : handoffTarget;
+            handoffTarget = normalizeTextValue(handoffTarget);
             title = title == null ? "" : title;
             summary = summary == null ? "" : summary;
             recommendedAction = recommendedAction == null ? "" : recommendedAction;
@@ -479,6 +507,10 @@ public record VisualRuntimeBindingRequirements(
 
     private static String normalizeFacetValue(String value) {
         return value == null ? "" : value.trim().toLowerCase(Locale.ROOT);
+    }
+
+    private static String normalizeTextValue(String value) {
+        return value == null ? "" : value.trim();
     }
 
     private static String stableRequirementKey(String targetKind,

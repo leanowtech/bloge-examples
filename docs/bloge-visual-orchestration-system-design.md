@@ -750,7 +750,7 @@ per-node `PLAN_DRAFT_RUNTIME_BINDING` / `PLAN_PUBLICATION_RUNTIME_BINDING` items
 而不是只凭 `design-only` readiness 做粗粒度归类。
 同一事实源还会通过 `GET /api/visual/assets/runtime-binding-requirements` 暴露为
 `bloge.visualRuntimeBindingRequirements.v1`，给外部 runtime-plane 集成团队按
-scope、targetKind、bindingKind、handoffLane、sourceKind、loweringMode 和 readinessState 查询、分页和计数；
+scope、targetKind、bindingKind、handoffLane、handoffKind、handoffTarget、sourceKind、loweringMode 和 readinessState 查询、分页和计数；
 这个索引不保存待办状态，避免和 draft/publication readiness 形成第二套真相源。
 浏览器 Workspace Overview 会同步加载这个索引并展示 Runtime Binding Requirements 小节，
 提供同类过滤、分页和 draft/publication 打开动作，让作者和集成团队在画布工作台内看到

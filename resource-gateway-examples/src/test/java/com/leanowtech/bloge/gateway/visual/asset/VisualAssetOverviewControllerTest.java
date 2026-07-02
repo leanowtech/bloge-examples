@@ -139,6 +139,8 @@ class VisualAssetOverviewControllerTest {
                 "",
                 "",
                 "",
+                "",
+                "",
                 ""
         );
         VisualRuntimeBindingRequirements draftOnly = controller.runtimeBindingRequirements(
@@ -150,6 +152,8 @@ class VisualAssetOverviewControllerTest {
                 "draft",
                 "executable-lowering",
                 "operator-platform",
+                "operator-implementation",
+                "risk:eligibility",
                 "",
                 "",
                 ""
@@ -169,6 +173,8 @@ class VisualAssetOverviewControllerTest {
                 .containsEntry("publication", 1);
         assertThat(firstPage.bindingKindCounts()).containsEntry("executable-lowering", 2);
         assertThat(firstPage.handoffLaneCounts()).containsEntry("operator-platform", 2);
+        assertThat(firstPage.handoffKindCounts()).containsEntry("operator-implementation", 2);
+        assertThat(firstPage.handoffTargetCounts()).containsEntry("risk:eligibility", 2);
         assertThat(firstPage.sourceKindCounts()).containsEntry("user-library", 2);
         assertThat(firstPage.loweringModeCounts()).containsEntry("design", 2);
         assertThat(firstPage.readinessStateCounts()).containsEntry("design-only", 2);
@@ -191,6 +197,8 @@ class VisualAssetOverviewControllerTest {
         assertThat(draftOnly.filter().targetKind()).isEqualTo("draft");
         assertThat(draftOnly.filter().bindingKind()).isEqualTo("executable-lowering");
         assertThat(draftOnly.filter().handoffLane()).isEqualTo("operator-platform");
+        assertThat(draftOnly.filter().handoffKind()).isEqualTo("operator-implementation");
+        assertThat(draftOnly.filter().handoffTarget()).isEqualTo("risk:eligibility");
         assertThat(draftOnly.total()).isEqualTo(1);
         assertThat(draftOnly.unfilteredTotal()).isEqualTo(2);
         assertThat(draftOnly.items()).singleElement()

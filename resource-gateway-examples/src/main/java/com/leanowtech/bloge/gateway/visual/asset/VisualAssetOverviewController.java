@@ -116,6 +116,8 @@ public class VisualAssetOverviewController {
      * @param targetKind optional target kind filter
      * @param bindingKind optional binding kind filter
      * @param handoffLane optional runtime-plane handoff lane filter
+     * @param handoffKind optional runtime-plane handoff work kind filter
+     * @param handoffTarget optional runtime-plane routing target filter
      * @param sourceKind optional source kind filter
      * @param loweringMode optional lowering mode filter
      * @param readinessState optional graph or node readiness state filter
@@ -131,6 +133,8 @@ public class VisualAssetOverviewController {
             @RequestParam(defaultValue = "") String targetKind,
             @RequestParam(defaultValue = "") String bindingKind,
             @RequestParam(defaultValue = "") String handoffLane,
+            @RequestParam(defaultValue = "") String handoffKind,
+            @RequestParam(defaultValue = "") String handoffTarget,
             @RequestParam(defaultValue = "") String sourceKind,
             @RequestParam(defaultValue = "") String loweringMode,
             @RequestParam(defaultValue = "") String readinessState) {
@@ -145,6 +149,8 @@ public class VisualAssetOverviewController {
                 targetKind,
                 bindingKind,
                 handoffLane,
+                handoffKind,
+                handoffTarget,
                 sourceKind,
                 loweringMode,
                 readinessState
@@ -163,7 +169,7 @@ public class VisualAssetOverviewController {
                                                                 String namespace,
                                                                 String environment) {
         return runtimeBindingRequirements(tenantId, namespace, environment,
-                VisualRuntimeBindingRequirements.DEFAULT_ITEM_LIMIT, 0, "", "", "", "", "", "");
+                VisualRuntimeBindingRequirements.DEFAULT_ITEM_LIMIT, 0, "", "", "", "", "", "", "", "");
     }
 
     private List<GraphDraftSummary> draftSummaries(String tenantId, String namespace, String environment) {
