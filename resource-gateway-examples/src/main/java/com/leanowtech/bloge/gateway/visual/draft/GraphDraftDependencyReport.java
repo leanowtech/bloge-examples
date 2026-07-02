@@ -228,7 +228,10 @@ public record GraphDraftDependencyReport(
         );
     }
 
-    private static GraphDraftDependencyReport empty() {
+    /**
+     * @return an empty dependency report for rejected control-plane responses
+     */
+    public static GraphDraftDependencyReport empty() {
         return new GraphDraftDependencyReport(
                 SCHEMA_VERSION,
                 "",

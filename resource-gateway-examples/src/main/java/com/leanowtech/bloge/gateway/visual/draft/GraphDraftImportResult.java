@@ -13,13 +13,15 @@ import java.util.List;
  * @param draft stored draft when import succeeded
  * @param diagnostics import contract or target-environment compatibility diagnostics
  * @param validation target-environment validation and readiness when available
+ * @param dependencyReport target-environment dependency report for the stored draft
  */
 public record GraphDraftImportResult(
         String schemaVersion,
         boolean imported,
         GraphDraft draft,
         List<VisualDiagnostic> diagnostics,
-        VisualValidationResult validation
+        VisualValidationResult validation,
+        GraphDraftDependencyReport dependencyReport
 ) {
     public static final String SCHEMA_VERSION = "bloge.visualGraphDraftImportResult.v1";
 
@@ -30,6 +32,18 @@ public record GraphDraftImportResult(
         schemaVersion = schemaVersion == null || schemaVersion.isBlank() ? SCHEMA_VERSION : schemaVersion;
         diagnostics = diagnostics == null ? List.of() : List.copyOf(diagnostics);
         validation = validation == null ? new VisualValidationResult(false, diagnostics) : validation;
+        dependencyReport = dependencyReport == null ? GraphDraftDependencyReport.empty() : dependencyReport;
+    }
+
+    /**
+     * Backward-compatible constructor for callers that do not return a dependency report.
+     */
+    public GraphDraftImportResult(String schemaVersion,
+                                  boolean imported,
+                                  GraphDraft draft,
+                                  List<VisualDiagnostic> diagnostics,
+                                  VisualValidationResult validation) {
+        this(schemaVersion, imported, draft, diagnostics, validation, GraphDraftDependencyReport.empty());
     }
 
     /**
@@ -39,7 +53,8 @@ public record GraphDraftImportResult(
                                   boolean imported,
                                   GraphDraft draft,
                                   List<VisualDiagnostic> diagnostics) {
-        this(schemaVersion, imported, draft, diagnostics, new VisualValidationResult(false, diagnostics));
+        this(schemaVersion, imported, draft, diagnostics, new VisualValidationResult(false, diagnostics),
+                GraphDraftDependencyReport.empty());
     }
 
     /**
@@ -60,7 +75,23 @@ public record GraphDraftImportResult(
         VisualValidationResult safeValidation = validation == null
                 ? new VisualValidationResult(false, List.of())
                 : validation;
-        return new GraphDraftImportResult("", true, draft, safeValidation.diagnostics(), safeValidation);
+        return imported(draft, safeValidation, GraphDraftDependencyReport.empty());
+    }
+
+    /**
+     * @param draft stored draft
+     * @param validation target-environment validation and readiness for the stored draft
+     * @param dependencyReport target-environment dependency report for the stored draft
+     * @return successful import result
+     */
+    public static GraphDraftImportResult imported(GraphDraft draft,
+                                                  VisualValidationResult validation,
+                                                  GraphDraftDependencyReport dependencyReport) {
+        VisualValidationResult safeValidation = validation == null
+                ? new VisualValidationResult(false, List.of())
+                : validation;
+        return new GraphDraftImportResult("", true, draft, safeValidation.diagnostics(), safeValidation,
+                dependencyReport);
     }
 
     /**
@@ -69,6 +100,6 @@ public record GraphDraftImportResult(
      */
     public static GraphDraftImportResult rejected(List<VisualDiagnostic> diagnostics) {
         return new GraphDraftImportResult("", false, null, diagnostics, new VisualValidationResult(false,
-                diagnostics));
+                diagnostics), GraphDraftDependencyReport.empty());
     }
 }

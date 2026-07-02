@@ -122,6 +122,7 @@ class VisualAuthoringAppJsTest {
                 .contains("scopeMismatchOperatorCount")
                 .contains("SCOPE_MISMATCH")
                 .contains("function draftDependencyPolicyViolationLabel(row)")
+                .contains("payload?.dependencyReport")
                 .contains("data-draft-dependency-node")
                 .contains("data-draft-dependency-rebase")
                 .contains("focusCanvasNode(button.dataset.draftDependencyNode)")
@@ -3565,6 +3566,27 @@ class VisualAuthoringAppJsTest {
                             valid: true,
                             diagnostics: [],
                             readiness: transferReadiness
+                          },
+                          dependencyReport: {
+                            schemaVersion: 'bloge.visualGraphDraftDependencies.v1',
+                            draftId: 'draft-imported',
+                            revision: 1,
+                            graphName: 'importedGraph',
+                            tenantId: 'demo-tenant',
+                            namespace: 'local',
+                            environment: 'browser',
+                            nodeCount: 0,
+                            edgeCount: 0,
+                            operatorDependencyCount: 0,
+                            missingOperatorCount: 0,
+                            scopeMismatchOperatorCount: 0,
+                            driftedFingerprintCount: 0,
+                            missingFingerprintCount: 0,
+                            sourceKindCounts: {},
+                            loweringModeCounts: {},
+                            runtimeReadinessStateCounts: {},
+                            operators: [],
+                            nodes: []
                           }
                         })
                       };
@@ -3582,6 +3604,27 @@ class VisualAuthoringAppJsTest {
                             valid: true,
                             diagnostics: [],
                             readiness: transferReadiness
+                          },
+                          dependencyReport: {
+                            schemaVersion: 'bloge.visualGraphDraftDependencies.v1',
+                            draftId: 'draft-risk',
+                            revision: 4,
+                            graphName: 'importedGraph',
+                            tenantId: 'demo-tenant',
+                            namespace: 'local',
+                            environment: 'browser',
+                            nodeCount: 0,
+                            edgeCount: 0,
+                            operatorDependencyCount: 0,
+                            missingOperatorCount: 0,
+                            scopeMismatchOperatorCount: 0,
+                            driftedFingerprintCount: 0,
+                            missingFingerprintCount: 0,
+                            sourceKindCounts: {},
+                            loweringModeCounts: {},
+                            runtimeReadinessStateCounts: {},
+                            operators: [],
+                            nodes: []
                           }
                         })
                       };
@@ -3634,7 +3677,9 @@ class VisualAuthoringAppJsTest {
                       transferScenarioRenders,
                       currentDraftId: context.state.currentDraftId,
                       currentDraftRevision: context.state.currentDraftRevision,
-                      draftBundleHasValidation: context.state.draftBundleText.includes('"validation"')
+                      dependencyReportDraftId: context.state.draftDependencyReport?.draftId || '',
+                      draftBundleHasValidation: context.state.draftBundleText.includes('"validation"'),
+                      draftBundleHasDependencyReport: context.state.draftBundleText.includes('"dependencyReport"')
                     }));
                 }).then((transferResult) => {
                   const importBody = JSON.parse(transferResult.transferFetches[1].body || '{}');
@@ -3645,12 +3690,14 @@ class VisualAuthoringAppJsTest {
                     ['draft import endpoint', transferResult.transferFetches[1].url, '/api/visual/drafts/import'],
                     ['draft import body schema', importBody.schemaVersion, 'bloge.visualGraphDraftExport.v1'],
                     ['draft bundle carries validation', String(transferResult.draftBundleHasValidation), 'true'],
+                    ['draft bundle carries dependency report', String(transferResult.draftBundleHasDependencyReport), 'true'],
                     ['draft export message', transferResult.transferDraftMessages[0].text, 'Exported draft-risk@4.'],
                     ['draft export visual readiness', exportVisualCheck.readiness?.state, 'design-only'],
                     ['draft import message', transferResult.transferDraftMessages[1].text, 'Imported draft-imported@1.'],
                     ['draft import visual readiness', importVisualCheck.readiness?.state, 'design-only'],
                     ['draft import current id', transferResult.currentDraftId, 'draft-imported'],
                     ['draft import current revision', transferResult.currentDraftRevision, 1],
+                    ['draft import dependency report', transferResult.dependencyReportDraftId, 'draft-imported'],
                     ['draft transfer catalog loads', transferResult.transferCatalogLoads, 1],
                     ['draft transfer draft list loads', transferResult.transferDraftListLoads, 1],
                     ['draft transfer revision loads', transferResult.transferRevisionLoads, 1],

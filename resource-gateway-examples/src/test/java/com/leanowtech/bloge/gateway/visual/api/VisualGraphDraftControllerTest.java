@@ -475,6 +475,17 @@ class VisualGraphDraftControllerTest {
         assertThat(bundle.validation().valid()).isFalse();
         assertThat(bundle.validation().diagnostics()).isEqualTo(bundle.diagnostics());
         assertThat(bundle.validation().readiness().state()).isEqualTo("draft-repair-required");
+        assertThat(bundle.dependencyReport().draftId()).isEqualTo(stored.draftId());
+        assertThat(bundle.dependencyReport().revision()).isEqualTo(stored.revision());
+        assertThat(bundle.dependencyReport().missingOperatorCount()).isZero();
+        assertThat(bundle.dependencyReport().scopeMismatchOperatorCount()).isZero();
+        assertThat(bundle.dependencyReport().operators())
+                .singleElement()
+                .satisfies(operator -> {
+                    assertThat(operator.operatorRef()).isEqualTo("risk:eligibility");
+                    assertThat(operator.fingerprintState()).isEqualTo("current");
+                    assertThat(operator.scopeAllowed()).isTrue();
+                });
     }
 
     @Test
@@ -508,6 +519,10 @@ class VisualGraphDraftControllerTest {
         assertThat(response.getBody().validation().readiness().state()).isEqualTo("runtime-executable");
         assertThat(response.getBody().validation().readiness().artifactKinds())
                 .containsExactly("EXECUTABLE", "DESIGN");
+        assertThat(response.getBody().dependencyReport().missingOperatorCount()).isZero();
+        assertThat(response.getBody().dependencyReport().scopeMismatchOperatorCount()).isZero();
+        assertThat(response.getBody().dependencyReport().runtimeReadinessStateCounts())
+                .containsEntry("RUNTIME_EXECUTABLE", 1);
         GraphDraft imported = response.getBody().draft();
         assertThat(imported.draftId()).isNotBlank().isNotEqualTo(stored.draftId());
         assertThat(imported.revision()).isEqualTo(1);
@@ -551,6 +566,63 @@ class VisualGraphDraftControllerTest {
         assertThat(response.getBody().validation().valid()).isFalse();
         assertThat(response.getBody().validation().diagnostics()).isEqualTo(response.getBody().diagnostics());
         assertThat(response.getBody().validation().readiness().state()).isEqualTo("draft-repair-required");
+        assertThat(response.getBody().dependencyReport().draftId()).isEqualTo(response.getBody().draft().draftId());
+        assertThat(response.getBody().dependencyReport().missingOperatorCount()).isEqualTo(1);
+        assertThat(response.getBody().dependencyReport().scopeMismatchOperatorCount()).isZero();
+        assertThat(response.getBody().dependencyReport().runtimeReadinessStateCounts())
+                .containsEntry("CATALOG_MISSING", 1);
+        assertThat(response.getBody().dependencyReport().operators())
+                .singleElement()
+                .satisfies(operator -> {
+                    assertThat(operator.fingerprintState()).isEqualTo("catalog-missing");
+                    assertThat(operator.scopeAllowed()).isFalse();
+                    assertThat(operator.policyViolations()).isEmpty();
+                });
+    }
+
+    @Test
+    void importDraftBundleReturnsDependencyReportForTargetScopeMismatch() {
+        DefaultVisualOperatorCatalog sourceCatalog = VisualCatalogTestSupport.catalogWithLibrary(
+                VisualCatalogTestSupport.eligibilityLibrary("integer"));
+        DefaultVisualOperatorCatalog targetCatalog = VisualCatalogTestSupport.catalogWithLibrary(
+                VisualCatalogTestSupport.eligibilityLibrary("integer",
+                        new OperatorDefinition.Policy(List.of("demo-tenant"), List.of("local"), List.of("prod"))));
+        InMemoryGraphDraftRepository targetRepository = new InMemoryGraphDraftRepository();
+        VisualGraphDraftController sourceController =
+                controllerWithCatalog(sourceCatalog, new InMemoryGraphDraftRepository());
+        VisualGraphDraftController targetController = controllerWithCatalog(targetCatalog, targetRepository);
+        GraphDraft stored = sourceController.create(eligibilityDraft(graphInputSchema(
+                Map.of(
+                        "score", Map.of("type", "integer"),
+                        "amount", Map.of("type", "number")
+                )
+        )));
+        GraphDraftExportBundle bundle = sourceController.exportDraft(stored.draftId()).getBody();
+
+        ResponseEntity<GraphDraftImportResult> response = targetController.importDraft(bundle);
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.CREATED);
+        assertThat(response.getBody()).isNotNull();
+        assertThat(response.getBody().imported()).isTrue();
+        assertThat(targetRepository.all()).containsExactly(response.getBody().draft());
+        assertThat(response.getBody().diagnostics())
+                .extracting("code")
+                .contains("visual.operator.policyDenied");
+        assertThat(response.getBody().validation().valid()).isFalse();
+        assertThat(response.getBody().validation().readiness().state()).isEqualTo("draft-repair-required");
+        assertThat(response.getBody().dependencyReport().draftId()).isEqualTo(response.getBody().draft().draftId());
+        assertThat(response.getBody().dependencyReport().missingOperatorCount()).isZero();
+        assertThat(response.getBody().dependencyReport().scopeMismatchOperatorCount()).isEqualTo(1);
+        assertThat(response.getBody().dependencyReport().runtimeReadinessStateCounts())
+                .containsEntry("SCOPE_MISMATCH", 1);
+        assertThat(response.getBody().dependencyReport().operators())
+                .singleElement()
+                .satisfies(operator -> {
+                    assertThat(operator.fingerprintState()).isEqualTo("scope-mismatch");
+                    assertThat(operator.scopeAllowed()).isFalse();
+                    assertThat(operator.policyViolations()).containsExactly("environment 'local' is not in [prod]");
+                    assertThat(operator.executable()).isFalse();
+                });
     }
 
     @Test

@@ -7828,6 +7828,11 @@ async function exportSelectedDraft() {
   const validation = payload?.validation || null;
   const diagnostics = normalizeDiagnostics(validation?.diagnostics || payload?.diagnostics);
   state.draftBundleText = pretty(payload);
+  if (payload?.dependencyReport) {
+    state.draftDependencyReport = payload.dependencyReport;
+    state.draftDependencyMessage = null;
+    renderDraftDependencyReport();
+  }
   setDraftMessage(`Exported ${payload.sourceDraftId}@${payload.sourceRevision || 0}.`, 'success');
   setVisualCheck(
     'Exported visual draft package.',
@@ -7872,7 +7877,12 @@ async function importDraftBundle() {
   state.lastGeneratedVisualDsl = '';
   await loadDraftList({ render: false });
   await loadDraftRevisions({ render: false });
-  await loadDraftDependencies({ render: false });
+  if (payload?.dependencyReport) {
+    state.draftDependencyReport = payload.dependencyReport;
+    state.draftDependencyMessage = null;
+  } else {
+    await loadDraftDependencies({ render: false });
+  }
   syncGraphInputSchemaTextFromBuilder({ render: false });
   syncComposerFromBuilder({ render: false });
   const hasImportErrors = diagnostics.some((diagnostic) => String(diagnostic.level || '').toUpperCase() === 'ERROR');

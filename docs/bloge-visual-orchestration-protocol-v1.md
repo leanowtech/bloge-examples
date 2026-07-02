@@ -1414,13 +1414,17 @@ POST /api/visual/drafts/import
 ```
 
 `bloge.visualGraphDraftExport.v1` 包含 source draft identity、revision、draft
-snapshot、operator snapshots、export-time diagnostics，以及完整
-`validation`。`bloge.visualGraphDraftImportResult.v1` 在创建新 draft identity
-后返回目标环境 diagnostics 和同一结构的 `validation`。这不是重复字段洁癖；
-`diagnostics` 保持旧客户端兼容，`validation.readiness` 让迁移后的
-schema-only、runtime-blocked、governance-review 或 catalog-repair-required 图仍
-能被客户端按 `artifactKinds` 正确引导到 `DESIGN`、`EXECUTABLE` 或修复路径，而不
-需要用户再次手动 validate 才知道它是什么状态。
+snapshot、operator snapshots、export-time diagnostics、完整 `validation`，以及源环境
+`dependencyReport`。`bloge.visualGraphDraftImportResult.v1` 在创建新 draft identity
+后返回目标环境 diagnostics、同一结构的 `validation`，以及导入后 stored draft 的
+`dependencyReport`。这不是重复字段洁癖；`diagnostics` 保持旧客户端兼容，
+`validation.readiness` 让迁移后的 schema-only、runtime-blocked、
+governance-review 或 catalog-repair-required 图仍能被客户端按 `artifactKinds`
+正确引导到 `DESIGN`、`EXECUTABLE` 或修复路径，而不需要用户再次手动 validate
+才知道它是什么状态。export bundle 的 `dependencyReport` 记录 source catalog 的依赖视图；
+import result 的 `dependencyReport` 则一次性暴露 target catalog 下的 missing operator、
+scope mismatch、fingerprint drift、source/lowering 和 runtime readiness 分布，避免外部控制面在
+导入后还必须立刻补调 `/dependencies` 才能做迁移审阅。
 
 ### 10.4 校验 draft
 

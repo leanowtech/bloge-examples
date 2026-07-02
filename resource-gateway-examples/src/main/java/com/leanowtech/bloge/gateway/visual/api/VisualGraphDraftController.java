@@ -160,10 +160,12 @@ public class VisualGraphDraftController {
         return repository.find(draftId)
                 .map(draft -> {
                     VisualValidationResult validation = validator.validate(draft);
+                    GraphDraftDependencyReport dependencyReport = GraphDraftDependencyReport.from(draft, catalog);
                     return ResponseEntity.ok(GraphDraftExportBundle.from(
                             draft,
                             operatorSnapshots(draft),
-                            validation
+                            validation,
+                            dependencyReport
                     ));
                 })
                 .orElseGet(() -> ResponseEntity.notFound().build());
@@ -192,8 +194,9 @@ public class VisualGraphDraftController {
                 ));
         GraphDraft stored = repository.save(withCurrentOrProvidedOperatorSnapshotState(imported));
         VisualValidationResult validation = validator.validate(stored);
+        GraphDraftDependencyReport dependencyReport = GraphDraftDependencyReport.from(stored, catalog);
         return ResponseEntity.status(HttpStatus.CREATED)
-                .body(GraphDraftImportResult.imported(stored, validation));
+                .body(GraphDraftImportResult.imported(stored, validation, dependencyReport));
     }
 
     /**

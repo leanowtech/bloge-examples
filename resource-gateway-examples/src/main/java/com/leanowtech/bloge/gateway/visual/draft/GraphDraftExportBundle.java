@@ -18,6 +18,7 @@ import java.util.List;
  * @param operatorSnapshots operator definitions referenced by the exported draft when available
  * @param diagnostics validation diagnostics captured at export time
  * @param validation full export-time validation and readiness snapshot
+ * @param dependencyReport source-environment dependency report captured at export time
  */
 public record GraphDraftExportBundle(
         String schemaVersion,
@@ -27,7 +28,8 @@ public record GraphDraftExportBundle(
         GraphDraft draft,
         List<OperatorDefinition> operatorSnapshots,
         List<VisualDiagnostic> diagnostics,
-        VisualValidationResult validation
+        VisualValidationResult validation,
+        GraphDraftDependencyReport dependencyReport
 ) {
     public static final String SCHEMA_VERSION = "bloge.visualGraphDraftExport.v1";
 
@@ -44,6 +46,22 @@ public record GraphDraftExportBundle(
         operatorSnapshots = operatorSnapshots == null ? List.of() : List.copyOf(operatorSnapshots);
         diagnostics = diagnostics == null ? List.of() : List.copyOf(diagnostics);
         validation = validation == null ? new VisualValidationResult(false, diagnostics) : validation;
+        dependencyReport = dependencyReport == null ? GraphDraftDependencyReport.empty() : dependencyReport;
+    }
+
+    /**
+     * Backward-compatible constructor for callers that do not return a dependency report.
+     */
+    public GraphDraftExportBundle(String schemaVersion,
+                                  Instant exportedAt,
+                                  String sourceDraftId,
+                                  long sourceRevision,
+                                  GraphDraft draft,
+                                  List<OperatorDefinition> operatorSnapshots,
+                                  List<VisualDiagnostic> diagnostics,
+                                  VisualValidationResult validation) {
+        this(schemaVersion, exportedAt, sourceDraftId, sourceRevision, draft, operatorSnapshots, diagnostics,
+                validation, GraphDraftDependencyReport.empty());
     }
 
     /**
@@ -57,7 +75,7 @@ public record GraphDraftExportBundle(
                                   List<OperatorDefinition> operatorSnapshots,
                                   List<VisualDiagnostic> diagnostics) {
         this(schemaVersion, exportedAt, sourceDraftId, sourceRevision, draft, operatorSnapshots, diagnostics,
-                new VisualValidationResult(false, diagnostics));
+                new VisualValidationResult(false, diagnostics), GraphDraftDependencyReport.empty());
     }
 
     /**
@@ -85,11 +103,27 @@ public record GraphDraftExportBundle(
     public static GraphDraftExportBundle from(GraphDraft draft,
                                               List<OperatorDefinition> operatorSnapshots,
                                               VisualValidationResult validation) {
+        return from(draft, operatorSnapshots, validation, GraphDraftDependencyReport.empty());
+    }
+
+    /**
+     * Creates a bundle from a stored draft snapshot.
+     *
+     * @param draft stored draft
+     * @param operatorSnapshots referenced operator snapshots
+     * @param validation export-time validation and readiness
+     * @param dependencyReport source-environment dependency report
+     * @return portable export bundle
+     */
+    public static GraphDraftExportBundle from(GraphDraft draft,
+                                              List<OperatorDefinition> operatorSnapshots,
+                                              VisualValidationResult validation,
+                                              GraphDraftDependencyReport dependencyReport) {
         VisualValidationResult safeValidation = validation == null
                 ? new VisualValidationResult(false, List.of())
                 : validation;
         return new GraphDraftExportBundle("", null, draft == null ? "" : draft.draftId(),
                 draft == null ? 0 : draft.revision(), draft, operatorSnapshots, safeValidation.diagnostics(),
-                safeValidation);
+                safeValidation, dependencyReport);
     }
 }
