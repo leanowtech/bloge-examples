@@ -2343,8 +2343,52 @@ class VisualGraphDraftControllerTest {
                     assertThat(operator.runtimeReadinessState()).isEqualTo("DESIGN_ONLY");
                     assertThat(operator.artifactKinds()).containsExactly("DESIGN");
                     assertThat(operator.executable()).isFalse();
-                });
+        });
         assertThat(publications.find(result.publication().publicationId())).contains(result.publication());
+    }
+
+    @Test
+    void publishDesignArtifactReturnsPersistenceDiagnosticWhenRepositoryCreateFails() {
+        DefaultVisualOperatorCatalog catalog = VisualCatalogTestSupport.catalogWithLibrary(
+                VisualCatalogTestSupport.designOnlyEligibilityLibrary("integer"));
+        FailingCreateVisualGraphPublicationRepository publications =
+                new FailingCreateVisualGraphPublicationRepository();
+        VisualGraphDraftController controller = controllerWithCatalog(
+                catalog,
+                new InMemoryGraphDraftRepository(),
+                publications
+        );
+        GraphDraft stored = controller.create(eligibilityDraft(graphInputSchema(
+                Map.of(
+                        "score", Map.of("type", "integer"),
+                        "amount", Map.of("type", "number")
+                )
+        )));
+
+        ResponseEntity<VisualGraphPublicationResult> response = controller.publish(stored.draftId(),
+                new VisualGraphPublishRequest(stored.revision(), false, VisualGraphPublication.ARTIFACT_DESIGN));
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.CONFLICT);
+        assertThat(response.getBody()).isNotNull();
+        assertThat(response.getBody().published()).isFalse();
+        assertThat(response.getBody().publication()).isNull();
+        assertThat(response.getBody().validation()).isNotNull();
+        assertThat(response.getBody().validation().valid()).isTrue();
+        assertThat(response.getBody().validation().readiness().state()).isEqualTo("design-only");
+        assertThat(response.getBody().diagnostics())
+                .singleElement()
+                .satisfies(diagnostic -> {
+                    assertThat(diagnostic.code()).isEqualTo("visual.publication.persistenceFailed");
+                    assertThat(diagnostic.target()).isEqualTo("/publication");
+                    assertThat(diagnostic.metadata())
+                            .containsEntry("draftId", stored.draftId())
+                            .containsEntry("draftRevision", stored.revision())
+                            .containsEntry("graphName", stored.graphName())
+                            .containsEntry("artifactKind", VisualGraphPublication.ARTIFACT_DESIGN)
+                            .containsEntry("exceptionType", "IllegalStateException")
+                            .containsEntry("exceptionMessage", "publication store unavailable");
+                });
+        assertThat(publications.all()).isEmpty();
     }
 
     @Test
@@ -2536,6 +2580,13 @@ class VisualGraphDraftControllerTest {
                     null,
                     "graph %s {}".formatted(draft.graphName())
             );
+        }
+    }
+
+    private static class FailingCreateVisualGraphPublicationRepository extends InMemoryVisualGraphPublicationRepository {
+        @Override
+        public VisualGraphPublication create(VisualGraphPublication publication) {
+            throw new IllegalStateException("publication store unavailable");
         }
     }
 

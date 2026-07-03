@@ -851,9 +851,36 @@ public class VisualGraphDraftController {
                         request.publicationMetadata())
                 : VisualGraphPublication.from(snapshot, snapshots, validation, generation, dependencyReport,
                         request.publicationMetadata());
-        VisualGraphPublication publication = publicationRepository.create(candidate);
+        VisualGraphPublication publication;
+        try {
+            publication = publicationRepository.create(candidate);
+        } catch (RuntimeException e) {
+            return ResponseEntity.status(HttpStatus.CONFLICT)
+                    .body(VisualGraphPublicationResult.rejected(
+                            List.of(publicationPersistenceFailureDiagnostic(candidate, e)), validation));
+        }
         return ResponseEntity.status(HttpStatus.CREATED)
                 .body(VisualGraphPublicationResult.published(publication));
+    }
+
+    private static VisualDiagnostic publicationPersistenceFailureDiagnostic(VisualGraphPublication publication,
+                                                                           RuntimeException failure) {
+        String exceptionMessage = failure.getMessage() == null ? "" : failure.getMessage();
+        Map<String, Object> metadata = new LinkedHashMap<>();
+        metadata.put("publicationId", publication.publicationId());
+        metadata.put("draftId", publication.draftId());
+        metadata.put("draftRevision", publication.draftRevision());
+        metadata.put("graphName", publication.graphName());
+        metadata.put("artifactKind", publication.artifactKind());
+        metadata.put("exceptionType", failure.getClass().getSimpleName());
+        metadata.put("exceptionMessage", exceptionMessage);
+        return VisualDiagnostic.error(
+                "visual.publication.persistenceFailed",
+                "Visual graph publication for draft '%s' could not be persisted: %s"
+                        .formatted(publication.draftId(), exceptionMessage),
+                "/publication",
+                metadata
+        );
     }
 
     private static List<VisualDiagnostic> publishGovernanceEvidenceDiagnostics(VisualGraphPublishRequest request) {

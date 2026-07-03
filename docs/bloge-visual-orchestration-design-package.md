@@ -79,7 +79,7 @@
    external-runtime-bound governed apply mutation、apply revision-write failed result、post-apply evidence refresh/rebind mutation、governed
    unbind/deactivate mutation、bind 写入失败诊断、字段级 implementation contract-diff gate、semantic JSON
    Schema-compatible drift classification 和三类 runtime evidence submit stable-id 精确 replay
-   幂等返回、submit 写入失败诊断之后，补跨 repository 事务/partial-failure 硬化、更广义 idempotency、
+   幂等返回、submit 写入失败诊断，以及 publication publish/import 持久化失败诊断之后，补跨 repository 事务/partial-failure 硬化、更广义 idempotency、
    更深 SemVer/reimplementation 策略和更完整 JSON Schema 兼容性推理门禁，让
    handoff contract snapshot 能被外部 runtime team 变成可绑定、可激活、可对账 executor bridge、
    可回滚、可持续重新派生 executable readiness 的实现事实。

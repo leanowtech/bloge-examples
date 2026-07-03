@@ -2453,6 +2453,11 @@ diagnostic 且调用方用 `ackWarnings=true` 继续发布时，服务端要求 
 `reason` 非空；否则返回 `400` 与 `visual.publication.governanceEvidenceMissing`，
 避免生产 promotion 只留下匿名布尔开关。成功创建的 artifact 会冻结
 `publicationMetadata`，供后续审计、迁移复核和 golden promotion 使用。
+如果 publication repository 写入失败，服务端返回 `409`、`published=false` 和
+`visual.publication.persistenceFailed`，target 为 `/publication`，metadata 至少携带
+`publicationId`、`draftId`、`draftRevision`、`graphName`、`artifactKind`、`exceptionType`
+和 `exceptionMessage`；响应仍保留本次 validation/readiness/actionReadiness，供画布把失败
+归因到控制面存储而不是误判为图 schema 不可发布。
 
 响应：
 
@@ -2556,6 +2561,11 @@ repository 记录。`import-bundle` 才真正创建 immutable publication。两�
   `visual.publication.schemaVersionUnsupported`。
 - 目标 repository 已存在同一 `publicationId` 返回
   `visual.publication.importConflict`。
+- 目标 repository 创建失败返回 `visual.publication.importPersistenceFailed`，target 为
+  `/publication`，metadata 至少携带 `publicationId`、`draftId`、`draftRevision`、
+  `artifactKind`、`sourceBundleFingerprint`、`exceptionType` 和 `exceptionMessage`；
+  result 仍回显 source lineage、target dependency report 和 runtime-binding handoff，便于
+  外部迁移控制面重试或人工处置。
 
 这条路径让 `DESIGN` publication 可以作为跨环境、跨 runtime-plane 的控制面资产被
 移交；后续是否具备 runtime binding 仍由 asset overview 和 runtime binding

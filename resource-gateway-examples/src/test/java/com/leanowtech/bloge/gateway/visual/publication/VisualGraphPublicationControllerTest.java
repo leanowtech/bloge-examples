@@ -195,6 +195,43 @@ class VisualGraphPublicationControllerTest {
     }
 
     @Test
+    void importBundleReturnsPersistenceDiagnosticWhenRepositoryCreateFails() {
+        InMemoryVisualGraphPublicationRepository sourceRepository = new InMemoryVisualGraphPublicationRepository();
+        VisualGraphPublication source = sourceRepository.create(publication("tenant-a", "risk", "prod"));
+        VisualGraphPublicationExportBundle bundle = VisualGraphPublicationExportBundle.from(source);
+        FailingCreateVisualGraphPublicationRepository targetRepository =
+                new FailingCreateVisualGraphPublicationRepository();
+        VisualGraphPublicationController controller = new VisualGraphPublicationController(targetRepository, runner(),
+                new InMemoryVisualGraphRunRepository(), VisualCatalogTestSupport.catalogWithLibrary(
+                        VisualCatalogTestSupport.eligibilityLibrary("integer")));
+
+        ResponseEntity<VisualGraphPublicationImportResult> response = controller.importBundle(bundle);
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.CONFLICT);
+        assertThat(response.getBody()).isNotNull();
+        assertThat(response.getBody().imported()).isFalse();
+        assertThat(response.getBody().mutationAction()).isEqualTo(VisualGraphPublicationImportResult.ACTION_REJECTED);
+        assertThat(response.getBody().sourceBundleFingerprint()).isEqualTo(bundle.bundleFingerprint());
+        assertThat(response.getBody().sourcePublicationId()).isEqualTo(source.publicationId());
+        assertThat(response.getBody().targetDependencyReport().missingOperatorCount()).isZero();
+        assertThat(response.getBody().diagnostics())
+                .singleElement()
+                .satisfies(diagnostic -> {
+                    assertThat(diagnostic.code()).isEqualTo("visual.publication.importPersistenceFailed");
+                    assertThat(diagnostic.target()).isEqualTo("/publication");
+                    assertThat(diagnostic.metadata())
+                            .containsEntry("publicationId", source.publicationId())
+                            .containsEntry("draftId", source.draftId())
+                            .containsEntry("draftRevision", source.draftRevision())
+                            .containsEntry("artifactKind", source.artifactKind())
+                            .containsEntry("sourceBundleFingerprint", bundle.bundleFingerprint())
+                            .containsEntry("exceptionType", "IllegalStateException")
+                            .containsEntry("exceptionMessage", "publication import store unavailable");
+                });
+        assertThat(targetRepository.all()).isEmpty();
+    }
+
+    @Test
     void validateBundlePreviewsTargetEnvironmentWithoutStorage() {
         InMemoryVisualGraphPublicationRepository sourceRepository = new InMemoryVisualGraphPublicationRepository();
         VisualGraphPublication source = sourceRepository.create(publication("tenant-a", "risk", "prod"));
@@ -596,6 +633,13 @@ class VisualGraphPublicationControllerTest {
                     null,
                     publication.dsl()
             );
+        }
+    }
+
+    private static class FailingCreateVisualGraphPublicationRepository extends InMemoryVisualGraphPublicationRepository {
+        @Override
+        public VisualGraphPublication create(VisualGraphPublication publication) {
+            throw new IllegalStateException("publication import store unavailable");
         }
     }
 }

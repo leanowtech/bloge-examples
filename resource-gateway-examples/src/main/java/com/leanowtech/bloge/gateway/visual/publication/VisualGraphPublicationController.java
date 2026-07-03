@@ -21,6 +21,7 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.util.Collection;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
@@ -232,6 +233,10 @@ public class VisualGraphPublicationController {
         } catch (IllegalArgumentException e) {
             return ResponseEntity.status(HttpStatus.CONFLICT).body(VisualGraphPublicationImportResult.rejected(
                     bundle, publication, targetDependencyReport, publicationAlreadyExistsDiagnostics(publication)));
+        } catch (RuntimeException e) {
+            return ResponseEntity.status(HttpStatus.CONFLICT).body(VisualGraphPublicationImportResult.rejected(
+                    bundle, publication, targetDependencyReport, publicationImportPersistenceFailureDiagnostics(
+                            bundle, publication, e)));
         }
     }
 
@@ -319,6 +324,29 @@ public class VisualGraphPublicationController {
                 "Visual graph publication '%s' already exists in the target repository.".formatted(publicationId),
                 "/publication/publicationId",
                 Map.of("publicationId", publicationId)
+        ));
+    }
+
+    private static List<VisualDiagnostic> publicationImportPersistenceFailureDiagnostics(
+            VisualGraphPublicationExportBundle bundle,
+            VisualGraphPublication publication,
+            RuntimeException failure) {
+        String publicationId = publication == null ? "" : publication.publicationId();
+        String exceptionMessage = failure.getMessage() == null ? "" : failure.getMessage();
+        Map<String, Object> metadata = new LinkedHashMap<>();
+        metadata.put("publicationId", publicationId);
+        metadata.put("draftId", publication == null ? "" : publication.draftId());
+        metadata.put("draftRevision", publication == null ? 0 : publication.draftRevision());
+        metadata.put("artifactKind", publication == null ? "" : publication.artifactKind());
+        metadata.put("sourceBundleFingerprint", bundle == null ? "" : bundle.bundleFingerprint());
+        metadata.put("exceptionType", failure.getClass().getSimpleName());
+        metadata.put("exceptionMessage", exceptionMessage);
+        return List.of(VisualDiagnostic.error(
+                "visual.publication.importPersistenceFailed",
+                "Visual graph publication '%s' could not be imported into the target repository: %s"
+                        .formatted(publicationId, exceptionMessage),
+                "/publication",
+                metadata
         ));
     }
 
