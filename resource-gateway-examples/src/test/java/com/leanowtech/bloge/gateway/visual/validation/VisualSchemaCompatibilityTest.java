@@ -275,6 +275,105 @@ class VisualSchemaCompatibilityTest {
     }
 
     @Test
+    void acceptsSourceNumericRangeThatAvoidsTargetNotMinimum() {
+        Map<String, Object> source = Map.of("type", "number", "maximum", -1);
+        Map<String, Object> target = Map.of(
+                "type", "number",
+                "not", Map.of("minimum", 0)
+        );
+
+        assertThat(VisualSchemaCompatibility.valueMatchesSchema(-1, target)).isTrue();
+        assertThat(VisualSchemaCompatibility.valueMatchesSchema(0, target)).isFalse();
+        assertThat(VisualSchemaCompatibility.schemaCompatibilityIssue(source, target)).isEmpty();
+    }
+
+    @Test
+    void acceptsSourceExclusiveNumericRangeThatAvoidsTargetNotMinimumAtSameBoundary() {
+        Map<String, Object> source = Map.of("type", "number", "exclusiveMaximum", 0);
+        Map<String, Object> target = Map.of(
+                "type", "number",
+                "not", Map.of("minimum", 0)
+        );
+
+        assertThat(VisualSchemaCompatibility.schemaCompatibilityIssue(source, target)).isEmpty();
+    }
+
+    @Test
+    void rejectsSourceNumericRangeWhenItOverlapsTargetNotMinimum() {
+        Map<String, Object> source = Map.of("type", "number", "maximum", 10);
+        Map<String, Object> target = Map.of(
+                "type", "number",
+                "not", Map.of("minimum", 0)
+        );
+
+        assertThat(VisualSchemaCompatibility.schemaCompatibilityIssue(source, target))
+                .hasValueSatisfying(reason -> assertThat(reason)
+                        .contains("target excludes schema number value >= 0")
+                        .contains("source number cannot prove it avoids the excluded domain"));
+    }
+
+    @Test
+    void acceptsSourceStringLengthThatAvoidsTargetNotMaxLength() {
+        Map<String, Object> source = Map.of("type", "string", "minLength", 4);
+        Map<String, Object> target = Map.of(
+                "type", "string",
+                "not", Map.of("maxLength", 3)
+        );
+
+        assertThat(VisualSchemaCompatibility.valueMatchesSchema("ABCD", target)).isTrue();
+        assertThat(VisualSchemaCompatibility.valueMatchesSchema("ABC", target)).isFalse();
+        assertThat(VisualSchemaCompatibility.schemaCompatibilityIssue(source, target)).isEmpty();
+    }
+
+    @Test
+    void treatsTypeLessNumericNotAsNumericExclusionForValueMatching() {
+        Map<String, Object> source = Map.of("type", "string");
+        Map<String, Object> target = Map.of(
+                "type", "string",
+                "not", Map.of("minimum", 0)
+        );
+
+        assertThat(VisualSchemaCompatibility.valueMatchesSchema("ACTIVE", target)).isTrue();
+        assertThat(VisualSchemaCompatibility.schemaCompatibilityIssue(source, target)).isEmpty();
+    }
+
+    @Test
+    void rejectsSourceStringLengthWhenItCouldMatchTargetNotMaxLength() {
+        Map<String, Object> source = Map.of("type", "string", "minLength", 2);
+        Map<String, Object> target = Map.of(
+                "type", "string",
+                "not", Map.of("maxLength", 3)
+        );
+
+        assertThat(VisualSchemaCompatibility.schemaCompatibilityIssue(source, target))
+                .hasValueSatisfying(reason -> assertThat(reason)
+                        .contains("target excludes schema string maxLength 3")
+                        .contains("source string cannot prove it avoids the excluded domain"));
+    }
+
+    @Test
+    void acceptsSourceArraySizeThatAvoidsTargetNotMinItems() {
+        Map<String, Object> source = Map.of("type", "array", "maxItems", 1);
+        Map<String, Object> target = Map.of(
+                "type", "array",
+                "not", Map.of("minItems", 2)
+        );
+
+        assertThat(VisualSchemaCompatibility.schemaCompatibilityIssue(source, target)).isEmpty();
+    }
+
+    @Test
+    void acceptsSourceObjectSizeThatAvoidsTargetNotMinProperties() {
+        Map<String, Object> source = Map.of("type", "object", "maxProperties", 1);
+        Map<String, Object> target = Map.of(
+                "type", "object",
+                "not", Map.of("minProperties", 2)
+        );
+
+        assertThat(VisualSchemaCompatibility.schemaCompatibilityIssue(source, target)).isEmpty();
+    }
+
+    @Test
     void matchesObjectFiniteValuesByStructureAndNestedNumericValue() {
         Map<String, Object> value = Map.of("a", "x", "b", List.of(1));
         Map<String, Object> schema = Map.of(

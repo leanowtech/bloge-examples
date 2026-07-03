@@ -302,7 +302,7 @@ public final class VisualSchemaCompatibility {
         List<Object> sourceValues = enumValues(sourceSchema);
         if (!sourceValues.isEmpty()) {
             List<Object> excludedSourceValues = sourceValues.stream()
-                    .filter(value -> valueMatchesSchema(value, excludedSchema))
+                    .filter(value -> valueMatchesEffectiveNotSchema(value, excludedSchema))
                     .toList();
             return excludedSourceValues.isEmpty()
                     ? Optional.empty()
@@ -326,7 +326,7 @@ public final class VisualSchemaCompatibility {
         }
         List<Object> sourceValues = enumValues(sourceSchema);
         if (!sourceValues.isEmpty()) {
-            return sourceValues.stream().noneMatch(value -> valueMatchesSchema(value, excludedSchema));
+            return sourceValues.stream().noneMatch(value -> valueMatchesEffectiveNotSchema(value, excludedSchema));
         }
         List<Object> excludedValues = enumValues(excludedSchema);
         if (!excludedValues.isEmpty()) {
@@ -334,9 +334,61 @@ public final class VisualSchemaCompatibility {
         }
         String sourceType = effectiveSchemaType(sourceSchema);
         String excludedType = effectiveSchemaType(excludedSchema);
-        return !sourceType.isBlank()
+        if (!sourceType.isBlank()
                 && !excludedType.isBlank()
-                && !schemaTypesOverlap(sourceType, excludedType);
+                && !schemaTypesOverlap(sourceType, excludedType)) {
+            return true;
+        }
+        if (numeric(sourceType) && numeric(excludedType)
+                && numericRangesDisjoint(sourceSchema, excludedSchema)) {
+            return true;
+        }
+        if (stringLike(sourceType) && stringLike(excludedType)
+                && longRangesDisjoint(stringMinLength(sourceSchema), stringMaxLength(sourceSchema),
+                stringMinLength(excludedSchema), stringMaxLength(excludedSchema))) {
+            return true;
+        }
+        if ("array".equals(sourceType) && "array".equals(excludedType)
+                && longRangesDisjoint(arrayMinItems(sourceSchema), arrayMaxItems(sourceSchema),
+                arrayMinItems(excludedSchema), arrayMaxItems(excludedSchema))) {
+            return true;
+        }
+        return "object".equals(sourceType) && "object".equals(excludedType)
+                && longRangesDisjoint(objectMinProperties(sourceSchema), objectMaxProperties(sourceSchema),
+                objectMinProperties(excludedSchema), objectMaxProperties(excludedSchema));
+    }
+
+    private static boolean numericRangesDisjoint(Map<String, Object> sourceSchema,
+                                                 Map<String, Object> excludedSchema) {
+        NumericBoundary sourceUpper = upperBound(sourceSchema);
+        NumericBoundary excludedLower = lowerBound(excludedSchema);
+        if (sourceUpper != null && excludedLower != null && upperBoundIsBelowLower(sourceUpper, excludedLower)) {
+            return true;
+        }
+        NumericBoundary sourceLower = lowerBound(sourceSchema);
+        NumericBoundary excludedUpper = upperBound(excludedSchema);
+        return sourceLower != null && excludedUpper != null
+                && lowerBoundIsAboveUpper(sourceLower, excludedUpper);
+    }
+
+    private static boolean upperBoundIsBelowLower(NumericBoundary upper, NumericBoundary lower) {
+        int comparison = Double.compare(upper.value(), lower.value());
+        return comparison < 0 || comparison == 0 && (upper.exclusive() || lower.exclusive());
+    }
+
+    private static boolean lowerBoundIsAboveUpper(NumericBoundary lower, NumericBoundary upper) {
+        int comparison = Double.compare(lower.value(), upper.value());
+        return comparison > 0 || comparison == 0 && (lower.exclusive() || upper.exclusive());
+    }
+
+    private static boolean longRangesDisjoint(Long sourceMinimum,
+                                              Long sourceMaximum,
+                                              Long excludedMinimum,
+                                              Long excludedMaximum) {
+        if (sourceMaximum != null && excludedMinimum != null && sourceMaximum < excludedMinimum) {
+            return true;
+        }
+        return sourceMinimum != null && excludedMaximum != null && sourceMinimum > excludedMaximum;
     }
 
     private static boolean schemaTypesOverlap(String left, String right) {
@@ -356,6 +408,9 @@ public final class VisualSchemaCompatibility {
         }
         if (hasSchemaKeyword(schema, "pattern", "format", "minLength", "maxLength")) {
             return "string";
+        }
+        if (hasSchemaKeyword(schema, "minimum", "maximum", "exclusiveMinimum", "exclusiveMaximum", "multipleOf")) {
+            return "number";
         }
         if (hasSchemaKeyword(schema, "items", "prefixItems", "contains", "minItems", "maxItems", "uniqueItems",
                 "minContains", "maxContains")) {
@@ -397,6 +452,22 @@ public final class VisualSchemaCompatibility {
         String format = stringFormat(schema);
         if (format != null) {
             label = label + " format '" + format + "'";
+        }
+        NumericBoundary lower = lowerBound(schema);
+        if (lower != null) {
+            label = label + " " + lower.lowerLabel();
+        }
+        NumericBoundary upper = upperBound(schema);
+        if (upper != null) {
+            label = label + " " + upper.upperLabel();
+        }
+        Long minLength = stringMinLength(schema);
+        if (minLength != null) {
+            label = label + " minLength " + minLength;
+        }
+        Long maxLength = stringMaxLength(schema);
+        if (maxLength != null) {
+            label = label + " maxLength " + maxLength;
         }
         return label;
     }
@@ -1355,7 +1426,25 @@ public final class VisualSchemaCompatibility {
 
     private static boolean valueMatchesNotConstraint(Object value, Map<String, Object> schema) {
         Map<String, Object> excludedSchema = objectProperty(schema.get("not"));
-        return excludedSchema != null && valueMatchesSchema(value, excludedSchema);
+        return excludedSchema != null && valueMatchesEffectiveNotSchema(value, excludedSchema);
+    }
+
+    private static boolean valueMatchesEffectiveNotSchema(Object value, Map<String, Object> excludedSchema) {
+        return valueMatchesSchema(value, effectiveNotValueSchema(excludedSchema));
+    }
+
+    private static Map<String, Object> effectiveNotValueSchema(Map<String, Object> excludedSchema) {
+        String declaredType = schemaType(excludedSchema);
+        if (!declaredType.isBlank()) {
+            return excludedSchema;
+        }
+        String effectiveType = effectiveSchemaType(excludedSchema);
+        if (effectiveType.isBlank()) {
+            return excludedSchema;
+        }
+        Map<String, Object> effective = new LinkedHashMap<>(excludedSchema);
+        effective.put("type", effectiveType);
+        return effective;
     }
 
     private static boolean valueMatchesUnions(Object value, Map<String, Object> schema) {

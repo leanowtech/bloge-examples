@@ -2243,7 +2243,21 @@ public final class VisualSchemaValidator {
 
     private static boolean valueMatchesNotConstraint(Object value, Map<String, Object> schema) {
         Map<String, Object> notSchema = objectProperty(schema.get("not"));
-        return notSchema != null && valueMatchesSchema(value, notSchema);
+        return notSchema != null && valueMatchesSchema(value, effectiveNotValueSchema(notSchema));
+    }
+
+    private static Map<String, Object> effectiveNotValueSchema(Map<String, Object> schema) {
+        String declaredKind = schemaKind(schema);
+        if (!declaredKind.isBlank()) {
+            return schema;
+        }
+        String effectiveKind = effectiveNotSchemaKind(schema);
+        if (effectiveKind.isBlank()) {
+            return schema;
+        }
+        Map<String, Object> effective = new LinkedHashMap<>(schema);
+        effective.put("type", effectiveKind);
+        return effective;
     }
 
     private static String notSchemaLabel(Map<String, Object> schema) {

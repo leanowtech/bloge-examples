@@ -228,6 +228,26 @@ class VisualSchemaValidatorTest {
     }
 
     @Test
+    void treatsTypeLessNumericNotAsNumericRuntimeExclusion() {
+        SchemaEnvelope schema = new SchemaEnvelope(SchemaEnvelope.JSON_SCHEMA, "2020-12", Map.of(
+                "type", "object",
+                "properties", Map.of(
+                        "decision", Map.of(
+                                "type", "string",
+                                "not", Map.of("minimum", 0)
+                        )
+                ),
+                "required", List.of("decision"),
+                "additionalProperties", false
+        ));
+
+        assertThat(VisualSchemaValidator.validateSchema(schema.schema(), "/schema")).isEmpty();
+        assertThat(VisualSchemaValidator.validateValue(schema, Map.of(
+                "decision", "ACTIVE"
+        ), "/context")).isEmpty();
+    }
+
+    @Test
     void acceptsRuntimeAndDefaultValuesWithNumericallyEquivalentFiniteDomains() {
         SchemaEnvelope schema = new SchemaEnvelope(SchemaEnvelope.JSON_SCHEMA, "2020-12", Map.of(
                 "type", "object",

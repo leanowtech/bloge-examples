@@ -1167,7 +1167,11 @@ class VisualAuthoringAppJsTest {
                   'schemaEnumValues',
                   'finiteSchemaValues',
                   'schemaValueMatchesNot',
+                  'schemaValueMatchesEffectiveNotSchema',
+                  'effectiveNotValueSchema',
                   'schemaAllowsNull',
+                  'effectiveSchemaType',
+                  'schemaHasAnyKeyword',
                   'unionBranchSelectionValue',
                   'unionBranchSelectionFromValue',
                   'selectedUnionBranchSchema',
@@ -1202,6 +1206,7 @@ class VisualAuthoringAppJsTest {
                   'patternMatches',
                   'validateSchemaStructure',
                   'validateSchemaNot',
+                  'effectiveNotSchemaKind',
                   'validateSchemaEnumValues',
                   'validateSchemaAdditionalProperties',
                   'validateSchemaUnevaluatedProperties',
@@ -5686,6 +5691,10 @@ operators:
                   'targetNotCompatibilityIssue',
                   'schemaValueMatchesSchema',
                   'schemaValueMatchesNot',
+                  'schemaValueMatchesEffectiveNotSchema',
+                  'effectiveNotValueSchema',
+                  'effectiveSchemaType',
+                  'schemaHasAnyKeyword',
                   'schemaValueMatchesUnions',
                   'schemaValueMatchesType',
                   'rawSchemaType',
@@ -5941,7 +5950,7 @@ operators:
                   ['ambiguous union code', ambiguousUnionDiagnostics.some((diagnostic) => diagnostic.code === 'visual.schema.unionAmbiguous'), true],
                   ['allOf remains unsupported', unsupportedCompositionDiagnostics.map((diagnostic) => diagnostic.code).join('|'), 'visual.schema.compositionUnsupported'],
                   ['finite not diagnostics', finiteNotDiagnostics.length, 0],
-                  ['non-finite not code', nonFiniteNotDiagnostics.map((diagnostic) => diagnostic.code).join('|'), 'visual.schema.notUnsupported'],
+                  ['schema-form not diagnostics', nonFiniteNotDiagnostics.length, 0],
                   ['safe scalar allOf diagnostics', safeAllOfDiagnostics.length, 0],
                   ['safe scalar allOf string type', safeAllOfSchema.properties.code.type, 'string'],
                   ['safe scalar allOf string pattern', safeAllOfSchema.properties.code.pattern, '^[A-Z]+$'],
@@ -5957,6 +5966,7 @@ operators:
                   ['anyOf missing value', context.schemaValueMatchesSchema(false, { anyOf: [{ type: 'integer' }, { type: 'string' }] }), false],
                   ['not excluded value', context.schemaValueMatchesSchema('ARCHIVED', { type: 'string', not: { const: 'ARCHIVED' } }), false],
                   ['not accepted value', context.schemaValueMatchesSchema('ACTIVE', { type: 'string', not: { const: 'ARCHIVED' } }), true],
+                  ['type-less numeric not keeps string value', context.schemaValueMatchesSchema('ACTIVE', { type: 'string', not: { minimum: 0 } }), true],
                   ['nested union summary', nestedUnionSummary, 'decision oneOf<integer|string>, events[] anyOf<boolean|null>'],
                   ['union contract row html', String(unionContractHtml.includes('decision oneOf&lt;integer|string&gt;, events[] anyOf&lt;boolean|null&gt;')), 'true'],
                   ['union contract row annotation', String(unionContractHtml.includes('Decision value')), 'true'],
@@ -6023,6 +6033,7 @@ operators:
 
                 const context = vm.createContext({ console });
                 context.SUPPORTED_SCHEMA_UNION_KEYWORDS = ['oneOf', 'anyOf'];
+                context.SUPPORTED_SCHEMA_STRING_FORMATS = new Set(['date', 'date-time', 'duration', 'email', 'uri', 'uuid']);
 
                 for (const name of [
                   'schemaCompatibilityIssue',
@@ -6034,6 +6045,15 @@ operators:
                   'sourceFiniteDomainLabel',
                   'sourceDomainKind',
                   'targetNotCompatibilityIssue',
+                  'schemasDefinitelyDisjoint',
+                  'schemaTypesOverlap',
+                  'effectiveSchemaType',
+                  'schemaHasAnyKeyword',
+                  'excludedSchemaLabel',
+                  'numericRangesDisjoint',
+                  'upperBoundIsBelowLower',
+                  'lowerBoundIsAboveUpper',
+                  'longRangesDisjoint',
                   'numericIntegerCompatibilityIssue',
                   'objectSchemaCompatibilityIssue',
                   'objectOptionalTargetPropertiesCompatibilityIssue',
@@ -6068,6 +6088,8 @@ operators:
                   'canonicalSchemaValueKey',
                   'schemaValueMatchesSchema',
                   'schemaValueMatchesNot',
+                  'schemaValueMatchesEffectiveNotSchema',
+                  'effectiveNotValueSchema',
                   'schemaValueMatchesUnions',
                   'schemaValueMatchesType',
                   'rawSchemaType',
@@ -6075,12 +6097,34 @@ operators:
                   'schemaMayProduceNull',
                   'schemaAllowsNull',
                   'schemaTypeForValue',
+                  'schemaLowerBound',
+                  'schemaUpperBound',
+                  'numericBoundary',
+                  'numericBoundaryValue',
+                  'numericLowerLabel',
+                  'numericUpperLabel',
+                  'trimNumericLabel',
+                  'schemaMinLength',
+                  'schemaMaxLength',
+                  'stringLengthBoundaryValue',
+                  'stringCodePointLength',
+                  'schemaMinItems',
+                  'schemaMaxItems',
+                  'explicitSchemaMinItems',
+                  'explicitSchemaMaxItems',
+                  'arrayItemBoundaryValue',
+                  'schemaMinProperties',
+                  'schemaMaxProperties',
+                  'explicitSchemaMinProperties',
+                  'explicitSchemaMaxProperties',
+                  'objectPropertyBoundaryValue',
                   'numericType',
                   'numericMultipleOfValue',
                   'numericValueIsMultipleOf',
                   'numberLabel',
                   'stringType',
                   'arrayType',
+                  'schemaFormatValue',
                   'stringValueMatchesPattern',
                   'schemaPatternValue'
                 ]) {
@@ -6201,6 +6245,60 @@ operators:
                 }, {
                   type: 'integer'
                 });
+                const targetNotPatternIssue = context.schemaCompatibilityIssue({
+                  type: 'string',
+                  enum: ['ACTIVE', 'ARCHIVED']
+                }, {
+                  type: 'string',
+                  not: { pattern: '^ARCHIVED$' }
+                });
+                const targetNotPatternSafeIssue = context.schemaCompatibilityIssue({
+                  type: 'string',
+                  enum: ['ACTIVE']
+                }, {
+                  type: 'string',
+                  not: { pattern: '^ARCHIVED$' }
+                });
+                const targetOnlyNotStringIssue = context.schemaCompatibilityIssue({
+                  type: 'string'
+                }, {
+                  not: { type: 'string' }
+                });
+                const targetNotNumericDisjointIssue = context.schemaCompatibilityIssue({
+                  type: 'number',
+                  maximum: -1
+                }, {
+                  type: 'number',
+                  not: { minimum: 0 }
+                });
+                const targetNotNumericOverlapIssue = context.schemaCompatibilityIssue({
+                  type: 'number',
+                  maximum: 10
+                }, {
+                  type: 'number',
+                  not: { minimum: 0 }
+                });
+                const targetNotStringLengthDisjointIssue = context.schemaCompatibilityIssue({
+                  type: 'string',
+                  minLength: 4
+                }, {
+                  type: 'string',
+                  not: { maxLength: 3 }
+                });
+                const targetNotArrayCountDisjointIssue = context.schemaCompatibilityIssue({
+                  type: 'array',
+                  maxItems: 1
+                }, {
+                  type: 'array',
+                  not: { minItems: 2 }
+                });
+                const targetNotObjectCountDisjointIssue = context.schemaCompatibilityIssue({
+                  type: 'object',
+                  maxProperties: 1
+                }, {
+                  type: 'object',
+                  not: { minProperties: 2 }
+                });
 
                 const checks = [
                   ['residual optional collision path', String(residualIssue.includes("at 'score'")), 'true'],
@@ -6219,7 +6317,15 @@ operators:
                   ['reordered object unique collapse', String(reorderedObjectUniqueCount), '1'],
                   ['number to integer requires proof', numberToIntegerIssue, 'target type integer requires integer-valued source, but source type number has no integral multipleOf'],
                   ['integral number to integer safe', integralNumberToIntegerIssue, ''],
-                  ['fractional number to integer blocked', fractionalNumberToIntegerIssue, 'source multipleOf 0.5 does not guarantee integer values required by target type integer']
+                  ['fractional number to integer blocked', fractionalNumberToIntegerIssue, 'source multipleOf 0.5 does not guarantee integer values required by target type integer'],
+                  ['target not pattern excludes enum', targetNotPatternIssue, 'source enum value(s) [ARCHIVED] do not match target schema string'],
+                  ['target not pattern safe enum', targetNotPatternSafeIssue, ''],
+                  ['target only not string blocks source', targetOnlyNotStringIssue, 'target excludes schema string but source string cannot prove it avoids the excluded domain'],
+                  ['target not numeric disjoint safe', targetNotNumericDisjointIssue, ''],
+                  ['target not numeric overlap blocked', targetNotNumericOverlapIssue, 'target excludes schema number value >= 0 but source number cannot prove it avoids the excluded domain'],
+                  ['target not string length disjoint safe', targetNotStringLengthDisjointIssue, ''],
+                  ['target not array count disjoint safe', targetNotArrayCountDisjointIssue, ''],
+                  ['target not object count disjoint safe', targetNotObjectCountDisjointIssue, '']
                 ];
 
                 for (const [label, actual, expected] of checks) {

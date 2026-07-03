@@ -18452,6 +18452,7 @@ function validateSchemaStructure(schema, path, diagnostics) {
   validateSupportedSchemaUnions(schema, path, diagnostics);
   const invalidTypeArray = validateSchemaTypeArray(schema, path, diagnostics);
   validateSchemaDefinitions(schema, path, diagnostics);
+  validateSchemaNot(schema, path, diagnostics);
   const kind = rawSchemaType(schema);
   if (invalidTypeArray) {
     return;
@@ -18469,7 +18470,6 @@ function validateSchemaStructure(schema, path, diagnostics) {
   }
   validateSchemaEnum(schema, kind, path, diagnostics);
   validateSchemaConst(schema, kind, path, diagnostics);
-  validateSchemaNot(schema, path, diagnostics);
   validateSchemaNumericBounds(schema, kind, path, diagnostics);
   validateSchemaNumericMultipleOf(schema, kind, path, diagnostics);
   validateSchemaStringLengthBounds(schema, kind, path, diagnostics);
@@ -19031,16 +19031,9 @@ function validateSchemaNot(schema, path, diagnostics) {
     ));
     return;
   }
-  const excludedValues = finiteSchemaValues(notSchema);
-  if (!excludedValues.length) {
-    diagnostics.push(graphInputSchemaDiagnostic(
-      'visual.schema.notUnsupported',
-      'Schema not is supported only for finite const/enum exclusion domains.',
-      `${path}/not`
-    ));
-    return;
-  }
-  if (Object.prototype.hasOwnProperty.call(notSchema, 'enum')) {
+  const declaredNotKind = rawSchemaType(notSchema);
+  validateSchemaStructure(notSchema, `${path}/not`, diagnostics);
+  if (!declaredNotKind && Object.prototype.hasOwnProperty.call(notSchema, 'enum')) {
     if (!Array.isArray(notSchema.enum) || !notSchema.enum.length) {
       diagnostics.push(graphInputSchemaDiagnostic(
         'visual.schema.enumInvalid',
@@ -19051,7 +19044,7 @@ function validateSchemaNot(schema, path, diagnostics) {
       validateSchemaEnumValues(notSchema.enum, `${path}/not/enum`, diagnostics);
     }
   }
-  if (rawSchemaType(notSchema) === 'enum') {
+  if (!declaredNotKind && effectiveNotSchemaKind(notSchema) === 'enum') {
     if (!Array.isArray(notSchema.values) || !notSchema.values.length) {
       diagnostics.push(graphInputSchemaDiagnostic(
         'visual.schema.enumValuesMissing',
@@ -19062,6 +19055,54 @@ function validateSchemaNot(schema, path, diagnostics) {
       validateSchemaEnumValues(notSchema.values, `${path}/not/values`, diagnostics);
     }
   }
+  const notKind = declaredNotKind ? '' : effectiveNotSchemaKind(notSchema);
+  if (!notKind) {
+    return;
+  }
+  validateSchemaNumericBounds(notSchema, notKind, `${path}/not`, diagnostics);
+  validateSchemaNumericMultipleOf(notSchema, notKind, `${path}/not`, diagnostics);
+  validateSchemaStringLengthBounds(notSchema, notKind, `${path}/not`, diagnostics);
+  validateSchemaStringPattern(notSchema, notKind, `${path}/not`, diagnostics);
+  validateSchemaStringFormat(notSchema, notKind, `${path}/not`, diagnostics);
+  validateSchemaArrayItemBounds(notSchema, notKind, `${path}/not`, diagnostics);
+  validateSchemaArrayUniqueItems(notSchema, notKind, `${path}/not`, diagnostics);
+  validateSchemaArrayContains(notSchema, notKind, `${path}/not`, diagnostics);
+  validateSchemaObjectPropertyBounds(notSchema, notKind, `${path}/not`, diagnostics);
+  validateSchemaObjectPatternProperties(notSchema, notKind, `${path}/not`, diagnostics);
+  validateSchemaObjectPropertyNames(notSchema, notKind, `${path}/not`, diagnostics);
+  validateSchemaObjectDependentRequired(notSchema, notKind, `${path}/not`, diagnostics);
+  validateSchemaObjectDependentSchemas(notSchema, notKind, `${path}/not`, diagnostics);
+  validateSchemaUnevaluatedProperties(notSchema, notKind, `${path}/not`, diagnostics);
+}
+
+function effectiveNotSchemaKind(schema) {
+  const kind = rawSchemaType(schema);
+  if (kind) {
+    return kind;
+  }
+  if (schemaHasAnyKeyword(schema, 'pattern', 'format', 'minLength', 'maxLength')) {
+    return 'string';
+  }
+  if (schemaHasAnyKeyword(schema, 'minimum', 'maximum', 'exclusiveMinimum', 'exclusiveMaximum', 'multipleOf')) {
+    return 'number';
+  }
+  if (Object.prototype.hasOwnProperty.call(schema || {}, 'values')) {
+    return 'enum';
+  }
+  if (schemaHasAnyKeyword(schema, 'items', 'prefixItems', 'contains', 'minItems', 'maxItems', 'uniqueItems',
+      'minContains', 'maxContains', 'unevaluatedItems')) {
+    return 'array';
+  }
+  if (schemaHasAnyKeyword(schema, 'properties', 'required', 'additionalProperties', 'unevaluatedProperties',
+      'patternProperties', 'propertyNames', 'dependentRequired', 'dependentSchemas', 'minProperties',
+      'maxProperties')) {
+    return 'object';
+  }
+  return '';
+}
+
+function schemaHasAnyKeyword(schema, ...keywords) {
+  return keywords.some((keyword) => Object.prototype.hasOwnProperty.call(schema || {}, keyword));
 }
 
 function validateSchemaNumericBounds(schema, kind, path, diagnostics) {
@@ -20038,9 +20079,6 @@ function schemaCompatibilityIssue(sourceSchema, targetSchema, path = '') {
   }
   const sourceType = rawSchemaType(sourceSchema);
   const targetType = rawSchemaType(targetSchema);
-  if (!sourceType || !targetType || sourceType === 'any' || targetType === 'any' || sourceType === 'opaque' || targetType === 'opaque') {
-    return '';
-  }
   if (schemaMayProduceNull(sourceSchema) && !schemaValueMatchesSchema(null, targetSchema)) {
     return reasonAt(path, `source may produce null but target ${schemaType(targetSchema)} does not allow null`);
   }
@@ -20048,6 +20086,9 @@ function schemaCompatibilityIssue(sourceSchema, targetSchema, path = '') {
     return schemaValueMatchesSchema(null, targetSchema)
       ? ''
       : reasonAt(path, `source type null cannot feed target type ${schemaType(targetSchema)}`);
+  }
+  if (!sourceType || !targetType || sourceType === 'any' || targetType === 'any' || sourceType === 'opaque' || targetType === 'opaque') {
+    return targetNotCompatibilityIssue(sourceSchema, targetSchema, path) || '';
   }
   if (sourceType === 'array' && targetType === 'array') {
     return arrayPrefixItemsCompatibilityIssue(sourceSchema, targetSchema, path)
@@ -20191,14 +20232,154 @@ function sourceDomainKind(targetSchema) {
 }
 
 function targetNotCompatibilityIssue(sourceSchema, targetSchema, path = '') {
-  const excludedValues = finiteSchemaValues(targetSchema?.not);
-  if (!excludedValues.length) {
+  const excludedSchema = targetSchema?.not;
+  if (!excludedSchema || typeof excludedSchema !== 'object' || Array.isArray(excludedSchema)) {
     return '';
   }
-  const possiblyProduced = excludedValues.filter((value) => schemaValueMatchesSchema(value, sourceSchema));
-  return possiblyProduced.length
-    ? reasonAt(path, `target excludes value(s) ${valueDomainLabel(possiblyProduced)} but source schema could produce them`)
-    : '';
+  const excludedValues = finiteSchemaValues(excludedSchema);
+  if (excludedValues.length) {
+    const possiblyProduced = excludedValues.filter((value) => schemaValueMatchesSchema(value, sourceSchema));
+    return possiblyProduced.length
+      ? reasonAt(path, `target excludes value(s) ${valueDomainLabel(possiblyProduced)} but source schema could produce them`)
+      : '';
+  }
+  const sourceValues = schemaEnumValues(sourceSchema);
+  if (sourceValues.length) {
+    const excludedSourceValues = sourceValues.filter((value) => schemaValueMatchesEffectiveNotSchema(value, excludedSchema));
+    return excludedSourceValues.length
+      ? reasonAt(path, `target excludes schema ${excludedSchemaLabel(excludedSchema)} and source value(s) ${valueDomainLabel(excludedSourceValues)} match it`)
+      : '';
+  }
+  if (schemasDefinitelyDisjoint(sourceSchema, excludedSchema)) {
+    return '';
+  }
+  return reasonAt(path, `target excludes schema ${excludedSchemaLabel(excludedSchema)} but source ${schemaType(sourceSchema)} cannot prove it avoids the excluded domain`);
+}
+
+function schemasDefinitelyDisjoint(sourceSchema, excludedSchema) {
+  const sourceValues = schemaEnumValues(sourceSchema);
+  if (sourceValues.length) {
+    return sourceValues.every((value) => !schemaValueMatchesEffectiveNotSchema(value, excludedSchema));
+  }
+  const excludedValues = schemaEnumValues(excludedSchema);
+  if (excludedValues.length) {
+    return excludedValues.every((value) => !schemaValueMatchesSchema(value, sourceSchema));
+  }
+  const sourceType = effectiveSchemaType(sourceSchema);
+  const excludedType = effectiveSchemaType(excludedSchema);
+  if (sourceType && excludedType && !schemaTypesOverlap(sourceType, excludedType)) {
+    return true;
+  }
+  if (numericType(sourceType) && numericType(excludedType) && numericRangesDisjoint(sourceSchema, excludedSchema)) {
+    return true;
+  }
+  if (stringType(sourceType) && stringType(excludedType)
+      && longRangesDisjoint(schemaMinLength(sourceSchema), schemaMaxLength(sourceSchema),
+        schemaMinLength(excludedSchema), schemaMaxLength(excludedSchema))) {
+    return true;
+  }
+  if (arrayType(sourceType) && arrayType(excludedType)
+      && longRangesDisjoint(schemaMinItems(sourceSchema), schemaMaxItems(sourceSchema),
+        schemaMinItems(excludedSchema), schemaMaxItems(excludedSchema))) {
+    return true;
+  }
+  return sourceType === 'object' && excludedType === 'object'
+    && longRangesDisjoint(schemaMinProperties(sourceSchema), schemaMaxProperties(sourceSchema),
+      schemaMinProperties(excludedSchema), schemaMaxProperties(excludedSchema));
+}
+
+function schemaTypesOverlap(left, right) {
+  if (left === right) {
+    return true;
+  }
+  if (numericType(left) && numericType(right)) {
+    return true;
+  }
+  return stringType(left) && stringType(right);
+}
+
+function effectiveSchemaType(schema) {
+  const type = rawSchemaType(schema);
+  if (type && !type.startsWith('[')) {
+    return type;
+  }
+  if (schemaHasAnyKeyword(schema, 'pattern', 'format', 'minLength', 'maxLength')) {
+    return 'string';
+  }
+  if (schemaHasAnyKeyword(schema, 'minimum', 'maximum', 'exclusiveMinimum', 'exclusiveMaximum', 'multipleOf')) {
+    return 'number';
+  }
+  if (schemaHasAnyKeyword(schema, 'items', 'prefixItems', 'contains', 'minItems', 'maxItems', 'uniqueItems',
+      'minContains', 'maxContains')) {
+    return 'array';
+  }
+  if (schemaHasAnyKeyword(schema, 'properties', 'required', 'additionalProperties', 'unevaluatedProperties',
+      'patternProperties', 'propertyNames', 'dependentRequired', 'dependentSchemas', 'minProperties',
+      'maxProperties')) {
+    return 'object';
+  }
+  return '';
+}
+
+function excludedSchemaLabel(schema) {
+  const values = schemaEnumValues(schema);
+  if (values.length) {
+    return valueDomainLabel(values);
+  }
+  let label = effectiveSchemaType(schema) || schemaType(schema);
+  const pattern = schemaPatternValue(schema);
+  if (pattern !== null) {
+    label = `${label} pattern '${pattern}'`;
+  }
+  const format = schemaFormatValue(schema);
+  if (format !== null) {
+    label = `${label} format '${format}'`;
+  }
+  const lower = schemaLowerBound(schema);
+  if (lower) {
+    label = `${label} ${numericLowerLabel(lower)}`;
+  }
+  const upper = schemaUpperBound(schema);
+  if (upper) {
+    label = `${label} ${numericUpperLabel(upper)}`;
+  }
+  const minLength = schemaMinLength(schema);
+  if (minLength !== null) {
+    label = `${label} minLength ${minLength}`;
+  }
+  const maxLength = schemaMaxLength(schema);
+  if (maxLength !== null) {
+    label = `${label} maxLength ${maxLength}`;
+  }
+  return label;
+}
+
+function numericRangesDisjoint(sourceSchema, excludedSchema) {
+  const sourceUpper = schemaUpperBound(sourceSchema);
+  const excludedLower = schemaLowerBound(excludedSchema);
+  if (sourceUpper && excludedLower && upperBoundIsBelowLower(sourceUpper, excludedLower)) {
+    return true;
+  }
+  const sourceLower = schemaLowerBound(sourceSchema);
+  const excludedUpper = schemaUpperBound(excludedSchema);
+  return Boolean(sourceLower && excludedUpper && lowerBoundIsAboveUpper(sourceLower, excludedUpper));
+}
+
+function upperBoundIsBelowLower(upper, lower) {
+  return upper.value < lower.value
+    || (upper.value === lower.value && (upper.exclusive || lower.exclusive));
+}
+
+function lowerBoundIsAboveUpper(lower, upper) {
+  return lower.value > upper.value
+    || (lower.value === upper.value && (lower.exclusive || upper.exclusive));
+}
+
+function longRangesDisjoint(sourceMinimum, sourceMaximum, excludedMinimum, excludedMaximum) {
+  if (sourceMaximum !== null && excludedMinimum !== null && sourceMaximum < excludedMinimum) {
+    return true;
+  }
+  return sourceMinimum !== null && excludedMaximum !== null && sourceMinimum > excludedMaximum;
 }
 
 function numericBoundsCompatibilityIssue(sourceSchema, targetSchema, path = '') {
@@ -20809,8 +20990,21 @@ function schemaValueMatchesSchema(value, schema) {
 }
 
 function schemaValueMatchesNot(value, schema) {
-  return finiteSchemaValues(schema?.not)
-    .some((excluded) => schemaValuesEqual(excluded, value));
+  const excludedSchema = schema?.not;
+  return Boolean(excludedSchema && typeof excludedSchema === 'object' && !Array.isArray(excludedSchema)
+    && schemaValueMatchesEffectiveNotSchema(value, excludedSchema));
+}
+
+function schemaValueMatchesEffectiveNotSchema(value, excludedSchema) {
+  return schemaValueMatchesSchema(value, effectiveNotValueSchema(excludedSchema));
+}
+
+function effectiveNotValueSchema(excludedSchema) {
+  if (rawSchemaType(excludedSchema)) {
+    return excludedSchema;
+  }
+  const effectiveType = effectiveSchemaType(excludedSchema);
+  return effectiveType ? { ...excludedSchema, type: effectiveType } : excludedSchema;
 }
 
 function schemaValueMatchesUnions(value, schema) {
