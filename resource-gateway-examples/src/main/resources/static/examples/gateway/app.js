@@ -996,7 +996,15 @@ function visualRuntimeBindingHandoffReviewMessage(review) {
   const drifted = Number(review.driftedCount || 0) || 0;
   const missing = Number(review.missingCount || 0) || 0;
   const fresh = Number(review.newCurrentWindowCount || 0) || 0;
-  return `Handoff review ${stateLabel}: ${matched} current, ${drifted} drifted, ${missing} missing, ${fresh} new in current window.`;
+  const contractMatched = Number(review.operatorContractMatchedCount || 0) || 0;
+  const contractDrifted = Number(review.operatorContractDriftedCount || 0) || 0;
+  const contractMissing = Number(review.operatorContractMissingCount || 0) || 0;
+  const contractFresh = Number(review.operatorContractNewCurrentWindowCount || 0) || 0;
+  const contractAttention = contractDrifted + contractMissing + contractFresh;
+  const contractSummary = contractAttention
+    ? ` Contracts: ${contractMatched} current, ${contractDrifted} drifted, ${contractMissing} missing, ${contractFresh} new current-window.`
+    : '';
+  return `Handoff review ${stateLabel}: ${matched} current, ${drifted} drifted, ${missing} missing, ${fresh} new in current window.${contractSummary}`;
 }
 
 function visualBundleFingerprintSuffix(fingerprint) {
@@ -1017,10 +1025,15 @@ function visualRuntimeBindingHandoffReviewRows(review) {
   }
   const operatorContracts = Number(review.exportedOperatorContractCount || 0) || 0;
   if (operatorContracts) {
+    const contractStatus = review.operatorContractStatusCounts || {};
+    const contractStatusSummary = visualRuntimeBindingHandoffReviewCountFacetSummary(contractStatus, '', true);
     rows.push({
-      level: 'info',
+      level: (Number(review.operatorContractDriftedCount || 0)
+        + Number(review.operatorContractMissingCount || 0)
+        + Number(review.operatorContractNewCurrentWindowCount || 0)) > 0 ? 'warning' : 'info',
       label: 'Operator contract snapshots',
       value: `${operatorContracts} contract${operatorContracts === 1 ? '' : 's'} exported with this handoff`
+        + (contractStatusSummary ? `; ${contractStatusSummary}` : '')
     });
   }
   const routingSummary = visualRuntimeBindingHandoffReviewRoutingSummary(review);
@@ -1039,6 +1052,16 @@ function visualRuntimeBindingHandoffReviewRows(review) {
       value: categorySummary
     });
   }
+  const contractCategorySummary = visualRuntimeBindingHandoffReviewCategorySummary(
+    review.operatorContractFieldChangeCategoryCounts
+  );
+  if (contractCategorySummary) {
+    rows.push({
+      level: 'warning',
+      label: 'Operator contract drift categories',
+      value: contractCategorySummary
+    });
+  }
   const itemRows = (Array.isArray(review.items) ? review.items : [])
     .filter((item) => item && String(item.status || '').toLowerCase() !== 'current')
     .slice(0, 5)
@@ -1050,6 +1073,17 @@ function visualRuntimeBindingHandoffReviewRows(review) {
       value: visualRuntimeBindingHandoffReviewItemValue(item)
     }));
   rows.push(...itemRows);
+  const contractItemRows = (Array.isArray(review.operatorContractItems) ? review.operatorContractItems : [])
+    .filter((item) => item && String(item.status || '').toLowerCase() !== 'current')
+    .slice(0, 5)
+    .map((item) => ({
+      level: ['error', 'warning', 'info', 'success'].includes(String(item.level || '').toLowerCase())
+        ? String(item.level).toLowerCase()
+        : 'warning',
+      label: visualRuntimeBindingHandoffReviewContractItemLabel(item),
+      value: visualRuntimeBindingHandoffReviewItemValue(item)
+    }));
+  rows.push(...contractItemRows);
   const newKeys = Array.isArray(review.newCurrentWindowRequirementKeys)
     ? review.newCurrentWindowRequirementKeys.filter(Boolean)
     : [];
@@ -1101,7 +1135,10 @@ function visualRuntimeBindingHandoffReviewCountFacetSummary(counts = {}, suffix 
   return Object.entries(counts || {})
     .filter(([, count]) => Number(count || 0) > 0)
     .sort(([left], [right]) => left.localeCompare(right))
-    .map(([key, count]) => `${prettify ? operatorPaletteFacetLabel(key) : key} ${suffix}: ${Number(count || 0)}`)
+    .map(([key, count]) => {
+      const label = prettify ? operatorPaletteFacetLabel(key) : key;
+      return `${label}${suffix ? ` ${suffix}` : ''}: ${Number(count || 0)}`;
+    })
     .join(', ');
 }
 
@@ -1117,6 +1154,14 @@ function visualRuntimeBindingHandoffReviewItemLabel(item) {
   const status = operatorPaletteFacetLabel(item?.status || 'review');
   const requirementKey = item?.requirementKey || item?.exportedRequirement?.requirementKey || '';
   const target = item?.currentRequirement?.targetLabel || item?.exportedRequirement?.targetLabel || requirementKey;
+  return [status, target].filter(Boolean).join(' · ');
+}
+
+function visualRuntimeBindingHandoffReviewContractItemLabel(item) {
+  const status = operatorPaletteFacetLabel(item?.status || 'review');
+  const contract = item?.currentContract || item?.exportedContract || {};
+  const displayName = contract?.display?.name || contract?.display?.title || '';
+  const target = displayName || item?.operatorRef || contract?.operatorRef || '';
   return [status, target].filter(Boolean).join(' · ');
 }
 

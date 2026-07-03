@@ -964,6 +964,90 @@ class VisualAssetOverviewControllerTest {
     }
 
     @Test
+    void runtimeBindingHandoffReviewDetectsStaleOperatorContractSnapshots() {
+        RuntimeBindingImplementationFixture fixture = runtimeBindingImplementationFixture();
+        VisualRuntimeBindingHandoffBundle handoffBundle = fixture.handoffBundle();
+        VisualRuntimeBindingHandoffBundle.OperatorContractSnapshot exportedContract = fixture.contract();
+        VisualRuntimeBindingHandoffBundle.OperatorContractSnapshot staleContract =
+                new VisualRuntimeBindingHandoffBundle.OperatorContractSnapshot(
+                        exportedContract.operatorRef(),
+                        exportedContract.operatorVersion(),
+                        "sha256:exported-stale-contract",
+                        exportedContract.operatorLibraryId(),
+                        exportedContract.display(),
+                        exportedContract.source(),
+                        exportedContract.ports(),
+                        exportedContract.configSchema(),
+                        exportedContract.capabilities(),
+                        exportedContract.policy(),
+                        exportedContract.lowering(),
+                        exportedContract.runtimeReadiness()
+                );
+        VisualRuntimeBindingHandoffBundle staleContractBundle = new VisualRuntimeBindingHandoffBundle(
+                handoffBundle.schemaVersion(),
+                handoffBundle.exportedAt(),
+                handoffBundle.sourceIndexSchemaVersion(),
+                handoffBundle.sourceIndexGeneratedAt(),
+                "",
+                handoffBundle.scope(),
+                handoffBundle.filter(),
+                handoffBundle.total(),
+                handoffBundle.unfilteredTotal(),
+                handoffBundle.displayedCount(),
+                handoffBundle.itemLimit(),
+                handoffBundle.offset(),
+                handoffBundle.hasMore(),
+                handoffBundle.requirementKeys(),
+                handoffBundle.targetKindCounts(),
+                handoffBundle.operatorRefCounts(),
+                handoffBundle.operatorLibraryIdCounts(),
+                handoffBundle.bindingKindCounts(),
+                handoffBundle.handoffLaneCounts(),
+                handoffBundle.handoffKindCounts(),
+                handoffBundle.handoffTargetCounts(),
+                handoffBundle.sourceKindCounts(),
+                handoffBundle.loweringModeCounts(),
+                handoffBundle.readinessStateCounts(),
+                handoffBundle.artifactKindCounts(),
+                List.of(staleContract),
+                handoffBundle.requirements()
+        );
+
+        VisualRuntimeBindingHandoffReview review = fixture.controller()
+                .reviewRuntimeBindingHandoffBundle(staleContractBundle)
+                .getBody();
+
+        assertThat(staleContractBundle.bundleFingerprintVerified()).isTrue();
+        assertThat(staleContractBundle.bundleFingerprint()).isNotEqualTo(handoffBundle.bundleFingerprint());
+        assertThat(review).isNotNull();
+        assertThat(review.reviewable()).isTrue();
+        assertThat(review.state()).isEqualTo("stale");
+        assertThat(review.matchedCount()).isEqualTo(1);
+        assertThat(review.driftedCount()).isZero();
+        assertThat(review.missingCount()).isZero();
+        assertThat(review.operatorContractMatchedCount()).isZero();
+        assertThat(review.operatorContractDriftedCount()).isEqualTo(1);
+        assertThat(review.operatorContractMissingCount()).isZero();
+        assertThat(review.operatorContractNewCurrentWindowCount()).isZero();
+        assertThat(review.operatorContractStatusCounts()).containsEntry("drifted", 1);
+        assertThat(review.operatorContractFieldChangeCategoryCounts()).containsEntry("operator-contract", 1);
+        assertThat(review.operatorContractItems()).singleElement().satisfies(item -> {
+            assertThat(item.operatorRef()).isEqualTo(exportedContract.operatorRef());
+            assertThat(item.status()).isEqualTo("drifted");
+            assertThat(item.changedFields()).containsExactly("fingerprint");
+            assertThat(item.exportedContract()).isNotNull();
+            assertThat(item.currentContract()).isNotNull();
+            assertThat(item.currentContract().fingerprint()).isEqualTo(exportedContract.fingerprint());
+            assertThat(item.fieldChanges()).singleElement().satisfies(change -> {
+                assertThat(change.field()).isEqualTo("fingerprint");
+                assertThat(change.category()).isEqualTo("operator-contract");
+                assertThat(change.exportedValue()).isEqualTo("sha256:exported-stale-contract");
+                assertThat(change.currentValue()).isEqualTo(exportedContract.fingerprint());
+            });
+        });
+    }
+
+    @Test
     void runtimeBindingHandoffReviewSummarizesNewCurrentWindowRouting() {
         DefaultVisualOperatorCatalog catalog = VisualCatalogTestSupport.catalogWithLibrary(
                 VisualCatalogTestSupport.designOnlyEligibilityLibrary("integer"));
@@ -1138,6 +1222,143 @@ class VisualAssetOverviewControllerTest {
         assertThat(response.getBody().sourceHandoffBundleFingerprint()).isEqualTo(handoffBundle.bundleFingerprint());
         assertThat(response.getBody().implementation().adapterKind()).isEqualTo("native");
         assertThat(response.getBody().diagnostics()).isEmpty();
+    }
+
+    @Test
+    void runtimeBindingImplementationValidationRequiresReviewForStaleSourceRequirementKeys() {
+        OperatorLibrary library = VisualCatalogTestSupport.designOnlyEligibilityLibrary("integer");
+        DefaultVisualOperatorCatalog catalog = VisualCatalogTestSupport.catalogWithLibrary(library);
+        GraphDraftValidator validator = new GraphDraftValidator(catalog);
+        InMemoryGraphDraftRepository drafts = new InMemoryGraphDraftRepository();
+        OperatorDefinition operator = catalog.find("risk:eligibility").orElseThrow();
+        drafts.save(draftWithFingerprint(operator));
+        VisualAssetOverviewController controller = new VisualAssetOverviewController(
+                drafts,
+                validator,
+                catalog,
+                new InMemoryVisualGraphPublicationRepository()
+        );
+        VisualRuntimeBindingHandoffBundle handoffBundle = controller.runtimeBindingHandoffBundle(
+                "",
+                "",
+                "",
+                10,
+                0,
+                "draft",
+                "executable-lowering",
+                "operator-platform",
+                "operator-implementation",
+                "risk:eligibility",
+                "",
+                "",
+                "",
+                ""
+        );
+        VisualRuntimeBindingHandoffBundle.OperatorContractSnapshot contract =
+                handoffBundle.operatorContracts().getFirst();
+        String staleRequirementKey = "RUNTIME_BINDING|draft|missing|eligibility|executable-lowering|"
+                + "risk:eligibility|";
+
+        var response = controller.validateRuntimeBindingImplementation(
+                new VisualRuntimeBindingImplementationValidation.Request(
+                        VisualRuntimeBindingImplementationValidation.REQUEST_SCHEMA_VERSION,
+                        contract.operatorRef(),
+                        contract.fingerprint(),
+                        handoffBundle.bundleFingerprint(),
+                        List.of(staleRequirementKey),
+                        contract,
+                        completeImplementation()
+                ));
+
+        assertThat(response.getStatusCode().value()).isEqualTo(200);
+        assertThat(response.getBody()).isNotNull();
+        assertThat(response.getBody().valid()).isTrue();
+        assertThat(response.getBody().bindable()).isFalse();
+        assertThat(response.getBody().state()).isEqualTo("requires-review");
+        assertThat(response.getBody().diagnostics()).singleElement().satisfies(diagnostic -> {
+            assertThat(diagnostic.code())
+                    .isEqualTo("visual.runtimeBindingImplementation.sourceRequirementKeyStale");
+            assertThat(diagnostic.target()).isEqualTo("/sourceRequirementKeys/0");
+            assertThat(diagnostic.metadata()).containsEntry("requirementKey", staleRequirementKey);
+        });
+    }
+
+    @Test
+    void runtimeBindingImplementationValidationRejectsSourceRequirementKeyForDifferentOperator() {
+        OperatorLibrary library = VisualCatalogTestSupport.designOnlyEligibilityLibrary("integer");
+        DefaultVisualOperatorCatalog catalog = VisualCatalogTestSupport.catalogWithLibrary(library);
+        GraphDraftValidator validator = new GraphDraftValidator(catalog);
+        InMemoryGraphDraftRepository drafts = new InMemoryGraphDraftRepository();
+        OperatorDefinition operator = catalog.find("risk:eligibility").orElseThrow();
+        drafts.save(draftWithFingerprint(operator));
+        VisualAssetOverviewController controller = new VisualAssetOverviewController(
+                drafts,
+                validator,
+                catalog,
+                new InMemoryVisualGraphPublicationRepository()
+        );
+        VisualRuntimeBindingHandoffBundle handoffBundle = controller.runtimeBindingHandoffBundle(
+                "",
+                "",
+                "",
+                10,
+                0,
+                "draft",
+                "executable-lowering",
+                "operator-platform",
+                "operator-implementation",
+                "risk:eligibility",
+                "",
+                "",
+                "",
+                ""
+        );
+        VisualRuntimeBindingHandoffBundle.OperatorContractSnapshot contract =
+                handoffBundle.operatorContracts().getFirst();
+        VisualRuntimeBindingHandoffBundle.OperatorContractSnapshot otherOperatorContract =
+                new VisualRuntimeBindingHandoffBundle.OperatorContractSnapshot(
+                        "risk:other",
+                        contract.operatorVersion(),
+                        contract.fingerprint(),
+                        contract.operatorLibraryId(),
+                        contract.display(),
+                        contract.source(),
+                        contract.ports(),
+                        contract.configSchema(),
+                        contract.capabilities(),
+                        contract.policy(),
+                        contract.lowering(),
+                        contract.runtimeReadiness()
+                );
+
+        var response = controller.validateRuntimeBindingImplementation(
+                new VisualRuntimeBindingImplementationValidation.Request(
+                        VisualRuntimeBindingImplementationValidation.REQUEST_SCHEMA_VERSION,
+                        otherOperatorContract.operatorRef(),
+                        otherOperatorContract.fingerprint(),
+                        handoffBundle.bundleFingerprint(),
+                        handoffBundle.requirementKeys(),
+                        otherOperatorContract,
+                        completeImplementation("risk-other-native-v1")
+                ));
+
+        assertThat(response.getStatusCode().value()).isEqualTo(200);
+        assertThat(response.getBody()).isNotNull();
+        assertThat(response.getBody().valid()).isFalse();
+        assertThat(response.getBody().bindable()).isFalse();
+        assertThat(response.getBody().state()).isEqualTo("rejected");
+        assertThat(response.getBody().diagnostics())
+                .filteredOn(diagnostic ->
+                        "visual.runtimeBindingImplementation.sourceRequirementOperatorMismatch"
+                                .equals(diagnostic.code()))
+                .singleElement()
+                .satisfies(diagnostic -> {
+                    assertThat(diagnostic.target()).isEqualTo("/sourceRequirementKeys/0");
+                    assertThat(diagnostic.metadata())
+                            .containsEntry("actualOperatorRef", "risk:eligibility")
+                            .containsEntry("expectedOperatorRef", "risk:other")
+                            .containsEntry("nodeId", "eligibility");
+                });
     }
 
     @Test

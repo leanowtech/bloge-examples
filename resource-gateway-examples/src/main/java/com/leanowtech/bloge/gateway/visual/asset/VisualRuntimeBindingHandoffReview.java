@@ -44,10 +44,17 @@ import java.util.function.Function;
  * @param newCurrentWindowRequirementKeys current same-window keys absent from the submitted bundle
  * @param statusCounts review item counts by status
  * @param fieldChangeCategoryCounts drifted field-change counts by category
+ * @param operatorContractMatchedCount exported operator contracts still matching the current catalog
+ * @param operatorContractDriftedCount exported operator contracts whose current catalog contract changed
+ * @param operatorContractMissingCount exported operator contracts no longer present in the current catalog
+ * @param operatorContractNewCurrentWindowCount current-window operator contracts absent from the submitted bundle
+ * @param operatorContractStatusCounts operator contract review counts by status
+ * @param operatorContractFieldChangeCategoryCounts operator contract field-change counts by category
  * @param exportedWindowDistribution routing distribution for the exported requirement window
  * @param currentWindowDistribution routing distribution for the current same-scope/filter/page window
  * @param newCurrentWindowDistribution routing distribution for current-window requirements absent from the bundle
  * @param items per-requirement review rows for the exported bundle
+ * @param operatorContractItems per-operator contract review rows for the submitted bundle
  * @param diagnostics structured diagnostics for invalid or partial reviews
  */
 public record VisualRuntimeBindingHandoffReview(
@@ -77,10 +84,17 @@ public record VisualRuntimeBindingHandoffReview(
         List<String> newCurrentWindowRequirementKeys,
         Map<String, Integer> statusCounts,
         Map<String, Integer> fieldChangeCategoryCounts,
+        int operatorContractMatchedCount,
+        int operatorContractDriftedCount,
+        int operatorContractMissingCount,
+        int operatorContractNewCurrentWindowCount,
+        Map<String, Integer> operatorContractStatusCounts,
+        Map<String, Integer> operatorContractFieldChangeCategoryCounts,
         RequirementDistribution exportedWindowDistribution,
         RequirementDistribution currentWindowDistribution,
         RequirementDistribution newCurrentWindowDistribution,
         List<ReviewItem> items,
+        List<OperatorContractReviewItem> operatorContractItems,
         List<VisualDiagnostic> diagnostics
 ) {
     public static final String SCHEMA_VERSION = "bloge.visualRuntimeBindingHandoffReview.v1";
@@ -118,6 +132,12 @@ public record VisualRuntimeBindingHandoffReview(
         newCurrentWindowRequirementKeys = immutableStringList(newCurrentWindowRequirementKeys);
         statusCounts = immutableCounts(statusCounts);
         fieldChangeCategoryCounts = immutableCounts(fieldChangeCategoryCounts);
+        operatorContractMatchedCount = Math.max(0, operatorContractMatchedCount);
+        operatorContractDriftedCount = Math.max(0, operatorContractDriftedCount);
+        operatorContractMissingCount = Math.max(0, operatorContractMissingCount);
+        operatorContractNewCurrentWindowCount = Math.max(0, operatorContractNewCurrentWindowCount);
+        operatorContractStatusCounts = immutableCounts(operatorContractStatusCounts);
+        operatorContractFieldChangeCategoryCounts = immutableCounts(operatorContractFieldChangeCategoryCounts);
         exportedWindowDistribution = exportedWindowDistribution == null
                 ? RequirementDistribution.empty()
                 : exportedWindowDistribution;
@@ -128,6 +148,7 @@ public record VisualRuntimeBindingHandoffReview(
                 ? RequirementDistribution.empty()
                 : newCurrentWindowDistribution;
         items = items == null ? List.of() : List.copyOf(items);
+        operatorContractItems = operatorContractItems == null ? List.of() : List.copyOf(operatorContractItems);
         diagnostics = immutableDiagnostics(diagnostics);
         reviewable = reviewable && diagnostics.stream().noneMatch(VisualDiagnostic::error);
     }
@@ -144,6 +165,23 @@ public record VisualRuntimeBindingHandoffReview(
             VisualRuntimeBindingHandoffBundle bundle,
             Map<String, VisualRuntimeBindingRequirements.RequirementItem> currentByRequirementKey,
             VisualRuntimeBindingRequirements currentWindow) {
+        return from(bundle, currentByRequirementKey, currentWindow, Map.of());
+    }
+
+    /**
+     * Reviews a handoff bundle against the current runtime-binding requirement and catalog-contract read models.
+     *
+     * @param bundle submitted handoff bundle
+     * @param currentByRequirementKey current requirement rows keyed by submitted stable key
+     * @param currentWindow current same-scope/filter/page requirement window
+     * @param currentOperatorContractsByRef current catalog contract snapshots keyed by operatorRef
+     * @return review result
+     */
+    public static VisualRuntimeBindingHandoffReview from(
+            VisualRuntimeBindingHandoffBundle bundle,
+            Map<String, VisualRuntimeBindingRequirements.RequirementItem> currentByRequirementKey,
+            VisualRuntimeBindingRequirements currentWindow,
+            Map<String, VisualRuntimeBindingHandoffBundle.OperatorContractSnapshot> currentOperatorContractsByRef) {
         VisualRuntimeBindingHandoffBundle safeBundle = bundle == null
                 ? VisualRuntimeBindingHandoffBundle.from(VisualRuntimeBindingRequirements.empty())
                 : bundle;
@@ -181,7 +219,19 @@ public record VisualRuntimeBindingHandoffReview(
         int matched = statusCounts.getOrDefault(ReviewItem.STATUS_CURRENT, 0);
         int drifted = statusCounts.getOrDefault(ReviewItem.STATUS_DRIFTED, 0);
         int missing = statusCounts.getOrDefault(ReviewItem.STATUS_MISSING, 0);
-        String state = reviewState(exportedKeys.size(), drifted, missing, newWindowKeys.size());
+        List<OperatorContractReviewItem> contractItems = operatorContractReviewItems(
+                safeBundle,
+                currentOperatorContractsByRef,
+                currentWindowKeys,
+                currentWindowByKey);
+        Map<String, Integer> contractStatusCounts = countOperatorContractStatus(contractItems);
+        int contractMatched = contractStatusCounts.getOrDefault(OperatorContractReviewItem.STATUS_CURRENT, 0);
+        int contractDrifted = contractStatusCounts.getOrDefault(OperatorContractReviewItem.STATUS_DRIFTED, 0);
+        int contractMissing = contractStatusCounts.getOrDefault(OperatorContractReviewItem.STATUS_MISSING, 0);
+        int contractNewCurrentWindow =
+                contractStatusCounts.getOrDefault(OperatorContractReviewItem.STATUS_NEW_CURRENT_WINDOW, 0);
+        String state = reviewState(exportedKeys.size(), drifted, missing, newWindowKeys.size(),
+                contractDrifted, contractMissing, contractNewCurrentWindow);
         String level = reviewLevel(state);
         return new VisualRuntimeBindingHandoffReview(
                 SCHEMA_VERSION,
@@ -210,10 +260,17 @@ public record VisualRuntimeBindingHandoffReview(
                 newWindowKeys,
                 statusCounts,
                 countFieldChangeCategories(items),
+                contractMatched,
+                contractDrifted,
+                contractMissing,
+                contractNewCurrentWindow,
+                contractStatusCounts,
+                countOperatorContractFieldChangeCategories(contractItems),
                 RequirementDistribution.from(safeBundle.requirements(), exportedKeys.size()),
                 RequirementDistribution.from(safeWindow.items(), currentWindowKeys.size()),
                 RequirementDistribution.from(newWindowItems, newWindowKeys.size()),
                 items,
+                contractItems,
                 List.of()
         );
     }
@@ -258,9 +315,16 @@ public record VisualRuntimeBindingHandoffReview(
                 List.of(),
                 Map.of(),
                 Map.of(),
+                0,
+                0,
+                0,
+                0,
+                Map.of(),
+                Map.of(),
                 RequirementDistribution.from(safeBundle.requirements(), keys.size()),
                 RequirementDistribution.empty(),
                 RequirementDistribution.empty(),
+                List.of(),
                 List.of(),
                 diagnostics
         );
@@ -451,6 +515,77 @@ public record VisualRuntimeBindingHandoffReview(
     }
 
     /**
+     * One exported operator contract reconciled against the current catalog snapshot.
+     *
+     * @param operatorRef operator reference being reviewed
+     * @param status current, drifted, missing, or new-current-window
+     * @param level UI/control-plane severity
+     * @param message human-readable row summary
+     * @param changedFields fields that differ between exported and current contracts
+     * @param fieldChanges structured field changes with exported/current values
+     * @param exportedContract exported operator contract snapshot
+     * @param currentContract current catalog operator contract snapshot when available
+     */
+    public record OperatorContractReviewItem(
+            String operatorRef,
+            String status,
+            String level,
+            String message,
+            List<String> changedFields,
+            List<FieldChange> fieldChanges,
+            VisualRuntimeBindingHandoffBundle.OperatorContractSnapshot exportedContract,
+            VisualRuntimeBindingHandoffBundle.OperatorContractSnapshot currentContract
+    ) {
+        public static final String STATUS_CURRENT = "current";
+        public static final String STATUS_DRIFTED = "drifted";
+        public static final String STATUS_MISSING = "missing";
+        public static final String STATUS_NEW_CURRENT_WINDOW = "new-current-window";
+
+        public OperatorContractReviewItem {
+            operatorRef = operatorRef == null ? "" : operatorRef.trim();
+            status = normalizeState(status);
+            level = normalizeLevel(level);
+            message = message == null ? "" : message;
+            changedFields = immutableStringList(changedFields);
+            fieldChanges = fieldChanges == null ? List.of() : List.copyOf(fieldChanges);
+        }
+
+        static OperatorContractReviewItem from(
+                String operatorRef,
+                VisualRuntimeBindingHandoffBundle.OperatorContractSnapshot exported,
+                VisualRuntimeBindingHandoffBundle.OperatorContractSnapshot current) {
+            if (exported == null && current == null) {
+                return new OperatorContractReviewItem(operatorRef, STATUS_MISSING, "warning",
+                        "Operator contract is absent from both the handoff bundle and current catalog.",
+                        List.of(), List.of(), null, null);
+            }
+            if (exported == null) {
+                return new OperatorContractReviewItem(operatorRef, STATUS_NEW_CURRENT_WINDOW, "warning",
+                        "Current runtime-binding window references an operator contract that was absent from the submitted bundle.",
+                        List.of(), List.of(), null, current);
+            }
+            if (current == null) {
+                return new OperatorContractReviewItem(operatorRef, STATUS_MISSING, "warning",
+                        "Exported operator contract is no longer present in the current catalog.",
+                        List.of(), List.of(), exported, null);
+            }
+            List<FieldChange> fieldChanges = operatorContractFieldChanges(exported, current);
+            List<String> changedFields = fieldChanges.stream()
+                    .map(FieldChange::field)
+                    .toList();
+            if (!changedFields.isEmpty()) {
+                return new OperatorContractReviewItem(operatorRef, STATUS_DRIFTED, "warning",
+                        "Operator contract still exists but changed fields: %s."
+                                .formatted(String.join(", ", changedFields)),
+                        changedFields, fieldChanges, exported, current);
+            }
+            return new OperatorContractReviewItem(operatorRef, STATUS_CURRENT, "success",
+                    "Operator contract snapshot is still current.",
+                    List.of(), List.of(), exported, current);
+        }
+    }
+
+    /**
      * One changed field in a drifted handoff review row.
      *
      * @param field changed field name
@@ -479,6 +614,44 @@ public record VisualRuntimeBindingHandoffReview(
             }
         }
         return byKey;
+    }
+
+    private static List<OperatorContractReviewItem> operatorContractReviewItems(
+            VisualRuntimeBindingHandoffBundle bundle,
+            Map<String, VisualRuntimeBindingHandoffBundle.OperatorContractSnapshot> currentOperatorContractsByRef,
+            List<String> currentWindowKeys,
+            Map<String, VisualRuntimeBindingRequirements.RequirementItem> currentWindowByKey) {
+        Map<String, VisualRuntimeBindingHandoffBundle.OperatorContractSnapshot> exportedByRef =
+                operatorContractsByRef(bundle.operatorContracts());
+        if (exportedByRef.isEmpty()) {
+            return List.of();
+        }
+        Map<String, VisualRuntimeBindingHandoffBundle.OperatorContractSnapshot> currentByRef =
+                currentOperatorContractsByRef == null ? Map.of() : currentOperatorContractsByRef;
+        LinkedHashSet<String> refs = new LinkedHashSet<>(exportedByRef.keySet());
+        for (String key : currentWindowKeys == null ? List.<String>of() : currentWindowKeys) {
+            VisualRuntimeBindingRequirements.RequirementItem item = currentWindowByKey.get(key);
+            if (item != null && !item.operatorRef().isBlank()) {
+                refs.add(item.operatorRef());
+            }
+        }
+        List<OperatorContractReviewItem> items = new ArrayList<>();
+        for (String ref : refs) {
+            items.add(OperatorContractReviewItem.from(ref, exportedByRef.get(ref), currentByRef.get(ref)));
+        }
+        return List.copyOf(items);
+    }
+
+    private static Map<String, VisualRuntimeBindingHandoffBundle.OperatorContractSnapshot> operatorContractsByRef(
+            List<VisualRuntimeBindingHandoffBundle.OperatorContractSnapshot> contracts) {
+        Map<String, VisualRuntimeBindingHandoffBundle.OperatorContractSnapshot> byRef = new LinkedHashMap<>();
+        for (VisualRuntimeBindingHandoffBundle.OperatorContractSnapshot contract
+                : contracts == null ? List.<VisualRuntimeBindingHandoffBundle.OperatorContractSnapshot>of() : contracts) {
+            if (contract != null && !contract.operatorRef().isBlank()) {
+                byRef.putIfAbsent(contract.operatorRef(), contract);
+            }
+        }
+        return byRef;
     }
 
     private static List<FieldChange> fieldChanges(VisualRuntimeBindingRequirements.RequirementItem exported,
@@ -514,9 +687,36 @@ public record VisualRuntimeBindingHandoffReview(
         return changed;
     }
 
+    private static List<FieldChange> operatorContractFieldChanges(
+            VisualRuntimeBindingHandoffBundle.OperatorContractSnapshot exported,
+            VisualRuntimeBindingHandoffBundle.OperatorContractSnapshot current) {
+        if (exported == null || current == null) {
+            return List.of();
+        }
+        List<FieldChange> changed = new ArrayList<>();
+        addContractChanged(changed, "operatorVersion", exported.operatorVersion(), current.operatorVersion());
+        addContractChanged(changed, "fingerprint", exported.fingerprint(), current.fingerprint());
+        addContractChanged(changed, "operatorLibraryId", exported.operatorLibraryId(), current.operatorLibraryId());
+        addContractChanged(changed, "sourceKind", sourceKind(exported), sourceKind(current));
+        addContractChanged(changed, "sourceLibraryId", sourceLibraryId(exported), sourceLibraryId(current));
+        addContractChanged(changed, "loweringMode", loweringMode(exported), loweringMode(current));
+        addContractChanged(changed, "runtimeReadinessState",
+                runtimeReadinessState(exported), runtimeReadinessState(current));
+        addContractChanged(changed, "artifactKinds",
+                artifactKinds(exported), artifactKinds(current));
+        return changed;
+    }
+
     private static void addChanged(List<FieldChange> changed, String field, String exported, String current) {
         if (!String.valueOf(exported).equals(String.valueOf(current))) {
             changed.add(new FieldChange(field, fieldCategory(field), String.valueOf(exported), String.valueOf(current)));
+        }
+    }
+
+    private static void addContractChanged(List<FieldChange> changed, String field, String exported, String current) {
+        if (!String.valueOf(exported).equals(String.valueOf(current))) {
+            changed.add(new FieldChange(field, operatorContractFieldCategory(field),
+                    String.valueOf(exported), String.valueOf(current)));
         }
     }
 
@@ -539,6 +739,39 @@ public record VisualRuntimeBindingHandoffReview(
             case "graphName", "targetLabel", "updatedAt" -> "asset-metadata";
             default -> "metadata";
         };
+    }
+
+    private static String operatorContractFieldCategory(String field) {
+        return switch (field == null ? "" : field) {
+            case "fingerprint", "operatorVersion", "artifactKinds" -> "operator-contract";
+            case "operatorLibraryId", "sourceKind", "sourceLibraryId" -> "ownership";
+            case "loweringMode", "runtimeReadinessState" -> "runtime-binding";
+            default -> "metadata";
+        };
+    }
+
+    private static String sourceKind(VisualRuntimeBindingHandoffBundle.OperatorContractSnapshot contract) {
+        return contract == null || contract.source() == null ? "" : contract.source().kind();
+    }
+
+    private static String sourceLibraryId(VisualRuntimeBindingHandoffBundle.OperatorContractSnapshot contract) {
+        return contract == null || contract.source() == null ? "" : contract.source().libraryId();
+    }
+
+    private static String loweringMode(VisualRuntimeBindingHandoffBundle.OperatorContractSnapshot contract) {
+        return contract == null || contract.lowering() == null ? "" : contract.lowering().mode();
+    }
+
+    private static String runtimeReadinessState(VisualRuntimeBindingHandoffBundle.OperatorContractSnapshot contract) {
+        return contract == null || contract.runtimeReadiness() == null ? "" : contract.runtimeReadiness().state();
+    }
+
+    private static String artifactKinds(VisualRuntimeBindingHandoffBundle.OperatorContractSnapshot contract) {
+        if (contract == null || contract.runtimeReadiness() == null
+                || contract.runtimeReadiness().artifactKinds() == null) {
+            return "";
+        }
+        return String.join(",", contract.runtimeReadiness().artifactKinds());
     }
 
     private static Map<String, Integer> countByStatus(List<ReviewItem> items) {
@@ -566,6 +799,32 @@ public record VisualRuntimeBindingHandoffReview(
         return counts;
     }
 
+    private static Map<String, Integer> countOperatorContractStatus(List<OperatorContractReviewItem> items) {
+        Map<String, Integer> counts = new LinkedHashMap<>();
+        for (OperatorContractReviewItem item : items == null ? List.<OperatorContractReviewItem>of() : items) {
+            if (item != null && !item.status().isBlank()) {
+                counts.merge(item.status(), 1, Integer::sum);
+            }
+        }
+        return counts;
+    }
+
+    private static Map<String, Integer> countOperatorContractFieldChangeCategories(
+            List<OperatorContractReviewItem> items) {
+        Map<String, Integer> counts = new LinkedHashMap<>();
+        for (OperatorContractReviewItem item : items == null ? List.<OperatorContractReviewItem>of() : items) {
+            if (item == null || item.fieldChanges() == null) {
+                continue;
+            }
+            for (FieldChange change : item.fieldChanges()) {
+                if (change != null && !change.category().isBlank()) {
+                    counts.merge(change.category(), 1, Integer::sum);
+                }
+            }
+        }
+        return counts;
+    }
+
     private static Map<String, Integer> countRequirementsBy(
             List<VisualRuntimeBindingRequirements.RequirementItem> requirements,
             Function<VisualRuntimeBindingRequirements.RequirementItem, String> classifier) {
@@ -580,11 +839,19 @@ public record VisualRuntimeBindingHandoffReview(
         return counts;
     }
 
-    private static String reviewState(int exportedCount, int driftedCount, int missingCount, int newWindowCount) {
+    private static String reviewState(int exportedCount,
+                                      int driftedCount,
+                                      int missingCount,
+                                      int newWindowCount,
+                                      int contractDriftedCount,
+                                      int contractMissingCount,
+                                      int contractNewCurrentWindowCount) {
         if (exportedCount == 0) {
             return STATE_EMPTY;
         }
-        if (driftedCount > 0 || missingCount > 0 || newWindowCount > 0) {
+        if (driftedCount > 0 || missingCount > 0 || newWindowCount > 0
+                || contractDriftedCount > 0 || contractMissingCount > 0
+                || contractNewCurrentWindowCount > 0) {
             return STATE_STALE;
         }
         return STATE_CURRENT;

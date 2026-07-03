@@ -323,6 +323,7 @@ class VisualAuthoringAppJsTest {
                 .contains("function visualRuntimeBindingHandoffReviewCountFacetSummary(counts = {}, suffix = '', prettify = true)")
                 .contains("function visualRuntimeBindingHandoffReviewCategorySummary(counts = {})")
                 .contains("function visualRuntimeBindingHandoffReviewItemLabel(item)")
+                .contains("function visualRuntimeBindingHandoffReviewContractItemLabel(item)")
                 .contains("function visualRuntimeBindingHandoffReviewItemValue(item)")
                 .contains("function visualRuntimeBindingFieldChangeText(change)")
                 .contains("function visualRuntimeBindingFieldLabel(value)")
@@ -333,6 +334,8 @@ class VisualAuthoringAppJsTest {
                 .contains("sourceBundleFingerprint")
                 .contains("Snapshot fingerprint")
                 .contains("fieldChangeCategoryCounts")
+                .contains("operatorContractFieldChangeCategoryCounts")
+                .contains("operatorContractItems")
                 .contains("fieldChanges")
                 .contains("Runtime binding index unavailable")
                 .contains("function visualRuntimeBindingRequirementControls(bindingIndex)")
@@ -897,6 +900,7 @@ class VisualAuthoringAppJsTest {
                   'visualRuntimeBindingHandoffReviewCountFacetSummary',
                   'visualRuntimeBindingHandoffReviewCategorySummary',
                   'visualRuntimeBindingHandoffReviewItemLabel',
+                  'visualRuntimeBindingHandoffReviewContractItemLabel',
                   'visualRuntimeBindingHandoffReviewItemValue',
                   'visualRuntimeBindingFieldChangeText',
                   'visualRuntimeBindingFieldLabel'
@@ -911,9 +915,19 @@ class VisualAuthoringAppJsTest {
                   newCurrentWindowCount: 1,
                   sourceBundleFingerprint: 'sha256:1234567890abcdef',
                   exportedOperatorContractCount: 1,
+                  operatorContractMatchedCount: 0,
+                  operatorContractDriftedCount: 1,
+                  operatorContractMissingCount: 0,
+                  operatorContractNewCurrentWindowCount: 0,
+                  operatorContractStatusCounts: {
+                    drifted: 1
+                  },
                   fieldChangeCategoryCounts: {
                     'runtime-binding': 2,
                     'asset-metadata': 1
+                  },
+                  operatorContractFieldChangeCategoryCounts: {
+                    'operator-contract': 1
                   },
                   newCurrentWindowRequirementKeys: [
                     'RUNTIME_BINDING|draft|fresh|eligibility|executable-lowering|risk:eligibility|'
@@ -980,29 +994,56 @@ class VisualAuthoringAppJsTest {
                         targetLabel: 'Missing policy @1'
                       }
                     }
+                  ],
+                  operatorContractItems: [
+                    {
+                      operatorRef: 'risk:eligibility',
+                      status: 'drifted',
+                      level: 'warning',
+                      exportedContract: {
+                        display: { name: 'Eligibility' },
+                        fingerprint: 'sha256:old'
+                      },
+                      currentContract: {
+                        display: { name: 'Eligibility' },
+                        fingerprint: 'sha256:new'
+                      },
+                      fieldChanges: [
+                        {
+                          field: 'fingerprint',
+                          category: 'operator-contract',
+                          exportedValue: 'sha256:old',
+                          currentValue: 'sha256:new'
+                        }
+                      ]
+                    }
                   ]
                 };
                 const message = context.visualRuntimeBindingHandoffReviewMessage(review);
                 const rows = context.visualRuntimeBindingHandoffReviewRows(review);
                 const routingSummary = context.visualRuntimeBindingHandoffReviewRoutingSummary(review);
                 const checks = [
-                  ['message', message, 'Handoff review STALE: 0 current, 1 drifted, 1 missing, 1 new in current window.'],
-                  ['row count', rows.length, 7],
+                  ['message', message, 'Handoff review STALE: 0 current, 1 drifted, 1 missing, 1 new in current window. Contracts: 0 current, 1 drifted, 0 missing, 0 new current-window.'],
+                  ['row count', rows.length, 9],
                   ['fingerprint label', rows[0].label, 'Snapshot fingerprint'],
                   ['fingerprint value', rows[0].value, 'sha256:1234567890abcdef'],
                   ['contracts label', rows[1].label, 'Operator contract snapshots'],
-                  ['contracts value', rows[1].value, '1 contract exported with this handoff'],
+                  ['contracts value', rows[1].value, '1 contract exported with this handoff; Drifted: 1'],
                   ['routing label', rows[2].label, 'Runtime binding routing'],
                   ['routing summary includes exported owner', String(routingSummary.includes('Exported 2 requirements (risk-policy-design library: 2')), 'true'],
                   ['routing summary includes current target', String(routingSummary.includes('Current 2 requirements')), 'true'],
                   ['routing summary includes new work', String(routingSummary.includes('New 1 requirement')), 'true'],
                   ['category label', rows[3].label, 'Drift categories'],
                   ['category value', rows[3].value, 'Asset Metadata 1 · Runtime Binding 2'],
-                  ['drift label', rows[4].label, 'Drifted · Risk policy @2'],
-                  ['drift value includes route', String(rows[4].value.includes('Runtime Binding Handoff Target: legacy-risk-owner -> risk:eligibility')), 'true'],
-                  ['drift value includes action', String(rows[4].value.includes('Runtime Binding Recommended Action: Legacy action -> Bind executable lowering before EXECUTABLE promotion.')), 'true'],
-                  ['missing label', rows[5].label, 'Missing · Missing policy @1'],
-                  ['new key label', rows[6].label, 'New current-window requirements']
+                  ['contract category label', rows[4].label, 'Operator contract drift categories'],
+                  ['contract category value', rows[4].value, 'Operator Contract 1'],
+                  ['drift label', rows[5].label, 'Drifted · Risk policy @2'],
+                  ['drift value includes route', String(rows[5].value.includes('Runtime Binding Handoff Target: legacy-risk-owner -> risk:eligibility')), 'true'],
+                  ['drift value includes action', String(rows[5].value.includes('Runtime Binding Recommended Action: Legacy action -> Bind executable lowering before EXECUTABLE promotion.')), 'true'],
+                  ['missing label', rows[6].label, 'Missing · Missing policy @1'],
+                  ['contract drift label', rows[7].label, 'Drifted · Eligibility'],
+                  ['contract drift value', rows[7].value, 'Operator Contract Fingerprint: sha256:old -> sha256:new'],
+                  ['new key label', rows[8].label, 'New current-window requirements']
                 ];
                 for (const [label, actual, expected] of checks) {
                   if (actual !== expected) {

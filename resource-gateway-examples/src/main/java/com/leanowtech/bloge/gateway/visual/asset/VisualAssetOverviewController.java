@@ -449,7 +449,8 @@ public class VisualAssetOverviewController {
         return ResponseEntity.ok(VisualRuntimeBindingHandoffReview.from(
                 bundle,
                 currentByRequirementKey,
-                currentWindow
+                currentWindow,
+                currentOperatorContractsForHandoffReview(bundle, currentWindow)
         ));
     }
 
@@ -475,7 +476,10 @@ public class VisualAssetOverviewController {
                 ? null
                 : catalog.find(operatorRef).orElse(null);
         VisualRuntimeBindingImplementationValidation result =
-                VisualRuntimeBindingImplementationValidation.from(request, currentOperator);
+                VisualRuntimeBindingImplementationValidation.from(
+                        request,
+                        currentOperator,
+                        currentRuntimeBindingRequirementsByKey(request.sourceRequirementKeys()));
         boolean unsupportedVersion = result.diagnostics().stream()
                 .anyMatch(diagnostic ->
                         "visual.runtimeBindingImplementation.schemaVersionUnsupported".equals(diagnostic.code()));
@@ -527,7 +531,10 @@ public class VisualAssetOverviewController {
                 ? null
                 : catalog.find(operatorRef).orElse(null);
         VisualRuntimeBindingImplementationValidation validation =
-                VisualRuntimeBindingImplementationValidation.from(request, currentOperator);
+                VisualRuntimeBindingImplementationValidation.from(
+                        request,
+                        currentOperator,
+                        currentRuntimeBindingRequirementsByKey(request.sourceRequirementKeys()));
         if (!validation.valid()) {
             return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(validation);
         }
@@ -3169,6 +3176,34 @@ public class VisualAssetOverviewController {
         return List.copyOf(operatorsByRef.values());
     }
 
+    private Map<String, VisualRuntimeBindingHandoffBundle.OperatorContractSnapshot>
+            currentOperatorContractsForHandoffReview(VisualRuntimeBindingHandoffBundle bundle,
+                                                     VisualRuntimeBindingRequirements currentWindow) {
+        Map<String, VisualRuntimeBindingHandoffBundle.OperatorContractSnapshot> contractsByRef =
+                new LinkedHashMap<>();
+        for (VisualRuntimeBindingHandoffBundle.OperatorContractSnapshot contract
+                : bundle == null || bundle.operatorContracts() == null
+                        ? List.<VisualRuntimeBindingHandoffBundle.OperatorContractSnapshot>of()
+                        : bundle.operatorContracts()) {
+            if (contract != null && !contract.operatorRef().isBlank()) {
+                catalog.find(contract.operatorRef())
+                        .map(VisualRuntimeBindingHandoffBundle.OperatorContractSnapshot::from)
+                        .ifPresent(snapshot -> contractsByRef.putIfAbsent(contract.operatorRef(), snapshot));
+            }
+        }
+        for (VisualRuntimeBindingRequirements.RequirementItem item
+                : currentWindow == null ? List.<VisualRuntimeBindingRequirements.RequirementItem>of()
+                        : currentWindow.items()) {
+            if (item == null || item.operatorRef().isBlank() || contractsByRef.containsKey(item.operatorRef())) {
+                continue;
+            }
+            catalog.find(item.operatorRef())
+                    .map(VisualRuntimeBindingHandoffBundle.OperatorContractSnapshot::from)
+                    .ifPresent(snapshot -> contractsByRef.putIfAbsent(item.operatorRef(), snapshot));
+        }
+        return Map.copyOf(contractsByRef);
+    }
+
     private static String implementationOperatorRef(VisualRuntimeBindingImplementationValidation.Request request) {
         if (request == null) {
             return "";
@@ -3178,6 +3213,42 @@ public class VisualAssetOverviewController {
         }
         VisualRuntimeBindingHandoffBundle.OperatorContractSnapshot contract = request.operatorContract();
         return contract == null ? "" : contract.operatorRef();
+    }
+
+    private Map<String, VisualRuntimeBindingRequirements.RequirementItem> currentRuntimeBindingRequirementsByKey(
+            List<String> requirementKeys) {
+        if (requirementKeys == null || requirementKeys.isEmpty()) {
+            return Map.of();
+        }
+        Map<String, VisualRuntimeBindingRequirements.RequirementItem> currentByKey = new LinkedHashMap<>();
+        for (String requirementKey : requirementKeys) {
+            if (requirementKey == null || requirementKey.isBlank()
+                    || currentByKey.containsKey(requirementKey)) {
+                continue;
+            }
+            VisualRuntimeBindingRequirements current = runtimeBindingRequirements(
+                    "",
+                    "",
+                    "",
+                    1,
+                    0,
+                    "",
+                    "",
+                    "",
+                    "",
+                    "",
+                    "",
+                    "",
+                    "",
+                    "",
+                    "",
+                    requirementKey
+            );
+            current.items().stream()
+                    .findFirst()
+                    .ifPresent(item -> currentByKey.put(requirementKey, item));
+        }
+        return Map.copyOf(currentByKey);
     }
 
     private static String implementationBindingId(VisualRuntimeBindingImplementationValidation.Request request) {

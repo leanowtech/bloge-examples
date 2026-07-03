@@ -1934,6 +1934,13 @@ runtime-plane 工单或审阅系统直接路由。review 顶层还会返回
 handoff lane/kind/target、source kind、lowering mode、readiness state 和 artifact kind
 汇总导出窗口、当前同窗口和当前新增 requirement 的分布，让外部工单系统无需扫描
 `items[]` 或解析 message 就能按 owner 与 runtime-plane lane 分派增量工作。
+对于携带 `operatorContracts[]` 的 bundle，review 还会把导出的 operator contract snapshot
+逐一与当前 catalog contract 对账，返回 `operatorContractItems[]`、
+`operatorContractStatusCounts`、`operatorContractFieldChangeCategoryCounts` 以及
+`operatorContractMatchedCount/operatorContractDriftedCount/operatorContractMissingCount/operatorContractNewCurrentWindowCount`。
+这层审阅回答“runtime team 拿到的 ports/config/lowering/readiness 契约是否仍可信”，
+即使 requirement key 仍然 current，只要 operator fingerprint、owner、source、lowering 或
+runtimeReadiness 发生变化，handoff review 也会进入 `stale`。
 `bundleFingerprint` 由服务端按 handoff
 业务内容派生，覆盖 `operatorContracts[]`，但不包含 `exportedAt` / `sourceIndexGeneratedAt` 这类导出时间戳；
 review 会先校验提交的 `bundleFingerprint` 是否匹配 bundle material，若不匹配则返回
@@ -1942,8 +1949,9 @@ review 会先校验提交的 `bundleFingerprint` 是否匹配 bundle material，
 让外部工单、回放审阅和浏览器面板能引用同一份 portable snapshot。review 是快照新鲜度校验，不是状态写入；
 runtime binding 的完成情况仍应通过真正的 operator implementation / runtime binding
 控制面进入 active binding，再通过 catalog projection 和后续 runtime adapter/readiness 回流被派生出来。浏览器 Workspace Overview 会消费
-`sourceBundleFingerprint`、`fieldChangeCategoryCounts` 和 `items[].fieldChanges[]`，在 review 后展示
-snapshot fingerprint、drift 类别、字段级旧值/当前值、missing requirement 和当前窗口新增 requirement，避免作者只能从
+`sourceBundleFingerprint`、`fieldChangeCategoryCounts`、`operatorContractFieldChangeCategoryCounts`、
+`items[].fieldChanges[]` 和 `operatorContractItems[].fieldChanges[]`，在 review 后展示
+snapshot fingerprint、requirement/contract drift 类别、字段级旧值/当前值、missing requirement、stale operator contract 和当前窗口新增 requirement，避免作者只能从
 JSON output 或自然语言摘要里判断交接快照是否还能继续排期。
 `POST /api/visual/assets/runtime-binding-requirements/implementation-bindings/validate`
 接收 `bloge.visualRuntimeBindingImplementationBinding.v1`，其中包含 `operatorRef`、
@@ -1956,6 +1964,12 @@ handoff `operatorContract` snapshot，以及 implementation metadata：
 `requires-review` 或 `rejected` 表达 pre-bind 裁决，并回显 `contractFingerprint`、
 `currentCatalogFingerprint`、`currentCatalogState` 与结构化 diagnostics。该端点只验证
 runtime team 提交的实现材料是否仍对准 handoff contract 和当前 catalog，不持久化 binding。
+服务端还会用 `sourceRequirementKeys[]` 回查当前 runtime-binding requirement read model：
+仍 current 但属于其他 `operatorRef` 的 key 会以
+`visual.runtimeBindingImplementation.sourceRequirementOperatorMismatch` 拒绝；已经不在当前
+read model 的 key 会以 `sourceRequirementKeyStale` 进入 requires-review；缺少 handoff
+fingerprint 或 requirement key 也只进入 requires-review，保留人工迁移/legacy handoff 的余地，
+但不会伪装成 clean ready-to-bind。
 `implementationVersion` 若提供必须是 `MAJOR.MINOR.PATCH` 语义版本；声明
 `reimplementationOfBindingId` 时应同时声明 `reimplementationStrategy`，支持
 `compatible`、`breaking`、`adapter-migration` 和 `rollback`。缺少版本或策略不会伪装成

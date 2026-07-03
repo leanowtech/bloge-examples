@@ -789,15 +789,21 @@ runtime binding / operator implementation 控制面，再由 catalog/readiness �
 `changedFields[]`、`fieldChanges[]` 和 `fieldChangeCategoryCounts`，把旧值/当前值及
 identity、scope、readiness、runtime-binding、asset-metadata 等变化类别结构化给
 runtime-plane 控制面，而不是要求它解析自然语言摘要。review 还会回显
-`sourceBundleFingerprint` 和 `exportedOperatorContractCount`，并在提交的
+`sourceBundleFingerprint` 和 `exportedOperatorContractCount`，并对携带的
+`operatorContracts[]` 做第二层 contract snapshot 对账：`operatorContractItems[]`
+会标记 current、drifted、missing 或 new-current-window，并通过
+`operatorContractStatusCounts` / `operatorContractFieldChangeCategoryCounts`
+暴露 operator fingerprint、owner、source、lowering 与 runtimeReadiness 漂移。
+这保证 requirement key 仍存在时，过期 schema/contract handoff 也不会被误判成可继续实现。
+提交的
 `bundleFingerprint` 与 bundle material 不一致时返回
 `visual.runtimeBindingHandoff.fingerprintMismatch` 阻断对账，让浏览器和外部工单能引用被审阅的同一份 portable snapshot。
 这个 review 只判断快照是否仍可用于
 交接排期，不记录外部工单进度，也不替代 draft/publication readiness。
 浏览器 Workspace Overview 会同步加载这个索引并展示 Runtime Binding Requirements 小节，
 提供同类过滤、分页、draft/publication 打开动作、当前窗口 handoff bundle 导出和最近导出
-bundle 的 handoff review，并在 stale review 中展示 drift category、字段级 exported/current
-值、missing key、当前窗口新增 key 和 snapshot fingerprint，让作者和集成团队在画布工作台内看到、携带并回放审阅
+bundle 的 handoff review，并在 stale review 中展示 requirement/contract drift category、
+字段级 exported/current 值、missing key、stale operator contract、当前窗口新增 key 和 snapshot fingerprint，让作者和集成团队在画布工作台内看到、携带并回放审阅
 “可设计但不可执行”的具体 runtime-plane 交接项。
 connection preflight 会返回候选连接相关的局部 diagnostics，同时携带应用 preview
 edge/binding/config expression 后的完整 candidate draft validation/readiness/actionReadiness；compile 和 run 响应同样携带本次服务端门禁使用的 validation/readiness/actionReadiness；
@@ -907,8 +913,8 @@ fingerprint snapshot；普通保存和 PATCH 仍保留既有 snapshot，避免�
 | `GET` | `/api/visual/assets/overview` | 当前已实现：返回 `bloge.visualAssetOverview.v1`，聚合 draft/publication/operator catalog readiness，并用 summary actionReadiness 和 runtimeBindingRequirements 派生可按 severity/type/targetKind/operatorRef/operatorLibraryId 查询、计数和分页的 action queue |
 | `GET` | `/api/visual/assets/runtime-binding-requirements` | 当前已实现：返回 `bloge.visualRuntimeBindingRequirements.v1`，把 active draft 和 immutable publication 的 runtime binding gaps 暴露为 scope-aware/filterable/pageable 事实索引，并支持 `operatorRef` / `operatorLibraryId` 过滤/计数和 `requirementKey` 精确回查 |
 | `GET` | `/api/visual/assets/runtime-binding-requirements/handoff-bundle` | 当前已实现：返回 `bloge.visualRuntimeBindingHandoff.v1`，把当前 runtime-binding 查询窗口导出为 portable handoff bundle，包含 source index lineage、scope/filter、stable requirement keys、operatorRef/operatorLibraryId/routing 计数、requirement 明细、当前窗口相关 `operatorContracts[]` 契约快照和 `bundleFingerprint` |
-| `POST` | `/api/visual/assets/runtime-binding-requirements/handoff-review` | 当前已实现：接收 `bloge.visualRuntimeBindingHandoff.v1` 并返回 `bloge.visualRuntimeBindingHandoffReview.v1`，按当前 runtime-binding read model 对账导出快照的 current/drifted/missing/new-current-window 状态，并回显 `sourceBundleFingerprint` 与 `exportedOperatorContractCount`；`bundleFingerprint` 不匹配时以 `visual.runtimeBindingHandoff.fingerprintMismatch` 拒绝 |
-| `POST` | `/api/visual/assets/runtime-binding-requirements/implementation-bindings/validate` | 当前已实现第一刀：接收 `bloge.visualRuntimeBindingImplementationBinding.v1`，把 runtime team 提交的 implementation metadata、test evidence、policy evidence、rollback target、可选 implementation SemVer 和 reimplementation strategy 对准 handoff `operatorContract` snapshot 与当前 catalog fingerprint 做无状态 pre-bind 校验，返回 `bloge.visualRuntimeBindingImplementationValidation.v1` 的 ready-to-bind/requires-review/rejected 裁决；不写入 binding 状态 |
+| `POST` | `/api/visual/assets/runtime-binding-requirements/handoff-review` | 当前已实现：接收 `bloge.visualRuntimeBindingHandoff.v1` 并返回 `bloge.visualRuntimeBindingHandoffReview.v1`，按当前 runtime-binding read model 对账导出快照的 current/drifted/missing/new-current-window 状态，同时对 `operatorContracts[]` 做 current/drifted/missing/new-current-window contract snapshot 对账并暴露 operator fingerprint/owner/source/lowering/readiness drift；`bundleFingerprint` 不匹配时以 `visual.runtimeBindingHandoff.fingerprintMismatch` 拒绝 |
+| `POST` | `/api/visual/assets/runtime-binding-requirements/implementation-bindings/validate` | 当前已实现第一刀：接收 `bloge.visualRuntimeBindingImplementationBinding.v1`，把 runtime team 提交的 source handoff fingerprint、source requirement keys、implementation metadata、test evidence、policy evidence、rollback target、可选 implementation SemVer 和 reimplementation strategy 对准 handoff `operatorContract` snapshot、当前 runtime-binding read model 与当前 catalog fingerprint 做无状态 pre-bind 校验；current requirement key 若属于其他 operator 会 rejected，stale/missing source evidence 会 requires-review；返回 `bloge.visualRuntimeBindingImplementationValidation.v1` 的 ready-to-bind/requires-review/rejected 裁决；不写入 binding 状态 |
 | `GET/POST` | `/api/visual/assets/runtime-binding-requirements/implementation-bindings` | 当前已实现：valid proposal 可持久化为 `bloge.visualRuntimeBindingImplementationBindingRecord.v1`，并按 operatorRef/state 查询；同一 stable `bindingId` 的精确 replay 返回已有 record 作为 idempotent `200`，同 id 但 submitted evidence 不同则返回结构化 `409`；声明 reimplementation 时会对 repository 中的 base binding 做同 operator 与 forward SemVer 校验，repository 写入失败返回 `visual.runtimeBindingImplementation.persistenceFailed` 诊断而不是通用 500 |
 | `POST` | `/api/visual/assets/runtime-binding-requirements/implementation-bindings/{bindingId}/bind` | 当前已实现：把 ready-to-bind 或 review-acknowledged proposal 推进到 `bound` lifecycle state，要求 actor/reason 审计证据；同一治理意图的 exact replay 返回 idempotent `200 OK` 且不重复追加 lifecycle event，不同 already-bound 请求仍冲突；拒绝同一 operatorRef 的第二个 active binding；repository update 失败会返回 `state=failed` 和 `visual.runtimeBindingImplementation.bindPersistenceFailed` 诊断，而不是泄漏为通用 500 或伪造 active bound fact |
 | `POST` | `/api/visual/assets/runtime-binding-requirements/implementation-bindings/{bindingId}/unbind` | 当前已实现：把 active bound implementation 推进到 `unbound` lifecycle state，要求 actor/reason 审计证据，并级联把当前 active executable lowering integration 与 adapter activation 标记为 `inactive`，从 active catalog/promotion projection 中移除但保留审计事实；同一治理意图的 exact replay 返回 idempotent `200 OK` 和已保存的 inactive evidence，不同 already-unbound 请求仍冲突；若 cascade 后续写入失败，会返回 `state=failed`，恢复已 inactive 的 runtime evidence，并把 integration 对齐到恢复后的 activation revision |
@@ -1322,7 +1328,9 @@ external 路径派生 `EXTERNAL_RUNTIME_BOUND`，不谎称当前 request-respons
 refresh/rebind mutation，可把旧 binding / activation / integration evidence 重新对账到当前 trusted
 fingerprint，并用 supersede lineage 保留旧证据；supersede lifecycle 已能在 replacement 临时 bound 后 current superseded 写入失败时恢复 replacement，避免同一 operator 出现双 active binding；也已补 governed unbind/deactivate mutation，让 active
 binding、activation 和 lowering integration 能退回 unbound/inactive 审计事实，并在 unbind 后续写入失败时恢复已 inactive 的 runtime evidence、对齐 integration 的 activation revision；implementation validate
-还会在 handoff contract 与当前 catalog fingerprint 漂移时输出字段级 contract diff 诊断，复用 shared JSON
+还会把 source handoff fingerprint 与 `sourceRequirementKeys[]` 纳入 proposal 证据链，用当前
+runtime-binding read model 回查 requirement key，拒绝属于其他 operator 的 current key，并把 stale/missing
+source evidence 降为 requires-review；它还会在 handoff contract 与当前 catalog fingerprint 漂移时输出字段级 contract diff 诊断，复用 shared JSON
 Schema compatibility 把 input/output/config schema drift 分成 blocking breaking 与 requires-review compatible，
 并在 breaking metadata 中携带 `schemaCompatibilityIssues` 字段原因；implementation binding、adapter activation
 和 executable lowering integration 三类 stable id submit endpoint 也已支持精确 replay 幂等返回；runtime implementation

@@ -266,6 +266,23 @@ public record VisualRuntimeBindingImplementationValidation(
      */
     public static VisualRuntimeBindingImplementationValidation from(Request request,
                                                                     OperatorDefinition currentOperator) {
+        return from(request, currentOperator, null);
+    }
+
+    /**
+     * Validates one implementation proposal against a submitted handoff contract, current catalog state,
+     * and any current runtime-binding requirement rows that match the submitted source requirement keys.
+     *
+     * @param request submitted implementation binding proposal
+     * @param currentOperator current catalog operator when visible
+     * @param currentRequirementsByKey current requirement rows keyed by submitted sourceRequirementKeys;
+     *                                 null when the caller intentionally skips live requirement lookup
+     * @return validation result
+     */
+    public static VisualRuntimeBindingImplementationValidation from(
+            Request request,
+            OperatorDefinition currentOperator,
+            Map<String, VisualRuntimeBindingRequirements.RequirementItem> currentRequirementsByKey) {
         if (request == null) {
             return missingRequest();
         }
@@ -300,6 +317,7 @@ public record VisualRuntimeBindingImplementationValidation(
         if (contract != null) {
             addContractDiagnostics(request, contract, currentOperator, diagnostics);
         }
+        addSourceRequirementDiagnostics(request, contract, currentRequirementsByKey, diagnostics);
         addImplementationDiagnostics(request.implementation(), contract, diagnostics);
         String contractFingerprint = contract == null ? "" : contract.fingerprint();
         String currentFingerprint = currentOperator == null ? "" : currentOperator.fingerprint();
@@ -371,6 +389,79 @@ public record VisualRuntimeBindingImplementationValidation(
                     "visual.runtimeBindingImplementation.contractAlreadyExecutable",
                     "Submitted operator contract is already runtime-executable; implementation binding may be unnecessary.",
                     "/operatorContract/runtimeReadiness"));
+        }
+    }
+
+    private static void addSourceRequirementDiagnostics(
+            Request request,
+            VisualRuntimeBindingHandoffBundle.OperatorContractSnapshot contract,
+            Map<String, VisualRuntimeBindingRequirements.RequirementItem> currentRequirementsByKey,
+            List<VisualDiagnostic> diagnostics) {
+        if (request.sourceHandoffBundleFingerprint().isBlank()) {
+            diagnostics.add(VisualDiagnostic.warning(
+                    "visual.runtimeBindingImplementation.sourceHandoffBundleFingerprintMissing",
+                    "Runtime binding implementation does not cite the source handoff bundle fingerprint; binding should require review.",
+                    "/sourceHandoffBundleFingerprint"));
+        } else if (!looksLikeSha256Fingerprint(request.sourceHandoffBundleFingerprint())) {
+            diagnostics.add(VisualDiagnostic.warning(
+                    "visual.runtimeBindingImplementation.sourceHandoffBundleFingerprintMalformed",
+                    "Runtime binding implementation sourceHandoffBundleFingerprint does not use the expected sha256 fingerprint form; binding should require review.",
+                    "/sourceHandoffBundleFingerprint",
+                    Map.of("actual", request.sourceHandoffBundleFingerprint())));
+        }
+
+        List<String> requirementKeys = request.sourceRequirementKeys();
+        if (requirementKeys.isEmpty()) {
+            diagnostics.add(VisualDiagnostic.warning(
+                    "visual.runtimeBindingImplementation.sourceRequirementKeysMissing",
+                    "Runtime binding implementation does not cite any source runtime-binding requirement keys; binding should require review.",
+                    "/sourceRequirementKeys"));
+            return;
+        }
+
+        String expectedOperatorRef = contract == null || contract.operatorRef().isBlank()
+                ? request.operatorRef()
+                : contract.operatorRef();
+        for (int index = 0; index < requirementKeys.size(); index++) {
+            String requirementKey = requirementKeys.get(index);
+            String target = "/sourceRequirementKeys/%d".formatted(index);
+            if (!looksLikeRuntimeBindingRequirementKey(requirementKey)) {
+                diagnostics.add(VisualDiagnostic.error(
+                        "visual.runtimeBindingImplementation.sourceRequirementKeyMalformed",
+                        "Runtime binding implementation sourceRequirementKeys[%d] is not a stable runtime-binding requirement key."
+                                .formatted(index),
+                        target,
+                        Map.of("requirementKey", requirementKey)));
+                continue;
+            }
+            if (currentRequirementsByKey == null) {
+                continue;
+            }
+            VisualRuntimeBindingRequirements.RequirementItem current = currentRequirementsByKey.get(requirementKey);
+            if (current == null) {
+                diagnostics.add(VisualDiagnostic.warning(
+                        "visual.runtimeBindingImplementation.sourceRequirementKeyStale",
+                        "Runtime binding implementation source requirement key '%s' is no longer present in the current runtime-binding read model; binding should require review."
+                                .formatted(requirementKey),
+                        target,
+                        Map.of("requirementKey", requirementKey)));
+                continue;
+            }
+            if (!expectedOperatorRef.isBlank() && !expectedOperatorRef.equals(current.operatorRef())) {
+                diagnostics.add(VisualDiagnostic.error(
+                        "visual.runtimeBindingImplementation.sourceRequirementOperatorMismatch",
+                        "Runtime binding implementation source requirement key '%s' belongs to operatorRef '%s', not '%s'."
+                                .formatted(requirementKey, current.operatorRef(), expectedOperatorRef),
+                        target,
+                        Map.of(
+                                "requirementKey", requirementKey,
+                                "actualOperatorRef", current.operatorRef(),
+                                "expectedOperatorRef", expectedOperatorRef,
+                                "targetKind", current.targetKind(),
+                                "targetId", current.targetId(),
+                                "nodeId", current.nodeId()
+                        )));
+            }
         }
     }
 
@@ -807,6 +898,27 @@ public record VisualRuntimeBindingImplementationValidation(
 
     private static boolean warning(VisualDiagnostic diagnostic) {
         return diagnostic != null && "WARNING".equalsIgnoreCase(diagnostic.level());
+    }
+
+    private static boolean looksLikeSha256Fingerprint(String value) {
+        if (value == null || value.length() != 71 || !value.startsWith("sha256:")) {
+            return false;
+        }
+        for (int index = "sha256:".length(); index < value.length(); index++) {
+            char ch = value.charAt(index);
+            if (!((ch >= '0' && ch <= '9')
+                    || (ch >= 'a' && ch <= 'f')
+                    || (ch >= 'A' && ch <= 'F'))) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    private static boolean looksLikeRuntimeBindingRequirementKey(String value) {
+        return value != null
+                && value.startsWith("RUNTIME_BINDING|")
+                && value.split("\\|", -1).length == 7;
     }
 
     private static List<String> normalizeStrings(List<String> values) {
