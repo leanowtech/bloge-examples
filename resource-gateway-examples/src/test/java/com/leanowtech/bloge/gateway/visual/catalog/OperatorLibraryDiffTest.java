@@ -84,6 +84,23 @@ class OperatorLibraryDiffTest {
         assertThat(diff.changeSummary()).isEqualTo("No library or operator surface changes.");
     }
 
+    @Test
+    void ignoresCatalogLibraryOwnerMetadataWhenClassifyingOperatorSurfaceChange() {
+        OperatorDefinition previous = operator("risk:eligibility", "integer");
+        OperatorDefinition replacement = withLibraryOwner("risk-policy",
+                operator("risk:eligibility", "string"));
+
+        OperatorDefinitionChangeSummary.ChangeReport report = OperatorDefinitionChangeSummary.analyze(
+                previous,
+                replacement
+        );
+
+        assertThat(report.risk()).isEqualTo(OperatorDefinitionChangeSummary.RISK_BREAKING_SCHEMA);
+        assertThat(report.categories()).containsExactly(OperatorDefinitionChangeSummary.RISK_BREAKING_SCHEMA);
+        assertThat(report.summary()).contains("input port 'inputs' schema changed")
+                .doesNotContain("source metadata changed");
+    }
+
     private static OperatorLibrary library(String version, List<OperatorDefinition> operators) {
         return new OperatorLibrary(
                 "bloge.visualOperatorLibrary.v1",
@@ -119,6 +136,32 @@ class OperatorLibraryDiffTest {
                 OperatorDefinition.Policy.unrestricted(),
                 new OperatorDefinition.Lowering("design", "", Map.of()),
                 List.of()
+        );
+    }
+
+    private static OperatorDefinition withLibraryOwner(String libraryId, OperatorDefinition operator) {
+        OperatorDefinition.Source source = operator.source();
+        return new OperatorDefinition(
+                operator.schemaVersion(),
+                operator.operatorRef(),
+                operator.operatorVersion(),
+                operator.fingerprint(),
+                operator.display(),
+                new OperatorDefinition.Source(
+                        source.kind(),
+                        source.resourceId(),
+                        source.method(),
+                        source.urlTemplate(),
+                        source.virtual(),
+                        libraryId
+                ),
+                operator.ports(),
+                operator.configSchema(),
+                operator.capabilities(),
+                operator.policy(),
+                operator.lowering(),
+                operator.diagnostics(),
+                operator.runtimeReadiness()
         );
     }
 }

@@ -982,19 +982,20 @@ transform assemble {
 ### 10.1 查询 catalog
 
 ```http
-GET /api/visual/operators?search=score&tenantId=demo-tenant&namespace=local&environment=dev&sourceKind=user-library&loweringMode=design&capability=design-only&runtimeReadiness=design-only
+GET /api/visual/operators?search=score&tenantId=demo-tenant&namespace=local&environment=dev&sourceKind=user-library&operatorLibraryId=risk-policy&loweringMode=design&capability=design-only&runtimeReadiness=design-only
 ```
 
 当前 `resource-gateway-examples` 的查询面支持：
 
 | 参数 | 说明 |
 | --- | --- |
-| `search` | 多词搜索，匹配 operatorRef、展示名、描述、source kind、resourceId、input/output/config schema 字段路径、类型、format、enum/const 值，以及字段级 JSON Schema `title` / `description` / `examples` / `default` / `$comment` annotation |
+| `search` | 多词搜索，匹配 operatorRef、展示名、描述、source kind、resourceId、operator library owner id、input/output/config schema 字段路径、类型、format、enum/const 值，以及字段级 JSON Schema `title` / `description` / `examples` / `default` / `$comment` annotation |
 | `tags` | 要求 operator display tags 包含这些标签 |
 | `resourceOnly` | 只返回 resource-backed virtual operators |
 | `includeDeprecated` | 包含 deprecated library/resource contract；disabled 仍不进入公开 catalog |
 | `tenantId` / `namespace` / `environment` | authoring scope policy filtering |
 | `sourceKind` | 可重复；例如 `user-library`、`remote-worker`、`ai-tool`、`event-source`、`message-handler`、`webhook`、`resource-descriptor`、`java-operator`、`java-streaming-operator`、`java-suspendable-operator`、`visual-publication` |
+| `operatorLibraryId` | 可重复；只返回由指定 imported operator library 拥有的 catalog-visible operators；native、Java、resource、publication operators 不匹配该过滤器 |
 | `loweringMode` | 可重复；例如 `native`、`transform`、`branch`、`resource-descriptor`、`design`、`remote-worker`、`ai-tool`、`event-source`、`message-handler`、`webhook` |
 | `capability` | 可重复；例如 `design-only`、`runtime-executable`、`streaming`、`durable`、`suspendable`、`requires-secret`、`external-effect`、`non-idempotent` |
 | `runtimeReadiness` | 可重复；按服务端派生 readiness state 过滤，例如 `runtime-executable`、`design-only`、`runtime-blocked`、`governance-review`、`catalog-repair-required` |
@@ -1029,6 +1030,7 @@ GET /api/visual/operators?search=score&tenantId=demo-tenant&namespace=local&envi
   "facets": {
     "total": 1,
     "sourceKinds": { "resource-descriptor": 1 },
+    "operatorLibraryIds": {},
     "loweringModes": { "resource-descriptor": 1 },
     "capabilities": {
       "runtime-executable": 1,
@@ -1048,6 +1050,10 @@ diagnostics 派生，用户导入的算子库不能伪造。当前 request-respo
 `RUNTIME_EXECUTABLE`、`DESIGN_ONLY`、`RUNTIME_BLOCKED`、`GOVERNANCE_REVIEW` 或
 `CATALOG_REPAIR_REQUIRED`，并作为 `runtimeReadiness` query filter 与
 `facets.runtimeReadinessStates` 聚合维度暴露。浏览器优先消费该字段；缺失时才使用本地兼容推断。
+Imported operator 在 catalog 投影时会把 owner 写入 `source.libraryId`，并进入
+`operatorLibraryId` 查询、`facets.operatorLibraryIds` 和浏览器 palette library
+过滤；这个字段是控制面归属元数据，不参与 operator fingerprint，避免仅因库归属
+或导出/导入包装变化造成运行行为漂移误报。
 
 ### 10.1.1 获取单个 operator 定义
 
@@ -1074,7 +1080,7 @@ GET /api/visual/operators/resource:loan-applicant-service.getProfile?tenantId=de
 
 该端点不是绕过 catalog 的内部查找口，而是用同一套 catalog visibility query
 精确读取单个 operator。当前实现支持 `tenantId`、`namespace`、`environment`、
-`includeDeprecated`、`resourceOnly`、`sourceKind`、`loweringMode`、`capability`
+`includeDeprecated`、`resourceOnly`、`sourceKind`、`operatorLibraryId`、`loweringMode`、`capability`
 和 `runtimeReadiness` 参数；当 operator 不存在、被 scope policy 隐藏、deprecated
 但未显式 `includeDeprecated=true`，或被 facet 条件排除时，返回 `404`。外部控制面
 可用它为 inspector、schema cache 或 operator detail 页面按需加载定义，而不必拉取完整目录。

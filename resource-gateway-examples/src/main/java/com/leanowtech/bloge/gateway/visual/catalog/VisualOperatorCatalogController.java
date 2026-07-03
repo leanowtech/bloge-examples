@@ -36,6 +36,7 @@ public class VisualOperatorCatalogController {
      * @param namespace namespace scope
      * @param environment authoring environment scope
      * @param sourceKinds source kind filters
+     * @param operatorLibraryIds imported operator library owner filters
      * @param loweringModes lowering mode filters
      * @param capabilities capability facet filters
      * @param runtimeReadinessStates runtime readiness state filters
@@ -51,6 +52,8 @@ public class VisualOperatorCatalogController {
                                         @RequestParam(defaultValue = "") String environment,
                                         @RequestParam(name = "sourceKind", defaultValue = "")
                                         List<String> sourceKinds,
+                                        @RequestParam(name = "operatorLibraryId", defaultValue = "")
+                                        List<String> operatorLibraryIds,
                                         @RequestParam(name = "loweringMode", defaultValue = "")
                                         List<String> loweringModes,
                                         @RequestParam(name = "capability", defaultValue = "")
@@ -58,7 +61,8 @@ public class VisualOperatorCatalogController {
                                         @RequestParam(name = "runtimeReadiness", defaultValue = "")
                                         List<String> runtimeReadinessStates) {
         OperatorCatalogQuery query = new OperatorCatalogQuery(search, tags, resourceOnly, includeDeprecated,
-                tenantId, namespace, environment, sourceKinds, loweringModes, capabilities, runtimeReadinessStates);
+                tenantId, namespace, environment, sourceKinds, operatorLibraryIds, loweringModes, capabilities,
+                runtimeReadinessStates);
         return new OperatorCatalogResponse(
                 "bloge.visualOperatorCatalog.v1",
                 catalog.list(query),
@@ -76,6 +80,7 @@ public class VisualOperatorCatalogController {
      * @param namespace namespace scope
      * @param environment authoring environment scope
      * @param sourceKinds source kind filters
+     * @param operatorLibraryIds imported operator library owner filters
      * @param loweringModes lowering mode filters
      * @param capabilities capability facet filters
      * @param runtimeReadinessStates runtime readiness state filters
@@ -90,6 +95,8 @@ public class VisualOperatorCatalogController {
                                                   @RequestParam(defaultValue = "") String environment,
                                                   @RequestParam(name = "sourceKind", defaultValue = "")
                                                   List<String> sourceKinds,
+                                                  @RequestParam(name = "operatorLibraryId", defaultValue = "")
+                                                  List<String> operatorLibraryIds,
                                                   @RequestParam(name = "loweringMode", defaultValue = "")
                                                   List<String> loweringModes,
                                                   @RequestParam(name = "capability", defaultValue = "")
@@ -97,7 +104,8 @@ public class VisualOperatorCatalogController {
                                                   @RequestParam(name = "runtimeReadiness", defaultValue = "")
                                                   List<String> runtimeReadinessStates) {
         OperatorCatalogQuery query = new OperatorCatalogQuery("", List.of(), resourceOnly, includeDeprecated,
-                tenantId, namespace, environment, sourceKinds, loweringModes, capabilities, runtimeReadinessStates);
+                tenantId, namespace, environment, sourceKinds, operatorLibraryIds, loweringModes, capabilities,
+                runtimeReadinessStates);
         return catalog.list(query).stream()
                 .filter(operator -> operator.operatorRef().equals(operatorRef))
                 .findFirst()

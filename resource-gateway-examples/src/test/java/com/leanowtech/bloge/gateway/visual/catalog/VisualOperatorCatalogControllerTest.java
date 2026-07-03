@@ -46,6 +46,8 @@ class VisualOperatorCatalogControllerTest {
         mockMvc.perform(get("/api/visual/operators")
                         .param("sourceKind", "user-library")
                         .param("sourceKind", "resource-descriptor")
+                        .param("operatorLibraryId", "risk-policy")
+                        .param("operatorLibraryId", " fraud-policy ")
                         .param("loweringMode", "design")
                         .param("capability", "runtime-executable")
                         .param("capability", "requires_secret")
@@ -55,6 +57,7 @@ class VisualOperatorCatalogControllerTest {
 
         OperatorCatalogQuery query = catalog.lastQuery.get();
         assertThat(query.sourceKinds()).containsExactly("user-library", "resource-descriptor");
+        assertThat(query.operatorLibraryIds()).containsExactly("risk-policy", "fraud-policy");
         assertThat(query.loweringModes()).containsExactly("design");
         assertThat(query.capabilities()).containsExactly("runtime-executable", "requires-secret");
         assertThat(query.runtimeReadinessStates()).containsExactly("governance-review", "design-only");
@@ -70,6 +73,7 @@ class VisualOperatorCatalogControllerTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.facets.total").value(2))
                 .andExpect(jsonPath("$.facets.sourceKinds['user-library']").value(2))
+                .andExpect(jsonPath("$.facets.operatorLibraryIds['risk-policy']").value(1))
                 .andExpect(jsonPath("$.facets.loweringModes.transform").value(1))
                 .andExpect(jsonPath("$.facets.loweringModes.design").value(1))
                 .andExpect(jsonPath("$.facets.capabilities['runtime-executable']").value(1))
@@ -115,6 +119,7 @@ class VisualOperatorCatalogControllerTest {
         assertThat(query.namespace()).isEqualTo("local");
         assertThat(query.environment()).isEqualTo("browser");
         assertThat(query.sourceKinds()).containsExactly("resource-descriptor");
+        assertThat(query.operatorLibraryIds()).isEmpty();
         assertThat(query.loweringModes()).containsExactly("resource-descriptor");
         assertThat(query.capabilities()).containsExactly("runtime-executable", "requires-secret");
         assertThat(query.runtimeReadinessStates()).containsExactly("governance-review");
@@ -211,7 +216,7 @@ class VisualOperatorCatalogControllerTest {
         @Override
         public List<OperatorDefinition> list(OperatorCatalogQuery query) {
             return List.of(
-                    VisualCatalogTestSupport.eligibilityOperator("integer"),
+                    ownedBy("risk-policy", VisualCatalogTestSupport.eligibilityOperator("integer")),
                     VisualCatalogTestSupport.designOnlyEligibilityOperator("integer")
             );
         }
@@ -220,5 +225,31 @@ class VisualOperatorCatalogControllerTest {
         public Optional<OperatorDefinition> find(String operatorRef) {
             return Optional.empty();
         }
+    }
+
+    private static OperatorDefinition ownedBy(String libraryId, OperatorDefinition operator) {
+        OperatorDefinition.Source source = operator.source();
+        return new OperatorDefinition(
+                operator.schemaVersion(),
+                operator.operatorRef(),
+                operator.operatorVersion(),
+                operator.fingerprint(),
+                operator.display(),
+                new OperatorDefinition.Source(
+                        source.kind(),
+                        source.resourceId(),
+                        source.method(),
+                        source.urlTemplate(),
+                        source.virtual(),
+                        libraryId
+                ),
+                operator.ports(),
+                operator.configSchema(),
+                operator.capabilities(),
+                operator.policy(),
+                operator.lowering(),
+                operator.diagnostics(),
+                operator.runtimeReadiness()
+        );
     }
 }

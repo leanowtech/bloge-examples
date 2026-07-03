@@ -12,6 +12,7 @@ import java.util.TreeMap;
  *
  * @param total total matching operators
  * @param sourceKinds count by source kind
+ * @param operatorLibraryIds count by imported operator library owner
  * @param loweringModes count by lowering mode
  * @param capabilities count by runtime/governance capability facet
  * @param runtimeReadinessStates count by server-derived runtime readiness state
@@ -19,6 +20,7 @@ import java.util.TreeMap;
 public record OperatorCatalogFacets(
         int total,
         Map<String, Integer> sourceKinds,
+        Map<String, Integer> operatorLibraryIds,
         Map<String, Integer> loweringModes,
         Map<String, Integer> capabilities,
         Map<String, Integer> runtimeReadinessStates
@@ -29,6 +31,8 @@ public record OperatorCatalogFacets(
     public OperatorCatalogFacets {
         sourceKinds = sourceKinds == null ? Map.of()
                 : Collections.unmodifiableMap(new LinkedHashMap<>(sourceKinds));
+        operatorLibraryIds = operatorLibraryIds == null ? Map.of()
+                : Collections.unmodifiableMap(new LinkedHashMap<>(operatorLibraryIds));
         loweringModes = loweringModes == null ? Map.of()
                 : Collections.unmodifiableMap(new LinkedHashMap<>(loweringModes));
         capabilities = capabilities == null ? Map.of()
@@ -48,11 +52,13 @@ public record OperatorCatalogFacets(
                 .filter(operator -> operator != null)
                 .toList();
         Map<String, Integer> sourceKinds = new TreeMap<>();
+        Map<String, Integer> operatorLibraryIds = new TreeMap<>();
         Map<String, Integer> loweringModes = new TreeMap<>();
         Map<String, Integer> capabilities = new TreeMap<>();
         Map<String, Integer> runtimeReadinessStates = new TreeMap<>();
         for (OperatorDefinition operator : safeOperators) {
             increment(sourceKinds, normalizeFacetValue(operator.source().kind()));
+            increment(operatorLibraryIds, operator.source().libraryId());
             increment(loweringModes, normalizeFacetValue(operator.lowering().mode()));
             for (String capability : capabilityValues(operator)) {
                 increment(capabilities, capability);
@@ -62,6 +68,7 @@ public record OperatorCatalogFacets(
         return new OperatorCatalogFacets(
                 safeOperators.size(),
                 new LinkedHashMap<>(sourceKinds),
+                new LinkedHashMap<>(operatorLibraryIds),
                 new LinkedHashMap<>(loweringModes),
                 new LinkedHashMap<>(capabilities),
                 new LinkedHashMap<>(runtimeReadinessStates)

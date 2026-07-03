@@ -476,6 +476,7 @@ const state = {
   paletteKind: '',
   paletteTag: '',
   paletteSourceKind: '',
+  paletteOperatorLibraryId: '',
   paletteCapability: '',
   paletteReadiness: '',
   paletteLoweringMode: '',
@@ -681,6 +682,7 @@ function rememberCatalogOperator(operator, options = {}) {
       description: operator.display?.description || '',
       tags: Array.isArray(operator.display?.tags) ? operator.display.tags.map(String) : [],
       sourceKind: operator.source?.kind || '',
+      operatorLibraryId: operator.source?.libraryId || '',
       policy: operator.policy,
       lowering: operator.lowering,
       diagnostics,
@@ -715,6 +717,7 @@ function rememberCatalogOperator(operator, options = {}) {
     description: operator.display?.description || '',
     tags: Array.isArray(operator.display?.tags) ? operator.display.tags.map(String) : [],
     sourceKind: operator.source?.kind || '',
+    operatorLibraryId: operator.source?.libraryId || '',
     policy: operator.policy,
     lowering: operator.lowering,
     diagnostics,
@@ -749,6 +752,9 @@ function operatorCatalogUrl(builder = state.builder, options = {}) {
   if (options.includeDeprecated) {
     params.set('includeDeprecated', 'true');
   }
+  if (options.operatorLibraryId) {
+    params.set('operatorLibraryId', options.operatorLibraryId);
+  }
   return `/api/visual/operators?${params.toString()}`;
 }
 
@@ -763,6 +769,9 @@ function operatorDefinitionUrl(operatorRef, builder = state.builder, options = {
   }
   if (options.resourceOnly) {
     params.set('resourceOnly', 'true');
+  }
+  if (options.operatorLibraryId) {
+    params.set('operatorLibraryId', options.operatorLibraryId);
   }
   return `/api/visual/operators/${encodeURIComponent(operatorRef)}?${params.toString()}`;
 }
@@ -1482,6 +1491,7 @@ function renderInputForm() {
           <select id="operator-palette-kind" aria-label="Filter operators by type"></select>
           <select id="operator-palette-tag" aria-label="Filter operators by tag"></select>
           <select id="operator-palette-source-kind" aria-label="Filter operators by source"></select>
+          <select id="operator-palette-library" aria-label="Filter operators by library"></select>
           <select id="operator-palette-capability" aria-label="Filter operators by capability"></select>
           <select id="operator-palette-readiness" aria-label="Filter operators by runtime readiness"></select>
           <select id="operator-palette-lowering-mode" aria-label="Filter operators by lowering mode"></select>
@@ -2787,6 +2797,22 @@ function renderOperatorPaletteFilters(entries) {
     };
   }
 
+  const libraryIds = operatorPaletteLibraryIds(entries);
+  const librarySelect = $('operator-palette-library');
+  if (librarySelect) {
+    const selected = libraryIds.includes(state.paletteOperatorLibraryId) ? state.paletteOperatorLibraryId : '';
+    state.paletteOperatorLibraryId = selected;
+    librarySelect.innerHTML = ['<option value="">All libraries</option>']
+      .concat(libraryIds.map((libraryId) =>
+        `<option value="${escapeHtml(libraryId)}">${escapeHtml(operatorPaletteLibraryLabel(libraryId))}</option>`))
+      .join('');
+    librarySelect.value = selected;
+    librarySelect.onchange = (event) => {
+      state.paletteOperatorLibraryId = event.target.value;
+      renderOperatorPalette();
+    };
+  }
+
   const capabilities = [...new Set(entries.flatMap(([, spec]) =>
     operatorPaletteCapabilityFacetValues(spec)))]
     .sort();
@@ -2852,6 +2878,7 @@ function renderOperatorPaletteSummary(visible, total) {
     state.paletteKind ? `type ${state.paletteKind}` : '',
     state.paletteTag ? `tag ${state.paletteTag}` : '',
     state.paletteSourceKind ? `source ${operatorPaletteFacetLabel(state.paletteSourceKind)}` : '',
+    state.paletteOperatorLibraryId ? `library ${operatorPaletteLibraryLabel(state.paletteOperatorLibraryId)}` : '',
     state.paletteCapability ? `capability ${operatorPaletteFacetLabel(state.paletteCapability)}` : '',
     state.paletteReadiness ? `readiness ${operatorPaletteFacetLabel(state.paletteReadiness)}` : '',
     state.paletteLoweringMode ? `lowering ${operatorPaletteFacetLabel(state.paletteLoweringMode)}` : ''
@@ -2865,11 +2892,37 @@ function renderOperatorPaletteSummary(visible, total) {
     : matchSummary;
 }
 
+function operatorPaletteLibraryIds(entries = []) {
+  const facetIds = Object.keys(state.visualOperatorCatalogFacets?.operatorLibraryIds || {});
+  if (facetIds.length) {
+    return facetIds.sort((left, right) => left.localeCompare(right));
+  }
+  return [...new Set(entries
+    .map(([, spec]) => String(spec.operatorLibraryId || '').trim())
+    .filter(Boolean))]
+    .sort((left, right) => left.localeCompare(right));
+}
+
+function operatorPaletteLibraryLabel(libraryId) {
+  const normalized = String(libraryId || '').trim();
+  if (!normalized) {
+    return '';
+  }
+  const library = (state.operatorLibraries || [])
+    .find((item) => String(item?.libraryId || '') === normalized);
+  const displayName = String(library?.displayName || '').trim();
+  if (displayName && displayName !== normalized) {
+    return `${displayName} (${normalized})`;
+  }
+  return normalized;
+}
+
 function normalizeOperatorCatalogFacets(facets, operators = []) {
   const payload = facets && typeof facets === 'object' ? facets : {};
   const normalized = {
     total: Number(payload.total) || 0,
     sourceKinds: normalizeFacetCountMap(payload.sourceKinds),
+    operatorLibraryIds: normalizeFacetCountMap(payload.operatorLibraryIds),
     loweringModes: normalizeFacetCountMap(payload.loweringModes),
     capabilities: normalizeFacetCountMap(payload.capabilities),
     runtimeReadinessStates: normalizeFacetCountMap(payload.runtimeReadinessStates)
@@ -2884,6 +2937,9 @@ function normalizeOperatorCatalogFacets(facets, operators = []) {
   if (!Object.keys(normalized.loweringModes).length) {
     normalized.loweringModes = fallback.loweringModes;
   }
+  if (!Object.keys(normalized.operatorLibraryIds).length) {
+    normalized.operatorLibraryIds = fallback.operatorLibraryIds;
+  }
   if (!Object.keys(normalized.capabilities).length) {
     normalized.capabilities = fallback.capabilities;
   }
@@ -2892,6 +2948,7 @@ function normalizeOperatorCatalogFacets(facets, operators = []) {
   }
   if (normalized.total
       || Object.keys(normalized.sourceKinds).length
+      || Object.keys(normalized.operatorLibraryIds).length
       || Object.keys(normalized.loweringModes).length
       || Object.keys(normalized.capabilities).length
       || Object.keys(normalized.runtimeReadinessStates).length) {
@@ -2902,17 +2959,20 @@ function normalizeOperatorCatalogFacets(facets, operators = []) {
 
 function operatorCatalogFallbackFacets(operators = []) {
   const sourceKinds = {};
+  const operatorLibraryIds = {};
   const loweringModes = {};
   const capabilities = {};
   const runtimeReadinessStates = {};
   for (const operator of Array.isArray(operators) ? operators : []) {
     const spec = {
       sourceKind: operator?.source?.kind || '',
+      operatorLibraryId: operator?.source?.libraryId || '',
       lowering: operator?.lowering || {},
       capabilities: operator?.capabilities || {},
       runtimeReadiness: operator?.runtimeReadiness || null
     };
     incrementFacetCount(sourceKinds, spec.sourceKind);
+    incrementFacetCount(operatorLibraryIds, spec.operatorLibraryId);
     incrementFacetCount(loweringModes, operatorPaletteLoweringMode(spec));
     for (const capability of operatorPaletteCapabilityFacetValues(spec)) {
       incrementFacetCount(capabilities, capability);
@@ -2922,6 +2982,7 @@ function operatorCatalogFallbackFacets(operators = []) {
   return {
     total: Array.isArray(operators) ? operators.length : 0,
     sourceKinds,
+    operatorLibraryIds,
     loweringModes,
     capabilities,
     runtimeReadinessStates
@@ -2982,6 +3043,10 @@ function operatorMatchesPaletteFilter(type, spec) {
   if (state.paletteSourceKind && String(spec.sourceKind || '') !== state.paletteSourceKind) {
     return false;
   }
+  if (state.paletteOperatorLibraryId
+      && String(spec.operatorLibraryId || '') !== state.paletteOperatorLibraryId) {
+    return false;
+  }
   if (state.paletteCapability
       && !operatorPaletteCapabilityFacetValues(spec).includes(state.paletteCapability)) {
     return false;
@@ -3003,6 +3068,7 @@ function operatorMatchesPaletteFilter(type, spec) {
     spec.operatorRef,
     spec.visualOperatorRef,
     spec.resourceId,
+    spec.operatorLibraryId,
     spec.description,
     spec.sourceKind,
     operatorPaletteLoweringMode(spec),
@@ -8580,6 +8646,7 @@ async function focusOperatorPaletteRef(operatorRef, context = null) {
   state.paletteKind = '';
   state.paletteTag = '';
   state.paletteSourceKind = '';
+  state.paletteOperatorLibraryId = '';
   state.paletteCapability = '';
   state.paletteReadiness = '';
   state.paletteLoweringMode = '';

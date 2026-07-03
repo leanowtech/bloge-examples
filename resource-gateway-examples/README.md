@@ -88,8 +88,9 @@ drag operators such as `HTTP Resource`, `Decision Table`, and `Transform` onto
 the graph canvas. Resource operators are loaded from the visual operator catalog
 as `resource:<resourceId>` virtual operators, so descriptor-backed APIs can be
 dragged as schema-aware business operators and lowered back to `httpResource` at
-runtime. The palette can filter large catalogs by operator kind, tag, schema
-field names, port-qualified field names, config field names, and field types.
+runtime. The palette can filter large catalogs by operator kind, tag, imported
+operator library owner, schema field names, port-qualified field names, config
+field names, and field types.
 Java operators registered in the Spring `OperatorRegistry` also enter
 the same catalog from BLOGE metadata, with streaming and suspendable operators
 marked as distinct Java source kinds and suspendable operators marked as durable
@@ -129,7 +130,7 @@ repairing or deleting a node, search the operator palette with multi-term
 queries across label, operator ref, description, source kind/resource id, tag,
 input/output/config schema fields, port-qualified field names, field types, and
 JSON Schema field annotations such as `title`, `description`, `examples`, `default`, and `$comment`, filter it by operator type,
-tag, source, capability, runtime readiness, or lowering mode for larger imported catalogs, and see the server-provided catalog mix counts for runtime-executable, design-only, runtime-blocked, governance-review, catalog-repair, streaming/durable, secret-bound, and external-effect operators, inspect each palette card's input/output port and
+tag, source, imported operator library owner, capability, runtime readiness, or lowering mode for larger imported catalogs, and see the server-provided catalog mix counts for library owners, runtime-executable, design-only, runtime-blocked, governance-review, catalog-repair, streaming/durable, secret-bound, and external-effect operators, inspect each palette card's input/output port and
 schema-field summary plus streaming/durable/suspendable/secret/effect capability badges before dragging, inspect the selected node's contract
 coverage summary for input/output ports, required binding coverage, and config
 field counts plus the server-derived operator runtime readiness contract across runtime-executable, design-only,
@@ -795,8 +796,8 @@ Showcase metadata APIs:
 | `GET` | `/api/gateway/examples/scenarios/{graphName}` | Load scenario metadata and run recipe |
 | `GET` | `/api/gateway/examples/scenarios/{graphName}/diagram` | Load the `bloge.visualLayout.v1` diagram for a scenario |
 | `POST` | `/api/gateway/examples/compose/run` | Compile and run submitted DSL with JSON context, returning diagnostics, output, layout, and decision-table metadata |
-| `GET` | `/api/visual/operators` | List native, Java registry, imported, executable publication-backed subgraph, and resource-backed visual operator definitions; supports `tenantId`, `namespace`, and `environment` policy filtering, `sourceKind` / `loweringMode` / `capability` / `runtimeReadiness` catalog facets, plus multi-term schema-aware search across input/output/config fields, field types, JSON Schema field annotations, and readiness summaries; response includes `facets.total/sourceKinds/loweringModes/capabilities/runtimeReadinessStates` counts |
-| `GET` | `/api/visual/operators/{operatorRef}` | Return one visible `bloge.visualOperator.v1` definition under the same `tenantId` / `namespace` / `environment`, `includeDeprecated`, `resourceOnly`, and catalog facet visibility gates used by the operator catalog; returns `404` when the operator is hidden or missing |
+| `GET` | `/api/visual/operators` | List native, Java registry, imported, executable publication-backed subgraph, and resource-backed visual operator definitions; supports `tenantId`, `namespace`, and `environment` policy filtering, `sourceKind` / `operatorLibraryId` / `loweringMode` / `capability` / `runtimeReadiness` catalog facets, plus multi-term schema-aware search across input/output/config fields, field types, JSON Schema field annotations, library owner ids, and readiness summaries; response includes `facets.total/sourceKinds/operatorLibraryIds/loweringModes/capabilities/runtimeReadinessStates` counts |
+| `GET` | `/api/visual/operators/{operatorRef}` | Return one visible `bloge.visualOperator.v1` definition under the same `tenantId` / `namespace` / `environment`, `includeDeprecated`, `resourceOnly`, `operatorLibraryId`, and catalog facet visibility gates used by the operator catalog; returns `404` when the operator is hidden or missing |
 | `GET` | `/api/visual/operators/{operatorRef}/usage` | Return stored draft and immutable-publication usage of one operatorRef, including saved/frozen fingerprint status, changed-surface drift summaries, and `changeRisk/changeCategories/changeSummary` when snapshots allow risk classification |
 | `GET` | `/api/visual/assets/overview` | Return `bloge.visualAssetOverview.v1`, an environment-level visual authoring overview that echoes the requested authoring scope while aggregating draft summaries, publication summaries, current operator catalog facets, and an action-readiness/runtime-binding-requirement-aware server-derived action queue with optional `tenantId` / `namespace` / `environment` scope filters plus `actionLimit` / `actionOffset` / `actionSeverity` / `actionType` / `actionTargetKind` / `actionOperatorRef` / `actionOperatorLibraryId` queue query controls and operatorRef/operatorLibraryId counts for runtime-plane triage |
 | `GET` | `/api/visual/assets/runtime-binding-requirements` | Return `bloge.visualRuntimeBindingRequirements.v1`, a scope-aware, pageable runtime-binding gap index for active drafts and immutable publications, with `targetKind` / `operatorRef` / `operatorLibraryId` / `bindingKind` / `handoffLane` / `handoffKind` / `handoffTarget` / `sourceKind` / `loweringMode` / `readinessState` / `requirementKey` filters, stable requirement keys, operatorRef/operatorLibraryId counts, and handoff lane/kind/target fields for external runtime-plane routing |

@@ -127,6 +127,10 @@ public class DefaultVisualOperatorCatalog implements VisualOperatorCatalog {
             if (!library.visibleInCatalog(effectiveQuery.includeDeprecated())) {
                 continue;
             }
+            if (!effectiveQuery.operatorLibraryIds().isEmpty()
+                    && !effectiveQuery.operatorLibraryIds().contains(library.libraryId())) {
+                continue;
+            }
             for (int i = 0; i < library.operators().size(); i++) {
                 OperatorDefinition operator = library.operators().get(i);
                 if (operator == null) {
@@ -139,7 +143,8 @@ public class DefaultVisualOperatorCatalog implements VisualOperatorCatalog {
                             "/libraries/%s/operators/%d".formatted(library.libraryId(), i)));
                     continue;
                 }
-                if (!matches(operator, effectiveQuery)) {
+                OperatorDefinition ownedOperator = withLibrarySource(library, operator);
+                if (!matches(ownedOperator, effectiveQuery)) {
                     continue;
                 }
                 hiddenMalformedPortDiagnostic(library, operator, i).ifPresent(diagnostics::add);
@@ -151,16 +156,12 @@ public class DefaultVisualOperatorCatalog implements VisualOperatorCatalog {
     @Override
     public Map<String, String> operatorLibraryIdsByOperatorRef(boolean includeDeprecated) {
         Map<String, String> owners = new LinkedHashMap<>();
-        for (OperatorLibrary library : libraryRegistry.all()) {
-            if (!library.visibleInCatalog(includeDeprecated)) {
+        for (OperatorDefinition operator : list(new OperatorCatalogQuery("", List.of(), false, includeDeprecated))) {
+            String libraryId = operator.source().libraryId();
+            if (libraryId.isBlank()) {
                 continue;
             }
-            for (OperatorDefinition operator : library.operators()) {
-                if (operator == null || !hasConcretePorts(operator) || operator.operatorRef().isBlank()) {
-                    continue;
-                }
-                owners.putIfAbsent(operator.operatorRef(), library.libraryId());
-            }
+            owners.putIfAbsent(operator.operatorRef(), libraryId);
         }
         return Map.copyOf(owners);
     }
@@ -195,10 +196,41 @@ public class DefaultVisualOperatorCatalog implements VisualOperatorCatalog {
                 if (operator == null || !hasConcretePorts(operator)) {
                     continue;
                 }
-                operators.add(withLibraryLifecycleDiagnostic(library, operator, i));
+                operators.add(withLibraryLifecycleDiagnostic(library, withLibrarySource(library, operator), i));
             }
         }
         return operators;
+    }
+
+    private static OperatorDefinition withLibrarySource(OperatorLibrary library, OperatorDefinition operator) {
+        OperatorDefinition.Source source = operator.source();
+        String libraryId = library == null ? "" : library.libraryId();
+        if (libraryId.equals(source.libraryId())) {
+            return operator;
+        }
+        OperatorDefinition.Source ownedSource = new OperatorDefinition.Source(
+                source.kind(),
+                source.resourceId(),
+                source.method(),
+                source.urlTemplate(),
+                source.virtual(),
+                libraryId
+        );
+        return new OperatorDefinition(
+                operator.schemaVersion(),
+                operator.operatorRef(),
+                operator.operatorVersion(),
+                operator.fingerprint(),
+                operator.display(),
+                ownedSource,
+                operator.ports(),
+                operator.configSchema(),
+                operator.capabilities(),
+                operator.policy(),
+                operator.lowering(),
+                operator.diagnostics(),
+                operator.runtimeReadiness()
+        );
     }
 
     private static boolean hasConcretePorts(OperatorDefinition operator) {
@@ -324,6 +356,10 @@ public class DefaultVisualOperatorCatalog implements VisualOperatorCatalog {
                 && !query.sourceKinds().contains(normalizeFacetValue(operator.source().kind()))) {
             return false;
         }
+        if (!query.operatorLibraryIds().isEmpty()
+                && !query.operatorLibraryIds().contains(operator.source().libraryId())) {
+            return false;
+        }
         if (!query.loweringModes().isEmpty()
                 && !query.loweringModes().contains(normalizeFacetValue(operator.lowering().mode()))) {
             return false;
@@ -400,6 +436,7 @@ public class DefaultVisualOperatorCatalog implements VisualOperatorCatalog {
         addSearchValue(values, operator.display().description());
         addSearchValue(values, operator.source().kind());
         addSearchValue(values, operator.source().resourceId());
+        addSearchValue(values, operator.source().libraryId());
         addSearchValue(values, OperatorCatalogFacets.readinessStateValue(operator));
         addSearchValue(values, operator.runtimeReadiness().title());
         addSearchValue(values, operator.runtimeReadiness().summary());

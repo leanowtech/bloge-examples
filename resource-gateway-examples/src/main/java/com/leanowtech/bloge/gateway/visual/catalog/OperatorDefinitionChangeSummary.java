@@ -49,7 +49,8 @@ public final class OperatorDefinitionChangeSummary {
         ChangeAccumulator changes = new ChangeAccumulator();
         addIfChanged(changes, previous.operatorVersion(), replacement.operatorVersion(), "operator version",
                 RISK_METADATA);
-        addIfChanged(changes, previous.source(), replacement.source(), "source metadata", RISK_RUNTIME_BINDING);
+        addIfChanged(changes, sourceRuntimeIdentity(previous.source()), sourceRuntimeIdentity(replacement.source()),
+                "source metadata", RISK_RUNTIME_BINDING);
         describePorts("input", previous.ports().inputs(), replacement.ports().inputs(), changes);
         describePorts("output", previous.ports().outputs(), replacement.ports().outputs(), changes);
         addInputLikeSchemaChange(changes, previous.configSchema(), replacement.configSchema(), "config schema");
@@ -70,6 +71,19 @@ public final class OperatorDefinitionChangeSummary {
         if (!Objects.equals(previous, replacement)) {
             changes.add(label + " changed", risk);
         }
+    }
+
+    private static Map<String, Object> sourceRuntimeIdentity(OperatorDefinition.Source source) {
+        if (source == null) {
+            return Map.of();
+        }
+        Map<String, Object> identity = new LinkedHashMap<>();
+        identity.put("kind", source.kind());
+        identity.put("resourceId", source.resourceId());
+        identity.put("method", source.method());
+        identity.put("urlTemplate", source.urlTemplate());
+        identity.put("virtual", source.virtual());
+        return identity;
     }
 
     private static void describePorts(String direction,

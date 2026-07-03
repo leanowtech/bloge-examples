@@ -168,14 +168,24 @@ public record OperatorDefinition(
      * @param method HTTP method when available
      * @param urlTemplate URL template when available
      * @param virtual whether the operator lowers into another executable operator
+     * @param libraryId imported operator library owner id when available
      */
     public record Source(
             String kind,
             String resourceId,
             String method,
             String urlTemplate,
-            boolean virtual
+            boolean virtual,
+            String libraryId
     ) {
+        public Source(String kind,
+                      String resourceId,
+                      String method,
+                      String urlTemplate,
+                      boolean virtual) {
+            this(kind, resourceId, method, urlTemplate, virtual, "");
+        }
+
         public Source {
             kind = kind == null || kind.isBlank()
                     ? "built-in"
@@ -183,6 +193,7 @@ public record OperatorDefinition(
             resourceId = resourceId == null ? "" : resourceId;
             method = method == null ? "" : method;
             urlTemplate = urlTemplate == null ? "" : urlTemplate;
+            libraryId = libraryId == null ? "" : libraryId.trim();
         }
 
         public static Source builtIn(String kind) {
@@ -608,6 +619,8 @@ public record OperatorDefinition(
             body.put("method", source.method());
             body.put("urlTemplate", source.urlTemplate());
             body.put("virtual", source.virtual());
+            // libraryId is catalog ownership metadata; excluding it avoids
+            // behavior-drift fingerprints when the same definition is re-owned.
             return canonicalize(body);
         }
         if (value instanceof Ports ports) {

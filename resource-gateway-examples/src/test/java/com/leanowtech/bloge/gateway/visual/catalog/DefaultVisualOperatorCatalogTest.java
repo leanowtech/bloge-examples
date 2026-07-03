@@ -102,6 +102,34 @@ class DefaultVisualOperatorCatalogTest {
         assertThat(catalog.operatorLibraryIdsByOperatorRef(true))
                 .containsEntry("risk:eligibility", "risk-policy-design")
                 .containsEntry("risk:aiSummary", "risk-ai-tools-deprecated");
+        assertThat(catalog.find("risk:eligibility").orElseThrow().source().libraryId())
+                .isEqualTo("risk-policy-design");
+        assertThat(catalog.find("risk:aiSummary").orElseThrow().source().libraryId())
+                .isEqualTo("risk-ai-tools-deprecated");
+    }
+
+    @Test
+    void filtersVisibleImportedOperatorsByOperatorLibraryOwner() {
+        InMemoryOperatorLibraryRegistry libraries = new InMemoryOperatorLibraryRegistry();
+        libraries.upsert(VisualCatalogTestSupport.eligibilityLibrary("integer"));
+        libraries.upsert(library("risk-ai-tools", "ACTIVE", VisualCatalogTestSupport.aiToolSummaryOperator()));
+        DefaultVisualOperatorCatalog catalog = new DefaultVisualOperatorCatalog(
+                VisualCatalogTestSupport.emptyResourceRegistry(),
+                new InMemoryResourceDesignContractRegistry(),
+                new ResourceVirtualOperatorProjector(),
+                libraries
+        );
+
+        List<OperatorDefinition> riskPolicyOperators = catalog.list(new OperatorCatalogQuery(
+                "", List.of(), false, false, "", "", "",
+                List.of(), List.of("risk-policy"), List.of(), List.of(), List.of()));
+
+        assertThat(riskPolicyOperators)
+                .extracting(OperatorDefinition::operatorRef)
+                .containsExactly("risk:eligibility");
+        assertThat(riskPolicyOperators.getFirst().source().libraryId()).isEqualTo("risk-policy");
+        assertThat(OperatorCatalogFacets.from(riskPolicyOperators).operatorLibraryIds())
+                .containsExactly(Map.entry("risk-policy", 1));
     }
 
     @Test
@@ -493,6 +521,8 @@ class DefaultVisualOperatorCatalogTest {
         assertThat(catalog.find("risk:eligibility"))
                 .map(operator -> operator.source().kind())
                 .contains("java-operator");
+        assertThat(catalog.operatorLibraryIdsByOperatorRef(true))
+                .doesNotContainKey("risk:eligibility");
     }
 
     private static OperatorCatalogQuery search(String value) {

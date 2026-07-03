@@ -13,6 +13,7 @@ import java.util.List;
  * @param namespace namespace scope for availability filtering
  * @param environment environment scope for availability filtering
  * @param sourceKinds required operator source kinds
+ * @param operatorLibraryIds required imported operator library owners
  * @param loweringModes required lowering modes
  * @param capabilities required catalog capability facets
  * @param runtimeReadinessStates required server-derived runtime readiness states
@@ -26,6 +27,7 @@ public record OperatorCatalogQuery(
         String namespace,
         String environment,
         List<String> sourceKinds,
+        List<String> operatorLibraryIds,
         List<String> loweringModes,
         List<String> capabilities,
         List<String> runtimeReadinessStates
@@ -43,6 +45,7 @@ public record OperatorCatalogQuery(
         namespace = namespace == null ? "" : namespace.trim();
         environment = environment == null ? "" : environment.trim();
         sourceKinds = normalizeFacetValues(sourceKinds);
+        operatorLibraryIds = normalizeExactValues(operatorLibraryIds);
         loweringModes = normalizeFacetValues(loweringModes);
         capabilities = normalizeFacetValues(capabilities);
         runtimeReadinessStates = normalizeFacetValues(runtimeReadinessStates);
@@ -69,7 +72,7 @@ public record OperatorCatalogQuery(
                                 String namespace,
                                 String environment) {
         this(search, tags, resourceOnly, includeDeprecated, tenantId, namespace, environment,
-                List.of(), List.of(), List.of(), List.of());
+                List.of(), List.of(), List.of(), List.of(), List.of());
     }
 
     /**
@@ -86,7 +89,25 @@ public record OperatorCatalogQuery(
                                 List<String> loweringModes,
                                 List<String> capabilities) {
         this(search, tags, resourceOnly, includeDeprecated, tenantId, namespace, environment,
-                sourceKinds, loweringModes, capabilities, List.of());
+                sourceKinds, List.of(), loweringModes, capabilities, List.of());
+    }
+
+    /**
+     * Backward-compatible constructor for callers that do not filter by operator library owner.
+     */
+    public OperatorCatalogQuery(String search,
+                                List<String> tags,
+                                boolean resourceOnly,
+                                boolean includeDeprecated,
+                                String tenantId,
+                                String namespace,
+                                String environment,
+                                List<String> sourceKinds,
+                                List<String> loweringModes,
+                                List<String> capabilities,
+                                List<String> runtimeReadinessStates) {
+        this(search, tags, resourceOnly, includeDeprecated, tenantId, namespace, environment,
+                sourceKinds, List.of(), loweringModes, capabilities, runtimeReadinessStates);
     }
 
     /**
@@ -103,6 +124,17 @@ public record OperatorCatalogQuery(
         return values.stream()
                 .filter(value -> value != null && !value.isBlank())
                 .map(value -> value.trim().toLowerCase(java.util.Locale.ROOT).replace('_', '-'))
+                .distinct()
+                .toList();
+    }
+
+    private static List<String> normalizeExactValues(List<String> values) {
+        if (values == null) {
+            return List.of();
+        }
+        return values.stream()
+                .filter(value -> value != null && !value.isBlank())
+                .map(String::trim)
                 .distinct()
                 .toList();
     }

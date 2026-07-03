@@ -2068,6 +2068,7 @@ class VisualAuthoringAppJsTest {
                   label: 'Eligibility',
                   operatorRef: 'risk:eligibility',
                   sourceKind: 'user-library',
+                  operatorLibraryId: 'risk-policy',
                   tags: ['risk', 'policy'],
                   capabilities: { effect: 'PURE', idempotency: 'DETERMINISTIC' },
                   lowering: { mode: 'transform' },
@@ -2414,12 +2415,13 @@ class VisualAuthoringAppJsTest {
                     'governance-review': 1
                   },
                   sourceKinds: { 'user-library': 3 },
+                  operatorLibraryIds: { 'risk-policy': 3 },
                   loweringModes: { transform: 2, design: 1 }
                 });
                 const serverCatalogFacetSummary = context.operatorCatalogFacetSummary(serverCatalogFacets);
                 const fallbackCatalogFacets = context.normalizeOperatorCatalogFacets(null, [
                   {
-                    source: { kind: 'user-library' },
+                    source: { kind: 'user-library', libraryId: 'risk-policy' },
                     lowering: { mode: 'design' },
                     capabilities: { effect: 'PURE' }
                   },
@@ -2907,12 +2909,19 @@ operators:
                 const paletteMultiTokenMiss = context.operatorMatchesPaletteFilter('risk:eligibility', paletteSearchSpec);
                 context.state.paletteSearch = 'durable suspendable write-external secret';
                 const paletteCapabilitySearchMatch = context.operatorMatchesPaletteFilter('awaitApproval', suspendablePaletteSpec);
+                context.state.paletteSearch = 'risk-policy';
+                const paletteLibrarySearchMatch = context.operatorMatchesPaletteFilter('risk:eligibility', paletteSearchSpec);
                 context.state.paletteSearch = '';
                 context.state.paletteSourceKind = 'user-library';
                 const paletteSourceFilterMatch = context.operatorMatchesPaletteFilter('risk:eligibility', paletteSearchSpec);
                 context.state.paletteSourceKind = 'resource-descriptor';
                 const paletteSourceFilterMiss = context.operatorMatchesPaletteFilter('risk:eligibility', paletteSearchSpec);
                 context.state.paletteSourceKind = '';
+                context.state.paletteOperatorLibraryId = 'risk-policy';
+                const paletteLibraryFilterMatch = context.operatorMatchesPaletteFilter('risk:eligibility', paletteSearchSpec);
+                context.state.paletteOperatorLibraryId = 'fraud-policy';
+                const paletteLibraryFilterMiss = context.operatorMatchesPaletteFilter('risk:eligibility', paletteSearchSpec);
+                context.state.paletteOperatorLibraryId = '';
                 context.state.paletteCapability = 'requires-secret';
                 const paletteCapabilityFilterMatch = context.operatorMatchesPaletteFilter('awaitApproval', suspendablePaletteSpec);
                 context.state.paletteCapability = 'runtime-executable';
@@ -4140,13 +4149,18 @@ operators:
                   ['publish error status beats readiness info', publishErrorStatusLevel, 'error'],
                   ['catalog facet summary', serverCatalogFacetSummary, 'Catalog mix: 3 Runtime executable · 2 Design only · 1 Runtime blocked · 1 Governance review · 1 Streaming · 1 Requires secret · 1 External effect.'],
                   ['catalog facet fallback total', fallbackCatalogFacets.total, 2],
+                  ['catalog facet server library count', serverCatalogFacets.operatorLibraryIds['risk-policy'], 3],
+                  ['catalog facet fallback library count', fallbackCatalogFacets.operatorLibraryIds['risk-policy'], 1],
                   ['catalog facet fallback design count', fallbackCatalogFacets.capabilities['design-only'], 1],
                   ['catalog facet fallback durable count', fallbackCatalogFacets.capabilities.durable, 1],
                   ['catalog facet fallback design readiness count', fallbackCatalogFacets.runtimeReadinessStates['design-only'], 1],
                   ['catalog facet fallback blocked readiness count', fallbackCatalogFacets.runtimeReadinessStates['runtime-blocked'], 1],
                   ['palette capability search match', String(paletteCapabilitySearchMatch), 'true'],
+                  ['palette library search match', String(paletteLibrarySearchMatch), 'true'],
                   ['palette source filter match', String(paletteSourceFilterMatch), 'true'],
                   ['palette source filter miss', String(paletteSourceFilterMiss), 'false'],
+                  ['palette library filter match', String(paletteLibraryFilterMatch), 'true'],
+                  ['palette library filter miss', String(paletteLibraryFilterMiss), 'false'],
                   ['palette capability filter match', String(paletteCapabilityFilterMatch), 'true'],
                   ['palette capability filter miss', String(paletteCapabilityFilterMiss), 'false'],
                   ['palette readiness filter match', String(paletteReadinessFilterMatch), 'true'],
