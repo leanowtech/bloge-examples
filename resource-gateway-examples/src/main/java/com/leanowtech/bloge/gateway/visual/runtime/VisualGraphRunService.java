@@ -9,6 +9,7 @@ import com.leanowtech.bloge.gateway.visual.diagnostic.VisualDiagnostic;
 import com.leanowtech.bloge.gateway.visual.draft.GraphDraft;
 import com.leanowtech.bloge.gateway.visual.model.SchemaEnvelope;
 import com.leanowtech.bloge.gateway.visual.publication.VisualGraphPublication;
+import com.leanowtech.bloge.gateway.visual.validation.VisualGraphActionReadiness;
 import com.leanowtech.bloge.gateway.visual.validation.GraphDraftValidator;
 import com.leanowtech.bloge.gateway.visual.validation.VisualGraphReadiness;
 import com.leanowtech.bloge.gateway.visual.validation.VisualSchemaValidator;
@@ -64,6 +65,10 @@ public class VisualGraphRunService {
         if (!validation.valid()) {
             return new DslGenerationResult(false, "", validation.diagnostics(), validation);
         }
+        if (!validation.actionReadiness().compileNow()) {
+            return new DslGenerationResult(false, "", List.of(actionReadinessDiagnostic("compile",
+                    validation.actionReadiness())), validation);
+        }
         DslGenerationResult generated = generator.generate(draft);
         if (!generated.generated()) {
             return new DslGenerationResult(false, generated.dsl(), generated.diagnostics(), validation);
@@ -96,6 +101,11 @@ public class VisualGraphRunService {
         List<VisualDiagnostic> diagnostics = new ArrayList<>(validation.diagnostics());
         if (!validation.valid()) {
             return blocked(draft, false, diagnostics, List.of("Visual validation failed."), "", validation);
+        }
+        if (!validation.actionReadiness().runNow()) {
+            diagnostics.add(actionReadinessDiagnostic("run", validation.actionReadiness()));
+            return blocked(draft, true, diagnostics, List.of("Visual graph action readiness blocked runtime run."),
+                    "", validation);
         }
         List<VisualDiagnostic> contextDiagnostics = validateRuntimeContext(draft, context);
         diagnostics.addAll(contextDiagnostics);
@@ -345,6 +355,28 @@ public class VisualGraphRunService {
                 null,
                 generatedDsl,
                 validation
+        );
+    }
+
+    private static VisualDiagnostic actionReadinessDiagnostic(String action,
+                                                              VisualGraphActionReadiness actionReadiness) {
+        VisualGraphActionReadiness readiness = actionReadiness == null
+                ? VisualGraphActionReadiness.from(false, List.of(), VisualGraphReadiness.notAssessed())
+                : actionReadiness;
+        String normalizedAction = "run".equals(action) ? "run" : "compile";
+        Map<String, Object> metadata = new LinkedHashMap<>();
+        metadata.put("action", normalizedAction);
+        metadata.put("state", readiness.state());
+        metadata.put("compileNow", readiness.compileNow());
+        metadata.put("runNow", readiness.runNow());
+        metadata.put("artifactKinds", readiness.artifactKinds());
+        metadata.put("recommendedAction", readiness.recommendedAction());
+        return VisualDiagnostic.error(
+                "visual.action.%sBlocked".formatted(normalizedAction),
+                "Visual graph action '%s' is blocked by readiness state '%s': %s"
+                        .formatted(normalizedAction, readiness.state(), readiness.message()),
+                "/actionReadiness",
+                metadata
         );
     }
 

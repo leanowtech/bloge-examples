@@ -217,15 +217,17 @@ class VisualGraphDraftControllerTest {
         DslGenerationResult result = controller.compile(draft);
 
         assertThat(result.generated()).isFalse();
-        assertThat(result.dsl()).isNotBlank();
+        assertThat(result.dsl()).isBlank();
         assertThat(result.validation().valid()).isTrue();
         assertThat(result.validation().readiness().state()).isEqualTo("design-only");
         assertThat(result.validation().readiness().artifactKinds()).containsExactly("DESIGN");
+        assertThat(result.validation().actionReadiness().state()).isEqualTo("design-artifact-ready");
+        assertThat(result.validation().actionReadiness().compileNow()).isFalse();
         assertThat(result.diagnostics())
                 .extracting("code", "target")
                 .containsExactly(org.assertj.core.groups.Tuple.tuple(
-                        "visual.codegen.designOnlyOperator",
-                        "/nodes/eligibility/operatorRef"));
+                        "visual.action.compileBlocked",
+                        "/actionReadiness"));
     }
 
     @Test
@@ -2464,7 +2466,7 @@ class VisualGraphDraftControllerTest {
         assertThat(result.publication().generation().generated()).isFalse();
         assertThat(result.publication().generation().diagnostics())
                 .anySatisfy(diagnostic ->
-                        assertThat(diagnostic.code()).isEqualTo("visual.codegen.designOnlyOperator"));
+                        assertThat(diagnostic.code()).isEqualTo("visual.action.compileBlocked"));
         assertThat(result.publication().operatorSnapshots())
                 .extracting("operatorRef")
                 .containsExactly("risk:eligibility");
@@ -2550,7 +2552,7 @@ class VisualGraphDraftControllerTest {
         assertThat(response.getBody().published()).isFalse();
         assertThat(response.getBody().diagnostics())
                 .anySatisfy(diagnostic ->
-                        assertThat(diagnostic.code()).isEqualTo("visual.codegen.designOnlyOperator"));
+                        assertThat(diagnostic.code()).isEqualTo("visual.action.compileBlocked"));
         assertThat(response.getBody().validation()).isNotNull();
         assertThat(response.getBody().validation().valid()).isTrue();
         assertThat(response.getBody().validation().readiness().state()).isEqualTo("design-only");

@@ -583,7 +583,11 @@ versus design-artifact meaning.
 Compile and run responses now also carry the server-side validation/readiness/action-readiness
 used for that operation. Draft compile/run returns the current draft readiness,
 while publication run returns the frozen publication readiness from the immutable
-artifact. The browser keeps that readiness and the derived action gates in Server Check after compile, run,
+artifact. The transient draft compile/run APIs treat that action-readiness
+contract as the authoritative server-side gate too: schema-valid `DESIGN`
+artifacts return `visual.action.compileBlocked` or `visual.action.runBlocked`
+instead of falling through to DSL lowering or dynamic execution. The browser
+keeps that readiness and the derived action gates in Server Check after compile, run,
 publication run, and connection preflight diagnostics, so a design-only or
 runtime-blocked graph does not lose its publish guidance just because the author
 clicked another server action. Once Server Check has returned server action

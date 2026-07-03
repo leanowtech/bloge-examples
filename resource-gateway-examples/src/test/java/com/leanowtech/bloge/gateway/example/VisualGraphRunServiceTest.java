@@ -130,6 +130,80 @@ class VisualGraphRunServiceTest {
     }
 
     @Test
+    void blocksDesignOnlyDraftCompileAndRunAtActionReadinessGate() {
+        VisualOperatorCatalog catalog = VisualCatalogTestSupport.catalogWithLibrary(
+                VisualCatalogTestSupport.designOnlyEligibilityLibrary("integer"));
+        VisualGraphRunService service = new VisualGraphRunService(
+                new GraphDraftValidator(catalog),
+                new GraphDraftDslGenerator(catalog),
+                new DynamicGatewayComposerService(MockOperator.returning(null))
+        );
+        GraphDraft draft = withFingerprints(new GraphDraft(
+                "",
+                "",
+                0,
+                "eligibilityPolicy",
+                "",
+                "",
+                "",
+                "",
+                null,
+                List.of(new GraphDraft.DraftNode(
+                        "eligibility",
+                        "risk:eligibility",
+                        "",
+                        Map.of(
+                                "score", GraphDraft.Binding.contextPath("score"),
+                                "amount", GraphDraft.Binding.contextPath("amount")
+                        ),
+                        Map.of(),
+                        null
+                )),
+                List.of(),
+                Map.of(),
+                new GraphDraft.OutputSelection("eligibility", "")
+        ), catalog);
+
+        DslGenerationResult compile = service.compile(draft);
+        VisualGraphRunResponse run = service.run(draft, Map.of("score", 720, "amount", 250_000), "");
+
+        assertThat(compile.generated()).isFalse();
+        assertThat(compile.dsl()).isBlank();
+        assertThat(compile.validation().valid()).isTrue();
+        assertThat(compile.validation().readiness().state()).isEqualTo("design-only");
+        assertThat(compile.validation().actionReadiness().state()).isEqualTo("design-artifact-ready");
+        assertThat(compile.validation().actionReadiness().compileNow()).isFalse();
+        assertThat(compile.diagnostics())
+                .anySatisfy(diagnostic -> {
+                    assertThat(diagnostic.code()).isEqualTo("visual.action.compileBlocked");
+                    assertThat(diagnostic.target()).isEqualTo("/actionReadiness");
+                    assertThat(diagnostic.message()).contains("design-artifact-ready");
+                });
+        assertThat(compile.diagnostics())
+                .extracting(diagnostic -> diagnostic.code())
+                .doesNotContain("visual.codegen.designOnlyOperator");
+
+        assertThat(run.validated()).isTrue();
+        assertThat(run.compiled()).isFalse();
+        assertThat(run.success()).isFalse();
+        assertThat(run.generatedDsl()).isBlank();
+        assertThat(run.validation().valid()).isTrue();
+        assertThat(run.validation().readiness().state()).isEqualTo("design-only");
+        assertThat(run.validation().actionReadiness().state()).isEqualTo("design-artifact-ready");
+        assertThat(run.validation().actionReadiness().runNow()).isFalse();
+        assertThat(run.errors()).contains("Visual graph action readiness blocked runtime run.");
+        assertThat(run.diagnostics())
+                .anySatisfy(diagnostic -> {
+                    assertThat(diagnostic.code()).isEqualTo("visual.action.runBlocked");
+                    assertThat(diagnostic.target()).isEqualTo("/actionReadiness");
+                    assertThat(diagnostic.message()).contains("design-artifact-ready");
+                });
+        assertThat(run.diagnostics())
+                .extracting(diagnostic -> diagnostic.code())
+                .doesNotContain("visual.codegen.designOnlyOperator");
+    }
+
+    @Test
     void runsJavaOperatorProjectedFromRuntimeRegistry() {
         DefaultOperatorRegistry registry = new DefaultOperatorRegistry();
         registry.register("normalizeText", new NormalizeTextOperator());
