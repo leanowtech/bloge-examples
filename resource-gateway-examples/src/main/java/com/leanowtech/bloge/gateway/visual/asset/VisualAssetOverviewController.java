@@ -880,44 +880,133 @@ public class VisualAssetOverviewController {
         }
 
         Instant now = Instant.now();
-        VisualRuntimeBindingImplementationBinding replacementBound = implementationRepository.update(
-                replacement.withLifecycleTransition(
-                        VisualRuntimeBindingImplementationBinding.STATE_BOUND,
-                        "success",
-                        current.bindingId(),
-                        null,
-                        lifecycleEvent(
-                                "bound",
-                                replacement.state(),
-                                VisualRuntimeBindingImplementationBinding.STATE_BOUND,
-                                request,
-                                current.bindingId(),
-                                now
-                        ),
-                        now
-                ));
-        VisualRuntimeBindingImplementationBinding currentSuperseded = implementationRepository.update(
-                current.withLifecycleTransition(
-                        VisualRuntimeBindingImplementationBinding.STATE_SUPERSEDED,
-                        "info",
-                        null,
-                        replacement.bindingId(),
-                        lifecycleEvent(
-                                "superseded",
-                                current.state(),
-                                VisualRuntimeBindingImplementationBinding.STATE_SUPERSEDED,
-                                request,
-                                replacement.bindingId(),
-                                now
-                        ),
-                        now
-                ));
+        VisualRuntimeBindingImplementationBinding replacementBound;
+        try {
+            replacementBound = implementationRepository.update(
+                    replacement.withLifecycleTransition(
+                            VisualRuntimeBindingImplementationBinding.STATE_BOUND,
+                            "success",
+                            current.bindingId(),
+                            null,
+                            lifecycleEvent(
+                                    "bound",
+                                    replacement.state(),
+                                    VisualRuntimeBindingImplementationBinding.STATE_BOUND,
+                                    request,
+                                    current.bindingId(),
+                                    now
+                            ),
+                            now
+                    ));
+        } catch (IllegalArgumentException | IllegalStateException e) {
+            return lifecycleFailure(
+                    HttpStatus.CONFLICT,
+                    "failed",
+                    "visual.runtimeBindingImplementation.supersedeReplacementBindFailed",
+                    "Runtime binding supersede failed while binding replacement '%s': %s"
+                            .formatted(replacement.bindingId(), e.getMessage()),
+                    "/replacementBindingId",
+                    current,
+                    replacement,
+                    Map.of("replacementBindingId", replacement.bindingId(),
+                            "exceptionType", e.getClass().getSimpleName(),
+                            "exceptionMessage", defaultIfBlank(e.getMessage(), ""))
+            );
+        }
+        VisualRuntimeBindingImplementationBinding currentSuperseded;
+        try {
+            currentSuperseded = implementationRepository.update(
+                    current.withLifecycleTransition(
+                            VisualRuntimeBindingImplementationBinding.STATE_SUPERSEDED,
+                            "info",
+                            null,
+                            replacement.bindingId(),
+                            lifecycleEvent(
+                                    "superseded",
+                                    current.state(),
+                                    VisualRuntimeBindingImplementationBinding.STATE_SUPERSEDED,
+                                    request,
+                                    replacement.bindingId(),
+                                    now
+                            ),
+                            now
+                    ));
+        } catch (IllegalArgumentException | IllegalStateException e) {
+            return supersedeCompensatedFailure(
+                    current,
+                    replacement,
+                    replacementBound,
+                    request,
+                    e);
+        }
         return ResponseEntity.ok(VisualRuntimeBindingImplementationLifecycleResult.accepted(
                 "Runtime binding implementation '%s' superseded '%s'."
                         .formatted(replacementBound.bindingId(), currentSuperseded.bindingId()),
                 currentSuperseded,
                 replacementBound
         ));
+    }
+
+    private ResponseEntity<VisualRuntimeBindingImplementationLifecycleResult> supersedeCompensatedFailure(
+            VisualRuntimeBindingImplementationBinding current,
+            VisualRuntimeBindingImplementationBinding replacement,
+            VisualRuntimeBindingImplementationBinding replacementBound,
+            VisualRuntimeBindingImplementationTransitionRequest request,
+            RuntimeException mutationFailure) {
+        ArrayList<VisualDiagnostic> diagnostics = new ArrayList<>();
+        diagnostics.add(VisualDiagnostic.error(
+                "visual.runtimeBindingImplementation.supersedeCurrentUpdateFailed",
+                "Runtime binding supersede failed while marking current binding '%s' as superseded: %s"
+                        .formatted(current.bindingId(),
+                                defaultIfBlank(mutationFailure.getMessage(),
+                                        mutationFailure.getClass().getSimpleName())),
+                "/bindingId",
+                Map.of("bindingId", current.bindingId(),
+                        "replacementBindingId", replacement.bindingId(),
+                        "exceptionType", mutationFailure.getClass().getSimpleName(),
+                        "exceptionMessage", defaultIfBlank(mutationFailure.getMessage(), ""))));
+
+        VisualRuntimeBindingImplementationBinding restoredReplacement = replacementBound;
+        try {
+            Instant restoredAt = Instant.now();
+            restoredReplacement = implementationRepository.update(
+                    replacementBound.withLifecycleTransition(
+                            replacement.state(),
+                            replacement.level(),
+                            "",
+                            null,
+                            lifecycleEvent(
+                                    "restored",
+                                    replacementBound.state(),
+                                    replacement.state(),
+                                    request,
+                                    current.bindingId(),
+                                    restoredAt
+                            ),
+                            restoredAt
+                    ));
+        } catch (IllegalArgumentException | IllegalStateException compensationFailure) {
+            diagnostics.add(VisualDiagnostic.error(
+                    "visual.runtimeBindingImplementation.supersedeCompensationFailed",
+                    "Runtime binding supersede compensation failed while restoring replacement binding '%s': %s"
+                            .formatted(replacementBound.bindingId(),
+                                    defaultIfBlank(compensationFailure.getMessage(),
+                                            compensationFailure.getClass().getSimpleName())),
+                    "/replacementBindingId",
+                    Map.of("bindingId", current.bindingId(),
+                            "replacementBindingId", replacementBound.bindingId(),
+                            "exceptionType", compensationFailure.getClass().getSimpleName(),
+                            "exceptionMessage", defaultIfBlank(compensationFailure.getMessage(), ""))));
+        }
+
+        return ResponseEntity.status(HttpStatus.CONFLICT).body(
+                VisualRuntimeBindingImplementationLifecycleResult.rejected(
+                        "failed",
+                        "Runtime binding supersede failed; replacement binding was restored when possible.",
+                        current,
+                        restoredReplacement,
+                        diagnostics
+                ));
     }
 
     /**
@@ -1695,34 +1784,61 @@ public class VisualAssetOverviewController {
                             Map.of("refreshedBindingId", refreshedBindingId))));
         }
         Instant now = Instant.now();
-        VisualRuntimeBindingImplementationBinding refreshedBinding = implementationRepository.update(
-                refreshedProposal.withLifecycleTransition(
-                        VisualRuntimeBindingImplementationBinding.STATE_BOUND,
-                        "success",
-                        sourceBinding.bindingId(),
-                        null,
-                        lifecycleEvent(
-                                "bound",
-                                refreshedProposal.state(),
-                                VisualRuntimeBindingImplementationBinding.STATE_BOUND,
-                                transition,
-                                sourceBinding.bindingId(),
-                                now),
-                        now));
-        VisualRuntimeBindingImplementationBinding supersededSourceBinding = implementationRepository.update(
-                sourceBinding.withLifecycleTransition(
-                        VisualRuntimeBindingImplementationBinding.STATE_SUPERSEDED,
-                        "info",
-                        null,
-                        refreshedBinding.bindingId(),
-                        lifecycleEvent(
-                                "superseded",
-                                sourceBinding.state(),
-                                VisualRuntimeBindingImplementationBinding.STATE_SUPERSEDED,
-                                transition,
-                                refreshedBinding.bindingId(),
-                                now),
-                        now));
+        VisualRuntimeBindingImplementationBinding refreshedBinding = null;
+        VisualRuntimeBindingImplementationBinding supersededSourceBinding = null;
+        try {
+            refreshedBinding = implementationRepository.update(
+                    refreshedProposal.withLifecycleTransition(
+                            VisualRuntimeBindingImplementationBinding.STATE_BOUND,
+                            "success",
+                            sourceBinding.bindingId(),
+                            null,
+                            lifecycleEvent(
+                                    "bound",
+                                    refreshedProposal.state(),
+                                    VisualRuntimeBindingImplementationBinding.STATE_BOUND,
+                                    transition,
+                                    sourceBinding.bindingId(),
+                                    now),
+                            now));
+            supersededSourceBinding = implementationRepository.update(
+                    sourceBinding.withLifecycleTransition(
+                            VisualRuntimeBindingImplementationBinding.STATE_SUPERSEDED,
+                            "info",
+                            null,
+                            refreshedBinding.bindingId(),
+                            lifecycleEvent(
+                                    "superseded",
+                                    sourceBinding.state(),
+                                    VisualRuntimeBindingImplementationBinding.STATE_SUPERSEDED,
+                                    transition,
+                                    refreshedBinding.bindingId(),
+                                    now),
+                            now));
+        } catch (IllegalArgumentException | IllegalStateException e) {
+            VisualRuntimeBindingImplementationBinding partialRefreshedBinding =
+                    refreshedBinding == null ? refreshedProposal : refreshedBinding;
+            return evidenceRefreshCompensatedFailure(
+                    normalizedOperatorRef,
+                    sourceBinding.operatorFingerprint(),
+                    currentOperator.fingerprint(),
+                    changeReport,
+                    "Executable readiness evidence refresh for '%s' failed while switching binding lifecycle; source evidence was preserved or restored."
+                            .formatted(normalizedOperatorRef),
+                    sourceBinding,
+                    partialRefreshedBinding,
+                    sourceActivation,
+                    null,
+                    sourceIntegration,
+                    null,
+                    transition,
+                    List.of(evidenceRefreshMutationExceptionDiagnostic(
+                            "visual.executableReadinessEvidenceRefresh.bindingTransitionFailed",
+                            e.getMessage(),
+                            "/refreshedBindingId",
+                            e,
+                            Map.of("refreshedBindingId", partialRefreshedBinding.bindingId()))));
+        }
 
         VisualRuntimeAdapterActivationValidation.Request activationRefreshRequest =
                 refreshedActivationRequest(
@@ -1738,22 +1854,48 @@ public class VisualAssetOverviewController {
                         refreshedBinding,
                         currentOperator);
         if (!activationValidation.valid()) {
-            return evidenceRefreshFailure(
-                    HttpStatus.CONFLICT,
+            return evidenceRefreshCompensatedFailure(
                     normalizedOperatorRef,
                     supersededSourceBinding.operatorFingerprint(),
                     currentOperator.fingerprint(),
-                    "blocked",
-                    "error",
+                    changeReport,
                     "Executable readiness evidence refresh for '%s' could not create a current activation."
                             .formatted(normalizedOperatorRef),
                     supersededSourceBinding,
+                    refreshedBinding,
                     sourceActivation,
+                    null,
                     sourceIntegration,
+                    null,
+                    transition,
                     activationValidation.diagnostics());
         }
-        VisualRuntimeAdapterActivation refreshedActivation = adapterActivationRepository.create(
-                VisualRuntimeAdapterActivation.from(activationRefreshRequest, activationValidation));
+        VisualRuntimeAdapterActivation refreshedActivation;
+        try {
+            refreshedActivation = adapterActivationRepository.create(
+                    VisualRuntimeAdapterActivation.from(activationRefreshRequest, activationValidation));
+        } catch (IllegalArgumentException | IllegalStateException e) {
+            return evidenceRefreshCompensatedFailure(
+                    normalizedOperatorRef,
+                    supersededSourceBinding.operatorFingerprint(),
+                    currentOperator.fingerprint(),
+                    changeReport,
+                    "Executable readiness evidence refresh for '%s' failed while creating a current activation; source evidence was restored."
+                            .formatted(normalizedOperatorRef),
+                    supersededSourceBinding,
+                    refreshedBinding,
+                    sourceActivation,
+                    null,
+                    sourceIntegration,
+                    null,
+                    transition,
+                    List.of(evidenceRefreshMutationExceptionDiagnostic(
+                            "visual.executableReadinessEvidenceRefresh.activationCreateFailed",
+                            e.getMessage(),
+                            "/refreshedActivationId",
+                            e,
+                            Map.of("refreshedActivationId", defaultIfBlank(refreshedActivationId, "")))));
+        }
 
         VisualExecutableLoweringIntegrationValidation.Request integrationRefreshRequest =
                 refreshedIntegrationRequest(
@@ -1770,22 +1912,48 @@ public class VisualAssetOverviewController {
                         refreshedBinding,
                         currentOperator);
         if (!integrationValidation.valid()) {
-            return evidenceRefreshFailure(
-                    HttpStatus.CONFLICT,
+            return evidenceRefreshCompensatedFailure(
                     normalizedOperatorRef,
                     supersededSourceBinding.operatorFingerprint(),
                     currentOperator.fingerprint(),
-                    "blocked",
-                    "error",
+                    changeReport,
                     "Executable readiness evidence refresh for '%s' could not create a current lowering integration."
                             .formatted(normalizedOperatorRef),
                     supersededSourceBinding,
+                    refreshedBinding,
                     sourceActivation,
+                    refreshedActivation,
                     sourceIntegration,
+                    null,
+                    transition,
                     integrationValidation.diagnostics());
         }
-        VisualExecutableLoweringIntegration refreshedIntegration = executableLoweringIntegrationRepository.create(
-                VisualExecutableLoweringIntegration.from(integrationRefreshRequest, integrationValidation));
+        VisualExecutableLoweringIntegration refreshedIntegration;
+        try {
+            refreshedIntegration = executableLoweringIntegrationRepository.create(
+                    VisualExecutableLoweringIntegration.from(integrationRefreshRequest, integrationValidation));
+        } catch (IllegalArgumentException | IllegalStateException e) {
+            return evidenceRefreshCompensatedFailure(
+                    normalizedOperatorRef,
+                    supersededSourceBinding.operatorFingerprint(),
+                    currentOperator.fingerprint(),
+                    changeReport,
+                    "Executable readiness evidence refresh for '%s' failed while creating a current lowering integration; source evidence was restored."
+                            .formatted(normalizedOperatorRef),
+                    supersededSourceBinding,
+                    refreshedBinding,
+                    sourceActivation,
+                    refreshedActivation,
+                    sourceIntegration,
+                    null,
+                    transition,
+                    List.of(evidenceRefreshMutationExceptionDiagnostic(
+                            "visual.executableReadinessEvidenceRefresh.integrationCreateFailed",
+                            e.getMessage(),
+                            "/refreshedIntegrationId",
+                            e,
+                            Map.of("refreshedIntegrationId", defaultIfBlank(refreshedIntegrationId, "")))));
+        }
 
         return ResponseEntity.ok(VisualExecutableReadinessEvidenceRefreshResult.refreshed(
                 normalizedOperatorRef,
@@ -1825,6 +1993,178 @@ public class VisualAssetOverviewController {
                 sourceActivation,
                 sourceIntegration,
                 diagnostics));
+    }
+
+    private ResponseEntity<VisualExecutableReadinessEvidenceRefreshResult> evidenceRefreshCompensatedFailure(
+            String operatorRef,
+            String previousOperatorFingerprint,
+            String currentOperatorFingerprint,
+            OperatorDefinitionChangeSummary.ChangeReport changeReport,
+            String message,
+            VisualRuntimeBindingImplementationBinding sourceBinding,
+            VisualRuntimeBindingImplementationBinding refreshedBinding,
+            VisualRuntimeAdapterActivation sourceActivation,
+            VisualRuntimeAdapterActivation refreshedActivation,
+            VisualExecutableLoweringIntegration sourceIntegration,
+            VisualExecutableLoweringIntegration refreshedIntegration,
+            VisualRuntimeBindingImplementationTransitionRequest transition,
+            List<VisualDiagnostic> diagnostics) {
+        ArrayList<VisualDiagnostic> allDiagnostics = new ArrayList<>(
+                diagnostics == null ? List.of() : diagnostics);
+        Instant now = Instant.now();
+        String failedBindingId = refreshedBinding == null ? "" : refreshedBinding.bindingId();
+        String failureRef = failedBindingId.isBlank() ? "operator:%s".formatted(operatorRef) : "binding:%s"
+                .formatted(failedBindingId);
+        String failureSummary =
+                "Executable readiness evidence refresh failed; partial refreshed evidence was marked failed and the source evidence was restored when possible.";
+
+        VisualExecutableLoweringIntegration compensatedIntegration = refreshedIntegration;
+        if (refreshedIntegration != null && refreshedIntegration.active()) {
+            try {
+                compensatedIntegration = executableLoweringIntegrationRepository.update(
+                        refreshedIntegration.withStateTransition(
+                                VisualExecutableLoweringIntegration.STATE_FAILED,
+                                "error",
+                                transition.changeSource(),
+                                transition.reason(),
+                                new VisualExecutableLoweringIntegration.Evidence(
+                                        "refresh-failed",
+                                        failureRef,
+                                        failureSummary),
+                                now));
+            } catch (IllegalArgumentException | IllegalStateException e) {
+                allDiagnostics.add(evidenceRefreshCompensationFailureDiagnostic(
+                        "executable-lowering-integration",
+                        refreshedIntegration.integrationId(),
+                        e));
+            }
+        }
+
+        VisualRuntimeAdapterActivation compensatedActivation = refreshedActivation;
+        if (refreshedActivation != null && refreshedActivation.active()) {
+            try {
+                compensatedActivation = adapterActivationRepository.update(
+                        refreshedActivation.withStateTransition(
+                                VisualRuntimeAdapterActivation.STATE_FAILED,
+                                "error",
+                                transition.changeSource(),
+                                transition.reason(),
+                                new VisualRuntimeAdapterActivation.Evidence(
+                                        "refresh-failed",
+                                        failureRef,
+                                        failureSummary),
+                                now));
+            } catch (IllegalArgumentException | IllegalStateException e) {
+                allDiagnostics.add(evidenceRefreshCompensationFailureDiagnostic(
+                        "runtime-adapter-activation",
+                        refreshedActivation.activationId(),
+                        e));
+            }
+        }
+
+        VisualRuntimeBindingImplementationBinding failedRefreshedBinding = refreshedBinding;
+        if (refreshedBinding != null && !refreshedBinding.failed()) {
+            try {
+                failedRefreshedBinding = implementationRepository.update(
+                        refreshedBinding.withLifecycleTransition(
+                                VisualRuntimeBindingImplementationBinding.STATE_FAILED,
+                                "error",
+                                null,
+                                null,
+                                lifecycleEvent(
+                                        "failed",
+                                        refreshedBinding.state(),
+                                        VisualRuntimeBindingImplementationBinding.STATE_FAILED,
+                                        transition,
+                                        sourceBinding == null ? "" : sourceBinding.bindingId(),
+                                        now),
+                                now));
+            } catch (IllegalArgumentException | IllegalStateException e) {
+                allDiagnostics.add(evidenceRefreshCompensationFailureDiagnostic(
+                        "runtime-binding-implementation",
+                        refreshedBinding.bindingId(),
+                        e));
+            }
+        }
+
+        VisualRuntimeBindingImplementationBinding restoredSourceBinding = sourceBinding;
+        if (sourceBinding != null && sourceBinding.superseded()) {
+            try {
+                restoredSourceBinding = implementationRepository.update(
+                        sourceBinding.withLifecycleTransition(
+                                VisualRuntimeBindingImplementationBinding.STATE_BOUND,
+                                "success",
+                                null,
+                                "",
+                                lifecycleEvent(
+                                        "restored",
+                                        sourceBinding.state(),
+                                        VisualRuntimeBindingImplementationBinding.STATE_BOUND,
+                                        transition,
+                                        failedBindingId,
+                                        now),
+                                now));
+            } catch (IllegalArgumentException | IllegalStateException e) {
+                allDiagnostics.add(evidenceRefreshCompensationFailureDiagnostic(
+                        "runtime-binding-implementation",
+                        sourceBinding.bindingId(),
+                        e));
+            }
+        }
+
+        return ResponseEntity.status(HttpStatus.CONFLICT).body(VisualExecutableReadinessEvidenceRefreshResult.failed(
+                operatorRef,
+                previousOperatorFingerprint,
+                currentOperatorFingerprint,
+                changeReport == null ? "" : changeReport.risk(),
+                changeReport == null ? List.of() : changeReport.categories(),
+                changeReport == null ? "" : changeReport.summary(),
+                message,
+                restoredSourceBinding,
+                failedRefreshedBinding,
+                sourceActivation,
+                compensatedActivation,
+                sourceIntegration,
+                compensatedIntegration,
+                allDiagnostics));
+    }
+
+    private static VisualDiagnostic evidenceRefreshMutationExceptionDiagnostic(
+            String code,
+            String message,
+            String target,
+            RuntimeException exception,
+            Map<String, Object> metadata) {
+        LinkedHashMap<String, Object> diagnosticMetadata = new LinkedHashMap<>();
+        if (metadata != null) {
+            metadata.forEach((key, value) -> diagnosticMetadata.put(key, value == null ? "" : value));
+        }
+        diagnosticMetadata.put("exceptionType", exception.getClass().getSimpleName());
+        diagnosticMetadata.put("exceptionMessage", defaultIfBlank(exception.getMessage(), ""));
+        return VisualDiagnostic.error(
+                code,
+                defaultIfBlank(message, "Executable readiness evidence refresh mutation failed."),
+                target,
+                diagnosticMetadata);
+    }
+
+    private static VisualDiagnostic evidenceRefreshCompensationFailureDiagnostic(
+            String recordKind,
+            String recordId,
+            RuntimeException exception) {
+        LinkedHashMap<String, Object> metadata = new LinkedHashMap<>();
+        metadata.put("recordKind", defaultIfBlank(recordKind, ""));
+        metadata.put("recordId", defaultIfBlank(recordId, ""));
+        metadata.put("exceptionType", exception.getClass().getSimpleName());
+        metadata.put("exceptionMessage", defaultIfBlank(exception.getMessage(), ""));
+        return VisualDiagnostic.error(
+                "visual.executableReadinessEvidenceRefresh.compensationFailed",
+                "Executable readiness evidence refresh compensation failed for %s '%s': %s"
+                        .formatted(defaultIfBlank(recordKind, "record"),
+                                defaultIfBlank(recordId, ""),
+                                defaultIfBlank(exception.getMessage(), exception.getClass().getSimpleName())),
+                "/runtimeEvidence",
+                metadata);
     }
 
     private static boolean operatorRuntimeEvidenceApplied(OperatorDefinition operator) {

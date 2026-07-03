@@ -12,7 +12,7 @@ import java.util.Locale;
  * @param schemaVersion response contract version
  * @param resolvedAt server timestamp
  * @param accepted true when the lifecycle transition was applied
- * @param state accepted, rejected, or conflict
+ * @param state accepted, rejected, conflict, or failed
  * @param level UI/control-plane severity
  * @param message human-readable summary
  * @param binding primary binding record

@@ -17,7 +17,7 @@ import java.util.Locale;
  * @param schemaVersion response contract version
  * @param refreshedAt server mutation timestamp
  * @param refreshed true when a new evidence chain was created
- * @param state refreshed, current, ack-required, rejected, blocked, or missing
+ * @param state refreshed, current, failed, ack-required, rejected, blocked, or missing
  * @param level UI/control-plane severity
  * @param message human-readable summary
  * @param operatorRef refreshed operator reference
@@ -177,6 +177,44 @@ public record VisualExecutableReadinessEvidenceRefreshResult(
                 null,
                 sourceIntegration,
                 null,
+                diagnostics
+        );
+    }
+
+    public static VisualExecutableReadinessEvidenceRefreshResult failed(
+            String operatorRef,
+            String previousOperatorFingerprint,
+            String currentOperatorFingerprint,
+            String changeRisk,
+            List<String> changeCategories,
+            String changeSummary,
+            String message,
+            VisualRuntimeBindingImplementationBinding sourceBinding,
+            VisualRuntimeBindingImplementationBinding refreshedBinding,
+            VisualRuntimeAdapterActivation sourceActivation,
+            VisualRuntimeAdapterActivation refreshedActivation,
+            VisualExecutableLoweringIntegration sourceIntegration,
+            VisualExecutableLoweringIntegration refreshedIntegration,
+            List<VisualDiagnostic> diagnostics) {
+        return new VisualExecutableReadinessEvidenceRefreshResult(
+                SCHEMA_VERSION,
+                Instant.now(),
+                false,
+                "failed",
+                "error",
+                message,
+                operatorRef,
+                previousOperatorFingerprint,
+                currentOperatorFingerprint,
+                changeRisk,
+                changeCategories,
+                changeSummary,
+                sourceBinding,
+                refreshedBinding,
+                sourceActivation,
+                refreshedActivation,
+                sourceIntegration,
+                refreshedIntegration,
                 diagnostics
         );
     }

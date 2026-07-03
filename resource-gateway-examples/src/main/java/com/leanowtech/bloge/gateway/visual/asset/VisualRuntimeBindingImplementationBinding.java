@@ -15,7 +15,7 @@ import java.util.Locale;
  * @param schemaVersion binding record contract version
  * @param bindingId stable binding proposal id
  * @param revision monotonically increasing record revision
- * @param state ready-to-bind, requires-review, bound, unbound, or superseded
+ * @param state ready-to-bind, requires-review, bound, unbound, superseded, or failed
  * @param level UI/control-plane severity
  * @param operatorRef operator being implemented
  * @param operatorFingerprint fingerprint of the submitted operator contract
@@ -55,6 +55,7 @@ public record VisualRuntimeBindingImplementationBinding(
     public static final String STATE_BOUND = "bound";
     public static final String STATE_UNBOUND = "unbound";
     public static final String STATE_SUPERSEDED = "superseded";
+    public static final String STATE_FAILED = "failed";
 
     /**
      * Creates a normalized binding record.
@@ -81,7 +82,7 @@ public record VisualRuntimeBindingImplementationBinding(
     /**
      * Audit event for proposal lifecycle transitions.
      *
-     * @param eventType submitted, bound, unbound, or superseded
+     * @param eventType submitted, bound, unbound, superseded, failed, or restored
      * @param fromState previous lifecycle state
      * @param toState next lifecycle state
      * @param actor principal or team that approved the transition
@@ -248,5 +249,9 @@ public record VisualRuntimeBindingImplementationBinding(
 
     public boolean superseded() {
         return STATE_SUPERSEDED.equals(state);
+    }
+
+    public boolean failed() {
+        return STATE_FAILED.equals(state);
     }
 }

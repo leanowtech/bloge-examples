@@ -1943,6 +1943,12 @@ binding。`POST /api/visual/assets/runtime-binding-requirements/implementation-b
 要求当前 binding 已是 `bound`，且 `replacementBindingId` 指向同一 operatorRef 的
 ready-to-bind 或 review-acknowledged proposal；成功后旧记录进入 `superseded`，新记录进入
 `bound`，并写入 `supersedesBindingId` / `supersededByBindingId` 和 lifecycle events。
+如果 replacement 已被临时写成 `bound`，但 current binding 写入 `superseded` 失败，服务端会返回
+`409`、`state=failed`，追加
+`visual.runtimeBindingImplementation.supersedeCurrentUpdateFailed` diagnostic，并尝试把 replacement
+恢复到原 proposal state、清空临时 `supersedesBindingId`；若恢复也失败，会追加
+`visual.runtimeBindingImplementation.supersedeCompensationFailed`，避免同一 operatorRef 的双 active
+binding 被静默投影进 catalog。
 两个 mutation 返回 `bloge.visualRuntimeBindingImplementationLifecycleResult.v1`，用结构化
 diagnostics 表达 missing request、治理证据缺失、review ack 缺失、active binding 冲突、
 replacement 缺失和 operator mismatch。该 lifecycle fact 是后续 catalog/operator
@@ -2039,6 +2045,12 @@ activation 与 executable lowering integration 事实，写入 `post-apply-refre
 runtime-binding / metadata 变化面和非 `design` lowering evidence；breaking schema 或
 policy/governance 变化仍必须走 implementation validate 的 contract-diff gate、后续更严格的
 SemVer / JSON Schema 兼容性检查和 reimplementation 流程。
+如果 refreshed binding 已写入后 activation 或 executable lowering integration 创建失败，服务端返回
+`409`、`state=failed`，把 partial refreshed binding / activation 标记为 `failed`，并把 source
+binding 从 `superseded` 恢复为 `bound`；失败响应会同时携带恢复后的 source evidence、失败的
+refreshed evidence 和 `visual.executableReadinessEvidenceRefresh.*CreateFailed` diagnostic。补偿本身若失败，
+响应会追加 `visual.executableReadinessEvidenceRefresh.compensationFailed`，避免半成功 evidence chain 被误投影成
+current runtime binding。
 如果 active binding 已经指向当前 trusted operator fingerprint，服务端只有在同一 binding 下仍能找到
 active adapter activation 和 active executable lowering integration 且三段 evidence 对齐时才返回
 `state=current`；若只有 binding 已切换而 activation/integration 缺失或漂移，会返回 blocking
