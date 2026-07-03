@@ -374,6 +374,9 @@ class VisualAssetOverviewControllerTest {
         );
         String draftRequirementKey = "RUNTIME_BINDING|draft|%s|eligibility|executable-lowering|risk:eligibility|"
                 .formatted(draft.draftId());
+        String publicationRequirementKey =
+                "RUNTIME_BINDING|publication|%s|eligibility|executable-lowering|risk:eligibility|DESIGN"
+                        .formatted(publication.publicationId());
         VisualRuntimeBindingRequirements byRequirementKey = controller.runtimeBindingRequirements(
                 "",
                 "",
@@ -442,6 +445,25 @@ class VisualAssetOverviewControllerTest {
                 "",
                 ""
         );
+        VisualRuntimeBindingRequirements designArtifacts = controller.runtimeBindingRequirements(
+                "",
+                "",
+                "",
+                10,
+                0,
+                "",
+                "",
+                "",
+                "",
+                "",
+                "",
+                "",
+                "",
+                "",
+                "",
+                "",
+                "design"
+        );
         VisualRuntimeBindingHandoffBundle handoffBundle = controller.runtimeBindingHandoffBundle(
                 "",
                 "",
@@ -458,8 +480,29 @@ class VisualAssetOverviewControllerTest {
                 "",
                 ""
         );
+        VisualRuntimeBindingHandoffBundle designHandoffBundle = controller.runtimeBindingHandoffBundle(
+                "",
+                "",
+                "",
+                10,
+                0,
+                "",
+                "",
+                "",
+                "",
+                "",
+                "",
+                "",
+                "",
+                "",
+                "",
+                "",
+                "DESIGN"
+        );
         VisualRuntimeBindingHandoffReview currentReview = controller.reviewRuntimeBindingHandoffBundle(handoffBundle)
                 .getBody();
+        VisualRuntimeBindingHandoffReview designReview =
+                controller.reviewRuntimeBindingHandoffBundle(designHandoffBundle).getBody();
         VisualRuntimeBindingHandoffBundle sameMaterialDifferentExportTime = new VisualRuntimeBindingHandoffBundle(
                 handoffBundle.schemaVersion(),
                 Instant.EPOCH,
@@ -663,10 +706,30 @@ class VisualAssetOverviewControllerTest {
         assertThat(byRequirementKey.items()).singleElement()
                 .extracting(VisualRuntimeBindingRequirements.RequirementItem::requirementKey)
                 .isEqualTo(draftRequirementKey);
+        assertThat(designArtifacts.filter().filtered()).isTrue();
+        assertThat(designArtifacts.filter().artifactKind()).isEqualTo("DESIGN");
+        assertThat(designArtifacts.total()).isEqualTo(1);
+        assertThat(designArtifacts.unfilteredTotal()).isEqualTo(2);
+        assertThat(designArtifacts.targetKindCounts()).containsEntry("publication", 1);
+        assertThat(designArtifacts.artifactKindCounts()).containsEntry("DESIGN", 1);
+        assertThat(designArtifacts.items()).singleElement().satisfies(item -> {
+            assertThat(item.requirementKey()).isEqualTo(publicationRequirementKey);
+            assertThat(item.targetKind()).isEqualTo("publication");
+            assertThat(item.targetId()).isEqualTo(publication.publicationId());
+            assertThat(item.artifactKind()).isEqualTo("DESIGN");
+        });
         assertThat(handoffBundle.schemaVersion()).isEqualTo(VisualRuntimeBindingHandoffBundle.SCHEMA_VERSION);
         assertThat(handoffBundle.bundleFingerprint()).startsWith("sha256:");
         assertThat(handoffBundle.bundleFingerprint()).hasSize(71);
         assertThat(handoffBundle.bundleFingerprintVerified()).isTrue();
+        assertThat(designHandoffBundle.filter().artifactKind()).isEqualTo("DESIGN");
+        assertThat(designHandoffBundle.total()).isEqualTo(1);
+        assertThat(designHandoffBundle.unfilteredTotal()).isEqualTo(2);
+        assertThat(designHandoffBundle.requirementKeys()).containsExactly(publicationRequirementKey);
+        assertThat(designHandoffBundle.artifactKindCounts()).containsEntry("DESIGN", 1);
+        assertThat(designHandoffBundle.requirements()).singleElement()
+                .extracting(VisualRuntimeBindingRequirements.RequirementItem::artifactKind)
+                .isEqualTo("DESIGN");
         assertThat(sameMaterialDifferentExportTime.bundleFingerprint()).isEqualTo(handoffBundle.bundleFingerprint());
         assertThat(mismatchedFingerprintBundle.bundleFingerprint()).isEqualTo("sha256:forged");
         assertThat(mismatchedFingerprintBundle.computedBundleFingerprint()).isEqualTo(handoffBundle.bundleFingerprint());
@@ -780,6 +843,13 @@ class VisualAssetOverviewControllerTest {
             assertThat(item.changedFields()).isEmpty();
             assertThat(item.currentRequirement()).isNotNull();
         });
+        assertThat(designReview).isNotNull();
+        assertThat(designReview.state()).isEqualTo("current");
+        assertThat(designReview.filter().artifactKind()).isEqualTo("DESIGN");
+        assertThat(designReview.exportedRequirementKeys()).containsExactly(publicationRequirementKey);
+        assertThat(designReview.currentWindowRequirementKeys()).containsExactly(publicationRequirementKey);
+        assertThat(designReview.currentWindowDistribution().artifactKindCounts())
+                .containsEntry("DESIGN", 1);
         assertThat(firstPage.items()).noneMatch(item -> item.targetId().equals(publication.publicationId()));
         assertThat(excludedScope.scope().filtered()).isTrue();
         assertThat(excludedScope.total()).isZero();

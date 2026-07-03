@@ -416,6 +416,7 @@ const state = {
   visualRuntimeBindingHandoffBundleMessage: null,
   visualRuntimeBindingRequirementQuery: {
     targetKind: '',
+    artifactKind: '',
     operatorRef: '',
     operatorLibraryId: '',
     bindingKind: '',
@@ -835,6 +836,9 @@ function visualRuntimeBindingRequirementParams(builder = state.builder) {
   if (query.targetKind) {
     params.set('targetKind', query.targetKind);
   }
+  if (query.artifactKind) {
+    params.set('artifactKind', query.artifactKind);
+  }
   if (query.operatorRef) {
     params.set('operatorRef', query.operatorRef);
   }
@@ -894,6 +898,7 @@ function normalizeVisualRuntimeBindingRequirementQuery(query = {}) {
   const limit = Math.max(1, Math.min(Number(query.limit || 10) || 10, 200));
   return {
     targetKind: String(query.targetKind || '').trim().toLowerCase(),
+    artifactKind: normalizePublicationArtifactKindFilter(query.artifactKind),
     operatorRef: String(query.operatorRef || '').trim(),
     operatorLibraryId: String(query.operatorLibraryId || '').trim(),
     bindingKind: String(query.bindingKind || '').trim().toLowerCase(),
@@ -8069,7 +8074,9 @@ function visualRuntimeBindingRequirementsShouldShow(bindingIndex) {
   const query = normalizeVisualRuntimeBindingRequirementQuery(state.visualRuntimeBindingRequirementQuery);
   return Number(bindingIndex?.unfilteredTotal ?? bindingIndex?.total ?? 0) > 0
     || Boolean(query.targetKind
+      || query.artifactKind
       || query.operatorRef
+      || query.operatorLibraryId
       || query.bindingKind
       || query.handoffLane
       || query.handoffKind
@@ -8164,6 +8171,7 @@ function visualRuntimeBindingRequirementControls(bindingIndex) {
   const offset = Number(bindingIndex?.offset ?? query.offset) || 0;
   const pageSize = Number(bindingIndex?.itemLimit || query.limit || 10) || 10;
   const hasFilter = Boolean(query.targetKind
+    || query.artifactKind
     || query.operatorRef
     || query.operatorLibraryId
     || query.bindingKind
@@ -8188,6 +8196,12 @@ function visualRuntimeBindingRequirementControls(bindingIndex) {
             query.targetKind,
             bindingIndex?.targetKindCounts
           )}
+        </select>
+      </label>
+      <label>
+        <span>${escapeHtml('Artifact')}</span>
+        <select id="runtime-binding-artifact-kind" aria-label="Filter runtime binding requirements by artifact kind">
+          ${visualRuntimeBindingRawOptionMarkup('All artifacts', bindingIndex?.artifactKindCounts, query.artifactKind)}
         </select>
       </label>
       <label>
@@ -8599,6 +8613,13 @@ function attachVisualRuntimeBindingRequirementQueryHandlers(bindingIndex) {
       offset: 0
     });
   }
+  const artifactKind = $('runtime-binding-artifact-kind');
+  if (artifactKind) {
+    artifactKind.onchange = () => updateVisualRuntimeBindingRequirementQuery({
+      artifactKind: artifactKind.value,
+      offset: 0
+    });
+  }
   const bindingKind = $('runtime-binding-kind');
   if (bindingKind) {
     bindingKind.onchange = () => updateVisualRuntimeBindingRequirementQuery({
@@ -8691,6 +8712,7 @@ function attachVisualRuntimeBindingRequirementQueryHandlers(bindingIndex) {
   if (reset) {
     reset.onclick = () => updateVisualRuntimeBindingRequirementQuery({
       targetKind: '',
+      artifactKind: '',
       operatorRef: '',
       operatorLibraryId: '',
       bindingKind: '',

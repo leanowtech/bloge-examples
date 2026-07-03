@@ -1909,13 +1909,14 @@ schema-only draft 在目标 catalog 未就绪时仍可按源算子库归属交�
 `bloge.visualRuntimeBindingRequirements.v1`，按 active draft 和 immutable publication
 展开同一批 requirement，并支持 `tenantId/namespace/environment`、`limit/offset`、
 `targetKind`、`operatorRef`、`operatorLibraryId`、`bindingKind`、`handoffLane`、`handoffKind`、`handoffTarget`、
-`sourceKind`、`loweringMode`、`readinessState` 和 `requirementKey`
-查询。`requirementKey` 用于让 draft/publication import result 或 workspace item
+`sourceKind`、`loweringMode`、`readinessState`、`artifactKind=EXECUTABLE\|DESIGN` 和 `requirementKey`
+查询。`artifactKind` 过滤只命中 publication requirements，用于把 DESIGN artifact 的实现缺口
+独立导出给 runtime-plane；`requirementKey` 用于让 draft/publication import result 或 workspace item
 直接回查同一条 runtime binding gap，而不是分页扫描索引。该索引不持久化待办状态，`readiness.runtimeBindingRequirements[]`
 仍是唯一事实来源。
 `GET /api/visual/assets/runtime-binding-requirements/handoff-bundle` 会把当前查询窗口导出为
 `bloge.visualRuntimeBindingHandoff.v1`，携带 source index lineage、scope/filter、
-stable requirement keys、`operatorRefCounts`、`operatorLibraryIdCounts`、路由计数、requirement rows、
+stable requirement keys、`artifactKindCounts`、`operatorRefCounts`、`operatorLibraryIdCounts`、路由计数、requirement rows、
 `operatorContracts[]` 和 `bundleFingerprint`，用于把 schema-only/design-only
 资产移交给 runtime-plane 团队。`operatorContracts[]` 是当前 handoff window
 引用算子的轻量契约快照，包含 `operatorRef`、`operatorVersion`、`fingerprint`、
@@ -2634,7 +2635,7 @@ repository 记录。`import-bundle` 才真正创建 immutable publication。两�
 publication 资产列表同样把 artifact kind 当作查询合同，而不是客户端标签：
 `GET /api/visual/publications` 和 `GET /api/visual/publications/summaries`
 都支持 `tenantId`、`namespace`、`environment` 与
-`artifactKind=EXECUTABLE|DESIGN` 过滤；`summaries` 返回
+`artifactKind=EXECUTABLE\|DESIGN` 过滤；`summaries` 返回
 `bloge.visualGraphPublicationSummary.v1`，用于外部控制面和浏览器在不拉取完整
 immutable artifact payload 的情况下建立 `EXECUTABLE` / `DESIGN` 资产索引。
 

@@ -238,6 +238,7 @@ public class VisualAssetOverviewController {
      * @param loweringMode optional lowering mode filter
      * @param readinessState optional graph or node readiness state filter
      * @param requirementKey optional stable requirement key filter
+     * @param artifactKind optional publication artifact kind filter
      * @return runtime binding requirement index
      */
     @GetMapping("/runtime-binding-requirements")
@@ -257,7 +258,8 @@ public class VisualAssetOverviewController {
             @RequestParam(defaultValue = "") String sourceKind,
             @RequestParam(defaultValue = "") String loweringMode,
             @RequestParam(defaultValue = "") String readinessState,
-            @RequestParam(defaultValue = "") String requirementKey) {
+            @RequestParam(defaultValue = "") String requirementKey,
+            @RequestParam(defaultValue = "") String artifactKind) {
         return VisualRuntimeBindingRequirements.from(
                 draftSummaries(tenantId, namespace, environment),
                 publicationSummaries(tenantId, namespace, environment),
@@ -277,8 +279,46 @@ public class VisualAssetOverviewController {
                 sourceKind,
                 loweringMode,
                 readinessState,
-                requirementKey
+                requirementKey,
+                artifactKind
         );
+    }
+
+    public VisualRuntimeBindingRequirements runtimeBindingRequirements(
+            String tenantId,
+            String namespace,
+            String environment,
+            int limit,
+            int offset,
+            String targetKind,
+            String operatorRef,
+            String operatorLibraryId,
+            String bindingKind,
+            String handoffLane,
+            String handoffKind,
+            String handoffTarget,
+            String sourceKind,
+            String loweringMode,
+            String readinessState,
+            String requirementKey) {
+        return runtimeBindingRequirements(
+                tenantId,
+                namespace,
+                environment,
+                limit,
+                offset,
+                targetKind,
+                operatorRef,
+                operatorLibraryId,
+                bindingKind,
+                handoffLane,
+                handoffKind,
+                handoffTarget,
+                sourceKind,
+                loweringMode,
+                readinessState,
+                requirementKey,
+                "");
     }
 
     /**
@@ -304,6 +344,7 @@ public class VisualAssetOverviewController {
      * @param loweringMode optional lowering mode filter
      * @param readinessState optional graph or node readiness state filter
      * @param requirementKey optional stable requirement key filter
+     * @param artifactKind optional publication artifact kind filter
      * @return portable runtime-binding handoff bundle
      */
     @GetMapping("/runtime-binding-requirements/handoff-bundle")
@@ -323,7 +364,8 @@ public class VisualAssetOverviewController {
             @RequestParam(defaultValue = "") String sourceKind,
             @RequestParam(defaultValue = "") String loweringMode,
             @RequestParam(defaultValue = "") String readinessState,
-            @RequestParam(defaultValue = "") String requirementKey) {
+            @RequestParam(defaultValue = "") String requirementKey,
+            @RequestParam(defaultValue = "") String artifactKind) {
         VisualRuntimeBindingRequirements index = runtimeBindingRequirements(
                 tenantId,
                 namespace,
@@ -340,9 +382,47 @@ public class VisualAssetOverviewController {
                 sourceKind,
                 loweringMode,
                 readinessState,
-                requirementKey
+                requirementKey,
+                artifactKind
         );
         return VisualRuntimeBindingHandoffBundle.from(index, operatorContractsForRuntimeBindingHandoff(index));
+    }
+
+    public VisualRuntimeBindingHandoffBundle runtimeBindingHandoffBundle(
+            String tenantId,
+            String namespace,
+            String environment,
+            int limit,
+            int offset,
+            String targetKind,
+            String operatorRef,
+            String operatorLibraryId,
+            String bindingKind,
+            String handoffLane,
+            String handoffKind,
+            String handoffTarget,
+            String sourceKind,
+            String loweringMode,
+            String readinessState,
+            String requirementKey) {
+        return runtimeBindingHandoffBundle(
+                tenantId,
+                namespace,
+                environment,
+                limit,
+                offset,
+                targetKind,
+                operatorRef,
+                operatorLibraryId,
+                bindingKind,
+                handoffLane,
+                handoffKind,
+                handoffTarget,
+                sourceKind,
+                loweringMode,
+                readinessState,
+                requirementKey,
+                "");
     }
 
     /**
@@ -419,7 +499,8 @@ public class VisualAssetOverviewController {
                 filter.sourceKind(),
                 filter.loweringMode(),
                 filter.readinessState(),
-                filter.requirementKey()
+                filter.requirementKey(),
+                filter.artifactKind()
         );
         Map<String, VisualRuntimeBindingRequirements.RequirementItem> currentByRequirementKey =
                 new LinkedHashMap<>();
@@ -440,7 +521,8 @@ public class VisualAssetOverviewController {
                     "",
                     "",
                     "",
-                    requirementKey
+                    requirementKey,
+                    ""
             );
             currentRequirement.items().stream()
                     .findFirst()

@@ -389,6 +389,8 @@ class VisualAuthoringBrowserWorkflowTest {
                 .contains("run-history-artifact")
                 .contains("publication-artifact-filter")
                 .contains("publicationArtifactKindFilter")
+                .contains("runtime-binding-artifact-kind")
+                .contains("artifactKind: normalizePublicationArtifactKindFilter")
                 .contains("sourceArtifactKind")
                 .contains("bySourceArtifactKind")
                 .contains("/api/visual/runs/${encodeURIComponent(runId)}/trace")

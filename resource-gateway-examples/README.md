@@ -1222,8 +1222,8 @@ recommendation list, `/api/visual/assets/runtime-binding-requirements` exposes
 the same gaps as `bloge.visualRuntimeBindingRequirements.v1`, scoped and
 pageable by tenant/namespace/environment and filterable by target kind, operator
 reference, owner operator library id, binding kind, handoff lane, handoff work
-kind, handoff route target, source kind, lowering mode, readiness state, or
-stable requirement key. The same
+kind, handoff route target, source kind, lowering mode, readiness state,
+publication artifact kind (`EXECUTABLE` / `DESIGN`), or stable requirement key. The same
 Workspace Overview panel renders that index with filters, paging, and
 draft/publication Open actions, and can export the current filtered window as a
 `bloge.visualRuntimeBindingHandoff.v1` bundle with source-index lineage,
@@ -1692,7 +1692,7 @@ Seven `.bloge` graphs live in `src/main/resources/bloge/gateway/`:
 | `GraphDraftRevisionRestoreRequest` | Governed restore request for turning one immutable draft revision into a new latest revision with optimistic locking and actor/source/summary/reason audit metadata |
 | `VisualGraphReadiness` | Server-derived graph runtime/design readiness (`bloge.visualGraphReadiness.v1`) with node readiness rows and runtime binding requirements for schema-valid but non-executable design artifacts |
 | `VisualGraphActionReadiness` | Server-derived graph action gate summary (`bloge.visualGraphActionReadiness.v1`) for compile, run, DESIGN publication, EXECUTABLE publication, warning acknowledgement, and governance evidence requirements |
-| `VisualRuntimeBindingHandoffBundle` | Portable `bloge.visualRuntimeBindingHandoff.v1` snapshot derived from the runtime-binding requirement index for assigning schema-only/design-only runtime implementation gaps to external runtime-plane teams, including operator-library owner counts for batch routing and operator contract snapshots for schema/lowering/readiness implementation handoff |
+| `VisualRuntimeBindingHandoffBundle` | Portable `bloge.visualRuntimeBindingHandoff.v1` snapshot derived from the runtime-binding requirement index for assigning schema-only/design-only runtime implementation gaps to external runtime-plane teams, including artifact-kind-filtered DESIGN/EXECUTABLE windows, operator-library owner counts for batch routing, and operator contract snapshots for schema/lowering/readiness implementation handoff |
 | `VisualRuntimeBindingHandoffReview` | Read-only `bloge.visualRuntimeBindingHandoffReview.v1` reconciliation report that compares a handoff bundle with the current runtime-binding requirement read model by stable key and also compares exported operator contract snapshots with the current catalog, returning requirement/contract drift field changes and exported/current/new-window routing distributions |
 | `VisualRuntimeBindingImplementationValidation` | Stateless `bloge.visualRuntimeBindingImplementationValidation.v1` pre-bind gate that validates a runtime team's implementation proposal against source handoff fingerprint, source requirement keys, a handoff operator contract snapshot, current catalog fingerprint, semantic JSON Schema-aware field-level contract diff, implementation metadata, test evidence, policy evidence, and rollback target without closing runtime-binding workflow state |
 | `VisualRuntimeBindingImplementationBinding` | Persistent `bloge.visualRuntimeBindingImplementationBindingRecord.v1` proposal/lifecycle record with validation snapshot, implementation metadata, bound/superseded state, actor/reason lifecycle events, and supersede lineage |

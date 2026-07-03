@@ -121,6 +121,7 @@ public record VisualRuntimeBindingRequirements(
      * @param loweringMode optional lowering mode filter
      * @param readinessState optional graph/node readiness state filter
      * @param requirementKey optional stable requirement key filter
+     * @param artifactKind optional publication artifact kind filter
      * @return runtime binding requirement index
      */
     public static VisualRuntimeBindingRequirements from(List<GraphDraftSummary> drafts,
@@ -141,10 +142,12 @@ public record VisualRuntimeBindingRequirements(
                                                         String sourceKind,
                                                         String loweringMode,
                                                         String readinessState,
-                                                        String requirementKey) {
+                                                        String requirementKey,
+                                                        String artifactKind) {
         List<RequirementItem> generated = generate(drafts, publications, operatorLibraryIdsByOperatorRef);
         RequirementFilter filter = new RequirementFilter(targetKind, operatorRef, operatorLibraryId, bindingKind,
-                handoffLane, handoffKind, handoffTarget, sourceKind, loweringMode, readinessState, requirementKey);
+                handoffLane, handoffKind, handoffTarget, sourceKind, loweringMode, readinessState, requirementKey,
+                artifactKind);
         List<RequirementItem> filtered = generated.stream()
                 .filter(filter::matches)
                 .sorted(VisualRuntimeBindingRequirements::compareItems)
@@ -179,6 +182,53 @@ public record VisualRuntimeBindingRequirements(
 
     public static VisualRuntimeBindingRequirements from(List<GraphDraftSummary> drafts,
                                                         List<VisualGraphPublicationSummary> publications,
+                                                        Map<String, String> operatorLibraryIdsByOperatorRef,
+                                                        String tenantId,
+                                                        String namespace,
+                                                        String environment,
+                                                        int itemLimit,
+                                                        int offset,
+                                                        String targetKind,
+                                                        String operatorRef,
+                                                        String operatorLibraryId,
+                                                        String bindingKind,
+                                                        String handoffLane,
+                                                        String handoffKind,
+                                                        String handoffTarget,
+                                                        String sourceKind,
+                                                        String loweringMode,
+                                                        String readinessState,
+                                                        String requirementKey) {
+        return from(drafts, publications, operatorLibraryIdsByOperatorRef, tenantId, namespace, environment,
+                itemLimit, offset, targetKind, operatorRef, operatorLibraryId, bindingKind, handoffLane, handoffKind,
+                handoffTarget, sourceKind, loweringMode, readinessState, requirementKey, "");
+    }
+
+    public static VisualRuntimeBindingRequirements from(List<GraphDraftSummary> drafts,
+                                                        List<VisualGraphPublicationSummary> publications,
+                                                        String tenantId,
+                                                        String namespace,
+                                                        String environment,
+                                                        int itemLimit,
+                                                        int offset,
+                                                        String targetKind,
+                                                        String operatorRef,
+                                                        String bindingKind,
+                                                        String handoffLane,
+                                                        String handoffKind,
+                                                        String handoffTarget,
+                                                        String sourceKind,
+                                                        String loweringMode,
+                                                        String readinessState,
+                                                        String requirementKey,
+                                                        String artifactKind) {
+        return from(drafts, publications, Map.of(), tenantId, namespace, environment, itemLimit, offset, targetKind,
+                operatorRef, "", bindingKind, handoffLane, handoffKind, handoffTarget, sourceKind, loweringMode,
+                readinessState, requirementKey, artifactKind);
+    }
+
+    public static VisualRuntimeBindingRequirements from(List<GraphDraftSummary> drafts,
+                                                        List<VisualGraphPublicationSummary> publications,
                                                         String tenantId,
                                                         String namespace,
                                                         String environment,
@@ -194,9 +244,9 @@ public record VisualRuntimeBindingRequirements(
                                                         String loweringMode,
                                                         String readinessState,
                                                         String requirementKey) {
-        return from(drafts, publications, Map.of(), tenantId, namespace, environment, itemLimit, offset, targetKind,
-                operatorRef, "", bindingKind, handoffLane, handoffKind, handoffTarget, sourceKind, loweringMode,
-                readinessState, requirementKey);
+        return from(drafts, publications, tenantId, namespace, environment, itemLimit, offset, targetKind,
+                operatorRef, bindingKind, handoffLane, handoffKind, handoffTarget, sourceKind, loweringMode,
+                readinessState, requirementKey, "");
     }
 
     /**
@@ -228,7 +278,7 @@ public record VisualRuntimeBindingRequirements(
      */
     public static VisualRuntimeBindingRequirements empty() {
         return from(List.of(), List.of(), "", "", "", DEFAULT_ITEM_LIMIT, 0, "", "", "", "", "", "", "", "",
-                "", "");
+                "", "", "");
     }
 
     /**
@@ -245,6 +295,7 @@ public record VisualRuntimeBindingRequirements(
      * @param loweringMode lowering mode, empty when unfiltered
      * @param readinessState graph/node readiness state, empty when unfiltered
      * @param requirementKey stable requirement key, empty when unfiltered
+     * @param artifactKind publication artifact kind, empty when unfiltered
      * @param filtered true when any filter is active
      */
     public record RequirementFilter(
@@ -259,6 +310,7 @@ public record VisualRuntimeBindingRequirements(
             String loweringMode,
             String readinessState,
             String requirementKey,
+            String artifactKind,
             boolean filtered
     ) {
         public RequirementFilter(String targetKind,
@@ -271,7 +323,8 @@ public record VisualRuntimeBindingRequirements(
                                  String sourceKind,
                                  String loweringMode,
                                  String readinessState,
-                                 String requirementKey) {
+                                 String requirementKey,
+                                 String artifactKind) {
             this(
                     normalizeFacetValue(targetKind),
                     normalizeTextValue(operatorRef),
@@ -284,6 +337,7 @@ public record VisualRuntimeBindingRequirements(
                     normalizeFacetValue(loweringMode),
                     normalizeFacetValue(readinessState),
                     normalizeTextValue(requirementKey),
+                    normalizeArtifactKindValue(artifactKind),
                     !normalizeFacetValue(targetKind).isBlank()
                             || !normalizeTextValue(operatorRef).isBlank()
                             || !normalizeTextValue(operatorLibraryId).isBlank()
@@ -295,7 +349,23 @@ public record VisualRuntimeBindingRequirements(
                             || !normalizeFacetValue(loweringMode).isBlank()
                             || !normalizeFacetValue(readinessState).isBlank()
                             || !normalizeTextValue(requirementKey).isBlank()
+                            || !normalizeArtifactKindValue(artifactKind).isBlank()
             );
+        }
+
+        public RequirementFilter(String targetKind,
+                                 String operatorRef,
+                                 String operatorLibraryId,
+                                 String bindingKind,
+                                 String handoffLane,
+                                 String handoffKind,
+                                 String handoffTarget,
+                                 String sourceKind,
+                                 String loweringMode,
+                                 String readinessState,
+                                 String requirementKey) {
+            this(targetKind, operatorRef, operatorLibraryId, bindingKind, handoffLane, handoffKind, handoffTarget,
+                    sourceKind, loweringMode, readinessState, requirementKey, "");
         }
 
         public RequirementFilter(String targetKind,
@@ -338,6 +408,7 @@ public record VisualRuntimeBindingRequirements(
             loweringMode = normalizeFacetValue(loweringMode);
             readinessState = normalizeFacetValue(readinessState);
             requirementKey = normalizeTextValue(requirementKey);
+            artifactKind = normalizeArtifactKindValue(artifactKind);
             filtered = !targetKind.isBlank()
                     || !operatorRef.isBlank()
                     || !operatorLibraryId.isBlank()
@@ -348,11 +419,12 @@ public record VisualRuntimeBindingRequirements(
                     || !sourceKind.isBlank()
                     || !loweringMode.isBlank()
                     || !readinessState.isBlank()
-                    || !requirementKey.isBlank();
+                    || !requirementKey.isBlank()
+                    || !artifactKind.isBlank();
         }
 
         static RequirementFilter all() {
-            return new RequirementFilter("", "", "", "", "", "", "", "", "", "", "");
+            return new RequirementFilter("", "", "", "", "", "", "", "", "", "", "", "");
         }
 
         boolean matches(RequirementItem item) {
@@ -369,7 +441,8 @@ public record VisualRuntimeBindingRequirements(
                     && (loweringMode.isBlank() || loweringMode.equals(item.loweringMode()))
                     && (readinessState.isBlank()
                             || readinessState.equals(item.readinessState())
-                            || readinessState.equals(item.requirementState()));
+                            || readinessState.equals(item.requirementState()))
+                    && (artifactKind.isBlank() || artifactKind.equals(item.artifactKind()));
         }
     }
 
@@ -675,6 +748,10 @@ public record VisualRuntimeBindingRequirements(
 
     private static String normalizeTextValue(String value) {
         return value == null ? "" : value.trim();
+    }
+
+    private static String normalizeArtifactKindValue(String value) {
+        return value == null ? "" : value.trim().toUpperCase(Locale.ROOT);
     }
 
 }
