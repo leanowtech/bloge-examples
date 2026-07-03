@@ -333,8 +333,9 @@ MVP schema kind：
 已经声明未来执行或外部事件边界，但当前 resource-gateway request-response visual
 runtime 还不能调度 worker job、调用 AI tool、订阅事件、消费消息通道或暴露 inbound
 webhook。服务端因此派生 `runtimeReadiness.state=RUNTIME_BLOCKED`、
-`executable=false`、`artifactKinds=["DESIGN"]`，并在 DSL generation 阶段返回
-`visual.codegen.runtimeBindingUnsupported`，避免画布把尚未接入的运行时伪装成可执行图。
+`executable=false`、`artifactKinds=["DESIGN"]`。控制面 compile/run/publish 优先使用
+`bloge.visualGraphActionReadiness.v1` 阻断不可执行动作；低层 DSL generation 仍可返回
+`visual.codegen.runtimeBindingUnsupported` 作为 generator 级诊断，避免画布把尚未接入的运行时伪装成可执行图。
 
 ### 5.4 capabilities
 

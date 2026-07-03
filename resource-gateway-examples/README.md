@@ -644,8 +644,10 @@ mode to `DESIGN`, and now constrains that selector from the server-returned
 graph readiness `artifactKinds`; API callers may pass `artifactKind: "DESIGN"`
 directly to freeze a schema-valid but non-executable design artifact. This is useful when
 the draft uses schema-only `lowering.mode=design` operators whose runtime
-lowering does not exist yet. Design publications retain generation diagnostics such as
-`visual.codegen.designOnlyOperator`; publication run returns
+lowering does not exist yet. Design publications retain generation diagnostics
+from the server action gate, such as `visual.action.compileBlocked`, while
+direct low-level DSL generation still reports node-scoped lowering diagnostics
+such as `visual.codegen.designOnlyOperator` for generator tests; publication run returns
 `visual.publication.designNotExecutable`, and design artifacts are not projected
 back into the operator catalog as reusable subgraphs. The Publications panel
 labels each artifact as `EXECUTABLE` or `DESIGN`, and disables run/golden actions
@@ -1211,14 +1213,15 @@ their input/output schema constraints, saved, revised, exported, and validated;
 the validate response reports `bloge.visualGraphReadiness.v1`, so a schema-valid
 design-only graph is explicitly `valid=true`, `executable=false`, and publishable
 as a `DESIGN` artifact instead of being treated as a broken runtime graph;
-compile/run and default `artifactKind=EXECUTABLE` publish then return a
-deterministic `visual.codegen.designOnlyOperator` diagnostic until the operator
-is rebound to an executable native/transform/branch lowering. That publish
-rejection still includes validation readiness, so the browser can move the
-author back to the `DESIGN` artifact path instead of treating the composition as
-broken. The Browser Composer's Server Check area renders a dedicated readiness
-panel for these graphs, showing that save/export/`DESIGN` publication remain
-allowed while compile/run/`EXECUTABLE` publication wait for runtime binding.
+transient compile/run and default `artifactKind=EXECUTABLE` publish then stop at
+the action-readiness gate with deterministic `visual.action.compileBlocked` or
+`visual.action.runBlocked` diagnostics until the operator is rebound to an
+executable native/transform/branch lowering. That publish rejection still
+includes validation readiness, so the browser can move the author back to the
+`DESIGN` artifact path instead of treating the composition as broken. The
+Browser Composer's Server Check area renders a dedicated readiness panel for
+these graphs, showing that save/export/`DESIGN` publication remain allowed while
+compile/run/`EXECUTABLE` publication wait for runtime binding.
 That readiness payload also lists node-scoped `runtimeBindingRequirements` for
 schema-valid but non-executable nodes, including the missing binding kind,
 declared target such as worker topic/event type/channel/webhook path, handoff
@@ -1369,9 +1372,9 @@ operators use the same non-executable contract shape: `source.kind =
 These are not executed by the current request-response visual runtime: they
 validate as schema-authorable runtime-blocked operators, appear in
 source/lowering/readiness facets, can be saved/exported/published as `DESIGN`
-artifacts, and fail
-compile/run/executable publish with `visual.codegen.runtimeBindingUnsupported`
-until a worker, AI-tool, event, message, or webhook runtime is attached.
+artifacts, and fail compile/run/executable publish at the action-readiness or
+low-level DSL lowering gate until a worker, AI-tool, event, message, or webhook
+runtime is attached.
 `POST /admin/visual-operator-libraries/from-asyncapi` can preview-project
 AsyncAPI JSON or YAML into the same external-boundary operator-library draft
 shape, including webhook method/path, message channels, event payload schema,

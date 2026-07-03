@@ -733,8 +733,11 @@ publication asset overview 中被分类成不同待办。
 当前还支持
 `lowering.mode=design` 的 schema-only authoring：这类用户算子可以进入 catalog、
 拖拽、连线、保存、导出、被 schema validator 校验，并可通过浏览器发布模式或 API
-`artifactKind=DESIGN` 发布成非执行型设计制品；compile/run/default executable publish 会返回
-`visual.codegen.designOnlyOperator`，直到后续绑定 native / transform / branch 等可执行 lowering。
+`artifactKind=DESIGN` 发布成非执行型设计制品；schema-valid design-only draft 的
+compile/run/default executable publish 会停在 `bloge.visualGraphActionReadiness.v1`
+动作门禁并返回 `visual.action.compileBlocked` 或 `visual.action.runBlocked`，直到后续绑定
+native / transform / branch 等可执行 lowering。低层 DSL generator 直接调用仍可返回
+node-scoped `visual.codegen.designOnlyOperator`，但控制面 API 不要求浏览器解析该低层诊断。
 draft validate response 现在返回服务端派生的 `bloge.visualGraphReadiness.v1` 和
 `bloge.visualGraphActionReadiness.v1`：
 `valid` 只表达 draft contract 是否有 blocking error，`readiness` 单独表达
@@ -1277,7 +1280,7 @@ resource-gateway 已有 rate limiting、cache、circuit breaker，可以作为�
 | builder 节点字段写死贷款场景，不能通用 | 已缓解：inspector 根据 input/config schema 渲染字段、source picker 和 config controls | 继续补复杂嵌套 config 的专业化控件和浏览器回归测试 |
 | DSL 字符串由 JS 拼接，难以校验和扩展 | 已缓解：GraphDraft -> DSL 在服务端生成，compile/run/publish 走服务端 validator/generator/compiler | 保留 DSL preview，但不让手写 DSL 成为画布语义源 |
 | `ResourceDescriptor` 无精确 payload schema，画布无法类型安全连接 | 已缓解：独立 `ResourceDesignContract` 补足 request/payload schema 并投影 resource virtual operator；已提供 OpenAPI operation discovery 和 operation 到 contract 草案的 preview endpoint，且 OpenAPI schema `$ref` 无法本地解析时会在 discovery/projection/浏览器 Preview 前置为 `BLOCKED`，不会生成半可信 contract/descriptor；AsyncAPI operation/message discovery 可先暴露候选 readiness，再用单选或 `selections[]` 批量选择子集生成 event-source/message-handler/webhook operator-library 草案并复用 validator/profile/impact；AsyncAPI message headers schema 会投影成 schema-aware `headers` 端口，operation summary 会暴露 payload/header type，lowering parameters 会保留最小 AsyncAPI operation/channel/message 身份；projection result 会返回 available/selected/omitted、selector match、unmatched selector、omitted reason 和 coverage status 审计证据，浏览器可把 preview 结果回填到 operator-library import 编辑器；批量 selector 未命中会阻断静默半截投影 | 继续深化 descriptor 生成建议、schema diff、更细粒度协议 impact preview 和更广义接口导入 |
-| `/compose/run` 只注册 `httpResource`，无法执行通用算子 | 部分缓解：visual draft run 使用 GraphDraft DSL generator 和现有 dynamic runner；user-library transform/branch/native lowering 已可参与；无实现的 schema-only operator 可用 `lowering.mode=design` 进入画布，并可用 `artifactKind=DESIGN` 冻结设计制品；remote-worker / AI-tool / event-source / message-handler / webhook source kind 与 lowering binding 已可进入 catalog、schema 编排和 DESIGN publication，但在 compile/run/default executable publish 阶段明确阻断 | 补真正的 worker dispatcher、AI tool invocation runtime、event/message/webhook ingress runtime 和更完整 runtime operator availability |
+| `/compose/run` 只注册 `httpResource`，无法执行通用算子 | 部分缓解：visual draft run 使用 GraphDraft DSL generator 和现有 dynamic runner；user-library transform/branch/native lowering 已可参与；无实现的 schema-only operator 可用 `lowering.mode=design` 进入画布，并可用 `artifactKind=DESIGN` 冻结设计制品；remote-worker / AI-tool / event-source / message-handler / webhook source kind 与 lowering binding 已可进入 catalog、schema 编排和 DESIGN publication，但在 compile/run/default executable publish 阶段由 action-readiness 或低层 DSL lowering gate 明确阻断 | 补真正的 worker dispatcher、AI tool invocation runtime、event/message/webhook ingress runtime 和更完整 runtime operator availability |
 | diagnostics 只展示 compiler 信息，缺少 schema/权限/策略错误 | 已缓解：`VisualDiagnostic` 覆盖 schema、policy、connection、fingerprint、compile/run diagnostics；run history 已保存 shape-only trace 并提供 `/api/visual/runs/{runId}/trace` | 继续补节点耗时、事件流和画布高亮重放 |
 
 当前 `resource-gateway-examples` 已经把 `configSchema` 的第一层落成代码：用户导入 operator library 时会校验 config schema 本身，canvas inspector 会根据简单 config 字段渲染编辑控件，并允许把 config 字段从 literal 切换为 source-backed expression。服务端 `GraphDraftValidator` 会在 validate/compile/run 前阻断缺必填 config、类型不匹配、enum 不匹配和禁止额外字段场景。结构化 config expression（例如 `{ kind: "expression", expr: "ctx.threshold" }`）不会被当成普通 object 误杀；如果它是纯 `ctx.*` 或 `node.output.*` 引用，服务端会把引用 schema 与目标 `configSchema` 做兼容性校验，DSL preview/codegen 也会把该结构降回普通 BLOGE DSL 表达式。native operator 的业务 `configSchema` 会 lower 成 BLOGE input block 的 `config` 对象，所以浏览器会在业务 config 存在时隐藏会 lower 到根 `config` 的普通 input target，服务端也会在 draft 校验和连接预检中阻断同一节点把普通 input schema 路径 lower 到根 `config` 的冲突。它还区分正式校验与连接预检：正式 draft 阻断 data edge / semantic dependency 不一致，连接预检则允许尚未写入 binding 的 preview edge 先通过 schema 与 DAG gate。config 中的表达式引用已经参与引用存在性校验、DAG cycle gate 和拓扑排序。复杂表达式类型推断、复杂嵌套 config 的专业化控件仍属于后续增强，但服务端契约已经先行兜底。
