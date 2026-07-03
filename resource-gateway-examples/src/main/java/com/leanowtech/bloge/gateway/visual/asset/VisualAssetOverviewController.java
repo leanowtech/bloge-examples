@@ -14,6 +14,7 @@ import com.leanowtech.bloge.gateway.visual.publication.VisualGraphPublicationSum
 import com.leanowtech.bloge.gateway.visual.validation.GraphDraftValidator;
 import com.leanowtech.bloge.gateway.visual.validation.VisualValidationResult;
 
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -23,8 +24,10 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
+import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 
 /**
@@ -38,6 +41,7 @@ public class VisualAssetOverviewController {
     private final GraphDraftValidator validator;
     private final VisualOperatorCatalog catalog;
     private final VisualGraphPublicationRepository publicationRepository;
+    private final VisualRuntimeBindingImplementationRepository implementationRepository;
 
     /**
      * @param draftRepository draft repository
@@ -49,10 +53,30 @@ public class VisualAssetOverviewController {
                                          GraphDraftValidator validator,
                                          VisualOperatorCatalog catalog,
                                          VisualGraphPublicationRepository publicationRepository) {
+        this(draftRepository, validator, catalog, publicationRepository,
+                new InMemoryVisualRuntimeBindingImplementationRepository());
+    }
+
+    /**
+     * @param draftRepository draft repository
+     * @param validator draft validator
+     * @param catalog visual operator catalog
+     * @param publicationRepository publication repository
+     * @param implementationRepository runtime implementation binding repository
+     */
+    @Autowired
+    public VisualAssetOverviewController(GraphDraftRepository draftRepository,
+                                         GraphDraftValidator validator,
+                                         VisualOperatorCatalog catalog,
+                                         VisualGraphPublicationRepository publicationRepository,
+                                         VisualRuntimeBindingImplementationRepository implementationRepository) {
         this.draftRepository = draftRepository;
         this.validator = validator;
         this.catalog = catalog;
         this.publicationRepository = publicationRepository;
+        this.implementationRepository = implementationRepository == null
+                ? new InMemoryVisualRuntimeBindingImplementationRepository()
+                : implementationRepository;
     }
 
     /**
@@ -352,6 +376,112 @@ public class VisualAssetOverviewController {
         ));
     }
 
+    /**
+     * Validates a runtime-plane implementation binding proposal against a handoff operator contract.
+     *
+     * <p>This endpoint is intentionally stateless. It is the pre-mutation gate for
+     * a future bind/supersede lifecycle and does not close runtime-binding
+     * requirements by itself.</p>
+     *
+     * @param request submitted implementation binding proposal
+     * @return validation result with contract, catalog, and evidence diagnostics
+     */
+    @PostMapping("/runtime-binding-requirements/implementation-bindings/validate")
+    public ResponseEntity<VisualRuntimeBindingImplementationValidation> validateRuntimeBindingImplementation(
+            @RequestBody(required = false) VisualRuntimeBindingImplementationValidation.Request request) {
+        if (request == null) {
+            return ResponseEntity.badRequest()
+                    .body(VisualRuntimeBindingImplementationValidation.missingRequest());
+        }
+        String operatorRef = implementationOperatorRef(request);
+        OperatorDefinition currentOperator = operatorRef.isBlank()
+                ? null
+                : catalog.find(operatorRef).orElse(null);
+        VisualRuntimeBindingImplementationValidation result =
+                VisualRuntimeBindingImplementationValidation.from(request, currentOperator);
+        boolean unsupportedVersion = result.diagnostics().stream()
+                .anyMatch(diagnostic ->
+                        "visual.runtimeBindingImplementation.schemaVersionUnsupported".equals(diagnostic.code()));
+        return unsupportedVersion
+                ? ResponseEntity.status(HttpStatus.BAD_REQUEST).body(result)
+                : ResponseEntity.ok(result);
+    }
+
+    /**
+     * Lists submitted runtime implementation binding proposals.
+     *
+     * @param operatorRef optional operator reference filter
+     * @param state optional binding proposal state filter
+     * @return matching implementation binding proposals
+     */
+    @GetMapping("/runtime-binding-requirements/implementation-bindings")
+    public List<VisualRuntimeBindingImplementationBinding> runtimeBindingImplementationBindings(
+            @RequestParam(defaultValue = "") String operatorRef,
+            @RequestParam(defaultValue = "") String state) {
+        String normalizedOperatorRef = operatorRef == null ? "" : operatorRef.trim();
+        String normalizedState = state == null ? "" : state.trim().toLowerCase(Locale.ROOT);
+        return implementationRepository.all().stream()
+                .filter(binding -> normalizedOperatorRef.isBlank()
+                        || binding.operatorRef().equals(normalizedOperatorRef))
+                .filter(binding -> normalizedState.isBlank()
+                        || binding.state().equals(normalizedState))
+                .toList();
+    }
+
+    /**
+     * Submits a runtime implementation binding proposal after contract validation.
+     *
+     * <p>Rejected proposals are not persisted. Accepted proposals are still only
+     * control-plane records; they do not close runtime-binding requirements or
+     * mutate graph/publication state.</p>
+     *
+     * @param request submitted implementation binding proposal
+     * @return stored proposal when accepted, otherwise validation diagnostics
+     */
+    @PostMapping("/runtime-binding-requirements/implementation-bindings")
+    public ResponseEntity<Object> submitRuntimeBindingImplementation(
+            @RequestBody(required = false) VisualRuntimeBindingImplementationValidation.Request request) {
+        if (request == null) {
+            return ResponseEntity.badRequest()
+                    .body(VisualRuntimeBindingImplementationValidation.missingRequest());
+        }
+        String operatorRef = implementationOperatorRef(request);
+        OperatorDefinition currentOperator = operatorRef.isBlank()
+                ? null
+                : catalog.find(operatorRef).orElse(null);
+        VisualRuntimeBindingImplementationValidation validation =
+                VisualRuntimeBindingImplementationValidation.from(request, currentOperator);
+        if (!validation.valid()) {
+            return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(validation);
+        }
+        String bindingId = implementationBindingId(request);
+        if (!bindingId.isBlank() && implementationRepository.find(bindingId).isPresent()) {
+            return ResponseEntity.status(HttpStatus.CONFLICT).body(validationWithBlockingDiagnostic(
+                    validation,
+                    VisualDiagnostic.error(
+                            "visual.runtimeBindingImplementation.bindingIdDuplicate",
+                            "Runtime binding implementation bindingId '%s' already exists.".formatted(bindingId),
+                            "/implementation/bindingId",
+                            Map.of("bindingId", bindingId))
+            ));
+        }
+        VisualRuntimeBindingImplementationBinding stored;
+        try {
+            stored = implementationRepository.create(
+                    VisualRuntimeBindingImplementationBinding.from(request, validation));
+        } catch (IllegalArgumentException e) {
+            return ResponseEntity.status(HttpStatus.CONFLICT).body(validationWithBlockingDiagnostic(
+                    validation,
+                    VisualDiagnostic.error(
+                            "visual.runtimeBindingImplementation.bindingIdDuplicate",
+                            e.getMessage(),
+                            "/implementation/bindingId",
+                            Map.of("bindingId", bindingId))
+            ));
+        }
+        return ResponseEntity.status(HttpStatus.CREATED).body(stored);
+    }
+
     VisualAssetOverview overview(String tenantId, String namespace, String environment) {
         return overview(tenantId, namespace, environment, VisualAssetOverview.DEFAULT_ACTION_ITEM_LIMIT);
     }
@@ -441,6 +571,48 @@ public class VisualAssetOverviewController {
                     .ifPresent(operator -> operatorsByRef.put(item.operatorRef(), operator));
         }
         return List.copyOf(operatorsByRef.values());
+    }
+
+    private static String implementationOperatorRef(VisualRuntimeBindingImplementationValidation.Request request) {
+        if (request == null) {
+            return "";
+        }
+        if (!request.operatorRef().isBlank()) {
+            return request.operatorRef();
+        }
+        VisualRuntimeBindingHandoffBundle.OperatorContractSnapshot contract = request.operatorContract();
+        return contract == null ? "" : contract.operatorRef();
+    }
+
+    private static String implementationBindingId(VisualRuntimeBindingImplementationValidation.Request request) {
+        if (request == null || request.implementation() == null) {
+            return "";
+        }
+        return request.implementation().bindingId();
+    }
+
+    private static VisualRuntimeBindingImplementationValidation validationWithBlockingDiagnostic(
+            VisualRuntimeBindingImplementationValidation validation,
+            VisualDiagnostic diagnostic) {
+        List<VisualDiagnostic> diagnostics = new ArrayList<>(validation.diagnostics());
+        diagnostics.add(diagnostic);
+        return new VisualRuntimeBindingImplementationValidation(
+                validation.schemaVersion(),
+                validation.validatedAt(),
+                false,
+                false,
+                "rejected",
+                "error",
+                diagnostic.message(),
+                validation.operatorRef(),
+                validation.operatorFingerprint(),
+                validation.sourceHandoffBundleFingerprint(),
+                validation.contractFingerprint(),
+                validation.currentCatalogFingerprint(),
+                validation.currentCatalogState(),
+                validation.implementation(),
+                diagnostics
+        );
     }
 
     private List<GraphDraftSummary> draftSummaries(String tenantId, String namespace, String environment) {

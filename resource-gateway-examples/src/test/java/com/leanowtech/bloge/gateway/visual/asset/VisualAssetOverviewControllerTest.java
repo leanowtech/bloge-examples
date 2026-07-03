@@ -8,6 +8,7 @@ import com.leanowtech.bloge.gateway.visual.catalog.OperatorLibraryImportReadines
 import com.leanowtech.bloge.gateway.visual.catalog.OperatorLibraryProfile;
 import com.leanowtech.bloge.gateway.visual.catalog.VisualCatalogTestSupport;
 import com.leanowtech.bloge.gateway.visual.codegen.DslGenerationResult;
+import com.leanowtech.bloge.gateway.visual.diagnostic.VisualDiagnostic;
 import com.leanowtech.bloge.gateway.visual.draft.GraphDraft;
 import com.leanowtech.bloge.gateway.visual.draft.GraphDraftDependencyReport;
 import com.leanowtech.bloge.gateway.visual.draft.GraphDraftSummary;
@@ -1061,6 +1062,325 @@ class VisualAssetOverviewControllerTest {
     }
 
     @Test
+    void runtimeBindingImplementationValidationAcceptsCurrentHandoffContract() {
+        OperatorLibrary library = VisualCatalogTestSupport.designOnlyEligibilityLibrary("integer");
+        DefaultVisualOperatorCatalog catalog = VisualCatalogTestSupport.catalogWithLibrary(library);
+        GraphDraftValidator validator = new GraphDraftValidator(catalog);
+        InMemoryGraphDraftRepository drafts = new InMemoryGraphDraftRepository();
+        OperatorDefinition operator = catalog.find("risk:eligibility").orElseThrow();
+        drafts.save(draftWithFingerprint(operator));
+        VisualAssetOverviewController controller = new VisualAssetOverviewController(
+                drafts,
+                validator,
+                catalog,
+                new InMemoryVisualGraphPublicationRepository()
+        );
+        VisualRuntimeBindingHandoffBundle handoffBundle = controller.runtimeBindingHandoffBundle(
+                "",
+                "",
+                "",
+                10,
+                0,
+                "draft",
+                "executable-lowering",
+                "operator-platform",
+                "operator-implementation",
+                "risk:eligibility",
+                "",
+                "",
+                "",
+                ""
+        );
+        VisualRuntimeBindingHandoffBundle.OperatorContractSnapshot contract =
+                handoffBundle.operatorContracts().getFirst();
+
+        var response = controller.validateRuntimeBindingImplementation(
+                new VisualRuntimeBindingImplementationValidation.Request(
+                        VisualRuntimeBindingImplementationValidation.REQUEST_SCHEMA_VERSION,
+                        contract.operatorRef(),
+                        contract.fingerprint(),
+                        handoffBundle.bundleFingerprint(),
+                        handoffBundle.requirementKeys(),
+                        contract,
+                        completeImplementation()
+                ));
+
+        assertThat(response.getStatusCode().value()).isEqualTo(200);
+        assertThat(response.getBody()).isNotNull();
+        assertThat(response.getBody().schemaVersion())
+                .isEqualTo(VisualRuntimeBindingImplementationValidation.SCHEMA_VERSION);
+        assertThat(response.getBody().valid()).isTrue();
+        assertThat(response.getBody().bindable()).isTrue();
+        assertThat(response.getBody().state()).isEqualTo("ready-to-bind");
+        assertThat(response.getBody().level()).isEqualTo("success");
+        assertThat(response.getBody().operatorRef()).isEqualTo("risk:eligibility");
+        assertThat(response.getBody().operatorFingerprint()).isEqualTo(operator.fingerprint());
+        assertThat(response.getBody().contractFingerprint()).isEqualTo(operator.fingerprint());
+        assertThat(response.getBody().currentCatalogFingerprint()).isEqualTo(operator.fingerprint());
+        assertThat(response.getBody().currentCatalogState()).isEqualTo("current");
+        assertThat(response.getBody().sourceHandoffBundleFingerprint()).isEqualTo(handoffBundle.bundleFingerprint());
+        assertThat(response.getBody().implementation().adapterKind()).isEqualTo("native");
+        assertThat(response.getBody().diagnostics()).isEmpty();
+    }
+
+    @Test
+    void runtimeBindingImplementationValidationRejectsContractFingerprintMismatch() {
+        OperatorLibrary library = VisualCatalogTestSupport.designOnlyEligibilityLibrary("integer");
+        DefaultVisualOperatorCatalog catalog = VisualCatalogTestSupport.catalogWithLibrary(library);
+        GraphDraftValidator validator = new GraphDraftValidator(catalog);
+        InMemoryGraphDraftRepository drafts = new InMemoryGraphDraftRepository();
+        OperatorDefinition operator = catalog.find("risk:eligibility").orElseThrow();
+        drafts.save(draftWithFingerprint(operator));
+        VisualAssetOverviewController controller = new VisualAssetOverviewController(
+                drafts,
+                validator,
+                catalog,
+                new InMemoryVisualGraphPublicationRepository()
+        );
+        VisualRuntimeBindingHandoffBundle handoffBundle = controller.runtimeBindingHandoffBundle(
+                "",
+                "",
+                "",
+                10,
+                0,
+                "draft",
+                "executable-lowering",
+                "operator-platform",
+                "operator-implementation",
+                "risk:eligibility",
+                "",
+                "",
+                "",
+                ""
+        );
+        VisualRuntimeBindingHandoffBundle.OperatorContractSnapshot contract =
+                handoffBundle.operatorContracts().getFirst();
+
+        var response = controller.validateRuntimeBindingImplementation(
+                new VisualRuntimeBindingImplementationValidation.Request(
+                        VisualRuntimeBindingImplementationValidation.REQUEST_SCHEMA_VERSION,
+                        contract.operatorRef(),
+                        "sha256:tampered",
+                        handoffBundle.bundleFingerprint(),
+                        handoffBundle.requirementKeys(),
+                        contract,
+                        completeImplementation()
+                ));
+
+        assertThat(response.getStatusCode().value()).isEqualTo(200);
+        assertThat(response.getBody()).isNotNull();
+        assertThat(response.getBody().valid()).isFalse();
+        assertThat(response.getBody().bindable()).isFalse();
+        assertThat(response.getBody().state()).isEqualTo("rejected");
+        assertThat(response.getBody().diagnostics()).anySatisfy(diagnostic -> {
+            assertThat(diagnostic.code()).isEqualTo("visual.runtimeBindingImplementation.fingerprintMismatch");
+            assertThat(diagnostic.target()).isEqualTo("/operatorFingerprint");
+            assertThat(diagnostic.metadata()).containsEntry("actual", "sha256:tampered")
+                    .containsEntry("expected", operator.fingerprint());
+        });
+    }
+
+    @Test
+    void runtimeBindingImplementationValidationRequiresReviewForMissingEvidence() {
+        DefaultVisualOperatorCatalog catalog = VisualCatalogTestSupport.catalogWithLibrary(
+                VisualCatalogTestSupport.designOnlyEligibilityLibrary("integer"));
+        GraphDraftValidator validator = new GraphDraftValidator(catalog);
+        InMemoryGraphDraftRepository drafts = new InMemoryGraphDraftRepository();
+        OperatorDefinition operator = catalog.find("risk:eligibility").orElseThrow();
+        drafts.save(draftWithFingerprint(operator));
+        VisualAssetOverviewController controller = new VisualAssetOverviewController(
+                drafts,
+                validator,
+                catalog,
+                new InMemoryVisualGraphPublicationRepository()
+        );
+        VisualRuntimeBindingHandoffBundle handoffBundle = controller.runtimeBindingHandoffBundle(
+                "",
+                "",
+                "",
+                10,
+                0,
+                "draft",
+                "executable-lowering",
+                "operator-platform",
+                "operator-implementation",
+                "risk:eligibility",
+                "",
+                "",
+                "",
+                ""
+        );
+        VisualRuntimeBindingHandoffBundle.OperatorContractSnapshot contract =
+                handoffBundle.operatorContracts().getFirst();
+
+        var response = controller.validateRuntimeBindingImplementation(
+                new VisualRuntimeBindingImplementationValidation.Request(
+                        VisualRuntimeBindingImplementationValidation.REQUEST_SCHEMA_VERSION,
+                        contract.operatorRef(),
+                        contract.fingerprint(),
+                        handoffBundle.bundleFingerprint(),
+                        handoffBundle.requirementKeys(),
+                        contract,
+                        new VisualRuntimeBindingImplementationValidation.ImplementationMetadata(
+                                "risk-eligibility-native-v1",
+                                "native",
+                                "com.acme.risk.RiskEligibilityOperator",
+                                "risk-platform",
+                                List.of("request-response"),
+                                List.of(),
+                                List.of(),
+                                "",
+                                "")
+                ));
+
+        assertThat(response.getStatusCode().value()).isEqualTo(200);
+        assertThat(response.getBody()).isNotNull();
+        assertThat(response.getBody().valid()).isTrue();
+        assertThat(response.getBody().bindable()).isFalse();
+        assertThat(response.getBody().state()).isEqualTo("requires-review");
+        assertThat(response.getBody().diagnostics())
+                .extracting(VisualDiagnostic::code)
+                .contains(
+                        "visual.runtimeBindingImplementation.testEvidenceMissing",
+                        "visual.runtimeBindingImplementation.rollbackTargetMissing"
+                );
+    }
+
+    @Test
+    void runtimeBindingImplementationSubmitPersistsAcceptedProposal() {
+        OperatorLibrary library = VisualCatalogTestSupport.designOnlyEligibilityLibrary("integer");
+        DefaultVisualOperatorCatalog catalog = VisualCatalogTestSupport.catalogWithLibrary(library);
+        GraphDraftValidator validator = new GraphDraftValidator(catalog);
+        InMemoryGraphDraftRepository drafts = new InMemoryGraphDraftRepository();
+        OperatorDefinition operator = catalog.find("risk:eligibility").orElseThrow();
+        drafts.save(draftWithFingerprint(operator));
+        VisualAssetOverviewController controller = new VisualAssetOverviewController(
+                drafts,
+                validator,
+                catalog,
+                new InMemoryVisualGraphPublicationRepository()
+        );
+        VisualRuntimeBindingHandoffBundle handoffBundle = controller.runtimeBindingHandoffBundle(
+                "",
+                "",
+                "",
+                10,
+                0,
+                "draft",
+                "executable-lowering",
+                "operator-platform",
+                "operator-implementation",
+                "risk:eligibility",
+                "",
+                "",
+                "",
+                ""
+        );
+        VisualRuntimeBindingHandoffBundle.OperatorContractSnapshot contract =
+                handoffBundle.operatorContracts().getFirst();
+
+        VisualRuntimeBindingImplementationValidation.Request request =
+                new VisualRuntimeBindingImplementationValidation.Request(
+                        VisualRuntimeBindingImplementationValidation.REQUEST_SCHEMA_VERSION,
+                        contract.operatorRef(),
+                        contract.fingerprint(),
+                        handoffBundle.bundleFingerprint(),
+                        handoffBundle.requirementKeys(),
+                        contract,
+                        completeImplementation()
+                );
+
+        var response = controller.submitRuntimeBindingImplementation(request);
+
+        assertThat(response.getStatusCode().value()).isEqualTo(201);
+        assertThat(response.getBody()).isInstanceOf(VisualRuntimeBindingImplementationBinding.class);
+        VisualRuntimeBindingImplementationBinding binding =
+                (VisualRuntimeBindingImplementationBinding) response.getBody();
+        assertThat(binding.schemaVersion())
+                .isEqualTo(VisualRuntimeBindingImplementationBinding.SCHEMA_VERSION);
+        assertThat(binding.bindingId()).isEqualTo("risk-eligibility-native-v1");
+        assertThat(binding.revision()).isEqualTo(1);
+        assertThat(binding.state()).isEqualTo("ready-to-bind");
+        assertThat(binding.operatorRef()).isEqualTo("risk:eligibility");
+        assertThat(binding.operatorFingerprint()).isEqualTo(operator.fingerprint());
+        assertThat(binding.sourceHandoffBundleFingerprint()).isEqualTo(handoffBundle.bundleFingerprint());
+        assertThat(binding.sourceRequirementKeys()).containsExactlyElementsOf(handoffBundle.requirementKeys());
+        assertThat(binding.validation().valid()).isTrue();
+        assertThat(binding.validation().bindable()).isTrue();
+        assertThat(controller.runtimeBindingImplementationBindings("", "")).singleElement().isEqualTo(binding);
+        assertThat(controller.runtimeBindingImplementationBindings("risk:eligibility", "ready-to-bind"))
+                .singleElement()
+                .isEqualTo(binding);
+        assertThat(controller.runtimeBindingImplementationBindings("risk:missing", "")).isEmpty();
+
+        var duplicate = controller.submitRuntimeBindingImplementation(request);
+        assertThat(duplicate.getStatusCode().value()).isEqualTo(409);
+        assertThat(duplicate.getBody()).isInstanceOf(VisualRuntimeBindingImplementationValidation.class);
+        VisualRuntimeBindingImplementationValidation duplicateValidation =
+                (VisualRuntimeBindingImplementationValidation) duplicate.getBody();
+        assertThat(duplicateValidation.valid()).isFalse();
+        assertThat(duplicateValidation.diagnostics())
+                .extracting(VisualDiagnostic::code)
+                .contains("visual.runtimeBindingImplementation.bindingIdDuplicate");
+        assertThat(controller.runtimeBindingImplementationBindings("", "")).singleElement().isEqualTo(binding);
+    }
+
+    @Test
+    void runtimeBindingImplementationSubmitRejectsInvalidProposalWithoutPersisting() {
+        OperatorLibrary library = VisualCatalogTestSupport.designOnlyEligibilityLibrary("integer");
+        DefaultVisualOperatorCatalog catalog = VisualCatalogTestSupport.catalogWithLibrary(library);
+        GraphDraftValidator validator = new GraphDraftValidator(catalog);
+        InMemoryGraphDraftRepository drafts = new InMemoryGraphDraftRepository();
+        OperatorDefinition operator = catalog.find("risk:eligibility").orElseThrow();
+        drafts.save(draftWithFingerprint(operator));
+        VisualAssetOverviewController controller = new VisualAssetOverviewController(
+                drafts,
+                validator,
+                catalog,
+                new InMemoryVisualGraphPublicationRepository()
+        );
+        VisualRuntimeBindingHandoffBundle handoffBundle = controller.runtimeBindingHandoffBundle(
+                "",
+                "",
+                "",
+                10,
+                0,
+                "draft",
+                "executable-lowering",
+                "operator-platform",
+                "operator-implementation",
+                "risk:eligibility",
+                "",
+                "",
+                "",
+                ""
+        );
+        VisualRuntimeBindingHandoffBundle.OperatorContractSnapshot contract =
+                handoffBundle.operatorContracts().getFirst();
+
+        var response = controller.submitRuntimeBindingImplementation(
+                new VisualRuntimeBindingImplementationValidation.Request(
+                        VisualRuntimeBindingImplementationValidation.REQUEST_SCHEMA_VERSION,
+                        contract.operatorRef(),
+                        "sha256:tampered",
+                        handoffBundle.bundleFingerprint(),
+                        handoffBundle.requirementKeys(),
+                        contract,
+                        completeImplementation()
+                ));
+
+        assertThat(response.getStatusCode().value()).isEqualTo(400);
+        assertThat(response.getBody()).isInstanceOf(VisualRuntimeBindingImplementationValidation.class);
+        VisualRuntimeBindingImplementationValidation validation =
+                (VisualRuntimeBindingImplementationValidation) response.getBody();
+        assertThat(validation.valid()).isFalse();
+        assertThat(validation.diagnostics())
+                .extracting(VisualDiagnostic::code)
+                .contains("visual.runtimeBindingImplementation.fingerprintMismatch");
+        assertThat(controller.runtimeBindingImplementationBindings("", "")).isEmpty();
+    }
+
+    @Test
     void overviewQueuesWarningAcknowledgementFromGraphActionReadiness() {
         DefaultVisualOperatorCatalog catalog = VisualCatalogTestSupport.catalogWithLibrary(
                 VisualCatalogTestSupport.designOnlyEligibilityLibrary("integer"));
@@ -1385,6 +1705,28 @@ class VisualAssetOverviewControllerTest {
         material.put("summary", item.summary());
         material.put("recommendedAction", item.recommendedAction());
         return material;
+    }
+
+    private static VisualRuntimeBindingImplementationValidation.ImplementationMetadata completeImplementation() {
+        return new VisualRuntimeBindingImplementationValidation.ImplementationMetadata(
+                "risk-eligibility-native-v1",
+                "native",
+                "com.acme.risk.RiskEligibilityOperator",
+                "risk-platform",
+                List.of("request-response"),
+                List.of(new VisualRuntimeBindingImplementationValidation.Evidence(
+                        "test",
+                        "golden-suite:risk-eligibility",
+                        "Golden suite passed against the exported operator contract."
+                )),
+                List.of(new VisualRuntimeBindingImplementationValidation.Evidence(
+                        "approval",
+                        "change-approval:RB-42",
+                        "Runtime owner approved policy and deployment scope."
+                )),
+                "deployment:risk-eligibility-native-v0",
+                ""
+        );
     }
 
     private static Map<String, Object> legacyFilterMaterial(

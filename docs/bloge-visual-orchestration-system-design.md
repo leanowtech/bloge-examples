@@ -766,10 +766,17 @@ scope、targetKind、operatorRef、operatorLibraryId、bindingKind、handoffLane
 当团队需要把当前筛选窗口交给 runtime plane 实现方时，
 `GET /api/visual/assets/runtime-binding-requirements/handoff-bundle` 会返回
 `bloge.visualRuntimeBindingHandoff.v1`，携带 source index lineage、scope/filter、
-stable requirementKeys、operatorRef/operatorLibraryId 计数、handoff lane/kind/target 计数、requirement 明细和
-服务端派生的 `bundleFingerprint`。
-它是便携交接快照，不是工单系统；后续执行状态仍应回写到真正的 runtime binding /
-operator implementation 控制面，再由 catalog/readiness 重新派生。
+stable requirementKeys、operatorRef/operatorLibraryId 计数、handoff lane/kind/target 计数、requirement 明细、
+当前窗口相关 `operatorContracts[]` 和服务端派生的 `bundleFingerprint`。
+`operatorContracts[]` 不是 catalog 全量导出，而是 runtime-plane 实现需要的最小契约证据：
+每个被当前 handoff window 引用的 operator 会冻结 operatorRef、operatorVersion、fingerprint、
+operatorLibraryId、display/source、ports、configSchema、capabilities、policy、lowering 和
+runtimeReadiness。这样外部 runtime team 不需要回查源 catalog，就能知道要实现的输入输出端口、
+配置合同、治理边界、lowering 目标和当前不可执行原因。`bundleFingerprint` 覆盖这些
+contract snapshots；只有旧版空 `operatorContracts` bundle 才走兼容 fingerprint 路径，
+避免手工拼接或篡改契约快照继续参与排期。
+它是便携交接快照，不是工单系统，也不是新的 graph 状态；后续执行状态仍应回写到真正的
+runtime binding / operator implementation 控制面，再由 catalog/readiness 重新派生。
 `POST /api/visual/assets/runtime-binding-requirements/handoff-review` 则把交接快照带回
 当前环境做只读对账，返回 `bloge.visualRuntimeBindingHandoffReview.v1`：
 服务端按 bundle 的 scope/filter/page-window 重算当前索引，并按 stable requirementKey
@@ -777,7 +784,8 @@ operator implementation 控制面，再由 catalog/readiness 重新派生。
 `changedFields[]`、`fieldChanges[]` 和 `fieldChangeCategoryCounts`，把旧值/当前值及
 identity、scope、readiness、runtime-binding、asset-metadata 等变化类别结构化给
 runtime-plane 控制面，而不是要求它解析自然语言摘要。review 还会回显
-`sourceBundleFingerprint`，并在提交的 `bundleFingerprint` 与 bundle material 不一致时返回
+`sourceBundleFingerprint` 和 `exportedOperatorContractCount`，并在提交的
+`bundleFingerprint` 与 bundle material 不一致时返回
 `visual.runtimeBindingHandoff.fingerprintMismatch` 阻断对账，让浏览器和外部工单能引用被审阅的同一份 portable snapshot。
 这个 review 只判断快照是否仍可用于
 交接排期，不记录外部工单进度，也不替代 draft/publication readiness。
@@ -885,8 +893,9 @@ fingerprint snapshot；普通保存和 PATCH 仍保留既有 snapshot，避免�
 | `POST` | `/api/visual/publications/import-bundle` | 当前已实现：导入 portable publication bundle，返回 `bloge.visualGraphPublicationImportResult.v1`，包含 `sourceBundleFingerprint`、source bundle dependency report、基于目标环境当前 catalog 计算的 target dependency report、frozen readiness 派生的 target runtime-binding handoff requirements 和 stable keys，并对 unsupported bundle/publication schemaVersion、fingerprint mismatch、缺失 snapshot 和重复 publicationId 做结构化拒绝 |
 | `GET` | `/api/visual/assets/overview` | 当前已实现：返回 `bloge.visualAssetOverview.v1`，聚合 draft/publication/operator catalog readiness，并用 summary actionReadiness 和 runtimeBindingRequirements 派生可按 severity/type/targetKind/operatorRef/operatorLibraryId 查询、计数和分页的 action queue |
 | `GET` | `/api/visual/assets/runtime-binding-requirements` | 当前已实现：返回 `bloge.visualRuntimeBindingRequirements.v1`，把 active draft 和 immutable publication 的 runtime binding gaps 暴露为 scope-aware/filterable/pageable 事实索引，并支持 `operatorRef` / `operatorLibraryId` 过滤/计数和 `requirementKey` 精确回查 |
-| `GET` | `/api/visual/assets/runtime-binding-requirements/handoff-bundle` | 当前已实现：返回 `bloge.visualRuntimeBindingHandoff.v1`，把当前 runtime-binding 查询窗口导出为 portable handoff bundle，包含 source index lineage、scope/filter、stable requirement keys、operatorRef/operatorLibraryId/routing 计数、requirement 明细和 `bundleFingerprint` |
-| `POST` | `/api/visual/assets/runtime-binding-requirements/handoff-review` | 当前已实现：接收 `bloge.visualRuntimeBindingHandoff.v1` 并返回 `bloge.visualRuntimeBindingHandoffReview.v1`，按当前 runtime-binding read model 对账导出快照的 current/drifted/missing/new-current-window 状态，并回显 `sourceBundleFingerprint`；`bundleFingerprint` 不匹配时以 `visual.runtimeBindingHandoff.fingerprintMismatch` 拒绝 |
+| `GET` | `/api/visual/assets/runtime-binding-requirements/handoff-bundle` | 当前已实现：返回 `bloge.visualRuntimeBindingHandoff.v1`，把当前 runtime-binding 查询窗口导出为 portable handoff bundle，包含 source index lineage、scope/filter、stable requirement keys、operatorRef/operatorLibraryId/routing 计数、requirement 明细、当前窗口相关 `operatorContracts[]` 契约快照和 `bundleFingerprint` |
+| `POST` | `/api/visual/assets/runtime-binding-requirements/handoff-review` | 当前已实现：接收 `bloge.visualRuntimeBindingHandoff.v1` 并返回 `bloge.visualRuntimeBindingHandoffReview.v1`，按当前 runtime-binding read model 对账导出快照的 current/drifted/missing/new-current-window 状态，并回显 `sourceBundleFingerprint` 与 `exportedOperatorContractCount`；`bundleFingerprint` 不匹配时以 `visual.runtimeBindingHandoff.fingerprintMismatch` 拒绝 |
+| `POST` | `/api/visual/assets/runtime-binding-requirements/implementation-bindings/validate` | 当前已实现第一刀：接收 `bloge.visualRuntimeBindingImplementationBinding.v1`，把 runtime team 提交的 implementation metadata、test evidence、policy evidence 和 rollback target 对准 handoff `operatorContract` snapshot 与当前 catalog fingerprint 做无状态 pre-bind 校验，返回 `bloge.visualRuntimeBindingImplementationValidation.v1` 的 ready-to-bind/requires-review/rejected 裁决；不写入 binding 状态 |
 
 ### 12.3 Runtime / Trace API
 
@@ -1259,6 +1268,36 @@ durable runtime authoring/instance 管理仍属于后续治理层增强。
 - `SchemaCompatibilityChecker`
 - `VisualRunController`
 
+### 19.4 当前生产级差距判定
+
+当前 `resource-gateway-examples` 已经达到“严肃示例项目”的前半段：用户可以导入
+operator library，按 schema 约束拖拽、连线、保存、导出、发布 DESIGN artifact，并把
+schema-only / runtime-blocked 的缺口通过 runtime-binding index 和 handoff bundle 交给外部团队。
+这已经不是只能演示贷款场景的前端玩具。
+
+但它还没有达到完整工业级平台的后半段，核心缺口不是“非执行图不能运行”。非执行图不能运行是正确设计。
+真正的缺口是：外部 runtime implementation 完成后，系统还缺一套完整的一等
+`RuntimeBindingImplementation` / `OperatorImplementationBinding` 生命周期，把 handoff contract
+转换为可审阅、可验证、可回滚、可重新派生 readiness 的 catalog 事实。当前已先落地无状态
+implementation validate API 和 proposal persistence，能证明并保存实现材料是否对准
+handoff contract 与当前 catalog；但 bind/supersede mutation 和 readiness 回流仍未闭合。没有这层闭环，
+handoff bundle 只能把工作交出去，不能把实现结果可靠带回来。
+
+因此下一阶段的生产级优先级应按下面排序，而不是继续堆前端控件：
+
+| 优先级 | 缺口 | 为什么卡住生产级 |
+| --- | --- | --- |
+| P0 | Runtime implementation binding 生命周期 | 当前已有 validate gate 和 proposal record；下一步需要把 runtime team 提交的 implementation metadata、适配器入口、能力声明、兼容性证据和测试结果通过 bind/supersede 持久绑定回 operator contract / library revision；否则 runtime-binding requirement 只能被导出、预检和保存提案，不能被关闭 |
+| P0 | Contract diff 与兼容性门禁 | 当前 handoff snapshot 可防篡改、可对账，但 implementation 提交时还需要证明它实现的是同一个 operator contract，且输入/输出/config/policy/lowering 变化按 SemVer 与治理规则被接受 |
+| P1 | Runtime-plane 状态回流 | 外部工单、worker dispatcher、AI tool runtime、event/message/webhook runtime 的状态需要以事件或回调进入控制面，但不能成为第二套 readiness 真相源；最终仍应回到 catalog/readiness 派生 |
+| P1 | IAM / RBAC / tenant isolation | 当前 tenant/namespace/environment policy 是可见性和使用门禁，不是完整权限后台；生产环境需要 actor 权限、secret scope、egress policy、审计查询和管理员分权 |
+| P1 | 运行时适配器族 | remote-worker、AI-tool、event-source、message-handler、webhook、streaming、durable 的 authoring contract 已有，但真正 dispatcher、ingress runtime、实例状态和重放仍需补齐 |
+| P2 | 协作与运营 | 多人协作、告警、SLO、runbook、容量和成本控制会决定平台是否能长期运转，但必须建立在前面的 contract/binding 闭环之上 |
+
+这意味着后续代码切片应优先围绕“implementation binding 闭环”推进：在当前 validate / proposal persistence API 之后，
+继续补 bind/supersede mutation，再把 runtime-binding requirement review 与 operator-library revision、draft/publication readiness
+重新串起来。画布 UI 可以展示这些状态，但不能成为状态源。
+
 ## 20. 路线图
 
 Phase 1 的工程拆分、包结构、API、测试和 Definition of Done 见
@@ -1319,6 +1358,29 @@ Phase 1 的工程拆分、包结构、API、测试和 Definition of Done 见
 - 已发布版本不可变。
 - 修改 descriptor 时能列出受影响图。
 - 发布前能跑测试输入并阻断不兼容 schema。
+
+### Phase 2.5：Runtime Binding 实现闭环
+
+目标：把“schema-valid 但不可执行”的 DESIGN asset 从可交接快照推进到可关闭缺口的工程闭环。
+
+交付：
+
+- `RuntimeBindingImplementation` / `OperatorImplementationBinding` 合同草案。
+- 当前已落地 implementation validate API，返回 ready-to-bind / requires-review / rejected。
+- 当前已落地 implementation proposal submit/list API，持久化 valid proposal 为 `bloge.visualRuntimeBindingImplementationBindingRecord.v1`。
+- 后续补 implementation bind / unbind / supersede API。
+- handoff bundle `operatorContracts[]` 到 implementation contract 的 fingerprint 校验；当前 validate 已覆盖第一层 operatorRef/fingerprint/catalog drift/evidence gate。
+- implementation metadata：adapter kind、entrypoint、capabilities、runtime owner、test evidence、policy evidence、rollback target。
+- contract diff：输入/输出/config/policy/lowering/runtime readiness 的 breaking / compatible / metadata 变化分类。
+- readiness 回流：implementation 绑定成功后只更新 catalog/operator implementation 事实，再由现有 draft/publication readiness 与 runtime-binding index 重新派生，不直接改 graph artifact。
+
+验收：
+
+- 一个 `lowering.mode=design` 的用户算子可以先被画布编排并发布为 DESIGN artifact。
+- runtime team 基于 handoff bundle 的 operator contract snapshot 提交实现绑定。
+- 服务端能验证实现绑定对应同一个 contract fingerprint，或明确返回兼容性/治理诊断。
+- 绑定完成后，新的 draft validation 能从 design-only 推进到 runtime-executable 或 runtime-blocked-with-diagnostics。
+- 旧的 DESIGN publication 不被原地改写；需要 republish 或 recertify 才能进入可执行发布路径。
 
 ### Phase 3：复杂编排覆盖
 

@@ -1900,6 +1900,25 @@ runtime binding 的完成情况仍应通过真正的 operator implementation / r
 `sourceBundleFingerprint`、`fieldChangeCategoryCounts` 和 `items[].fieldChanges[]`，在 review 后展示
 snapshot fingerprint、drift 类别、字段级旧值/当前值、missing requirement 和当前窗口新增 requirement，避免作者只能从
 JSON output 或自然语言摘要里判断交接快照是否还能继续排期。
+`POST /api/visual/assets/runtime-binding-requirements/implementation-bindings/validate`
+接收 `bloge.visualRuntimeBindingImplementationBinding.v1`，其中包含 `operatorRef`、
+`operatorFingerprint`、`sourceHandoffBundleFingerprint`、`sourceRequirementKeys[]`、
+handoff `operatorContract` snapshot，以及 implementation metadata：
+`bindingId`、`adapterKind`、`entrypoint`、`runtimeOwner`、`capabilities[]`、
+`testEvidence[]`、`policyEvidence[]`、`rollbackTarget` 和 `notes`。
+返回 `bloge.visualRuntimeBindingImplementationValidation.v1`，用 `ready-to-bind`、
+`requires-review` 或 `rejected` 表达 pre-bind 裁决，并回显 `contractFingerprint`、
+`currentCatalogFingerprint`、`currentCatalogState` 与结构化 diagnostics。该端点只验证
+runtime team 提交的实现材料是否仍对准 handoff contract 和当前 catalog，不持久化 binding。
+`POST /api/visual/assets/runtime-binding-requirements/implementation-bindings`
+复用同一 gate：无效 proposal 返回 `400` 和 validation diagnostics；有效 proposal
+被存为 `bloge.visualRuntimeBindingImplementationBindingRecord.v1`，包含 repository
+分配的 revision/timestamps、operator contract snapshot、implementation metadata 和 validation
+snapshot；重复 `bindingId` 返回 `409` 与 `visual.runtimeBindingImplementation.bindingIdDuplicate`。
+`GET /api/visual/assets/runtime-binding-requirements/implementation-bindings`
+可按 `operatorRef` 和 `state` 查询已提交 proposal。该持久记录仍不关闭
+runtime-binding requirement；后续真正 bind/supersede mutation 必须仍以 catalog/operator
+implementation 事实为来源，再由 readiness 和 runtime-binding index 重新派生。
 `actionReadiness` 则把同一批 diagnostics/readiness 压成产品动作门禁：`compileNow`、
 `runNow`、`publishDesignNow`、`publishDesignAfterReview`、`publishExecutableNow`、
 `publishExecutableAfterReview`，以及 `requiresAckWarnings` /

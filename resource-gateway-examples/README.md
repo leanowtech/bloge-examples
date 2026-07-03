@@ -803,6 +803,9 @@ Showcase metadata APIs:
 | `GET` | `/api/visual/assets/runtime-binding-requirements` | Return `bloge.visualRuntimeBindingRequirements.v1`, a scope-aware, pageable runtime-binding gap index for active drafts and immutable publications, with `targetKind` / `operatorRef` / `operatorLibraryId` / `bindingKind` / `handoffLane` / `handoffKind` / `handoffTarget` / `sourceKind` / `loweringMode` / `readinessState` / `requirementKey` filters, stable requirement keys, operatorRef/operatorLibraryId counts, and handoff lane/kind/target fields for external runtime-plane routing |
 | `GET` | `/api/visual/assets/runtime-binding-requirements/handoff-bundle` | Export the current runtime-binding gap query window as `bloge.visualRuntimeBindingHandoff.v1`, preserving source index lineage, normalized scope/filter, stable requirement keys, operator/library/routing counts, requirement rows, and per-operator contract snapshots with ports/config/lowering/readiness evidence for runtime-plane handoff without creating workflow state |
 | `POST` | `/api/visual/assets/runtime-binding-requirements/handoff-review` | Review a `bloge.visualRuntimeBindingHandoff.v1` bundle against the current runtime-binding read model and return `bloge.visualRuntimeBindingHandoffReview.v1` with exported operator contract count, current/drifted/missing/new-current-window reconciliation status, field-change categories, and exported/current/new routing distributions for owner/lane assignment |
+| `POST` | `/api/visual/assets/runtime-binding-requirements/implementation-bindings/validate` | Validate a stateless `bloge.visualRuntimeBindingImplementationBinding.v1` implementation proposal against a handoff operator contract snapshot and current catalog fingerprint, returning `bloge.visualRuntimeBindingImplementationValidation.v1` with ready-to-bind/requires-review/rejected state, evidence diagnostics, and catalog drift status without closing workflow state |
+| `GET` | `/api/visual/assets/runtime-binding-requirements/implementation-bindings` | List stored `bloge.visualRuntimeBindingImplementationBindingRecord.v1` implementation proposals with optional `operatorRef` and `state` filters, preserving validation evidence for later bind/supersede workflow steps |
+| `POST` | `/api/visual/assets/runtime-binding-requirements/implementation-bindings` | Submit and persist a valid runtime implementation proposal after the same contract/evidence validation gate; rejected proposals are not stored, duplicate `bindingId` returns `409 CONFLICT`, and accepted records remain control-plane evidence rather than closing runtime-binding requirements |
 | `GET` | `/api/visual/drafts` | List stored visual graph drafts with optional `tenantId` / `namespace` / `environment` scope filters |
 | `GET` | `/api/visual/drafts/history` | List lightweight active/deleted draft history summaries with current/latest revision, revision count, latest actor/source/summary, recovery status, and optional `tenantId` / `namespace` / `environment` scope filters |
 | `GET` | `/api/visual/drafts/summaries` | List `bloge.visualGraphDraftSummary.v1` draft asset summaries that combine history, server validation/readiness/action-readiness, diagnostic counts, and dependency counts without returning full draft JSON; supports optional `tenantId` / `namespace` / `environment` scope filters |
@@ -1184,6 +1187,16 @@ distributions by operator, owner library, binding kind, handoff lane/work/target
 source, lowering, readiness, and artifact kind, so design-time binding work is
 visible, portable, assignable, and replay-checkable from the canvas without
 pretending the graph is executable.
+Runtime teams can then submit a stateless
+`bloge.visualRuntimeBindingImplementationBinding.v1` proposal to the
+implementation validation endpoint; the server checks the submitted
+operator contract snapshot, operator fingerprint, current catalog fingerprint,
+implementation metadata, test evidence, policy evidence, and rollback target,
+and returns ready-to-bind/requires-review/rejected. The same request can be
+submitted to the implementation binding endpoint, which stores valid proposals
+as `bloge.visualRuntimeBindingImplementationBindingRecord.v1` records with
+their validation evidence while still leaving requirement closure, bind,
+supersede, and readiness回流 to the next lifecycle step.
 The Drafts panel renders a Draft Asset Index from server-side draft summaries
 for the active Authoring Scope, so active and recoverable deleted drafts expose
 design-only, runtime-blocked, governance-review, repair-required readiness, and
@@ -1584,6 +1597,7 @@ Seven `.bloge` graphs live in `src/main/resources/bloge/gateway/`:
 | `VisualGraphActionReadiness` | Server-derived graph action gate summary (`bloge.visualGraphActionReadiness.v1`) for compile, run, DESIGN publication, EXECUTABLE publication, warning acknowledgement, and governance evidence requirements |
 | `VisualRuntimeBindingHandoffBundle` | Portable `bloge.visualRuntimeBindingHandoff.v1` snapshot derived from the runtime-binding requirement index for assigning schema-only/design-only runtime implementation gaps to external runtime-plane teams, including operator-library owner counts for batch routing and operator contract snapshots for schema/lowering/readiness implementation handoff |
 | `VisualRuntimeBindingHandoffReview` | Read-only `bloge.visualRuntimeBindingHandoffReview.v1` reconciliation report that compares a handoff bundle with the current runtime-binding requirement read model by stable key, exported operator contract count, field changes, and exported/current/new-window routing distributions |
+| `VisualRuntimeBindingImplementationValidation` | Stateless `bloge.visualRuntimeBindingImplementationValidation.v1` pre-bind gate that validates a runtime team's implementation proposal against a handoff operator contract snapshot, current catalog fingerprint, implementation metadata, test evidence, policy evidence, and rollback target without closing runtime-binding workflow state |
 | `GraphDraftExportBundle` | Portable draft package with source identity, draft snapshot, operator snapshots, export-time diagnostics, validation/readiness/action-readiness, and source dependency report |
 | `GraphDraftImportResult` | Import response contract with source bundle/draft identity, stored draft identity, target-environment compatibility diagnostics, validation/readiness/action-readiness, source dependency report, target dependency report, target runtime-binding handoff requirements and stable keys, and legacy target `dependencyReport` |
 | `DatabaseGraphDraftRepository` | H2-backed graph draft repository with revision assignment, immutable revision history, expected-revision guarded updates, deletion audit snapshots, and retained history for deleted-draft recovery |

@@ -20,6 +20,8 @@ import com.leanowtech.bloge.gateway.operator.ResponseValidator;
 import com.leanowtech.bloge.gateway.operator.UrlTemplateRenderer;
 import com.leanowtech.bloge.gateway.resource.DatabaseResourceRegistry;
 import com.leanowtech.bloge.gateway.resource.WritableResourceRegistry;
+import com.leanowtech.bloge.gateway.visual.asset.DatabaseVisualRuntimeBindingImplementationRepository;
+import com.leanowtech.bloge.gateway.visual.asset.VisualRuntimeBindingImplementationRepository;
 import com.leanowtech.bloge.gateway.visual.catalog.DatabaseOperatorLibraryRegistry;
 import com.leanowtech.bloge.gateway.visual.catalog.OperatorLibraryRegistry;
 import com.leanowtech.bloge.gateway.visual.draft.DatabaseGraphDraftRepository;
@@ -326,6 +328,21 @@ public class GatewayConfiguration {
             JdbcTemplate jdbc,
             ObjectMapper objectMapper) {
         return new DatabaseVisualGraphGoldenCertificationRepository(jdbc, objectMapper);
+    }
+
+    /**
+     * Database-backed repository for runtime implementation binding proposals.
+     *
+     * @param jdbc JDBC template for H2 access
+     * @param objectMapper Jackson mapper for binding serialization
+     * @return runtime binding implementation repository
+     */
+    @Bean
+    @ConditionalOnMissingBean
+    public VisualRuntimeBindingImplementationRepository visualRuntimeBindingImplementationRepository(
+            JdbcTemplate jdbc,
+            ObjectMapper objectMapper) {
+        return new DatabaseVisualRuntimeBindingImplementationRepository(jdbc, objectMapper);
     }
 
     // ── Interceptors ────────────────────────────────────────────────────
