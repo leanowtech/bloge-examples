@@ -2228,6 +2228,8 @@ Content-Type: application/json
 后再报错；它需要服务端返回当前 draft 中哪些目标端点可接、哪些目标端点被
 schema/DAG/policy 阻断以及阻断原因。该接口是只读候选发现：服务端从当前
 catalog 中的 target operator input/config schema 派生候选 target endpoint，
+包括对象字段、数组 item 代表下标和 tuple `prefixItems` 下标路径（例如
+`items.0`、`items.1.score`），
 再对每个候选复用 `/api/visual/connections/check` 的权威预检路径。它不保存
 draft，不产生新 edge，也不成为新的 schema 判断来源。
 

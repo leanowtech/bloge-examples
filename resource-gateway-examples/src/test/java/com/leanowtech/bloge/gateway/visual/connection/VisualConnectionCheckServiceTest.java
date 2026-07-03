@@ -293,6 +293,76 @@ class VisualConnectionCheckServiceTest {
     }
 
     @Test
+    void connectionCandidatesDiscoverArrayItemTargetPaths() {
+        VisualConnectionCheckService service = connectionService(VisualCatalogTestSupport
+                .catalogWithLibrary(VisualCatalogTestSupport.listCompatibilityLibrary("integer", "integer")));
+        GraphDraft draft = listCompatibilityDraft();
+
+        VisualConnectionCandidatesResult result = service.candidates(new VisualConnectionCandidatesRequest(
+                draft,
+                new GraphDraft.Endpoint("listFacts", "output", "items.0"),
+                "data",
+                true,
+                50,
+                0,
+                "listConsumer",
+                "input"
+        ));
+
+        assertThat(result.candidates())
+                .anySatisfy(candidate -> {
+                    assertThat(candidate.target().nodeId()).isEqualTo("listConsumer");
+                    assertThat(candidate.target().port()).isEqualTo("inputs");
+                    assertThat(candidate.target().path()).isEqualTo("items.0");
+                    assertThat(candidate.accepted()).isTrue();
+                    assertThat(candidate.bindingKey()).isEqualTo("items.0");
+                    assertThat(candidate.explanation().sourceSchemaType()).isEqualTo("integer");
+                    assertThat(candidate.explanation().targetSchemaType()).isEqualTo("integer");
+                    assertThat(candidate.explanation().sourceSchemaKnown()).isTrue();
+                    assertThat(candidate.explanation().targetSchemaKnown()).isTrue();
+                    assertThat(candidate.diagnostics()).isEmpty();
+                });
+    }
+
+    @Test
+    void connectionCandidatesDiscoverPrefixItemsAndUniformArrayRemainderPaths() {
+        VisualConnectionCheckService service = connectionService(VisualCatalogTestSupport
+                .catalogWithLibrary(VisualCatalogTestSupport.listPrefixItemsCompatibilityLibrary(
+                        List.of(Map.of("type", "integer")),
+                        List.of(Map.of("type", "integer")))));
+        GraphDraft draft = listCompatibilityDraft();
+
+        VisualConnectionCandidatesResult result = service.candidates(new VisualConnectionCandidatesRequest(
+                draft,
+                new GraphDraft.Endpoint("listFacts", "output", "items.0"),
+                "data",
+                true,
+                50,
+                0,
+                "listConsumer",
+                "input"
+        ));
+
+        assertThat(result.candidates())
+                .anySatisfy(candidate -> {
+                    assertThat(candidate.target().path()).isEqualTo("items.0");
+                    assertThat(candidate.accepted()).isTrue();
+                    assertThat(candidate.explanation().targetSchemaType()).isEqualTo("integer");
+                    assertThat(candidate.diagnostics()).isEmpty();
+                })
+                .anySatisfy(candidate -> {
+                    assertThat(candidate.target().path()).isEqualTo("items.1");
+                    assertThat(candidate.accepted()).isFalse();
+                    assertThat(candidate.explanation().targetSchemaType()).isEqualTo("string");
+                    assertThat(candidate.explanation().firstDiagnosticCode())
+                            .isEqualTo("visual.binding.typeMismatch");
+                    assertThat(candidate.diagnostics())
+                            .extracting("code")
+                            .contains("visual.binding.typeMismatch");
+                });
+    }
+
+    @Test
     void acceptsConnectionPreviewWithExplicitTargetUnionBranchSelection() {
         VisualConnectionCheckService service = connectionService(VisualCatalogTestSupport
                 .catalogWithLibrary(unionBranchSelectionLibrary()));

@@ -747,6 +747,20 @@ public class VisualConnectionCheckService {
         if (depth >= MAX_SCHEMA_CANDIDATE_DEPTH || schema.containsKey("oneOf") || schema.containsKey("anyOf")) {
             return;
         }
+        if ("array".equals(schemaType(schema))) {
+            List<Map<String, Object>> prefixItems = prefixItemsOf(schema);
+            for (int i = 0; i < prefixItems.size(); i++) {
+                collectConnectableSchemaPaths(prefixItems.get(i), appendPath(path, String.valueOf(i)),
+                        paths, depth + 1);
+            }
+            Map<String, Object> items = objectSchema(schema.get("items"));
+            if (items != null) {
+                int representativeIndex = prefixItems.isEmpty() ? 0 : prefixItems.size();
+                collectConnectableSchemaPaths(items, appendPath(path, String.valueOf(representativeIndex)),
+                        paths, depth + 1);
+            }
+            return;
+        }
         for (Map.Entry<String, Object> entry : propertiesOf(schema).entrySet()) {
             Map<String, Object> child = objectSchema(entry.getValue());
             if (child != null) {
@@ -1259,6 +1273,21 @@ public class VisualConnectionCheckService {
             return objectSchema(list.get(index));
         }
         return objectSchema(schema.get("items"));
+    }
+
+    private static List<Map<String, Object>> prefixItemsOf(Map<String, Object> schema) {
+        Object raw = schema.get("prefixItems");
+        if (!(raw instanceof List<?> list)) {
+            return List.of();
+        }
+        List<Map<String, Object>> prefixItems = new ArrayList<>();
+        for (Object item : list) {
+            Map<String, Object> itemSchema = objectSchema(item);
+            if (itemSchema != null) {
+                prefixItems.add(itemSchema);
+            }
+        }
+        return prefixItems;
     }
 
     private static Integer arrayIndexSegment(String segment) {
