@@ -2019,6 +2019,13 @@ operator，并把 actor/source/summary/reason 写入 revision metadata。native 
 runtime binding apply kind、binding id、activation id、integration id 等受管 lowering 参数，用户导入
 operator library 时不能声明这些参数来伪造绑定状态；`transform`、`branch` 等需要额外 lowering
 语义的候选仍以 blocking diagnostic 拒绝。
+调用方可以提交可选 `expectedCurrentOperatorFingerprint` 和
+`expectedCandidateOperatorFingerprint`，把“我刚审阅并确认的是哪一次 preview”变成机器可校验
+前置条件；任一值与服务端重新 preview 得到的 current/candidate fingerprint 不一致时，mutation
+返回 `409`、`state=stale`，并给出
+`visual.executableReadinessRecompute.expectedCurrentOperatorFingerprintMismatch` 或
+`visual.executableReadinessRecompute.expectedCandidateOperatorFingerprintMismatch`，避免旧浏览器页面或外部
+control-plane 重试把过期确认写成新的 trusted revision。
 
 `POST /api/visual/assets/runtime-binding-requirements/executable-readiness-recomputations/evidence-refresh?operatorRef=...&ackWarnings=true&actor=...&reason=...`
 返回 `bloge.visualExecutableReadinessEvidenceRefreshResult.v1`，用于在 apply 已把 operator 变成
@@ -2037,6 +2044,12 @@ active adapter activation 和 active executable lowering integration 且三段 e
 `state=current`；若只有 binding 已切换而 activation/integration 缺失或漂移，会返回 blocking
 diagnostic（例如 `visual.executableReadinessEvidenceRefresh.activationMissing`），避免 partial
 failure 被误报为刷新完成。
+调用方可以提交可选 `expectedPreviousOperatorFingerprint` 和
+`expectedCurrentOperatorFingerprint`，把 source evidence 与 current trusted operator 的审阅结果固定到
+mutation 请求上；任一值不匹配时返回 `409`、`state=stale`，并给出
+`visual.executableReadinessEvidenceRefresh.expectedPreviousOperatorFingerprintMismatch` 或
+`visual.executableReadinessEvidenceRefresh.expectedCurrentOperatorFingerprintMismatch`，避免 runtime-plane
+在证据链或 trusted catalog 已变更后继续用旧确认执行 rebind。
 `actionReadiness` 则把同一批 diagnostics/readiness 压成产品动作门禁：`compileNow`、
 `runNow`、`publishDesignNow`、`publishDesignAfterReview`、`publishExecutableNow`、
 `publishExecutableAfterReview`，以及 `requiresAckWarnings` /

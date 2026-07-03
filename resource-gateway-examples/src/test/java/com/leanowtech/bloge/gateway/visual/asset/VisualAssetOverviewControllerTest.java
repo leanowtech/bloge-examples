@@ -2227,6 +2227,66 @@ class VisualAssetOverviewControllerTest {
     }
 
     @Test
+    void executableReadinessRecomputeApplyRejectsStaleExpectedFingerprints() {
+        RuntimeBindingImplementationFixture fixture = runtimeBindingImplementationFixture();
+        VisualRuntimeBindingImplementationBinding stored = submitImplementation(
+                fixture,
+                completeImplementation("risk-eligibility-native-v1")
+        );
+        VisualRuntimeBindingImplementationBinding binding = fixture.controller()
+                .bindRuntimeBindingImplementation(stored.bindingId(), transitionRequest("", true))
+                .getBody()
+                .binding();
+        VisualRuntimeAdapterActivation activation = (VisualRuntimeAdapterActivation) fixture.controller()
+                .submitRuntimeAdapterActivation(adapterActivationRequest(binding, "risk-eligibility-prod-active"))
+                .getBody();
+        fixture.controller().submitExecutableLoweringIntegration(
+                executableLoweringIntegrationRequest(activation, "risk-eligibility-lowering-v1"));
+        VisualExecutableReadinessRecomputePreview preview = fixture.controller()
+                .previewExecutableReadinessRecompute("risk:eligibility")
+                .getBody();
+
+        var staleCurrent = fixture.controller().applyExecutableReadinessRecompute(
+                "risk:eligibility",
+                true,
+                "runtime-platform",
+                "visual-canvas-test",
+                "Promote stale preview.",
+                "Caller reviewed an older current operator fingerprint.",
+                "sha256:stale-current",
+                preview.candidateOperatorFingerprint()
+        );
+        var staleCandidate = fixture.controller().applyExecutableReadinessRecompute(
+                "risk:eligibility",
+                true,
+                "runtime-platform",
+                "visual-canvas-test",
+                "Promote stale preview.",
+                "Caller reviewed an older candidate operator fingerprint.",
+                preview.currentOperatorFingerprint(),
+                "sha256:stale-candidate"
+        );
+
+        assertThat(staleCurrent.getStatusCode().value()).isEqualTo(409);
+        assertThat(staleCurrent.getBody()).isNotNull();
+        assertThat(staleCurrent.getBody().applied()).isFalse();
+        assertThat(staleCurrent.getBody().state()).isEqualTo("stale");
+        assertThat(staleCurrent.getBody().diagnostics())
+                .extracting(VisualDiagnostic::code)
+                .contains("visual.executableReadinessRecompute.expectedCurrentOperatorFingerprintMismatch");
+        assertThat(staleCandidate.getStatusCode().value()).isEqualTo(409);
+        assertThat(staleCandidate.getBody()).isNotNull();
+        assertThat(staleCandidate.getBody().applied()).isFalse();
+        assertThat(staleCandidate.getBody().state()).isEqualTo("stale");
+        assertThat(staleCandidate.getBody().diagnostics())
+                .extracting(VisualDiagnostic::code)
+                .contains("visual.executableReadinessRecompute.expectedCandidateOperatorFingerprintMismatch");
+        assertThat(fixture.libraries().revisions("risk-policy-design")).hasSize(1);
+        assertThat(fixture.catalog().find("risk:eligibility").orElseThrow().fingerprint())
+                .isEqualTo(preview.currentOperatorFingerprint());
+    }
+
+    @Test
     void executableReadinessRecomputeApplyWritesExternalLoweringRevisionWithoutLocalExecution() {
         RuntimeBindingImplementationFixture fixture = runtimeBindingImplementationFixture();
         VisualRuntimeBindingImplementationBinding stored = submitImplementation(
@@ -2428,6 +2488,81 @@ class VisualAssetOverviewControllerTest {
                 .isEqualTo("risk-eligibility-native-v1-refresh");
         assertThat(afterRefreshPreview.getBody().activeAdapterActivationId())
                 .isEqualTo("risk-eligibility-prod-active-refresh");
+    }
+
+    @Test
+    void executableReadinessEvidenceRefreshRejectsStaleExpectedFingerprints() {
+        RuntimeBindingImplementationFixture fixture = runtimeBindingImplementationFixture();
+        VisualRuntimeBindingImplementationBinding stored = submitImplementation(
+                fixture,
+                completeImplementation("risk-eligibility-native-v1")
+        );
+        VisualRuntimeBindingImplementationBinding binding = fixture.controller()
+                .bindRuntimeBindingImplementation(stored.bindingId(), transitionRequest("", true))
+                .getBody()
+                .binding();
+        VisualRuntimeAdapterActivation activation = (VisualRuntimeAdapterActivation) fixture.controller()
+                .submitRuntimeAdapterActivation(adapterActivationRequest(binding, "risk-eligibility-prod-active"))
+                .getBody();
+        fixture.controller().submitExecutableLoweringIntegration(
+                executableLoweringIntegrationRequest(activation, "risk-eligibility-lowering-v1"));
+        VisualExecutableReadinessRecomputeResult applied = fixture.controller()
+                .applyExecutableReadinessRecompute(
+                        "risk:eligibility",
+                        true,
+                        "runtime-platform",
+                        "visual-canvas-test",
+                        "Promote risk eligibility executable readiness.",
+                        "Runtime implementation, activation, and executor bridge evidence were reviewed.")
+                .getBody();
+
+        var stalePrevious = fixture.controller().refreshExecutableReadinessEvidence(
+                "risk:eligibility",
+                true,
+                "runtime-platform",
+                "visual-canvas-test",
+                "Refresh stale evidence.",
+                "Caller reviewed an older source evidence fingerprint.",
+                "risk-eligibility-native-v1-refresh",
+                "risk-eligibility-prod-active-refresh",
+                "risk-eligibility-lowering-v1-refresh",
+                "sha256:stale-previous",
+                applied.candidateOperatorFingerprint()
+        );
+        var staleCurrent = fixture.controller().refreshExecutableReadinessEvidence(
+                "risk:eligibility",
+                true,
+                "runtime-platform",
+                "visual-canvas-test",
+                "Refresh stale evidence.",
+                "Caller reviewed an older current operator fingerprint.",
+                "risk-eligibility-native-v1-refresh",
+                "risk-eligibility-prod-active-refresh",
+                "risk-eligibility-lowering-v1-refresh",
+                binding.operatorFingerprint(),
+                "sha256:stale-current"
+        );
+
+        assertThat(stalePrevious.getStatusCode().value()).isEqualTo(409);
+        assertThat(stalePrevious.getBody()).isNotNull();
+        assertThat(stalePrevious.getBody().refreshed()).isFalse();
+        assertThat(stalePrevious.getBody().state()).isEqualTo("stale");
+        assertThat(stalePrevious.getBody().diagnostics())
+                .extracting(VisualDiagnostic::code)
+                .contains("visual.executableReadinessEvidenceRefresh.expectedPreviousOperatorFingerprintMismatch");
+        assertThat(staleCurrent.getStatusCode().value()).isEqualTo(409);
+        assertThat(staleCurrent.getBody()).isNotNull();
+        assertThat(staleCurrent.getBody().refreshed()).isFalse();
+        assertThat(staleCurrent.getBody().state()).isEqualTo("stale");
+        assertThat(staleCurrent.getBody().diagnostics())
+                .extracting(VisualDiagnostic::code)
+                .contains("visual.executableReadinessEvidenceRefresh.expectedCurrentOperatorFingerprintMismatch");
+        assertThat(fixture.controller().runtimeBindingImplementationBindings("risk:eligibility", "bound"))
+                .singleElement()
+                .extracting(VisualRuntimeBindingImplementationBinding::bindingId)
+                .isEqualTo(binding.bindingId());
+        assertThat(fixture.controller().runtimeBindingImplementationBindings("risk:eligibility", "superseded"))
+                .isEmpty();
     }
 
     @Test

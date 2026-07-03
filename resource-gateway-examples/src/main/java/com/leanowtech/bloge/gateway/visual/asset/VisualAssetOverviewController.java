@@ -1244,6 +1244,24 @@ public class VisualAssetOverviewController {
      * @param reason reason for the governed mutation
      * @return apply result
      */
+    public ResponseEntity<VisualExecutableReadinessRecomputeResult> applyExecutableReadinessRecompute(
+            String operatorRef,
+            boolean ackWarnings,
+            String actor,
+            String changeSource,
+            String changeSummary,
+            String reason) {
+        return applyExecutableReadinessRecompute(
+                operatorRef,
+                ackWarnings,
+                actor,
+                changeSource,
+                changeSummary,
+                reason,
+                "",
+                "");
+    }
+
     @PostMapping("/runtime-binding-requirements/executable-readiness-recomputations/apply")
     public ResponseEntity<VisualExecutableReadinessRecomputeResult> applyExecutableReadinessRecompute(
             @RequestParam(defaultValue = "") String operatorRef,
@@ -1251,7 +1269,9 @@ public class VisualAssetOverviewController {
             @RequestParam(defaultValue = "") String actor,
             @RequestParam(defaultValue = "") String changeSource,
             @RequestParam(defaultValue = "") String changeSummary,
-            @RequestParam(defaultValue = "") String reason) {
+            @RequestParam(defaultValue = "") String reason,
+            @RequestParam(defaultValue = "") String expectedCurrentOperatorFingerprint,
+            @RequestParam(defaultValue = "") String expectedCandidateOperatorFingerprint) {
         ResponseEntity<VisualExecutableReadinessRecomputePreview> previewResponse =
                 previewExecutableReadinessRecompute(operatorRef);
         VisualExecutableReadinessRecomputePreview preview = previewResponse.getBody();
@@ -1262,6 +1282,21 @@ public class VisualAssetOverviewController {
         if (preview == null || !preview.recomputable()) {
             return ResponseEntity.status(HttpStatus.CONFLICT)
                     .body(VisualExecutableReadinessRecomputeResult.fromPreview(preview));
+        }
+        List<VisualDiagnostic> expectedFingerprintDiagnostics =
+                executableReadinessApplyExpectedFingerprintDiagnostics(
+                        expectedCurrentOperatorFingerprint,
+                        expectedCandidateOperatorFingerprint,
+                        preview);
+        if (!expectedFingerprintDiagnostics.isEmpty()) {
+            return ResponseEntity.status(HttpStatus.CONFLICT)
+                    .body(VisualExecutableReadinessRecomputeResult.rejected(
+                            preview,
+                            "stale",
+                            "error",
+                            "Executable readiness recompute preview for '%s' is stale; reload preview before applying."
+                                    .formatted(preview.operatorRef()),
+                            expectedFingerprintDiagnostics));
         }
         if (!ackWarnings) {
             VisualDiagnostic diagnostic = executableReadinessApplyAckRequired(preview);
@@ -1327,6 +1362,30 @@ public class VisualAssetOverviewController {
      * @param refreshedIntegrationId optional id for the refreshed lowering integration
      * @return refresh result
      */
+    public ResponseEntity<VisualExecutableReadinessEvidenceRefreshResult> refreshExecutableReadinessEvidence(
+            String operatorRef,
+            boolean ackWarnings,
+            String actor,
+            String changeSource,
+            String changeSummary,
+            String reason,
+            String refreshedBindingId,
+            String refreshedActivationId,
+            String refreshedIntegrationId) {
+        return refreshExecutableReadinessEvidence(
+                operatorRef,
+                ackWarnings,
+                actor,
+                changeSource,
+                changeSummary,
+                reason,
+                refreshedBindingId,
+                refreshedActivationId,
+                refreshedIntegrationId,
+                "",
+                "");
+    }
+
     @PostMapping("/runtime-binding-requirements/executable-readiness-recomputations/evidence-refresh")
     public ResponseEntity<VisualExecutableReadinessEvidenceRefreshResult> refreshExecutableReadinessEvidence(
             @RequestParam(defaultValue = "") String operatorRef,
@@ -1337,7 +1396,9 @@ public class VisualAssetOverviewController {
             @RequestParam(defaultValue = "") String reason,
             @RequestParam(defaultValue = "") String refreshedBindingId,
             @RequestParam(defaultValue = "") String refreshedActivationId,
-            @RequestParam(defaultValue = "") String refreshedIntegrationId) {
+            @RequestParam(defaultValue = "") String refreshedIntegrationId,
+            @RequestParam(defaultValue = "") String expectedPreviousOperatorFingerprint,
+            @RequestParam(defaultValue = "") String expectedCurrentOperatorFingerprint) {
         String normalizedOperatorRef = operatorRef == null ? "" : operatorRef.trim();
         if (normalizedOperatorRef.isBlank()) {
             return evidenceRefreshFailure(
@@ -1404,6 +1465,27 @@ public class VisualAssetOverviewController {
                 ? null
                 : executableLoweringIntegrationRepository.findActiveByActivationId(
                         sourceActivation.activationId()).orElse(null);
+        List<VisualDiagnostic> expectedFingerprintDiagnostics =
+                executableReadinessEvidenceRefreshExpectedFingerprintDiagnostics(
+                        expectedPreviousOperatorFingerprint,
+                        expectedCurrentOperatorFingerprint,
+                        sourceBinding.operatorFingerprint(),
+                        currentOperator.fingerprint());
+        if (!expectedFingerprintDiagnostics.isEmpty()) {
+            return evidenceRefreshFailure(
+                    HttpStatus.CONFLICT,
+                    normalizedOperatorRef,
+                    sourceBinding.operatorFingerprint(),
+                    currentOperator.fingerprint(),
+                    "stale",
+                    "error",
+                    "Executable readiness evidence refresh for '%s' is stale; reload runtime evidence before retrying."
+                            .formatted(normalizedOperatorRef),
+                    sourceBinding,
+                    sourceActivation,
+                    sourceIntegration,
+                    expectedFingerprintDiagnostics);
+        }
         if (!ackWarnings) {
             return evidenceRefreshFailure(
                     HttpStatus.CONFLICT,
@@ -2128,6 +2210,81 @@ public class VisualAssetOverviewController {
                 "Rebound executable lowering integration after executable readiness apply to activation '%s'."
                         .formatted(refreshedActivation.activationId())));
         return List.copyOf(evidence);
+    }
+
+    private static List<VisualDiagnostic> executableReadinessApplyExpectedFingerprintDiagnostics(
+            String expectedCurrentOperatorFingerprint,
+            String expectedCandidateOperatorFingerprint,
+            VisualExecutableReadinessRecomputePreview preview) {
+        List<VisualDiagnostic> diagnostics = new ArrayList<>();
+        addExpectedFingerprintMismatch(
+                diagnostics,
+                "visual.executableReadinessRecompute.expectedCurrentOperatorFingerprintMismatch",
+                "Expected current operator fingerprint",
+                "/expectedCurrentOperatorFingerprint",
+                expectedCurrentOperatorFingerprint,
+                preview.currentOperatorFingerprint(),
+                preview.operatorRef());
+        addExpectedFingerprintMismatch(
+                diagnostics,
+                "visual.executableReadinessRecompute.expectedCandidateOperatorFingerprintMismatch",
+                "Expected candidate operator fingerprint",
+                "/expectedCandidateOperatorFingerprint",
+                expectedCandidateOperatorFingerprint,
+                preview.candidateOperatorFingerprint(),
+                preview.operatorRef());
+        return diagnostics;
+    }
+
+    private static List<VisualDiagnostic> executableReadinessEvidenceRefreshExpectedFingerprintDiagnostics(
+            String expectedPreviousOperatorFingerprint,
+            String expectedCurrentOperatorFingerprint,
+            String actualPreviousOperatorFingerprint,
+            String actualCurrentOperatorFingerprint) {
+        List<VisualDiagnostic> diagnostics = new ArrayList<>();
+        addExpectedFingerprintMismatch(
+                diagnostics,
+                "visual.executableReadinessEvidenceRefresh.expectedPreviousOperatorFingerprintMismatch",
+                "Expected previous operator fingerprint",
+                "/expectedPreviousOperatorFingerprint",
+                expectedPreviousOperatorFingerprint,
+                actualPreviousOperatorFingerprint,
+                "");
+        addExpectedFingerprintMismatch(
+                diagnostics,
+                "visual.executableReadinessEvidenceRefresh.expectedCurrentOperatorFingerprintMismatch",
+                "Expected current operator fingerprint",
+                "/expectedCurrentOperatorFingerprint",
+                expectedCurrentOperatorFingerprint,
+                actualCurrentOperatorFingerprint,
+                "");
+        return diagnostics;
+    }
+
+    private static void addExpectedFingerprintMismatch(List<VisualDiagnostic> diagnostics,
+                                                       String code,
+                                                       String label,
+                                                       String target,
+                                                       String submittedExpected,
+                                                       String actual,
+                                                       String operatorRef) {
+        String expected = submittedExpected == null ? "" : submittedExpected.trim();
+        if (expected.isBlank()) {
+            return;
+        }
+        String normalizedActual = actual == null ? "" : actual.trim();
+        if (expected.equals(normalizedActual)) {
+            return;
+        }
+        Map<String, Object> metadata = operatorRef == null || operatorRef.isBlank()
+                ? Map.of("expected", expected, "actual", normalizedActual)
+                : Map.of("operatorRef", operatorRef, "expected", expected, "actual", normalizedActual);
+        diagnostics.add(VisualDiagnostic.error(
+                code,
+                "%s '%s' does not match the current server value '%s'; reload the preview before retrying."
+                        .formatted(label, expected, normalizedActual),
+                target,
+                metadata));
     }
 
     private static VisualDiagnostic executableReadinessApplyAckRequired(
