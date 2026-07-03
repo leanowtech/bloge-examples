@@ -1932,6 +1932,10 @@ snapshot；同一 `bindingId` 但 submitted evidence 不同会返回 `409` 与
 同一 stable `bindingId` 且 submitted evidence 与既有 record 完全一致时，端点把它视为 runtime-plane
 retry/replay，返回已有 record 和 `200`，不创建新 revision；同 id 但 implementation、contract、
 validation、source requirement 或 lifecycle evidence 不一致时仍返回 `409`。
+如果 repository 写入在 proposal 持久化阶段失败，端点返回 `409` 和
+`visual.runtimeBindingImplementation.persistenceFailed` validation diagnostic，metadata 至少包含
+`bindingId`、`operatorRef`、`exceptionType` 和 `exceptionMessage`，不能把持久化异常泄漏成通用
+500。
 `GET /api/visual/assets/runtime-binding-requirements/implementation-bindings`
 可按 `operatorRef` 和 `state` 查询已提交 proposal。该持久记录仍不关闭
 runtime-binding requirement。
@@ -1998,7 +2002,9 @@ fingerprint/adapter drift、同一 activationId 但 submitted evidence 不同、
 以及缺失 actor/reason/evidence 的请求；`GET .../adapter-activations` 可按 `bindingId`、
 `operatorRef` 和 `state` 查询。同一 stable `activationId` 且 submitted evidence 与既有 fact
 完全一致时返回已有 fact 和 `200`；同 id 但 activation metadata、validation 或 evidence 不一致时仍返回
-`409`。`POST
+`409`。如果 repository 写入失败，端点返回 `409` 和
+`visual.runtimeAdapterActivation.persistenceFailed` validation diagnostic，metadata 携带
+activation/binding/operator 和异常类型信息。`POST
 /api/visual/assets/runtime-binding-requirements/executable-lowering-integrations/validate`
 接收 `bloge.visualExecutableLoweringIntegrationRequest.v1`，对准 active activation、
 bound implementation、当前 catalog fingerprint、非 design 的 executable lowering mode、
@@ -2010,7 +2016,9 @@ binding、catalog drift、`loweringMode=design`、同一 integrationId 但 submi
 active integration 以及缺失 executor evidence 的请求；`GET .../executable-lowering-integrations`
 可按 `activationId`、`operatorRef` 和 `state` 查询。同一 stable `integrationId` 且 submitted
 evidence 与既有 fact 完全一致时返回已有 fact 和 `200`；同 id 但 lowering integration metadata、
-validation 或 evidence 不一致时仍返回 `409`。真正的 executable readiness 关闭还必须由
+validation 或 evidence 不一致时仍返回 `409`。如果 repository 写入失败，端点返回 `409` 和
+`visual.executableLoweringIntegration.persistenceFailed` validation diagnostic，metadata 携带
+integration/activation/binding/operator 和异常类型信息。真正的 executable readiness 关闭还必须由
 library revision 或 readiness recomputation 消费该 integration fact 后重新派生；
 `adapter-active` 和 `readiness-recompute-required` 都只是控制面事实，不会直接把 design-only
 operator 改成可执行。

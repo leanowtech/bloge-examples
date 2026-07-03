@@ -563,6 +563,20 @@ public class VisualAssetOverviewController {
                             "/implementation/bindingId",
                             Map.of("bindingId", bindingId))
             ));
+        } catch (IllegalStateException e) {
+            return ResponseEntity.status(HttpStatus.CONFLICT).body(validationWithBlockingDiagnostic(
+                    validation,
+                    runtimeEvidenceMutationExceptionDiagnostic(
+                            "visual.runtimeBindingImplementation.persistenceFailed",
+                            "Runtime binding implementation '%s' could not be persisted: %s"
+                                    .formatted(defaultIfBlank(bindingId, candidate.bindingId()),
+                                            defaultIfBlank(e.getMessage(), e.getClass().getSimpleName())),
+                            "/implementation/bindingId",
+                            e,
+                            Map.of(
+                                    "bindingId", defaultIfBlank(bindingId, candidate.bindingId()),
+                                    "operatorRef", candidate.operatorRef()))
+            ));
         }
         return ResponseEntity.status(HttpStatus.CREATED).body(stored);
     }
@@ -1315,6 +1329,21 @@ public class VisualAssetOverviewController {
                             "/activationId",
                             Map.of("activationId", request.activationId(), "bindingId", validation.bindingId()))
             ));
+        } catch (IllegalStateException e) {
+            return ResponseEntity.status(HttpStatus.CONFLICT).body(adapterActivationValidationWithBlockingDiagnostic(
+                    validation,
+                    runtimeEvidenceMutationExceptionDiagnostic(
+                            "visual.runtimeAdapterActivation.persistenceFailed",
+                            "Runtime adapter activation '%s' could not be persisted: %s"
+                                    .formatted(defaultIfBlank(request.activationId(), candidate.activationId()),
+                                            defaultIfBlank(e.getMessage(), e.getClass().getSimpleName())),
+                            "/activationId",
+                            e,
+                            Map.of(
+                                    "activationId", defaultIfBlank(request.activationId(), candidate.activationId()),
+                                    "bindingId", validation.bindingId(),
+                                    "operatorRef", validation.operatorRef()))
+            ));
         }
         return ResponseEntity.status(HttpStatus.CREATED).body(stored);
     }
@@ -1457,6 +1486,25 @@ public class VisualAssetOverviewController {
                                     Map.of(
                                             "integrationId", request.integrationId(),
                                             "activationId", validation.activationId()))
+                    ));
+        } catch (IllegalStateException e) {
+            return ResponseEntity.status(HttpStatus.CONFLICT)
+                    .body(executableLoweringIntegrationValidationWithBlockingDiagnostic(
+                            validation,
+                            runtimeEvidenceMutationExceptionDiagnostic(
+                                    "visual.executableLoweringIntegration.persistenceFailed",
+                                    "Executable lowering integration '%s' could not be persisted: %s"
+                                            .formatted(defaultIfBlank(request.integrationId(),
+                                                            candidate.integrationId()),
+                                                    defaultIfBlank(e.getMessage(), e.getClass().getSimpleName())),
+                                    "/integrationId",
+                                    e,
+                                    Map.of(
+                                            "integrationId", defaultIfBlank(request.integrationId(),
+                                                    candidate.integrationId()),
+                                            "activationId", validation.activationId(),
+                                            "bindingId", validation.bindingId(),
+                                            "operatorRef", validation.operatorRef()))
                     ));
         }
         return ResponseEntity.status(HttpStatus.CREATED).body(stored);
@@ -2387,6 +2435,25 @@ public class VisualAssetOverviewController {
                                 defaultIfBlank(exception.getMessage(), exception.getClass().getSimpleName())),
                 "/runtimeEvidence",
                 metadata);
+    }
+
+    private static VisualDiagnostic runtimeEvidenceMutationExceptionDiagnostic(
+            String code,
+            String message,
+            String target,
+            RuntimeException exception,
+            Map<String, Object> metadata) {
+        LinkedHashMap<String, Object> diagnosticMetadata = new LinkedHashMap<>();
+        if (metadata != null) {
+            metadata.forEach((key, value) -> diagnosticMetadata.put(key, value == null ? "" : value));
+        }
+        diagnosticMetadata.put("exceptionType", exception.getClass().getSimpleName());
+        diagnosticMetadata.put("exceptionMessage", defaultIfBlank(exception.getMessage(), ""));
+        return VisualDiagnostic.error(
+                code,
+                defaultIfBlank(message, "Runtime evidence mutation failed."),
+                target,
+                diagnosticMetadata);
     }
 
     private static boolean operatorRuntimeEvidenceApplied(OperatorDefinition operator) {

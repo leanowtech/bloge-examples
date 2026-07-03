@@ -1527,6 +1527,36 @@ class VisualAssetOverviewControllerTest {
     }
 
     @Test
+    void runtimeBindingImplementationSubmitReturnsConflictWhenRepositoryWriteFails() {
+        RuntimeBindingImplementationFixture fixture = runtimeBindingImplementationFixture(
+                new FailingSubmitBindingCreateRepository("risk-eligibility-native-v1"),
+                new InMemoryVisualExecutableLoweringIntegrationRepository());
+
+        var response = fixture.controller().submitRuntimeBindingImplementation(
+                implementationRequest(fixture, completeImplementation("risk-eligibility-native-v1")));
+
+        assertThat(response.getStatusCode().value()).isEqualTo(409);
+        assertThat(response.getBody()).isInstanceOf(VisualRuntimeBindingImplementationValidation.class);
+        VisualRuntimeBindingImplementationValidation validation =
+                (VisualRuntimeBindingImplementationValidation) response.getBody();
+        assertThat(validation.valid()).isFalse();
+        assertThat(validation.state()).isEqualTo("rejected");
+        assertThat(validation.level()).isEqualTo("error");
+        assertThat(validation.diagnostics())
+                .filteredOn(diagnostic ->
+                        "visual.runtimeBindingImplementation.persistenceFailed".equals(diagnostic.code()))
+                .singleElement()
+                .satisfies(diagnostic -> {
+                    assertThat(diagnostic.target()).isEqualTo("/implementation/bindingId");
+                    assertThat(diagnostic.metadata())
+                            .containsEntry("bindingId", "risk-eligibility-native-v1")
+                            .containsEntry("operatorRef", "risk:eligibility")
+                            .containsEntry("exceptionType", "IllegalStateException");
+                });
+        assertThat(fixture.controller().runtimeBindingImplementationBindings("", "")).isEmpty();
+    }
+
+    @Test
     void runtimeBindingImplementationBindActivatesReadyProposal() {
         RuntimeBindingImplementationFixture fixture = runtimeBindingImplementationFixture();
         VisualRuntimeBindingImplementationBinding stored = submitImplementation(
@@ -2140,6 +2170,46 @@ class VisualAssetOverviewControllerTest {
     }
 
     @Test
+    void runtimeAdapterActivationSubmitReturnsConflictWhenRepositoryWriteFails() {
+        RuntimeBindingImplementationFixture fixture = runtimeBindingImplementationFixture(
+                new InMemoryVisualRuntimeBindingImplementationRepository(),
+                new FailingSubmitAdapterActivationRepository("risk-eligibility-prod-active"),
+                new InMemoryVisualExecutableLoweringIntegrationRepository());
+        VisualRuntimeBindingImplementationBinding stored = submitImplementation(
+                fixture,
+                completeImplementation("risk-eligibility-native-v1")
+        );
+        VisualRuntimeBindingImplementationBinding binding = fixture.controller()
+                .bindRuntimeBindingImplementation(stored.bindingId(), transitionRequest("", true))
+                .getBody()
+                .binding();
+
+        var response = fixture.controller().submitRuntimeAdapterActivation(
+                adapterActivationRequest(binding, "risk-eligibility-prod-active"));
+
+        assertThat(response.getStatusCode().value()).isEqualTo(409);
+        assertThat(response.getBody()).isInstanceOf(VisualRuntimeAdapterActivationValidation.class);
+        VisualRuntimeAdapterActivationValidation validation =
+                (VisualRuntimeAdapterActivationValidation) response.getBody();
+        assertThat(validation.valid()).isFalse();
+        assertThat(validation.state()).isEqualTo("rejected");
+        assertThat(validation.level()).isEqualTo("error");
+        assertThat(validation.diagnostics())
+                .filteredOn(diagnostic ->
+                        "visual.runtimeAdapterActivation.persistenceFailed".equals(diagnostic.code()))
+                .singleElement()
+                .satisfies(diagnostic -> {
+                    assertThat(diagnostic.target()).isEqualTo("/activationId");
+                    assertThat(diagnostic.metadata())
+                            .containsEntry("activationId", "risk-eligibility-prod-active")
+                            .containsEntry("bindingId", binding.bindingId())
+                            .containsEntry("operatorRef", "risk:eligibility")
+                            .containsEntry("exceptionType", "IllegalStateException");
+                });
+        assertThat(fixture.controller().runtimeAdapterActivations("", "", "")).isEmpty();
+    }
+
+    @Test
     void executableLoweringIntegrationSubmitPersistsBridgeEvidenceWithoutClosingReadiness() {
         RuntimeBindingImplementationFixture fixture = runtimeBindingImplementationFixture();
         VisualRuntimeBindingImplementationBinding stored = submitImplementation(
@@ -2251,6 +2321,48 @@ class VisualAssetOverviewControllerTest {
         assertThat(validation.diagnostics())
                 .extracting(VisualDiagnostic::code)
                 .contains("visual.executableLoweringIntegration.activationMissing");
+        assertThat(fixture.controller().executableLoweringIntegrations("", "", "")).isEmpty();
+    }
+
+    @Test
+    void executableLoweringIntegrationSubmitReturnsConflictWhenRepositoryWriteFails() {
+        RuntimeBindingImplementationFixture fixture = runtimeBindingImplementationFixture(
+                new FailingSubmitLoweringIntegrationRepository("risk-eligibility-lowering-v1"));
+        VisualRuntimeBindingImplementationBinding stored = submitImplementation(
+                fixture,
+                completeImplementation("risk-eligibility-native-v1")
+        );
+        VisualRuntimeBindingImplementationBinding binding = fixture.controller()
+                .bindRuntimeBindingImplementation(stored.bindingId(), transitionRequest("", true))
+                .getBody()
+                .binding();
+        VisualRuntimeAdapterActivation activation = (VisualRuntimeAdapterActivation) fixture.controller()
+                .submitRuntimeAdapterActivation(adapterActivationRequest(binding, "risk-eligibility-prod-active"))
+                .getBody();
+
+        var response = fixture.controller().submitExecutableLoweringIntegration(
+                executableLoweringIntegrationRequest(activation, "risk-eligibility-lowering-v1"));
+
+        assertThat(response.getStatusCode().value()).isEqualTo(409);
+        assertThat(response.getBody()).isInstanceOf(VisualExecutableLoweringIntegrationValidation.class);
+        VisualExecutableLoweringIntegrationValidation validation =
+                (VisualExecutableLoweringIntegrationValidation) response.getBody();
+        assertThat(validation.valid()).isFalse();
+        assertThat(validation.state()).isEqualTo("rejected");
+        assertThat(validation.level()).isEqualTo("error");
+        assertThat(validation.diagnostics())
+                .filteredOn(diagnostic ->
+                        "visual.executableLoweringIntegration.persistenceFailed".equals(diagnostic.code()))
+                .singleElement()
+                .satisfies(diagnostic -> {
+                    assertThat(diagnostic.target()).isEqualTo("/integrationId");
+                    assertThat(diagnostic.metadata())
+                            .containsEntry("integrationId", "risk-eligibility-lowering-v1")
+                            .containsEntry("activationId", activation.activationId())
+                            .containsEntry("bindingId", binding.bindingId())
+                            .containsEntry("operatorRef", "risk:eligibility")
+                            .containsEntry("exceptionType", "IllegalStateException");
+                });
         assertThat(fixture.controller().executableLoweringIntegrations("", "", "")).isEmpty();
     }
 
@@ -3779,6 +3891,58 @@ class VisualAssetOverviewControllerTest {
             VisualRuntimeBindingHandoffBundle handoffBundle,
             VisualRuntimeBindingHandoffBundle.OperatorContractSnapshot contract
     ) {
+    }
+
+    private static final class FailingSubmitBindingCreateRepository
+            extends InMemoryVisualRuntimeBindingImplementationRepository {
+        private final String failingBindingId;
+
+        private FailingSubmitBindingCreateRepository(String failingBindingId) {
+            this.failingBindingId = failingBindingId;
+        }
+
+        @Override
+        public VisualRuntimeBindingImplementationBinding create(
+                VisualRuntimeBindingImplementationBinding binding) {
+            if (binding != null && failingBindingId.equals(binding.bindingId())) {
+                throw new IllegalStateException("Injected runtime binding implementation persistence failure.");
+            }
+            return super.create(binding);
+        }
+    }
+
+    private static final class FailingSubmitAdapterActivationRepository
+            extends InMemoryVisualRuntimeAdapterActivationRepository {
+        private final String failingActivationId;
+
+        private FailingSubmitAdapterActivationRepository(String failingActivationId) {
+            this.failingActivationId = failingActivationId;
+        }
+
+        @Override
+        public VisualRuntimeAdapterActivation create(VisualRuntimeAdapterActivation activation) {
+            if (activation != null && failingActivationId.equals(activation.activationId())) {
+                throw new IllegalStateException("Injected runtime adapter activation persistence failure.");
+            }
+            return super.create(activation);
+        }
+    }
+
+    private static final class FailingSubmitLoweringIntegrationRepository
+            extends InMemoryVisualExecutableLoweringIntegrationRepository {
+        private final String failingIntegrationId;
+
+        private FailingSubmitLoweringIntegrationRepository(String failingIntegrationId) {
+            this.failingIntegrationId = failingIntegrationId;
+        }
+
+        @Override
+        public VisualExecutableLoweringIntegration create(VisualExecutableLoweringIntegration integration) {
+            if (integration != null && failingIntegrationId.equals(integration.integrationId())) {
+                throw new IllegalStateException("Injected executable lowering integration persistence failure.");
+            }
+            return super.create(integration);
+        }
     }
 
     private static final class FailingRefreshLoweringIntegrationRepository
