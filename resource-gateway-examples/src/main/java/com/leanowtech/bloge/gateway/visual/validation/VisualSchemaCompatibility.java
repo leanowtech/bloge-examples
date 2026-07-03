@@ -353,9 +353,63 @@ public final class VisualSchemaCompatibility {
                 arrayMinItems(excludedSchema), arrayMaxItems(excludedSchema))) {
             return true;
         }
-        return "object".equals(sourceType) && "object".equals(excludedType)
-                && longRangesDisjoint(objectMinProperties(sourceSchema), objectMaxProperties(sourceSchema),
-                objectMinProperties(excludedSchema), objectMaxProperties(excludedSchema));
+        if ("object".equals(sourceType) && "object".equals(excludedType)) {
+            return longRangesDisjoint(objectMinProperties(sourceSchema), objectMaxProperties(sourceSchema),
+                    objectMinProperties(excludedSchema), objectMaxProperties(excludedSchema))
+                    || objectSchemasDefinitelyDisjoint(sourceSchema, excludedSchema);
+        }
+        return false;
+    }
+
+    private static boolean objectSchemasDefinitelyDisjoint(Map<String, Object> sourceSchema,
+                                                           Map<String, Object> excludedSchema) {
+        Map<String, Object> excludedProperties = propertiesOf(excludedSchema);
+        for (String required : requiredNamesOf(excludedSchema)) {
+            if (sourceCannotContainProperty(sourceSchema, required)) {
+                return true;
+            }
+            Map<String, Object> excludedProperty = objectProperty(excludedProperties.get(required));
+            if (excludedProperty != null
+                    && sourcePropertyConstraintsDisjointFrom(sourceSchema, required, excludedProperty)) {
+                return true;
+            }
+        }
+        Map<String, Object> excludedPropertyNames = propertyNameSchema(excludedSchema);
+        if (excludedPropertyNames != null) {
+            Map<String, Object> effectivePropertyNames = effectivePropertyNameSchema(excludedPropertyNames);
+            for (String required : requiredNamesOf(sourceSchema)) {
+                if (!valueMatchesSchema(required, effectivePropertyNames)) {
+                    return true;
+                }
+            }
+        }
+        return false;
+    }
+
+    private static boolean sourcePropertyConstraintsDisjointFrom(Map<String, Object> sourceSchema,
+                                                                 String propertyName,
+                                                                 Map<String, Object> excludedPropertySchema) {
+        return sourcePropertyConstraintsFor(sourceSchema, propertyName).stream()
+                .anyMatch(sourceConstraint -> schemasDefinitelyDisjoint(sourceConstraint, excludedPropertySchema));
+    }
+
+    private static List<Map<String, Object>> sourcePropertyConstraintsFor(Map<String, Object> sourceSchema,
+                                                                          String propertyName) {
+        List<Map<String, Object>> constraints = new ArrayList<>();
+        Map<String, Object> sourceProperty = objectProperty(propertiesOf(sourceSchema).get(propertyName));
+        if (sourceProperty != null) {
+            constraints.add(sourceProperty);
+        }
+        constraints.addAll(matchingPatternPropertySchemas(sourceSchema, propertyName));
+        if (constraints.isEmpty()) {
+            Object residual = residualPropertiesPolicy(sourceSchema);
+            if (residual instanceof Map<?, ?> residualSchema) {
+                constraints.add(objectProperty(residualSchema));
+            }
+        }
+        return constraints.stream()
+                .filter(Objects::nonNull)
+                .toList();
     }
 
     private static boolean numericRangesDisjoint(Map<String, Object> sourceSchema,

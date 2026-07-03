@@ -374,6 +374,65 @@ class VisualSchemaCompatibilityTest {
     }
 
     @Test
+    void acceptsClosedObjectSourceThatCannotContainTargetNotRequiredProperty() {
+        Map<String, Object> source = Map.of(
+                "type", "object",
+                "properties", Map.of("publicId", Map.of("type", "string")),
+                "required", List.of("publicId"),
+                "additionalProperties", false
+        );
+        Map<String, Object> target = Map.of(
+                "type", "object",
+                "not", Map.of("required", List.of("debug"))
+        );
+
+        assertThat(VisualSchemaCompatibility.valueMatchesSchema(Map.of("publicId", "P-1"), target)).isTrue();
+        assertThat(VisualSchemaCompatibility.valueMatchesSchema(Map.of("debug", true), target)).isFalse();
+        assertThat(VisualSchemaCompatibility.schemaCompatibilityIssue(source, target)).isEmpty();
+    }
+
+    @Test
+    void acceptsObjectSourcePropertySchemaThatAvoidsTargetNotRequiredConstProperty() {
+        Map<String, Object> source = Map.of(
+                "type", "object",
+                "properties", Map.of("mode", Map.of(
+                        "type", "string",
+                        "enum", List.of("user", "guest")
+                )),
+                "additionalProperties", false
+        );
+        Map<String, Object> target = Map.of(
+                "type", "object",
+                "not", Map.of(
+                        "required", List.of("mode"),
+                        "properties", Map.of("mode", Map.of("const", "admin"))
+                )
+        );
+
+        assertThat(VisualSchemaCompatibility.valueMatchesSchema(Map.of("mode", "user"), target)).isTrue();
+        assertThat(VisualSchemaCompatibility.valueMatchesSchema(Map.of("mode", "admin"), target)).isFalse();
+        assertThat(VisualSchemaCompatibility.schemaCompatibilityIssue(source, target)).isEmpty();
+    }
+
+    @Test
+    void acceptsObjectSourceRequiredNameThatAvoidsTargetNotPropertyNames() {
+        Map<String, Object> source = Map.of(
+                "type", "object",
+                "properties", Map.of("public.id", Map.of("type", "string")),
+                "required", List.of("public.id"),
+                "additionalProperties", false
+        );
+        Map<String, Object> target = Map.of(
+                "type", "object",
+                "not", Map.of("propertyNames", Map.of("pattern", "^internal\\."))
+        );
+
+        assertThat(VisualSchemaCompatibility.valueMatchesSchema(Map.of("public.id", "P-1"), target)).isTrue();
+        assertThat(VisualSchemaCompatibility.valueMatchesSchema(Map.of("internal.id", "I-1"), target)).isFalse();
+        assertThat(VisualSchemaCompatibility.schemaCompatibilityIssue(source, target)).isEmpty();
+    }
+
+    @Test
     void matchesObjectFiniteValuesByStructureAndNestedNumericValue() {
         Map<String, Object> value = Map.of("a", "x", "b", List.of(1));
         Map<String, Object> schema = Map.of(

@@ -20283,9 +20283,12 @@ function schemasDefinitelyDisjoint(sourceSchema, excludedSchema) {
         schemaMinItems(excludedSchema), schemaMaxItems(excludedSchema))) {
     return true;
   }
-  return sourceType === 'object' && excludedType === 'object'
-    && longRangesDisjoint(schemaMinProperties(sourceSchema), schemaMaxProperties(sourceSchema),
-      schemaMinProperties(excludedSchema), schemaMaxProperties(excludedSchema));
+  if (sourceType === 'object' && excludedType === 'object') {
+    return longRangesDisjoint(schemaMinProperties(sourceSchema), schemaMaxProperties(sourceSchema),
+      schemaMinProperties(excludedSchema), schemaMaxProperties(excludedSchema))
+      || objectSchemasDefinitelyDisjoint(sourceSchema, excludedSchema);
+  }
+  return false;
 }
 
 function schemaTypesOverlap(left, right) {
@@ -20380,6 +20383,53 @@ function longRangesDisjoint(sourceMinimum, sourceMaximum, excludedMinimum, exclu
     return true;
   }
   return sourceMinimum !== null && excludedMaximum !== null && sourceMinimum > excludedMaximum;
+}
+
+function objectSchemasDefinitelyDisjoint(sourceSchema, excludedSchema) {
+  const excludedProperties = schemaObjectProperties(excludedSchema);
+  for (const required of schemaRequiredNames(excludedSchema)) {
+    if (sourceCannotContainProperty(sourceSchema, required)) {
+      return true;
+    }
+    const excludedProperty = excludedProperties[required];
+    if (excludedProperty
+        && typeof excludedProperty === 'object'
+        && !Array.isArray(excludedProperty)
+        && sourcePropertyConstraintsDisjointFrom(sourceSchema, required, excludedProperty)) {
+      return true;
+    }
+  }
+  const excludedPropertyNames = schemaPropertyNameSchema(excludedSchema);
+  if (excludedPropertyNames) {
+    const effectivePropertyNames = effectivePropertyNameSchema(excludedPropertyNames);
+    for (const required of schemaRequiredNames(sourceSchema)) {
+      if (!schemaValueMatchesSchema(required, effectivePropertyNames)) {
+        return true;
+      }
+    }
+  }
+  return false;
+}
+
+function sourcePropertyConstraintsDisjointFrom(sourceSchema, propertyName, excludedPropertySchema) {
+  return sourcePropertyConstraintsFor(sourceSchema, propertyName)
+    .some((sourceConstraint) => schemasDefinitelyDisjoint(sourceConstraint, excludedPropertySchema));
+}
+
+function sourcePropertyConstraintsFor(sourceSchema, propertyName) {
+  const constraints = [];
+  const sourceProperty = schemaObjectProperties(sourceSchema)[propertyName];
+  if (sourceProperty && typeof sourceProperty === 'object' && !Array.isArray(sourceProperty)) {
+    constraints.push(sourceProperty);
+  }
+  constraints.push(...matchingPatternPropertySchemas(sourceSchema, propertyName));
+  if (!constraints.length) {
+    const residual = residualPropertiesPolicy(sourceSchema);
+    if (residual && typeof residual === 'object' && !Array.isArray(residual)) {
+      constraints.push(residual);
+    }
+  }
+  return constraints;
 }
 
 function numericBoundsCompatibilityIssue(sourceSchema, targetSchema, path = '') {

@@ -6054,6 +6054,9 @@ operators:
                   'upperBoundIsBelowLower',
                   'lowerBoundIsAboveUpper',
                   'longRangesDisjoint',
+                  'objectSchemasDefinitelyDisjoint',
+                  'sourcePropertyConstraintsDisjointFrom',
+                  'sourcePropertyConstraintsFor',
                   'numericIntegerCompatibilityIssue',
                   'objectSchemaCompatibilityIssue',
                   'objectOptionalTargetPropertiesCompatibilityIssue',
@@ -6299,6 +6302,45 @@ operators:
                   type: 'object',
                   not: { minProperties: 2 }
                 });
+                const targetNotObjectRequiredDisjointIssue = context.schemaCompatibilityIssue({
+                  type: 'object',
+                  properties: {
+                    publicId: { type: 'string' }
+                  },
+                  required: ['publicId'],
+                  additionalProperties: false
+                }, {
+                  type: 'object',
+                  not: { required: ['debug'] }
+                });
+                const targetNotObjectRequiredConstDisjointIssue = context.schemaCompatibilityIssue({
+                  type: 'object',
+                  properties: {
+                    mode: { type: 'string', enum: ['user', 'guest'] }
+                  },
+                  additionalProperties: false
+                }, {
+                  type: 'object',
+                  not: {
+                    required: ['mode'],
+                    properties: {
+                      mode: { const: 'admin' }
+                    }
+                  }
+                });
+                const targetNotObjectPropertyNamesDisjointIssue = context.schemaCompatibilityIssue({
+                  type: 'object',
+                  properties: {
+                    'public.id': { type: 'string' }
+                  },
+                  required: ['public.id'],
+                  additionalProperties: false
+                }, {
+                  type: 'object',
+                  not: {
+                    propertyNames: { pattern: '^internal\\\\.' }
+                  }
+                });
 
                 const checks = [
                   ['residual optional collision path', String(residualIssue.includes("at 'score'")), 'true'],
@@ -6325,7 +6367,10 @@ operators:
                   ['target not numeric overlap blocked', targetNotNumericOverlapIssue, 'target excludes schema number value >= 0 but source number cannot prove it avoids the excluded domain'],
                   ['target not string length disjoint safe', targetNotStringLengthDisjointIssue, ''],
                   ['target not array count disjoint safe', targetNotArrayCountDisjointIssue, ''],
-                  ['target not object count disjoint safe', targetNotObjectCountDisjointIssue, '']
+                  ['target not object count disjoint safe', targetNotObjectCountDisjointIssue, ''],
+                  ['target not object required property disjoint safe', targetNotObjectRequiredDisjointIssue, ''],
+                  ['target not object required const disjoint safe', targetNotObjectRequiredConstDisjointIssue, ''],
+                  ['target not object propertyNames disjoint safe', targetNotObjectPropertyNamesDisjointIssue, '']
                 ];
 
                 for (const [label, actual, expected] of checks) {
