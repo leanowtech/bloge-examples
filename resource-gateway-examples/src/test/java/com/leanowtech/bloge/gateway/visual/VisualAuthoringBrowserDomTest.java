@@ -553,6 +553,15 @@ class VisualAuthoringBrowserDomTest {
                       operationId: sendRiskCommand
                       message:
                         name: RiskCommand
+                        headers:
+                          type: object
+                          properties:
+                            tenantId:
+                              type: string
+                            traceId:
+                              type: string
+                          required:
+                            - tenantId
                         payload:
                           type: object
                           properties:
@@ -576,12 +585,14 @@ class VisualAuthoringBrowserDomTest {
 
         click(wait, By.id("discover-asyncapi-library"));
         waitForText(wait, By.id("library-status"), "Discovered 3 AsyncAPI operations");
+        waitForText(wait, By.id("asyncapi-operation-select"), "headers object");
         Select asyncApiSelect = new Select(
                 wait.until(ExpectedConditions.elementToBeClickable(By.id("asyncapi-operation-select")))
         );
         asyncApiSelect.selectByValue("0");
         asyncApiSelect.selectByValue("1");
         waitForText(wait, By.id("asyncapi-operation-summary"), "2 AsyncAPI operations selected");
+        waitForText(wait, By.id("asyncapi-operation-summary"), "1 with headers");
 
         click(wait, By.id("project-asyncapi-library"));
         waitForText(wait, By.id("library-status"), "Projected AsyncAPI into risk-events-operators");
@@ -599,6 +610,8 @@ class VisualAuthoringBrowserDomTest {
                 .contains("\"kind\": \"webhook\"")
                 .contains("\"kind\": \"message-handler\"")
                 .contains("\"mode\": \"message-handler\"")
+                .contains("\"name\": \"headers\"")
+                .contains("\"headersType\": \"object\"")
                 .doesNotContain("RiskAudit");
 
         click(wait, By.id("import-library"));

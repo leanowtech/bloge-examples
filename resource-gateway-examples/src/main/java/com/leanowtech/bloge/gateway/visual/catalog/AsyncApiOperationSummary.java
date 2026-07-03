@@ -14,6 +14,8 @@ import java.util.List;
  * @param sourceKind inferred or explicitly declared visual source kind
  * @param hasPayload true when the message declares a payload schema
  * @param payloadType top-level payload schema type, or {@code opaque} when unknown
+ * @param hasHeaders true when the message declares a headers schema
+ * @param headersType top-level headers schema type, or {@code opaque} when unknown
  * @param tags operation and message tags
  * @param projectionLevel READY, WARNING, or BLOCKED for operator-library projection
  * @param projectionMessage short explanation of the projection level
@@ -28,6 +30,8 @@ public record AsyncApiOperationSummary(
         String sourceKind,
         boolean hasPayload,
         String payloadType,
+        boolean hasHeaders,
+        String headersType,
         List<String> tags,
         String projectionLevel,
         String projectionMessage
@@ -44,6 +48,7 @@ public record AsyncApiOperationSummary(
         title = title == null ? "" : title;
         sourceKind = sourceKind == null ? "" : sourceKind;
         payloadType = payloadType == null || payloadType.isBlank() ? "opaque" : payloadType;
+        headersType = headersType == null || headersType.isBlank() ? "opaque" : headersType;
         tags = tags == null ? List.of() : List.copyOf(tags);
         projectionLevel = projectionLevel == null || projectionLevel.isBlank()
                 ? "READY"

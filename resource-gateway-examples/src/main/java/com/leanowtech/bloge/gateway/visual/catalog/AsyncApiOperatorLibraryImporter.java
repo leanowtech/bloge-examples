@@ -267,12 +267,13 @@ public class AsyncApiOperatorLibraryImporter {
                                                              Map<String, Object> asyncApi) {
         SourceKindProjection sourceKind = sourceKindProjection(candidate);
         PayloadProjection payload = payloadProjection(candidate, asyncApi);
+        HeaderProjection headers = headersProjection(candidate, asyncApi);
         String projectionLevel = "BLOCKED".equals(sourceKind.level())
                 ? "BLOCKED"
-                : payload.level();
+                : projectionLevel(payload, headers);
         String projectionMessage = "BLOCKED".equals(sourceKind.level())
                 ? sourceKind.message()
-                : payload.message();
+                : projectionMessage(payload, headers);
         return new AsyncApiOperationSummary(
                 operationId(candidate),
                 candidate.channelName(),
@@ -283,10 +284,32 @@ public class AsyncApiOperatorLibraryImporter {
                 sourceKind.sourceKind(),
                 payload.hasPayload(),
                 payload.payloadType(),
+                headers.hasHeaders(),
+                headers.headersType(),
                 tags(candidate, sourceKind.sourceKind()),
                 projectionLevel,
                 projectionMessage
         );
+    }
+
+    private static String projectionLevel(PayloadProjection payload, HeaderProjection headers) {
+        if ("WARNING".equals(payload.level())) {
+            return payload.level();
+        }
+        if ("WARNING".equals(headers.level())) {
+            return headers.level();
+        }
+        return payload.level();
+    }
+
+    private static String projectionMessage(PayloadProjection payload, HeaderProjection headers) {
+        if ("WARNING".equals(payload.level())) {
+            return payload.message();
+        }
+        if ("WARNING".equals(headers.level())) {
+            return headers.message();
+        }
+        return payload.message();
     }
 
     private static Map<String, Object> asyncApiDocument(AsyncApiOperatorLibraryImportRequest request,
@@ -594,6 +617,7 @@ public class AsyncApiOperatorLibraryImporter {
                                                    List<VisualDiagnostic> diagnostics) {
         String sourceKind = sourceKind(candidate, diagnostics);
         SchemaEnvelope payload = payloadSchema(candidate, asyncApi, diagnostics);
+        Optional<SchemaEnvelope> headers = headersSchema(candidate, asyncApi, diagnostics);
         String baseName = firstNonBlank(
                 string(candidate.message().get("name")),
                 string(candidate.message().get("title")),
@@ -602,22 +626,8 @@ public class AsyncApiOperatorLibraryImporter {
         );
         String operatorRef = uniqueOperatorRef("asyncapi:" + identifierToken(baseName), operatorRefs);
         List<String> tags = tags(candidate, sourceKind);
-        OperatorDefinition.Ports ports = switch (sourceKind) {
-            case "message-handler" -> new OperatorDefinition.Ports(
-                    List.of(new OperatorDefinition.Port("message", payload, true, "Message payload.")),
-                    List.of(new OperatorDefinition.Port("ack", acknowledgementSchema(), true,
-                            "Message handling acknowledgement."))
-            );
-            case "webhook" -> new OperatorDefinition.Ports(
-                    List.of(),
-                    List.of(new OperatorDefinition.Port("request", payload, true, "Webhook request payload."))
-            );
-            default -> new OperatorDefinition.Ports(
-                    List.of(),
-                    List.of(new OperatorDefinition.Port("event", payload, true, "Event payload."))
-            );
-        };
-        Map<String, Object> loweringParameters = loweringParameters(sourceKind, candidate);
+        OperatorDefinition.Ports ports = ports(sourceKind, payload, headers);
+        Map<String, Object> loweringParameters = loweringParameters(sourceKind, candidate, headers);
         return new OperatorDefinition(
                 "bloge.visualOperator.v1",
                 operatorRef,
@@ -630,6 +640,41 @@ public class AsyncApiOperatorLibraryImporter {
                 new OperatorDefinition.Lowering(sourceKind, "", loweringParameters),
                 List.of()
         );
+    }
+
+    private static OperatorDefinition.Ports ports(String sourceKind,
+                                                  SchemaEnvelope payload,
+                                                  Optional<SchemaEnvelope> headers) {
+        List<OperatorDefinition.Port> headerInputs = headers
+                .map(schema -> List.of(new OperatorDefinition.Port("headers", schema,
+                        headersRequired(schema), "Message headers.")))
+                .orElseGet(List::of);
+        List<OperatorDefinition.Port> headerOutputs = headers
+                .map(schema -> List.of(new OperatorDefinition.Port("headers", schema,
+                        false, "Message headers.")))
+                .orElseGet(List::of);
+        return switch (sourceKind) {
+            case "message-handler" -> {
+                List<OperatorDefinition.Port> inputs = new ArrayList<>();
+                inputs.add(new OperatorDefinition.Port("message", payload, true, "Message payload."));
+                inputs.addAll(headerInputs);
+                yield new OperatorDefinition.Ports(inputs, List.of(
+                        new OperatorDefinition.Port("ack", acknowledgementSchema(), true,
+                                "Message handling acknowledgement.")));
+            }
+            case "webhook" -> {
+                List<OperatorDefinition.Port> outputs = new ArrayList<>();
+                outputs.add(new OperatorDefinition.Port("request", payload, true, "Webhook request payload."));
+                outputs.addAll(headerOutputs);
+                yield new OperatorDefinition.Ports(List.of(), outputs);
+            }
+            default -> {
+                List<OperatorDefinition.Port> outputs = new ArrayList<>();
+                outputs.add(new OperatorDefinition.Port("event", payload, true, "Event payload."));
+                outputs.addAll(headerOutputs);
+                yield new OperatorDefinition.Ports(List.of(), outputs);
+            }
+        };
     }
 
     private static String sourceKind(ProjectionCandidate candidate, List<VisualDiagnostic> diagnostics) {
@@ -686,7 +731,9 @@ public class AsyncApiOperatorLibraryImporter {
                 false);
     }
 
-    private static Map<String, Object> loweringParameters(String sourceKind, ProjectionCandidate candidate) {
+    private static Map<String, Object> loweringParameters(String sourceKind,
+                                                          ProjectionCandidate candidate,
+                                                          Optional<SchemaEnvelope> headers) {
         Map<String, Object> parameters = new LinkedHashMap<>();
         switch (sourceKind) {
             case "message-handler" -> parameters.put("channel", firstNonBlank(candidate.address(),
@@ -697,7 +744,29 @@ public class AsyncApiOperatorLibraryImporter {
             }
             default -> parameters.put("eventType", eventType(candidate));
         }
+        parameters.put("asyncApi", asyncApiLoweringMetadata(candidate, headers));
         return parameters;
+    }
+
+    private static Map<String, Object> asyncApiLoweringMetadata(ProjectionCandidate candidate,
+                                                                Optional<SchemaEnvelope> headers) {
+        Map<String, Object> metadata = new LinkedHashMap<>();
+        putIfNotBlank(metadata, "operationId", operationId(candidate));
+        putIfNotBlank(metadata, "channelName", candidate.channelName());
+        putIfNotBlank(metadata, "address", candidate.address());
+        putIfNotBlank(metadata, "action", candidate.operationKind());
+        putIfNotBlank(metadata, "messageName", messageName(candidate));
+        metadata.put("hasHeaders", headers.isPresent());
+        headers.map(SchemaEnvelope::schema)
+                .map(AsyncApiOperatorLibraryImporter::schemaType)
+                .ifPresent(headersType -> metadata.put("headersType", headersType));
+        return metadata;
+    }
+
+    private static void putIfNotBlank(Map<String, Object> target, String key, String value) {
+        if (value != null && !value.isBlank()) {
+            target.put(key, value);
+        }
     }
 
     private static String eventType(ProjectionCandidate candidate) {
@@ -780,6 +849,45 @@ public class AsyncApiOperatorLibraryImporter {
         }
         return new PayloadProjection(true, schemaType(objectMap(schema)), "READY",
                 "Ready to project into a runtime-blocked operator-library draft.");
+    }
+
+    private static Optional<SchemaEnvelope> headersSchema(ProjectionCandidate candidate,
+                                                          Map<String, Object> asyncApi,
+                                                          List<VisualDiagnostic> diagnostics) {
+        Object rawHeaders = candidate.message().get("headers");
+        if (rawHeaders == null) {
+            return Optional.empty();
+        }
+        Object resolved = resolveMaybeRef(asyncApi, rawHeaders, new ArrayList<>());
+        if (!(resolved instanceof Map<?, ?> schema)) {
+            diagnostics.add(VisualDiagnostic.warning("visual.library.asyncapi.headersUnsupported",
+                    "AsyncAPI message '%s' headers schema is not an object; generated operator omits the headers port."
+                            .formatted(displayName(candidate)),
+                    candidate.target() + "/message/headers"));
+            return Optional.empty();
+        }
+        return Optional.of(new SchemaEnvelope(SchemaEnvelope.JSON_SCHEMA, "2020-12",
+                normalizeSchema(objectMap(schema))));
+    }
+
+    private static HeaderProjection headersProjection(ProjectionCandidate candidate,
+                                                      Map<String, Object> asyncApi) {
+        Object rawHeaders = candidate.message().get("headers");
+        if (rawHeaders == null) {
+            return new HeaderProjection(false, "opaque", "READY", "");
+        }
+        Object resolved = resolveMaybeRef(asyncApi, rawHeaders, new ArrayList<>());
+        if (!(resolved instanceof Map<?, ?> schema)) {
+            return new HeaderProjection(true, "opaque", "WARNING",
+                    "Message headers schema is not an object; projected operator will omit the headers port.");
+        }
+        return new HeaderProjection(true, schemaType(objectMap(schema)), "READY",
+                "Ready to project message headers into a schema-aware port.");
+    }
+
+    private static boolean headersRequired(SchemaEnvelope headers) {
+        Object required = headers.schema().get("required");
+        return required instanceof List<?> requiredList && !requiredList.isEmpty();
     }
 
     private static Map<String, Object> normalizeSchema(Map<String, Object> schema) {
@@ -1091,6 +1199,14 @@ public class AsyncApiOperatorLibraryImporter {
     private record PayloadProjection(
             boolean hasPayload,
             String payloadType,
+            String level,
+            String message
+    ) {
+    }
+
+    private record HeaderProjection(
+            boolean hasHeaders,
+            String headersType,
             String level,
             String message
     ) {

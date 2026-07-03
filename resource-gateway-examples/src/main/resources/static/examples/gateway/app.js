@@ -3252,6 +3252,8 @@ function normalizeAsyncApiOperations(operations) {
       sourceKind: String(operation?.sourceKind || ''),
       hasPayload: Boolean(operation?.hasPayload),
       payloadType: String(operation?.payloadType || 'opaque'),
+      hasHeaders: Boolean(operation?.hasHeaders),
+      headersType: String(operation?.headersType || 'opaque'),
       tags: Array.isArray(operation?.tags) ? operation.tags.map((tag) => String(tag || '')) : [],
       projectionLevel: String(operation?.projectionLevel || 'READY').toUpperCase(),
       projectionMessage: String(operation?.projectionMessage || '')
@@ -3297,8 +3299,15 @@ function asyncApiOperationOptionLabel(operation) {
   const action = operation.action || 'operation';
   const channel = operation.channelName || operation.address || 'channel';
   const identity = operation.operationId || operation.messageName || operation.title || 'message';
+  const schema = asyncApiOperationSchemaLabel(operation);
   const source = operation.sourceKind ? ` · ${operation.sourceKind}` : '';
-  return `${action} ${channel} · ${identity}${source}`;
+  return `${action} ${channel} · ${identity}${schema ? ` · ${schema}` : ''}${source}`;
+}
+
+function asyncApiOperationSchemaLabel(operation) {
+  const payload = operation.hasPayload ? `payload ${operation.payloadType || 'opaque'}` : 'payload opaque';
+  const headers = operation.hasHeaders ? `headers ${operation.headersType || 'opaque'}` : '';
+  return [payload, headers].filter(Boolean).join(' · ');
 }
 
 function asyncApiOperationMatchesSelection(operation) {
@@ -3375,14 +3384,15 @@ function renderAsyncApiOperationSummary(target, operations) {
   target.className = `resource-operation-summary ${level}`;
   if (selected.length === 1) {
     const operation = selected[0];
-    const payload = operation.hasPayload ? operation.payloadType : 'opaque';
-    target.textContent = `${operation.projectionLevel} · ${asyncApiOperationOptionLabel(operation)} · payload ${payload}: ${operation.projectionMessage}`;
+    target.textContent = `${operation.projectionLevel} · ${asyncApiOperationOptionLabel(operation)}: ${operation.projectionMessage}`;
     return;
   }
   const blocked = selected.filter((operation) => operation.projectionLevel === 'BLOCKED').length;
   const warnings = selected.filter((operation) => operation.projectionLevel === 'WARNING').length;
+  const headers = selected.filter((operation) => operation.hasHeaders).length;
   const runtimeKinds = Array.from(new Set(selected.map((operation) => operation.sourceKind).filter(Boolean)));
-  target.textContent = `${selected.length} AsyncAPI operations selected · ${blocked} blocked · ${warnings} warning · ${runtimeKinds.join(', ') || 'external-boundary'}`;
+  const headerSummary = headers ? ` · ${headers} with headers` : '';
+  target.textContent = `${selected.length} AsyncAPI operations selected · ${blocked} blocked · ${warnings} warning${headerSummary} · ${runtimeKinds.join(', ') || 'external-boundary'}`;
 }
 
 function asyncApiSelectionSummaryLevel(operations) {
@@ -4048,8 +4058,9 @@ function asyncApiProjectionOperationLabel(operation) {
   const channel = operation?.channelName || operation?.address || 'channel';
   const identity = operation?.title || operation?.messageName || operation?.operationId || 'message';
   const operationId = operation?.operationId && operation.operationId !== identity ? ` · ${operation.operationId}` : '';
+  const schema = asyncApiOperationSchemaLabel(operation);
   const source = operation?.sourceKind ? ` · ${operation.sourceKind}` : '';
-  return `${action} ${channel} · ${identity}${operationId}${source}`;
+  return `${action} ${channel} · ${identity}${operationId}${schema ? ` · ${schema}` : ''}${source}`;
 }
 
 function asyncApiProjectionRemainingEvidence(review, renderedSelectorCount, renderedOmittedCount) {

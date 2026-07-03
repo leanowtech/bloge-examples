@@ -345,6 +345,92 @@ class OperatorLibraryAdminControllerTest {
     }
 
     @Test
+    void fromAsyncApiProjectsMessageHeadersAsSchemaAwarePorts() throws Exception {
+        String asyncApi = """
+                asyncapi: '2.6.0'
+                info:
+                  title: Risk Commands
+                  version: 1.2.3
+                channels:
+                  risk.commands:
+                    publish:
+                      operationId: sendRiskCommand
+                      message:
+                        name: RiskCommand
+                        headers:
+                          $ref: '#/components/schemas/RiskHeaders'
+                        payload:
+                          type: object
+                          properties:
+                            commandId:
+                              type: string
+                          required:
+                            - commandId
+                components:
+                  schemas:
+                    RiskHeaders:
+                      type: object
+                      properties:
+                        tenantId:
+                          type: string
+                        traceId:
+                          type: string
+                      required:
+                        - tenantId
+                """;
+        AsyncApiOperatorLibraryImportRequest request = new AsyncApiOperatorLibraryImportRequest(
+                "",
+                "",
+                "",
+                "",
+                "",
+                Map.of(),
+                asyncApi
+        );
+
+        mockMvc.perform(post("/admin/visual-operator-libraries/from-asyncapi/operations")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(request)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.operations.length()").value(1))
+                .andExpect(jsonPath("$.operations[0].operationId").value("sendRiskCommand"))
+                .andExpect(jsonPath("$.operations[0].hasHeaders").value(true))
+                .andExpect(jsonPath("$.operations[0].headersType").value("object"))
+                .andExpect(jsonPath("$.operations[0].projectionLevel").value("READY"))
+                .andExpect(jsonPath("$.validation.valid").value(true));
+
+        mockMvc.perform(post("/admin/visual-operator-libraries/from-asyncapi")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(request)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.library.libraryId").value("risk-commands-operators"))
+                .andExpect(jsonPath("$.library.operators.length()").value(1))
+                .andExpect(jsonPath("$.library.operators[0].source.kind").value("message-handler"))
+                .andExpect(jsonPath("$.library.operators[0].ports.inputs.length()").value(2))
+                .andExpect(jsonPath("$.library.operators[0].ports.inputs[0].name").value("message"))
+                .andExpect(jsonPath("$.library.operators[0].ports.inputs[1].name").value("headers"))
+                .andExpect(jsonPath("$.library.operators[0].ports.inputs[1].required").value(true))
+                .andExpect(jsonPath("$.library.operators[0].ports.inputs[1].schema.schema.type")
+                        .value("object"))
+                .andExpect(jsonPath("$.library.operators[0].ports.inputs[1].schema.schema.properties.tenantId.type")
+                        .value("string"))
+                .andExpect(jsonPath("$.library.operators[0].lowering.parameters.channel")
+                        .value("risk.commands"))
+                .andExpect(jsonPath("$.library.operators[0].lowering.parameters.asyncApi.operationId")
+                        .value("sendRiskCommand"))
+                .andExpect(jsonPath("$.library.operators[0].lowering.parameters.asyncApi.messageName")
+                        .value("RiskCommand"))
+                .andExpect(jsonPath("$.library.operators[0].lowering.parameters.asyncApi.hasHeaders")
+                        .value(true))
+                .andExpect(jsonPath("$.library.operators[0].lowering.parameters.asyncApi.headersType")
+                        .value("object"))
+                .andExpect(jsonPath("$.validation.valid").value(true))
+                .andExpect(jsonPath("$.validation.diagnostics").isEmpty());
+
+        assertThat(registry.all()).isEmpty();
+    }
+
+    @Test
     void fromAsyncApiProjectsSelectedOperationSubsetWithoutStoring() throws Exception {
         AsyncApiOperatorLibraryImportRequest request = new AsyncApiOperatorLibraryImportRequest(
                 "",

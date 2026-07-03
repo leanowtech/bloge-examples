@@ -511,11 +511,15 @@ projection/source-kind counts 表达 selector 覆盖率、未命中 selector、�
 省略原因。批量 `selections[]` 中任何 selector 未命中都会返回
 `visual.library.asyncapi.selectionMissing` blocking diagnostic，避免大型协议导入时静默生成半截 operator library。
 该 importer 把 AsyncAPI channel/root operation 的 message payload 投影为
-`event-source`、`message-handler` 或 `webhook` runtime-blocked operator，并继续复用
+`event-source`、`message-handler` 或 `webhook` runtime-blocked operator；当 message 声明
+headers schema 时，也会把 headers 投影成独立的 schema-aware `headers` 端口，并在
+operation summary 中暴露 `hasHeaders` / `headersType`，同时在 lowering parameters 的
+`asyncApi` 元信息里保留 operation/channel/message 身份，便于后续 runtime binding
+handoff。它继续复用
 operator-library validator、profile 和 impact review；它不直接写入 registry。
 `POST /admin/visual-operator-libraries/from-asyncapi/operations` 在 projection 前返回
 operation/message 候选摘要，包括 channel、action、message、source kind、payload
-type、tags 和 projection readiness，浏览器可先 Discover 再选择被审阅的候选。
+type、headers type、tags 和 projection readiness，浏览器可先 Discover 再选择被审阅的候选。
 
 ### 6.4 缺 schema 时的降级
 
