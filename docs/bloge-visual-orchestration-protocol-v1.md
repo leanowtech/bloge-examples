@@ -1912,11 +1912,12 @@ handoff `operatorContract` snapshot，以及 implementation metadata：
 runtime team 提交的实现材料是否仍对准 handoff contract 和当前 catalog，不持久化 binding。
 当 handoff contract fingerprint 与当前 catalog fingerprint drift 时，diagnostics 会进一步携带
 字段级 contract diff 分类：`visual.runtimeBindingImplementation.contractDiffBreaking`
-以 error 阻断 input/output/config port 或 schema breaking drift；
+以 error 阻断 input/output/config port 或保守 JSON Schema compatibility 判定为不兼容的 schema drift，
+并在 metadata 的 `schemaCompatibilityIssues` 中返回字段级原因；
 `contractDiffCompatible`、`contractDiffRuntime`、`contractDiffGovernance`、
 `contractDiffMetadata` 以 warning 进入 requires-review，并在 metadata 中保留
-`category`、`fields[]`、submitted/current fingerprint，供外部 runtime-plane 控制面决定是否重新
-实现、重新测试或追加审批。
+`category`、`fields[]`、submitted/current fingerprint，供外部 runtime-plane 控制面决定是否继续
+review 后绑定、重新实现、重新测试或追加审批。
 `POST /api/visual/assets/runtime-binding-requirements/implementation-bindings`
 复用同一 gate：无效 proposal 返回 `400` 和 validation diagnostics；有效 proposal
 被存为 `bloge.visualRuntimeBindingImplementationBindingRecord.v1`，包含 repository

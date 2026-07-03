@@ -2,6 +2,7 @@ package com.leanowtech.bloge.gateway.visual.asset;
 
 import com.leanowtech.bloge.gateway.visual.catalog.OperatorDefinition;
 import com.leanowtech.bloge.gateway.visual.diagnostic.VisualDiagnostic;
+import com.leanowtech.bloge.gateway.visual.model.SchemaEnvelope;
 
 import java.time.Instant;
 import java.util.ArrayList;
@@ -11,7 +12,10 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Optional;
 import java.util.Set;
+
+import static com.leanowtech.bloge.gateway.visual.validation.VisualSchemaCompatibility.schemaCompatibilityIssue;
 
 /**
  * Stateless validation result for a runtime-plane implementation binding proposal.
@@ -321,21 +325,22 @@ public record VisualRuntimeBindingImplementationValidation(
                     "Current catalog contract contains breaking schema or port changes; submit a new implementation "
                             + "proposal from a fresh handoff bundle.",
                     "/operatorContract",
-                    diffMetadata("breaking", contract, currentOperator, diff.breaking())));
+                    diffMetadata("breaking", contract, currentOperator, diff.breaking(),
+                            diff.schemaCompatibilityIssues())));
         }
         if (!diff.compatible().isEmpty()) {
             diagnostics.add(VisualDiagnostic.warning(
                     "visual.runtimeBindingImplementation.contractDiffCompatible",
-                    "Current catalog contract added compatible surface area; review implementation coverage before binding.",
+                    "Current catalog contract added or relaxed compatible surface area; review implementation coverage before binding.",
                     "/operatorContract",
-                    diffMetadata("compatible", contract, currentOperator, diff.compatible())));
+                    diffMetadata("compatible", contract, currentOperator, diff.compatible(), Map.of())));
         }
         if (!diff.runtime().isEmpty()) {
             diagnostics.add(VisualDiagnostic.warning(
                     "visual.runtimeBindingImplementation.contractDiffRuntime",
                     "Current catalog runtime or lowering boundary changed; runtime owner must review the binding.",
                     "/operatorContract",
-                    diffMetadata("runtime", contract, currentOperator, diff.runtime())));
+                    diffMetadata("runtime", contract, currentOperator, diff.runtime(), Map.of())));
         }
         if (!diff.governance().isEmpty()) {
             diagnostics.add(VisualDiagnostic.warning(
@@ -343,7 +348,7 @@ public record VisualRuntimeBindingImplementationValidation(
                     "Current catalog governance, policy, side-effect, or secret boundary changed; approval evidence "
                             + "must be reviewed before binding.",
                     "/operatorContract",
-                    diffMetadata("governance", contract, currentOperator, diff.governance())));
+                    diffMetadata("governance", contract, currentOperator, diff.governance(), Map.of())));
         }
         if (!diff.metadata().isEmpty()) {
             diagnostics.add(VisualDiagnostic.warning(
@@ -351,21 +356,25 @@ public record VisualRuntimeBindingImplementationValidation(
                     "Current catalog metadata changed; confirm the submitted implementation still refers to the intended "
                             + "operator contract.",
                     "/operatorContract",
-                    diffMetadata("metadata", contract, currentOperator, diff.metadata())));
+                    diffMetadata("metadata", contract, currentOperator, diff.metadata(), Map.of())));
         }
     }
 
     private static Map<String, Object> diffMetadata(String category,
                                                     VisualRuntimeBindingHandoffBundle.OperatorContractSnapshot contract,
                                                     OperatorDefinition currentOperator,
-                                                    List<String> fields) {
-        return Map.of(
-                "category", category,
-                "fields", fields,
-                "operatorRef", currentOperator.operatorRef(),
-                "submittedFingerprint", contract.fingerprint(),
-                "currentFingerprint", currentOperator.fingerprint()
-        );
+                                                    List<String> fields,
+                                                    Map<String, String> schemaCompatibilityIssues) {
+        Map<String, Object> metadata = new LinkedHashMap<>();
+        metadata.put("category", category);
+        metadata.put("fields", fields);
+        metadata.put("operatorRef", currentOperator.operatorRef());
+        metadata.put("submittedFingerprint", contract.fingerprint());
+        metadata.put("currentFingerprint", currentOperator.fingerprint());
+        if (schemaCompatibilityIssues != null && !schemaCompatibilityIssues.isEmpty()) {
+            metadata.put("schemaCompatibilityIssues", schemaCompatibilityIssues);
+        }
+        return Map.copyOf(metadata);
     }
 
     private record ContractDiffSummary(
@@ -373,7 +382,8 @@ public record VisualRuntimeBindingImplementationValidation(
             List<String> compatible,
             List<String> runtime,
             List<String> governance,
-            List<String> metadata
+            List<String> metadata,
+            Map<String, String> schemaCompatibilityIssues
     ) {
         private static ContractDiffSummary from(VisualRuntimeBindingHandoffBundle.OperatorContractSnapshot contract,
                                                 OperatorDefinition currentOperator) {
@@ -382,6 +392,7 @@ public record VisualRuntimeBindingImplementationValidation(
             List<String> runtime = new ArrayList<>();
             List<String> governance = new ArrayList<>();
             List<String> metadata = new ArrayList<>();
+            Map<String, String> schemaCompatibilityIssues = new LinkedHashMap<>();
 
             if (!Objects.equals(contract.operatorVersion(), currentOperator.operatorVersion())) {
                 metadata.add("operatorVersion");
@@ -393,12 +404,11 @@ public record VisualRuntimeBindingImplementationValidation(
                 metadata.add("operatorLibraryId");
             }
             diffPorts("inputs", contract.ports().inputs(), currentOperator.ports().inputs(),
-                    breaking, compatible, metadata);
+                    breaking, compatible, metadata, schemaCompatibilityIssues);
             diffPorts("outputs", contract.ports().outputs(), currentOperator.ports().outputs(),
-                    breaking, compatible, metadata);
-            if (!Objects.equals(contract.configSchema(), currentOperator.configSchema())) {
-                breaking.add("configSchema");
-            }
+                    breaking, compatible, metadata, schemaCompatibilityIssues);
+            diffSchema("configSchema", contract.configSchema(), currentOperator.configSchema(),
+                    breaking, compatible, schemaCompatibilityIssues);
             diffSource(contract.source(), currentOperator.source(), runtime, metadata);
             diffLowering(contract.lowering(), currentOperator.lowering(), runtime);
             diffCapabilities(contract.capabilities(), currentOperator.capabilities(), runtime, governance);
@@ -412,7 +422,8 @@ public record VisualRuntimeBindingImplementationValidation(
                     List.copyOf(compatible),
                     List.copyOf(runtime),
                     List.copyOf(governance),
-                    List.copyOf(metadata)
+                    List.copyOf(metadata),
+                    Map.copyOf(schemaCompatibilityIssues)
             );
         }
 
@@ -421,7 +432,8 @@ public record VisualRuntimeBindingImplementationValidation(
                                       List<OperatorDefinition.Port> currentPorts,
                                       List<String> breaking,
                                       List<String> compatible,
-                                      List<String> metadata) {
+                                      List<String> metadata,
+                                      Map<String, String> schemaCompatibilityIssues) {
             Map<String, OperatorDefinition.Port> submitted = portsByName(submittedPorts);
             Map<String, OperatorDefinition.Port> current = portsByName(currentPorts);
             Set<String> names = new LinkedHashSet<>();
@@ -446,13 +458,38 @@ public record VisualRuntimeBindingImplementationValidation(
                 if (submittedPort.required() != currentPort.required()) {
                     breaking.add(prefix + ".required");
                 }
-                if (!Objects.equals(submittedPort.schema(), currentPort.schema())) {
-                    breaking.add(prefix + ".schema");
-                }
+                diffSchema(prefix + ".schema", submittedPort.schema(), currentPort.schema(),
+                        breaking, compatible, schemaCompatibilityIssues);
                 if (!Objects.equals(submittedPort.description(), currentPort.description())) {
                     metadata.add(prefix + ".description");
                 }
             }
+        }
+
+        private static void diffSchema(String field,
+                                       SchemaEnvelope submittedSchema,
+                                       SchemaEnvelope currentSchema,
+                                       List<String> breaking,
+                                       List<String> compatible,
+                                       Map<String, String> schemaCompatibilityIssues) {
+            if (Objects.equals(submittedSchema, currentSchema)) {
+                return;
+            }
+            if (submittedSchema == null || currentSchema == null
+                    || !Objects.equals(submittedSchema.format(), currentSchema.format())
+                    || !Objects.equals(submittedSchema.version(), currentSchema.version())) {
+                breaking.add(field);
+                schemaCompatibilityIssues.put(field, "schema format or dialect changed");
+                return;
+            }
+            Optional<String> compatibilityIssue =
+                    schemaCompatibilityIssue(submittedSchema.schema(), currentSchema.schema());
+            if (compatibilityIssue.isPresent()) {
+                breaking.add(field);
+                schemaCompatibilityIssues.put(field, compatibilityIssue.get());
+                return;
+            }
+            compatible.add(field);
         }
 
         private static Map<String, OperatorDefinition.Port> portsByName(List<OperatorDefinition.Port> ports) {

@@ -1224,6 +1224,9 @@ class VisualAssetOverviewControllerTest {
                     assertThat(diagnostic.metadata()).containsEntry("category", "breaking");
                     assertThat(String.valueOf(diagnostic.metadata().get("fields")))
                             .contains("ports.inputs.inputs.schema");
+                    assertThat(String.valueOf(diagnostic.metadata().get("schemaCompatibilityIssues")))
+                            .contains("ports.inputs.inputs.schema")
+                            .contains("score");
                 });
 
         var submit = fixture.controller().submitRuntimeBindingImplementation(
@@ -1231,6 +1234,46 @@ class VisualAssetOverviewControllerTest {
 
         assertThat(submit.getStatusCode().value()).isEqualTo(400);
         assertThat(fixture.controller().runtimeBindingImplementationBindings("", "")).isEmpty();
+    }
+
+    @Test
+    void runtimeBindingImplementationValidationRequiresReviewForCompatibleSchemaDrift() {
+        RuntimeBindingImplementationFixture fixture = runtimeBindingImplementationFixture();
+        fixture.libraries().upsert(VisualCatalogTestSupport.designOnlyEligibilityLibrary("number"));
+
+        var response = fixture.controller().validateRuntimeBindingImplementation(
+                implementationRequest(fixture, completeImplementation()));
+
+        assertThat(response.getStatusCode().value()).isEqualTo(200);
+        assertThat(response.getBody()).isNotNull();
+        assertThat(response.getBody().valid()).isTrue();
+        assertThat(response.getBody().bindable()).isFalse();
+        assertThat(response.getBody().state()).isEqualTo("requires-review");
+        assertThat(response.getBody().currentCatalogState()).isEqualTo("drifted");
+        assertThat(response.getBody().diagnostics())
+                .extracting(VisualDiagnostic::code)
+                .contains(
+                        "visual.runtimeBindingImplementation.catalogFingerprintDrift",
+                        "visual.runtimeBindingImplementation.contractDiffCompatible"
+                )
+                .doesNotContain("visual.runtimeBindingImplementation.contractDiffBreaking");
+        assertThat(response.getBody().diagnostics())
+                .filteredOn(diagnostic ->
+                        "visual.runtimeBindingImplementation.contractDiffCompatible".equals(diagnostic.code()))
+                .singleElement()
+                .satisfies(diagnostic -> {
+                    assertThat(diagnostic.metadata()).containsEntry("category", "compatible");
+                    assertThat(String.valueOf(diagnostic.metadata().get("fields")))
+                            .contains("ports.inputs.inputs.schema");
+                    assertThat(diagnostic.metadata()).doesNotContainKey("schemaCompatibilityIssues");
+                });
+
+        var submit = fixture.controller().submitRuntimeBindingImplementation(
+                implementationRequest(fixture, completeImplementation()));
+
+        assertThat(submit.getStatusCode().value()).isEqualTo(201);
+        assertThat(fixture.controller().runtimeBindingImplementationBindings("", "requires-review"))
+                .hasSize(1);
     }
 
     @Test

@@ -1308,12 +1308,12 @@ external 路径派生 `EXTERNAL_RUNTIME_BOUND`，不谎称当前 request-respons
 refresh/rebind mutation，可把旧 binding / activation / integration evidence 重新对账到当前 trusted
 fingerprint，并用 supersede lineage 保留旧证据；也已补 governed unbind/deactivate mutation，让 active
 binding、activation 和 lowering integration 能退回 unbound/inactive 审计事实；implementation validate
-还会在 handoff contract 与当前 catalog fingerprint 漂移时输出字段级 contract diff 诊断，把
-input/output/config schema 或 port breaking drift 直接拒绝，把 compatible surface、runtime/lowering、
-governance/policy 和 metadata drift 路由到 requires-review；implementation binding、adapter activation
+还会在 handoff contract 与当前 catalog fingerprint 漂移时输出字段级 contract diff 诊断，复用 shared JSON
+Schema compatibility 把 input/output/config schema drift 分成 blocking breaking 与 requires-review compatible，
+并在 breaking metadata 中携带 `schemaCompatibilityIssues` 字段原因；implementation binding、adapter activation
 和 executable lowering integration 三类 stable id submit endpoint 也已支持精确 replay 幂等返回。剩余缺口不再是“完全不能写回、无法续接、
 无法退出、非 native lowering 无法 apply、完全不知道 drift 形态或基础 retry 一定冲突”，而是还缺跨 repository mutation
-的事务/partial-failure 硬化与更广义 idempotency，以及更深的 SemVer / JSON Schema 兼容性 contract diff 门禁。没有这些后续硬化，
+的事务/partial-failure 硬化与更广义 idempotency，以及更深 SemVer/reimplementation 策略和更完整 JSON Schema 兼容性推理门禁。没有这些后续硬化，
 handoff bundle 已能把工作交出去并把实现结果、激活事实和 lowering integration 事实带回 catalog 响应，native
 与 external-bound 路径也能形成可信 library revision 并完成 evidence 续接，但还不能覆盖所有 runtime-plane 变更的
 长期稳定治理。
@@ -1322,8 +1322,8 @@ handoff bundle 已能把工作交出去并把实现结果、激活事实和 lowe
 
 | 优先级 | 缺口 | 为什么卡住生产级 |
 | --- | --- | --- |
-| P0 | Runtime implementation binding 与 readiness 派生闭环 | 当前已有 validate gate、proposal record、bind/supersede/unbind lifecycle fact、adapter activation registry、executable lowering integration registry、三类 runtime evidence submit stable-id 精确 replay 幂等返回、catalog response 级 `OperatorRuntimeBindingProjection` / `OperatorExecutablePromotionProjection`、native executable 与 external-runtime-bound readiness recompute preview、受治理 apply mutation 写入 trusted operator-library revision，post-apply evidence refresh/rebind mutation 续接当前 trusted fingerprint，governed unbind/deactivate 退出 active evidence，以及 implementation contract-diff gate；下一步需要补跨 repository mutation 的事务/partial-failure 硬化、更广义 idempotency 和更深的 SemVer / JSON Schema 兼容性 diff，否则 runtime-binding requirement 虽然能被导出、预检、保存提案、形成绑定、激活、lowering integration 事实、写回可信 library revision、续接/退出 active evidence，但仍不能覆盖所有长期运行治理场景 |
-| P0 | Contract diff 与兼容性门禁 | 当前 handoff snapshot 可防篡改、可对账，implementation validate 已能在 catalog fingerprint drift 时按 input/output/config breaking、compatible surface、runtime/lowering、governance/policy、metadata 分类输出 diagnostics，并用 breaking port/config schema drift 阻断 submit；下一步仍需要更深的 JSON Schema 兼容性推理、SemVer 规则和 reimplementation 策略，而不是只做字段级精确比较 |
+| P0 | Runtime implementation binding 与 readiness 派生闭环 | 当前已有 validate gate、proposal record、bind/supersede/unbind lifecycle fact、adapter activation registry、executable lowering integration registry、三类 runtime evidence submit stable-id 精确 replay 幂等返回、catalog response 级 `OperatorRuntimeBindingProjection` / `OperatorExecutablePromotionProjection`、native executable 与 external-runtime-bound readiness recompute preview、受治理 apply mutation 写入 trusted operator-library revision，post-apply evidence refresh/rebind mutation 续接当前 trusted fingerprint，governed unbind/deactivate 退出 active evidence，以及复用 shared JSON Schema compatibility 的 implementation contract-diff gate；下一步需要补跨 repository mutation 的事务/partial-failure 硬化、更广义 idempotency、更深 SemVer/reimplementation 策略和更完整 JSON Schema 兼容性推理，否则 runtime-binding requirement 虽然能被导出、预检、保存提案、形成绑定、激活、lowering integration 事实、写回可信 library revision、续接/退出 active evidence，但仍不能覆盖所有长期运行治理场景 |
+| P0 | Contract diff 与兼容性门禁 | 当前 handoff snapshot 可防篡改、可对账，implementation validate 已能在 catalog fingerprint drift 时按 input/output/config breaking、compatible surface、runtime/lowering、governance/policy、metadata 分类输出 diagnostics，并用 shared JSON Schema compatibility 把确定不兼容的 schema drift 作为 blocking error、把保守可兼容 schema drift 路由到 requires-review，breaking metadata 会携带 `schemaCompatibilityIssues`；下一步仍需要更深的 SemVer 规则、reimplementation 策略和更完整 JSON Schema 语义推理，而不是只停在第一层兼容性工具复用 |
 | P1 | Runtime-plane 状态回流 | 外部工单、worker dispatcher、AI tool runtime、event/message/webhook runtime 的状态需要以事件或回调进入控制面，但不能成为第二套 readiness 真相源；最终仍应回到 catalog/readiness 派生 |
 | P1 | IAM / RBAC / tenant isolation | 当前 tenant/namespace/environment policy 是可见性和使用门禁，不是完整权限后台；生产环境需要 actor 权限、secret scope、egress policy、审计查询和管理员分权 |
 | P1 | 运行时适配器族 | remote-worker、AI-tool、event-source、message-handler、webhook、streaming、durable 的 authoring contract 已有，但真正 dispatcher、ingress runtime、实例状态和重放仍需补齐 |
@@ -1408,10 +1408,10 @@ Phase 1 的工程拆分、包结构、API、测试和 Definition of Done 见
 - 当前已落地 executable lowering integration validate/submit/list API，持久化 current executor bridge assertion 为 `bloge.visualExecutableLoweringIntegration.v1`。
 - 当前已落地 operator catalog response projection，返回 active binding 与 adapter activation 的 missing/bound/drifted/adapter-active/adapter-drifted/not-required 状态。
 - 当前已落地 executable promotion projection，返回 already-executable/binding-required/activation-required/executor-integration-required/lowering-integration-drifted/readiness-recompute-required 等 promotion 状态。
-- 已补 native governed library revision mutation、external-runtime-bound governed library revision mutation、post-apply evidence refresh/rebind mutation、governed unbind/deactivate mutation、implementation contract-diff gate 和三类 runtime evidence submit stable-id 精确 replay 幂等返回，把 readiness recompute preview 写成可信 operator-library 事实后继续续接或退出当前 runtime evidence，并在旧 handoff contract 回流时区分 breaking / compatible / runtime / governance / metadata drift；后续补跨 repository 事务/partial-failure 硬化、更广义 idempotency 和更深 SemVer / JSON Schema 兼容性 diff。
+- 已补 native governed library revision mutation、external-runtime-bound governed library revision mutation、post-apply evidence refresh/rebind mutation、governed unbind/deactivate mutation、implementation contract-diff gate、semantic JSON Schema-compatible drift classification 和三类 runtime evidence submit stable-id 精确 replay 幂等返回，把 readiness recompute preview 写成可信 operator-library 事实后继续续接或退出当前 runtime evidence，并在旧 handoff contract 回流时区分 breaking / compatible / runtime / governance / metadata drift；后续补跨 repository 事务/partial-failure 硬化、更广义 idempotency、更深 SemVer/reimplementation 策略和更完整 JSON Schema 兼容性推理。
 - handoff bundle `operatorContracts[]` 到 implementation contract 的 fingerprint 校验；当前 validate 已覆盖第一层 operatorRef/fingerprint/catalog drift/evidence gate。
 - implementation metadata：adapter kind、entrypoint、capabilities、runtime owner、test evidence、policy evidence、rollback target。
-- contract diff：输入/输出/config/policy/lowering/runtime readiness 的 breaking / compatible / runtime / governance / metadata 变化分类已进入 implementation validate；后续需要补 SemVer 和 JSON Schema 兼容性语义。
+- contract diff：输入/输出/config/policy/lowering/runtime readiness 的 breaking / compatible / runtime / governance / metadata 变化分类已进入 implementation validate，input/output/config schema drift 已复用 shared JSON Schema compatibility 做保守分类并返回 breaking reason；后续需要补 SemVer、reimplementation 策略和更完整 JSON Schema 兼容性推理。
 - readiness 回流：implementation 绑定、adapter activation 和 executable lowering integration 成功后先更新 catalog projection 与 executable promotion projection；未来由 trusted operator-library/catalog revision、现有 draft/publication readiness 与 runtime-binding index 重新派生 executable 能力，不直接改 graph artifact。
 
 验收：
