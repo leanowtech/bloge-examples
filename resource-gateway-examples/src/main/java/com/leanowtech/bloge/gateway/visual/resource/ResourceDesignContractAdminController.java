@@ -243,7 +243,20 @@ public class ResourceDesignContractAdminController {
         if (warningGate != null) {
             return warningGate;
         }
-        return ResponseEntity.ok(registry.upsert(contract));
+        try {
+            return ResponseEntity.ok(registry.upsert(contract));
+        } catch (IllegalArgumentException ex) {
+            throw ex;
+        } catch (RuntimeException ex) {
+            return ResponseEntity.status(HttpStatus.CONFLICT)
+                    .body(persistenceFailureResult(contract,
+                            "visual.resourceContract.upsertPersistenceFailed",
+                            "Resource design contract for '%s' could not be stored."
+                                    .formatted(contract.resourceId()),
+                            "/contract",
+                            "UPSERT",
+                            ex));
+        }
     }
 
     /**
@@ -273,7 +286,22 @@ public class ResourceDesignContractAdminController {
             return ResponseEntity.status(HttpStatus.BAD_REQUEST)
                     .body(validationResult(registry.findByResourceId(resourceId).orElse(null), governanceEvidence));
         }
-        registry.deleteByResourceId(resourceId);
+        ResourceDesignContract current = registry.findByResourceId(resourceId).orElse(null);
+        try {
+            registry.deleteByResourceId(resourceId);
+        } catch (IllegalArgumentException ex) {
+            throw ex;
+        } catch (RuntimeException ex) {
+            return ResponseEntity.status(HttpStatus.CONFLICT)
+                    .body(persistenceFailureResult(current,
+                            "visual.resourceContract.deletePersistenceFailed",
+                            "Resource design contract for '%s' could not be deleted."
+                                    .formatted(resourceId),
+                            "/resourceId",
+                            "DELETE",
+                            ex,
+                            resourceId));
+        }
         return ResponseEntity.noContent().build();
     }
 
@@ -621,6 +649,34 @@ public class ResourceDesignContractAdminController {
     private static ResourceDesignContractValidationResult validationResult(ResourceDesignContract contract,
                                                                            List<VisualDiagnostic> diagnostics) {
         return ResourceDesignContractValidationResult.from(contract, diagnostics);
+    }
+
+    private static ResourceDesignContractValidationResult persistenceFailureResult(ResourceDesignContract contract,
+                                                                                  String code,
+                                                                                  String message,
+                                                                                  String target,
+                                                                                  String mutationAction,
+                                                                                  RuntimeException exception) {
+        return persistenceFailureResult(contract, code, message, target, mutationAction, exception,
+                contract == null ? "" : contract.resourceId());
+    }
+
+    private static ResourceDesignContractValidationResult persistenceFailureResult(ResourceDesignContract contract,
+                                                                                  String code,
+                                                                                  String message,
+                                                                                  String target,
+                                                                                  String mutationAction,
+                                                                                  RuntimeException exception,
+                                                                                  String resourceId) {
+        Map<String, Object> metadata = new LinkedHashMap<>();
+        metadata.put("resourceId", resourceId == null ? "" : resourceId);
+        metadata.put("contractId", contract == null ? "" : contract.contractId());
+        metadata.put("mutationAction", mutationAction == null ? "" : mutationAction);
+        metadata.put("exception", exception == null ? "" : exception.getClass().getSimpleName());
+        if (exception != null && exception.getMessage() != null && !exception.getMessage().isBlank()) {
+            metadata.put("exceptionMessage", exception.getMessage());
+        }
+        return validationResult(contract, List.of(VisualDiagnostic.error(code, message, target, metadata)));
     }
 
     /**

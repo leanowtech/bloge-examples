@@ -316,6 +316,29 @@ class ResourceDesignContractAdminControllerTest {
     }
 
     @Test
+    void upsertReturnsStructuredPersistenceFailureWithoutStoring() throws Exception {
+        useFailingRegistry(FailingMutation.UPSERT);
+        ResourceDesignContract valid = validContract(Map.of());
+
+        mockMvc.perform(put("/admin/resource-design-contracts/order-service.listOrders")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(valid)))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.valid").value(false))
+                .andExpect(jsonPath("$.diagnostics[0].code")
+                        .value("visual.resourceContract.upsertPersistenceFailed"))
+                .andExpect(jsonPath("$.diagnostics[0].target").value("/contract"))
+                .andExpect(jsonPath("$.diagnostics[0].metadata.resourceId")
+                        .value("order-service.listOrders"))
+                .andExpect(jsonPath("$.diagnostics[0].metadata.contractId").value("contract:orders"))
+                .andExpect(jsonPath("$.diagnostics[0].metadata.mutationAction").value("UPSERT"))
+                .andExpect(jsonPath("$.diagnostics[0].metadata.exception")
+                        .value("IllegalStateException"));
+
+        assertThat(registry.all()).isEmpty();
+    }
+
+    @Test
     void upsertRejectsDisablingContractReferencedByStoredDraft() throws Exception {
         ResourceDesignContract original = validContract(Map.of());
         ResourceDesignContract disabled = validContract(Map.of(), ResourceDesignContract.STATUS_DISABLED);
@@ -782,6 +805,28 @@ class ResourceDesignContractAdminControllerTest {
     }
 
     @Test
+    void deleteReturnsStructuredPersistenceFailureAndKeepsCurrentContract() throws Exception {
+        useFailingRegistry(FailingMutation.DELETE);
+        ResourceDesignContract contract = validContract(Map.of());
+        ((FailingResourceDesignContractRegistry) registry).seed(contract);
+
+        mockMvc.perform(delete("/admin/resource-design-contracts/order-service.listOrders"))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.valid").value(false))
+                .andExpect(jsonPath("$.diagnostics[0].code")
+                        .value("visual.resourceContract.deletePersistenceFailed"))
+                .andExpect(jsonPath("$.diagnostics[0].target").value("/resourceId"))
+                .andExpect(jsonPath("$.diagnostics[0].metadata.resourceId")
+                        .value("order-service.listOrders"))
+                .andExpect(jsonPath("$.diagnostics[0].metadata.contractId").value("contract:orders"))
+                .andExpect(jsonPath("$.diagnostics[0].metadata.mutationAction").value("DELETE"))
+                .andExpect(jsonPath("$.diagnostics[0].metadata.exception")
+                        .value("IllegalStateException"));
+
+        assertThat(registry.findByResourceId("order-service.listOrders")).contains(contract);
+    }
+
+    @Test
     void deleteForceRequiresGovernanceEvidenceBeforeMutation() throws Exception {
         ResourceDesignContract contract = validContract(Map.of());
         registry.upsert(contract);
@@ -800,6 +845,20 @@ class ResourceDesignContractAdminControllerTest {
                 .andExpect(jsonPath("$.diagnostics[0].metadata.resourceId").value("order-service.listOrders"));
 
         assertThat(registry.findByResourceId("order-service.listOrders")).contains(contract);
+    }
+
+    private void useFailingRegistry(FailingMutation mutation) {
+        registry = new FailingResourceDesignContractRegistry(mutation);
+        ResourceDesignContractAdminController controller = new ResourceDesignContractAdminController(
+                registry,
+                new ResourceDesignContractValidator(),
+                new OpenApiResourceDesignContractImporter(),
+                drafts,
+                publications,
+                resourceRegistry(descriptor),
+                projector
+        );
+        mockMvc = MockMvcBuilders.standaloneSetup(controller).build();
     }
 
     private static ResourceDesignContract invalidArrayContract() {
@@ -1075,5 +1134,38 @@ class ResourceDesignContractAdminControllerTest {
                 return List.of(descriptor);
             }
         };
+    }
+
+    private enum FailingMutation {
+        UPSERT,
+        DELETE
+    }
+
+    private static final class FailingResourceDesignContractRegistry extends InMemoryResourceDesignContractRegistry {
+        private final FailingMutation mutation;
+
+        private FailingResourceDesignContractRegistry(FailingMutation mutation) {
+            this.mutation = mutation;
+        }
+
+        private void seed(ResourceDesignContract contract) {
+            super.upsert(contract);
+        }
+
+        @Override
+        public ResourceDesignContract upsert(ResourceDesignContract contract) {
+            if (mutation == FailingMutation.UPSERT) {
+                throw new IllegalStateException("Injected resource contract upsert failure");
+            }
+            return super.upsert(contract);
+        }
+
+        @Override
+        public void deleteByResourceId(String resourceId) {
+            if (mutation == FailingMutation.DELETE) {
+                throw new IllegalStateException("Injected resource contract delete failure");
+            }
+            super.deleteByResourceId(resourceId);
+        }
     }
 }

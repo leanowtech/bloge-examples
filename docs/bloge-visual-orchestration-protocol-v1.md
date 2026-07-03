@@ -484,6 +484,12 @@ enum 缺少 values 和 examples 中的原始 secret 都会返回 blocking
 `VisualDiagnostic`，不会被持久化到设计合同 registry。示例实现使用
 H2-backed `ResourceDesignContractRegistry`，并且 bootstrap 只补齐缺失的内置
 contract，不覆盖已经持久化的用户修改。
+如果 registry 在 upsert/delete 阶段写入失败，admin 端点返回结构化 `409`
+而不是通用 500：保存失败使用
+`visual.resourceContract.upsertPersistenceFailed`，删除失败使用
+`visual.resourceContract.deletePersistenceFailed`。diagnostic metadata 至少携带
+`resourceId`、`contractId`、`mutationAction` 和异常类别；调用方应把这类失败路由为平台
+存储故障，而不是 schema 校验、impact review 或 runtime-readiness 缺口。
 
 resource-gateway 示例还提供
 `POST /admin/resource-design-contracts/from-openapi` 作为 validate-only
