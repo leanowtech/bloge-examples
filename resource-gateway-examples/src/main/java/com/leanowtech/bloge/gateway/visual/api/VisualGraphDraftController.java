@@ -333,7 +333,18 @@ public class VisualGraphDraftController {
                         List.of("/"),
                         reason
                 ));
-        GraphDraft stored = repository.save(imported);
+        GraphDraft preview = draftBundlePreview(bundle);
+        VisualValidationResult previewValidation = validator.validate(preview);
+        GraphDraftDependencyReport previewDependencyReport = GraphDraftDependencyReport.from(preview, catalog);
+        GraphDraft stored;
+        try {
+            stored = repository.save(imported);
+        } catch (RuntimeException e) {
+            return ResponseEntity.status(HttpStatus.CONFLICT)
+                    .body(GraphDraftImportResult.rejected(bundle, preview,
+                            List.of(draftImportPersistenceFailureDiagnostic(bundle, preview, e)),
+                            previewValidation, previewDependencyReport));
+        }
         VisualValidationResult validation = validator.validate(stored);
         GraphDraftDependencyReport dependencyReport = GraphDraftDependencyReport.from(stored, catalog);
         return ResponseEntity.status(HttpStatus.CREATED)
@@ -358,6 +369,28 @@ public class VisualGraphDraftController {
     private GraphDraft draftBundleImportCandidate(GraphDraftExportBundle bundle) {
         return withCurrentOrProvidedOperatorSnapshotState(withBundleOperatorSnapshots(bundle.draft(), bundle.operatorSnapshots())
                 .withIdentity("", 0));
+    }
+
+    private static VisualDiagnostic draftImportPersistenceFailureDiagnostic(GraphDraftExportBundle bundle,
+                                                                            GraphDraft preview,
+                                                                            RuntimeException failure) {
+        String exceptionMessage = failure.getMessage() == null ? "" : failure.getMessage();
+        Map<String, Object> metadata = new LinkedHashMap<>();
+        metadata.put("sourceDraftId", bundle == null ? "" : bundle.sourceDraftId());
+        metadata.put("sourceRevision", bundle == null ? 0 : bundle.sourceRevision());
+        metadata.put("sourceBundleFingerprint", bundle == null ? "" : bundle.bundleFingerprint());
+        metadata.put("previewDraftId", preview == null ? "" : preview.draftId());
+        metadata.put("previewRevision", preview == null ? 0 : preview.revision());
+        metadata.put("graphName", preview == null ? "" : preview.graphName());
+        metadata.put("exceptionType", failure.getClass().getSimpleName());
+        metadata.put("exceptionMessage", exceptionMessage);
+        return VisualDiagnostic.error(
+                "visual.draft.importPersistenceFailed",
+                "Visual graph draft import for source draft '%s' could not be persisted: %s"
+                        .formatted(bundle == null ? "" : bundle.sourceDraftId(), exceptionMessage),
+                "/draft",
+                metadata
+        );
     }
 
     /**

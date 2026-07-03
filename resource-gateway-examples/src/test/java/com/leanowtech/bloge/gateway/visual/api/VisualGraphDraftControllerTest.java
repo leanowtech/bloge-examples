@@ -888,6 +888,65 @@ class VisualGraphDraftControllerTest {
     }
 
     @Test
+    void importDraftBundleReturnsPersistenceDiagnosticWhenRepositorySaveFails() {
+        DefaultVisualOperatorCatalog catalog = VisualCatalogTestSupport.catalogWithLibrary(
+                VisualCatalogTestSupport.designOnlyEligibilityLibrary("integer"));
+        VisualGraphDraftController sourceController =
+                controllerWithCatalog(catalog, new InMemoryGraphDraftRepository());
+        FailingSaveGraphDraftRepository targetRepository = new FailingSaveGraphDraftRepository();
+        VisualGraphDraftController targetController = controllerWithCatalog(catalog, targetRepository);
+        GraphDraft stored = sourceController.create(eligibilityDraft(graphInputSchema(
+                Map.of(
+                        "score", Map.of("type", "integer"),
+                        "amount", Map.of("type", "number")
+                )
+        )));
+        GraphDraftExportBundle bundle = sourceController.exportDraft(stored.draftId()).getBody();
+
+        ResponseEntity<GraphDraftImportResult> response = targetController.importDraft(bundle);
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.CONFLICT);
+        assertThat(response.getBody()).isNotNull();
+        GraphDraftImportResult result = response.getBody();
+        assertThat(result.imported()).isFalse();
+        assertThat(result.sourceBundleSchemaVersion()).isEqualTo(GraphDraftExportBundle.SCHEMA_VERSION);
+        assertThat(result.sourceBundleFingerprint()).isEqualTo(bundle.bundleFingerprint());
+        assertThat(result.sourceDraftId()).isEqualTo(stored.draftId());
+        assertThat(result.sourceRevision()).isEqualTo(stored.revision());
+        assertThat(result.draft().draftId()).isEqualTo(stored.draftId());
+        assertThat(result.draft().revision()).isEqualTo(stored.revision());
+        assertThat(result.validation().valid()).isTrue();
+        assertThat(result.validation().readiness().state()).isEqualTo("design-only");
+        assertThat(result.validation().readiness().artifactKinds()).containsExactly("DESIGN");
+        assertThat(result.sourceDependencyReport()).isEqualTo(bundle.dependencyReport());
+        assertThat(result.targetDependencyReport()).isEqualTo(result.dependencyReport());
+        assertThat(result.targetDependencyReport().draftId()).isEqualTo(stored.draftId());
+        assertThat(result.targetDependencyReport().runtimeReadinessStateCounts())
+                .containsEntry("DESIGN_ONLY", 1);
+        assertThat(result.targetRuntimeBindingRequirements())
+                .isEqualTo(result.validation().readiness().runtimeBindingRequirements());
+        assertThat(result.targetRuntimeBindingRequirementKeys())
+                .containsExactly("RUNTIME_BINDING|draft|%s|eligibility|executable-lowering|risk:eligibility|"
+                        .formatted(stored.draftId()));
+        assertThat(result.diagnostics())
+                .singleElement()
+                .satisfies(diagnostic -> {
+                    assertThat(diagnostic.code()).isEqualTo("visual.draft.importPersistenceFailed");
+                    assertThat(diagnostic.target()).isEqualTo("/draft");
+                    assertThat(diagnostic.metadata())
+                            .containsEntry("sourceDraftId", stored.draftId())
+                            .containsEntry("sourceRevision", stored.revision())
+                            .containsEntry("sourceBundleFingerprint", bundle.bundleFingerprint())
+                            .containsEntry("previewDraftId", stored.draftId())
+                            .containsEntry("previewRevision", stored.revision())
+                            .containsEntry("graphName", stored.graphName())
+                            .containsEntry("exceptionType", "IllegalStateException")
+                            .containsEntry("exceptionMessage", "draft store unavailable");
+                });
+        assertThat(targetRepository.all()).isEmpty();
+    }
+
+    @Test
     void importDraftBundleRejectsUnsupportedBundleContractBeforeStorage() {
         InMemoryGraphDraftRepository repository = new InMemoryGraphDraftRepository();
         VisualGraphDraftController controller = controllerWithCatalog(eligibilityCatalog(), repository);
@@ -2587,6 +2646,13 @@ class VisualGraphDraftControllerTest {
         @Override
         public VisualGraphPublication create(VisualGraphPublication publication) {
             throw new IllegalStateException("publication store unavailable");
+        }
+    }
+
+    private static class FailingSaveGraphDraftRepository extends InMemoryGraphDraftRepository {
+        @Override
+        public GraphDraft save(GraphDraft draft) {
+            throw new IllegalStateException("draft store unavailable");
         }
     }
 

@@ -1696,6 +1696,18 @@ schema-only/design-only readiness 和 runtime binding handoff。
 因此这组元数据用于跨环境 lineage、迁移审计和人工复核，而不是把
 schema-only 或 catalog-repair-required 图误提升为可执行制品。
 
+如果 `POST /api/visual/drafts/import` 已通过 bundle schemaVersion、fingerprint
+和内嵌 draft contract 门禁，但目标 repository 在创建新 draft revision 时失败，
+服务端返回 `409 CONFLICT`，`imported=false`，并给出
+`visual.draft.importPersistenceFailed` diagnostic。该拒绝结果不会丢弃目标环境证据：
+`draft` 仍是非写入 target preview snapshot，`validation`、`targetDependencyReport`、
+`targetRuntimeBindingRequirements[]` 和 `targetRuntimeBindingRequirementKeys[]`
+仍按目标 catalog 派生，metadata 携带 `sourceDraftId`、`sourceRevision`、
+`sourceBundleFingerprint`、`previewDraftId`、`previewRevision`、`graphName`、
+`exceptionType` 和 `exceptionMessage`。这条语义很重要：存储失败不是 schema
+不兼容，也不是 runtime 实现缺失，外部迁移工具和浏览器必须能把它路由到平台存储修复，
+同时继续保留 schema-only/design-only 的实现交接证据。
+
 `bloge.visualGraphDraftExport.v1` 包含 source draft identity、revision、`bundleFingerprint`、draft
 snapshot、operator snapshots、export-time diagnostics、完整 `validation`，以及源环境
 `dependencyReport`。`bloge.visualGraphDraftImportResult.v1` 在创建新 draft identity

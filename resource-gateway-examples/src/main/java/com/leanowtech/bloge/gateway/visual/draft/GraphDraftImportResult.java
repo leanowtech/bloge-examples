@@ -165,6 +165,26 @@ public record GraphDraftImportResult(
     }
 
     /**
+     * @param bundle source export bundle
+     * @param draft normalized target-environment draft preview that was not stored
+     * @param diagnostics blocking import diagnostics
+     * @param validation target-environment validation and readiness for the preview draft
+     * @param dependencyReport target-environment dependency report for the preview draft
+     * @return rejected import result with source lineage and target-environment evidence
+     */
+    public static GraphDraftImportResult rejected(GraphDraftExportBundle bundle,
+                                                  GraphDraft draft,
+                                                  List<VisualDiagnostic> diagnostics,
+                                                  VisualValidationResult validation,
+                                                  GraphDraftDependencyReport dependencyReport) {
+        VisualValidationResult safeValidation = validation == null
+                ? new VisualValidationResult(false, diagnostics)
+                : validation;
+        return from(bundle, false, draft, diagnostics, safeValidation,
+                sourceDependencyReport(bundle), dependencyReport);
+    }
+
+    /**
      * @param diagnostics blocking import diagnostics
      * @return rejected import result
      */
