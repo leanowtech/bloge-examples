@@ -162,6 +162,65 @@ class VisualSchemaValidatorTest {
     }
 
     @Test
+    void acceptsRuntimeAndDefaultValuesWithNumericallyEquivalentFiniteDomains() {
+        SchemaEnvelope schema = new SchemaEnvelope(SchemaEnvelope.JSON_SCHEMA, "2020-12", Map.of(
+                "type", "object",
+                "properties", Map.of(
+                        "amount", Map.of(
+                                "type", "number",
+                                "const", 1.0
+                        )
+                ),
+                "required", List.of("amount"),
+                "additionalProperties", false
+        ));
+
+        assertThat(VisualSchemaValidator.validateValue(schema, Map.of("amount", 1), "/context")).isEmpty();
+        assertThat(VisualSchemaValidator.validateSchema(Map.of(
+                "type", "number",
+                "enum", List.of(1.0),
+                "default", 1
+        ), "/schema")).isEmpty();
+    }
+
+    @Test
+    void reportsSchemaEnumDuplicatesUsingSchemaValueEquality() {
+        Map<String, Object> first = Map.of("a", "x", "b", List.of(1));
+        Map<String, Object> second = Map.of("b", List.of(1.0), "a", "x");
+
+        var diagnostics = VisualSchemaValidator.validateSchema(Map.of(
+                "type", "object",
+                "enum", List.of(first, second)
+        ), "/schema");
+
+        assertThat(diagnostics)
+                .anySatisfy(diagnostic -> {
+                    assertThat(diagnostic.code()).isEqualTo("visual.schema.enumDuplicate");
+                    assertThat(diagnostic.target()).isEqualTo("/schema/enum/1");
+                });
+    }
+
+    @Test
+    void rejectsRuntimeUniqueItemsDuplicatesUsingSchemaValueEquality() {
+        SchemaEnvelope schema = new SchemaEnvelope(SchemaEnvelope.JSON_SCHEMA, "2020-12", Map.of(
+                "type", "array",
+                "uniqueItems", true
+        ));
+
+        var diagnostics = VisualSchemaValidator.validateValue(schema, List.of(
+                Map.of("a", "x", "b", List.of(1)),
+                Map.of("b", List.of(1.0), "a", "x")
+        ), "/context");
+
+        assertThat(diagnostics)
+                .anySatisfy(diagnostic -> {
+                    assertThat(diagnostic.code()).isEqualTo("visual.context.arrayConstraintMismatch");
+                    assertThat(diagnostic.target()).isEqualTo("/context");
+                    assertThat(diagnostic.message()).contains("uniqueItems");
+                });
+    }
+
+    @Test
     void rejectsInvalidUnionSchemaShapes() {
         var diagnostics = VisualSchemaValidator.validateSchema(Map.of(
                 "type", "object",

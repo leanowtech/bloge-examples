@@ -6170,6 +6170,20 @@ operators:
                   type: 'string',
                   const: 'APPROVE'
                 });
+                const reorderedObjectConstMatches = context.schemaValueMatchesSchema({
+                  b: [1],
+                  a: 'x'
+                }, {
+                  type: 'object',
+                  const: {
+                    a: 'x',
+                    b: [1]
+                  }
+                });
+                const reorderedObjectUniqueCount = context.uniqueSchemaValues([
+                  { b: 1, a: 'x' },
+                  { a: 'x', b: 1 }
+                ]).length;
                 const numberToIntegerIssue = context.schemaCompatibilityIssue({
                   type: 'number'
                 }, {
@@ -6200,6 +6214,9 @@ operators:
                   ['target const requires finite source', targetConstIssue, 'target const [APPROVE] requires a finite source value domain, but source is string'],
                   ['target const safe source', targetConstSafeIssue, ''],
                   ['target const mismatch', targetConstMismatchIssue, 'source const value(s) [REJECT] are outside target const [APPROVE]'],
+                  ['reordered object schema equality', String(context.schemaValuesEqual({ b: [1], a: 'x' }, { a: 'x', b: [1] })), 'true'],
+                  ['reordered object const match', String(reorderedObjectConstMatches), 'true'],
+                  ['reordered object unique collapse', String(reorderedObjectUniqueCount), '1'],
                   ['number to integer requires proof', numberToIntegerIssue, 'target type integer requires integer-valued source, but source type number has no integral multipleOf'],
                   ['integral number to integer safe', integralNumberToIntegerIssue, ''],
                   ['fractional number to integer blocked', fractionalNumberToIntegerIssue, 'source multipleOf 0.5 does not guarantee integer values required by target type integer']

@@ -20766,7 +20766,7 @@ function schemaValuesEqual(left, right) {
 }
 
 function schemaValueKey(value) {
-  return JSON.stringify(value);
+  return canonicalSchemaValueKey(value);
 }
 
 function canonicalSchemaValueKey(value) {

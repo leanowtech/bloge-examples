@@ -3,6 +3,7 @@ package com.leanowtech.bloge.gateway.visual.validation;
 import com.leanowtech.bloge.gateway.visual.diagnostic.VisualDiagnostic;
 import com.leanowtech.bloge.gateway.visual.model.SchemaEnvelope;
 
+import java.math.BigDecimal;
 import java.net.URI;
 import java.net.URISyntaxException;
 import java.time.Duration;
@@ -157,7 +158,7 @@ public final class VisualSchemaValidator {
                     path));
             return;
         }
-        if (schema.containsKey("const") && !Objects.equals(schema.get("const"), value)) {
+        if (schema.containsKey("const") && !schemaValuesEqual(schema.get("const"), value)) {
             diagnostics.add(VisualDiagnostic.error("visual.context.constMismatch",
                     "Runtime value at '%s' must equal const value '%s'."
                             .formatted(path, schema.get("const")),
@@ -165,7 +166,7 @@ public final class VisualSchemaValidator {
             return;
         }
         Object rawEnum = "enum".equals(kind) ? schema.get("values") : schema.get("enum");
-        if (rawEnum instanceof List<?> values && !values.contains(value)) {
+        if (rawEnum instanceof List<?> values && !schemaValuesContain(values, value)) {
             diagnostics.add(VisualDiagnostic.error("visual.context.enumMismatch",
                     "Runtime value at '%s' must be one of %s.".formatted(path, values),
                     path));
@@ -640,7 +641,7 @@ public final class VisualSchemaValidator {
                     "Schema default must not match schema not exclusion.",
                     path));
         }
-        if (schema.containsKey("const") && !Objects.equals(schema.get("const"), value)) {
+        if (schema.containsKey("const") && !schemaValuesEqual(schema.get("const"), value)) {
             diagnostics.add(VisualDiagnostic.error("visual.schema.defaultConstMismatch",
                     "Schema default must equal const value '%s'.".formatted(schema.get("const")),
                     path));
@@ -753,7 +754,7 @@ public final class VisualSchemaValidator {
         }
         if ("enum".equals(kind)) {
             Object values = schema.get("values");
-            if (values instanceof List<?> list && !list.contains(value)) {
+            if (values instanceof List<?> list && !schemaValuesContain(list, value)) {
                 diagnostics.add(VisualDiagnostic.error("visual.schema.defaultEnumMismatch",
                         "Schema default must be one of %s.".formatted(list),
                         path));
@@ -761,7 +762,7 @@ public final class VisualSchemaValidator {
             return;
         }
         Object rawEnum = schema.get("enum");
-        if (rawEnum instanceof List<?> values && !values.contains(value)) {
+        if (rawEnum instanceof List<?> values && !schemaValuesContain(values, value)) {
             diagnostics.add(VisualDiagnostic.error("visual.schema.defaultEnumMismatch",
                     "Schema default must be one of %s.".formatted(values),
                     path));
@@ -1582,14 +1583,15 @@ public final class VisualSchemaValidator {
     private static void validateEnumValues(List<?> values,
                                            String path,
                                            List<VisualDiagnostic> diagnostics) {
-        Set<Object> seen = new LinkedHashSet<>();
+        List<Object> seen = new ArrayList<>();
         for (int i = 0; i < values.size(); i++) {
             Object value = values.get(i);
-            if (!seen.add(value)) {
+            if (schemaValuesContain(seen, value)) {
                 diagnostics.add(VisualDiagnostic.error("visual.schema.enumDuplicate",
                         "Enum value '%s' is duplicated.".formatted(value),
                         path + "/" + i));
             }
+            seen.add(value);
         }
     }
 
@@ -1826,7 +1828,7 @@ public final class VisualSchemaValidator {
 	        if (!(value instanceof List<?> list) || !Boolean.TRUE.equals(schema.get("uniqueItems"))) {
 	            return true;
 	        }
-	        return new LinkedHashSet<>(list).size() == list.size();
+	        return schemaValuesUnique(list);
 	    }
 
 	    private static boolean arrayValueMatchesContains(List<?> value, Map<String, Object> schema) {
@@ -2154,16 +2156,16 @@ public final class VisualSchemaValidator {
 		        if (!valueMatchesDeclaredType(value, schema, kind)) {
 	            return false;
 	        }
-	        if (schema.containsKey("const") && !Objects.equals(schema.get("const"), value)) {
+	        if (schema.containsKey("const") && !schemaValuesEqual(schema.get("const"), value)) {
 	            return false;
 	        }
 	        Object rawEnum = schema.get("enum");
-	        if (rawEnum instanceof List<?> values && !values.contains(value)) {
+	        if (rawEnum instanceof List<?> values && !schemaValuesContain(values, value)) {
 	            return false;
 	        }
 	        if ("enum".equals(kind)) {
 	            Object rawValues = schema.get("values");
-	            if (rawValues instanceof List<?> values && !values.contains(value)) {
+	            if (rawValues instanceof List<?> values && !schemaValuesContain(values, value)) {
 	                return false;
 	            }
 	        }
@@ -2182,7 +2184,7 @@ public final class VisualSchemaValidator {
 
     private static boolean valueMatchesNotConstraint(Object value, Map<String, Object> schema) {
         return finiteSchemaValues(objectProperty(schema.get("not"))).stream()
-                .anyMatch(excluded -> Objects.equals(excluded, value));
+                .anyMatch(excluded -> schemaValuesEqual(excluded, value));
     }
 
     private static List<Object> finiteSchemaValues(Map<String, Object> schema) {
@@ -2194,12 +2196,83 @@ public final class VisualSchemaValidator {
         }
         Object rawEnum = schema.get("enum");
         if (rawEnum instanceof List<?> values) {
-            return values.stream().map(Object.class::cast).distinct().toList();
+            return uniqueSchemaValues(values);
         }
         if ("enum".equals(schemaKind(schema)) && schema.get("values") instanceof List<?> values) {
-            return values.stream().map(Object.class::cast).distinct().toList();
+            return uniqueSchemaValues(values);
         }
         return List.of();
+    }
+
+    private static List<Object> uniqueSchemaValues(List<?> values) {
+        List<Object> unique = new ArrayList<>();
+        for (Object value : values) {
+            if (!schemaValuesContain(unique, value)) {
+                unique.add(value);
+            }
+        }
+        return unique;
+    }
+
+    private static boolean schemaValuesContain(List<?> values, Object value) {
+        return values.stream().anyMatch(item -> schemaValuesEqual(item, value));
+    }
+
+    private static boolean schemaValuesUnique(List<?> values) {
+        List<Object> seen = new ArrayList<>();
+        for (Object value : values) {
+            if (schemaValuesContain(seen, value)) {
+                return false;
+            }
+            seen.add(value);
+        }
+        return true;
+    }
+
+    private static boolean schemaValuesEqual(Object left, Object right) {
+        if (left instanceof Number leftNumber && right instanceof Number rightNumber) {
+            BigDecimal leftDecimal = schemaNumberValue(leftNumber);
+            BigDecimal rightDecimal = schemaNumberValue(rightNumber);
+            return leftDecimal != null && rightDecimal != null && leftDecimal.compareTo(rightDecimal) == 0;
+        }
+        if (left instanceof Map<?, ?> leftMap && right instanceof Map<?, ?> rightMap) {
+            if (leftMap.size() != rightMap.size()) {
+                return false;
+            }
+            for (Map.Entry<?, ?> entry : leftMap.entrySet()) {
+                Object key = entry.getKey();
+                if (!rightMap.containsKey(key) || !schemaValuesEqual(entry.getValue(), rightMap.get(key))) {
+                    return false;
+                }
+            }
+            return true;
+        }
+        if (left instanceof List<?> leftList && right instanceof List<?> rightList) {
+            if (leftList.size() != rightList.size()) {
+                return false;
+            }
+            for (int i = 0; i < leftList.size(); i++) {
+                if (!schemaValuesEqual(leftList.get(i), rightList.get(i))) {
+                    return false;
+                }
+            }
+            return true;
+        }
+        return Objects.equals(left, right);
+    }
+
+    private static BigDecimal schemaNumberValue(Number value) {
+        if (value instanceof Double doubleValue && !Double.isFinite(doubleValue)) {
+            return null;
+        }
+        if (value instanceof Float floatValue && !Float.isFinite(floatValue)) {
+            return null;
+        }
+        try {
+            return new BigDecimal(value.toString());
+        } catch (NumberFormatException ex) {
+            return null;
+        }
     }
 
     private static Optional<String> unionMismatch(Object value, Map<String, Object> schema) {

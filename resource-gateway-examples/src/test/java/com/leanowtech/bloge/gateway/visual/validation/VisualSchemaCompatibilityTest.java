@@ -193,6 +193,39 @@ class VisualSchemaCompatibilityTest {
     }
 
     @Test
+    void acceptsNumericallyEquivalentFiniteDomains() {
+        Map<String, Object> source = Map.of("type", "number", "enum", List.of(1));
+        Map<String, Object> target = Map.of("type", "number", "const", 1.0);
+
+        assertThat(VisualSchemaCompatibility.schemaCompatibilityIssue(source, target)).isEmpty();
+    }
+
+    @Test
+    void rejectsNumericallyEquivalentValueExcludedByTargetNot() {
+        Map<String, Object> source = Map.of("type", "number", "enum", List.of(1));
+        Map<String, Object> target = Map.of(
+                "type", "number",
+                "not", Map.of("const", 1.0)
+        );
+
+        assertThat(VisualSchemaCompatibility.schemaCompatibilityIssue(source, target))
+                .hasValueSatisfying(reason -> assertThat(reason)
+                        .contains("source enum value(s) [1]")
+                        .contains("do not match target schema number"));
+    }
+
+    @Test
+    void matchesObjectFiniteValuesByStructureAndNestedNumericValue() {
+        Map<String, Object> value = Map.of("a", "x", "b", List.of(1));
+        Map<String, Object> schema = Map.of(
+                "type", "object",
+                "const", Map.of("b", List.of(1.0), "a", "x")
+        );
+
+        assertThat(VisualSchemaCompatibility.valueMatchesSchema(value, schema)).isTrue();
+    }
+
+    @Test
     void rejectsUnboundedNumberSourceWhenTargetRequiresInteger() {
         Map<String, Object> source = Map.of("type", "number");
         Map<String, Object> target = Map.of("type", "integer");

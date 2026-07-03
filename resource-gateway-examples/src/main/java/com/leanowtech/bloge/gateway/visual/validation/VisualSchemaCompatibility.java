@@ -1,5 +1,6 @@
 package com.leanowtech.bloge.gateway.visual.validation;
 
+import java.math.BigDecimal;
 import java.net.URI;
 import java.net.URISyntaxException;
 import java.time.Duration;
@@ -255,7 +256,7 @@ public final class VisualSchemaCompatibility {
                                     sourceDomainKind(targetSchema), schemaTypeLabel(sourceSchema))));
         }
         List<Object> outside = sourceValues.stream()
-                .filter(value -> !targetValues.contains(value))
+                .filter(value -> !schemaValuesContain(targetValues, value))
                 .toList();
         return outside.isEmpty()
                 ? Optional.empty()
@@ -1103,10 +1104,10 @@ public final class VisualSchemaCompatibility {
         }
         Object rawEnum = schema.get("enum");
         if (rawEnum instanceof List<?> values) {
-            return values.stream().map(Object.class::cast).distinct().toList();
+            return uniqueSchemaValues(values);
         }
         if ("enum".equals(schemaType(schema)) && schema.get("values") instanceof List<?> values) {
-            return values.stream().map(Object.class::cast).distinct().toList();
+            return uniqueSchemaValues(values);
         }
         return List.of();
     }
@@ -1128,6 +1129,77 @@ public final class VisualSchemaCompatibility {
 
     private static String valueDomainLabel(List<Object> values) {
         return values.stream().map(String::valueOf).toList().toString();
+    }
+
+    private static List<Object> uniqueSchemaValues(List<?> values) {
+        List<Object> unique = new ArrayList<>();
+        for (Object value : values) {
+            if (!schemaValuesContain(unique, value)) {
+                unique.add(value);
+            }
+        }
+        return unique;
+    }
+
+    private static boolean schemaValuesContain(List<?> values, Object value) {
+        return values.stream().anyMatch(item -> schemaValuesEqual(item, value));
+    }
+
+    private static boolean schemaValuesUnique(List<?> values) {
+        List<Object> seen = new ArrayList<>();
+        for (Object value : values) {
+            if (schemaValuesContain(seen, value)) {
+                return false;
+            }
+            seen.add(value);
+        }
+        return true;
+    }
+
+    private static boolean schemaValuesEqual(Object left, Object right) {
+        if (left instanceof Number leftNumber && right instanceof Number rightNumber) {
+            BigDecimal leftDecimal = schemaNumberValue(leftNumber);
+            BigDecimal rightDecimal = schemaNumberValue(rightNumber);
+            return leftDecimal != null && rightDecimal != null && leftDecimal.compareTo(rightDecimal) == 0;
+        }
+        if (left instanceof Map<?, ?> leftMap && right instanceof Map<?, ?> rightMap) {
+            if (leftMap.size() != rightMap.size()) {
+                return false;
+            }
+            for (Map.Entry<?, ?> entry : leftMap.entrySet()) {
+                Object key = entry.getKey();
+                if (!rightMap.containsKey(key) || !schemaValuesEqual(entry.getValue(), rightMap.get(key))) {
+                    return false;
+                }
+            }
+            return true;
+        }
+        if (left instanceof List<?> leftList && right instanceof List<?> rightList) {
+            if (leftList.size() != rightList.size()) {
+                return false;
+            }
+            for (int i = 0; i < leftList.size(); i++) {
+                if (!schemaValuesEqual(leftList.get(i), rightList.get(i))) {
+                    return false;
+                }
+            }
+            return true;
+        }
+        return Objects.equals(left, right);
+    }
+
+    private static BigDecimal schemaNumberValue(Number value) {
+        if (value instanceof Double doubleValue && !Double.isFinite(doubleValue)) {
+            return null;
+        }
+        if (value instanceof Float floatValue && !Float.isFinite(floatValue)) {
+            return null;
+        }
+        try {
+            return new BigDecimal(value.toString());
+        } catch (NumberFormatException ex) {
+            return null;
+        }
     }
 
 	    private static boolean numeric(String type) {
@@ -1155,13 +1227,13 @@ public final class VisualSchemaCompatibility {
         String type = schemaType(schema);
         if (value == null && schemaAllowsNull(schema)) {
             List<Object> values = enumValues(schema);
-            return values.isEmpty() || values.contains(null);
+            return values.isEmpty() || schemaValuesContain(values, null);
         }
         if (!valueMatchesType(value, type)) {
             return false;
         }
         List<Object> values = enumValues(schema);
-        if (!values.isEmpty() && !values.contains(value)) {
+        if (!values.isEmpty() && !schemaValuesContain(values, value)) {
             return false;
         }
         if (valueMatchesNotConstraint(value, schema)) {
@@ -1179,7 +1251,7 @@ public final class VisualSchemaCompatibility {
 
     private static boolean valueMatchesNotConstraint(Object value, Map<String, Object> schema) {
         return finiteSchemaValues(objectProperty(schema.get("not"))).stream()
-                .anyMatch(excluded -> Objects.equals(excluded, value));
+                .anyMatch(excluded -> schemaValuesEqual(excluded, value));
     }
 
     private static boolean valueMatchesUnions(Object value, Map<String, Object> schema) {
@@ -1494,7 +1566,7 @@ public final class VisualSchemaCompatibility {
             }
         }
         List<Object> values = enumValues(schema);
-        return values.isEmpty() ? schemaAllowsNull(schema) : values.contains(null);
+        return values.isEmpty() ? schemaAllowsNull(schema) : schemaValuesContain(values, null);
     }
 
     private static boolean schemaAllowsNull(Map<String, Object> schema) {
@@ -1659,7 +1731,7 @@ public final class VisualSchemaCompatibility {
 	    }
 
 	    private static boolean arrayItemsUnique(List<?> value) {
-	        return new LinkedHashSet<>(value).size() == value.size();
+	        return schemaValuesUnique(value);
 	    }
 
 		    private static Long arrayItemBoundary(Object value) {

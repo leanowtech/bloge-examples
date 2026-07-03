@@ -284,7 +284,10 @@ an output constrained to `LOW|HIGH` cannot feed an input constrained to
 `APPROVE|REJECT`, a fixed `const: "REJECT"` output cannot feed a
 `const: "APPROVE"` input, and an unconstrained string cannot feed an enum or
 const input without an explicit transform; server and browser diagnostics now
-name `const` target domains distinctly from enum domains. Numeric bounds are treated as
+name `const` target domains distinctly from enum domains. Finite domain equality
+uses JSON value semantics, so numerically equivalent values such as `1` and
+`1.0`, nested arrays, and object values with different field order are compared
+consistently by the server validator and browser hints. Numeric bounds are treated as
 schema-enforced value domains too: a source score range must be a subset of the
 target's `minimum`/`maximum` or `exclusiveMinimum`/`exclusiveMaximum` range
 before the edge can be saved, and a source numeric `multipleOf` must be a
