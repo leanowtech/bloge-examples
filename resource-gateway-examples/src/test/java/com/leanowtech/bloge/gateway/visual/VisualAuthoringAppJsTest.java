@@ -290,9 +290,18 @@ class VisualAuthoringAppJsTest {
                 .contains("fetch(visualRuntimeBindingHandoffReviewUrl(), {")
                 .contains("runtimeBindingHandoffReview: payload")
                 .contains("function visualRuntimeBindingHandoffReviewMessage(review)")
+                .contains("function visualRuntimeBindingHandoffReviewRows(review)")
+                .contains("function visualRuntimeBindingHandoffReviewCategorySummary(counts = {})")
+                .contains("function visualRuntimeBindingHandoffReviewItemLabel(item)")
+                .contains("function visualRuntimeBindingHandoffReviewItemValue(item)")
+                .contains("function visualRuntimeBindingFieldChangeText(change)")
+                .contains("function visualRuntimeBindingFieldLabel(value)")
                 .contains("Runtime Binding Requirements")
                 .contains("Current runtime binding")
                 .contains("Runtime binding handoff")
+                .contains("Handoff Review Drift Details")
+                .contains("fieldChangeCategoryCounts")
+                .contains("fieldChanges")
                 .contains("Runtime binding index unavailable")
                 .contains("function visualRuntimeBindingRequirementControls(bindingIndex)")
                 .contains("runtime-binding-target-kind")
@@ -319,9 +328,35 @@ class VisualAuthoringAppJsTest {
                 .contains("Opened runtime binding requirement:")
                 .contains("Exported ${displayed} of ${total} runtime binding requirement(s).")
                 .contains("Handoff review ${stateLabel}: ${matched} current, ${drifted} drifted, ${missing} missing, ${fresh} new in current window.")
+                .contains("New current-window requirements")
+                .contains("Drift categories")
+                .contains("server-derived row")
                 .contains("No matching runtime binding requirements")
                 .contains("more runtime binding requirements");
         assertThat(countOccurrences(source, "function visualRuntimeBindingRequirementRows(")).isEqualTo(1);
+    }
+
+    @Test
+    void rendersRuntimeBindingHandoffReviewDriftDetails() throws Exception {
+        assumeNodeAvailable();
+
+        Path tempDir = Files.createTempDirectory("bloge-handoff-review-app-js-test");
+        Path appJs = tempDir.resolve("app.js");
+        Path probe = tempDir.resolve("probe.js");
+        try {
+            Files.writeString(appJs, appJsSource(), StandardCharsets.UTF_8);
+            Files.writeString(probe, runtimeBindingHandoffReviewProbe(), StandardCharsets.UTF_8);
+
+            ProcessResult result = runProcess(List.of("node", probe.toString(), appJs.toString()), tempDir, 10);
+
+            assertThat(result.finished()).as(result.output()).isTrue();
+            assertThat(result.exitCode()).as(result.output()).isZero();
+            assertThat(result.output()).contains("runtime binding handoff review probe passed");
+        } finally {
+            Files.deleteIfExists(probe);
+            Files.deleteIfExists(appJs);
+            Files.deleteIfExists(tempDir);
+        }
     }
 
     @Test
@@ -731,6 +766,134 @@ class VisualAuthoringAppJsTest {
         String output = new String(process.getInputStream().readAllBytes(), StandardCharsets.UTF_8);
         int exitCode = finished ? process.exitValue() : -1;
         return new ProcessResult(finished, exitCode, output);
+    }
+
+    private static String runtimeBindingHandoffReviewProbe() {
+        return String.join("", """
+                const fs = require('fs');
+                const vm = require('vm');
+                const source = fs.readFileSync(process.argv[2], 'utf8');
+                new vm.Script(source, { filename: 'app.js' });
+
+                function functionSource(name) {
+                  const start = source.indexOf(`function ${name}(`);
+                  if (start < 0) throw new Error(`missing function ${name}`);
+                  const openParen = source.indexOf('(', start);
+                  let parenDepth = 0;
+                  let brace = -1;
+                  for (let i = openParen; i < source.length; i += 1) {
+                    const ch = source[i];
+                    if (ch === '(') parenDepth += 1;
+                    if (ch === ')') {
+                      parenDepth -= 1;
+                      if (parenDepth === 0) {
+                        brace = source.indexOf('{', i + 1);
+                        break;
+                      }
+                    }
+                  }
+                  if (brace < 0) throw new Error(`missing body for function ${name}`);
+                  let depth = 0;
+                  for (let i = brace; i < source.length; i += 1) {
+                    const ch = source[i];
+                    if (ch === '{') depth += 1;
+                    if (ch === '}') {
+                      depth -= 1;
+                      if (depth === 0) return source.slice(start, i + 1);
+                    }
+                  }
+                  throw new Error(`unterminated function ${name}`);
+                }
+
+                const context = vm.createContext({ console });
+                for (const name of [
+                  'operatorPaletteFacetLabel',
+                  'visualRuntimeBindingHandoffReviewMessage',
+                  'visualRuntimeBindingHandoffReviewRows',
+                  'visualRuntimeBindingHandoffReviewCategorySummary',
+                  'visualRuntimeBindingHandoffReviewItemLabel',
+                  'visualRuntimeBindingHandoffReviewItemValue',
+                  'visualRuntimeBindingFieldChangeText',
+                  'visualRuntimeBindingFieldLabel'
+                ]) {
+                  vm.runInContext(functionSource(name), context);
+                }
+                const review = {
+                  state: 'STALE',
+                  matchedCount: 0,
+                  driftedCount: 1,
+                  missingCount: 1,
+                  newCurrentWindowCount: 1,
+                  fieldChangeCategoryCounts: {
+                    'runtime-binding': 2,
+                    'asset-metadata': 1
+                  },
+                  newCurrentWindowRequirementKeys: [
+                    'RUNTIME_BINDING|draft|fresh|eligibility|executable-lowering|risk:eligibility|'
+                  ],
+                  items: [
+                    {
+                      requirementKey: 'RUNTIME_BINDING|draft|risk|eligibility|executable-lowering|risk:eligibility|',
+                      status: 'drifted',
+                      level: 'warning',
+                      exportedRequirement: {
+                        targetLabel: 'Risk policy @1'
+                      },
+                      currentRequirement: {
+                        targetLabel: 'Risk policy @2'
+                      },
+                      fieldChanges: [
+                        {
+                          field: 'targetLabel',
+                          category: 'asset-metadata',
+                          exportedValue: 'Risk policy @1',
+                          currentValue: 'Risk policy @2'
+                        },
+                        {
+                          field: 'handoffTarget',
+                          category: 'runtime-binding',
+                          exportedValue: 'legacy-risk-owner',
+                          currentValue: 'risk:eligibility'
+                        },
+                        {
+                          field: 'recommendedAction',
+                          category: 'runtime-binding',
+                          exportedValue: 'Legacy action',
+                          currentValue: 'Bind executable lowering before EXECUTABLE promotion.'
+                        }
+                      ]
+                    },
+                    {
+                      requirementKey: 'RUNTIME_BINDING|draft|missing|eligibility|executable-lowering|risk:eligibility|',
+                      status: 'missing',
+                      level: 'warning',
+                      message: 'Exported requirement key is no longer present.',
+                      exportedRequirement: {
+                        targetLabel: 'Missing policy @1'
+                      }
+                    }
+                  ]
+                };
+                const message = context.visualRuntimeBindingHandoffReviewMessage(review);
+                const rows = context.visualRuntimeBindingHandoffReviewRows(review);
+                const checks = [
+                  ['message', message, 'Handoff review Stale: 0 current, 1 drifted, 1 missing, 1 new in current window.'],
+                  ['row count', rows.length, 4],
+                  ['category label', rows[0].label, 'Drift categories'],
+                  ['category value', rows[0].value, 'Asset Metadata 1 · Runtime Binding 2'],
+                  ['drift label', rows[1].label, 'Drifted · Risk policy @2'],
+                  ['drift value includes route', String(rows[1].value.includes('Runtime Binding Handoff Target: legacy-risk-owner -> risk:eligibility')), 'true'],
+                  ['drift value includes action', String(rows[1].value.includes('Runtime Binding Recommended Action: Legacy action -> Bind executable lowering before EXECUTABLE promotion.')), 'true'],
+                  ['missing label', rows[2].label, 'Missing · Missing policy @1'],
+                  ['new key label', rows[3].label, 'New current-window requirements']
+                ];
+                for (const [label, actual, expected] of checks) {
+                  if (actual !== expected) {
+                    throw new Error(`${label}: expected ${expected}, got ${actual}`);
+                  }
+                }
+                console.log('runtime binding handoff review probe passed');
+                """);
     }
 
     private static String bracketPathProbe() {

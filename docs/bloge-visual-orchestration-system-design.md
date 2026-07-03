@@ -768,11 +768,15 @@ operator implementation 控制面，再由 catalog/readiness 重新派生。
 `POST /api/visual/assets/runtime-binding-requirements/handoff-review` 则把交接快照带回
 当前环境做只读对账，返回 `bloge.visualRuntimeBindingHandoffReview.v1`：
 服务端按 bundle 的 scope/filter/page-window 重算当前索引，并按 stable requirementKey
-标记 current、drifted、missing 和 current window 新增项。这个 review 只判断快照是否
-仍可用于交接排期，不记录外部工单进度，也不替代 draft/publication readiness。
+标记 current、drifted、missing 和 current window 新增项；drifted row 会同时返回
+`changedFields[]`、`fieldChanges[]` 和 `fieldChangeCategoryCounts`，把旧值/当前值及
+identity、scope、readiness、runtime-binding、asset-metadata 等变化类别结构化给
+runtime-plane 控制面，而不是要求它解析自然语言摘要。这个 review 只判断快照是否仍可用于
+交接排期，不记录外部工单进度，也不替代 draft/publication readiness。
 浏览器 Workspace Overview 会同步加载这个索引并展示 Runtime Binding Requirements 小节，
 提供同类过滤、分页、draft/publication 打开动作、当前窗口 handoff bundle 导出和最近导出
-bundle 的 handoff review，让作者和集成团队在画布工作台内看到、携带并回放审阅
+bundle 的 handoff review，并在 stale review 中展示 drift category、字段级 exported/current
+值、missing key 和当前窗口新增 key，让作者和集成团队在画布工作台内看到、携带并回放审阅
 “可设计但不可执行”的具体 runtime-plane 交接项。
 connection preflight 会返回候选连接相关的局部 diagnostics，同时携带应用 preview
 edge/binding/config expression 后的完整 candidate draft validation/readiness/actionReadiness；compile 和 run 响应同样携带本次服务端门禁使用的 validation/readiness/actionReadiness；

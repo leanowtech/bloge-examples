@@ -350,6 +350,117 @@ class VisualAssetOverviewControllerTest {
     }
 
     @Test
+    void runtimeBindingHandoffReviewExplainsDriftedRequirementFields() {
+        DefaultVisualOperatorCatalog catalog = VisualCatalogTestSupport.catalogWithLibrary(
+                VisualCatalogTestSupport.designOnlyEligibilityLibrary("integer"));
+        GraphDraftValidator validator = new GraphDraftValidator(catalog);
+        InMemoryGraphDraftRepository drafts = new InMemoryGraphDraftRepository();
+        InMemoryVisualGraphPublicationRepository publications = new InMemoryVisualGraphPublicationRepository();
+        OperatorDefinition operator = catalog.find("risk:eligibility").orElseThrow();
+        drafts.save(draftWithFingerprint(operator));
+        VisualAssetOverviewController controller =
+                new VisualAssetOverviewController(drafts, validator, catalog, publications);
+        VisualRuntimeBindingHandoffBundle handoffBundle = controller.runtimeBindingHandoffBundle(
+                "",
+                "",
+                "",
+                10,
+                0,
+                "draft",
+                "executable-lowering",
+                "operator-platform",
+                "operator-implementation",
+                "risk:eligibility",
+                "",
+                "",
+                "",
+                ""
+        );
+        VisualRuntimeBindingRequirements.RequirementItem exported = handoffBundle.requirements().getFirst();
+        VisualRuntimeBindingRequirements.RequirementItem staleRequirement =
+                new VisualRuntimeBindingRequirements.RequirementItem(
+                        exported.requirementKey(),
+                        exported.targetKind(),
+                        exported.targetId(),
+                        exported.targetLabel() + " stale snapshot",
+                        exported.graphName(),
+                        exported.tenantId(),
+                        exported.namespace(),
+                        exported.environment(),
+                        exported.artifactKind(),
+                        exported.updatedAt(),
+                        exported.nodeId(),
+                        exported.operatorRef(),
+                        exported.readinessState(),
+                        exported.requirementState(),
+                        exported.level(),
+                        exported.sourceKind(),
+                        exported.loweringMode(),
+                        exported.bindingKind(),
+                        exported.bindingTarget(),
+                        exported.handoffLane(),
+                        exported.handoffKind(),
+                        "legacy-risk-owner",
+                        exported.title(),
+                        exported.summary(),
+                        "Legacy runtime-plane action"
+                );
+        VisualRuntimeBindingHandoffBundle staleBundle = new VisualRuntimeBindingHandoffBundle(
+                handoffBundle.schemaVersion(),
+                handoffBundle.exportedAt(),
+                handoffBundle.sourceIndexSchemaVersion(),
+                handoffBundle.sourceIndexGeneratedAt(),
+                handoffBundle.scope(),
+                handoffBundle.filter(),
+                handoffBundle.total(),
+                handoffBundle.unfilteredTotal(),
+                handoffBundle.displayedCount(),
+                handoffBundle.itemLimit(),
+                handoffBundle.offset(),
+                handoffBundle.hasMore(),
+                handoffBundle.requirementKeys(),
+                handoffBundle.targetKindCounts(),
+                handoffBundle.bindingKindCounts(),
+                handoffBundle.handoffLaneCounts(),
+                handoffBundle.handoffKindCounts(),
+                handoffBundle.handoffTargetCounts(),
+                handoffBundle.sourceKindCounts(),
+                handoffBundle.loweringModeCounts(),
+                handoffBundle.readinessStateCounts(),
+                handoffBundle.artifactKindCounts(),
+                List.of(staleRequirement)
+        );
+
+        VisualRuntimeBindingHandoffReview driftedReview = controller.reviewRuntimeBindingHandoffBundle(staleBundle)
+                .getBody();
+
+        assertThat(driftedReview).isNotNull();
+        assertThat(driftedReview.reviewable()).isTrue();
+        assertThat(driftedReview.state()).isEqualTo("stale");
+        assertThat(driftedReview.driftedCount()).isEqualTo(1);
+        assertThat(driftedReview.missingCount()).isZero();
+        assertThat(driftedReview.statusCounts()).containsEntry("drifted", 1);
+        assertThat(driftedReview.fieldChangeCategoryCounts())
+                .containsEntry("asset-metadata", 1)
+                .containsEntry("runtime-binding", 2);
+        assertThat(driftedReview.items()).singleElement().satisfies(item -> {
+            assertThat(item.status()).isEqualTo("drifted");
+            assertThat(item.changedFields()).containsExactly("targetLabel", "handoffTarget", "recommendedAction");
+            assertThat(item.fieldChanges())
+                    .extracting(VisualRuntimeBindingHandoffReview.FieldChange::field)
+                    .containsExactly("targetLabel", "handoffTarget", "recommendedAction");
+            assertThat(item.fieldChanges())
+                    .filteredOn(change -> change.field().equals("handoffTarget"))
+                    .singleElement()
+                    .satisfies(change -> {
+                        assertThat(change.category()).isEqualTo("runtime-binding");
+                        assertThat(change.exportedValue()).isEqualTo("legacy-risk-owner");
+                        assertThat(change.currentValue()).isEqualTo("risk:eligibility");
+                    });
+        });
+    }
+
+    @Test
     void runtimeBindingHandoffReviewRejectsUnsupportedBundleVersion() {
         VisualRuntimeBindingHandoffBundle unsupported = new VisualRuntimeBindingHandoffBundle(
                 "bloge.visualRuntimeBindingHandoff.future",

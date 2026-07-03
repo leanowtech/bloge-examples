@@ -40,6 +40,7 @@ import java.util.Set;
  * @param currentWindowRequirementKeys current same-window requirement keys
  * @param newCurrentWindowRequirementKeys current same-window keys absent from the submitted bundle
  * @param statusCounts review item counts by status
+ * @param fieldChangeCategoryCounts drifted field-change counts by category
  * @param items per-requirement review rows for the exported bundle
  * @param diagnostics structured diagnostics for invalid or partial reviews
  */
@@ -67,6 +68,7 @@ public record VisualRuntimeBindingHandoffReview(
         List<String> currentWindowRequirementKeys,
         List<String> newCurrentWindowRequirementKeys,
         Map<String, Integer> statusCounts,
+        Map<String, Integer> fieldChangeCategoryCounts,
         List<ReviewItem> items,
         List<VisualDiagnostic> diagnostics
 ) {
@@ -102,6 +104,7 @@ public record VisualRuntimeBindingHandoffReview(
         currentWindowRequirementKeys = immutableStringList(currentWindowRequirementKeys);
         newCurrentWindowRequirementKeys = immutableStringList(newCurrentWindowRequirementKeys);
         statusCounts = immutableCounts(statusCounts);
+        fieldChangeCategoryCounts = immutableCounts(fieldChangeCategoryCounts);
         items = items == null ? List.of() : List.copyOf(items);
         diagnostics = immutableDiagnostics(diagnostics);
         reviewable = reviewable && diagnostics.stream().noneMatch(VisualDiagnostic::error);
@@ -176,6 +179,7 @@ public record VisualRuntimeBindingHandoffReview(
                 currentWindowKeys,
                 newWindowKeys,
                 statusCounts,
+                countFieldChangeCategories(items),
                 items,
                 List.of()
         );
@@ -218,6 +222,7 @@ public record VisualRuntimeBindingHandoffReview(
                 List.of(),
                 List.of(),
                 Map.of(),
+                Map.of(),
                 List.of(),
                 diagnostics
         );
@@ -257,6 +262,7 @@ public record VisualRuntimeBindingHandoffReview(
      * @param level UI/control-plane severity
      * @param message human-readable row summary
      * @param changedFields fields that differ between exported and current rows
+     * @param fieldChanges structured field changes with exported/current values
      * @param exportedRequirement exported requirement row
      * @param currentRequirement current requirement row when still present
      */
@@ -266,6 +272,7 @@ public record VisualRuntimeBindingHandoffReview(
             String level,
             String message,
             List<String> changedFields,
+            List<FieldChange> fieldChanges,
             VisualRuntimeBindingRequirements.RequirementItem exportedRequirement,
             VisualRuntimeBindingRequirements.RequirementItem currentRequirement
     ) {
@@ -279,6 +286,7 @@ public record VisualRuntimeBindingHandoffReview(
             level = normalizeLevel(level);
             message = message == null ? "" : message;
             changedFields = immutableStringList(changedFields);
+            fieldChanges = fieldChanges == null ? List.of() : List.copyOf(fieldChanges);
         }
 
         static ReviewItem from(String requirementKey,
@@ -291,11 +299,15 @@ public record VisualRuntimeBindingHandoffReview(
                         "warning",
                         "Exported requirement key is no longer present in the current runtime-binding read model.",
                         List.of(),
+                        List.of(),
                         exported,
                         null
                 );
             }
-            List<String> changedFields = VisualRuntimeBindingHandoffReview.changedFields(exported, current);
+            List<FieldChange> fieldChanges = VisualRuntimeBindingHandoffReview.fieldChanges(exported, current);
+            List<String> changedFields = fieldChanges.stream()
+                    .map(FieldChange::field)
+                    .toList();
             if (!changedFields.isEmpty()) {
                 return new ReviewItem(
                         requirementKey,
@@ -303,6 +315,7 @@ public record VisualRuntimeBindingHandoffReview(
                         "warning",
                         "Requirement still exists but changed fields: %s.".formatted(String.join(", ", changedFields)),
                         changedFields,
+                        fieldChanges,
                         exported,
                         current
                 );
@@ -313,9 +326,29 @@ public record VisualRuntimeBindingHandoffReview(
                     "success",
                     "Requirement key is still current.",
                     List.of(),
+                    List.of(),
                     exported,
                     current
             );
+        }
+    }
+
+    /**
+     * One changed field in a drifted handoff review row.
+     *
+     * @param field changed field name
+     * @param category routing category for the changed field
+     * @param exportedValue value captured in the submitted handoff bundle
+     * @param currentValue value in the current runtime-binding read model
+     */
+    public record FieldChange(String field, String category, String exportedValue, String currentValue) {
+        public FieldChange {
+            field = field == null ? "" : field.trim();
+            category = category == null || category.isBlank()
+                    ? "metadata"
+                    : category.trim().toLowerCase().replace('_', '-');
+            exportedValue = exportedValue == null ? "" : exportedValue;
+            currentValue = currentValue == null ? "" : currentValue;
         }
     }
 
@@ -331,12 +364,12 @@ public record VisualRuntimeBindingHandoffReview(
         return byKey;
     }
 
-    private static List<String> changedFields(VisualRuntimeBindingRequirements.RequirementItem exported,
-                                              VisualRuntimeBindingRequirements.RequirementItem current) {
+    private static List<FieldChange> fieldChanges(VisualRuntimeBindingRequirements.RequirementItem exported,
+                                                  VisualRuntimeBindingRequirements.RequirementItem current) {
         if (exported == null || current == null) {
             return List.of();
         }
-        List<String> changed = new ArrayList<>();
+        List<FieldChange> changed = new ArrayList<>();
         addChanged(changed, "targetKind", exported.targetKind(), current.targetKind());
         addChanged(changed, "targetId", exported.targetId(), current.targetId());
         addChanged(changed, "targetLabel", exported.targetLabel(), current.targetLabel());
@@ -362,10 +395,22 @@ public record VisualRuntimeBindingHandoffReview(
         return changed;
     }
 
-    private static void addChanged(List<String> changed, String field, String exported, String current) {
+    private static void addChanged(List<FieldChange> changed, String field, String exported, String current) {
         if (!String.valueOf(exported).equals(String.valueOf(current))) {
-            changed.add(field);
+            changed.add(new FieldChange(field, fieldCategory(field), String.valueOf(exported), String.valueOf(current)));
         }
+    }
+
+    private static String fieldCategory(String field) {
+        return switch (field == null ? "" : field) {
+            case "targetKind", "targetId", "nodeId", "operatorRef", "artifactKind" -> "identity";
+            case "tenantId", "namespace", "environment" -> "scope";
+            case "readinessState", "requirementState", "level" -> "readiness";
+            case "sourceKind", "loweringMode", "bindingKind", "bindingTarget",
+                    "handoffLane", "handoffKind", "handoffTarget", "recommendedAction" -> "runtime-binding";
+            case "graphName", "targetLabel", "updatedAt" -> "asset-metadata";
+            default -> "metadata";
+        };
     }
 
     private static Map<String, Integer> countByStatus(List<ReviewItem> items) {
@@ -373,6 +418,21 @@ public record VisualRuntimeBindingHandoffReview(
         for (ReviewItem item : items == null ? List.<ReviewItem>of() : items) {
             if (item != null && !item.status().isBlank()) {
                 counts.merge(item.status(), 1, Integer::sum);
+            }
+        }
+        return counts;
+    }
+
+    private static Map<String, Integer> countFieldChangeCategories(List<ReviewItem> items) {
+        Map<String, Integer> counts = new LinkedHashMap<>();
+        for (ReviewItem item : items == null ? List.<ReviewItem>of() : items) {
+            if (item == null || item.fieldChanges() == null) {
+                continue;
+            }
+            for (FieldChange change : item.fieldChanges()) {
+                if (change != null && !change.category().isBlank()) {
+                    counts.merge(change.category(), 1, Integer::sum);
+                }
             }
         }
         return counts;

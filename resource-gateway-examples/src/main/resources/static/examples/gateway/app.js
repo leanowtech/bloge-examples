@@ -966,6 +966,92 @@ function visualRuntimeBindingHandoffReviewMessage(review) {
   return `Handoff review ${stateLabel}: ${matched} current, ${drifted} drifted, ${missing} missing, ${fresh} new in current window.`;
 }
 
+function visualRuntimeBindingHandoffReviewRows(review) {
+  if (!review) {
+    return [];
+  }
+  const rows = [];
+  const categorySummary = visualRuntimeBindingHandoffReviewCategorySummary(review.fieldChangeCategoryCounts);
+  if (categorySummary) {
+    rows.push({
+      level: 'warning',
+      label: 'Drift categories',
+      value: categorySummary
+    });
+  }
+  const itemRows = (Array.isArray(review.items) ? review.items : [])
+    .filter((item) => item && String(item.status || '').toLowerCase() !== 'current')
+    .slice(0, 5)
+    .map((item) => ({
+      level: ['error', 'warning', 'info', 'success'].includes(String(item.level || '').toLowerCase())
+        ? String(item.level).toLowerCase()
+        : 'warning',
+      label: visualRuntimeBindingHandoffReviewItemLabel(item),
+      value: visualRuntimeBindingHandoffReviewItemValue(item)
+    }));
+  rows.push(...itemRows);
+  const newKeys = Array.isArray(review.newCurrentWindowRequirementKeys)
+    ? review.newCurrentWindowRequirementKeys.filter(Boolean)
+    : [];
+  if (newKeys.length) {
+    rows.push({
+      level: 'info',
+      label: 'New current-window requirements',
+      value: newKeys.slice(0, 3).join(', ') + (newKeys.length > 3 ? ` +${newKeys.length - 3} more` : '')
+    });
+  }
+  return rows;
+}
+
+function visualRuntimeBindingHandoffReviewCategorySummary(counts = {}) {
+  return Object.entries(counts || {})
+    .filter(([, count]) => Number(count || 0) > 0)
+    .sort(([left], [right]) => left.localeCompare(right))
+    .map(([category, count]) => `${operatorPaletteFacetLabel(category)} ${Number(count || 0)}`)
+    .join(' · ');
+}
+
+function visualRuntimeBindingHandoffReviewItemLabel(item) {
+  const status = operatorPaletteFacetLabel(item?.status || 'review');
+  const requirementKey = item?.requirementKey || item?.exportedRequirement?.requirementKey || '';
+  const target = item?.currentRequirement?.targetLabel || item?.exportedRequirement?.targetLabel || requirementKey;
+  return [status, target].filter(Boolean).join(' · ');
+}
+
+function visualRuntimeBindingHandoffReviewItemValue(item) {
+  const status = String(item?.status || '').toLowerCase();
+  if (status === 'missing') {
+    return item?.message || 'Exported requirement is no longer present in the current read model.';
+  }
+  const changes = Array.isArray(item?.fieldChanges) ? item.fieldChanges : [];
+  if (changes.length) {
+    return changes.slice(0, 3).map(visualRuntimeBindingFieldChangeText).join(' · ')
+      + (changes.length > 3 ? ` · +${changes.length - 3} more field changes` : '');
+  }
+  const fields = Array.isArray(item?.changedFields) ? item.changedFields.filter(Boolean) : [];
+  if (fields.length) {
+    return `Changed fields: ${fields.slice(0, 5).join(', ')}${fields.length > 5 ? ', ...' : ''}.`;
+  }
+  return item?.message || 'Review item requires attention.';
+}
+
+function visualRuntimeBindingFieldChangeText(change) {
+  const field = change?.field ? visualRuntimeBindingFieldLabel(change.field) : 'Field';
+  const category = change?.category ? operatorPaletteFacetLabel(change.category) : '';
+  const exportedValue = change?.exportedValue == null || change.exportedValue === '' ? '(empty)' : String(change.exportedValue);
+  const currentValue = change?.currentValue == null || change.currentValue === '' ? '(empty)' : String(change.currentValue);
+  const prefix = category ? `${category} ${field}` : field;
+  return `${prefix}: ${exportedValue} -> ${currentValue}`;
+}
+
+function visualRuntimeBindingFieldLabel(value) {
+  return String(value || '')
+    .trim()
+    .replace(/([a-z0-9])([A-Z])/g, '$1 $2')
+    .replaceAll('-', ' ')
+    .replace(/\b\w/g, (letter) => letter.toUpperCase());
+}
+
 function visualDraftsUrl(builder = state.builder) {
   return scopedVisualAuthoringUrl('/api/visual/drafts', builder);
 }
@@ -7359,6 +7445,7 @@ function renderVisualAssetOverview() {
   const activeAction = visualAssetActionContext(state.activeVisualAssetAction);
   const activeBinding = visualRuntimeBindingRequirementContext(state.activeVisualRuntimeBindingRequirement);
   const handoffBundleMessage = state.visualRuntimeBindingHandoffBundleMessage || null;
+  const handoffReviewRows = visualRuntimeBindingHandoffReviewRows(state.visualRuntimeBindingHandoffReview);
   const scopeLabel = visualAssetOverviewScopeLabel(overview);
   const actionQueueVisible = visualAssetOverviewShouldShowActionQueue(actionQueue);
   const bindingRequirementsVisible = visualRuntimeBindingRequirementsShouldShow(bindingIndex)
@@ -7400,6 +7487,18 @@ function renderVisualAssetOverview() {
     ${handoffBundleMessage?.text ? `<div class="library-impact-risk ${escapeHtml(handoffBundleMessage.level || 'info')}">
       <strong>${escapeHtml('Runtime binding handoff')}</strong>
       <span>${escapeHtml(handoffBundleMessage.text)}</span>
+    </div>` : ''}
+    ${handoffReviewRows.length ? `<div class="library-impact-risks">
+      <div class="library-impact-head">
+        <strong>Handoff Review Drift Details</strong>
+        <span>${escapeHtml(`${handoffReviewRows.length} server-derived row${handoffReviewRows.length === 1 ? '' : 's'}`)}</span>
+      </div>
+      ${handoffReviewRows.map((row) => `
+        <div class="library-impact-risk ${escapeHtml(row.level)}">
+          <strong>${escapeHtml(row.label)}</strong>
+          <span>${escapeHtml(row.value)}</span>
+        </div>
+      `).join('')}
     </div>` : ''}
     <div class="library-impact-stats">${stats}</div>
     ${rows.length ? `<div class="library-impact-risks">${rows.map((row) => `
