@@ -149,6 +149,23 @@ public class DefaultVisualOperatorCatalog implements VisualOperatorCatalog {
     }
 
     @Override
+    public Map<String, String> operatorLibraryIdsByOperatorRef(boolean includeDeprecated) {
+        Map<String, String> owners = new LinkedHashMap<>();
+        for (OperatorLibrary library : libraryRegistry.all()) {
+            if (!library.visibleInCatalog(includeDeprecated)) {
+                continue;
+            }
+            for (OperatorDefinition operator : library.operators()) {
+                if (operator == null || !hasConcretePorts(operator) || operator.operatorRef().isBlank()) {
+                    continue;
+                }
+                owners.putIfAbsent(operator.operatorRef(), library.libraryId());
+            }
+        }
+        return Map.copyOf(owners);
+    }
+
+    @Override
     public Optional<OperatorDefinition> find(String operatorRef) {
         if (operatorRef == null || operatorRef.isBlank()) {
             return Optional.empty();

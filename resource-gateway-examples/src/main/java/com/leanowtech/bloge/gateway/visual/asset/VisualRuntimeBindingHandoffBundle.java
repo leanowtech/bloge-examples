@@ -31,6 +31,7 @@ import java.util.Map;
  * @param requirementKeys stable requirement keys included in this handoff window
  * @param targetKindCounts filtered requirement counts by target asset kind
  * @param operatorRefCounts filtered requirement counts by operator reference
+ * @param operatorLibraryIdCounts filtered requirement counts by owner operator library id
  * @param bindingKindCounts filtered requirement counts by binding kind
  * @param handoffLaneCounts filtered requirement counts by runtime-plane responsibility lane
  * @param handoffKindCounts filtered requirement counts by runtime-plane work kind
@@ -58,6 +59,7 @@ public record VisualRuntimeBindingHandoffBundle(
         List<String> requirementKeys,
         Map<String, Integer> targetKindCounts,
         Map<String, Integer> operatorRefCounts,
+        Map<String, Integer> operatorLibraryIdCounts,
         Map<String, Integer> bindingKindCounts,
         Map<String, Integer> handoffLaneCounts,
         Map<String, Integer> handoffKindCounts,
@@ -88,6 +90,7 @@ public record VisualRuntimeBindingHandoffBundle(
         requirementKeys = requirementKeys == null ? List.of() : List.copyOf(requirementKeys);
         targetKindCounts = immutableCounts(targetKindCounts);
         operatorRefCounts = immutableCounts(operatorRefCounts);
+        operatorLibraryIdCounts = immutableCounts(operatorLibraryIdCounts);
         bindingKindCounts = immutableCounts(bindingKindCounts);
         handoffLaneCounts = immutableCounts(handoffLaneCounts);
         handoffKindCounts = immutableCounts(handoffKindCounts);
@@ -112,6 +115,7 @@ public record VisualRuntimeBindingHandoffBundle(
                         requirementKeys,
                         targetKindCounts,
                         operatorRefCounts,
+                        operatorLibraryIdCounts,
                         bindingKindCounts,
                         handoffLaneCounts,
                         handoffKindCounts,
@@ -142,6 +146,7 @@ public record VisualRuntimeBindingHandoffBundle(
                                              List<String> requirementKeys,
                                              Map<String, Integer> targetKindCounts,
                                              Map<String, Integer> operatorRefCounts,
+                                             Map<String, Integer> operatorLibraryIdCounts,
                                              Map<String, Integer> bindingKindCounts,
                                              Map<String, Integer> handoffLaneCounts,
                                              Map<String, Integer> handoffKindCounts,
@@ -153,7 +158,76 @@ public record VisualRuntimeBindingHandoffBundle(
                                              List<VisualRuntimeBindingRequirements.RequirementItem> requirements) {
         this(schemaVersion, exportedAt, sourceIndexSchemaVersion, sourceIndexGeneratedAt, "",
                 scope, filter, total, unfilteredTotal, displayedCount, itemLimit, offset, hasMore,
-                requirementKeys, targetKindCounts, operatorRefCounts, bindingKindCounts, handoffLaneCounts,
+                requirementKeys, targetKindCounts, operatorRefCounts, operatorLibraryIdCounts, bindingKindCounts,
+                handoffLaneCounts, handoffKindCounts, handoffTargetCounts, sourceKindCounts, loweringModeCounts,
+                readinessStateCounts, artifactKindCounts, requirements);
+    }
+
+    /**
+     * Backward-compatible constructor for callers that do not supply library owner counts.
+     */
+    public VisualRuntimeBindingHandoffBundle(String schemaVersion,
+                                             Instant exportedAt,
+                                             String sourceIndexSchemaVersion,
+                                             Instant sourceIndexGeneratedAt,
+                                             VisualAssetOverview.AuthoringScope scope,
+                                             VisualRuntimeBindingRequirements.RequirementFilter filter,
+                                             int total,
+                                             int unfilteredTotal,
+                                             int displayedCount,
+                                             int itemLimit,
+                                             int offset,
+                                             boolean hasMore,
+                                             List<String> requirementKeys,
+                                             Map<String, Integer> targetKindCounts,
+                                             Map<String, Integer> operatorRefCounts,
+                                             Map<String, Integer> bindingKindCounts,
+                                             Map<String, Integer> handoffLaneCounts,
+                                             Map<String, Integer> handoffKindCounts,
+                                             Map<String, Integer> handoffTargetCounts,
+                                             Map<String, Integer> sourceKindCounts,
+                                             Map<String, Integer> loweringModeCounts,
+                                             Map<String, Integer> readinessStateCounts,
+                                             Map<String, Integer> artifactKindCounts,
+                                             List<VisualRuntimeBindingRequirements.RequirementItem> requirements) {
+        this(schemaVersion, exportedAt, sourceIndexSchemaVersion, sourceIndexGeneratedAt, "",
+                scope, filter, total, unfilteredTotal, displayedCount, itemLimit, offset, hasMore,
+                requirementKeys, targetKindCounts, operatorRefCounts, Map.of(), bindingKindCounts, handoffLaneCounts,
+                handoffKindCounts, handoffTargetCounts, sourceKindCounts, loweringModeCounts, readinessStateCounts,
+                artifactKindCounts, requirements);
+    }
+
+    /**
+     * Backward-compatible constructor for submitted bundles that do not carry library owner counts.
+     */
+    public VisualRuntimeBindingHandoffBundle(String schemaVersion,
+                                             Instant exportedAt,
+                                             String sourceIndexSchemaVersion,
+                                             Instant sourceIndexGeneratedAt,
+                                             String bundleFingerprint,
+                                             VisualAssetOverview.AuthoringScope scope,
+                                             VisualRuntimeBindingRequirements.RequirementFilter filter,
+                                             int total,
+                                             int unfilteredTotal,
+                                             int displayedCount,
+                                             int itemLimit,
+                                             int offset,
+                                             boolean hasMore,
+                                             List<String> requirementKeys,
+                                             Map<String, Integer> targetKindCounts,
+                                             Map<String, Integer> operatorRefCounts,
+                                             Map<String, Integer> bindingKindCounts,
+                                             Map<String, Integer> handoffLaneCounts,
+                                             Map<String, Integer> handoffKindCounts,
+                                             Map<String, Integer> handoffTargetCounts,
+                                             Map<String, Integer> sourceKindCounts,
+                                             Map<String, Integer> loweringModeCounts,
+                                             Map<String, Integer> readinessStateCounts,
+                                             Map<String, Integer> artifactKindCounts,
+                                             List<VisualRuntimeBindingRequirements.RequirementItem> requirements) {
+        this(schemaVersion, exportedAt, sourceIndexSchemaVersion, sourceIndexGeneratedAt, bundleFingerprint,
+                scope, filter, total, unfilteredTotal, displayedCount, itemLimit, offset, hasMore,
+                requirementKeys, targetKindCounts, operatorRefCounts, Map.of(), bindingKindCounts, handoffLaneCounts,
                 handoffKindCounts, handoffTargetCounts, sourceKindCounts, loweringModeCounts, readinessStateCounts,
                 artifactKindCounts, requirements);
     }
@@ -186,7 +260,7 @@ public record VisualRuntimeBindingHandoffBundle(
                                              List<VisualRuntimeBindingRequirements.RequirementItem> requirements) {
         this(schemaVersion, exportedAt, sourceIndexSchemaVersion, sourceIndexGeneratedAt, "", scope, filter, total,
                 unfilteredTotal, displayedCount, itemLimit, offset, hasMore, requirementKeys, targetKindCounts,
-                Map.of(), bindingKindCounts, handoffLaneCounts, handoffKindCounts, handoffTargetCounts,
+                Map.of(), Map.of(), bindingKindCounts, handoffLaneCounts, handoffKindCounts, handoffTargetCounts,
                 sourceKindCounts, loweringModeCounts, readinessStateCounts, artifactKindCounts, requirements);
     }
 
@@ -219,7 +293,7 @@ public record VisualRuntimeBindingHandoffBundle(
                                              List<VisualRuntimeBindingRequirements.RequirementItem> requirements) {
         this(schemaVersion, exportedAt, sourceIndexSchemaVersion, sourceIndexGeneratedAt, bundleFingerprint, scope,
                 filter, total, unfilteredTotal, displayedCount, itemLimit, offset, hasMore, requirementKeys,
-                targetKindCounts, Map.of(), bindingKindCounts, handoffLaneCounts, handoffKindCounts,
+                targetKindCounts, Map.of(), Map.of(), bindingKindCounts, handoffLaneCounts, handoffKindCounts,
                 handoffTargetCounts, sourceKindCounts, loweringModeCounts, readinessStateCounts, artifactKindCounts,
                 requirements);
     }
@@ -255,6 +329,7 @@ public record VisualRuntimeBindingHandoffBundle(
                         .toList(),
                 safeIndex.targetKindCounts(),
                 safeIndex.operatorRefCounts(),
+                safeIndex.operatorLibraryIdCounts(),
                 safeIndex.bindingKindCounts(),
                 safeIndex.handoffLaneCounts(),
                 safeIndex.handoffKindCounts(),
@@ -287,6 +362,7 @@ public record VisualRuntimeBindingHandoffBundle(
                 requirementKeys,
                 targetKindCounts,
                 operatorRefCounts,
+                operatorLibraryIdCounts,
                 bindingKindCounts,
                 handoffLaneCounts,
                 handoffKindCounts,
@@ -327,6 +403,7 @@ public record VisualRuntimeBindingHandoffBundle(
                 requirementKeys,
                 targetKindCounts,
                 operatorRefCounts,
+                operatorLibraryIdCounts,
                 bindingKindCounts,
                 handoffLaneCounts,
                 handoffKindCounts,
@@ -352,6 +429,7 @@ public record VisualRuntimeBindingHandoffBundle(
                                               List<String> requirementKeys,
                                               Map<String, Integer> targetKindCounts,
                                               Map<String, Integer> operatorRefCounts,
+                                              Map<String, Integer> operatorLibraryIdCounts,
                                               Map<String, Integer> bindingKindCounts,
                                               Map<String, Integer> handoffLaneCounts,
                                               Map<String, Integer> handoffKindCounts,
@@ -375,6 +453,7 @@ public record VisualRuntimeBindingHandoffBundle(
                 requirementKeys,
                 targetKindCounts,
                 operatorRefCounts,
+                operatorLibraryIdCounts,
                 bindingKindCounts,
                 handoffLaneCounts,
                 handoffKindCounts,
@@ -400,6 +479,7 @@ public record VisualRuntimeBindingHandoffBundle(
                                               List<String> requirementKeys,
                                               Map<String, Integer> targetKindCounts,
                                               Map<String, Integer> operatorRefCounts,
+                                              Map<String, Integer> operatorLibraryIdCounts,
                                               Map<String, Integer> bindingKindCounts,
                                               Map<String, Integer> handoffLaneCounts,
                                               Map<String, Integer> handoffKindCounts,
@@ -409,12 +489,12 @@ public record VisualRuntimeBindingHandoffBundle(
                                               Map<String, Integer> readinessStateCounts,
                                               Map<String, Integer> artifactKindCounts,
                                               List<VisualRuntimeBindingRequirements.RequirementItem> requirements,
-                                              boolean includeOperatorRefCounts) {
+                                              boolean includeOperatorOwnership) {
         Map<String, Object> material = new LinkedHashMap<>();
         material.put("schemaVersion", schemaVersion);
         material.put("sourceIndexSchemaVersion", sourceIndexSchemaVersion);
         material.put("scope", scope);
-        material.put("filter", includeOperatorRefCounts ? filter : legacyFilter(filter));
+        material.put("filter", includeOperatorOwnership ? filter : legacyFilter(filter));
         material.put("total", total);
         material.put("unfilteredTotal", unfilteredTotal);
         material.put("displayedCount", displayedCount);
@@ -423,8 +503,9 @@ public record VisualRuntimeBindingHandoffBundle(
         material.put("hasMore", hasMore);
         material.put("requirementKeys", requirementKeys);
         material.put("targetKindCounts", targetKindCounts);
-        if (includeOperatorRefCounts) {
+        if (includeOperatorOwnership) {
             material.put("operatorRefCounts", operatorRefCounts);
+            material.put("operatorLibraryIdCounts", operatorLibraryIdCounts);
         }
         material.put("bindingKindCounts", bindingKindCounts);
         material.put("handoffLaneCounts", handoffLaneCounts);
@@ -434,8 +515,51 @@ public record VisualRuntimeBindingHandoffBundle(
         material.put("loweringModeCounts", loweringModeCounts);
         material.put("readinessStateCounts", readinessStateCounts);
         material.put("artifactKindCounts", artifactKindCounts);
-        material.put("requirements", requirements);
+        material.put("requirements", includeOperatorOwnership ? requirements : legacyRequirements(requirements));
         return VisualBundleFingerprint.fromMaterial(material);
+    }
+
+    private static List<Map<String, Object>> legacyRequirements(
+            List<VisualRuntimeBindingRequirements.RequirementItem> requirements) {
+        return (requirements == null ? List.<VisualRuntimeBindingRequirements.RequirementItem>of() : requirements)
+                .stream()
+                .map(VisualRuntimeBindingHandoffBundle::legacyRequirement)
+                .toList();
+    }
+
+    private static Map<String, Object> legacyRequirement(VisualRuntimeBindingRequirements.RequirementItem item) {
+        VisualRuntimeBindingRequirements.RequirementItem safeItem = item == null
+                ? new VisualRuntimeBindingRequirements.RequirementItem(
+                        "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "",
+                        "", "", "", "", "")
+                : item;
+        Map<String, Object> legacy = new LinkedHashMap<>();
+        legacy.put("requirementKey", safeItem.requirementKey());
+        legacy.put("targetKind", safeItem.targetKind());
+        legacy.put("targetId", safeItem.targetId());
+        legacy.put("targetLabel", safeItem.targetLabel());
+        legacy.put("graphName", safeItem.graphName());
+        legacy.put("tenantId", safeItem.tenantId());
+        legacy.put("namespace", safeItem.namespace());
+        legacy.put("environment", safeItem.environment());
+        legacy.put("artifactKind", safeItem.artifactKind());
+        legacy.put("updatedAt", safeItem.updatedAt());
+        legacy.put("nodeId", safeItem.nodeId());
+        legacy.put("operatorRef", safeItem.operatorRef());
+        legacy.put("readinessState", safeItem.readinessState());
+        legacy.put("requirementState", safeItem.requirementState());
+        legacy.put("level", safeItem.level());
+        legacy.put("sourceKind", safeItem.sourceKind());
+        legacy.put("loweringMode", safeItem.loweringMode());
+        legacy.put("bindingKind", safeItem.bindingKind());
+        legacy.put("bindingTarget", safeItem.bindingTarget());
+        legacy.put("handoffLane", safeItem.handoffLane());
+        legacy.put("handoffKind", safeItem.handoffKind());
+        legacy.put("handoffTarget", safeItem.handoffTarget());
+        legacy.put("title", safeItem.title());
+        legacy.put("summary", safeItem.summary());
+        legacy.put("recommendedAction", safeItem.recommendedAction());
+        return legacy;
     }
 
     private static Object legacyFilter(VisualRuntimeBindingRequirements.RequirementFilter filter) {

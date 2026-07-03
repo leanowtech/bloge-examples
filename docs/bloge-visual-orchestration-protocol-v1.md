@@ -1834,20 +1834,22 @@ message handler、webhook、streaming 或 durable capability 暂时不能运行�
 `/api/visual/assets/overview` 会继续消费这些 requirement，把 draft 缺口投影为
 `PLAN_DRAFT_RUNTIME_BINDING`，把 frozen DESIGN publication 缺口投影为
 `PLAN_PUBLICATION_RUNTIME_BINDING`，并把 `nodeId/bindingKind/bindingTarget`
-固化进稳定 `actionKey`，同时透传 `handoffLane/handoffKind/handoffTarget`
-作为 runtime-plane 路由提示；这些字段不是工单状态，不引入第二套 workflow 真相源。
+固化进稳定 `actionKey`，同时透传 `operatorRef` 与
+`handoffLane/handoffKind/handoffTarget` 作为 runtime-plane 路由提示；overview
+action queue 支持 `actionOperatorRef` 过滤并返回 `operatorRefCounts`，这些字段不是工单状态，
+不引入第二套 workflow 真相源。
 如果外部 runtime-plane 团队需要事实清单而不是 overview action recommendation，
 `GET /api/visual/assets/runtime-binding-requirements` 会返回
 `bloge.visualRuntimeBindingRequirements.v1`，按 active draft 和 immutable publication
 展开同一批 requirement，并支持 `tenantId/namespace/environment`、`limit/offset`、
-`targetKind`、`operatorRef`、`bindingKind`、`handoffLane`、`handoffKind`、`handoffTarget`、
+`targetKind`、`operatorRef`、`operatorLibraryId`、`bindingKind`、`handoffLane`、`handoffKind`、`handoffTarget`、
 `sourceKind`、`loweringMode`、`readinessState` 和 `requirementKey`
 查询。`requirementKey` 用于让 draft/publication import result 或 workspace item
 直接回查同一条 runtime binding gap，而不是分页扫描索引。该索引不持久化待办状态，`readiness.runtimeBindingRequirements[]`
 仍是唯一事实来源。
 `GET /api/visual/assets/runtime-binding-requirements/handoff-bundle` 会把当前查询窗口导出为
 `bloge.visualRuntimeBindingHandoff.v1`，携带 source index lineage、scope/filter、
-stable requirement keys、`operatorRefCounts`、路由计数、requirement rows 和 `bundleFingerprint`，用于把 schema-only/design-only
+stable requirement keys、`operatorRefCounts`、`operatorLibraryIdCounts`、路由计数、requirement rows 和 `bundleFingerprint`，用于把 schema-only/design-only
 资产移交给 runtime-plane 团队。`POST /api/visual/assets/runtime-binding-requirements/handoff-review`
 接收该 bundle 并返回 `bloge.visualRuntimeBindingHandoffReview.v1`，按 stable key
 对比当前 read model，标记 current、drifted、missing 和 current window 新增项。

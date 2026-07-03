@@ -16,6 +16,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.function.Function;
 
 /**
  * Environment-level visual authoring asset overview.
@@ -157,6 +158,7 @@ public record VisualAssetOverview(
      * @param actionSeverity optional severity filter
      * @param actionType optional action type filter
      * @param actionTargetKind optional target kind filter
+     * @param actionOperatorRef optional operator reference filter
      * @return visual asset overview
      */
     public static VisualAssetOverview from(List<GraphDraftSummary> drafts,
@@ -170,7 +172,8 @@ public record VisualAssetOverview(
                                            int actionOffset,
                                            String actionSeverity,
                                            String actionType,
-                                           String actionTargetKind) {
+                                           String actionTargetKind,
+                                           String actionOperatorRef) {
         return new VisualAssetOverview(
                 SCHEMA_VERSION,
                 Instant.now(),
@@ -186,8 +189,38 @@ public record VisualAssetOverview(
                         actionOffset,
                         actionSeverity,
                         actionType,
-                        actionTargetKind
+                        actionTargetKind,
+                        actionOperatorRef
                 )
+        );
+    }
+
+    public static VisualAssetOverview from(List<GraphDraftSummary> drafts,
+                                           List<VisualGraphPublicationSummary> publications,
+                                           List<OperatorDefinition> operators,
+                                           List<VisualDiagnostic> catalogDiagnostics,
+                                           String tenantId,
+                                           String namespace,
+                                           String environment,
+                                           int actionItemLimit,
+                                           int actionOffset,
+                                           String actionSeverity,
+                                           String actionType,
+                                           String actionTargetKind) {
+        return from(
+                drafts,
+                publications,
+                operators,
+                catalogDiagnostics,
+                tenantId,
+                namespace,
+                environment,
+                actionItemLimit,
+                actionOffset,
+                actionSeverity,
+                actionType,
+                actionTargetKind,
+                ""
         );
     }
 
@@ -511,6 +544,7 @@ public record VisualAssetOverview(
      * @param warningCount warning-severity action count
      * @param infoCount info-severity action count
      * @param actionTypeCounts action counts by machine-readable action type
+     * @param operatorRefCounts action counts by related operator reference
      * @param items first high-priority action items
      */
     public record ActionQueue(
@@ -525,6 +559,7 @@ public record VisualAssetOverview(
             int warningCount,
             int infoCount,
             Map<String, Integer> actionTypeCounts,
+            Map<String, Integer> operatorRefCounts,
             List<ActionItem> items
     ) {
         public ActionQueue(int total,
@@ -547,6 +582,7 @@ public record VisualAssetOverview(
                     warningCount,
                     infoCount,
                     actionTypeCounts,
+                    Map.of(),
                     items
             );
         }
@@ -558,6 +594,7 @@ public record VisualAssetOverview(
             itemLimit = normalizeActionItemLimit(itemLimit);
             filter = filter == null ? ActionFilter.all() : filter;
             actionTypeCounts = immutableCounts(actionTypeCounts);
+            operatorRefCounts = immutableCounts(operatorRefCounts);
             items = items == null ? List.of() : List.copyOf(items);
             displayedCount = items.size();
             hasMore = offset + displayedCount < total;
@@ -584,6 +621,19 @@ public record VisualAssetOverview(
                                 String actionSeverity,
                                 String actionType,
                                 String actionTargetKind) {
+            return from(drafts, publications, operators, actionItemLimit, actionOffset, actionSeverity,
+                    actionType, actionTargetKind, "");
+        }
+
+        static ActionQueue from(List<GraphDraftSummary> drafts,
+                                List<VisualGraphPublicationSummary> publications,
+                                List<OperatorDefinition> operators,
+                                int actionItemLimit,
+                                int actionOffset,
+                                String actionSeverity,
+                                String actionType,
+                                String actionTargetKind,
+                                String actionOperatorRef) {
             List<ActionItem> generated = new ArrayList<>();
             for (GraphDraftSummary draft : drafts == null ? List.<GraphDraftSummary>of() : drafts) {
                 addDraftAction(generated, draft);
@@ -607,11 +657,12 @@ public record VisualAssetOverview(
                 }
                 return left.targetId().compareTo(right.targetId());
             });
-            ActionFilter filter = new ActionFilter(actionSeverity, actionType, actionTargetKind);
+            ActionFilter filter = new ActionFilter(actionSeverity, actionType, actionTargetKind, actionOperatorRef);
             List<ActionItem> filtered = generated.stream()
                     .filter(filter::matches)
                     .toList();
             Map<String, Integer> actionTypes = new LinkedHashMap<>();
+            Map<String, Integer> operatorRefs = countBy(filtered, ActionItem::operatorRef);
             int errorCount = 0;
             int warningCount = 0;
             int infoCount = 0;
@@ -637,6 +688,7 @@ public record VisualAssetOverview(
                     warningCount,
                     infoCount,
                     actionTypes,
+                    operatorRefs,
                     filtered.stream().skip(normalizedOffset).limit(normalizedLimit).toList()
             );
         }
@@ -652,22 +704,30 @@ public record VisualAssetOverview(
      * @param severity severity filter, empty when not filtered
      * @param actionType action type filter, empty when not filtered
      * @param targetKind target kind filter, empty when not filtered
+     * @param operatorRef operator reference filter, empty when not filtered
      * @param filtered true when at least one action filter is active
      */
     public record ActionFilter(
             String severity,
             String actionType,
             String targetKind,
+            String operatorRef,
             boolean filtered
     ) {
         public ActionFilter(String severity, String actionType, String targetKind) {
+            this(severity, actionType, targetKind, "");
+        }
+
+        public ActionFilter(String severity, String actionType, String targetKind, String operatorRef) {
             this(
                     normalizeSeverityFilter(severity),
                     normalizeActionTypeFilter(actionType),
                     normalizeTargetKindFilter(targetKind),
+                    normalizeTextValue(operatorRef),
                     !normalizeSeverityFilter(severity).isBlank()
                             || !normalizeActionTypeFilter(actionType).isBlank()
                             || !normalizeTargetKindFilter(targetKind).isBlank()
+                            || !normalizeTextValue(operatorRef).isBlank()
             );
         }
 
@@ -675,18 +735,21 @@ public record VisualAssetOverview(
             severity = normalizeSeverityFilter(severity);
             actionType = normalizeActionTypeFilter(actionType);
             targetKind = normalizeTargetKindFilter(targetKind);
-            filtered = !severity.isBlank() || !actionType.isBlank() || !targetKind.isBlank();
+            operatorRef = normalizeTextValue(operatorRef);
+            filtered = !severity.isBlank() || !actionType.isBlank() || !targetKind.isBlank()
+                    || !operatorRef.isBlank();
         }
 
         static ActionFilter all() {
-            return new ActionFilter("", "", "");
+            return new ActionFilter("", "", "", "");
         }
 
         boolean matches(ActionItem item) {
             return item != null
                     && (severity.isBlank() || severity.equals(item.severity()))
                     && (actionType.isBlank() || actionType.equals(item.actionType()))
-                    && (targetKind.isBlank() || targetKind.equals(item.targetKind()));
+                    && (targetKind.isBlank() || targetKind.equals(item.targetKind()))
+                    && (operatorRef.isBlank() || operatorRef.equals(item.operatorRef()));
         }
     }
 
@@ -707,6 +770,7 @@ public record VisualAssetOverview(
      * @param targetKind target asset kind
      * @param targetId target asset id
      * @param targetLabel human-readable target label
+     * @param operatorRef related operator reference when the action is operator-scoped
      * @param readinessState graph/operator readiness state when known
      * @param artifactKind publication artifact kind when known
      * @param handoffLane runtime-plane responsibility lane when this is a binding action
@@ -722,6 +786,7 @@ public record VisualAssetOverview(
             String targetKind,
             String targetId,
             String targetLabel,
+            String operatorRef,
             String readinessState,
             String artifactKind,
             String handoffLane,
@@ -746,6 +811,7 @@ public record VisualAssetOverview(
                     targetKind,
                     targetId,
                     targetLabel,
+                    "",
                     readinessState,
                     artifactKind,
                     "",
@@ -773,6 +839,7 @@ public record VisualAssetOverview(
                     targetKind,
                     targetId,
                     targetLabel,
+                    "",
                     readinessState,
                     artifactKind,
                     "",
@@ -791,6 +858,7 @@ public record VisualAssetOverview(
             targetKind = targetKind == null ? "" : targetKind.trim().toLowerCase(Locale.ROOT);
             targetId = targetId == null ? "" : targetId;
             targetLabel = targetLabel == null ? "" : targetLabel;
+            operatorRef = normalizeTextValue(operatorRef);
             readinessState = normalizeFacetValue(readinessState);
             artifactKind = artifactKind == null || artifactKind.isBlank() ? "" : artifactKind.trim().toUpperCase(Locale.ROOT);
             handoffLane = normalizeFacetValue(handoffLane);
@@ -806,6 +874,19 @@ public record VisualAssetOverview(
 
     private static Map<String, Integer> immutableCounts(Map<String, Integer> counts) {
         return counts == null ? Map.of() : Collections.unmodifiableMap(new LinkedHashMap<>(counts));
+    }
+
+    private static Map<String, Integer> countBy(List<ActionItem> items,
+                                                Function<ActionItem, String> classifier) {
+        Map<String, Integer> counts = new LinkedHashMap<>();
+        for (ActionItem item : items == null ? List.<ActionItem>of() : items) {
+            String key = classifier.apply(item);
+            if (key == null || key.isBlank()) {
+                continue;
+            }
+            counts.merge(key, 1, Integer::sum);
+        }
+        return counts;
     }
 
     private static void addDraftAction(List<ActionItem> items, GraphDraftSummary draft) {
@@ -1023,6 +1104,7 @@ public record VisualAssetOverview(
                     "draft",
                     draft.draftId(),
                     runtimeBindingTargetLabel(label, requirement),
+                    requirement.operatorRef(),
                     readinessState,
                     "",
                     requirement.handoffLane(),
@@ -1056,6 +1138,7 @@ public record VisualAssetOverview(
                     "publication",
                     publication.publicationId(),
                     runtimeBindingTargetLabel(label, requirement),
+                    requirement.operatorRef(),
                     readinessState,
                     artifactKind,
                     requirement.handoffLane(),
@@ -1082,45 +1165,65 @@ public record VisualAssetOverview(
                 : operator.runtimeReadiness().summary();
         switch (state) {
             case "catalog-repair-required" -> items.add(new ActionItem(
+                    "",
                     "error",
                     "REPAIR_OPERATOR_CATALOG",
                     "operator",
                     operator.operatorRef(),
                     label,
+                    operator.operatorRef(),
                     state,
+                    "",
+                    "",
+                    "",
                     "",
                     summary,
                     "Repair operator definition, policy, or lowering contract before authoring at scale."
             ));
             case "runtime-blocked" -> items.add(new ActionItem(
+                    "",
                     "warning",
                     "BIND_OPERATOR_RUNTIME",
                     "operator",
                     operator.operatorRef(),
                     label,
+                    operator.operatorRef(),
                     state,
+                    "",
+                    "",
+                    "",
                     "",
                     summary,
                     "Provide the required runtime binding or keep this operator in DESIGN-only flows."
             ));
             case "governance-review" -> items.add(new ActionItem(
+                    "",
                     "warning",
                     "REVIEW_OPERATOR_GOVERNANCE",
                     "operator",
                     operator.operatorRef(),
                     label,
+                    operator.operatorRef(),
                     state,
+                    "",
+                    "",
+                    "",
                     "",
                     summary,
                     "Review policy, secret, or side-effect governance before production promotion."
             ));
             case "design-only" -> items.add(new ActionItem(
+                    "",
                     "info",
                     "TRACK_SCHEMA_ONLY_OPERATOR",
                     "operator",
                     operator.operatorRef(),
                     label,
+                    operator.operatorRef(),
                     state,
+                    "",
+                    "",
+                    "",
                     "",
                     summary,
                     "Keep as a schema-only operator until an executable runtime binding is available."
@@ -1289,5 +1392,9 @@ public record VisualAssetOverview(
                 .trim()
                 .toLowerCase(Locale.ROOT)
                 .replace('_', '-');
+    }
+
+    private static String normalizeTextValue(String value) {
+        return value == null ? "" : value.trim();
     }
 }

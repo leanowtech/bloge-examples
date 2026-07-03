@@ -66,6 +66,7 @@ public class VisualAssetOverviewController {
      * @param actionSeverity optional action severity filter
      * @param actionType optional action type filter
      * @param actionTargetKind optional action target kind filter
+     * @param actionOperatorRef optional related operator reference filter
      * @return visual asset overview
      */
     @GetMapping("/overview")
@@ -76,7 +77,8 @@ public class VisualAssetOverviewController {
                                         @RequestParam(defaultValue = "0") int actionOffset,
                                         @RequestParam(defaultValue = "") String actionSeverity,
                                         @RequestParam(defaultValue = "") String actionType,
-                                        @RequestParam(defaultValue = "") String actionTargetKind) {
+                                        @RequestParam(defaultValue = "") String actionTargetKind,
+                                        @RequestParam(defaultValue = "") String actionOperatorRef) {
         List<GraphDraftSummary> draftSummaries = draftSummaries(tenantId, namespace, environment);
         List<VisualGraphPublicationSummary> publicationSummaries =
                 publicationSummaries(tenantId, namespace, environment);
@@ -107,7 +109,8 @@ public class VisualAssetOverviewController {
                 actionOffset,
                 actionSeverity,
                 actionType,
-                actionTargetKind
+                actionTargetKind,
+                actionOperatorRef
         );
     }
 
@@ -121,6 +124,7 @@ public class VisualAssetOverviewController {
      * @param offset zero-based requirement item offset after filtering
      * @param targetKind optional target kind filter
      * @param operatorRef optional operator reference filter
+     * @param operatorLibraryId optional owner operator library id filter
      * @param bindingKind optional binding kind filter
      * @param handoffLane optional runtime-plane handoff lane filter
      * @param handoffKind optional runtime-plane handoff work kind filter
@@ -140,6 +144,7 @@ public class VisualAssetOverviewController {
             @RequestParam(defaultValue = "0") int offset,
             @RequestParam(defaultValue = "") String targetKind,
             @RequestParam(defaultValue = "") String operatorRef,
+            @RequestParam(defaultValue = "") String operatorLibraryId,
             @RequestParam(defaultValue = "") String bindingKind,
             @RequestParam(defaultValue = "") String handoffLane,
             @RequestParam(defaultValue = "") String handoffKind,
@@ -151,6 +156,7 @@ public class VisualAssetOverviewController {
         return VisualRuntimeBindingRequirements.from(
                 draftSummaries(tenantId, namespace, environment),
                 publicationSummaries(tenantId, namespace, environment),
+                catalog.operatorLibraryIdsByOperatorRef(true),
                 tenantId,
                 namespace,
                 environment,
@@ -158,6 +164,7 @@ public class VisualAssetOverviewController {
                 offset,
                 targetKind,
                 operatorRef,
+                operatorLibraryId,
                 bindingKind,
                 handoffLane,
                 handoffKind,
@@ -183,6 +190,7 @@ public class VisualAssetOverviewController {
      * @param offset zero-based requirement item offset after filtering
      * @param targetKind optional target kind filter
      * @param operatorRef optional operator reference filter
+     * @param operatorLibraryId optional owner operator library id filter
      * @param bindingKind optional binding kind filter
      * @param handoffLane optional runtime-plane handoff lane filter
      * @param handoffKind optional runtime-plane handoff work kind filter
@@ -202,6 +210,7 @@ public class VisualAssetOverviewController {
             @RequestParam(defaultValue = "0") int offset,
             @RequestParam(defaultValue = "") String targetKind,
             @RequestParam(defaultValue = "") String operatorRef,
+            @RequestParam(defaultValue = "") String operatorLibraryId,
             @RequestParam(defaultValue = "") String bindingKind,
             @RequestParam(defaultValue = "") String handoffLane,
             @RequestParam(defaultValue = "") String handoffKind,
@@ -218,6 +227,7 @@ public class VisualAssetOverviewController {
                 offset,
                 targetKind,
                 operatorRef,
+                operatorLibraryId,
                 bindingKind,
                 handoffLane,
                 handoffKind,
@@ -296,6 +306,7 @@ public class VisualAssetOverviewController {
                 bundle.offset(),
                 filter.targetKind(),
                 filter.operatorRef(),
+                filter.operatorLibraryId(),
                 filter.bindingKind(),
                 filter.handoffLane(),
                 filter.handoffKind(),
@@ -314,6 +325,7 @@ public class VisualAssetOverviewController {
                     scope.environment(),
                     1,
                     0,
+                    "",
                     "",
                     "",
                     "",
@@ -344,11 +356,23 @@ public class VisualAssetOverviewController {
         return overview(tenantId, namespace, environment, actionLimit, 0, "", "", "");
     }
 
+    VisualAssetOverview overview(String tenantId,
+                                 String namespace,
+                                 String environment,
+                                 int actionLimit,
+                                 int actionOffset,
+                                 String actionSeverity,
+                                 String actionType,
+                                 String actionTargetKind) {
+        return overview(tenantId, namespace, environment, actionLimit, actionOffset, actionSeverity, actionType,
+                actionTargetKind, "");
+    }
+
     VisualRuntimeBindingRequirements runtimeBindingRequirements(String tenantId,
                                                                 String namespace,
                                                                 String environment) {
         return runtimeBindingRequirements(tenantId, namespace, environment,
-                VisualRuntimeBindingRequirements.DEFAULT_ITEM_LIMIT, 0, "", "", "", "", "", "", "", "", "", "");
+                VisualRuntimeBindingRequirements.DEFAULT_ITEM_LIMIT, 0, "", "", "", "", "", "", "", "", "", "", "");
     }
 
     VisualRuntimeBindingRequirements runtimeBindingRequirements(String tenantId,
@@ -363,9 +387,9 @@ public class VisualAssetOverviewController {
                                                                 String handoffTarget,
                                                                 String sourceKind,
                                                                 String loweringMode,
-                                                                String readinessState,
-                                                                String requirementKey) {
-        return runtimeBindingRequirements(tenantId, namespace, environment, limit, offset, targetKind, "",
+                                                        String readinessState,
+                                                        String requirementKey) {
+        return runtimeBindingRequirements(tenantId, namespace, environment, limit, offset, targetKind, "", "",
                 bindingKind, handoffLane, handoffKind, handoffTarget, sourceKind, loweringMode, readinessState,
                 requirementKey);
     }
@@ -382,9 +406,9 @@ public class VisualAssetOverviewController {
                                                                   String handoffTarget,
                                                                   String sourceKind,
                                                                   String loweringMode,
-                                                                  String readinessState,
-                                                                  String requirementKey) {
-        return runtimeBindingHandoffBundle(tenantId, namespace, environment, limit, offset, targetKind, "",
+                                                          String readinessState,
+                                                          String requirementKey) {
+        return runtimeBindingHandoffBundle(tenantId, namespace, environment, limit, offset, targetKind, "", "",
                 bindingKind, handoffLane, handoffKind, handoffTarget, sourceKind, loweringMode, readinessState,
                 requirementKey);
     }

@@ -386,6 +386,8 @@ public record VisualRuntimeBindingHandoffReview(
         addChanged(changed, "updatedAt", exported.updatedAt(), current.updatedAt());
         addChanged(changed, "nodeId", exported.nodeId(), current.nodeId());
         addChanged(changed, "operatorRef", exported.operatorRef(), current.operatorRef());
+        addChangedWhenExportedPresent(changed, "operatorLibraryId",
+                exported.operatorLibraryId(), current.operatorLibraryId());
         addChanged(changed, "readinessState", exported.readinessState(), current.readinessState());
         addChanged(changed, "requirementState", exported.requirementState(), current.requirementState());
         addChanged(changed, "level", exported.level(), current.level());
@@ -406,12 +408,21 @@ public record VisualRuntimeBindingHandoffReview(
         }
     }
 
+    private static void addChangedWhenExportedPresent(List<FieldChange> changed,
+                                                      String field,
+                                                      String exported,
+                                                      String current) {
+        if (exported != null && !exported.isBlank()) {
+            addChanged(changed, field, exported, current);
+        }
+    }
+
     private static String fieldCategory(String field) {
         return switch (field == null ? "" : field) {
             case "targetKind", "targetId", "nodeId", "operatorRef", "artifactKind" -> "identity";
             case "tenantId", "namespace", "environment" -> "scope";
             case "readinessState", "requirementState", "level" -> "readiness";
-            case "sourceKind", "loweringMode", "bindingKind", "bindingTarget",
+            case "sourceKind", "loweringMode", "bindingKind", "bindingTarget", "operatorLibraryId",
                     "handoffLane", "handoffKind", "handoffTarget", "recommendedAction" -> "runtime-binding";
             case "graphName", "targetLabel", "updatedAt" -> "asset-metadata";
             default -> "metadata";

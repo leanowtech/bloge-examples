@@ -84,6 +84,27 @@ class DefaultVisualOperatorCatalogTest {
     }
 
     @Test
+    void exposesOperatorLibraryOwnershipForVisibleImportedOperators() {
+        InMemoryOperatorLibraryRegistry libraries = new InMemoryOperatorLibraryRegistry();
+        libraries.upsert(VisualCatalogTestSupport.designOnlyEligibilityLibrary("integer"));
+        libraries.upsert(library("risk-ai-tools-deprecated", "DEPRECATED",
+                VisualCatalogTestSupport.aiToolSummaryOperator()));
+        DefaultVisualOperatorCatalog catalog = new DefaultVisualOperatorCatalog(
+                VisualCatalogTestSupport.emptyResourceRegistry(),
+                new InMemoryResourceDesignContractRegistry(),
+                new ResourceVirtualOperatorProjector(),
+                libraries
+        );
+
+        assertThat(catalog.operatorLibraryIdsByOperatorRef(false))
+                .containsEntry("risk:eligibility", "risk-policy-design")
+                .doesNotContainKey("risk:aiSummary");
+        assertThat(catalog.operatorLibraryIdsByOperatorRef(true))
+                .containsEntry("risk:eligibility", "risk-policy-design")
+                .containsEntry("risk:aiSummary", "risk-ai-tools-deprecated");
+    }
+
+    @Test
     void derivesRuntimeReadinessAsServerManagedOperatorMetadata() {
         OperatorDefinition executable = VisualCatalogTestSupport.eligibilityOperator("integer");
         OperatorDefinition designOnly = VisualCatalogTestSupport.designOnlyEligibilityOperator("integer");

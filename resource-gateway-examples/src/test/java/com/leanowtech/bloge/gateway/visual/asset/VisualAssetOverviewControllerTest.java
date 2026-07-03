@@ -86,6 +86,8 @@ class VisualAssetOverviewControllerTest {
                 .containsEntry("TRACK_DESIGN_DRAFT", 1)
                 .containsEntry("PLAN_PUBLICATION_RUNTIME_BINDING", 1)
                 .containsEntry("TRACK_SCHEMA_ONLY_OPERATOR", 1);
+        assertThat(overview.actionQueue().operatorRefCounts())
+                .containsEntry("risk:eligibility", 3);
         assertThat(overview.actionQueue().items())
                 .extracting(VisualAssetOverview.ActionItem::actionType)
                 .contains("PLAN_DRAFT_RUNTIME_BINDING",
@@ -106,6 +108,7 @@ class VisualAssetOverviewControllerTest {
                 .filteredOn(item -> item.actionType().equals("PLAN_DRAFT_RUNTIME_BINDING"))
                 .singleElement()
                 .satisfies(item -> {
+                    assertThat(item.operatorRef()).isEqualTo("risk:eligibility");
                     assertThat(item.targetLabel()).contains("eligibility");
                     assertThat(item.summary()).contains("executable-lowering").contains("risk:eligibility");
                     assertThat(item.handoffLane()).isEqualTo("operator-platform");
@@ -141,6 +144,7 @@ class VisualAssetOverviewControllerTest {
         assertThat(workspaceIndex.total()).isEqualTo(1);
         assertThat(workspaceIndex.unfilteredTotal()).isEqualTo(1);
         assertThat(workspaceIndex.operatorRefCounts()).containsEntry(importedRequirement.operatorRef(), 1);
+        assertThat(workspaceIndex.operatorLibraryIdCounts()).containsEntry(library.libraryId(), 1);
         assertThat(workspaceIndex.bindingKindCounts()).isEqualTo(importReadiness.bindingKindCounts());
         assertThat(workspaceIndex.handoffLaneCounts()).isEqualTo(importReadiness.handoffLaneCounts());
         assertThat(workspaceIndex.handoffKindCounts()).isEqualTo(importReadiness.handoffKindCounts());
@@ -153,6 +157,7 @@ class VisualAssetOverviewControllerTest {
             assertThat(item.targetId()).isEqualTo(draft.draftId());
             assertThat(item.nodeId()).isEqualTo("eligibility");
             assertThat(item.operatorRef()).isEqualTo(importedRequirement.operatorRef());
+            assertThat(item.operatorLibraryId()).isEqualTo(library.libraryId());
             assertThat(item.requirementState()).isEqualTo(importedRequirement.state());
             assertThat(item.level()).isEqualTo(importedRequirement.level());
             assertThat(item.sourceKind()).isEqualTo(importedRequirement.sourceKind());
@@ -252,6 +257,25 @@ class VisualAssetOverviewControllerTest {
                 "",
                 "",
                 "",
+                "",
+                ""
+        );
+        VisualRuntimeBindingRequirements byOperatorLibrary = controller.runtimeBindingRequirements(
+                "",
+                "",
+                "",
+                10,
+                0,
+                "",
+                "",
+                "risk-policy-design",
+                "",
+                "",
+                "",
+                "",
+                "",
+                "",
+                "",
                 ""
         );
         VisualRuntimeBindingHandoffBundle handoffBundle = controller.runtimeBindingHandoffBundle(
@@ -288,6 +312,7 @@ class VisualAssetOverviewControllerTest {
                 handoffBundle.requirementKeys(),
                 handoffBundle.targetKindCounts(),
                 handoffBundle.operatorRefCounts(),
+                handoffBundle.operatorLibraryIdCounts(),
                 handoffBundle.bindingKindCounts(),
                 handoffBundle.handoffLaneCounts(),
                 handoffBundle.handoffKindCounts(),
@@ -315,6 +340,7 @@ class VisualAssetOverviewControllerTest {
                 handoffBundle.requirementKeys(),
                 handoffBundle.targetKindCounts(),
                 handoffBundle.operatorRefCounts(),
+                handoffBundle.operatorLibraryIdCounts(),
                 handoffBundle.bindingKindCounts(),
                 handoffBundle.handoffLaneCounts(),
                 handoffBundle.handoffKindCounts(),
@@ -369,6 +395,7 @@ class VisualAssetOverviewControllerTest {
         assertThat(firstPage.targetKindCounts()).containsEntry("draft", 1)
                 .containsEntry("publication", 1);
         assertThat(firstPage.operatorRefCounts()).containsEntry("risk:eligibility", 2);
+        assertThat(firstPage.operatorLibraryIdCounts()).containsEntry("risk-policy-design", 2);
         assertThat(firstPage.bindingKindCounts()).containsEntry("executable-lowering", 2);
         assertThat(firstPage.handoffLaneCounts()).containsEntry("operator-platform", 2);
         assertThat(firstPage.handoffKindCounts()).containsEntry("operator-implementation", 2);
@@ -383,6 +410,7 @@ class VisualAssetOverviewControllerTest {
             assertThat(item.targetKind()).isEqualTo("draft");
             assertThat(item.targetLabel()).contains("visualPolicy").contains("eligibility");
             assertThat(item.operatorRef()).isEqualTo("risk:eligibility");
+            assertThat(item.operatorLibraryId()).isEqualTo("risk-policy-design");
             assertThat(item.bindingKind()).isEqualTo("executable-lowering");
             assertThat(item.bindingTarget()).isEqualTo("risk:eligibility");
             assertThat(item.handoffLane()).isEqualTo("operator-platform");
@@ -407,6 +435,14 @@ class VisualAssetOverviewControllerTest {
         assertThat(byOperatorRef.total()).isEqualTo(2);
         assertThat(byOperatorRef.unfilteredTotal()).isEqualTo(2);
         assertThat(byOperatorRef.operatorRefCounts()).containsEntry("risk:eligibility", 2);
+        assertThat(byOperatorLibrary.filter().filtered()).isTrue();
+        assertThat(byOperatorLibrary.filter().operatorLibraryId()).isEqualTo("risk-policy-design");
+        assertThat(byOperatorLibrary.total()).isEqualTo(2);
+        assertThat(byOperatorLibrary.unfilteredTotal()).isEqualTo(2);
+        assertThat(byOperatorLibrary.operatorLibraryIdCounts()).containsEntry("risk-policy-design", 2);
+        assertThat(byOperatorLibrary.items())
+                .extracting(VisualRuntimeBindingRequirements.RequirementItem::operatorLibraryId)
+                .containsOnly("risk-policy-design");
         assertThat(byRequirementKey.filter().filtered()).isTrue();
         assertThat(byRequirementKey.filter().requirementKey()).isEqualTo(draftRequirementKey);
         assertThat(byRequirementKey.total()).isEqualTo(1);
@@ -453,6 +489,7 @@ class VisualAssetOverviewControllerTest {
         assertThat(handoffBundle.requirementKeys()).containsExactly(draftRequirementKey);
         assertThat(handoffBundle.handoffLaneCounts()).containsEntry("operator-platform", 1);
         assertThat(handoffBundle.operatorRefCounts()).containsEntry("risk:eligibility", 1);
+        assertThat(handoffBundle.operatorLibraryIdCounts()).containsEntry("risk-policy-design", 1);
         assertThat(handoffBundle.handoffKindCounts()).containsEntry("operator-implementation", 1);
         assertThat(handoffBundle.handoffTargetCounts()).containsEntry("risk:eligibility", 1);
         assertThat(handoffBundle.requirements()).singleElement().satisfies(item -> {
@@ -460,6 +497,7 @@ class VisualAssetOverviewControllerTest {
             assertThat(item.targetKind()).isEqualTo("draft");
             assertThat(item.targetId()).isEqualTo(draft.draftId());
             assertThat(item.operatorRef()).isEqualTo("risk:eligibility");
+            assertThat(item.operatorLibraryId()).isEqualTo("risk-policy-design");
         });
         assertThat(currentReview).isNotNull();
         assertThat(currentReview.schemaVersion()).isEqualTo(VisualRuntimeBindingHandoffReview.SCHEMA_VERSION);
@@ -583,6 +621,7 @@ class VisualAssetOverviewControllerTest {
                         exported.updatedAt(),
                         exported.nodeId(),
                         exported.operatorRef(),
+                        exported.operatorLibraryId(),
                         exported.readinessState(),
                         exported.requirementState(),
                         exported.level(),
@@ -884,6 +923,17 @@ class VisualAssetOverviewControllerTest {
                 "TRACK_SCHEMA_ONLY_OPERATOR",
                 "operator"
         );
+        VisualAssetOverview byOperatorRef = controller.overview(
+                "",
+                "",
+                "",
+                10,
+                0,
+                "",
+                "",
+                "",
+                "risk:eligibility"
+        );
 
         assertThat(operatorOnly.actionQueue().unfilteredTotal()).isEqualTo(unfilteredTotal);
         assertThat(operatorOnly.actionQueue().total()).isEqualTo(1);
@@ -893,9 +943,21 @@ class VisualAssetOverviewControllerTest {
         assertThat(operatorOnly.actionQueue().filter().severity()).isEqualTo("info");
         assertThat(operatorOnly.actionQueue().filter().actionType()).isEqualTo("TRACK_SCHEMA_ONLY_OPERATOR");
         assertThat(operatorOnly.actionQueue().filter().targetKind()).isEqualTo("operator");
+        assertThat(operatorOnly.actionQueue().filter().operatorRef()).isEmpty();
         assertThat(operatorOnly.actionQueue().items())
                 .extracting(VisualAssetOverview.ActionItem::actionType)
                 .containsExactly("TRACK_SCHEMA_ONLY_OPERATOR");
+        assertThat(byOperatorRef.actionQueue().unfilteredTotal()).isEqualTo(unfilteredTotal);
+        assertThat(byOperatorRef.actionQueue().total()).isEqualTo(3);
+        assertThat(byOperatorRef.actionQueue().filter().operatorRef()).isEqualTo("risk:eligibility");
+        assertThat(byOperatorRef.actionQueue().operatorRefCounts()).containsEntry("risk:eligibility", 3);
+        assertThat(byOperatorRef.actionQueue().items())
+                .extracting(VisualAssetOverview.ActionItem::operatorRef)
+                .containsOnly("risk:eligibility");
+        assertThat(byOperatorRef.actionQueue().actionTypeCounts())
+                .containsEntry("PLAN_DRAFT_RUNTIME_BINDING", 1)
+                .containsEntry("PLAN_PUBLICATION_RUNTIME_BINDING", 1)
+                .containsEntry("TRACK_SCHEMA_ONLY_OPERATOR", 1);
         assertThat(secondAction.actionQueue().unfilteredTotal()).isEqualTo(unfilteredTotal);
         assertThat(secondAction.actionQueue().total()).isEqualTo(unfilteredTotal);
         assertThat(secondAction.actionQueue().offset()).isEqualTo(1);
@@ -937,8 +999,46 @@ class VisualAssetOverviewControllerTest {
         material.put("loweringModeCounts", bundle.loweringModeCounts());
         material.put("readinessStateCounts", bundle.readinessStateCounts());
         material.put("artifactKindCounts", bundle.artifactKindCounts());
-        material.put("requirements", bundle.requirements());
+        material.put("requirements", legacyRequirementMaterials(bundle.requirements()));
         return VisualBundleFingerprint.fromMaterial(material);
+    }
+
+    private static List<Map<String, Object>> legacyRequirementMaterials(
+            List<VisualRuntimeBindingRequirements.RequirementItem> requirements) {
+        return requirements.stream()
+                .map(VisualAssetOverviewControllerTest::legacyRequirementMaterial)
+                .toList();
+    }
+
+    private static Map<String, Object> legacyRequirementMaterial(
+            VisualRuntimeBindingRequirements.RequirementItem item) {
+        Map<String, Object> material = new LinkedHashMap<>();
+        material.put("requirementKey", item.requirementKey());
+        material.put("targetKind", item.targetKind());
+        material.put("targetId", item.targetId());
+        material.put("targetLabel", item.targetLabel());
+        material.put("graphName", item.graphName());
+        material.put("tenantId", item.tenantId());
+        material.put("namespace", item.namespace());
+        material.put("environment", item.environment());
+        material.put("artifactKind", item.artifactKind());
+        material.put("updatedAt", item.updatedAt());
+        material.put("nodeId", item.nodeId());
+        material.put("operatorRef", item.operatorRef());
+        material.put("readinessState", item.readinessState());
+        material.put("requirementState", item.requirementState());
+        material.put("level", item.level());
+        material.put("sourceKind", item.sourceKind());
+        material.put("loweringMode", item.loweringMode());
+        material.put("bindingKind", item.bindingKind());
+        material.put("bindingTarget", item.bindingTarget());
+        material.put("handoffLane", item.handoffLane());
+        material.put("handoffKind", item.handoffKind());
+        material.put("handoffTarget", item.handoffTarget());
+        material.put("title", item.title());
+        material.put("summary", item.summary());
+        material.put("recommendedAction", item.recommendedAction());
+        return material;
     }
 
     private static Map<String, Object> legacyFilterMaterial(

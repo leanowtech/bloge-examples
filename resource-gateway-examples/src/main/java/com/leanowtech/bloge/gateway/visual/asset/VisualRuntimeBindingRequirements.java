@@ -33,6 +33,7 @@ import java.util.function.Function;
  * @param filter normalized requirement filter
  * @param targetKindCounts filtered requirement counts by target asset kind
  * @param operatorRefCounts filtered requirement counts by operator reference
+ * @param operatorLibraryIdCounts filtered requirement counts by owner operator library id
  * @param bindingKindCounts filtered requirement counts by binding kind
  * @param handoffLaneCounts filtered requirement counts by runtime-plane handoff lane
  * @param handoffKindCounts filtered requirement counts by runtime-plane handoff work kind
@@ -56,6 +57,7 @@ public record VisualRuntimeBindingRequirements(
         RequirementFilter filter,
         Map<String, Integer> targetKindCounts,
         Map<String, Integer> operatorRefCounts,
+        Map<String, Integer> operatorLibraryIdCounts,
         Map<String, Integer> bindingKindCounts,
         Map<String, Integer> handoffLaneCounts,
         Map<String, Integer> handoffKindCounts,
@@ -84,6 +86,7 @@ public record VisualRuntimeBindingRequirements(
         filter = filter == null ? RequirementFilter.all() : filter;
         targetKindCounts = immutableCounts(targetKindCounts);
         operatorRefCounts = immutableCounts(operatorRefCounts);
+        operatorLibraryIdCounts = immutableCounts(operatorLibraryIdCounts);
         bindingKindCounts = immutableCounts(bindingKindCounts);
         handoffLaneCounts = immutableCounts(handoffLaneCounts);
         handoffKindCounts = immutableCounts(handoffKindCounts);
@@ -109,6 +112,7 @@ public record VisualRuntimeBindingRequirements(
      * @param offset zero-based item offset after filtering
      * @param targetKind optional target kind filter
      * @param operatorRef optional operator reference filter
+     * @param operatorLibraryId optional owner operator library id filter
      * @param bindingKind optional binding kind filter
      * @param handoffLane optional runtime-plane handoff lane filter
      * @param handoffKind optional runtime-plane handoff work kind filter
@@ -121,6 +125,7 @@ public record VisualRuntimeBindingRequirements(
      */
     public static VisualRuntimeBindingRequirements from(List<GraphDraftSummary> drafts,
                                                         List<VisualGraphPublicationSummary> publications,
+                                                        Map<String, String> operatorLibraryIdsByOperatorRef,
                                                         String tenantId,
                                                         String namespace,
                                                         String environment,
@@ -128,6 +133,7 @@ public record VisualRuntimeBindingRequirements(
                                                         int offset,
                                                         String targetKind,
                                                         String operatorRef,
+                                                        String operatorLibraryId,
                                                         String bindingKind,
                                                         String handoffLane,
                                                         String handoffKind,
@@ -136,9 +142,9 @@ public record VisualRuntimeBindingRequirements(
                                                         String loweringMode,
                                                         String readinessState,
                                                         String requirementKey) {
-        List<RequirementItem> generated = generate(drafts, publications);
-        RequirementFilter filter = new RequirementFilter(targetKind, operatorRef, bindingKind, handoffLane, handoffKind,
-                handoffTarget, sourceKind, loweringMode, readinessState, requirementKey);
+        List<RequirementItem> generated = generate(drafts, publications, operatorLibraryIdsByOperatorRef);
+        RequirementFilter filter = new RequirementFilter(targetKind, operatorRef, operatorLibraryId, bindingKind,
+                handoffLane, handoffKind, handoffTarget, sourceKind, loweringMode, readinessState, requirementKey);
         List<RequirementItem> filtered = generated.stream()
                 .filter(filter::matches)
                 .sorted(VisualRuntimeBindingRequirements::compareItems)
@@ -158,6 +164,7 @@ public record VisualRuntimeBindingRequirements(
                 filter,
                 countBy(filtered, RequirementItem::targetKind),
                 countBy(filtered, RequirementItem::operatorRef),
+                countBy(filtered, RequirementItem::operatorLibraryId),
                 countBy(filtered, RequirementItem::bindingKind),
                 countBy(filtered, RequirementItem::handoffLane),
                 countBy(filtered, RequirementItem::handoffKind),
@@ -168,6 +175,28 @@ public record VisualRuntimeBindingRequirements(
                 countBy(filtered, RequirementItem::artifactKind),
                 filtered.stream().skip(normalizedOffset).limit(normalizedLimit).toList()
         );
+    }
+
+    public static VisualRuntimeBindingRequirements from(List<GraphDraftSummary> drafts,
+                                                        List<VisualGraphPublicationSummary> publications,
+                                                        String tenantId,
+                                                        String namespace,
+                                                        String environment,
+                                                        int itemLimit,
+                                                        int offset,
+                                                        String targetKind,
+                                                        String operatorRef,
+                                                        String bindingKind,
+                                                        String handoffLane,
+                                                        String handoffKind,
+                                                        String handoffTarget,
+                                                        String sourceKind,
+                                                        String loweringMode,
+                                                        String readinessState,
+                                                        String requirementKey) {
+        return from(drafts, publications, Map.of(), tenantId, namespace, environment, itemLimit, offset, targetKind,
+                operatorRef, "", bindingKind, handoffLane, handoffKind, handoffTarget, sourceKind, loweringMode,
+                readinessState, requirementKey);
     }
 
     /**
@@ -207,6 +236,7 @@ public record VisualRuntimeBindingRequirements(
      *
      * @param targetKind draft or publication, empty when unfiltered
      * @param operatorRef operator reference, empty when unfiltered
+     * @param operatorLibraryId owner operator library id, empty when unfiltered
      * @param bindingKind binding kind, empty when unfiltered
      * @param handoffLane runtime-plane handoff lane, empty when unfiltered
      * @param handoffKind runtime-plane handoff work kind, empty when unfiltered
@@ -220,6 +250,7 @@ public record VisualRuntimeBindingRequirements(
     public record RequirementFilter(
             String targetKind,
             String operatorRef,
+            String operatorLibraryId,
             String bindingKind,
             String handoffLane,
             String handoffKind,
@@ -232,6 +263,7 @@ public record VisualRuntimeBindingRequirements(
     ) {
         public RequirementFilter(String targetKind,
                                  String operatorRef,
+                                 String operatorLibraryId,
                                  String bindingKind,
                                  String handoffLane,
                                  String handoffKind,
@@ -243,6 +275,7 @@ public record VisualRuntimeBindingRequirements(
             this(
                     normalizeFacetValue(targetKind),
                     normalizeTextValue(operatorRef),
+                    normalizeTextValue(operatorLibraryId),
                     normalizeFacetValue(bindingKind),
                     normalizeFacetValue(handoffLane),
                     normalizeFacetValue(handoffKind),
@@ -253,6 +286,7 @@ public record VisualRuntimeBindingRequirements(
                     normalizeTextValue(requirementKey),
                     !normalizeFacetValue(targetKind).isBlank()
                             || !normalizeTextValue(operatorRef).isBlank()
+                            || !normalizeTextValue(operatorLibraryId).isBlank()
                             || !normalizeFacetValue(bindingKind).isBlank()
                             || !normalizeFacetValue(handoffLane).isBlank()
                             || !normalizeFacetValue(handoffKind).isBlank()
@@ -265,6 +299,7 @@ public record VisualRuntimeBindingRequirements(
         }
 
         public RequirementFilter(String targetKind,
+                                 String operatorRef,
                                  String bindingKind,
                                  String handoffLane,
                                  String handoffKind,
@@ -273,13 +308,28 @@ public record VisualRuntimeBindingRequirements(
                                  String loweringMode,
                                  String readinessState,
                                  String requirementKey) {
-            this(targetKind, "", bindingKind, handoffLane, handoffKind, handoffTarget, sourceKind, loweringMode,
+            this(targetKind, operatorRef, "", bindingKind, handoffLane, handoffKind, handoffTarget, sourceKind,
+                    loweringMode,
+                    readinessState, requirementKey);
+        }
+
+        public RequirementFilter(String targetKind,
+                                 String bindingKind,
+                                 String handoffLane,
+                                 String handoffKind,
+                                 String handoffTarget,
+                                 String sourceKind,
+                                 String loweringMode,
+                                 String readinessState,
+                                 String requirementKey) {
+            this(targetKind, "", "", bindingKind, handoffLane, handoffKind, handoffTarget, sourceKind, loweringMode,
                     readinessState, requirementKey);
         }
 
         public RequirementFilter {
             targetKind = normalizeFacetValue(targetKind);
             operatorRef = normalizeTextValue(operatorRef);
+            operatorLibraryId = normalizeTextValue(operatorLibraryId);
             bindingKind = normalizeFacetValue(bindingKind);
             handoffLane = normalizeFacetValue(handoffLane);
             handoffKind = normalizeFacetValue(handoffKind);
@@ -290,6 +340,7 @@ public record VisualRuntimeBindingRequirements(
             requirementKey = normalizeTextValue(requirementKey);
             filtered = !targetKind.isBlank()
                     || !operatorRef.isBlank()
+                    || !operatorLibraryId.isBlank()
                     || !bindingKind.isBlank()
                     || !handoffLane.isBlank()
                     || !handoffKind.isBlank()
@@ -301,7 +352,7 @@ public record VisualRuntimeBindingRequirements(
         }
 
         static RequirementFilter all() {
-            return new RequirementFilter("", "", "", "", "", "", "", "", "", "");
+            return new RequirementFilter("", "", "", "", "", "", "", "", "", "", "");
         }
 
         boolean matches(RequirementItem item) {
@@ -309,6 +360,7 @@ public record VisualRuntimeBindingRequirements(
                     && (requirementKey.isBlank() || requirementKey.equals(item.requirementKey()))
                     && (targetKind.isBlank() || targetKind.equals(item.targetKind()))
                     && (operatorRef.isBlank() || operatorRef.equals(item.operatorRef()))
+                    && (operatorLibraryId.isBlank() || operatorLibraryId.equals(item.operatorLibraryId()))
                     && (bindingKind.isBlank() || bindingKind.equals(item.bindingKind()))
                     && (handoffLane.isBlank() || handoffLane.equals(item.handoffLane()))
                     && (handoffKind.isBlank() || handoffKind.equals(item.handoffKind()))
@@ -336,6 +388,7 @@ public record VisualRuntimeBindingRequirements(
      * @param updatedAt draft update or publication creation timestamp
      * @param nodeId draft/publication node id
      * @param operatorRef operator reference used by the node
+     * @param operatorLibraryId owner operator library id when the operator comes from an imported library
      * @param readinessState graph readiness state
      * @param requirementState node requirement readiness state
      * @param level requirement severity
@@ -363,6 +416,7 @@ public record VisualRuntimeBindingRequirements(
             String updatedAt,
             String nodeId,
             String operatorRef,
+            String operatorLibraryId,
             String readinessState,
             String requirementState,
             String level,
@@ -391,6 +445,7 @@ public record VisualRuntimeBindingRequirements(
             updatedAt = updatedAt == null ? "" : updatedAt;
             nodeId = nodeId == null ? "" : nodeId;
             operatorRef = operatorRef == null ? "" : operatorRef;
+            operatorLibraryId = normalizeTextValue(operatorLibraryId);
             readinessState = normalizeFacetValue(readinessState);
             requirementState = normalizeFacetValue(requirementState);
             level = normalizeFacetValue(level);
@@ -412,7 +467,8 @@ public record VisualRuntimeBindingRequirements(
     }
 
     private static List<RequirementItem> generate(List<GraphDraftSummary> drafts,
-                                                  List<VisualGraphPublicationSummary> publications) {
+                                                  List<VisualGraphPublicationSummary> publications,
+                                                  Map<String, String> operatorLibraryIdsByOperatorRef) {
         List<RequirementItem> generated = new ArrayList<>();
         for (GraphDraftSummary draft : drafts == null ? List.<GraphDraftSummary>of() : drafts) {
             if (draft == null || !draft.active()) {
@@ -420,7 +476,8 @@ public record VisualRuntimeBindingRequirements(
             }
             for (VisualGraphReadiness.RuntimeBindingRequirement requirement
                     : runtimeBindingRequirements(draft.readiness())) {
-                generated.add(fromDraft(draft, requirement));
+                generated.add(fromDraft(draft, requirement,
+                        operatorLibraryId(requirement, operatorLibraryIdsByOperatorRef)));
             }
         }
         for (VisualGraphPublicationSummary publication : publications == null
@@ -431,14 +488,16 @@ public record VisualRuntimeBindingRequirements(
             }
             for (VisualGraphReadiness.RuntimeBindingRequirement requirement
                     : runtimeBindingRequirements(publication.readiness())) {
-                generated.add(fromPublication(publication, requirement));
+                generated.add(fromPublication(publication, requirement,
+                        operatorLibraryId(requirement, operatorLibraryIdsByOperatorRef)));
             }
         }
         return generated;
     }
 
     private static RequirementItem fromDraft(GraphDraftSummary draft,
-                                             VisualGraphReadiness.RuntimeBindingRequirement requirement) {
+                                             VisualGraphReadiness.RuntimeBindingRequirement requirement,
+                                             String operatorLibraryId) {
         String label = "%s @%d".formatted(
                 draft.graphName().isBlank() ? draft.draftId() : draft.graphName(),
                 draft.currentRevision() > 0 ? draft.currentRevision() : draft.latestRevision()
@@ -457,6 +516,7 @@ public record VisualRuntimeBindingRequirements(
                 draft.updatedAt(),
                 requirement.nodeId(),
                 requirement.operatorRef(),
+                operatorLibraryId,
                 draft.readiness() == null ? "" : draft.readiness().state(),
                 requirement.state(),
                 requirement.level(),
@@ -474,7 +534,8 @@ public record VisualRuntimeBindingRequirements(
     }
 
     private static RequirementItem fromPublication(VisualGraphPublicationSummary publication,
-                                                   VisualGraphReadiness.RuntimeBindingRequirement requirement) {
+                                                   VisualGraphReadiness.RuntimeBindingRequirement requirement,
+                                                   String operatorLibraryId) {
         String label = "%s publication @%d".formatted(
                 publication.graphName().isBlank() ? publication.publicationId() : publication.graphName(),
                 publication.draftRevision()
@@ -494,6 +555,7 @@ public record VisualRuntimeBindingRequirements(
                 publication.createdAt().toString(),
                 requirement.nodeId(),
                 requirement.operatorRef(),
+                operatorLibraryId,
                 publication.readiness() == null ? "" : publication.readiness().state(),
                 requirement.state(),
                 requirement.level(),
@@ -518,6 +580,14 @@ public record VisualRuntimeBindingRequirements(
         return readiness.runtimeBindingRequirements().stream()
                 .filter(requirement -> requirement != null)
                 .toList();
+    }
+
+    private static String operatorLibraryId(VisualGraphReadiness.RuntimeBindingRequirement requirement,
+                                            Map<String, String> operatorLibraryIdsByOperatorRef) {
+        if (requirement == null || operatorLibraryIdsByOperatorRef == null) {
+            return "";
+        }
+        return normalizeTextValue(operatorLibraryIdsByOperatorRef.get(requirement.operatorRef()));
     }
 
     private static String runtimeBindingTargetLabel(String assetLabel,
