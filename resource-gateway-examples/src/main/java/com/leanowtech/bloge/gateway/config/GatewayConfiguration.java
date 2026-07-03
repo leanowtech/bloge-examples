@@ -37,11 +37,13 @@ import com.leanowtech.bloge.gateway.visual.resource.ResourceDesignContractRegist
 import com.leanowtech.bloge.gateway.visual.runtime.DatabaseVisualExecutableLoweringIntegrationRepository;
 import com.leanowtech.bloge.gateway.visual.runtime.DatabaseVisualGraphRunRepository;
 import com.leanowtech.bloge.gateway.visual.runtime.DatabaseVisualRuntimeAdapterActivationRepository;
+import com.leanowtech.bloge.gateway.visual.runtime.DatabaseVisualRuntimeRolloutObservationRepository;
 import com.leanowtech.bloge.gateway.visual.runtime.VisualExecutableLoweringIntegrationRepository;
 import com.leanowtech.bloge.gateway.visual.runtime.VisualGraphPublicationOperator;
 import com.leanowtech.bloge.gateway.visual.runtime.VisualGraphRunRepository;
 import com.leanowtech.bloge.gateway.visual.runtime.VisualGraphRunService;
 import com.leanowtech.bloge.gateway.visual.runtime.VisualRuntimeAdapterActivationRepository;
+import com.leanowtech.bloge.gateway.visual.runtime.VisualRuntimeRolloutObservationRepository;
 import com.leanowtech.bloge.operators.http.HttpRequestInput;
 import com.leanowtech.bloge.operators.http.HttpRequestOperator;
 import com.leanowtech.bloge.spring.annotation.BlogeOperator;
@@ -377,6 +379,21 @@ public class GatewayConfiguration {
             JdbcTemplate jdbc,
             ObjectMapper objectMapper) {
         return new DatabaseVisualExecutableLoweringIntegrationRepository(jdbc, objectMapper);
+    }
+
+    /**
+     * Database-backed repository for runtime rollout observation facts.
+     *
+     * @param jdbc JDBC template for H2 access
+     * @param objectMapper Jackson mapper for observation serialization
+     * @return runtime rollout observation repository
+     */
+    @Bean
+    @ConditionalOnMissingBean
+    public VisualRuntimeRolloutObservationRepository visualRuntimeRolloutObservationRepository(
+            JdbcTemplate jdbc,
+            ObjectMapper objectMapper) {
+        return new DatabaseVisualRuntimeRolloutObservationRepository(jdbc, objectMapper);
     }
 
     // ── Interceptors ────────────────────────────────────────────────────

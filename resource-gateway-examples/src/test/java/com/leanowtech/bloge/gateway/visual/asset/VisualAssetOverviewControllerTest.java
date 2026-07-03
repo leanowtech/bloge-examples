@@ -27,6 +27,7 @@ import com.leanowtech.bloge.gateway.visual.publication.VisualGraphPublicationSum
 import com.leanowtech.bloge.gateway.visual.resource.InMemoryResourceDesignContractRegistry;
 import com.leanowtech.bloge.gateway.visual.runtime.InMemoryVisualExecutableLoweringIntegrationRepository;
 import com.leanowtech.bloge.gateway.visual.runtime.InMemoryVisualRuntimeAdapterActivationRepository;
+import com.leanowtech.bloge.gateway.visual.runtime.InMemoryVisualRuntimeRolloutObservationRepository;
 import com.leanowtech.bloge.gateway.visual.runtime.VisualExecutableLoweringIntegration;
 import com.leanowtech.bloge.gateway.visual.runtime.VisualExecutableLoweringIntegrationValidation;
 import com.leanowtech.bloge.gateway.visual.runtime.VisualExecutableReadinessEvidenceRefreshResult;
@@ -35,6 +36,8 @@ import com.leanowtech.bloge.gateway.visual.runtime.VisualExecutableReadinessReco
 import com.leanowtech.bloge.gateway.visual.runtime.VisualRuntimeAdapterActivation;
 import com.leanowtech.bloge.gateway.visual.runtime.VisualRuntimeAdapterActivationValidation;
 import com.leanowtech.bloge.gateway.visual.runtime.VisualRuntimeBindingDeactivationResult;
+import com.leanowtech.bloge.gateway.visual.runtime.VisualRuntimeRolloutObservation;
+import com.leanowtech.bloge.gateway.visual.runtime.VisualRuntimeRolloutObservationValidation;
 import com.leanowtech.bloge.gateway.visual.validation.GraphDraftValidator;
 import com.leanowtech.bloge.gateway.visual.validation.VisualValidationResult;
 
@@ -2725,9 +2728,160 @@ class VisualAssetOverviewControllerTest {
                             .containsEntry("activationId", "risk-eligibility-prod-active")
                             .containsEntry("bindingId", binding.bindingId())
                             .containsEntry("operatorRef", "risk:eligibility")
-                            .containsEntry("exceptionType", "IllegalStateException");
+                .containsEntry("exceptionType", "IllegalStateException");
                 });
         assertThat(fixture.controller().runtimeAdapterActivations("", "", "")).isEmpty();
+    }
+
+    @Test
+    void runtimeRolloutObservationSubmitPersistsHealthyCanaryFeedback() {
+        RuntimeBindingImplementationFixture fixture = runtimeBindingImplementationFixture();
+        VisualRuntimeBindingImplementationBinding stored = submitImplementation(
+                fixture,
+                completeImplementation("risk-eligibility-native-v1")
+        );
+        VisualRuntimeBindingImplementationBinding binding = fixture.controller()
+                .bindRuntimeBindingImplementation(stored.bindingId(), transitionRequest("", true))
+                .getBody()
+                .binding();
+        VisualRuntimeAdapterActivation activation = (VisualRuntimeAdapterActivation) fixture.controller()
+                .submitRuntimeAdapterActivation(adapterActivationRequest(binding, "risk-eligibility-prod-active"))
+                .getBody();
+        VisualRuntimeRolloutObservationValidation.Request request =
+                rolloutObservationRequest(activation, "risk-rollout-canary-5",
+                        VisualRuntimeRolloutObservation.STATE_HEALTHY, 5, false, "");
+
+        var validation = fixture.controller().validateRuntimeRolloutObservation(request);
+        var response = fixture.controller().submitRuntimeRolloutObservation(request);
+
+        assertThat(validation.getStatusCode().value()).isEqualTo(200);
+        assertThat(validation.getBody()).isNotNull();
+        assertThat(validation.getBody().valid()).isTrue();
+        assertThat(validation.getBody().recordable()).isTrue();
+        assertThat(validation.getBody().state()).isEqualTo("ready-to-record");
+        assertThat(validation.getBody().level()).isEqualTo("success");
+        assertThat(validation.getBody().activationId()).isEqualTo(activation.activationId());
+        assertThat(validation.getBody().bindingId()).isEqualTo(binding.bindingId());
+        assertThat(validation.getBody().currentCatalogState()).isEqualTo("current");
+        assertThat(validation.getBody().rolloutStrategy()).isEqualTo("canary");
+        assertThat(validation.getBody().trafficPercent()).isEqualTo(5);
+        assertThat(response.getStatusCode().value()).isEqualTo(201);
+        assertThat(response.getBody()).isInstanceOf(VisualRuntimeRolloutObservation.class);
+        VisualRuntimeRolloutObservation observation = (VisualRuntimeRolloutObservation) response.getBody();
+        assertThat(observation.schemaVersion()).isEqualTo(VisualRuntimeRolloutObservation.SCHEMA_VERSION);
+        assertThat(observation.observationId()).isEqualTo("risk-rollout-canary-5");
+        assertThat(observation.activationId()).isEqualTo(activation.activationId());
+        assertThat(observation.activationRevision()).isEqualTo(activation.revision());
+        assertThat(observation.bindingId()).isEqualTo(binding.bindingId());
+        assertThat(observation.bindingRevision()).isEqualTo(binding.revision());
+        assertThat(observation.operatorRef()).isEqualTo("risk:eligibility");
+        assertThat(observation.operatorFingerprint()).isEqualTo(binding.operatorFingerprint());
+        assertThat(observation.rolloutStrategy()).isEqualTo("canary");
+        assertThat(observation.trafficPercent()).isEqualTo(5);
+        assertThat(observation.state()).isEqualTo(VisualRuntimeRolloutObservation.STATE_HEALTHY);
+        assertThat(observation.level()).isEqualTo("success");
+        assertThat(observation.evidence()).singleElement().satisfies(evidence -> {
+            assertThat(evidence.kind()).isEqualTo("canary-metric");
+            assertThat(evidence.ref()).isEqualTo("rollout:risk-rollout-canary-5");
+        });
+        assertThat(fixture.controller().runtimeRolloutObservations("", "", "", ""))
+                .singleElement()
+                .isEqualTo(observation);
+        assertThat(fixture.controller().runtimeRolloutObservations(
+                activation.activationId(), binding.bindingId(), "risk:eligibility", "healthy"))
+                .singleElement()
+                .isEqualTo(observation);
+
+        var replay = fixture.controller().submitRuntimeRolloutObservation(request);
+        assertThat(replay.getStatusCode().value()).isEqualTo(200);
+        assertThat(replay.getBody()).isEqualTo(observation);
+
+        var duplicate = fixture.controller().submitRuntimeRolloutObservation(
+                rolloutObservationRequest(activation, "risk-rollout-canary-5",
+                        VisualRuntimeRolloutObservation.STATE_COMPLETED, 100, false, ""));
+        assertThat(duplicate.getStatusCode().value()).isEqualTo(409);
+        assertThat(duplicate.getBody()).isInstanceOf(VisualRuntimeRolloutObservationValidation.class);
+        VisualRuntimeRolloutObservationValidation duplicateValidation =
+                (VisualRuntimeRolloutObservationValidation) duplicate.getBody();
+        assertThat(duplicateValidation.valid()).isFalse();
+        assertThat(duplicateValidation.diagnostics())
+                .extracting(VisualDiagnostic::code)
+                .contains("visual.runtimeRolloutObservation.observationIdDuplicate");
+    }
+
+    @Test
+    void runtimeRolloutObservationRecordsRollbackAsRecordableErrorFact() {
+        RuntimeBindingImplementationFixture fixture = runtimeBindingImplementationFixture();
+        VisualRuntimeBindingImplementationBinding stored = submitImplementation(
+                fixture,
+                completeImplementation("risk-eligibility-native-v1")
+        );
+        VisualRuntimeBindingImplementationBinding binding = fixture.controller()
+                .bindRuntimeBindingImplementation(stored.bindingId(), transitionRequest("", true))
+                .getBody()
+                .binding();
+        VisualRuntimeAdapterActivation activation = (VisualRuntimeAdapterActivation) fixture.controller()
+                .submitRuntimeAdapterActivation(adapterActivationRequest(binding, "risk-eligibility-prod-active"))
+                .getBody();
+        VisualRuntimeRolloutObservationValidation.Request request =
+                rolloutObservationRequest(activation, "risk-rollout-rollback-1",
+                        VisualRuntimeRolloutObservation.STATE_ROLLED_BACK, 0, true,
+                        "error-rate > 2% or golden regression failure");
+
+        var validation = fixture.controller().validateRuntimeRolloutObservation(request);
+        var response = fixture.controller().submitRuntimeRolloutObservation(request);
+
+        assertThat(validation.getStatusCode().value()).isEqualTo(200);
+        assertThat(validation.getBody()).isNotNull();
+        assertThat(validation.getBody().valid()).isTrue();
+        assertThat(validation.getBody().recordable()).isTrue();
+        assertThat(validation.getBody().state()).isEqualTo("ready-to-record");
+        assertThat(validation.getBody().level()).isEqualTo("error");
+        assertThat(response.getStatusCode().value()).isEqualTo(201);
+        assertThat(response.getBody()).isInstanceOf(VisualRuntimeRolloutObservation.class);
+        VisualRuntimeRolloutObservation observation = (VisualRuntimeRolloutObservation) response.getBody();
+        assertThat(observation.state()).isEqualTo(VisualRuntimeRolloutObservation.STATE_ROLLED_BACK);
+        assertThat(observation.level()).isEqualTo("error");
+        assertThat(observation.rollbackTriggered()).isTrue();
+        assertThat(observation.rollbackSignal()).contains("error-rate");
+        assertThat(fixture.controller().runtimeRolloutObservations(
+                activation.activationId(), binding.bindingId(), "risk:eligibility", "rolled-back"))
+                .singleElement()
+                .isEqualTo(observation);
+    }
+
+    @Test
+    void runtimeRolloutObservationRejectsPlanMismatchAndInvalidTraffic() {
+        RuntimeBindingImplementationFixture fixture = runtimeBindingImplementationFixture();
+        VisualRuntimeBindingImplementationBinding stored = submitImplementation(
+                fixture,
+                completeImplementation("risk-eligibility-native-v1")
+        );
+        VisualRuntimeBindingImplementationBinding binding = fixture.controller()
+                .bindRuntimeBindingImplementation(stored.bindingId(), transitionRequest("", true))
+                .getBody()
+                .binding();
+        VisualRuntimeAdapterActivation activation = (VisualRuntimeAdapterActivation) fixture.controller()
+                .submitRuntimeAdapterActivation(adapterActivationRequest(binding, "risk-eligibility-prod-active"))
+                .getBody();
+        VisualRuntimeRolloutObservationValidation.Request request =
+                rolloutObservationRequest(activation, "risk-rollout-invalid",
+                        "immediate", VisualRuntimeRolloutObservation.STATE_HEALTHY, 101, false, "");
+
+        var response = fixture.controller().submitRuntimeRolloutObservation(request);
+
+        assertThat(response.getStatusCode().value()).isEqualTo(400);
+        assertThat(response.getBody()).isInstanceOf(VisualRuntimeRolloutObservationValidation.class);
+        VisualRuntimeRolloutObservationValidation validation =
+                (VisualRuntimeRolloutObservationValidation) response.getBody();
+        assertThat(validation.valid()).isFalse();
+        assertThat(validation.recordable()).isFalse();
+        assertThat(validation.diagnostics())
+                .extracting(VisualDiagnostic::code)
+                .contains(
+                        "visual.runtimeRolloutObservation.rolloutStrategyMismatch",
+                        "visual.runtimeRolloutObservation.trafficPercentInvalid");
+        assertThat(fixture.controller().runtimeRolloutObservations("", "", "", "")).isEmpty();
     }
 
     @Test
@@ -4409,6 +4563,7 @@ class VisualAssetOverviewControllerTest {
             InMemoryVisualRuntimeBindingImplementationRepository implementationRepository,
             InMemoryVisualRuntimeAdapterActivationRepository adapterActivationRepository,
             InMemoryVisualExecutableLoweringIntegrationRepository executableLoweringIntegrationRepository,
+            InMemoryVisualRuntimeRolloutObservationRepository rolloutObservationRepository,
             VisualRuntimeBindingHandoffBundle handoffBundle,
             VisualRuntimeBindingHandoffBundle.OperatorContractSnapshot contract
     ) {
@@ -4647,6 +4802,8 @@ class VisualAssetOverviewControllerTest {
         OperatorLibrary library = VisualCatalogTestSupport.designOnlyEligibilityLibrary("integer");
         libraries.upsert(library);
         InMemoryVisualGraphPublicationRepository publications = new InMemoryVisualGraphPublicationRepository();
+        InMemoryVisualRuntimeRolloutObservationRepository rolloutObservationRepository =
+                new InMemoryVisualRuntimeRolloutObservationRepository();
         DefaultVisualOperatorCatalog catalog = new DefaultVisualOperatorCatalog(
                 VisualCatalogTestSupport.emptyResourceRegistry(),
                 new InMemoryResourceDesignContractRegistry(),
@@ -4671,6 +4828,7 @@ class VisualAssetOverviewControllerTest {
                 implementationRepository,
                 adapterActivationRepository,
                 executableLoweringIntegrationRepository,
+                rolloutObservationRepository,
                 libraries
         );
         VisualRuntimeBindingHandoffBundle handoffBundle = controller.runtimeBindingHandoffBundle(
@@ -4696,6 +4854,7 @@ class VisualAssetOverviewControllerTest {
                 implementationRepository,
                 adapterActivationRepository,
                 executableLoweringIntegrationRepository,
+                rolloutObservationRepository,
                 handoffBundle,
                 handoffBundle.operatorContracts().getFirst()
         );
@@ -4817,6 +4976,59 @@ class VisualAssetOverviewControllerTest {
                         "health-check",
                         "deployment:risk-eligibility-native-v1",
                         "Readiness probe is healthy."))
+        );
+    }
+
+    private static VisualRuntimeRolloutObservationValidation.Request rolloutObservationRequest(
+            VisualRuntimeAdapterActivation activation,
+            String observationId,
+            String observationState,
+            int trafficPercent,
+            boolean rollbackTriggered,
+            String rollbackSignal) {
+        return rolloutObservationRequest(
+                activation,
+                observationId,
+                "canary",
+                observationState,
+                trafficPercent,
+                rollbackTriggered,
+                rollbackSignal);
+    }
+
+    private static VisualRuntimeRolloutObservationValidation.Request rolloutObservationRequest(
+            VisualRuntimeAdapterActivation activation,
+            String observationId,
+            String rolloutStrategy,
+            String observationState,
+            int trafficPercent,
+            boolean rollbackTriggered,
+            String rollbackSignal) {
+        return new VisualRuntimeRolloutObservationValidation.Request(
+                VisualRuntimeRolloutObservationValidation.REQUEST_SCHEMA_VERSION,
+                observationId,
+                activation.activationId(),
+                activation.revision(),
+                activation.bindingId(),
+                activation.bindingRevision(),
+                activation.operatorRef(),
+                activation.operatorFingerprint(),
+                rolloutStrategy,
+                trafficPercent,
+                trafficPercent >= 100 ? "full-ramp" : "canary",
+                observationState,
+                rollbackTriggered,
+                rollbackSignal,
+                "runtime-platform",
+                "visual-canvas-test",
+                rollbackTriggered ? "Rollback trigger was observed." : "Rollout observation was collected.",
+                List.of(new VisualRuntimeRolloutObservation.Evidence(
+                        rollbackTriggered ? "rollback-event" : "canary-metric",
+                        "rollout:%s".formatted(observationId),
+                        rollbackTriggered
+                                ? "Runtime rollout emitted rollback evidence."
+                                : "Runtime rollout canary metrics stayed within guardrails.")),
+                Instant.parse("2026-07-04T00:00:00Z")
         );
     }
 

@@ -2082,7 +2082,23 @@ fingerprint/adapter drift、同一 activationId 但 submitted evidence 不同、
 完全一致时返回已有 fact 和 `200`；同 id 但 activation metadata、validation 或 evidence 不一致时仍返回
 `409`。如果 repository 写入失败，端点返回 `409` 和
 `visual.runtimeAdapterActivation.persistenceFailed` validation diagnostic，metadata 携带
-activation/binding/operator 和异常类型信息。`POST
+activation/binding/operator 和异常类型信息。
+`POST /api/visual/assets/runtime-binding-requirements/rollout-observations/validate`
+接收 `bloge.visualRuntimeRolloutObservationRequest.v1`，对准 active adapter activation、
+bound implementation、当前 catalog fingerprint、bound implementation 上的 `rolloutPlan`、
+rollout strategy、traffic percent、rollout phase、observation state、rollback signal、
+observedBy、reason 和 evidence 做无状态校验，返回
+`bloge.visualRuntimeRolloutObservationValidation.v1`。该合同把运行面结果和请求合法性分开：
+`healthy/completed/in-progress/degraded/failed/rolled-back` 都可以成为 recordable observation；
+真正阻断的是 activation/binding revision 或 operator fingerprint 不匹配、catalog drift、
+rollout strategy 与计划不一致、traffic 超出计划、rollback 已触发但缺少 signal、或缺少审计/证据。
+`POST .../rollout-observations` 会持久化当前 canary/ramp/rollback execution fact 为
+`bloge.visualRuntimeRolloutObservation.v1`；`GET .../rollout-observations` 可按
+`activationId`、`bindingId`、`operatorRef` 和 `state` 查询。同一 stable `observationId`
+且 submitted evidence 与既有 fact 完全一致时返回已有 fact 和 `200`；同 id 但 observation
+metadata、validation 或 evidence 不一致时返回 `409`。这些 observation 是 runtime feedback
+和后续治理输入，不会直接修改 graph artifact、operator definition 或 executable readiness。
+`POST
 /api/visual/assets/runtime-binding-requirements/executable-lowering-integrations/validate`
 接收 `bloge.visualExecutableLoweringIntegrationRequest.v1`，对准 active activation、
 bound implementation、当前 catalog fingerprint、非 design 的 executable lowering mode、

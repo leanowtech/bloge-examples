@@ -841,6 +841,9 @@ Showcase metadata APIs:
 | `POST` | `/api/visual/assets/runtime-binding-requirements/adapter-activations/validate` | Validate a `bloge.visualRuntimeAdapterActivationRequest.v1` runtime-plane activation assertion against a bound implementation, current catalog fingerprint, adapter metadata, healthy runtime environment, actor/reason, and activation evidence without persisting state |
 | `GET` | `/api/visual/assets/runtime-binding-requirements/adapter-activations` | List stored `bloge.visualRuntimeAdapterActivation.v1` adapter activation facts with optional `bindingId`, `operatorRef`, and `state` filters |
 | `POST` | `/api/visual/assets/runtime-binding-requirements/adapter-activations` | Persist a healthy active adapter activation for a bound implementation; rejects unbound bindings, fingerprint/adapter drift, the same `activationId` with different submitted evidence, and duplicate active activations for the same binding, while exact stable `activationId` replay returns the existing fact as an idempotent `200 OK`; repository persistence failures return structured `409` validation diagnostics. The catalog projection can show `adapter-active`, but the operator remains non-executable until explicit BLOGE runtime lowering/executor integration exists |
+| `POST` | `/api/visual/assets/runtime-binding-requirements/rollout-observations/validate` | Validate a `bloge.visualRuntimeRolloutObservationRequest.v1` canary/ramp/rollback execution observation against an active adapter activation, bound implementation, current catalog fingerprint, bound `rolloutPlan`, observed traffic, rollback signal, actor/reason, and rollout evidence without persisting state; degraded or rolled-back observations are recordable facts when contract identity is current |
+| `GET` | `/api/visual/assets/runtime-binding-requirements/rollout-observations` | List stored `bloge.visualRuntimeRolloutObservation.v1` rollout execution facts with optional `activationId`, `bindingId`, `operatorRef`, and `state` filters |
+| `POST` | `/api/visual/assets/runtime-binding-requirements/rollout-observations` | Persist one runtime rollout execution observation for an active adapter activation; rejects missing/stale activation, unbound or drifted binding, catalog drift, rollout strategy mismatch, invalid traffic, missing rollback signal when rollback is triggered, missing actor/reason, and missing rollout evidence; exact stable `observationId` replay returns the existing fact as `200 OK`, same-id different evidence returns `409`, and accepted observations remain audit/control-plane feedback rather than executable readiness |
 | `POST` | `/api/visual/assets/runtime-binding-requirements/executable-lowering-integrations/validate` | Validate a `bloge.visualExecutableLoweringIntegrationRequest.v1` executor-plane assertion against an active adapter activation, bound implementation, current catalog fingerprint, executable lowering mode, executor entrypoint, actor/reason, and integration evidence without persisting state |
 | `GET` | `/api/visual/assets/runtime-binding-requirements/executable-lowering-integrations` | List stored `bloge.visualExecutableLoweringIntegration.v1` executable lowering integration facts with optional `activationId`, `operatorRef`, and `state` filters |
 | `POST` | `/api/visual/assets/runtime-binding-requirements/executable-lowering-integrations` | Persist one active executable lowering integration fact for an active adapter activation; rejects missing/stale activation, unbound or drifted binding, catalog drift, `loweringMode=design`, the same `integrationId` with different submitted evidence, and duplicate active integrations for the same activation, while exact stable `integrationId` replay returns the existing fact as an idempotent `200 OK`; repository persistence failures return structured `409` validation diagnostics. Catalog promotion can advance to `readiness-recompute-required`, while executable readiness still waits for a trusted catalog/library revision or readiness recomputation |
@@ -1280,6 +1283,16 @@ implementations; the server persists healthy current assertions as
 fingerprint drift, adapter metadata drift, same-id different-evidence activation
 conflicts, duplicate active activations, missing actor/reason, and missing health
 evidence, while exact stable activation id replay returns the existing fact.
+After activation, rollout systems can submit
+`bloge.visualRuntimeRolloutObservationRequest.v1` execution observations for
+canary, ramp, full rollout, degradation, failure, or rollback phases. These
+observations are checked against the active activation revision, bound binding
+revision, current operator fingerprint, and the bound implementation's
+`rolloutPlan`; strategy mismatch, invalid traffic, missing rollback signal, or
+missing rollout evidence is rejected, while a `degraded` or `rolled-back`
+observation with correct identity is stored as an auditable `level=warning` or
+`level=error` fact. Exact stable observation id replay is idempotent, and the
+fact remains runtime feedback rather than executable readiness.
 Executable lowering integration
 assertions then validate activation revision, binding revision, current catalog
 fingerprint, non-design lowering mode, executor entrypoint, actor/reason, and

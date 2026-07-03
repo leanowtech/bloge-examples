@@ -20,6 +20,7 @@ import com.leanowtech.bloge.gateway.visual.publication.VisualGraphPublicationRep
 import com.leanowtech.bloge.gateway.visual.publication.VisualGraphPublicationSummary;
 import com.leanowtech.bloge.gateway.visual.runtime.InMemoryVisualExecutableLoweringIntegrationRepository;
 import com.leanowtech.bloge.gateway.visual.runtime.InMemoryVisualRuntimeAdapterActivationRepository;
+import com.leanowtech.bloge.gateway.visual.runtime.InMemoryVisualRuntimeRolloutObservationRepository;
 import com.leanowtech.bloge.gateway.visual.runtime.VisualExecutableLoweringIntegration;
 import com.leanowtech.bloge.gateway.visual.runtime.VisualExecutableLoweringIntegrationRepository;
 import com.leanowtech.bloge.gateway.visual.runtime.VisualExecutableLoweringIntegrationValidation;
@@ -30,6 +31,9 @@ import com.leanowtech.bloge.gateway.visual.runtime.VisualRuntimeAdapterActivatio
 import com.leanowtech.bloge.gateway.visual.runtime.VisualRuntimeAdapterActivationRepository;
 import com.leanowtech.bloge.gateway.visual.runtime.VisualRuntimeAdapterActivationValidation;
 import com.leanowtech.bloge.gateway.visual.runtime.VisualRuntimeBindingDeactivationResult;
+import com.leanowtech.bloge.gateway.visual.runtime.VisualRuntimeRolloutObservation;
+import com.leanowtech.bloge.gateway.visual.runtime.VisualRuntimeRolloutObservationRepository;
+import com.leanowtech.bloge.gateway.visual.runtime.VisualRuntimeRolloutObservationValidation;
 import com.leanowtech.bloge.gateway.visual.validation.GraphDraftValidator;
 import com.leanowtech.bloge.gateway.visual.validation.VisualValidationResult;
 
@@ -66,6 +70,7 @@ public class VisualAssetOverviewController {
     private final VisualRuntimeBindingImplementationRepository implementationRepository;
     private final VisualRuntimeAdapterActivationRepository adapterActivationRepository;
     private final VisualExecutableLoweringIntegrationRepository executableLoweringIntegrationRepository;
+    private final VisualRuntimeRolloutObservationRepository rolloutObservationRepository;
     private final OperatorLibraryRegistry operatorLibraryRegistry;
 
     /**
@@ -82,6 +87,7 @@ public class VisualAssetOverviewController {
                 new InMemoryVisualRuntimeBindingImplementationRepository(),
                 new InMemoryVisualRuntimeAdapterActivationRepository(),
                 new InMemoryVisualExecutableLoweringIntegrationRepository(),
+                new InMemoryVisualRuntimeRolloutObservationRepository(),
                 OperatorLibraryRegistry.empty());
     }
 
@@ -93,6 +99,7 @@ public class VisualAssetOverviewController {
      * @param implementationRepository runtime implementation binding repository
      * @param adapterActivationRepository runtime adapter activation repository
      * @param executableLoweringIntegrationRepository executable lowering integration repository
+     * @param rolloutObservationRepository runtime rollout observation repository
      */
     @Autowired
     public VisualAssetOverviewController(GraphDraftRepository draftRepository,
@@ -103,6 +110,7 @@ public class VisualAssetOverviewController {
                                          VisualRuntimeAdapterActivationRepository adapterActivationRepository,
                                          VisualExecutableLoweringIntegrationRepository
                                                  executableLoweringIntegrationRepository,
+                                         VisualRuntimeRolloutObservationRepository rolloutObservationRepository,
                                          OperatorLibraryRegistry operatorLibraryRegistry) {
         this.draftRepository = draftRepository;
         this.validator = validator;
@@ -117,6 +125,9 @@ public class VisualAssetOverviewController {
         this.executableLoweringIntegrationRepository = executableLoweringIntegrationRepository == null
                 ? new InMemoryVisualExecutableLoweringIntegrationRepository()
                 : executableLoweringIntegrationRepository;
+        this.rolloutObservationRepository = rolloutObservationRepository == null
+                ? new InMemoryVisualRuntimeRolloutObservationRepository()
+                : rolloutObservationRepository;
         this.operatorLibraryRegistry = operatorLibraryRegistry == null
                 ? OperatorLibraryRegistry.empty()
                 : operatorLibraryRegistry;
@@ -129,9 +140,24 @@ public class VisualAssetOverviewController {
                                          VisualRuntimeBindingImplementationRepository implementationRepository,
                                          VisualRuntimeAdapterActivationRepository adapterActivationRepository,
                                          VisualExecutableLoweringIntegrationRepository
+                                                 executableLoweringIntegrationRepository,
+                                         OperatorLibraryRegistry operatorLibraryRegistry) {
+        this(draftRepository, validator, catalog, publicationRepository, implementationRepository,
+                adapterActivationRepository, executableLoweringIntegrationRepository,
+                new InMemoryVisualRuntimeRolloutObservationRepository(), operatorLibraryRegistry);
+    }
+
+    public VisualAssetOverviewController(GraphDraftRepository draftRepository,
+                                         GraphDraftValidator validator,
+                                         VisualOperatorCatalog catalog,
+                                         VisualGraphPublicationRepository publicationRepository,
+                                         VisualRuntimeBindingImplementationRepository implementationRepository,
+                                         VisualRuntimeAdapterActivationRepository adapterActivationRepository,
+                                         VisualExecutableLoweringIntegrationRepository
                                                  executableLoweringIntegrationRepository) {
         this(draftRepository, validator, catalog, publicationRepository, implementationRepository,
-                adapterActivationRepository, executableLoweringIntegrationRepository, OperatorLibraryRegistry.empty());
+                adapterActivationRepository, executableLoweringIntegrationRepository,
+                new InMemoryVisualRuntimeRolloutObservationRepository(), OperatorLibraryRegistry.empty());
     }
 
     public VisualAssetOverviewController(GraphDraftRepository draftRepository,
@@ -1462,6 +1488,165 @@ public class VisualAssetOverviewController {
                                     "bindingId", validation.bindingId(),
                                     "operatorRef", validation.operatorRef()))
             ));
+        }
+        return ResponseEntity.status(HttpStatus.CREATED).body(stored);
+    }
+
+    /**
+     * Validates a runtime rollout execution observation against an active adapter activation.
+     *
+     * <p>Rollout observations are execution feedback facts: degraded or rolled-back
+     * observations are recordable when identity, revision, fingerprint, rollout
+     * plan, and evidence checks pass.</p>
+     *
+     * @param request submitted rollout observation request
+     * @return validation result with activation, binding, catalog, and rollout diagnostics
+     */
+    @PostMapping("/runtime-binding-requirements/rollout-observations/validate")
+    public ResponseEntity<VisualRuntimeRolloutObservationValidation> validateRuntimeRolloutObservation(
+            @RequestBody(required = false) VisualRuntimeRolloutObservationValidation.Request request) {
+        if (request == null) {
+            return ResponseEntity.badRequest()
+                    .body(VisualRuntimeRolloutObservationValidation.missingRequest());
+        }
+        VisualRuntimeAdapterActivation activation = request.activationId().isBlank()
+                ? null
+                : adapterActivationRepository.find(request.activationId()).orElse(null);
+        String bindingId = activation == null ? request.bindingId() : activation.bindingId();
+        VisualRuntimeBindingImplementationBinding binding = bindingId.isBlank()
+                ? null
+                : implementationRepository.find(bindingId).orElse(null);
+        String operatorRef = activation == null ? request.operatorRef() : activation.operatorRef();
+        OperatorDefinition currentOperator = operatorRef.isBlank()
+                ? null
+                : catalog.find(operatorRef).orElse(null);
+        VisualRuntimeRolloutObservationValidation result =
+                VisualRuntimeRolloutObservationValidation.from(request, activation, binding, currentOperator);
+        boolean unsupportedVersion = result.diagnostics().stream()
+                .anyMatch(diagnostic ->
+                        "visual.runtimeRolloutObservation.schemaVersionUnsupported".equals(diagnostic.code()));
+        return unsupportedVersion
+                ? ResponseEntity.status(HttpStatus.BAD_REQUEST).body(result)
+                : ResponseEntity.ok(result);
+    }
+
+    /**
+     * Lists submitted runtime rollout observations.
+     *
+     * @param activationId optional adapter activation id filter
+     * @param bindingId optional implementation binding id filter
+     * @param operatorRef optional operator reference filter
+     * @param state optional observation state filter
+     * @return matching runtime rollout observations
+     */
+    @GetMapping("/runtime-binding-requirements/rollout-observations")
+    public List<VisualRuntimeRolloutObservation> runtimeRolloutObservations(
+            @RequestParam(defaultValue = "") String activationId,
+            @RequestParam(defaultValue = "") String bindingId,
+            @RequestParam(defaultValue = "") String operatorRef,
+            @RequestParam(defaultValue = "") String state) {
+        String normalizedActivationId = activationId == null ? "" : activationId.trim();
+        String normalizedBindingId = bindingId == null ? "" : bindingId.trim();
+        String normalizedOperatorRef = operatorRef == null ? "" : operatorRef.trim();
+        String normalizedState = state == null ? "" : state.trim().toLowerCase(Locale.ROOT);
+        return rolloutObservationRepository.all().stream()
+                .filter(observation -> normalizedActivationId.isBlank()
+                        || observation.activationId().equals(normalizedActivationId))
+                .filter(observation -> normalizedBindingId.isBlank()
+                        || observation.bindingId().equals(normalizedBindingId))
+                .filter(observation -> normalizedOperatorRef.isBlank()
+                        || observation.operatorRef().equals(normalizedOperatorRef))
+                .filter(observation -> normalizedState.isBlank()
+                        || observation.state().equals(normalizedState))
+                .toList();
+    }
+
+    /**
+     * Stores a runtime rollout observation fact for an active adapter activation.
+     *
+     * <p>Accepted observations are auditable runtime-plane execution feedback.
+     * They do not mutate operator definitions or by themselves close executable
+     * readiness.</p>
+     *
+     * @param request submitted rollout observation request
+     * @return stored observation when accepted, otherwise validation diagnostics
+     */
+    @PostMapping("/runtime-binding-requirements/rollout-observations")
+    public ResponseEntity<Object> submitRuntimeRolloutObservation(
+            @RequestBody(required = false) VisualRuntimeRolloutObservationValidation.Request request) {
+        if (request == null) {
+            return ResponseEntity.badRequest()
+                    .body(VisualRuntimeRolloutObservationValidation.missingRequest());
+        }
+        VisualRuntimeAdapterActivation activation = request.activationId().isBlank()
+                ? null
+                : adapterActivationRepository.find(request.activationId()).orElse(null);
+        String bindingId = activation == null ? request.bindingId() : activation.bindingId();
+        VisualRuntimeBindingImplementationBinding binding = bindingId.isBlank()
+                ? null
+                : implementationRepository.find(bindingId).orElse(null);
+        String operatorRef = activation == null ? request.operatorRef() : activation.operatorRef();
+        OperatorDefinition currentOperator = operatorRef.isBlank()
+                ? null
+                : catalog.find(operatorRef).orElse(null);
+        VisualRuntimeRolloutObservationValidation validation =
+                VisualRuntimeRolloutObservationValidation.from(request, activation, binding, currentOperator);
+        if (!validation.valid()) {
+            return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(validation);
+        }
+        VisualRuntimeRolloutObservation candidate = VisualRuntimeRolloutObservation.from(request, validation);
+        if (!request.observationId().isBlank()) {
+            VisualRuntimeRolloutObservation existing = rolloutObservationRepository.find(request.observationId())
+                    .orElse(null);
+            if (existing != null) {
+                if (sameRuntimeRolloutObservationSubmission(existing, candidate)) {
+                    return ResponseEntity.ok(existing);
+                }
+                return ResponseEntity.status(HttpStatus.CONFLICT)
+                        .body(runtimeRolloutObservationValidationWithBlockingDiagnostic(
+                                validation,
+                                VisualDiagnostic.error(
+                                        "visual.runtimeRolloutObservation.observationIdDuplicate",
+                                        "Runtime rollout observationId '%s' already exists with different submitted evidence."
+                                                .formatted(request.observationId()),
+                                        "/observationId",
+                                        Map.of("observationId", request.observationId()))
+                        ));
+            }
+        }
+        VisualRuntimeRolloutObservation stored;
+        try {
+            stored = rolloutObservationRepository.create(candidate);
+        } catch (IllegalArgumentException e) {
+            return ResponseEntity.status(HttpStatus.CONFLICT)
+                    .body(runtimeRolloutObservationValidationWithBlockingDiagnostic(
+                            validation,
+                            VisualDiagnostic.error(
+                                    "visual.runtimeRolloutObservation.observationConflict",
+                                    e.getMessage(),
+                                    "/observationId",
+                                    Map.of("observationId", request.observationId(),
+                                            "activationId", validation.activationId()))
+                    ));
+        } catch (IllegalStateException e) {
+            return ResponseEntity.status(HttpStatus.CONFLICT)
+                    .body(runtimeRolloutObservationValidationWithBlockingDiagnostic(
+                            validation,
+                            runtimeEvidenceMutationExceptionDiagnostic(
+                                    "visual.runtimeRolloutObservation.persistenceFailed",
+                                    "Runtime rollout observation '%s' could not be persisted: %s"
+                                            .formatted(defaultIfBlank(request.observationId(),
+                                                            candidate.observationId()),
+                                                    defaultIfBlank(e.getMessage(), e.getClass().getSimpleName())),
+                                    "/observationId",
+                                    e,
+                                    Map.of(
+                                            "observationId", defaultIfBlank(request.observationId(),
+                                                    candidate.observationId()),
+                                            "activationId", validation.activationId(),
+                                            "bindingId", validation.bindingId(),
+                                            "operatorRef", validation.operatorRef()))
+                    ));
         }
         return ResponseEntity.status(HttpStatus.CREATED).body(stored);
     }
@@ -3397,6 +3582,18 @@ public class VisualAssetOverviewController {
                 existing.updatedAt()));
     }
 
+    private static boolean sameRuntimeRolloutObservationSubmission(VisualRuntimeRolloutObservation existing,
+                                                                   VisualRuntimeRolloutObservation candidate) {
+        if (existing == null || candidate == null) {
+            return false;
+        }
+        return existing.equals(candidate.withIdentity(
+                existing.observationId(),
+                existing.revision(),
+                existing.createdAt(),
+                existing.updatedAt()));
+    }
+
     private static boolean sameExecutableLoweringIntegrationSubmission(VisualExecutableLoweringIntegration existing,
                                                                        VisualExecutableLoweringIntegration candidate) {
         if (existing == null || candidate == null) {
@@ -3601,6 +3798,42 @@ public class VisualAssetOverviewController {
                 validation.executorEntrypoint(),
                 validation.executorOwner(),
                 validation.integratedBy(),
+                validation.reason(),
+                diagnostics
+        );
+    }
+
+    private static VisualRuntimeRolloutObservationValidation runtimeRolloutObservationValidationWithBlockingDiagnostic(
+            VisualRuntimeRolloutObservationValidation validation,
+            VisualDiagnostic diagnostic) {
+        List<VisualDiagnostic> diagnostics = new ArrayList<>(validation.diagnostics());
+        diagnostics.add(diagnostic);
+        return new VisualRuntimeRolloutObservationValidation(
+                validation.schemaVersion(),
+                validation.validatedAt(),
+                false,
+                false,
+                "rejected",
+                "error",
+                diagnostic.message(),
+                validation.observationId(),
+                validation.activationId(),
+                validation.activationRevision(),
+                validation.bindingId(),
+                validation.bindingRevision(),
+                validation.operatorRef(),
+                validation.operatorFingerprint(),
+                validation.currentCatalogFingerprint(),
+                validation.currentCatalogState(),
+                validation.adapterKind(),
+                validation.runtimeEnvironment(),
+                validation.rolloutStrategy(),
+                validation.trafficPercent(),
+                validation.rolloutPhase(),
+                validation.observationState(),
+                validation.rollbackTriggered(),
+                validation.rollbackSignal(),
+                validation.observedBy(),
                 validation.reason(),
                 diagnostics
         );
