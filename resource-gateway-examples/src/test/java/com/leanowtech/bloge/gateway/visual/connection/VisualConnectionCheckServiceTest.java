@@ -1031,6 +1031,29 @@ class VisualConnectionCheckServiceTest {
     }
 
     @Test
+    void rejectsNodeOutputRootPortPickerBindingWhenDynamicFieldCollidesWithTargetOptionalProperty() {
+        VisualConnectionCheckService service = connectionService(VisualCatalogTestSupport
+                .catalogWithLibrary(VisualCatalogTestSupport.dynamicOptionalCollisionLibrary()));
+        GraphDraft draft = dynamicOptionalCollisionDraft();
+
+        VisualConnectionCheckResult result = service.check(new VisualConnectionCheckRequest(
+                draft,
+                new GraphDraft.Endpoint("dynamicStringFacts", "facts", ""),
+                new GraphDraft.Endpoint("optionalScoreSink", "inputs", ""),
+                "data"
+        ));
+
+        assertThat(result.accepted()).isFalse();
+        assertThat(result.diagnostics())
+                .extracting("code")
+                .contains("visual.binding.typeMismatch", "visual.edge.typeMismatch");
+        assertThat(result.diagnostics())
+                .anySatisfy(diagnostic -> assertThat(diagnostic.message())
+                        .contains("at 'score'")
+                        .contains("source type string cannot feed target type integer"));
+    }
+
+    @Test
     void rejectsWholeObjectConnectionWithSourceAdditionalFieldsForStrictTarget() {
         VisualConnectionCheckService service = connectionService(VisualCatalogTestSupport
                 .catalogWithLibrary(VisualCatalogTestSupport.objectCompatibilityLibrary(
@@ -2433,6 +2456,41 @@ class VisualConnectionCheckServiceTest {
                 List.of(),
                 Map.of(),
                 new GraphDraft.OutputSelection("merge", "")
+        );
+    }
+
+    private static GraphDraft dynamicOptionalCollisionDraft() {
+        return new GraphDraft(
+                "",
+                "",
+                0,
+                "dynamicOptionalCollisionConnectionCheck",
+                "",
+                "",
+                "",
+                "",
+                null,
+                List.of(
+                        new GraphDraft.DraftNode(
+                                "dynamicStringFacts",
+                                "risk:dynamicStringFacts",
+                                "",
+                                Map.of(),
+                                Map.of(),
+                                null
+                        ),
+                        new GraphDraft.DraftNode(
+                                "optionalScoreSink",
+                                "risk:optionalScoreSink",
+                                "",
+                                Map.of(),
+                                Map.of(),
+                                null
+                        )
+                ),
+                List.of(),
+                Map.of(),
+                new GraphDraft.OutputSelection("optionalScoreSink", "")
         );
     }
 

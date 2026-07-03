@@ -20435,11 +20435,49 @@ function objectSchemaCompatibilityIssue(sourceSchema, targetSchema, path = '') {
       }
     }
   }
-  return objectPatternPropertiesCompatibilityIssue(sourceSchema, targetSchema, path)
+  return objectOptionalTargetPropertiesCompatibilityIssue(sourceSchema, targetSchema, path)
+    || objectPatternPropertiesCompatibilityIssue(sourceSchema, targetSchema, path)
     || objectPropertyNamesCompatibilityIssue(sourceSchema, targetSchema, path)
     || objectDependentRequiredCompatibilityIssue(sourceSchema, targetSchema, path)
     || objectDependentSchemasCompatibilityIssue(sourceSchema, targetSchema, path)
     || objectPropertyBoundsCompatibilityIssue(sourceSchema, targetSchema, path);
+}
+
+function objectOptionalTargetPropertiesCompatibilityIssue(sourceSchema, targetSchema, path = '') {
+  const sourceProperties = schemaObjectProperties(sourceSchema);
+  const targetRequired = new Set(schemaRequiredNames(targetSchema));
+  for (const [propertyName, targetProperty] of Object.entries(schemaObjectProperties(targetSchema))) {
+    if (targetRequired.has(propertyName)
+        || Object.prototype.hasOwnProperty.call(sourceProperties, propertyName)
+        || sourceCannotContainProperty(sourceSchema, propertyName)
+        || !targetProperty
+        || typeof targetProperty !== 'object'
+        || Array.isArray(targetProperty)) {
+      continue;
+    }
+    const childPath = appendCompatibilityPath(path, propertyName);
+    const sourcePatternSchemas = matchingPatternPropertySchemas(sourceSchema, propertyName);
+    if (sourcePatternSchemas.length) {
+      for (const sourcePatternSchema of sourcePatternSchemas) {
+        const nested = schemaCompatibilityIssue(sourcePatternSchema, targetProperty, childPath);
+        if (nested) {
+          return nested;
+        }
+      }
+      continue;
+    }
+    const sourceResidual = residualPropertiesPolicy(sourceSchema);
+    const sourceResidualKeyword = residualPropertiesKeyword(sourceSchema);
+    if (sourceResidual && typeof sourceResidual === 'object' && !Array.isArray(sourceResidual)) {
+      const nested = schemaCompatibilityIssue(sourceResidual, targetProperty, childPath);
+      if (nested) {
+        return nested;
+      }
+    } else if (sourceResidual === undefined || sourceResidual === true) {
+      return reasonAt(childPath, `source object may produce optional field '${propertyName}' from unconstrained ${sourceResidualKeyword} but target requires ${schemaType(targetProperty)}`);
+    }
+  }
+  return '';
 }
 
 function objectPatternPropertiesCompatibilityIssue(sourceSchema, targetSchema, path = '') {
@@ -21313,9 +21351,16 @@ function presentObjectProperty(value, property) {
 }
 
 function sourceCannotContainProperty(sourceSchema, property) {
-  return residualPropertiesPolicy(sourceSchema) === false
+  return sourcePropertyNamesRejectProperty(sourceSchema, property)
+    || (residualPropertiesPolicy(sourceSchema) === false
     && !Object.prototype.hasOwnProperty.call(schemaObjectProperties(sourceSchema), property)
-    && !matchingPatternPropertySchemas(sourceSchema, property).length;
+    && !matchingPatternPropertySchemas(sourceSchema, property).length);
+}
+
+function sourcePropertyNamesRejectProperty(sourceSchema, property) {
+  const propertyNameSchema = schemaPropertyNameSchema(sourceSchema);
+  const effective = effectivePropertyNameSchema(propertyNameSchema);
+  return Boolean(effective) && !schemaValueMatchesSchema(property, effective);
 }
 
 function residualPropertiesPolicy(schema) {

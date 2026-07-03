@@ -1513,6 +1513,47 @@ class VisualAuthoringBrowserDomTest {
                 "riskDynamicFacts.output.facts.dynamicScore");
     }
 
+    @Test
+    void composerRejectsDynamicRootObjectOutputWhenItCanCollideWithTargetOptionalProperty()
+            throws JsonProcessingException {
+        driver = newChromeDriverOrSkip();
+        WebDriverWait wait = new WebDriverWait(driver, WAIT_TIMEOUT);
+        driver.get("http://localhost:" + port + "/examples/gateway");
+
+        waitForComposer(wait);
+        wait.until(ExpectedConditions.visibilityOfElementLocated(By.id("operator-palette")));
+
+        importOperatorLibrary(wait, VisualCatalogTestSupport.dynamicOptionalCollisionLibrary());
+        dragOperatorToCanvas(wait, "Dynamic string facts", "risk:dynamicStringFacts",
+                "riskDynamicStringFacts", 140, 120);
+        dragOperatorToCanvas(wait, "Optional score sink", "risk:optionalScoreSink",
+                "riskOptionalScoreSink", 140, 120);
+
+        click(wait, By.cssSelector("#diagram [data-node-id='riskOptionalScoreSink']"));
+        waitForText(wait, By.id("selected-operator-editor"), "Optional score sink");
+        By rootBindingSource = By.cssSelector(
+                "[data-binding-source][data-binding-port='inputs'][data-binding-path='']");
+        wait.until(ExpectedConditions.visibilityOfElementLocated(rootBindingSource));
+        List<String> rootSourceOptions = optionTexts(wait, By.cssSelector(
+                "[data-binding-source][data-binding-port='inputs'][data-binding-path=''] option"));
+        assertThat(rootSourceOptions)
+                .anySatisfy(option -> assertThat(option)
+                        .contains("riskDynamicStringFacts.facts")
+                        .contains("source type string cannot feed target type integer"));
+        int edgeCount = driver.findElements(By.cssSelector("#diagram path.edge")).size();
+
+        selectByValue(wait, rootBindingSource,
+                bindingSourceValue("riskDynamicStringFacts", "facts", ""));
+
+        waitForText(wait, By.id("connection-status"),
+                "source type string cannot feed target type integer");
+        assertThat(driver.findElements(By.cssSelector("#diagram path.edge")).size()).isEqualTo(edgeCount);
+        wait.until(ignored -> valueOf(By.cssSelector(
+                "[data-binding-expression][data-binding-port='inputs'][data-binding-path='']")).isBlank());
+        assertThat(valueOf(By.id("composer-dsl")))
+                .doesNotContain("riskDynamicStringFacts.output.facts");
+    }
+
     private WebDriver newChromeDriverOrSkip() {
         if (chromeWebDriverUnavailableReason != null) {
             Assumptions.abort(chromeWebDriverUnavailableReason);

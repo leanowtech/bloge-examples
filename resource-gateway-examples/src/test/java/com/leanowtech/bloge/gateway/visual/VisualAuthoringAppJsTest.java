@@ -65,6 +65,29 @@ class VisualAuthoringAppJsTest {
     }
 
     @Test
+    void browserSchemaCompatibilityHintsRejectDynamicOptionalPropertyCollisions() throws Exception {
+        assumeNodeAvailable();
+
+        Path tempDir = Files.createTempDirectory("bloge-schema-compat-app-js-test");
+        Path appJs = tempDir.resolve("app.js");
+        Path probe = tempDir.resolve("probe.js");
+        try {
+            Files.writeString(appJs, appJsSource(), StandardCharsets.UTF_8);
+            Files.writeString(probe, schemaCompatibilityProbe(), StandardCharsets.UTF_8);
+
+            ProcessResult result = runProcess(List.of("node", probe.toString(), appJs.toString()), tempDir, 10);
+
+            assertThat(result.finished()).as(result.output()).isTrue();
+            assertThat(result.exitCode()).as(result.output()).isZero();
+            assertThat(result.output()).contains("browser schema compatibility probe passed");
+        } finally {
+            Files.deleteIfExists(probe);
+            Files.deleteIfExists(appJs);
+            Files.deleteIfExists(tempDir);
+        }
+    }
+
+    @Test
     void keepsServerPreflightAuthoritativeForLocallyRejectedConnections() throws Exception {
         String source = appJsSource();
 
@@ -5930,6 +5953,159 @@ operators:
                   }
                 }
                 console.log('browser union schema probe passed');
+                """;
+    }
+
+    private static String schemaCompatibilityProbe() {
+        return """
+                const fs = require('fs');
+                const vm = require('vm');
+                const source = fs.readFileSync(process.argv[2], 'utf8');
+                new vm.Script(source, { filename: 'app.js' });
+
+                function functionSource(name) {
+                  const start = source.indexOf(`function ${name}(`);
+                  if (start < 0) throw new Error(`missing function ${name}`);
+                  const openParen = source.indexOf('(', start);
+                  let parenDepth = 0;
+                  let brace = -1;
+                  for (let i = openParen; i < source.length; i += 1) {
+                    const ch = source[i];
+                    if (ch === '(') parenDepth += 1;
+                    if (ch === ')') {
+                      parenDepth -= 1;
+                      if (parenDepth === 0) {
+                        brace = source.indexOf('{', i + 1);
+                        break;
+                      }
+                    }
+                  }
+                  if (brace < 0) throw new Error(`missing body for function ${name}`);
+                  let depth = 0;
+                  for (let i = brace; i < source.length; i += 1) {
+                    const ch = source[i];
+                    if (ch === '{') depth += 1;
+                    if (ch === '}') {
+                      depth -= 1;
+                      if (depth === 0) return source.slice(start, i + 1);
+                    }
+                  }
+                  throw new Error(`unterminated function ${name}`);
+                }
+
+                const context = vm.createContext({ console });
+                context.SUPPORTED_SCHEMA_UNION_KEYWORDS = ['oneOf', 'anyOf'];
+
+                for (const name of [
+                  'schemaCompatibilityIssue',
+                  'sourceUnionCompatibilityIssue',
+                  'targetUnionCompatibilityIssue',
+                  'unionBaseCompatibilityIssue',
+                  'objectSchemaCompatibilityIssue',
+                  'objectOptionalTargetPropertiesCompatibilityIssue',
+                  'objectPatternPropertiesCompatibilityIssue',
+                  'objectPropertyNamesCompatibilityIssue',
+                  'objectDependentRequiredCompatibilityIssue',
+                  'objectDependentSchemasCompatibilityIssue',
+                  'objectPropertyBoundsCompatibilityIssue',
+                  'schemaType',
+                  'schemaUnionLabel',
+                  'schemaUnionBranches',
+                  'schemaWithoutUnions',
+                  'schemaObjectProperties',
+                  'schemaPatternProperties',
+                  'matchingPatternPropertySchemas',
+                  'patternMatches',
+                  'schemaPropertyNameSchema',
+                  'effectivePropertyNameSchema',
+                  'schemaRequiredNames',
+                  'sourceCannotContainProperty',
+                  'sourcePropertyNamesRejectProperty',
+                  'residualPropertiesPolicy',
+                  'residualPropertiesKeyword',
+                  'appendCompatibilityPath',
+                  'reasonAt',
+                  'valueDomainLabel',
+                  'schemaEnumValues',
+                  'uniqueSchemaValues',
+                  'schemaValuesEqual',
+                  'schemaValueKey',
+                  'canonicalSchemaValueKey',
+                  'schemaValueMatchesSchema',
+                  'schemaValueMatchesUnions',
+                  'schemaValueMatchesType',
+                  'rawSchemaType',
+                  'nullableTypePrimary',
+                  'schemaMayProduceNull',
+                  'schemaAllowsNull',
+                  'schemaTypeForValue',
+                  'numericType',
+                  'stringType',
+                  'arrayType',
+                  'stringValueMatchesPattern',
+                  'schemaPatternValue'
+                ]) {
+                  vm.runInContext(functionSource(name), context);
+                }
+
+                context.numericBoundsCompatibilityIssue = () => '';
+                context.numericMultipleOfCompatibilityIssue = () => '';
+                context.stringFormatCompatibilityIssue = () => '';
+                context.stringPatternCompatibilityIssue = () => '';
+                context.stringLengthCompatibilityIssue = () => '';
+                context.arrayPrefixItemsCompatibilityIssue = () => '';
+                context.arrayItemsCompatibilityIssue = () => '';
+                context.arrayItemBoundsCompatibilityIssue = () => '';
+                context.arrayUniqueItemsCompatibilityIssue = () => '';
+                context.arrayContainsCompatibilityIssue = () => '';
+                context.numericValueMatchesBounds = () => true;
+                context.numericValueMatchesMultipleOf = () => true;
+                context.stringValueMatchesLengthBounds = () => true;
+                context.stringValueMatchesFormat = () => true;
+                context.arrayValueMatchesSchema = () => true;
+                context.objectValueMatchesSchema = () => true;
+                context.objectDependentRequiredCompatibilityIssue = () => '';
+                context.objectDependentSchemasCompatibilityIssue = () => '';
+                context.objectPropertyBoundsCompatibilityIssue = () => '';
+
+                const target = {
+                  type: 'object',
+                  properties: {
+                    score: { type: 'integer' }
+                  },
+                  additionalProperties: true
+                };
+                const residualIssue = context.schemaCompatibilityIssue({
+                  type: 'object',
+                  additionalProperties: { type: 'string' }
+                }, target);
+                const patternIssue = context.schemaCompatibilityIssue({
+                  type: 'object',
+                  patternProperties: {
+                    '^score$': { type: 'string' }
+                  },
+                  additionalProperties: false
+                }, target);
+                const excludedByPropertyNamesIssue = context.schemaCompatibilityIssue({
+                  type: 'object',
+                  propertyNames: { pattern: '^meta\\\\.' },
+                  additionalProperties: { type: 'string' }
+                }, target);
+
+                const checks = [
+                  ['residual optional collision path', String(residualIssue.includes("at 'score'")), 'true'],
+                  ['residual optional collision type', String(residualIssue.includes('source type string cannot feed target type integer')), 'true'],
+                  ['pattern optional collision path', String(patternIssue.includes("at 'score'")), 'true'],
+                  ['pattern optional collision type', String(patternIssue.includes('source type string cannot feed target type integer')), 'true'],
+                  ['propertyNames excluded optional collision', excludedByPropertyNamesIssue, '']
+                ];
+
+                for (const [label, actual, expected] of checks) {
+                  if (actual !== expected) {
+                    throw new Error(`${label}: expected ${expected}, got ${actual}`);
+                  }
+                }
+                console.log('browser schema compatibility probe passed');
                 """;
     }
 

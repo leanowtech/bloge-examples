@@ -729,6 +729,72 @@ public final class VisualCatalogTestSupport {
         );
     }
 
+    public static OperatorLibrary dynamicOptionalCollisionLibrary() {
+        SchemaEnvelope dynamicStringPort = new SchemaEnvelope(SchemaEnvelope.JSON_SCHEMA, "2020-12", Map.of(
+                "type", "object",
+                "properties", Map.of(),
+                "additionalProperties", Map.of("type", "string")
+        ));
+        Map<String, Object> optionalInputProperties = new LinkedHashMap<>();
+        optionalInputProperties.put("score", Map.of("type", "integer"));
+        optionalInputProperties.put("tier", Map.of("type", "string"));
+        SchemaEnvelope optionalScoreInput = new SchemaEnvelope(SchemaEnvelope.JSON_SCHEMA, "2020-12", Map.of(
+                "type", "object",
+                "properties", optionalInputProperties,
+                "additionalProperties", true
+        ));
+        OperatorDefinition producer = new OperatorDefinition(
+                "bloge.visualOperator.v1",
+                "risk:dynamicStringFacts",
+                "1.0.0",
+                new OperatorDefinition.Display("Dynamic string facts",
+                        "Produces map-style dynamic string facts.",
+                        List.of("risk", "facts")),
+                new OperatorDefinition.Source("user-library", "", "", "", true),
+                new OperatorDefinition.Ports(
+                        List.of(),
+                        List.of(new OperatorDefinition.Port("facts", dynamicStringPort, true,
+                                "Dynamic string fact map."))
+                ),
+                SchemaEnvelope.opaque(),
+                OperatorDefinition.Capabilities.pure(),
+                new OperatorDefinition.Lowering("native", "riskDynamicStringFacts", Map.of()),
+                List.of()
+        );
+        OperatorDefinition sink = new OperatorDefinition(
+                "bloge.visualOperator.v1",
+                "risk:optionalScoreSink",
+                "1.0.0",
+                new OperatorDefinition.Display("Optional score sink",
+                        "Consumes an object with an optional score field.",
+                        List.of("risk", "facts")),
+                new OperatorDefinition.Source("user-library", "", "", "", true),
+                new OperatorDefinition.Ports(
+                        List.of(new OperatorDefinition.Port("inputs", optionalScoreInput, true,
+                                "Optional score input object.")),
+                        List.of(new OperatorDefinition.Port("output",
+                                SchemaEnvelope.object(Map.of("accepted", Map.of("type", "boolean")), List.of()),
+                                true,
+                                "Accepted result."))
+                ),
+                SchemaEnvelope.opaque(),
+                OperatorDefinition.Capabilities.pure(),
+                new OperatorDefinition.Lowering("transform", "transform", Map.of(
+                        "assignments", Map.of("accepted", "true")
+                )),
+                List.of()
+        );
+        return new OperatorLibrary(
+                "bloge.visualOperatorLibrary.v1",
+                "risk-dynamic-optional-collision",
+                "Dynamic optional collision operators",
+                "1.0.0",
+                "risk-team",
+                "ACTIVE",
+                List.of(producer, sink)
+        );
+    }
+
     public static OperatorLibrary unsafePathLibrary() {
         Map<String, Object> sourceOutputProperties = new LinkedHashMap<>();
         sourceOutputProperties.put("bad-field", Map.of("type", "integer"));

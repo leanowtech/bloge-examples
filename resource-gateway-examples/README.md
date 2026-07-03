@@ -275,7 +275,9 @@ and honor schema-shaped `additionalProperties` or residual
 target optional-property contracts either: if source `additionalProperties` or
 matching `patternProperties` can produce a target-declared optional key, that
 dynamic value schema must still feed the target field schema; source
-`propertyNames` can prove such a key impossible. Array bindings and edges compare item
+`propertyNames` can prove such a key impossible. The browser's local source
+picker and drag-hover schema hints mirror this optional/dynamic collision rule,
+while server connection preflight remains the final authority. Array bindings and edges compare item
 schemas, so `array<string>` cannot be wired into an input
 that requires `array<integer>`. Enum and `const` value domains are checked too:
 an output constrained to `LOW|HIGH` cannot feed an input constrained to
