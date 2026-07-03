@@ -72,11 +72,6 @@ public final class VisualSchemaCompatibility {
         }
         String sourceType = schemaType(sourceSchema);
         String targetType = schemaType(targetSchema);
-        if (sourceType.isBlank() || targetType.isBlank()
-                || "any".equals(sourceType) || "any".equals(targetType)
-                || "opaque".equals(sourceType) || "opaque".equals(targetType)) {
-            return Optional.empty();
-        }
         if (schemaMayProduceNull(sourceSchema) && !valueMatchesSchema(null, targetSchema)) {
             return Optional.of(reasonAt(path,
                     "source may produce null but target %s does not allow null"
@@ -87,6 +82,12 @@ public final class VisualSchemaCompatibility {
                     ? Optional.empty()
                     : Optional.of(reasonAt(path,
                     "source type null cannot feed target type %s".formatted(schemaTypeLabel(targetSchema))));
+        }
+        if (sourceType.isBlank() || targetType.isBlank()
+                || "any".equals(sourceType) || "any".equals(targetType)
+                || "opaque".equals(sourceType) || "opaque".equals(targetType)) {
+            Optional<String> targetNotIssue = targetNotCompatibilityIssue(sourceSchema, targetSchema, path);
+            return targetNotIssue.isPresent() ? targetNotIssue : Optional.empty();
         }
 	        if ("array".equals(sourceType) && "array".equals(targetType)) {
 	            Optional<String> prefixItemsIssue = arrayPrefixItemsCompatibilityIssue(sourceSchema, targetSchema, path);
@@ -283,18 +284,121 @@ public final class VisualSchemaCompatibility {
     private static Optional<String> targetNotCompatibilityIssue(Map<String, Object> sourceSchema,
                                                                  Map<String, Object> targetSchema,
                                                                  String path) {
-        List<Object> excludedValues = finiteSchemaValues(objectProperty(targetSchema.get("not")));
-        if (excludedValues.isEmpty()) {
+        Map<String, Object> excludedSchema = objectProperty(targetSchema.get("not"));
+        if (excludedSchema == null) {
             return Optional.empty();
         }
-        List<Object> possiblyProduced = excludedValues.stream()
-                .filter(value -> valueMatchesSchema(value, sourceSchema))
-                .toList();
-        return possiblyProduced.isEmpty()
-                ? Optional.empty()
-                : Optional.of(reasonAt(path,
-                "target excludes value(s) %s but source schema could produce them"
-                        .formatted(valueDomainLabel(possiblyProduced))));
+        List<Object> excludedValues = finiteSchemaValues(excludedSchema);
+        if (!excludedValues.isEmpty()) {
+            List<Object> possiblyProduced = excludedValues.stream()
+                    .filter(value -> valueMatchesSchema(value, sourceSchema))
+                    .toList();
+            return possiblyProduced.isEmpty()
+                    ? Optional.empty()
+                    : Optional.of(reasonAt(path,
+                    "target excludes value(s) %s but source schema could produce them"
+                            .formatted(valueDomainLabel(possiblyProduced))));
+        }
+        List<Object> sourceValues = enumValues(sourceSchema);
+        if (!sourceValues.isEmpty()) {
+            List<Object> excludedSourceValues = sourceValues.stream()
+                    .filter(value -> valueMatchesSchema(value, excludedSchema))
+                    .toList();
+            return excludedSourceValues.isEmpty()
+                    ? Optional.empty()
+                    : Optional.of(reasonAt(path,
+                    "target excludes schema %s and source value(s) %s match it"
+                            .formatted(excludedSchemaLabel(excludedSchema),
+                                    valueDomainLabel(excludedSourceValues))));
+        }
+        if (schemasDefinitelyDisjoint(sourceSchema, excludedSchema)) {
+            return Optional.empty();
+        }
+        return Optional.of(reasonAt(path,
+                "target excludes schema %s but source %s cannot prove it avoids the excluded domain"
+                        .formatted(excludedSchemaLabel(excludedSchema), schemaTypeLabel(sourceSchema))));
+    }
+
+    private static boolean schemasDefinitelyDisjoint(Map<String, Object> sourceSchema,
+                                                     Map<String, Object> excludedSchema) {
+        if (sourceSchema == null || excludedSchema == null) {
+            return false;
+        }
+        List<Object> sourceValues = enumValues(sourceSchema);
+        if (!sourceValues.isEmpty()) {
+            return sourceValues.stream().noneMatch(value -> valueMatchesSchema(value, excludedSchema));
+        }
+        List<Object> excludedValues = enumValues(excludedSchema);
+        if (!excludedValues.isEmpty()) {
+            return excludedValues.stream().noneMatch(value -> valueMatchesSchema(value, sourceSchema));
+        }
+        String sourceType = effectiveSchemaType(sourceSchema);
+        String excludedType = effectiveSchemaType(excludedSchema);
+        return !sourceType.isBlank()
+                && !excludedType.isBlank()
+                && !schemaTypesOverlap(sourceType, excludedType);
+    }
+
+    private static boolean schemaTypesOverlap(String left, String right) {
+        if (left.equals(right)) {
+            return true;
+        }
+        if (numeric(left) && numeric(right)) {
+            return true;
+        }
+        return stringLike(left) && stringLike(right);
+    }
+
+    private static String effectiveSchemaType(Map<String, Object> schema) {
+        String type = schemaType(schema);
+        if (!type.isBlank() && !type.startsWith("[")) {
+            return type;
+        }
+        if (hasSchemaKeyword(schema, "pattern", "format", "minLength", "maxLength")) {
+            return "string";
+        }
+        if (hasSchemaKeyword(schema, "items", "prefixItems", "contains", "minItems", "maxItems", "uniqueItems",
+                "minContains", "maxContains")) {
+            return "array";
+        }
+        if (hasSchemaKeyword(schema, "properties", "required", "additionalProperties", "unevaluatedProperties",
+                "patternProperties", "propertyNames", "dependentRequired", "dependentSchemas", "minProperties",
+                "maxProperties")) {
+            return "object";
+        }
+        return "";
+    }
+
+    private static boolean hasSchemaKeyword(Map<String, Object> schema, String... keywords) {
+        if (schema == null) {
+            return false;
+        }
+        for (String keyword : keywords) {
+            if (schema.containsKey(keyword)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private static String excludedSchemaLabel(Map<String, Object> schema) {
+        List<Object> values = enumValues(schema);
+        if (!values.isEmpty()) {
+            return valueDomainLabel(values);
+        }
+        String label = effectiveSchemaType(schema);
+        if (label.isBlank()) {
+            label = schemaTypeLabel(schema);
+        }
+        String pattern = stringPattern(schema);
+        if (pattern != null) {
+            label = label + " pattern '" + pattern + "'";
+        }
+        String format = stringFormat(schema);
+        if (format != null) {
+            label = label + " format '" + format + "'";
+        }
+        return label;
     }
 
 	    private static Optional<String> numericBoundsCompatibilityIssue(Map<String, Object> sourceSchema,
@@ -1250,8 +1354,8 @@ public final class VisualSchemaCompatibility {
 		    }
 
     private static boolean valueMatchesNotConstraint(Object value, Map<String, Object> schema) {
-        return finiteSchemaValues(objectProperty(schema.get("not"))).stream()
-                .anyMatch(excluded -> schemaValuesEqual(excluded, value));
+        Map<String, Object> excludedSchema = objectProperty(schema.get("not"));
+        return excludedSchema != null && valueMatchesSchema(value, excludedSchema);
     }
 
     private static boolean valueMatchesUnions(Object value, Map<String, Object> schema) {

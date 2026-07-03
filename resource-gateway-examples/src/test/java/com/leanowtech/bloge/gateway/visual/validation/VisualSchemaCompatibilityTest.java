@@ -215,6 +215,66 @@ class VisualSchemaCompatibilityTest {
     }
 
     @Test
+    void rejectsFiniteSourceEnumWhenTargetNotPatternExcludesValue() {
+        Map<String, Object> source = Map.of("type", "string", "enum", List.of("ACTIVE", "ARCHIVED"));
+        Map<String, Object> target = Map.of(
+                "type", "string",
+                "not", Map.of("pattern", "^ARCHIVED$")
+        );
+
+        assertThat(VisualSchemaCompatibility.valueMatchesSchema("ARCHIVED", target)).isFalse();
+        assertThat(VisualSchemaCompatibility.valueMatchesSchema("ACTIVE", target)).isTrue();
+        assertThat(VisualSchemaCompatibility.schemaCompatibilityIssue(source, target))
+                .hasValueSatisfying(reason -> assertThat(reason)
+                        .contains("source enum value(s) [ARCHIVED]")
+                        .contains("do not match target schema string"));
+    }
+
+    @Test
+    void acceptsFiniteSourceEnumWhenTargetNotPatternDoesNotMatch() {
+        Map<String, Object> source = Map.of("type", "string", "enum", List.of("ACTIVE", "PENDING"));
+        Map<String, Object> target = Map.of(
+                "type", "string",
+                "not", Map.of("pattern", "^ARCHIVED$")
+        );
+
+        assertThat(VisualSchemaCompatibility.schemaCompatibilityIssue(source, target)).isEmpty();
+    }
+
+    @Test
+    void rejectsUnboundedSourceWhenTargetNotPatternCouldMatch() {
+        Map<String, Object> source = Map.of("type", "string");
+        Map<String, Object> target = Map.of(
+                "type", "string",
+                "not", Map.of("pattern", "^ARCHIVED$")
+        );
+
+        assertThat(VisualSchemaCompatibility.schemaCompatibilityIssue(source, target))
+                .hasValueSatisfying(reason -> assertThat(reason)
+                        .contains("target excludes schema string pattern '^ARCHIVED$'")
+                        .contains("source string cannot prove it avoids the excluded domain"));
+    }
+
+    @Test
+    void acceptsSourceWhenTargetOnlyNotSchemaIsDisjoint() {
+        Map<String, Object> source = Map.of("type", "integer");
+        Map<String, Object> target = Map.of("not", Map.of("type", "string"));
+
+        assertThat(VisualSchemaCompatibility.schemaCompatibilityIssue(source, target)).isEmpty();
+    }
+
+    @Test
+    void rejectsSourceWhenTargetOnlyNotSchemaCouldExcludeIt() {
+        Map<String, Object> source = Map.of("type", "string");
+        Map<String, Object> target = Map.of("not", Map.of("type", "string"));
+
+        assertThat(VisualSchemaCompatibility.schemaCompatibilityIssue(source, target))
+                .hasValueSatisfying(reason -> assertThat(reason)
+                        .contains("target excludes schema string")
+                        .contains("source string cannot prove it avoids the excluded domain"));
+    }
+
+    @Test
     void matchesObjectFiniteValuesByStructureAndNestedNumericValue() {
         Map<String, Object> value = Map.of("a", "x", "b", List.of(1));
         Map<String, Object> schema = Map.of(
