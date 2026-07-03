@@ -896,6 +896,9 @@ fingerprint snapshot；普通保存和 PATCH 仍保留既有 snapshot，避免�
 | `GET` | `/api/visual/assets/runtime-binding-requirements/handoff-bundle` | 当前已实现：返回 `bloge.visualRuntimeBindingHandoff.v1`，把当前 runtime-binding 查询窗口导出为 portable handoff bundle，包含 source index lineage、scope/filter、stable requirement keys、operatorRef/operatorLibraryId/routing 计数、requirement 明细、当前窗口相关 `operatorContracts[]` 契约快照和 `bundleFingerprint` |
 | `POST` | `/api/visual/assets/runtime-binding-requirements/handoff-review` | 当前已实现：接收 `bloge.visualRuntimeBindingHandoff.v1` 并返回 `bloge.visualRuntimeBindingHandoffReview.v1`，按当前 runtime-binding read model 对账导出快照的 current/drifted/missing/new-current-window 状态，并回显 `sourceBundleFingerprint` 与 `exportedOperatorContractCount`；`bundleFingerprint` 不匹配时以 `visual.runtimeBindingHandoff.fingerprintMismatch` 拒绝 |
 | `POST` | `/api/visual/assets/runtime-binding-requirements/implementation-bindings/validate` | 当前已实现第一刀：接收 `bloge.visualRuntimeBindingImplementationBinding.v1`，把 runtime team 提交的 implementation metadata、test evidence、policy evidence 和 rollback target 对准 handoff `operatorContract` snapshot 与当前 catalog fingerprint 做无状态 pre-bind 校验，返回 `bloge.visualRuntimeBindingImplementationValidation.v1` 的 ready-to-bind/requires-review/rejected 裁决；不写入 binding 状态 |
+| `GET/POST` | `/api/visual/assets/runtime-binding-requirements/implementation-bindings` | 当前已实现：valid proposal 可持久化为 `bloge.visualRuntimeBindingImplementationBindingRecord.v1`，并按 operatorRef/state 查询；duplicate bindingId 返回结构化 `409` |
+| `POST` | `/api/visual/assets/runtime-binding-requirements/implementation-bindings/{bindingId}/bind` | 当前已实现：把 ready-to-bind 或 review-acknowledged proposal 推进到 `bound` lifecycle state，要求 actor/reason 审计证据，并拒绝同一 operatorRef 的第二个 active binding |
+| `POST` | `/api/visual/assets/runtime-binding-requirements/implementation-bindings/{bindingId}/supersede` | 当前已实现：用同 operatorRef 的 replacement proposal 替换 active bound binding，写入 supersede lineage 和 lifecycle events；仍不直接改 graph artifact 或伪造 executable readiness |
 
 ### 12.3 Runtime / Trace API
 
@@ -1280,22 +1283,23 @@ schema-only / runtime-blocked 的缺口通过 runtime-binding index 和 handoff 
 `RuntimeBindingImplementation` / `OperatorImplementationBinding` 生命周期，把 handoff contract
 转换为可审阅、可验证、可回滚、可重新派生 readiness 的 catalog 事实。当前已先落地无状态
 implementation validate API 和 proposal persistence，能证明并保存实现材料是否对准
-handoff contract 与当前 catalog；但 bind/supersede mutation 和 readiness 回流仍未闭合。没有这层闭环，
+handoff contract 与当前 catalog，并已支持 bind/supersede lifecycle fact；但 active bound fact
+还没有投影回 operator catalog / library revision / runtime adapter registry，readiness 回流仍未闭合。没有这层闭环，
 handoff bundle 只能把工作交出去，不能把实现结果可靠带回来。
 
 因此下一阶段的生产级优先级应按下面排序，而不是继续堆前端控件：
 
 | 优先级 | 缺口 | 为什么卡住生产级 |
 | --- | --- | --- |
-| P0 | Runtime implementation binding 生命周期 | 当前已有 validate gate 和 proposal record；下一步需要把 runtime team 提交的 implementation metadata、适配器入口、能力声明、兼容性证据和测试结果通过 bind/supersede 持久绑定回 operator contract / library revision；否则 runtime-binding requirement 只能被导出、预检和保存提案，不能被关闭 |
+| P0 | Runtime implementation binding 生命周期 | 当前已有 validate gate、proposal record 和 bind/supersede lifecycle fact；下一步需要把 active bound implementation metadata、适配器入口、能力声明、兼容性证据和测试结果投影回 operator contract / library revision / runtime adapter registry；否则 runtime-binding requirement 只能被导出、预检、保存提案和形成绑定事实，不能重新派生 executable readiness |
 | P0 | Contract diff 与兼容性门禁 | 当前 handoff snapshot 可防篡改、可对账，但 implementation 提交时还需要证明它实现的是同一个 operator contract，且输入/输出/config/policy/lowering 变化按 SemVer 与治理规则被接受 |
 | P1 | Runtime-plane 状态回流 | 外部工单、worker dispatcher、AI tool runtime、event/message/webhook runtime 的状态需要以事件或回调进入控制面，但不能成为第二套 readiness 真相源；最终仍应回到 catalog/readiness 派生 |
 | P1 | IAM / RBAC / tenant isolation | 当前 tenant/namespace/environment policy 是可见性和使用门禁，不是完整权限后台；生产环境需要 actor 权限、secret scope、egress policy、审计查询和管理员分权 |
 | P1 | 运行时适配器族 | remote-worker、AI-tool、event-source、message-handler、webhook、streaming、durable 的 authoring contract 已有，但真正 dispatcher、ingress runtime、实例状态和重放仍需补齐 |
 | P2 | 协作与运营 | 多人协作、告警、SLO、runbook、容量和成本控制会决定平台是否能长期运转，但必须建立在前面的 contract/binding 闭环之上 |
 
-这意味着后续代码切片应优先围绕“implementation binding 闭环”推进：在当前 validate / proposal persistence API 之后，
-继续补 bind/supersede mutation，再把 runtime-binding requirement review 与 operator-library revision、draft/publication readiness
+这意味着后续代码切片应优先围绕“implementation binding 闭环”推进：在当前 validate / proposal persistence / bind-supersede API 之后，
+继续补 operator implementation projection 与 runtime adapter registry，再把 runtime-binding requirement review 与 operator-library revision、draft/publication readiness
 重新串起来。画布 UI 可以展示这些状态，但不能成为状态源。
 
 ## 20. 路线图
@@ -1368,7 +1372,8 @@ Phase 1 的工程拆分、包结构、API、测试和 Definition of Done 见
 - `RuntimeBindingImplementation` / `OperatorImplementationBinding` 合同草案。
 - 当前已落地 implementation validate API，返回 ready-to-bind / requires-review / rejected。
 - 当前已落地 implementation proposal submit/list API，持久化 valid proposal 为 `bloge.visualRuntimeBindingImplementationBindingRecord.v1`。
-- 后续补 implementation bind / unbind / supersede API。
+- 当前已落地 implementation bind / supersede API，记录 active bound fact、replacement lineage 和 actor/reason lifecycle events。
+- 后续补 operator implementation projection / runtime adapter registry / unbind API。
 - handoff bundle `operatorContracts[]` 到 implementation contract 的 fingerprint 校验；当前 validate 已覆盖第一层 operatorRef/fingerprint/catalog drift/evidence gate。
 - implementation metadata：adapter kind、entrypoint、capabilities、runtime owner、test evidence、policy evidence、rollback target。
 - contract diff：输入/输出/config/policy/lowering/runtime readiness 的 breaking / compatible / metadata 变化分类。

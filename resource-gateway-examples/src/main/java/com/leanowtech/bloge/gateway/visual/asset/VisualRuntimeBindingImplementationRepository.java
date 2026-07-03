@@ -28,4 +28,29 @@ public interface VisualRuntimeBindingImplementationRepository {
      * @return stored proposal with repository identity
      */
     VisualRuntimeBindingImplementationBinding create(VisualRuntimeBindingImplementationBinding binding);
+
+    /**
+     * Updates an existing binding proposal lifecycle record.
+     *
+     * @param binding binding record to replace
+     * @return stored binding record
+     */
+    VisualRuntimeBindingImplementationBinding update(VisualRuntimeBindingImplementationBinding binding);
+
+    /**
+     * Finds the active bound implementation for one operator.
+     *
+     * @param operatorRef operator reference
+     * @return active bound implementation when present
+     */
+    default Optional<VisualRuntimeBindingImplementationBinding> findActiveBound(String operatorRef) {
+        String normalized = operatorRef == null ? "" : operatorRef.trim();
+        if (normalized.isBlank()) {
+            return Optional.empty();
+        }
+        return all().stream()
+                .filter(binding -> normalized.equals(binding.operatorRef()))
+                .filter(VisualRuntimeBindingImplementationBinding::bound)
+                .findFirst();
+    }
 }

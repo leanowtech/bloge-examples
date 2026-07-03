@@ -806,6 +806,8 @@ Showcase metadata APIs:
 | `POST` | `/api/visual/assets/runtime-binding-requirements/implementation-bindings/validate` | Validate a stateless `bloge.visualRuntimeBindingImplementationBinding.v1` implementation proposal against a handoff operator contract snapshot and current catalog fingerprint, returning `bloge.visualRuntimeBindingImplementationValidation.v1` with ready-to-bind/requires-review/rejected state, evidence diagnostics, and catalog drift status without closing workflow state |
 | `GET` | `/api/visual/assets/runtime-binding-requirements/implementation-bindings` | List stored `bloge.visualRuntimeBindingImplementationBindingRecord.v1` implementation proposals with optional `operatorRef` and `state` filters, preserving validation evidence for later bind/supersede workflow steps |
 | `POST` | `/api/visual/assets/runtime-binding-requirements/implementation-bindings` | Submit and persist a valid runtime implementation proposal after the same contract/evidence validation gate; rejected proposals are not stored, duplicate `bindingId` returns `409 CONFLICT`, and accepted records remain control-plane evidence rather than closing runtime-binding requirements |
+| `POST` | `/api/visual/assets/runtime-binding-requirements/implementation-bindings/{bindingId}/bind` | Transition a ready-to-bind or review-acknowledged proposal into the active `bound` lifecycle state with actor/reason audit evidence; rejects missing governance evidence, review-required proposals without `ackReview`, already bound/superseded records, and operators with an existing active binding |
+| `POST` | `/api/visual/assets/runtime-binding-requirements/implementation-bindings/{bindingId}/supersede` | Replace one active bound implementation with another accepted proposal for the same operator, linking `supersedesBindingId` / `supersededByBindingId` and lifecycle events while still leaving executable catalog/readiness projection to a later runtime adapter integration |
 | `GET` | `/api/visual/drafts` | List stored visual graph drafts with optional `tenantId` / `namespace` / `environment` scope filters |
 | `GET` | `/api/visual/drafts/history` | List lightweight active/deleted draft history summaries with current/latest revision, revision count, latest actor/source/summary, recovery status, and optional `tenantId` / `namespace` / `environment` scope filters |
 | `GET` | `/api/visual/drafts/summaries` | List `bloge.visualGraphDraftSummary.v1` draft asset summaries that combine history, server validation/readiness/action-readiness, diagnostic counts, and dependency counts without returning full draft JSON; supports optional `tenantId` / `namespace` / `environment` scope filters |
@@ -1195,8 +1197,11 @@ implementation metadata, test evidence, policy evidence, and rollback target,
 and returns ready-to-bind/requires-review/rejected. The same request can be
 submitted to the implementation binding endpoint, which stores valid proposals
 as `bloge.visualRuntimeBindingImplementationBindingRecord.v1` records with
-their validation evidence while still leaving requirement closure, bind,
-supersede, and readiness回流 to the next lifecycle step.
+their validation evidence. Lifecycle endpoints can then mark a reviewed proposal
+as `bound` or supersede one active binding with another, preserving actor/reason
+audit events and replacement lineage. These records are now control-plane
+implementation facts; they still do not rewrite graph artifacts or pretend an
+executable adapter exists before catalog/readiness projection consumes them.
 The Drafts panel renders a Draft Asset Index from server-side draft summaries
 for the active Authoring Scope, so active and recoverable deleted drafts expose
 design-only, runtime-blocked, governance-review, repair-required readiness, and
@@ -1598,6 +1603,8 @@ Seven `.bloge` graphs live in `src/main/resources/bloge/gateway/`:
 | `VisualRuntimeBindingHandoffBundle` | Portable `bloge.visualRuntimeBindingHandoff.v1` snapshot derived from the runtime-binding requirement index for assigning schema-only/design-only runtime implementation gaps to external runtime-plane teams, including operator-library owner counts for batch routing and operator contract snapshots for schema/lowering/readiness implementation handoff |
 | `VisualRuntimeBindingHandoffReview` | Read-only `bloge.visualRuntimeBindingHandoffReview.v1` reconciliation report that compares a handoff bundle with the current runtime-binding requirement read model by stable key, exported operator contract count, field changes, and exported/current/new-window routing distributions |
 | `VisualRuntimeBindingImplementationValidation` | Stateless `bloge.visualRuntimeBindingImplementationValidation.v1` pre-bind gate that validates a runtime team's implementation proposal against a handoff operator contract snapshot, current catalog fingerprint, implementation metadata, test evidence, policy evidence, and rollback target without closing runtime-binding workflow state |
+| `VisualRuntimeBindingImplementationBinding` | Persistent `bloge.visualRuntimeBindingImplementationBindingRecord.v1` proposal/lifecycle record with validation snapshot, implementation metadata, bound/superseded state, actor/reason lifecycle events, and supersede lineage |
+| `VisualRuntimeBindingImplementationLifecycleResult` | Mutation response for bind/supersede lifecycle transitions, returning accepted/rejected state, affected binding records, and structured diagnostics |
 | `GraphDraftExportBundle` | Portable draft package with source identity, draft snapshot, operator snapshots, export-time diagnostics, validation/readiness/action-readiness, and source dependency report |
 | `GraphDraftImportResult` | Import response contract with source bundle/draft identity, stored draft identity, target-environment compatibility diagnostics, validation/readiness/action-readiness, source dependency report, target dependency report, target runtime-binding handoff requirements and stable keys, and legacy target `dependencyReport` |
 | `DatabaseGraphDraftRepository` | H2-backed graph draft repository with revision assignment, immutable revision history, expected-revision guarded updates, deletion audit snapshots, and retained history for deleted-draft recovery |

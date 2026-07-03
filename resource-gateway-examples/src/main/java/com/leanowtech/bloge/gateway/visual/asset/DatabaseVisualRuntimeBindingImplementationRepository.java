@@ -43,6 +43,14 @@ public class DatabaseVisualRuntimeBindingImplementationRepository
                 (binding_id, operator_ref, state, created_at, updated_at, binding_json)
             VALUES (?, ?, ?, ?, ?, ?)
             """;
+    private static final String UPDATE = """
+            UPDATE visual_runtime_binding_implementations
+            SET operator_ref = ?,
+                state = ?,
+                updated_at = ?,
+                binding_json = ?
+            WHERE binding_id = ?
+            """;
 
     private final ConcurrentHashMap<String, VisualRuntimeBindingImplementationBinding> cache =
             new ConcurrentHashMap<>();
@@ -114,6 +122,35 @@ public class DatabaseVisualRuntimeBindingImplementationRepository
         log.info("Created visual runtime binding implementation: {} operator={} state={}",
                 stored.bindingId(), stored.operatorRef(), stored.state());
         return stored;
+    }
+
+    @Override
+    public VisualRuntimeBindingImplementationBinding update(VisualRuntimeBindingImplementationBinding binding) {
+        if (binding == null || binding.bindingId().isBlank()) {
+            throw new IllegalArgumentException("Runtime binding implementation id is required for update.");
+        }
+        if (!cache.containsKey(binding.bindingId())) {
+            throw new IllegalArgumentException("Runtime binding implementation does not exist: " + binding.bindingId());
+        }
+        try {
+            int updated = jdbc.update(UPDATE,
+                    binding.operatorRef(),
+                    binding.state(),
+                    binding.updatedAt().toString(),
+                    objectMapper.writeValueAsString(binding),
+                    binding.bindingId());
+            if (updated == 0) {
+                throw new IllegalArgumentException(
+                        "Runtime binding implementation does not exist: " + binding.bindingId());
+            }
+            cache.put(binding.bindingId(), binding);
+            log.info("Updated visual runtime binding implementation: {} operator={} state={}",
+                    binding.bindingId(), binding.operatorRef(), binding.state());
+            return binding;
+        } catch (JsonProcessingException e) {
+            throw new IllegalStateException("Failed to serialize visual runtime binding implementation: "
+                    + binding.bindingId(), e);
+        }
     }
 
     private void persist(VisualRuntimeBindingImplementationBinding binding) {

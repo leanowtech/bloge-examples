@@ -41,4 +41,16 @@ public class InMemoryVisualRuntimeBindingImplementationRepository
         }
         return stored;
     }
+
+    @Override
+    public VisualRuntimeBindingImplementationBinding update(VisualRuntimeBindingImplementationBinding binding) {
+        if (binding == null || binding.bindingId().isBlank()) {
+            throw new IllegalArgumentException("Runtime binding implementation id is required for update.");
+        }
+        if (!bindings.containsKey(binding.bindingId())) {
+            throw new IllegalArgumentException("Runtime binding implementation does not exist: " + binding.bindingId());
+        }
+        bindings.put(binding.bindingId(), binding);
+        return binding;
+    }
 }

@@ -1381,6 +1381,134 @@ class VisualAssetOverviewControllerTest {
     }
 
     @Test
+    void runtimeBindingImplementationBindActivatesReadyProposal() {
+        RuntimeBindingImplementationFixture fixture = runtimeBindingImplementationFixture();
+        VisualRuntimeBindingImplementationBinding stored = submitImplementation(
+                fixture,
+                completeImplementation("risk-eligibility-native-v1")
+        );
+
+        var response = fixture.controller().bindRuntimeBindingImplementation(
+                stored.bindingId(),
+                transitionRequest("", true)
+        );
+
+        assertThat(response.getStatusCode().value()).isEqualTo(200);
+        assertThat(response.getBody()).isNotNull();
+        assertThat(response.getBody().accepted()).isTrue();
+        assertThat(response.getBody().binding()).isNotNull();
+        assertThat(response.getBody().binding().state()).isEqualTo("bound");
+        assertThat(response.getBody().binding().revision()).isEqualTo(2);
+        assertThat(response.getBody().binding().lifecycleEvents()).singleElement().satisfies(event -> {
+            assertThat(event.eventType()).isEqualTo("bound");
+            assertThat(event.fromState()).isEqualTo("ready-to-bind");
+            assertThat(event.toState()).isEqualTo("bound");
+            assertThat(event.actor()).isEqualTo("runtime-platform");
+            assertThat(event.reason()).isEqualTo("Implementation evidence reviewed.");
+        });
+        assertThat(fixture.controller().runtimeBindingImplementationBindings("risk:eligibility", "bound"))
+                .singleElement()
+                .isEqualTo(response.getBody().binding());
+    }
+
+    @Test
+    void runtimeBindingImplementationBindRequiresReviewAcknowledgement() {
+        RuntimeBindingImplementationFixture fixture = runtimeBindingImplementationFixture();
+        VisualRuntimeBindingImplementationBinding stored = submitImplementation(
+                fixture,
+                incompleteImplementation("risk-eligibility-native-review")
+        );
+
+        var rejected = fixture.controller().bindRuntimeBindingImplementation(
+                stored.bindingId(),
+                transitionRequest("", false)
+        );
+
+        assertThat(rejected.getStatusCode().value()).isEqualTo(409);
+        assertThat(rejected.getBody()).isNotNull();
+        assertThat(rejected.getBody().accepted()).isFalse();
+        assertThat(rejected.getBody().diagnostics())
+                .extracting(VisualDiagnostic::code)
+                .contains("visual.runtimeBindingImplementation.reviewAcknowledgementMissing");
+        assertThat(fixture.controller().runtimeBindingImplementationBindings("", "requires-review"))
+                .singleElement()
+                .isEqualTo(stored);
+
+        var accepted = fixture.controller().bindRuntimeBindingImplementation(
+                stored.bindingId(),
+                transitionRequest("", true)
+        );
+
+        assertThat(accepted.getStatusCode().value()).isEqualTo(200);
+        assertThat(accepted.getBody()).isNotNull();
+        assertThat(accepted.getBody().binding().state()).isEqualTo("bound");
+    }
+
+    @Test
+    void runtimeBindingImplementationBindRejectsSecondActiveBinding() {
+        RuntimeBindingImplementationFixture fixture = runtimeBindingImplementationFixture();
+        VisualRuntimeBindingImplementationBinding first = submitImplementation(
+                fixture,
+                completeImplementation("risk-eligibility-native-v1")
+        );
+        VisualRuntimeBindingImplementationBinding second = submitImplementation(
+                fixture,
+                completeImplementation("risk-eligibility-native-v2")
+        );
+        assertThat(fixture.controller().bindRuntimeBindingImplementation(first.bindingId(), transitionRequest("", true))
+                .getStatusCode().value()).isEqualTo(200);
+
+        var response = fixture.controller().bindRuntimeBindingImplementation(
+                second.bindingId(),
+                transitionRequest("", true)
+        );
+
+        assertThat(response.getStatusCode().value()).isEqualTo(409);
+        assertThat(response.getBody()).isNotNull();
+        assertThat(response.getBody().diagnostics())
+                .extracting(VisualDiagnostic::code)
+                .contains("visual.runtimeBindingImplementation.activeBindingExists");
+        assertThat(fixture.controller().runtimeBindingImplementationBindings("", "bound")).hasSize(1);
+    }
+
+    @Test
+    void runtimeBindingImplementationSupersedeSwitchesActiveBinding() {
+        RuntimeBindingImplementationFixture fixture = runtimeBindingImplementationFixture();
+        VisualRuntimeBindingImplementationBinding first = submitImplementation(
+                fixture,
+                completeImplementation("risk-eligibility-native-v1")
+        );
+        VisualRuntimeBindingImplementationBinding second = submitImplementation(
+                fixture,
+                completeImplementation("risk-eligibility-native-v2")
+        );
+        fixture.controller().bindRuntimeBindingImplementation(first.bindingId(), transitionRequest("", true));
+
+        var response = fixture.controller().supersedeRuntimeBindingImplementation(
+                first.bindingId(),
+                transitionRequest(second.bindingId(), true)
+        );
+
+        assertThat(response.getStatusCode().value()).isEqualTo(200);
+        assertThat(response.getBody()).isNotNull();
+        assertThat(response.getBody().accepted()).isTrue();
+        assertThat(response.getBody().binding().state()).isEqualTo("superseded");
+        assertThat(response.getBody().binding().supersededByBindingId()).isEqualTo(second.bindingId());
+        assertThat(response.getBody().replacementBinding().state()).isEqualTo("bound");
+        assertThat(response.getBody().replacementBinding().supersedesBindingId()).isEqualTo(first.bindingId());
+        assertThat(response.getBody().replacementBinding().lifecycleEvents()).singleElement().satisfies(event -> {
+            assertThat(event.eventType()).isEqualTo("bound");
+            assertThat(event.relatedBindingId()).isEqualTo(first.bindingId());
+        });
+        assertThat(fixture.controller().runtimeBindingImplementationBindings("", "bound"))
+                .singleElement()
+                .isEqualTo(response.getBody().replacementBinding());
+        assertThat(fixture.controller().runtimeBindingImplementationBindings("", "superseded"))
+                .singleElement()
+                .isEqualTo(response.getBody().binding());
+    }
+
+    @Test
     void overviewQueuesWarningAcknowledgementFromGraphActionReadiness() {
         DefaultVisualOperatorCatalog catalog = VisualCatalogTestSupport.catalogWithLibrary(
                 VisualCatalogTestSupport.designOnlyEligibilityLibrary("integer"));
@@ -1707,9 +1835,88 @@ class VisualAssetOverviewControllerTest {
         return material;
     }
 
+    private record RuntimeBindingImplementationFixture(
+            VisualAssetOverviewController controller,
+            VisualRuntimeBindingHandoffBundle handoffBundle,
+            VisualRuntimeBindingHandoffBundle.OperatorContractSnapshot contract
+    ) {
+    }
+
+    private static RuntimeBindingImplementationFixture runtimeBindingImplementationFixture() {
+        OperatorLibrary library = VisualCatalogTestSupport.designOnlyEligibilityLibrary("integer");
+        DefaultVisualOperatorCatalog catalog = VisualCatalogTestSupport.catalogWithLibrary(library);
+        GraphDraftValidator validator = new GraphDraftValidator(catalog);
+        InMemoryGraphDraftRepository drafts = new InMemoryGraphDraftRepository();
+        OperatorDefinition operator = catalog.find("risk:eligibility").orElseThrow();
+        drafts.save(draftWithFingerprint(operator));
+        VisualAssetOverviewController controller = new VisualAssetOverviewController(
+                drafts,
+                validator,
+                catalog,
+                new InMemoryVisualGraphPublicationRepository()
+        );
+        VisualRuntimeBindingHandoffBundle handoffBundle = controller.runtimeBindingHandoffBundle(
+                "",
+                "",
+                "",
+                10,
+                0,
+                "draft",
+                "executable-lowering",
+                "operator-platform",
+                "operator-implementation",
+                "risk:eligibility",
+                "",
+                "",
+                "",
+                ""
+        );
+        return new RuntimeBindingImplementationFixture(
+                controller,
+                handoffBundle,
+                handoffBundle.operatorContracts().getFirst()
+        );
+    }
+
+    private static VisualRuntimeBindingImplementationBinding submitImplementation(
+            RuntimeBindingImplementationFixture fixture,
+            VisualRuntimeBindingImplementationValidation.ImplementationMetadata implementation) {
+        var response = fixture.controller().submitRuntimeBindingImplementation(
+                new VisualRuntimeBindingImplementationValidation.Request(
+                        VisualRuntimeBindingImplementationValidation.REQUEST_SCHEMA_VERSION,
+                        fixture.contract().operatorRef(),
+                        fixture.contract().fingerprint(),
+                        fixture.handoffBundle().bundleFingerprint(),
+                        fixture.handoffBundle().requirementKeys(),
+                        fixture.contract(),
+                        implementation
+                ));
+        assertThat(response.getStatusCode().value()).isEqualTo(201);
+        assertThat(response.getBody()).isInstanceOf(VisualRuntimeBindingImplementationBinding.class);
+        return (VisualRuntimeBindingImplementationBinding) response.getBody();
+    }
+
+    private static VisualRuntimeBindingImplementationTransitionRequest transitionRequest(String replacementBindingId,
+                                                                                         boolean ackReview) {
+        return new VisualRuntimeBindingImplementationTransitionRequest(
+                VisualRuntimeBindingImplementationTransitionRequest.SCHEMA_VERSION,
+                "runtime-platform",
+                "Implementation evidence reviewed.",
+                "visual-canvas-test",
+                "Bind runtime implementation evidence.",
+                ackReview,
+                replacementBindingId
+        );
+    }
+
     private static VisualRuntimeBindingImplementationValidation.ImplementationMetadata completeImplementation() {
+        return completeImplementation("risk-eligibility-native-v1");
+    }
+
+    private static VisualRuntimeBindingImplementationValidation.ImplementationMetadata completeImplementation(
+            String bindingId) {
         return new VisualRuntimeBindingImplementationValidation.ImplementationMetadata(
-                "risk-eligibility-native-v1",
+                bindingId,
                 "native",
                 "com.acme.risk.RiskEligibilityOperator",
                 "risk-platform",
@@ -1725,6 +1932,21 @@ class VisualAssetOverviewControllerTest {
                         "Runtime owner approved policy and deployment scope."
                 )),
                 "deployment:risk-eligibility-native-v0",
+                ""
+        );
+    }
+
+    private static VisualRuntimeBindingImplementationValidation.ImplementationMetadata incompleteImplementation(
+            String bindingId) {
+        return new VisualRuntimeBindingImplementationValidation.ImplementationMetadata(
+                bindingId,
+                "native",
+                "com.acme.risk.RiskEligibilityOperator",
+                "risk-platform",
+                List.of("request-response"),
+                List.of(),
+                List.of(),
+                "",
                 ""
         );
     }

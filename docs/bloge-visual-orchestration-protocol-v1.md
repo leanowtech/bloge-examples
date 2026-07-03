@@ -1917,8 +1917,21 @@ runtime team 提交的实现材料是否仍对准 handoff contract 和当前 cat
 snapshot；重复 `bindingId` 返回 `409` 与 `visual.runtimeBindingImplementation.bindingIdDuplicate`。
 `GET /api/visual/assets/runtime-binding-requirements/implementation-bindings`
 可按 `operatorRef` 和 `state` 查询已提交 proposal。该持久记录仍不关闭
-runtime-binding requirement；后续真正 bind/supersede mutation 必须仍以 catalog/operator
-implementation 事实为来源，再由 readiness 和 runtime-binding index 重新派生。
+runtime-binding requirement。
+`POST /api/visual/assets/runtime-binding-requirements/implementation-bindings/{bindingId}/bind`
+接收 `bloge.visualRuntimeBindingImplementationTransition.v1`，要求 `actor` 和
+`reason`；当 proposal 为 `requires-review` 时必须显式 `ackReview=true`。成功后 record
+进入 `bound` state，追加 lifecycle event，并拒绝同一 operatorRef 已存在的 active
+binding。`POST /api/visual/assets/runtime-binding-requirements/implementation-bindings/{bindingId}/supersede`
+要求当前 binding 已是 `bound`，且 `replacementBindingId` 指向同一 operatorRef 的
+ready-to-bind 或 review-acknowledged proposal；成功后旧记录进入 `superseded`，新记录进入
+`bound`，并写入 `supersedesBindingId` / `supersededByBindingId` 和 lifecycle events。
+两个 mutation 返回 `bloge.visualRuntimeBindingImplementationLifecycleResult.v1`，用结构化
+diagnostics 表达 missing request、治理证据缺失、review ack 缺失、active binding 冲突、
+replacement 缺失和 operator mismatch。该 lifecycle fact 是后续 catalog/operator
+implementation projection 的审计输入；当前仍不直接改 graph artifact，也不伪造 executable
+readiness。真正的 runtime readiness 关闭还必须由 catalog/operator implementation 事实被投影后，
+再由 readiness 和 runtime-binding index 重新派生。
 `actionReadiness` 则把同一批 diagnostics/readiness 压成产品动作门禁：`compileNow`、
 `runNow`、`publishDesignNow`、`publishDesignAfterReview`、`publishExecutableNow`、
 `publishExecutableAfterReview`，以及 `requiresAckWarnings` /

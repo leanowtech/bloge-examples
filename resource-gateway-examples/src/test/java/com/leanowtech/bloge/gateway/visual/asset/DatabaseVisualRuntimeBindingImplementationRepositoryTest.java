@@ -10,6 +10,7 @@ import org.springframework.jdbc.datasource.embedded.EmbeddedDatabaseBuilder;
 import org.springframework.jdbc.datasource.embedded.EmbeddedDatabaseType;
 
 import javax.sql.DataSource;
+import java.time.Instant;
 import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -57,6 +58,43 @@ class DatabaseVisualRuntimeBindingImplementationRepositoryTest {
 
         assertThat(reloaded.find("risk-binding-1")).contains(stored);
         assertThat(reloaded.all()).containsExactly(stored);
+    }
+
+    @Test
+    void updatePersistsLifecycleTransition() {
+        VisualRuntimeBindingImplementationBinding stored = repository.create(binding("risk-binding-2"));
+        Instant now = Instant.now();
+        VisualRuntimeBindingImplementationBinding updated = stored.withLifecycleTransition(
+                VisualRuntimeBindingImplementationBinding.STATE_BOUND,
+                "success",
+                null,
+                null,
+                new VisualRuntimeBindingImplementationBinding.LifecycleEvent(
+                        "bound",
+                        stored.state(),
+                        VisualRuntimeBindingImplementationBinding.STATE_BOUND,
+                        "runtime-platform",
+                        "repository-test",
+                        "Approved.",
+                        "Bind implementation.",
+                        "",
+                        now
+                ),
+                now
+        );
+
+        VisualRuntimeBindingImplementationBinding saved = repository.update(updated);
+
+        assertThat(saved.revision()).isEqualTo(2);
+        assertThat(saved.state()).isEqualTo("bound");
+        assertThat(repository.findActiveBound("risk:eligibility")).contains(saved);
+
+        DatabaseVisualRuntimeBindingImplementationRepository reloaded =
+                new DatabaseVisualRuntimeBindingImplementationRepository(jdbc, objectMapper);
+        reloaded.init();
+
+        assertThat(reloaded.find("risk-binding-2")).contains(saved);
+        assertThat(reloaded.findActiveBound("risk:eligibility")).contains(saved);
     }
 
     private static VisualRuntimeBindingImplementationBinding binding(String bindingId) {

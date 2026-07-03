@@ -18,12 +18,14 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -482,6 +484,234 @@ public class VisualAssetOverviewController {
         return ResponseEntity.status(HttpStatus.CREATED).body(stored);
     }
 
+    /**
+     * Marks one accepted implementation proposal as the active bound implementation fact.
+     *
+     * <p>This records control-plane lifecycle evidence only. It does not rewrite
+     * graph artifacts and does not pretend that an executable adapter exists.</p>
+     *
+     * @param bindingId binding proposal id
+     * @param request transition audit request
+     * @return lifecycle result
+     */
+    @PostMapping("/runtime-binding-requirements/implementation-bindings/{bindingId}/bind")
+    public ResponseEntity<VisualRuntimeBindingImplementationLifecycleResult> bindRuntimeBindingImplementation(
+            @PathVariable String bindingId,
+            @RequestBody(required = false) VisualRuntimeBindingImplementationTransitionRequest request) {
+        ResponseEntity<VisualRuntimeBindingImplementationLifecycleResult> requestError =
+                transitionRequestError(request, false);
+        if (requestError != null) {
+            return requestError;
+        }
+        VisualRuntimeBindingImplementationBinding binding = implementationRepository.find(bindingId)
+                .orElse(null);
+        if (binding == null) {
+            return lifecycleFailure(
+                    HttpStatus.NOT_FOUND,
+                    "missing",
+                    "visual.runtimeBindingImplementation.bindingMissing",
+                    "Runtime binding implementation '%s' does not exist.".formatted(bindingId),
+                    "/bindingId",
+                    null,
+                    null,
+                    Map.of("bindingId", bindingId)
+            );
+        }
+        ResponseEntity<VisualRuntimeBindingImplementationLifecycleResult> stateError =
+                bindableStateError(binding, request, null);
+        if (stateError != null) {
+            return stateError;
+        }
+        VisualRuntimeBindingImplementationBinding active = implementationRepository
+                .findActiveBound(binding.operatorRef())
+                .filter(existing -> !existing.bindingId().equals(binding.bindingId()))
+                .orElse(null);
+        if (active != null) {
+            return lifecycleFailure(
+                    HttpStatus.CONFLICT,
+                    "conflict",
+                    "visual.runtimeBindingImplementation.activeBindingExists",
+                    "Operator '%s' already has active runtime binding '%s'; use supersede instead."
+                            .formatted(binding.operatorRef(), active.bindingId()),
+                    "/bindingId",
+                    binding,
+                    active,
+                    Map.of("operatorRef", binding.operatorRef(), "activeBindingId", active.bindingId())
+            );
+        }
+        Instant now = Instant.now();
+        VisualRuntimeBindingImplementationBinding.LifecycleEvent event = lifecycleEvent(
+                "bound",
+                binding.state(),
+                VisualRuntimeBindingImplementationBinding.STATE_BOUND,
+                request,
+                "",
+                now
+        );
+        VisualRuntimeBindingImplementationBinding updated = implementationRepository.update(
+                binding.withLifecycleTransition(
+                        VisualRuntimeBindingImplementationBinding.STATE_BOUND,
+                        "success",
+                        null,
+                        null,
+                        event,
+                        now
+                ));
+        return ResponseEntity.ok(VisualRuntimeBindingImplementationLifecycleResult.accepted(
+                "Runtime binding implementation '%s' is now bound.".formatted(updated.bindingId()),
+                updated,
+                null
+        ));
+    }
+
+    /**
+     * Supersedes one active implementation binding with another accepted proposal.
+     *
+     * @param bindingId active binding id to supersede
+     * @param request transition audit request with replacementBindingId
+     * @return lifecycle result
+     */
+    @PostMapping("/runtime-binding-requirements/implementation-bindings/{bindingId}/supersede")
+    public ResponseEntity<VisualRuntimeBindingImplementationLifecycleResult> supersedeRuntimeBindingImplementation(
+            @PathVariable String bindingId,
+            @RequestBody(required = false) VisualRuntimeBindingImplementationTransitionRequest request) {
+        ResponseEntity<VisualRuntimeBindingImplementationLifecycleResult> requestError =
+                transitionRequestError(request, true);
+        if (requestError != null) {
+            return requestError;
+        }
+        VisualRuntimeBindingImplementationBinding current = implementationRepository.find(bindingId)
+                .orElse(null);
+        if (current == null) {
+            return lifecycleFailure(
+                    HttpStatus.NOT_FOUND,
+                    "missing",
+                    "visual.runtimeBindingImplementation.bindingMissing",
+                    "Runtime binding implementation '%s' does not exist.".formatted(bindingId),
+                    "/bindingId",
+                    null,
+                    null,
+                    Map.of("bindingId", bindingId)
+            );
+        }
+        VisualRuntimeBindingImplementationBinding replacement =
+                implementationRepository.find(request.replacementBindingId()).orElse(null);
+        if (replacement == null) {
+            return lifecycleFailure(
+                    HttpStatus.NOT_FOUND,
+                    "missing",
+                    "visual.runtimeBindingImplementation.replacementMissing",
+                    "Replacement runtime binding implementation '%s' does not exist."
+                            .formatted(request.replacementBindingId()),
+                    "/replacementBindingId",
+                    current,
+                    null,
+                    Map.of("replacementBindingId", request.replacementBindingId())
+            );
+        }
+        if (current.bindingId().equals(replacement.bindingId())) {
+            return lifecycleFailure(
+                    HttpStatus.CONFLICT,
+                    "conflict",
+                    "visual.runtimeBindingImplementation.replacementSelf",
+                    "A runtime binding implementation cannot supersede itself.",
+                    "/replacementBindingId",
+                    current,
+                    replacement,
+                    Map.of("bindingId", current.bindingId())
+            );
+        }
+        if (!current.bound()) {
+            return lifecycleFailure(
+                    HttpStatus.CONFLICT,
+                    "conflict",
+                    "visual.runtimeBindingImplementation.currentNotBound",
+                    "Runtime binding implementation '%s' must be bound before it can be superseded."
+                            .formatted(current.bindingId()),
+                    "/bindingId",
+                    current,
+                    replacement,
+                    Map.of("bindingId", current.bindingId(), "state", current.state())
+            );
+        }
+        if (!current.operatorRef().equals(replacement.operatorRef())) {
+            return lifecycleFailure(
+                    HttpStatus.CONFLICT,
+                    "conflict",
+                    "visual.runtimeBindingImplementation.replacementOperatorMismatch",
+                    "Replacement binding operatorRef '%s' does not match active binding operatorRef '%s'."
+                            .formatted(replacement.operatorRef(), current.operatorRef()),
+                    "/replacementBindingId",
+                    current,
+                    replacement,
+                    Map.of("currentOperatorRef", current.operatorRef(),
+                            "replacementOperatorRef", replacement.operatorRef())
+            );
+        }
+        ResponseEntity<VisualRuntimeBindingImplementationLifecycleResult> replacementStateError =
+                bindableStateError(replacement, request, current);
+        if (replacementStateError != null) {
+            return replacementStateError;
+        }
+        VisualRuntimeBindingImplementationBinding active = implementationRepository
+                .findActiveBound(current.operatorRef())
+                .filter(existing -> !existing.bindingId().equals(current.bindingId()))
+                .orElse(null);
+        if (active != null) {
+            return lifecycleFailure(
+                    HttpStatus.CONFLICT,
+                    "conflict",
+                    "visual.runtimeBindingImplementation.activeBindingExists",
+                    "Operator '%s' has active runtime binding '%s' instead of '%s'."
+                            .formatted(current.operatorRef(), active.bindingId(), current.bindingId()),
+                    "/bindingId",
+                    current,
+                    replacement,
+                    Map.of("operatorRef", current.operatorRef(), "activeBindingId", active.bindingId())
+            );
+        }
+
+        Instant now = Instant.now();
+        VisualRuntimeBindingImplementationBinding replacementBound = implementationRepository.update(
+                replacement.withLifecycleTransition(
+                        VisualRuntimeBindingImplementationBinding.STATE_BOUND,
+                        "success",
+                        current.bindingId(),
+                        null,
+                        lifecycleEvent(
+                                "bound",
+                                replacement.state(),
+                                VisualRuntimeBindingImplementationBinding.STATE_BOUND,
+                                request,
+                                current.bindingId(),
+                                now
+                        ),
+                        now
+                ));
+        VisualRuntimeBindingImplementationBinding currentSuperseded = implementationRepository.update(
+                current.withLifecycleTransition(
+                        VisualRuntimeBindingImplementationBinding.STATE_SUPERSEDED,
+                        "info",
+                        null,
+                        replacement.bindingId(),
+                        lifecycleEvent(
+                                "superseded",
+                                current.state(),
+                                VisualRuntimeBindingImplementationBinding.STATE_SUPERSEDED,
+                                request,
+                                replacement.bindingId(),
+                                now
+                        ),
+                        now
+                ));
+        return ResponseEntity.ok(VisualRuntimeBindingImplementationLifecycleResult.accepted(
+                "Runtime binding implementation '%s' superseded '%s'."
+                        .formatted(replacementBound.bindingId(), currentSuperseded.bindingId()),
+                currentSuperseded,
+                replacementBound
+        ));
+    }
+
     VisualAssetOverview overview(String tenantId, String namespace, String environment) {
         return overview(tenantId, namespace, environment, VisualAssetOverview.DEFAULT_ACTION_ITEM_LIMIT);
     }
@@ -612,6 +842,173 @@ public class VisualAssetOverviewController {
                 validation.currentCatalogState(),
                 validation.implementation(),
                 diagnostics
+        );
+    }
+
+    private static ResponseEntity<VisualRuntimeBindingImplementationLifecycleResult> transitionRequestError(
+            VisualRuntimeBindingImplementationTransitionRequest request,
+            boolean requireReplacement) {
+        if (request == null) {
+            return lifecycleFailure(
+                    HttpStatus.BAD_REQUEST,
+                    "rejected",
+                    "visual.runtimeBindingImplementation.transitionRequestMissing",
+                    "Runtime binding implementation lifecycle transition requires a request body.",
+                    "/",
+                    null,
+                    null,
+                    Map.of()
+            );
+        }
+        if (!VisualRuntimeBindingImplementationTransitionRequest.SCHEMA_VERSION.equals(request.schemaVersion())) {
+            return lifecycleFailure(
+                    HttpStatus.BAD_REQUEST,
+                    "rejected",
+                    "visual.runtimeBindingImplementation.transitionSchemaVersionUnsupported",
+                    "Runtime binding implementation transition schemaVersion '%s' is not supported; expected '%s'."
+                            .formatted(request.schemaVersion(),
+                                    VisualRuntimeBindingImplementationTransitionRequest.SCHEMA_VERSION),
+                    "/schemaVersion",
+                    null,
+                    null,
+                    Map.of("actual", request.schemaVersion(),
+                            "expected", VisualRuntimeBindingImplementationTransitionRequest.SCHEMA_VERSION)
+            );
+        }
+        if (request.actor().isBlank()) {
+            return lifecycleFailure(
+                    HttpStatus.BAD_REQUEST,
+                    "rejected",
+                    "visual.runtimeBindingImplementation.actorMissing",
+                    "Runtime binding implementation lifecycle transition requires actor.",
+                    "/actor",
+                    null,
+                    null,
+                    Map.of()
+            );
+        }
+        if (request.reason().isBlank()) {
+            return lifecycleFailure(
+                    HttpStatus.BAD_REQUEST,
+                    "rejected",
+                    "visual.runtimeBindingImplementation.reasonMissing",
+                    "Runtime binding implementation lifecycle transition requires reason.",
+                    "/reason",
+                    null,
+                    null,
+                    Map.of()
+            );
+        }
+        if (requireReplacement && request.replacementBindingId().isBlank()) {
+            return lifecycleFailure(
+                    HttpStatus.BAD_REQUEST,
+                    "rejected",
+                    "visual.runtimeBindingImplementation.replacementBindingIdMissing",
+                    "Runtime binding implementation supersede transition requires replacementBindingId.",
+                    "/replacementBindingId",
+                    null,
+                    null,
+                    Map.of()
+            );
+        }
+        return null;
+    }
+
+    private static ResponseEntity<VisualRuntimeBindingImplementationLifecycleResult> bindableStateError(
+            VisualRuntimeBindingImplementationBinding binding,
+            VisualRuntimeBindingImplementationTransitionRequest request,
+            VisualRuntimeBindingImplementationBinding relatedBinding) {
+        if (binding.bound()) {
+            return lifecycleFailure(
+                    HttpStatus.CONFLICT,
+                    "conflict",
+                    "visual.runtimeBindingImplementation.alreadyBound",
+                    "Runtime binding implementation '%s' is already bound.".formatted(binding.bindingId()),
+                    "/bindingId",
+                    binding,
+                    relatedBinding,
+                    Map.of("bindingId", binding.bindingId(), "state", binding.state())
+            );
+        }
+        if (binding.superseded()) {
+            return lifecycleFailure(
+                    HttpStatus.CONFLICT,
+                    "conflict",
+                    "visual.runtimeBindingImplementation.alreadySuperseded",
+                    "Runtime binding implementation '%s' has already been superseded.".formatted(binding.bindingId()),
+                    "/bindingId",
+                    binding,
+                    relatedBinding,
+                    Map.of("bindingId", binding.bindingId(), "state", binding.state())
+            );
+        }
+        if (binding.requiresReview() && !request.ackReview()) {
+            return lifecycleFailure(
+                    HttpStatus.CONFLICT,
+                    "conflict",
+                    "visual.runtimeBindingImplementation.reviewAcknowledgementMissing",
+                    "Runtime binding implementation '%s' requires review before it can be bound."
+                            .formatted(binding.bindingId()),
+                    "/ackReview",
+                    binding,
+                    relatedBinding,
+                    Map.of("bindingId", binding.bindingId(), "state", binding.state())
+            );
+        }
+        if (!binding.readyToBind() && !binding.requiresReview()) {
+            return lifecycleFailure(
+                    HttpStatus.CONFLICT,
+                    "conflict",
+                    "visual.runtimeBindingImplementation.stateNotBindable",
+                    "Runtime binding implementation '%s' is in state '%s' and cannot be bound."
+                            .formatted(binding.bindingId(), binding.state()),
+                    "/bindingId",
+                    binding,
+                    relatedBinding,
+                    Map.of("bindingId", binding.bindingId(), "state", binding.state())
+            );
+        }
+        return null;
+    }
+
+    private static ResponseEntity<VisualRuntimeBindingImplementationLifecycleResult> lifecycleFailure(
+            HttpStatus status,
+            String state,
+            String code,
+            String message,
+            String target,
+            VisualRuntimeBindingImplementationBinding binding,
+            VisualRuntimeBindingImplementationBinding replacementBinding,
+            Map<String, Object> metadata) {
+        VisualDiagnostic diagnostic = metadata == null || metadata.isEmpty()
+                ? VisualDiagnostic.error(code, message, target)
+                : VisualDiagnostic.error(code, message, target, metadata);
+        return ResponseEntity.status(status).body(VisualRuntimeBindingImplementationLifecycleResult.rejected(
+                state,
+                message,
+                binding,
+                replacementBinding,
+                List.of(diagnostic)
+        ));
+    }
+
+    private static VisualRuntimeBindingImplementationBinding.LifecycleEvent lifecycleEvent(
+            String eventType,
+            String fromState,
+            String toState,
+            VisualRuntimeBindingImplementationTransitionRequest request,
+            String relatedBindingId,
+            Instant occurredAt) {
+        return new VisualRuntimeBindingImplementationBinding.LifecycleEvent(
+                eventType,
+                fromState,
+                toState,
+                request.actor(),
+                request.changeSource(),
+                request.reason(),
+                request.changeSummary(),
+                relatedBindingId,
+                occurredAt
         );
     }
 
