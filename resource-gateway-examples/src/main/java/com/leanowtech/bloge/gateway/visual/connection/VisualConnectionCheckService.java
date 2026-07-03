@@ -6,8 +6,10 @@ import com.leanowtech.bloge.gateway.visual.diagnostic.VisualDiagnostic;
 import com.leanowtech.bloge.gateway.visual.draft.GraphDraft;
 import com.leanowtech.bloge.gateway.visual.model.SchemaEnvelope;
 import com.leanowtech.bloge.gateway.visual.validation.GraphDraftValidator;
+import com.leanowtech.bloge.gateway.visual.validation.VisualGraphReadiness;
 import com.leanowtech.bloge.gateway.visual.validation.VisualSchemaCompatibility;
 import com.leanowtech.bloge.gateway.visual.validation.VisualValidationResult;
+import com.leanowtech.bloge.gateway.visual.validation.VisualRuntimeBindingRequirementKey;
 
 import org.springframework.stereotype.Service;
 
@@ -16,9 +18,10 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.function.Function;
+import java.util.function.Predicate;
 import java.util.regex.Pattern;
 import java.util.regex.PatternSyntaxException;
-import java.util.function.Predicate;
 
 /**
  * Server-side schema gate for interactive canvas connections.
@@ -469,8 +472,78 @@ public class VisualConnectionCheckService {
                 firstDiagnostic == null ? "" : firstDiagnostic.code(),
                 replacementSummary(replacedBindings, replacedEdges),
                 replacedBindings,
-                replacedEdges
+                replacedEdges,
+                targetRuntimeBindingImpact(target.node().id(), check.validation(), operatorLibraryIdsByOperatorRef())
         );
+    }
+
+    private static VisualConnectionCandidatesResult.ConnectionCandidateRuntimeBindingImpact targetRuntimeBindingImpact(
+            String targetNodeId,
+            VisualValidationResult validation,
+            Map<String, String> operatorLibraryIdsByOperatorRef) {
+        List<VisualGraphReadiness.RuntimeBindingRequirement> requirements =
+                targetRuntimeBindingRequirements(targetNodeId, validation);
+        return new VisualConnectionCandidatesResult.ConnectionCandidateRuntimeBindingImpact(
+                requirements.size(),
+                runtimeBindingRequirementKeys(requirements),
+                countBy(requirements, VisualGraphReadiness.RuntimeBindingRequirement::bindingKind),
+                countBy(requirements, VisualGraphReadiness.RuntimeBindingRequirement::handoffLane),
+                countBy(requirements, VisualGraphReadiness.RuntimeBindingRequirement::handoffKind),
+                countBy(requirements, VisualGraphReadiness.RuntimeBindingRequirement::handoffTarget),
+                countBy(requirements, VisualGraphReadiness.RuntimeBindingRequirement::sourceKind),
+                countBy(requirements, requirement -> operatorLibraryId(requirement, operatorLibraryIdsByOperatorRef)),
+                countBy(requirements, VisualGraphReadiness.RuntimeBindingRequirement::loweringMode),
+                countBy(requirements, VisualGraphReadiness.RuntimeBindingRequirement::state)
+        );
+    }
+
+    private static List<VisualGraphReadiness.RuntimeBindingRequirement> targetRuntimeBindingRequirements(
+            String targetNodeId,
+            VisualValidationResult validation) {
+        if (targetNodeId == null || targetNodeId.isBlank() || validation == null || validation.readiness() == null
+                || validation.readiness().runtimeBindingRequirements() == null) {
+            return List.of();
+        }
+        return validation.readiness().runtimeBindingRequirements().stream()
+                .filter(requirement -> requirement != null && targetNodeId.equals(requirement.nodeId()))
+                .toList();
+    }
+
+    private static List<String> runtimeBindingRequirementKeys(
+            List<VisualGraphReadiness.RuntimeBindingRequirement> requirements) {
+        return requirements == null ? List.of() : requirements.stream()
+                .map(requirement -> VisualRuntimeBindingRequirementKey.stable(
+                        "connection-preview",
+                        "",
+                        requirement.nodeId(),
+                        requirement.bindingKind(),
+                        requirement.bindingTarget(),
+                        ""))
+                .toList();
+    }
+
+    private static String operatorLibraryId(VisualGraphReadiness.RuntimeBindingRequirement requirement,
+                                            Map<String, String> operatorLibraryIdsByOperatorRef) {
+        if (requirement == null || operatorLibraryIdsByOperatorRef == null) {
+            return "";
+        }
+        String value = operatorLibraryIdsByOperatorRef.get(requirement.operatorRef());
+        return value == null ? "" : value;
+    }
+
+    private static Map<String, Integer> countBy(
+            List<VisualGraphReadiness.RuntimeBindingRequirement> requirements,
+            Function<VisualGraphReadiness.RuntimeBindingRequirement, String> classifier) {
+        Map<String, Integer> counts = new LinkedHashMap<>();
+        for (VisualGraphReadiness.RuntimeBindingRequirement requirement
+                : requirements == null ? List.<VisualGraphReadiness.RuntimeBindingRequirement>of() : requirements) {
+            String key = classifier.apply(requirement);
+            if (key == null || key.isBlank()) {
+                continue;
+            }
+            counts.merge(key, 1, Integer::sum);
+        }
+        return counts;
     }
 
     private Map<String, Object> endpointSourceSchema(GraphDraft draft, GraphDraft.Endpoint source) {

@@ -720,16 +720,26 @@ public record VisualAssetOverview(
                                 String actionOperatorRef,
                                 String actionOperatorLibraryId) {
             List<ActionItem> generated = new ArrayList<>();
+            Map<String, String> currentOwnerIdsByOperatorRef = mergedOperatorLibraryIds(
+                    Map.of(),
+                    operatorLibraryIdsByOperatorRef
+            );
             for (GraphDraftSummary draft : drafts == null ? List.<GraphDraftSummary>of() : drafts) {
-                addDraftAction(generated, draft, operatorLibraryIdsByOperatorRef);
+                addDraftAction(generated, draft, mergedOperatorLibraryIds(
+                        draft == null ? Map.of() : draft.operatorLibraryIdsByOperatorRef(),
+                        currentOwnerIdsByOperatorRef
+                ));
             }
             for (VisualGraphPublicationSummary publication : publications == null
                     ? List.<VisualGraphPublicationSummary>of()
                     : publications) {
-                addPublicationAction(generated, publication, operatorLibraryIdsByOperatorRef);
+                addPublicationAction(generated, publication, mergedOperatorLibraryIds(
+                        publication == null ? Map.of() : publication.operatorLibraryIdsByOperatorRef(),
+                        currentOwnerIdsByOperatorRef
+                ));
             }
             for (OperatorDefinition operator : operators == null ? List.<OperatorDefinition>of() : operators) {
-                addCatalogAction(generated, operator, operatorLibraryIdsByOperatorRef);
+                addCatalogAction(generated, operator, currentOwnerIdsByOperatorRef);
             }
             generated.sort((left, right) -> {
                 int severity = Integer.compare(severityRank(left.severity()), severityRank(right.severity()));
@@ -1035,6 +1045,28 @@ public record VisualAssetOverview(
             return "";
         }
         return normalizeTextValue(operatorLibraryIdsByOperatorRef.get(operatorRef));
+    }
+
+    private static Map<String, String> mergedOperatorLibraryIds(Map<String, String> snapshotOwnerIdsByOperatorRef,
+                                                               Map<String, String> currentOwnerIdsByOperatorRef) {
+        Map<String, String> merged = new LinkedHashMap<>();
+        putOperatorLibraryIds(merged, snapshotOwnerIdsByOperatorRef);
+        putOperatorLibraryIds(merged, currentOwnerIdsByOperatorRef);
+        return merged;
+    }
+
+    private static void putOperatorLibraryIds(Map<String, String> target,
+                                              Map<String, String> ownerIdsByOperatorRef) {
+        if (ownerIdsByOperatorRef == null || ownerIdsByOperatorRef.isEmpty()) {
+            return;
+        }
+        for (Map.Entry<String, String> entry : ownerIdsByOperatorRef.entrySet()) {
+            String operatorRef = normalizeTextValue(entry.getKey());
+            String operatorLibraryId = normalizeTextValue(entry.getValue());
+            if (!operatorRef.isBlank() && !operatorLibraryId.isBlank()) {
+                target.put(operatorRef, operatorLibraryId);
+            }
+        }
     }
 
     private static void addDraftAction(List<ActionItem> items,

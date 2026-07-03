@@ -45,6 +45,7 @@ import java.util.Map;
  * @param missingFingerprintCount number of frozen nodes without a saved fingerprint
  * @param sourceKindCounts node counts by source kind
  * @param operatorLibraryIdCounts node counts by owner operator library id
+ * @param operatorLibraryIdsByOperatorRef exact operatorRef to owner operator library id map from frozen dependency evidence
  * @param loweringModeCounts node counts by lowering mode
  * @param runtimeReadinessStateCounts node counts by runtime readiness state
  */
@@ -74,6 +75,7 @@ public record VisualGraphPublicationSummary(
         int missingFingerprintCount,
         Map<String, Integer> sourceKindCounts,
         Map<String, Integer> operatorLibraryIdCounts,
+        Map<String, String> operatorLibraryIdsByOperatorRef,
         Map<String, Integer> loweringModeCounts,
         Map<String, Integer> runtimeReadinessStateCounts
 ) {
@@ -102,6 +104,7 @@ public record VisualGraphPublicationSummary(
         operatorLibraryIdCounts = operatorLibraryIdCounts == null
                 ? Map.of()
                 : new LinkedHashMap<>(operatorLibraryIdCounts);
+        operatorLibraryIdsByOperatorRef = normalizeOperatorLibraryIds(operatorLibraryIdsByOperatorRef);
         loweringModeCounts = loweringModeCounts == null ? Map.of() : new LinkedHashMap<>(loweringModeCounts);
         runtimeReadinessStateCounts = runtimeReadinessStateCounts == null
                 ? Map.of()
@@ -153,6 +156,7 @@ public record VisualGraphPublicationSummary(
                 dependencies.missingFingerprintCount(),
                 dependencies.sourceKindCounts(),
                 dependencies.operatorLibraryIdCounts(),
+                operatorLibraryIdsByOperatorRef(dependencies),
                 dependencies.loweringModeCounts(),
                 dependencies.runtimeReadinessStateCounts()
         );
@@ -189,8 +193,42 @@ public record VisualGraphPublicationSummary(
                 Map.of(),
                 Map.of(),
                 Map.of(),
+                Map.of(),
                 Map.of()
         );
+    }
+
+    private static Map<String, String> operatorLibraryIdsByOperatorRef(GraphDraftDependencyReport dependencies) {
+        if (dependencies == null || dependencies.operators() == null) {
+            return Map.of();
+        }
+        Map<String, String> ownerIds = new LinkedHashMap<>();
+        for (GraphDraftDependencyReport.OperatorDependency operator : dependencies.operators()) {
+            if (operator == null) {
+                continue;
+            }
+            String operatorRef = operator.operatorRef() == null ? "" : operator.operatorRef().trim();
+            String operatorLibraryId = operator.operatorLibraryId() == null ? "" : operator.operatorLibraryId().trim();
+            if (!operatorRef.isBlank() && !operatorLibraryId.isBlank()) {
+                ownerIds.putIfAbsent(operatorRef, operatorLibraryId);
+            }
+        }
+        return ownerIds;
+    }
+
+    private static Map<String, String> normalizeOperatorLibraryIds(Map<String, String> ownerIds) {
+        if (ownerIds == null || ownerIds.isEmpty()) {
+            return Map.of();
+        }
+        Map<String, String> normalized = new LinkedHashMap<>();
+        for (Map.Entry<String, String> entry : ownerIds.entrySet()) {
+            String operatorRef = entry.getKey() == null ? "" : entry.getKey().trim();
+            String operatorLibraryId = entry.getValue() == null ? "" : entry.getValue().trim();
+            if (!operatorRef.isBlank() && !operatorLibraryId.isBlank()) {
+                normalized.put(operatorRef, operatorLibraryId);
+            }
+        }
+        return normalized;
     }
 
     private static VisualGraphActionReadiness derivedActionReadiness(boolean valid,

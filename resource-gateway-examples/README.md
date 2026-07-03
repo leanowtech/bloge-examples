@@ -1154,6 +1154,17 @@ items with stable keys plus related `operatorRef` and owner `operatorLibraryId`,
 so runtime-plane binding work can be filtered, counted, and assigned by
 user-provided operator or operator-library ownership directly from the overview
 without loading each full draft or immutable publication.
+Draft and publication summaries also carry an exact
+`operatorLibraryIdsByOperatorRef` map derived from dependency evidence; overview
+actions and the runtime-binding index use the current catalog owner map when it
+exists and fall back to that snapshot map when a target environment has not
+installed the source operator library yet.
+Connection candidate discovery exposes the same runtime-binding evidence at two
+granularities: candidate `summary` describes the whole preview draft, while
+`explanation.targetRuntimeBinding` is filtered to the current drop target node.
+The browser's hover/connectability title prefers the target-scoped impact so a
+schema-compatible target is not blamed for unrelated design-only nodes elsewhere
+in the graph.
 For external integration teams that need a factual queue rather than a
 recommendation list, `/api/visual/assets/runtime-binding-requirements` exposes
 the same gaps as `bloge.visualRuntimeBindingRequirements.v1`, scoped and

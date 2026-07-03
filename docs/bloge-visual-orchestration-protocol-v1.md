@@ -1632,6 +1632,11 @@ binding/edge downstream lineage、source kind / operator library owner / lowerin
 `policyViolations`。对于 imported operator，报告还会在顶层
 `operatorLibraryIdCounts`、operator 行和 node 行暴露 `operatorLibraryId`，让 stored
 draft、draft bundle、import result 和 publication dependency report 能直接按用户导入库归属路由修复工作。
+`bloge.visualGraphDraftSummary.v1` 和 `bloge.visualGraphPublicationSummary.v1`
+会从 dependency report 的 operator 行继续派生 `operatorLibraryIdsByOperatorRef`，
+供 overview action queue 与 runtime-binding index 在目标环境 catalog 尚未安装对应
+operator library 时仍能保留精确 owner 路由；当前 catalog 能提供 owner map 时，以当前
+catalog 归属覆盖该快照值。
 当目标环境 catalog 缺少当前 operatorRef 时，报告会回退到
 draft 保存时冻结的 operator definition snapshot 提供 source/lowering/operator-library owner
 审阅上下文，但仍把运行状态标记为 `CATALOG_MISSING`，避免跨环境迁移或坏版本导入时把
@@ -1850,6 +1855,10 @@ message handler、webhook、streaming 或 durable capability 暂时不能运行�
 action queue 支持 `actionOperatorRef` / `actionOperatorLibraryId` 过滤并返回
 `operatorRefCounts` / `operatorLibraryIdCounts`，这些字段不是工单状态，不引入第二套
 workflow 真相源。
+owner `operatorLibraryId` 的解析顺序是：优先使用当前 catalog 的
+`operatorRef -> operatorLibraryId`，缺失时回退到 draft/publication summary 从 dependency
+evidence 派生的 `operatorLibraryIdsByOperatorRef`。这保证跨环境 DESIGN publication 或
+schema-only draft 在目标 catalog 未就绪时仍可按源算子库归属交接 runtime-plane work。
 如果外部 runtime-plane 团队需要事实清单而不是 overview action recommendation，
 `GET /api/visual/assets/runtime-binding-requirements` 会返回
 `bloge.visualRuntimeBindingRequirements.v1`，按 active draft 和 immutable publication
@@ -2193,6 +2202,12 @@ candidate draft 时，候选内嵌的 `summary` 同样携带 preview-scoped runt
 requirement count/key、owner counts 和 routing counts；浏览器 hover、connectability inspector
 或外部审阅面板可以据此提示“可连接、可保存、可 DESIGN 发布，但 EXECUTABLE promotion
 需要 runtime binding”，而不是把它误判为普通成功连接。
+因为 `summary` 描述的是加入候选连接后的整张 candidate draft，单个候选的
+`explanation.targetRuntimeBinding` 还会按 target node 过滤同一批 requirement，
+返回目标节点级 requirement keys、binding kind、handoff lane/kind/target、
+source kind、owner operator library、lowering mode 和 readiness state 计数。
+拖拽 hover 与 selected-node connectability 标题应优先使用该目标级字段，再回退
+到图级 `summary`，避免把无关节点的 runtime binding 缺口归因到当前 drop target。
 客户端仍必须在真正
 drop 或写入 binding 前调用 `/api/visual/connections/check`，因为候选发现结果只是
 某一时刻 draft 快照的读模型；任何本地编辑、revision rebase 或 catalog drift 都可能

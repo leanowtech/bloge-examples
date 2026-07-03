@@ -72,6 +72,9 @@ class VisualAssetOverviewControllerTest {
         assertThat(GraphDraftSummary.from(drafts.history().getFirst(), draft, validation, dependencyReport)
                 .operatorLibraryIdCounts())
                 .containsEntry(library.libraryId(), 1);
+        assertThat(GraphDraftSummary.from(drafts.history().getFirst(), draft, validation, dependencyReport)
+                .operatorLibraryIdsByOperatorRef())
+                .containsEntry("risk:eligibility", library.libraryId());
         assertThat(overview.publications().total()).isEqualTo(1);
         assertThat(overview.publications().designArtifactCount()).isEqualTo(1);
         assertThat(overview.publications().artifactKindCounts()).containsEntry("DESIGN", 1);
@@ -81,6 +84,8 @@ class VisualAssetOverviewControllerTest {
                 .isEqualTo("design-artifact-ready");
         assertThat(VisualGraphPublicationSummary.from(publication).operatorLibraryIdCounts())
                 .containsEntry(library.libraryId(), 1);
+        assertThat(VisualGraphPublicationSummary.from(publication).operatorLibraryIdsByOperatorRef())
+                .containsEntry("risk:eligibility", library.libraryId());
         assertThat(overview.catalog().totalOperators()).isGreaterThanOrEqualTo(1);
         assertThat(overview.catalog().facets().runtimeReadinessStates()).containsEntry("design-only", 1);
         assertThat(overview.actionQueue().itemLimit()).isEqualTo(VisualAssetOverview.DEFAULT_ACTION_ITEM_LIMIT);
@@ -126,6 +131,137 @@ class VisualAssetOverviewControllerTest {
                     assertThat(item.handoffTarget()).isEqualTo("risk:eligibility");
                     assertThat(item.recommendedAction()).contains("EXECUTABLE promotion");
                 });
+    }
+
+    @Test
+    void runtimeBindingRoutingFallsBackToFrozenOperatorLibraryOwnersWhenCatalogMapIsMissing() {
+        OperatorLibrary library = VisualCatalogTestSupport.designOnlyEligibilityLibrary("integer");
+        DefaultVisualOperatorCatalog catalog = VisualCatalogTestSupport.catalogWithLibrary(library);
+        GraphDraftValidator validator = new GraphDraftValidator(catalog);
+        InMemoryGraphDraftRepository drafts = new InMemoryGraphDraftRepository();
+        InMemoryVisualGraphPublicationRepository publications = new InMemoryVisualGraphPublicationRepository();
+        OperatorDefinition operator = catalog.find("risk:eligibility").orElseThrow();
+        GraphDraft draft = drafts.save(draftWithFingerprint(operator)
+                .withOperatorSnapshots(Map.of("eligibility", operator)));
+        VisualValidationResult validation = validator.validate(draft);
+        GraphDraftDependencyReport dependencyReport = GraphDraftDependencyReport.from(draft, catalog);
+        GraphDraftSummary draftSummary =
+                GraphDraftSummary.from(drafts.history().getFirst(), draft, validation, dependencyReport);
+        VisualGraphPublication publication = publications.create(VisualGraphPublication.design(
+                draft,
+                List.of(operator),
+                validation,
+                new DslGenerationResult(false, "", List.of()),
+                dependencyReport
+        ));
+        VisualGraphPublicationSummary publicationSummary = VisualGraphPublicationSummary.from(publication);
+        String targetCatalogOwner = "target-risk-library";
+
+        VisualRuntimeBindingRequirements fallbackIndex = VisualRuntimeBindingRequirements.from(
+                List.of(draftSummary),
+                List.of(publicationSummary),
+                Map.of(),
+                "",
+                "",
+                "",
+                10,
+                0,
+                "",
+                "",
+                library.libraryId(),
+                "",
+                "",
+                "",
+                "",
+                "",
+                "",
+                "",
+                ""
+        );
+        VisualAssetOverview fallbackOverview = VisualAssetOverview.from(
+                List.of(draftSummary),
+                List.of(publicationSummary),
+                List.of(),
+                List.of(),
+                Map.of(),
+                "",
+                "",
+                "",
+                10,
+                0,
+                "",
+                "",
+                "",
+                "",
+                library.libraryId()
+        );
+        VisualRuntimeBindingRequirements overriddenIndex = VisualRuntimeBindingRequirements.from(
+                List.of(draftSummary),
+                List.of(publicationSummary),
+                Map.of("risk:eligibility", targetCatalogOwner),
+                "",
+                "",
+                "",
+                10,
+                0,
+                "",
+                "",
+                targetCatalogOwner,
+                "",
+                "",
+                "",
+                "",
+                "",
+                "",
+                "",
+                ""
+        );
+        VisualAssetOverview overriddenOverview = VisualAssetOverview.from(
+                List.of(draftSummary),
+                List.of(publicationSummary),
+                List.of(),
+                List.of(),
+                Map.of("risk:eligibility", targetCatalogOwner),
+                "",
+                "",
+                "",
+                10,
+                0,
+                "",
+                "",
+                "",
+                "",
+                targetCatalogOwner
+        );
+
+        assertThat(draftSummary.operatorLibraryIdsByOperatorRef())
+                .containsEntry("risk:eligibility", library.libraryId());
+        assertThat(publicationSummary.operatorLibraryIdsByOperatorRef())
+                .containsEntry("risk:eligibility", library.libraryId());
+        assertThat(fallbackIndex.filter().operatorLibraryId()).isEqualTo(library.libraryId());
+        assertThat(fallbackIndex.total()).isEqualTo(2);
+        assertThat(fallbackIndex.operatorLibraryIdCounts()).containsEntry(library.libraryId(), 2);
+        assertThat(fallbackIndex.items())
+                .extracting(VisualRuntimeBindingRequirements.RequirementItem::operatorLibraryId)
+                .containsOnly(library.libraryId());
+        assertThat(fallbackOverview.actionQueue().filter().operatorLibraryId()).isEqualTo(library.libraryId());
+        assertThat(fallbackOverview.actionQueue().total()).isEqualTo(2);
+        assertThat(fallbackOverview.actionQueue().operatorLibraryIdCounts()).containsEntry(library.libraryId(), 2);
+        assertThat(fallbackOverview.actionQueue().items())
+                .extracting(VisualAssetOverview.ActionItem::operatorLibraryId)
+                .containsOnly(library.libraryId());
+        assertThat(overriddenIndex.filter().operatorLibraryId()).isEqualTo(targetCatalogOwner);
+        assertThat(overriddenIndex.total()).isEqualTo(2);
+        assertThat(overriddenIndex.operatorLibraryIdCounts()).containsEntry(targetCatalogOwner, 2);
+        assertThat(overriddenIndex.items())
+                .extracting(VisualRuntimeBindingRequirements.RequirementItem::operatorLibraryId)
+                .containsOnly(targetCatalogOwner);
+        assertThat(overriddenOverview.actionQueue().filter().operatorLibraryId()).isEqualTo(targetCatalogOwner);
+        assertThat(overriddenOverview.actionQueue().total()).isEqualTo(2);
+        assertThat(overriddenOverview.actionQueue().operatorLibraryIdCounts()).containsEntry(targetCatalogOwner, 2);
+        assertThat(overriddenOverview.actionQueue().items())
+                .extracting(VisualAssetOverview.ActionItem::operatorLibraryId)
+                .containsOnly(targetCatalogOwner);
     }
 
     @Test

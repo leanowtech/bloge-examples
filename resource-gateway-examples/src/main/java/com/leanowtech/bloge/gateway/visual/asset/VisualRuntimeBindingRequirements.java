@@ -474,10 +474,14 @@ public record VisualRuntimeBindingRequirements(
             if (draft == null || !draft.active()) {
                 continue;
             }
+            Map<String, String> ownerIdsByOperatorRef = mergedOperatorLibraryIds(
+                    draft.operatorLibraryIdsByOperatorRef(),
+                    operatorLibraryIdsByOperatorRef
+            );
             for (VisualGraphReadiness.RuntimeBindingRequirement requirement
                     : runtimeBindingRequirements(draft.readiness())) {
                 generated.add(fromDraft(draft, requirement,
-                        operatorLibraryId(requirement, operatorLibraryIdsByOperatorRef)));
+                        operatorLibraryId(requirement, ownerIdsByOperatorRef)));
             }
         }
         for (VisualGraphPublicationSummary publication : publications == null
@@ -486,10 +490,14 @@ public record VisualRuntimeBindingRequirements(
             if (publication == null) {
                 continue;
             }
+            Map<String, String> ownerIdsByOperatorRef = mergedOperatorLibraryIds(
+                    publication.operatorLibraryIdsByOperatorRef(),
+                    operatorLibraryIdsByOperatorRef
+            );
             for (VisualGraphReadiness.RuntimeBindingRequirement requirement
                     : runtimeBindingRequirements(publication.readiness())) {
                 generated.add(fromPublication(publication, requirement,
-                        operatorLibraryId(requirement, operatorLibraryIdsByOperatorRef)));
+                        operatorLibraryId(requirement, ownerIdsByOperatorRef)));
             }
         }
         return generated;
@@ -588,6 +596,28 @@ public record VisualRuntimeBindingRequirements(
             return "";
         }
         return normalizeTextValue(operatorLibraryIdsByOperatorRef.get(requirement.operatorRef()));
+    }
+
+    private static Map<String, String> mergedOperatorLibraryIds(Map<String, String> snapshotOwnerIdsByOperatorRef,
+                                                               Map<String, String> currentOwnerIdsByOperatorRef) {
+        Map<String, String> merged = new LinkedHashMap<>();
+        putOperatorLibraryIds(merged, snapshotOwnerIdsByOperatorRef);
+        putOperatorLibraryIds(merged, currentOwnerIdsByOperatorRef);
+        return merged;
+    }
+
+    private static void putOperatorLibraryIds(Map<String, String> target,
+                                              Map<String, String> ownerIdsByOperatorRef) {
+        if (ownerIdsByOperatorRef == null || ownerIdsByOperatorRef.isEmpty()) {
+            return;
+        }
+        for (Map.Entry<String, String> entry : ownerIdsByOperatorRef.entrySet()) {
+            String operatorRef = normalizeTextValue(entry.getKey());
+            String operatorLibraryId = normalizeTextValue(entry.getValue());
+            if (!operatorRef.isBlank() && !operatorLibraryId.isBlank()) {
+                target.put(operatorRef, operatorLibraryId);
+            }
+        }
     }
 
     private static String runtimeBindingTargetLabel(String assetLabel,

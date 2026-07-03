@@ -117,6 +117,25 @@ class VisualConnectionCheckServiceTest {
             assertThat(candidate.summary().bindingKindCounts()).containsEntry("executable-lowering", 1);
             assertThat(candidate.summary().handoffTargetCounts()).containsEntry("risk:eligibility", 1);
             assertThat(candidate.summary().operatorLibraryIdCounts()).containsEntry("risk-policy-design", 1);
+            assertThat(candidate.explanation().targetRuntimeBinding().requirementCount()).isEqualTo(1);
+            assertThat(candidate.explanation().targetRuntimeBinding().requirementKeys())
+                    .containsExactly("RUNTIME_BINDING|connection-preview||eligibility|executable-lowering|risk:eligibility|");
+            assertThat(candidate.explanation().targetRuntimeBinding().bindingKindCounts())
+                    .containsEntry("executable-lowering", 1);
+            assertThat(candidate.explanation().targetRuntimeBinding().handoffLaneCounts())
+                    .containsEntry("operator-platform", 1);
+            assertThat(candidate.explanation().targetRuntimeBinding().handoffKindCounts())
+                    .containsEntry("operator-implementation", 1);
+            assertThat(candidate.explanation().targetRuntimeBinding().handoffTargetCounts())
+                    .containsEntry("risk:eligibility", 1);
+            assertThat(candidate.explanation().targetRuntimeBinding().sourceKindCounts())
+                    .containsEntry("user-library", 1);
+            assertThat(candidate.explanation().targetRuntimeBinding().operatorLibraryIdCounts())
+                    .containsEntry("risk-policy-design", 1);
+            assertThat(candidate.explanation().targetRuntimeBinding().loweringModeCounts())
+                    .containsEntry("design", 1);
+            assertThat(candidate.explanation().targetRuntimeBinding().readinessStateCounts())
+                    .containsEntry("design-only", 1);
         });
     }
 

@@ -3,7 +3,10 @@ package com.leanowtech.bloge.gateway.visual.connection;
 import com.leanowtech.bloge.gateway.visual.diagnostic.VisualDiagnostic;
 import com.leanowtech.bloge.gateway.visual.draft.GraphDraft;
 
+import java.util.Collections;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 
 /**
  * Schema-aware connection target candidates for an interactive canvas drag source.
@@ -140,6 +143,7 @@ public record VisualConnectionCandidatesResult(
      * @param replacementSummary short summary of replaced bindings/edges
      * @param replacedBindingCount existing input bindings replaced by this accepted preview
      * @param replacedEdgeCount existing edges replaced by this accepted preview
+     * @param targetRuntimeBinding target-node runtime binding impact for this candidate
      */
     public record ConnectionCandidateExplanation(
             String sourceLabel,
@@ -153,8 +157,26 @@ public record VisualConnectionCandidatesResult(
             String firstDiagnosticCode,
             String replacementSummary,
             int replacedBindingCount,
-            int replacedEdgeCount
+            int replacedEdgeCount,
+            ConnectionCandidateRuntimeBindingImpact targetRuntimeBinding
     ) {
+        public ConnectionCandidateExplanation(String sourceLabel,
+                                              String targetLabel,
+                                              String sourceSchemaType,
+                                              String targetSchemaType,
+                                              boolean sourceSchemaKnown,
+                                              boolean targetSchemaKnown,
+                                              String decisionSource,
+                                              String decisionMessage,
+                                              String firstDiagnosticCode,
+                                              String replacementSummary,
+                                              int replacedBindingCount,
+                                              int replacedEdgeCount) {
+            this(sourceLabel, targetLabel, sourceSchemaType, targetSchemaType, sourceSchemaKnown, targetSchemaKnown,
+                    decisionSource, decisionMessage, firstDiagnosticCode, replacementSummary, replacedBindingCount,
+                    replacedEdgeCount, ConnectionCandidateRuntimeBindingImpact.empty());
+        }
+
         /**
          * Creates a candidate explanation.
          */
@@ -171,11 +193,74 @@ public record VisualConnectionCandidatesResult(
             replacementSummary = replacementSummary == null ? "" : replacementSummary;
             replacedBindingCount = Math.max(0, replacedBindingCount);
             replacedEdgeCount = Math.max(0, replacedEdgeCount);
+            targetRuntimeBinding = targetRuntimeBinding == null
+                    ? ConnectionCandidateRuntimeBindingImpact.empty()
+                    : targetRuntimeBinding;
         }
 
         public static ConnectionCandidateExplanation empty() {
             return new ConnectionCandidateExplanation("", "", "", "", false, false, "server-validator",
-                    "", "", "", 0, 0);
+                    "", "", "", 0, 0, ConnectionCandidateRuntimeBindingImpact.empty());
         }
+    }
+
+    /**
+     * Target-node runtime binding impact for one candidate.
+     *
+     * @param requirementCount number of target-node requirements
+     * @param requirementKeys preview-scoped stable target-node requirement keys
+     * @param bindingKindCounts target-node requirement counts by binding kind
+     * @param handoffLaneCounts target-node requirement counts by runtime-plane handoff lane
+     * @param handoffKindCounts target-node requirement counts by runtime-plane work kind
+     * @param handoffTargetCounts target-node requirement counts by runtime-plane routing target
+     * @param sourceKindCounts target-node requirement counts by operator source kind
+     * @param operatorLibraryIdCounts target-node requirement counts by owner operator library id
+     * @param loweringModeCounts target-node requirement counts by lowering mode
+     * @param readinessStateCounts target-node requirement counts by node readiness state
+     */
+    public record ConnectionCandidateRuntimeBindingImpact(
+            int requirementCount,
+            List<String> requirementKeys,
+            Map<String, Integer> bindingKindCounts,
+            Map<String, Integer> handoffLaneCounts,
+            Map<String, Integer> handoffKindCounts,
+            Map<String, Integer> handoffTargetCounts,
+            Map<String, Integer> sourceKindCounts,
+            Map<String, Integer> operatorLibraryIdCounts,
+            Map<String, Integer> loweringModeCounts,
+            Map<String, Integer> readinessStateCounts
+    ) {
+        public ConnectionCandidateRuntimeBindingImpact {
+            requirementKeys = requirementKeys == null ? List.of() : List.copyOf(requirementKeys);
+            requirementCount = requirementKeys.isEmpty() ? Math.max(0, requirementCount) : requirementKeys.size();
+            bindingKindCounts = immutableCounts(bindingKindCounts);
+            handoffLaneCounts = immutableCounts(handoffLaneCounts);
+            handoffKindCounts = immutableCounts(handoffKindCounts);
+            handoffTargetCounts = immutableCounts(handoffTargetCounts);
+            sourceKindCounts = immutableCounts(sourceKindCounts);
+            operatorLibraryIdCounts = immutableCounts(operatorLibraryIdCounts);
+            loweringModeCounts = immutableCounts(loweringModeCounts);
+            readinessStateCounts = immutableCounts(readinessStateCounts);
+        }
+
+        public static ConnectionCandidateRuntimeBindingImpact empty() {
+            return new ConnectionCandidateRuntimeBindingImpact(0, List.of(), Map.of(), Map.of(), Map.of(), Map.of(),
+                    Map.of(), Map.of(), Map.of(), Map.of());
+        }
+    }
+
+    private static Map<String, Integer> immutableCounts(Map<String, Integer> counts) {
+        if (counts == null || counts.isEmpty()) {
+            return Map.of();
+        }
+        Map<String, Integer> normalized = new LinkedHashMap<>();
+        for (Map.Entry<String, Integer> entry : counts.entrySet()) {
+            String key = entry.getKey() == null ? "" : entry.getKey().trim();
+            int count = entry.getValue() == null ? 0 : Math.max(0, entry.getValue());
+            if (!key.isBlank() && count > 0) {
+                normalized.put(key, count);
+            }
+        }
+        return Collections.unmodifiableMap(normalized);
     }
 }

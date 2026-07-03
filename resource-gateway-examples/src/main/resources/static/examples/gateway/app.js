@@ -12640,7 +12640,8 @@ function nodeConnectabilityTargetTitle(entry) {
     ? `${explanation.sourceSchemaType || 'unknown'} -> ${explanation.targetSchemaType || 'unknown'}`
     : '';
   const replacement = explanation?.replacementSummary || '';
-  const runtimeBinding = connectionRuntimeBindingSummary(entry.serverCandidate?.summary);
+  const runtimeBinding = connectionCandidateTargetRuntimeBindingSummary(explanation?.targetRuntimeBinding)
+    || connectionRuntimeBindingSummary(entry.serverCandidate?.summary);
   return [
     label,
     !entry.compatibility?.ok && message ? message : '',
@@ -21715,7 +21716,23 @@ function normalizeConnectionCandidateExplanation(explanation, summary = null, di
       replacedEdgeCount
     ),
     replacedBindingCount,
-    replacedEdgeCount
+    replacedEdgeCount,
+    targetRuntimeBinding: normalizeConnectionCandidateRuntimeBindingImpact(explanation?.targetRuntimeBinding)
+  };
+}
+
+function normalizeConnectionCandidateRuntimeBindingImpact(source = null) {
+  return {
+    requirementCount: numericCount(source?.requirementCount, normalizeStringArray(source?.requirementKeys).length),
+    requirementKeys: normalizeStringArray(source?.requirementKeys),
+    bindingKindCounts: normalizeCountMap(source?.bindingKindCounts),
+    handoffLaneCounts: normalizeCountMap(source?.handoffLaneCounts),
+    handoffKindCounts: normalizeCountMap(source?.handoffKindCounts),
+    handoffTargetCounts: normalizeCountMap(source?.handoffTargetCounts),
+    sourceKindCounts: normalizeCountMap(source?.sourceKindCounts),
+    operatorLibraryIdCounts: normalizeCountMap(source?.operatorLibraryIdCounts),
+    loweringModeCounts: normalizeCountMap(source?.loweringModeCounts),
+    readinessStateCounts: normalizeCountMap(source?.readinessStateCounts)
   };
 }
 
@@ -22067,6 +22084,22 @@ function connectionRuntimeBindingSummary(summary) {
     ? ` ${libraryEntries.map(([libraryId, value]) => `${libraryId} library: ${value}`).join(', ')}.`
     : '';
   return `${count} runtime binding requirement${count === 1 ? '' : 's'}${kindSummary} before executable promotion.${librarySummary}`;
+}
+
+function connectionCandidateTargetRuntimeBindingSummary(impact) {
+  const count = numericCount(impact?.requirementCount, 0);
+  if (!count) {
+    return '';
+  }
+  const kindEntries = Object.entries(normalizeCountMap(impact?.bindingKindCounts));
+  const kindSummary = kindEntries.length
+    ? ` (${kindEntries.map(([kind, value]) => `${operatorPaletteFacetLabel(kind)}: ${value}`).join(', ')})`
+    : '';
+  const libraryEntries = Object.entries(normalizeCountMap(impact?.operatorLibraryIdCounts));
+  const librarySummary = libraryEntries.length
+    ? ` ${libraryEntries.map(([libraryId, value]) => `${libraryId} library: ${value}`).join(', ')}.`
+    : '';
+  return `${count} target runtime binding requirement${count === 1 ? '' : 's'}${kindSummary} before executable promotion.${librarySummary}`;
 }
 
 function normalizeStringArray(value) {
