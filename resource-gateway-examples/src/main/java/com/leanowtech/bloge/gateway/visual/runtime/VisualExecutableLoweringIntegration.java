@@ -30,8 +30,8 @@ import java.util.Locale;
  * @param executorEntrypoint executable BLOGE lowering/executor entrypoint
  * @param executorOwner owning executor platform team or service
  * @param integratedBy principal or service that confirmed integration
- * @param changeSource source system or workflow that submitted the integration
- * @param reason human-readable integration reason
+ * @param changeSource source system or workflow that submitted the latest integration lifecycle transition
+ * @param reason human-readable latest integration lifecycle reason
  * @param evidence external integration evidence
  * @param createdAt first persistence timestamp
  * @param updatedAt latest persistence timestamp
@@ -187,6 +187,55 @@ public record VisualExecutableLoweringIntegration(
                 reason,
                 evidence,
                 created,
+                updated
+        );
+    }
+
+    /**
+     * Applies a lifecycle state transition while retaining prior integration evidence.
+     *
+     * @param nextState next integration state
+     * @param nextLevel UI/control-plane level
+     * @param nextChangeSource source workflow for the transition
+     * @param nextReason transition reason
+     * @param transitionEvidence persisted evidence for the transition
+     * @param updated transition timestamp
+     * @return integration record ready for repository update
+     */
+    public VisualExecutableLoweringIntegration withStateTransition(String nextState,
+                                                                   String nextLevel,
+                                                                   String nextChangeSource,
+                                                                   String nextReason,
+                                                                   Evidence transitionEvidence,
+                                                                   Instant updated) {
+        java.util.ArrayList<Evidence> nextEvidence = new java.util.ArrayList<>(evidence);
+        if (transitionEvidence != null) {
+            nextEvidence.add(transitionEvidence);
+        }
+        return new VisualExecutableLoweringIntegration(
+                schemaVersion,
+                integrationId,
+                revision,
+                nextState,
+                nextLevel,
+                activationId,
+                activationRevision,
+                bindingId,
+                bindingRevision,
+                operatorRef,
+                operatorFingerprint,
+                adapterKind,
+                entrypoint,
+                runtimeEnvironment,
+                loweringMode,
+                executorKind,
+                executorEntrypoint,
+                executorOwner,
+                integratedBy,
+                nextChangeSource,
+                nextReason,
+                nextEvidence,
+                createdAt,
                 updated
         );
     }

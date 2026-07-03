@@ -898,6 +898,7 @@ fingerprint snapshot；普通保存和 PATCH 仍保留既有 snapshot，避免�
 | `POST` | `/api/visual/assets/runtime-binding-requirements/implementation-bindings/validate` | 当前已实现第一刀：接收 `bloge.visualRuntimeBindingImplementationBinding.v1`，把 runtime team 提交的 implementation metadata、test evidence、policy evidence 和 rollback target 对准 handoff `operatorContract` snapshot 与当前 catalog fingerprint 做无状态 pre-bind 校验，返回 `bloge.visualRuntimeBindingImplementationValidation.v1` 的 ready-to-bind/requires-review/rejected 裁决；不写入 binding 状态 |
 | `GET/POST` | `/api/visual/assets/runtime-binding-requirements/implementation-bindings` | 当前已实现：valid proposal 可持久化为 `bloge.visualRuntimeBindingImplementationBindingRecord.v1`，并按 operatorRef/state 查询；duplicate bindingId 返回结构化 `409` |
 | `POST` | `/api/visual/assets/runtime-binding-requirements/implementation-bindings/{bindingId}/bind` | 当前已实现：把 ready-to-bind 或 review-acknowledged proposal 推进到 `bound` lifecycle state，要求 actor/reason 审计证据，并拒绝同一 operatorRef 的第二个 active binding |
+| `POST` | `/api/visual/assets/runtime-binding-requirements/implementation-bindings/{bindingId}/unbind` | 当前已实现：把 active bound implementation 推进到 `unbound` lifecycle state，要求 actor/reason 审计证据，并级联把当前 active executable lowering integration 与 adapter activation 标记为 `inactive`，从 active catalog/promotion projection 中移除但保留审计事实 |
 | `POST` | `/api/visual/assets/runtime-binding-requirements/implementation-bindings/{bindingId}/supersede` | 当前已实现：用同 operatorRef 的 replacement proposal 替换 active bound binding，写入 supersede lineage 和 lifecycle events；仍不直接改 graph artifact 或伪造 executable readiness |
 | `POST` | `/api/visual/assets/runtime-binding-requirements/adapter-activations/validate` | 当前已实现：接收 `bloge.visualRuntimeAdapterActivationRequest.v1`，把 runtime-plane activation assertion 对准 bound implementation、当前 catalog fingerprint、adapter metadata、runtime environment、healthy state、actor/reason 和 evidence 做无状态校验 |
 | `GET/POST` | `/api/visual/assets/runtime-binding-requirements/adapter-activations` | 当前已实现：healthy/current activation assertion 可持久化为 `bloge.visualRuntimeAdapterActivation.v1`，并按 bindingId/operatorRef/state 查询；拒绝 unbound binding、fingerprint/adapter drift、重复 active activation；catalog projection 可展示 `adapter-active`，但仍不伪造 executable readiness |
@@ -1290,7 +1291,7 @@ schema-only / runtime-blocked 的缺口通过 runtime-binding index 和 handoff 
 `RuntimeBindingImplementation` / `OperatorImplementationBinding` 生命周期，把 handoff contract
 转换为可审阅、可验证、可回滚、可重新派生 readiness 的 catalog 事实。当前已先落地无状态
 implementation validate API 和 proposal persistence，能证明并保存实现材料是否对准
-handoff contract 与当前 catalog，并已支持 bind/supersede lifecycle fact；但 active bound fact
+handoff contract 与当前 catalog，并已支持 bind/supersede/unbind lifecycle fact；但 active bound fact
 现在已先投影回 operator catalog response，形成 palette/外部控制面可见的
 `OperatorRuntimeBindingProjection` 读模型；runtime adapter activation registry 也已能保存
 健康、当前、可审计的运行面激活事实，并把 `adapter-active` / `adapter-drifted` 投回 catalog。
@@ -1303,8 +1304,9 @@ implementation / activation / executor bridge 事实缺失，收窄到可信 lib
 operator surface、fingerprint 和 runtime readiness，也已能通过受治理 apply mutation 把 native
 candidate 写成 owning operator-library 的新 immutable revision；同时已补 post-apply evidence
 refresh/rebind mutation，可把旧 binding / activation / integration evidence 重新对账到当前 executable
-fingerprint，并用 supersede lineage 保留旧证据。剩余缺口不再是“完全不能写回或无法续接”，
-而是还缺 unbind/deactivate、非 native lowering 的 apply 语义、跨 repository mutation 的事务/idempotency
+fingerprint，并用 supersede lineage 保留旧证据；也已补 governed unbind/deactivate mutation，让 active
+binding、activation 和 lowering integration 能退回 unbound/inactive 审计事实。剩余缺口不再是“完全不能写回、
+无法续接或无法退出”，而是还缺非 native lowering 的 apply 语义、跨 repository mutation 的事务/idempotency
 硬化，以及更完整的 contract diff 门禁。没有这些后续硬化，
 handoff bundle 已能把工作交出去并把实现结果、激活事实和 lowering integration 事实带回 catalog 响应，native
 路径也能形成可信 library revision 并完成 native evidence 续接，但还不能覆盖所有 runtime-plane 变更的
@@ -1314,7 +1316,7 @@ handoff bundle 已能把工作交出去并把实现结果、激活事实和 lowe
 
 | 优先级 | 缺口 | 为什么卡住生产级 |
 | --- | --- | --- |
-| P0 | Runtime implementation binding 与 readiness 派生闭环 | 当前已有 validate gate、proposal record、bind/supersede lifecycle fact、adapter activation registry、executable lowering integration registry、catalog response 级 `OperatorRuntimeBindingProjection` / `OperatorExecutablePromotionProjection`、native executable readiness recompute preview、受治理 native apply mutation 写入 trusted operator-library revision，以及 post-apply evidence refresh/rebind mutation 续接当前 executable fingerprint；下一步需要补 unbind/deactivate、非 native lowering apply 语义、跨 repository mutation 的事务/idempotency 硬化和更完整的 contract diff 门禁，否则 runtime-binding requirement 虽然能被导出、预检、保存提案、形成绑定、激活、lowering integration 事实并在 native 路径写回可信 library revision和续接证据，但仍不能覆盖所有长期运行治理场景 |
+| P0 | Runtime implementation binding 与 readiness 派生闭环 | 当前已有 validate gate、proposal record、bind/supersede/unbind lifecycle fact、adapter activation registry、executable lowering integration registry、catalog response 级 `OperatorRuntimeBindingProjection` / `OperatorExecutablePromotionProjection`、native executable readiness recompute preview、受治理 native apply mutation 写入 trusted operator-library revision，以及 post-apply evidence refresh/rebind mutation 续接当前 executable fingerprint；下一步需要补非 native lowering apply 语义、跨 repository mutation 的事务/idempotency 硬化和更完整的 contract diff 门禁，否则 runtime-binding requirement 虽然能被导出、预检、保存提案、形成绑定、激活、lowering integration 事实、退出 active evidence，并在 native 路径写回可信 library revision和续接证据，但仍不能覆盖所有长期运行治理场景 |
 | P0 | Contract diff 与兼容性门禁 | 当前 handoff snapshot 可防篡改、可对账，但 implementation 提交时还需要证明它实现的是同一个 operator contract，且输入/输出/config/policy/lowering 变化按 SemVer 与治理规则被接受 |
 | P1 | Runtime-plane 状态回流 | 外部工单、worker dispatcher、AI tool runtime、event/message/webhook runtime 的状态需要以事件或回调进入控制面，但不能成为第二套 readiness 真相源；最终仍应回到 catalog/readiness 派生 |
 | P1 | IAM / RBAC / tenant isolation | 当前 tenant/namespace/environment policy 是可见性和使用门禁，不是完整权限后台；生产环境需要 actor 权限、secret scope、egress policy、审计查询和管理员分权 |
@@ -1400,7 +1402,7 @@ Phase 1 的工程拆分、包结构、API、测试和 Definition of Done 见
 - 当前已落地 executable lowering integration validate/submit/list API，持久化 current executor bridge assertion 为 `bloge.visualExecutableLoweringIntegration.v1`。
 - 当前已落地 operator catalog response projection，返回 active binding 与 adapter activation 的 missing/bound/drifted/adapter-active/adapter-drifted/not-required 状态。
 - 当前已落地 executable promotion projection，返回 already-executable/binding-required/activation-required/executor-integration-required/lowering-integration-drifted/readiness-recompute-required 等 promotion 状态。
-- 已补 native governed library revision mutation 和 post-apply evidence refresh/rebind mutation，把 readiness recompute preview 写成可信 operator-library 事实后继续续接当前 executable fingerprint；后续补 unbind/deactivate、非 native lowering apply、事务/idempotency 硬化和更完整 contract diff。
+- 已补 native governed library revision mutation、post-apply evidence refresh/rebind mutation 和 governed unbind/deactivate mutation，把 readiness recompute preview 写成可信 operator-library 事实后继续续接或退出当前 runtime evidence；后续补非 native lowering apply、事务/idempotency 硬化和更完整 contract diff。
 - handoff bundle `operatorContracts[]` 到 implementation contract 的 fingerprint 校验；当前 validate 已覆盖第一层 operatorRef/fingerprint/catalog drift/evidence gate。
 - implementation metadata：adapter kind、entrypoint、capabilities、runtime owner、test evidence、policy evidence、rollback target。
 - contract diff：输入/输出/config/policy/lowering/runtime readiness 的 breaking / compatible / metadata 变化分类。

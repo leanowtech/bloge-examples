@@ -27,8 +27,8 @@ import java.util.Locale;
  * @param runtimeEnvironment concrete runtime environment
  * @param healthState healthy runtime adapter health state required for activation
  * @param activatedBy principal or service that confirmed the activation
- * @param changeSource source system or workflow that submitted the activation
- * @param reason human-readable activation reason
+ * @param changeSource source system or workflow that submitted the latest activation lifecycle transition
+ * @param reason human-readable latest activation lifecycle reason
  * @param evidence external activation evidence
  * @param createdAt first persistence timestamp
  * @param updatedAt latest persistence timestamp
@@ -168,6 +168,51 @@ public record VisualRuntimeAdapterActivation(
                 reason,
                 evidence,
                 created,
+                updated
+        );
+    }
+
+    /**
+     * Applies a lifecycle state transition while retaining prior activation evidence.
+     *
+     * @param nextState next activation state
+     * @param nextLevel UI/control-plane level
+     * @param nextChangeSource source workflow for the transition
+     * @param nextReason transition reason
+     * @param transitionEvidence persisted evidence for the transition
+     * @param updated transition timestamp
+     * @return activation record ready for repository update
+     */
+    public VisualRuntimeAdapterActivation withStateTransition(String nextState,
+                                                              String nextLevel,
+                                                              String nextChangeSource,
+                                                              String nextReason,
+                                                              Evidence transitionEvidence,
+                                                              Instant updated) {
+        java.util.ArrayList<Evidence> nextEvidence = new java.util.ArrayList<>(evidence);
+        if (transitionEvidence != null) {
+            nextEvidence.add(transitionEvidence);
+        }
+        return new VisualRuntimeAdapterActivation(
+                schemaVersion,
+                activationId,
+                revision,
+                nextState,
+                nextLevel,
+                bindingId,
+                bindingRevision,
+                operatorRef,
+                operatorFingerprint,
+                adapterKind,
+                entrypoint,
+                runtimeOwner,
+                runtimeEnvironment,
+                healthState,
+                activatedBy,
+                nextChangeSource,
+                nextReason,
+                nextEvidence,
+                createdAt,
                 updated
         );
     }

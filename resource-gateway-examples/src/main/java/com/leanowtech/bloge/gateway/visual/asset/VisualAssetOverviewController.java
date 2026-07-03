@@ -28,6 +28,7 @@ import com.leanowtech.bloge.gateway.visual.runtime.VisualExecutableReadinessReco
 import com.leanowtech.bloge.gateway.visual.runtime.VisualRuntimeAdapterActivation;
 import com.leanowtech.bloge.gateway.visual.runtime.VisualRuntimeAdapterActivationRepository;
 import com.leanowtech.bloge.gateway.visual.runtime.VisualRuntimeAdapterActivationValidation;
+import com.leanowtech.bloge.gateway.visual.runtime.VisualRuntimeBindingDeactivationResult;
 import com.leanowtech.bloge.gateway.visual.validation.GraphDraftValidator;
 import com.leanowtech.bloge.gateway.visual.validation.VisualValidationResult;
 
@@ -633,6 +634,131 @@ public class VisualAssetOverviewController {
                 "Runtime binding implementation '%s' is now bound.".formatted(updated.bindingId()),
                 updated,
                 null
+        ));
+    }
+
+    /**
+     * Unbinds one active implementation and deactivates its active runtime evidence chain.
+     *
+     * <p>This is the rollback/decommission counterpart of bind, adapter activation, and executable lowering
+     * integration. It leaves old evidence in the audit store but removes it from active catalog projections.</p>
+     *
+     * @param bindingId active binding id to unbind
+     * @param request transition audit request
+     * @return deactivation result
+     */
+    @PostMapping("/runtime-binding-requirements/implementation-bindings/{bindingId}/unbind")
+    public ResponseEntity<VisualRuntimeBindingDeactivationResult> unbindRuntimeBindingImplementation(
+            @PathVariable String bindingId,
+            @RequestBody(required = false) VisualRuntimeBindingImplementationTransitionRequest request) {
+        ResponseEntity<VisualRuntimeBindingImplementationLifecycleResult> requestError =
+                transitionRequestError(request, false);
+        if (requestError != null) {
+            VisualRuntimeBindingImplementationLifecycleResult body = requestError.getBody();
+            return ResponseEntity.status(requestError.getStatusCode())
+                    .body(VisualRuntimeBindingDeactivationResult.rejected(
+                            body == null ? "rejected" : body.state(),
+                            body == null ? "error" : body.level(),
+                            body == null ? "Runtime binding unbind request is invalid." : body.message(),
+                            null,
+                            null,
+                            null,
+                            body == null ? List.of() : body.diagnostics()));
+        }
+        VisualRuntimeBindingImplementationBinding binding = implementationRepository.find(bindingId)
+                .orElse(null);
+        if (binding == null) {
+            return runtimeBindingDeactivationFailure(
+                    HttpStatus.NOT_FOUND,
+                    "missing",
+                    "visual.runtimeBindingImplementation.bindingMissing",
+                    "Runtime binding implementation '%s' does not exist.".formatted(bindingId),
+                    "/bindingId",
+                    null,
+                    null,
+                    null,
+                    Map.of("bindingId", bindingId)
+            );
+        }
+        if (!binding.bound()) {
+            return runtimeBindingDeactivationFailure(
+                    HttpStatus.CONFLICT,
+                    "conflict",
+                    "visual.runtimeBindingImplementation.bindingNotBoundForUnbind",
+                    "Runtime binding implementation '%s' is in state '%s' and cannot be unbound."
+                            .formatted(binding.bindingId(), binding.state()),
+                    "/bindingId",
+                    binding,
+                    null,
+                    null,
+                    Map.of("bindingId", binding.bindingId(), "state", binding.state())
+            );
+        }
+
+        Instant now = Instant.now();
+        String source = defaultIfBlank(request.changeSource(), "visual-asset-overview");
+        String summary = defaultIfBlank(request.changeSummary(),
+                "Unbind runtime implementation evidence for '%s'.".formatted(binding.operatorRef()));
+        String evidenceRef = "binding:%s".formatted(binding.bindingId());
+        String evidenceSummary = "%s Actor '%s' requested unbind because: %s"
+                .formatted(summary, request.actor(), request.reason());
+
+        VisualRuntimeAdapterActivation activeActivation =
+                adapterActivationRepository.findActiveByBindingId(binding.bindingId()).orElse(null);
+        VisualExecutableLoweringIntegration activeIntegration = activeActivation == null
+                ? null
+                : executableLoweringIntegrationRepository.findActiveByActivationId(
+                        activeActivation.activationId()).orElse(null);
+        VisualExecutableLoweringIntegration deactivatedIntegration = null;
+        if (activeIntegration != null) {
+            deactivatedIntegration = executableLoweringIntegrationRepository.update(
+                    activeIntegration.withStateTransition(
+                            VisualExecutableLoweringIntegration.STATE_INACTIVE,
+                            "info",
+                            source,
+                            request.reason(),
+                            new VisualExecutableLoweringIntegration.Evidence(
+                                    "binding-unbind",
+                                    evidenceRef,
+                                    evidenceSummary),
+                            now));
+        }
+        VisualRuntimeAdapterActivation deactivatedActivation = null;
+        if (activeActivation != null) {
+            deactivatedActivation = adapterActivationRepository.update(
+                    activeActivation.withStateTransition(
+                            VisualRuntimeAdapterActivation.STATE_INACTIVE,
+                            "info",
+                            source,
+                            request.reason(),
+                            new VisualRuntimeAdapterActivation.Evidence(
+                                    "binding-unbind",
+                                    evidenceRef,
+                                    evidenceSummary),
+                            now));
+        }
+        VisualRuntimeBindingImplementationBinding unbound = implementationRepository.update(
+                binding.withLifecycleTransition(
+                        VisualRuntimeBindingImplementationBinding.STATE_UNBOUND,
+                        "info",
+                        null,
+                        null,
+                        lifecycleEvent(
+                                "unbound",
+                                binding.state(),
+                                VisualRuntimeBindingImplementationBinding.STATE_UNBOUND,
+                                request,
+                                "",
+                                now
+                        ),
+                        now
+                ));
+        return ResponseEntity.ok(VisualRuntimeBindingDeactivationResult.accepted(
+                "Runtime binding implementation '%s' was unbound and active runtime evidence was deactivated."
+                        .formatted(unbound.bindingId()),
+                unbound,
+                deactivatedActivation,
+                deactivatedIntegration
         ));
     }
 
@@ -2406,6 +2532,30 @@ public class VisualAssetOverviewController {
                 message,
                 binding,
                 replacementBinding,
+                List.of(diagnostic)
+        ));
+    }
+
+    private static ResponseEntity<VisualRuntimeBindingDeactivationResult> runtimeBindingDeactivationFailure(
+            HttpStatus status,
+            String state,
+            String code,
+            String message,
+            String target,
+            VisualRuntimeBindingImplementationBinding binding,
+            VisualRuntimeAdapterActivation activation,
+            VisualExecutableLoweringIntegration integration,
+            Map<String, Object> metadata) {
+        VisualDiagnostic diagnostic = metadata == null || metadata.isEmpty()
+                ? VisualDiagnostic.error(code, message, target)
+                : VisualDiagnostic.error(code, message, target, metadata);
+        return ResponseEntity.status(status).body(VisualRuntimeBindingDeactivationResult.rejected(
+                state,
+                "error",
+                message,
+                binding,
+                activation,
+                integration,
                 List.of(diagnostic)
         ));
     }

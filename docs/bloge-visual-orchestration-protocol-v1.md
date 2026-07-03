@@ -1930,7 +1930,12 @@ ready-to-bind 或 review-acknowledged proposal；成功后旧记录进入 `super
 diagnostics 表达 missing request、治理证据缺失、review ack 缺失、active binding 冲突、
 replacement 缺失和 operator mismatch。该 lifecycle fact 是后续 catalog/operator
 implementation projection 的审计输入；当前仍不直接改 graph artifact，也不伪造 executable
-readiness。`GET /api/visual/operators` 现在会把 active bound record 作为
+readiness。`POST /api/visual/assets/runtime-binding-requirements/implementation-bindings/{bindingId}/unbind`
+返回 `bloge.visualRuntimeBindingDeactivationResult.v1`，同样接收
+`bloge.visualRuntimeBindingImplementationTransition.v1` 并要求 actor/reason 审计证据；成功后 binding
+进入 `unbound`，该 binding 下的当前 active executable lowering integration 与 adapter activation 会被级联标记为
+`inactive`。旧 evidence 不删除，但不再进入 active catalog/promotion projection。
+`GET /api/visual/operators` 现在会把 active bound record 作为
 `bloge.operatorRuntimeBindingProjection.v1` 投影到响应的 `runtimeBindingProjections[]`
 和 `runtimeBindingProjectionStateCounts`，用 `binding-required`、`binding-bound`、
 `binding-drifted`、`adapter-active`、`adapter-drifted`、`not-required` 等状态表达

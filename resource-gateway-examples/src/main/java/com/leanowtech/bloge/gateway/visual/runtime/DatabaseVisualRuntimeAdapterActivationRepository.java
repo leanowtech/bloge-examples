@@ -144,25 +144,31 @@ public class DatabaseVisualRuntimeAdapterActivationRepository
             throw new IllegalArgumentException(
                     "Runtime adapter activation does not exist: " + activation.activationId());
         }
+        VisualRuntimeAdapterActivation stored = activation.withIdentity(
+                activation.activationId(),
+                activation.revision() + 1,
+                activation.createdAt(),
+                Instant.now()
+        );
         try {
             int updated = jdbc.update(UPDATE,
-                    activation.bindingId(),
-                    activation.operatorRef(),
-                    activation.state(),
-                    activation.updatedAt().toString(),
-                    objectMapper.writeValueAsString(activation),
-                    activation.activationId());
+                    stored.bindingId(),
+                    stored.operatorRef(),
+                    stored.state(),
+                    stored.updatedAt().toString(),
+                    objectMapper.writeValueAsString(stored),
+                    stored.activationId());
             if (updated == 0) {
                 throw new IllegalArgumentException(
-                        "Runtime adapter activation does not exist: " + activation.activationId());
+                        "Runtime adapter activation does not exist: " + stored.activationId());
             }
-            cache.put(activation.activationId(), activation);
+            cache.put(stored.activationId(), stored);
             log.info("Updated visual runtime adapter activation: {} binding={} operator={} state={}",
-                    activation.activationId(), activation.bindingId(), activation.operatorRef(), activation.state());
-            return activation;
+                    stored.activationId(), stored.bindingId(), stored.operatorRef(), stored.state());
+            return stored;
         } catch (JsonProcessingException e) {
             throw new IllegalStateException("Failed to serialize visual runtime adapter activation: "
-                    + activation.activationId(), e);
+                    + stored.activationId(), e);
         }
     }
 

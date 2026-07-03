@@ -3,6 +3,7 @@ package com.leanowtech.bloge.gateway.visual.asset;
 import com.leanowtech.bloge.gateway.visual.catalog.DefaultVisualOperatorCatalog;
 import com.leanowtech.bloge.gateway.visual.catalog.InMemoryOperatorLibraryRegistry;
 import com.leanowtech.bloge.gateway.visual.catalog.JavaOperatorInventoryProjector;
+import com.leanowtech.bloge.gateway.visual.catalog.OperatorCatalogQuery;
 import com.leanowtech.bloge.gateway.visual.catalog.OperatorDefinition;
 import com.leanowtech.bloge.gateway.visual.catalog.OperatorLibrary;
 import com.leanowtech.bloge.gateway.visual.catalog.OperatorLibraryImpactReview;
@@ -32,6 +33,7 @@ import com.leanowtech.bloge.gateway.visual.runtime.VisualExecutableReadinessReco
 import com.leanowtech.bloge.gateway.visual.runtime.VisualExecutableReadinessRecomputeResult;
 import com.leanowtech.bloge.gateway.visual.runtime.VisualRuntimeAdapterActivation;
 import com.leanowtech.bloge.gateway.visual.runtime.VisualRuntimeAdapterActivationValidation;
+import com.leanowtech.bloge.gateway.visual.runtime.VisualRuntimeBindingDeactivationResult;
 import com.leanowtech.bloge.gateway.visual.validation.GraphDraftValidator;
 import com.leanowtech.bloge.gateway.visual.validation.VisualValidationResult;
 
@@ -1520,6 +1522,136 @@ class VisualAssetOverviewControllerTest {
         assertThat(fixture.controller().runtimeBindingImplementationBindings("", "superseded"))
                 .singleElement()
                 .isEqualTo(response.getBody().binding());
+    }
+
+    @Test
+    void runtimeBindingImplementationUnbindDeactivatesRuntimeEvidenceAndReopensBindingGap() {
+        RuntimeBindingImplementationFixture fixture = runtimeBindingImplementationFixture();
+        VisualRuntimeBindingImplementationBinding stored = submitImplementation(
+                fixture,
+                completeImplementation("risk-eligibility-native-v1")
+        );
+        VisualRuntimeBindingImplementationBinding binding = fixture.controller()
+                .bindRuntimeBindingImplementation(stored.bindingId(), transitionRequest("", true))
+                .getBody()
+                .binding();
+        VisualRuntimeAdapterActivation activation = (VisualRuntimeAdapterActivation) fixture.controller()
+                .submitRuntimeAdapterActivation(adapterActivationRequest(binding, "risk-eligibility-prod-active"))
+                .getBody();
+        VisualExecutableLoweringIntegration integration = (VisualExecutableLoweringIntegration) fixture.controller()
+                .submitExecutableLoweringIntegration(
+                        executableLoweringIntegrationRequest(activation, "risk-eligibility-lowering-v1"))
+                .getBody();
+        OperatorDefinition operator = fixture.catalog().find("risk:eligibility").orElseThrow();
+        assertThat(fixture.catalog()
+                .executablePromotionProjections(
+                        OperatorCatalogQuery.all(),
+                        fixture.catalog().runtimeBindingProjections(OperatorCatalogQuery.all(), List.of(operator)))
+                .getFirst()
+                .promotionState())
+                .isEqualTo("readiness-recompute-required");
+
+        var response = fixture.controller().unbindRuntimeBindingImplementation(
+                binding.bindingId(),
+                transitionRequest("", true)
+        );
+
+        assertThat(response.getStatusCode().value()).isEqualTo(200);
+        assertThat(response.getBody()).isNotNull();
+        VisualRuntimeBindingDeactivationResult result = response.getBody();
+        assertThat(result.schemaVersion()).isEqualTo(VisualRuntimeBindingDeactivationResult.SCHEMA_VERSION);
+        assertThat(result.accepted()).isTrue();
+        assertThat(result.binding().state()).isEqualTo("unbound");
+        assertThat(result.binding().revision()).isEqualTo(3);
+        assertThat(result.binding().lifecycleEvents()).last().satisfies(event -> {
+            assertThat(event.eventType()).isEqualTo("unbound");
+            assertThat(event.fromState()).isEqualTo("bound");
+            assertThat(event.toState()).isEqualTo("unbound");
+            assertThat(event.actor()).isEqualTo("runtime-platform");
+        });
+        assertThat(result.deactivatedActivation()).isNotNull();
+        assertThat(result.deactivatedActivation().activationId()).isEqualTo(activation.activationId());
+        assertThat(result.deactivatedActivation().state()).isEqualTo("inactive");
+        assertThat(result.deactivatedActivation().revision()).isEqualTo(2);
+        assertThat(result.deactivatedActivation().evidence())
+                .extracting(VisualRuntimeAdapterActivation.Evidence::kind)
+                .contains("health-check", "binding-unbind");
+        assertThat(result.deactivatedIntegration()).isNotNull();
+        assertThat(result.deactivatedIntegration().integrationId()).isEqualTo(integration.integrationId());
+        assertThat(result.deactivatedIntegration().state()).isEqualTo("inactive");
+        assertThat(result.deactivatedIntegration().revision()).isEqualTo(2);
+        assertThat(result.deactivatedIntegration().evidence())
+                .extracting(VisualExecutableLoweringIntegration.Evidence::kind)
+                .contains("executor-test", "binding-unbind");
+        assertThat(fixture.controller().runtimeBindingImplementationBindings("risk:eligibility", "bound"))
+                .isEmpty();
+        assertThat(fixture.controller().runtimeBindingImplementationBindings("risk:eligibility", "unbound"))
+                .singleElement()
+                .isEqualTo(result.binding());
+        assertThat(fixture.controller().runtimeAdapterActivations("", "risk:eligibility", "active"))
+                .isEmpty();
+        assertThat(fixture.controller().runtimeAdapterActivations("", "risk:eligibility", "inactive"))
+                .singleElement()
+                .isEqualTo(result.deactivatedActivation());
+        assertThat(fixture.controller().executableLoweringIntegrations("", "risk:eligibility", "active"))
+                .isEmpty();
+        assertThat(fixture.controller().executableLoweringIntegrations("", "risk:eligibility", "inactive"))
+                .singleElement()
+                .isEqualTo(result.deactivatedIntegration());
+
+        var runtimeProjection = fixture.catalog()
+                .runtimeBindingProjections(OperatorCatalogQuery.all(), List.of(operator))
+                .getFirst();
+        assertThat(runtimeProjection.projectionState()).isEqualTo("binding-required");
+        assertThat(runtimeProjection.activeBindingId()).isBlank();
+        assertThat(runtimeProjection.activeAdapterActivationId()).isBlank();
+        assertThat(fixture.catalog()
+                .executablePromotionProjections(OperatorCatalogQuery.all(), List.of(runtimeProjection))
+                .getFirst()
+                .promotionState())
+                .isEqualTo("binding-required");
+    }
+
+    @Test
+    void runtimeBindingImplementationUnbindRequiresGovernanceAndBoundState() {
+        RuntimeBindingImplementationFixture fixture = runtimeBindingImplementationFixture();
+        VisualRuntimeBindingImplementationBinding stored = submitImplementation(
+                fixture,
+                completeImplementation("risk-eligibility-native-v1")
+        );
+
+        var missingGovernance = fixture.controller().unbindRuntimeBindingImplementation(
+                stored.bindingId(),
+                new VisualRuntimeBindingImplementationTransitionRequest(
+                        VisualRuntimeBindingImplementationTransitionRequest.SCHEMA_VERSION,
+                        "",
+                        "",
+                        "visual-canvas-test",
+                        "Unbind runtime implementation evidence.",
+                        true,
+                        "")
+        );
+
+        assertThat(missingGovernance.getStatusCode().value()).isEqualTo(400);
+        assertThat(missingGovernance.getBody()).isNotNull();
+        assertThat(missingGovernance.getBody().accepted()).isFalse();
+        assertThat(missingGovernance.getBody().diagnostics())
+                .extracting(VisualDiagnostic::code)
+                .contains("visual.runtimeBindingImplementation.actorMissing");
+
+        var notBound = fixture.controller().unbindRuntimeBindingImplementation(
+                stored.bindingId(),
+                transitionRequest("", true)
+        );
+
+        assertThat(notBound.getStatusCode().value()).isEqualTo(409);
+        assertThat(notBound.getBody()).isNotNull();
+        assertThat(notBound.getBody().diagnostics())
+                .extracting(VisualDiagnostic::code)
+                .contains("visual.runtimeBindingImplementation.bindingNotBoundForUnbind");
+        assertThat(fixture.controller().runtimeBindingImplementationBindings("risk:eligibility", "ready-to-bind"))
+                .singleElement()
+                .isEqualTo(stored);
     }
 
     @Test

@@ -60,7 +60,13 @@ public class InMemoryVisualRuntimeAdapterActivationRepository
             throw new IllegalArgumentException(
                     "Runtime adapter activation does not exist: " + activation.activationId());
         }
-        activations.put(activation.activationId(), activation);
-        return activation;
+        VisualRuntimeAdapterActivation stored = activation.withIdentity(
+                activation.activationId(),
+                activation.revision() + 1,
+                activation.createdAt(),
+                Instant.now()
+        );
+        activations.put(stored.activationId(), stored);
+        return stored;
     }
 }
