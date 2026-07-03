@@ -10,6 +10,7 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.function.Function;
 
 /**
  * Read-only reconciliation report for a portable runtime-binding handoff bundle.
@@ -42,6 +43,9 @@ import java.util.Set;
  * @param newCurrentWindowRequirementKeys current same-window keys absent from the submitted bundle
  * @param statusCounts review item counts by status
  * @param fieldChangeCategoryCounts drifted field-change counts by category
+ * @param exportedWindowDistribution routing distribution for the exported requirement window
+ * @param currentWindowDistribution routing distribution for the current same-scope/filter/page window
+ * @param newCurrentWindowDistribution routing distribution for current-window requirements absent from the bundle
  * @param items per-requirement review rows for the exported bundle
  * @param diagnostics structured diagnostics for invalid or partial reviews
  */
@@ -71,6 +75,9 @@ public record VisualRuntimeBindingHandoffReview(
         List<String> newCurrentWindowRequirementKeys,
         Map<String, Integer> statusCounts,
         Map<String, Integer> fieldChangeCategoryCounts,
+        RequirementDistribution exportedWindowDistribution,
+        RequirementDistribution currentWindowDistribution,
+        RequirementDistribution newCurrentWindowDistribution,
         List<ReviewItem> items,
         List<VisualDiagnostic> diagnostics
 ) {
@@ -108,6 +115,15 @@ public record VisualRuntimeBindingHandoffReview(
         newCurrentWindowRequirementKeys = immutableStringList(newCurrentWindowRequirementKeys);
         statusCounts = immutableCounts(statusCounts);
         fieldChangeCategoryCounts = immutableCounts(fieldChangeCategoryCounts);
+        exportedWindowDistribution = exportedWindowDistribution == null
+                ? RequirementDistribution.empty()
+                : exportedWindowDistribution;
+        currentWindowDistribution = currentWindowDistribution == null
+                ? RequirementDistribution.empty()
+                : currentWindowDistribution;
+        newCurrentWindowDistribution = newCurrentWindowDistribution == null
+                ? RequirementDistribution.empty()
+                : newCurrentWindowDistribution;
         items = items == null ? List.of() : List.copyOf(items);
         diagnostics = immutableDiagnostics(diagnostics);
         reviewable = reviewable && diagnostics.stream().noneMatch(VisualDiagnostic::error);
@@ -148,9 +164,15 @@ public record VisualRuntimeBindingHandoffReview(
                 .filter(key -> key != null && !key.isBlank())
                 .distinct()
                 .toList();
+        Map<String, VisualRuntimeBindingRequirements.RequirementItem> currentWindowByKey = requirementsByKey(
+                safeWindow.items());
         Set<String> exportedKeySet = new LinkedHashSet<>(exportedKeys);
         List<String> newWindowKeys = currentWindowKeys.stream()
                 .filter(key -> !exportedKeySet.contains(key))
+                .toList();
+        List<VisualRuntimeBindingRequirements.RequirementItem> newWindowItems = newWindowKeys.stream()
+                .map(currentWindowByKey::get)
+                .filter(item -> item != null)
                 .toList();
         Map<String, Integer> statusCounts = countByStatus(items);
         int matched = statusCounts.getOrDefault(ReviewItem.STATUS_CURRENT, 0);
@@ -184,6 +206,9 @@ public record VisualRuntimeBindingHandoffReview(
                 newWindowKeys,
                 statusCounts,
                 countFieldChangeCategories(items),
+                RequirementDistribution.from(safeBundle.requirements(), exportedKeys.size()),
+                RequirementDistribution.from(safeWindow.items(), currentWindowKeys.size()),
+                RequirementDistribution.from(newWindowItems, newWindowKeys.size()),
                 items,
                 List.of()
         );
@@ -228,6 +253,9 @@ public record VisualRuntimeBindingHandoffReview(
                 List.of(),
                 Map.of(),
                 Map.of(),
+                RequirementDistribution.from(safeBundle.requirements(), keys.size()),
+                RequirementDistribution.empty(),
+                RequirementDistribution.empty(),
                 List.of(),
                 diagnostics
         );
@@ -257,6 +285,85 @@ public record VisualRuntimeBindingHandoffReview(
                     .forEach(keys::add);
         }
         return List.copyOf(keys);
+    }
+
+    /**
+     * Runtime-binding routing distribution for one review surface.
+     *
+     * @param requirementCount number of requirements represented by this distribution
+     * @param targetKindCounts requirement counts by target asset kind
+     * @param operatorRefCounts requirement counts by operator reference
+     * @param operatorLibraryIdCounts requirement counts by owner operator library id
+     * @param bindingKindCounts requirement counts by missing binding kind
+     * @param handoffLaneCounts requirement counts by runtime-plane handoff lane
+     * @param handoffKindCounts requirement counts by runtime-plane work kind
+     * @param handoffTargetCounts requirement counts by runtime-plane routing target
+     * @param sourceKindCounts requirement counts by operator source kind
+     * @param loweringModeCounts requirement counts by lowering mode
+     * @param readinessStateCounts requirement counts by graph/node readiness state
+     * @param artifactKindCounts publication requirement counts by frozen artifact kind
+     */
+    public record RequirementDistribution(
+            int requirementCount,
+            Map<String, Integer> targetKindCounts,
+            Map<String, Integer> operatorRefCounts,
+            Map<String, Integer> operatorLibraryIdCounts,
+            Map<String, Integer> bindingKindCounts,
+            Map<String, Integer> handoffLaneCounts,
+            Map<String, Integer> handoffKindCounts,
+            Map<String, Integer> handoffTargetCounts,
+            Map<String, Integer> sourceKindCounts,
+            Map<String, Integer> loweringModeCounts,
+            Map<String, Integer> readinessStateCounts,
+            Map<String, Integer> artifactKindCounts
+    ) {
+        public RequirementDistribution {
+            requirementCount = Math.max(0, requirementCount);
+            targetKindCounts = immutableCounts(targetKindCounts);
+            operatorRefCounts = immutableCounts(operatorRefCounts);
+            operatorLibraryIdCounts = immutableCounts(operatorLibraryIdCounts);
+            bindingKindCounts = immutableCounts(bindingKindCounts);
+            handoffLaneCounts = immutableCounts(handoffLaneCounts);
+            handoffKindCounts = immutableCounts(handoffKindCounts);
+            handoffTargetCounts = immutableCounts(handoffTargetCounts);
+            sourceKindCounts = immutableCounts(sourceKindCounts);
+            loweringModeCounts = immutableCounts(loweringModeCounts);
+            readinessStateCounts = immutableCounts(readinessStateCounts);
+            artifactKindCounts = immutableCounts(artifactKindCounts);
+        }
+
+        static RequirementDistribution empty() {
+            return new RequirementDistribution(0, Map.of(), Map.of(), Map.of(), Map.of(), Map.of(), Map.of(),
+                    Map.of(), Map.of(), Map.of(), Map.of(), Map.of());
+        }
+
+        static RequirementDistribution from(List<VisualRuntimeBindingRequirements.RequirementItem> requirements,
+                                            int fallbackRequirementCount) {
+            List<VisualRuntimeBindingRequirements.RequirementItem> safeRequirements =
+                    requirements == null ? List.of() : requirements.stream()
+                            .filter(item -> item != null)
+                            .toList();
+            int count = safeRequirements.isEmpty()
+                    ? Math.max(0, fallbackRequirementCount)
+                    : safeRequirements.size();
+            return new RequirementDistribution(
+                    count,
+                    countRequirementsBy(safeRequirements, VisualRuntimeBindingRequirements.RequirementItem::targetKind),
+                    countRequirementsBy(safeRequirements, VisualRuntimeBindingRequirements.RequirementItem::operatorRef),
+                    countRequirementsBy(safeRequirements,
+                            VisualRuntimeBindingRequirements.RequirementItem::operatorLibraryId),
+                    countRequirementsBy(safeRequirements, VisualRuntimeBindingRequirements.RequirementItem::bindingKind),
+                    countRequirementsBy(safeRequirements, VisualRuntimeBindingRequirements.RequirementItem::handoffLane),
+                    countRequirementsBy(safeRequirements, VisualRuntimeBindingRequirements.RequirementItem::handoffKind),
+                    countRequirementsBy(safeRequirements,
+                            VisualRuntimeBindingRequirements.RequirementItem::handoffTarget),
+                    countRequirementsBy(safeRequirements, VisualRuntimeBindingRequirements.RequirementItem::sourceKind),
+                    countRequirementsBy(safeRequirements, VisualRuntimeBindingRequirements.RequirementItem::loweringMode),
+                    countRequirementsBy(safeRequirements,
+                            VisualRuntimeBindingRequirements.RequirementItem::readinessState),
+                    countRequirementsBy(safeRequirements, VisualRuntimeBindingRequirements.RequirementItem::artifactKind)
+            );
+        }
     }
 
     /**
@@ -449,6 +556,20 @@ public record VisualRuntimeBindingHandoffReview(
                 if (change != null && !change.category().isBlank()) {
                     counts.merge(change.category(), 1, Integer::sum);
                 }
+            }
+        }
+        return counts;
+    }
+
+    private static Map<String, Integer> countRequirementsBy(
+            List<VisualRuntimeBindingRequirements.RequirementItem> requirements,
+            Function<VisualRuntimeBindingRequirements.RequirementItem, String> classifier) {
+        Map<String, Integer> counts = new LinkedHashMap<>();
+        for (VisualRuntimeBindingRequirements.RequirementItem requirement
+                : requirements == null ? List.<VisualRuntimeBindingRequirements.RequirementItem>of() : requirements) {
+            String key = classifier.apply(requirement);
+            if (key != null && !key.isBlank()) {
+                counts.merge(key, 1, Integer::sum);
             }
         }
         return counts;

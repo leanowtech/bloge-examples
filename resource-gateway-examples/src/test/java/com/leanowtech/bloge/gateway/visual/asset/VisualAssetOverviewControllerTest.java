@@ -663,6 +663,19 @@ class VisualAssetOverviewControllerTest {
         assertThat(currentReview.exportedRequirementKeys()).containsExactly(draftRequirementKey);
         assertThat(currentReview.currentWindowRequirementKeys()).containsExactly(draftRequirementKey);
         assertThat(currentReview.statusCounts()).containsEntry("current", 1);
+        assertThat(currentReview.exportedWindowDistribution().requirementCount()).isEqualTo(1);
+        assertThat(currentReview.exportedWindowDistribution().operatorRefCounts())
+                .containsEntry("risk:eligibility", 1);
+        assertThat(currentReview.exportedWindowDistribution().operatorLibraryIdCounts())
+                .containsEntry("risk-policy-design", 1);
+        assertThat(currentReview.exportedWindowDistribution().handoffLaneCounts())
+                .containsEntry("operator-platform", 1);
+        assertThat(currentReview.currentWindowDistribution().requirementCount()).isEqualTo(1);
+        assertThat(currentReview.currentWindowDistribution().operatorLibraryIdCounts())
+                .containsEntry("risk-policy-design", 1);
+        assertThat(currentReview.currentWindowDistribution().handoffKindCounts())
+                .containsEntry("operator-implementation", 1);
+        assertThat(currentReview.newCurrentWindowDistribution().requirementCount()).isZero();
         assertThat(currentReview.items()).singleElement().satisfies(item -> {
             assertThat(item.requirementKey()).isEqualTo(draftRequirementKey);
             assertThat(item.status()).isEqualTo("current");
@@ -717,6 +730,11 @@ class VisualAssetOverviewControllerTest {
         assertThat(staleReview.driftedCount()).isZero();
         assertThat(staleReview.missingCount()).isEqualTo(1);
         assertThat(staleReview.statusCounts()).containsEntry("missing", 1);
+        assertThat(staleReview.exportedWindowDistribution().requirementCount()).isEqualTo(1);
+        assertThat(staleReview.exportedWindowDistribution().operatorLibraryIdCounts())
+                .containsEntry("risk-policy-design", 1);
+        assertThat(staleReview.currentWindowDistribution().requirementCount()).isZero();
+        assertThat(staleReview.newCurrentWindowDistribution().requirementCount()).isZero();
         assertThat(staleReview.items()).singleElement().satisfies(item -> {
             assertThat(item.status()).isEqualTo("missing");
             assertThat(item.exportedRequirement()).isNotNull();
@@ -820,6 +838,12 @@ class VisualAssetOverviewControllerTest {
         assertThat(driftedReview.driftedCount()).isEqualTo(1);
         assertThat(driftedReview.missingCount()).isZero();
         assertThat(driftedReview.statusCounts()).containsEntry("drifted", 1);
+        assertThat(driftedReview.exportedWindowDistribution().handoffTargetCounts())
+                .containsEntry("legacy-risk-owner", 1);
+        assertThat(driftedReview.currentWindowDistribution().handoffTargetCounts())
+                .containsEntry("risk:eligibility", 1);
+        assertThat(driftedReview.currentWindowDistribution().operatorLibraryIdCounts())
+                .containsEntry("risk-policy-design", 1);
         assertThat(driftedReview.fieldChangeCategoryCounts())
                 .containsEntry("asset-metadata", 1)
                 .containsEntry("runtime-binding", 2);
@@ -837,7 +861,71 @@ class VisualAssetOverviewControllerTest {
                         assertThat(change.exportedValue()).isEqualTo("legacy-risk-owner");
                         assertThat(change.currentValue()).isEqualTo("risk:eligibility");
                     });
-        });
+                });
+    }
+
+    @Test
+    void runtimeBindingHandoffReviewSummarizesNewCurrentWindowRouting() {
+        DefaultVisualOperatorCatalog catalog = VisualCatalogTestSupport.catalogWithLibrary(
+                VisualCatalogTestSupport.designOnlyEligibilityLibrary("integer"));
+        GraphDraftValidator validator = new GraphDraftValidator(catalog);
+        InMemoryGraphDraftRepository drafts = new InMemoryGraphDraftRepository();
+        InMemoryVisualGraphPublicationRepository publications = new InMemoryVisualGraphPublicationRepository();
+        OperatorDefinition operator = catalog.find("risk:eligibility").orElseThrow();
+        GraphDraft firstDraft = drafts.save(draftWithFingerprint(operator));
+        VisualAssetOverviewController controller =
+                new VisualAssetOverviewController(drafts, validator, catalog, publications);
+        VisualRuntimeBindingHandoffBundle handoffBundle = controller.runtimeBindingHandoffBundle(
+                "",
+                "",
+                "",
+                10,
+                0,
+                "draft",
+                "executable-lowering",
+                "operator-platform",
+                "operator-implementation",
+                "risk:eligibility",
+                "",
+                "",
+                "",
+                ""
+        );
+
+        GraphDraft secondDraft = drafts.save(draftWithFingerprint(operator));
+        VisualRuntimeBindingHandoffReview review = controller.reviewRuntimeBindingHandoffBundle(handoffBundle)
+                .getBody();
+
+        assertThat(firstDraft.draftId()).isNotEqualTo(secondDraft.draftId());
+        assertThat(review).isNotNull();
+        assertThat(review.reviewable()).isTrue();
+        assertThat(review.state()).isEqualTo("stale");
+        assertThat(review.exportedRequirementCount()).isEqualTo(1);
+        assertThat(review.currentWindowTotal()).isEqualTo(2);
+        assertThat(review.currentWindowDisplayedCount()).isEqualTo(2);
+        assertThat(review.matchedCount()).isEqualTo(1);
+        assertThat(review.newCurrentWindowCount()).isEqualTo(1);
+        assertThat(review.newCurrentWindowRequirementKeys()).singleElement()
+                .satisfies(key -> assertThat(key).contains(secondDraft.draftId()));
+        assertThat(review.exportedWindowDistribution().requirementCount()).isEqualTo(1);
+        assertThat(review.currentWindowDistribution().requirementCount()).isEqualTo(2);
+        assertThat(review.currentWindowDistribution().operatorRefCounts())
+                .containsEntry("risk:eligibility", 2);
+        assertThat(review.currentWindowDistribution().operatorLibraryIdCounts())
+                .containsEntry("risk-policy-design", 2);
+        assertThat(review.currentWindowDistribution().handoffLaneCounts())
+                .containsEntry("operator-platform", 2);
+        assertThat(review.newCurrentWindowDistribution().requirementCount()).isEqualTo(1);
+        assertThat(review.newCurrentWindowDistribution().operatorRefCounts())
+                .containsEntry("risk:eligibility", 1);
+        assertThat(review.newCurrentWindowDistribution().operatorLibraryIdCounts())
+                .containsEntry("risk-policy-design", 1);
+        assertThat(review.newCurrentWindowDistribution().bindingKindCounts())
+                .containsEntry("executable-lowering", 1);
+        assertThat(review.newCurrentWindowDistribution().handoffKindCounts())
+                .containsEntry("operator-implementation", 1);
+        assertThat(review.newCurrentWindowDistribution().handoffTargetCounts())
+                .containsEntry("risk:eligibility", 1);
     }
 
     @Test

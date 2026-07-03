@@ -1877,7 +1877,13 @@ stable requirement keys、`operatorRefCounts`、`operatorLibraryIdCounts`、路�
 drifted item 会保留兼容字段 `changedFields[]`，并新增结构化 `fieldChanges[]`
 记录 `field/category/exportedValue/currentValue`；顶层 `fieldChangeCategoryCounts`
 聚合 identity、scope、readiness、runtime-binding、asset-metadata 等变化类别，供
-runtime-plane 工单或审阅系统直接路由。`bundleFingerprint` 由服务端按 handoff
+runtime-plane 工单或审阅系统直接路由。review 顶层还会返回
+`exportedWindowDistribution`、`currentWindowDistribution` 和
+`newCurrentWindowDistribution`，按 operatorRef、operatorLibraryId、binding kind、
+handoff lane/kind/target、source kind、lowering mode、readiness state 和 artifact kind
+汇总导出窗口、当前同窗口和当前新增 requirement 的分布，让外部工单系统无需扫描
+`items[]` 或解析 message 就能按 owner 与 runtime-plane lane 分派增量工作。
+`bundleFingerprint` 由服务端按 handoff
 业务内容派生，不包含 `exportedAt` / `sourceIndexGeneratedAt` 这类导出时间戳；
 review 会先校验提交的 `bundleFingerprint` 是否匹配 bundle material，若不匹配则返回
 `visual.runtimeBindingHandoff.fingerprintMismatch` 并在 metadata 中给出 `actual/expected`，

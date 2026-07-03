@@ -1011,6 +1011,14 @@ function visualRuntimeBindingHandoffReviewRows(review) {
       value: review.sourceBundleFingerprint
     });
   }
+  const routingSummary = visualRuntimeBindingHandoffReviewRoutingSummary(review);
+  if (routingSummary) {
+    rows.push({
+      level: String(review.state || '').toLowerCase() === 'current' ? 'success' : 'info',
+      label: 'Runtime binding routing',
+      value: routingSummary
+    });
+  }
   const categorySummary = visualRuntimeBindingHandoffReviewCategorySummary(review.fieldChangeCategoryCounts);
   if (categorySummary) {
     rows.push({
@@ -1041,6 +1049,48 @@ function visualRuntimeBindingHandoffReviewRows(review) {
     });
   }
   return rows;
+}
+
+function visualRuntimeBindingHandoffReviewRoutingSummary(review) {
+  if (!review) {
+    return '';
+  }
+  const segments = [];
+  const exported = visualRuntimeBindingHandoffReviewDistributionSummary(review.exportedWindowDistribution);
+  const current = visualRuntimeBindingHandoffReviewDistributionSummary(review.currentWindowDistribution);
+  const fresh = visualRuntimeBindingHandoffReviewDistributionSummary(review.newCurrentWindowDistribution);
+  if (exported) {
+    segments.push(`Exported ${exported}`);
+  }
+  if (current) {
+    segments.push(`Current ${current}`);
+  }
+  if (fresh) {
+    segments.push(`New ${fresh}`);
+  }
+  return segments.join(' | ');
+}
+
+function visualRuntimeBindingHandoffReviewDistributionSummary(distribution) {
+  const count = Number(distribution?.requirementCount || 0) || 0;
+  if (!count) {
+    return '';
+  }
+  const parts = [
+    visualRuntimeBindingHandoffReviewCountFacetSummary(distribution?.operatorLibraryIdCounts, 'library', false),
+    visualRuntimeBindingHandoffReviewCountFacetSummary(distribution?.handoffLaneCounts, 'lane'),
+    visualRuntimeBindingHandoffReviewCountFacetSummary(distribution?.handoffKindCounts, 'work'),
+    visualRuntimeBindingHandoffReviewCountFacetSummary(distribution?.handoffTargetCounts, 'target', false)
+  ].filter(Boolean);
+  return `${count} requirement${count === 1 ? '' : 's'}${parts.length ? ` (${parts.join(', ')})` : ''}`;
+}
+
+function visualRuntimeBindingHandoffReviewCountFacetSummary(counts = {}, suffix = '', prettify = true) {
+  return Object.entries(counts || {})
+    .filter(([, count]) => Number(count || 0) > 0)
+    .sort(([left], [right]) => left.localeCompare(right))
+    .map(([key, count]) => `${prettify ? operatorPaletteFacetLabel(key) : key} ${suffix}: ${Number(count || 0)}`)
+    .join(', ');
 }
 
 function visualRuntimeBindingHandoffReviewCategorySummary(counts = {}) {

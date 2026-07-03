@@ -316,6 +316,9 @@ class VisualAuthoringAppJsTest {
                 .contains("runtimeBindingHandoffReview: payload")
                 .contains("function visualRuntimeBindingHandoffReviewMessage(review)")
                 .contains("function visualRuntimeBindingHandoffReviewRows(review)")
+                .contains("function visualRuntimeBindingHandoffReviewRoutingSummary(review)")
+                .contains("function visualRuntimeBindingHandoffReviewDistributionSummary(distribution)")
+                .contains("function visualRuntimeBindingHandoffReviewCountFacetSummary(counts = {}, suffix = '', prettify = true)")
                 .contains("function visualRuntimeBindingHandoffReviewCategorySummary(counts = {})")
                 .contains("function visualRuntimeBindingHandoffReviewItemLabel(item)")
                 .contains("function visualRuntimeBindingHandoffReviewItemValue(item)")
@@ -887,6 +890,9 @@ class VisualAuthoringAppJsTest {
                   'operatorPaletteFacetLabel',
                   'visualRuntimeBindingHandoffReviewMessage',
                   'visualRuntimeBindingHandoffReviewRows',
+                  'visualRuntimeBindingHandoffReviewRoutingSummary',
+                  'visualRuntimeBindingHandoffReviewDistributionSummary',
+                  'visualRuntimeBindingHandoffReviewCountFacetSummary',
                   'visualRuntimeBindingHandoffReviewCategorySummary',
                   'visualRuntimeBindingHandoffReviewItemLabel',
                   'visualRuntimeBindingHandoffReviewItemValue',
@@ -909,6 +915,27 @@ class VisualAuthoringAppJsTest {
                   newCurrentWindowRequirementKeys: [
                     'RUNTIME_BINDING|draft|fresh|eligibility|executable-lowering|risk:eligibility|'
                   ],
+                  exportedWindowDistribution: {
+                    requirementCount: 2,
+                    operatorLibraryIdCounts: { 'risk-policy-design': 2 },
+                    handoffLaneCounts: { 'operator-platform': 2 },
+                    handoffKindCounts: { 'operator-implementation': 2 },
+                    handoffTargetCounts: { 'risk:eligibility': 1, 'legacy-risk-owner': 1 }
+                  },
+                  currentWindowDistribution: {
+                    requirementCount: 2,
+                    operatorLibraryIdCounts: { 'risk-policy-design': 2 },
+                    handoffLaneCounts: { 'operator-platform': 2 },
+                    handoffKindCounts: { 'operator-implementation': 2 },
+                    handoffTargetCounts: { 'risk:eligibility': 2 }
+                  },
+                  newCurrentWindowDistribution: {
+                    requirementCount: 1,
+                    operatorLibraryIdCounts: { 'risk-policy-design': 1 },
+                    handoffLaneCounts: { 'operator-platform': 1 },
+                    handoffKindCounts: { 'operator-implementation': 1 },
+                    handoffTargetCounts: { 'risk:eligibility': 1 }
+                  },
                   items: [
                     {
                       requirementKey: 'RUNTIME_BINDING|draft|risk|eligibility|executable-lowering|risk:eligibility|',
@@ -954,18 +981,23 @@ class VisualAuthoringAppJsTest {
                 };
                 const message = context.visualRuntimeBindingHandoffReviewMessage(review);
                 const rows = context.visualRuntimeBindingHandoffReviewRows(review);
+                const routingSummary = context.visualRuntimeBindingHandoffReviewRoutingSummary(review);
                 const checks = [
                   ['message', message, 'Handoff review STALE: 0 current, 1 drifted, 1 missing, 1 new in current window.'],
-                  ['row count', rows.length, 5],
+                  ['row count', rows.length, 6],
                   ['fingerprint label', rows[0].label, 'Snapshot fingerprint'],
                   ['fingerprint value', rows[0].value, 'sha256:1234567890abcdef'],
-                  ['category label', rows[1].label, 'Drift categories'],
-                  ['category value', rows[1].value, 'Asset Metadata 1 · Runtime Binding 2'],
-                  ['drift label', rows[2].label, 'Drifted · Risk policy @2'],
-                  ['drift value includes route', String(rows[2].value.includes('Runtime Binding Handoff Target: legacy-risk-owner -> risk:eligibility')), 'true'],
-                  ['drift value includes action', String(rows[2].value.includes('Runtime Binding Recommended Action: Legacy action -> Bind executable lowering before EXECUTABLE promotion.')), 'true'],
-                  ['missing label', rows[3].label, 'Missing · Missing policy @1'],
-                  ['new key label', rows[4].label, 'New current-window requirements']
+                  ['routing label', rows[1].label, 'Runtime binding routing'],
+                  ['routing summary includes exported owner', String(routingSummary.includes('Exported 2 requirements (risk-policy-design library: 2')), 'true'],
+                  ['routing summary includes current target', String(routingSummary.includes('Current 2 requirements')), 'true'],
+                  ['routing summary includes new work', String(routingSummary.includes('New 1 requirement')), 'true'],
+                  ['category label', rows[2].label, 'Drift categories'],
+                  ['category value', rows[2].value, 'Asset Metadata 1 · Runtime Binding 2'],
+                  ['drift label', rows[3].label, 'Drifted · Risk policy @2'],
+                  ['drift value includes route', String(rows[3].value.includes('Runtime Binding Handoff Target: legacy-risk-owner -> risk:eligibility')), 'true'],
+                  ['drift value includes action', String(rows[3].value.includes('Runtime Binding Recommended Action: Legacy action -> Bind executable lowering before EXECUTABLE promotion.')), 'true'],
+                  ['missing label', rows[4].label, 'Missing · Missing policy @1'],
+                  ['new key label', rows[5].label, 'New current-window requirements']
                 ];
                 for (const [label, actual, expected] of checks) {
                   if (actual !== expected) {
