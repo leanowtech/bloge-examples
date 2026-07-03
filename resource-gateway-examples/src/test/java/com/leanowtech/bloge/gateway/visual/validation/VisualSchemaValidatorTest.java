@@ -162,6 +162,72 @@ class VisualSchemaValidatorTest {
     }
 
     @Test
+    void acceptsSchemaFormNotPatternAndRejectsRuntimeValueThatMatchesIt() {
+        SchemaEnvelope schema = new SchemaEnvelope(SchemaEnvelope.JSON_SCHEMA, "2020-12", Map.of(
+                "type", "object",
+                "properties", Map.of(
+                        "decision", Map.of(
+                                "type", "string",
+                                "not", Map.of("pattern", "^ARCHIVED$")
+                        )
+                ),
+                "required", List.of("decision"),
+                "additionalProperties", false
+        ));
+
+        assertThat(VisualSchemaValidator.validateSchema(schema.schema(), "/schema")).isEmpty();
+        assertThat(VisualSchemaValidator.validateValue(schema, Map.of(
+                "decision", "ACTIVE"
+        ), "/context")).isEmpty();
+
+        var diagnostics = VisualSchemaValidator.validateValue(schema, Map.of(
+                "decision", "ARCHIVED"
+        ), "/context");
+
+        assertThat(diagnostics)
+                .anySatisfy(diagnostic -> {
+                    assertThat(diagnostic.code()).isEqualTo("visual.context.notMismatch");
+                    assertThat(diagnostic.target()).isEqualTo("/context/decision");
+                    assertThat(diagnostic.message()).contains("pattern=^ARCHIVED$");
+                });
+    }
+
+    @Test
+    void rejectsDefaultAndConstValuesThatMatchSchemaFormNotPattern() {
+        var diagnostics = VisualSchemaValidator.validateSchema(Map.of(
+                "type", "string",
+                "not", Map.of("pattern", "^ARCHIVED$"),
+                "default", "ARCHIVED",
+                "const", "ARCHIVED"
+        ), "/schema");
+
+        assertThat(diagnostics)
+                .anySatisfy(diagnostic -> {
+                    assertThat(diagnostic.code()).isEqualTo("visual.schema.defaultNotMismatch");
+                    assertThat(diagnostic.target()).isEqualTo("/schema/default");
+                })
+                .anySatisfy(diagnostic -> {
+                    assertThat(diagnostic.code()).isEqualTo("visual.schema.constConstraintMismatch");
+                    assertThat(diagnostic.target()).isEqualTo("/schema/const");
+                    assertThat(diagnostic.message()).contains("not exclusion");
+                });
+    }
+
+    @Test
+    void rejectsInvalidSchemaFormNotPattern() {
+        var diagnostics = VisualSchemaValidator.validateSchema(Map.of(
+                "type", "string",
+                "not", Map.of("pattern", "[")
+        ), "/schema");
+
+        assertThat(diagnostics)
+                .anySatisfy(diagnostic -> {
+                    assertThat(diagnostic.code()).isEqualTo("visual.schema.patternConstraintInvalid");
+                    assertThat(diagnostic.target()).isEqualTo("/schema/not/pattern");
+                });
+    }
+
+    @Test
     void acceptsRuntimeAndDefaultValuesWithNumericallyEquivalentFiniteDomains() {
         SchemaEnvelope schema = new SchemaEnvelope(SchemaEnvelope.JSON_SCHEMA, "2020-12", Map.of(
                 "type", "object",

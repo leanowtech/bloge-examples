@@ -174,8 +174,8 @@ public final class VisualSchemaValidator {
         }
         if (valueMatchesNotConstraint(value, schema)) {
             diagnostics.add(VisualDiagnostic.error("visual.context.notMismatch",
-                    "Runtime value at '%s' must not match excluded schema value(s) %s."
-                            .formatted(path, finiteSchemaValues(objectProperty(schema.get("not")))),
+                    "Runtime value at '%s' must not match excluded schema %s."
+                            .formatted(path, notSchemaLabel(objectProperty(schema.get("not")))),
                     path));
             return;
         }
@@ -352,16 +352,25 @@ public final class VisualSchemaValidator {
     private static void validateSchema(Map<String, Object> schema,
                                        String path,
                                        List<VisualDiagnostic> diagnostics) {
+        validateSchema(schema, path, diagnostics, true);
+    }
+
+    @SuppressWarnings("unchecked")
+    private static void validateSchema(Map<String, Object> schema,
+                                       String path,
+                                       List<VisualDiagnostic> diagnostics,
+                                       boolean warnOpaque) {
         boolean hasUnsupportedKeyword = validateUnsupportedKeywords(schema, path, diagnostics);
         boolean hasSupportedUnion = validateSupportedUnions(schema, path, diagnostics);
         boolean invalidTypeArray = validateTypeArray(schema, path, diagnostics);
         validateDefinitions(schema, path, diagnostics);
+        validateNotConstraint(schema, path, diagnostics);
         String kind = schemaKind(schema);
         if (invalidTypeArray) {
             return;
         }
         if (kind.isBlank()) {
-            if (!hasUnsupportedKeyword && !hasSupportedUnion) {
+            if (warnOpaque && !hasUnsupportedKeyword && !hasSupportedUnion && !schema.containsKey("not")) {
                 diagnostics.add(VisualDiagnostic.warning("visual.schema.opaque",
                         "Schema has no type/kind; it will be treated as opaque.",
                         path));
@@ -376,7 +385,6 @@ public final class VisualSchemaValidator {
         }
 	        validateStandardEnum(schema, kind, path, diagnostics);
 	        validateConstValue(schema, kind, path, diagnostics);
-	        validateNotConstraint(schema, path, diagnostics);
 	        validateNumericBounds(schema, kind, path, diagnostics);
 	        validateNumericMultipleOf(schema, kind, path, diagnostics);
 	        validateStringLengthBounds(schema, kind, path, diagnostics);
@@ -1265,14 +1273,9 @@ public final class VisualSchemaValidator {
                     path + "/not"));
             return;
         }
-        List<Object> excludedValues = finiteSchemaValues(notSchema);
-        if (excludedValues.isEmpty()) {
-            diagnostics.add(VisualDiagnostic.error("visual.schema.notUnsupported",
-                    "Schema not is supported only for finite const/enum exclusion domains.",
-                    path + "/not"));
-            return;
-        }
-        if (notSchema.containsKey("enum")) {
+        String declaredNotKind = schemaKind(notSchema);
+        validateSchema(notSchema, path + "/not", diagnostics, false);
+        if (declaredNotKind.isBlank() && notSchema.containsKey("enum")) {
             Object rawEnum = notSchema.get("enum");
             if (!(rawEnum instanceof List<?> values) || values.isEmpty()) {
                 diagnostics.add(VisualDiagnostic.error("visual.schema.enumInvalid",
@@ -1282,7 +1285,7 @@ public final class VisualSchemaValidator {
                 validateEnumValues(values, path + "/not/enum", diagnostics);
             }
         }
-        if ("enum".equals(schemaKind(notSchema))) {
+        if (declaredNotKind.isBlank() && "enum".equals(effectiveNotSchemaKind(notSchema))) {
             Object rawValues = notSchema.get("values");
             if (!(rawValues instanceof List<?> values) || values.isEmpty()) {
                 diagnostics.add(VisualDiagnostic.error("visual.schema.enumValuesMissing",
@@ -1292,6 +1295,62 @@ public final class VisualSchemaValidator {
                 validateEnumValues(values, path + "/not/values", diagnostics);
             }
         }
+        String notKind = declaredNotKind.isBlank() ? effectiveNotSchemaKind(notSchema) : "";
+        if (notKind.isBlank()) {
+            return;
+        }
+        validateNumericBounds(notSchema, notKind, path + "/not", diagnostics);
+        validateNumericMultipleOf(notSchema, notKind, path + "/not", diagnostics);
+        validateStringLengthBounds(notSchema, notKind, path + "/not", diagnostics);
+        validateStringPattern(notSchema, notKind, path + "/not", diagnostics);
+        validateStringFormat(notSchema, notKind, path + "/not", diagnostics);
+        validateArrayItemBounds(notSchema, notKind, path + "/not", diagnostics);
+        validateArrayUniqueItems(notSchema, notKind, path + "/not", diagnostics);
+        validateArrayContains(notSchema, notKind, path + "/not", diagnostics);
+        validateObjectPropertyBounds(notSchema, notKind, path + "/not", diagnostics);
+        validateObjectPatternProperties(notSchema, notKind, path + "/not", diagnostics);
+        validateObjectPropertyNames(notSchema, notKind, path + "/not", diagnostics);
+        validateObjectDependentRequired(notSchema, notKind, path + "/not", diagnostics);
+        validateObjectDependentSchemas(notSchema, notKind, path + "/not", diagnostics);
+        validateUnevaluatedProperties(notSchema, notKind, path + "/not", diagnostics);
+    }
+
+    private static String effectiveNotSchemaKind(Map<String, Object> schema) {
+        String kind = schemaKind(schema);
+        if (!kind.isBlank()) {
+            return kind;
+        }
+        if (hasSchemaKeyword(schema, "pattern", "format", "minLength", "maxLength")) {
+            return "string";
+        }
+        if (hasSchemaKeyword(schema, "minimum", "maximum", "exclusiveMinimum", "exclusiveMaximum", "multipleOf")) {
+            return "number";
+        }
+        if (schema.containsKey("values")) {
+            return "enum";
+        }
+        if (hasSchemaKeyword(schema, "items", "prefixItems", "contains", "minItems", "maxItems", "uniqueItems",
+                "minContains", "maxContains", "unevaluatedItems")) {
+            return "array";
+        }
+        if (hasSchemaKeyword(schema, "properties", "required", "additionalProperties", "unevaluatedProperties",
+                "patternProperties", "propertyNames", "dependentRequired", "dependentSchemas", "minProperties",
+                "maxProperties")) {
+            return "object";
+        }
+        return "";
+    }
+
+    private static boolean hasSchemaKeyword(Map<String, Object> schema, String... keywords) {
+        if (schema == null) {
+            return false;
+        }
+        for (String keyword : keywords) {
+            if (schema.containsKey(keyword)) {
+                return true;
+            }
+        }
+        return false;
     }
 
 	    private static void validateNumericBounds(Map<String, Object> schema,
@@ -2183,8 +2242,39 @@ public final class VisualSchemaValidator {
 	    }
 
     private static boolean valueMatchesNotConstraint(Object value, Map<String, Object> schema) {
-        return finiteSchemaValues(objectProperty(schema.get("not"))).stream()
-                .anyMatch(excluded -> schemaValuesEqual(excluded, value));
+        Map<String, Object> notSchema = objectProperty(schema.get("not"));
+        return notSchema != null && valueMatchesSchema(value, notSchema);
+    }
+
+    private static String notSchemaLabel(Map<String, Object> schema) {
+        List<Object> values = finiteSchemaValues(schema);
+        if (!values.isEmpty()) {
+            return values.toString();
+        }
+        if (schema == null || schema.isEmpty()) {
+            return "{}";
+        }
+        String kind = effectiveNotSchemaKind(schema);
+        List<String> constraints = new ArrayList<>();
+        addConstraintLabel(constraints, schema, "pattern");
+        addConstraintLabel(constraints, schema, "format");
+        addConstraintLabel(constraints, schema, "minimum");
+        addConstraintLabel(constraints, schema, "maximum");
+        addConstraintLabel(constraints, schema, "exclusiveMinimum");
+        addConstraintLabel(constraints, schema, "exclusiveMaximum");
+        addConstraintLabel(constraints, schema, "multipleOf");
+        if (constraints.isEmpty()) {
+            return kind.isBlank() ? schema.keySet().toString() : kind;
+        }
+        return kind.isBlank()
+                ? String.join(", ", constraints)
+                : kind + " " + String.join(", ", constraints);
+    }
+
+    private static void addConstraintLabel(List<String> labels, Map<String, Object> schema, String keyword) {
+        if (schema.containsKey(keyword)) {
+            labels.add(keyword + "=" + schema.get(keyword));
+        }
     }
 
     private static List<Object> finiteSchemaValues(Map<String, Object> schema) {

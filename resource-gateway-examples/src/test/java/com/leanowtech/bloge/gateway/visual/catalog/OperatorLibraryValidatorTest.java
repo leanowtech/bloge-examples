@@ -64,6 +64,42 @@ class OperatorLibraryValidatorTest {
     }
 
     @Test
+    void acceptsImportedSchemaFormNotPattern() {
+        OperatorDefinition base = VisualCatalogTestSupport.eligibilityOperator("integer");
+        Map<String, Object> inputProperties = new LinkedHashMap<>();
+        inputProperties.put("score", Map.of("type", "integer"));
+        inputProperties.put("amount", Map.of("type", "number"));
+        inputProperties.put("decision", Map.of(
+                "type", "string",
+                "not", Map.of("pattern", "^ARCHIVED$")
+        ));
+        OperatorDefinition operator = new OperatorDefinition(
+                base.schemaVersion(),
+                base.operatorRef(),
+                base.operatorVersion(),
+                base.display(),
+                base.source(),
+                new OperatorDefinition.Ports(
+                        List.of(new OperatorDefinition.Port("inputs",
+                                SchemaEnvelope.object(inputProperties, List.of("score", "amount", "decision")),
+                                true,
+                                "Inputs.")),
+                        base.ports().outputs()
+                ),
+                base.configSchema(),
+                base.capabilities(),
+                base.policy(),
+                base.lowering(),
+                base.diagnostics()
+        );
+
+        VisualValidationResult result = validator.validate(libraryWith(operator));
+
+        assertThat(result.valid()).as(result.diagnostics().toString()).isTrue();
+        assertThat(result.diagnostics()).isEmpty();
+    }
+
+    @Test
     void rejectsUnsupportedLibrarySchemaVersion() {
         OperatorLibrary library = new OperatorLibrary(
                 "bloge.visualOperatorLibrary.v2",
