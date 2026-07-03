@@ -1,15 +1,9 @@
 package com.leanowtech.bloge.gateway.visual.asset;
 
-import com.fasterxml.jackson.core.JsonProcessingException;
-import com.fasterxml.jackson.databind.ObjectMapper;
-import com.fasterxml.jackson.databind.SerializationFeature;
+import com.leanowtech.bloge.gateway.visual.model.VisualBundleFingerprint;
 
-import java.nio.charset.StandardCharsets;
-import java.security.MessageDigest;
-import java.security.NoSuchAlgorithmException;
 import java.time.Instant;
 import java.util.Collections;
-import java.util.HexFormat;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -73,9 +67,6 @@ public record VisualRuntimeBindingHandoffBundle(
         List<VisualRuntimeBindingRequirements.RequirementItem> requirements
 ) {
     public static final String SCHEMA_VERSION = "bloge.visualRuntimeBindingHandoff.v1";
-    private static final ObjectMapper FINGERPRINT_MAPPER = new ObjectMapper()
-            .findAndRegisterModules()
-            .configure(SerializationFeature.ORDER_MAP_ENTRIES_BY_KEYS, true);
 
     /**
      * Creates a normalized handoff bundle.
@@ -290,13 +281,6 @@ public record VisualRuntimeBindingHandoffBundle(
         material.put("readinessStateCounts", readinessStateCounts);
         material.put("artifactKindCounts", artifactKindCounts);
         material.put("requirements", requirements);
-        try {
-            byte[] body = FINGERPRINT_MAPPER.writeValueAsString(material).getBytes(StandardCharsets.UTF_8);
-            return "sha256:" + HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(body));
-        } catch (JsonProcessingException e) {
-            throw new IllegalStateException("Failed to serialize runtime-binding handoff fingerprint material.", e);
-        } catch (NoSuchAlgorithmException e) {
-            throw new IllegalStateException("SHA-256 is unavailable for runtime-binding handoff fingerprinting.", e);
-        }
+        return VisualBundleFingerprint.fromMaterial(material);
     }
 }

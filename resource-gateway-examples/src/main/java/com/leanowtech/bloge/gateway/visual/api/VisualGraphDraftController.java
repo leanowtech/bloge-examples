@@ -1097,6 +1097,15 @@ public class VisualGraphDraftController {
                             .formatted(actual, GraphDraftExportBundle.SCHEMA_VERSION),
                     "/schemaVersion",
                     Map.of("actual", actual, "expected", GraphDraftExportBundle.SCHEMA_VERSION)));
+            return diagnostics;
+        }
+        if (!bundle.bundleFingerprintVerified()) {
+            diagnostics.add(VisualDiagnostic.error("visual.draftExport.fingerprintMismatch",
+                    ("Graph draft export bundle fingerprint '%s' does not match the submitted bundle material; "
+                            + "expected '%s'.")
+                            .formatted(bundle.bundleFingerprint(), bundle.computedBundleFingerprint()),
+                    "/bundleFingerprint",
+                    Map.of("actual", bundle.bundleFingerprint(), "expected", bundle.computedBundleFingerprint())));
         }
         if (bundle.draft() == null) {
             diagnostics.add(VisualDiagnostic.error("visual.draftExport.draftMissing",

@@ -15,6 +15,7 @@ import java.util.Locale;
  * @param schemaVersion import result schema version
  * @param imported whether the target repository stored the publication
  * @param sourceBundleSchemaVersion source export bundle schema version
+ * @param sourceBundleFingerprint source export bundle stable fingerprint
  * @param sourcePublicationId source publication id from the bundle
  * @param sourceDraftId source draft id from the bundle
  * @param sourceDraftRevision source draft revision from the bundle
@@ -33,6 +34,7 @@ public record VisualGraphPublicationImportResult(
         String schemaVersion,
         boolean imported,
         String sourceBundleSchemaVersion,
+        String sourceBundleFingerprint,
         String sourcePublicationId,
         String sourceDraftId,
         long sourceDraftRevision,
@@ -57,6 +59,7 @@ public record VisualGraphPublicationImportResult(
     public VisualGraphPublicationImportResult {
         schemaVersion = schemaVersion == null || schemaVersion.isBlank() ? SCHEMA_VERSION : schemaVersion;
         sourceBundleSchemaVersion = sourceBundleSchemaVersion == null ? "" : sourceBundleSchemaVersion.trim();
+        sourceBundleFingerprint = sourceBundleFingerprint == null ? "" : sourceBundleFingerprint.trim();
         sourcePublicationId = sourcePublicationId == null || sourcePublicationId.isBlank()
                 ? publication == null ? "" : publication.publicationId()
                 : sourcePublicationId.trim();
@@ -146,7 +149,7 @@ public record VisualGraphPublicationImportResult(
                                                            GraphDraftDependencyReport targetDependencyReport,
                                                            List<VisualDiagnostic> diagnostics) {
         VisualGraphPublicationExportBundle safeBundle = bundle == null
-                ? new VisualGraphPublicationExportBundle("", null, "", "", 0, "", publication, null, null)
+                ? new VisualGraphPublicationExportBundle("", null, "", "", "", 0, "", publication, null, null)
                 : bundle;
         List<VisualGraphReadiness.RuntimeBindingRequirement> runtimeBindingRequirements =
                 runtimeBindingRequirements(publication);
@@ -154,6 +157,7 @@ public record VisualGraphPublicationImportResult(
                 SCHEMA_VERSION,
                 imported,
                 safeBundle.schemaVersion(),
+                safeBundle.bundleFingerprint(),
                 safeBundle.sourcePublicationId(),
                 safeBundle.sourceDraftId(),
                 safeBundle.sourceDraftRevision(),

@@ -1,15 +1,19 @@
 package com.leanowtech.bloge.gateway.visual.publication;
 
 import com.leanowtech.bloge.gateway.visual.draft.GraphDraftDependencyReport;
+import com.leanowtech.bloge.gateway.visual.model.VisualBundleFingerprint;
 import com.leanowtech.bloge.gateway.visual.validation.VisualValidationResult;
 
 import java.time.Instant;
+import java.util.LinkedHashMap;
+import java.util.Map;
 
 /**
  * Portable export package for one immutable visual graph publication.
  *
  * @param schemaVersion export package schema version
  * @param exportedAt export timestamp
+ * @param bundleFingerprint stable fingerprint of the publication export material
  * @param sourcePublicationId original publication id
  * @param sourceDraftId original source draft id
  * @param sourceDraftRevision original source draft revision
@@ -21,6 +25,7 @@ import java.time.Instant;
 public record VisualGraphPublicationExportBundle(
         String schemaVersion,
         Instant exportedAt,
+        String bundleFingerprint,
         String sourcePublicationId,
         String sourceDraftId,
         long sourceDraftRevision,
@@ -54,6 +59,33 @@ public record VisualGraphPublicationExportBundle(
                 ? publication.dependencyReport()
                 : dependencyReport;
         dependencyReport = dependencyReport == null ? GraphDraftDependencyReport.empty() : dependencyReport;
+        bundleFingerprint = bundleFingerprint == null || bundleFingerprint.isBlank()
+                ? computedFingerprint(
+                        schemaVersion,
+                        sourcePublicationId,
+                        sourceDraftId,
+                        sourceDraftRevision,
+                        sourceArtifactKind,
+                        publication,
+                        validation,
+                        dependencyReport)
+                : bundleFingerprint.trim();
+    }
+
+    /**
+     * Backward-compatible constructor for callers that do not supply the derived fingerprint.
+     */
+    public VisualGraphPublicationExportBundle(String schemaVersion,
+                                              Instant exportedAt,
+                                              String sourcePublicationId,
+                                              String sourceDraftId,
+                                              long sourceDraftRevision,
+                                              String sourceArtifactKind,
+                                              VisualGraphPublication publication,
+                                              VisualValidationResult validation,
+                                              GraphDraftDependencyReport dependencyReport) {
+        this(schemaVersion, exportedAt, "", sourcePublicationId, sourceDraftId, sourceDraftRevision,
+                sourceArtifactKind, publication, validation, dependencyReport);
     }
 
     /**
@@ -66,6 +98,7 @@ public record VisualGraphPublicationExportBundle(
         return new VisualGraphPublicationExportBundle(
                 SCHEMA_VERSION,
                 Instant.now(),
+                "",
                 publication == null ? "" : publication.publicationId(),
                 publication == null ? "" : publication.draftId(),
                 publication == null ? 0 : publication.draftRevision(),
@@ -74,5 +107,51 @@ public record VisualGraphPublicationExportBundle(
                 publication == null ? null : publication.validation(),
                 publication == null ? null : publication.dependencyReport()
         );
+    }
+
+    /**
+     * Computes the canonical fingerprint for the current normalized publication export material.
+     *
+     * @return expected fingerprint derived from bundle content
+     */
+    public String computedBundleFingerprint() {
+        return computedFingerprint(
+                schemaVersion,
+                sourcePublicationId,
+                sourceDraftId,
+                sourceDraftRevision,
+                sourceArtifactKind,
+                publication,
+                validation,
+                dependencyReport);
+    }
+
+    /**
+     * Checks whether the submitted fingerprint matches the current normalized material.
+     *
+     * @return true when the publication export fingerprint is current for this bundle body
+     */
+    public boolean bundleFingerprintVerified() {
+        return bundleFingerprint.equals(computedBundleFingerprint());
+    }
+
+    private static String computedFingerprint(String schemaVersion,
+                                              String sourcePublicationId,
+                                              String sourceDraftId,
+                                              long sourceDraftRevision,
+                                              String sourceArtifactKind,
+                                              VisualGraphPublication publication,
+                                              VisualValidationResult validation,
+                                              GraphDraftDependencyReport dependencyReport) {
+        Map<String, Object> material = new LinkedHashMap<>();
+        material.put("schemaVersion", schemaVersion);
+        material.put("sourcePublicationId", sourcePublicationId);
+        material.put("sourceDraftId", sourceDraftId);
+        material.put("sourceDraftRevision", sourceDraftRevision);
+        material.put("sourceArtifactKind", sourceArtifactKind);
+        material.put("publication", publication);
+        material.put("validation", validation);
+        material.put("dependencyReport", dependencyReport);
+        return VisualBundleFingerprint.fromMaterial(material);
     }
 }

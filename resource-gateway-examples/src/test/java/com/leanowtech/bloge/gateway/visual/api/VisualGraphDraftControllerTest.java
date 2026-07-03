@@ -41,6 +41,7 @@ import org.junit.jupiter.api.Test;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 
+import java.time.Instant;
 import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -540,6 +541,9 @@ class VisualGraphDraftControllerTest {
         GraphDraftExportBundle bundle = response.getBody();
         assertThat(bundle).isNotNull();
         assertThat(bundle.schemaVersion()).isEqualTo(GraphDraftExportBundle.SCHEMA_VERSION);
+        assertThat(bundle.bundleFingerprint()).startsWith("sha256:");
+        assertThat(bundle.bundleFingerprint()).hasSize(71);
+        assertThat(bundle.bundleFingerprintVerified()).isTrue();
         assertThat(bundle.sourceDraftId()).isEqualTo(stored.draftId());
         assertThat(bundle.sourceRevision()).isEqualTo(stored.revision());
         assertThat(bundle.draft()).isEqualTo(stored);
@@ -563,6 +567,18 @@ class VisualGraphDraftControllerTest {
                     assertThat(operator.fingerprintState()).isEqualTo("current");
                     assertThat(operator.scopeAllowed()).isTrue();
                 });
+
+        GraphDraftExportBundle sameMaterialDifferentExportTime = new GraphDraftExportBundle(
+                bundle.schemaVersion(),
+                Instant.EPOCH,
+                bundle.sourceDraftId(),
+                bundle.sourceRevision(),
+                bundle.draft(),
+                bundle.operatorSnapshots(),
+                bundle.diagnostics(),
+                bundle.validation(),
+                bundle.dependencyReport());
+        assertThat(sameMaterialDifferentExportTime.bundleFingerprint()).isEqualTo(bundle.bundleFingerprint());
     }
 
     @Test
@@ -592,6 +608,7 @@ class VisualGraphDraftControllerTest {
         assertThat(response.getBody().schemaVersion()).isEqualTo(GraphDraftImportResult.SCHEMA_VERSION);
         assertThat(response.getBody().imported()).isTrue();
         assertThat(response.getBody().sourceBundleSchemaVersion()).isEqualTo(GraphDraftExportBundle.SCHEMA_VERSION);
+        assertThat(response.getBody().sourceBundleFingerprint()).isEqualTo(bundle.bundleFingerprint());
         assertThat(response.getBody().sourceDraftId()).isEqualTo(stored.draftId());
         assertThat(response.getBody().sourceRevision()).isEqualTo(stored.revision());
         assertThat(response.getBody().diagnostics()).isEmpty();
@@ -844,6 +861,7 @@ class VisualGraphDraftControllerTest {
         GraphDraftImportResult result = response.getBody();
         assertThat(result.imported()).isFalse();
         assertThat(result.sourceBundleSchemaVersion()).isEqualTo("bloge.visualGraphDraftExport.v2");
+        assertThat(result.sourceBundleFingerprint()).isEqualTo(bundle.bundleFingerprint());
         assertThat(result.sourceDraftId()).isEqualTo("source-draft");
         assertThat(result.sourceRevision()).isEqualTo(7);
         assertThat(result.draft()).isNull();
@@ -860,6 +878,54 @@ class VisualGraphDraftControllerTest {
                     assertThat(diagnostic.metadata())
                             .containsEntry("actual", "bloge.visualGraphDraftExport.v2")
                             .containsEntry("expected", GraphDraftExportBundle.SCHEMA_VERSION);
+                });
+        assertThat(repository.all()).isEmpty();
+    }
+
+    @Test
+    void importDraftBundleRejectsMismatchedBundleFingerprintBeforeStorage() {
+        InMemoryGraphDraftRepository repository = new InMemoryGraphDraftRepository();
+        VisualGraphDraftController controller = controllerWithCatalog(eligibilityCatalog(), repository);
+        GraphDraft draft = eligibilityDraft(graphInputSchema(
+                Map.of(
+                        "score", Map.of("type", "integer"),
+                        "amount", Map.of("type", "number")
+                )
+        ));
+        GraphDraftExportBundle base = GraphDraftExportBundle.from(
+                draft,
+                List.of(),
+                new VisualValidationResult(true, List.of()),
+                GraphDraftDependencyReport.empty());
+        GraphDraftExportBundle forged = new GraphDraftExportBundle(
+                base.schemaVersion(),
+                base.exportedAt(),
+                "sha256:forged",
+                base.sourceDraftId(),
+                base.sourceRevision(),
+                base.draft(),
+                base.operatorSnapshots(),
+                base.diagnostics(),
+                base.validation(),
+                base.dependencyReport());
+
+        ResponseEntity<GraphDraftImportResult> response = controller.importDraft(forged);
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+        assertThat(response.getBody()).isNotNull();
+        GraphDraftImportResult result = response.getBody();
+        assertThat(forged.bundleFingerprintVerified()).isFalse();
+        assertThat(forged.computedBundleFingerprint()).isEqualTo(base.bundleFingerprint());
+        assertThat(result.imported()).isFalse();
+        assertThat(result.sourceBundleFingerprint()).isEqualTo("sha256:forged");
+        assertThat(result.diagnostics())
+                .singleElement()
+                .satisfies(diagnostic -> {
+                    assertThat(diagnostic.code()).isEqualTo("visual.draftExport.fingerprintMismatch");
+                    assertThat(diagnostic.target()).isEqualTo("/bundleFingerprint");
+                    assertThat(diagnostic.metadata())
+                            .containsEntry("actual", "sha256:forged")
+                            .containsEntry("expected", base.bundleFingerprint());
                 });
         assertThat(repository.all()).isEmpty();
     }
@@ -890,6 +956,7 @@ class VisualGraphDraftControllerTest {
         GraphDraftImportResult result = response.getBody();
         assertThat(result.imported()).isFalse();
         assertThat(result.sourceBundleSchemaVersion()).isEqualTo(GraphDraftExportBundle.SCHEMA_VERSION);
+        assertThat(result.sourceBundleFingerprint()).isEqualTo(bundle.bundleFingerprint());
         assertThat(result.sourceDraftId()).isEqualTo("source-draft");
         assertThat(result.sourceRevision()).isEqualTo(7);
         assertThat(result.draft()).isNull();

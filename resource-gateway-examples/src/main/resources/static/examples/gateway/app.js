@@ -966,6 +966,10 @@ function visualRuntimeBindingHandoffReviewMessage(review) {
   return `Handoff review ${stateLabel}: ${matched} current, ${drifted} drifted, ${missing} missing, ${fresh} new in current window.`;
 }
 
+function visualBundleFingerprintSuffix(fingerprint) {
+  return fingerprint ? ` (${fingerprint})` : '';
+}
+
 function visualRuntimeBindingHandoffReviewRows(review) {
   if (!review) {
     return [];
@@ -10162,7 +10166,10 @@ async function exportSelectedPublication() {
     return;
   }
   state.publicationBundleText = pretty(payload);
-  setPublicationMessage(`Exported ${payload?.sourcePublicationId || publication.publicationId}.`, 'success');
+  setPublicationMessage(
+    `Exported ${payload?.sourcePublicationId || publication.publicationId}${visualBundleFingerprintSuffix(payload?.bundleFingerprint)}.`,
+    'success'
+  );
   $('output').textContent = pretty({ status: response.status, publicationExport: payload });
   renderPublicationControls();
 }
@@ -10197,7 +10204,9 @@ async function importPublicationBundle() {
   await loadGoldenCases({ render: false });
   await loadGoldenCertificationStatus({ render: false });
   await loadVisualAssetOverview({ render: false });
-  const sourceLineage = payload?.sourcePublicationId ? ` from ${payload.sourcePublicationId}` : '';
+  const sourceLineage = payload?.sourcePublicationId
+    ? ` from ${payload.sourcePublicationId}${visualBundleFingerprintSuffix(payload?.sourceBundleFingerprint)}`
+    : '';
   const targetReview = publicationImportTargetReviewText(payload?.targetDependencyReport);
   const bindingReview = runtimeBindingRequirementImportReviewText(
     payload?.targetRuntimeBindingRequirements || importedPublication?.validation?.readiness?.runtimeBindingRequirements
@@ -10777,7 +10786,10 @@ async function exportSelectedDraft() {
     state.draftDependencyMessage = null;
     renderDraftDependencyReport();
   }
-  setDraftMessage(`Exported ${payload.sourceDraftId}@${payload.sourceRevision || 0}.`, 'success');
+  setDraftMessage(
+    `Exported ${payload.sourceDraftId}@${payload.sourceRevision || 0}${visualBundleFingerprintSuffix(payload?.bundleFingerprint)}.`,
+    'success'
+  );
   setVisualCheck(
     'Exported visual draft package.',
     visualCheckLevel(diagnostics, validation?.valid !== false),
@@ -10834,7 +10846,7 @@ async function importDraftBundle() {
   syncComposerFromBuilder({ render: false });
   const hasImportErrors = diagnostics.some((diagnostic) => String(diagnostic.level || '').toUpperCase() === 'ERROR');
   const sourceLineage = payload?.sourceDraftId
-    ? ` from ${payload.sourceDraftId}@${payload.sourceRevision || 0}`
+    ? ` from ${payload.sourceDraftId}@${payload.sourceRevision || 0}${visualBundleFingerprintSuffix(payload?.sourceBundleFingerprint)}`
     : '';
   const targetReview = draftImportTargetReviewText(targetDependencyReport);
   const bindingReview = runtimeBindingRequirementImportReviewText(

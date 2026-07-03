@@ -1606,10 +1606,10 @@ POST /api/visual/drafts/import
 因此这组元数据用于跨环境 lineage、迁移审计和人工复核，而不是把
 schema-only 或 catalog-repair-required 图误提升为可执行制品。
 
-`bloge.visualGraphDraftExport.v1` 包含 source draft identity、revision、draft
+`bloge.visualGraphDraftExport.v1` 包含 source draft identity、revision、`bundleFingerprint`、draft
 snapshot、operator snapshots、export-time diagnostics、完整 `validation`，以及源环境
 `dependencyReport`。`bloge.visualGraphDraftImportResult.v1` 在创建新 draft identity
-后返回 `sourceBundleSchemaVersion`、`sourceDraftId`、`sourceRevision`、
+后返回 `sourceBundleSchemaVersion`、`sourceBundleFingerprint`、`sourceDraftId`、`sourceRevision`、
 目标环境 diagnostics、同一结构的 `validation`，以及
 `sourceDependencyReport` / `targetDependencyReport` 和
 `targetRuntimeBindingRequirements[]` / `targetRuntimeBindingRequirementKeys[]`。
@@ -1619,8 +1619,13 @@ snapshot、operator snapshots、export-time diagnostics、完整 `validation`，
 `validation.readiness` 让迁移后的 schema-only、runtime-blocked、
 governance-review 或 catalog-repair-required 图仍能被客户端按 `artifactKinds`
 正确引导到 `DESIGN`、`EXECUTABLE` 或修复路径，而不需要用户再次手动 validate
-才知道它是什么状态。import 会在存储前拒绝 unsupported export bundle schemaVersion
-或内嵌 draft schemaVersion，并在 `visual.draftExport.schemaVersion.unsupported` /
+才知道它是什么状态。`bundleFingerprint` 由服务端按 source identity、draft snapshot、
+operator snapshots、diagnostics、validation 和 dependency report 计算，不包含
+`exportedAt`，用于让外部迁移、工单和审计系统稳定引用同一份 draft export material。
+import 会在存储前拒绝 unsupported export bundle schemaVersion、`bundleFingerprint`
+与 bundle material 不一致或内嵌 draft schemaVersion，并在
+`visual.draftExport.schemaVersion.unsupported` /
+`visual.draftExport.fingerprintMismatch` /
 `visual.draft.schemaVersion.unsupported` diagnostics 的 metadata 中返回
 `actual` 和 `expected`，让外部迁移控制面不必解析自然语言错误文案。export bundle 的 `dependencyReport` 和 import result 的 `sourceDependencyReport` 记录 source catalog 的依赖视图；
 import result 的 `targetDependencyReport` / legacy `dependencyReport` 则一次性暴露 target catalog 下的 missing operator、
@@ -2163,6 +2168,7 @@ GET /api/visual/publications/{publicationId}/export
 返回 `bloge.visualGraphPublicationExport.v1`，包含：
 
 - `sourcePublicationId`、`sourceDraftId`、`sourceDraftRevision`、`sourceArtifactKind`。
+- `bundleFingerprint`，由服务端按 source lineage、publication snapshot、frozen validation 和 dependency report 派生，不包含 `exportedAt`。
 - 完整 `publication` snapshot。
 - 冻结的 publish-time `validation/readiness`。
 - 冻结的 publish-time `dependencyReport`。
@@ -2177,6 +2183,8 @@ Content-Type: application/json
 返回 `bloge.visualGraphPublicationImportResult.v1`。导入只做 portable artifact
 边界校验，不重新 lower draft，也不使用当前 catalog 改写 publication：
 
+- 成功和可审阅拒绝结果会回显 `sourceBundleSchemaVersion` 与
+  `sourceBundleFingerprint`，供目标环境审计、工单和迁移日志引用同一份 portable artifact。
 - 成功和可审阅拒绝结果会返回 `sourceDependencyReport` 与
   `targetDependencyReport`。前者来自 bundle，后者基于目标环境当前 catalog
   即时计算，用于暴露 missing operator、scope mismatch、fingerprint drift 和
@@ -2187,6 +2195,8 @@ Content-Type: application/json
   与该清单顺序对齐，并与 runtime-binding requirement index 的 `requirementKey` 共用稳定 key 合同。
 - unsupported bundle schemaVersion 返回
   `visual.publication.bundle.schemaVersionUnsupported`。
+- `bundleFingerprint` 与 bundle material 不一致返回
+  `visual.publication.bundle.fingerprintMismatch`，target 为 `/bundleFingerprint`，metadata 携带 `actual/expected`。
 - 缺失 publication snapshot 返回
   `visual.publication.bundle.snapshotMissing`。
 - unsupported inner publication schemaVersion 返回

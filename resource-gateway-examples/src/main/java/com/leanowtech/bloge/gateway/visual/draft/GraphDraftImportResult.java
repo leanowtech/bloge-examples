@@ -13,6 +13,7 @@ import java.util.List;
  * @param schemaVersion import result schema version
  * @param imported whether a new draft was stored
  * @param sourceBundleSchemaVersion source export bundle schema version
+ * @param sourceBundleFingerprint source export bundle stable fingerprint
  * @param sourceDraftId source draft id from the bundle
  * @param sourceRevision source draft revision from the bundle
  * @param draft stored draft when import succeeded
@@ -28,6 +29,7 @@ public record GraphDraftImportResult(
         String schemaVersion,
         boolean imported,
         String sourceBundleSchemaVersion,
+        String sourceBundleFingerprint,
         String sourceDraftId,
         long sourceRevision,
         GraphDraft draft,
@@ -47,6 +49,7 @@ public record GraphDraftImportResult(
     public GraphDraftImportResult {
         schemaVersion = schemaVersion == null || schemaVersion.isBlank() ? SCHEMA_VERSION : schemaVersion;
         sourceBundleSchemaVersion = sourceBundleSchemaVersion == null ? "" : sourceBundleSchemaVersion.trim();
+        sourceBundleFingerprint = sourceBundleFingerprint == null ? "" : sourceBundleFingerprint.trim();
         sourceDraftId = sourceDraftId == null ? "" : sourceDraftId.trim();
         sourceRevision = Math.max(0, sourceRevision);
         diagnostics = diagnostics == null ? List.of() : List.copyOf(diagnostics);
@@ -75,7 +78,7 @@ public record GraphDraftImportResult(
                                   GraphDraft draft,
                                   List<VisualDiagnostic> diagnostics,
                                   VisualValidationResult validation) {
-        this(schemaVersion, imported, "", "", 0, draft, diagnostics, validation,
+        this(schemaVersion, imported, "", "", "", 0, draft, diagnostics, validation,
                 GraphDraftDependencyReport.empty(), GraphDraftDependencyReport.empty(),
                 GraphDraftDependencyReport.empty(), null, null);
     }
@@ -87,7 +90,7 @@ public record GraphDraftImportResult(
                                   boolean imported,
                                   GraphDraft draft,
                                   List<VisualDiagnostic> diagnostics) {
-        this(schemaVersion, imported, "", "", 0, draft, diagnostics, new VisualValidationResult(false, diagnostics),
+        this(schemaVersion, imported, "", "", "", 0, draft, diagnostics, new VisualValidationResult(false, diagnostics),
                 GraphDraftDependencyReport.empty(), GraphDraftDependencyReport.empty(),
                 GraphDraftDependencyReport.empty(), null, null);
     }
@@ -174,6 +177,7 @@ public record GraphDraftImportResult(
                 SCHEMA_VERSION,
                 imported,
                 bundle == null ? "" : bundle.schemaVersion(),
+                bundle == null ? "" : bundle.bundleFingerprint(),
                 bundle == null ? "" : bundle.sourceDraftId(),
                 bundle == null ? 0 : bundle.sourceRevision(),
                 draft,

@@ -172,6 +172,10 @@ public class VisualGraphPublicationController {
             return ResponseEntity.badRequest().body(VisualGraphPublicationImportResult.rejected(
                     bundle, bundle.publication(), publicationBundleSchemaVersionDiagnostics(bundle)));
         }
+        if (bundle != null && !bundle.bundleFingerprintVerified()) {
+            return ResponseEntity.badRequest().body(VisualGraphPublicationImportResult.rejected(
+                    bundle, bundle.publication(), publicationBundleFingerprintDiagnostics(bundle)));
+        }
         VisualGraphPublication publication = bundle == null ? null : bundle.publication();
         if (publication == null) {
             return ResponseEntity.badRequest().body(VisualGraphPublicationImportResult.rejected(
@@ -246,6 +250,19 @@ public class VisualGraphPublicationController {
                 "visual.publication.bundle.snapshotMissing",
                 "Visual graph publication import bundle must include a publication snapshot.",
                 "/publication"
+        ));
+    }
+
+    private static List<VisualDiagnostic> publicationBundleFingerprintDiagnostics(
+            VisualGraphPublicationExportBundle bundle) {
+        String actual = bundle == null ? "" : bundle.bundleFingerprint();
+        String expected = bundle == null ? "" : bundle.computedBundleFingerprint();
+        return List.of(VisualDiagnostic.error(
+                "visual.publication.bundle.fingerprintMismatch",
+                ("Visual graph publication import bundle fingerprint '%s' does not match the submitted bundle "
+                        + "material; expected '%s'.").formatted(actual, expected),
+                "/bundleFingerprint",
+                Map.of("actual", actual, "expected", expected)
         ));
     }
 

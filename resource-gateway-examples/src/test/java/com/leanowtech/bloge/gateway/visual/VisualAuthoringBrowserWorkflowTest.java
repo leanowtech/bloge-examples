@@ -130,6 +130,7 @@ class VisualAuthoringBrowserWorkflowTest {
                 .containsEntry("schemaVersion", "bloge.visualGraphDraftExport.v1")
                 .containsEntry("sourceDraftId", storedDraft.draftId())
                 .containsEntry("sourceRevision", 1);
+        assertThat(String.valueOf(draftExport.get("bundleFingerprint"))).startsWith("sha256:").hasSize(71);
         assertThat((List<Map<String, Object>>) draftExport.get("operatorSnapshots"))
                 .extracting(snapshot -> String.valueOf(snapshot.get("operatorRef")))
                 .contains("resource:loan-applicant-service.getProfile", "risk:eligibility");
@@ -138,6 +139,7 @@ class VisualAuthoringBrowserWorkflowTest {
                 .containsEntry("schemaVersion", "bloge.visualGraphDraftImportResult.v1")
                 .containsEntry("imported", true)
                 .containsEntry("sourceBundleSchemaVersion", "bloge.visualGraphDraftExport.v1")
+                .containsEntry("sourceBundleFingerprint", draftExport.get("bundleFingerprint"))
                 .containsEntry("sourceDraftId", storedDraft.draftId())
                 .containsEntry("sourceRevision", 1);
         assertThat((List<Map<String, Object>>) draftImport.get("diagnostics")).isEmpty();

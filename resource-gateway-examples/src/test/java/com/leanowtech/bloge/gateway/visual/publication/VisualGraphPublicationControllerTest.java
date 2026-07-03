@@ -18,6 +18,7 @@ import org.junit.jupiter.api.Test;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 
+import java.time.Instant;
 import java.util.List;
 import java.util.Map;
 
@@ -129,6 +130,9 @@ class VisualGraphPublicationControllerTest {
         assertThat(response.getBody()).isNotNull();
         assertThat(response.getBody().schemaVersion())
                 .isEqualTo(VisualGraphPublicationExportBundle.SCHEMA_VERSION);
+        assertThat(response.getBody().bundleFingerprint()).startsWith("sha256:");
+        assertThat(response.getBody().bundleFingerprint()).hasSize(71);
+        assertThat(response.getBody().bundleFingerprintVerified()).isTrue();
         assertThat(response.getBody().sourcePublicationId()).isEqualTo(stored.publicationId());
         assertThat(response.getBody().sourceDraftId()).isEqualTo(stored.draftId());
         assertThat(response.getBody().sourceDraftRevision()).isEqualTo(stored.draftRevision());
@@ -136,6 +140,20 @@ class VisualGraphPublicationControllerTest {
         assertThat(response.getBody().publication()).isEqualTo(stored);
         assertThat(response.getBody().validation()).isEqualTo(stored.validation());
         assertThat(response.getBody().dependencyReport()).isEqualTo(stored.dependencyReport());
+
+        VisualGraphPublicationExportBundle sameMaterialDifferentExportTime =
+                new VisualGraphPublicationExportBundle(
+                        response.getBody().schemaVersion(),
+                        Instant.EPOCH,
+                        response.getBody().sourcePublicationId(),
+                        response.getBody().sourceDraftId(),
+                        response.getBody().sourceDraftRevision(),
+                        response.getBody().sourceArtifactKind(),
+                        response.getBody().publication(),
+                        response.getBody().validation(),
+                        response.getBody().dependencyReport());
+        assertThat(sameMaterialDifferentExportTime.bundleFingerprint())
+                .isEqualTo(response.getBody().bundleFingerprint());
     }
 
     @Test
@@ -157,6 +175,7 @@ class VisualGraphPublicationControllerTest {
         assertThat(response.getBody().imported()).isTrue();
         assertThat(response.getBody().sourceBundleSchemaVersion())
                 .isEqualTo(VisualGraphPublicationExportBundle.SCHEMA_VERSION);
+        assertThat(response.getBody().sourceBundleFingerprint()).isEqualTo(bundle.bundleFingerprint());
         assertThat(response.getBody().sourcePublicationId()).isEqualTo(source.publicationId());
         assertThat(response.getBody().sourceArtifactKind()).isEqualTo(source.artifactKind());
         assertThat(response.getBody().importedPublicationId()).isEqualTo(source.publicationId());
@@ -257,12 +276,50 @@ class VisualGraphPublicationControllerTest {
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
         assertThat(response.getBody()).isNotNull();
         assertThat(response.getBody().imported()).isFalse();
+        assertThat(response.getBody().sourceBundleFingerprint()).isEqualTo(unsupported.bundleFingerprint());
         assertThat(response.getBody().diagnostics())
                 .singleElement()
                 .satisfies(diagnostic -> {
                     assertThat(diagnostic.code())
                             .isEqualTo("visual.publication.bundle.schemaVersionUnsupported");
                     assertThat(diagnostic.target()).isEqualTo("/schemaVersion");
+                });
+    }
+
+    @Test
+    void importBundleRejectsMismatchedBundleFingerprint() {
+        VisualGraphPublication source = publication("tenant-a", "risk", "prod");
+        VisualGraphPublicationExportBundle base = VisualGraphPublicationExportBundle.from(source);
+        VisualGraphPublicationExportBundle forged = new VisualGraphPublicationExportBundle(
+                base.schemaVersion(),
+                base.exportedAt(),
+                "sha256:forged",
+                base.sourcePublicationId(),
+                base.sourceDraftId(),
+                base.sourceDraftRevision(),
+                base.sourceArtifactKind(),
+                base.publication(),
+                base.validation(),
+                base.dependencyReport());
+        VisualGraphPublicationController controller = new VisualGraphPublicationController(
+                new InMemoryVisualGraphPublicationRepository(), runner(), new InMemoryVisualGraphRunRepository());
+
+        ResponseEntity<VisualGraphPublicationImportResult> response = controller.importBundle(forged);
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+        assertThat(response.getBody()).isNotNull();
+        assertThat(forged.bundleFingerprintVerified()).isFalse();
+        assertThat(forged.computedBundleFingerprint()).isEqualTo(base.bundleFingerprint());
+        assertThat(response.getBody().imported()).isFalse();
+        assertThat(response.getBody().sourceBundleFingerprint()).isEqualTo("sha256:forged");
+        assertThat(response.getBody().diagnostics())
+                .singleElement()
+                .satisfies(diagnostic -> {
+                    assertThat(diagnostic.code()).isEqualTo("visual.publication.bundle.fingerprintMismatch");
+                    assertThat(diagnostic.target()).isEqualTo("/bundleFingerprint");
+                    assertThat(diagnostic.metadata())
+                            .containsEntry("actual", "sha256:forged")
+                            .containsEntry("expected", base.bundleFingerprint());
                 });
     }
 
