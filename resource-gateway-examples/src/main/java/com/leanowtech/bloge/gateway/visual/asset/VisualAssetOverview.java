@@ -174,6 +174,60 @@ public record VisualAssetOverview(
                                            String actionType,
                                            String actionTargetKind,
                                            String actionOperatorRef) {
+        return from(
+                drafts,
+                publications,
+                operators,
+                catalogDiagnostics,
+                Map.of(),
+                tenantId,
+                namespace,
+                environment,
+                actionItemLimit,
+                actionOffset,
+                actionSeverity,
+                actionType,
+                actionTargetKind,
+                actionOperatorRef,
+                ""
+        );
+    }
+
+    /**
+     * Builds an overview with operator-library ownership context for action routing.
+     *
+     * @param drafts draft summaries in scope
+     * @param publications publication summaries in scope
+     * @param operators catalog operators in scope
+     * @param catalogDiagnostics catalog diagnostics in scope
+     * @param operatorLibraryIdsByOperatorRef catalog-derived operatorRef to library owner map
+     * @param tenantId tenant scope used for the read model, empty for all
+     * @param namespace namespace scope used for the read model, empty for all
+     * @param environment environment scope used for the read model, empty for all
+     * @param actionItemLimit requested number of action item details, clamped to the overview contract bounds
+     * @param actionOffset zero-based action item offset after filtering
+     * @param actionSeverity optional severity filter
+     * @param actionType optional action type filter
+     * @param actionTargetKind optional target kind filter
+     * @param actionOperatorRef optional operator reference filter
+     * @param actionOperatorLibraryId optional owner operator library id filter
+     * @return visual asset overview
+     */
+    public static VisualAssetOverview from(List<GraphDraftSummary> drafts,
+                                           List<VisualGraphPublicationSummary> publications,
+                                           List<OperatorDefinition> operators,
+                                           List<VisualDiagnostic> catalogDiagnostics,
+                                           Map<String, String> operatorLibraryIdsByOperatorRef,
+                                           String tenantId,
+                                           String namespace,
+                                           String environment,
+                                           int actionItemLimit,
+                                           int actionOffset,
+                                           String actionSeverity,
+                                           String actionType,
+                                           String actionTargetKind,
+                                           String actionOperatorRef,
+                                           String actionOperatorLibraryId) {
         return new VisualAssetOverview(
                 SCHEMA_VERSION,
                 Instant.now(),
@@ -185,12 +239,14 @@ public record VisualAssetOverview(
                         drafts,
                         publications,
                         operators,
+                        operatorLibraryIdsByOperatorRef,
                         actionItemLimit,
                         actionOffset,
                         actionSeverity,
                         actionType,
                         actionTargetKind,
-                        actionOperatorRef
+                        actionOperatorRef,
+                        actionOperatorLibraryId
                 )
         );
     }
@@ -545,6 +601,7 @@ public record VisualAssetOverview(
      * @param infoCount info-severity action count
      * @param actionTypeCounts action counts by machine-readable action type
      * @param operatorRefCounts action counts by related operator reference
+     * @param operatorLibraryIdCounts action counts by owner operator library id
      * @param items first high-priority action items
      */
     public record ActionQueue(
@@ -560,6 +617,7 @@ public record VisualAssetOverview(
             int infoCount,
             Map<String, Integer> actionTypeCounts,
             Map<String, Integer> operatorRefCounts,
+            Map<String, Integer> operatorLibraryIdCounts,
             List<ActionItem> items
     ) {
         public ActionQueue(int total,
@@ -583,6 +641,7 @@ public record VisualAssetOverview(
                     infoCount,
                     actionTypeCounts,
                     Map.of(),
+                    Map.of(),
                     items
             );
         }
@@ -595,6 +654,7 @@ public record VisualAssetOverview(
             filter = filter == null ? ActionFilter.all() : filter;
             actionTypeCounts = immutableCounts(actionTypeCounts);
             operatorRefCounts = immutableCounts(operatorRefCounts);
+            operatorLibraryIdCounts = immutableCounts(operatorLibraryIdCounts);
             items = items == null ? List.of() : List.copyOf(items);
             displayedCount = items.size();
             hasMore = offset + displayedCount < total;
@@ -634,17 +694,32 @@ public record VisualAssetOverview(
                                 String actionType,
                                 String actionTargetKind,
                                 String actionOperatorRef) {
+            return from(drafts, publications, operators, Map.of(), actionItemLimit, actionOffset, actionSeverity,
+                    actionType, actionTargetKind, actionOperatorRef, "");
+        }
+
+        static ActionQueue from(List<GraphDraftSummary> drafts,
+                                List<VisualGraphPublicationSummary> publications,
+                                List<OperatorDefinition> operators,
+                                Map<String, String> operatorLibraryIdsByOperatorRef,
+                                int actionItemLimit,
+                                int actionOffset,
+                                String actionSeverity,
+                                String actionType,
+                                String actionTargetKind,
+                                String actionOperatorRef,
+                                String actionOperatorLibraryId) {
             List<ActionItem> generated = new ArrayList<>();
             for (GraphDraftSummary draft : drafts == null ? List.<GraphDraftSummary>of() : drafts) {
-                addDraftAction(generated, draft);
+                addDraftAction(generated, draft, operatorLibraryIdsByOperatorRef);
             }
             for (VisualGraphPublicationSummary publication : publications == null
                     ? List.<VisualGraphPublicationSummary>of()
                     : publications) {
-                addPublicationAction(generated, publication);
+                addPublicationAction(generated, publication, operatorLibraryIdsByOperatorRef);
             }
             for (OperatorDefinition operator : operators == null ? List.<OperatorDefinition>of() : operators) {
-                addCatalogAction(generated, operator);
+                addCatalogAction(generated, operator, operatorLibraryIdsByOperatorRef);
             }
             generated.sort((left, right) -> {
                 int severity = Integer.compare(severityRank(left.severity()), severityRank(right.severity()));
@@ -657,12 +732,14 @@ public record VisualAssetOverview(
                 }
                 return left.targetId().compareTo(right.targetId());
             });
-            ActionFilter filter = new ActionFilter(actionSeverity, actionType, actionTargetKind, actionOperatorRef);
+            ActionFilter filter = new ActionFilter(actionSeverity, actionType, actionTargetKind, actionOperatorRef,
+                    actionOperatorLibraryId);
             List<ActionItem> filtered = generated.stream()
                     .filter(filter::matches)
                     .toList();
             Map<String, Integer> actionTypes = new LinkedHashMap<>();
             Map<String, Integer> operatorRefs = countBy(filtered, ActionItem::operatorRef);
+            Map<String, Integer> operatorLibraries = countBy(filtered, ActionItem::operatorLibraryId);
             int errorCount = 0;
             int warningCount = 0;
             int infoCount = 0;
@@ -689,6 +766,7 @@ public record VisualAssetOverview(
                     infoCount,
                     actionTypes,
                     operatorRefs,
+                    operatorLibraries,
                     filtered.stream().skip(normalizedOffset).limit(normalizedLimit).toList()
             );
         }
@@ -705,6 +783,7 @@ public record VisualAssetOverview(
      * @param actionType action type filter, empty when not filtered
      * @param targetKind target kind filter, empty when not filtered
      * @param operatorRef operator reference filter, empty when not filtered
+     * @param operatorLibraryId owner operator library id filter, empty when not filtered
      * @param filtered true when at least one action filter is active
      */
     public record ActionFilter(
@@ -712,6 +791,7 @@ public record VisualAssetOverview(
             String actionType,
             String targetKind,
             String operatorRef,
+            String operatorLibraryId,
             boolean filtered
     ) {
         public ActionFilter(String severity, String actionType, String targetKind) {
@@ -719,15 +799,25 @@ public record VisualAssetOverview(
         }
 
         public ActionFilter(String severity, String actionType, String targetKind, String operatorRef) {
+            this(severity, actionType, targetKind, operatorRef, "");
+        }
+
+        public ActionFilter(String severity,
+                            String actionType,
+                            String targetKind,
+                            String operatorRef,
+                            String operatorLibraryId) {
             this(
                     normalizeSeverityFilter(severity),
                     normalizeActionTypeFilter(actionType),
                     normalizeTargetKindFilter(targetKind),
                     normalizeTextValue(operatorRef),
+                    normalizeTextValue(operatorLibraryId),
                     !normalizeSeverityFilter(severity).isBlank()
                             || !normalizeActionTypeFilter(actionType).isBlank()
                             || !normalizeTargetKindFilter(targetKind).isBlank()
                             || !normalizeTextValue(operatorRef).isBlank()
+                            || !normalizeTextValue(operatorLibraryId).isBlank()
             );
         }
 
@@ -736,12 +826,14 @@ public record VisualAssetOverview(
             actionType = normalizeActionTypeFilter(actionType);
             targetKind = normalizeTargetKindFilter(targetKind);
             operatorRef = normalizeTextValue(operatorRef);
+            operatorLibraryId = normalizeTextValue(operatorLibraryId);
             filtered = !severity.isBlank() || !actionType.isBlank() || !targetKind.isBlank()
-                    || !operatorRef.isBlank();
+                    || !operatorRef.isBlank()
+                    || !operatorLibraryId.isBlank();
         }
 
         static ActionFilter all() {
-            return new ActionFilter("", "", "", "");
+            return new ActionFilter("", "", "", "", "");
         }
 
         boolean matches(ActionItem item) {
@@ -749,7 +841,8 @@ public record VisualAssetOverview(
                     && (severity.isBlank() || severity.equals(item.severity()))
                     && (actionType.isBlank() || actionType.equals(item.actionType()))
                     && (targetKind.isBlank() || targetKind.equals(item.targetKind()))
-                    && (operatorRef.isBlank() || operatorRef.equals(item.operatorRef()));
+                    && (operatorRef.isBlank() || operatorRef.equals(item.operatorRef()))
+                    && (operatorLibraryId.isBlank() || operatorLibraryId.equals(item.operatorLibraryId()));
         }
     }
 
@@ -771,6 +864,7 @@ public record VisualAssetOverview(
      * @param targetId target asset id
      * @param targetLabel human-readable target label
      * @param operatorRef related operator reference when the action is operator-scoped
+     * @param operatorLibraryId owner operator library id when the related operator comes from an imported library
      * @param readinessState graph/operator readiness state when known
      * @param artifactKind publication artifact kind when known
      * @param handoffLane runtime-plane responsibility lane when this is a binding action
@@ -787,6 +881,7 @@ public record VisualAssetOverview(
             String targetId,
             String targetLabel,
             String operatorRef,
+            String operatorLibraryId,
             String readinessState,
             String artifactKind,
             String handoffLane,
@@ -811,6 +906,7 @@ public record VisualAssetOverview(
                     targetKind,
                     targetId,
                     targetLabel,
+                    "",
                     "",
                     readinessState,
                     artifactKind,
@@ -840,11 +936,45 @@ public record VisualAssetOverview(
                     targetId,
                     targetLabel,
                     "",
+                    "",
                     readinessState,
                     artifactKind,
                     "",
                     "",
                     "",
+                    summary,
+                    recommendedAction
+            );
+        }
+
+        public ActionItem(String actionKey,
+                          String severity,
+                          String actionType,
+                          String targetKind,
+                          String targetId,
+                          String targetLabel,
+                          String operatorRef,
+                          String readinessState,
+                          String artifactKind,
+                          String handoffLane,
+                          String handoffKind,
+                          String handoffTarget,
+                          String summary,
+                          String recommendedAction) {
+            this(
+                    actionKey,
+                    severity,
+                    actionType,
+                    targetKind,
+                    targetId,
+                    targetLabel,
+                    operatorRef,
+                    "",
+                    readinessState,
+                    artifactKind,
+                    handoffLane,
+                    handoffKind,
+                    handoffTarget,
                     summary,
                     recommendedAction
             );
@@ -859,6 +989,7 @@ public record VisualAssetOverview(
             targetId = targetId == null ? "" : targetId;
             targetLabel = targetLabel == null ? "" : targetLabel;
             operatorRef = normalizeTextValue(operatorRef);
+            operatorLibraryId = normalizeTextValue(operatorLibraryId);
             readinessState = normalizeFacetValue(readinessState);
             artifactKind = artifactKind == null || artifactKind.isBlank() ? "" : artifactKind.trim().toUpperCase(Locale.ROOT);
             handoffLane = normalizeFacetValue(handoffLane);
@@ -889,7 +1020,16 @@ public record VisualAssetOverview(
         return counts;
     }
 
-    private static void addDraftAction(List<ActionItem> items, GraphDraftSummary draft) {
+    private static String operatorLibraryId(String operatorRef, Map<String, String> operatorLibraryIdsByOperatorRef) {
+        if (operatorRef == null || operatorLibraryIdsByOperatorRef == null) {
+            return "";
+        }
+        return normalizeTextValue(operatorLibraryIdsByOperatorRef.get(operatorRef));
+    }
+
+    private static void addDraftAction(List<ActionItem> items,
+                                       GraphDraftSummary draft,
+                                       Map<String, String> operatorLibraryIdsByOperatorRef) {
         if (draft == null || !draft.active()) {
             return;
         }
@@ -929,7 +1069,8 @@ public record VisualAssetOverview(
             ));
         } else if (VisualGraphActionReadiness.RUNTIME_BINDING_REQUIRED.equals(actionState)
                 || "runtime-blocked".equals(state)) {
-            if (!addDraftRuntimeBindingActions(items, draft, label, state, actionReadiness, "warning")) {
+            if (!addDraftRuntimeBindingActions(items, draft, label, state, actionReadiness, "warning",
+                    operatorLibraryIdsByOperatorRef)) {
                 items.add(new ActionItem(
                         "warning",
                         "BIND_DRAFT_RUNTIME",
@@ -972,7 +1113,8 @@ public record VisualAssetOverview(
                             "Publish with ackWarnings=true plus actor and reason after reviewing diagnostics.")
             ));
         } else if ("design-only".equals(state)) {
-            addDraftRuntimeBindingActions(items, draft, label, state, actionReadiness, "info");
+            addDraftRuntimeBindingActions(items, draft, label, state, actionReadiness, "info",
+                    operatorLibraryIdsByOperatorRef);
             items.add(new ActionItem(
                     "info",
                     "TRACK_DESIGN_DRAFT",
@@ -988,7 +1130,9 @@ public record VisualAssetOverview(
         }
     }
 
-    private static void addPublicationAction(List<ActionItem> items, VisualGraphPublicationSummary publication) {
+    private static void addPublicationAction(List<ActionItem> items,
+                                             VisualGraphPublicationSummary publication,
+                                             Map<String, String> operatorLibraryIdsByOperatorRef) {
         if (publication == null) {
             return;
         }
@@ -1029,7 +1173,8 @@ public record VisualAssetOverview(
             ));
         } else if (VisualGraphActionReadiness.RUNTIME_BINDING_REQUIRED.equals(actionState)
                 || "runtime-blocked".equals(state)) {
-            if (!addPublicationRuntimeBindingActions(items, publication, label, state, artifactKind, "warning")) {
+            if (!addPublicationRuntimeBindingActions(items, publication, label, state, artifactKind, "warning",
+                    operatorLibraryIdsByOperatorRef)) {
                 items.add(new ActionItem(
                         "warning",
                         "BIND_PUBLICATION_RUNTIME",
@@ -1069,7 +1214,8 @@ public record VisualAssetOverview(
                     "Review frozen actor/reason acknowledgement, diagnostics, and certification before promotion."
             ));
         } else if (VisualGraphPublication.ARTIFACT_DESIGN.equals(artifactKind) || "design-only".equals(state)) {
-            if (!addPublicationRuntimeBindingActions(items, publication, label, state, artifactKind, "info")) {
+            if (!addPublicationRuntimeBindingActions(items, publication, label, state, artifactKind, "info",
+                    operatorLibraryIdsByOperatorRef)) {
                 items.add(new ActionItem(
                         "info",
                         "PLAN_PUBLICATION_RUNTIME_BINDING",
@@ -1090,7 +1236,8 @@ public record VisualAssetOverview(
                                                         String label,
                                                         String readinessState,
                                                         VisualGraphActionReadiness actionReadiness,
-                                                        String severity) {
+                                                        String severity,
+                                                        Map<String, String> operatorLibraryIdsByOperatorRef) {
         List<VisualGraphReadiness.RuntimeBindingRequirement> requirements =
                 runtimeBindingRequirements(draft == null ? null : draft.readiness());
         if (requirements.isEmpty()) {
@@ -1105,6 +1252,7 @@ public record VisualAssetOverview(
                     draft.draftId(),
                     runtimeBindingTargetLabel(label, requirement),
                     requirement.operatorRef(),
+                    operatorLibraryId(requirement.operatorRef(), operatorLibraryIdsByOperatorRef),
                     readinessState,
                     "",
                     requirement.handoffLane(),
@@ -1123,7 +1271,8 @@ public record VisualAssetOverview(
                                                               String label,
                                                               String readinessState,
                                                               String artifactKind,
-                                                              String severity) {
+                                                              String severity,
+                                                              Map<String, String> operatorLibraryIdsByOperatorRef) {
         List<VisualGraphReadiness.RuntimeBindingRequirement> requirements =
                 runtimeBindingRequirements(publication == null ? null : publication.readiness());
         if (requirements.isEmpty()) {
@@ -1139,6 +1288,7 @@ public record VisualAssetOverview(
                     publication.publicationId(),
                     runtimeBindingTargetLabel(label, requirement),
                     requirement.operatorRef(),
+                    operatorLibraryId(requirement.operatorRef(), operatorLibraryIdsByOperatorRef),
                     readinessState,
                     artifactKind,
                     requirement.handoffLane(),
@@ -1152,7 +1302,9 @@ public record VisualAssetOverview(
         return true;
     }
 
-    private static void addCatalogAction(List<ActionItem> items, OperatorDefinition operator) {
+    private static void addCatalogAction(List<ActionItem> items,
+                                         OperatorDefinition operator,
+                                         Map<String, String> operatorLibraryIdsByOperatorRef) {
         if (operator == null || operator.runtimeReadiness() == null) {
             return;
         }
@@ -1163,6 +1315,7 @@ public record VisualAssetOverview(
         String summary = operator.runtimeReadiness().summary().isBlank()
                 ? operator.runtimeReadiness().title()
                 : operator.runtimeReadiness().summary();
+        String operatorLibraryId = operatorLibraryId(operator.operatorRef(), operatorLibraryIdsByOperatorRef);
         switch (state) {
             case "catalog-repair-required" -> items.add(new ActionItem(
                     "",
@@ -1172,6 +1325,7 @@ public record VisualAssetOverview(
                     operator.operatorRef(),
                     label,
                     operator.operatorRef(),
+                    operatorLibraryId,
                     state,
                     "",
                     "",
@@ -1188,6 +1342,7 @@ public record VisualAssetOverview(
                     operator.operatorRef(),
                     label,
                     operator.operatorRef(),
+                    operatorLibraryId,
                     state,
                     "",
                     "",
@@ -1204,6 +1359,7 @@ public record VisualAssetOverview(
                     operator.operatorRef(),
                     label,
                     operator.operatorRef(),
+                    operatorLibraryId,
                     state,
                     "",
                     "",
@@ -1220,6 +1376,7 @@ public record VisualAssetOverview(
                     operator.operatorRef(),
                     label,
                     operator.operatorRef(),
+                    operatorLibraryId,
                     state,
                     "",
                     "",

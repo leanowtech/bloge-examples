@@ -403,6 +403,7 @@ const state = {
     actionType: '',
     targetKind: '',
     operatorRef: '',
+    operatorLibraryId: '',
     offset: 0,
     limit: 12
   },
@@ -789,6 +790,9 @@ function visualAssetOverviewUrl(builder = state.builder) {
   if (actionQuery.operatorRef) {
     params.set('actionOperatorRef', actionQuery.operatorRef);
   }
+  if (actionQuery.operatorLibraryId) {
+    params.set('actionOperatorLibraryId', actionQuery.operatorLibraryId);
+  }
   return `/api/visual/assets/overview?${params.toString()}`;
 }
 
@@ -860,6 +864,7 @@ function normalizeVisualAssetActionQuery(query = {}) {
     actionType: String(query.actionType || '').trim().toUpperCase(),
     targetKind: String(query.targetKind || '').trim().toLowerCase(),
     operatorRef: String(query.operatorRef || '').trim(),
+    operatorLibraryId: String(query.operatorLibraryId || '').trim(),
     offset: Math.max(0, Number(query.offset || 0) || 0),
     limit
   };
@@ -7852,7 +7857,12 @@ function visualAssetOverviewScopeLabel(overview) {
 function visualAssetOverviewShouldShowActionQueue(actionQueue) {
   const query = normalizeVisualAssetActionQuery(state.visualAssetOverviewActionQuery);
   return Number(actionQueue?.unfilteredTotal ?? actionQueue?.total ?? 0) > 0
-    || Boolean(query.severity || query.actionType || query.targetKind || query.offset);
+    || Boolean(query.severity
+      || query.actionType
+      || query.targetKind
+      || query.operatorRef
+      || query.operatorLibraryId
+      || query.offset);
 }
 
 function visualRuntimeBindingRequirementsShouldShow(bindingIndex) {
@@ -7898,7 +7908,7 @@ function visualAssetOverviewActionControls(actionQueue) {
   const offset = Number(actionQueue?.offset ?? query.offset) || 0;
   const pageSize = Number(actionQueue?.itemLimit || query.limit || 12) || 12;
   const hasFilter = Boolean(query.severity || query.actionType || query.targetKind || query.operatorRef
-    || offset || pageSize !== 12);
+    || query.operatorLibraryId || offset || pageSize !== 12);
   const canPrevious = offset > 0;
   const canNext = Boolean(actionQueue?.hasMore);
   return `
@@ -7919,6 +7929,12 @@ function visualAssetOverviewActionControls(actionQueue) {
         <span>${escapeHtml('Target')}</span>
         <select id="visual-asset-action-target-kind" aria-label="Filter asset actions by target kind">
           ${visualAssetActionOptionMarkup(VISUAL_ASSET_ACTION_TARGET_KINDS, query.targetKind)}
+        </select>
+      </label>
+      <label>
+        <span>${escapeHtml('Library')}</span>
+        <select id="visual-asset-action-operator-library-id" aria-label="Filter asset actions by operator library">
+          ${visualRuntimeBindingRawOptionMarkup('All libraries', actionQueue?.operatorLibraryIdCounts, query.operatorLibraryId)}
         </select>
       </label>
       <label>
@@ -8282,12 +8298,13 @@ function visualAssetActionContext(item) {
   const handoff = [operatorPaletteFacetLabel(item.handoffLane), item.handoffTarget]
     .filter(Boolean)
     .join(' ');
+  const library = item.operatorLibraryId ? `library ${item.operatorLibraryId}` : '';
   const operator = item.operatorRef ? `operator ${item.operatorRef}` : '';
   return {
     level: ['error', 'warning', 'info', 'success'].includes(String(item.severity || '').toLowerCase())
       ? String(item.severity).toLowerCase()
       : 'info',
-    message: [action, target, operator, readiness, handoff, item.recommendedAction || item.summary]
+    message: [action, target, library, operator, readiness, handoff, item.recommendedAction || item.summary]
       .filter(Boolean)
       .join(' · ')
   };
@@ -8300,8 +8317,9 @@ function visualAssetOverviewActionLabel(item) {
   const readiness = item?.readinessState ? operatorPaletteFacetLabel(item.readinessState) : '';
   const action = String(item?.actionType || 'REVIEW_ASSET').replaceAll('_', ' ').toLowerCase();
   const handoff = item?.handoffLane ? operatorPaletteFacetLabel(item.handoffLane) : '';
+  const library = item?.operatorLibraryId ? `library ${item.operatorLibraryId}` : '';
   const operator = item?.operatorRef ? `operator ${item.operatorRef}` : '';
-  return [action, target, operator, readiness, handoff]
+  return [action, target, library, operator, readiness, handoff]
     .filter(Boolean)
     .join(' · ');
 }
@@ -8329,6 +8347,13 @@ function attachVisualAssetOverviewActionQueryHandlers(actionQueue) {
   if (operatorRef) {
     operatorRef.onchange = () => updateVisualAssetActionQuery({ operatorRef: operatorRef.value, offset: 0 });
   }
+  const operatorLibraryId = $('visual-asset-action-operator-library-id');
+  if (operatorLibraryId) {
+    operatorLibraryId.onchange = () => updateVisualAssetActionQuery({
+      operatorLibraryId: operatorLibraryId.value,
+      offset: 0
+    });
+  }
   const limit = $('visual-asset-action-limit');
   if (limit) {
     limit.onchange = () => updateVisualAssetActionQuery({ limit: Number(limit.value || 12), offset: 0 });
@@ -8350,6 +8375,7 @@ function attachVisualAssetOverviewActionQueryHandlers(actionQueue) {
       actionType: '',
       targetKind: '',
       operatorRef: '',
+      operatorLibraryId: '',
       offset: 0,
       limit: 12
     });

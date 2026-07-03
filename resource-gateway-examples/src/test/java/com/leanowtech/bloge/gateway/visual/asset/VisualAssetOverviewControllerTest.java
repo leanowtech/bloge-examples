@@ -36,8 +36,8 @@ class VisualAssetOverviewControllerTest {
 
     @Test
     void overviewAggregatesDraftPublicationAndCatalogReadiness() {
-        DefaultVisualOperatorCatalog catalog = VisualCatalogTestSupport.catalogWithLibrary(
-                VisualCatalogTestSupport.designOnlyEligibilityLibrary("integer"));
+        OperatorLibrary library = VisualCatalogTestSupport.designOnlyEligibilityLibrary("integer");
+        DefaultVisualOperatorCatalog catalog = VisualCatalogTestSupport.catalogWithLibrary(library);
         GraphDraftValidator validator = new GraphDraftValidator(catalog);
         InMemoryGraphDraftRepository drafts = new InMemoryGraphDraftRepository();
         InMemoryVisualGraphPublicationRepository publications = new InMemoryVisualGraphPublicationRepository();
@@ -88,6 +88,8 @@ class VisualAssetOverviewControllerTest {
                 .containsEntry("TRACK_SCHEMA_ONLY_OPERATOR", 1);
         assertThat(overview.actionQueue().operatorRefCounts())
                 .containsEntry("risk:eligibility", 3);
+        assertThat(overview.actionQueue().operatorLibraryIdCounts())
+                .containsEntry(library.libraryId(), 3);
         assertThat(overview.actionQueue().items())
                 .extracting(VisualAssetOverview.ActionItem::actionType)
                 .contains("PLAN_DRAFT_RUNTIME_BINDING",
@@ -109,6 +111,7 @@ class VisualAssetOverviewControllerTest {
                 .singleElement()
                 .satisfies(item -> {
                     assertThat(item.operatorRef()).isEqualTo("risk:eligibility");
+                    assertThat(item.operatorLibraryId()).isEqualTo(library.libraryId());
                     assertThat(item.targetLabel()).contains("eligibility");
                     assertThat(item.summary()).contains("executable-lowering").contains("risk:eligibility");
                     assertThat(item.handoffLane()).isEqualTo("operator-platform");
@@ -883,8 +886,8 @@ class VisualAssetOverviewControllerTest {
 
     @Test
     void overviewFiltersAndOffsetsActionQueueForControlPlaneQueries() {
-        DefaultVisualOperatorCatalog catalog = VisualCatalogTestSupport.catalogWithLibrary(
-                VisualCatalogTestSupport.designOnlyEligibilityLibrary("integer"));
+        OperatorLibrary library = VisualCatalogTestSupport.designOnlyEligibilityLibrary("integer");
+        DefaultVisualOperatorCatalog catalog = VisualCatalogTestSupport.catalogWithLibrary(library);
         GraphDraftValidator validator = new GraphDraftValidator(catalog);
         InMemoryGraphDraftRepository drafts = new InMemoryGraphDraftRepository();
         InMemoryVisualGraphPublicationRepository publications = new InMemoryVisualGraphPublicationRepository();
@@ -934,6 +937,18 @@ class VisualAssetOverviewControllerTest {
                 "",
                 "risk:eligibility"
         );
+        VisualAssetOverview byOperatorLibrary = controller.overview(
+                "",
+                "",
+                "",
+                10,
+                0,
+                "",
+                "",
+                "",
+                "",
+                library.libraryId()
+        );
 
         assertThat(operatorOnly.actionQueue().unfilteredTotal()).isEqualTo(unfilteredTotal);
         assertThat(operatorOnly.actionQueue().total()).isEqualTo(1);
@@ -950,11 +965,29 @@ class VisualAssetOverviewControllerTest {
         assertThat(byOperatorRef.actionQueue().unfilteredTotal()).isEqualTo(unfilteredTotal);
         assertThat(byOperatorRef.actionQueue().total()).isEqualTo(3);
         assertThat(byOperatorRef.actionQueue().filter().operatorRef()).isEqualTo("risk:eligibility");
+        assertThat(byOperatorRef.actionQueue().filter().operatorLibraryId()).isEmpty();
         assertThat(byOperatorRef.actionQueue().operatorRefCounts()).containsEntry("risk:eligibility", 3);
+        assertThat(byOperatorRef.actionQueue().operatorLibraryIdCounts()).containsEntry(library.libraryId(), 3);
         assertThat(byOperatorRef.actionQueue().items())
                 .extracting(VisualAssetOverview.ActionItem::operatorRef)
                 .containsOnly("risk:eligibility");
+        assertThat(byOperatorRef.actionQueue().items())
+                .extracting(VisualAssetOverview.ActionItem::operatorLibraryId)
+                .containsOnly(library.libraryId());
         assertThat(byOperatorRef.actionQueue().actionTypeCounts())
+                .containsEntry("PLAN_DRAFT_RUNTIME_BINDING", 1)
+                .containsEntry("PLAN_PUBLICATION_RUNTIME_BINDING", 1)
+                .containsEntry("TRACK_SCHEMA_ONLY_OPERATOR", 1);
+        assertThat(byOperatorLibrary.actionQueue().unfilteredTotal()).isEqualTo(unfilteredTotal);
+        assertThat(byOperatorLibrary.actionQueue().total()).isEqualTo(3);
+        assertThat(byOperatorLibrary.actionQueue().filter().operatorRef()).isEmpty();
+        assertThat(byOperatorLibrary.actionQueue().filter().operatorLibraryId()).isEqualTo(library.libraryId());
+        assertThat(byOperatorLibrary.actionQueue().operatorRefCounts()).containsEntry("risk:eligibility", 3);
+        assertThat(byOperatorLibrary.actionQueue().operatorLibraryIdCounts()).containsEntry(library.libraryId(), 3);
+        assertThat(byOperatorLibrary.actionQueue().items())
+                .extracting(VisualAssetOverview.ActionItem::operatorLibraryId)
+                .containsOnly(library.libraryId());
+        assertThat(byOperatorLibrary.actionQueue().actionTypeCounts())
                 .containsEntry("PLAN_DRAFT_RUNTIME_BINDING", 1)
                 .containsEntry("PLAN_PUBLICATION_RUNTIME_BINDING", 1)
                 .containsEntry("TRACK_SCHEMA_ONLY_OPERATOR", 1);

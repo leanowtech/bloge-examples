@@ -67,6 +67,7 @@ public class VisualAssetOverviewController {
      * @param actionType optional action type filter
      * @param actionTargetKind optional action target kind filter
      * @param actionOperatorRef optional related operator reference filter
+     * @param actionOperatorLibraryId optional related owner operator library id filter
      * @return visual asset overview
      */
     @GetMapping("/overview")
@@ -78,7 +79,8 @@ public class VisualAssetOverviewController {
                                         @RequestParam(defaultValue = "") String actionSeverity,
                                         @RequestParam(defaultValue = "") String actionType,
                                         @RequestParam(defaultValue = "") String actionTargetKind,
-                                        @RequestParam(defaultValue = "") String actionOperatorRef) {
+                                        @RequestParam(defaultValue = "") String actionOperatorRef,
+                                        @RequestParam(defaultValue = "") String actionOperatorLibraryId) {
         List<GraphDraftSummary> draftSummaries = draftSummaries(tenantId, namespace, environment);
         List<VisualGraphPublicationSummary> publicationSummaries =
                 publicationSummaries(tenantId, namespace, environment);
@@ -102,6 +104,7 @@ public class VisualAssetOverviewController {
                 publicationSummaries,
                 operators,
                 diagnostics,
+                catalog.operatorLibraryIdsByOperatorRef(true),
                 tenantId,
                 namespace,
                 environment,
@@ -110,7 +113,8 @@ public class VisualAssetOverviewController {
                 actionSeverity,
                 actionType,
                 actionTargetKind,
-                actionOperatorRef
+                actionOperatorRef,
+                actionOperatorLibraryId
         );
     }
 
@@ -366,6 +370,19 @@ public class VisualAssetOverviewController {
                                  String actionTargetKind) {
         return overview(tenantId, namespace, environment, actionLimit, actionOffset, actionSeverity, actionType,
                 actionTargetKind, "");
+    }
+
+    VisualAssetOverview overview(String tenantId,
+                                 String namespace,
+                                 String environment,
+                                 int actionLimit,
+                                 int actionOffset,
+                                 String actionSeverity,
+                                 String actionType,
+                                 String actionTargetKind,
+                                 String actionOperatorRef) {
+        return overview(tenantId, namespace, environment, actionLimit, actionOffset, actionSeverity, actionType,
+                actionTargetKind, actionOperatorRef, "");
     }
 
     VisualRuntimeBindingRequirements runtimeBindingRequirements(String tenantId,

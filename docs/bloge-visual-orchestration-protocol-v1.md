@@ -1834,10 +1834,11 @@ message handler、webhook、streaming 或 durable capability 暂时不能运行�
 `/api/visual/assets/overview` 会继续消费这些 requirement，把 draft 缺口投影为
 `PLAN_DRAFT_RUNTIME_BINDING`，把 frozen DESIGN publication 缺口投影为
 `PLAN_PUBLICATION_RUNTIME_BINDING`，并把 `nodeId/bindingKind/bindingTarget`
-固化进稳定 `actionKey`，同时透传 `operatorRef` 与
+固化进稳定 `actionKey`，同时透传 `operatorRef`、owner `operatorLibraryId` 与
 `handoffLane/handoffKind/handoffTarget` 作为 runtime-plane 路由提示；overview
-action queue 支持 `actionOperatorRef` 过滤并返回 `operatorRefCounts`，这些字段不是工单状态，
-不引入第二套 workflow 真相源。
+action queue 支持 `actionOperatorRef` / `actionOperatorLibraryId` 过滤并返回
+`operatorRefCounts` / `operatorLibraryIdCounts`，这些字段不是工单状态，不引入第二套
+workflow 真相源。
 如果外部 runtime-plane 团队需要事实清单而不是 overview action recommendation，
 `GET /api/visual/assets/runtime-binding-requirements` 会返回
 `bloge.visualRuntimeBindingRequirements.v1`，按 active draft 和 immutable publication
