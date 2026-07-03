@@ -341,6 +341,7 @@ public record VisualAssetOverview(
             Map<String, Integer> graphReadinessStateCounts,
             Map<String, Integer> publishableArtifactKindCounts,
             Map<String, Integer> sourceKindCounts,
+            Map<String, Integer> operatorLibraryIdCounts,
             Map<String, Integer> loweringModeCounts,
             Map<String, Integer> operatorRuntimeReadinessStateCounts
     ) {
@@ -348,6 +349,7 @@ public record VisualAssetOverview(
             graphReadinessStateCounts = immutableCounts(graphReadinessStateCounts);
             publishableArtifactKindCounts = immutableCounts(publishableArtifactKindCounts);
             sourceKindCounts = immutableCounts(sourceKindCounts);
+            operatorLibraryIdCounts = immutableCounts(operatorLibraryIdCounts);
             loweringModeCounts = immutableCounts(loweringModeCounts);
             operatorRuntimeReadinessStateCounts = immutableCounts(operatorRuntimeReadinessStateCounts);
         }
@@ -359,6 +361,7 @@ public record VisualAssetOverview(
             Map<String, Integer> graphReadiness = new LinkedHashMap<>();
             Map<String, Integer> publishableKinds = new LinkedHashMap<>();
             Map<String, Integer> sourceKinds = new LinkedHashMap<>();
+            Map<String, Integer> operatorLibraries = new LinkedHashMap<>();
             Map<String, Integer> loweringModes = new LinkedHashMap<>();
             Map<String, Integer> runtimeReadiness = new LinkedHashMap<>();
             int activeCount = 0;
@@ -404,6 +407,7 @@ public record VisualAssetOverview(
                     }
                 }
                 mergeNormalized(sourceKinds, summary.sourceKindCounts());
+                mergeText(operatorLibraries, summary.operatorLibraryIdCounts());
                 mergeNormalized(loweringModes, summary.loweringModeCounts());
                 mergeNormalized(runtimeReadiness, summary.runtimeReadinessStateCounts());
             }
@@ -426,6 +430,7 @@ public record VisualAssetOverview(
                     graphReadiness,
                     publishableKinds,
                     sourceKinds,
+                    operatorLibraries,
                     loweringModes,
                     runtimeReadiness
             );
@@ -458,6 +463,7 @@ public record VisualAssetOverview(
             Map<String, Integer> artifactKindCounts,
             Map<String, Integer> graphReadinessStateCounts,
             Map<String, Integer> sourceKindCounts,
+            Map<String, Integer> operatorLibraryIdCounts,
             Map<String, Integer> loweringModeCounts,
             Map<String, Integer> operatorRuntimeReadinessStateCounts
     ) {
@@ -465,6 +471,7 @@ public record VisualAssetOverview(
             artifactKindCounts = immutableCounts(artifactKindCounts);
             graphReadinessStateCounts = immutableCounts(graphReadinessStateCounts);
             sourceKindCounts = immutableCounts(sourceKindCounts);
+            operatorLibraryIdCounts = immutableCounts(operatorLibraryIdCounts);
             loweringModeCounts = immutableCounts(loweringModeCounts);
             operatorRuntimeReadinessStateCounts = immutableCounts(operatorRuntimeReadinessStateCounts);
         }
@@ -476,6 +483,7 @@ public record VisualAssetOverview(
             Map<String, Integer> artifactKinds = new LinkedHashMap<>();
             Map<String, Integer> graphReadiness = new LinkedHashMap<>();
             Map<String, Integer> sourceKinds = new LinkedHashMap<>();
+            Map<String, Integer> operatorLibraries = new LinkedHashMap<>();
             Map<String, Integer> loweringModes = new LinkedHashMap<>();
             Map<String, Integer> runtimeReadiness = new LinkedHashMap<>();
             int executableArtifactCount = 0;
@@ -518,6 +526,7 @@ public record VisualAssetOverview(
                 VisualGraphReadiness readiness = summary.readiness();
                 incrementNormalized(graphReadiness, readiness == null ? "" : readiness.state());
                 mergeNormalized(sourceKinds, summary.sourceKindCounts());
+                mergeText(operatorLibraries, summary.operatorLibraryIdCounts());
                 mergeNormalized(loweringModes, summary.loweringModeCounts());
                 mergeNormalized(runtimeReadiness, summary.runtimeReadinessStateCounts());
             }
@@ -540,6 +549,7 @@ public record VisualAssetOverview(
                     artifactKinds,
                     graphReadiness,
                     sourceKinds,
+                    operatorLibraries,
                     loweringModes,
                     runtimeReadiness
             );
@@ -1456,6 +1466,19 @@ public record VisualAssetOverview(
         }
         for (Map.Entry<String, Integer> entry : source.entrySet()) {
             String key = normalizeFacetValue(entry.getKey());
+            int value = entry.getValue() == null ? 0 : entry.getValue();
+            if (!key.isBlank() && value != 0) {
+                target.merge(key, value, Integer::sum);
+            }
+        }
+    }
+
+    private static void mergeText(Map<String, Integer> target, Map<String, Integer> source) {
+        if (source == null) {
+            return;
+        }
+        for (Map.Entry<String, Integer> entry : source.entrySet()) {
+            String key = normalizeTextValue(entry.getKey());
             int value = entry.getValue() == null ? 0 : entry.getValue();
             if (!key.isBlank() && value != 0) {
                 target.merge(key, value, Integer::sum);

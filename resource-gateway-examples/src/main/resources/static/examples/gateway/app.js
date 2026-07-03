@@ -8971,6 +8971,7 @@ function renderDraftDependencyReport() {
   ].map(([label, value]) => `<span><strong>${escapeHtml(value)}</strong> ${escapeHtml(label)}</span>`).join('');
   const readinessRows = draftDependencyCountRows(report.runtimeReadinessStateCounts || {}, 'readiness');
   const sourceRows = draftDependencyCountRows(report.sourceKindCounts || {}, 'source');
+  const libraryRows = draftDependencyCountRows(report.operatorLibraryIdCounts || {}, 'library');
   const operatorRows = draftDependencyOperatorRows(report);
   const nodeRows = draftDependencyNodeRows(report);
   target.innerHTML = `
@@ -8980,7 +8981,9 @@ function renderDraftDependencyReport() {
     </div>
     <div class="library-impact-risk-summary">${escapeHtml(draftDependencySummary(report))}</div>
     <div class="library-impact-stats">${stats}</div>
-    ${readinessRows || sourceRows ? `<div class="library-impact-codes">${readinessRows}${sourceRows}</div>` : ''}
+    ${readinessRows || sourceRows || libraryRows
+      ? `<div class="library-impact-codes">${readinessRows}${sourceRows}${libraryRows}</div>`
+      : ''}
     ${operatorRows ? `<div class="library-impact-risks">${operatorRows}</div>` : ''}
     ${nodeRows ? `<div class="library-impact-risks">${nodeRows}</div>` : ''}
   `;
@@ -9048,9 +9051,13 @@ function draftDependencyCountRows(counts, label) {
     .map(([key, count]) => `
       <div class="library-impact-code ${escapeHtml(draftDependencyCountLevel(label, key))}">
         <strong>${escapeHtml(count)}</strong>
-        <span>${escapeHtml(`${operatorPaletteFacetLabel(key)} ${label}`)}</span>
+        <span>${escapeHtml(`${draftDependencyCountLabel(label, key)} ${label}`)}</span>
       </div>
     `).join('');
+}
+
+function draftDependencyCountLabel(label, key) {
+  return label === 'library' ? String(key || '') : operatorPaletteFacetLabel(key);
 }
 
 function draftDependencyCountLevel(label, key) {
@@ -9182,6 +9189,7 @@ function draftDependencyFingerprintLevel(fingerprintState, runtimeReadinessState
 function draftDependencyOperatorSummary(operator) {
   return [
     operatorPaletteFacetLabel(operator.sourceKind || 'unknown'),
+    draftDependencyOperatorLibraryLabel(operator.operatorLibraryId),
     operatorPaletteFacetLabel(operator.loweringMode || 'native'),
     operatorPaletteFacetLabel(operator.runtimeReadinessState || 'UNKNOWN'),
     draftDependencyFingerprintLabel(operator.fingerprintState),
@@ -9215,10 +9223,16 @@ function draftDependencyNodeSummary(node) {
     edges.length ? `edge from: ${edges.join(', ')}` : '',
     bindingTargets.length ? `binding to: ${bindingTargets.join(', ')}` : '',
     edgeTargets.length ? `edge to: ${edgeTargets.join(', ')}` : '',
+    draftDependencyOperatorLibraryLabel(node?.operatorLibraryId),
     draftDependencyFingerprintLabel(node?.fingerprintState),
     draftDependencyPolicyViolationLabel(node)
   ].filter(Boolean);
   return parts.join(' · ');
+}
+
+function draftDependencyOperatorLibraryLabel(operatorLibraryId) {
+  const value = String(operatorLibraryId || '').trim();
+  return value ? `library ${value}` : '';
 }
 
 function draftDependencyPolicyViolationLabel(row) {
@@ -9806,6 +9820,7 @@ function renderPublicationDependencyReport() {
   ].map(([label, value]) => `<span><strong>${escapeHtml(value)}</strong> ${escapeHtml(label)}</span>`).join('');
   const readinessRows = draftDependencyCountRows(report.runtimeReadinessStateCounts || {}, 'readiness');
   const sourceRows = draftDependencyCountRows(report.sourceKindCounts || {}, 'source');
+  const libraryRows = draftDependencyCountRows(report.operatorLibraryIdCounts || {}, 'library');
   const operatorRows = publicationDependencyOperatorRows(report);
   const nodeRows = publicationDependencyNodeRows(report);
   target.hidden = false;
@@ -9817,7 +9832,9 @@ function renderPublicationDependencyReport() {
     </div>
     <div class="library-impact-risk-summary">${escapeHtml(publicationDependencySummary(report))}</div>
     <div class="library-impact-stats">${stats}</div>
-    ${readinessRows || sourceRows ? `<div class="library-impact-codes">${readinessRows}${sourceRows}</div>` : ''}
+    ${readinessRows || sourceRows || libraryRows
+      ? `<div class="library-impact-codes">${readinessRows}${sourceRows}${libraryRows}</div>`
+      : ''}
     ${operatorRows ? `<div class="library-impact-risks">${operatorRows}</div>` : ''}
     ${nodeRows ? `<div class="library-impact-risks">${nodeRows}</div>` : ''}
   `;
@@ -21994,6 +22011,11 @@ function normalizeConnectionCheckSummary(summary, payload, diagnostics, validati
       runtimeBindingRequirements,
       'sourceKind'
     ),
+    operatorLibraryIdCounts: normalizeConnectionRuntimeBindingCountMap(
+      source.operatorLibraryIdCounts,
+      runtimeBindingRequirements,
+      'operatorLibraryId'
+    ),
     loweringModeCounts: normalizeConnectionRuntimeBindingCountMap(
       source.loweringModeCounts,
       runtimeBindingRequirements,
@@ -22036,7 +22058,11 @@ function connectionRuntimeBindingSummary(summary) {
   const kindSummary = kindEntries.length
     ? ` (${kindEntries.map(([kind, value]) => `${operatorPaletteFacetLabel(kind)}: ${value}`).join(', ')})`
     : '';
-  return `${count} runtime binding requirement${count === 1 ? '' : 's'}${kindSummary} before executable promotion.`;
+  const libraryEntries = Object.entries(normalizeCountMap(summary?.operatorLibraryIdCounts));
+  const librarySummary = libraryEntries.length
+    ? ` ${libraryEntries.map(([libraryId, value]) => `${libraryId} library: ${value}`).join(', ')}.`
+    : '';
+  return `${count} runtime binding requirement${count === 1 ? '' : 's'}${kindSummary} before executable promotion.${librarySummary}`;
 }
 
 function normalizeStringArray(value) {

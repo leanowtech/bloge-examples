@@ -106,6 +106,7 @@ public record VisualConnectionCheckResult(
      * @param handoffKindCounts runtime binding requirement counts by handoff work kind
      * @param handoffTargetCounts runtime binding requirement counts by runtime-plane routing target
      * @param sourceKindCounts runtime binding requirement counts by operator source kind
+     * @param operatorLibraryIdCounts runtime binding requirement counts by owner operator library id
      * @param loweringModeCounts runtime binding requirement counts by lowering mode
      * @param readinessStateCounts runtime binding requirement counts by node readiness state
      * @param message human-readable decision summary
@@ -140,6 +141,7 @@ public record VisualConnectionCheckResult(
             Map<String, Integer> handoffKindCounts,
             Map<String, Integer> handoffTargetCounts,
             Map<String, Integer> sourceKindCounts,
+            Map<String, Integer> operatorLibraryIdCounts,
             Map<String, Integer> loweringModeCounts,
             Map<String, Integer> readinessStateCounts,
             String message
@@ -175,6 +177,7 @@ public record VisualConnectionCheckResult(
             handoffKindCounts = immutableCounts(handoffKindCounts);
             handoffTargetCounts = immutableCounts(handoffTargetCounts);
             sourceKindCounts = immutableCounts(sourceKindCounts);
+            operatorLibraryIdCounts = immutableCounts(operatorLibraryIdCounts);
             loweringModeCounts = immutableCounts(loweringModeCounts);
             readinessStateCounts = immutableCounts(readinessStateCounts);
             message = message == null ? "" : message;
@@ -195,6 +198,18 @@ public record VisualConnectionCheckResult(
                                                  VisualValidationResult validation,
                                                  List<String> replacedInputKeys,
                                                  List<String> replacedEdgeIds) {
+            return from(accepted, edge, bindingKey, diagnostics, validation, replacedInputKeys, replacedEdgeIds,
+                    Map.of());
+        }
+
+        static VisualConnectionCheckSummary from(boolean accepted,
+                                                 GraphDraft.DraftEdge edge,
+                                                 String bindingKey,
+                                                 List<VisualDiagnostic> diagnostics,
+                                                 VisualValidationResult validation,
+                                                 List<String> replacedInputKeys,
+                                                 List<String> replacedEdgeIds,
+                                                 Map<String, String> operatorLibraryIdsByOperatorRef) {
             List<VisualDiagnostic> safeDiagnostics = diagnostics == null ? List.of() : diagnostics;
             VisualValidationResult candidate = validation == null
                     ? new VisualValidationResult(false, safeDiagnostics)
@@ -249,6 +264,8 @@ public record VisualConnectionCheckResult(
                     countBy(runtimeBindingRequirements, VisualGraphReadiness.RuntimeBindingRequirement::handoffKind),
                     countBy(runtimeBindingRequirements, VisualGraphReadiness.RuntimeBindingRequirement::handoffTarget),
                     countBy(runtimeBindingRequirements, VisualGraphReadiness.RuntimeBindingRequirement::sourceKind),
+                    countBy(runtimeBindingRequirements,
+                            requirement -> operatorLibraryId(requirement, operatorLibraryIdsByOperatorRef)),
                     countBy(runtimeBindingRequirements, VisualGraphReadiness.RuntimeBindingRequirement::loweringMode),
                     countBy(runtimeBindingRequirements, VisualGraphReadiness.RuntimeBindingRequirement::state),
                     summaryMessage(accepted, safeDiagnostics, graphStillInvalid, runtimeBindingRequirements.size())
@@ -306,6 +323,15 @@ public record VisualConnectionCheckResult(
                             requirement.bindingTarget(),
                             ""))
                     .toList();
+        }
+
+        private static String operatorLibraryId(VisualGraphReadiness.RuntimeBindingRequirement requirement,
+                                                Map<String, String> operatorLibraryIdsByOperatorRef) {
+            if (requirement == null || operatorLibraryIdsByOperatorRef == null) {
+                return "";
+            }
+            String value = operatorLibraryIdsByOperatorRef.get(requirement.operatorRef());
+            return value == null ? "" : value;
         }
 
         private static Map<String, Integer> countBy(

@@ -106,6 +106,7 @@ class VisualConnectionCheckServiceTest {
         assertThat(result.summary().handoffKindCounts()).containsEntry("operator-implementation", 1);
         assertThat(result.summary().handoffTargetCounts()).containsEntry("risk:eligibility", 1);
         assertThat(result.summary().sourceKindCounts()).containsEntry("user-library", 1);
+        assertThat(result.summary().operatorLibraryIdCounts()).containsEntry("risk-policy-design", 1);
         assertThat(result.summary().loweringModeCounts()).containsEntry("design", 1);
         assertThat(result.summary().readinessStateCounts()).containsEntry("design-only", 1);
         assertThat(result.summary().message())
@@ -115,6 +116,7 @@ class VisualConnectionCheckServiceTest {
             assertThat(candidate.summary().runtimeBindingRequirementCount()).isEqualTo(1);
             assertThat(candidate.summary().bindingKindCounts()).containsEntry("executable-lowering", 1);
             assertThat(candidate.summary().handoffTargetCounts()).containsEntry("risk:eligibility", 1);
+            assertThat(candidate.summary().operatorLibraryIdCounts()).containsEntry("risk-policy-design", 1);
         });
     }
 

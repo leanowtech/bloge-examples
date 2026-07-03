@@ -1622,14 +1622,17 @@ GET /api/visual/drafts/{draftId}/dependencies
 该端点返回 `bloge.visualGraphDraftDependencies.v1`，用于外部控制面、迁移审阅和
 后续浏览器依赖面板。报告按当前 catalog 解析 draft 中的 operatorRef，输出
 distinct operator dependencies、每个节点的 binding/edge upstream lineage、
-binding/edge downstream lineage、source kind / lowering mode / runtime readiness 计数，
+binding/edge downstream lineage、source kind / operator library owner / lowering mode / runtime readiness 计数，
 以及每个节点 saved fingerprint 与 current catalog fingerprint 的状态：
 `current`、`missing-snapshot`、`drifted`、`catalog-missing` 或
 `scope-mismatch`。报告同时输出 `missingOperatorCount`、
 `scopeMismatchOperatorCount`，并在 operator/node 行暴露 `scopeAllowed` 和
-`policyViolations`。当目标环境 catalog 缺少当前 operatorRef 时，报告会回退到
-draft 保存时冻结的 operator definition snapshot 提供 source/lowering 审阅上下文，
-但仍把运行状态标记为 `CATALOG_MISSING`，避免跨环境迁移或坏版本导入时把
+`policyViolations`。对于 imported operator，报告还会在顶层
+`operatorLibraryIdCounts`、operator 行和 node 行暴露 `operatorLibraryId`，让 stored
+draft、draft bundle、import result 和 publication dependency report 能直接按用户导入库归属路由修复工作。
+当目标环境 catalog 缺少当前 operatorRef 时，报告会回退到
+draft 保存时冻结的 operator definition snapshot 提供 source/lowering/operator-library owner
+审阅上下文，但仍把运行状态标记为 `CATALOG_MISSING`，避免跨环境迁移或坏版本导入时把
 schema-only 设计资产误判为可执行图。当 operatorRef 在全局 catalog 存在、但被
 draft 的 tenant/namespace/environment policy 排除时，报告会标记
 `scope-mismatch` / `SCOPE_MISMATCH`；这表示需要修复草稿 scope 或算子库 policy，
@@ -2017,6 +2020,7 @@ binding 必须有可见 data edge。
     "handoffKindCounts": {},
     "handoffTargetCounts": {},
     "sourceKindCounts": {},
+    "operatorLibraryIdCounts": {},
     "loweringModeCounts": {},
     "readinessStateCounts": {},
     "message": "Connection accepted; graph still has validation issues."
@@ -2053,7 +2057,7 @@ candidate 一致。
 当预检后的 candidate draft 是 schema-valid 但仍不能执行时，`summary` 会从
 `validation.readiness.runtimeBindingRequirements[]` 派生
 `runtimeBindingRequirementCount`、`runtimeBindingRequirementKeys[]` 以及
-binding/handoff/source/lowering/readiness 分布计数。这里的 key 使用
+binding/handoff/owner/source/lowering/readiness 分布计数。这里的 key 使用
 `RUNTIME_BINDING|connection-preview||{nodeId}|{bindingKind}|{bindingTarget}|`
 格式，只保证同一次候选/预检窗口内可去重、可提示；保存为 draft 或冻结为 publication
 后，应以 `/api/visual/assets/runtime-binding-requirements` 返回的 asset-scoped
@@ -2144,6 +2148,7 @@ draft，不产生新 edge，也不成为新的 schema 判断来源。
         "handoffKindCounts": { "operator-implementation": 1 },
         "handoffTargetCounts": { "risk:eligibility": 1 },
         "sourceKindCounts": { "user-library": 1 },
+        "operatorLibraryIdCounts": { "risk-policy": 1 },
         "loweringModeCounts": { "design": 1 },
         "readinessStateCounts": { "design-only": 1 },
         "message": "Connection accepted; executable promotion needs runtime binding."
@@ -2183,7 +2188,7 @@ surface 或某个精确 target endpoint，而不必拉完整候选集合。`targ
 first diagnostic code 和 replacement counts 不应从自然语言 message 里反解析。
 当候选连接会形成 schema-valid 但 non-executable 的 design-only/runtime-blocked
 candidate draft 时，候选内嵌的 `summary` 同样携带 preview-scoped runtime binding
-requirement count/key 和 routing counts；浏览器 hover、connectability inspector
+requirement count/key、owner counts 和 routing counts；浏览器 hover、connectability inspector
 或外部审阅面板可以据此提示“可连接、可保存、可 DESIGN 发布，但 EXECUTABLE promotion
 需要 runtime binding”，而不是把它误判为普通成功连接。
 客户端仍必须在真正

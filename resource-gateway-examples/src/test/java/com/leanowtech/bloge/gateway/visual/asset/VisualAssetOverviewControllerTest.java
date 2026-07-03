@@ -64,16 +64,23 @@ class VisualAssetOverviewControllerTest {
         assertThat(overview.drafts().validCount()).isEqualTo(1);
         assertThat(overview.drafts().graphReadinessStateCounts()).containsEntry("design-only", 1);
         assertThat(overview.drafts().publishableArtifactKindCounts()).containsEntry("DESIGN", 1);
+        assertThat(overview.drafts().operatorLibraryIdCounts()).containsEntry(library.libraryId(), 1);
         assertThat(overview.drafts().operatorRuntimeReadinessStateCounts()).containsEntry("design-only", 1);
         assertThat(GraphDraftSummary.from(drafts.history().getFirst(), draft, validation, dependencyReport)
                 .actionReadiness().state())
                 .isEqualTo("design-artifact-ready");
+        assertThat(GraphDraftSummary.from(drafts.history().getFirst(), draft, validation, dependencyReport)
+                .operatorLibraryIdCounts())
+                .containsEntry(library.libraryId(), 1);
         assertThat(overview.publications().total()).isEqualTo(1);
         assertThat(overview.publications().designArtifactCount()).isEqualTo(1);
         assertThat(overview.publications().artifactKindCounts()).containsEntry("DESIGN", 1);
         assertThat(overview.publications().graphReadinessStateCounts()).containsEntry("design-only", 1);
+        assertThat(overview.publications().operatorLibraryIdCounts()).containsEntry(library.libraryId(), 1);
         assertThat(VisualGraphPublicationSummary.from(publication).actionReadiness().state())
                 .isEqualTo("design-artifact-ready");
+        assertThat(VisualGraphPublicationSummary.from(publication).operatorLibraryIdCounts())
+                .containsEntry(library.libraryId(), 1);
         assertThat(overview.catalog().totalOperators()).isGreaterThanOrEqualTo(1);
         assertThat(overview.catalog().facets().runtimeReadinessStates()).containsEntry("design-only", 1);
         assertThat(overview.actionQueue().itemLimit()).isEqualTo(VisualAssetOverview.DEFAULT_ACTION_ITEM_LIMIT);

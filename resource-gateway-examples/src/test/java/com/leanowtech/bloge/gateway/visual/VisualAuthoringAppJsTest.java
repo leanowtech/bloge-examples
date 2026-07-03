@@ -251,9 +251,11 @@ class VisualAuthoringAppJsTest {
                 .contains("runtimeBindingRequirementCount: numericCount(")
                 .contains("runtimeBindingRequirementKeys: normalizeStringArray(source.runtimeBindingRequirementKeys)")
                 .contains("bindingKindCounts: normalizeConnectionRuntimeBindingCountMap(")
+                .contains("operatorLibraryIdCounts: normalizeConnectionRuntimeBindingCountMap(")
                 .contains("replacedInputKeys: normalizeStringArray(source.replacedInputKeys)")
                 .contains("replacedEdgeIds: normalizeStringArray(source.replacedEdgeIds)")
                 .contains("function connectionRuntimeBindingSummary(summary)")
+                .contains("summary?.operatorLibraryIdCounts")
                 .contains("function connectionAppliedMessage(source, target, serverCheck = null)")
                 .contains("function clearConnectionReplacementInputs(node, summary = null)")
                 .contains("applyConnection(source, checkedTarget, serverCheck)")
@@ -401,6 +403,10 @@ class VisualAuthoringAppJsTest {
                 .contains("/api/visual/drafts/${encodeURIComponent(state.currentDraftId)}/dependencies")
                 .contains("function renderDraftDependencyReport()")
                 .contains("Draft Dependencies")
+                .contains("operatorLibraryIdCounts")
+                .contains("function draftDependencyCountLabel(label, key)")
+                .contains("function draftDependencyOperatorLibraryLabel(operatorLibraryId)")
+                .contains("library ${value}")
                 .contains("id=\"validate-draft-bundle\"")
                 .contains("async function validateDraftBundle()")
                 .contains("fetch('/api/visual/drafts/validate-bundle'")
@@ -3648,6 +3654,7 @@ operators:
                       handoffKindCounts: { 'operator-implementation': 1 },
                       handoffTargetCounts: { 'risk:audit': 1 },
                       sourceKindCounts: { 'user-library': 1 },
+                      operatorLibraryIdCounts: { 'risk-policy': 1 },
                       loweringModeCounts: { design: 1 },
                       readinessStateCounts: { 'design-only': 1 }
                     },
@@ -4519,7 +4526,8 @@ operators:
                   ['connection candidates runtime binding count', serverCandidateResult.candidates[0].summary.runtimeBindingRequirementCount, 1],
                   ['connection candidates runtime binding key', serverCandidateResult.candidates[0].summary.runtimeBindingRequirementKeys[0], 'RUNTIME_BINDING|connection-preview||auditNode|executable-lowering|risk:audit|'],
                   ['connection candidates runtime binding kind count', serverCandidateResult.candidates[0].summary.bindingKindCounts['executable-lowering'], 1],
-                  ['connection candidates runtime binding summary', context.connectionRuntimeBindingSummary(serverCandidateResult.candidates[0].summary), '1 runtime binding requirement (Executable Lowering: 1) before executable promotion.'],
+                  ['connection candidates runtime binding library count', serverCandidateResult.candidates[0].summary.operatorLibraryIdCounts['risk-policy'], 1],
+                  ['connection candidates runtime binding summary', context.connectionRuntimeBindingSummary(serverCandidateResult.candidates[0].summary), '1 runtime binding requirement (Executable Lowering: 1) before executable promotion. risk-policy library: 1.'],
                   ['connection candidates explanation diagnostic code', serverCandidateResult.candidates[1].explanation.firstDiagnosticCode, 'visual.binding.typeMismatch'],
                   ['connection candidates explanation replacement', serverCandidateResult.candidates[1].explanation.replacementSummary, 'Replaces 1 binding.'],
                   ['connection candidates target port filter', unionCandidateResult.targetPort, 'inputs'],

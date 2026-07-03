@@ -158,7 +158,7 @@ remote-worker, AI-tool, event/message/webhook, streaming, durable, or unresolved
 native operators need runtime-plane binding before executable graph use; those
 operator-level requirement kinds, targets, and handoff lane/kind/target routing
 metadata plus stable `requirementKey` / `runtimeBindingRequirementKeys` and
-binding/handoff/source/lowering/readiness count maps are derived by the same
+binding/handoff/owner/source/lowering/readiness count maps are derived by the same
 server planner later used by graph readiness and workspace runtime-binding
 indexes, so large operator-library imports can be routed before authors create
 draft graphs,
@@ -570,9 +570,9 @@ whether the graph as a whole remains repair-required, design-only, or executable
 The same response includes a `bloge.visualConnectionCheckSummary.v1` summary
 with the canonical binding key, binding/write shape, connection-scoped
 diagnostic counts, replaced input binding keys, replaced edge ids, candidate
-readiness state, `graphStillInvalid`, and runtime-binding requirement count,
-preview-scoped keys, and binding/handoff/source/lowering/readiness distribution
-counts, so large canvases and external governance consoles can route connection
+readiness state, `graphStillInvalid`, runtime-binding requirement count,
+preview-scoped keys, and binding/handoff/owner/source/lowering/readiness
+distribution counts, so large canvases and external governance consoles can route connection
 decisions and design-only runtime handoff hints without parsing diagnostic
 prose. The browser applies those replacement keys before writing the accepted
 connection, which keeps root/field rebinding behavior aligned with the
@@ -727,7 +727,7 @@ panel calls the draft revision diff API to show a latest-to-selected
 changes, including risk, summary, and node/edge add/remove/change counts before
 preview or restore. Stored drafts also expose
 `bloge.visualGraphDraftDependencies.v1`, a current-catalog dependency report
-that groups operatorRefs, node lineage, source/lowering/readiness counts, and
+that groups operatorRefs, owner operator-library counts, node lineage, source/lowering/readiness counts, and
 fingerprint states, while falling back to saved operator snapshots when a draft
 is imported into an environment where the current catalog is missing an
 operator and flagging scope-mismatch dependencies when an operator exists but is
@@ -1552,7 +1552,7 @@ Seven `.bloge` graphs live in `src/main/resources/bloge/gateway/`:
 | `ResourceDesignContractValidator` | Blocks invalid resource authoring schemas and raw secret examples before resource contracts enter the virtual operator catalog |
 | `OperatorLibrary` | User-provided operator catalog bundle with schema-aware `OperatorDefinition` entries |
 | `OperatorLibraryExportBundle` | Portable operator-library package with source identity, current library snapshot, latest registry revision evidence, and export-time validation/profile/impact/readiness result |
-| `OperatorLibraryImportReadiness` | Server-derived operator-library import decision summary, separating importable/design-only/runtime-binding/governance/force/catalog-repair states from raw diagnostics and listing per-operator import-time runtime binding requirements with stable keys plus binding/handoff/source/lowering/readiness distribution counts |
+| `OperatorLibraryImportReadiness` | Server-derived operator-library import decision summary, separating importable/design-only/runtime-binding/governance/force/catalog-repair states from raw diagnostics and listing per-operator import-time runtime binding requirements with stable keys plus binding/handoff/owner/source/lowering/readiness distribution counts |
 | `OperatorLibraryImportResult` | Target-environment result for importing an operator-library export bundle, including source identity, import decision, target latest revision, and target preflight validation/profile/impact/readiness evidence |
 | `OperatorLibraryRevision` | Immutable create/replace/delete/restore audit snapshot for user-provided operator-library registry changes |
 | `DatabaseOperatorLibraryRegistry` | H2-backed user operator-library registry with current catalog storage plus immutable revision snapshots, so imported operator catalogs and their governance history survive restart |
@@ -1562,7 +1562,7 @@ Seven `.bloge` graphs live in `src/main/resources/bloge/gateway/`:
 | `GraphDraft` | Editable canvas graph model: input schema, nodes, port-aware bindings, edges, layout, output selection, operator fingerprint snapshots, and node-level operator definition snapshots |
 | `GraphDraftHistorySummary` | Lightweight active/deleted draft history index entry for browser and external recovery control planes, including latest revision actor/source/summary/reason |
 | `GraphDraftDiff` | Machine-readable graph draft revision diff with graph/node/edge change surfaces, node and edge add/remove/change counts, and risk-classified review summaries |
-| `GraphDraftDependencyReport` | Machine-readable dependency report used for stored drafts, migration bundles, import results, and frozen publications, with distinct operatorRef usage, per-node binding/edge upstream and downstream lineage, source/lowering/readiness counts, saved-vs-current/scope-mismatch fingerprint state, and scope policy diagnostics |
+| `GraphDraftDependencyReport` | Machine-readable dependency report used for stored drafts, migration bundles, import results, and frozen publications, with distinct operatorRef usage, owner operator-library counts, per-node binding/edge upstream and downstream lineage, source/lowering/readiness counts, saved-vs-current/scope-mismatch fingerprint state, and scope policy diagnostics |
 | `GraphDraftRevisionRestoreRequest` | Governed restore request for turning one immutable draft revision into a new latest revision with optimistic locking and actor/source/summary/reason audit metadata |
 | `VisualGraphReadiness` | Server-derived graph runtime/design readiness (`bloge.visualGraphReadiness.v1`) with node readiness rows and runtime binding requirements for schema-valid but non-executable design artifacts |
 | `VisualGraphActionReadiness` | Server-derived graph action gate summary (`bloge.visualGraphActionReadiness.v1`) for compile, run, DESIGN publication, EXECUTABLE publication, warning acknowledgement, and governance evidence requirements |

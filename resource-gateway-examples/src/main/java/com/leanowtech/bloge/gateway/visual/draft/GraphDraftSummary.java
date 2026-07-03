@@ -46,6 +46,7 @@ import java.util.Map;
  * @param driftedFingerprintCount number of nodes whose saved fingerprint drifted
  * @param missingFingerprintCount number of nodes without a saved fingerprint
  * @param sourceKindCounts node counts by operator source kind
+ * @param operatorLibraryIdCounts node counts by owner operator library id
  * @param loweringModeCounts node counts by operator lowering mode
  * @param runtimeReadinessStateCounts node counts by operator runtime readiness state
  */
@@ -79,6 +80,7 @@ public record GraphDraftSummary(
         int driftedFingerprintCount,
         int missingFingerprintCount,
         Map<String, Integer> sourceKindCounts,
+        Map<String, Integer> operatorLibraryIdCounts,
         Map<String, Integer> loweringModeCounts,
         Map<String, Integer> runtimeReadinessStateCounts
 ) {
@@ -104,6 +106,9 @@ public record GraphDraftSummary(
                 ? derivedActionReadiness(valid, diagnosticCount, errorCount, warningCount, readiness)
                 : actionReadiness;
         sourceKindCounts = sourceKindCounts == null ? Map.of() : new LinkedHashMap<>(sourceKindCounts);
+        operatorLibraryIdCounts = operatorLibraryIdCounts == null
+                ? Map.of()
+                : new LinkedHashMap<>(operatorLibraryIdCounts);
         loweringModeCounts = loweringModeCounts == null ? Map.of() : new LinkedHashMap<>(loweringModeCounts);
         runtimeReadinessStateCounts = runtimeReadinessStateCounts == null
                 ? Map.of()
@@ -164,6 +169,7 @@ public record GraphDraftSummary(
                 safeDependencies.driftedFingerprintCount(),
                 safeDependencies.missingFingerprintCount(),
                 safeDependencies.sourceKindCounts(),
+                safeDependencies.operatorLibraryIdCounts(),
                 safeDependencies.loweringModeCounts(),
                 safeDependencies.runtimeReadinessStateCounts()
         );

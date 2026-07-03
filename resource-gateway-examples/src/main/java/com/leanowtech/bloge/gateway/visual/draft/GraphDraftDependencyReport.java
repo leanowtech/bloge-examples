@@ -35,6 +35,7 @@ import java.util.Set;
  * @param driftedFingerprintCount number of nodes whose saved fingerprint differs from the current catalog
  * @param missingFingerprintCount number of nodes without a saved fingerprint
  * @param sourceKindCounts node counts by operator source kind
+ * @param operatorLibraryIdCounts node counts by owner operator library id
  * @param loweringModeCounts node counts by operator lowering mode
  * @param runtimeReadinessStateCounts node counts by operator runtime readiness state
  * @param operators distinct operator dependencies used by the draft
@@ -56,6 +57,7 @@ public record GraphDraftDependencyReport(
         int driftedFingerprintCount,
         int missingFingerprintCount,
         Map<String, Integer> sourceKindCounts,
+        Map<String, Integer> operatorLibraryIdCounts,
         Map<String, Integer> loweringModeCounts,
         Map<String, Integer> runtimeReadinessStateCounts,
         List<OperatorDependency> operators,
@@ -74,6 +76,9 @@ public record GraphDraftDependencyReport(
         namespace = namespace == null ? "" : namespace;
         environment = environment == null ? "" : environment;
         sourceKindCounts = sourceKindCounts == null ? Map.of() : new LinkedHashMap<>(sourceKindCounts);
+        operatorLibraryIdCounts = operatorLibraryIdCounts == null
+                ? Map.of()
+                : new LinkedHashMap<>(operatorLibraryIdCounts);
         loweringModeCounts = loweringModeCounts == null ? Map.of() : new LinkedHashMap<>(loweringModeCounts);
         runtimeReadinessStateCounts = runtimeReadinessStateCounts == null
                 ? Map.of()
@@ -117,6 +122,7 @@ public record GraphDraftDependencyReport(
         }
 
         Map<String, Integer> sourceKindCounts = new LinkedHashMap<>();
+        Map<String, Integer> operatorLibraryIdCounts = new LinkedHashMap<>();
         Map<String, Integer> loweringModeCounts = new LinkedHashMap<>();
         Map<String, Integer> runtimeReadinessStateCounts = new LinkedHashMap<>();
         Map<String, OperatorAggregate> operatorAggregates = new LinkedHashMap<>();
@@ -158,6 +164,7 @@ public record GraphDraftDependencyReport(
             }
 
             String sourceKind = sourceKind(reviewOperator, currentOperatorPresent);
+            String operatorLibraryId = operatorLibraryId(reviewOperator);
             String loweringMode = loweringMode(reviewOperator);
             String readinessState = runtimeReadinessState(reviewOperator, currentOperatorPresent, scopeAllowed);
             boolean executable = reviewOperator != null
@@ -169,6 +176,7 @@ public record GraphDraftDependencyReport(
                     : reviewOperator.runtimeReadiness().artifactKinds();
 
             increment(sourceKindCounts, sourceKind);
+            incrementIfPresent(operatorLibraryIdCounts, operatorLibraryId);
             increment(loweringModeCounts, loweringMode);
             increment(runtimeReadinessStateCounts, readinessState);
 
@@ -188,6 +196,7 @@ public record GraphDraftDependencyReport(
                     node.label(),
                     node.operatorRef(),
                     sourceKind,
+                    operatorLibraryId,
                     loweringMode,
                     readinessState,
                     executable,
@@ -209,6 +218,7 @@ public record GraphDraftDependencyReport(
                     .computeIfAbsent(node.operatorRef(), ignored -> new OperatorAggregate(
                             node.operatorRef(),
                             sourceKind,
+                            operatorLibraryId,
                             loweringMode,
                             readinessState,
                             executable,
@@ -239,6 +249,7 @@ public record GraphDraftDependencyReport(
                 driftedFingerprints,
                 missingFingerprints,
                 sourceKindCounts,
+                operatorLibraryIdCounts,
                 loweringModeCounts,
                 runtimeReadinessStateCounts,
                 operators,
@@ -265,6 +276,7 @@ public record GraphDraftDependencyReport(
                 0,
                 0,
                 0,
+                Map.of(),
                 Map.of(),
                 Map.of(),
                 Map.of(),
@@ -320,6 +332,13 @@ public record GraphDraftDependencyReport(
         return normalizeFacet(operator.source().kind(), "unknown");
     }
 
+    private static String operatorLibraryId(OperatorDefinition operator) {
+        if (operator == null || operator.source() == null || operator.source().libraryId() == null) {
+            return "";
+        }
+        return operator.source().libraryId().trim();
+    }
+
     private static String loweringMode(OperatorDefinition operator) {
         if (operator == null || operator.lowering() == null) {
             return "unknown";
@@ -356,11 +375,19 @@ public record GraphDraftDependencyReport(
         counts.merge(value, 1, Integer::sum);
     }
 
+    private static void incrementIfPresent(Map<String, Integer> counts, String value) {
+        if (value == null || value.isBlank()) {
+            return;
+        }
+        counts.merge(value, 1, Integer::sum);
+    }
+
     /**
      * Distinct operator dependency row.
      *
      * @param operatorRef operator reference
      * @param sourceKind source kind
+     * @param operatorLibraryId owner operator library id for imported operators
      * @param loweringMode lowering mode
      * @param runtimeReadinessState current runtime readiness state
      * @param executable whether all current runtime prerequisites are present for this operator
@@ -374,6 +401,7 @@ public record GraphDraftDependencyReport(
     public record OperatorDependency(
             String operatorRef,
             String sourceKind,
+            String operatorLibraryId,
             String loweringMode,
             String runtimeReadinessState,
             boolean executable,
@@ -387,6 +415,7 @@ public record GraphDraftDependencyReport(
         public OperatorDependency {
             operatorRef = operatorRef == null ? "" : operatorRef;
             sourceKind = sourceKind == null ? "" : sourceKind;
+            operatorLibraryId = operatorLibraryId == null ? "" : operatorLibraryId;
             loweringMode = loweringMode == null ? "" : loweringMode;
             runtimeReadinessState = runtimeReadinessState == null ? "" : runtimeReadinessState;
             artifactKinds = artifactKinds == null ? List.of() : List.copyOf(artifactKinds);
@@ -404,6 +433,7 @@ public record GraphDraftDependencyReport(
      * @param label node label
      * @param operatorRef operator reference
      * @param sourceKind source kind
+     * @param operatorLibraryId owner operator library id for imported operators
      * @param loweringMode lowering mode
      * @param runtimeReadinessState current runtime readiness state
      * @param executable whether this node is executable against the current catalog
@@ -424,6 +454,7 @@ public record GraphDraftDependencyReport(
             String label,
             String operatorRef,
             String sourceKind,
+            String operatorLibraryId,
             String loweringMode,
             String runtimeReadinessState,
             boolean executable,
@@ -444,6 +475,7 @@ public record GraphDraftDependencyReport(
             label = label == null ? "" : label;
             operatorRef = operatorRef == null ? "" : operatorRef;
             sourceKind = sourceKind == null ? "" : sourceKind;
+            operatorLibraryId = operatorLibraryId == null ? "" : operatorLibraryId;
             loweringMode = loweringMode == null ? "" : loweringMode;
             runtimeReadinessState = runtimeReadinessState == null ? "" : runtimeReadinessState;
             savedFingerprint = savedFingerprint == null ? "" : savedFingerprint;
@@ -462,6 +494,7 @@ public record GraphDraftDependencyReport(
     private static final class OperatorAggregate {
         private final String operatorRef;
         private final String sourceKind;
+        private final String operatorLibraryId;
         private final String loweringMode;
         private final String runtimeReadinessState;
         private final boolean executable;
@@ -474,6 +507,7 @@ public record GraphDraftDependencyReport(
 
         private OperatorAggregate(String operatorRef,
                                   String sourceKind,
+                                  String operatorLibraryId,
                                   String loweringMode,
                                   String runtimeReadinessState,
                                   boolean executable,
@@ -483,6 +517,7 @@ public record GraphDraftDependencyReport(
                                   List<String> policyViolations) {
             this.operatorRef = operatorRef;
             this.sourceKind = sourceKind;
+            this.operatorLibraryId = operatorLibraryId == null ? "" : operatorLibraryId;
             this.loweringMode = loweringMode;
             this.runtimeReadinessState = runtimeReadinessState;
             this.executable = executable;
@@ -502,6 +537,7 @@ public record GraphDraftDependencyReport(
             return new OperatorDependency(
                     operatorRef,
                     sourceKind,
+                    operatorLibraryId,
                     loweringMode,
                     runtimeReadinessState,
                     executable,

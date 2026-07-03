@@ -44,6 +44,7 @@ import java.util.Map;
  * @param driftedFingerprintCount number of frozen nodes whose saved fingerprint drifted
  * @param missingFingerprintCount number of frozen nodes without a saved fingerprint
  * @param sourceKindCounts node counts by source kind
+ * @param operatorLibraryIdCounts node counts by owner operator library id
  * @param loweringModeCounts node counts by lowering mode
  * @param runtimeReadinessStateCounts node counts by runtime readiness state
  */
@@ -72,6 +73,7 @@ public record VisualGraphPublicationSummary(
         int driftedFingerprintCount,
         int missingFingerprintCount,
         Map<String, Integer> sourceKindCounts,
+        Map<String, Integer> operatorLibraryIdCounts,
         Map<String, Integer> loweringModeCounts,
         Map<String, Integer> runtimeReadinessStateCounts
 ) {
@@ -97,6 +99,9 @@ public record VisualGraphPublicationSummary(
                 ? derivedActionReadiness(valid, diagnosticCount, errorCount, warningCount, readiness)
                 : actionReadiness;
         sourceKindCounts = sourceKindCounts == null ? Map.of() : new LinkedHashMap<>(sourceKindCounts);
+        operatorLibraryIdCounts = operatorLibraryIdCounts == null
+                ? Map.of()
+                : new LinkedHashMap<>(operatorLibraryIdCounts);
         loweringModeCounts = loweringModeCounts == null ? Map.of() : new LinkedHashMap<>(loweringModeCounts);
         runtimeReadinessStateCounts = runtimeReadinessStateCounts == null
                 ? Map.of()
@@ -147,6 +152,7 @@ public record VisualGraphPublicationSummary(
                 dependencies.driftedFingerprintCount(),
                 dependencies.missingFingerprintCount(),
                 dependencies.sourceKindCounts(),
+                dependencies.operatorLibraryIdCounts(),
                 dependencies.loweringModeCounts(),
                 dependencies.runtimeReadinessStateCounts()
         );
@@ -180,6 +186,7 @@ public record VisualGraphPublicationSummary(
                 0,
                 0,
                 0,
+                Map.of(),
                 Map.of(),
                 Map.of(),
                 Map.of()

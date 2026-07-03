@@ -249,12 +249,14 @@ class VisualGraphDraftControllerTest {
         assertThat(report.driftedFingerprintCount()).isZero();
         assertThat(report.missingFingerprintCount()).isZero();
         assertThat(report.sourceKindCounts()).containsEntry("user-library", 2);
+        assertThat(report.operatorLibraryIdCounts()).containsEntry("risk-policy", 2);
         assertThat(report.loweringModeCounts()).containsEntry("transform", 2);
         assertThat(report.runtimeReadinessStateCounts()).containsEntry("RUNTIME_EXECUTABLE", 2);
         assertThat(report.operators())
                 .singleElement()
                 .satisfies(operator -> {
                     assertThat(operator.operatorRef()).isEqualTo("risk:eligibility");
+                    assertThat(operator.operatorLibraryId()).isEqualTo("risk-policy");
                     assertThat(operator.executable()).isTrue();
                     assertThat(operator.scopeAllowed()).isTrue();
                     assertThat(operator.policyViolations()).isEmpty();
@@ -266,6 +268,7 @@ class VisualGraphDraftControllerTest {
                 .filteredOn(node -> node.nodeId().equals("audit"))
                 .singleElement()
                 .satisfies(node -> {
+                    assertThat(node.operatorLibraryId()).isEqualTo("risk-policy");
                     assertThat(node.bindingSourceNodes()).containsExactly("eligibility");
                     assertThat(node.edgeSourceNodes()).containsExactly("eligibility");
                     assertThat(node.upstreamNodes()).containsExactly("eligibility");
@@ -337,11 +340,13 @@ class VisualGraphDraftControllerTest {
         assertThat(report.missingOperatorCount()).isEqualTo(1);
         assertThat(report.scopeMismatchOperatorCount()).isZero();
         assertThat(report.sourceKindCounts()).containsEntry("user-library", 1);
+        assertThat(report.operatorLibraryIdCounts()).containsEntry("risk-policy", 1);
         assertThat(report.runtimeReadinessStateCounts()).containsEntry("CATALOG_MISSING", 1);
         assertThat(report.operators())
                 .singleElement()
                 .satisfies(operator -> {
                     assertThat(operator.operatorRef()).isEqualTo("risk:eligibility");
+                    assertThat(operator.operatorLibraryId()).isEqualTo("risk-policy");
                     assertThat(operator.currentFingerprint()).isBlank();
                     assertThat(operator.fingerprintState()).isEqualTo("catalog-missing");
                     assertThat(operator.scopeAllowed()).isFalse();
@@ -352,6 +357,7 @@ class VisualGraphDraftControllerTest {
         assertThat(report.nodes())
                 .singleElement()
                 .satisfies(node -> {
+                    assertThat(node.operatorLibraryId()).isEqualTo("risk-policy");
                     assertThat(node.savedFingerprint()).startsWith("sha256:");
                     assertThat(node.currentFingerprint()).isBlank();
                     assertThat(node.fingerprintState()).isEqualTo("catalog-missing");
@@ -381,11 +387,13 @@ class VisualGraphDraftControllerTest {
         GraphDraftDependencyReport report = response.getBody();
         assertThat(report.missingOperatorCount()).isZero();
         assertThat(report.scopeMismatchOperatorCount()).isEqualTo(1);
+        assertThat(report.operatorLibraryIdCounts()).containsEntry("risk-policy", 1);
         assertThat(report.runtimeReadinessStateCounts()).containsEntry("SCOPE_MISMATCH", 1);
         assertThat(report.operators())
                 .singleElement()
                 .satisfies(operator -> {
                     assertThat(operator.operatorRef()).isEqualTo("risk:eligibility");
+                    assertThat(operator.operatorLibraryId()).isEqualTo("risk-policy");
                     assertThat(operator.currentFingerprint()).startsWith("sha256:");
                     assertThat(operator.fingerprintState()).isEqualTo("scope-mismatch");
                     assertThat(operator.scopeAllowed()).isFalse();
@@ -395,6 +403,7 @@ class VisualGraphDraftControllerTest {
         assertThat(report.nodes())
                 .singleElement()
                 .satisfies(node -> {
+                    assertThat(node.operatorLibraryId()).isEqualTo("risk-policy");
                     assertThat(node.fingerprintState()).isEqualTo("scope-mismatch");
                     assertThat(node.runtimeReadinessState()).isEqualTo("SCOPE_MISMATCH");
                     assertThat(node.currentFingerprint()).startsWith("sha256:");

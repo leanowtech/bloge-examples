@@ -116,7 +116,8 @@ public class VisualConnectionCheckService {
         boolean accepted = diagnostics.stream().noneMatch(VisualDiagnostic::error);
         return new VisualConnectionCheckResult(accepted, edge, inputKey, diagnostics, validation,
                 VisualConnectionCheckResult.VisualConnectionCheckSummary.from(accepted, edge, inputKey,
-                        diagnostics, validation, replacedInputKeys, replacedEdgeIds));
+                        diagnostics, validation, replacedInputKeys, replacedEdgeIds,
+                        operatorLibraryIdsByOperatorRef()));
     }
 
     private VisualConnectionCheckResult checkDependencyEdge(VisualConnectionCheckRequest request,
@@ -137,8 +138,10 @@ public class VisualConnectionCheckService {
         VisualValidationResult validation = validator.validate(candidate);
         List<VisualDiagnostic> diagnostics = preflightDiagnostics(validation,
                 diagnostic -> relevantToDependencyEdge(diagnostic, previewIndex, request, nodeIndexes));
-        return new VisualConnectionCheckResult(diagnostics.stream().noneMatch(VisualDiagnostic::error),
-                edge, "", diagnostics, validation);
+        boolean accepted = diagnostics.stream().noneMatch(VisualDiagnostic::error);
+        return new VisualConnectionCheckResult(accepted, edge, "", diagnostics, validation,
+                VisualConnectionCheckResult.VisualConnectionCheckSummary.from(accepted, edge, "",
+                        diagnostics, validation, List.of(), List.of(), operatorLibraryIdsByOperatorRef()));
     }
 
     private VisualConnectionCheckResult checkRouteEdge(VisualConnectionCheckRequest request,
@@ -159,8 +162,10 @@ public class VisualConnectionCheckService {
         VisualValidationResult validation = validator.validate(candidate);
         List<VisualDiagnostic> diagnostics = preflightDiagnostics(validation,
                 diagnostic -> relevantToDependencyEdge(diagnostic, previewIndex, request, nodeIndexes));
-        return new VisualConnectionCheckResult(diagnostics.stream().noneMatch(VisualDiagnostic::error),
-                edge, "", diagnostics, validation);
+        boolean accepted = diagnostics.stream().noneMatch(VisualDiagnostic::error);
+        return new VisualConnectionCheckResult(accepted, edge, "", diagnostics, validation,
+                VisualConnectionCheckResult.VisualConnectionCheckSummary.from(accepted, edge, "",
+                        diagnostics, validation, List.of(), List.of(), operatorLibraryIdsByOperatorRef()));
     }
 
     private VisualConnectionCheckResult checkConfigBinding(VisualConnectionCheckRequest request,
@@ -198,8 +203,10 @@ public class VisualConnectionCheckService {
         List<VisualDiagnostic> diagnostics = preflightDiagnostics(validation,
                 diagnostic -> relevantToConfigBinding(diagnostic, configPath, operatorPath,
                         request, nodeIndexes));
-        return new VisualConnectionCheckResult(diagnostics.stream().noneMatch(VisualDiagnostic::error),
-                edge, "", diagnostics, validation);
+        boolean accepted = diagnostics.stream().noneMatch(VisualDiagnostic::error);
+        return new VisualConnectionCheckResult(accepted, edge, "", diagnostics, validation,
+                VisualConnectionCheckResult.VisualConnectionCheckSummary.from(accepted, edge, "",
+                        diagnostics, validation, List.of(), List.of(), operatorLibraryIdsByOperatorRef()));
     }
 
     private VisualConnectionCheckResult checkContextBinding(VisualConnectionCheckRequest request,
@@ -233,7 +240,11 @@ public class VisualConnectionCheckService {
         boolean accepted = diagnostics.stream().noneMatch(VisualDiagnostic::error);
         return new VisualConnectionCheckResult(accepted, edge, inputKey, diagnostics, validation,
                 VisualConnectionCheckResult.VisualConnectionCheckSummary.from(accepted, edge, inputKey,
-                        diagnostics, validation, replacedInputKeys, List.of()));
+                        diagnostics, validation, replacedInputKeys, List.of(), operatorLibraryIdsByOperatorRef()));
+    }
+
+    private Map<String, String> operatorLibraryIdsByOperatorRef() {
+        return catalog == null ? Map.of() : catalog.operatorLibraryIdsByOperatorRef(true);
     }
 
     /**
