@@ -14,6 +14,8 @@ import com.leanowtech.bloge.gateway.visual.publication.InMemoryVisualGraphPublic
 import com.leanowtech.bloge.gateway.visual.publication.VisualGraphPublication;
 import com.leanowtech.bloge.gateway.visual.resource.InMemoryResourceDesignContractRegistry;
 import com.leanowtech.bloge.gateway.visual.resource.ResourceDesignContract;
+import com.leanowtech.bloge.gateway.visual.runtime.InMemoryVisualRuntimeAdapterActivationRepository;
+import com.leanowtech.bloge.gateway.visual.runtime.VisualRuntimeAdapterActivation;
 import com.leanowtech.bloge.gateway.visual.runtime.VisualGraphPublicationOperator;
 import com.leanowtech.bloge.gateway.visual.validation.VisualSchemaValidator;
 import com.leanowtech.bloge.gateway.visual.validation.VisualValidationResult;
@@ -228,6 +230,140 @@ class DefaultVisualOperatorCatalogTest {
         assertThat(projection.activeBindingId()).isEqualTo("risk-eligibility-native-v1");
         assertThat(OperatorRuntimeBindingProjection.stateCounts(List.of(projection)))
                 .containsExactly(Map.entry("binding-bound", 1));
+    }
+
+    @Test
+    void projectsActiveRuntimeAdapterActivationWithoutClaimingOperatorExecutable() {
+        OperatorDefinition operator = VisualCatalogTestSupport.designOnlyEligibilityOperator("integer");
+        InMemoryVisualRuntimeBindingImplementationRepository bindings =
+                new InMemoryVisualRuntimeBindingImplementationRepository();
+        VisualRuntimeBindingImplementationBinding binding =
+                bindings.create(boundImplementation(operator, operator.fingerprint(), "risk-eligibility-native-v1"));
+        InMemoryVisualRuntimeAdapterActivationRepository activations =
+                new InMemoryVisualRuntimeAdapterActivationRepository();
+        activations.create(activeActivation(binding, "risk-eligibility-prod-active"));
+        InMemoryOperatorLibraryRegistry libraries = new InMemoryOperatorLibraryRegistry();
+        libraries.upsert(library("risk-policy-design", "ACTIVE", operator));
+        DefaultVisualOperatorCatalog catalog = new DefaultVisualOperatorCatalog(
+                VisualCatalogTestSupport.emptyResourceRegistry(),
+                new InMemoryResourceDesignContractRegistry(),
+                new ResourceVirtualOperatorProjector(),
+                libraries,
+                JavaOperatorInventoryProjector.empty(),
+                new InMemoryVisualGraphPublicationRepository(),
+                new VisualGraphPublicationOperatorProjector(),
+                bindings,
+                activations
+        );
+
+        List<OperatorDefinition> operators = catalog.list(OperatorCatalogQuery.all());
+        OperatorDefinition projectedOperator = operators.stream()
+                .filter(candidate -> candidate.operatorRef().equals("risk:eligibility"))
+                .findFirst()
+                .orElseThrow();
+        OperatorRuntimeBindingProjection projection = catalog.runtimeBindingProjections(
+                        OperatorCatalogQuery.all(), operators).stream()
+                .filter(candidate -> candidate.operatorRef().equals("risk:eligibility"))
+                .findFirst()
+                .orElseThrow();
+
+        assertThat(projectedOperator.runtimeReadiness().state()).isEqualTo("DESIGN_ONLY");
+        assertThat(projectedOperator.runtimeReadiness().executable()).isFalse();
+        assertThat(projection.projectionState()).isEqualTo("adapter-active");
+        assertThat(projection.implementationBindingRequired()).isFalse();
+        assertThat(projection.runtimeActivationRequired()).isFalse();
+        assertThat(projection.executable()).isFalse();
+        assertThat(projection.activeBindingId()).isEqualTo(binding.bindingId());
+        assertThat(projection.activeAdapterActivationId()).isEqualTo("risk-eligibility-prod-active");
+        assertThat(projection.adapterActivationState()).isEqualTo("active");
+        assertThat(projection.adapterHealthState()).isEqualTo("healthy");
+        assertThat(projection.runtimeEnvironment()).isEqualTo("prod");
+        assertThat(OperatorRuntimeBindingProjection.stateCounts(List.of(projection)))
+                .containsExactly(Map.entry("adapter-active", 1));
+
+        OperatorExecutablePromotionProjection promotion =
+                OperatorExecutablePromotionProjection.from(projection);
+        assertThat(promotion.promotionState()).isEqualTo("executor-integration-required");
+        assertThat(promotion.requiredNextAction()).isEqualTo("INTEGRATE_EXECUTABLE_LOWERING");
+        assertThat(promotion.promotionReady()).isFalse();
+        assertThat(promotion.executableNow()).isFalse();
+        assertThat(promotion.activeBindingId()).isEqualTo(binding.bindingId());
+        assertThat(promotion.activeAdapterActivationId()).isEqualTo("risk-eligibility-prod-active");
+        assertThat(promotion.diagnostics()).singleElement().satisfies(diagnostic -> {
+            assertThat(diagnostic.level()).isEqualTo("INFO");
+            assertThat(diagnostic.code()).isEqualTo("visual.executablePromotion.executorIntegrationRequired");
+            assertThat(diagnostic.metadata())
+                    .containsEntry("activationId", "risk-eligibility-prod-active")
+                    .containsEntry("adapterKind", "native");
+        });
+        assertThat(OperatorExecutablePromotionProjection.stateCounts(List.of(promotion)))
+                .containsExactly(Map.entry("executor-integration-required", 1));
+    }
+
+    @Test
+    void projectsRuntimeAdapterActivationAsDriftedWhenBindingRevisionChanges() {
+        OperatorDefinition operator = VisualCatalogTestSupport.designOnlyEligibilityOperator("integer");
+        InMemoryVisualRuntimeBindingImplementationRepository bindings =
+                new InMemoryVisualRuntimeBindingImplementationRepository();
+        VisualRuntimeBindingImplementationBinding binding =
+                bindings.create(boundImplementation(operator, operator.fingerprint(), "risk-eligibility-native-v1"));
+        InMemoryVisualRuntimeAdapterActivationRepository activations =
+                new InMemoryVisualRuntimeAdapterActivationRepository();
+        activations.create(new VisualRuntimeAdapterActivation(
+                VisualRuntimeAdapterActivation.SCHEMA_VERSION,
+                "risk-eligibility-prod-active",
+                0,
+                VisualRuntimeAdapterActivation.STATE_ACTIVE,
+                "success",
+                binding.bindingId(),
+                binding.revision() + 1,
+                binding.operatorRef(),
+                binding.operatorFingerprint(),
+                binding.implementation().adapterKind(),
+                binding.implementation().entrypoint(),
+                binding.implementation().runtimeOwner(),
+                "prod",
+                VisualRuntimeAdapterActivation.HEALTH_HEALTHY,
+                "runtime-platform",
+                "catalog-test",
+                "Deployment is healthy.",
+                List.of(new VisualRuntimeAdapterActivation.Evidence(
+                        "health-check",
+                        "deployment:risk-eligibility-native-v1",
+                        "Readiness probe is healthy.")),
+                Instant.EPOCH,
+                Instant.EPOCH
+        ));
+        InMemoryOperatorLibraryRegistry libraries = new InMemoryOperatorLibraryRegistry();
+        libraries.upsert(library("risk-policy-design", "ACTIVE", operator));
+        DefaultVisualOperatorCatalog catalog = new DefaultVisualOperatorCatalog(
+                VisualCatalogTestSupport.emptyResourceRegistry(),
+                new InMemoryResourceDesignContractRegistry(),
+                new ResourceVirtualOperatorProjector(),
+                libraries,
+                JavaOperatorInventoryProjector.empty(),
+                new InMemoryVisualGraphPublicationRepository(),
+                new VisualGraphPublicationOperatorProjector(),
+                bindings,
+                activations
+        );
+
+        OperatorRuntimeBindingProjection projection = catalog.runtimeBindingProjections(
+                        OperatorCatalogQuery.all(), catalog.list(OperatorCatalogQuery.all())).stream()
+                .filter(candidate -> candidate.operatorRef().equals("risk:eligibility"))
+                .findFirst()
+                .orElseThrow();
+
+        assertThat(projection.projectionState()).isEqualTo("adapter-drifted");
+        assertThat(projection.implementationBindingRequired()).isFalse();
+        assertThat(projection.runtimeActivationRequired()).isTrue();
+        assertThat(projection.executable()).isFalse();
+        assertThat(projection.diagnostics()).singleElement().satisfies(diagnostic -> {
+            assertThat(diagnostic.code()).isEqualTo("visual.runtimeBindingProjection.adapterActivationDrift");
+            assertThat(diagnostic.metadata())
+                    .containsEntry("activationBindingRevision", binding.revision() + 1)
+                    .containsEntry("bindingRevision", binding.revision());
+        });
     }
 
     @Test
@@ -926,6 +1062,36 @@ class DefaultVisualOperatorCatalogTest {
                 List.of(),
                 now,
                 now
+        );
+    }
+
+    private static VisualRuntimeAdapterActivation activeActivation(
+            VisualRuntimeBindingImplementationBinding binding,
+            String activationId) {
+        return new VisualRuntimeAdapterActivation(
+                VisualRuntimeAdapterActivation.SCHEMA_VERSION,
+                activationId,
+                0,
+                VisualRuntimeAdapterActivation.STATE_ACTIVE,
+                "success",
+                binding.bindingId(),
+                binding.revision(),
+                binding.operatorRef(),
+                binding.operatorFingerprint(),
+                binding.implementation().adapterKind(),
+                binding.implementation().entrypoint(),
+                binding.implementation().runtimeOwner(),
+                "prod",
+                VisualRuntimeAdapterActivation.HEALTH_HEALTHY,
+                "runtime-platform",
+                "catalog-test",
+                "Deployment is healthy.",
+                List.of(new VisualRuntimeAdapterActivation.Evidence(
+                        "health-check",
+                        "deployment:risk-eligibility-native-v1",
+                        "Readiness probe is healthy.")),
+                Instant.EPOCH,
+                Instant.EPOCH
         );
     }
 

@@ -3,6 +3,7 @@ package com.leanowtech.bloge.gateway.visual.catalog;
 import com.leanowtech.bloge.gateway.visual.asset.VisualRuntimeBindingImplementationBinding;
 import com.leanowtech.bloge.gateway.visual.asset.VisualRuntimeBindingImplementationValidation;
 import com.leanowtech.bloge.gateway.visual.diagnostic.VisualDiagnostic;
+import com.leanowtech.bloge.gateway.visual.runtime.VisualRuntimeAdapterActivation;
 
 import java.time.Instant;
 import java.util.ArrayList;
@@ -27,7 +28,8 @@ import java.util.Map;
  * @param executable whether the current request-response runtime can execute the operator
  * @param implementationBindingRequired true when an implementation binding is still missing or stale
  * @param runtimeActivationRequired true when a bound implementation still needs adapter runtime activation
- * @param projectionState not-required, binding-required, binding-bound, or binding-drifted
+ * @param projectionState not-required, binding-required, binding-bound, binding-drifted,
+ *                        adapter-active, adapter-drifted, or binding-bound-unneeded
  * @param level UI/control-plane severity
  * @param title short display title
  * @param summary human-readable projection summary
@@ -38,6 +40,12 @@ import java.util.Map;
  * @param implementationEntrypoint submitted runtime adapter entrypoint
  * @param runtimeOwner implementation owner
  * @param boundAt active binding update timestamp
+ * @param activeAdapterActivationId active adapter activation id when present
+ * @param activeAdapterActivationRevision active adapter activation revision
+ * @param adapterActivationState active adapter activation state
+ * @param adapterHealthState active adapter health state
+ * @param runtimeEnvironment active adapter runtime environment
+ * @param activatedAt active adapter activation update timestamp
  * @param diagnostics projection diagnostics
  */
 public record OperatorRuntimeBindingProjection(
@@ -59,6 +67,12 @@ public record OperatorRuntimeBindingProjection(
         String implementationEntrypoint,
         String runtimeOwner,
         Instant boundAt,
+        String activeAdapterActivationId,
+        long activeAdapterActivationRevision,
+        String adapterActivationState,
+        String adapterHealthState,
+        String runtimeEnvironment,
+        Instant activatedAt,
         List<VisualDiagnostic> diagnostics
 ) {
     public static final String SCHEMA_VERSION = "bloge.operatorRuntimeBindingProjection.v1";
@@ -84,7 +98,43 @@ public record OperatorRuntimeBindingProjection(
         implementationEntrypoint = implementationEntrypoint == null ? "" : implementationEntrypoint.trim();
         runtimeOwner = runtimeOwner == null ? "" : runtimeOwner.trim();
         boundAt = boundAt == null ? Instant.EPOCH : boundAt;
+        activeAdapterActivationId = activeAdapterActivationId == null ? "" : activeAdapterActivationId.trim();
+        activeAdapterActivationRevision = Math.max(0, activeAdapterActivationRevision);
+        adapterActivationState = adapterActivationState == null
+                ? ""
+                : adapterActivationState.trim().toLowerCase(Locale.ROOT);
+        adapterHealthState = adapterHealthState == null ? "" : adapterHealthState.trim().toLowerCase(Locale.ROOT);
+        runtimeEnvironment = runtimeEnvironment == null ? "" : runtimeEnvironment.trim();
+        activatedAt = activatedAt == null ? Instant.EPOCH : activatedAt;
         diagnostics = diagnostics == null ? List.of() : Collections.unmodifiableList(new ArrayList<>(diagnostics));
+    }
+
+    /**
+     * Backward-compatible constructor for callers that do not yet project adapter activation state.
+     */
+    public OperatorRuntimeBindingProjection(String schemaVersion,
+                                            String operatorRef,
+                                            String operatorFingerprint,
+                                            String runtimeReadinessState,
+                                            boolean executable,
+                                            boolean implementationBindingRequired,
+                                            boolean runtimeActivationRequired,
+                                            String projectionState,
+                                            String level,
+                                            String title,
+                                            String summary,
+                                            String activeBindingId,
+                                            long activeBindingRevision,
+                                            String activeBindingState,
+                                            String implementationAdapterKind,
+                                            String implementationEntrypoint,
+                                            String runtimeOwner,
+                                            Instant boundAt,
+                                            List<VisualDiagnostic> diagnostics) {
+        this(schemaVersion, operatorRef, operatorFingerprint, runtimeReadinessState, executable,
+                implementationBindingRequired, runtimeActivationRequired, projectionState, level, title, summary,
+                activeBindingId, activeBindingRevision, activeBindingState, implementationAdapterKind,
+                implementationEntrypoint, runtimeOwner, boundAt, "", 0, "", "", "", Instant.EPOCH, diagnostics);
     }
 
     /**
@@ -97,11 +147,35 @@ public record OperatorRuntimeBindingProjection(
     public static List<OperatorRuntimeBindingProjection> from(
             List<OperatorDefinition> operators,
             Map<String, VisualRuntimeBindingImplementationBinding> activeBindingsByOperatorRef) {
+        return from(operators, activeBindingsByOperatorRef, Map.of());
+    }
+
+    /**
+     * Builds projections for the supplied operator window.
+     *
+     * @param operators catalog-visible operators
+     * @param activeBindingsByOperatorRef active bound bindings keyed by operatorRef
+     * @param activeActivationsByBindingId active adapter activations keyed by bindingId
+     * @return projection list aligned with the operators list
+     */
+    public static List<OperatorRuntimeBindingProjection> from(
+            List<OperatorDefinition> operators,
+            Map<String, VisualRuntimeBindingImplementationBinding> activeBindingsByOperatorRef,
+            Map<String, VisualRuntimeAdapterActivation> activeActivationsByBindingId) {
         Map<String, VisualRuntimeBindingImplementationBinding> activeBindings =
                 activeBindingsByOperatorRef == null ? Map.of() : activeBindingsByOperatorRef;
+        Map<String, VisualRuntimeAdapterActivation> activeActivations =
+                activeActivationsByBindingId == null ? Map.of() : activeActivationsByBindingId;
         return (operators == null ? List.<OperatorDefinition>of() : operators).stream()
                 .filter(operator -> operator != null)
-                .map(operator -> from(operator, activeBindings.get(operator.operatorRef())))
+                .map(operator -> {
+                    VisualRuntimeBindingImplementationBinding activeBinding =
+                            activeBindings.get(operator.operatorRef());
+                    VisualRuntimeAdapterActivation activeActivation = activeBinding == null
+                            ? null
+                            : activeActivations.get(activeBinding.bindingId());
+                    return from(operator, activeBinding, activeActivation);
+                })
                 .toList();
     }
 
@@ -132,18 +206,34 @@ public record OperatorRuntimeBindingProjection(
      */
     public static OperatorRuntimeBindingProjection from(OperatorDefinition operator,
                                                         VisualRuntimeBindingImplementationBinding activeBinding) {
+        return from(operator, activeBinding, null);
+    }
+
+    /**
+     * Builds one projection with optional adapter activation state.
+     *
+     * @param operator current operator definition
+     * @param activeBinding active bound binding when present
+     * @param activeActivation active adapter activation when present
+     * @return projection
+     */
+    public static OperatorRuntimeBindingProjection from(OperatorDefinition operator,
+                                                        VisualRuntimeBindingImplementationBinding activeBinding,
+                                                        VisualRuntimeAdapterActivation activeActivation) {
         OperatorDefinition.RuntimeReadiness readiness = operator == null ? null : operator.runtimeReadiness();
         String operatorRef = operator == null ? "" : operator.operatorRef();
         String fingerprint = operator == null ? "" : operator.fingerprint();
         String readinessState = readiness == null ? "unknown" : readiness.state();
         boolean executable = readiness != null && readiness.executable();
         BindingFields binding = BindingFields.from(activeBinding);
+        ActivationFields activation = ActivationFields.from(activeActivation);
         if (activeBinding == null || activeBinding.bindingId().isBlank()) {
             return unboundProjection(operatorRef, fingerprint, readinessState, executable, readiness);
         }
         if (!fingerprint.isBlank() && !activeBinding.operatorFingerprint().isBlank()
                 && !fingerprint.equals(activeBinding.operatorFingerprint())) {
-            return driftedProjection(operatorRef, fingerprint, readinessState, executable, binding, activeBinding);
+            return driftedProjection(operatorRef, fingerprint, readinessState, executable, binding,
+                    activation, activeBinding);
         }
         if (executable) {
             return new OperatorRuntimeBindingProjection(
@@ -165,6 +255,45 @@ public record OperatorRuntimeBindingProjection(
                     binding.entrypoint(),
                     binding.runtimeOwner(),
                     binding.boundAt(),
+                    activation.activationId(),
+                    activation.revision(),
+                    activation.state(),
+                    activation.healthState(),
+                    activation.runtimeEnvironment(),
+                    activation.activatedAt(),
+                    List.of()
+            );
+        }
+        if (activeActivation != null && !activationMatchesBinding(activeActivation, activeBinding, binding)) {
+            return adapterDriftedProjection(operatorRef, fingerprint, readinessState, binding, activation,
+                    activeBinding, activeActivation);
+        }
+        if (activeActivation != null) {
+            return new OperatorRuntimeBindingProjection(
+                    SCHEMA_VERSION,
+                    operatorRef,
+                    fingerprint,
+                    readinessState,
+                    false,
+                    false,
+                    false,
+                    "adapter-active",
+                    "success",
+                    "Runtime adapter active",
+                    "A healthy runtime adapter activation is recorded; executable promotion still requires explicit BLOGE runtime integration.",
+                    binding.bindingId(),
+                    binding.revision(),
+                    binding.state(),
+                    binding.adapterKind(),
+                    binding.entrypoint(),
+                    binding.runtimeOwner(),
+                    binding.boundAt(),
+                    activation.activationId(),
+                    activation.revision(),
+                    activation.state(),
+                    activation.healthState(),
+                    activation.runtimeEnvironment(),
+                    activation.activatedAt(),
                     List.of()
             );
         }
@@ -187,6 +316,12 @@ public record OperatorRuntimeBindingProjection(
                 binding.entrypoint(),
                 binding.runtimeOwner(),
                 binding.boundAt(),
+                "",
+                0,
+                "",
+                "",
+                "",
+                Instant.EPOCH,
                 List.of()
         );
     }
@@ -212,6 +347,12 @@ public record OperatorRuntimeBindingProjection(
                     "",
                     0,
                     "",
+                    "",
+                    "",
+                    "",
+                    Instant.EPOCH,
+                    "",
+                    0,
                     "",
                     "",
                     "",
@@ -242,6 +383,12 @@ public record OperatorRuntimeBindingProjection(
                 "",
                 "",
                 Instant.EPOCH,
+                "",
+                0,
+                "",
+                "",
+                "",
+                Instant.EPOCH,
                 List.of()
         );
     }
@@ -251,6 +398,7 @@ public record OperatorRuntimeBindingProjection(
                                                                       String readinessState,
                                                                       boolean executable,
                                                                       BindingFields binding,
+                                                                      ActivationFields activation,
                                                                       VisualRuntimeBindingImplementationBinding activeBinding) {
         VisualDiagnostic diagnostic = VisualDiagnostic.warning(
                 "visual.runtimeBindingProjection.fingerprintDrift",
@@ -282,8 +430,83 @@ public record OperatorRuntimeBindingProjection(
                 binding.entrypoint(),
                 binding.runtimeOwner(),
                 binding.boundAt(),
+                activation.activationId(),
+                activation.revision(),
+                activation.state(),
+                activation.healthState(),
+                activation.runtimeEnvironment(),
+                activation.activatedAt(),
                 List.of(diagnostic)
         );
+    }
+
+    private static OperatorRuntimeBindingProjection adapterDriftedProjection(
+            String operatorRef,
+            String fingerprint,
+            String readinessState,
+            BindingFields binding,
+            ActivationFields activation,
+            VisualRuntimeBindingImplementationBinding activeBinding,
+            VisualRuntimeAdapterActivation activeActivation) {
+        Map<String, Object> metadata = new LinkedHashMap<>();
+        metadata.put("activationId", activeActivation.activationId());
+        metadata.put("activationBindingId", activeActivation.bindingId());
+        metadata.put("bindingId", activeBinding.bindingId());
+        metadata.put("activationBindingRevision", activeActivation.bindingRevision());
+        metadata.put("bindingRevision", activeBinding.revision());
+        metadata.put("activationOperatorFingerprint", activeActivation.operatorFingerprint());
+        metadata.put("bindingOperatorFingerprint", activeBinding.operatorFingerprint());
+        metadata.put("activationAdapterKind", activeActivation.adapterKind());
+        metadata.put("bindingAdapterKind", binding.adapterKind());
+        metadata.put("activationEntrypoint", activeActivation.entrypoint());
+        metadata.put("bindingEntrypoint", binding.entrypoint());
+        VisualDiagnostic diagnostic = VisualDiagnostic.warning(
+                "visual.runtimeBindingProjection.adapterActivationDrift",
+                "Active adapter activation '%s' no longer matches runtime binding '%s'; re-activate after implementation binding review."
+                        .formatted(activeActivation.activationId(), activeBinding.bindingId()),
+                "/operators/" + operatorRef + "/runtimeBindingProjection",
+                metadata);
+        return new OperatorRuntimeBindingProjection(
+                SCHEMA_VERSION,
+                operatorRef,
+                fingerprint,
+                readinessState,
+                false,
+                false,
+                true,
+                "adapter-drifted",
+                "warning",
+                "Runtime adapter activation drifted",
+                "The active adapter activation no longer matches the bound implementation; re-activate it before executable promotion.",
+                binding.bindingId(),
+                binding.revision(),
+                binding.state(),
+                binding.adapterKind(),
+                binding.entrypoint(),
+                binding.runtimeOwner(),
+                binding.boundAt(),
+                activation.activationId(),
+                activation.revision(),
+                activation.state(),
+                activation.healthState(),
+                activation.runtimeEnvironment(),
+                activation.activatedAt(),
+                List.of(diagnostic)
+        );
+    }
+
+    private static boolean activationMatchesBinding(VisualRuntimeAdapterActivation activation,
+                                                    VisualRuntimeBindingImplementationBinding binding,
+                                                    BindingFields fields) {
+        return activation.active()
+                && VisualRuntimeAdapterActivation.HEALTH_HEALTHY.equals(activation.healthState())
+                && activation.bindingId().equals(binding.bindingId())
+                && activation.bindingRevision() == binding.revision()
+                && activation.operatorRef().equals(binding.operatorRef())
+                && activation.operatorFingerprint().equals(binding.operatorFingerprint())
+                && activation.adapterKind().equals(fields.adapterKind())
+                && activation.entrypoint().equals(fields.entrypoint())
+                && activation.runtimeOwner().equals(fields.runtimeOwner());
     }
 
     private static String normalizeState(String value) {
@@ -311,6 +534,24 @@ public record OperatorRuntimeBindingProjection(
                     implementation == null ? "" : implementation.entrypoint(),
                     implementation == null ? "" : implementation.runtimeOwner(),
                     binding == null ? Instant.EPOCH : binding.updatedAt()
+            );
+        }
+    }
+
+    private record ActivationFields(String activationId,
+                                    long revision,
+                                    String state,
+                                    String healthState,
+                                    String runtimeEnvironment,
+                                    Instant activatedAt) {
+        private static ActivationFields from(VisualRuntimeAdapterActivation activation) {
+            return new ActivationFields(
+                    activation == null ? "" : activation.activationId(),
+                    activation == null ? 0 : activation.revision(),
+                    activation == null ? "" : activation.state(),
+                    activation == null ? "" : activation.healthState(),
+                    activation == null ? "" : activation.runtimeEnvironment(),
+                    activation == null ? Instant.EPOCH : activation.updatedAt()
             );
         }
     }

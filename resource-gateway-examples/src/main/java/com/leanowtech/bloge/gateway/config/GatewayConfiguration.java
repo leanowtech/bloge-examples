@@ -35,9 +35,11 @@ import com.leanowtech.bloge.gateway.visual.publication.VisualGraphPublicationRep
 import com.leanowtech.bloge.gateway.visual.resource.DatabaseResourceDesignContractRegistry;
 import com.leanowtech.bloge.gateway.visual.resource.ResourceDesignContractRegistry;
 import com.leanowtech.bloge.gateway.visual.runtime.DatabaseVisualGraphRunRepository;
+import com.leanowtech.bloge.gateway.visual.runtime.DatabaseVisualRuntimeAdapterActivationRepository;
 import com.leanowtech.bloge.gateway.visual.runtime.VisualGraphPublicationOperator;
 import com.leanowtech.bloge.gateway.visual.runtime.VisualGraphRunRepository;
 import com.leanowtech.bloge.gateway.visual.runtime.VisualGraphRunService;
+import com.leanowtech.bloge.gateway.visual.runtime.VisualRuntimeAdapterActivationRepository;
 import com.leanowtech.bloge.operators.http.HttpRequestInput;
 import com.leanowtech.bloge.operators.http.HttpRequestOperator;
 import com.leanowtech.bloge.spring.annotation.BlogeOperator;
@@ -343,6 +345,21 @@ public class GatewayConfiguration {
             JdbcTemplate jdbc,
             ObjectMapper objectMapper) {
         return new DatabaseVisualRuntimeBindingImplementationRepository(jdbc, objectMapper);
+    }
+
+    /**
+     * Database-backed repository for runtime adapter activation facts.
+     *
+     * @param jdbc JDBC template for H2 access
+     * @param objectMapper Jackson mapper for activation serialization
+     * @return runtime adapter activation repository
+     */
+    @Bean
+    @ConditionalOnMissingBean
+    public VisualRuntimeAdapterActivationRepository visualRuntimeAdapterActivationRepository(
+            JdbcTemplate jdbc,
+            ObjectMapper objectMapper) {
+        return new DatabaseVisualRuntimeAdapterActivationRepository(jdbc, objectMapper);
     }
 
     // ── Interceptors ────────────────────────────────────────────────────

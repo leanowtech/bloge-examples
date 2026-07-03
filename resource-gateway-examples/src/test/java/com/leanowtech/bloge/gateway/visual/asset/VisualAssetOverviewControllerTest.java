@@ -18,6 +18,8 @@ import com.leanowtech.bloge.gateway.visual.model.VisualBundleFingerprint;
 import com.leanowtech.bloge.gateway.visual.publication.InMemoryVisualGraphPublicationRepository;
 import com.leanowtech.bloge.gateway.visual.publication.VisualGraphPublication;
 import com.leanowtech.bloge.gateway.visual.publication.VisualGraphPublicationSummary;
+import com.leanowtech.bloge.gateway.visual.runtime.VisualRuntimeAdapterActivation;
+import com.leanowtech.bloge.gateway.visual.runtime.VisualRuntimeAdapterActivationValidation;
 import com.leanowtech.bloge.gateway.visual.validation.GraphDraftValidator;
 import com.leanowtech.bloge.gateway.visual.validation.VisualValidationResult;
 
@@ -1509,6 +1511,91 @@ class VisualAssetOverviewControllerTest {
     }
 
     @Test
+    void runtimeAdapterActivationSubmitPersistsHealthyBoundAdapter() {
+        RuntimeBindingImplementationFixture fixture = runtimeBindingImplementationFixture();
+        VisualRuntimeBindingImplementationBinding stored = submitImplementation(
+                fixture,
+                completeImplementation("risk-eligibility-native-v1")
+        );
+        var boundResponse = fixture.controller().bindRuntimeBindingImplementation(
+                stored.bindingId(),
+                transitionRequest("", true)
+        );
+        assertThat(boundResponse.getStatusCode().value()).isEqualTo(200);
+        VisualRuntimeBindingImplementationBinding binding = boundResponse.getBody().binding();
+        VisualRuntimeAdapterActivationValidation.Request request =
+                adapterActivationRequest(binding, "risk-eligibility-prod-active");
+
+        var validation = fixture.controller().validateRuntimeAdapterActivation(request);
+        var response = fixture.controller().submitRuntimeAdapterActivation(request);
+
+        assertThat(validation.getStatusCode().value()).isEqualTo(200);
+        assertThat(validation.getBody()).isNotNull();
+        assertThat(validation.getBody().valid()).isTrue();
+        assertThat(validation.getBody().activatable()).isTrue();
+        assertThat(validation.getBody().state()).isEqualTo("ready-to-activate");
+        assertThat(validation.getBody().bindingId()).isEqualTo(binding.bindingId());
+        assertThat(validation.getBody().bindingRevision()).isEqualTo(binding.revision());
+        assertThat(validation.getBody().currentCatalogState()).isEqualTo("current");
+        assertThat(response.getStatusCode().value()).isEqualTo(201);
+        assertThat(response.getBody()).isInstanceOf(VisualRuntimeAdapterActivation.class);
+        VisualRuntimeAdapterActivation activation = (VisualRuntimeAdapterActivation) response.getBody();
+        assertThat(activation.schemaVersion()).isEqualTo(VisualRuntimeAdapterActivation.SCHEMA_VERSION);
+        assertThat(activation.activationId()).isEqualTo("risk-eligibility-prod-active");
+        assertThat(activation.bindingId()).isEqualTo(binding.bindingId());
+        assertThat(activation.bindingRevision()).isEqualTo(binding.revision());
+        assertThat(activation.operatorRef()).isEqualTo("risk:eligibility");
+        assertThat(activation.operatorFingerprint()).isEqualTo(binding.operatorFingerprint());
+        assertThat(activation.adapterKind()).isEqualTo("native");
+        assertThat(activation.entrypoint()).isEqualTo("com.acme.risk.RiskEligibilityOperator");
+        assertThat(activation.runtimeEnvironment()).isEqualTo("prod");
+        assertThat(activation.healthState()).isEqualTo("healthy");
+        assertThat(activation.evidence()).singleElement().satisfies(evidence -> {
+            assertThat(evidence.kind()).isEqualTo("health-check");
+            assertThat(evidence.ref()).isEqualTo("deployment:risk-eligibility-native-v1");
+        });
+        assertThat(fixture.controller().runtimeAdapterActivations("", "", ""))
+                .singleElement()
+                .isEqualTo(activation);
+        assertThat(fixture.controller().runtimeAdapterActivations(binding.bindingId(), "risk:eligibility", "active"))
+                .singleElement()
+                .isEqualTo(activation);
+
+        var duplicate = fixture.controller().submitRuntimeAdapterActivation(request);
+        assertThat(duplicate.getStatusCode().value()).isEqualTo(409);
+        assertThat(duplicate.getBody()).isInstanceOf(VisualRuntimeAdapterActivationValidation.class);
+        VisualRuntimeAdapterActivationValidation duplicateValidation =
+                (VisualRuntimeAdapterActivationValidation) duplicate.getBody();
+        assertThat(duplicateValidation.valid()).isFalse();
+        assertThat(duplicateValidation.diagnostics())
+                .extracting(VisualDiagnostic::code)
+                .contains("visual.runtimeAdapterActivation.activationIdDuplicate");
+    }
+
+    @Test
+    void runtimeAdapterActivationSubmitRejectsUnboundImplementation() {
+        RuntimeBindingImplementationFixture fixture = runtimeBindingImplementationFixture();
+        VisualRuntimeBindingImplementationBinding stored = submitImplementation(
+                fixture,
+                completeImplementation("risk-eligibility-native-v1")
+        );
+
+        var response = fixture.controller().submitRuntimeAdapterActivation(
+                adapterActivationRequest(stored, "risk-eligibility-prod-active")
+        );
+
+        assertThat(response.getStatusCode().value()).isEqualTo(400);
+        assertThat(response.getBody()).isInstanceOf(VisualRuntimeAdapterActivationValidation.class);
+        VisualRuntimeAdapterActivationValidation validation =
+                (VisualRuntimeAdapterActivationValidation) response.getBody();
+        assertThat(validation.valid()).isFalse();
+        assertThat(validation.diagnostics())
+                .extracting(VisualDiagnostic::code)
+                .contains("visual.runtimeAdapterActivation.bindingNotBound");
+        assertThat(fixture.controller().runtimeAdapterActivations("", "", "")).isEmpty();
+    }
+
+    @Test
     void overviewQueuesWarningAcknowledgementFromGraphActionReadiness() {
         DefaultVisualOperatorCatalog catalog = VisualCatalogTestSupport.catalogWithLibrary(
                 VisualCatalogTestSupport.designOnlyEligibilityLibrary("integer"));
@@ -1906,6 +1993,31 @@ class VisualAssetOverviewControllerTest {
                 "Bind runtime implementation evidence.",
                 ackReview,
                 replacementBindingId
+        );
+    }
+
+    private static VisualRuntimeAdapterActivationValidation.Request adapterActivationRequest(
+            VisualRuntimeBindingImplementationBinding binding,
+            String activationId) {
+        return new VisualRuntimeAdapterActivationValidation.Request(
+                VisualRuntimeAdapterActivationValidation.REQUEST_SCHEMA_VERSION,
+                activationId,
+                binding.bindingId(),
+                binding.revision(),
+                binding.operatorRef(),
+                binding.operatorFingerprint(),
+                binding.implementation().adapterKind(),
+                binding.implementation().entrypoint(),
+                binding.implementation().runtimeOwner(),
+                "prod",
+                VisualRuntimeAdapterActivation.HEALTH_HEALTHY,
+                "runtime-platform",
+                "visual-canvas-test",
+                "Runtime deployment is healthy.",
+                List.of(new VisualRuntimeAdapterActivation.Evidence(
+                        "health-check",
+                        "deployment:risk-eligibility-native-v1",
+                        "Readiness probe is healthy."))
         );
     }
 

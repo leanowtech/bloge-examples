@@ -14,6 +14,8 @@ import java.util.Map;
  * @param facets count summary for matching operators
  * @param runtimeBindingProjections server-derived implementation binding projections
  * @param runtimeBindingProjectionStateCounts projection state counts
+ * @param executablePromotionProjections server-derived executable promotion projections
+ * @param executablePromotionStateCounts executable promotion state counts
  */
 public record OperatorCatalogResponse(
         String schemaVersion,
@@ -21,7 +23,9 @@ public record OperatorCatalogResponse(
         List<VisualDiagnostic> diagnostics,
         OperatorCatalogFacets facets,
         List<OperatorRuntimeBindingProjection> runtimeBindingProjections,
-        Map<String, Integer> runtimeBindingProjectionStateCounts
+        Map<String, Integer> runtimeBindingProjectionStateCounts,
+        List<OperatorExecutablePromotionProjection> executablePromotionProjections,
+        Map<String, Integer> executablePromotionStateCounts
 ) {
     /**
      * Backward-compatible response constructor.
@@ -66,7 +70,52 @@ public record OperatorCatalogResponse(
                                    OperatorCatalogFacets facets,
                                    List<OperatorRuntimeBindingProjection> runtimeBindingProjections) {
         this(schemaVersion, operators, diagnostics, facets, runtimeBindingProjections,
-                OperatorRuntimeBindingProjection.stateCounts(runtimeBindingProjections));
+                OperatorRuntimeBindingProjection.stateCounts(runtimeBindingProjections),
+                OperatorExecutablePromotionProjection.from(runtimeBindingProjections));
+    }
+
+    /**
+     * Creates a response with explicit runtime binding counts and derived promotion projections.
+     *
+     * @param schemaVersion response schema version
+     * @param operators matching operators
+     * @param diagnostics catalog diagnostics
+     * @param facets count summary
+     * @param runtimeBindingProjections server-derived runtime binding projections
+     * @param runtimeBindingProjectionStateCounts runtime binding projection state counts
+     */
+    public OperatorCatalogResponse(String schemaVersion,
+                                   List<OperatorDefinition> operators,
+                                   List<VisualDiagnostic> diagnostics,
+                                   OperatorCatalogFacets facets,
+                                   List<OperatorRuntimeBindingProjection> runtimeBindingProjections,
+                                   Map<String, Integer> runtimeBindingProjectionStateCounts) {
+        this(schemaVersion, operators, diagnostics, facets, runtimeBindingProjections,
+                runtimeBindingProjectionStateCounts,
+                OperatorExecutablePromotionProjection.from(runtimeBindingProjections));
+    }
+
+    /**
+     * Creates a response with executable promotion projections.
+     *
+     * @param schemaVersion response schema version
+     * @param operators matching operators
+     * @param diagnostics catalog diagnostics
+     * @param facets count summary
+     * @param runtimeBindingProjections server-derived runtime binding projections
+     * @param runtimeBindingProjectionStateCounts runtime binding projection state counts
+     * @param executablePromotionProjections server-derived executable promotion projections
+     */
+    public OperatorCatalogResponse(String schemaVersion,
+                                   List<OperatorDefinition> operators,
+                                   List<VisualDiagnostic> diagnostics,
+                                   OperatorCatalogFacets facets,
+                                   List<OperatorRuntimeBindingProjection> runtimeBindingProjections,
+                                   Map<String, Integer> runtimeBindingProjectionStateCounts,
+                                   List<OperatorExecutablePromotionProjection> executablePromotionProjections) {
+        this(schemaVersion, operators, diagnostics, facets, runtimeBindingProjections,
+                runtimeBindingProjectionStateCounts, executablePromotionProjections,
+                OperatorExecutablePromotionProjection.stateCounts(executablePromotionProjections));
     }
 
     /**
@@ -85,5 +134,11 @@ public record OperatorCatalogResponse(
         runtimeBindingProjectionStateCounts = runtimeBindingProjectionStateCounts == null
                 ? OperatorRuntimeBindingProjection.stateCounts(runtimeBindingProjections)
                 : Map.copyOf(runtimeBindingProjectionStateCounts);
+        executablePromotionProjections = executablePromotionProjections == null
+                ? OperatorExecutablePromotionProjection.from(runtimeBindingProjections)
+                : List.copyOf(executablePromotionProjections);
+        executablePromotionStateCounts = executablePromotionStateCounts == null
+                ? OperatorExecutablePromotionProjection.stateCounts(executablePromotionProjections)
+                : Map.copyOf(executablePromotionStateCounts);
     }
 }

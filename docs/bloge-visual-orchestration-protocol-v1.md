@@ -1933,10 +1933,30 @@ implementation projection 的审计输入；当前仍不直接改 graph artifact
 readiness。`GET /api/visual/operators` 现在会把 active bound record 作为
 `bloge.operatorRuntimeBindingProjection.v1` 投影到响应的 `runtimeBindingProjections[]`
 和 `runtimeBindingProjectionStateCounts`，用 `binding-required`、`binding-bound`、
-`binding-drifted`、`not-required` 等状态表达 palette 层的实现绑定进度；projection 会校验
-active binding 的 operator fingerprint 是否仍匹配当前 catalog，drift 时不会关闭实现缺口。
-真正的 executable readiness 关闭还必须由 runtime adapter registry / executable lowering
-接入后，再由 readiness 和 runtime-binding index 重新派生。
+`binding-drifted`、`adapter-active`、`adapter-drifted`、`not-required` 等状态表达
+palette 层的实现绑定与运行适配器激活进度；projection 会校验 active binding 的
+operator fingerprint 是否仍匹配当前 catalog，也会校验 active adapter activation 的
+binding revision、operator fingerprint、adapter kind、entrypoint、runtime owner 和 health
+state 是否仍匹配 bound implementation，drift 时不会关闭实现缺口。
+同一 catalog response 还会派生 `bloge.operatorExecutablePromotionProjection.v1` 到
+`executablePromotionProjections[]`，并返回 `executablePromotionStateCounts`。该读模型把
+`binding-required`、`binding-drifted`、`activation-required`、`activation-drifted`、
+`executor-integration-required` 和 `already-executable` 拆成显式 promotion 状态；
+其中 `adapter-active` 会被进一步表达为 `executor-integration-required`，说明运行面已激活，
+但还缺 BLOGE lowering/executor 接入。它不修改 `OperatorDefinition.runtimeReadiness`，
+也不会把 design-only operator 伪装成 executable。
+`POST /api/visual/assets/runtime-binding-requirements/adapter-activations/validate`
+接收 `bloge.visualRuntimeAdapterActivationRequest.v1`，对准 bound implementation、当前
+catalog fingerprint、adapter metadata、runtimeEnvironment、healthState、activatedBy、
+reason 和 evidence 做无状态校验，返回
+`bloge.visualRuntimeAdapterActivationValidation.v1`。`POST
+/api/visual/assets/runtime-binding-requirements/adapter-activations` 会持久化健康且当前的
+activation assertion 为 `bloge.visualRuntimeAdapterActivation.v1`，并拒绝 unbound binding、
+fingerprint/adapter drift、重复 activationId、同一 binding 的第二个 active activation
+以及缺失 actor/reason/evidence 的请求；`GET .../adapter-activations` 可按 `bindingId`、
+`operatorRef` 和 `state` 查询。真正的 executable readiness 关闭还必须由 executable
+lowering / executor integration 接入后，再由 readiness 和 runtime-binding index 重新派生；
+`adapter-active` 只是运行面事实，不会直接把 design-only operator 改成可执行。
 `actionReadiness` 则把同一批 diagnostics/readiness 压成产品动作门禁：`compileNow`、
 `runNow`、`publishDesignNow`、`publishDesignAfterReview`、`publishExecutableNow`、
 `publishExecutableAfterReview`，以及 `requiresAckWarnings` /

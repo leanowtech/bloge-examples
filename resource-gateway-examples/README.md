@@ -796,7 +796,7 @@ Showcase metadata APIs:
 | `GET` | `/api/gateway/examples/scenarios/{graphName}` | Load scenario metadata and run recipe |
 | `GET` | `/api/gateway/examples/scenarios/{graphName}/diagram` | Load the `bloge.visualLayout.v1` diagram for a scenario |
 | `POST` | `/api/gateway/examples/compose/run` | Compile and run submitted DSL with JSON context, returning diagnostics, output, layout, and decision-table metadata |
-| `GET` | `/api/visual/operators` | List native, Java registry, imported, executable publication-backed subgraph, and resource-backed visual operator definitions; supports `tenantId`, `namespace`, and `environment` policy filtering, `sourceKind` / `operatorLibraryId` / `loweringMode` / `capability` / `runtimeReadiness` catalog facets, plus multi-term schema-aware search across input/output/config fields, field types, JSON Schema field annotations, library owner ids, and readiness summaries; response includes `facets.total/sourceKinds/operatorLibraryIds/loweringModes/capabilities/runtimeReadinessStates` counts plus server-derived `runtimeBindingProjections[]` and `runtimeBindingProjectionStateCounts` so palette clients can distinguish missing, bound, and drifted implementation bindings without trusting imported libraries to declare runtime state |
+| `GET` | `/api/visual/operators` | List native, Java registry, imported, executable publication-backed subgraph, and resource-backed visual operator definitions; supports `tenantId`, `namespace`, and `environment` policy filtering, `sourceKind` / `operatorLibraryId` / `loweringMode` / `capability` / `runtimeReadiness` catalog facets, plus multi-term schema-aware search across input/output/config fields, field types, JSON Schema field annotations, library owner ids, and readiness summaries; response includes `facets.total/sourceKinds/operatorLibraryIds/loweringModes/capabilities/runtimeReadinessStates` counts plus server-derived `runtimeBindingProjections[]` / `runtimeBindingProjectionStateCounts` and `executablePromotionProjections[]` / `executablePromotionStateCounts`, so palette clients can distinguish missing, bound, drifted, adapter-active, and still-executor-blocked implementation state without trusting imported libraries to declare runtime readiness |
 | `GET` | `/api/visual/operators/{operatorRef}` | Return one visible `bloge.visualOperator.v1` definition under the same `tenantId` / `namespace` / `environment`, `includeDeprecated`, `resourceOnly`, `operatorLibraryId`, and catalog facet visibility gates used by the operator catalog; returns `404` when the operator is hidden or missing |
 | `GET` | `/api/visual/operators/{operatorRef}/usage` | Return stored draft and immutable-publication usage of one operatorRef, including saved/frozen fingerprint status, changed-surface drift summaries, and `changeRisk/changeCategories/changeSummary` when snapshots allow risk classification |
 | `GET` | `/api/visual/assets/overview` | Return `bloge.visualAssetOverview.v1`, an environment-level visual authoring overview that echoes the requested authoring scope while aggregating draft summaries, publication summaries, current operator catalog facets, and an action-readiness/runtime-binding-requirement-aware server-derived action queue with optional `tenantId` / `namespace` / `environment` scope filters plus `actionLimit` / `actionOffset` / `actionSeverity` / `actionType` / `actionTargetKind` / `actionOperatorRef` / `actionOperatorLibraryId` queue query controls and operatorRef/operatorLibraryId counts for runtime-plane triage |
@@ -808,6 +808,9 @@ Showcase metadata APIs:
 | `POST` | `/api/visual/assets/runtime-binding-requirements/implementation-bindings` | Submit and persist a valid runtime implementation proposal after the same contract/evidence validation gate; rejected proposals are not stored, duplicate `bindingId` returns `409 CONFLICT`, and accepted records remain control-plane evidence rather than closing runtime-binding requirements |
 | `POST` | `/api/visual/assets/runtime-binding-requirements/implementation-bindings/{bindingId}/bind` | Transition a ready-to-bind or review-acknowledged proposal into the active `bound` lifecycle state with actor/reason audit evidence; rejects missing governance evidence, review-required proposals without `ackReview`, already bound/superseded records, and operators with an existing active binding |
 | `POST` | `/api/visual/assets/runtime-binding-requirements/implementation-bindings/{bindingId}/supersede` | Replace one active bound implementation with another accepted proposal for the same operator, linking `supersedesBindingId` / `supersededByBindingId` and lifecycle events; the active binding is projected into the operator catalog response as implementation evidence, while executable readiness still waits for real runtime adapter integration |
+| `POST` | `/api/visual/assets/runtime-binding-requirements/adapter-activations/validate` | Validate a `bloge.visualRuntimeAdapterActivationRequest.v1` runtime-plane activation assertion against a bound implementation, current catalog fingerprint, adapter metadata, healthy runtime environment, actor/reason, and activation evidence without persisting state |
+| `GET` | `/api/visual/assets/runtime-binding-requirements/adapter-activations` | List stored `bloge.visualRuntimeAdapterActivation.v1` adapter activation facts with optional `bindingId`, `operatorRef`, and `state` filters |
+| `POST` | `/api/visual/assets/runtime-binding-requirements/adapter-activations` | Persist a healthy active adapter activation for a bound implementation; rejects unbound bindings, fingerprint/adapter drift, duplicate activation ids, and duplicate active activations for the same binding. The catalog projection can show `adapter-active`, but the operator remains non-executable until explicit BLOGE runtime lowering/executor integration exists |
 | `GET` | `/api/visual/drafts` | List stored visual graph drafts with optional `tenantId` / `namespace` / `environment` scope filters |
 | `GET` | `/api/visual/drafts/history` | List lightweight active/deleted draft history summaries with current/latest revision, revision count, latest actor/source/summary, recovery status, and optional `tenantId` / `namespace` / `environment` scope filters |
 | `GET` | `/api/visual/drafts/summaries` | List `bloge.visualGraphDraftSummary.v1` draft asset summaries that combine history, server validation/readiness/action-readiness, diagnostic counts, and dependency counts without returning full draft JSON; supports optional `tenantId` / `namespace` / `environment` scope filters |
@@ -1202,12 +1205,21 @@ as `bound` or supersede one active binding with another, preserving actor/reason
 audit events and replacement lineage. These records are now control-plane
 implementation facts. The operator catalog response now exposes server-derived
 `runtimeBindingProjections[]` with `binding-required`, `binding-bound`,
-`binding-drifted`, and `not-required` projection states, so palette and external
-control planes can see active implementation evidence without letting imported
-operator libraries forge readiness. A bound projection still does not rewrite
-graph artifacts or pretend an executable adapter exists; executable readiness
-remains blocked until a real runtime adapter registry/lowering integration
-consumes the bound implementation.
+`binding-drifted`, `adapter-active`, `adapter-drifted`, and `not-required`
+projection states, so palette and external control planes can see active
+implementation and adapter activation evidence without letting imported operator
+libraries forge readiness. The same response also derives
+`executablePromotionProjections[]` and `executablePromotionStateCounts`; an
+`adapter-active` row becomes `executor-integration-required` until explicit
+BLOGE lowering/executor integration promotes the operator. Runtime teams can also submit
+`bloge.visualRuntimeAdapterActivationRequest.v1` activation assertions for bound
+implementations; the server persists healthy current assertions as
+`bloge.visualRuntimeAdapterActivation.v1` facts and rejects unbound bindings,
+fingerprint drift, adapter metadata drift, duplicate activations, missing
+actor/reason, and missing health evidence. Even `adapter-active` still does not
+rewrite graph artifacts or pretend the current BLOGE request-response runtime can
+execute a design-only operator; executable readiness remains blocked until an
+explicit runtime lowering/executor integration consumes the activation fact.
 The Drafts panel renders a Draft Asset Index from server-side draft summaries
 for the active Authoring Scope, so active and recoverable deleted drafts expose
 design-only, runtime-blocked, governance-review, repair-required readiness, and

@@ -100,7 +100,16 @@ class VisualOperatorCatalogControllerTest {
                         .value("risk-eligibility-native-v1"))
                 .andExpect(jsonPath("$.runtimeBindingProjections[0].implementationBindingRequired").value(false))
                 .andExpect(jsonPath("$.runtimeBindingProjections[0].runtimeActivationRequired").value(true))
-                .andExpect(jsonPath("$.runtimeBindingProjectionStateCounts['binding-bound']").value(1));
+                .andExpect(jsonPath("$.runtimeBindingProjectionStateCounts['binding-bound']").value(1))
+                .andExpect(jsonPath("$.executablePromotionProjections[0].operatorRef")
+                        .value("risk:eligibility"))
+                .andExpect(jsonPath("$.executablePromotionProjections[0].promotionState")
+                        .value("activation-required"))
+                .andExpect(jsonPath("$.executablePromotionProjections[0].requiredNextAction")
+                        .value("ACTIVATE_RUNTIME_ADAPTER"))
+                .andExpect(jsonPath("$.executablePromotionProjections[0].promotionReady").value(false))
+                .andExpect(jsonPath("$.executablePromotionProjections[0].executableNow").value(false))
+                .andExpect(jsonPath("$.executablePromotionStateCounts['activation-required']").value(1));
     }
 
     @Test

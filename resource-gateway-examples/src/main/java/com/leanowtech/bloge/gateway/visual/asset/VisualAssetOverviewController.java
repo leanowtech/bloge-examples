@@ -11,6 +11,10 @@ import com.leanowtech.bloge.gateway.visual.draft.GraphDraftRepository;
 import com.leanowtech.bloge.gateway.visual.draft.GraphDraftSummary;
 import com.leanowtech.bloge.gateway.visual.publication.VisualGraphPublicationRepository;
 import com.leanowtech.bloge.gateway.visual.publication.VisualGraphPublicationSummary;
+import com.leanowtech.bloge.gateway.visual.runtime.InMemoryVisualRuntimeAdapterActivationRepository;
+import com.leanowtech.bloge.gateway.visual.runtime.VisualRuntimeAdapterActivation;
+import com.leanowtech.bloge.gateway.visual.runtime.VisualRuntimeAdapterActivationRepository;
+import com.leanowtech.bloge.gateway.visual.runtime.VisualRuntimeAdapterActivationValidation;
 import com.leanowtech.bloge.gateway.visual.validation.GraphDraftValidator;
 import com.leanowtech.bloge.gateway.visual.validation.VisualValidationResult;
 
@@ -44,6 +48,7 @@ public class VisualAssetOverviewController {
     private final VisualOperatorCatalog catalog;
     private final VisualGraphPublicationRepository publicationRepository;
     private final VisualRuntimeBindingImplementationRepository implementationRepository;
+    private final VisualRuntimeAdapterActivationRepository adapterActivationRepository;
 
     /**
      * @param draftRepository draft repository
@@ -56,7 +61,8 @@ public class VisualAssetOverviewController {
                                          VisualOperatorCatalog catalog,
                                          VisualGraphPublicationRepository publicationRepository) {
         this(draftRepository, validator, catalog, publicationRepository,
-                new InMemoryVisualRuntimeBindingImplementationRepository());
+                new InMemoryVisualRuntimeBindingImplementationRepository(),
+                new InMemoryVisualRuntimeAdapterActivationRepository());
     }
 
     /**
@@ -65,13 +71,15 @@ public class VisualAssetOverviewController {
      * @param catalog visual operator catalog
      * @param publicationRepository publication repository
      * @param implementationRepository runtime implementation binding repository
+     * @param adapterActivationRepository runtime adapter activation repository
      */
     @Autowired
     public VisualAssetOverviewController(GraphDraftRepository draftRepository,
                                          GraphDraftValidator validator,
                                          VisualOperatorCatalog catalog,
                                          VisualGraphPublicationRepository publicationRepository,
-                                         VisualRuntimeBindingImplementationRepository implementationRepository) {
+                                         VisualRuntimeBindingImplementationRepository implementationRepository,
+                                         VisualRuntimeAdapterActivationRepository adapterActivationRepository) {
         this.draftRepository = draftRepository;
         this.validator = validator;
         this.catalog = catalog;
@@ -79,6 +87,18 @@ public class VisualAssetOverviewController {
         this.implementationRepository = implementationRepository == null
                 ? new InMemoryVisualRuntimeBindingImplementationRepository()
                 : implementationRepository;
+        this.adapterActivationRepository = adapterActivationRepository == null
+                ? new InMemoryVisualRuntimeAdapterActivationRepository()
+                : adapterActivationRepository;
+    }
+
+    public VisualAssetOverviewController(GraphDraftRepository draftRepository,
+                                         GraphDraftValidator validator,
+                                         VisualOperatorCatalog catalog,
+                                         VisualGraphPublicationRepository publicationRepository,
+                                         VisualRuntimeBindingImplementationRepository implementationRepository) {
+        this(draftRepository, validator, catalog, publicationRepository, implementationRepository,
+                new InMemoryVisualRuntimeAdapterActivationRepository());
     }
 
     /**
@@ -712,6 +732,126 @@ public class VisualAssetOverviewController {
         ));
     }
 
+    /**
+     * Validates a runtime adapter activation assertion against the active binding and current catalog.
+     *
+     * @param request submitted adapter activation request
+     * @return validation result with binding, catalog, and runtime assertion diagnostics
+     */
+    @PostMapping("/runtime-binding-requirements/adapter-activations/validate")
+    public ResponseEntity<VisualRuntimeAdapterActivationValidation> validateRuntimeAdapterActivation(
+            @RequestBody(required = false) VisualRuntimeAdapterActivationValidation.Request request) {
+        if (request == null) {
+            return ResponseEntity.badRequest()
+                    .body(VisualRuntimeAdapterActivationValidation.missingRequest());
+        }
+        VisualRuntimeBindingImplementationBinding binding = request.bindingId().isBlank()
+                ? null
+                : implementationRepository.find(request.bindingId()).orElse(null);
+        OperatorDefinition currentOperator = binding == null
+                ? null
+                : catalog.find(binding.operatorRef()).orElse(null);
+        VisualRuntimeAdapterActivationValidation result =
+                VisualRuntimeAdapterActivationValidation.from(request, binding, currentOperator);
+        boolean unsupportedVersion = result.diagnostics().stream()
+                .anyMatch(diagnostic ->
+                        "visual.runtimeAdapterActivation.schemaVersionUnsupported".equals(diagnostic.code()));
+        return unsupportedVersion
+                ? ResponseEntity.status(HttpStatus.BAD_REQUEST).body(result)
+                : ResponseEntity.ok(result);
+    }
+
+    /**
+     * Lists submitted runtime adapter activations.
+     *
+     * @param bindingId optional binding id filter
+     * @param operatorRef optional operator reference filter
+     * @param state optional activation state filter
+     * @return matching runtime adapter activations
+     */
+    @GetMapping("/runtime-binding-requirements/adapter-activations")
+    public List<VisualRuntimeAdapterActivation> runtimeAdapterActivations(
+            @RequestParam(defaultValue = "") String bindingId,
+            @RequestParam(defaultValue = "") String operatorRef,
+            @RequestParam(defaultValue = "") String state) {
+        String normalizedBindingId = bindingId == null ? "" : bindingId.trim();
+        String normalizedOperatorRef = operatorRef == null ? "" : operatorRef.trim();
+        String normalizedState = state == null ? "" : state.trim().toLowerCase(Locale.ROOT);
+        return adapterActivationRepository.all().stream()
+                .filter(activation -> normalizedBindingId.isBlank()
+                        || activation.bindingId().equals(normalizedBindingId))
+                .filter(activation -> normalizedOperatorRef.isBlank()
+                        || activation.operatorRef().equals(normalizedOperatorRef))
+                .filter(activation -> normalizedState.isBlank()
+                        || activation.state().equals(normalizedState))
+                .toList();
+    }
+
+    /**
+     * Stores a healthy runtime adapter activation fact for a bound implementation.
+     *
+     * <p>Accepted activations are auditable runtime-plane facts. They are surfaced
+     * through the operator catalog projection, but they still do not mutate the
+     * imported operator definition or make design-only operators executable.</p>
+     *
+     * @param request submitted adapter activation request
+     * @return stored activation when accepted, otherwise validation diagnostics
+     */
+    @PostMapping("/runtime-binding-requirements/adapter-activations")
+    public ResponseEntity<Object> submitRuntimeAdapterActivation(
+            @RequestBody(required = false) VisualRuntimeAdapterActivationValidation.Request request) {
+        if (request == null) {
+            return ResponseEntity.badRequest()
+                    .body(VisualRuntimeAdapterActivationValidation.missingRequest());
+        }
+        VisualRuntimeBindingImplementationBinding binding = request.bindingId().isBlank()
+                ? null
+                : implementationRepository.find(request.bindingId()).orElse(null);
+        OperatorDefinition currentOperator = binding == null
+                ? null
+                : catalog.find(binding.operatorRef()).orElse(null);
+        VisualRuntimeAdapterActivationValidation validation =
+                VisualRuntimeAdapterActivationValidation.from(request, binding, currentOperator);
+        if (!validation.valid()) {
+            return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(validation);
+        }
+        if (!request.activationId().isBlank() && adapterActivationRepository.find(request.activationId()).isPresent()) {
+            return ResponseEntity.status(HttpStatus.CONFLICT).body(adapterActivationValidationWithBlockingDiagnostic(
+                    validation,
+                    VisualDiagnostic.error(
+                            "visual.runtimeAdapterActivation.activationIdDuplicate",
+                            "Runtime adapter activationId '%s' already exists.".formatted(request.activationId()),
+                            "/activationId",
+                            Map.of("activationId", request.activationId()))
+            ));
+        }
+        if (adapterActivationRepository.findActiveByBindingId(validation.bindingId()).isPresent()) {
+            return ResponseEntity.status(HttpStatus.CONFLICT).body(adapterActivationValidationWithBlockingDiagnostic(
+                    validation,
+                    VisualDiagnostic.error(
+                            "visual.runtimeAdapterActivation.activeActivationExists",
+                            "Runtime adapter activation already exists for binding '%s'."
+                                    .formatted(validation.bindingId()),
+                            "/bindingId",
+                            Map.of("bindingId", validation.bindingId()))
+            ));
+        }
+        VisualRuntimeAdapterActivation stored;
+        try {
+            stored = adapterActivationRepository.create(VisualRuntimeAdapterActivation.from(request, validation));
+        } catch (IllegalArgumentException e) {
+            return ResponseEntity.status(HttpStatus.CONFLICT).body(adapterActivationValidationWithBlockingDiagnostic(
+                    validation,
+                    VisualDiagnostic.error(
+                            "visual.runtimeAdapterActivation.activationConflict",
+                            e.getMessage(),
+                            "/activationId",
+                            Map.of("activationId", request.activationId(), "bindingId", validation.bindingId()))
+            ));
+        }
+        return ResponseEntity.status(HttpStatus.CREATED).body(stored);
+    }
+
     VisualAssetOverview overview(String tenantId, String namespace, String environment) {
         return overview(tenantId, namespace, environment, VisualAssetOverview.DEFAULT_ACTION_ITEM_LIMIT);
     }
@@ -841,6 +981,37 @@ public class VisualAssetOverviewController {
                 validation.currentCatalogFingerprint(),
                 validation.currentCatalogState(),
                 validation.implementation(),
+                diagnostics
+        );
+    }
+
+    private static VisualRuntimeAdapterActivationValidation adapterActivationValidationWithBlockingDiagnostic(
+            VisualRuntimeAdapterActivationValidation validation,
+            VisualDiagnostic diagnostic) {
+        List<VisualDiagnostic> diagnostics = new ArrayList<>(validation.diagnostics());
+        diagnostics.add(diagnostic);
+        return new VisualRuntimeAdapterActivationValidation(
+                validation.schemaVersion(),
+                validation.validatedAt(),
+                false,
+                false,
+                "rejected",
+                "error",
+                diagnostic.message(),
+                validation.activationId(),
+                validation.bindingId(),
+                validation.bindingRevision(),
+                validation.operatorRef(),
+                validation.operatorFingerprint(),
+                validation.currentCatalogFingerprint(),
+                validation.currentCatalogState(),
+                validation.adapterKind(),
+                validation.entrypoint(),
+                validation.runtimeOwner(),
+                validation.runtimeEnvironment(),
+                validation.healthState(),
+                validation.activatedBy(),
+                validation.reason(),
                 diagnostics
         );
     }
