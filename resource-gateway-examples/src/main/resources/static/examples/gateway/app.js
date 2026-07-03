@@ -930,11 +930,15 @@ async function exportVisualRuntimeBindingHandoffBundle() {
     }
     const displayed = Number(payload?.displayedCount ?? payload?.requirements?.length ?? 0) || 0;
     const total = Number(payload?.total || 0) || 0;
+    const operatorContracts = Number(payload?.operatorContracts?.length || 0) || 0;
+    const contractSummary = operatorContracts
+      ? ` Included ${operatorContracts} operator contract snapshot${operatorContracts === 1 ? '' : 's'}.`
+      : ' No operator contract snapshots were available for this window.';
     const hasMore = payload?.hasMore ? ' Current query has more matching requirements after this window.' : '';
     state.visualRuntimeBindingHandoffBundle = payload;
     state.visualRuntimeBindingHandoffReview = null;
     state.visualRuntimeBindingHandoffBundleMessage = {
-      text: `Exported ${displayed} of ${total} runtime binding requirement(s).${hasMore}`,
+      text: `Exported ${displayed} of ${total} runtime binding requirement(s).${contractSummary}${hasMore}`,
       level: 'success'
     };
     $('output').textContent = pretty({ status: response.status, runtimeBindingHandoffBundle: payload });
@@ -1009,6 +1013,14 @@ function visualRuntimeBindingHandoffReviewRows(review) {
       level: 'info',
       label: 'Snapshot fingerprint',
       value: review.sourceBundleFingerprint
+    });
+  }
+  const operatorContracts = Number(review.exportedOperatorContractCount || 0) || 0;
+  if (operatorContracts) {
+    rows.push({
+      level: 'info',
+      label: 'Operator contract snapshots',
+      value: `${operatorContracts} contract${operatorContracts === 1 ? '' : 's'} exported with this handoff`
     });
   }
   const routingSummary = visualRuntimeBindingHandoffReviewRoutingSummary(review);

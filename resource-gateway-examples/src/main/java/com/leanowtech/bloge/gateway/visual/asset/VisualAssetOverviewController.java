@@ -241,7 +241,7 @@ public class VisualAssetOverviewController {
                 readinessState,
                 requirementKey
         );
-        return VisualRuntimeBindingHandoffBundle.from(index);
+        return VisualRuntimeBindingHandoffBundle.from(index, operatorContractsForRuntimeBindingHandoff(index));
     }
 
     /**
@@ -428,6 +428,19 @@ public class VisualAssetOverviewController {
         return runtimeBindingHandoffBundle(tenantId, namespace, environment, limit, offset, targetKind, "", "",
                 bindingKind, handoffLane, handoffKind, handoffTarget, sourceKind, loweringMode, readinessState,
                 requirementKey);
+    }
+
+    private List<OperatorDefinition> operatorContractsForRuntimeBindingHandoff(VisualRuntimeBindingRequirements index) {
+        Map<String, OperatorDefinition> operatorsByRef = new LinkedHashMap<>();
+        for (VisualRuntimeBindingRequirements.RequirementItem item
+                : index == null ? List.<VisualRuntimeBindingRequirements.RequirementItem>of() : index.items()) {
+            if (item == null || item.operatorRef().isBlank() || operatorsByRef.containsKey(item.operatorRef())) {
+                continue;
+            }
+            catalog.find(item.operatorRef())
+                    .ifPresent(operator -> operatorsByRef.put(item.operatorRef(), operator));
+        }
+        return List.copyOf(operatorsByRef.values());
     }
 
     private List<GraphDraftSummary> draftSummaries(String tenantId, String namespace, String environment) {

@@ -310,6 +310,8 @@ class VisualAuthoringAppJsTest {
                 .contains("async function updateVisualRuntimeBindingRequirementQuery(patch = {})")
                 .contains("async function exportVisualRuntimeBindingHandoffBundle()")
                 .contains("fetch(visualRuntimeBindingHandoffBundleUrl())")
+                .contains("payload?.operatorContracts?.length")
+                .contains("operator contract snapshot")
                 .contains("runtimeBindingHandoffBundle: payload")
                 .contains("async function reviewVisualRuntimeBindingHandoffBundle()")
                 .contains("fetch(visualRuntimeBindingHandoffReviewUrl(), {")
@@ -908,6 +910,7 @@ class VisualAuthoringAppJsTest {
                   missingCount: 1,
                   newCurrentWindowCount: 1,
                   sourceBundleFingerprint: 'sha256:1234567890abcdef',
+                  exportedOperatorContractCount: 1,
                   fieldChangeCategoryCounts: {
                     'runtime-binding': 2,
                     'asset-metadata': 1
@@ -984,20 +987,22 @@ class VisualAuthoringAppJsTest {
                 const routingSummary = context.visualRuntimeBindingHandoffReviewRoutingSummary(review);
                 const checks = [
                   ['message', message, 'Handoff review STALE: 0 current, 1 drifted, 1 missing, 1 new in current window.'],
-                  ['row count', rows.length, 6],
+                  ['row count', rows.length, 7],
                   ['fingerprint label', rows[0].label, 'Snapshot fingerprint'],
                   ['fingerprint value', rows[0].value, 'sha256:1234567890abcdef'],
-                  ['routing label', rows[1].label, 'Runtime binding routing'],
+                  ['contracts label', rows[1].label, 'Operator contract snapshots'],
+                  ['contracts value', rows[1].value, '1 contract exported with this handoff'],
+                  ['routing label', rows[2].label, 'Runtime binding routing'],
                   ['routing summary includes exported owner', String(routingSummary.includes('Exported 2 requirements (risk-policy-design library: 2')), 'true'],
                   ['routing summary includes current target', String(routingSummary.includes('Current 2 requirements')), 'true'],
                   ['routing summary includes new work', String(routingSummary.includes('New 1 requirement')), 'true'],
-                  ['category label', rows[2].label, 'Drift categories'],
-                  ['category value', rows[2].value, 'Asset Metadata 1 · Runtime Binding 2'],
-                  ['drift label', rows[3].label, 'Drifted · Risk policy @2'],
-                  ['drift value includes route', String(rows[3].value.includes('Runtime Binding Handoff Target: legacy-risk-owner -> risk:eligibility')), 'true'],
-                  ['drift value includes action', String(rows[3].value.includes('Runtime Binding Recommended Action: Legacy action -> Bind executable lowering before EXECUTABLE promotion.')), 'true'],
-                  ['missing label', rows[4].label, 'Missing · Missing policy @1'],
-                  ['new key label', rows[5].label, 'New current-window requirements']
+                  ['category label', rows[3].label, 'Drift categories'],
+                  ['category value', rows[3].value, 'Asset Metadata 1 · Runtime Binding 2'],
+                  ['drift label', rows[4].label, 'Drifted · Risk policy @2'],
+                  ['drift value includes route', String(rows[4].value.includes('Runtime Binding Handoff Target: legacy-risk-owner -> risk:eligibility')), 'true'],
+                  ['drift value includes action', String(rows[4].value.includes('Runtime Binding Recommended Action: Legacy action -> Bind executable lowering before EXECUTABLE promotion.')), 'true'],
+                  ['missing label', rows[5].label, 'Missing · Missing policy @1'],
+                  ['new key label', rows[6].label, 'New current-window requirements']
                 ];
                 for (const [label, actual, expected] of checks) {
                   if (actual !== expected) {

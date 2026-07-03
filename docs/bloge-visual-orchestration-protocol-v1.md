@@ -1870,10 +1870,16 @@ schema-only draft 在目标 catalog 未就绪时仍可按源算子库归属交�
 仍是唯一事实来源。
 `GET /api/visual/assets/runtime-binding-requirements/handoff-bundle` 会把当前查询窗口导出为
 `bloge.visualRuntimeBindingHandoff.v1`，携带 source index lineage、scope/filter、
-stable requirement keys、`operatorRefCounts`、`operatorLibraryIdCounts`、路由计数、requirement rows 和 `bundleFingerprint`，用于把 schema-only/design-only
-资产移交给 runtime-plane 团队。`POST /api/visual/assets/runtime-binding-requirements/handoff-review`
+stable requirement keys、`operatorRefCounts`、`operatorLibraryIdCounts`、路由计数、requirement rows、
+`operatorContracts[]` 和 `bundleFingerprint`，用于把 schema-only/design-only
+资产移交给 runtime-plane 团队。`operatorContracts[]` 是当前 handoff window
+引用算子的轻量契约快照，包含 `operatorRef`、`operatorVersion`、`fingerprint`、
+`operatorLibraryId`、display/source、input/output `ports`、`configSchema`、
+capabilities/policy、lowering 和 `runtimeReadiness`，让 runtime-plane
+接收方即使不能访问源端 catalog，也能按 frozen schema 与 readiness 证据实现绑定。
+`POST /api/visual/assets/runtime-binding-requirements/handoff-review`
 接收该 bundle 并返回 `bloge.visualRuntimeBindingHandoffReview.v1`，按 stable key
-对比当前 read model，标记 current、drifted、missing 和 current window 新增项。
+对比当前 read model，回显 `exportedOperatorContractCount`，并标记 current、drifted、missing 和 current window 新增项。
 drifted item 会保留兼容字段 `changedFields[]`，并新增结构化 `fieldChanges[]`
 记录 `field/category/exportedValue/currentValue`；顶层 `fieldChangeCategoryCounts`
 聚合 identity、scope、readiness、runtime-binding、asset-metadata 等变化类别，供
@@ -1884,7 +1890,7 @@ handoff lane/kind/target、source kind、lowering mode、readiness state 和 art
 汇总导出窗口、当前同窗口和当前新增 requirement 的分布，让外部工单系统无需扫描
 `items[]` 或解析 message 就能按 owner 与 runtime-plane lane 分派增量工作。
 `bundleFingerprint` 由服务端按 handoff
-业务内容派生，不包含 `exportedAt` / `sourceIndexGeneratedAt` 这类导出时间戳；
+业务内容派生，覆盖 `operatorContracts[]`，但不包含 `exportedAt` / `sourceIndexGeneratedAt` 这类导出时间戳；
 review 会先校验提交的 `bundleFingerprint` 是否匹配 bundle material，若不匹配则返回
 `visual.runtimeBindingHandoff.fingerprintMismatch` 并在 metadata 中给出 `actual/expected`，
 不会继续对当前 read model 做错误对账。review 会回显 `sourceBundleFingerprint`，

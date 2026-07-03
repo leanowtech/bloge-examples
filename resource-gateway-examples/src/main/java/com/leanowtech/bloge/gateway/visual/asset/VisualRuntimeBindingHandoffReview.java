@@ -31,6 +31,7 @@ import java.util.function.Function;
  * @param scope authoring scope from the submitted bundle
  * @param filter requirement filter from the submitted bundle
  * @param exportedRequirementCount submitted requirement key count
+ * @param exportedOperatorContractCount submitted operator contract snapshot count
  * @param currentWindowTotal current matching requirement total for the same scope/filter
  * @param currentWindowDisplayedCount current matching requirement count in the same page window
  * @param currentWindowHasMore true when the current scope/filter has more rows after the reviewed window
@@ -63,6 +64,7 @@ public record VisualRuntimeBindingHandoffReview(
         VisualAssetOverview.AuthoringScope scope,
         VisualRuntimeBindingRequirements.RequirementFilter filter,
         int exportedRequirementCount,
+        int exportedOperatorContractCount,
         int currentWindowTotal,
         int currentWindowDisplayedCount,
         boolean currentWindowHasMore,
@@ -104,6 +106,7 @@ public record VisualRuntimeBindingHandoffReview(
         scope = scope == null ? VisualAssetOverview.AuthoringScope.all() : scope;
         filter = filter == null ? VisualRuntimeBindingRequirements.RequirementFilter.all() : filter;
         exportedRequirementCount = Math.max(0, exportedRequirementCount);
+        exportedOperatorContractCount = Math.max(0, exportedOperatorContractCount);
         currentWindowTotal = Math.max(0, currentWindowTotal);
         currentWindowDisplayedCount = Math.max(0, currentWindowDisplayedCount);
         matchedCount = Math.max(0, matchedCount);
@@ -194,6 +197,7 @@ public record VisualRuntimeBindingHandoffReview(
                 safeBundle.scope(),
                 safeBundle.filter(),
                 exportedKeys.size(),
+                safeBundle.operatorContracts().size(),
                 safeWindow.total(),
                 safeWindow.displayedCount(),
                 safeWindow.hasMore(),
@@ -241,6 +245,7 @@ public record VisualRuntimeBindingHandoffReview(
                 safeBundle.scope(),
                 safeBundle.filter(),
                 keys.size(),
+                safeBundle.operatorContracts().size(),
                 0,
                 0,
                 false,

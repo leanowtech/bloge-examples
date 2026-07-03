@@ -1,5 +1,7 @@
 package com.leanowtech.bloge.gateway.visual.asset;
 
+import com.leanowtech.bloge.gateway.visual.catalog.OperatorDefinition;
+import com.leanowtech.bloge.gateway.visual.model.SchemaEnvelope;
 import com.leanowtech.bloge.gateway.visual.model.VisualBundleFingerprint;
 
 import java.time.Instant;
@@ -40,6 +42,7 @@ import java.util.Map;
  * @param loweringModeCounts filtered requirement counts by lowering mode
  * @param readinessStateCounts filtered requirement counts by graph/node readiness state
  * @param artifactKindCounts filtered publication requirement counts by frozen artifact kind
+ * @param operatorContracts schema and runtime contract snapshots for operators referenced by this handoff window
  * @param requirements returned runtime-binding requirements
  */
 public record VisualRuntimeBindingHandoffBundle(
@@ -68,6 +71,7 @@ public record VisualRuntimeBindingHandoffBundle(
         Map<String, Integer> loweringModeCounts,
         Map<String, Integer> readinessStateCounts,
         Map<String, Integer> artifactKindCounts,
+        List<OperatorContractSnapshot> operatorContracts,
         List<VisualRuntimeBindingRequirements.RequirementItem> requirements
 ) {
     public static final String SCHEMA_VERSION = "bloge.visualRuntimeBindingHandoff.v1";
@@ -99,6 +103,7 @@ public record VisualRuntimeBindingHandoffBundle(
         loweringModeCounts = immutableCounts(loweringModeCounts);
         readinessStateCounts = immutableCounts(readinessStateCounts);
         artifactKindCounts = immutableCounts(artifactKindCounts);
+        operatorContracts = operatorContracts == null ? List.of() : List.copyOf(operatorContracts);
         requirements = requirements == null ? List.of() : List.copyOf(requirements);
         bundleFingerprint = bundleFingerprint == null || bundleFingerprint.isBlank()
                 ? computedFingerprint(
@@ -124,8 +129,85 @@ public record VisualRuntimeBindingHandoffBundle(
                         loweringModeCounts,
                         readinessStateCounts,
                         artifactKindCounts,
+                        operatorContracts,
                         requirements)
                 : bundleFingerprint.trim();
+    }
+
+    /**
+     * Portable operator contract material needed by runtime-plane implementers.
+     *
+     * <p>This is intentionally narrower than a full catalog export: it carries the
+     * schema/runtime contract required to implement a missing binding, but not
+     * catalog lifecycle or registry mutation semantics.</p>
+     *
+     * @param operatorRef stable operator reference
+     * @param operatorVersion operator contract version
+     * @param fingerprint stable operator behavior/schema fingerprint
+     * @param operatorLibraryId imported operator-library owner when available
+     * @param display display metadata for humans receiving the handoff
+     * @param source source/runtime boundary metadata
+     * @param ports input/output port schemas
+     * @param configSchema operator configuration schema
+     * @param capabilities runtime and governance capabilities
+     * @param policy authoring availability policy
+     * @param lowering executable/design lowering metadata
+     * @param runtimeReadiness server-derived runtime readiness summary
+     */
+    public record OperatorContractSnapshot(
+            String operatorRef,
+            String operatorVersion,
+            String fingerprint,
+            String operatorLibraryId,
+            OperatorDefinition.Display display,
+            OperatorDefinition.Source source,
+            OperatorDefinition.Ports ports,
+            SchemaEnvelope configSchema,
+            OperatorDefinition.Capabilities capabilities,
+            OperatorDefinition.Policy policy,
+            OperatorDefinition.Lowering lowering,
+            OperatorDefinition.RuntimeReadiness runtimeReadiness
+    ) {
+        public OperatorContractSnapshot {
+            operatorRef = operatorRef == null ? "" : operatorRef;
+            operatorVersion = operatorVersion == null || operatorVersion.isBlank() ? "1.0.0" : operatorVersion;
+            fingerprint = fingerprint == null ? "" : fingerprint;
+            operatorLibraryId = operatorLibraryId == null ? "" : operatorLibraryId.trim();
+            display = display == null ? new OperatorDefinition.Display(operatorRef, "", List.of()) : display;
+            source = source == null ? new OperatorDefinition.Source("user-library", "", "", "", false) : source;
+            ports = ports == null ? new OperatorDefinition.Ports(List.of(), List.of()) : ports;
+            configSchema = configSchema == null ? SchemaEnvelope.opaque() : configSchema;
+            capabilities = capabilities == null ? OperatorDefinition.Capabilities.pure() : capabilities;
+            policy = policy == null ? OperatorDefinition.Policy.unrestricted() : policy;
+            lowering = lowering == null ? new OperatorDefinition.Lowering("native", operatorRef, Map.of()) : lowering;
+            runtimeReadiness = runtimeReadiness == null
+                    ? new OperatorDefinition.RuntimeReadiness(
+                            "UNKNOWN", "info", false, List.of(), "Runtime readiness unknown",
+                            "No runtime readiness summary was supplied with this operator contract.", List.of())
+                    : runtimeReadiness;
+        }
+
+        public static OperatorContractSnapshot from(OperatorDefinition operator) {
+            if (operator == null) {
+                return new OperatorContractSnapshot(
+                        "", "1.0.0", "", "", null, null, null, null, null, null, null, null);
+            }
+            OperatorDefinition.Source source = operator.source();
+            return new OperatorContractSnapshot(
+                    operator.operatorRef(),
+                    operator.operatorVersion(),
+                    operator.fingerprint(),
+                    source == null ? "" : source.libraryId(),
+                    operator.display(),
+                    source,
+                    operator.ports(),
+                    operator.configSchema(),
+                    operator.capabilities(),
+                    operator.policy(),
+                    operator.lowering(),
+                    operator.runtimeReadiness()
+            );
+        }
     }
 
     /**
@@ -160,7 +242,7 @@ public record VisualRuntimeBindingHandoffBundle(
                 scope, filter, total, unfilteredTotal, displayedCount, itemLimit, offset, hasMore,
                 requirementKeys, targetKindCounts, operatorRefCounts, operatorLibraryIdCounts, bindingKindCounts,
                 handoffLaneCounts, handoffKindCounts, handoffTargetCounts, sourceKindCounts, loweringModeCounts,
-                readinessStateCounts, artifactKindCounts, requirements);
+                readinessStateCounts, artifactKindCounts, List.of(), requirements);
     }
 
     /**
@@ -194,7 +276,7 @@ public record VisualRuntimeBindingHandoffBundle(
                 scope, filter, total, unfilteredTotal, displayedCount, itemLimit, offset, hasMore,
                 requirementKeys, targetKindCounts, operatorRefCounts, Map.of(), bindingKindCounts, handoffLaneCounts,
                 handoffKindCounts, handoffTargetCounts, sourceKindCounts, loweringModeCounts, readinessStateCounts,
-                artifactKindCounts, requirements);
+                artifactKindCounts, List.of(), requirements);
     }
 
     /**
@@ -229,7 +311,7 @@ public record VisualRuntimeBindingHandoffBundle(
                 scope, filter, total, unfilteredTotal, displayedCount, itemLimit, offset, hasMore,
                 requirementKeys, targetKindCounts, operatorRefCounts, Map.of(), bindingKindCounts, handoffLaneCounts,
                 handoffKindCounts, handoffTargetCounts, sourceKindCounts, loweringModeCounts, readinessStateCounts,
-                artifactKindCounts, requirements);
+                artifactKindCounts, List.of(), requirements);
     }
 
     /**
@@ -261,7 +343,8 @@ public record VisualRuntimeBindingHandoffBundle(
         this(schemaVersion, exportedAt, sourceIndexSchemaVersion, sourceIndexGeneratedAt, "", scope, filter, total,
                 unfilteredTotal, displayedCount, itemLimit, offset, hasMore, requirementKeys, targetKindCounts,
                 Map.of(), Map.of(), bindingKindCounts, handoffLaneCounts, handoffKindCounts, handoffTargetCounts,
-                sourceKindCounts, loweringModeCounts, readinessStateCounts, artifactKindCounts, requirements);
+                sourceKindCounts, loweringModeCounts, readinessStateCounts, artifactKindCounts, List.of(),
+                requirements);
     }
 
     /**
@@ -295,7 +378,7 @@ public record VisualRuntimeBindingHandoffBundle(
                 filter, total, unfilteredTotal, displayedCount, itemLimit, offset, hasMore, requirementKeys,
                 targetKindCounts, Map.of(), Map.of(), bindingKindCounts, handoffLaneCounts, handoffKindCounts,
                 handoffTargetCounts, sourceKindCounts, loweringModeCounts, readinessStateCounts, artifactKindCounts,
-                requirements);
+                List.of(), requirements);
     }
 
     /**
@@ -305,10 +388,24 @@ public record VisualRuntimeBindingHandoffBundle(
      * @return portable handoff bundle
      */
     public static VisualRuntimeBindingHandoffBundle from(VisualRuntimeBindingRequirements index) {
+        return from(index, List.of());
+    }
+
+    /**
+     * Builds a portable handoff bundle with operator contract snapshots for the
+     * operators referenced by the exported requirement window.
+     *
+     * @param index source runtime-binding requirement index
+     * @param operators current operator definitions available to the exporter
+     * @return portable handoff bundle
+     */
+    public static VisualRuntimeBindingHandoffBundle from(VisualRuntimeBindingRequirements index,
+                                                         List<OperatorDefinition> operators) {
         VisualRuntimeBindingRequirements safeIndex = index == null
                 ? VisualRuntimeBindingRequirements.empty()
                 : index;
         List<VisualRuntimeBindingRequirements.RequirementItem> items = safeIndex.items();
+        List<OperatorContractSnapshot> operatorContracts = operatorContractsFor(items, operators);
         return new VisualRuntimeBindingHandoffBundle(
                 SCHEMA_VERSION,
                 Instant.now(),
@@ -338,8 +435,34 @@ public record VisualRuntimeBindingHandoffBundle(
                 safeIndex.loweringModeCounts(),
                 safeIndex.readinessStateCounts(),
                 safeIndex.artifactKindCounts(),
+                operatorContracts,
                 items
         );
+    }
+
+    private static List<OperatorContractSnapshot> operatorContractsFor(
+            List<VisualRuntimeBindingRequirements.RequirementItem> items,
+            List<OperatorDefinition> operators) {
+        Map<String, OperatorDefinition> definitionsByRef = new LinkedHashMap<>();
+        for (OperatorDefinition operator : operators == null ? List.<OperatorDefinition>of() : operators) {
+            if (operator == null || operator.operatorRef().isBlank()) {
+                continue;
+            }
+            definitionsByRef.putIfAbsent(operator.operatorRef(), operator);
+        }
+        Map<String, OperatorContractSnapshot> snapshotsByRef = new LinkedHashMap<>();
+        for (VisualRuntimeBindingRequirements.RequirementItem item
+                : items == null ? List.<VisualRuntimeBindingRequirements.RequirementItem>of() : items) {
+            if (item == null || item.operatorRef().isBlank()) {
+                continue;
+            }
+            OperatorDefinition operator = definitionsByRef.get(item.operatorRef());
+            if (operator == null) {
+                continue;
+            }
+            snapshotsByRef.putIfAbsent(item.operatorRef(), OperatorContractSnapshot.from(operator));
+        }
+        return List.copyOf(snapshotsByRef.values());
     }
 
     /**
@@ -371,6 +494,7 @@ public record VisualRuntimeBindingHandoffBundle(
                 loweringModeCounts,
                 readinessStateCounts,
                 artifactKindCounts,
+                operatorContracts,
                 requirements);
     }
 
@@ -380,12 +504,48 @@ public record VisualRuntimeBindingHandoffBundle(
      * @return true when the handoff fingerprint is current for this bundle body
      */
     public boolean bundleFingerprintVerified() {
-        return bundleFingerprint.equals(computedBundleFingerprint())
+        if (bundleFingerprint.equals(computedBundleFingerprint())) {
+            return true;
+        }
+        if (!operatorContracts.isEmpty()) {
+            return false;
+        }
+        return bundleFingerprint.equals(legacyComputedBundleFingerprintWithOperatorOwnership())
                 || bundleFingerprint.equals(legacyComputedBundleFingerprint());
     }
 
     private static Map<String, Integer> immutableCounts(Map<String, Integer> counts) {
         return counts == null ? Map.of() : Collections.unmodifiableMap(new LinkedHashMap<>(counts));
+    }
+
+    private String legacyComputedBundleFingerprintWithOperatorOwnership() {
+        return computedFingerprint(
+                schemaVersion,
+                sourceIndexSchemaVersion,
+                scope,
+                filter,
+                total,
+                unfilteredTotal,
+                displayedCount,
+                itemLimit,
+                offset,
+                hasMore,
+                requirementKeys,
+                targetKindCounts,
+                operatorRefCounts,
+                operatorLibraryIdCounts,
+                bindingKindCounts,
+                handoffLaneCounts,
+                handoffKindCounts,
+                handoffTargetCounts,
+                sourceKindCounts,
+                loweringModeCounts,
+                readinessStateCounts,
+                artifactKindCounts,
+                operatorContracts,
+                requirements,
+                true,
+                false);
     }
 
     private String legacyComputedBundleFingerprint() {
@@ -412,7 +572,9 @@ public record VisualRuntimeBindingHandoffBundle(
                 loweringModeCounts,
                 readinessStateCounts,
                 artifactKindCounts,
+                operatorContracts,
                 requirements,
+                false,
                 false);
     }
 
@@ -438,6 +600,7 @@ public record VisualRuntimeBindingHandoffBundle(
                                               Map<String, Integer> loweringModeCounts,
                                               Map<String, Integer> readinessStateCounts,
                                               Map<String, Integer> artifactKindCounts,
+                                              List<OperatorContractSnapshot> operatorContracts,
                                               List<VisualRuntimeBindingRequirements.RequirementItem> requirements) {
         return computedFingerprint(
                 schemaVersion,
@@ -462,7 +625,9 @@ public record VisualRuntimeBindingHandoffBundle(
                 loweringModeCounts,
                 readinessStateCounts,
                 artifactKindCounts,
+                operatorContracts,
                 requirements,
+                true,
                 true);
     }
 
@@ -488,8 +653,10 @@ public record VisualRuntimeBindingHandoffBundle(
                                               Map<String, Integer> loweringModeCounts,
                                               Map<String, Integer> readinessStateCounts,
                                               Map<String, Integer> artifactKindCounts,
+                                              List<OperatorContractSnapshot> operatorContracts,
                                               List<VisualRuntimeBindingRequirements.RequirementItem> requirements,
-                                              boolean includeOperatorOwnership) {
+                                              boolean includeOperatorOwnership,
+                                              boolean includeOperatorContracts) {
         Map<String, Object> material = new LinkedHashMap<>();
         material.put("schemaVersion", schemaVersion);
         material.put("sourceIndexSchemaVersion", sourceIndexSchemaVersion);
@@ -515,6 +682,9 @@ public record VisualRuntimeBindingHandoffBundle(
         material.put("loweringModeCounts", loweringModeCounts);
         material.put("readinessStateCounts", readinessStateCounts);
         material.put("artifactKindCounts", artifactKindCounts);
+        if (includeOperatorContracts) {
+            material.put("operatorContracts", operatorContracts);
+        }
         material.put("requirements", includeOperatorOwnership ? requirements : legacyRequirements(requirements));
         return VisualBundleFingerprint.fromMaterial(material);
     }
