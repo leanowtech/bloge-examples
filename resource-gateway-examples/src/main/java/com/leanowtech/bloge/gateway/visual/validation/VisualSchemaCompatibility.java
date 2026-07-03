@@ -641,6 +641,11 @@ public final class VisualSchemaCompatibility {
 	        if (additionalIssue.isPresent()) {
 	            return additionalIssue;
 	        }
+	        Optional<String> optionalPropertyIssue =
+	                objectOptionalTargetPropertiesCompatibilityIssue(sourceSchema, targetSchema, path);
+	        if (optionalPropertyIssue.isPresent()) {
+	            return optionalPropertyIssue;
+	        }
 	        Optional<String> patternPropertiesIssue =
 	                objectPatternPropertiesCompatibilityIssue(sourceSchema, targetSchema, path);
 	        if (patternPropertiesIssue.isPresent()) {
@@ -687,6 +692,54 @@ public final class VisualSchemaCompatibility {
         }
         return Optional.empty();
     }
+
+	    private static Optional<String> objectOptionalTargetPropertiesCompatibilityIssue(
+	            Map<String, Object> sourceSchema,
+	            Map<String, Object> targetSchema,
+	            String path) {
+	        Map<String, Object> sourceProperties = propertiesOf(sourceSchema);
+	        Map<String, Object> targetProperties = propertiesOf(targetSchema);
+	        Set<String> targetRequired = new LinkedHashSet<>(requiredNamesOf(targetSchema));
+	        for (Map.Entry<String, Object> entry : targetProperties.entrySet()) {
+	            String propertyName = entry.getKey();
+	            if (targetRequired.contains(propertyName) || sourceProperties.containsKey(propertyName)
+	                    || sourceCannotContainProperty(sourceSchema, propertyName)) {
+	                continue;
+	            }
+	            Map<String, Object> targetProperty = objectProperty(entry.getValue());
+	            if (targetProperty == null) {
+	                continue;
+	            }
+	            String childPath = appendCompatibilityPath(path, propertyName);
+	            List<Map<String, Object>> sourcePatternSchemas =
+	                    matchingPatternPropertySchemas(sourceSchema, propertyName);
+	            if (!sourcePatternSchemas.isEmpty()) {
+	                for (Map<String, Object> sourcePatternSchema : sourcePatternSchemas) {
+	                    Optional<String> nested = schemaCompatibilityIssue(sourcePatternSchema, targetProperty,
+	                            childPath);
+	                    if (nested.isPresent()) {
+	                        return nested;
+	                    }
+	                }
+	                continue;
+	            }
+	            Object sourceResidual = residualPropertiesPolicy(sourceSchema);
+	            String sourceResidualKeyword = residualPropertiesKeyword(sourceSchema);
+	            if (sourceResidual instanceof Map<?, ?> sourceResidualSchema) {
+	                Optional<String> nested = schemaCompatibilityIssue(objectProperty(sourceResidualSchema),
+	                        targetProperty, childPath);
+	                if (nested.isPresent()) {
+	                    return nested;
+	                }
+	            } else if (sourceResidual == null || Boolean.TRUE.equals(sourceResidual)) {
+	                return Optional.of(reasonAt(childPath,
+	                        "source object may produce optional field '%s' from unconstrained %s but target requires %s"
+	                                .formatted(propertyName, sourceResidualKeyword,
+	                                        schemaTypeLabel(targetProperty))));
+	            }
+	        }
+	        return Optional.empty();
+	    }
 
 	    private static Optional<String> objectPatternPropertiesCompatibilityIssue(Map<String, Object> sourceSchema,
 	                                                                              Map<String, Object> targetSchema,
@@ -1690,9 +1743,18 @@ public final class VisualSchemaCompatibility {
 	    }
 
 	    private static boolean sourceCannotContainProperty(Map<String, Object> sourceSchema, String property) {
+	        if (sourcePropertyNamesRejectProperty(sourceSchema, property)) {
+	            return true;
+	        }
 	        return Boolean.FALSE.equals(residualPropertiesPolicy(sourceSchema))
 	                && !propertiesOf(sourceSchema).containsKey(property)
 	                && matchingPatternPropertySchemas(sourceSchema, property).isEmpty();
+	    }
+
+	    private static boolean sourcePropertyNamesRejectProperty(Map<String, Object> sourceSchema, String property) {
+	        Map<String, Object> propertyNameSchema = propertyNameSchema(sourceSchema);
+	        return propertyNameSchema != null
+	                && !valueMatchesSchema(property, effectivePropertyNameSchema(propertyNameSchema));
 	    }
 
 	    private static Object residualPropertiesPolicy(Map<String, Object> schema) {

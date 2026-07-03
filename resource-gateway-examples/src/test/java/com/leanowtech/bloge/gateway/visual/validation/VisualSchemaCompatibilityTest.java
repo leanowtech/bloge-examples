@@ -69,4 +69,57 @@ class VisualSchemaCompatibilityTest {
                         .contains("target oneOf is ambiguous")
                         .contains("2 compatible branches"));
     }
+
+    @Test
+    void rejectsSourceResidualFieldThatCanCollideWithTargetOptionalProperty() {
+        Map<String, Object> source = Map.of(
+                "type", "object",
+                "additionalProperties", Map.of("type", "string")
+        );
+        Map<String, Object> target = Map.of(
+                "type", "object",
+                "properties", Map.of("score", Map.of("type", "integer")),
+                "additionalProperties", true
+        );
+
+        assertThat(VisualSchemaCompatibility.schemaCompatibilityIssue(source, target))
+                .hasValueSatisfying(reason -> assertThat(reason)
+                        .contains("at 'score'")
+                        .contains("source type string cannot feed target type integer"));
+    }
+
+    @Test
+    void rejectsSourcePatternPropertyThatCanCollideWithTargetOptionalProperty() {
+        Map<String, Object> source = Map.of(
+                "type", "object",
+                "patternProperties", Map.of("^score$", Map.of("type", "string")),
+                "additionalProperties", false
+        );
+        Map<String, Object> target = Map.of(
+                "type", "object",
+                "properties", Map.of("score", Map.of("type", "integer")),
+                "additionalProperties", true
+        );
+
+        assertThat(VisualSchemaCompatibility.schemaCompatibilityIssue(source, target))
+                .hasValueSatisfying(reason -> assertThat(reason)
+                        .contains("at 'score'")
+                        .contains("source type string cannot feed target type integer"));
+    }
+
+    @Test
+    void acceptsResidualFieldWhenPropertyNamesExcludeTargetOptionalProperty() {
+        Map<String, Object> source = Map.of(
+                "type", "object",
+                "propertyNames", Map.of("pattern", "^meta\\."),
+                "additionalProperties", Map.of("type", "string")
+        );
+        Map<String, Object> target = Map.of(
+                "type", "object",
+                "properties", Map.of("score", Map.of("type", "integer")),
+                "additionalProperties", true
+        );
+
+        assertThat(VisualSchemaCompatibility.schemaCompatibilityIssue(source, target)).isEmpty();
+    }
 }

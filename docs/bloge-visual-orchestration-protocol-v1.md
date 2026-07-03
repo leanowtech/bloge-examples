@@ -703,6 +703,7 @@ gate 都以这个 schema 为准；Context JSON 只作为一次运行或调试的
 - `data` edge 必须通过 schema compatibility。
 - 正式 draft 中，`data` edge 必须有对应的语义依赖，例如 `nodePath` binding 或可解析的 config expression 引用；`nodePath` binding 也必须有对应的 `data` edge，防止画布显示的数据线和实际编译输入分叉。
 - object schema 按结构证明校验：target required 字段必须在 source schema 中显式声明为 required，并递归满足类型兼容。
+- source object 的动态字段策略不能绕过 target 的可选显式字段：若 source `additionalProperties`、`unevaluatedProperties` 或匹配的 `patternProperties` 可能产生 target 已声明的 optional property，该动态值 schema 也必须兼容 target property schema；source `propertyNames` 可用于证明某个 optional key 不可能出现。
 - enum schema 按值域集合校验：source enum values 必须是 target enum values 的子集；普通 `string` 不能直接连到 enum input，必须先经过显式 transform。
 - 浏览器 connection hint/source picker 应镜像上述 object/enum 关键规则，减少拖拽后才被服务端拒绝的体验断层；发布、运行和编译前仍以服务端 validator 为权威。
 - `control` edge 不传递字段，只影响执行顺序。

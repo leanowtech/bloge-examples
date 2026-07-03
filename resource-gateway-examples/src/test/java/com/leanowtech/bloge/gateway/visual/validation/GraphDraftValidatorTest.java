@@ -4086,6 +4086,32 @@ class GraphDraftValidatorTest {
     }
 
     @Test
+    void rejectsObjectBindingWhenSourceResidualCanCollideWithTargetOptionalProperty() {
+        Map<String, Object> targetProperties = new LinkedHashMap<>();
+        targetProperties.put("score", Map.of("type", "integer"));
+        targetProperties.put("tier", Map.of("type", "string"));
+        GraphDraftValidator validator = new GraphDraftValidator(
+                VisualCatalogTestSupport.catalogWithLibrary(
+                        objectCompatibilityLibraryWithApplicantSchemas(
+                                applicantSchema(Map.of(),
+                                        List.of(), Map.of("type", "string")),
+                                applicantSchema(targetProperties,
+                                        List.of(), true))));
+        GraphDraft draft = objectCompatibilityDraft();
+
+        VisualValidationResult result = validator.validate(draft);
+
+        assertThat(result.valid()).isFalse();
+        assertThat(result.diagnostics())
+                .extracting("code")
+                .contains("visual.binding.typeMismatch", "visual.edge.typeMismatch");
+        assertThat(result.diagnostics())
+                .anySatisfy(diagnostic -> assertThat(diagnostic.message())
+                        .contains("at 'score'")
+                        .contains("source type string cannot feed target type integer"));
+    }
+
+    @Test
     void acceptsObjectBindingWhenAdditionalPropertySchemasAreCompatible() {
         GraphDraftValidator validator = new GraphDraftValidator(
                 VisualCatalogTestSupport.catalogWithLibrary(

@@ -271,7 +271,11 @@ when `tier` exists only as an optional source field. Whole-object bindings also
 compare all overlapping declared fields, reject source-declared or dynamically
 allowed extra fields when the target object has `additionalProperties=false`,
 and honor schema-shaped `additionalProperties` or residual
-`unevaluatedProperties` on both sides. Array bindings and edges compare item
+`unevaluatedProperties` on both sides. Dynamic object fields cannot bypass
+target optional-property contracts either: if source `additionalProperties` or
+matching `patternProperties` can produce a target-declared optional key, that
+dynamic value schema must still feed the target field schema; source
+`propertyNames` can prove such a key impossible. Array bindings and edges compare item
 schemas, so `array<string>` cannot be wired into an input
 that requires `array<integer>`. Enum and `const` value domains are checked too:
 an output constrained to `LOW|HIGH` cannot feed an input constrained to
