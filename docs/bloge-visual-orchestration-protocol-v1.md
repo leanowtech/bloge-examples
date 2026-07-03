@@ -1921,7 +1921,11 @@ runtime team 提交的实现材料是否仍对准 handoff contract 和当前 cat
 复用同一 gate：无效 proposal 返回 `400` 和 validation diagnostics；有效 proposal
 被存为 `bloge.visualRuntimeBindingImplementationBindingRecord.v1`，包含 repository
 分配的 revision/timestamps、operator contract snapshot、implementation metadata 和 validation
-snapshot；重复 `bindingId` 返回 `409` 与 `visual.runtimeBindingImplementation.bindingIdDuplicate`。
+snapshot；同一 `bindingId` 但 submitted evidence 不同会返回 `409` 与
+`visual.runtimeBindingImplementation.bindingIdDuplicate`。
+同一 stable `bindingId` 且 submitted evidence 与既有 record 完全一致时，端点把它视为 runtime-plane
+retry/replay，返回已有 record 和 `200`，不创建新 revision；同 id 但 implementation、contract、
+validation、source requirement 或 lifecycle evidence 不一致时仍返回 `409`。
 `GET /api/visual/assets/runtime-binding-requirements/implementation-bindings`
 可按 `operatorRef` 和 `state` 查询已提交 proposal。该持久记录仍不关闭
 runtime-binding requirement。
@@ -1965,9 +1969,11 @@ reason 和 evidence 做无状态校验，返回
 `bloge.visualRuntimeAdapterActivationValidation.v1`。`POST
 /api/visual/assets/runtime-binding-requirements/adapter-activations` 会持久化健康且当前的
 activation assertion 为 `bloge.visualRuntimeAdapterActivation.v1`，并拒绝 unbound binding、
-fingerprint/adapter drift、重复 activationId、同一 binding 的第二个 active activation
+fingerprint/adapter drift、同一 activationId 但 submitted evidence 不同、同一 binding 的第二个 active activation
 以及缺失 actor/reason/evidence 的请求；`GET .../adapter-activations` 可按 `bindingId`、
-`operatorRef` 和 `state` 查询。`POST
+`operatorRef` 和 `state` 查询。同一 stable `activationId` 且 submitted evidence 与既有 fact
+完全一致时返回已有 fact 和 `200`；同 id 但 activation metadata、validation 或 evidence 不一致时仍返回
+`409`。`POST
 /api/visual/assets/runtime-binding-requirements/executable-lowering-integrations/validate`
 接收 `bloge.visualExecutableLoweringIntegrationRequest.v1`，对准 active activation、
 bound implementation、当前 catalog fingerprint、非 design 的 executable lowering mode、
@@ -1975,9 +1981,11 @@ executor kind/entrypoint/owner、integratedBy、reason 和 evidence 做无状态
 `bloge.visualExecutableLoweringIntegrationValidation.v1`。`POST
 .../executable-lowering-integrations` 会持久化当前 executor bridge assertion 为
 `bloge.visualExecutableLoweringIntegration.v1`，并拒绝 missing/stale activation、unbound
-binding、catalog drift、`loweringMode=design`、重复 integrationId、同一 activation 的第二个
+binding、catalog drift、`loweringMode=design`、同一 integrationId 但 submitted evidence 不同、同一 activation 的第二个
 active integration 以及缺失 executor evidence 的请求；`GET .../executable-lowering-integrations`
-可按 `activationId`、`operatorRef` 和 `state` 查询。真正的 executable readiness 关闭还必须由
+可按 `activationId`、`operatorRef` 和 `state` 查询。同一 stable `integrationId` 且 submitted
+evidence 与既有 fact 完全一致时返回已有 fact 和 `200`；同 id 但 lowering integration metadata、
+validation 或 evidence 不一致时仍返回 `409`。真正的 executable readiness 关闭还必须由
 library revision 或 readiness recomputation 消费该 integration fact 后重新派生；
 `adapter-active` 和 `readiness-recompute-required` 都只是控制面事实，不会直接把 design-only
 operator 改成可执行。

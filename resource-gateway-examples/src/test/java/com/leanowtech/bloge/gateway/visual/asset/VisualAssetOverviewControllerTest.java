@@ -1401,7 +1401,21 @@ class VisualAssetOverviewControllerTest {
                 .isEqualTo(binding);
         assertThat(controller.runtimeBindingImplementationBindings("risk:missing", "")).isEmpty();
 
-        var duplicate = controller.submitRuntimeBindingImplementation(request);
+        var replay = controller.submitRuntimeBindingImplementation(request);
+        assertThat(replay.getStatusCode().value()).isEqualTo(200);
+        assertThat(replay.getBody()).isEqualTo(binding);
+
+        var duplicate = controller.submitRuntimeBindingImplementation(
+                new VisualRuntimeBindingImplementationValidation.Request(
+                        VisualRuntimeBindingImplementationValidation.REQUEST_SCHEMA_VERSION,
+                        contract.operatorRef(),
+                        contract.fingerprint(),
+                        handoffBundle.bundleFingerprint(),
+                        handoffBundle.requirementKeys(),
+                        contract,
+                        completeImplementation("risk-eligibility-native-v1",
+                                "com.acme.risk.AlternateEligibilityOperator")
+                ));
         assertThat(duplicate.getStatusCode().value()).isEqualTo(409);
         assertThat(duplicate.getBody()).isInstanceOf(VisualRuntimeBindingImplementationValidation.class);
         VisualRuntimeBindingImplementationValidation duplicateValidation =
@@ -1777,7 +1791,13 @@ class VisualAssetOverviewControllerTest {
                 .singleElement()
                 .isEqualTo(activation);
 
-        var duplicate = fixture.controller().submitRuntimeAdapterActivation(request);
+        var replay = fixture.controller().submitRuntimeAdapterActivation(request);
+        assertThat(replay.getStatusCode().value()).isEqualTo(200);
+        assertThat(replay.getBody()).isEqualTo(activation);
+
+        var duplicate = fixture.controller().submitRuntimeAdapterActivation(
+                adapterActivationRequest(binding, "risk-eligibility-prod-active",
+                        "Runtime deployment changed after the first submission."));
         assertThat(duplicate.getStatusCode().value()).isEqualTo(409);
         assertThat(duplicate.getBody()).isInstanceOf(VisualRuntimeAdapterActivationValidation.class);
         VisualRuntimeAdapterActivationValidation duplicateValidation =
@@ -1863,7 +1883,16 @@ class VisualAssetOverviewControllerTest {
                 .singleElement()
                 .isEqualTo(integration);
 
-        var duplicate = fixture.controller().submitExecutableLoweringIntegration(request);
+        var replay = fixture.controller().submitExecutableLoweringIntegration(request);
+        assertThat(replay.getStatusCode().value()).isEqualTo(200);
+        assertThat(replay.getBody()).isEqualTo(integration);
+
+        var duplicate = fixture.controller().submitExecutableLoweringIntegration(
+                executableLoweringIntegrationRequest(
+                        activation,
+                        "risk-eligibility-lowering-v1",
+                        "native",
+                        "operator:risk:eligibility-v2"));
         assertThat(duplicate.getStatusCode().value()).isEqualTo(409);
         assertThat(duplicate.getBody()).isInstanceOf(VisualExecutableLoweringIntegrationValidation.class);
         VisualExecutableLoweringIntegrationValidation duplicateValidation =
@@ -2973,6 +3002,13 @@ class VisualAssetOverviewControllerTest {
     private static VisualRuntimeAdapterActivationValidation.Request adapterActivationRequest(
             VisualRuntimeBindingImplementationBinding binding,
             String activationId) {
+        return adapterActivationRequest(binding, activationId, "Runtime deployment is healthy.");
+    }
+
+    private static VisualRuntimeAdapterActivationValidation.Request adapterActivationRequest(
+            VisualRuntimeBindingImplementationBinding binding,
+            String activationId,
+            String reason) {
         return new VisualRuntimeAdapterActivationValidation.Request(
                 VisualRuntimeAdapterActivationValidation.REQUEST_SCHEMA_VERSION,
                 activationId,
@@ -2987,7 +3023,7 @@ class VisualAssetOverviewControllerTest {
                 VisualRuntimeAdapterActivation.HEALTH_HEALTHY,
                 "runtime-platform",
                 "visual-canvas-test",
-                "Runtime deployment is healthy.",
+                reason,
                 List.of(new VisualRuntimeAdapterActivation.Evidence(
                         "health-check",
                         "deployment:risk-eligibility-native-v1",
@@ -3058,10 +3094,16 @@ class VisualAssetOverviewControllerTest {
 
     private static VisualRuntimeBindingImplementationValidation.ImplementationMetadata completeImplementation(
             String bindingId) {
+        return completeImplementation(bindingId, "com.acme.risk.RiskEligibilityOperator");
+    }
+
+    private static VisualRuntimeBindingImplementationValidation.ImplementationMetadata completeImplementation(
+            String bindingId,
+            String entrypoint) {
         return new VisualRuntimeBindingImplementationValidation.ImplementationMetadata(
                 bindingId,
                 "native",
-                "com.acme.risk.RiskEligibilityOperator",
+                entrypoint,
                 "risk-platform",
                 List.of("request-response"),
                 List.of(new VisualRuntimeBindingImplementationValidation.Evidence(

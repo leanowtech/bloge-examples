@@ -49,6 +49,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Objects;
 
 /**
  * Public API for environment-level visual authoring asset health.
@@ -530,20 +531,29 @@ public class VisualAssetOverviewController {
             return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(validation);
         }
         String bindingId = implementationBindingId(request);
-        if (!bindingId.isBlank() && implementationRepository.find(bindingId).isPresent()) {
-            return ResponseEntity.status(HttpStatus.CONFLICT).body(validationWithBlockingDiagnostic(
-                    validation,
-                    VisualDiagnostic.error(
-                            "visual.runtimeBindingImplementation.bindingIdDuplicate",
-                            "Runtime binding implementation bindingId '%s' already exists.".formatted(bindingId),
-                            "/implementation/bindingId",
-                            Map.of("bindingId", bindingId))
-            ));
+        VisualRuntimeBindingImplementationBinding candidate =
+                VisualRuntimeBindingImplementationBinding.from(request, validation);
+        if (!bindingId.isBlank()) {
+            VisualRuntimeBindingImplementationBinding existing = implementationRepository.find(bindingId)
+                    .orElse(null);
+            if (existing != null) {
+                if (sameRuntimeBindingImplementationSubmission(existing, candidate)) {
+                    return ResponseEntity.ok(existing);
+                }
+                return ResponseEntity.status(HttpStatus.CONFLICT).body(validationWithBlockingDiagnostic(
+                        validation,
+                        VisualDiagnostic.error(
+                                "visual.runtimeBindingImplementation.bindingIdDuplicate",
+                                "Runtime binding implementation bindingId '%s' already exists with different submitted evidence."
+                                        .formatted(bindingId),
+                                "/implementation/bindingId",
+                                Map.of("bindingId", bindingId))
+                ));
+            }
         }
         VisualRuntimeBindingImplementationBinding stored;
         try {
-            stored = implementationRepository.create(
-                    VisualRuntimeBindingImplementationBinding.from(request, validation));
+            stored = implementationRepository.create(candidate);
         } catch (IllegalArgumentException e) {
             return ResponseEntity.status(HttpStatus.CONFLICT).body(validationWithBlockingDiagnostic(
                     validation,
@@ -993,15 +1003,24 @@ public class VisualAssetOverviewController {
         if (!validation.valid()) {
             return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(validation);
         }
-        if (!request.activationId().isBlank() && adapterActivationRepository.find(request.activationId()).isPresent()) {
-            return ResponseEntity.status(HttpStatus.CONFLICT).body(adapterActivationValidationWithBlockingDiagnostic(
-                    validation,
-                    VisualDiagnostic.error(
-                            "visual.runtimeAdapterActivation.activationIdDuplicate",
-                            "Runtime adapter activationId '%s' already exists.".formatted(request.activationId()),
-                            "/activationId",
-                            Map.of("activationId", request.activationId()))
-            ));
+        VisualRuntimeAdapterActivation candidate = VisualRuntimeAdapterActivation.from(request, validation);
+        if (!request.activationId().isBlank()) {
+            VisualRuntimeAdapterActivation existing = adapterActivationRepository.find(request.activationId())
+                    .orElse(null);
+            if (existing != null) {
+                if (sameRuntimeAdapterActivationSubmission(existing, candidate)) {
+                    return ResponseEntity.ok(existing);
+                }
+                return ResponseEntity.status(HttpStatus.CONFLICT).body(adapterActivationValidationWithBlockingDiagnostic(
+                        validation,
+                        VisualDiagnostic.error(
+                                "visual.runtimeAdapterActivation.activationIdDuplicate",
+                                "Runtime adapter activationId '%s' already exists with different submitted evidence."
+                                        .formatted(request.activationId()),
+                                "/activationId",
+                                Map.of("activationId", request.activationId()))
+                ));
+            }
         }
         if (adapterActivationRepository.findActiveByBindingId(validation.bindingId()).isPresent()) {
             return ResponseEntity.status(HttpStatus.CONFLICT).body(adapterActivationValidationWithBlockingDiagnostic(
@@ -1016,7 +1035,7 @@ public class VisualAssetOverviewController {
         }
         VisualRuntimeAdapterActivation stored;
         try {
-            stored = adapterActivationRepository.create(VisualRuntimeAdapterActivation.from(request, validation));
+            stored = adapterActivationRepository.create(candidate);
         } catch (IllegalArgumentException e) {
             return ResponseEntity.status(HttpStatus.CONFLICT).body(adapterActivationValidationWithBlockingDiagnostic(
                     validation,
@@ -1120,18 +1139,27 @@ public class VisualAssetOverviewController {
         if (!validation.valid()) {
             return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(validation);
         }
-        if (!request.integrationId().isBlank()
-                && executableLoweringIntegrationRepository.find(request.integrationId()).isPresent()) {
-            return ResponseEntity.status(HttpStatus.CONFLICT)
-                    .body(executableLoweringIntegrationValidationWithBlockingDiagnostic(
-                            validation,
-                            VisualDiagnostic.error(
-                                    "visual.executableLoweringIntegration.integrationIdDuplicate",
-                                    "Executable lowering integrationId '%s' already exists."
-                                            .formatted(request.integrationId()),
-                                    "/integrationId",
-                                    Map.of("integrationId", request.integrationId()))
-                    ));
+        VisualExecutableLoweringIntegration candidate =
+                VisualExecutableLoweringIntegration.from(request, validation);
+        if (!request.integrationId().isBlank()) {
+            VisualExecutableLoweringIntegration existing = executableLoweringIntegrationRepository
+                    .find(request.integrationId())
+                    .orElse(null);
+            if (existing != null) {
+                if (sameExecutableLoweringIntegrationSubmission(existing, candidate)) {
+                    return ResponseEntity.ok(existing);
+                }
+                return ResponseEntity.status(HttpStatus.CONFLICT)
+                        .body(executableLoweringIntegrationValidationWithBlockingDiagnostic(
+                                validation,
+                                VisualDiagnostic.error(
+                                        "visual.executableLoweringIntegration.integrationIdDuplicate",
+                                        "Executable lowering integrationId '%s' already exists with different submitted evidence."
+                                                .formatted(request.integrationId()),
+                                        "/integrationId",
+                                        Map.of("integrationId", request.integrationId()))
+                        ));
+            }
         }
         if (executableLoweringIntegrationRepository.findActiveByActivationId(validation.activationId()).isPresent()) {
             return ResponseEntity.status(HttpStatus.CONFLICT)
@@ -1147,8 +1175,7 @@ public class VisualAssetOverviewController {
         }
         VisualExecutableLoweringIntegration stored;
         try {
-            stored = executableLoweringIntegrationRepository.create(
-                    VisualExecutableLoweringIntegration.from(request, validation));
+            stored = executableLoweringIntegrationRepository.create(candidate);
         } catch (IllegalArgumentException e) {
             return ResponseEntity.status(HttpStatus.CONFLICT)
                     .body(executableLoweringIntegrationValidationWithBlockingDiagnostic(
@@ -2300,6 +2327,74 @@ public class VisualAssetOverviewController {
             return "";
         }
         return request.implementation().bindingId();
+    }
+
+    private static boolean sameRuntimeBindingImplementationSubmission(
+            VisualRuntimeBindingImplementationBinding existing,
+            VisualRuntimeBindingImplementationBinding candidate) {
+        if (existing == null || candidate == null) {
+            return false;
+        }
+        return Objects.equals(existing.schemaVersion(), candidate.schemaVersion())
+                && Objects.equals(existing.bindingId(), candidate.bindingId())
+                && Objects.equals(existing.state(), candidate.state())
+                && Objects.equals(existing.level(), candidate.level())
+                && Objects.equals(existing.operatorRef(), candidate.operatorRef())
+                && Objects.equals(existing.operatorFingerprint(), candidate.operatorFingerprint())
+                && Objects.equals(existing.sourceHandoffBundleFingerprint(), candidate.sourceHandoffBundleFingerprint())
+                && Objects.equals(existing.sourceRequirementKeys(), candidate.sourceRequirementKeys())
+                && Objects.equals(existing.operatorContract(), candidate.operatorContract())
+                && Objects.equals(existing.implementation(), candidate.implementation())
+                && sameRuntimeBindingImplementationValidation(existing.validation(), candidate.validation())
+                && Objects.equals(existing.supersedesBindingId(), candidate.supersedesBindingId())
+                && Objects.equals(existing.supersededByBindingId(), candidate.supersededByBindingId())
+                && Objects.equals(existing.lifecycleEvents(), candidate.lifecycleEvents());
+    }
+
+    private static boolean sameRuntimeBindingImplementationValidation(
+            VisualRuntimeBindingImplementationValidation existing,
+            VisualRuntimeBindingImplementationValidation candidate) {
+        if (existing == null || candidate == null) {
+            return existing == candidate;
+        }
+        return Objects.equals(existing.schemaVersion(), candidate.schemaVersion())
+                && existing.valid() == candidate.valid()
+                && existing.bindable() == candidate.bindable()
+                && Objects.equals(existing.state(), candidate.state())
+                && Objects.equals(existing.level(), candidate.level())
+                && Objects.equals(existing.message(), candidate.message())
+                && Objects.equals(existing.operatorRef(), candidate.operatorRef())
+                && Objects.equals(existing.operatorFingerprint(), candidate.operatorFingerprint())
+                && Objects.equals(existing.sourceHandoffBundleFingerprint(), candidate.sourceHandoffBundleFingerprint())
+                && Objects.equals(existing.contractFingerprint(), candidate.contractFingerprint())
+                && Objects.equals(existing.currentCatalogFingerprint(), candidate.currentCatalogFingerprint())
+                && Objects.equals(existing.currentCatalogState(), candidate.currentCatalogState())
+                && Objects.equals(existing.implementation(), candidate.implementation())
+                && Objects.equals(existing.diagnostics(), candidate.diagnostics());
+    }
+
+    private static boolean sameRuntimeAdapterActivationSubmission(VisualRuntimeAdapterActivation existing,
+                                                                  VisualRuntimeAdapterActivation candidate) {
+        if (existing == null || candidate == null) {
+            return false;
+        }
+        return existing.equals(candidate.withIdentity(
+                existing.activationId(),
+                existing.revision(),
+                existing.createdAt(),
+                existing.updatedAt()));
+    }
+
+    private static boolean sameExecutableLoweringIntegrationSubmission(VisualExecutableLoweringIntegration existing,
+                                                                       VisualExecutableLoweringIntegration candidate) {
+        if (existing == null || candidate == null) {
+            return false;
+        }
+        return existing.equals(candidate.withIdentity(
+                existing.integrationId(),
+                existing.revision(),
+                existing.createdAt(),
+                existing.updatedAt()));
     }
 
     private static VisualRuntimeBindingImplementationValidation validationWithBlockingDiagnostic(
