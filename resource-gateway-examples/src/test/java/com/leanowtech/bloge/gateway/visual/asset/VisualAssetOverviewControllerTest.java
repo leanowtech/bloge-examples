@@ -1,12 +1,16 @@
 package com.leanowtech.bloge.gateway.visual.asset;
 
 import com.leanowtech.bloge.gateway.visual.catalog.DefaultVisualOperatorCatalog;
+import com.leanowtech.bloge.gateway.visual.catalog.InMemoryOperatorLibraryRegistry;
+import com.leanowtech.bloge.gateway.visual.catalog.JavaOperatorInventoryProjector;
 import com.leanowtech.bloge.gateway.visual.catalog.OperatorDefinition;
 import com.leanowtech.bloge.gateway.visual.catalog.OperatorLibrary;
 import com.leanowtech.bloge.gateway.visual.catalog.OperatorLibraryImpactReview;
 import com.leanowtech.bloge.gateway.visual.catalog.OperatorLibraryImportReadiness;
 import com.leanowtech.bloge.gateway.visual.catalog.OperatorLibraryProfile;
+import com.leanowtech.bloge.gateway.visual.catalog.ResourceVirtualOperatorProjector;
 import com.leanowtech.bloge.gateway.visual.catalog.VisualCatalogTestSupport;
+import com.leanowtech.bloge.gateway.visual.catalog.VisualGraphPublicationOperatorProjector;
 import com.leanowtech.bloge.gateway.visual.codegen.DslGenerationResult;
 import com.leanowtech.bloge.gateway.visual.diagnostic.VisualDiagnostic;
 import com.leanowtech.bloge.gateway.visual.draft.GraphDraft;
@@ -18,8 +22,12 @@ import com.leanowtech.bloge.gateway.visual.model.VisualBundleFingerprint;
 import com.leanowtech.bloge.gateway.visual.publication.InMemoryVisualGraphPublicationRepository;
 import com.leanowtech.bloge.gateway.visual.publication.VisualGraphPublication;
 import com.leanowtech.bloge.gateway.visual.publication.VisualGraphPublicationSummary;
+import com.leanowtech.bloge.gateway.visual.resource.InMemoryResourceDesignContractRegistry;
+import com.leanowtech.bloge.gateway.visual.runtime.InMemoryVisualExecutableLoweringIntegrationRepository;
+import com.leanowtech.bloge.gateway.visual.runtime.InMemoryVisualRuntimeAdapterActivationRepository;
 import com.leanowtech.bloge.gateway.visual.runtime.VisualExecutableLoweringIntegration;
 import com.leanowtech.bloge.gateway.visual.runtime.VisualExecutableLoweringIntegrationValidation;
+import com.leanowtech.bloge.gateway.visual.runtime.VisualExecutableReadinessRecomputePreview;
 import com.leanowtech.bloge.gateway.visual.runtime.VisualRuntimeAdapterActivation;
 import com.leanowtech.bloge.gateway.visual.runtime.VisualRuntimeAdapterActivationValidation;
 import com.leanowtech.bloge.gateway.visual.validation.GraphDraftValidator;
@@ -1704,6 +1712,100 @@ class VisualAssetOverviewControllerTest {
     }
 
     @Test
+    void executableReadinessRecomputePreviewBuildsCandidateSurfaceWithoutMutatingCatalog() {
+        RuntimeBindingImplementationFixture fixture = runtimeBindingImplementationFixture();
+        VisualRuntimeBindingImplementationBinding stored = submitImplementation(
+                fixture,
+                completeImplementation("risk-eligibility-native-v1")
+        );
+        VisualRuntimeBindingImplementationBinding binding = fixture.controller()
+                .bindRuntimeBindingImplementation(stored.bindingId(), transitionRequest("", true))
+                .getBody()
+                .binding();
+        VisualRuntimeAdapterActivation activation = (VisualRuntimeAdapterActivation) fixture.controller()
+                .submitRuntimeAdapterActivation(adapterActivationRequest(binding, "risk-eligibility-prod-active"))
+                .getBody();
+        VisualExecutableLoweringIntegration integration = (VisualExecutableLoweringIntegration) fixture.controller()
+                .submitExecutableLoweringIntegration(
+                        executableLoweringIntegrationRequest(activation, "risk-eligibility-lowering-v1"))
+                .getBody();
+
+        var response = fixture.controller().previewExecutableReadinessRecompute("risk:eligibility");
+
+        assertThat(response.getStatusCode().value()).isEqualTo(200);
+        assertThat(response.getBody()).isNotNull();
+        VisualExecutableReadinessRecomputePreview preview = response.getBody();
+        assertThat(preview.schemaVersion()).isEqualTo(VisualExecutableReadinessRecomputePreview.SCHEMA_VERSION);
+        assertThat(preview.recomputable()).isTrue();
+        assertThat(preview.state()).isEqualTo("ready-to-apply");
+        assertThat(preview.level()).isEqualTo("success");
+        assertThat(preview.operatorRef()).isEqualTo("risk:eligibility");
+        assertThat(preview.operatorLibraryId()).isEqualTo("risk-policy-design");
+        assertThat(preview.currentOperatorFingerprint()).isEqualTo(fixture.contract().fingerprint());
+        assertThat(preview.currentRuntimeReadinessState()).isEqualTo("DESIGN_ONLY");
+        assertThat(preview.currentLoweringMode()).isEqualTo("design");
+        assertThat(preview.activeBindingId()).isEqualTo(binding.bindingId());
+        assertThat(preview.activeAdapterActivationId()).isEqualTo(activation.activationId());
+        assertThat(preview.activeExecutableLoweringIntegrationId()).isEqualTo(integration.integrationId());
+        assertThat(preview.candidateOperator()).isNotNull();
+        assertThat(preview.candidateOperatorFingerprint()).isEqualTo(preview.candidateOperator().fingerprint());
+        assertThat(preview.candidateOperatorFingerprint()).isNotEqualTo(preview.currentOperatorFingerprint());
+        assertThat(preview.candidateRuntimeReadinessState()).isEqualTo("RUNTIME_EXECUTABLE");
+        assertThat(preview.candidateLoweringMode()).isEqualTo("native");
+        assertThat(preview.candidateLoweringOperatorRef()).isEqualTo("operator:risk:eligibility");
+        assertThat(preview.candidateOperator().runtimeReadiness().executable()).isTrue();
+        assertThat(preview.candidateOperator().runtimeReadiness().artifactKinds()).containsExactly("EXECUTABLE");
+        assertThat(preview.candidateOperator().lowering().parameters())
+                .containsEntry("runtimeBindingId", binding.bindingId())
+                .containsEntry("adapterActivationId", activation.activationId())
+                .containsEntry("executableLoweringIntegrationId", integration.integrationId())
+                .containsEntry("executorEntrypoint", "operator:risk:eligibility");
+        assertThat(preview.diagnostics()).isEmpty();
+        assertThat(fixture.catalog().find("risk:eligibility").orElseThrow().runtimeReadiness().state())
+                .isEqualTo("DESIGN_ONLY");
+        assertThat(fixture.catalog().find("risk:eligibility").orElseThrow().lowering().mode())
+                .isEqualTo("design");
+    }
+
+    @Test
+    void executableReadinessRecomputePreviewBlocksUnsupportedLoweringMode() {
+        RuntimeBindingImplementationFixture fixture = runtimeBindingImplementationFixture();
+        VisualRuntimeBindingImplementationBinding stored = submitImplementation(
+                fixture,
+                completeImplementation("risk-eligibility-native-v1")
+        );
+        VisualRuntimeBindingImplementationBinding binding = fixture.controller()
+                .bindRuntimeBindingImplementation(stored.bindingId(), transitionRequest("", true))
+                .getBody()
+                .binding();
+        VisualRuntimeAdapterActivation activation = (VisualRuntimeAdapterActivation) fixture.controller()
+                .submitRuntimeAdapterActivation(adapterActivationRequest(binding, "risk-eligibility-prod-active"))
+                .getBody();
+        var integrationResponse = fixture.controller().submitExecutableLoweringIntegration(
+                executableLoweringIntegrationRequest(
+                        activation,
+                        "risk-eligibility-transform-lowering",
+                        "transform",
+                        "operator:risk:eligibility-transform"
+                ));
+        assertThat(integrationResponse.getStatusCode().value()).isEqualTo(201);
+
+        var response = fixture.controller().previewExecutableReadinessRecompute("risk:eligibility");
+
+        assertThat(response.getStatusCode().value()).isEqualTo(200);
+        assertThat(response.getBody()).isNotNull();
+        assertThat(response.getBody().recomputable()).isFalse();
+        assertThat(response.getBody().state()).isEqualTo("blocked");
+        assertThat(response.getBody().candidateOperator()).isNull();
+        assertThat(response.getBody().currentRuntimeReadinessState()).isEqualTo("DESIGN_ONLY");
+        assertThat(response.getBody().activeExecutableLoweringIntegrationId())
+                .isEqualTo("risk-eligibility-transform-lowering");
+        assertThat(response.getBody().diagnostics())
+                .extracting(VisualDiagnostic::code)
+                .contains("visual.executableReadinessRecompute.loweringModeUnsupported");
+    }
+
+    @Test
     void overviewQueuesWarningAcknowledgementFromGraphActionReadiness() {
         DefaultVisualOperatorCatalog catalog = VisualCatalogTestSupport.catalogWithLibrary(
                 VisualCatalogTestSupport.designOnlyEligibilityLibrary("integer"));
@@ -2032,6 +2134,7 @@ class VisualAssetOverviewControllerTest {
 
     private record RuntimeBindingImplementationFixture(
             VisualAssetOverviewController controller,
+            DefaultVisualOperatorCatalog catalog,
             VisualRuntimeBindingHandoffBundle handoffBundle,
             VisualRuntimeBindingHandoffBundle.OperatorContractSnapshot contract
     ) {
@@ -2039,7 +2142,27 @@ class VisualAssetOverviewControllerTest {
 
     private static RuntimeBindingImplementationFixture runtimeBindingImplementationFixture() {
         OperatorLibrary library = VisualCatalogTestSupport.designOnlyEligibilityLibrary("integer");
-        DefaultVisualOperatorCatalog catalog = VisualCatalogTestSupport.catalogWithLibrary(library);
+        InMemoryOperatorLibraryRegistry libraries = new InMemoryOperatorLibraryRegistry();
+        libraries.upsert(library);
+        InMemoryVisualGraphPublicationRepository publications = new InMemoryVisualGraphPublicationRepository();
+        InMemoryVisualRuntimeBindingImplementationRepository implementationRepository =
+                new InMemoryVisualRuntimeBindingImplementationRepository();
+        InMemoryVisualRuntimeAdapterActivationRepository adapterActivationRepository =
+                new InMemoryVisualRuntimeAdapterActivationRepository();
+        InMemoryVisualExecutableLoweringIntegrationRepository executableLoweringIntegrationRepository =
+                new InMemoryVisualExecutableLoweringIntegrationRepository();
+        DefaultVisualOperatorCatalog catalog = new DefaultVisualOperatorCatalog(
+                VisualCatalogTestSupport.emptyResourceRegistry(),
+                new InMemoryResourceDesignContractRegistry(),
+                new ResourceVirtualOperatorProjector(),
+                libraries,
+                JavaOperatorInventoryProjector.forRegistry(null),
+                publications,
+                new VisualGraphPublicationOperatorProjector(),
+                implementationRepository,
+                adapterActivationRepository,
+                executableLoweringIntegrationRepository
+        );
         GraphDraftValidator validator = new GraphDraftValidator(catalog);
         InMemoryGraphDraftRepository drafts = new InMemoryGraphDraftRepository();
         OperatorDefinition operator = catalog.find("risk:eligibility").orElseThrow();
@@ -2048,7 +2171,10 @@ class VisualAssetOverviewControllerTest {
                 drafts,
                 validator,
                 catalog,
-                new InMemoryVisualGraphPublicationRepository()
+                publications,
+                implementationRepository,
+                adapterActivationRepository,
+                executableLoweringIntegrationRepository
         );
         VisualRuntimeBindingHandoffBundle handoffBundle = controller.runtimeBindingHandoffBundle(
                 "",
@@ -2068,6 +2194,7 @@ class VisualAssetOverviewControllerTest {
         );
         return new RuntimeBindingImplementationFixture(
                 controller,
+                catalog,
                 handoffBundle,
                 handoffBundle.operatorContracts().getFirst()
         );
@@ -2132,6 +2259,19 @@ class VisualAssetOverviewControllerTest {
     private static VisualExecutableLoweringIntegrationValidation.Request executableLoweringIntegrationRequest(
             VisualRuntimeAdapterActivation activation,
             String integrationId) {
+        return executableLoweringIntegrationRequest(
+                activation,
+                integrationId,
+                "native",
+                "operator:risk:eligibility"
+        );
+    }
+
+    private static VisualExecutableLoweringIntegrationValidation.Request executableLoweringIntegrationRequest(
+            VisualRuntimeAdapterActivation activation,
+            String integrationId,
+            String loweringMode,
+            String executorEntrypoint) {
         return new VisualExecutableLoweringIntegrationValidation.Request(
                 VisualExecutableLoweringIntegrationValidation.REQUEST_SCHEMA_VERSION,
                 integrationId,
@@ -2144,9 +2284,9 @@ class VisualAssetOverviewControllerTest {
                 activation.adapterKind(),
                 activation.entrypoint(),
                 activation.runtimeEnvironment(),
-                "native",
+                loweringMode,
                 "bloge-operator-registry",
-                "operator:risk:eligibility",
+                executorEntrypoint,
                 "operator-platform",
                 "runtime-platform",
                 "visual-canvas-test",

@@ -1969,6 +1969,15 @@ active integration 以及缺失 executor evidence 的请求；`GET .../executabl
 library revision 或 readiness recomputation 消费该 integration fact 后重新派生；
 `adapter-active` 和 `readiness-recompute-required` 都只是控制面事实，不会直接把 design-only
 operator 改成可执行。
+`GET /api/visual/assets/runtime-binding-requirements/executable-readiness-recomputations/preview?operatorRef=...`
+返回 `bloge.visualExecutableReadinessRecomputePreview.v1`，在不写 catalog / operator-library
+registry 的前提下，把当前 visible operator、active bound implementation、active adapter
+activation 和 active executable lowering integration 重新组合成 candidate `OperatorDefinition`、
+candidate fingerprint 与 candidate runtime readiness。当前自动 preview 只支持
+`loweringMode=native` 且有 `executorEntrypoint` 的 bridge；`transform`、`branch` 或其他需要额外
+assignment/condition 语义的 lowering 会返回 blocking diagnostic，而不是伪造可写 revision。
+因此该合同是 trusted revision mutation 前的 preview gate：它能证明“如果写入，会得到什么 surface”，
+但不会自行改变 `OperatorDefinition.runtimeReadiness`。
 `actionReadiness` 则把同一批 diagnostics/readiness 压成产品动作门禁：`compileNow`、
 `runNow`、`publishDesignNow`、`publishDesignAfterReview`、`publishExecutableNow`、
 `publishExecutableAfterReview`，以及 `requiresAckWarnings` /

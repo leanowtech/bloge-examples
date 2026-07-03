@@ -2,6 +2,8 @@ package com.leanowtech.bloge.gateway.visual.asset;
 
 import com.leanowtech.bloge.gateway.visual.catalog.OperatorCatalogQuery;
 import com.leanowtech.bloge.gateway.visual.catalog.OperatorDefinition;
+import com.leanowtech.bloge.gateway.visual.catalog.OperatorExecutablePromotionProjection;
+import com.leanowtech.bloge.gateway.visual.catalog.OperatorRuntimeBindingProjection;
 import com.leanowtech.bloge.gateway.visual.catalog.VisualOperatorCatalog;
 import com.leanowtech.bloge.gateway.visual.diagnostic.VisualDiagnostic;
 import com.leanowtech.bloge.gateway.visual.draft.GraphDraft;
@@ -16,6 +18,7 @@ import com.leanowtech.bloge.gateway.visual.runtime.InMemoryVisualRuntimeAdapterA
 import com.leanowtech.bloge.gateway.visual.runtime.VisualExecutableLoweringIntegration;
 import com.leanowtech.bloge.gateway.visual.runtime.VisualExecutableLoweringIntegrationRepository;
 import com.leanowtech.bloge.gateway.visual.runtime.VisualExecutableLoweringIntegrationValidation;
+import com.leanowtech.bloge.gateway.visual.runtime.VisualExecutableReadinessRecomputePreview;
 import com.leanowtech.bloge.gateway.visual.runtime.VisualRuntimeAdapterActivation;
 import com.leanowtech.bloge.gateway.visual.runtime.VisualRuntimeAdapterActivationRepository;
 import com.leanowtech.bloge.gateway.visual.runtime.VisualRuntimeAdapterActivationValidation;
@@ -1008,6 +1011,44 @@ public class VisualAssetOverviewController {
                     ));
         }
         return ResponseEntity.status(HttpStatus.CREATED).body(stored);
+    }
+
+    /**
+     * Previews the trusted operator surface that a later readiness recompute mutation would write.
+     *
+     * <p>This endpoint is intentionally read-only. It consumes the same catalog projection chain as the
+     * palette response and proves whether the active implementation binding, adapter activation, and
+     * executable lowering integration are sufficient to build an executable candidate operator.</p>
+     *
+     * @param operatorRef operator reference to preview
+     * @return readiness recompute preview
+     */
+    @GetMapping("/runtime-binding-requirements/executable-readiness-recomputations/preview")
+    public ResponseEntity<VisualExecutableReadinessRecomputePreview> previewExecutableReadinessRecompute(
+            @RequestParam(defaultValue = "") String operatorRef) {
+        String normalizedOperatorRef = operatorRef == null ? "" : operatorRef.trim();
+        if (normalizedOperatorRef.isBlank()) {
+            return ResponseEntity.status(HttpStatus.BAD_REQUEST)
+                    .body(VisualExecutableReadinessRecomputePreview.missingOperatorRef());
+        }
+        OperatorDefinition currentOperator = catalog.find(normalizedOperatorRef).orElse(null);
+        if (currentOperator == null) {
+            return ResponseEntity.status(HttpStatus.NOT_FOUND)
+                    .body(VisualExecutableReadinessRecomputePreview.missingOperator(normalizedOperatorRef));
+        }
+        OperatorCatalogQuery query = OperatorCatalogQuery.all();
+        List<OperatorRuntimeBindingProjection> runtimeBindingProjections =
+                catalog.runtimeBindingProjections(query, List.of(currentOperator));
+        List<OperatorExecutablePromotionProjection> promotionProjections =
+                catalog.executablePromotionProjections(query, runtimeBindingProjections);
+        OperatorExecutablePromotionProjection promotionProjection = promotionProjections.stream()
+                .filter(projection -> projection.operatorRef().equals(normalizedOperatorRef))
+                .findFirst()
+                .orElse(null);
+        return ResponseEntity.ok(VisualExecutableReadinessRecomputePreview.from(
+                currentOperator,
+                promotionProjection
+        ));
     }
 
     VisualAssetOverview overview(String tenantId, String namespace, String environment) {
