@@ -413,6 +413,7 @@ const state = {
   visualRuntimeBindingHandoffBundleMessage: null,
   visualRuntimeBindingRequirementQuery: {
     targetKind: '',
+    operatorRef: '',
     bindingKind: '',
     handoffLane: '',
     handoffKind: '',
@@ -814,6 +815,9 @@ function visualRuntimeBindingRequirementParams(builder = state.builder) {
   if (query.targetKind) {
     params.set('targetKind', query.targetKind);
   }
+  if (query.operatorRef) {
+    params.set('operatorRef', query.operatorRef);
+  }
   if (query.bindingKind) {
     params.set('bindingKind', query.bindingKind);
   }
@@ -865,6 +869,7 @@ function normalizeVisualRuntimeBindingRequirementQuery(query = {}) {
   const limit = Math.max(1, Math.min(Number(query.limit || 10) || 10, 200));
   return {
     targetKind: String(query.targetKind || '').trim().toLowerCase(),
+    operatorRef: String(query.operatorRef || '').trim(),
     bindingKind: String(query.bindingKind || '').trim().toLowerCase(),
     handoffLane: String(query.handoffLane || '').trim().toLowerCase(),
     handoffKind: String(query.handoffKind || '').trim().toLowerCase(),
@@ -7844,6 +7849,7 @@ function visualRuntimeBindingRequirementsShouldShow(bindingIndex) {
   const query = normalizeVisualRuntimeBindingRequirementQuery(state.visualRuntimeBindingRequirementQuery);
   return Number(bindingIndex?.unfilteredTotal ?? bindingIndex?.total ?? 0) > 0
     || Boolean(query.targetKind
+      || query.operatorRef
       || query.bindingKind
       || query.handoffLane
       || query.handoffKind
@@ -7925,6 +7931,7 @@ function visualRuntimeBindingRequirementControls(bindingIndex) {
   const offset = Number(bindingIndex?.offset ?? query.offset) || 0;
   const pageSize = Number(bindingIndex?.itemLimit || query.limit || 10) || 10;
   const hasFilter = Boolean(query.targetKind
+    || query.operatorRef
     || query.bindingKind
     || query.handoffLane
     || query.handoffKind
@@ -7947,6 +7954,12 @@ function visualRuntimeBindingRequirementControls(bindingIndex) {
             query.targetKind,
             bindingIndex?.targetKindCounts
           )}
+        </select>
+      </label>
+      <label>
+        <span>${escapeHtml('Operator')}</span>
+        <select id="runtime-binding-operator-ref" aria-label="Filter runtime binding requirements by operator reference">
+          ${visualRuntimeBindingRawOptionMarkup('All operators', bindingIndex?.operatorRefCounts, query.operatorRef)}
         </select>
       </label>
       <label>
@@ -8335,6 +8348,13 @@ function attachVisualRuntimeBindingRequirementQueryHandlers(bindingIndex) {
       offset: 0
     });
   }
+  const operatorRef = $('runtime-binding-operator-ref');
+  if (operatorRef) {
+    operatorRef.onchange = () => updateVisualRuntimeBindingRequirementQuery({
+      operatorRef: operatorRef.value,
+      offset: 0
+    });
+  }
   const handoffLane = $('runtime-binding-handoff-lane');
   if (handoffLane) {
     handoffLane.onchange = () => updateVisualRuntimeBindingRequirementQuery({
@@ -8406,6 +8426,7 @@ function attachVisualRuntimeBindingRequirementQueryHandlers(bindingIndex) {
   if (reset) {
     reset.onclick = () => updateVisualRuntimeBindingRequirementQuery({
       targetKind: '',
+      operatorRef: '',
       bindingKind: '',
       handoffLane: '',
       handoffKind: '',

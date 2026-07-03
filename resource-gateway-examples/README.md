@@ -799,8 +799,8 @@ Showcase metadata APIs:
 | `GET` | `/api/visual/operators/{operatorRef}` | Return one visible `bloge.visualOperator.v1` definition under the same `tenantId` / `namespace` / `environment`, `includeDeprecated`, `resourceOnly`, and catalog facet visibility gates used by the operator catalog; returns `404` when the operator is hidden or missing |
 | `GET` | `/api/visual/operators/{operatorRef}/usage` | Return stored draft and immutable-publication usage of one operatorRef, including saved/frozen fingerprint status, changed-surface drift summaries, and `changeRisk/changeCategories/changeSummary` when snapshots allow risk classification |
 | `GET` | `/api/visual/assets/overview` | Return `bloge.visualAssetOverview.v1`, an environment-level visual authoring overview that echoes the requested authoring scope while aggregating draft summaries, publication summaries, current operator catalog facets, and an action-readiness/runtime-binding-requirement-aware server-derived action queue with optional `tenantId` / `namespace` / `environment` scope filters plus `actionLimit` / `actionOffset` / `actionSeverity` / `actionType` / `actionTargetKind` queue query controls |
-| `GET` | `/api/visual/assets/runtime-binding-requirements` | Return `bloge.visualRuntimeBindingRequirements.v1`, a scope-aware, pageable runtime-binding gap index for active drafts and immutable publications, with `targetKind` / `bindingKind` / `handoffLane` / `handoffKind` / `handoffTarget` / `sourceKind` / `loweringMode` / `readinessState` / `requirementKey` filters, stable requirement keys, and handoff lane/kind/target fields for external runtime-plane routing |
-| `GET` | `/api/visual/assets/runtime-binding-requirements/handoff-bundle` | Export the current runtime-binding gap query window as `bloge.visualRuntimeBindingHandoff.v1`, preserving source index lineage, normalized scope/filter, stable requirement keys, routing counts, and requirement rows for runtime-plane handoff without creating workflow state |
+| `GET` | `/api/visual/assets/runtime-binding-requirements` | Return `bloge.visualRuntimeBindingRequirements.v1`, a scope-aware, pageable runtime-binding gap index for active drafts and immutable publications, with `targetKind` / `operatorRef` / `bindingKind` / `handoffLane` / `handoffKind` / `handoffTarget` / `sourceKind` / `loweringMode` / `readinessState` / `requirementKey` filters, stable requirement keys, operatorRef counts, and handoff lane/kind/target fields for external runtime-plane routing |
+| `GET` | `/api/visual/assets/runtime-binding-requirements/handoff-bundle` | Export the current runtime-binding gap query window as `bloge.visualRuntimeBindingHandoff.v1`, preserving source index lineage, normalized scope/filter, stable requirement keys, operator/routing counts, and requirement rows for runtime-plane handoff without creating workflow state |
 | `POST` | `/api/visual/assets/runtime-binding-requirements/handoff-review` | Review a `bloge.visualRuntimeBindingHandoff.v1` bundle against the current runtime-binding read model and return `bloge.visualRuntimeBindingHandoffReview.v1` with current, drifted, missing, and new-current-window reconciliation status |
 | `GET` | `/api/visual/drafts` | List stored visual graph drafts with optional `tenantId` / `namespace` / `environment` scope filters |
 | `GET` | `/api/visual/drafts/history` | List lightweight active/deleted draft history summaries with current/latest revision, revision count, latest actor/source/summary, recovery status, and optional `tenantId` / `namespace` / `environment` scope filters |
@@ -1154,13 +1154,13 @@ from the overview without loading each full draft or immutable publication.
 For external integration teams that need a factual queue rather than a
 recommendation list, `/api/visual/assets/runtime-binding-requirements` exposes
 the same gaps as `bloge.visualRuntimeBindingRequirements.v1`, scoped and
-pageable by tenant/namespace/environment and filterable by target kind, binding
-kind, handoff lane, handoff work kind, handoff route target, source kind,
-lowering mode, readiness state, or stable requirement key. The same
+pageable by tenant/namespace/environment and filterable by target kind, operator
+reference, binding kind, handoff lane, handoff work kind, handoff route target,
+source kind, lowering mode, readiness state, or stable requirement key. The same
 Workspace Overview panel renders that index with filters, paging, and
 draft/publication Open actions, and can export the current filtered window as a
 `bloge.visualRuntimeBindingHandoff.v1` bundle with source-index lineage,
-scope/filter, stable requirement keys, routing counts, and requirement rows. It
+scope/filter, stable requirement keys, operator/routing counts, and requirement rows. It
 can also review the latest exported handoff bundle against the current read
 model, so design-time binding work is visible, portable, and replay-checkable
 from the canvas without pretending the graph is executable.

@@ -759,13 +759,13 @@ per-node `PLAN_DRAFT_RUNTIME_BINDING` / `PLAN_PUBLICATION_RUNTIME_BINDING` items
 而不是只凭 `design-only` readiness 做粗粒度归类。
 同一事实源还会通过 `GET /api/visual/assets/runtime-binding-requirements` 暴露为
 `bloge.visualRuntimeBindingRequirements.v1`，给外部 runtime-plane 集成团队按
-scope、targetKind、bindingKind、handoffLane、handoffKind、handoffTarget、sourceKind、loweringMode、readinessState 和 requirementKey 查询、分页和计数；
+scope、targetKind、operatorRef、bindingKind、handoffLane、handoffKind、handoffTarget、sourceKind、loweringMode、readinessState 和 requirementKey 查询、分页和计数；
 其中 `requirementKey` 是 import result、overview item 和索引 row 之间的精确回查桥。
 这个索引不保存待办状态，避免和 draft/publication readiness 形成第二套真相源。
 当团队需要把当前筛选窗口交给 runtime plane 实现方时，
 `GET /api/visual/assets/runtime-binding-requirements/handoff-bundle` 会返回
 `bloge.visualRuntimeBindingHandoff.v1`，携带 source index lineage、scope/filter、
-stable requirementKeys、handoff lane/kind/target 计数、requirement 明细和
+stable requirementKeys、operatorRef 计数、handoff lane/kind/target 计数、requirement 明细和
 服务端派生的 `bundleFingerprint`。
 它是便携交接快照，不是工单系统；后续执行状态仍应回写到真正的 runtime binding /
 operator implementation 控制面，再由 catalog/readiness 重新派生。
@@ -883,8 +883,8 @@ fingerprint snapshot；普通保存和 PATCH 仍保留既有 snapshot，避免�
 | `POST` | `/api/visual/publications/validate-bundle` | 当前已实现：非写入预检 portable publication bundle，返回 `bloge.visualGraphPublicationImportResult.v1`，校验 schemaVersion / fingerprint / snapshot 后基于目标 catalog 派生 target dependency report、runtime-binding handoff requirements 与 stable keys，不创建 publication 记录 |
 | `POST` | `/api/visual/publications/import-bundle` | 当前已实现：导入 portable publication bundle，返回 `bloge.visualGraphPublicationImportResult.v1`，包含 `sourceBundleFingerprint`、source bundle dependency report、基于目标环境当前 catalog 计算的 target dependency report、frozen readiness 派生的 target runtime-binding handoff requirements 和 stable keys，并对 unsupported bundle/publication schemaVersion、fingerprint mismatch、缺失 snapshot 和重复 publicationId 做结构化拒绝 |
 | `GET` | `/api/visual/assets/overview` | 当前已实现：返回 `bloge.visualAssetOverview.v1`，聚合 draft/publication/operator catalog readiness，并用 summary actionReadiness 和 runtimeBindingRequirements 派生可分页 action queue |
-| `GET` | `/api/visual/assets/runtime-binding-requirements` | 当前已实现：返回 `bloge.visualRuntimeBindingRequirements.v1`，把 active draft 和 immutable publication 的 runtime binding gaps 暴露为 scope-aware/filterable/pageable 事实索引，并支持 `requirementKey` 精确回查 |
-| `GET` | `/api/visual/assets/runtime-binding-requirements/handoff-bundle` | 当前已实现：返回 `bloge.visualRuntimeBindingHandoff.v1`，把当前 runtime-binding 查询窗口导出为 portable handoff bundle，包含 source index lineage、scope/filter、stable requirement keys、路由计数、requirement 明细和 `bundleFingerprint` |
+| `GET` | `/api/visual/assets/runtime-binding-requirements` | 当前已实现：返回 `bloge.visualRuntimeBindingRequirements.v1`，把 active draft 和 immutable publication 的 runtime binding gaps 暴露为 scope-aware/filterable/pageable 事实索引，并支持 `operatorRef` 过滤/计数和 `requirementKey` 精确回查 |
+| `GET` | `/api/visual/assets/runtime-binding-requirements/handoff-bundle` | 当前已实现：返回 `bloge.visualRuntimeBindingHandoff.v1`，把当前 runtime-binding 查询窗口导出为 portable handoff bundle，包含 source index lineage、scope/filter、stable requirement keys、operatorRef/routing 计数、requirement 明细和 `bundleFingerprint` |
 | `POST` | `/api/visual/assets/runtime-binding-requirements/handoff-review` | 当前已实现：接收 `bloge.visualRuntimeBindingHandoff.v1` 并返回 `bloge.visualRuntimeBindingHandoffReview.v1`，按当前 runtime-binding read model 对账导出快照的 current/drifted/missing/new-current-window 状态，并回显 `sourceBundleFingerprint`；`bundleFingerprint` 不匹配时以 `visual.runtimeBindingHandoff.fingerprintMismatch` 拒绝 |
 
 ### 12.3 Runtime / Trace API

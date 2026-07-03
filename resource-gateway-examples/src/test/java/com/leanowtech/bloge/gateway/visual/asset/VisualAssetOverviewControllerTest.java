@@ -13,6 +13,7 @@ import com.leanowtech.bloge.gateway.visual.draft.GraphDraftDependencyReport;
 import com.leanowtech.bloge.gateway.visual.draft.GraphDraftSummary;
 import com.leanowtech.bloge.gateway.visual.draft.InMemoryGraphDraftRepository;
 import com.leanowtech.bloge.gateway.visual.model.SchemaEnvelope;
+import com.leanowtech.bloge.gateway.visual.model.VisualBundleFingerprint;
 import com.leanowtech.bloge.gateway.visual.publication.InMemoryVisualGraphPublicationRepository;
 import com.leanowtech.bloge.gateway.visual.publication.VisualGraphPublication;
 import com.leanowtech.bloge.gateway.visual.publication.VisualGraphPublicationSummary;
@@ -22,6 +23,7 @@ import com.leanowtech.bloge.gateway.visual.validation.VisualValidationResult;
 import org.junit.jupiter.api.Test;
 
 import java.time.Instant;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
@@ -138,6 +140,7 @@ class VisualAssetOverviewControllerTest {
         assertThat(importReadiness.runtimeBindingRequirementCount()).isEqualTo(1);
         assertThat(workspaceIndex.total()).isEqualTo(1);
         assertThat(workspaceIndex.unfilteredTotal()).isEqualTo(1);
+        assertThat(workspaceIndex.operatorRefCounts()).containsEntry(importedRequirement.operatorRef(), 1);
         assertThat(workspaceIndex.bindingKindCounts()).isEqualTo(importReadiness.bindingKindCounts());
         assertThat(workspaceIndex.handoffLaneCounts()).isEqualTo(importReadiness.handoffLaneCounts());
         assertThat(workspaceIndex.handoffKindCounts()).isEqualTo(importReadiness.handoffKindCounts());
@@ -234,6 +237,23 @@ class VisualAssetOverviewControllerTest {
                 "",
                 ""
         );
+        VisualRuntimeBindingRequirements byOperatorRef = controller.runtimeBindingRequirements(
+                "",
+                "",
+                "",
+                10,
+                0,
+                "",
+                "risk:eligibility",
+                "",
+                "",
+                "",
+                "",
+                "",
+                "",
+                "",
+                ""
+        );
         VisualRuntimeBindingHandoffBundle handoffBundle = controller.runtimeBindingHandoffBundle(
                 "",
                 "",
@@ -267,6 +287,7 @@ class VisualAssetOverviewControllerTest {
                 handoffBundle.hasMore(),
                 handoffBundle.requirementKeys(),
                 handoffBundle.targetKindCounts(),
+                handoffBundle.operatorRefCounts(),
                 handoffBundle.bindingKindCounts(),
                 handoffBundle.handoffLaneCounts(),
                 handoffBundle.handoffKindCounts(),
@@ -293,6 +314,33 @@ class VisualAssetOverviewControllerTest {
                 handoffBundle.hasMore(),
                 handoffBundle.requirementKeys(),
                 handoffBundle.targetKindCounts(),
+                handoffBundle.operatorRefCounts(),
+                handoffBundle.bindingKindCounts(),
+                handoffBundle.handoffLaneCounts(),
+                handoffBundle.handoffKindCounts(),
+                handoffBundle.handoffTargetCounts(),
+                handoffBundle.sourceKindCounts(),
+                handoffBundle.loweringModeCounts(),
+                handoffBundle.readinessStateCounts(),
+                handoffBundle.artifactKindCounts(),
+                handoffBundle.requirements()
+        );
+        VisualRuntimeBindingHandoffBundle legacyFingerprintBundle = new VisualRuntimeBindingHandoffBundle(
+                handoffBundle.schemaVersion(),
+                handoffBundle.exportedAt(),
+                handoffBundle.sourceIndexSchemaVersion(),
+                handoffBundle.sourceIndexGeneratedAt(),
+                legacyHandoffFingerprint(handoffBundle),
+                handoffBundle.scope(),
+                handoffBundle.filter(),
+                handoffBundle.total(),
+                handoffBundle.unfilteredTotal(),
+                handoffBundle.displayedCount(),
+                handoffBundle.itemLimit(),
+                handoffBundle.offset(),
+                handoffBundle.hasMore(),
+                handoffBundle.requirementKeys(),
+                handoffBundle.targetKindCounts(),
                 handoffBundle.bindingKindCounts(),
                 handoffBundle.handoffLaneCounts(),
                 handoffBundle.handoffKindCounts(),
@@ -305,6 +353,8 @@ class VisualAssetOverviewControllerTest {
         );
         var mismatchedFingerprintResponse =
                 controller.reviewRuntimeBindingHandoffBundle(mismatchedFingerprintBundle);
+        var legacyFingerprintResponse =
+                controller.reviewRuntimeBindingHandoffBundle(legacyFingerprintBundle);
         VisualRuntimeBindingRequirements excludedScope =
                 controller.runtimeBindingRequirements("tenant-b", "risk", "dev");
 
@@ -318,6 +368,7 @@ class VisualAssetOverviewControllerTest {
         assertThat(firstPage.hasMore()).isTrue();
         assertThat(firstPage.targetKindCounts()).containsEntry("draft", 1)
                 .containsEntry("publication", 1);
+        assertThat(firstPage.operatorRefCounts()).containsEntry("risk:eligibility", 2);
         assertThat(firstPage.bindingKindCounts()).containsEntry("executable-lowering", 2);
         assertThat(firstPage.handoffLaneCounts()).containsEntry("operator-platform", 2);
         assertThat(firstPage.handoffKindCounts()).containsEntry("operator-implementation", 2);
@@ -341,6 +392,7 @@ class VisualAssetOverviewControllerTest {
         });
         assertThat(draftOnly.filter().filtered()).isTrue();
         assertThat(draftOnly.filter().targetKind()).isEqualTo("draft");
+        assertThat(draftOnly.filter().operatorRef()).isEmpty();
         assertThat(draftOnly.filter().bindingKind()).isEqualTo("executable-lowering");
         assertThat(draftOnly.filter().handoffLane()).isEqualTo("operator-platform");
         assertThat(draftOnly.filter().handoffKind()).isEqualTo("operator-implementation");
@@ -350,6 +402,11 @@ class VisualAssetOverviewControllerTest {
         assertThat(draftOnly.items()).singleElement()
                 .extracting(VisualRuntimeBindingRequirements.RequirementItem::targetId)
                 .isEqualTo(draft.draftId());
+        assertThat(byOperatorRef.filter().filtered()).isTrue();
+        assertThat(byOperatorRef.filter().operatorRef()).isEqualTo("risk:eligibility");
+        assertThat(byOperatorRef.total()).isEqualTo(2);
+        assertThat(byOperatorRef.unfilteredTotal()).isEqualTo(2);
+        assertThat(byOperatorRef.operatorRefCounts()).containsEntry("risk:eligibility", 2);
         assertThat(byRequirementKey.filter().filtered()).isTrue();
         assertThat(byRequirementKey.filter().requirementKey()).isEqualTo(draftRequirementKey);
         assertThat(byRequirementKey.total()).isEqualTo(1);
@@ -375,9 +432,16 @@ class VisualAssetOverviewControllerTest {
             assertThat(diagnostic.metadata()).containsEntry("actual", "sha256:forged")
                     .containsEntry("expected", handoffBundle.bundleFingerprint());
         });
+        assertThat(legacyFingerprintBundle.bundleFingerprint()).isNotEqualTo(handoffBundle.bundleFingerprint());
+        assertThat(legacyFingerprintBundle.bundleFingerprintVerified()).isTrue();
+        assertThat(legacyFingerprintResponse.getStatusCode().value()).isEqualTo(200);
+        assertThat(legacyFingerprintResponse.getBody()).isNotNull();
+        assertThat(legacyFingerprintResponse.getBody().reviewable()).isTrue();
+        assertThat(legacyFingerprintResponse.getBody().state()).isEqualTo("current");
         assertThat(handoffBundle.sourceIndexSchemaVersion())
                 .isEqualTo(VisualRuntimeBindingRequirements.SCHEMA_VERSION);
         assertThat(handoffBundle.filter().targetKind()).isEqualTo("draft");
+        assertThat(handoffBundle.filter().operatorRef()).isEmpty();
         assertThat(handoffBundle.filter().bindingKind()).isEqualTo("executable-lowering");
         assertThat(handoffBundle.filter().handoffLane()).isEqualTo("operator-platform");
         assertThat(handoffBundle.filter().handoffKind()).isEqualTo("operator-implementation");
@@ -388,6 +452,7 @@ class VisualAssetOverviewControllerTest {
         assertThat(handoffBundle.hasMore()).isFalse();
         assertThat(handoffBundle.requirementKeys()).containsExactly(draftRequirementKey);
         assertThat(handoffBundle.handoffLaneCounts()).containsEntry("operator-platform", 1);
+        assertThat(handoffBundle.operatorRefCounts()).containsEntry("risk:eligibility", 1);
         assertThat(handoffBundle.handoffKindCounts()).containsEntry("operator-implementation", 1);
         assertThat(handoffBundle.handoffTargetCounts()).containsEntry("risk:eligibility", 1);
         assertThat(handoffBundle.requirements()).singleElement().satisfies(item -> {
@@ -848,6 +913,51 @@ class VisualAssetOverviewControllerTest {
         return actionQueue.actionTypeCounts().values().stream()
                 .mapToInt(Integer::intValue)
                 .sum();
+    }
+
+    private static String legacyHandoffFingerprint(VisualRuntimeBindingHandoffBundle bundle) {
+        Map<String, Object> material = new LinkedHashMap<>();
+        material.put("schemaVersion", bundle.schemaVersion());
+        material.put("sourceIndexSchemaVersion", bundle.sourceIndexSchemaVersion());
+        material.put("scope", bundle.scope());
+        material.put("filter", legacyFilterMaterial(bundle.filter()));
+        material.put("total", bundle.total());
+        material.put("unfilteredTotal", bundle.unfilteredTotal());
+        material.put("displayedCount", bundle.displayedCount());
+        material.put("itemLimit", bundle.itemLimit());
+        material.put("offset", bundle.offset());
+        material.put("hasMore", bundle.hasMore());
+        material.put("requirementKeys", bundle.requirementKeys());
+        material.put("targetKindCounts", bundle.targetKindCounts());
+        material.put("bindingKindCounts", bundle.bindingKindCounts());
+        material.put("handoffLaneCounts", bundle.handoffLaneCounts());
+        material.put("handoffKindCounts", bundle.handoffKindCounts());
+        material.put("handoffTargetCounts", bundle.handoffTargetCounts());
+        material.put("sourceKindCounts", bundle.sourceKindCounts());
+        material.put("loweringModeCounts", bundle.loweringModeCounts());
+        material.put("readinessStateCounts", bundle.readinessStateCounts());
+        material.put("artifactKindCounts", bundle.artifactKindCounts());
+        material.put("requirements", bundle.requirements());
+        return VisualBundleFingerprint.fromMaterial(material);
+    }
+
+    private static Map<String, Object> legacyFilterMaterial(
+            VisualRuntimeBindingRequirements.RequirementFilter filter) {
+        VisualRuntimeBindingRequirements.RequirementFilter safeFilter = filter == null
+                ? VisualRuntimeBindingRequirements.RequirementFilter.all()
+                : filter;
+        Map<String, Object> material = new LinkedHashMap<>();
+        material.put("targetKind", safeFilter.targetKind());
+        material.put("bindingKind", safeFilter.bindingKind());
+        material.put("handoffLane", safeFilter.handoffLane());
+        material.put("handoffKind", safeFilter.handoffKind());
+        material.put("handoffTarget", safeFilter.handoffTarget());
+        material.put("sourceKind", safeFilter.sourceKind());
+        material.put("loweringMode", safeFilter.loweringMode());
+        material.put("readinessState", safeFilter.readinessState());
+        material.put("requirementKey", safeFilter.requirementKey());
+        material.put("filtered", safeFilter.filtered());
+        return material;
     }
 
     private static GraphDraft draftWithFingerprint(OperatorDefinition operator) {

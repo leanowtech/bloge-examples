@@ -1840,14 +1840,14 @@ message handler、webhook、streaming 或 durable capability 暂时不能运行�
 `GET /api/visual/assets/runtime-binding-requirements` 会返回
 `bloge.visualRuntimeBindingRequirements.v1`，按 active draft 和 immutable publication
 展开同一批 requirement，并支持 `tenantId/namespace/environment`、`limit/offset`、
-`targetKind`、`bindingKind`、`handoffLane`、`handoffKind`、`handoffTarget`、
+`targetKind`、`operatorRef`、`bindingKind`、`handoffLane`、`handoffKind`、`handoffTarget`、
 `sourceKind`、`loweringMode`、`readinessState` 和 `requirementKey`
 查询。`requirementKey` 用于让 draft/publication import result 或 workspace item
 直接回查同一条 runtime binding gap，而不是分页扫描索引。该索引不持久化待办状态，`readiness.runtimeBindingRequirements[]`
 仍是唯一事实来源。
 `GET /api/visual/assets/runtime-binding-requirements/handoff-bundle` 会把当前查询窗口导出为
 `bloge.visualRuntimeBindingHandoff.v1`，携带 source index lineage、scope/filter、
-stable requirement keys、路由计数、requirement rows 和 `bundleFingerprint`，用于把 schema-only/design-only
+stable requirement keys、`operatorRefCounts`、路由计数、requirement rows 和 `bundleFingerprint`，用于把 schema-only/design-only
 资产移交给 runtime-plane 团队。`POST /api/visual/assets/runtime-binding-requirements/handoff-review`
 接收该 bundle 并返回 `bloge.visualRuntimeBindingHandoffReview.v1`，按 stable key
 对比当前 read model，标记 current、drifted、missing 和 current window 新增项。

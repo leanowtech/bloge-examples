@@ -32,6 +32,7 @@ import java.util.function.Function;
  * @param hasMore true when more filtered requirements exist after the returned window
  * @param filter normalized requirement filter
  * @param targetKindCounts filtered requirement counts by target asset kind
+ * @param operatorRefCounts filtered requirement counts by operator reference
  * @param bindingKindCounts filtered requirement counts by binding kind
  * @param handoffLaneCounts filtered requirement counts by runtime-plane handoff lane
  * @param handoffKindCounts filtered requirement counts by runtime-plane handoff work kind
@@ -54,6 +55,7 @@ public record VisualRuntimeBindingRequirements(
         boolean hasMore,
         RequirementFilter filter,
         Map<String, Integer> targetKindCounts,
+        Map<String, Integer> operatorRefCounts,
         Map<String, Integer> bindingKindCounts,
         Map<String, Integer> handoffLaneCounts,
         Map<String, Integer> handoffKindCounts,
@@ -81,6 +83,7 @@ public record VisualRuntimeBindingRequirements(
         offset = Math.max(0, offset);
         filter = filter == null ? RequirementFilter.all() : filter;
         targetKindCounts = immutableCounts(targetKindCounts);
+        operatorRefCounts = immutableCounts(operatorRefCounts);
         bindingKindCounts = immutableCounts(bindingKindCounts);
         handoffLaneCounts = immutableCounts(handoffLaneCounts);
         handoffKindCounts = immutableCounts(handoffKindCounts);
@@ -105,6 +108,7 @@ public record VisualRuntimeBindingRequirements(
      * @param itemLimit requested item limit
      * @param offset zero-based item offset after filtering
      * @param targetKind optional target kind filter
+     * @param operatorRef optional operator reference filter
      * @param bindingKind optional binding kind filter
      * @param handoffLane optional runtime-plane handoff lane filter
      * @param handoffKind optional runtime-plane handoff work kind filter
@@ -123,6 +127,7 @@ public record VisualRuntimeBindingRequirements(
                                                         int itemLimit,
                                                         int offset,
                                                         String targetKind,
+                                                        String operatorRef,
                                                         String bindingKind,
                                                         String handoffLane,
                                                         String handoffKind,
@@ -132,7 +137,7 @@ public record VisualRuntimeBindingRequirements(
                                                         String readinessState,
                                                         String requirementKey) {
         List<RequirementItem> generated = generate(drafts, publications);
-        RequirementFilter filter = new RequirementFilter(targetKind, bindingKind, handoffLane, handoffKind,
+        RequirementFilter filter = new RequirementFilter(targetKind, operatorRef, bindingKind, handoffLane, handoffKind,
                 handoffTarget, sourceKind, loweringMode, readinessState, requirementKey);
         List<RequirementItem> filtered = generated.stream()
                 .filter(filter::matches)
@@ -152,6 +157,7 @@ public record VisualRuntimeBindingRequirements(
                 false,
                 filter,
                 countBy(filtered, RequirementItem::targetKind),
+                countBy(filtered, RequirementItem::operatorRef),
                 countBy(filtered, RequirementItem::bindingKind),
                 countBy(filtered, RequirementItem::handoffLane),
                 countBy(filtered, RequirementItem::handoffKind),
@@ -165,16 +171,42 @@ public record VisualRuntimeBindingRequirements(
     }
 
     /**
+     * Backward-compatible builder for callers that do not filter by operator reference.
+     */
+    public static VisualRuntimeBindingRequirements from(List<GraphDraftSummary> drafts,
+                                                        List<VisualGraphPublicationSummary> publications,
+                                                        String tenantId,
+                                                        String namespace,
+                                                        String environment,
+                                                        int itemLimit,
+                                                        int offset,
+                                                        String targetKind,
+                                                        String bindingKind,
+                                                        String handoffLane,
+                                                        String handoffKind,
+                                                        String handoffTarget,
+                                                        String sourceKind,
+                                                        String loweringMode,
+                                                        String readinessState,
+                                                        String requirementKey) {
+        return from(drafts, publications, tenantId, namespace, environment, itemLimit, offset, targetKind, "",
+                bindingKind, handoffLane, handoffKind, handoffTarget, sourceKind, loweringMode, readinessState,
+                requirementKey);
+    }
+
+    /**
      * @return an empty index
      */
     public static VisualRuntimeBindingRequirements empty() {
-        return from(List.of(), List.of(), "", "", "", DEFAULT_ITEM_LIMIT, 0, "", "", "", "", "", "", "", "", "");
+        return from(List.of(), List.of(), "", "", "", DEFAULT_ITEM_LIMIT, 0, "", "", "", "", "", "", "", "",
+                "", "");
     }
 
     /**
      * Normalized runtime binding requirement query filter.
      *
      * @param targetKind draft or publication, empty when unfiltered
+     * @param operatorRef operator reference, empty when unfiltered
      * @param bindingKind binding kind, empty when unfiltered
      * @param handoffLane runtime-plane handoff lane, empty when unfiltered
      * @param handoffKind runtime-plane handoff work kind, empty when unfiltered
@@ -187,6 +219,7 @@ public record VisualRuntimeBindingRequirements(
      */
     public record RequirementFilter(
             String targetKind,
+            String operatorRef,
             String bindingKind,
             String handoffLane,
             String handoffKind,
@@ -198,6 +231,7 @@ public record VisualRuntimeBindingRequirements(
             boolean filtered
     ) {
         public RequirementFilter(String targetKind,
+                                 String operatorRef,
                                  String bindingKind,
                                  String handoffLane,
                                  String handoffKind,
@@ -208,6 +242,7 @@ public record VisualRuntimeBindingRequirements(
                                  String requirementKey) {
             this(
                     normalizeFacetValue(targetKind),
+                    normalizeTextValue(operatorRef),
                     normalizeFacetValue(bindingKind),
                     normalizeFacetValue(handoffLane),
                     normalizeFacetValue(handoffKind),
@@ -217,6 +252,7 @@ public record VisualRuntimeBindingRequirements(
                     normalizeFacetValue(readinessState),
                     normalizeTextValue(requirementKey),
                     !normalizeFacetValue(targetKind).isBlank()
+                            || !normalizeTextValue(operatorRef).isBlank()
                             || !normalizeFacetValue(bindingKind).isBlank()
                             || !normalizeFacetValue(handoffLane).isBlank()
                             || !normalizeFacetValue(handoffKind).isBlank()
@@ -228,8 +264,22 @@ public record VisualRuntimeBindingRequirements(
             );
         }
 
+        public RequirementFilter(String targetKind,
+                                 String bindingKind,
+                                 String handoffLane,
+                                 String handoffKind,
+                                 String handoffTarget,
+                                 String sourceKind,
+                                 String loweringMode,
+                                 String readinessState,
+                                 String requirementKey) {
+            this(targetKind, "", bindingKind, handoffLane, handoffKind, handoffTarget, sourceKind, loweringMode,
+                    readinessState, requirementKey);
+        }
+
         public RequirementFilter {
             targetKind = normalizeFacetValue(targetKind);
+            operatorRef = normalizeTextValue(operatorRef);
             bindingKind = normalizeFacetValue(bindingKind);
             handoffLane = normalizeFacetValue(handoffLane);
             handoffKind = normalizeFacetValue(handoffKind);
@@ -239,6 +289,7 @@ public record VisualRuntimeBindingRequirements(
             readinessState = normalizeFacetValue(readinessState);
             requirementKey = normalizeTextValue(requirementKey);
             filtered = !targetKind.isBlank()
+                    || !operatorRef.isBlank()
                     || !bindingKind.isBlank()
                     || !handoffLane.isBlank()
                     || !handoffKind.isBlank()
@@ -250,13 +301,14 @@ public record VisualRuntimeBindingRequirements(
         }
 
         static RequirementFilter all() {
-            return new RequirementFilter("", "", "", "", "", "", "", "", "");
+            return new RequirementFilter("", "", "", "", "", "", "", "", "", "");
         }
 
         boolean matches(RequirementItem item) {
             return item != null
                     && (requirementKey.isBlank() || requirementKey.equals(item.requirementKey()))
                     && (targetKind.isBlank() || targetKind.equals(item.targetKind()))
+                    && (operatorRef.isBlank() || operatorRef.equals(item.operatorRef()))
                     && (bindingKind.isBlank() || bindingKind.equals(item.bindingKind()))
                     && (handoffLane.isBlank() || handoffLane.equals(item.handoffLane()))
                     && (handoffKind.isBlank() || handoffKind.equals(item.handoffKind()))
