@@ -525,6 +525,46 @@ class VisualGraphPublicationControllerTest {
         assertThat(record.draftId()).isEqualTo(stored.draftId());
     }
 
+    @Test
+    void runDesignPublicationReturnsBlockedRunAndRecordsAuditFailure() {
+        InMemoryVisualGraphPublicationRepository repository = new InMemoryVisualGraphPublicationRepository();
+        VisualGraphPublication stored = repository.create(designPublication("tenant-a", "risk", "prod"));
+        InMemoryVisualGraphRunRepository runs = new InMemoryVisualGraphRunRepository();
+        VisualGraphPublicationController controller = new VisualGraphPublicationController(
+                repository,
+                new VisualGraphRunService(null, null, null),
+                runs);
+
+        ResponseEntity<VisualGraphRunResponse> response = controller.run(stored.publicationId(),
+                new VisualStoredDraftRunRequest(Map.of("score", 720), ""));
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat(response.getBody()).isNotNull();
+        assertThat(response.getBody().validated()).isTrue();
+        assertThat(response.getBody().compiled()).isFalse();
+        assertThat(response.getBody().success()).isFalse();
+        assertThat(response.getBody().errors()).contains("Design visual graph publication is not executable.");
+        assertThat(response.getBody().runId()).isNotBlank();
+        assertThat(response.getBody().diagnostics())
+                .anySatisfy(diagnostic -> {
+                    assertThat(diagnostic.code()).isEqualTo("visual.publication.designNotExecutable");
+                    assertThat(diagnostic.target()).isEqualTo("/artifactKind");
+                    assertThat(diagnostic.message()).contains(stored.publicationId());
+                });
+        VisualGraphRunRecord record = runs.find(response.getBody().runId()).orElseThrow();
+        assertThat(record.sourceKind()).isEqualTo(VisualGraphRunRecord.SOURCE_PUBLICATION);
+        assertThat(record.publicationId()).isEqualTo(stored.publicationId());
+        assertThat(record.sourceArtifactKind()).isEqualTo("DESIGN");
+        assertThat(record.draftId()).isEqualTo(stored.draftId());
+        assertThat(record.validated()).isTrue();
+        assertThat(record.compiled()).isFalse();
+        assertThat(record.success()).isFalse();
+        assertThat(record.errors()).contains("Design visual graph publication is not executable.");
+        assertThat(record.diagnostics())
+                .anySatisfy(diagnostic -> assertThat(diagnostic.code())
+                        .isEqualTo("visual.publication.designNotExecutable"));
+    }
+
     private static VisualGraphRunService runner() {
         return new CapturingRunService();
     }
