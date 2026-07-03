@@ -2631,6 +2631,13 @@ repository 记录。`import-bundle` 才真正创建 immutable publication。两�
   result 仍回显 source lineage、target dependency report 和 runtime-binding handoff，便于
   外部迁移控制面重试或人工处置。
 
+publication 资产列表同样把 artifact kind 当作查询合同，而不是客户端标签：
+`GET /api/visual/publications` 和 `GET /api/visual/publications/summaries`
+都支持 `tenantId`、`namespace`、`environment` 与
+`artifactKind=EXECUTABLE|DESIGN` 过滤；`summaries` 返回
+`bloge.visualGraphPublicationSummary.v1`，用于外部控制面和浏览器在不拉取完整
+immutable artifact payload 的情况下建立 `EXECUTABLE` / `DESIGN` 资产索引。
+
 这条路径让 `DESIGN` publication 可以作为跨环境、跨 runtime-plane 的控制面资产被
 移交；后续是否具备 runtime binding 仍由 asset overview 和 runtime binding
 requirement index 审阅，不由 import 动作伪造执行能力。

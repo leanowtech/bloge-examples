@@ -390,6 +390,7 @@ const state = {
   publicationSummaries: [],
   publicationDetailsById: {},
   selectedPublicationId: '',
+  publicationArtifactKindFilter: '',
   publicationBundleText: '',
   publicationMessage: null,
   goldenCases: [],
@@ -1213,7 +1214,9 @@ function visualDraftSummariesUrl(builder = state.builder) {
 }
 
 function visualPublicationSummariesUrl(builder = state.builder) {
-  return scopedVisualAuthoringUrl('/api/visual/publications/summaries', builder);
+  const url = scopedVisualAuthoringUrl('/api/visual/publications/summaries', builder);
+  const artifactKind = normalizePublicationArtifactKindFilter(state.publicationArtifactKindFilter || '');
+  return artifactKind ? `${url}&artifactKind=${encodeURIComponent(artifactKind)}` : url;
 }
 
 function scopedVisualAuthoringUrl(path, builder = state.builder) {
@@ -1726,6 +1729,7 @@ function renderInputForm() {
       <div class="builder-panel">
         <div class="panel-title">Publications</div>
         <div class="draft-controls">
+          <select id="publication-artifact-filter" aria-label="Filter publications by artifact kind"></select>
           <select id="publication-select" aria-label="Published visual graphs"></select>
           <button id="run-publication" class="secondary compact" type="button">Run</button>
           <button id="reload-publications" class="secondary compact" type="button">Reload</button>
@@ -6233,6 +6237,7 @@ async function publishVisualDraft() {
       state.pendingPublishWarningKey = '';
       state.selectedPublicationId = publication.publicationId;
       state.publicationDetailsById[publication.publicationId] = publication;
+      ensurePublicationArtifactVisible(publication);
       await loadPublicationList({ render: false });
       await loadGoldenCases({ render: false });
       await loadGoldenCertificationStatus({ render: false });
@@ -6260,6 +6265,22 @@ function publishWarningAcknowledgementKey(draftId, revision) {
 
 function normalizePublishArtifactKind(value) {
   return String(value || '').trim().toUpperCase() === 'DESIGN' ? 'DESIGN' : 'EXECUTABLE';
+}
+
+function normalizePublicationArtifactKindFilter(value) {
+  const normalized = String(value || '').trim().toUpperCase();
+  return normalized === 'EXECUTABLE' || normalized === 'DESIGN' ? normalized : '';
+}
+
+function ensurePublicationArtifactVisible(publication) {
+  const filter = normalizePublicationArtifactKindFilter(state.publicationArtifactKindFilter || '');
+  if (!filter || !publication?.publicationId) {
+    return;
+  }
+  const artifactKind = normalizePublishArtifactKind(publication.artifactKind || 'EXECUTABLE');
+  if (filter !== artifactKind) {
+    state.publicationArtifactKindFilter = artifactKind;
+  }
 }
 
 async function loadOperatorLibraries(options = {}) {
@@ -9380,6 +9401,25 @@ function setDraftMessage(text, level = 'info') {
 function renderPublicationControls() {
   const select = $('publication-select');
   if (!select) return;
+  const artifactFilter = $('publication-artifact-filter');
+  if (artifactFilter) {
+    artifactFilter.innerHTML = [
+      '<option value="">All artifacts</option>',
+      '<option value="EXECUTABLE">Executable</option>',
+      '<option value="DESIGN">Design</option>'
+    ].join('');
+    artifactFilter.value = normalizePublicationArtifactKindFilter(state.publicationArtifactKindFilter || '');
+    artifactFilter.onchange = async () => {
+      state.publicationArtifactKindFilter = normalizePublicationArtifactKindFilter(artifactFilter.value || '');
+      state.selectedPublicationId = '';
+      state.selectedGoldenCaseId = '';
+      state.goldenAssertions = [];
+      await loadPublicationList({ render: false });
+      await loadGoldenCases({ render: false });
+      await loadGoldenCertificationStatus({ render: false });
+      renderPublicationControls();
+    };
+  }
   const options = state.publications.length
     ? state.publications.map((publication) => {
       const selected = publication.publicationId === state.selectedPublicationId ? ' selected' : '';
@@ -10806,6 +10846,7 @@ async function importPublicationBundle() {
   if (importedPublication?.publicationId) {
     state.selectedPublicationId = importedPublication.publicationId;
     state.publicationDetailsById[importedPublication.publicationId] = importedPublication;
+    ensurePublicationArtifactVisible(importedPublication);
   }
   await loadPublicationList({ render: false });
   await loadSelectedPublicationDetails({ render: false });

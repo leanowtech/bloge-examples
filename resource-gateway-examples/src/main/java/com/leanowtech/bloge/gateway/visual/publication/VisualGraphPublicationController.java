@@ -67,14 +67,17 @@ public class VisualGraphPublicationController {
      * @param tenantId tenant scope, empty for all
      * @param namespace namespace scope, empty for all
      * @param environment environment scope, empty for all
+     * @param artifactKind optional publication artifact kind, such as EXECUTABLE or DESIGN
      * @return publications in scope
      */
     @GetMapping
     public Collection<VisualGraphPublication> list(@RequestParam(defaultValue = "") String tenantId,
                                                    @RequestParam(defaultValue = "") String namespace,
-                                                   @RequestParam(defaultValue = "") String environment) {
+                                                   @RequestParam(defaultValue = "") String environment,
+                                                   @RequestParam(defaultValue = "") String artifactKind) {
         return repository.all().stream()
                 .filter(publication -> matchesPublicationScope(publication, tenantId, namespace, environment))
+                .filter(publication -> matchesArtifactKind(publication.artifactKind(), artifactKind))
                 .toList();
     }
 
@@ -82,7 +85,14 @@ public class VisualGraphPublicationController {
      * Backward-compatible direct-call helper for tests and non-Spring callers.
      */
     public Collection<VisualGraphPublication> list() {
-        return list("", "", "");
+        return list("", "", "", "");
+    }
+
+    /**
+     * Backward-compatible direct-call helper for tests and non-Spring callers.
+     */
+    public Collection<VisualGraphPublication> list(String tenantId, String namespace, String environment) {
+        return list(tenantId, namespace, environment, "");
     }
 
     /**
@@ -91,15 +101,18 @@ public class VisualGraphPublicationController {
      * @param tenantId tenant scope, empty for all
      * @param namespace namespace scope, empty for all
      * @param environment environment scope, empty for all
+     * @param artifactKind optional publication artifact kind, such as EXECUTABLE or DESIGN
      * @return publication summaries newest first in scope
      */
     @GetMapping("/summaries")
     public List<VisualGraphPublicationSummary> summaries(@RequestParam(defaultValue = "") String tenantId,
                                                          @RequestParam(defaultValue = "") String namespace,
-                                                         @RequestParam(defaultValue = "") String environment) {
+                                                         @RequestParam(defaultValue = "") String environment,
+                                                         @RequestParam(defaultValue = "") String artifactKind) {
         return repository.all().stream()
                 .map(VisualGraphPublicationSummary::from)
                 .filter(summary -> matchesPublicationSummaryScope(summary, tenantId, namespace, environment))
+                .filter(summary -> matchesArtifactKind(summary.artifactKind(), artifactKind))
                 .toList();
     }
 
@@ -107,7 +120,14 @@ public class VisualGraphPublicationController {
      * Backward-compatible direct-call helper for tests and non-Spring callers.
      */
     public List<VisualGraphPublicationSummary> summaries() {
-        return summaries("", "", "");
+        return summaries("", "", "", "");
+    }
+
+    /**
+     * Backward-compatible direct-call helper for tests and non-Spring callers.
+     */
+    public List<VisualGraphPublicationSummary> summaries(String tenantId, String namespace, String environment) {
+        return summaries(tenantId, namespace, environment, "");
     }
 
     private static boolean matchesPublicationScope(VisualGraphPublication publication,
@@ -132,6 +152,11 @@ public class VisualGraphPublicationController {
 
     private static boolean matchesScope(String actual, String expected) {
         return expected == null || expected.isBlank() || String.valueOf(actual).equals(expected);
+    }
+
+    private static boolean matchesArtifactKind(String actual, String expected) {
+        return expected == null || expected.isBlank()
+                || String.valueOf(actual).equalsIgnoreCase(expected.trim());
     }
 
     /**

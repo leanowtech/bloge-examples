@@ -72,16 +72,26 @@ class VisualGraphPublicationControllerTest {
     void listAndSummariesFilterPublicationsByAuthoringScope() {
         InMemoryVisualGraphPublicationRepository repository = new InMemoryVisualGraphPublicationRepository();
         VisualGraphPublication included = repository.create(publication("tenant-a", "risk", "dev"));
+        VisualGraphPublication includedDesign = repository.create(designPublication("tenant-a", "risk", "dev"));
         VisualGraphPublication excluded = repository.create(publication("tenant-b", "risk", "dev"));
         VisualGraphPublicationController controller = new VisualGraphPublicationController(repository, runner(),
                 new InMemoryVisualGraphRunRepository());
 
         assertThat(controller.list("tenant-a", "risk", "dev"))
                 .extracting(VisualGraphPublication::publicationId)
-                .containsExactly(included.publicationId());
+                .containsExactlyInAnyOrder(included.publicationId(), includedDesign.publicationId());
+        assertThat(controller.list("tenant-a", "risk", "dev", "DESIGN"))
+                .extracting(VisualGraphPublication::publicationId)
+                .containsExactly(includedDesign.publicationId());
         assertThat(controller.summaries("tenant-a", "risk", "dev"))
                 .extracting(VisualGraphPublicationSummary::publicationId)
-                .containsExactly(included.publicationId());
+                .containsExactlyInAnyOrder(included.publicationId(), includedDesign.publicationId());
+        assertThat(controller.summaries("tenant-a", "risk", "dev", "design"))
+                .singleElement()
+                .satisfies(summary -> {
+                    assertThat(summary.publicationId()).isEqualTo(includedDesign.publicationId());
+                    assertThat(summary.artifactKind()).isEqualTo("DESIGN");
+                });
         assertThat(controller.summaries("tenant-b", "risk", "dev"))
                 .extracting(VisualGraphPublicationSummary::publicationId)
                 .containsExactly(excluded.publicationId());
