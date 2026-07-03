@@ -170,20 +170,33 @@ public class VisualGraphDraftController {
      * @return stored draft
      */
     @PostMapping
-    public GraphDraft create(@RequestBody GraphDraft draft,
-                             @RequestParam(defaultValue = "") String actor,
-                             @RequestParam(defaultValue = "") String changeSource,
-                             @RequestParam(defaultValue = "") String changeSummary,
-                             @RequestParam(defaultValue = "") String reason) {
+    public ResponseEntity<Object> createDraft(@RequestBody GraphDraft draft,
+                                              @RequestParam(defaultValue = "") String actor,
+                                              @RequestParam(defaultValue = "") String changeSource,
+                                              @RequestParam(defaultValue = "") String changeSummary,
+                                              @RequestParam(defaultValue = "") String reason) {
         requireSupportedDraftContract(draft);
-        return repository.save(withCurrentOperatorSnapshotState(draft.withIdentity("", 0))
-                .withRevisionMetadata(GraphDraft.RevisionMetadata.patch(
-                        actor,
-                        changeSource.isBlank() ? "api" : changeSource,
-                        changeSummary.isBlank() ? "Created draft." : changeSummary,
-                        List.of("/"),
-                        reason
-                )));
+        GraphDraft candidate = createDraftCandidate(draft, actor, changeSource, changeSummary, reason);
+        VisualValidationResult validation = validator.validate(candidate);
+        try {
+            return ResponseEntity.ok(repository.save(candidate));
+        } catch (RuntimeException e) {
+            return ResponseEntity.status(HttpStatus.CONFLICT)
+                    .body(validationWithPersistenceFailure(validation,
+                            draftCreatePersistenceFailureDiagnostic(candidate, e)));
+        }
+    }
+
+    /**
+     * Backward-compatible direct-call helper for tests and non-Spring callers.
+     */
+    public GraphDraft create(GraphDraft draft,
+                             String actor,
+                             String changeSource,
+                             String changeSummary,
+                             String reason) {
+        requireSupportedDraftContract(draft);
+        return repository.save(createDraftCandidate(draft, actor, changeSource, changeSummary, reason));
     }
 
     /**
@@ -191,6 +204,21 @@ public class VisualGraphDraftController {
      */
     public GraphDraft create(GraphDraft draft) {
         return create(draft, "", "", "", "");
+    }
+
+    private GraphDraft createDraftCandidate(GraphDraft draft,
+                                            String actor,
+                                            String changeSource,
+                                            String changeSummary,
+                                            String reason) {
+        return withCurrentOperatorSnapshotState(draft.withIdentity("", 0))
+                .withRevisionMetadata(GraphDraft.RevisionMetadata.patch(
+                        actor,
+                        changeSource.isBlank() ? "api" : changeSource,
+                        changeSummary.isBlank() ? "Created draft." : changeSummary,
+                        List.of("/"),
+                        reason
+                ));
     }
 
     private GraphDraftSummary draftSummary(GraphDraftHistorySummary history) {
@@ -393,6 +421,61 @@ public class VisualGraphDraftController {
         );
     }
 
+    private static VisualValidationResult validationWithPersistenceFailure(VisualValidationResult validation,
+                                                                           VisualDiagnostic diagnostic) {
+        List<VisualDiagnostic> diagnostics = new ArrayList<>();
+        diagnostics.add(diagnostic);
+        if (validation != null) {
+            diagnostics.addAll(validation.diagnostics());
+        }
+        return new VisualValidationResult(false, diagnostics,
+                validation == null ? null : validation.readiness());
+    }
+
+    private static VisualDiagnostic draftCreatePersistenceFailureDiagnostic(GraphDraft draft,
+                                                                           RuntimeException failure) {
+        String exceptionMessage = failure.getMessage() == null ? "" : failure.getMessage();
+        Map<String, Object> metadata = new LinkedHashMap<>();
+        metadata.put("submittedDraftId", draft == null ? "" : draft.draftId());
+        metadata.put("submittedRevision", draft == null ? 0 : draft.revision());
+        metadata.put("graphName", draft == null ? "" : draft.graphName());
+        metadata.put("tenantId", draft == null ? "" : draft.tenantId());
+        metadata.put("namespace", draft == null ? "" : draft.namespace());
+        metadata.put("environment", draft == null ? "" : draft.environment());
+        metadata.put("exceptionType", failure.getClass().getSimpleName());
+        metadata.put("exceptionMessage", exceptionMessage);
+        return VisualDiagnostic.error(
+                "visual.draft.createPersistenceFailed",
+                "Visual graph draft '%s' could not be created: %s"
+                        .formatted(draft == null ? "" : draft.graphName(), exceptionMessage),
+                "/draft",
+                metadata
+        );
+    }
+
+    private static VisualDiagnostic draftUpdatePersistenceFailureDiagnostic(String draftId,
+                                                                           long expectedRevision,
+                                                                           GraphDraft current,
+                                                                           GraphDraft candidate,
+                                                                           RuntimeException failure) {
+        String exceptionMessage = failure.getMessage() == null ? "" : failure.getMessage();
+        Map<String, Object> metadata = new LinkedHashMap<>();
+        metadata.put("draftId", draftId == null ? "" : draftId);
+        metadata.put("expectedRevision", expectedRevision);
+        metadata.put("currentRevision", current == null ? 0 : current.revision());
+        metadata.put("currentGraphName", current == null ? "" : current.graphName());
+        metadata.put("attemptedGraphName", candidate == null ? "" : candidate.graphName());
+        metadata.put("exceptionType", failure.getClass().getSimpleName());
+        metadata.put("exceptionMessage", exceptionMessage);
+        return VisualDiagnostic.error(
+                "visual.draft.updatePersistenceFailed",
+                "Visual graph draft '%s' could not be updated at revision %d: %s"
+                        .formatted(draftId == null ? "" : draftId, expectedRevision, exceptionMessage),
+                "/draft",
+                metadata
+        );
+    }
+
     /**
      * Lists stored revisions for a draft.
      *
@@ -537,9 +620,16 @@ public class VisualGraphDraftController {
                         List.of("/"),
                         reason
                 )));
-        return repository.saveIfRevision(draftId, expectedRevision, candidate)
-                .<ResponseEntity<Object>>map(ResponseEntity::ok)
-                .orElseGet(() -> updateConflictResponse(draftId, expectedRevision, current.get()));
+        try {
+            return repository.saveIfRevision(draftId, expectedRevision, candidate)
+                    .<ResponseEntity<Object>>map(ResponseEntity::ok)
+                    .orElseGet(() -> updateConflictResponse(draftId, expectedRevision, current.get()));
+        } catch (RuntimeException e) {
+            return ResponseEntity.status(HttpStatus.CONFLICT)
+                    .body(GraphDraftPatchResult.rejected(current.get(),
+                            List.of(draftUpdatePersistenceFailureDiagnostic(
+                                    draftId, expectedRevision, current.get(), candidate, e))));
+        }
     }
 
     /**

@@ -870,7 +870,7 @@ fingerprint snapshot；普通保存和 PATCH 仍保留既有 snapshot，避免�
 
 | Method | Path | 说明 |
 | --- | --- | --- |
-| `POST` | `/api/visual/drafts` | 创建图草稿 |
+| `POST` | `/api/visual/drafts` | 当前已实现：创建图草稿，服务端分配 identity/revision 并固化 operator snapshot；repository 写入失败返回 `409` / `visual.draft.createPersistenceFailed`，保留候选 draft readiness |
 | `GET` | `/api/visual/drafts/{draftId}` | 获取草稿 |
 | `GET` | `/api/visual/drafts/history` | 当前已实现：返回轻量 active/deleted draft history index，用于发现 retained history 和 deleted draft recovery 入口 |
 | `GET` | `/api/visual/drafts/summaries` | 当前已实现：返回 `bloge.visualGraphDraftSummary.v1`，列表层暴露 validation/readiness/actionReadiness、diagnostic counts 和 dependency counts |
@@ -879,6 +879,7 @@ fingerprint snapshot；普通保存和 PATCH 仍保留既有 snapshot，避免�
 | `POST` | `/api/visual/drafts/import` | 当前已实现：以新 identity 导入 export bundle，刷新当前 catalog fingerprints，存储前校验 bundle fingerprint 与 draft contract，并返回 `bloge.visualGraphDraftImportResult.v1` 目标环境 diagnostics、validation/readiness/actionReadiness、`sourceBundleFingerprint`、source dependency report、target dependency report、target runtime-binding handoff requirements 和 stable keys；repository save 失败时返回 `409` / `visual.draft.importPersistenceFailed`，保留非写入 target preview 证据 |
 | `GET` | `/api/visual/drafts/{draftId}/revisions/{baseRevision}/diff/{targetRevision}` | 当前已实现：返回 `bloge.visualGraphDraftDiff.v1`，按 graph/node/edge 分解 draft revision 变化、最高风险、风险分类、摘要和节点/边增删改计数 |
 | `POST` | `/api/visual/drafts/{draftId}/revisions/{revision}/restore` | 当前已实现：把 immutable draft revision 作为内容源恢复成新的 latest revision，带 `expectedRevision` 并发门禁、审计元数据、draft contract 校验，并保留历史 operator snapshot |
+| `PUT` | `/api/visual/drafts/{draftId}` | 当前已实现：整图覆盖保存，使用提交 revision 做 optimistic locking；stale revision 返回 `visual.draft.revisionConflict`，guarded update 写入失败返回 `visual.draft.updatePersistenceFailed` 和 current draft snapshot |
 | `PATCH` | `/api/visual/drafts/{draftId}` | 保存节点、边、layout、binding patch |
 | `POST` | `/api/visual/drafts/{draftId}/operator-fingerprints/rebase` | 当前已实现：显式刷新选中节点或全部节点的 service-managed operator fingerprint snapshot，使用 `expectedRevision` 防并发覆盖，并对未知节点/当前 catalog 缺失算子返回结构化 diagnostics |
 | `DELETE` | `/api/visual/drafts/{draftId}` | 当前已实现：删除 current draft 指针但保留 immutable revision history，写入 deletion audit snapshot，并允许后续从 retained revision 恢复 |

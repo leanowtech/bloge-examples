@@ -1528,6 +1528,18 @@ definition snapshot 固化到 draft。`PUT /api/visual/drafts/{draftId}` 是整�
 默认写入 `visual-canvas` / `gateway-browser` 来源和新建设计图原因；已存在 draft 则优先走
 字段级 PATCH，只有外部控制面需要整图覆盖语义时才使用 `PUT`。
 
+如果 `POST /api/visual/drafts` 在合同校验和 operator snapshot 派生后无法写入
+repository，服务端返回 `409 CONFLICT` 和 `visual.draft.createPersistenceFailed`，
+响应体使用 `VisualValidationResult`，其中 `readiness` 仍保留候选 draft 的
+schema/design/runtime 判断，让客户端知道这是平台存储故障，不是用户导入的 schema-only
+算子不能编排。`PUT /api/visual/drafts/{draftId}` 在 `expectedRevision` 已匹配但
+repository guarded update 失败时返回 `409 CONFLICT` 和
+`visual.draft.updatePersistenceFailed`，响应体使用 `GraphDraftPatchResult` 并带回
+current draft snapshot，metadata 包含 `draftId`、`expectedRevision`、`currentRevision`、
+current/attempted graph name 和 exception 信息。两条失败路径都不能退化为通用 500；
+保存设计资产本身是画布控制面的核心能力，运行实现缺失只影响 compile/run/publish executable，
+不应掩盖存储面的失败。
+
 ```http
 PATCH /api/visual/drafts/{draftId}
 Content-Type: application/json

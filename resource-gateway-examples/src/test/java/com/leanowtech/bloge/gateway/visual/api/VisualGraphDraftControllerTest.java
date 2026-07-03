@@ -46,6 +46,7 @@ import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -448,6 +449,45 @@ class VisualGraphDraftControllerTest {
         assertThatThrownBy(() -> controller.create(draft))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("bloge.visualGraphDraft.v2");
+        assertThat(repository.all()).isEmpty();
+    }
+
+    @Test
+    void createDraftReturnsPersistenceDiagnosticWhenRepositorySaveFails() {
+        DefaultVisualOperatorCatalog catalog = VisualCatalogTestSupport.catalogWithLibrary(
+                VisualCatalogTestSupport.designOnlyEligibilityLibrary("integer"));
+        FailingSaveGraphDraftRepository repository = new FailingSaveGraphDraftRepository();
+        VisualGraphDraftController controller = controllerWithCatalog(catalog, repository);
+
+        ResponseEntity<Object> response = controller.createDraft(eligibilityDraft(graphInputSchema(
+                        Map.of(
+                                "score", Map.of("type", "integer"),
+                                "amount", Map.of("type", "number")
+                        )
+                )),
+                "architect@example.com",
+                "browser-canvas",
+                "Created schema-only draft.",
+                "Persist a design-only graph before runtime implementation exists.");
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.CONFLICT);
+        assertThat(response.getBody()).isInstanceOf(VisualValidationResult.class);
+        VisualValidationResult result = (VisualValidationResult) response.getBody();
+        assertThat(result.valid()).isFalse();
+        assertThat(result.readiness().state()).isEqualTo("design-only");
+        assertThat(result.readiness().artifactKinds()).containsExactly("DESIGN");
+        assertThat(result.diagnostics())
+                .singleElement()
+                .satisfies(diagnostic -> {
+                    assertThat(diagnostic.code()).isEqualTo("visual.draft.createPersistenceFailed");
+                    assertThat(diagnostic.target()).isEqualTo("/draft");
+                    assertThat(diagnostic.metadata())
+                            .containsEntry("submittedDraftId", "")
+                            .containsEntry("submittedRevision", 0L)
+                            .containsEntry("graphName", "compileGate")
+                            .containsEntry("exceptionType", "IllegalStateException")
+                            .containsEntry("exceptionMessage", "draft store unavailable");
+                });
         assertThat(repository.all()).isEmpty();
     }
 
@@ -1476,6 +1516,41 @@ class VisualGraphDraftControllerTest {
                 .extracting("code")
                 .contains("visual.draft.revisionConflict");
         assertThat(controller.get(stored.draftId()).getBody().graphName()).isEqualTo("freshPolicy");
+    }
+
+    @Test
+    void updateReturnsPersistenceDiagnosticWhenRepositorySaveIfRevisionFails() {
+        FailingSaveIfRevisionGraphDraftRepository repository = new FailingSaveIfRevisionGraphDraftRepository();
+        VisualGraphDraftController controller = controllerWithCatalog(eligibilityCatalog(), repository);
+        GraphDraft stored = controller.create(eligibilityDraft(graphInputSchema(
+                Map.of(
+                        "score", Map.of("type", "integer"),
+                        "amount", Map.of("type", "number")
+                )
+        )));
+
+        ResponseEntity<Object> response = controller.update(stored.draftId(), renameDraft(stored, "blockedUpdate"));
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.CONFLICT);
+        assertThat(response.getBody()).isInstanceOf(GraphDraftPatchResult.class);
+        GraphDraftPatchResult result = (GraphDraftPatchResult) response.getBody();
+        assertThat(result.patched()).isFalse();
+        assertThat(result.draft()).isEqualTo(stored);
+        assertThat(result.diagnostics())
+                .singleElement()
+                .satisfies(diagnostic -> {
+                    assertThat(diagnostic.code()).isEqualTo("visual.draft.updatePersistenceFailed");
+                    assertThat(diagnostic.target()).isEqualTo("/draft");
+                    assertThat(diagnostic.metadata())
+                            .containsEntry("draftId", stored.draftId())
+                            .containsEntry("expectedRevision", stored.revision())
+                            .containsEntry("currentRevision", stored.revision())
+                            .containsEntry("currentGraphName", stored.graphName())
+                            .containsEntry("attemptedGraphName", "blockedUpdate")
+                            .containsEntry("exceptionType", "IllegalStateException")
+                            .containsEntry("exceptionMessage", "draft revision store unavailable");
+                });
+        assertThat(controller.get(stored.draftId()).getBody().graphName()).isEqualTo(stored.graphName());
     }
 
     @Test
@@ -2653,6 +2728,13 @@ class VisualGraphDraftControllerTest {
         @Override
         public GraphDraft save(GraphDraft draft) {
             throw new IllegalStateException("draft store unavailable");
+        }
+    }
+
+    private static class FailingSaveIfRevisionGraphDraftRepository extends InMemoryGraphDraftRepository {
+        @Override
+        public Optional<GraphDraft> saveIfRevision(String draftId, long expectedRevision, GraphDraft draft) {
+            throw new IllegalStateException("draft revision store unavailable");
         }
     }
 
