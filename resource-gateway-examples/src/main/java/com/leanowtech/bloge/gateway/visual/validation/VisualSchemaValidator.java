@@ -1190,14 +1190,14 @@ public final class VisualSchemaValidator {
                     path + "/const"));
         }
         Object rawEnum = schema.get("enum");
-        if (rawEnum instanceof List<?> values && !values.contains(constValue)) {
+        if (rawEnum instanceof List<?> values && !schemaValuesContain(values, constValue)) {
             diagnostics.add(VisualDiagnostic.error("visual.schema.constEnumMismatch",
                     "Const value must be one of enum %s.".formatted(values),
                     path + "/const"));
         }
         if ("enum".equals(kind)) {
             Object rawValues = schema.get("values");
-            if (rawValues instanceof List<?> values && !values.contains(constValue)) {
+            if (rawValues instanceof List<?> values && !schemaValuesContain(values, constValue)) {
                 diagnostics.add(VisualDiagnostic.error("visual.schema.constEnumMismatch",
                         "Const value must be one of enum values %s.".formatted(values),
                         path + "/const"));

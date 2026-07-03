@@ -184,6 +184,21 @@ class VisualSchemaValidatorTest {
     }
 
     @Test
+    void acceptsConstWhenItMatchesEnumBySchemaValueEquality() {
+        assertThat(VisualSchemaValidator.validateSchema(Map.of(
+                "type", "number",
+                "enum", List.of(1.0),
+                "const", 1
+        ), "/schema")).isEmpty();
+
+        assertThat(VisualSchemaValidator.validateSchema(Map.of(
+                "type", "enum",
+                "values", List.of(Map.of("status", "APPROVE", "score", 1.0)),
+                "const", Map.of("score", 1, "status", "APPROVE")
+        ), "/schema")).isEmpty();
+    }
+
+    @Test
     void reportsSchemaEnumDuplicatesUsingSchemaValueEquality() {
         Map<String, Object> first = Map.of("a", "x", "b", List.of(1));
         Map<String, Object> second = Map.of("b", List.of(1.0), "a", "x");
