@@ -2001,6 +2001,15 @@ binding 必须有可见 data edge。
     "readinessState": "draft-repair-required",
     "readinessLevel": "error",
     "readinessExecutable": false,
+    "runtimeBindingRequirementCount": 0,
+    "runtimeBindingRequirementKeys": [],
+    "bindingKindCounts": {},
+    "handoffLaneCounts": {},
+    "handoffKindCounts": {},
+    "handoffTargetCounts": {},
+    "sourceKindCounts": {},
+    "loweringModeCounts": {},
+    "readinessStateCounts": {},
     "message": "Connection accepted; graph still has validation issues."
   },
   "validation": {
@@ -2032,6 +2041,14 @@ binding 必须有可见 data edge。
 `accepted=true` 且 `replacedInputKeys` / `replacedEdgeIds` 非空，客户端应用连接前
 必须先按这些 key 清理本地旧 binding / edge 表现，保证最终画布状态与服务端 preview
 candidate 一致。
+当预检后的 candidate draft 是 schema-valid 但仍不能执行时，`summary` 会从
+`validation.readiness.runtimeBindingRequirements[]` 派生
+`runtimeBindingRequirementCount`、`runtimeBindingRequirementKeys[]` 以及
+binding/handoff/source/lowering/readiness 分布计数。这里的 key 使用
+`RUNTIME_BINDING|connection-preview||{nodeId}|{bindingKind}|{bindingTarget}|`
+格式，只保证同一次候选/预检窗口内可去重、可提示；保存为 draft 或冻结为 publication
+后，应以 `/api/visual/assets/runtime-binding-requirements` 返回的 asset-scoped
+`requirementKey` 作为外部 runtime-plane handoff 的长期引用。
 
 resource-gateway 示例已提供 `POST /api/visual/connections/check`，浏览器画布在
 drop 连线和 inspector source picker 写入 binding 前都调用它作为最终 gate；
@@ -2109,7 +2126,18 @@ draft，不产生新 edge，也不成为新的 schema 判断来源。
         "kind": "data",
         "bindingKey": "score",
         "diagnosticCount": 0,
-        "message": "Connection accepted."
+        "runtimeBindingRequirementCount": 1,
+        "runtimeBindingRequirementKeys": [
+          "RUNTIME_BINDING|connection-preview||loanPolicy|executable-lowering|risk:eligibility|"
+        ],
+        "bindingKindCounts": { "executable-lowering": 1 },
+        "handoffLaneCounts": { "operator-platform": 1 },
+        "handoffKindCounts": { "operator-implementation": 1 },
+        "handoffTargetCounts": { "risk:eligibility": 1 },
+        "sourceKindCounts": { "user-library": 1 },
+        "loweringModeCounts": { "design": 1 },
+        "readinessStateCounts": { "design-only": 1 },
+        "message": "Connection accepted; executable promotion needs runtime binding."
       },
       "explanation": {
         "sourceLabel": "fetchApplicant.payload.score",
@@ -2144,6 +2172,11 @@ surface 或某个精确 target endpoint，而不必拉完整候选集合。`targ
 目标及其 `visual.binding.*` / `visual.edge.*` diagnostics。每个候选的
 `explanation` 是稳定的机器可读说明面：source/target label、schema type、
 first diagnostic code 和 replacement counts 不应从自然语言 message 里反解析。
+当候选连接会形成 schema-valid 但 non-executable 的 design-only/runtime-blocked
+candidate draft 时，候选内嵌的 `summary` 同样携带 preview-scoped runtime binding
+requirement count/key 和 routing counts；浏览器 hover、connectability inspector
+或外部审阅面板可以据此提示“可连接、可保存、可 DESIGN 发布，但 EXECUTABLE promotion
+需要 runtime binding”，而不是把它误判为普通成功连接。
 客户端仍必须在真正
 drop 或写入 binding 前调用 `/api/visual/connections/check`，因为候选发现结果只是
 某一时刻 draft 快照的读模型；任何本地编辑、revision rebase 或 catalog drift 都可能

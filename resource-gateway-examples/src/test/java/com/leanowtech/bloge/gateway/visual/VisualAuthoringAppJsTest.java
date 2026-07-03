@@ -79,6 +79,7 @@ class VisualAuthoringAppJsTest {
                 .contains("targetPath: options.targetPath || target.path || ''")
                 .contains("normalizeConnectionCandidateExplanation(candidate?.explanation")
                 .contains("normalizeConnectionCandidatesResult(payload, source, requestBody)")
+                .contains("connectionRuntimeBindingSummary(summary)")
                 .contains("ensureConnectionCandidatePreviewForTarget(drag.source, target);")
                 .contains("const requestKey = connectionCandidatePreviewRequestKey(source, kind, target);")
                 .contains("connectionCandidatePreviewCoversTarget(preview.result, target)")
@@ -240,8 +241,12 @@ class VisualAuthoringAppJsTest {
                 .contains("function normalizeConnectionCheckSummary(summary, payload, diagnostics, validation)")
                 .contains("schemaVersion: source.schemaVersion || 'bloge.visualConnectionCheckSummary.v1'")
                 .contains("graphStillInvalid: Boolean(graphStillInvalid)")
+                .contains("runtimeBindingRequirementCount: numericCount(")
+                .contains("runtimeBindingRequirementKeys: normalizeStringArray(source.runtimeBindingRequirementKeys)")
+                .contains("bindingKindCounts: normalizeConnectionRuntimeBindingCountMap(")
                 .contains("replacedInputKeys: normalizeStringArray(source.replacedInputKeys)")
                 .contains("replacedEdgeIds: normalizeStringArray(source.replacedEdgeIds)")
+                .contains("function connectionRuntimeBindingSummary(summary)")
                 .contains("function connectionAppliedMessage(source, target, serverCheck = null)")
                 .contains("function clearConnectionReplacementInputs(node, summary = null)")
                 .contains("applyConnection(source, checkedTarget, serverCheck)")
@@ -1278,6 +1283,11 @@ class VisualAuthoringAppJsTest {
                   'sourceCandidatesForTarget',
                   'sourceCandidateComparator',
                   'normalizeConnectionCheckSummary',
+                  'normalizeConnectionRuntimeBindingCountMap',
+                  'countRuntimeBindingRequirementsBy',
+                  'connectionRuntimeBindingSummary',
+                  'normalizeCountMap',
+                  'normalizeRuntimeBindingRequirement',
                   'normalizeStringArray',
                   'numericCount',
                   'normalizeConnectionCandidateExplanation',
@@ -3604,7 +3614,20 @@ operators:
                     target: { nodeId: 'auditNode', port: 'inputs', path: 'score' },
                     accepted: true,
                     bindingKey: 'inputs.score',
-                    summary: { message: 'Server schema accepts score.' },
+                    summary: {
+                      message: 'Server schema accepts score.',
+                      runtimeBindingRequirementCount: 1,
+                      runtimeBindingRequirementKeys: [
+                        'RUNTIME_BINDING|connection-preview||auditNode|executable-lowering|risk:audit|'
+                      ],
+                      bindingKindCounts: { 'executable-lowering': 1 },
+                      handoffLaneCounts: { 'operator-platform': 1 },
+                      handoffKindCounts: { 'operator-implementation': 1 },
+                      handoffTargetCounts: { 'risk:audit': 1 },
+                      sourceKindCounts: { 'user-library': 1 },
+                      loweringModeCounts: { design: 1 },
+                      readinessStateCounts: { 'design-only': 1 }
+                    },
                     explanation: {
                       sourceLabel: 'riskNode.payload.score',
                       targetLabel: 'auditNode.inputs.score',
@@ -4465,6 +4488,10 @@ operators:
                   ['connection candidates rejected count', serverCandidateResult.rejectedCount, 2],
                   ['connection candidates explanation source type', serverCandidateResult.candidates[0].explanation.sourceSchemaType, 'integer'],
                   ['connection candidates explanation target type', serverCandidateResult.candidates[0].explanation.targetSchemaType, 'integer'],
+                  ['connection candidates runtime binding count', serverCandidateResult.candidates[0].summary.runtimeBindingRequirementCount, 1],
+                  ['connection candidates runtime binding key', serverCandidateResult.candidates[0].summary.runtimeBindingRequirementKeys[0], 'RUNTIME_BINDING|connection-preview||auditNode|executable-lowering|risk:audit|'],
+                  ['connection candidates runtime binding kind count', serverCandidateResult.candidates[0].summary.bindingKindCounts['executable-lowering'], 1],
+                  ['connection candidates runtime binding summary', context.connectionRuntimeBindingSummary(serverCandidateResult.candidates[0].summary), '1 runtime binding requirement (Executable Lowering: 1) before executable promotion.'],
                   ['connection candidates explanation diagnostic code', serverCandidateResult.candidates[1].explanation.firstDiagnosticCode, 'visual.binding.typeMismatch'],
                   ['connection candidates explanation replacement', serverCandidateResult.candidates[1].explanation.replacementSummary, 'Replaces 1 binding.'],
                   ['connection candidates target port filter', unionCandidateResult.targetPort, 'inputs'],
@@ -4481,6 +4508,7 @@ operators:
                   ['server candidate decision source', serverAcceptedDecision.source, 'server'],
                   ['server candidate accepted', serverAcceptedDecision.ok, true],
                   ['server candidate accepted message', serverAcceptedMessage, 'Server schema accepts score.'],
+                  ['server connectability ready title includes runtime binding', context.nodeConnectabilityTargetTitle(serverReadyTarget).includes('1 runtime binding requirement'), true],
                   ['server candidate rejected source', serverRejectedDecision.source, 'server'],
                   ['server candidate rejected', serverRejectedDecision.ok, false],
                   ['server candidate rejected message', serverRejectedMessage, 'Server schema rejects root risk.'],

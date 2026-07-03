@@ -12465,10 +12465,12 @@ function nodeConnectabilityTargetTitle(entry) {
     ? `${explanation.sourceSchemaType || 'unknown'} -> ${explanation.targetSchemaType || 'unknown'}`
     : '';
   const replacement = explanation?.replacementSummary || '';
+  const runtimeBinding = connectionRuntimeBindingSummary(entry.serverCandidate?.summary);
   return [
     label,
     !entry.compatibility?.ok && message ? message : '',
     schemaHint,
+    runtimeBinding,
     replacement
   ].filter(Boolean).join(' · ');
 }
@@ -21489,6 +21491,7 @@ function normalizeConnectionCandidate(candidate, kind = 'data') {
   };
   const summary = normalizeConnectionCheckSummary(candidate?.summary, payload, diagnostics, null);
   const explanation = normalizeConnectionCandidateExplanation(candidate?.explanation, summary, diagnostics);
+  const runtimeBindingMessage = connectionRuntimeBindingSummary(summary);
   const target = candidate?.target || {};
   return {
     targetNodeId: candidate?.targetNodeId || target.nodeId || '',
@@ -21507,7 +21510,7 @@ function normalizeConnectionCandidate(candidate, kind = 'data') {
     explanation,
     diagnostics,
     message: candidate?.accepted
-      ? (explanation.decisionMessage || summary.message || 'Connection accepted.')
+      ? (explanation.decisionMessage || summary.message || runtimeBindingMessage || 'Connection accepted.')
       : diagnosticMessage(diagnostics, explanation.decisionMessage || summary.message || 'Connection rejected by server.')
   };
 }
@@ -21768,6 +21771,9 @@ async function checkVisualConnectionOnServer(source, target) {
 function normalizeConnectionCheckSummary(summary, payload, diagnostics, validation) {
   const source = summary && typeof summary === 'object' ? summary : {};
   const normalizedDiagnostics = normalizeDiagnostics(diagnostics);
+  const runtimeBindingRequirements = Array.isArray(validation?.readiness?.runtimeBindingRequirements)
+    ? validation.readiness.runtimeBindingRequirements.map(normalizeRuntimeBindingRequirement)
+    : [];
   const errorCount = normalizedDiagnostics
     .filter((diagnostic) => String(diagnostic.level || '').toUpperCase() === 'ERROR')
     .length;
@@ -21804,8 +21810,79 @@ function normalizeConnectionCheckSummary(summary, payload, diagnostics, validati
     readinessState: source.readinessState || validation?.readiness?.state || '',
     readinessLevel: source.readinessLevel || validation?.readiness?.level || '',
     readinessExecutable: Boolean(source.readinessExecutable ?? validation?.readiness?.executable),
+    runtimeBindingRequirementCount: numericCount(
+      source.runtimeBindingRequirementCount,
+      numericCount(validation?.readiness?.runtimeBindingRequirementCount, runtimeBindingRequirements.length)
+    ),
+    runtimeBindingRequirementKeys: normalizeStringArray(source.runtimeBindingRequirementKeys),
+    bindingKindCounts: normalizeConnectionRuntimeBindingCountMap(
+      source.bindingKindCounts,
+      runtimeBindingRequirements,
+      'bindingKind'
+    ),
+    handoffLaneCounts: normalizeConnectionRuntimeBindingCountMap(
+      source.handoffLaneCounts,
+      runtimeBindingRequirements,
+      'handoffLane'
+    ),
+    handoffKindCounts: normalizeConnectionRuntimeBindingCountMap(
+      source.handoffKindCounts,
+      runtimeBindingRequirements,
+      'handoffKind'
+    ),
+    handoffTargetCounts: normalizeConnectionRuntimeBindingCountMap(
+      source.handoffTargetCounts,
+      runtimeBindingRequirements,
+      'handoffTarget'
+    ),
+    sourceKindCounts: normalizeConnectionRuntimeBindingCountMap(
+      source.sourceKindCounts,
+      runtimeBindingRequirements,
+      'sourceKind'
+    ),
+    loweringModeCounts: normalizeConnectionRuntimeBindingCountMap(
+      source.loweringModeCounts,
+      runtimeBindingRequirements,
+      'loweringMode'
+    ),
+    readinessStateCounts: normalizeConnectionRuntimeBindingCountMap(
+      source.readinessStateCounts,
+      runtimeBindingRequirements,
+      'state'
+    ),
     message: source.message || ''
   };
+}
+
+function normalizeConnectionRuntimeBindingCountMap(counts, requirements, field) {
+  const normalized = normalizeCountMap(counts);
+  return Object.keys(normalized).length
+    ? normalized
+    : countRuntimeBindingRequirementsBy(requirements, field);
+}
+
+function countRuntimeBindingRequirementsBy(requirements, field) {
+  const counts = {};
+  for (const requirement of Array.isArray(requirements) ? requirements : []) {
+    const key = String(requirement?.[field] || '').trim();
+    if (!key) {
+      continue;
+    }
+    counts[key] = (counts[key] || 0) + 1;
+  }
+  return counts;
+}
+
+function connectionRuntimeBindingSummary(summary) {
+  const count = numericCount(summary?.runtimeBindingRequirementCount, 0);
+  if (!count) {
+    return '';
+  }
+  const kindEntries = Object.entries(normalizeCountMap(summary?.bindingKindCounts));
+  const kindSummary = kindEntries.length
+    ? ` (${kindEntries.map(([kind, value]) => `${operatorPaletteFacetLabel(kind)}: ${value}`).join(', ')})`
+    : '';
+  return `${count} runtime binding requirement${count === 1 ? '' : 's'}${kindSummary} before executable promotion.`;
 }
 
 function normalizeStringArray(value) {

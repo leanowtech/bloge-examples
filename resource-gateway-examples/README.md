@@ -569,8 +569,10 @@ whether the graph as a whole remains repair-required, design-only, or executable
 The same response includes a `bloge.visualConnectionCheckSummary.v1` summary
 with the canonical binding key, binding/write shape, connection-scoped
 diagnostic counts, replaced input binding keys, replaced edge ids, candidate
-readiness state, and `graphStillInvalid`, so large canvases and external
-governance consoles can route connection decisions without parsing diagnostic
+readiness state, `graphStillInvalid`, and runtime-binding requirement count,
+preview-scoped keys, and binding/handoff/source/lowering/readiness distribution
+counts, so large canvases and external governance consoles can route connection
+decisions and design-only runtime handoff hints without parsing diagnostic
 prose. The browser applies those replacement keys before writing the accepted
 connection, which keeps root/field rebinding behavior aligned with the
 server-side preview instead of leaving stale overlapping inputs behind.
@@ -578,10 +580,12 @@ The Browser Composer also prefetches `bloge.visualConnectionCandidates.v1`
 when a normal data/config connection drag starts. The read model supports
 focused windows (`targetNodeId`, `targetSurface`, `offset`, `limit`) and returns
 per-candidate schema explanations with source/target labels, schema type
-summaries, first diagnostic code, and replacement counts. Hover feedback prefers
-the server candidate explanation or blocked diagnostic when present, falls back
-to local schema hints when the read model is unavailable or does not cover that
-target, and still runs `/api/visual/connections/check` before writing the edge.
+summaries, first diagnostic code, replacement counts, and runtime-binding
+summary for schema-valid but non-executable candidates. Hover feedback prefers
+the server candidate explanation, runtime-binding hint, or blocked diagnostic
+when present, falls back to local schema hints when the read model is unavailable
+or does not cover that target, and still runs `/api/visual/connections/check`
+before writing the edge.
 The selected-node Connectability inspector uses the same source-scoped candidate
 read model as a short-lived server snapshot, so blocked previews and quick-connect
 suggestions can show server-derived reasons before the author clicks; the click
@@ -816,8 +820,8 @@ Showcase metadata APIs:
 | `DELETE` | `/api/visual/drafts/{draftId}` | Delete the current visual graph draft pointer while preserving immutable revision history; optional `expectedRevision`, `actor`, `changeSource`, and `changeSummary` query parameters reject stale deletes and write deletion audit metadata |
 | `POST` | `/api/visual/drafts/validate` | Validate a visual graph draft against operator schemas, typed port edges, and DAG constraints; response includes `bloge.visualGraphReadiness.v1` and `bloge.visualGraphActionReadiness.v1` so callers can distinguish runtime-executable, design-only, runtime-blocked, governance-review, draft-repair-required graphs and the allowed compile/run/DESIGN publish/EXECUTABLE publish actions |
 | `POST` | `/api/visual/drafts/compile` | Validate a visual graph draft, lower it to BLOGE DSL, then compile the DSL; response includes validation/readiness/action-readiness so clients keep publish and action guidance after compile diagnostics |
-| `POST` | `/api/visual/connections/check` | Check a proposed source-to-target canvas connection against the same schema and DAG rules used by draft validation, returning connection-scoped diagnostics, a machine-readable decision/replacement summary, the canonical binding key for data/input bindings, and candidate draft validation/readiness/action-readiness |
-| `POST` | `/api/visual/connections/candidates` | Discover schema-aware target endpoints for one dragged source endpoint, returning `bloge.visualConnectionCandidates.v1` accepted/rejected counts, focused target filters/windowing, per-candidate schema explanations, optional blocked diagnostics, preflight summaries, and the same binding keys produced by connection check |
+| `POST` | `/api/visual/connections/check` | Check a proposed source-to-target canvas connection against the same schema and DAG rules used by draft validation, returning connection-scoped diagnostics, a machine-readable decision/replacement/runtime-binding summary, the canonical binding key for data/input bindings, and candidate draft validation/readiness/action-readiness |
+| `POST` | `/api/visual/connections/candidates` | Discover schema-aware target endpoints for one dragged source endpoint, returning `bloge.visualConnectionCandidates.v1` accepted/rejected counts, focused target filters/windowing, per-candidate schema explanations, optional blocked diagnostics, preflight summaries with runtime-binding count/keys/routing counts, and the same binding keys produced by connection check |
 | `POST` | `/api/visual/drafts/run` | Validate, compile, and execute a transient visual graph draft; response includes validation/readiness/action-readiness and a run history id |
 | `POST` | `/api/visual/drafts/{draftId}/run` | Execute a stored visual graph draft with submitted context; response includes validation/readiness/action-readiness, and optional `expectedRevision` rejects stale runs with `409 CONFLICT` |
 | `POST` | `/api/visual/drafts/{draftId}/publish` | Publish an immutable visual graph artifact; default `artifactKind=EXECUTABLE` validates, compiles, and stores frozen DSL, while `artifactKind=DESIGN` freezes a schema-valid non-executable design artifact with generation diagnostics; response includes validation/readiness/action-readiness on accepted and rejected attempts so clients can constrain publish artifact kinds and warning review gates; optional `expectedRevision` rejects stale publishes with `409 CONFLICT`; warning-level validation diagnostics require `ackWarnings=true`, and warning-acknowledged storage also requires non-empty `actor` and `reason` evidence that is frozen as publication metadata |
@@ -1564,7 +1568,7 @@ Seven `.bloge` graphs live in `src/main/resources/bloge/gateway/`:
 | `GraphDraftImportResult` | Import response contract with source bundle/draft identity, stored draft identity, target-environment compatibility diagnostics, validation/readiness/action-readiness, source dependency report, target dependency report, target runtime-binding handoff requirements and stable keys, and legacy target `dependencyReport` |
 | `DatabaseGraphDraftRepository` | H2-backed graph draft repository with revision assignment, immutable revision history, expected-revision guarded updates, deletion audit snapshots, and retained history for deleted-draft recovery |
 | `GraphDraftValidator` | Validates the `bloge.visualGraphDraft.v1` draft contract, `bloge.visualLayout.v1` presentation contract including node/edge coverage, operator references, operator fingerprint drift, operator scope policy, request-response runtime capability gates for streaming/durable/remote-worker/AI-tool/event-source/message-handler/webhook operators, schema-only design operator authoring, non-idempotent side-effect and secret-backed execution governance warnings, graph input `contextPath` bindings, binding kind and edge kind allow-lists, literal constants, expression references, required schema inputs, node config against `configSchema`, port-aware node bindings, DSL-safe source/target/output port segments, typed data edges, explicit dependency edges, branch route edges, edge identity/connection uniqueness, data edge/semantic dependency consistency, DAG shape, output schema selection, and output-reachability warnings for dangling nodes |
-| `VisualConnectionCheckService` | Reuses draft validation to accept or reject one proposed canvas edge before the browser writes a binding, including schema, source/target port-segment, path diagnostics, a stable decision/replacement summary, and candidate draft validation/readiness/action-readiness; also exposes source-endpoint target candidate discovery so a canvas can ask the server for accepted/blocked drop targets before authoring the edge |
+| `VisualConnectionCheckService` | Reuses draft validation to accept or reject one proposed canvas edge before the browser writes a binding, including schema, source/target port-segment, path diagnostics, a stable decision/replacement/runtime-binding summary, and candidate draft validation/readiness/action-readiness; also exposes source-endpoint target candidate discovery so a canvas can ask the server for accepted/blocked/non-executable drop targets before authoring the edge |
 | `GraphDraftDslGenerator` | Lowers visual drafts into executable BLOGE DSL, and deterministically blocks schema-only design operators until runtime lowering is bound |
 | `VisualGraphRunService` | Reuses the dynamic BLOGE runner to validate draft input context, compile, and execute visual drafts or frozen publications while returning draft or frozen-publication validation/readiness/action-readiness |
 | `InputCoercingOperatorRegistry` | Runtime adapter used by the dynamic runner to coerce visual DSL map inputs into Java DTO/record operator inputs before execution |

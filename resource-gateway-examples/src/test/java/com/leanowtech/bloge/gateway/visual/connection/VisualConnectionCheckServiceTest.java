@@ -58,6 +58,67 @@ class VisualConnectionCheckServiceTest {
     }
 
     @Test
+    void connectionPreviewSummarizesRuntimeBindingDebtForSchemaValidDesignOnlyDraft() {
+        VisualConnectionCheckService service = connectionService(VisualCatalogTestSupport
+                .catalogWithLoanApplicantResourceAndLibrary(
+                        VisualCatalogTestSupport.designOnlyEligibilityLibrary("integer")));
+        GraphDraft draft = resourceEligibilityDraftWithNodeInputs(
+                Map.of("applicantId", GraphDraft.Binding.constant("applicant-1")),
+                Map.of("amount", GraphDraft.Binding.constant(100000)),
+                List.of()
+        );
+
+        VisualConnectionCheckResult result = service.check(new VisualConnectionCheckRequest(
+                draft,
+                new GraphDraft.Endpoint("fetchApplicant", "payload", "score"),
+                new GraphDraft.Endpoint("eligibility", "inputs", "score"),
+                "data"
+        ));
+        VisualConnectionCandidatesResult candidates = service.candidates(new VisualConnectionCandidatesRequest(
+                draft,
+                new GraphDraft.Endpoint("fetchApplicant", "payload", "score"),
+                "data",
+                true,
+                10,
+                0,
+                "eligibility",
+                "input",
+                "inputs",
+                "score",
+                GraphDraft.UnionBranchSelection.empty(),
+                Map.of()
+        ));
+
+        assertThat(result.accepted()).isTrue();
+        assertThat(result.diagnostics()).isEmpty();
+        assertThat(result.validation().valid()).isTrue();
+        assertThat(result.validation().readiness().state()).isEqualTo("design-only");
+        assertThat(result.validation().readiness().executable()).isFalse();
+        assertThat(result.summary().candidateValid()).isTrue();
+        assertThat(result.summary().graphStillInvalid()).isFalse();
+        assertThat(result.summary().readinessState()).isEqualTo("design-only");
+        assertThat(result.summary().readinessExecutable()).isFalse();
+        assertThat(result.summary().runtimeBindingRequirementCount()).isEqualTo(1);
+        assertThat(result.summary().runtimeBindingRequirementKeys())
+                .containsExactly("RUNTIME_BINDING|connection-preview||eligibility|executable-lowering|risk:eligibility|");
+        assertThat(result.summary().bindingKindCounts()).containsEntry("executable-lowering", 1);
+        assertThat(result.summary().handoffLaneCounts()).containsEntry("operator-platform", 1);
+        assertThat(result.summary().handoffKindCounts()).containsEntry("operator-implementation", 1);
+        assertThat(result.summary().handoffTargetCounts()).containsEntry("risk:eligibility", 1);
+        assertThat(result.summary().sourceKindCounts()).containsEntry("user-library", 1);
+        assertThat(result.summary().loweringModeCounts()).containsEntry("design", 1);
+        assertThat(result.summary().readinessStateCounts()).containsEntry("design-only", 1);
+        assertThat(result.summary().message())
+                .isEqualTo("Connection accepted; executable promotion needs runtime binding.");
+        assertThat(candidates.candidates()).singleElement().satisfies(candidate -> {
+            assertThat(candidate.accepted()).isTrue();
+            assertThat(candidate.summary().runtimeBindingRequirementCount()).isEqualTo(1);
+            assertThat(candidate.summary().bindingKindCounts()).containsEntry("executable-lowering", 1);
+            assertThat(candidate.summary().handoffTargetCounts()).containsEntry("risk:eligibility", 1);
+        });
+    }
+
+    @Test
     void discoversAcceptedAndRejectedConnectionTargetCandidates() {
         VisualConnectionCheckService service = connectionService(VisualCatalogTestSupport
                 .catalogWithLoanApplicantResourceAndLibrary(VisualCatalogTestSupport.eligibilityLibrary("integer")));
@@ -1623,6 +1684,21 @@ class VisualConnectionCheckServiceTest {
             SchemaEnvelope inputSchema,
             Map<String, GraphDraft.Binding> eligibilityInputs,
             List<GraphDraft.DraftEdge> edges) {
+        return resourceEligibilityDraftWithNodeInputs(inputSchema, Map.of(), eligibilityInputs, edges);
+    }
+
+    private static GraphDraft resourceEligibilityDraftWithNodeInputs(
+            Map<String, GraphDraft.Binding> resourceInputs,
+            Map<String, GraphDraft.Binding> eligibilityInputs,
+            List<GraphDraft.DraftEdge> edges) {
+        return resourceEligibilityDraftWithNodeInputs(graphInputSchema(), resourceInputs, eligibilityInputs, edges);
+    }
+
+    private static GraphDraft resourceEligibilityDraftWithNodeInputs(
+            SchemaEnvelope inputSchema,
+            Map<String, GraphDraft.Binding> resourceInputs,
+            Map<String, GraphDraft.Binding> eligibilityInputs,
+            List<GraphDraft.DraftEdge> edges) {
         return new GraphDraft(
                 "",
                 "",
@@ -1638,7 +1714,7 @@ class VisualConnectionCheckServiceTest {
                                 "fetchApplicant",
                                 "resource:" + VisualCatalogTestSupport.RESOURCE_ID,
                                 "",
-                                Map.of(),
+                                resourceInputs,
                                 Map.of(),
                                 null
                         ),

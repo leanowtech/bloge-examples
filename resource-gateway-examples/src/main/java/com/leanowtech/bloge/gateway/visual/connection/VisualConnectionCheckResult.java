@@ -2,6 +2,8 @@ package com.leanowtech.bloge.gateway.visual.connection;
 
 import com.leanowtech.bloge.gateway.visual.diagnostic.VisualDiagnostic;
 import com.leanowtech.bloge.gateway.visual.draft.GraphDraft;
+import com.leanowtech.bloge.gateway.visual.validation.VisualGraphReadiness;
+import com.leanowtech.bloge.gateway.visual.validation.VisualRuntimeBindingRequirementKey;
 import com.leanowtech.bloge.gateway.visual.validation.VisualValidationResult;
 
 import java.util.Collections;
@@ -9,6 +11,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.function.Function;
 
 /**
  * Result of checking a proposed visual graph connection.
@@ -96,6 +99,15 @@ public record VisualConnectionCheckResult(
      * @param readinessState candidate graph readiness state
      * @param readinessLevel candidate graph readiness level
      * @param readinessExecutable whether the candidate graph is executable by the current runtime
+     * @param runtimeBindingRequirementCount runtime binding requirement count in the candidate graph
+     * @param runtimeBindingRequirementKeys preview-scoped stable runtime binding requirement keys
+     * @param bindingKindCounts runtime binding requirement counts by binding kind
+     * @param handoffLaneCounts runtime binding requirement counts by handoff lane
+     * @param handoffKindCounts runtime binding requirement counts by handoff work kind
+     * @param handoffTargetCounts runtime binding requirement counts by runtime-plane routing target
+     * @param sourceKindCounts runtime binding requirement counts by operator source kind
+     * @param loweringModeCounts runtime binding requirement counts by lowering mode
+     * @param readinessStateCounts runtime binding requirement counts by node readiness state
      * @param message human-readable decision summary
      */
     public record VisualConnectionCheckSummary(
@@ -121,6 +133,15 @@ public record VisualConnectionCheckResult(
             String readinessState,
             String readinessLevel,
             boolean readinessExecutable,
+            int runtimeBindingRequirementCount,
+            List<String> runtimeBindingRequirementKeys,
+            Map<String, Integer> bindingKindCounts,
+            Map<String, Integer> handoffLaneCounts,
+            Map<String, Integer> handoffKindCounts,
+            Map<String, Integer> handoffTargetCounts,
+            Map<String, Integer> sourceKindCounts,
+            Map<String, Integer> loweringModeCounts,
+            Map<String, Integer> readinessStateCounts,
             String message
     ) {
         public static final String SCHEMA_VERSION = "bloge.visualConnectionCheckSummary.v1";
@@ -143,6 +164,19 @@ public record VisualConnectionCheckResult(
             replacedEdgeCount = replacedEdgeIds.isEmpty() ? Math.max(0, replacedEdgeCount) : replacedEdgeIds.size();
             readinessState = readinessState == null ? "" : readinessState;
             readinessLevel = readinessLevel == null ? "" : readinessLevel;
+            runtimeBindingRequirementKeys = runtimeBindingRequirementKeys == null
+                    ? List.of()
+                    : List.copyOf(runtimeBindingRequirementKeys);
+            runtimeBindingRequirementCount = runtimeBindingRequirementKeys.isEmpty()
+                    ? Math.max(0, runtimeBindingRequirementCount)
+                    : runtimeBindingRequirementKeys.size();
+            bindingKindCounts = immutableCounts(bindingKindCounts);
+            handoffLaneCounts = immutableCounts(handoffLaneCounts);
+            handoffKindCounts = immutableCounts(handoffKindCounts);
+            handoffTargetCounts = immutableCounts(handoffTargetCounts);
+            sourceKindCounts = immutableCounts(sourceKindCounts);
+            loweringModeCounts = immutableCounts(loweringModeCounts);
+            readinessStateCounts = immutableCounts(readinessStateCounts);
             message = message == null ? "" : message;
         }
 
@@ -182,6 +216,9 @@ public record VisualConnectionCheckResult(
             }
             boolean candidateValid = candidate.valid();
             boolean graphStillInvalid = accepted && !candidateValid;
+            List<VisualGraphReadiness.RuntimeBindingRequirement> runtimeBindingRequirements =
+                    runtimeBindingRequirements(candidate);
+            List<String> runtimeBindingRequirementKeys = runtimeBindingRequirementKeys(runtimeBindingRequirements);
             return new VisualConnectionCheckSummary(
                     SCHEMA_VERSION,
                     accepted,
@@ -205,7 +242,16 @@ public record VisualConnectionCheckResult(
                     candidate.readiness().state(),
                     candidate.readiness().level(),
                     candidate.readiness().executable(),
-                    summaryMessage(accepted, safeDiagnostics, graphStillInvalid)
+                    runtimeBindingRequirements.size(),
+                    runtimeBindingRequirementKeys,
+                    countBy(runtimeBindingRequirements, VisualGraphReadiness.RuntimeBindingRequirement::bindingKind),
+                    countBy(runtimeBindingRequirements, VisualGraphReadiness.RuntimeBindingRequirement::handoffLane),
+                    countBy(runtimeBindingRequirements, VisualGraphReadiness.RuntimeBindingRequirement::handoffKind),
+                    countBy(runtimeBindingRequirements, VisualGraphReadiness.RuntimeBindingRequirement::handoffTarget),
+                    countBy(runtimeBindingRequirements, VisualGraphReadiness.RuntimeBindingRequirement::sourceKind),
+                    countBy(runtimeBindingRequirements, VisualGraphReadiness.RuntimeBindingRequirement::loweringMode),
+                    countBy(runtimeBindingRequirements, VisualGraphReadiness.RuntimeBindingRequirement::state),
+                    summaryMessage(accepted, safeDiagnostics, graphStillInvalid, runtimeBindingRequirements.size())
             );
         }
 
@@ -218,7 +264,8 @@ public record VisualConnectionCheckResult(
 
         private static String summaryMessage(boolean accepted,
                                              List<VisualDiagnostic> diagnostics,
-                                             boolean graphStillInvalid) {
+                                             boolean graphStillInvalid,
+                                             int runtimeBindingRequirementCount) {
             boolean hasErrors = diagnostics.stream().anyMatch(VisualDiagnostic::error);
             boolean hasWarnings = diagnostics.stream()
                     .anyMatch(diagnostic -> "WARNING".equalsIgnoreCase(diagnostic.level()));
@@ -231,7 +278,65 @@ public record VisualConnectionCheckResult(
             if (graphStillInvalid) {
                 return "Connection accepted; graph still has validation issues.";
             }
+            if (runtimeBindingRequirementCount > 0) {
+                return "Connection accepted; executable promotion needs runtime binding.";
+            }
             return "Connection accepted.";
+        }
+
+        private static List<VisualGraphReadiness.RuntimeBindingRequirement> runtimeBindingRequirements(
+                VisualValidationResult candidate) {
+            if (candidate == null || candidate.readiness() == null
+                    || candidate.readiness().runtimeBindingRequirements() == null) {
+                return List.of();
+            }
+            return candidate.readiness().runtimeBindingRequirements().stream()
+                    .filter(requirement -> requirement != null)
+                    .toList();
+        }
+
+        private static List<String> runtimeBindingRequirementKeys(
+                List<VisualGraphReadiness.RuntimeBindingRequirement> requirements) {
+            return requirements == null ? List.of() : requirements.stream()
+                    .map(requirement -> VisualRuntimeBindingRequirementKey.stable(
+                            "connection-preview",
+                            "",
+                            requirement.nodeId(),
+                            requirement.bindingKind(),
+                            requirement.bindingTarget(),
+                            ""))
+                    .toList();
+        }
+
+        private static Map<String, Integer> countBy(
+                List<VisualGraphReadiness.RuntimeBindingRequirement> requirements,
+                Function<VisualGraphReadiness.RuntimeBindingRequirement, String> classifier) {
+            Map<String, Integer> counts = new LinkedHashMap<>();
+            for (VisualGraphReadiness.RuntimeBindingRequirement requirement
+                    : requirements == null ? List.<VisualGraphReadiness.RuntimeBindingRequirement>of() : requirements) {
+                String key = classifier.apply(requirement);
+                if (key == null || key.isBlank()) {
+                    continue;
+                }
+                counts.merge(key, 1, Integer::sum);
+            }
+            return immutableCounts(counts);
+        }
+
+        private static Map<String, Integer> immutableCounts(Map<String, Integer> counts) {
+            if (counts == null || counts.isEmpty()) {
+                return Map.of();
+            }
+            Map<String, Integer> normalized = new LinkedHashMap<>();
+            for (Map.Entry<String, Integer> entry : counts.entrySet()) {
+                String key = entry.getKey() == null ? "" : entry.getKey().trim();
+                int count = entry.getValue() == null ? 0 : Math.max(0, entry.getValue());
+                if (key.isBlank() || count == 0) {
+                    continue;
+                }
+                normalized.put(key, count);
+            }
+            return normalized.isEmpty() ? Map.of() : Collections.unmodifiableMap(normalized);
         }
     }
 }

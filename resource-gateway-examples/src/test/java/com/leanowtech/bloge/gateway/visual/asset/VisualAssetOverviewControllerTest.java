@@ -2,6 +2,10 @@ package com.leanowtech.bloge.gateway.visual.asset;
 
 import com.leanowtech.bloge.gateway.visual.catalog.DefaultVisualOperatorCatalog;
 import com.leanowtech.bloge.gateway.visual.catalog.OperatorDefinition;
+import com.leanowtech.bloge.gateway.visual.catalog.OperatorLibrary;
+import com.leanowtech.bloge.gateway.visual.catalog.OperatorLibraryImpactReview;
+import com.leanowtech.bloge.gateway.visual.catalog.OperatorLibraryImportReadiness;
+import com.leanowtech.bloge.gateway.visual.catalog.OperatorLibraryProfile;
 import com.leanowtech.bloge.gateway.visual.catalog.VisualCatalogTestSupport;
 import com.leanowtech.bloge.gateway.visual.codegen.DslGenerationResult;
 import com.leanowtech.bloge.gateway.visual.draft.GraphDraft;
@@ -107,6 +111,57 @@ class VisualAssetOverviewControllerTest {
                     assertThat(item.handoffTarget()).isEqualTo("risk:eligibility");
                     assertThat(item.recommendedAction()).contains("EXECUTABLE promotion");
                 });
+    }
+
+    @Test
+    void runtimeBindingRequirementsKeepOperatorLibraryImportRoutingSemantics() {
+        OperatorLibrary library = VisualCatalogTestSupport.designOnlyEligibilityLibrary("integer");
+        OperatorLibraryImportReadiness importReadiness = OperatorLibraryImportReadiness.from(
+                true,
+                List.of(),
+                OperatorLibraryImpactReview.empty(),
+                OperatorLibraryProfile.from(library),
+                library
+        );
+        DefaultVisualOperatorCatalog catalog = VisualCatalogTestSupport.catalogWithLibrary(library);
+        GraphDraftValidator validator = new GraphDraftValidator(catalog);
+        InMemoryGraphDraftRepository drafts = new InMemoryGraphDraftRepository();
+        InMemoryVisualGraphPublicationRepository publications = new InMemoryVisualGraphPublicationRepository();
+        OperatorDefinition operator = catalog.find("risk:eligibility").orElseThrow();
+        GraphDraft draft = drafts.save(draftWithFingerprint(operator));
+        VisualAssetOverviewController controller =
+                new VisualAssetOverviewController(drafts, validator, catalog, publications);
+        VisualRuntimeBindingRequirements workspaceIndex = controller.runtimeBindingRequirements("", "", "");
+        OperatorLibraryImportReadiness.RuntimeBindingRequirement importedRequirement =
+                importReadiness.runtimeBindingRequirements().getFirst();
+
+        assertThat(importReadiness.runtimeBindingRequirementCount()).isEqualTo(1);
+        assertThat(workspaceIndex.total()).isEqualTo(1);
+        assertThat(workspaceIndex.unfilteredTotal()).isEqualTo(1);
+        assertThat(workspaceIndex.bindingKindCounts()).isEqualTo(importReadiness.bindingKindCounts());
+        assertThat(workspaceIndex.handoffLaneCounts()).isEqualTo(importReadiness.handoffLaneCounts());
+        assertThat(workspaceIndex.handoffKindCounts()).isEqualTo(importReadiness.handoffKindCounts());
+        assertThat(workspaceIndex.handoffTargetCounts()).isEqualTo(importReadiness.handoffTargetCounts());
+        assertThat(workspaceIndex.sourceKindCounts()).isEqualTo(importReadiness.sourceKindCounts());
+        assertThat(workspaceIndex.loweringModeCounts()).isEqualTo(importReadiness.loweringModeCounts());
+        assertThat(workspaceIndex.readinessStateCounts()).isEqualTo(importReadiness.readinessStateCounts());
+        assertThat(workspaceIndex.items()).singleElement().satisfies(item -> {
+            assertThat(item.targetKind()).isEqualTo("draft");
+            assertThat(item.targetId()).isEqualTo(draft.draftId());
+            assertThat(item.nodeId()).isEqualTo("eligibility");
+            assertThat(item.operatorRef()).isEqualTo(importedRequirement.operatorRef());
+            assertThat(item.requirementState()).isEqualTo(importedRequirement.state());
+            assertThat(item.level()).isEqualTo(importedRequirement.level());
+            assertThat(item.sourceKind()).isEqualTo(importedRequirement.sourceKind());
+            assertThat(item.loweringMode()).isEqualTo(importedRequirement.loweringMode());
+            assertThat(item.bindingKind()).isEqualTo(importedRequirement.bindingKind());
+            assertThat(item.bindingTarget()).isEqualTo(importedRequirement.bindingTarget());
+            assertThat(item.handoffLane()).isEqualTo(importedRequirement.handoffLane());
+            assertThat(item.handoffKind()).isEqualTo(importedRequirement.handoffKind());
+            assertThat(item.handoffTarget()).isEqualTo(importedRequirement.handoffTarget());
+            assertThat(item.title()).isEqualTo(importedRequirement.title());
+            assertThat(item.summary()).isEqualTo(importedRequirement.summary());
+        });
     }
 
     @Test

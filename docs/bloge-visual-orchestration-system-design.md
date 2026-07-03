@@ -790,10 +790,15 @@ edge/binding/config expression 后的完整 candidate draft validation/readiness
 publication run 则回传 artifact 冻结时的 validation/readiness/actionReadiness，不能按当前 catalog
 重新解释历史发布物。这样浏览器在 compile/run/connection preflight 之后不会丢失
 design-only、runtime-blocked、governance-review 或 draft-repair-required 的发布和执行引导。
+connection check summary 也会从 candidate readiness 派生 preview-scoped
+runtime binding requirement count/key 和 binding/handoff/source/lowering/readiness 分布，
+用于 hover、quick-connect 和外部审阅在拖拽阶段识别“可连接但不可执行”的候选；
+这些 key 只属于 connection-preview 窗口，保存成 draft 或 publication 后仍以 asset overview
+runtime-binding index 的 requirementKey 为长期 handoff 引用。
 拖拽连线的 hover 提示使用 `/api/visual/connections/candidates` 作为 source-scoped
 读模型：普通 data/config 拖拽开始时预取 accepted 与 blocked target，必要时可按
 `targetNodeId`、`targetSurface`、`offset` 和 `limit` 收窄大画布候选窗口；命中时优先展示服务端
-summary/diagnostic/schema explanation（source/target type、first diagnostic、replacement effect），
+summary/diagnostic/schema explanation（source/target type、first diagnostic、replacement effect、runtime binding hint），
 未命中或读模型失败时回退本地 schema hint；真正 drop 写入前仍必须调用
 `/api/visual/connections/check`，避免把候选发现误用成 mutation gate。
 selected-node connectability inspector 复用同一读模型为当前节点 source handles 建立短期快照，
