@@ -2,6 +2,7 @@ package com.leanowtech.bloge.gateway.visual.asset;
 
 import com.leanowtech.bloge.gateway.visual.catalog.OperatorDefinition;
 import com.leanowtech.bloge.gateway.visual.diagnostic.VisualDiagnostic;
+import com.leanowtech.bloge.gateway.visual.model.SemanticVersion;
 import com.leanowtech.bloge.gateway.visual.model.SchemaEnvelope;
 
 import java.time.Instant;
@@ -85,6 +86,39 @@ public record VisualRuntimeBindingImplementationValidation(
     }
 
     /**
+     * Returns this validation with extra diagnostics and recomputed validation state.
+     *
+     * @param additionalDiagnostics diagnostics discovered after the stateless contract check
+     * @return validation result with consistent validity, bindability, state, level, and message
+     */
+    public VisualRuntimeBindingImplementationValidation withAdditionalDiagnostics(
+            List<VisualDiagnostic> additionalDiagnostics) {
+        if (additionalDiagnostics == null || additionalDiagnostics.isEmpty()) {
+            return this;
+        }
+        List<VisualDiagnostic> nextDiagnostics = new ArrayList<>(diagnostics);
+        nextDiagnostics.addAll(additionalDiagnostics);
+        String nextState = validationState(nextDiagnostics);
+        return new VisualRuntimeBindingImplementationValidation(
+                schemaVersion,
+                validatedAt,
+                false,
+                false,
+                nextState,
+                validationLevel(nextState),
+                validationMessage(nextState, operatorRef, nextDiagnostics.size()),
+                operatorRef,
+                operatorFingerprint,
+                sourceHandoffBundleFingerprint,
+                contractFingerprint,
+                currentCatalogFingerprint,
+                currentCatalogState,
+                implementation,
+                nextDiagnostics
+        );
+    }
+
+    /**
      * Submitted implementation binding proposal.
      *
      * @param schemaVersion request contract version
@@ -124,6 +158,9 @@ public record VisualRuntimeBindingImplementationValidation(
      * @param adapterKind runtime adapter kind such as native, remote-worker, ai-tool, webhook, or message-handler
      * @param entrypoint executable adapter entrypoint
      * @param runtimeOwner owning team or service
+     * @param implementationVersion optional semantic implementation version
+     * @param reimplementationOfBindingId previous binding id when this proposal replaces an older implementation
+     * @param reimplementationStrategy compatible, breaking, adapter-migration, or rollback when this is a reimplementation
      * @param capabilities implementation capability labels
      * @param testEvidence test or certification evidence
      * @param policyEvidence governance, secret, egress, or approval evidence
@@ -135,17 +172,40 @@ public record VisualRuntimeBindingImplementationValidation(
             String adapterKind,
             String entrypoint,
             String runtimeOwner,
+            String implementationVersion,
+            String reimplementationOfBindingId,
+            String reimplementationStrategy,
             List<String> capabilities,
             List<Evidence> testEvidence,
             List<Evidence> policyEvidence,
             String rollbackTarget,
             String notes
     ) {
+        public ImplementationMetadata(String bindingId,
+                                      String adapterKind,
+                                      String entrypoint,
+                                      String runtimeOwner,
+                                      List<String> capabilities,
+                                      List<Evidence> testEvidence,
+                                      List<Evidence> policyEvidence,
+                                      String rollbackTarget,
+                                      String notes) {
+            this(bindingId, adapterKind, entrypoint, runtimeOwner, "", "", "", capabilities, testEvidence,
+                    policyEvidence, rollbackTarget, notes);
+        }
+
         public ImplementationMetadata {
             bindingId = bindingId == null ? "" : bindingId.trim();
             adapterKind = adapterKind == null ? "" : adapterKind.trim().toLowerCase(Locale.ROOT);
             entrypoint = entrypoint == null ? "" : entrypoint.trim();
             runtimeOwner = runtimeOwner == null ? "" : runtimeOwner.trim();
+            implementationVersion = implementationVersion == null ? "" : implementationVersion.trim();
+            reimplementationOfBindingId = reimplementationOfBindingId == null
+                    ? ""
+                    : reimplementationOfBindingId.trim();
+            reimplementationStrategy = reimplementationStrategy == null
+                    ? ""
+                    : reimplementationStrategy.trim().toLowerCase(Locale.ROOT);
             capabilities = normalizeStrings(capabilities);
             testEvidence = testEvidence == null ? List.of() : List.copyOf(testEvidence);
             policyEvidence = policyEvidence == null ? List.of() : List.copyOf(policyEvidence);
@@ -605,6 +665,7 @@ public record VisualRuntimeBindingImplementationValidation(
                     "Runtime binding implementation requires runtimeOwner.",
                     "/implementation/runtimeOwner"));
         }
+        addImplementationVersionDiagnostics(implementation, diagnostics);
         if (implementation.testEvidence().isEmpty()) {
             diagnostics.add(VisualDiagnostic.warning(
                     "visual.runtimeBindingImplementation.testEvidenceMissing",
@@ -623,6 +684,67 @@ public record VisualRuntimeBindingImplementationValidation(
                     "Runtime binding implementation affects policy, secrets, or side effects but has no policy evidence.",
                     "/implementation/policyEvidence"));
         }
+    }
+
+    private static void addImplementationVersionDiagnostics(
+            ImplementationMetadata implementation,
+            List<VisualDiagnostic> diagnostics) {
+        if (!implementation.implementationVersion().isBlank()
+                && SemanticVersion.parse(implementation.implementationVersion()).isEmpty()) {
+            diagnostics.add(VisualDiagnostic.error(
+                    "visual.runtimeBindingImplementation.implementationVersionInvalid",
+                    "Runtime binding implementation version '%s' must use semantic version form MAJOR.MINOR.PATCH."
+                            .formatted(implementation.implementationVersion()),
+                    "/implementation/implementationVersion",
+                    Map.of("implementationVersion", implementation.implementationVersion())));
+        }
+        String strategy = implementation.reimplementationStrategy();
+        boolean hasStrategy = !strategy.isBlank();
+        boolean hasBase = !implementation.reimplementationOfBindingId().isBlank();
+        if (hasStrategy && !reimplementationStrategies().contains(strategy)) {
+            diagnostics.add(VisualDiagnostic.error(
+                    "visual.runtimeBindingImplementation.reimplementationStrategyUnsupported",
+                    "Runtime binding implementation reimplementationStrategy '%s' is not supported."
+                            .formatted(strategy),
+                    "/implementation/reimplementationStrategy",
+                    Map.of("actual", strategy, "supported", reimplementationStrategies())));
+            return;
+        }
+        if (hasBase && !hasStrategy) {
+            diagnostics.add(VisualDiagnostic.warning(
+                    "visual.runtimeBindingImplementation.reimplementationStrategyMissing",
+                    "Runtime binding implementation references a previous binding but does not declare reimplementationStrategy; binding should require review.",
+                    "/implementation/reimplementationStrategy",
+                    Map.of("reimplementationOfBindingId", implementation.reimplementationOfBindingId())));
+        }
+        if (hasStrategy && !hasBase) {
+            diagnostics.add(VisualDiagnostic.warning(
+                    "visual.runtimeBindingImplementation.reimplementationBaseMissing",
+                    "Runtime binding implementation declares reimplementationStrategy but does not reference the previous binding id.",
+                    "/implementation/reimplementationOfBindingId",
+                    Map.of("reimplementationStrategy", strategy)));
+        }
+        if ((hasStrategy || hasBase) && implementation.implementationVersion().isBlank()) {
+            diagnostics.add(VisualDiagnostic.warning(
+                    "visual.runtimeBindingImplementation.implementationVersionMissing",
+                    "Runtime binding reimplementation should declare implementationVersion so future runtime evidence can be compared by SemVer.",
+                    "/implementation/implementationVersion",
+                    Map.of(
+                            "reimplementationOfBindingId", implementation.reimplementationOfBindingId(),
+                            "reimplementationStrategy", strategy)));
+        }
+        if (("breaking".equals(strategy) || "adapter-migration".equals(strategy))
+                && implementation.policyEvidence().isEmpty()) {
+            diagnostics.add(VisualDiagnostic.warning(
+                    "visual.runtimeBindingImplementation.reimplementationPolicyEvidenceMissing",
+                    "Breaking or adapter-migration runtime reimplementation requires explicit policy/approval evidence before binding.",
+                    "/implementation/policyEvidence",
+                    Map.of("reimplementationStrategy", strategy)));
+        }
+    }
+
+    private static Set<String> reimplementationStrategies() {
+        return Set.of("compatible", "breaking", "adapter-migration", "rollback");
     }
 
     private static boolean policyEvidenceRequired(
@@ -697,4 +819,5 @@ public record VisualRuntimeBindingImplementationValidation(
                 .distinct()
                 .toList();
     }
+
 }

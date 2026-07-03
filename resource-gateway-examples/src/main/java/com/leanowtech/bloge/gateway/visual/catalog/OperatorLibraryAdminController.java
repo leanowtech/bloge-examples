@@ -6,6 +6,7 @@ import com.fasterxml.jackson.dataformat.yaml.YAMLMapper;
 import com.leanowtech.bloge.gateway.visual.diagnostic.VisualDiagnostic;
 import com.leanowtech.bloge.gateway.visual.draft.GraphDraft;
 import com.leanowtech.bloge.gateway.visual.draft.GraphDraftRepository;
+import com.leanowtech.bloge.gateway.visual.model.SemanticVersion;
 import com.leanowtech.bloge.gateway.visual.publication.VisualGraphPublication;
 import com.leanowtech.bloge.gateway.visual.publication.VisualGraphPublicationRepository;
 import com.leanowtech.bloge.gateway.visual.validation.VisualValidationResult;
@@ -1127,44 +1128,6 @@ public class OperatorLibraryAdminController {
         metadata.put("changeSummary", change.summary());
         metadata.put("operatorRefs", change.operatorRefs());
         return metadata;
-    }
-
-    private record SemanticVersion(int major, int minor, int patch) {
-        private static Optional<SemanticVersion> parse(String value) {
-            if (value == null || value.isBlank()) {
-                return Optional.empty();
-            }
-            String core = value.trim().split("[-+]", 2)[0];
-            String[] parts = core.split("\\.");
-            if (parts.length != 3) {
-                return Optional.empty();
-            }
-            try {
-                return Optional.of(new SemanticVersion(
-                        Integer.parseInt(parts[0]),
-                        Integer.parseInt(parts[1]),
-                        Integer.parseInt(parts[2])
-                ));
-            } catch (NumberFormatException ignored) {
-                return Optional.empty();
-            }
-        }
-
-        private int compareCore(SemanticVersion other) {
-            int majorCompare = Integer.compare(major, other.major);
-            if (majorCompare != 0) {
-                return majorCompare;
-            }
-            int minorCompare = Integer.compare(minor, other.minor);
-            if (minorCompare != 0) {
-                return minorCompare;
-            }
-            return Integer.compare(patch, other.patch);
-        }
-
-        private boolean hasMinorOrMajorBumpFrom(SemanticVersion previous) {
-            return major > previous.major || major == previous.major && minor > previous.minor;
-        }
     }
 
     private record LibraryReplacementChange(

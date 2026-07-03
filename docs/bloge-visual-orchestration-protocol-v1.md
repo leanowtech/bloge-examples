@@ -1933,12 +1933,17 @@ JSON output 或自然语言摘要里判断交接快照是否还能继续排期�
 接收 `bloge.visualRuntimeBindingImplementationBinding.v1`，其中包含 `operatorRef`、
 `operatorFingerprint`、`sourceHandoffBundleFingerprint`、`sourceRequirementKeys[]`、
 handoff `operatorContract` snapshot，以及 implementation metadata：
-`bindingId`、`adapterKind`、`entrypoint`、`runtimeOwner`、`capabilities[]`、
-`testEvidence[]`、`policyEvidence[]`、`rollbackTarget` 和 `notes`。
+`bindingId`、`adapterKind`、`entrypoint`、`runtimeOwner`、可选
+`implementationVersion`、`reimplementationOfBindingId`、`reimplementationStrategy`、
+`capabilities[]`、`testEvidence[]`、`policyEvidence[]`、`rollbackTarget` 和 `notes`。
 返回 `bloge.visualRuntimeBindingImplementationValidation.v1`，用 `ready-to-bind`、
 `requires-review` 或 `rejected` 表达 pre-bind 裁决，并回显 `contractFingerprint`、
 `currentCatalogFingerprint`、`currentCatalogState` 与结构化 diagnostics。该端点只验证
 runtime team 提交的实现材料是否仍对准 handoff contract 和当前 catalog，不持久化 binding。
+`implementationVersion` 若提供必须是 `MAJOR.MINOR.PATCH` 语义版本；声明
+`reimplementationOfBindingId` 时应同时声明 `reimplementationStrategy`，支持
+`compatible`、`breaking`、`adapter-migration` 和 `rollback`。缺少版本或策略不会伪装成
+ready-to-bind，而是进入 requires-review；非法版本或未知策略会进入 rejected。
 当 handoff contract fingerprint 与当前 catalog fingerprint drift 时，diagnostics 会进一步携带
 字段级 contract diff 分类：`visual.runtimeBindingImplementation.contractDiffBreaking`
 以 error 阻断 input/output/config port 或保守 JSON Schema compatibility 判定为不兼容的 schema drift，
@@ -1960,6 +1965,11 @@ validation、source requirement 或 lifecycle evidence 不一致时仍返回 `40
 `visual.runtimeBindingImplementation.persistenceFailed` validation diagnostic，metadata 至少包含
 `bindingId`、`operatorRef`、`exceptionType` 和 `exceptionMessage`，不能把持久化异常泄漏成通用
 500。
+当 proposal 声明 `reimplementationOfBindingId` 时，submit 会额外对 repository 中的 base binding
+做跨记录校验：base 不存在或 operatorRef 不匹配返回 `409`，非 rollback 的
+`implementationVersion` 没有前进也返回 `409`；`compatible` 却跨 major、`breaking` /
+`adapter-migration` 未提升 major、或 `rollback` 仍向前升版会保留为 warning，proposal 可存储但
+状态为 `requires-review`，必须在后续 bind/supersede 时带 `ackReview=true` 和治理证据。
 `GET /api/visual/assets/runtime-binding-requirements/implementation-bindings`
 可按 `operatorRef` 和 `state` 查询已提交 proposal。该持久记录仍不关闭
 runtime-binding requirement。

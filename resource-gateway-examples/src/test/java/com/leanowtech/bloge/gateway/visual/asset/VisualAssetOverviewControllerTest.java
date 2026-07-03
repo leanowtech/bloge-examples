@@ -1527,6 +1527,128 @@ class VisualAssetOverviewControllerTest {
     }
 
     @Test
+    void runtimeBindingImplementationSubmitRejectsInvalidImplementationVersionWithoutPersisting() {
+        RuntimeBindingImplementationFixture fixture = runtimeBindingImplementationFixture();
+
+        var response = fixture.controller().submitRuntimeBindingImplementation(
+                implementationRequest(fixture,
+                        completeImplementationWithVersion(
+                                "risk-eligibility-native-v1",
+                                "v1",
+                                "",
+                                "")));
+
+        assertThat(response.getStatusCode().value()).isEqualTo(400);
+        assertThat(response.getBody()).isInstanceOf(VisualRuntimeBindingImplementationValidation.class);
+        VisualRuntimeBindingImplementationValidation validation =
+                (VisualRuntimeBindingImplementationValidation) response.getBody();
+        assertThat(validation.valid()).isFalse();
+        assertThat(validation.diagnostics())
+                .extracting(VisualDiagnostic::code)
+                .contains("visual.runtimeBindingImplementation.implementationVersionInvalid");
+        assertThat(fixture.controller().runtimeBindingImplementationBindings("", "")).isEmpty();
+    }
+
+    @Test
+    void runtimeBindingImplementationSubmitRejectsMissingReimplementationBaseWithoutPersisting() {
+        RuntimeBindingImplementationFixture fixture = runtimeBindingImplementationFixture();
+
+        var response = fixture.controller().submitRuntimeBindingImplementation(
+                implementationRequest(fixture,
+                        completeImplementationWithVersion(
+                                "risk-eligibility-native-v2",
+                                "1.1.0",
+                                "risk-eligibility-native-v1",
+                                "compatible")));
+
+        assertThat(response.getStatusCode().value()).isEqualTo(409);
+        assertThat(response.getBody()).isInstanceOf(VisualRuntimeBindingImplementationValidation.class);
+        VisualRuntimeBindingImplementationValidation validation =
+                (VisualRuntimeBindingImplementationValidation) response.getBody();
+        assertThat(validation.valid()).isFalse();
+        assertThat(validation.state()).isEqualTo("rejected");
+        assertThat(validation.diagnostics())
+                .filteredOn(diagnostic ->
+                        "visual.runtimeBindingImplementation.reimplementationBaseNotFound"
+                                .equals(diagnostic.code()))
+                .singleElement()
+                .satisfies(diagnostic -> assertThat(diagnostic.metadata())
+                        .containsEntry("reimplementationOfBindingId", "risk-eligibility-native-v1"));
+        assertThat(fixture.controller().runtimeBindingImplementationBindings("", "")).isEmpty();
+    }
+
+    @Test
+    void runtimeBindingImplementationSubmitRejectsNonForwardReimplementationVersion() {
+        RuntimeBindingImplementationFixture fixture = runtimeBindingImplementationFixture();
+        VisualRuntimeBindingImplementationBinding base = submitImplementation(
+                fixture,
+                completeImplementationWithVersion("risk-eligibility-native-v1", "1.2.0", "", ""));
+        assertThat(fixture.controller().bindRuntimeBindingImplementation(base.bindingId(), transitionRequest("", true))
+                .getStatusCode().value()).isEqualTo(200);
+
+        var response = fixture.controller().submitRuntimeBindingImplementation(
+                implementationRequest(fixture,
+                        completeImplementationWithVersion(
+                                "risk-eligibility-native-v2",
+                                "1.2.0",
+                                base.bindingId(),
+                                "compatible")));
+
+        assertThat(response.getStatusCode().value()).isEqualTo(409);
+        assertThat(response.getBody()).isInstanceOf(VisualRuntimeBindingImplementationValidation.class);
+        VisualRuntimeBindingImplementationValidation validation =
+                (VisualRuntimeBindingImplementationValidation) response.getBody();
+        assertThat(validation.valid()).isFalse();
+        assertThat(validation.state()).isEqualTo("rejected");
+        assertThat(validation.diagnostics())
+                .filteredOn(diagnostic ->
+                        "visual.runtimeBindingImplementation.implementationVersionNotForward"
+                                .equals(diagnostic.code()))
+                .singleElement()
+                .satisfies(diagnostic -> assertThat(diagnostic.metadata())
+                        .containsEntry("reimplementationOfBindingId", base.bindingId())
+                        .containsEntry("baseImplementationVersion", "1.2.0")
+                        .containsEntry("implementationVersion", "1.2.0")
+                        .containsEntry("reimplementationStrategy", "compatible"));
+        assertThat(fixture.controller().runtimeBindingImplementationBindings("", "bound")).singleElement()
+                .isEqualTo(fixture.implementationRepository().find(base.bindingId()).orElseThrow());
+        assertThat(fixture.controller().runtimeBindingImplementationBindings("", "")).hasSize(1);
+    }
+
+    @Test
+    void runtimeBindingImplementationSubmitPersistsCompatibleMajorChangeAsReviewRequired() {
+        RuntimeBindingImplementationFixture fixture = runtimeBindingImplementationFixture();
+        VisualRuntimeBindingImplementationBinding base = submitImplementation(
+                fixture,
+                completeImplementationWithVersion("risk-eligibility-native-v1", "1.2.0", "", ""));
+        assertThat(fixture.controller().bindRuntimeBindingImplementation(base.bindingId(), transitionRequest("", true))
+                .getStatusCode().value()).isEqualTo(200);
+
+        var response = fixture.controller().submitRuntimeBindingImplementation(
+                implementationRequest(fixture,
+                        completeImplementationWithVersion(
+                                "risk-eligibility-native-v2",
+                                "2.0.0",
+                                base.bindingId(),
+                                "compatible")));
+
+        assertThat(response.getStatusCode().value()).isEqualTo(201);
+        assertThat(response.getBody()).isInstanceOf(VisualRuntimeBindingImplementationBinding.class);
+        VisualRuntimeBindingImplementationBinding stored =
+                (VisualRuntimeBindingImplementationBinding) response.getBody();
+        assertThat(stored.state()).isEqualTo("requires-review");
+        assertThat(stored.validation().valid()).isTrue();
+        assertThat(stored.validation().bindable()).isFalse();
+        assertThat(stored.implementation().implementationVersion()).isEqualTo("2.0.0");
+        assertThat(stored.implementation().reimplementationOfBindingId()).isEqualTo(base.bindingId());
+        assertThat(stored.implementation().reimplementationStrategy()).isEqualTo("compatible");
+        assertThat(stored.validation().diagnostics())
+                .extracting(VisualDiagnostic::code)
+                .contains("visual.runtimeBindingImplementation.compatibleReimplementationMajorChanged");
+        assertThat(fixture.controller().runtimeBindingImplementationBindings("", "")).hasSize(2);
+    }
+
+    @Test
     void runtimeBindingImplementationSubmitReturnsConflictWhenRepositoryWriteFails() {
         RuntimeBindingImplementationFixture fixture = runtimeBindingImplementationFixture(
                 new FailingSubmitBindingCreateRepository("risk-eligibility-native-v1"),
@@ -4416,6 +4538,35 @@ class VisualAssetOverviewControllerTest {
                 "native",
                 entrypoint,
                 "risk-platform",
+                List.of("request-response"),
+                List.of(new VisualRuntimeBindingImplementationValidation.Evidence(
+                        "test",
+                        "golden-suite:risk-eligibility",
+                        "Golden suite passed against the exported operator contract."
+                )),
+                List.of(new VisualRuntimeBindingImplementationValidation.Evidence(
+                        "approval",
+                        "change-approval:RB-42",
+                        "Runtime owner approved policy and deployment scope."
+                )),
+                "deployment:risk-eligibility-native-v0",
+                ""
+        );
+    }
+
+    private static VisualRuntimeBindingImplementationValidation.ImplementationMetadata completeImplementationWithVersion(
+            String bindingId,
+            String implementationVersion,
+            String reimplementationOfBindingId,
+            String reimplementationStrategy) {
+        return new VisualRuntimeBindingImplementationValidation.ImplementationMetadata(
+                bindingId,
+                "native",
+                "com.acme.risk.RiskEligibilityOperator",
+                "risk-platform",
+                implementationVersion,
+                reimplementationOfBindingId,
+                reimplementationStrategy,
                 List.of("request-response"),
                 List.of(new VisualRuntimeBindingImplementationValidation.Evidence(
                         "test",

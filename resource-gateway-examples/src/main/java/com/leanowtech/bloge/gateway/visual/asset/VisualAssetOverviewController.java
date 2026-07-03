@@ -15,6 +15,7 @@ import com.leanowtech.bloge.gateway.visual.draft.GraphDraftDependencyReport;
 import com.leanowtech.bloge.gateway.visual.draft.GraphDraftHistorySummary;
 import com.leanowtech.bloge.gateway.visual.draft.GraphDraftRepository;
 import com.leanowtech.bloge.gateway.visual.draft.GraphDraftSummary;
+import com.leanowtech.bloge.gateway.visual.model.SemanticVersion;
 import com.leanowtech.bloge.gateway.visual.publication.VisualGraphPublicationRepository;
 import com.leanowtech.bloge.gateway.visual.publication.VisualGraphPublicationSummary;
 import com.leanowtech.bloge.gateway.visual.runtime.InMemoryVisualExecutableLoweringIntegrationRepository;
@@ -530,9 +531,14 @@ public class VisualAssetOverviewController {
         if (!validation.valid()) {
             return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(validation);
         }
+        VisualRuntimeBindingImplementationValidation submissionValidation =
+                validation.withAdditionalDiagnostics(runtimeBindingReimplementationDiagnostics(validation));
+        if (!submissionValidation.valid()) {
+            return ResponseEntity.status(HttpStatus.CONFLICT).body(submissionValidation);
+        }
         String bindingId = implementationBindingId(request);
         VisualRuntimeBindingImplementationBinding candidate =
-                VisualRuntimeBindingImplementationBinding.from(request, validation);
+                VisualRuntimeBindingImplementationBinding.from(request, submissionValidation);
         if (!bindingId.isBlank()) {
             VisualRuntimeBindingImplementationBinding existing = implementationRepository.find(bindingId)
                     .orElse(null);
@@ -2779,6 +2785,9 @@ public class VisualAssetOverviewController {
                 source.adapterKind(),
                 source.entrypoint(),
                 source.runtimeOwner(),
+                source.implementationVersion(),
+                source.reimplementationOfBindingId(),
+                source.reimplementationStrategy(),
                 source.capabilities(),
                 source.testEvidence(),
                 source.policyEvidence(),
@@ -3244,6 +3253,112 @@ public class VisualAssetOverviewController {
                 existing.revision(),
                 existing.createdAt(),
                 existing.updatedAt()));
+    }
+
+    private List<VisualDiagnostic> runtimeBindingReimplementationDiagnostics(
+            VisualRuntimeBindingImplementationValidation validation) {
+        if (validation == null || validation.implementation() == null) {
+            return List.of();
+        }
+        VisualRuntimeBindingImplementationValidation.ImplementationMetadata implementation =
+                validation.implementation();
+        String baseBindingId = implementation.reimplementationOfBindingId();
+        if (baseBindingId.isBlank()) {
+            return List.of();
+        }
+        List<VisualDiagnostic> diagnostics = new ArrayList<>();
+        VisualRuntimeBindingImplementationBinding base = implementationRepository.find(baseBindingId).orElse(null);
+        if (base == null) {
+            diagnostics.add(VisualDiagnostic.error(
+                    "visual.runtimeBindingImplementation.reimplementationBaseNotFound",
+                    "Runtime binding reimplementation references previous binding '%s', but no such binding exists."
+                            .formatted(baseBindingId),
+                    "/implementation/reimplementationOfBindingId",
+                    Map.of("reimplementationOfBindingId", baseBindingId)));
+            return diagnostics;
+        }
+        if (!validation.operatorRef().equals(base.operatorRef())) {
+            diagnostics.add(VisualDiagnostic.error(
+                    "visual.runtimeBindingImplementation.reimplementationOperatorMismatch",
+                    "Runtime binding reimplementation base '%s' belongs to operator '%s', not '%s'."
+                            .formatted(base.bindingId(), base.operatorRef(), validation.operatorRef()),
+                    "/implementation/reimplementationOfBindingId",
+                    Map.of(
+                            "reimplementationOfBindingId", base.bindingId(),
+                            "baseOperatorRef", base.operatorRef(),
+                            "operatorRef", validation.operatorRef())));
+            return diagnostics;
+        }
+        if (!base.bound() && !base.superseded() && !base.unbound()) {
+            diagnostics.add(VisualDiagnostic.warning(
+                    "visual.runtimeBindingImplementation.reimplementationBaseNotLifecycleFact",
+                    "Runtime binding reimplementation base '%s' is in state '%s'; review whether this proposal is replacing a lifecycle fact."
+                            .formatted(base.bindingId(), base.state()),
+                    "/implementation/reimplementationOfBindingId",
+                    Map.of("reimplementationOfBindingId", base.bindingId(), "baseState", base.state())));
+        }
+        VisualRuntimeBindingImplementationValidation.ImplementationMetadata baseImplementation =
+                base.implementation();
+        if (baseImplementation == null || baseImplementation.implementationVersion().isBlank()
+                || implementation.implementationVersion().isBlank()) {
+            return diagnostics;
+        }
+        SemanticVersion baseVersion = SemanticVersion.parse(baseImplementation.implementationVersion()).orElse(null);
+        SemanticVersion nextVersion = SemanticVersion.parse(implementation.implementationVersion()).orElse(null);
+        if (baseVersion == null || nextVersion == null) {
+            return diagnostics;
+        }
+        String strategy = implementation.reimplementationStrategy();
+        if (nextVersion.compareCore(baseVersion) <= 0 && !"rollback".equals(strategy)) {
+            diagnostics.add(VisualDiagnostic.error(
+                    "visual.runtimeBindingImplementation.implementationVersionNotForward",
+                    "Runtime binding reimplementation version '%s' must advance beyond base binding '%s' version '%s'."
+                            .formatted(implementation.implementationVersion(), base.bindingId(),
+                                    baseImplementation.implementationVersion()),
+                    "/implementation/implementationVersion",
+                    reimplementationVersionMetadata(base, baseImplementation, implementation)));
+            return diagnostics;
+        }
+        if ("compatible".equals(strategy) && nextVersion.major() != baseVersion.major()) {
+            diagnostics.add(VisualDiagnostic.warning(
+                    "visual.runtimeBindingImplementation.compatibleReimplementationMajorChanged",
+                    "Compatible runtime reimplementation changed major version from '%s' to '%s'; review whether this should be declared as breaking or adapter-migration."
+                            .formatted(baseImplementation.implementationVersion(),
+                                    implementation.implementationVersion()),
+                    "/implementation/reimplementationStrategy",
+                    reimplementationVersionMetadata(base, baseImplementation, implementation)));
+        }
+        if (("breaking".equals(strategy) || "adapter-migration".equals(strategy))
+                && nextVersion.major() <= baseVersion.major()) {
+            diagnostics.add(VisualDiagnostic.warning(
+                    "visual.runtimeBindingImplementation.breakingReimplementationMajorMissing",
+                    "Breaking or adapter-migration runtime reimplementation should advance the major version beyond '%s'."
+                            .formatted(baseImplementation.implementationVersion()),
+                    "/implementation/implementationVersion",
+                    reimplementationVersionMetadata(base, baseImplementation, implementation)));
+        }
+        if ("rollback".equals(strategy) && nextVersion.compareCore(baseVersion) > 0) {
+            diagnostics.add(VisualDiagnostic.warning(
+                    "visual.runtimeBindingImplementation.rollbackReimplementationVersionAdvanced",
+                    "Rollback runtime reimplementation advances version from '%s' to '%s'; review rollback intent before binding."
+                            .formatted(baseImplementation.implementationVersion(),
+                                    implementation.implementationVersion()),
+                    "/implementation/implementationVersion",
+                    reimplementationVersionMetadata(base, baseImplementation, implementation)));
+        }
+        return diagnostics;
+    }
+
+    private static Map<String, Object> reimplementationVersionMetadata(
+            VisualRuntimeBindingImplementationBinding base,
+            VisualRuntimeBindingImplementationValidation.ImplementationMetadata baseImplementation,
+            VisualRuntimeBindingImplementationValidation.ImplementationMetadata implementation) {
+        return Map.of(
+                "reimplementationOfBindingId", base.bindingId(),
+                "baseOperatorRef", base.operatorRef(),
+                "baseImplementationVersion", baseImplementation.implementationVersion(),
+                "implementationVersion", implementation.implementationVersion(),
+                "reimplementationStrategy", implementation.reimplementationStrategy());
     }
 
     private static VisualRuntimeBindingImplementationValidation validationWithBlockingDiagnostic(
