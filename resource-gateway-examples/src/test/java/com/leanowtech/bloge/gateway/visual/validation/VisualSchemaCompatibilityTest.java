@@ -161,4 +161,34 @@ class VisualSchemaCompatibilityTest {
                         .contains("source enum value(s) [ARCHIVED]")
                         .contains("do not match target schema string"));
     }
+
+    @Test
+    void acceptsSourceConstWhenItMatchesTargetConst() {
+        Map<String, Object> source = Map.of("type", "string", "const", "APPROVE");
+        Map<String, Object> target = Map.of("type", "string", "const", "APPROVE");
+
+        assertThat(VisualSchemaCompatibility.schemaCompatibilityIssue(source, target)).isEmpty();
+    }
+
+    @Test
+    void rejectsUnboundedSourceWhenTargetRequiresConst() {
+        Map<String, Object> source = Map.of("type", "string");
+        Map<String, Object> target = Map.of("type", "string", "const", "APPROVE");
+
+        assertThat(VisualSchemaCompatibility.schemaCompatibilityIssue(source, target))
+                .hasValueSatisfying(reason -> assertThat(reason)
+                        .contains("target const [APPROVE]")
+                        .contains("requires a finite source value domain"));
+    }
+
+    @Test
+    void rejectsSourceConstWhenItDiffersFromTargetConst() {
+        Map<String, Object> source = Map.of("type", "string", "const", "REJECT");
+        Map<String, Object> target = Map.of("type", "string", "const", "APPROVE");
+
+        assertThat(VisualSchemaCompatibility.schemaCompatibilityIssue(source, target))
+                .hasValueSatisfying(reason -> assertThat(reason)
+                        .contains("source const value(s) [REJECT]")
+                        .contains("outside target const [APPROVE]"));
+    }
 }

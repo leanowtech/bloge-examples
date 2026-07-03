@@ -20059,18 +20059,9 @@ function schemaCompatibilityIssue(sourceSchema, targetSchema, path = '') {
   if (sourceType === 'object' && targetType === 'object') {
     return objectSchemaCompatibilityIssue(sourceSchema, targetSchema, path);
   }
-  const targetEnumValues = schemaEnumValues(targetSchema);
-  if (targetEnumValues.length) {
-    const sourceEnumValues = schemaEnumValues(sourceSchema);
-    if (!sourceEnumValues.length) {
-      return reasonAt(path, `target enum ${valueDomainLabel(targetEnumValues)} requires a finite source enum domain, but source is ${schemaType(sourceSchema)}`);
-    }
-    const outside = sourceEnumValues.filter((value) =>
-      !targetEnumValues.some((targetValue) => schemaValuesEqual(targetValue, value))
-    );
-    return outside.length
-      ? reasonAt(path, `source enum value(s) ${valueDomainLabel(outside)} are outside target enum ${valueDomainLabel(targetEnumValues)}`)
-      : '';
+  const targetFiniteDomainIssue = targetFiniteDomainCompatibilityIssue(sourceSchema, targetSchema, path);
+  if (targetFiniteDomainIssue) {
+    return targetFiniteDomainIssue;
   }
   const sourceEnumValues = schemaEnumValues(sourceSchema);
   if (sourceEnumValues.length) {
@@ -20163,6 +20154,39 @@ function unionBaseCompatibilityIssue(sourceSchema, targetSchema, path = '') {
   }
   const baseIssue = schemaCompatibilityIssue(sourceSchema, base, path);
   return baseIssue ? reasonAt(path, `target union base constraints are not compatible: ${baseIssue}`) : '';
+}
+
+function targetFiniteDomainCompatibilityIssue(sourceSchema, targetSchema, path = '') {
+  const targetValues = schemaEnumValues(targetSchema);
+  if (!targetValues.length) {
+    return '';
+  }
+  const sourceValues = schemaEnumValues(sourceSchema);
+  if (!sourceValues.length) {
+    return reasonAt(path, `${targetFiniteDomainLabel(targetSchema, targetValues)} requires a finite source ${sourceDomainKind(targetSchema)} domain, but source is ${schemaType(sourceSchema)}`);
+  }
+  const outside = sourceValues.filter((value) =>
+    !targetValues.some((targetValue) => schemaValuesEqual(targetValue, value))
+  );
+  return outside.length
+    ? reasonAt(path, `${sourceFiniteDomainLabel(sourceSchema)} ${valueDomainLabel(outside)} are outside ${targetFiniteDomainLabel(targetSchema, targetValues)}`)
+    : '';
+}
+
+function targetFiniteDomainLabel(schema, values) {
+  return Object.prototype.hasOwnProperty.call(schema || {}, 'const')
+    ? `target const ${valueDomainLabel(values)}`
+    : `target enum ${valueDomainLabel(values)}`;
+}
+
+function sourceFiniteDomainLabel(schema) {
+  return Object.prototype.hasOwnProperty.call(schema || {}, 'const')
+    ? 'source const value(s)'
+    : 'source enum value(s)';
+}
+
+function sourceDomainKind(targetSchema) {
+  return Object.prototype.hasOwnProperty.call(targetSchema || {}, 'const') ? 'value' : 'enum';
 }
 
 function targetNotCompatibilityIssue(sourceSchema, targetSchema, path = '') {

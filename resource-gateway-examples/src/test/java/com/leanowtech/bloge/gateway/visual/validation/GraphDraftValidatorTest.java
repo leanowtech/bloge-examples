@@ -3881,7 +3881,7 @@ class GraphDraftValidatorTest {
                 .anySatisfy(diagnostic -> assertThat(diagnostic.message())
                         .contains("enum<REJECT>")
                         .contains("enum<APPROVE>")
-                        .contains("source enum value(s) [REJECT] are outside target enum [APPROVE]"));
+                        .contains("source const value(s) [REJECT] are outside target const [APPROVE]"));
     }
 
     @Test

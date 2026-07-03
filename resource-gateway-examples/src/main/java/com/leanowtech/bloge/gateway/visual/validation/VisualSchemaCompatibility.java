@@ -108,23 +108,11 @@ public final class VisualSchemaCompatibility {
         if ("object".equals(sourceType) && "object".equals(targetType)) {
             return objectSchemaCompatibilityIssue(sourceSchema, targetSchema, path);
         }
-        List<Object> targetEnumValues = enumValues(targetSchema);
-	        if (!targetEnumValues.isEmpty()) {
-	            List<Object> sourceEnumValues = enumValues(sourceSchema);
-	            if (sourceEnumValues.isEmpty()) {
-                return Optional.of(reasonAt(path,
-                        "target enum %s requires a finite source enum domain, but source is %s"
-                                .formatted(valueDomainLabel(targetEnumValues), schemaTypeLabel(sourceSchema))));
-            }
-            List<Object> outside = sourceEnumValues.stream()
-                    .filter(value -> !targetEnumValues.contains(value))
-                    .toList();
-            return outside.isEmpty()
-                    ? Optional.empty()
-                    : Optional.of(reasonAt(path,
-                    "source enum value(s) %s are outside target enum %s"
-	                            .formatted(valueDomainLabel(outside), valueDomainLabel(targetEnumValues))));
-	        }
+        Optional<String> targetFiniteDomainIssue =
+                targetFiniteDomainCompatibilityIssue(sourceSchema, targetSchema, path);
+        if (targetFiniteDomainIssue.isPresent()) {
+            return targetFiniteDomainIssue;
+        }
 	        List<Object> sourceEnumValues = enumValues(sourceSchema);
 	        if (!sourceEnumValues.isEmpty()) {
 	            List<Object> incompatible = sourceEnumValues.stream()
@@ -246,6 +234,45 @@ public final class VisualSchemaCompatibility {
         Optional<String> baseIssue = schemaCompatibilityIssue(sourceSchema, base, path);
         return baseIssue.map(reason -> reasonAt(path,
                 "target union base constraints are not compatible: " + reason));
+    }
+
+    private static Optional<String> targetFiniteDomainCompatibilityIssue(Map<String, Object> sourceSchema,
+                                                                         Map<String, Object> targetSchema,
+                                                                         String path) {
+        List<Object> targetValues = enumValues(targetSchema);
+        if (targetValues.isEmpty()) {
+            return Optional.empty();
+        }
+        List<Object> sourceValues = enumValues(sourceSchema);
+        if (sourceValues.isEmpty()) {
+            return Optional.of(reasonAt(path,
+                    "%s requires a finite source %s domain, but source is %s"
+                            .formatted(targetFiniteDomainLabel(targetSchema, targetValues),
+                                    sourceDomainKind(targetSchema), schemaTypeLabel(sourceSchema))));
+        }
+        List<Object> outside = sourceValues.stream()
+                .filter(value -> !targetValues.contains(value))
+                .toList();
+        return outside.isEmpty()
+                ? Optional.empty()
+                : Optional.of(reasonAt(path,
+                "%s %s are outside %s"
+                        .formatted(sourceFiniteDomainLabel(sourceSchema), valueDomainLabel(outside),
+                                targetFiniteDomainLabel(targetSchema, targetValues))));
+    }
+
+    private static String targetFiniteDomainLabel(Map<String, Object> schema, List<Object> values) {
+        return schema.containsKey("const")
+                ? "target const " + valueDomainLabel(values)
+                : "target enum " + valueDomainLabel(values);
+    }
+
+    private static String sourceFiniteDomainLabel(Map<String, Object> schema) {
+        return schema.containsKey("const") ? "source const value(s)" : "source enum value(s)";
+    }
+
+    private static String sourceDomainKind(Map<String, Object> targetSchema) {
+        return targetSchema.containsKey("const") ? "value" : "enum";
     }
 
     private static Optional<String> targetNotCompatibilityIssue(Map<String, Object> sourceSchema,

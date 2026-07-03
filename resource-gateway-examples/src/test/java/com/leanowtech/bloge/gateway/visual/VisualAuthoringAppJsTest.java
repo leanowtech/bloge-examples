@@ -5679,6 +5679,10 @@ operators:
                   'sourceUnionCompatibilityIssue',
                   'targetUnionCompatibilityIssue',
                   'unionBaseCompatibilityIssue',
+                  'targetFiniteDomainCompatibilityIssue',
+                  'targetFiniteDomainLabel',
+                  'sourceFiniteDomainLabel',
+                  'sourceDomainKind',
                   'targetNotCompatibilityIssue',
                   'schemaValueMatchesSchema',
                   'schemaValueMatchesNot',
@@ -6024,6 +6028,10 @@ operators:
                   'sourceUnionCompatibilityIssue',
                   'targetUnionCompatibilityIssue',
                   'unionBaseCompatibilityIssue',
+                  'targetFiniteDomainCompatibilityIssue',
+                  'targetFiniteDomainLabel',
+                  'sourceFiniteDomainLabel',
+                  'sourceDomainKind',
                   'targetNotCompatibilityIssue',
                   'objectSchemaCompatibilityIssue',
                   'objectOptionalTargetPropertiesCompatibilityIssue',
@@ -6137,6 +6145,26 @@ operators:
                   type: 'string',
                   not: { const: 'ARCHIVED' }
                 });
+                const targetConstIssue = context.schemaCompatibilityIssue({
+                  type: 'string'
+                }, {
+                  type: 'string',
+                  const: 'APPROVE'
+                });
+                const targetConstSafeIssue = context.schemaCompatibilityIssue({
+                  type: 'string',
+                  const: 'APPROVE'
+                }, {
+                  type: 'string',
+                  const: 'APPROVE'
+                });
+                const targetConstMismatchIssue = context.schemaCompatibilityIssue({
+                  type: 'string',
+                  const: 'REJECT'
+                }, {
+                  type: 'string',
+                  const: 'APPROVE'
+                });
 
                 const checks = [
                   ['residual optional collision path', String(residualIssue.includes("at 'score'")), 'true'],
@@ -6146,7 +6174,10 @@ operators:
                   ['propertyNames excluded optional collision', excludedByPropertyNamesIssue, ''],
                   ['target finite not possible issue', targetNotIssue, 'target excludes value(s) [ARCHIVED] but source schema could produce them'],
                   ['target finite not safe enum', finiteNotSafeIssue, ''],
-                  ['target finite not excluded enum', finiteNotExcludedIssue, 'source enum value(s) [ARCHIVED] do not match target schema string']
+                  ['target finite not excluded enum', finiteNotExcludedIssue, 'source enum value(s) [ARCHIVED] do not match target schema string'],
+                  ['target const requires finite source', targetConstIssue, 'target const [APPROVE] requires a finite source value domain, but source is string'],
+                  ['target const safe source', targetConstSafeIssue, ''],
+                  ['target const mismatch', targetConstMismatchIssue, 'source const value(s) [REJECT] are outside target const [APPROVE]']
                 ];
 
                 for (const [label, actual, expected] of checks) {
