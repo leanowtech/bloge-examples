@@ -300,6 +300,8 @@ class VisualAuthoringAppJsTest {
                 .contains("Current runtime binding")
                 .contains("Runtime binding handoff")
                 .contains("Handoff Review Drift Details")
+                .contains("sourceBundleFingerprint")
+                .contains("Snapshot fingerprint")
                 .contains("fieldChangeCategoryCounts")
                 .contains("fieldChanges")
                 .contains("Runtime binding index unavailable")
@@ -824,6 +826,7 @@ class VisualAuthoringAppJsTest {
                   driftedCount: 1,
                   missingCount: 1,
                   newCurrentWindowCount: 1,
+                  sourceBundleFingerprint: 'sha256:1234567890abcdef',
                   fieldChangeCategoryCounts: {
                     'runtime-binding': 2,
                     'asset-metadata': 1
@@ -878,14 +881,16 @@ class VisualAuthoringAppJsTest {
                 const rows = context.visualRuntimeBindingHandoffReviewRows(review);
                 const checks = [
                   ['message', message, 'Handoff review Stale: 0 current, 1 drifted, 1 missing, 1 new in current window.'],
-                  ['row count', rows.length, 4],
-                  ['category label', rows[0].label, 'Drift categories'],
-                  ['category value', rows[0].value, 'Asset Metadata 1 · Runtime Binding 2'],
-                  ['drift label', rows[1].label, 'Drifted · Risk policy @2'],
-                  ['drift value includes route', String(rows[1].value.includes('Runtime Binding Handoff Target: legacy-risk-owner -> risk:eligibility')), 'true'],
-                  ['drift value includes action', String(rows[1].value.includes('Runtime Binding Recommended Action: Legacy action -> Bind executable lowering before EXECUTABLE promotion.')), 'true'],
-                  ['missing label', rows[2].label, 'Missing · Missing policy @1'],
-                  ['new key label', rows[3].label, 'New current-window requirements']
+                  ['row count', rows.length, 5],
+                  ['fingerprint label', rows[0].label, 'Snapshot fingerprint'],
+                  ['fingerprint value', rows[0].value, 'sha256:1234567890abcdef'],
+                  ['category label', rows[1].label, 'Drift categories'],
+                  ['category value', rows[1].value, 'Asset Metadata 1 · Runtime Binding 2'],
+                  ['drift label', rows[2].label, 'Drifted · Risk policy @2'],
+                  ['drift value includes route', String(rows[2].value.includes('Runtime Binding Handoff Target: legacy-risk-owner -> risk:eligibility')), 'true'],
+                  ['drift value includes action', String(rows[2].value.includes('Runtime Binding Recommended Action: Legacy action -> Bind executable lowering before EXECUTABLE promotion.')), 'true'],
+                  ['missing label', rows[3].label, 'Missing · Missing policy @1'],
+                  ['new key label', rows[4].label, 'New current-window requirements']
                 ];
                 for (const [label, actual, expected] of checks) {
                   if (actual !== expected) {

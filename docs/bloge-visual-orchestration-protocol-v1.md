@@ -1770,18 +1770,23 @@ message handler、webhook、streaming 或 durable capability 暂时不能运行�
 仍是唯一事实来源。
 `GET /api/visual/assets/runtime-binding-requirements/handoff-bundle` 会把当前查询窗口导出为
 `bloge.visualRuntimeBindingHandoff.v1`，携带 source index lineage、scope/filter、
-stable requirement keys、路由计数和 requirement rows，用于把 schema-only/design-only
+stable requirement keys、路由计数、requirement rows 和 `bundleFingerprint`，用于把 schema-only/design-only
 资产移交给 runtime-plane 团队。`POST /api/visual/assets/runtime-binding-requirements/handoff-review`
 接收该 bundle 并返回 `bloge.visualRuntimeBindingHandoffReview.v1`，按 stable key
 对比当前 read model，标记 current、drifted、missing 和 current window 新增项。
 drifted item 会保留兼容字段 `changedFields[]`，并新增结构化 `fieldChanges[]`
 记录 `field/category/exportedValue/currentValue`；顶层 `fieldChangeCategoryCounts`
 聚合 identity、scope、readiness、runtime-binding、asset-metadata 等变化类别，供
-runtime-plane 工单或审阅系统直接路由。review 是快照新鲜度校验，不是状态写入；
+runtime-plane 工单或审阅系统直接路由。`bundleFingerprint` 由服务端按 handoff
+业务内容派生，不包含 `exportedAt` / `sourceIndexGeneratedAt` 这类导出时间戳；
+review 会先校验提交的 `bundleFingerprint` 是否匹配 bundle material，若不匹配则返回
+`visual.runtimeBindingHandoff.fingerprintMismatch` 并在 metadata 中给出 `actual/expected`，
+不会继续对当前 read model 做错误对账。review 会回显 `sourceBundleFingerprint`，
+让外部工单、回放审阅和浏览器面板能引用同一份 portable snapshot。review 是快照新鲜度校验，不是状态写入；
 runtime binding 的完成情况仍应通过真正的 operator implementation / runtime binding
 控制面改变 catalog/readiness 后再被派生出来。浏览器 Workspace Overview 会消费
-`fieldChangeCategoryCounts` 和 `items[].fieldChanges[]`，在 review 后展示 drift 类别、
-字段级旧值/当前值、missing requirement 和当前窗口新增 requirement，避免作者只能从
+`sourceBundleFingerprint`、`fieldChangeCategoryCounts` 和 `items[].fieldChanges[]`，在 review 后展示
+snapshot fingerprint、drift 类别、字段级旧值/当前值、missing requirement 和当前窗口新增 requirement，避免作者只能从
 JSON output 或自然语言摘要里判断交接快照是否还能继续排期。
 `actionReadiness` 则把同一批 diagnostics/readiness 压成产品动作门禁：`compileNow`、
 `runNow`、`publishDesignNow`、`publishDesignAfterReview`、`publishExecutableNow`、

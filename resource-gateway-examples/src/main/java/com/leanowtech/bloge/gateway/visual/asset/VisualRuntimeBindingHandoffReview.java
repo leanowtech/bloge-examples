@@ -24,6 +24,7 @@ import java.util.Set;
  * @param level UI/control-plane severity
  * @param message human-readable review summary
  * @param sourceBundleSchemaVersion submitted handoff bundle schema version
+ * @param sourceBundleFingerprint submitted handoff bundle stable fingerprint
  * @param sourceExportedAt original bundle export timestamp
  * @param sourceIndexGeneratedAt original source index generation timestamp
  * @param scope authoring scope from the submitted bundle
@@ -52,6 +53,7 @@ public record VisualRuntimeBindingHandoffReview(
         String level,
         String message,
         String sourceBundleSchemaVersion,
+        String sourceBundleFingerprint,
         Instant sourceExportedAt,
         Instant sourceIndexGeneratedAt,
         VisualAssetOverview.AuthoringScope scope,
@@ -89,6 +91,7 @@ public record VisualRuntimeBindingHandoffReview(
         level = normalizeLevel(level);
         message = message == null ? "" : message;
         sourceBundleSchemaVersion = sourceBundleSchemaVersion == null ? "" : sourceBundleSchemaVersion;
+        sourceBundleFingerprint = sourceBundleFingerprint == null ? "" : sourceBundleFingerprint.trim();
         sourceExportedAt = sourceExportedAt == null ? Instant.EPOCH : sourceExportedAt;
         sourceIndexGeneratedAt = sourceIndexGeneratedAt == null ? Instant.EPOCH : sourceIndexGeneratedAt;
         scope = scope == null ? VisualAssetOverview.AuthoringScope.all() : scope;
@@ -163,6 +166,7 @@ public record VisualRuntimeBindingHandoffReview(
                 level,
                 reviewMessage(state, exportedKeys.size(), matched, drifted, missing, newWindowKeys.size()),
                 safeBundle.schemaVersion(),
+                safeBundle.bundleFingerprint(),
                 safeBundle.exportedAt(),
                 safeBundle.sourceIndexGeneratedAt(),
                 safeBundle.scope(),
@@ -206,6 +210,7 @@ public record VisualRuntimeBindingHandoffReview(
                 "error",
                 "Runtime binding handoff bundle could not be reviewed.",
                 safeBundle.schemaVersion(),
+                safeBundle.bundleFingerprint(),
                 safeBundle.exportedAt(),
                 safeBundle.sourceIndexGeneratedAt(),
                 safeBundle.scope(),

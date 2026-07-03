@@ -971,6 +971,13 @@ function visualRuntimeBindingHandoffReviewRows(review) {
     return [];
   }
   const rows = [];
+  if (review.sourceBundleFingerprint) {
+    rows.push({
+      level: 'info',
+      label: 'Snapshot fingerprint',
+      value: review.sourceBundleFingerprint
+    });
+  }
   const categorySummary = visualRuntimeBindingHandoffReviewCategorySummary(review.fieldChangeCategoryCounts);
   if (categorySummary) {
     rows.push({

@@ -1,7 +1,15 @@
 package com.leanowtech.bloge.gateway.visual.asset;
 
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.SerializationFeature;
+
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
 import java.time.Instant;
 import java.util.Collections;
+import java.util.HexFormat;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -17,6 +25,7 @@ import java.util.Map;
  * @param exportedAt bundle export timestamp
  * @param sourceIndexSchemaVersion source runtime-binding index contract version
  * @param sourceIndexGeneratedAt source runtime-binding index generation timestamp
+ * @param bundleFingerprint stable fingerprint of the handoff material
  * @param scope authoring scope used to derive the bundle
  * @param filter normalized requirement filter used by the source index
  * @param total requirements after query filtering and before display limiting
@@ -42,6 +51,7 @@ public record VisualRuntimeBindingHandoffBundle(
         Instant exportedAt,
         String sourceIndexSchemaVersion,
         Instant sourceIndexGeneratedAt,
+        String bundleFingerprint,
         VisualAssetOverview.AuthoringScope scope,
         VisualRuntimeBindingRequirements.RequirementFilter filter,
         int total,
@@ -63,6 +73,9 @@ public record VisualRuntimeBindingHandoffBundle(
         List<VisualRuntimeBindingRequirements.RequirementItem> requirements
 ) {
     public static final String SCHEMA_VERSION = "bloge.visualRuntimeBindingHandoff.v1";
+    private static final ObjectMapper FINGERPRINT_MAPPER = new ObjectMapper()
+            .findAndRegisterModules()
+            .configure(SerializationFeature.ORDER_MAP_ENTRIES_BY_KEYS, true);
 
     /**
      * Creates a normalized handoff bundle.
@@ -90,6 +103,63 @@ public record VisualRuntimeBindingHandoffBundle(
         readinessStateCounts = immutableCounts(readinessStateCounts);
         artifactKindCounts = immutableCounts(artifactKindCounts);
         requirements = requirements == null ? List.of() : List.copyOf(requirements);
+        bundleFingerprint = bundleFingerprint == null || bundleFingerprint.isBlank()
+                ? computedFingerprint(
+                        schemaVersion,
+                        sourceIndexSchemaVersion,
+                        scope,
+                        filter,
+                        total,
+                        unfilteredTotal,
+                        displayedCount,
+                        itemLimit,
+                        offset,
+                        hasMore,
+                        requirementKeys,
+                        targetKindCounts,
+                        bindingKindCounts,
+                        handoffLaneCounts,
+                        handoffKindCounts,
+                        handoffTargetCounts,
+                        sourceKindCounts,
+                        loweringModeCounts,
+                        readinessStateCounts,
+                        artifactKindCounts,
+                        requirements)
+                : bundleFingerprint.trim();
+    }
+
+    /**
+     * Backward-compatible constructor for callers that do not supply the derived fingerprint.
+     */
+    public VisualRuntimeBindingHandoffBundle(String schemaVersion,
+                                             Instant exportedAt,
+                                             String sourceIndexSchemaVersion,
+                                             Instant sourceIndexGeneratedAt,
+                                             VisualAssetOverview.AuthoringScope scope,
+                                             VisualRuntimeBindingRequirements.RequirementFilter filter,
+                                             int total,
+                                             int unfilteredTotal,
+                                             int displayedCount,
+                                             int itemLimit,
+                                             int offset,
+                                             boolean hasMore,
+                                             List<String> requirementKeys,
+                                             Map<String, Integer> targetKindCounts,
+                                             Map<String, Integer> bindingKindCounts,
+                                             Map<String, Integer> handoffLaneCounts,
+                                             Map<String, Integer> handoffKindCounts,
+                                             Map<String, Integer> handoffTargetCounts,
+                                             Map<String, Integer> sourceKindCounts,
+                                             Map<String, Integer> loweringModeCounts,
+                                             Map<String, Integer> readinessStateCounts,
+                                             Map<String, Integer> artifactKindCounts,
+                                             List<VisualRuntimeBindingRequirements.RequirementItem> requirements) {
+        this(schemaVersion, exportedAt, sourceIndexSchemaVersion, sourceIndexGeneratedAt, "",
+                scope, filter, total, unfilteredTotal, displayedCount, itemLimit, offset, hasMore,
+                requirementKeys, targetKindCounts, bindingKindCounts, handoffLaneCounts, handoffKindCounts,
+                handoffTargetCounts, sourceKindCounts, loweringModeCounts, readinessStateCounts, artifactKindCounts,
+                requirements);
     }
 
     /**
@@ -108,6 +178,7 @@ public record VisualRuntimeBindingHandoffBundle(
                 Instant.now(),
                 safeIndex.schemaVersion(),
                 safeIndex.generatedAt(),
+                "",
                 safeIndex.scope(),
                 safeIndex.filter(),
                 safeIndex.total(),
@@ -133,7 +204,99 @@ public record VisualRuntimeBindingHandoffBundle(
         );
     }
 
+    /**
+     * Computes the canonical fingerprint for the current normalized handoff material.
+     *
+     * @return expected fingerprint derived from bundle content
+     */
+    public String computedBundleFingerprint() {
+        return computedFingerprint(
+                schemaVersion,
+                sourceIndexSchemaVersion,
+                scope,
+                filter,
+                total,
+                unfilteredTotal,
+                displayedCount,
+                itemLimit,
+                offset,
+                hasMore,
+                requirementKeys,
+                targetKindCounts,
+                bindingKindCounts,
+                handoffLaneCounts,
+                handoffKindCounts,
+                handoffTargetCounts,
+                sourceKindCounts,
+                loweringModeCounts,
+                readinessStateCounts,
+                artifactKindCounts,
+                requirements);
+    }
+
+    /**
+     * Checks whether the submitted fingerprint matches the current normalized material.
+     *
+     * @return true when the handoff fingerprint is current for this bundle body
+     */
+    public boolean bundleFingerprintVerified() {
+        return bundleFingerprint.equals(computedBundleFingerprint());
+    }
+
     private static Map<String, Integer> immutableCounts(Map<String, Integer> counts) {
         return counts == null ? Map.of() : Collections.unmodifiableMap(new LinkedHashMap<>(counts));
+    }
+
+    private static String computedFingerprint(String schemaVersion,
+                                              String sourceIndexSchemaVersion,
+                                              VisualAssetOverview.AuthoringScope scope,
+                                              VisualRuntimeBindingRequirements.RequirementFilter filter,
+                                              int total,
+                                              int unfilteredTotal,
+                                              int displayedCount,
+                                              int itemLimit,
+                                              int offset,
+                                              boolean hasMore,
+                                              List<String> requirementKeys,
+                                              Map<String, Integer> targetKindCounts,
+                                              Map<String, Integer> bindingKindCounts,
+                                              Map<String, Integer> handoffLaneCounts,
+                                              Map<String, Integer> handoffKindCounts,
+                                              Map<String, Integer> handoffTargetCounts,
+                                              Map<String, Integer> sourceKindCounts,
+                                              Map<String, Integer> loweringModeCounts,
+                                              Map<String, Integer> readinessStateCounts,
+                                              Map<String, Integer> artifactKindCounts,
+                                              List<VisualRuntimeBindingRequirements.RequirementItem> requirements) {
+        Map<String, Object> material = new LinkedHashMap<>();
+        material.put("schemaVersion", schemaVersion);
+        material.put("sourceIndexSchemaVersion", sourceIndexSchemaVersion);
+        material.put("scope", scope);
+        material.put("filter", filter);
+        material.put("total", total);
+        material.put("unfilteredTotal", unfilteredTotal);
+        material.put("displayedCount", displayedCount);
+        material.put("itemLimit", itemLimit);
+        material.put("offset", offset);
+        material.put("hasMore", hasMore);
+        material.put("requirementKeys", requirementKeys);
+        material.put("targetKindCounts", targetKindCounts);
+        material.put("bindingKindCounts", bindingKindCounts);
+        material.put("handoffLaneCounts", handoffLaneCounts);
+        material.put("handoffKindCounts", handoffKindCounts);
+        material.put("handoffTargetCounts", handoffTargetCounts);
+        material.put("sourceKindCounts", sourceKindCounts);
+        material.put("loweringModeCounts", loweringModeCounts);
+        material.put("readinessStateCounts", readinessStateCounts);
+        material.put("artifactKindCounts", artifactKindCounts);
+        material.put("requirements", requirements);
+        try {
+            byte[] body = FINGERPRINT_MAPPER.writeValueAsString(material).getBytes(StandardCharsets.UTF_8);
+            return "sha256:" + HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(body));
+        } catch (JsonProcessingException e) {
+            throw new IllegalStateException("Failed to serialize runtime-binding handoff fingerprint material.", e);
+        } catch (NoSuchAlgorithmException e) {
+            throw new IllegalStateException("SHA-256 is unavailable for runtime-binding handoff fingerprinting.", e);
+        }
     }
 }

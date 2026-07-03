@@ -261,6 +261,20 @@ public class VisualAssetOverviewController {
                             )))
             ));
         }
+        if (!bundle.bundleFingerprintVerified()) {
+            return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(VisualRuntimeBindingHandoffReview.rejected(
+                    bundle,
+                    List.of(VisualDiagnostic.error(
+                            "visual.runtimeBindingHandoff.fingerprintMismatch",
+                            "Runtime binding handoff bundle fingerprint '%s' does not match the submitted bundle material; expected '%s'."
+                                    .formatted(bundle.bundleFingerprint(), bundle.computedBundleFingerprint()),
+                            "/bundleFingerprint",
+                            Map.of(
+                                    "actual", bundle.bundleFingerprint(),
+                                    "expected", bundle.computedBundleFingerprint()
+                            )))
+            ));
+        }
 
         VisualAssetOverview.AuthoringScope scope = bundle.scope() == null
                 ? VisualAssetOverview.AuthoringScope.all()

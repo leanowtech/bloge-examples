@@ -17,6 +17,7 @@ import com.leanowtech.bloge.gateway.visual.validation.VisualValidationResult;
 
 import org.junit.jupiter.api.Test;
 
+import java.time.Instant;
 import java.util.List;
 import java.util.Map;
 
@@ -196,6 +197,59 @@ class VisualAssetOverviewControllerTest {
         );
         VisualRuntimeBindingHandoffReview currentReview = controller.reviewRuntimeBindingHandoffBundle(handoffBundle)
                 .getBody();
+        VisualRuntimeBindingHandoffBundle sameMaterialDifferentExportTime = new VisualRuntimeBindingHandoffBundle(
+                handoffBundle.schemaVersion(),
+                Instant.EPOCH,
+                handoffBundle.sourceIndexSchemaVersion(),
+                Instant.EPOCH,
+                handoffBundle.scope(),
+                handoffBundle.filter(),
+                handoffBundle.total(),
+                handoffBundle.unfilteredTotal(),
+                handoffBundle.displayedCount(),
+                handoffBundle.itemLimit(),
+                handoffBundle.offset(),
+                handoffBundle.hasMore(),
+                handoffBundle.requirementKeys(),
+                handoffBundle.targetKindCounts(),
+                handoffBundle.bindingKindCounts(),
+                handoffBundle.handoffLaneCounts(),
+                handoffBundle.handoffKindCounts(),
+                handoffBundle.handoffTargetCounts(),
+                handoffBundle.sourceKindCounts(),
+                handoffBundle.loweringModeCounts(),
+                handoffBundle.readinessStateCounts(),
+                handoffBundle.artifactKindCounts(),
+                handoffBundle.requirements()
+        );
+        VisualRuntimeBindingHandoffBundle mismatchedFingerprintBundle = new VisualRuntimeBindingHandoffBundle(
+                handoffBundle.schemaVersion(),
+                handoffBundle.exportedAt(),
+                handoffBundle.sourceIndexSchemaVersion(),
+                handoffBundle.sourceIndexGeneratedAt(),
+                "sha256:forged",
+                handoffBundle.scope(),
+                handoffBundle.filter(),
+                handoffBundle.total(),
+                handoffBundle.unfilteredTotal(),
+                handoffBundle.displayedCount(),
+                handoffBundle.itemLimit(),
+                handoffBundle.offset(),
+                handoffBundle.hasMore(),
+                handoffBundle.requirementKeys(),
+                handoffBundle.targetKindCounts(),
+                handoffBundle.bindingKindCounts(),
+                handoffBundle.handoffLaneCounts(),
+                handoffBundle.handoffKindCounts(),
+                handoffBundle.handoffTargetCounts(),
+                handoffBundle.sourceKindCounts(),
+                handoffBundle.loweringModeCounts(),
+                handoffBundle.readinessStateCounts(),
+                handoffBundle.artifactKindCounts(),
+                handoffBundle.requirements()
+        );
+        var mismatchedFingerprintResponse =
+                controller.reviewRuntimeBindingHandoffBundle(mismatchedFingerprintBundle);
         VisualRuntimeBindingRequirements excludedScope =
                 controller.runtimeBindingRequirements("tenant-b", "risk", "dev");
 
@@ -249,6 +303,23 @@ class VisualAssetOverviewControllerTest {
                 .extracting(VisualRuntimeBindingRequirements.RequirementItem::requirementKey)
                 .isEqualTo(draftRequirementKey);
         assertThat(handoffBundle.schemaVersion()).isEqualTo(VisualRuntimeBindingHandoffBundle.SCHEMA_VERSION);
+        assertThat(handoffBundle.bundleFingerprint()).startsWith("sha256:");
+        assertThat(handoffBundle.bundleFingerprint()).hasSize(71);
+        assertThat(handoffBundle.bundleFingerprintVerified()).isTrue();
+        assertThat(sameMaterialDifferentExportTime.bundleFingerprint()).isEqualTo(handoffBundle.bundleFingerprint());
+        assertThat(mismatchedFingerprintBundle.bundleFingerprint()).isEqualTo("sha256:forged");
+        assertThat(mismatchedFingerprintBundle.computedBundleFingerprint()).isEqualTo(handoffBundle.bundleFingerprint());
+        assertThat(mismatchedFingerprintBundle.bundleFingerprintVerified()).isFalse();
+        assertThat(mismatchedFingerprintResponse.getStatusCode().value()).isEqualTo(400);
+        assertThat(mismatchedFingerprintResponse.getBody()).isNotNull();
+        assertThat(mismatchedFingerprintResponse.getBody().reviewable()).isFalse();
+        assertThat(mismatchedFingerprintResponse.getBody().sourceBundleFingerprint()).isEqualTo("sha256:forged");
+        assertThat(mismatchedFingerprintResponse.getBody().diagnostics()).singleElement().satisfies(diagnostic -> {
+            assertThat(diagnostic.code()).isEqualTo("visual.runtimeBindingHandoff.fingerprintMismatch");
+            assertThat(diagnostic.target()).isEqualTo("/bundleFingerprint");
+            assertThat(diagnostic.metadata()).containsEntry("actual", "sha256:forged")
+                    .containsEntry("expected", handoffBundle.bundleFingerprint());
+        });
         assertThat(handoffBundle.sourceIndexSchemaVersion())
                 .isEqualTo(VisualRuntimeBindingRequirements.SCHEMA_VERSION);
         assertThat(handoffBundle.filter().targetKind()).isEqualTo("draft");
@@ -277,6 +348,7 @@ class VisualAssetOverviewControllerTest {
         assertThat(currentReview.level()).isEqualTo("success");
         assertThat(currentReview.sourceBundleSchemaVersion())
                 .isEqualTo(VisualRuntimeBindingHandoffBundle.SCHEMA_VERSION);
+        assertThat(currentReview.sourceBundleFingerprint()).isEqualTo(handoffBundle.bundleFingerprint());
         assertThat(currentReview.exportedRequirementCount()).isEqualTo(1);
         assertThat(currentReview.currentWindowTotal()).isEqualTo(1);
         assertThat(currentReview.currentWindowDisplayedCount()).isEqualTo(1);
@@ -434,9 +506,12 @@ class VisualAssetOverviewControllerTest {
         VisualRuntimeBindingHandoffReview driftedReview = controller.reviewRuntimeBindingHandoffBundle(staleBundle)
                 .getBody();
 
+        assertThat(staleBundle.bundleFingerprint()).startsWith("sha256:");
+        assertThat(staleBundle.bundleFingerprint()).isNotEqualTo(handoffBundle.bundleFingerprint());
         assertThat(driftedReview).isNotNull();
         assertThat(driftedReview.reviewable()).isTrue();
         assertThat(driftedReview.state()).isEqualTo("stale");
+        assertThat(driftedReview.sourceBundleFingerprint()).isEqualTo(staleBundle.bundleFingerprint());
         assertThat(driftedReview.driftedCount()).isEqualTo(1);
         assertThat(driftedReview.missingCount()).isZero();
         assertThat(driftedReview.statusCounts()).containsEntry("drifted", 1);
@@ -502,6 +577,7 @@ class VisualAssetOverviewControllerTest {
         assertThat(response.getBody()).isNotNull();
         assertThat(response.getBody().reviewable()).isFalse();
         assertThat(response.getBody().state()).isEqualTo("invalid-bundle");
+        assertThat(response.getBody().sourceBundleFingerprint()).isEqualTo(unsupported.bundleFingerprint());
         assertThat(response.getBody().diagnostics()).singleElement().satisfies(diagnostic -> {
             assertThat(diagnostic.error()).isTrue();
             assertThat(diagnostic.code()).isEqualTo("visual.runtimeBindingHandoff.schemaVersionUnsupported");
