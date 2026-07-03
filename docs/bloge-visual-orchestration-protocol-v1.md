@@ -1943,6 +1943,10 @@ binding。`POST /api/visual/assets/runtime-binding-requirements/implementation-b
 要求当前 binding 已是 `bound`，且 `replacementBindingId` 指向同一 operatorRef 的
 ready-to-bind 或 review-acknowledged proposal；成功后旧记录进入 `superseded`，新记录进入
 `bound`，并写入 `supersedesBindingId` / `supersededByBindingId` 和 lifecycle events。
+bind、supersede 和 unbind 都支持 lifecycle exact replay：当请求的
+`actor/reason/changeSource/changeSummary/replacementBindingId` 与最后一次已持久化 lifecycle event 完全匹配，
+且目标状态和关联 binding lineage 仍一致时，服务端返回 idempotent `200 OK`，不会追加第二条 event 或再次
+deactivate runtime evidence；如果状态相同但治理请求不同，则继续返回 conflict，避免把不同人工审批意图误合并。
 如果 replacement 已被临时写成 `bound`，但 current binding 写入 `superseded` 失败，服务端会返回
 `409`、`state=failed`，追加
 `visual.runtimeBindingImplementation.supersedeCurrentUpdateFailed` diagnostic，并尝试把 replacement
@@ -1958,6 +1962,15 @@ readiness。`POST /api/visual/assets/runtime-binding-requirements/implementation
 `bloge.visualRuntimeBindingImplementationTransition.v1` 并要求 actor/reason 审计证据；成功后 binding
 进入 `unbound`，该 binding 下的当前 active executable lowering integration 与 adapter activation 会被级联标记为
 `inactive`。旧 evidence 不删除，但不再进入 active catalog/promotion projection。
+如果 unbind cascade 在某一步失败，服务端返回 `409`、`state=failed`，并给出
+`visual.runtimeBindingDeactivation.integrationDeactivateFailed`、
+`visual.runtimeBindingDeactivation.activationDeactivateFailed` 或
+`visual.runtimeBindingDeactivation.bindingUnbindFailed` diagnostic。若失败发生在部分 runtime evidence
+已经被标记为 `inactive` 之后，服务端会尝试把已变更的 activation / integration 恢复为
+`active`；当 activation 恢复产生新的 revision 时，integration 会同步刷新
+`activationRevision`，避免补偿后仍被 catalog 判定为 `lowering-integration-drifted`。若补偿本身失败，会追加
+`visual.runtimeBindingDeactivation.compensationFailed`，调用方必须把返回体中的 binding、activation 和
+integration 视为最终可审计状态，而不是根据请求意图推断状态。
 `GET /api/visual/operators` 现在会把 active bound record 作为
 `bloge.operatorRuntimeBindingProjection.v1` 投影到响应的 `runtimeBindingProjections[]`
 和 `runtimeBindingProjectionStateCounts`，用 `binding-required`、`binding-bound`、

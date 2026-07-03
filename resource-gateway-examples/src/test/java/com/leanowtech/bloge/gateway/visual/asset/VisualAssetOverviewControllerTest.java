@@ -1617,6 +1617,36 @@ class VisualAssetOverviewControllerTest {
     }
 
     @Test
+    void runtimeBindingImplementationBindExactReplayIsIdempotent() {
+        RuntimeBindingImplementationFixture fixture = runtimeBindingImplementationFixture();
+        VisualRuntimeBindingImplementationBinding stored = submitImplementation(
+                fixture,
+                completeImplementation("risk-eligibility-native-v1")
+        );
+        VisualRuntimeBindingImplementationTransitionRequest request = transitionRequest("", true);
+
+        var accepted = fixture.controller().bindRuntimeBindingImplementation(stored.bindingId(), request);
+        var replay = fixture.controller().bindRuntimeBindingImplementation(stored.bindingId(), request);
+        var differentReason = fixture.controller().bindRuntimeBindingImplementation(
+                stored.bindingId(),
+                transitionRequest("", true, "A different runtime review should not replay.")
+        );
+
+        assertThat(accepted.getStatusCode().value()).isEqualTo(200);
+        assertThat(replay.getStatusCode().value()).isEqualTo(200);
+        assertThat(replay.getBody()).isNotNull();
+        assertThat(replay.getBody().accepted()).isTrue();
+        assertThat(replay.getBody().binding()).isEqualTo(accepted.getBody().binding());
+        assertThat(replay.getBody().binding().revision()).isEqualTo(2);
+        assertThat(replay.getBody().binding().lifecycleEvents()).hasSize(1);
+        assertThat(differentReason.getStatusCode().value()).isEqualTo(409);
+        assertThat(differentReason.getBody()).isNotNull();
+        assertThat(differentReason.getBody().diagnostics())
+                .extracting(VisualDiagnostic::code)
+                .contains("visual.runtimeBindingImplementation.alreadyBound");
+    }
+
+    @Test
     void runtimeBindingImplementationSupersedeSwitchesActiveBinding() {
         RuntimeBindingImplementationFixture fixture = runtimeBindingImplementationFixture();
         VisualRuntimeBindingImplementationBinding first = submitImplementation(
@@ -1651,6 +1681,43 @@ class VisualAssetOverviewControllerTest {
         assertThat(fixture.controller().runtimeBindingImplementationBindings("", "superseded"))
                 .singleElement()
                 .isEqualTo(response.getBody().binding());
+    }
+
+    @Test
+    void runtimeBindingImplementationSupersedeExactReplayIsIdempotent() {
+        RuntimeBindingImplementationFixture fixture = runtimeBindingImplementationFixture();
+        VisualRuntimeBindingImplementationBinding first = submitImplementation(
+                fixture,
+                completeImplementation("risk-eligibility-native-v1")
+        );
+        VisualRuntimeBindingImplementationBinding second = submitImplementation(
+                fixture,
+                completeImplementation("risk-eligibility-native-v2")
+        );
+        fixture.controller().bindRuntimeBindingImplementation(first.bindingId(), transitionRequest("", true));
+        VisualRuntimeBindingImplementationTransitionRequest request =
+                transitionRequest(second.bindingId(), true);
+
+        var accepted = fixture.controller().supersedeRuntimeBindingImplementation(first.bindingId(), request);
+        var replay = fixture.controller().supersedeRuntimeBindingImplementation(first.bindingId(), request);
+        var differentReason = fixture.controller().supersedeRuntimeBindingImplementation(
+                first.bindingId(),
+                transitionRequest(second.bindingId(), true, "A different supersede review should not replay.")
+        );
+
+        assertThat(accepted.getStatusCode().value()).isEqualTo(200);
+        assertThat(replay.getStatusCode().value()).isEqualTo(200);
+        assertThat(replay.getBody()).isNotNull();
+        assertThat(replay.getBody().accepted()).isTrue();
+        assertThat(replay.getBody().binding()).isEqualTo(accepted.getBody().binding());
+        assertThat(replay.getBody().replacementBinding()).isEqualTo(accepted.getBody().replacementBinding());
+        assertThat(replay.getBody().binding().lifecycleEvents()).hasSize(2);
+        assertThat(replay.getBody().replacementBinding().lifecycleEvents()).hasSize(1);
+        assertThat(differentReason.getStatusCode().value()).isEqualTo(409);
+        assertThat(differentReason.getBody()).isNotNull();
+        assertThat(differentReason.getBody().diagnostics())
+                .extracting(VisualDiagnostic::code)
+                .contains("visual.runtimeBindingImplementation.currentNotBound");
     }
 
     @Test
@@ -1799,6 +1866,143 @@ class VisualAssetOverviewControllerTest {
                 .getFirst()
                 .promotionState())
                 .isEqualTo("binding-required");
+    }
+
+    @Test
+    void runtimeBindingImplementationUnbindExactReplayIsIdempotent() {
+        RuntimeBindingImplementationFixture fixture = runtimeBindingImplementationFixture();
+        VisualRuntimeBindingImplementationBinding stored = submitImplementation(
+                fixture,
+                completeImplementation("risk-eligibility-native-v1")
+        );
+        VisualRuntimeBindingImplementationBinding binding = fixture.controller()
+                .bindRuntimeBindingImplementation(stored.bindingId(), transitionRequest("", true))
+                .getBody()
+                .binding();
+        VisualRuntimeAdapterActivation activation = (VisualRuntimeAdapterActivation) fixture.controller()
+                .submitRuntimeAdapterActivation(adapterActivationRequest(binding, "risk-eligibility-prod-active"))
+                .getBody();
+        fixture.controller().submitExecutableLoweringIntegration(
+                executableLoweringIntegrationRequest(activation, "risk-eligibility-lowering-v1"));
+        VisualRuntimeBindingImplementationTransitionRequest request = transitionRequest("", true);
+
+        var accepted = fixture.controller().unbindRuntimeBindingImplementation(binding.bindingId(), request);
+        var replay = fixture.controller().unbindRuntimeBindingImplementation(binding.bindingId(), request);
+        var differentReason = fixture.controller().unbindRuntimeBindingImplementation(
+                binding.bindingId(),
+                transitionRequest("", true, "A different unbind review should not replay.")
+        );
+
+        assertThat(accepted.getStatusCode().value()).isEqualTo(200);
+        assertThat(replay.getStatusCode().value()).isEqualTo(200);
+        assertThat(replay.getBody()).isNotNull();
+        assertThat(replay.getBody().accepted()).isTrue();
+        assertThat(replay.getBody().binding()).isEqualTo(accepted.getBody().binding());
+        assertThat(replay.getBody().binding().revision()).isEqualTo(3);
+        assertThat(replay.getBody().deactivatedActivation())
+                .isEqualTo(accepted.getBody().deactivatedActivation());
+        assertThat(replay.getBody().deactivatedIntegration())
+                .isEqualTo(accepted.getBody().deactivatedIntegration());
+        assertThat(replay.getBody().deactivatedActivation().revision()).isEqualTo(2);
+        assertThat(replay.getBody().deactivatedIntegration().revision()).isEqualTo(2);
+        assertThat(differentReason.getStatusCode().value()).isEqualTo(409);
+        assertThat(differentReason.getBody()).isNotNull();
+        assertThat(differentReason.getBody().diagnostics())
+                .extracting(VisualDiagnostic::code)
+                .contains("visual.runtimeBindingImplementation.bindingNotBoundForUnbind");
+    }
+
+    @Test
+    void runtimeBindingImplementationUnbindRestoresRuntimeEvidenceWhenBindingUpdateFails() {
+        RuntimeBindingImplementationFixture fixture = runtimeBindingImplementationFixture(
+                new FailingUnbindImplementationRepository("risk-eligibility-native-v1"),
+                new InMemoryVisualExecutableLoweringIntegrationRepository());
+        VisualRuntimeBindingImplementationBinding stored = submitImplementation(
+                fixture,
+                completeImplementation("risk-eligibility-native-v1")
+        );
+        VisualRuntimeBindingImplementationBinding binding = fixture.controller()
+                .bindRuntimeBindingImplementation(stored.bindingId(), transitionRequest("", true))
+                .getBody()
+                .binding();
+        VisualRuntimeAdapterActivation activation = (VisualRuntimeAdapterActivation) fixture.controller()
+                .submitRuntimeAdapterActivation(adapterActivationRequest(binding, "risk-eligibility-prod-active"))
+                .getBody();
+        VisualExecutableLoweringIntegration integration = (VisualExecutableLoweringIntegration) fixture.controller()
+                .submitExecutableLoweringIntegration(
+                        executableLoweringIntegrationRequest(activation, "risk-eligibility-lowering-v1"))
+                .getBody();
+
+        var response = fixture.controller().unbindRuntimeBindingImplementation(
+                binding.bindingId(),
+                transitionRequest("", true)
+        );
+
+        assertThat(response.getStatusCode().value()).isEqualTo(409);
+        assertThat(response.getBody()).isNotNull();
+        VisualRuntimeBindingDeactivationResult result = response.getBody();
+        assertThat(result.accepted()).isFalse();
+        assertThat(result.state()).isEqualTo("failed");
+        assertThat(result.binding().bindingId()).isEqualTo(binding.bindingId());
+        assertThat(result.binding().state()).isEqualTo("bound");
+        assertThat(result.deactivatedActivation()).isNotNull();
+        assertThat(result.deactivatedActivation().activationId()).isEqualTo(activation.activationId());
+        assertThat(result.deactivatedActivation().state()).isEqualTo("active");
+        assertThat(result.deactivatedActivation().revision()).isEqualTo(3);
+        assertThat(result.deactivatedActivation().evidence())
+                .extracting(VisualRuntimeAdapterActivation.Evidence::kind)
+                .contains("binding-unbind", "unbind-compensation");
+        assertThat(result.deactivatedIntegration()).isNotNull();
+        assertThat(result.deactivatedIntegration().integrationId()).isEqualTo(integration.integrationId());
+        assertThat(result.deactivatedIntegration().state()).isEqualTo("active");
+        assertThat(result.deactivatedIntegration().revision()).isEqualTo(3);
+        assertThat(result.deactivatedIntegration().evidence())
+                .extracting(VisualExecutableLoweringIntegration.Evidence::kind)
+                .contains("binding-unbind", "unbind-compensation");
+        assertThat(result.diagnostics())
+                .extracting(VisualDiagnostic::code)
+                .contains("visual.runtimeBindingDeactivation.bindingUnbindFailed")
+                .doesNotContain("visual.runtimeBindingDeactivation.compensationFailed");
+
+        assertThat(fixture.implementationRepository().find(binding.bindingId()))
+                .get()
+                .extracting(VisualRuntimeBindingImplementationBinding::state)
+                .isEqualTo("bound");
+        assertThat(fixture.adapterActivationRepository().find(activation.activationId()))
+                .get()
+                .isEqualTo(result.deactivatedActivation());
+        assertThat(fixture.executableLoweringIntegrationRepository().find(integration.integrationId()))
+                .get()
+                .isEqualTo(result.deactivatedIntegration());
+        assertThat(fixture.controller().runtimeBindingImplementationBindings("risk:eligibility", "bound"))
+                .singleElement()
+                .extracting(VisualRuntimeBindingImplementationBinding::bindingId)
+                .isEqualTo(binding.bindingId());
+        assertThat(fixture.controller().runtimeAdapterActivations("", "risk:eligibility", "active"))
+                .singleElement()
+                .extracting(VisualRuntimeAdapterActivation::activationId)
+                .isEqualTo(activation.activationId());
+        assertThat(fixture.controller().runtimeAdapterActivations("", "risk:eligibility", "inactive"))
+                .isEmpty();
+        assertThat(fixture.controller().executableLoweringIntegrations("", "risk:eligibility", "active"))
+                .singleElement()
+                .extracting(VisualExecutableLoweringIntegration::integrationId)
+                .isEqualTo(integration.integrationId());
+        assertThat(fixture.controller().executableLoweringIntegrations("", "risk:eligibility", "inactive"))
+                .isEmpty();
+
+        OperatorDefinition operator = fixture.catalog().find("risk:eligibility").orElseThrow();
+        var runtimeProjection = fixture.catalog()
+                .runtimeBindingProjections(OperatorCatalogQuery.all(), List.of(operator))
+                .getFirst();
+        assertThat(runtimeProjection.projectionState()).isEqualTo("adapter-active");
+        assertThat(runtimeProjection.activeBindingId()).isEqualTo(binding.bindingId());
+        assertThat(runtimeProjection.activeAdapterActivationId()).isEqualTo(activation.activationId());
+        assertThat(fixture.catalog()
+                .executablePromotionProjections(OperatorCatalogQuery.all(), List.of(runtimeProjection))
+                .getFirst()
+                .promotionState())
+                .isEqualTo("readiness-recompute-required");
     }
 
     @Test
@@ -3318,6 +3522,26 @@ class VisualAssetOverviewControllerTest {
         }
     }
 
+    private static final class FailingUnbindImplementationRepository
+            extends InMemoryVisualRuntimeBindingImplementationRepository {
+        private final String failingBindingId;
+
+        private FailingUnbindImplementationRepository(String failingBindingId) {
+            this.failingBindingId = failingBindingId;
+        }
+
+        @Override
+        public VisualRuntimeBindingImplementationBinding update(
+                VisualRuntimeBindingImplementationBinding binding) {
+            if (binding != null
+                    && failingBindingId.equals(binding.bindingId())
+                    && VisualRuntimeBindingImplementationBinding.STATE_UNBOUND.equals(binding.state())) {
+                throw new IllegalStateException("Injected unbind binding persistence failure.");
+            }
+            return super.update(binding);
+        }
+    }
+
     private static RuntimeBindingImplementationFixture runtimeBindingImplementationFixture() {
         return runtimeBindingImplementationFixture(
                 new InMemoryVisualRuntimeBindingImplementationRepository(),
@@ -3464,10 +3688,16 @@ class VisualAssetOverviewControllerTest {
 
     private static VisualRuntimeBindingImplementationTransitionRequest transitionRequest(String replacementBindingId,
                                                                                          boolean ackReview) {
+        return transitionRequest(replacementBindingId, ackReview, "Implementation evidence reviewed.");
+    }
+
+    private static VisualRuntimeBindingImplementationTransitionRequest transitionRequest(String replacementBindingId,
+                                                                                         boolean ackReview,
+                                                                                         String reason) {
         return new VisualRuntimeBindingImplementationTransitionRequest(
                 VisualRuntimeBindingImplementationTransitionRequest.SCHEMA_VERSION,
                 "runtime-platform",
-                "Implementation evidence reviewed.",
+                reason,
                 "visual-canvas-test",
                 "Bind runtime implementation evidence.",
                 ackReview,

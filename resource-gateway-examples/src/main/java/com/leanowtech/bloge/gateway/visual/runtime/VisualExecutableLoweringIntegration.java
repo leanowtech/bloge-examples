@@ -192,6 +192,44 @@ public record VisualExecutableLoweringIntegration(
     }
 
     /**
+     * Repoints this integration at a newer adapter activation revision.
+     *
+     * <p>This is used by compensation paths that temporarily deactivate and then restore an activation. Without
+     * refreshing the observed activation revision, the restored integration would remain active but drifted.</p>
+     *
+     * @param nextActivationRevision adapter activation revision observed by the restored integration
+     * @return integration record with updated activation revision
+     */
+    public VisualExecutableLoweringIntegration withActivationRevision(long nextActivationRevision) {
+        return new VisualExecutableLoweringIntegration(
+                schemaVersion,
+                integrationId,
+                revision,
+                state,
+                level,
+                activationId,
+                nextActivationRevision,
+                bindingId,
+                bindingRevision,
+                operatorRef,
+                operatorFingerprint,
+                adapterKind,
+                entrypoint,
+                runtimeEnvironment,
+                loweringMode,
+                executorKind,
+                executorEntrypoint,
+                executorOwner,
+                integratedBy,
+                changeSource,
+                reason,
+                evidence,
+                createdAt,
+                updatedAt
+        );
+    }
+
+    /**
      * Applies a lifecycle state transition while retaining prior integration evidence.
      *
      * @param nextState next integration state

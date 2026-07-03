@@ -13,12 +13,14 @@ import java.util.Locale;
  * @param schemaVersion response contract version
  * @param resolvedAt server timestamp
  * @param accepted true when the lifecycle transition was applied
- * @param state accepted, rejected, missing, or conflict
+ * @param state accepted, rejected, missing, conflict, or failed
  * @param level UI/control-plane severity
  * @param message human-readable summary
  * @param binding implementation binding after the transition when available
- * @param deactivatedActivation adapter activation deactivated by the transition when present
- * @param deactivatedIntegration executable lowering integration deactivated by the transition when present
+ * @param deactivatedActivation adapter activation deactivated by the transition when present, or restored activation
+ *        evidence when a failed transition was compensated
+ * @param deactivatedIntegration executable lowering integration deactivated by the transition when present, or restored
+ *        integration evidence when a failed transition was compensated
  * @param diagnostics structured diagnostics
  */
 public record VisualRuntimeBindingDeactivationResult(

@@ -600,6 +600,15 @@ public class VisualAssetOverviewController {
                     Map.of("bindingId", bindingId)
             );
         }
+        if (binding.bound() && transitionMatchesLastLifecycleEvent(binding, request, "bound",
+                VisualRuntimeBindingImplementationBinding.STATE_BOUND, "")) {
+            return ResponseEntity.ok(VisualRuntimeBindingImplementationLifecycleResult.accepted(
+                    "Runtime binding implementation '%s' is already bound by this lifecycle request."
+                            .formatted(binding.bindingId()),
+                    binding,
+                    null
+            ));
+        }
         ResponseEntity<VisualRuntimeBindingImplementationLifecycleResult> stateError =
                 bindableStateError(binding, request, null);
         if (stateError != null) {
@@ -690,6 +699,21 @@ public class VisualAssetOverviewController {
                     Map.of("bindingId", bindingId)
             );
         }
+        if (binding.unbound() && transitionMatchesLastLifecycleEvent(binding, request, "unbound",
+                VisualRuntimeBindingImplementationBinding.STATE_UNBOUND, "")) {
+            VisualRuntimeAdapterActivation inactiveActivation =
+                    latestInactiveActivationByBindingId(binding.bindingId());
+            VisualExecutableLoweringIntegration inactiveIntegration = inactiveActivation == null
+                    ? null
+                    : latestInactiveIntegrationByActivationId(inactiveActivation.activationId());
+            return ResponseEntity.ok(VisualRuntimeBindingDeactivationResult.accepted(
+                    "Runtime binding implementation '%s' is already unbound by this lifecycle request."
+                            .formatted(binding.bindingId()),
+                    binding,
+                    inactiveActivation,
+                    inactiveIntegration
+            ));
+        }
         if (!binding.bound()) {
             return runtimeBindingDeactivationFailure(
                     HttpStatus.CONFLICT,
@@ -721,48 +745,103 @@ public class VisualAssetOverviewController {
                         activeActivation.activationId()).orElse(null);
         VisualExecutableLoweringIntegration deactivatedIntegration = null;
         if (activeIntegration != null) {
-            deactivatedIntegration = executableLoweringIntegrationRepository.update(
-                    activeIntegration.withStateTransition(
-                            VisualExecutableLoweringIntegration.STATE_INACTIVE,
-                            "info",
-                            source,
-                            request.reason(),
-                            new VisualExecutableLoweringIntegration.Evidence(
-                                    "binding-unbind",
-                                    evidenceRef,
-                                    evidenceSummary),
-                            now));
+            try {
+                deactivatedIntegration = executableLoweringIntegrationRepository.update(
+                        activeIntegration.withStateTransition(
+                                VisualExecutableLoweringIntegration.STATE_INACTIVE,
+                                "info",
+                                source,
+                                request.reason(),
+                                new VisualExecutableLoweringIntegration.Evidence(
+                                        "binding-unbind",
+                                        evidenceRef,
+                                        evidenceSummary),
+                                now));
+            } catch (IllegalArgumentException | IllegalStateException e) {
+                return runtimeBindingDeactivationCompensatedFailure(
+                        binding,
+                        activeActivation,
+                        null,
+                        activeIntegration,
+                        null,
+                        request,
+                        source,
+                        evidenceRef,
+                        "visual.runtimeBindingDeactivation.integrationDeactivateFailed",
+                        "Runtime binding unbind failed while deactivating executable lowering integration '%s': %s"
+                                .formatted(activeIntegration.integrationId(),
+                                        defaultIfBlank(e.getMessage(), e.getClass().getSimpleName())),
+                        "/integrationId",
+                        e);
+            }
         }
         VisualRuntimeAdapterActivation deactivatedActivation = null;
         if (activeActivation != null) {
-            deactivatedActivation = adapterActivationRepository.update(
-                    activeActivation.withStateTransition(
-                            VisualRuntimeAdapterActivation.STATE_INACTIVE,
-                            "info",
-                            source,
-                            request.reason(),
-                            new VisualRuntimeAdapterActivation.Evidence(
-                                    "binding-unbind",
-                                    evidenceRef,
-                                    evidenceSummary),
-                            now));
+            try {
+                deactivatedActivation = adapterActivationRepository.update(
+                        activeActivation.withStateTransition(
+                                VisualRuntimeAdapterActivation.STATE_INACTIVE,
+                                "info",
+                                source,
+                                request.reason(),
+                                new VisualRuntimeAdapterActivation.Evidence(
+                                        "binding-unbind",
+                                        evidenceRef,
+                                        evidenceSummary),
+                                now));
+            } catch (IllegalArgumentException | IllegalStateException e) {
+                return runtimeBindingDeactivationCompensatedFailure(
+                        binding,
+                        activeActivation,
+                        null,
+                        activeIntegration,
+                        deactivatedIntegration,
+                        request,
+                        source,
+                        evidenceRef,
+                        "visual.runtimeBindingDeactivation.activationDeactivateFailed",
+                        "Runtime binding unbind failed while deactivating runtime adapter activation '%s': %s"
+                                .formatted(activeActivation.activationId(),
+                                        defaultIfBlank(e.getMessage(), e.getClass().getSimpleName())),
+                        "/activationId",
+                        e);
+            }
         }
-        VisualRuntimeBindingImplementationBinding unbound = implementationRepository.update(
-                binding.withLifecycleTransition(
-                        VisualRuntimeBindingImplementationBinding.STATE_UNBOUND,
-                        "info",
-                        null,
-                        null,
-                        lifecycleEvent(
-                                "unbound",
-                                binding.state(),
-                                VisualRuntimeBindingImplementationBinding.STATE_UNBOUND,
-                                request,
-                                "",
-                                now
-                        ),
-                        now
-                ));
+        VisualRuntimeBindingImplementationBinding unbound;
+        try {
+            unbound = implementationRepository.update(
+                    binding.withLifecycleTransition(
+                            VisualRuntimeBindingImplementationBinding.STATE_UNBOUND,
+                            "info",
+                            null,
+                            null,
+                            lifecycleEvent(
+                                    "unbound",
+                                    binding.state(),
+                                    VisualRuntimeBindingImplementationBinding.STATE_UNBOUND,
+                                    request,
+                                    "",
+                                    now
+                            ),
+                            now
+                    ));
+        } catch (IllegalArgumentException | IllegalStateException e) {
+            return runtimeBindingDeactivationCompensatedFailure(
+                    binding,
+                    activeActivation,
+                    deactivatedActivation,
+                    activeIntegration,
+                    deactivatedIntegration,
+                    request,
+                    source,
+                    evidenceRef,
+                    "visual.runtimeBindingDeactivation.bindingUnbindFailed",
+                    "Runtime binding unbind failed while marking implementation binding '%s' as unbound: %s"
+                            .formatted(binding.bindingId(),
+                                    defaultIfBlank(e.getMessage(), e.getClass().getSimpleName())),
+                    "/bindingId",
+                    e);
+        }
         return ResponseEntity.ok(VisualRuntimeBindingDeactivationResult.accepted(
                 "Runtime binding implementation '%s' was unbound and active runtime evidence was deactivated."
                         .formatted(unbound.bindingId()),
@@ -770,6 +849,93 @@ public class VisualAssetOverviewController {
                 deactivatedActivation,
                 deactivatedIntegration
         ));
+    }
+
+    private ResponseEntity<VisualRuntimeBindingDeactivationResult> runtimeBindingDeactivationCompensatedFailure(
+            VisualRuntimeBindingImplementationBinding binding,
+            VisualRuntimeAdapterActivation activeActivation,
+            VisualRuntimeAdapterActivation deactivatedActivation,
+            VisualExecutableLoweringIntegration activeIntegration,
+            VisualExecutableLoweringIntegration deactivatedIntegration,
+            VisualRuntimeBindingImplementationTransitionRequest request,
+            String changeSource,
+            String evidenceRef,
+            String code,
+            String message,
+            String target,
+            RuntimeException mutationFailure) {
+        ArrayList<VisualDiagnostic> diagnostics = new ArrayList<>();
+        diagnostics.add(runtimeBindingDeactivationMutationExceptionDiagnostic(
+                code,
+                message,
+                target,
+                mutationFailure,
+                Map.of("bindingId", binding == null ? "" : binding.bindingId(),
+                        "activationId", activeActivation == null ? "" : activeActivation.activationId(),
+                        "integrationId", activeIntegration == null ? "" : activeIntegration.integrationId())));
+
+        Instant restoredAt = Instant.now();
+        String compensationSummary =
+                "Runtime binding unbind failed; already-deactivated runtime evidence was restored when possible.";
+        VisualRuntimeAdapterActivation finalActivation =
+                deactivatedActivation == null ? activeActivation : deactivatedActivation;
+        if (deactivatedActivation != null && !deactivatedActivation.active()) {
+            try {
+                finalActivation = adapterActivationRepository.update(
+                        deactivatedActivation.withStateTransition(
+                                VisualRuntimeAdapterActivation.STATE_ACTIVE,
+                                "success",
+                                changeSource,
+                                request.reason(),
+                                new VisualRuntimeAdapterActivation.Evidence(
+                                        "unbind-compensation",
+                                        evidenceRef,
+                                        compensationSummary),
+                                restoredAt));
+            } catch (IllegalArgumentException | IllegalStateException e) {
+                diagnostics.add(runtimeBindingDeactivationCompensationFailureDiagnostic(
+                        "runtime-adapter-activation",
+                        deactivatedActivation.activationId(),
+                        e));
+            }
+        }
+
+        VisualExecutableLoweringIntegration finalIntegration =
+                deactivatedIntegration == null ? activeIntegration : deactivatedIntegration;
+        boolean activationAvailable = finalActivation == null || finalActivation.active();
+        if (deactivatedIntegration != null && !deactivatedIntegration.active() && activationAvailable) {
+            try {
+                VisualExecutableLoweringIntegration integrationToRestore = finalActivation == null
+                        ? deactivatedIntegration
+                        : deactivatedIntegration.withActivationRevision(finalActivation.revision());
+                finalIntegration = executableLoweringIntegrationRepository.update(
+                        integrationToRestore.withStateTransition(
+                                VisualExecutableLoweringIntegration.STATE_ACTIVE,
+                                "success",
+                                changeSource,
+                                request.reason(),
+                                new VisualExecutableLoweringIntegration.Evidence(
+                                        "unbind-compensation",
+                                        evidenceRef,
+                                        compensationSummary),
+                                restoredAt));
+            } catch (IllegalArgumentException | IllegalStateException e) {
+                diagnostics.add(runtimeBindingDeactivationCompensationFailureDiagnostic(
+                        "executable-lowering-integration",
+                        deactivatedIntegration.integrationId(),
+                        e));
+            }
+        }
+
+        return ResponseEntity.status(HttpStatus.CONFLICT).body(
+                VisualRuntimeBindingDeactivationResult.rejected(
+                        "failed",
+                        "error",
+                        "Runtime binding unbind failed; active runtime evidence was restored when possible.",
+                        binding,
+                        finalActivation,
+                        finalIntegration,
+                        diagnostics));
     }
 
     /**
@@ -828,6 +994,21 @@ public class VisualAssetOverviewController {
                     replacement,
                     Map.of("bindingId", current.bindingId())
             );
+        }
+        if (current.superseded()
+                && replacement.bound()
+                && current.supersededByBindingId().equals(replacement.bindingId())
+                && replacement.supersedesBindingId().equals(current.bindingId())
+                && transitionMatchesLastLifecycleEvent(current, request, "superseded",
+                VisualRuntimeBindingImplementationBinding.STATE_SUPERSEDED, replacement.bindingId())
+                && transitionMatchesLastLifecycleEvent(replacement, request, "bound",
+                VisualRuntimeBindingImplementationBinding.STATE_BOUND, current.bindingId())) {
+            return ResponseEntity.ok(VisualRuntimeBindingImplementationLifecycleResult.accepted(
+                    "Runtime binding implementation '%s' already superseded '%s' by this lifecycle request."
+                            .formatted(replacement.bindingId(), current.bindingId()),
+                    current,
+                    replacement
+            ));
         }
         if (!current.bound()) {
             return lifecycleFailure(
@@ -3132,6 +3313,52 @@ public class VisualAssetOverviewController {
         return null;
     }
 
+    private static boolean transitionMatchesLastLifecycleEvent(
+            VisualRuntimeBindingImplementationBinding binding,
+            VisualRuntimeBindingImplementationTransitionRequest request,
+            String eventType,
+            String toState,
+            String relatedBindingId) {
+        if (binding == null || request == null || binding.lifecycleEvents().isEmpty()) {
+            return false;
+        }
+        VisualRuntimeBindingImplementationBinding.LifecycleEvent event =
+                binding.lifecycleEvents().getLast();
+        return Objects.equals(event.eventType(), defaultIfBlank(eventType, "").toLowerCase(Locale.ROOT))
+                && Objects.equals(event.toState(), defaultIfBlank(toState, "").toLowerCase(Locale.ROOT))
+                && Objects.equals(event.actor(), request.actor())
+                && Objects.equals(event.changeSource(), request.changeSource())
+                && Objects.equals(event.reason(), request.reason())
+                && Objects.equals(event.summary(), request.changeSummary())
+                && Objects.equals(event.relatedBindingId(), defaultIfBlank(relatedBindingId, ""));
+    }
+
+    private VisualRuntimeAdapterActivation latestInactiveActivationByBindingId(String bindingId) {
+        String normalized = bindingId == null ? "" : bindingId.trim();
+        if (normalized.isBlank()) {
+            return null;
+        }
+        return adapterActivationRepository.all().stream()
+                .filter(activation -> normalized.equals(activation.bindingId()))
+                .filter(activation -> VisualRuntimeAdapterActivation.STATE_INACTIVE.equals(activation.state()))
+                .max(java.util.Comparator.comparing(VisualRuntimeAdapterActivation::updatedAt)
+                        .thenComparing(VisualRuntimeAdapterActivation::activationId))
+                .orElse(null);
+    }
+
+    private VisualExecutableLoweringIntegration latestInactiveIntegrationByActivationId(String activationId) {
+        String normalized = activationId == null ? "" : activationId.trim();
+        if (normalized.isBlank()) {
+            return null;
+        }
+        return executableLoweringIntegrationRepository.all().stream()
+                .filter(integration -> normalized.equals(integration.activationId()))
+                .filter(integration -> VisualExecutableLoweringIntegration.STATE_INACTIVE.equals(integration.state()))
+                .max(java.util.Comparator.comparing(VisualExecutableLoweringIntegration::updatedAt)
+                        .thenComparing(VisualExecutableLoweringIntegration::integrationId))
+                .orElse(null);
+    }
+
     private static ResponseEntity<VisualRuntimeBindingImplementationLifecycleResult> lifecycleFailure(
             HttpStatus status,
             String state,
@@ -3175,6 +3402,44 @@ public class VisualAssetOverviewController {
                 integration,
                 List.of(diagnostic)
         ));
+    }
+
+    private static VisualDiagnostic runtimeBindingDeactivationMutationExceptionDiagnostic(
+            String code,
+            String message,
+            String target,
+            RuntimeException exception,
+            Map<String, Object> metadata) {
+        LinkedHashMap<String, Object> diagnosticMetadata = new LinkedHashMap<>();
+        if (metadata != null) {
+            metadata.forEach((key, value) -> diagnosticMetadata.put(key, value == null ? "" : value));
+        }
+        diagnosticMetadata.put("exceptionType", exception.getClass().getSimpleName());
+        diagnosticMetadata.put("exceptionMessage", defaultIfBlank(exception.getMessage(), ""));
+        return VisualDiagnostic.error(
+                code,
+                defaultIfBlank(message, "Runtime binding deactivation mutation failed."),
+                target,
+                diagnosticMetadata);
+    }
+
+    private static VisualDiagnostic runtimeBindingDeactivationCompensationFailureDiagnostic(
+            String recordKind,
+            String recordId,
+            RuntimeException exception) {
+        LinkedHashMap<String, Object> metadata = new LinkedHashMap<>();
+        metadata.put("recordKind", defaultIfBlank(recordKind, ""));
+        metadata.put("recordId", defaultIfBlank(recordId, ""));
+        metadata.put("exceptionType", exception.getClass().getSimpleName());
+        metadata.put("exceptionMessage", defaultIfBlank(exception.getMessage(), ""));
+        return VisualDiagnostic.error(
+                "visual.runtimeBindingDeactivation.compensationFailed",
+                "Runtime binding deactivation compensation failed for %s '%s': %s"
+                        .formatted(defaultIfBlank(recordKind, "record"),
+                                defaultIfBlank(recordId, ""),
+                                defaultIfBlank(exception.getMessage(), exception.getClass().getSimpleName())),
+                "/runtimeEvidence",
+                metadata);
     }
 
     private static VisualRuntimeBindingImplementationBinding.LifecycleEvent lifecycleEvent(
