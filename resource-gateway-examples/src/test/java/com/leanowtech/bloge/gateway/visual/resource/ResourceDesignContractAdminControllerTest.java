@@ -150,6 +150,41 @@ class ResourceDesignContractAdminControllerTest {
     }
 
     @Test
+    void fromOpenApiRejectsUnresolvedSchemaReferencesBeforeReturningDraft() throws Exception {
+        OpenApiResourceDesignContractImportRequest request = new OpenApiResourceDesignContractImportRequest(
+                "order-service.listOrders",
+                "listOrders",
+                null,
+                null,
+                null,
+                openApiWithUnresolvedResponseSchemaRef()
+        );
+
+        mockMvc.perform(post("/admin/resource-design-contracts/from-openapi/operations")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(request)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.validation.valid").value(true))
+                .andExpect(jsonPath("$.operations[0].projectionLevel").value("BLOCKED"))
+                .andExpect(jsonPath("$.operations[0].projectionMessage")
+                        .value(org.hamcrest.Matchers.containsString("MissingOrderList")));
+
+        mockMvc.perform(post("/admin/resource-design-contracts/from-openapi")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(request)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.contract").value(org.hamcrest.Matchers.nullValue()))
+                .andExpect(jsonPath("$.descriptorSuggestion").value(org.hamcrest.Matchers.nullValue()))
+                .andExpect(jsonPath("$.validation.valid").value(false))
+                .andExpect(jsonPath("$.validation.diagnostics[0].code")
+                        .value("visual.resourceContract.openapi.refUnresolved"))
+                .andExpect(jsonPath("$.validation.diagnostics[0].message")
+                        .value(org.hamcrest.Matchers.containsString("MissingOrderList")));
+
+        assertThat(registry.all()).isEmpty();
+    }
+
+    @Test
     void fromOpenApiWarnsWhenPreviewDiffersFromStoredContractAndDescriptor() throws Exception {
         registry.upsert(new ResourceDesignContract(
                 "contract:orders",
@@ -940,6 +975,44 @@ class ResourceDesignContractAdminControllerTest {
                                         ),
                                         "required", List.of("id"),
                                         "additionalProperties", false
+                                )
+                        )
+                )
+        );
+    }
+
+    private static Map<String, Object> openApiWithUnresolvedResponseSchemaRef() {
+        return Map.of(
+                "openapi", "3.1.0",
+                "servers", List.of(Map.of("url", "https://api.example.test/v1")),
+                "paths", Map.of(
+                        "/orders", Map.of(
+                                "get", Map.of(
+                                        "operationId", "listOrders",
+                                        "summary", "List orders",
+                                        "responses", Map.of(
+                                                "200", Map.of(
+                                                        "description", "ok",
+                                                        "content", Map.of(
+                                                                "application/json", Map.of(
+                                                                        "schema", Map.of(
+                                                                                "$ref",
+                                                                                "#/components/schemas/MissingOrderList"
+                                                                        )
+                                                                )
+                                                        )
+                                                )
+                                        )
+                                )
+                        )
+                ),
+                "components", Map.of(
+                        "schemas", Map.of(
+                                "Order", Map.of(
+                                        "type", "object",
+                                        "properties", Map.of(
+                                                "id", Map.of("type", "string")
+                                        )
                                 )
                         )
                 )

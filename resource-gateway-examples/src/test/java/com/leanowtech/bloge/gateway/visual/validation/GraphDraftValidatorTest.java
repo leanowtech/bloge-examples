@@ -643,7 +643,7 @@ class GraphDraftValidatorTest {
                 .extracting("code")
                 .contains(
                         "visual.schema.compositionUnsupported",
-                        "visual.schema.refUnsupported"
+                        "visual.schema.refUnresolved"
                 );
         assertThat(result.diagnostics())
                 .extracting("target")

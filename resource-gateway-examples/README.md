@@ -143,7 +143,8 @@ field counts, dynamic schema surfaces, DSL-unsafe input/output fields and port n
 streaming/durable runtime requirements, external effects, non-idempotent side effects,
 secret-bound operators, and scope-restricted policy summaries before importing it into the catalog, validate
 user-provided operator library JSON or YAML source text before importing it, while the server-side
-validate/import path warning-gates streaming/durable runtime requirements,
+validate/import path expands safe local `#/$defs/*` schema references, blocks unresolved local refs with
+`visual.schema.refUnresolved`, blocks remote schema refs with `visual.schema.refRemoteUnsupported`, warning-gates streaming/durable runtime requirements,
 secret-backed execution, and non-idempotent external effects before storage, and
 the browser profile prefers the server-derived `bloge.visualOperatorLibraryProfile.v1`
 and `bloge.visualOperatorLibraryImportReadiness.v1` returned by validate/import
@@ -1005,6 +1006,13 @@ when needed and encodes body maps into repeated form-data parts. Other non-JSON
 request bodies such as binary media types are not silently projected; the
 preview emits a warning and omits the body mapping until an explicit runtime
 encoding strategy is configured.
+OpenAPI schema references must stay inside the submitted document. Discovery
+marks operations with unresolved local component schema references or remote
+schema `$ref` values as `BLOCKED`; projection returns blocking diagnostics such
+as `visual.resourceContract.openapi.refUnresolved` or
+`visual.resourceContract.openapi.refUnsupported` without returning a contract or
+descriptor draft. This avoids importing a resource operator contract whose
+request/response schema cannot be trusted by the visual canvas.
 Advanced security schemes remain in the design contract but are reported as
 descriptor-suggestion warnings when they cannot be represented by the runtime
 descriptor. When the resource already has a stored
@@ -1018,7 +1026,8 @@ The browser Composer includes the same OpenAPI Resource Contract path: authors
 paste raw OpenAPI JSON or YAML, Discover lists operations with READY/WARNING/BLOCKED
 projection readiness for the response that Preview will actually project, shows a
 compact readiness summary, and can fill operationId/path/method while updating the
-projection status message, Preview generates contract and descriptor JSON
+projection status message. If the selected discovered operation is `BLOCKED`, the
+browser blocks Preview before calling the projection endpoint; otherwise Preview generates contract and descriptor JSON
 drafts, Save Contract writes the design contract through the admin API, Save
 Descriptor creates or updates the runtime descriptor through `/admin/resources`,
 and the visual operator catalog is refreshed so the corresponding

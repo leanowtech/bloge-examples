@@ -443,6 +443,12 @@ class VisualAuthoringAppJsTest {
                 .contains("id=\"resource-operation-summary\"")
                 .contains("id=\"resource-contract-impact\"")
                 .contains("function renderOpenApiOperationSummary(operations, current)")
+                .contains("function openApiSelectedOperation(current = state.resourceContractImport)")
+                .contains("function openApiOperationIsBlocked(operation)")
+                .contains("function openApiBlockedProjectionMessage(current = state.resourceContractImport")
+                .contains("OpenAPI projection is blocked:")
+                .contains("Select a READY/WARNING operation")
+                .contains("openApiProjectionBlocked")
                 .contains("function openApiOperationStatusMessage(operation)")
                 .contains("function resourceContractSaveConfirmationKey(contract, diagnostics = [])")
                 .contains("function resourceContractWarningAcknowledgementMessage(impact, diagnostics, actionLabel = 'Save contract')")
@@ -1049,6 +1055,7 @@ class VisualAuthoringAppJsTest {
                   'validateSchemaAdditionalProperties',
                   'validateSchemaUnevaluatedProperties',
                   'validateSchemaObjectPatternProperties',
+                  'schemaReferenceDiagnostic',
                   'schemaFieldDescriptors',
                   'dslSafeSchemaFieldDescriptors',
                   'schemaFieldsFromSchema',
@@ -1129,6 +1136,9 @@ class VisualAuthoringAppJsTest {
                   'openApiOperationLabel',
                   'openApiOperationReadinessSummary',
                   'openApiOperationMatchesCurrent',
+                  'openApiSelectedOperation',
+                  'openApiOperationIsBlocked',
+                  'openApiBlockedProjectionMessage',
                   'renderOpenApiOperationSummary',
                   'renderOpenApiOperationSummaryPanel',
                   'openApiOperationStatusLevel',
@@ -3066,6 +3076,18 @@ operators:
                   openApiReadinessSummary.warning,
                   openApiReadinessSummary.blocked
                 ].join('|');
+                const openApiSelectedBlockedOperation = context.openApiSelectedOperation({
+                  operations: openApiReadinessOperations,
+                  operationId: 'healthText'
+                });
+                const openApiBlockedProjectionMessage = context.openApiBlockedProjectionMessage({
+                  operations: openApiReadinessOperations,
+                  operationId: 'healthText'
+                });
+                const openApiReadyProjectionMessage = context.openApiBlockedProjectionMessage({
+                  operations: openApiReadinessOperations,
+                  operationId: 'readyOrder'
+                });
                 const openApiSummaryHtml = context.renderOpenApiOperationSummary(
                   openApiReadinessOperations,
                   { operationId: 'healthText' }
@@ -4158,6 +4180,10 @@ operators:
                   ['openapi operation match by path', openApiOperationMatchByPath, true],
                   ['openapi operation miss', openApiOperationMiss, false],
                   ['openapi readiness summary counts', openApiReadinessSummaryText, '3|1|1|1'],
+                  ['openapi selected blocked operation', openApiSelectedBlockedOperation.operationId, 'healthText'],
+                  ['openapi selected blocked operation flag', context.openApiOperationIsBlocked(openApiSelectedBlockedOperation), true],
+                  ['openapi blocked projection message', String(openApiBlockedProjectionMessage.includes('OpenAPI projection is blocked:') && openApiBlockedProjectionMessage.includes('Select a READY/WARNING operation')), 'true'],
+                  ['openapi ready projection message', openApiReadyProjectionMessage, ''],
                   ['openapi readiness summary selected detail', String(openApiSummaryHtml.includes('Selected · BLOCKED') && openApiSummaryHtml.includes('Selected 2xx response is not JSON.')), 'true'],
                   ['openapi readiness summary stats', String(openApiSummaryHtml.includes('<strong>1</strong> ready') && openApiSummaryHtml.includes('<strong>1</strong> blocked')), 'true'],
                   ['openapi readiness empty summary', openApiEmptySummaryHtml, ''],
@@ -5282,6 +5308,7 @@ operators:
                 context.UNSUPPORTED_SCHEMA_REFERENCE_KEYWORDS = ['$ref', '$dynamicRef'];
                 context.UNSUPPORTED_SCHEMA_COMPOSITION_KEYWORDS = ['allOf', 'not', 'if', 'then', 'else'];
                 context.UNSUPPORTED_SCHEMA_CONSTRAINT_KEYWORDS = ['unevaluatedItems'];
+                context.LOCAL_SCHEMA_DEFS_REF_PREFIX = '#/$defs/';
                 context.isDslFieldName = (value) => /^[A-Za-z_][A-Za-z0-9_]*$/.test(String(value || ''))
                   && !new Set(['graph', 'node', 'input', 'output', 'true', 'false']).has(String(value || ''));
 
@@ -5293,6 +5320,7 @@ operators:
                   'validateSchemaTypeArray',
                   'validateSchemaDefinitions',
                   'validateUnsupportedSchemaKeywords',
+                  'schemaReferenceDiagnostic',
                   'validateSupportedSchemaUnions',
                   'graphInputSchemaDiagnostic',
                   'schemaType',
@@ -5425,6 +5453,14 @@ operators:
                 context.validateSchemaStructure({
                   allOf: [{ type: 'string' }]
                 }, 'schema', unsupportedCompositionDiagnostics);
+                const unresolvedRefDiagnostics = [];
+                context.validateSchemaStructure({
+                  type: 'object',
+                  properties: {
+                    customer: { $ref: '#/$defs/Customer' },
+                    remote: { $ref: 'https://schemas.example.test/Customer.json' }
+                  }
+                }, 'schema', unresolvedRefDiagnostics);
 
                 const sourceUnionIssue = context.schemaCompatibilityIssue(
                   { oneOf: [{ type: 'integer' }, { type: 'string' }] },
@@ -5506,6 +5542,8 @@ operators:
                   ['invalid union code', invalidUnionDiagnostics.map((diagnostic) => diagnostic.code).join('|'), 'visual.schema.unionInvalid'],
                   ['ambiguous union code', ambiguousUnionDiagnostics.some((diagnostic) => diagnostic.code === 'visual.schema.unionAmbiguous'), true],
                   ['allOf remains unsupported', unsupportedCompositionDiagnostics.map((diagnostic) => diagnostic.code).join('|'), 'visual.schema.compositionUnsupported'],
+                  ['unresolved local ref diagnostic', unresolvedRefDiagnostics.find((diagnostic) => diagnostic.target === '/inputSchema/schema/properties/customer/$ref')?.code, 'visual.schema.refUnresolved'],
+                  ['remote ref diagnostic', unresolvedRefDiagnostics.find((diagnostic) => diagnostic.target === '/inputSchema/schema/properties/remote/$ref')?.code, 'visual.schema.refRemoteUnsupported'],
                   ['oneOf type label', context.schemaType({ oneOf: [{ type: 'integer' }, { type: 'string' }] }), 'oneOf<integer|string>'],
                   ['nested anyOf type label', context.schemaType({ type: 'array', items: { anyOf: [{ type: 'boolean' }, { type: 'null' }] } }), 'array<anyOf<boolean|null>>'],
                   ['oneOf exact value', context.schemaValueMatchesSchema('APPROVE', { oneOf: [{ type: 'string', enum: ['APPROVE'] }, { type: 'string', enum: ['REJECT'] }] }), true],

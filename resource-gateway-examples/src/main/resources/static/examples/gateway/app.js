@@ -6901,6 +6901,26 @@ function openApiOperationMatchesCurrent(operation, current) {
   return operation.path === path && operation.method === method;
 }
 
+function openApiSelectedOperation(current = state.resourceContractImport) {
+  return normalizeOpenApiOperations(current?.operations)
+    .find((operation) => openApiOperationMatchesCurrent(operation, current)) || null;
+}
+
+function openApiOperationIsBlocked(operation) {
+  return String(operation?.projectionLevel || 'READY').trim().toUpperCase() === 'BLOCKED';
+}
+
+function openApiBlockedProjectionMessage(current = state.resourceContractImport, operation = null) {
+  const selected = operation || openApiSelectedOperation(current);
+  if (!openApiOperationIsBlocked(selected)) {
+    return '';
+  }
+  const methodPath = `${selected.method || 'GET'} ${selected.path || ''}`.trim();
+  const name = selected.operationId ? ` · ${selected.operationId}` : '';
+  const detail = selected.projectionMessage ? ` ${selected.projectionMessage}` : '';
+  return `OpenAPI projection is blocked: selected operation ${methodPath}${name} is not projection-ready.${detail} Select a READY/WARNING operation or repair the OpenAPI schema before projection.`;
+}
+
 function renderOpenApiOperationSelect(select, operations, current) {
   if (!select) {
     return;
@@ -7204,8 +7224,20 @@ async function previewOpenApiResourceContract() {
     setResourceContractImportMessage('OpenAPI JSON or YAML is required.', 'error');
     return;
   }
+  const blockedOperation = openApiSelectedOperation(current);
+  const blockedProjection = openApiBlockedProjectionMessage(current, blockedOperation);
   updateProjectedResourceContractText('');
   updateProjectedResourceDescriptorText('');
+  if (blockedProjection) {
+    setResourceContractImportMessage(blockedProjection, 'error');
+    $('output').textContent = pretty({
+      openApiProjectionBlocked: {
+        message: blockedProjection,
+        operation: blockedOperation
+      }
+    });
+    return;
+  }
   setResourceContractImportMessage('Projecting OpenAPI operation...', 'info');
   const request = {
     resourceId: current.resourceId.trim(),
@@ -17939,11 +17971,7 @@ function validateSchemaDefinitions(schema, path, diagnostics) {
 function validateUnsupportedSchemaKeywords(schema, path, diagnostics) {
   for (const keyword of UNSUPPORTED_SCHEMA_REFERENCE_KEYWORDS) {
     if (Object.prototype.hasOwnProperty.call(schema || {}, keyword)) {
-      diagnostics.push(graphInputSchemaDiagnostic(
-        'visual.schema.refUnsupported',
-        `Schema reference keyword '${keyword}' is not supported by visual authoring schemas.`,
-        `${path}/${keyword}`
-      ));
+      diagnostics.push(schemaReferenceDiagnostic(keyword, schema[keyword], `${path}/${keyword}`));
     }
   }
   for (const keyword of UNSUPPORTED_SCHEMA_COMPOSITION_KEYWORDS) {
@@ -17964,6 +17992,43 @@ function validateUnsupportedSchemaKeywords(schema, path, diagnostics) {
       ));
     }
   }
+}
+
+function schemaReferenceDiagnostic(keyword, rawRef, target) {
+  if (keyword !== '$ref') {
+    return graphInputSchemaDiagnostic(
+      'visual.schema.refUnsupported',
+      `Schema reference keyword '${keyword}' is not supported by visual authoring schemas.`,
+      target
+    );
+  }
+  const ref = typeof rawRef === 'string' ? rawRef.trim() : '';
+  if (!ref) {
+    return graphInputSchemaDiagnostic(
+      'visual.schema.refUnsupported',
+      'Schema $ref must be a non-blank string and must be expanded before validation.',
+      target
+    );
+  }
+  if (ref.startsWith(LOCAL_SCHEMA_DEFS_REF_PREFIX)) {
+    return graphInputSchemaDiagnostic(
+      'visual.schema.refUnresolved',
+      `Schema local reference '${ref}' could not be resolved or safely expanded from $defs.`,
+      target
+    );
+  }
+  if (ref.includes('://') || ref.startsWith('urn:') || ref.startsWith('file:')) {
+    return graphInputSchemaDiagnostic(
+      'visual.schema.refRemoteUnsupported',
+      `Schema remote reference '${ref}' is not supported by visual authoring schemas; inline it under $defs before import.`,
+      target
+    );
+  }
+  return graphInputSchemaDiagnostic(
+    'visual.schema.refUnsupported',
+    `Schema reference '${ref}' is not supported by visual authoring schemas; supported local $defs references must be expanded before validation.`,
+    target
+  );
 }
 
 function validateSupportedSchemaUnions(schema, path, diagnostics) {

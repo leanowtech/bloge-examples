@@ -151,4 +151,33 @@ class VisualSchemaValidatorTest {
                     assertThat(diagnostic.target()).isEqualTo("/schema/properties/riskSignal/anyOf/0");
                 });
     }
+
+    @Test
+    void reportsActionableSchemaReferenceDiagnostics() {
+        var diagnostics = VisualSchemaValidator.validateSchema(Map.of(
+                "type", "object",
+                "properties", Map.of(
+                        "missingLocal", Map.of("$ref", "#/$defs/Missing"),
+                        "remote", Map.of("$ref", "https://schemas.example.test/Risk.json"),
+                        "components", Map.of("$ref", "#/components/schemas/Risk")
+                )
+        ), "/schema");
+
+        assertThat(diagnostics)
+                .anySatisfy(diagnostic -> {
+                    assertThat(diagnostic.code()).isEqualTo("visual.schema.refUnresolved");
+                    assertThat(diagnostic.message()).contains("#/$defs/Missing");
+                    assertThat(diagnostic.target()).isEqualTo("/schema/properties/missingLocal/$ref");
+                })
+                .anySatisfy(diagnostic -> {
+                    assertThat(diagnostic.code()).isEqualTo("visual.schema.refRemoteUnsupported");
+                    assertThat(diagnostic.message()).contains("https://schemas.example.test/Risk.json");
+                    assertThat(diagnostic.target()).isEqualTo("/schema/properties/remote/$ref");
+                })
+                .anySatisfy(diagnostic -> {
+                    assertThat(diagnostic.code()).isEqualTo("visual.schema.refUnsupported");
+                    assertThat(diagnostic.message()).contains("#/components/schemas/Risk");
+                    assertThat(diagnostic.target()).isEqualTo("/schema/properties/components/$ref");
+                });
+    }
 }

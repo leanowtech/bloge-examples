@@ -761,7 +761,7 @@ class ResourceDesignContractValidatorTest {
         assertThat(result.diagnostics())
                 .extracting("code")
                 .contains(
-                        "visual.schema.refUnsupported",
+                        "visual.schema.refUnresolved",
                         "visual.schema.compositionUnsupported"
                 );
         assertThat(result.diagnostics())

@@ -493,7 +493,13 @@ projection endpoint。请求传入 `resourceId`、OpenAPI document，以及
 OpenAPI path/query/header/cookie parameters、JSON requestBody 和 2xx JSON
 response schema 投影为 visual schema，并把 local
 `#/components/schemas/*` 引用改写为 `$defs` 后再复用 resource-contract
-validation；它不直接写入 registry。
+validation；OpenAPI schema 内无法在当前文档本地解析的 component `$ref` 或远程 `$ref`
+会在 operation discovery 中标记为 `BLOCKED`，projection 阶段以
+`visual.resourceContract.openapi.refUnresolved` 或
+`visual.resourceContract.openapi.refUnsupported` blocking diagnostic 拒绝返回
+`ResourceDesignContract` / `ResourceDescriptor` 草案，避免把不可信 schema 降级成 `any`
+继续进入画布。浏览器 `Custom Composer` 在当前 selector 命中已 discovery 的 `BLOCKED`
+operation 时会提前阻断 Preview；服务端 projection endpoint 仍是最终权威 gate。它不直接写入 registry。
 
 resource-gateway 示例也提供
 `POST /admin/visual-operator-libraries/from-asyncapi` 作为 validate-only
@@ -1152,6 +1158,13 @@ operator contract 但 library version 回退，则返回 blocking
 `/version`，但 metadata 会携带 `previousVersion`、`replacementVersion`、
 `operatorRefs`、`changeRisk`、`changeCategories` 和 `changeSummary`，所以 impact
 review 可以在没有 stored draft 引用时仍然暴露 operator-level 变更风险。
+
+用户算子库 schema 校验会在 `SchemaEnvelope` 层展开可安全解析的本地
+`#/$defs/*` 引用；如果导入文本中仍残留未解析的本地 `$defs` 引用，返回
+`visual.schema.refUnresolved`，远程 URI / URN / file `$ref` 返回
+`visual.schema.refRemoteUnsupported`，其他 JSON Pointer `$ref` 返回
+`visual.schema.refUnsupported`。这些都是 blocking diagnostics，浏览器本地预检和
+服务端 validate/import 需要保持同口径，避免把半解析 schema 写入 catalog。
 浏览器 Operator Libraries 面板已在 Import 前调用该端点，把结构化 diagnostics、
 impact review、profile 和 import readiness 以明细列表展示给作者，再允许作者选择是否执行 Import。
 
@@ -1684,6 +1697,9 @@ POST /api/visual/drafts/{draftId}/validate
 schema、operator `configSchema` 复用同一个结构校验器：不支持的 `type/kind`、
 `required` 引用不存在的 property、array 缺少 `items`、enum 缺少 values 等都会
 产生 blocking diagnostic。
+该结构校验器也会把未展开的 schema `$ref` 作为 blocking diagnostic 暴露：
+可解析的本地 `#/$defs/*` 应在 envelope 阶段展开，剩余本地 `$defs` 引用视为
+`visual.schema.refUnresolved`，远程引用视为 `visual.schema.refRemoteUnsupported`。
 
 draft 校验还必须把非默认 output port name 当作 `node.output.<port>` 的 DSL
 path segment 处理。即使历史 catalog 或外部投影绕过了 operator library 导入

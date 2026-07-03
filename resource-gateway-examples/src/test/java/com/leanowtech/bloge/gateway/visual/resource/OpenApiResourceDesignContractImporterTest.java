@@ -156,6 +156,50 @@ class OpenApiResourceDesignContractImporterTest {
     }
 
     @Test
+    void discoversUnresolvedSchemaReferenceAsBlockedBeforeProjection() {
+        OpenApiOperationDiscoveryResult result = importer.discoverOperations(
+                new OpenApiResourceDesignContractImportRequest(
+                        null,
+                        null,
+                        null,
+                        null,
+                        null,
+                        openApiWithUnresolvedResponseSchemaRef()
+                )
+        );
+
+        assertThat(result.validation().valid()).isTrue();
+        assertThat(result.operations()).singleElement()
+                .satisfies(operation -> {
+                    assertThat(operation.operationId()).isEqualTo("listOrders");
+                    assertThat(operation.projectionLevel()).isEqualTo("BLOCKED");
+                    assertThat(operation.projectionMessage())
+                            .contains("Projection cannot safely import OpenAPI schemas")
+                            .contains("MissingOrderList");
+                });
+    }
+
+    @Test
+    void rejectsProjectionWhenSchemaReferenceCannotBeResolved() {
+        OpenApiResourceDesignContractImportResult result = importer.project(
+                request("order-service.listOrders", "listOrders", null, null,
+                        openApiWithUnresolvedResponseSchemaRef())
+        );
+
+        assertThat(result.contract()).isNull();
+        assertThat(result.descriptorSuggestion()).isNull();
+        assertThat(result.validation().valid()).isFalse();
+        assertThat(result.validation().diagnostics())
+                .filteredOn(diagnostic -> "visual.resourceContract.openapi.refUnresolved"
+                        .equals(diagnostic.code()))
+                .singleElement()
+                .satisfies(diagnostic -> {
+                    assertThat(diagnostic.message()).contains("MissingOrderList");
+                    assertThat(diagnostic.target()).contains("$defs/MissingOrderList");
+                });
+    }
+
+    @Test
     void suggestsDescriptorForPathQueryAndJsonBody() {
         OpenApiResourceDesignContractImportResult result = importer.project(
                 request("order-service.updateOrder", "updateOrder", null, null, openApiUpdateOrder())
@@ -675,6 +719,44 @@ class OpenApiResourceDesignContractImporterTest {
                                         ),
                                         "required", List.of("id"),
                                         "additionalProperties", false
+                                )
+                        )
+                )
+        );
+    }
+
+    private static Map<String, Object> openApiWithUnresolvedResponseSchemaRef() {
+        return Map.of(
+                "openapi", "3.1.0",
+                "servers", List.of(Map.of("url", "https://api.example.test/v1")),
+                "paths", Map.of(
+                        "/orders", Map.of(
+                                "get", Map.of(
+                                        "operationId", "listOrders",
+                                        "summary", "List orders",
+                                        "responses", Map.of(
+                                                "200", Map.of(
+                                                        "description", "ok",
+                                                        "content", Map.of(
+                                                                "application/json", Map.of(
+                                                                        "schema", Map.of(
+                                                                                "$ref",
+                                                                                "#/components/schemas/MissingOrderList"
+                                                                        )
+                                                                )
+                                                        )
+                                                )
+                                        )
+                                )
+                        )
+                ),
+                "components", Map.of(
+                        "schemas", Map.of(
+                                "Order", Map.of(
+                                        "type", "object",
+                                        "properties", Map.of(
+                                                "id", Map.of("type", "string")
+                                        )
                                 )
                         )
                 )

@@ -3155,7 +3155,7 @@ class OperatorLibraryValidatorTest {
                 .extracting("code")
                 .contains(
                         "visual.schema.compositionUnsupported",
-                        "visual.schema.refUnsupported"
+                        "visual.schema.refUnresolved"
                 );
         assertThat(result.diagnostics())
                 .extracting("target")
@@ -3203,6 +3203,48 @@ class OperatorLibraryValidatorTest {
 
         assertThat(result.valid()).as(result.diagnostics().toString()).isTrue();
         assertThat(result.diagnostics()).isEmpty();
+    }
+
+    @Test
+    void rejectsRemoteSchemaReferencesAcrossOperatorSchemasWithActionableDiagnostic() {
+        OperatorDefinition operator = new OperatorDefinition(
+                "bloge.visualOperator.v1",
+                "risk:remoteSchemaRef",
+                "1.0.0",
+                new OperatorDefinition.Display("Remote schema ref", "Test operator.", List.of("test")),
+                new OperatorDefinition.Source("user-library", "", "", "", true),
+                new OperatorDefinition.Ports(
+                        List.of(new OperatorDefinition.Port("inputs",
+                                SchemaEnvelope.object(Map.of(
+                                        "customer", Map.of("$ref",
+                                                "https://schemas.example.test/Customer.json")
+                                ), List.of()),
+                                true,
+                                "Input.")),
+                        List.of(new OperatorDefinition.Port("output",
+                                SchemaEnvelope.object(Map.of(
+                                        "accepted", Map.of("type", "boolean")
+                                ), List.of()),
+                                true,
+                                "Output."))
+                ),
+                SchemaEnvelope.object(Map.of(), List.of()),
+                OperatorDefinition.Capabilities.pure(),
+                new OperatorDefinition.Lowering("native", "riskRemoteSchemaRef", Map.of()),
+                List.of()
+        );
+
+        VisualValidationResult result = validator.validate(libraryWith(operator));
+
+        assertThat(result.valid()).isFalse();
+        assertThat(result.diagnostics())
+                .filteredOn(diagnostic -> "visual.schema.refRemoteUnsupported".equals(diagnostic.code()))
+                .singleElement()
+                .satisfies(diagnostic -> {
+                    assertThat(diagnostic.message()).contains("inline it under $defs");
+                    assertThat(diagnostic.target())
+                            .isEqualTo("/operators/0/ports/inputs/0/schema/schema/properties/customer/$ref");
+                });
     }
 
     @Test

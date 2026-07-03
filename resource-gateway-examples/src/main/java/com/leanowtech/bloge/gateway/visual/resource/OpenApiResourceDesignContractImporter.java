@@ -96,6 +96,9 @@ public class OpenApiResourceDesignContractImporter {
         SelectedOperation operation = selected.get();
         Map<String, Object> requestSchema = requestSchema(openApi, operation, diagnostics);
         Optional<Map<String, Object>> responseSchema = responseSchema(openApi, operation, diagnostics);
+        if (hasErrors(diagnostics)) {
+            return result(null, diagnostics);
+        }
         if (responseSchema.isEmpty()) {
             return result(null, diagnostics);
         }
@@ -175,9 +178,7 @@ public class OpenApiResourceDesignContractImporter {
                                 pathItemMap, operationMap);
                         List<String> requestMediaTypes = requestMediaTypes(openApi, selected);
                         List<String> responseMediaTypes = responseMediaTypes(openApi, selected);
-                        OperationProjection projection = operationProjection(operationMap.containsKey("requestBody"),
-                                requestBodyMediaType(openApi, selected).isPresent(),
-                                responseJsonMediaType(openApi, selected).isPresent());
+                        OperationProjection projection = operationProjection(openApi, selected);
                         operations.add(new OpenApiOperationSummary(
                                 string(operationMap.get("operationId")),
                                 selected.path(),
@@ -196,18 +197,34 @@ public class OpenApiResourceDesignContractImporter {
         return List.copyOf(operations);
     }
 
-    private OperationProjection operationProjection(boolean hasRequestBody,
-                                                    boolean requestBodyProjectable,
-                                                    boolean responseProjectable) {
+    private OperationProjection operationProjection(Map<String, Object> openApi, SelectedOperation selected) {
+        boolean hasRequestBody = selected.operation().containsKey("requestBody");
+        boolean requestBodyProjectable = requestBodyMediaType(openApi, selected).isPresent();
+        boolean responseProjectable = responseJsonMediaType(openApi, selected).isPresent();
         if (!responseProjectable) {
             return new OperationProjection("BLOCKED",
                     "Projection requires the selected 2xx response to declare JSON or JSON-compatible content.");
+        }
+        Optional<VisualDiagnostic> schemaError = schemaProjectionError(openApi, selected);
+        if (schemaError.isPresent()) {
+            return new OperationProjection("BLOCKED",
+                    "Projection cannot safely import OpenAPI schemas: " + schemaError.get().message());
         }
         if (hasRequestBody && !requestBodyProjectable) {
             return new OperationProjection("WARNING",
                     "Request body cannot be projected into a runnable descriptor yet; preview will omit the body mapping.");
         }
         return new OperationProjection("READY", "Ready to project into a resource contract.");
+    }
+
+    private Optional<VisualDiagnostic> schemaProjectionError(Map<String, Object> openApi,
+                                                             SelectedOperation selected) {
+        List<VisualDiagnostic> diagnostics = new ArrayList<>();
+        requestSchema(openApi, selected, diagnostics);
+        responseSchema(openApi, selected, diagnostics);
+        return diagnostics.stream()
+                .filter(VisualDiagnostic::error)
+                .findFirst();
     }
 
     private static Map<String, Object> openApiDocument(OpenApiResourceDesignContractImportRequest request,
