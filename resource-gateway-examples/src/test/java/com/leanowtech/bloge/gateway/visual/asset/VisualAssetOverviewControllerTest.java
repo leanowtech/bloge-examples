@@ -9,6 +9,7 @@ import com.leanowtech.bloge.gateway.visual.catalog.OperatorLibrary;
 import com.leanowtech.bloge.gateway.visual.catalog.OperatorLibraryImpactReview;
 import com.leanowtech.bloge.gateway.visual.catalog.OperatorLibraryImportReadiness;
 import com.leanowtech.bloge.gateway.visual.catalog.OperatorLibraryProfile;
+import com.leanowtech.bloge.gateway.visual.catalog.OperatorLibraryRevision;
 import com.leanowtech.bloge.gateway.visual.catalog.ResourceVirtualOperatorProjector;
 import com.leanowtech.bloge.gateway.visual.catalog.VisualCatalogTestSupport;
 import com.leanowtech.bloge.gateway.visual.catalog.VisualGraphPublicationOperatorProjector;
@@ -2491,6 +2492,63 @@ class VisualAssetOverviewControllerTest {
     }
 
     @Test
+    void executableReadinessRecomputeApplyReturnsFailedWhenLibraryRevisionWriteFails() {
+        RuntimeBindingImplementationFixture fixture = runtimeBindingImplementationFixture(
+                new FailingExecutableReadinessApplyOperatorLibraryRegistry("risk-policy-design"));
+        VisualRuntimeBindingImplementationBinding stored = submitImplementation(
+                fixture,
+                completeImplementation("risk-eligibility-native-v1")
+        );
+        VisualRuntimeBindingImplementationBinding binding = fixture.controller()
+                .bindRuntimeBindingImplementation(stored.bindingId(), transitionRequest("", true))
+                .getBody()
+                .binding();
+        VisualRuntimeAdapterActivation activation = (VisualRuntimeAdapterActivation) fixture.controller()
+                .submitRuntimeAdapterActivation(adapterActivationRequest(binding, "risk-eligibility-prod-active"))
+                .getBody();
+        fixture.controller().submitExecutableLoweringIntegration(
+                executableLoweringIntegrationRequest(activation, "risk-eligibility-lowering-v1"));
+        VisualExecutableReadinessRecomputePreview preview = fixture.controller()
+                .previewExecutableReadinessRecompute("risk:eligibility")
+                .getBody();
+
+        var response = fixture.controller().applyExecutableReadinessRecompute(
+                "risk:eligibility",
+                true,
+                "runtime-platform",
+                "visual-canvas-test",
+                "Promote risk eligibility executable readiness.",
+                "Runtime implementation, activation, and executor bridge evidence were reviewed.",
+                preview.currentOperatorFingerprint(),
+                preview.candidateOperatorFingerprint()
+        );
+
+        assertThat(response.getStatusCode().value()).isEqualTo(409);
+        assertThat(response.getBody()).isNotNull();
+        VisualExecutableReadinessRecomputeResult result = response.getBody();
+        assertThat(result.applied()).isFalse();
+        assertThat(result.state()).isEqualTo("failed");
+        assertThat(result.level()).isEqualTo("error");
+        assertThat(result.libraryRevision()).isZero();
+        assertThat(result.storedLibrary()).isNull();
+        assertThat(result.storedRevision()).isNull();
+        assertThat(result.preview().candidateOperatorFingerprint()).isEqualTo(preview.candidateOperatorFingerprint());
+        assertThat(result.diagnostics())
+                .extracting(VisualDiagnostic::code)
+                .containsExactly("visual.executableReadinessRecompute.libraryRevisionWriteFailed");
+        VisualDiagnostic diagnostic = result.diagnostics().getFirst();
+        assertThat(diagnostic.target()).isEqualTo("/operatorLibraryId");
+        assertThat(diagnostic.metadata())
+                .containsEntry("operatorRef", "risk:eligibility")
+                .containsEntry("operatorLibraryId", "risk-policy-design")
+                .containsEntry("exceptionType", "IllegalStateException");
+        assertThat(fixture.libraries().revisions("risk-policy-design")).hasSize(1);
+        OperatorDefinition trustedOperator = fixture.catalog().find("risk:eligibility").orElseThrow();
+        assertThat(trustedOperator.fingerprint()).isEqualTo(preview.currentOperatorFingerprint());
+        assertThat(trustedOperator.runtimeReadiness().state()).isEqualTo("DESIGN_ONLY");
+    }
+
+    @Test
     void executableReadinessRecomputeApplyRejectsStaleExpectedFingerprints() {
         RuntimeBindingImplementationFixture fixture = runtimeBindingImplementationFixture();
         VisualRuntimeBindingImplementationBinding stored = submitImplementation(
@@ -3815,10 +3873,38 @@ class VisualAssetOverviewControllerTest {
         }
     }
 
+    private static final class FailingExecutableReadinessApplyOperatorLibraryRegistry
+            extends InMemoryOperatorLibraryRegistry {
+        private final String failingLibraryId;
+
+        private FailingExecutableReadinessApplyOperatorLibraryRegistry(String failingLibraryId) {
+            this.failingLibraryId = failingLibraryId;
+        }
+
+        @Override
+        public OperatorLibrary upsert(OperatorLibrary library, OperatorLibraryRevision.RevisionMetadata metadata) {
+            if (library != null
+                    && failingLibraryId.equals(library.libraryId())
+                    && !revisions(library.libraryId()).isEmpty()) {
+                throw new IllegalStateException("Injected operator library revision persistence failure.");
+            }
+            return super.upsert(library, metadata);
+        }
+    }
+
     private static RuntimeBindingImplementationFixture runtimeBindingImplementationFixture() {
         return runtimeBindingImplementationFixture(
                 new InMemoryVisualRuntimeBindingImplementationRepository(),
                 new InMemoryVisualExecutableLoweringIntegrationRepository());
+    }
+
+    private static RuntimeBindingImplementationFixture runtimeBindingImplementationFixture(
+            InMemoryOperatorLibraryRegistry libraries) {
+        return runtimeBindingImplementationFixture(
+                new InMemoryVisualRuntimeBindingImplementationRepository(),
+                new InMemoryVisualRuntimeAdapterActivationRepository(),
+                new InMemoryVisualExecutableLoweringIntegrationRepository(),
+                libraries);
     }
 
     private static RuntimeBindingImplementationFixture runtimeBindingImplementationFixture(
@@ -3841,8 +3927,19 @@ class VisualAssetOverviewControllerTest {
             InMemoryVisualRuntimeBindingImplementationRepository implementationRepository,
             InMemoryVisualRuntimeAdapterActivationRepository adapterActivationRepository,
             InMemoryVisualExecutableLoweringIntegrationRepository executableLoweringIntegrationRepository) {
+        return runtimeBindingImplementationFixture(
+                implementationRepository,
+                adapterActivationRepository,
+                executableLoweringIntegrationRepository,
+                new InMemoryOperatorLibraryRegistry());
+    }
+
+    private static RuntimeBindingImplementationFixture runtimeBindingImplementationFixture(
+            InMemoryVisualRuntimeBindingImplementationRepository implementationRepository,
+            InMemoryVisualRuntimeAdapterActivationRepository adapterActivationRepository,
+            InMemoryVisualExecutableLoweringIntegrationRepository executableLoweringIntegrationRepository,
+            InMemoryOperatorLibraryRegistry libraries) {
         OperatorLibrary library = VisualCatalogTestSupport.designOnlyEligibilityLibrary("integer");
-        InMemoryOperatorLibraryRegistry libraries = new InMemoryOperatorLibraryRegistry();
         libraries.upsert(library);
         InMemoryVisualGraphPublicationRepository publications = new InMemoryVisualGraphPublicationRepository();
         DefaultVisualOperatorCatalog catalog = new DefaultVisualOperatorCatalog(

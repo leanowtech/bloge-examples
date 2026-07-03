@@ -2045,6 +2045,11 @@ operator library 时不能声明这些参数来伪造绑定状态；`transform`�
 `visual.executableReadinessRecompute.expectedCurrentOperatorFingerprintMismatch` 或
 `visual.executableReadinessRecompute.expectedCandidateOperatorFingerprintMismatch`，避免旧浏览器页面或外部
 control-plane 重试把过期确认写成新的 trusted revision。
+如果 owning operator-library revision 写入失败，mutation 返回 `409`、`state=failed`
+和 `visual.executableReadinessRecompute.libraryRevisionWriteFailed`，diagnostic metadata
+包含 operatorRef、operatorLibraryId、current/candidate fingerprint 和异常类别；此时
+`storedLibrary`、`storedRevision` 与 `libraryRevision` 为空/零值，catalog 继续停留在旧
+fingerprint，不得把失败的 apply 视为 readiness 已经关闭。
 
 `POST /api/visual/assets/runtime-binding-requirements/executable-readiness-recomputations/evidence-refresh?operatorRef=...&ackWarnings=true&actor=...&reason=...`
 返回 `bloge.visualExecutableReadinessEvidenceRefreshResult.v1`，用于在 apply 已把 operator 变成

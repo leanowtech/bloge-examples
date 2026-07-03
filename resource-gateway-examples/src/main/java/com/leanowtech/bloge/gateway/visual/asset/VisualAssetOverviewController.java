@@ -1604,7 +1604,29 @@ public class VisualAssetOverviewController {
                         "Apply executable readiness recompute for '%s'.".formatted(preview.operatorRef())),
                 reason
         );
-        OperatorLibrary stored = operatorLibraryRegistry.upsert(replacement.library(), metadata);
+        OperatorLibrary stored;
+        try {
+            stored = operatorLibraryRegistry.upsert(replacement.library(), metadata);
+        } catch (IllegalArgumentException | IllegalStateException e) {
+            return ResponseEntity.status(HttpStatus.CONFLICT)
+                    .body(VisualExecutableReadinessRecomputeResult.rejected(
+                            preview,
+                            "failed",
+                            "error",
+                            "Executable readiness recompute apply for '%s' failed while writing operator-library revision."
+                                    .formatted(preview.operatorRef()),
+                            List.of(executableReadinessApplyMutationExceptionDiagnostic(
+                                    "visual.executableReadinessRecompute.libraryRevisionWriteFailed",
+                                    e.getMessage(),
+                                    "/operatorLibraryId",
+                                    e,
+                                    Map.of(
+                                            "operatorRef", preview.operatorRef(),
+                                            "operatorLibraryId", preview.operatorLibraryId(),
+                                            "currentOperatorFingerprint", preview.currentOperatorFingerprint(),
+                                            "candidateOperatorFingerprint",
+                                            preview.candidateOperatorFingerprint())))));
+        }
         OperatorLibraryRevision latestRevision = operatorLibraryRegistry.revisions(stored.libraryId()).stream()
                 .findFirst()
                 .orElse(null);
@@ -2866,6 +2888,25 @@ public class VisualAssetOverviewController {
                     metadata));
         }
         return diagnostics;
+    }
+
+    private static VisualDiagnostic executableReadinessApplyMutationExceptionDiagnostic(
+            String code,
+            String message,
+            String target,
+            RuntimeException exception,
+            Map<String, Object> metadata) {
+        LinkedHashMap<String, Object> diagnosticMetadata = new LinkedHashMap<>();
+        if (metadata != null) {
+            metadata.forEach((key, value) -> diagnosticMetadata.put(key, value == null ? "" : value));
+        }
+        diagnosticMetadata.put("exceptionType", exception.getClass().getSimpleName());
+        diagnosticMetadata.put("exceptionMessage", defaultIfBlank(exception.getMessage(), ""));
+        return VisualDiagnostic.error(
+                code,
+                defaultIfBlank(message, "Executable readiness recompute apply mutation failed."),
+                target,
+                diagnosticMetadata);
     }
 
     private static ReplacementLibrary replacementLibraryForExecutableReadinessApply(
