@@ -12,6 +12,7 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
+import java.util.function.Function;
 
 /**
  * Server-derived import readiness summary for a user-provided operator library.
@@ -48,6 +49,13 @@ import java.util.Set;
  * @param message human-readable decision summary
  * @param recommendedAction concise next action for UI or automation
  * @param runtimeBindingRequirementCount runtime binding requirement count for submitted operators
+ * @param bindingKindCounts runtime binding requirement counts by binding kind
+ * @param handoffLaneCounts runtime binding requirement counts by runtime-plane handoff lane
+ * @param handoffKindCounts runtime binding requirement counts by runtime-plane work kind
+ * @param handoffTargetCounts runtime binding requirement counts by runtime-plane routing target
+ * @param sourceKindCounts runtime binding requirement counts by operator source kind
+ * @param loweringModeCounts runtime binding requirement counts by lowering mode
+ * @param readinessStateCounts runtime binding requirement counts by operator readiness state
  * @param runtimeBindingRequirementKeys stable keys aligned with runtimeBindingRequirements
  * @param runtimeBindingRequirements per-operator runtime binding requirements before executable use
  */
@@ -79,6 +87,13 @@ public record OperatorLibraryImportReadiness(
         String message,
         String recommendedAction,
         int runtimeBindingRequirementCount,
+        Map<String, Integer> bindingKindCounts,
+        Map<String, Integer> handoffLaneCounts,
+        Map<String, Integer> handoffKindCounts,
+        Map<String, Integer> handoffTargetCounts,
+        Map<String, Integer> sourceKindCounts,
+        Map<String, Integer> loweringModeCounts,
+        Map<String, Integer> readinessStateCounts,
         List<String> runtimeBindingRequirementKeys,
         List<RuntimeBindingRequirement> runtimeBindingRequirements
 ) {
@@ -131,12 +146,33 @@ public record OperatorLibraryImportReadiness(
         message = message == null ? "" : message;
         recommendedAction = recommendedAction == null ? "" : recommendedAction;
         runtimeBindingRequirements = immutableRuntimeBindingRequirements(runtimeBindingRequirements);
+        runtimeBindingRequirementCount = runtimeBindingRequirements.size();
+        bindingKindCounts = bindingKindCounts == null
+                ? countBy(runtimeBindingRequirements, RuntimeBindingRequirement::bindingKind)
+                : immutableCounts(bindingKindCounts);
+        handoffLaneCounts = handoffLaneCounts == null
+                ? countBy(runtimeBindingRequirements, RuntimeBindingRequirement::handoffLane)
+                : immutableCounts(handoffLaneCounts);
+        handoffKindCounts = handoffKindCounts == null
+                ? countBy(runtimeBindingRequirements, RuntimeBindingRequirement::handoffKind)
+                : immutableCounts(handoffKindCounts);
+        handoffTargetCounts = handoffTargetCounts == null
+                ? countBy(runtimeBindingRequirements, RuntimeBindingRequirement::handoffTarget)
+                : immutableCounts(handoffTargetCounts);
+        sourceKindCounts = sourceKindCounts == null
+                ? countBy(runtimeBindingRequirements, RuntimeBindingRequirement::sourceKind)
+                : immutableCounts(sourceKindCounts);
+        loweringModeCounts = loweringModeCounts == null
+                ? countBy(runtimeBindingRequirements, RuntimeBindingRequirement::loweringMode)
+                : immutableCounts(loweringModeCounts);
+        readinessStateCounts = readinessStateCounts == null
+                ? countBy(runtimeBindingRequirements, RuntimeBindingRequirement::state)
+                : immutableCounts(readinessStateCounts);
         runtimeBindingRequirementKeys = runtimeBindingRequirementKeys == null
                 ? runtimeBindingRequirements.stream()
                 .map(RuntimeBindingRequirement::requirementKey)
                 .toList()
                 : immutableStringList(runtimeBindingRequirementKeys);
-        runtimeBindingRequirementCount = runtimeBindingRequirements.size();
     }
 
     /**
@@ -249,6 +285,13 @@ public record OperatorLibraryImportReadiness(
                 message,
                 recommendedAction,
                 runtimeBindingRequirements.size(),
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
                 runtimeBindingRequirements.stream()
                         .map(RuntimeBindingRequirement::requirementKey)
                         .toList(),
@@ -404,6 +447,36 @@ public record OperatorLibraryImportReadiness(
         return Collections.unmodifiableList(values.stream()
                 .map(value -> value == null ? "" : value)
                 .toList());
+    }
+
+    private static Map<String, Integer> countBy(List<RuntimeBindingRequirement> requirements,
+                                                Function<RuntimeBindingRequirement, String> classifier) {
+        Map<String, Integer> counts = new LinkedHashMap<>();
+        for (RuntimeBindingRequirement requirement
+                : requirements == null ? List.<RuntimeBindingRequirement>of() : requirements) {
+            String key = classifier.apply(requirement);
+            if (key == null || key.isBlank()) {
+                continue;
+            }
+            counts.merge(key, 1, Integer::sum);
+        }
+        return immutableCounts(counts);
+    }
+
+    private static Map<String, Integer> immutableCounts(Map<String, Integer> counts) {
+        if (counts == null || counts.isEmpty()) {
+            return Map.of();
+        }
+        Map<String, Integer> normalized = new LinkedHashMap<>();
+        for (Map.Entry<String, Integer> entry : counts.entrySet()) {
+            String key = entry.getKey() == null ? "" : entry.getKey().trim();
+            int count = entry.getValue() == null ? 0 : Math.max(0, entry.getValue());
+            if (key.isBlank() || count == 0) {
+                continue;
+            }
+            normalized.put(key, count);
+        }
+        return normalized.isEmpty() ? Map.of() : Collections.unmodifiableMap(normalized);
     }
 
     /**

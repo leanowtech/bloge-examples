@@ -516,12 +516,19 @@ class VisualAuthoringAppJsTest {
                 .contains("importReadiness: importReadiness || null")
                 .contains("renderAsyncApiProjectionReviewPanel($('asyncapi-projection-review'), state.libraryMessage?.projectionReview)")
                 .contains("function renderLibraryImportReadiness(readiness)")
+                .contains("function renderLibraryImportReadinessCountRows(readiness)")
+                .contains("function libraryImportReadinessCountRows(label, counts, valueLabel = operatorPaletteFacetLabel)")
                 .contains("function normalizeOperatorLibraryImportReadiness(importReadiness)")
+                .contains("function normalizeCountMap(value)")
                 .contains("bloge.visualOperatorLibraryImportReadiness.v1")
                 .contains("requiresAckWarnings: Boolean(importReadiness.requiresAckWarnings)")
+                .contains("bindingKindCounts: normalizeCountMap(importReadiness.bindingKindCounts)")
+                .contains("handoffLaneCounts: normalizeCountMap(importReadiness.handoffLaneCounts)")
+                .contains("readinessStateCounts: normalizeCountMap(importReadiness.readinessStateCounts)")
                 .contains("runtimeBindingRequirementKeys: normalizeStringArray(importReadiness.runtimeBindingRequirementKeys)")
                 .contains("runtimeBindingRequirements: Array.isArray(importReadiness.runtimeBindingRequirements)")
                 .contains("requirementKey: String(requirement?.requirementKey || '')")
+                .contains("Runtime binding routing")
                 .contains("Runtime binding requirements")
                 .contains("request.operationId = current.operationId")
                 .contains("request.channel = current.channel")
@@ -1146,6 +1153,8 @@ class VisualAuthoringAppJsTest {
                   'applyOpenApiOperationSelection',
                   'renderLibraryProfilePanel',
                   'renderLibraryImportReadiness',
+                  'renderLibraryImportReadinessCountRows',
+                  'libraryImportReadinessCountRows',
                   'renderLibraryImpactPanel',
                   'libraryImpactSummaryFromPayload',
                   'libraryImpactDraftTargetsFromPayload',
@@ -1196,6 +1205,7 @@ class VisualAuthoringAppJsTest {
                   'compactSchemaAnnotation',
                   'schemaDynamicSurfaceCount',
                   'normalizeReadinessState',
+                  'normalizeCountMap',
                   'normalizeVisualGraphNodeReadiness',
                   'normalizeRuntimeBindingRequirement',
                   'normalizeVisualGraphReadiness',
@@ -2643,6 +2653,13 @@ operators:
                     affectedDraftCount: 2,
                     affectedOperatorCount: 1,
                     runtimeBindingRequirementCount: 1,
+                    bindingKindCounts: { 'runtime-adapter': 1 },
+                    handoffLaneCounts: { 'runtime-platform': 1 },
+                    handoffKindCounts: { 'runtime-adapter': 1 },
+                    handoffTargetCounts: { missingRuntimeBinding: 1 },
+                    sourceKindCounts: { 'user-library': 1 },
+                    loweringModeCounts: { native: 1 },
+                    readinessStateCounts: { 'runtime-blocked': 1 },
                     runtimeBindingRequirements: [{
                       operatorRef: 'risk:nativeBinding',
                       label: 'Native Binding',
@@ -4147,6 +4164,10 @@ operators:
                   ['library profile html import readiness gates', String(importReadinessProfileHtml.includes('ackWarnings + actor/reason')), 'true'],
                   ['library profile html import readiness affected', String(importReadinessProfileHtml.includes('2 drafts · 1 operators')), 'true'],
                   ['library profile html import readiness action', String(importReadinessProfileHtml.includes('bind the missing runtime')), 'true'],
+                  ['library profile html import routing heading', String(importReadinessProfileHtml.includes('Runtime binding routing')), 'true'],
+                  ['library profile html import routing binding', String(importReadinessProfileHtml.includes('Runtime Adapter: 1')), 'true'],
+                  ['library profile html import routing lane', String(importReadinessProfileHtml.includes('Runtime Platform: 1')), 'true'],
+                  ['library profile html import routing route', String(importReadinessProfileHtml.includes('missingRuntimeBinding: 1')), 'true'],
                   ['library profile html import binding heading', String(importReadinessProfileHtml.includes('Runtime binding requirements')), 'true'],
                   ['library profile html import binding label', String(importReadinessProfileHtml.includes('Native Binding')), 'true'],
                   ['library profile html import binding target', String(importReadinessProfileHtml.includes('missingRuntimeBinding')), 'true'],
@@ -5439,6 +5460,8 @@ operators:
                   'renderContractPortGroup',
                   'renderLibraryProfilePanel',
                   'renderLibraryImportReadiness',
+                  'renderLibraryImportReadinessCountRows',
+                  'libraryImportReadinessCountRows',
                   'libraryProfileLevel',
                   'operatorLibraryProfile',
                   'operatorLibraryOperatorProfile',
@@ -5463,6 +5486,7 @@ operators:
                   'schemaValueSummary',
                   'visibleSchemaAnnotationSummary',
                   'compactSchemaAnnotation',
+                  'normalizeCountMap',
                   'normalizeOperatorRuntimeReadiness'
                 ]) {
                   vm.runInContext(functionSource(name), context);

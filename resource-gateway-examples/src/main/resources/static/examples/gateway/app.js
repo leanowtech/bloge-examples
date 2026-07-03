@@ -3879,6 +3879,7 @@ function renderLibraryImportReadiness(readiness) {
     ? `<span>${escapeHtml(affected.join(' · '))}</span>`
     : '';
   const bindingRequirements = visualRuntimeBindingRequirementCodeRows(readiness.runtimeBindingRequirements);
+  const bindingCountRows = renderLibraryImportReadinessCountRows(readiness);
   const bindingOverflow = Math.max(
     0,
     Number(readiness.runtimeBindingRequirementCount || 0)
@@ -3893,11 +3894,47 @@ function renderLibraryImportReadiness(readiness) {
       ${gateText}
       ${affectedText}
       ${readiness.recommendedAction ? `<small>${escapeHtml(readiness.recommendedAction)}</small>` : ''}
+      ${bindingCountRows ? `<small>${escapeHtml('Runtime binding routing')}</small>
+        <div class="library-impact-codes">${bindingCountRows}</div>` : ''}
       ${bindingRequirements ? `<small>${escapeHtml('Runtime binding requirements')}</small>
         <div class="library-impact-codes">${bindingRequirements}</div>` : ''}
       ${bindingOverflow ? `<small>+${escapeHtml(bindingOverflow)} more runtime binding requirements</small>` : ''}
     </div>
   `;
+}
+
+function renderLibraryImportReadinessCountRows(readiness) {
+  if (!readiness) {
+    return '';
+  }
+  const rows = [
+    ...libraryImportReadinessCountRows('Binding', readiness.bindingKindCounts),
+    ...libraryImportReadinessCountRows('Lane', readiness.handoffLaneCounts),
+    ...libraryImportReadinessCountRows('Work', readiness.handoffKindCounts),
+    ...libraryImportReadinessCountRows('Route', readiness.handoffTargetCounts, (value) => value),
+    ...libraryImportReadinessCountRows('Source', readiness.sourceKindCounts),
+    ...libraryImportReadinessCountRows('Lowering', readiness.loweringModeCounts),
+    ...libraryImportReadinessCountRows('Readiness', readiness.readinessStateCounts)
+  ];
+  return rows.slice(0, 8).join('');
+}
+
+function libraryImportReadinessCountRows(label, counts, valueLabel = operatorPaletteFacetLabel) {
+  if (!counts || typeof counts !== 'object' || Array.isArray(counts)) {
+    return [];
+  }
+  return Object.entries(counts)
+    .map(([name, count]) => [String(name || '').trim(), Number(count || 0)])
+    .filter(([name, count]) => name && count > 0)
+    .sort(([leftName, leftCount], [rightName, rightCount]) =>
+      rightCount - leftCount || leftName.localeCompare(rightName))
+    .slice(0, 3)
+    .map(([name, count]) => `
+      <div class="library-impact-code">
+        <strong>${escapeHtml(label)}</strong>
+        <span>${escapeHtml(valueLabel(name))}: ${escapeHtml(count)}</span>
+      </div>
+    `);
 }
 
 function renderLibraryImpactPanel(target, diagnostics, impact = null) {
@@ -4666,6 +4703,13 @@ function normalizeOperatorLibraryImportReadiness(importReadiness) {
     message: String(importReadiness.message || ''),
     recommendedAction: String(importReadiness.recommendedAction || ''),
     runtimeBindingRequirementKeys: normalizeStringArray(importReadiness.runtimeBindingRequirementKeys),
+    bindingKindCounts: normalizeCountMap(importReadiness.bindingKindCounts),
+    handoffLaneCounts: normalizeCountMap(importReadiness.handoffLaneCounts),
+    handoffKindCounts: normalizeCountMap(importReadiness.handoffKindCounts),
+    handoffTargetCounts: normalizeCountMap(importReadiness.handoffTargetCounts),
+    sourceKindCounts: normalizeCountMap(importReadiness.sourceKindCounts),
+    loweringModeCounts: normalizeCountMap(importReadiness.loweringModeCounts),
+    readinessStateCounts: normalizeCountMap(importReadiness.readinessStateCounts),
     runtimeBindingRequirements: Array.isArray(importReadiness.runtimeBindingRequirements)
       ? importReadiness.runtimeBindingRequirements.map(normalizeRuntimeBindingRequirement)
       : [],
@@ -4674,6 +4718,15 @@ function normalizeOperatorLibraryImportReadiness(importReadiness) {
         ? importReadiness.runtimeBindingRequirements.length
         : 0))
   };
+}
+
+function normalizeCountMap(value) {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    return {};
+  }
+  return Object.fromEntries(Object.entries(value)
+    .map(([key, count]) => [String(key || '').trim(), Number(count || 0)])
+    .filter(([key, count]) => key && count > 0));
 }
 
 function operatorLibraryProfile(library) {

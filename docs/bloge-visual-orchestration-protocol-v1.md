@@ -1333,6 +1333,13 @@ libraryId 拉取 history、在 JSON editor 中预览历史 snapshot、并通过 
     "message": "The library can support authoring, but runtime binding is incomplete for executable graphs.",
     "recommendedAction": "Import for design work or bind the missing runtime before executable publication.",
     "runtimeBindingRequirementCount": 1,
+    "bindingKindCounts": { "executable-lowering": 1 },
+    "handoffLaneCounts": { "operator-platform": 1 },
+    "handoffKindCounts": { "operator-implementation": 1 },
+    "handoffTargetCounts": { "risk:eligibility": 1 },
+    "sourceKindCounts": { "user-library": 1 },
+    "loweringModeCounts": { "design": 1 },
+    "readinessStateCounts": { "design-only": 1 },
     "runtimeBindingRequirementKeys": [
       "RUNTIME_BINDING|operator-library|risk-policy|risk:eligibility|executable-lowering|risk:eligibility|"
     ],
@@ -1401,6 +1408,10 @@ governance-review/design-only 计数，以及用于浏览器 profile 面板的�
 路由下一步动作，而不是解析自然语言 diagnostic message。
 当导入前存在 runtime binding gap 时，`runtimeBindingRequirements[]` 中每个 item
 都会携带稳定 `requirementKey`，顶层 `runtimeBindingRequirementKeys[]` 与该数组按顺序对齐。
+顶层 `bindingKindCounts`、`handoffLaneCounts`、`handoffKindCounts`、`handoffTargetCounts`、
+`sourceKindCounts`、`loweringModeCounts` 和 `readinessStateCounts` 是同一批 requirement
+派生出的路由摘要，用于大型算子库导入前的容量评估、团队分派和 UI 分组；它们不是新的状态来源，
+不能绕过明细 requirement 或后续 graph readiness。
 当前 key 公式与后续图级 runtime-binding index 共用同一前缀：
 `RUNTIME_BINDING|operator-library|{libraryId}|{operatorRef}|{bindingKind}|{bindingTarget}|`。
 
