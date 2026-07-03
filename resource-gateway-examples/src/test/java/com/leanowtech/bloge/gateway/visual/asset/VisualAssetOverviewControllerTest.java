@@ -1621,6 +1621,49 @@ class VisualAssetOverviewControllerTest {
     }
 
     @Test
+    void runtimeBindingImplementationBindReturnsFailedWhenRepositoryWriteFails() {
+        RuntimeBindingImplementationFixture fixture = runtimeBindingImplementationFixture(
+                new FailingBindImplementationRepository("risk-eligibility-native-v1"),
+                new InMemoryVisualExecutableLoweringIntegrationRepository());
+        VisualRuntimeBindingImplementationBinding stored = submitImplementation(
+                fixture,
+                completeImplementation("risk-eligibility-native-v1")
+        );
+
+        var response = fixture.controller().bindRuntimeBindingImplementation(
+                stored.bindingId(),
+                transitionRequest("", true)
+        );
+
+        assertThat(response.getStatusCode().value()).isEqualTo(409);
+        assertThat(response.getBody()).isNotNull();
+        assertThat(response.getBody().accepted()).isFalse();
+        assertThat(response.getBody().state()).isEqualTo("failed");
+        assertThat(response.getBody().binding()).isEqualTo(stored);
+        assertThat(response.getBody().diagnostics())
+                .filteredOn(diagnostic ->
+                        "visual.runtimeBindingImplementation.bindPersistenceFailed".equals(diagnostic.code()))
+                .singleElement()
+                .satisfies(diagnostic -> {
+                    assertThat(diagnostic.target()).isEqualTo("/bindingId");
+                    assertThat(diagnostic.metadata())
+                            .containsEntry("bindingId", stored.bindingId())
+                            .containsEntry("operatorRef", "risk:eligibility")
+                            .containsEntry("fromState", "ready-to-bind")
+                            .containsEntry("toState", "bound")
+                            .containsEntry("exceptionType", "IllegalStateException");
+                });
+        assertThat(fixture.implementationRepository().find(stored.bindingId()))
+                .get()
+                .isEqualTo(stored);
+        assertThat(fixture.controller().runtimeBindingImplementationBindings("risk:eligibility", "bound"))
+                .isEmpty();
+        assertThat(fixture.controller().runtimeBindingImplementationBindings("risk:eligibility", "ready-to-bind"))
+                .singleElement()
+                .isEqualTo(stored);
+    }
+
+    @Test
     void runtimeBindingImplementationBindRejectsSecondActiveBinding() {
         RuntimeBindingImplementationFixture fixture = runtimeBindingImplementationFixture();
         VisualRuntimeBindingImplementationBinding first = submitImplementation(
@@ -4012,6 +4055,26 @@ class VisualAssetOverviewControllerTest {
                     && failingBindingId.equals(binding.bindingId())
                     && VisualRuntimeBindingImplementationBinding.STATE_SUPERSEDED.equals(binding.state())) {
                 throw new IllegalStateException("Injected supersede current binding persistence failure.");
+            }
+            return super.update(binding);
+        }
+    }
+
+    private static final class FailingBindImplementationRepository
+            extends InMemoryVisualRuntimeBindingImplementationRepository {
+        private final String failingBindingId;
+
+        private FailingBindImplementationRepository(String failingBindingId) {
+            this.failingBindingId = failingBindingId;
+        }
+
+        @Override
+        public VisualRuntimeBindingImplementationBinding update(
+                VisualRuntimeBindingImplementationBinding binding) {
+            if (binding != null
+                    && failingBindingId.equals(binding.bindingId())
+                    && VisualRuntimeBindingImplementationBinding.STATE_BOUND.equals(binding.state())) {
+                throw new IllegalStateException("Injected bind binding persistence failure.");
             }
             return super.update(binding);
         }

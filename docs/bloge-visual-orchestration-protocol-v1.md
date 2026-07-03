@@ -1951,6 +1951,10 @@ bind、supersede 和 unbind 都支持 lifecycle exact replay：当请求的
 `actor/reason/changeSource/changeSummary/replacementBindingId` 与最后一次已持久化 lifecycle event 完全匹配，
 且目标状态和关联 binding lineage 仍一致时，服务端返回 idempotent `200 OK`，不会追加第二条 event 或再次
 deactivate runtime evidence；如果状态相同但治理请求不同，则继续返回 conflict，避免把不同人工审批意图误合并。
+如果 bind lifecycle 的 repository update 失败，服务端返回 `409`、`state=failed`、
+`visual.runtimeBindingImplementation.bindPersistenceFailed` diagnostic，并在 metadata 中携带
+`bindingId`、`operatorRef`、`fromState`、`toState`、`exceptionType` 和
+`exceptionMessage`；原 proposal 必须保持原状态，不能被客户端当作已 bound 事实。
 如果 replacement 已被临时写成 `bound`，但 current binding 写入 `superseded` 失败，服务端会返回
 `409`、`state=failed`，追加
 `visual.runtimeBindingImplementation.supersedeCurrentUpdateFailed` diagnostic，并尝试把 replacement

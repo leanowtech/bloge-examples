@@ -654,15 +654,38 @@ public class VisualAssetOverviewController {
                 "",
                 now
         );
-        VisualRuntimeBindingImplementationBinding updated = implementationRepository.update(
-                binding.withLifecycleTransition(
-                        VisualRuntimeBindingImplementationBinding.STATE_BOUND,
-                        "success",
-                        null,
-                        null,
-                        event,
-                        now
-                ));
+        VisualRuntimeBindingImplementationBinding updated;
+        try {
+            updated = implementationRepository.update(
+                    binding.withLifecycleTransition(
+                            VisualRuntimeBindingImplementationBinding.STATE_BOUND,
+                            "success",
+                            null,
+                            null,
+                            event,
+                            now
+                    ));
+        } catch (IllegalArgumentException | IllegalStateException e) {
+            String message = "Runtime binding implementation '%s' could not be marked bound: %s"
+                    .formatted(binding.bindingId(), defaultIfBlank(e.getMessage(), e.getClass().getSimpleName()));
+            return ResponseEntity.status(HttpStatus.CONFLICT).body(
+                    VisualRuntimeBindingImplementationLifecycleResult.rejected(
+                            "failed",
+                            message,
+                            binding,
+                            null,
+                            List.of(runtimeEvidenceMutationExceptionDiagnostic(
+                                    "visual.runtimeBindingImplementation.bindPersistenceFailed",
+                                    message,
+                                    "/bindingId",
+                                    e,
+                                    Map.of(
+                                            "bindingId", binding.bindingId(),
+                                            "operatorRef", binding.operatorRef(),
+                                            "fromState", binding.state(),
+                                            "toState", VisualRuntimeBindingImplementationBinding.STATE_BOUND)))
+                    ));
+        }
         return ResponseEntity.ok(VisualRuntimeBindingImplementationLifecycleResult.accepted(
                 "Runtime binding implementation '%s' is now bound.".formatted(updated.bindingId()),
                 updated,
