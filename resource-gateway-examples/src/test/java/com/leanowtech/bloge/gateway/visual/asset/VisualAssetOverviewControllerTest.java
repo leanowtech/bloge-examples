@@ -1197,6 +1197,78 @@ class VisualAssetOverviewControllerTest {
     }
 
     @Test
+    void runtimeBindingImplementationValidationRejectsBreakingCatalogContractDiff() {
+        RuntimeBindingImplementationFixture fixture = runtimeBindingImplementationFixture();
+        fixture.libraries().upsert(VisualCatalogTestSupport.designOnlyEligibilityLibrary("string"));
+
+        var response = fixture.controller().validateRuntimeBindingImplementation(
+                implementationRequest(fixture, completeImplementation()));
+
+        assertThat(response.getStatusCode().value()).isEqualTo(200);
+        assertThat(response.getBody()).isNotNull();
+        assertThat(response.getBody().valid()).isFalse();
+        assertThat(response.getBody().bindable()).isFalse();
+        assertThat(response.getBody().state()).isEqualTo("rejected");
+        assertThat(response.getBody().currentCatalogState()).isEqualTo("drifted");
+        assertThat(response.getBody().diagnostics())
+                .extracting(VisualDiagnostic::code)
+                .contains(
+                        "visual.runtimeBindingImplementation.catalogFingerprintDrift",
+                        "visual.runtimeBindingImplementation.contractDiffBreaking"
+                );
+        assertThat(response.getBody().diagnostics())
+                .filteredOn(diagnostic ->
+                        "visual.runtimeBindingImplementation.contractDiffBreaking".equals(diagnostic.code()))
+                .singleElement()
+                .satisfies(diagnostic -> {
+                    assertThat(diagnostic.metadata()).containsEntry("category", "breaking");
+                    assertThat(String.valueOf(diagnostic.metadata().get("fields")))
+                            .contains("ports.inputs.inputs.schema");
+                });
+
+        var submit = fixture.controller().submitRuntimeBindingImplementation(
+                implementationRequest(fixture, completeImplementation()));
+
+        assertThat(submit.getStatusCode().value()).isEqualTo(400);
+        assertThat(fixture.controller().runtimeBindingImplementationBindings("", "")).isEmpty();
+    }
+
+    @Test
+    void runtimeBindingImplementationValidationRequiresReviewForNonBreakingContractDiffs() {
+        RuntimeBindingImplementationFixture fixture = runtimeBindingImplementationFixture();
+        fixture.libraries().upsert(nonBreakingRuntimeDriftEligibilityLibrary());
+
+        var response = fixture.controller().validateRuntimeBindingImplementation(
+                implementationRequest(fixture, completeImplementation()));
+
+        assertThat(response.getStatusCode().value()).isEqualTo(200);
+        assertThat(response.getBody()).isNotNull();
+        assertThat(response.getBody().valid()).isTrue();
+        assertThat(response.getBody().bindable()).isFalse();
+        assertThat(response.getBody().state()).isEqualTo("requires-review");
+        assertThat(response.getBody().currentCatalogState()).isEqualTo("drifted");
+        assertThat(response.getBody().diagnostics())
+                .extracting(VisualDiagnostic::code)
+                .contains(
+                        "visual.runtimeBindingImplementation.catalogFingerprintDrift",
+                        "visual.runtimeBindingImplementation.contractDiffCompatible",
+                        "visual.runtimeBindingImplementation.contractDiffRuntime",
+                        "visual.runtimeBindingImplementation.contractDiffGovernance",
+                        "visual.runtimeBindingImplementation.contractDiffMetadata"
+                )
+                .doesNotContain("visual.runtimeBindingImplementation.contractDiffBreaking");
+        assertThat(response.getBody().diagnostics())
+                .filteredOn(diagnostic ->
+                        "visual.runtimeBindingImplementation.contractDiffCompatible".equals(diagnostic.code()))
+                .singleElement()
+                .satisfies(diagnostic -> {
+                    assertThat(diagnostic.metadata()).containsEntry("category", "compatible");
+                    assertThat(String.valueOf(diagnostic.metadata().get("fields")))
+                            .contains("ports.inputs.region.added", "ports.outputs.audit.added");
+                });
+    }
+
+    @Test
     void runtimeBindingImplementationValidationRequiresReviewForMissingEvidence() {
         DefaultVisualOperatorCatalog catalog = VisualCatalogTestSupport.catalogWithLibrary(
                 VisualCatalogTestSupport.designOnlyEligibilityLibrary("integer"));
@@ -2660,18 +2732,68 @@ class VisualAssetOverviewControllerTest {
             RuntimeBindingImplementationFixture fixture,
             VisualRuntimeBindingImplementationValidation.ImplementationMetadata implementation) {
         var response = fixture.controller().submitRuntimeBindingImplementation(
-                new VisualRuntimeBindingImplementationValidation.Request(
-                        VisualRuntimeBindingImplementationValidation.REQUEST_SCHEMA_VERSION,
-                        fixture.contract().operatorRef(),
-                        fixture.contract().fingerprint(),
-                        fixture.handoffBundle().bundleFingerprint(),
-                        fixture.handoffBundle().requirementKeys(),
-                        fixture.contract(),
-                        implementation
-                ));
+                implementationRequest(fixture, implementation));
         assertThat(response.getStatusCode().value()).isEqualTo(201);
         assertThat(response.getBody()).isInstanceOf(VisualRuntimeBindingImplementationBinding.class);
         return (VisualRuntimeBindingImplementationBinding) response.getBody();
+    }
+
+    private static VisualRuntimeBindingImplementationValidation.Request implementationRequest(
+            RuntimeBindingImplementationFixture fixture,
+            VisualRuntimeBindingImplementationValidation.ImplementationMetadata implementation) {
+        return new VisualRuntimeBindingImplementationValidation.Request(
+                VisualRuntimeBindingImplementationValidation.REQUEST_SCHEMA_VERSION,
+                fixture.contract().operatorRef(),
+                fixture.contract().fingerprint(),
+                fixture.handoffBundle().bundleFingerprint(),
+                fixture.handoffBundle().requirementKeys(),
+                fixture.contract(),
+                implementation
+        );
+    }
+
+    private static OperatorLibrary nonBreakingRuntimeDriftEligibilityLibrary() {
+        OperatorDefinition base = VisualCatalogTestSupport.designOnlyEligibilityOperator("integer");
+        SchemaEnvelope stringSchema = new SchemaEnvelope(
+                SchemaEnvelope.JSON_SCHEMA,
+                "2020-12",
+                Map.of("type", "string")
+        );
+        OperatorDefinition operator = new OperatorDefinition(
+                base.schemaVersion(),
+                base.operatorRef(),
+                "1.0.1",
+                new OperatorDefinition.Display("Remote eligibility",
+                        "Evaluates eligibility through a reviewed remote worker binding.",
+                        List.of("risk", "policy", "worker")),
+                new OperatorDefinition.Source("remote-worker", "", "", "", false),
+                new OperatorDefinition.Ports(
+                        List.of(
+                                base.ports().inputs().getFirst(),
+                                new OperatorDefinition.Port("region", stringSchema, false, "Optional routing region.")
+                        ),
+                        List.of(
+                                base.ports().outputs().getFirst(),
+                                new OperatorDefinition.Port("audit", stringSchema, false, "Optional audit marker.")
+                        )
+                ),
+                base.configSchema(),
+                new OperatorDefinition.Capabilities("READ_EXTERNAL", "IDEMPOTENT", false, true, true),
+                new OperatorDefinition.Policy(List.of("tenant-a"), List.of("risk"), List.of("prod")),
+                new OperatorDefinition.Lowering("remote-worker", "", Map.of(
+                        "workerTopic", "workers.risk.eligibility"
+                )),
+                List.of()
+        );
+        return new OperatorLibrary(
+                "bloge.visualOperatorLibrary.v1",
+                "risk-policy-design",
+                "Risk policy design operators",
+                "1.0.1",
+                "risk-team",
+                "ACTIVE",
+                List.of(operator)
+        );
     }
 
     private static VisualRuntimeBindingImplementationTransitionRequest transitionRequest(String replacementBindingId,

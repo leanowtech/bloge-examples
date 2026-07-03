@@ -5,9 +5,13 @@ import com.leanowtech.bloge.gateway.visual.diagnostic.VisualDiagnostic;
 
 import java.time.Instant;
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Objects;
+import java.util.Set;
 
 /**
  * Stateless validation result for a runtime-plane implementation binding proposal.
@@ -296,12 +300,242 @@ public record VisualRuntimeBindingImplementationValidation(
                     Map.of(
                             "current", currentOperator.fingerprint(),
                             "submitted", contract.fingerprint())));
+            addContractDiffDiagnostics(contract, currentOperator, diagnostics);
         }
         if (contract.runtimeReadiness() != null && contract.runtimeReadiness().executable()) {
             diagnostics.add(VisualDiagnostic.warning(
                     "visual.runtimeBindingImplementation.contractAlreadyExecutable",
                     "Submitted operator contract is already runtime-executable; implementation binding may be unnecessary.",
                     "/operatorContract/runtimeReadiness"));
+        }
+    }
+
+    private static void addContractDiffDiagnostics(
+            VisualRuntimeBindingHandoffBundle.OperatorContractSnapshot contract,
+            OperatorDefinition currentOperator,
+            List<VisualDiagnostic> diagnostics) {
+        ContractDiffSummary diff = ContractDiffSummary.from(contract, currentOperator);
+        if (!diff.breaking().isEmpty()) {
+            diagnostics.add(VisualDiagnostic.error(
+                    "visual.runtimeBindingImplementation.contractDiffBreaking",
+                    "Current catalog contract contains breaking schema or port changes; submit a new implementation "
+                            + "proposal from a fresh handoff bundle.",
+                    "/operatorContract",
+                    diffMetadata("breaking", contract, currentOperator, diff.breaking())));
+        }
+        if (!diff.compatible().isEmpty()) {
+            diagnostics.add(VisualDiagnostic.warning(
+                    "visual.runtimeBindingImplementation.contractDiffCompatible",
+                    "Current catalog contract added compatible surface area; review implementation coverage before binding.",
+                    "/operatorContract",
+                    diffMetadata("compatible", contract, currentOperator, diff.compatible())));
+        }
+        if (!diff.runtime().isEmpty()) {
+            diagnostics.add(VisualDiagnostic.warning(
+                    "visual.runtimeBindingImplementation.contractDiffRuntime",
+                    "Current catalog runtime or lowering boundary changed; runtime owner must review the binding.",
+                    "/operatorContract",
+                    diffMetadata("runtime", contract, currentOperator, diff.runtime())));
+        }
+        if (!diff.governance().isEmpty()) {
+            diagnostics.add(VisualDiagnostic.warning(
+                    "visual.runtimeBindingImplementation.contractDiffGovernance",
+                    "Current catalog governance, policy, side-effect, or secret boundary changed; approval evidence "
+                            + "must be reviewed before binding.",
+                    "/operatorContract",
+                    diffMetadata("governance", contract, currentOperator, diff.governance())));
+        }
+        if (!diff.metadata().isEmpty()) {
+            diagnostics.add(VisualDiagnostic.warning(
+                    "visual.runtimeBindingImplementation.contractDiffMetadata",
+                    "Current catalog metadata changed; confirm the submitted implementation still refers to the intended "
+                            + "operator contract.",
+                    "/operatorContract",
+                    diffMetadata("metadata", contract, currentOperator, diff.metadata())));
+        }
+    }
+
+    private static Map<String, Object> diffMetadata(String category,
+                                                    VisualRuntimeBindingHandoffBundle.OperatorContractSnapshot contract,
+                                                    OperatorDefinition currentOperator,
+                                                    List<String> fields) {
+        return Map.of(
+                "category", category,
+                "fields", fields,
+                "operatorRef", currentOperator.operatorRef(),
+                "submittedFingerprint", contract.fingerprint(),
+                "currentFingerprint", currentOperator.fingerprint()
+        );
+    }
+
+    private record ContractDiffSummary(
+            List<String> breaking,
+            List<String> compatible,
+            List<String> runtime,
+            List<String> governance,
+            List<String> metadata
+    ) {
+        private static ContractDiffSummary from(VisualRuntimeBindingHandoffBundle.OperatorContractSnapshot contract,
+                                                OperatorDefinition currentOperator) {
+            List<String> breaking = new ArrayList<>();
+            List<String> compatible = new ArrayList<>();
+            List<String> runtime = new ArrayList<>();
+            List<String> governance = new ArrayList<>();
+            List<String> metadata = new ArrayList<>();
+
+            if (!Objects.equals(contract.operatorVersion(), currentOperator.operatorVersion())) {
+                metadata.add("operatorVersion");
+            }
+            if (!Objects.equals(contract.display(), currentOperator.display())) {
+                metadata.add("display");
+            }
+            if (!Objects.equals(contract.operatorLibraryId(), currentOperator.source().libraryId())) {
+                metadata.add("operatorLibraryId");
+            }
+            diffPorts("inputs", contract.ports().inputs(), currentOperator.ports().inputs(),
+                    breaking, compatible, metadata);
+            diffPorts("outputs", contract.ports().outputs(), currentOperator.ports().outputs(),
+                    breaking, compatible, metadata);
+            if (!Objects.equals(contract.configSchema(), currentOperator.configSchema())) {
+                breaking.add("configSchema");
+            }
+            diffSource(contract.source(), currentOperator.source(), runtime, metadata);
+            diffLowering(contract.lowering(), currentOperator.lowering(), runtime);
+            diffCapabilities(contract.capabilities(), currentOperator.capabilities(), runtime, governance);
+            if (!Objects.equals(contract.policy(), currentOperator.policy())) {
+                governance.add("policy");
+            }
+            diffRuntimeReadiness(contract.runtimeReadiness(), currentOperator.runtimeReadiness(), runtime);
+
+            return new ContractDiffSummary(
+                    List.copyOf(breaking),
+                    List.copyOf(compatible),
+                    List.copyOf(runtime),
+                    List.copyOf(governance),
+                    List.copyOf(metadata)
+            );
+        }
+
+        private static void diffPorts(String direction,
+                                      List<OperatorDefinition.Port> submittedPorts,
+                                      List<OperatorDefinition.Port> currentPorts,
+                                      List<String> breaking,
+                                      List<String> compatible,
+                                      List<String> metadata) {
+            Map<String, OperatorDefinition.Port> submitted = portsByName(submittedPorts);
+            Map<String, OperatorDefinition.Port> current = portsByName(currentPorts);
+            Set<String> names = new LinkedHashSet<>();
+            names.addAll(submitted.keySet());
+            names.addAll(current.keySet());
+            for (String name : names) {
+                OperatorDefinition.Port submittedPort = submitted.get(name);
+                OperatorDefinition.Port currentPort = current.get(name);
+                String prefix = "ports.%s.%s".formatted(direction, name);
+                if (submittedPort == null) {
+                    if ("inputs".equals(direction) && currentPort.required()) {
+                        breaking.add(prefix + ".addedRequired");
+                    } else {
+                        compatible.add(prefix + ".added");
+                    }
+                    continue;
+                }
+                if (currentPort == null) {
+                    breaking.add(prefix + ".removed");
+                    continue;
+                }
+                if (submittedPort.required() != currentPort.required()) {
+                    breaking.add(prefix + ".required");
+                }
+                if (!Objects.equals(submittedPort.schema(), currentPort.schema())) {
+                    breaking.add(prefix + ".schema");
+                }
+                if (!Objects.equals(submittedPort.description(), currentPort.description())) {
+                    metadata.add(prefix + ".description");
+                }
+            }
+        }
+
+        private static Map<String, OperatorDefinition.Port> portsByName(List<OperatorDefinition.Port> ports) {
+            Map<String, OperatorDefinition.Port> byName = new LinkedHashMap<>();
+            for (OperatorDefinition.Port port : ports == null ? List.<OperatorDefinition.Port>of() : ports) {
+                if (port != null) {
+                    byName.put(port.name(), port);
+                }
+            }
+            return byName;
+        }
+
+        private static void diffSource(OperatorDefinition.Source submitted,
+                                       OperatorDefinition.Source current,
+                                       List<String> runtime,
+                                       List<String> metadata) {
+            if (!Objects.equals(submitted.kind(), current.kind())) {
+                runtime.add("source.kind");
+            }
+            if (!Objects.equals(submitted.resourceId(), current.resourceId())) {
+                runtime.add("source.resourceId");
+            }
+            if (!Objects.equals(submitted.method(), current.method())) {
+                runtime.add("source.method");
+            }
+            if (!Objects.equals(submitted.urlTemplate(), current.urlTemplate())) {
+                runtime.add("source.urlTemplate");
+            }
+            if (submitted.virtual() != current.virtual()) {
+                runtime.add("source.virtual");
+            }
+            if (!Objects.equals(submitted.libraryId(), current.libraryId())) {
+                metadata.add("source.libraryId");
+            }
+        }
+
+        private static void diffLowering(OperatorDefinition.Lowering submitted,
+                                         OperatorDefinition.Lowering current,
+                                         List<String> runtime) {
+            if (!Objects.equals(submitted.mode(), current.mode())) {
+                runtime.add("lowering.mode");
+            }
+            if (!Objects.equals(submitted.operatorRef(), current.operatorRef())) {
+                runtime.add("lowering.operatorRef");
+            }
+            if (!Objects.equals(submitted.parameters(), current.parameters())) {
+                runtime.add("lowering.parameters");
+            }
+        }
+
+        private static void diffCapabilities(OperatorDefinition.Capabilities submitted,
+                                             OperatorDefinition.Capabilities current,
+                                             List<String> runtime,
+                                             List<String> governance) {
+            if (!Objects.equals(submitted.effect(), current.effect())) {
+                governance.add("capabilities.effect");
+            }
+            if (!Objects.equals(submitted.idempotency(), current.idempotency())) {
+                governance.add("capabilities.idempotency");
+            }
+            if (submitted.requiresSecrets() != current.requiresSecrets()) {
+                governance.add("capabilities.requiresSecrets");
+            }
+            if (submitted.streaming() != current.streaming()) {
+                runtime.add("capabilities.streaming");
+            }
+            if (submitted.durable() != current.durable()) {
+                runtime.add("capabilities.durable");
+            }
+        }
+
+        private static void diffRuntimeReadiness(OperatorDefinition.RuntimeReadiness submitted,
+                                                 OperatorDefinition.RuntimeReadiness current,
+                                                 List<String> runtime) {
+            if (!Objects.equals(submitted.state(), current.state())) {
+                runtime.add("runtimeReadiness.state");
+            }
+            if (submitted.executable() != current.executable()) {
+                runtime.add("runtimeReadiness.executable");
+            }
+            if (!Objects.equals(submitted.artifactKinds(), current.artifactKinds())) {
+                runtime.add("runtimeReadiness.artifactKinds");
+            }
         }
     }
 

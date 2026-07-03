@@ -1910,6 +1910,13 @@ handoff `operatorContract` snapshot，以及 implementation metadata：
 `requires-review` 或 `rejected` 表达 pre-bind 裁决，并回显 `contractFingerprint`、
 `currentCatalogFingerprint`、`currentCatalogState` 与结构化 diagnostics。该端点只验证
 runtime team 提交的实现材料是否仍对准 handoff contract 和当前 catalog，不持久化 binding。
+当 handoff contract fingerprint 与当前 catalog fingerprint drift 时，diagnostics 会进一步携带
+字段级 contract diff 分类：`visual.runtimeBindingImplementation.contractDiffBreaking`
+以 error 阻断 input/output/config port 或 schema breaking drift；
+`contractDiffCompatible`、`contractDiffRuntime`、`contractDiffGovernance`、
+`contractDiffMetadata` 以 warning 进入 requires-review，并在 metadata 中保留
+`category`、`fields[]`、submitted/current fingerprint，供外部 runtime-plane 控制面决定是否重新
+实现、重新测试或追加审批。
 `POST /api/visual/assets/runtime-binding-requirements/implementation-bindings`
 复用同一 gate：无效 proposal 返回 `400` 和 validation diagnostics；有效 proposal
 被存为 `bloge.visualRuntimeBindingImplementationBindingRecord.v1`，包含 repository
@@ -2002,8 +2009,9 @@ lowering integration 能形成一致 evidence chain 时执行；服务端会用�
 bound implementation binding，再复制必要的 adapter activation 与 executable lowering integration
 事实，写入 `post-apply-refresh` evidence，并把旧 binding 标记为 superseded。旧 activation /
 integration 作为审计事实保留，不被静默改写。当前自动 refresh 只接受 runtime-binding / metadata 变化面和
-native lowering evidence；non-native lowering、breaking schema 或 policy/governance 变化仍必须走后续更严格的
-contract diff / reimplementation 流程。
+native lowering evidence；non-native lowering、breaking schema 或 policy/governance 变化仍必须走
+implementation validate 的 contract-diff gate、后续更严格的 SemVer / JSON Schema 兼容性检查和
+reimplementation 流程。
 `actionReadiness` 则把同一批 diagnostics/readiness 压成产品动作门禁：`compileNow`、
 `runNow`、`publishDesignNow`、`publishDesignAfterReview`、`publishExecutableNow`、
 `publishExecutableAfterReview`，以及 `requiresAckWarnings` /
