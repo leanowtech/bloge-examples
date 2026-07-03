@@ -5768,6 +5768,7 @@ operators:
                     ? schema.properties
                     : {};
                 context.validatedSchemaRequiredNames = () => [];
+                context.numericIntegerCompatibilityIssue = () => '';
                 context.numericBoundsCompatibilityIssue = () => '';
                 context.numericMultipleOfCompatibilityIssue = () => '';
                 context.stringFormatCompatibilityIssue = () => '';
@@ -6033,6 +6034,7 @@ operators:
                   'sourceFiniteDomainLabel',
                   'sourceDomainKind',
                   'targetNotCompatibilityIssue',
+                  'numericIntegerCompatibilityIssue',
                   'objectSchemaCompatibilityIssue',
                   'objectOptionalTargetPropertiesCompatibilityIssue',
                   'objectPatternPropertiesCompatibilityIssue',
@@ -6074,6 +6076,9 @@ operators:
                   'schemaAllowsNull',
                   'schemaTypeForValue',
                   'numericType',
+                  'numericMultipleOfValue',
+                  'numericValueIsMultipleOf',
+                  'numberLabel',
                   'stringType',
                   'arrayType',
                   'stringValueMatchesPattern',
@@ -6165,6 +6170,23 @@ operators:
                   type: 'string',
                   const: 'APPROVE'
                 });
+                const numberToIntegerIssue = context.schemaCompatibilityIssue({
+                  type: 'number'
+                }, {
+                  type: 'integer'
+                });
+                const integralNumberToIntegerIssue = context.schemaCompatibilityIssue({
+                  type: 'number',
+                  multipleOf: 1
+                }, {
+                  type: 'integer'
+                });
+                const fractionalNumberToIntegerIssue = context.schemaCompatibilityIssue({
+                  type: 'number',
+                  multipleOf: 0.5
+                }, {
+                  type: 'integer'
+                });
 
                 const checks = [
                   ['residual optional collision path', String(residualIssue.includes("at 'score'")), 'true'],
@@ -6177,7 +6199,10 @@ operators:
                   ['target finite not excluded enum', finiteNotExcludedIssue, 'source enum value(s) [ARCHIVED] do not match target schema string'],
                   ['target const requires finite source', targetConstIssue, 'target const [APPROVE] requires a finite source value domain, but source is string'],
                   ['target const safe source', targetConstSafeIssue, ''],
-                  ['target const mismatch', targetConstMismatchIssue, 'source const value(s) [REJECT] are outside target const [APPROVE]']
+                  ['target const mismatch', targetConstMismatchIssue, 'source const value(s) [REJECT] are outside target const [APPROVE]'],
+                  ['number to integer requires proof', numberToIntegerIssue, 'target type integer requires integer-valued source, but source type number has no integral multipleOf'],
+                  ['integral number to integer safe', integralNumberToIntegerIssue, ''],
+                  ['fractional number to integer blocked', fractionalNumberToIntegerIssue, 'source multipleOf 0.5 does not guarantee integer values required by target type integer']
                 ];
 
                 for (const [label, actual, expected] of checks) {

@@ -191,4 +191,34 @@ class VisualSchemaCompatibilityTest {
                         .contains("source const value(s) [REJECT]")
                         .contains("outside target const [APPROVE]"));
     }
+
+    @Test
+    void rejectsUnboundedNumberSourceWhenTargetRequiresInteger() {
+        Map<String, Object> source = Map.of("type", "number");
+        Map<String, Object> target = Map.of("type", "integer");
+
+        assertThat(VisualSchemaCompatibility.schemaCompatibilityIssue(source, target))
+                .hasValueSatisfying(reason -> assertThat(reason)
+                        .contains("target type integer requires integer-valued source")
+                        .contains("source type number has no integral multipleOf"));
+    }
+
+    @Test
+    void acceptsNumberSourceWithIntegralMultipleOfWhenTargetRequiresInteger() {
+        Map<String, Object> source = Map.of("type", "number", "multipleOf", 1);
+        Map<String, Object> target = Map.of("type", "integer");
+
+        assertThat(VisualSchemaCompatibility.schemaCompatibilityIssue(source, target)).isEmpty();
+    }
+
+    @Test
+    void rejectsNumberSourceWithFractionalMultipleOfWhenTargetRequiresInteger() {
+        Map<String, Object> source = Map.of("type", "number", "multipleOf", 0.5);
+        Map<String, Object> target = Map.of("type", "integer");
+
+        assertThat(VisualSchemaCompatibility.schemaCompatibilityIssue(source, target))
+                .hasValueSatisfying(reason -> assertThat(reason)
+                        .contains("source multipleOf 0.5")
+                        .contains("does not guarantee integer values"));
+    }
 }

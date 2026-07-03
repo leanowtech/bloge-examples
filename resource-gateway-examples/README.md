@@ -288,7 +288,10 @@ name `const` target domains distinctly from enum domains. Numeric bounds are tre
 schema-enforced value domains too: a source score range must be a subset of the
 target's `minimum`/`maximum` or `exclusiveMinimum`/`exclusiveMaximum` range
 before the edge can be saved, and a source numeric `multipleOf` must be a
-compatible step for the target `multipleOf`. String length constraints are enforced the same
+compatible step for the target `multipleOf`. A target `integer` input also
+requires an integer-valued source: plain `number`/`decimal` outputs are blocked
+unless they prove integral values through an integral `multipleOf` such as `1`.
+String length constraints are enforced the same
 way: a source `customerId` range must satisfy the target `minLength`/`maxLength`
 domain, a source list must stay inside the target `minItems`/`maxItems`
 range and guarantee `uniqueItems=true` when the target requires a duplicate-free

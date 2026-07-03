@@ -129,6 +129,10 @@ public final class VisualSchemaCompatibility {
             return targetNotIssue;
         }
 	        if (numeric(sourceType) && numeric(targetType)) {
+	            Optional<String> integerIssue = numericIntegerCompatibilityIssue(sourceSchema, targetSchema, path);
+	            if (integerIssue.isPresent()) {
+	                return integerIssue;
+	            }
 	            Optional<String> boundsIssue = numericBoundsCompatibilityIssue(sourceSchema, targetSchema, path);
 	            return boundsIssue.isPresent()
 	                    ? boundsIssue
@@ -349,6 +353,28 @@ public final class VisualSchemaCompatibility {
 	                            .formatted(numberLabel(sourceMultipleOf), numberLabel(targetMultipleOf))));
 	        }
 	        return Optional.empty();
+	    }
+
+	    private static Optional<String> numericIntegerCompatibilityIssue(Map<String, Object> sourceSchema,
+	                                                                     Map<String, Object> targetSchema,
+	                                                                     String path) {
+	        String sourceType = schemaType(sourceSchema);
+	        String targetType = schemaType(targetSchema);
+	        if (!"integer".equals(targetType) || !numeric(sourceType) || "integer".equals(sourceType)) {
+	            return Optional.empty();
+	        }
+	        Double sourceMultipleOf = numericMultipleOf(sourceSchema.get("multipleOf"));
+	        if (sourceMultipleOf != null && numericValueIsMultipleOf(sourceMultipleOf, 1.0d)) {
+	            return Optional.empty();
+	        }
+	        if (sourceMultipleOf == null) {
+	            return Optional.of(reasonAt(path,
+	                    "target type integer requires integer-valued source, but source type %s has no integral multipleOf"
+	                            .formatted(schemaTypeLabel(sourceSchema))));
+	        }
+	        return Optional.of(reasonAt(path,
+	                "source multipleOf %s does not guarantee integer values required by target type integer"
+	                        .formatted(numberLabel(sourceMultipleOf))));
 	    }
 
 	    private static Optional<String> stringLengthCompatibilityIssue(Map<String, Object> sourceSchema,

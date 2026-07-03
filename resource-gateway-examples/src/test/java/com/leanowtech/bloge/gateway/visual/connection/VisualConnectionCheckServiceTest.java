@@ -1212,6 +1212,32 @@ class VisualConnectionCheckServiceTest {
     }
 
     @Test
+    void rejectsContextPickerBindingWhenNumberCannotGuaranteeIntegerTarget() {
+        VisualConnectionCheckService service = connectionService(VisualCatalogTestSupport
+                .catalogWithLoanApplicantResourceAndLibrary(VisualCatalogTestSupport.eligibilityLibrary("integer")));
+        GraphDraft draft = resourceEligibilityDraft(SchemaEnvelope.object(Map.of(
+                "score", Map.of("type", "number"),
+                "segment", Map.of("type", "string")
+        ), List.of()), List.of());
+
+        VisualConnectionCheckResult result = service.check(new VisualConnectionCheckRequest(
+                draft,
+                new GraphDraft.Endpoint("__ctx", "ctx", "score"),
+                new GraphDraft.Endpoint("eligibility", "inputs", "score"),
+                "data"
+        ));
+
+        assertThat(result.accepted()).isFalse();
+        assertThat(result.diagnostics())
+                .anySatisfy(diagnostic -> {
+                    assertThat(diagnostic.code()).isEqualTo("visual.binding.typeMismatch");
+                    assertThat(diagnostic.message())
+                            .contains("ctx.score")
+                            .contains("target type integer requires integer-valued source");
+                });
+    }
+
+    @Test
     void rejectsContextPickerBindingWhenAdditionalPropertiesSchemaTypeDoesNotMatch() {
         VisualConnectionCheckService service = connectionService(VisualCatalogTestSupport
                 .catalogWithLoanApplicantResourceAndLibrary(VisualCatalogTestSupport.eligibilityLibrary("integer")));

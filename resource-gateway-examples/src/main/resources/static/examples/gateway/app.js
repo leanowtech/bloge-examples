@@ -20075,7 +20075,8 @@ function schemaCompatibilityIssue(sourceSchema, targetSchema, path = '') {
     return targetNotIssue;
   }
   if (numericType(sourceType) && numericType(targetType)) {
-    return numericBoundsCompatibilityIssue(sourceSchema, targetSchema, path)
+    return numericIntegerCompatibilityIssue(sourceSchema, targetSchema, path)
+      || numericBoundsCompatibilityIssue(sourceSchema, targetSchema, path)
       || numericMultipleOfCompatibilityIssue(sourceSchema, targetSchema, path);
   }
   if (stringType(sourceType) && stringType(targetType)) {
@@ -20243,6 +20244,22 @@ function numericMultipleOfCompatibilityIssue(sourceSchema, targetSchema, path = 
     return reasonAt(path, `source multipleOf ${numberLabel(sourceMultipleOf)} is weaker than target multipleOf ${numberLabel(targetMultipleOf)}`);
   }
   return '';
+}
+
+function numericIntegerCompatibilityIssue(sourceSchema, targetSchema, path = '') {
+  const sourceType = rawSchemaType(sourceSchema);
+  const targetType = rawSchemaType(targetSchema);
+  if (targetType !== 'integer' || !numericType(sourceType) || sourceType === 'integer') {
+    return '';
+  }
+  const sourceMultipleOf = numericMultipleOfValue(sourceSchema?.multipleOf);
+  if (sourceMultipleOf !== null && numericValueIsMultipleOf(sourceMultipleOf, 1)) {
+    return '';
+  }
+  if (sourceMultipleOf === null) {
+    return reasonAt(path, `target type integer requires integer-valued source, but source type ${schemaType(sourceSchema)} has no integral multipleOf`);
+  }
+  return reasonAt(path, `source multipleOf ${numberLabel(sourceMultipleOf)} does not guarantee integer values required by target type integer`);
 }
 
 function stringLengthCompatibilityIssue(sourceSchema, targetSchema, path = '') {

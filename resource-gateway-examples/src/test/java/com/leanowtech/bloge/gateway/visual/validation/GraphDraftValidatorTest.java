@@ -2291,6 +2291,34 @@ class GraphDraftValidatorTest {
     }
 
     @Test
+    void rejectsContextPathBindingWhenNumberCannotGuaranteeIntegerTarget() {
+        GraphDraftValidator validator = new GraphDraftValidator(
+                VisualCatalogTestSupport.catalogWithLibrary(
+                        VisualCatalogTestSupport.eligibilityLibrary("integer")));
+        GraphDraft draft = contextEligibilityDraft(graphInputSchema(
+                Map.of(
+                        "score", Map.of("type", "number"),
+                        "amount", Map.of("type", "number")
+                ),
+                List.of("score", "amount")
+        ), Map.of(
+                "score", GraphDraft.Binding.contextPath("score"),
+                "amount", GraphDraft.Binding.contextPath("amount")
+        ));
+
+        VisualValidationResult result = validator.validate(draft);
+
+        assertThat(result.valid()).isFalse();
+        assertThat(result.diagnostics())
+                .anySatisfy(diagnostic -> {
+                    assertThat(diagnostic.code()).isEqualTo("visual.binding.typeMismatch");
+                    assertThat(diagnostic.message())
+                            .contains("ctx.score")
+                            .contains("target type integer requires integer-valued source");
+                });
+    }
+
+    @Test
     void rejectsExpressionBindingWhenContextReferencePathDoesNotExist() {
         GraphDraftValidator validator = new GraphDraftValidator(
                 VisualCatalogTestSupport.catalogWithLibrary(
