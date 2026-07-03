@@ -586,11 +586,13 @@ while publication run returns the frozen publication readiness from the immutabl
 artifact. The browser keeps that readiness and the derived action gates in Server Check after compile, run,
 publication run, and connection preflight diagnostics, so a design-only or
 runtime-blocked graph does not lose its publish guidance just because the author
-clicked another server action. Once Server Check has returned a non-executable
-readiness, the browser also disables visual-draft Compile and Run Custom Graph
-actions while keeping save, export, and `DESIGN` publication available through the server-derived `bloge.visualGraphActionReadiness.v1` gates; graph
-edits reset the readiness snapshot back to "Not checked" so stale server
-readiness does not lock a repaired draft.
+clicked another server action. Once Server Check has returned server action
+readiness, the browser gates visual-draft Compile and Run Custom Graph from the
+server-derived `compileNow` / `runNow` fields instead of re-deriving those
+decisions from graph readiness alone, while keeping save, export, and `DESIGN`
+publication available through the same `bloge.visualGraphActionReadiness.v1`
+contract; graph edits reset the readiness snapshot back to "Not checked" so
+stale server readiness does not lock a repaired draft.
 Connection preflight also returns the candidate draft validation/readiness/action-readiness after
 the preview edge, binding, or config expression is applied. Its top-level
 diagnostics stay scoped to the proposed connection, so an unrelated draft issue

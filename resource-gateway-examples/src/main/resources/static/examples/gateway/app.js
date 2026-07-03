@@ -6004,8 +6004,35 @@ function renderPublishArtifactKindControls() {
   return control;
 }
 
-function visualDraftExecutableActionState(readiness = state.visualCheck?.readiness) {
+function visualDraftExecutableActionState(
+  readiness = state.visualCheck?.readiness,
+  actionReadiness = state.visualCheck?.actionReadiness,
+  action = 'compile'
+) {
   const normalized = normalizeVisualGraphReadiness(readiness);
+  const normalizedAction = normalizeVisualGraphActionReadiness(actionReadiness);
+  const actionName = String(action || '').trim().toLowerCase() === 'run' ? 'run' : 'compile';
+  const actionAllowed = actionName === 'run' ? normalizedAction?.runNow : normalizedAction?.compileNow;
+  if (normalizedAction && normalizedAction.state && normalizedAction.state !== 'not-assessed') {
+    if (actionAllowed) {
+      return {
+        disabled: false,
+        level: normalizedAction.level || normalized?.level || 'info',
+        message: '',
+        title: ''
+      };
+    }
+    const message = normalizedAction.message
+      || normalizedAction.recommendedAction
+      || normalized?.summary
+      || `Visual graph cannot ${actionName === 'run' ? 'run' : 'compile'} yet.`;
+    return {
+      disabled: true,
+      level: normalizedAction.level || normalized?.level || 'warning',
+      message,
+      title: normalized?.title ? `${normalized.title}: ${message}` : message
+    };
+  }
   if (!normalized || normalized.executable) {
     return {
       disabled: false,
@@ -6038,7 +6065,11 @@ function composerDslUsesVisualDraft() {
 
 function renderExecutableAuthoringControls() {
   const compileButton = $('compile-visual-draft');
-  const compileState = visualDraftExecutableActionState();
+  const compileState = visualDraftExecutableActionState(
+    state.visualCheck?.readiness,
+    state.visualCheck?.actionReadiness,
+    'compile'
+  );
   if (compileButton) {
     compileButton.disabled = compileState.disabled;
     compileButton.title = compileState.disabled ? compileState.title : '';
@@ -6053,7 +6084,11 @@ function renderExecutableAuthoringControls() {
     runButton.title = '';
     return;
   }
-  const runState = visualDraftExecutableActionState();
+  const runState = visualDraftExecutableActionState(
+    state.visualCheck?.readiness,
+    state.visualCheck?.actionReadiness,
+    'run'
+  );
   const usesVisualDraft = composerDslUsesVisualDraft();
   runButton.disabled = usesVisualDraft && runState.disabled;
   runButton.title = usesVisualDraft && runState.disabled ? runState.title : '';
@@ -6127,7 +6162,8 @@ async function validateVisualDraft() {
 async function compileVisualDraft() {
   const readinessBeforeCompile = state.visualCheck?.readiness || null;
   const actionReadinessBeforeCompile = state.visualCheck?.actionReadiness || null;
-  const executableState = visualDraftExecutableActionState(readinessBeforeCompile);
+  const executableState = visualDraftExecutableActionState(readinessBeforeCompile,
+    actionReadinessBeforeCompile, 'compile');
   if (executableState.disabled) {
     setVisualCheck(
       executableState.message || 'Visual graph is not executable.',
@@ -23292,6 +23328,22 @@ async function runCustomGraph() {
   if (dslBox) {
     state.customDsl = dslBox.value;
   }
+  const builderDsl = builderToDsl(state.builder);
+  const useVisualDraft = state.customDsl === builderDsl || state.customDsl === state.lastGeneratedVisualDsl;
+  const readinessBeforeRun = state.visualCheck?.readiness || null;
+  const actionReadinessBeforeRun = state.visualCheck?.actionReadiness || null;
+  const executableState = visualDraftExecutableActionState(readinessBeforeRun, actionReadinessBeforeRun, 'run');
+  if (useVisualDraft && executableState.disabled) {
+    setVisualCheck(
+      executableState.message || 'Visual graph is not executable.',
+      executableState.level || 'warning',
+      normalizeDiagnostics(state.visualCheck?.diagnostics),
+      readinessBeforeRun,
+      actionReadinessBeforeRun
+    );
+    $('output').textContent = pretty({ status: 'not_executable', readiness: readinessBeforeRun });
+    return;
+  }
   let context;
   try {
     context = JSON.parse(state.customContextText || '{}');
@@ -23307,20 +23359,6 @@ async function runCustomGraph() {
   $('output').textContent = pretty({ status: 'running', graph: 'customLoanPolicy' });
   clearActiveRunTrace();
   const outputNode = composerOutputNode();
-  const builderDsl = builderToDsl(state.builder);
-  const useVisualDraft = state.customDsl === builderDsl || state.customDsl === state.lastGeneratedVisualDsl;
-  const executableState = visualDraftExecutableActionState(state.visualCheck?.readiness || null);
-  if (useVisualDraft && executableState.disabled) {
-    setVisualCheck(
-      executableState.message || 'Visual graph is not executable.',
-      executableState.level || 'warning',
-      normalizeDiagnostics(state.visualCheck?.diagnostics),
-      state.visualCheck?.readiness || null,
-      state.visualCheck?.actionReadiness || null
-    );
-    $('output').textContent = pretty({ status: 'not_executable', readiness: state.visualCheck?.readiness || null });
-    return;
-  }
   const response = await fetch(useVisualDraft ? '/api/visual/drafts/run' : '/api/gateway/examples/compose/run', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },

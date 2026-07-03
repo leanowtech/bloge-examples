@@ -111,6 +111,29 @@ class VisualAuthoringAppJsTest {
     }
 
     @Test
+    void browserDraftCompileAndRunHonorServerActionReadinessBeforeFetch() throws Exception {
+        assumeNodeAvailable();
+
+        Path tempDir = Files.createTempDirectory("bloge-draft-action-readiness-app-js-test");
+        Path appJs = tempDir.resolve("app.js");
+        Path probe = tempDir.resolve("probe.js");
+        try {
+            Files.writeString(appJs, appJsSource(), StandardCharsets.UTF_8);
+            Files.writeString(probe, draftActionReadinessGuardProbe(), StandardCharsets.UTF_8);
+
+            ProcessResult result = runProcess(List.of("node", probe.toString(), appJs.toString()), tempDir, 10);
+
+            assertThat(result.finished()).as(result.output()).isTrue();
+            assertThat(result.exitCode()).as(result.output()).isZero();
+            assertThat(result.output()).contains("browser draft action readiness guard probe passed");
+        } finally {
+            Files.deleteIfExists(probe);
+            Files.deleteIfExists(appJs);
+            Files.deleteIfExists(tempDir);
+        }
+    }
+
+    @Test
     void keepsServerPreflightAuthoritativeForLocallyRejectedConnections() throws Exception {
         String source = appJsSource();
 
@@ -286,7 +309,10 @@ class VisualAuthoringAppJsTest {
                 .contains("status: 'not_executable'")
                 .contains("const readinessBeforeCompile = state.visualCheck?.readiness || null;")
                 .contains("const actionReadinessBeforeCompile = state.visualCheck?.actionReadiness || null;")
-                .contains("const executableState = visualDraftExecutableActionState(readinessBeforeCompile);")
+                .contains("const executableState = visualDraftExecutableActionState(readinessBeforeCompile,")
+                .contains("actionReadinessBeforeCompile, 'compile');")
+                .contains("const actionReadinessBeforeRun = state.visualCheck?.actionReadiness || null;")
+                .contains("const executableState = visualDraftExecutableActionState(readinessBeforeRun, actionReadinessBeforeRun, 'run');")
                 .contains("setVisualCheck('Compiling...', 'info', [], readinessBeforeCompile, actionReadinessBeforeCompile);")
                 .contains("payload.validation?.readiness || readinessBeforeCompile")
                 .contains("payload.validation?.actionReadiness || actionReadinessBeforeCompile")
@@ -1040,6 +1066,160 @@ class VisualAuthoringAppJsTest {
                   console.error(error);
                   process.exitCode = 1;
                 });
+                """);
+    }
+
+    private static String draftActionReadinessGuardProbe() {
+        return String.join("", """
+                const fs = require('fs');
+                const vm = require('vm');
+                const source = fs.readFileSync(process.argv[2], 'utf8');
+
+                function functionSource(name) {
+                  const asyncNeedle = `async function ${name}(`;
+                  const functionNeedle = `function ${name}(`;
+                  let start = source.indexOf(asyncNeedle);
+                  if (start < 0) start = source.indexOf(functionNeedle);
+                  if (start < 0) throw new Error(`missing function ${name}`);
+                  const openParen = source.indexOf('(', start);
+                  let parenDepth = 0;
+                  let brace = -1;
+                  for (let i = openParen; i < source.length; i += 1) {
+                    const ch = source[i];
+                    if (ch === '(') parenDepth += 1;
+                    if (ch === ')') {
+                      parenDepth -= 1;
+                      if (parenDepth === 0) {
+                        brace = source.indexOf('{', i + 1);
+                        break;
+                      }
+                    }
+                  }
+                  if (brace < 0) throw new Error(`missing body for function ${name}`);
+                  let depth = 0;
+                  for (let i = brace; i < source.length; i += 1) {
+                    const ch = source[i];
+                    if (ch === '{') depth += 1;
+                    if (ch === '}') {
+                      depth -= 1;
+                      if (depth === 0) return source.slice(start, i + 1);
+                    }
+                  }
+                  throw new Error(`unterminated function ${name}`);
+                }
+
+                let fetchCalls = 0;
+                const context = vm.createContext({
+                  console,
+                  fetch: async () => {
+                    fetchCalls += 1;
+                    throw new Error('fetch should not be called when server action readiness blocks draft actions');
+                  },
+                  pretty: (value) => JSON.stringify(value)
+                });
+                for (const name of [
+                  'normalizeReadinessState',
+                  'normalizeRuntimeBindingRequirement',
+                  'normalizeVisualGraphNodeReadiness',
+                  'normalizeVisualGraphReadiness',
+                  'normalizeStringArray',
+                  'normalizeVisualGraphActionReadiness',
+                  'normalizeDiagnostics',
+                  'visualDraftExecutableActionState',
+                  'setVisualCheck',
+                  'compileVisualDraft',
+                  'runCustomGraph'
+                ]) {
+                  vm.runInContext(functionSource(name), context);
+                }
+                const readiness = {
+                  schemaVersion: 'bloge.visualGraphReadiness.v1',
+                  state: 'RUNTIME_EXECUTABLE',
+                  level: 'SUCCESS',
+                  executable: true,
+                  artifactKinds: ['EXECUTABLE', 'DESIGN'],
+                  title: 'Executable graph',
+                  summary: 'Graph-level readiness still looks executable.'
+                };
+                const actionReadiness = {
+                  schemaVersion: 'bloge.visualGraphActionReadiness.v1',
+                  state: 'RUNTIME_BINDING_REQUIRED',
+                  level: 'WARNING',
+                  compileNow: false,
+                  runNow: false,
+                  publishDesignNow: true,
+                  publishExecutableNow: false,
+                  artifactKinds: ['DESIGN'],
+                  message: 'Server action gate blocked runtime execution.',
+                  recommendedAction: 'Bind runtime first.'
+                };
+                context.state = {
+                  builder: { nodes: [] },
+                  customDsl: 'draft-dsl',
+                  lastGeneratedVisualDsl: 'draft-dsl',
+                  customContextText: '{ invalid json',
+                  visualCheck: {
+                    message: '',
+                    level: 'info',
+                    diagnostics: [{ level: 'WARNING', code: 'visual.runtimeBinding.required' }],
+                    readiness,
+                    actionReadiness
+                  }
+                };
+                context.elements = {
+                  output: { textContent: 'unchanged-output' },
+                  'composer-dsl': { value: 'draft-dsl' }
+                };
+                context.$ = (id) => context.elements[id] || null;
+                context.builderToDsl = () => 'draft-dsl';
+                context.renderVisualCheck = () => {
+                  context.renderVisualCheckCalls = (context.renderVisualCheckCalls || 0) + 1;
+                };
+                context.renderCanvasNavigator = () => {
+                  context.renderCanvasNavigatorCalls = (context.renderCanvasNavigatorCalls || 0) + 1;
+                };
+
+                const compileState = context.visualDraftExecutableActionState(readiness, actionReadiness, 'compile');
+                const runState = context.visualDraftExecutableActionState(readiness, actionReadiness, 'run');
+                context.compileVisualDraft()
+                  .then(() => {
+                    const compileOutput = context.elements.output.textContent;
+                    const compileMessage = context.state.visualCheck.message;
+                    return context.runCustomGraph().then(() => ({
+                      compileOutput,
+                      compileMessage,
+                      finalOutput: context.elements.output.textContent,
+                      finalVisualCheck: context.state.visualCheck
+                    }));
+                  })
+                  .then((result) => {
+                    const checks = [
+                      ['compile state disabled', compileState.disabled, true],
+                      ['compile state message', compileState.message, 'Server action gate blocked runtime execution.'],
+                      ['run state disabled', runState.disabled, true],
+                      ['run state message', runState.message, 'Server action gate blocked runtime execution.'],
+                      ['fetch calls', fetchCalls, 0],
+                      ['compile output not executable', String(result.compileOutput.includes('not_executable')), 'true'],
+                      ['compile message', result.compileMessage, 'Server action gate blocked runtime execution.'],
+                      ['run output not executable', String(result.finalOutput.includes('not_executable')), 'true'],
+                      ['run output skipped context parse', String(result.finalOutput.includes('invalid_context')), 'false'],
+                      ['visual level', result.finalVisualCheck.level, 'warning'],
+                      ['visual readiness state', result.finalVisualCheck.readiness.state, 'runtime-executable'],
+                      ['visual action state', result.finalVisualCheck.actionReadiness.state, 'runtime-binding-required'],
+                      ['visual check renders', context.renderVisualCheckCalls, 2],
+                      ['canvas navigator renders', context.renderCanvasNavigatorCalls, 2]
+                    ];
+                    for (const [label, actual, expected] of checks) {
+                      if (actual !== expected) {
+                        throw new Error(`${label}: expected ${expected}, got ${actual}`);
+                      }
+                    }
+                    console.log('browser draft action readiness guard probe passed');
+                  })
+                  .catch((error) => {
+                    console.error(error);
+                    process.exitCode = 1;
+                  });
                 """);
     }
 
