@@ -2564,6 +2564,81 @@ class VisualAssetOverviewControllerTest {
     }
 
     @Test
+    void executableReadinessEvidenceRefreshDoesNotReportCurrentForIncompleteCurrentEvidenceChain() {
+        RuntimeBindingImplementationFixture fixture = runtimeBindingImplementationFixture();
+        VisualRuntimeBindingImplementationBinding stored = submitImplementation(
+                fixture,
+                completeImplementation("risk-eligibility-native-v1")
+        );
+        VisualRuntimeBindingImplementationBinding binding = fixture.controller()
+                .bindRuntimeBindingImplementation(stored.bindingId(), transitionRequest("", true))
+                .getBody()
+                .binding();
+        VisualRuntimeAdapterActivation activation = (VisualRuntimeAdapterActivation) fixture.controller()
+                .submitRuntimeAdapterActivation(adapterActivationRequest(binding, "risk-eligibility-prod-active"))
+                .getBody();
+        fixture.controller().submitExecutableLoweringIntegration(
+                executableLoweringIntegrationRequest(activation, "risk-eligibility-lowering-v1"));
+        VisualExecutableReadinessRecomputeResult applied = fixture.controller()
+                .applyExecutableReadinessRecompute(
+                        "risk:eligibility",
+                        true,
+                        "runtime-platform",
+                        "visual-canvas-test",
+                        "Promote risk eligibility executable readiness.",
+                        "Runtime implementation, activation, and executor bridge evidence were reviewed.")
+                .getBody();
+        OperatorDefinition currentOperator = fixture.catalog().find("risk:eligibility").orElseThrow();
+        VisualRuntimeBindingImplementationValidation.Request currentBindingRequest =
+                new VisualRuntimeBindingImplementationValidation.Request(
+                        VisualRuntimeBindingImplementationValidation.REQUEST_SCHEMA_VERSION,
+                        currentOperator.operatorRef(),
+                        currentOperator.fingerprint(),
+                        fixture.handoffBundle().bundleFingerprint(),
+                        fixture.handoffBundle().requirementKeys(),
+                        VisualRuntimeBindingHandoffBundle.OperatorContractSnapshot.from(currentOperator),
+                        completeImplementation("risk-eligibility-native-current-only"));
+        Object submittedCurrent = fixture.controller().submitRuntimeBindingImplementation(currentBindingRequest)
+                .getBody();
+        assertThat(submittedCurrent).isInstanceOf(VisualRuntimeBindingImplementationBinding.class);
+        VisualRuntimeBindingImplementationBinding currentBinding =
+                (VisualRuntimeBindingImplementationBinding) submittedCurrent;
+        assertThat(fixture.controller()
+                .supersedeRuntimeBindingImplementation(binding.bindingId(),
+                        transitionRequest(currentBinding.bindingId(), true))
+                .getStatusCode().value())
+                .isEqualTo(200);
+
+        var response = fixture.controller().refreshExecutableReadinessEvidence(
+                "risk:eligibility",
+                true,
+                "runtime-platform",
+                "visual-canvas-test",
+                "Retry evidence refresh after partial control-plane mutation.",
+                "Binding points at the current operator fingerprint, but runtime evidence is incomplete.",
+                "risk-eligibility-native-v1-refresh",
+                "risk-eligibility-prod-active-refresh",
+                "risk-eligibility-lowering-v1-refresh"
+        );
+
+        assertThat(currentOperator.fingerprint()).isEqualTo(applied.candidateOperatorFingerprint());
+        assertThat(response.getStatusCode().value()).isEqualTo(409);
+        assertThat(response.getBody()).isNotNull();
+        assertThat(response.getBody().refreshed()).isFalse();
+        assertThat(response.getBody().state()).isEqualTo("blocked");
+        assertThat(response.getBody().sourceBinding().bindingId()).isEqualTo(currentBinding.bindingId());
+        assertThat(response.getBody().currentOperatorFingerprint())
+                .isEqualTo(applied.candidateOperatorFingerprint());
+        assertThat(response.getBody().diagnostics())
+                .extracting(VisualDiagnostic::code)
+                .contains("visual.executableReadinessEvidenceRefresh.activationMissing");
+        assertThat(fixture.controller().runtimeBindingImplementationBindings("risk:eligibility", "bound"))
+                .singleElement()
+                .extracting(VisualRuntimeBindingImplementationBinding::bindingId)
+                .isEqualTo(currentBinding.bindingId());
+    }
+
+    @Test
     void overviewQueuesWarningAcknowledgementFromGraphActionReadiness() {
         DefaultVisualOperatorCatalog catalog = VisualCatalogTestSupport.catalogWithLibrary(
                 VisualCatalogTestSupport.designOnlyEligibilityLibrary("integer"));

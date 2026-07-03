@@ -1463,10 +1463,31 @@ public class VisualAssetOverviewController {
                                     "runtimeReadinessState", runtimeReadinessState(currentOperator)))));
         }
         if (sourceBinding.operatorFingerprint().equals(currentOperator.fingerprint())) {
+            List<VisualDiagnostic> currentChainDiagnostics = executableReadinessEvidenceRefreshChainDiagnostics(
+                    sourceBinding,
+                    sourceActivation,
+                    sourceIntegration);
+            if (!currentChainDiagnostics.isEmpty()) {
+                return evidenceRefreshFailure(
+                        HttpStatus.CONFLICT,
+                        normalizedOperatorRef,
+                        sourceBinding.operatorFingerprint(),
+                        currentOperator.fingerprint(),
+                        "blocked",
+                        "error",
+                        "Executable readiness evidence refresh for '%s' is blocked by incomplete current runtime evidence."
+                                .formatted(normalizedOperatorRef),
+                        sourceBinding,
+                        sourceActivation,
+                        sourceIntegration,
+                        currentChainDiagnostics);
+            }
             return ResponseEntity.ok(VisualExecutableReadinessEvidenceRefreshResult.current(
                     normalizedOperatorRef,
                     currentOperator.fingerprint(),
-                    sourceBinding));
+                    sourceBinding,
+                    sourceActivation,
+                    sourceIntegration));
         }
         List<VisualDiagnostic> duplicateDiagnostics = executableReadinessEvidenceRefreshDuplicateDiagnostics(
                 refreshedBindingId,

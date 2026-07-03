@@ -2628,6 +2628,57 @@ class OperatorLibraryValidatorTest {
     }
 
     @Test
+    void acceptsSafeScalarAllOfAcrossOperatorDefinitions() {
+        OperatorDefinition operator = new OperatorDefinition(
+                "bloge.visualOperator.v1",
+                "risk:scalarAllOfPolicy",
+                "1.0.0",
+                new OperatorDefinition.Display("Scalar allOf policy", "Test operator.", List.of("test")),
+                new OperatorDefinition.Source("user-library", "", "", "", true),
+                new OperatorDefinition.Ports(
+                        List.of(new OperatorDefinition.Port("payload",
+                                SchemaEnvelope.object(Map.of(
+                                        "customerCode", Map.of(
+                                                "allOf", List.of(
+                                                        Map.of("type", "string"),
+                                                        Map.of("minLength", 3),
+                                                        Map.of("pattern", "^[A-Z]+$"))),
+                                        "score", Map.of(
+                                                "allOf", List.of(
+                                                        Map.of("type", "integer"),
+                                                        Map.of("minimum", 300),
+                                                        Map.of("maximum", 850)))
+                                ), List.of("customerCode", "score")),
+                                true,
+                                "Input.")),
+                        List.of(new OperatorDefinition.Port("output",
+                                SchemaEnvelope.object(Map.of(
+                                        "decision", Map.of(
+                                                "allOf", List.of(
+                                                        Map.of("type", "string"),
+                                                        Map.of("minLength", 1)))
+                                ), List.of("decision")),
+                                true,
+                                "Output."))
+                ),
+                SchemaEnvelope.object(Map.of(
+                        "timeoutCode", Map.of(
+                                "allOf", List.of(
+                                        Map.of("type", "string"),
+                                        Map.of("format", "duration")))
+                ), List.of()),
+                OperatorDefinition.Capabilities.pure(),
+                new OperatorDefinition.Lowering("native", "riskScalarAllOfPolicy", Map.of()),
+                List.of()
+        );
+
+        VisualValidationResult result = validator.validate(libraryWith(operator));
+
+        assertThat(result.valid()).as("diagnostics: %s", result.diagnostics()).isTrue();
+        assertThat(result.diagnostics()).isEmpty();
+    }
+
+    @Test
     void acceptsObjectDependentRequiredAcrossOperatorDefinitions() {
         OperatorDefinition operator = new OperatorDefinition(
                 "bloge.visualOperator.v1",

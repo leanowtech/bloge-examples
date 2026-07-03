@@ -184,7 +184,12 @@ public record SchemaEnvelope(
 
         Map<String, Object> resolved = new LinkedHashMap<>();
         map.forEach((key, item) -> resolved.put(key, resolveLocalReferences(item, root, referenceStack)));
-        return flattenObjectAllOf(resolved);
+        return flattenSafeAllOf(resolved);
+    }
+
+    private static Map<String, Object> flattenSafeAllOf(Map<String, Object> schema) {
+        Map<String, Object> objectFlattened = flattenObjectAllOf(schema);
+        return objectFlattened.containsKey("allOf") ? flattenScalarAllOf(objectFlattened) : objectFlattened;
     }
 
     private static Map<String, Object> flattenObjectAllOf(Map<String, Object> schema) {
@@ -310,6 +315,151 @@ public record SchemaEnvelope(
             }
         }
         return merged;
+    }
+
+    private static Map<String, Object> flattenScalarAllOf(Map<String, Object> schema) {
+        Object rawAllOf = schema.get("allOf");
+        if (!(rawAllOf instanceof List<?> allOf) || allOf.isEmpty()) {
+            return schema;
+        }
+
+        List<Map<String, Object>> fragments = new ArrayList<>();
+        for (Object item : allOf) {
+            if (!(item instanceof Map<?, ?> rawFragment)) {
+                return schema;
+            }
+            Map<String, Object> fragment = objectMap(rawFragment);
+            if (fragment.keySet().stream().anyMatch(SCHEMA_DECLARATION_KEYS::contains)) {
+                return schema;
+            }
+            fragments.add(fragment);
+        }
+
+        Map<String, Object> sibling = new LinkedHashMap<>(schema);
+        sibling.remove("allOf");
+        if (sibling.keySet().stream().anyMatch(key -> !SCHEMA_ANNOTATION_KEYS.contains(key)
+                && !SCHEMA_DECLARATION_KEYS.contains(key))) {
+            fragments.add(sibling);
+        }
+
+        String scalarType = "";
+        for (Map<String, Object> fragment : fragments) {
+            String candidate = explicitScalarAllOfType(fragment);
+            if (candidate == null) {
+                return schema;
+            }
+            if (!candidate.isBlank()) {
+                if (!scalarType.isBlank() && !scalarType.equals(candidate)) {
+                    return schema;
+                }
+                scalarType = candidate;
+            }
+        }
+        if (scalarType.isBlank()) {
+            return schema;
+        }
+
+        Map<String, Object> merged = new LinkedHashMap<>();
+        merged.put("type", scalarType);
+        for (Map<String, Object> fragment : fragments) {
+            if (!scalarAllOfFragmentSupported(fragment, scalarType)
+                    || !mergeScalarAllOfFragment(merged, fragment, scalarType)) {
+                return schema;
+            }
+        }
+        for (String key : SCHEMA_ANNOTATION_KEYS) {
+            if (sibling.containsKey(key)) {
+                merged.put(key, deepCopyValue(sibling.get(key)));
+            }
+        }
+        for (String key : SCHEMA_DECLARATION_KEYS) {
+            if (sibling.containsKey(key)) {
+                merged.put(key, deepCopyValue(sibling.get(key)));
+            }
+        }
+        return merged;
+    }
+
+    private static String explicitScalarAllOfType(Map<String, Object> schema) {
+        Object raw = schema.get("kind");
+        if (raw == null) {
+            raw = schema.get("type");
+        }
+        if (raw == null) {
+            return "";
+        }
+        if (!(raw instanceof String type) || type.isBlank()) {
+            return null;
+        }
+        return scalarAllOfAllowedKeys(type) == null ? null : type;
+    }
+
+    private static boolean scalarAllOfFragmentSupported(Map<String, Object> fragment, String scalarType) {
+        List<String> allowed = scalarAllOfAllowedKeys(scalarType);
+        if (allowed == null) {
+            return false;
+        }
+        for (Map.Entry<String, Object> entry : fragment.entrySet()) {
+            String key = entry.getKey();
+            if ("type".equals(key) || "kind".equals(key)
+                    || SCHEMA_ANNOTATION_KEYS.contains(key)
+                    || SCHEMA_DECLARATION_KEYS.contains(key)) {
+                continue;
+            }
+            if (!allowed.contains(key) || !validScalarAllOfConstraint(key, entry.getValue())) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    private static boolean mergeScalarAllOfFragment(Map<String, Object> merged,
+                                                    Map<String, Object> fragment,
+                                                    String scalarType) {
+        List<String> allowed = scalarAllOfAllowedKeys(scalarType);
+        for (String key : allowed) {
+            if (!fragment.containsKey(key)) {
+                continue;
+            }
+            Object value = deepCopyValue(fragment.get(key));
+            if (merged.containsKey(key) && !merged.get(key).equals(value)) {
+                return false;
+            }
+            merged.put(key, value);
+        }
+        return true;
+    }
+
+    private static List<String> scalarAllOfAllowedKeys(String scalarType) {
+        return switch (scalarType) {
+            case "string", "duration", "datetime" -> List.of("minLength", "maxLength", "pattern", "format");
+            case "integer", "number", "decimal" -> List.of(
+                    "minimum",
+                    "exclusiveMinimum",
+                    "maximum",
+                    "exclusiveMaximum",
+                    "multipleOf");
+            case "boolean", "null" -> List.of();
+            default -> null;
+        };
+    }
+
+    private static boolean validScalarAllOfConstraint(String key, Object value) {
+        return switch (key) {
+            case "minLength", "maxLength" -> nonNegativeInteger(value);
+            case "pattern", "format" -> value instanceof String;
+            case "minimum", "exclusiveMinimum", "maximum", "exclusiveMaximum" -> value instanceof Number;
+            case "multipleOf" -> value instanceof Number number && number.doubleValue() > 0;
+            default -> false;
+        };
+    }
+
+    private static boolean nonNegativeInteger(Object value) {
+        if (!(value instanceof Number number)) {
+            return false;
+        }
+        double raw = number.doubleValue();
+        return raw >= 0 && Math.floor(raw) == raw;
     }
 
     private static boolean objectSchema(Map<String, Object> schema) {

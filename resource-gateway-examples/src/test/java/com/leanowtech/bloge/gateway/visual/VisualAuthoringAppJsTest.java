@@ -5532,12 +5532,45 @@ operators:
                 context.UNSUPPORTED_SCHEMA_COMPOSITION_KEYWORDS = ['allOf', 'not', 'if', 'then', 'else'];
                 context.UNSUPPORTED_SCHEMA_CONSTRAINT_KEYWORDS = ['unevaluatedItems'];
                 context.LOCAL_SCHEMA_DEFS_REF_PREFIX = '#/$defs/';
+                context.SCHEMA_REF_ANNOTATION_KEYS = new Set([
+                  '$ref', '$comment', 'title', 'description', 'examples', 'deprecated', 'readOnly', 'writeOnly'
+                ]);
+                context.SCHEMA_ANNOTATION_KEYS = new Set([
+                  '$comment', 'title', 'description', 'examples', 'deprecated', 'readOnly', 'writeOnly'
+                ]);
+                context.SCHEMA_DECLARATION_KEYS = new Set(['$defs']);
                 context.isDslFieldName = (value) => /^[A-Za-z_][A-Za-z0-9_]*$/.test(String(value || ''))
                   && !new Set(['graph', 'node', 'input', 'output', 'true', 'false']).has(String(value || ''));
 
                 for (const name of [
                   'escapeHtml',
                   'isPlainObject',
+                  'resolveLocalSchemaRefs',
+                  'resolveLocalSchemaRefValue',
+                  'flattenSafeAllOf',
+                  'flattenObjectAllOf',
+                  'flattenScalarAllOf',
+                  'explicitScalarAllOfType',
+                  'scalarAllOfFragmentSupported',
+                  'mergeScalarAllOfFragment',
+                  'scalarAllOfAllowedKeys',
+                  'validScalarAllOfConstraint',
+                  'objectCompositionSchema',
+                  'mergeObjectMap',
+                  'mergeObjectKeyword',
+                  'mergeDependentRequiredKeyword',
+                  'mergeRequiredKeyword',
+                  'mergeUniqueStrings',
+                  'residualPolicy',
+                  'mergeResidualPolicy',
+                  'propertyBound',
+                  'maxOptionalNumber',
+                  'minOptionalNumber',
+                  'expandableLocalSchemaRef',
+                  'resolveSchemaJsonPointer',
+                  'decodeJsonPointerToken',
+                  'arrayIndexSegment',
+                  'deepCloneSchemaValue',
                   'validateSchemaEnvelope',
                   'validateSchemaStructure',
                   'validateSchemaTypeArray',
@@ -5688,6 +5721,27 @@ operators:
                 context.validateSchemaStructure({
                   allOf: [{ type: 'string' }]
                 }, 'schema', unsupportedCompositionDiagnostics);
+                const safeAllOfSchema = context.resolveLocalSchemaRefs({
+                  type: 'object',
+                  properties: {
+                    code: {
+                      allOf: [
+                        { type: 'string' },
+                        { minLength: 3 },
+                        { pattern: '^[A-Z]+$' }
+                      ]
+                    },
+                    score: {
+                      allOf: [
+                        { type: 'integer' },
+                        { minimum: 300 },
+                        { maximum: 850 }
+                      ]
+                    }
+                  }
+                });
+                const safeAllOfDiagnostics = [];
+                context.validateSchemaStructure(safeAllOfSchema, 'schema', safeAllOfDiagnostics);
                 const unresolvedRefDiagnostics = [];
                 context.validateSchemaStructure({
                   type: 'object',
@@ -5789,6 +5843,10 @@ operators:
                   ['invalid union code', invalidUnionDiagnostics.map((diagnostic) => diagnostic.code).join('|'), 'visual.schema.unionInvalid'],
                   ['ambiguous union code', ambiguousUnionDiagnostics.some((diagnostic) => diagnostic.code === 'visual.schema.unionAmbiguous'), true],
                   ['allOf remains unsupported', unsupportedCompositionDiagnostics.map((diagnostic) => diagnostic.code).join('|'), 'visual.schema.compositionUnsupported'],
+                  ['safe scalar allOf diagnostics', safeAllOfDiagnostics.length, 0],
+                  ['safe scalar allOf string type', safeAllOfSchema.properties.code.type, 'string'],
+                  ['safe scalar allOf string pattern', safeAllOfSchema.properties.code.pattern, '^[A-Z]+$'],
+                  ['safe scalar allOf number minimum', safeAllOfSchema.properties.score.minimum, 300],
                   ['unresolved local ref diagnostic', unresolvedRefDiagnostics.find((diagnostic) => diagnostic.target === '/inputSchema/schema/properties/customer/$ref')?.code, 'visual.schema.refUnresolved'],
                   ['remote ref diagnostic', unresolvedRefDiagnostics.find((diagnostic) => diagnostic.target === '/inputSchema/schema/properties/remote/$ref')?.code, 'visual.schema.refRemoteUnsupported'],
                   ['oneOf type label', context.schemaType({ oneOf: [{ type: 'integer' }, { type: 'string' }] }), 'oneOf<integer|string>'],

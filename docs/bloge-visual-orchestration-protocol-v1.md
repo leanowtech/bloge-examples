@@ -1171,6 +1171,11 @@ review 可以在没有 stored draft 引用时仍然暴露 operator-level 变更�
 `visual.schema.refRemoteUnsupported`，其他 JSON Pointer `$ref` 返回
 `visual.schema.refUnsupported`。这些都是 blocking diagnostics，浏览器本地预检和
 服务端 validate/import 需要保持同口径，避免把半解析 schema 写入 catalog。
+同一 normalization 层还会把可证明等价的 safe object `allOf` 与 safe scalar
+`allOf` 展开成普通 object/string/integer/number/decimal/boolean/null schema；
+scalar `allOf` 只接受同一标量类型和非冲突的基础数字/字符串约束。无法安全展开的
+`allOf` 会继续作为 unsupported composition 被 blocking diagnostic 拦截，而不是
+被画布近似解释。
 浏览器 Operator Libraries 面板已在 Import 前调用该端点，把结构化 diagnostics、
 impact review、profile 和 import readiness 以明细列表展示给作者，再允许作者选择是否执行 Import。
 
@@ -2027,6 +2032,11 @@ activation 与 executable lowering integration 事实，写入 `post-apply-refre
 runtime-binding / metadata 变化面和非 `design` lowering evidence；breaking schema 或
 policy/governance 变化仍必须走 implementation validate 的 contract-diff gate、后续更严格的
 SemVer / JSON Schema 兼容性检查和 reimplementation 流程。
+如果 active binding 已经指向当前 trusted operator fingerprint，服务端只有在同一 binding 下仍能找到
+active adapter activation 和 active executable lowering integration 且三段 evidence 对齐时才返回
+`state=current`；若只有 binding 已切换而 activation/integration 缺失或漂移，会返回 blocking
+diagnostic（例如 `visual.executableReadinessEvidenceRefresh.activationMissing`），避免 partial
+failure 被误报为刷新完成。
 `actionReadiness` 则把同一批 diagnostics/readiness 压成产品动作门禁：`compileNow`、
 `runNow`、`publishDesignNow`、`publishDesignAfterReview`、`publishExecutableNow`、
 `publishExecutableAfterReview`，以及 `requiresAckWarnings` /

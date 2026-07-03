@@ -81,6 +81,53 @@ class SchemaEnvelopeTest {
     }
 
     @Test
+    void flattensSafeScalarAllOfSchemas() {
+        SchemaEnvelope envelope = new SchemaEnvelope(SchemaEnvelope.JSON_SCHEMA, "2020-12", Map.of(
+                "type", "object",
+                "properties", Map.of(
+                        "customerCode", Map.of(
+                                "allOf", List.of(
+                                        Map.of("type", "string"),
+                                        Map.of("minLength", 3),
+                                        Map.of("pattern", "^[A-Z]+$"))),
+                        "score", Map.of(
+                                "allOf", List.of(
+                                        Map.of("type", "integer"),
+                                        Map.of("minimum", 300),
+                                        Map.of("maximum", 850)))
+                )
+        ));
+
+        Map<String, Object> customerCode = property(envelope.schema(), "customerCode");
+        assertThat(customerCode)
+                .doesNotContainKey("allOf")
+                .containsEntry("type", "string")
+                .containsEntry("minLength", 3)
+                .containsEntry("pattern", "^[A-Z]+$");
+        Map<String, Object> score = property(envelope.schema(), "score");
+        assertThat(score)
+                .doesNotContainKey("allOf")
+                .containsEntry("type", "integer")
+                .containsEntry("minimum", 300)
+                .containsEntry("maximum", 850);
+    }
+
+    @Test
+    void keepsConflictingScalarAllOfSchemasUnsupported() {
+        SchemaEnvelope envelope = new SchemaEnvelope(SchemaEnvelope.JSON_SCHEMA, "2020-12", Map.of(
+                "type", "object",
+                "properties", Map.of(
+                        "decision", Map.of(
+                                "allOf", List.of(
+                                        Map.of("type", "string", "pattern", "^[A-Z]+$"),
+                                        Map.of("pattern", "^[a-z]+$"))))
+        ));
+
+        assertThat(property(envelope.schema(), "decision"))
+                .containsKey("allOf");
+    }
+
+    @Test
     void preservesNullValuesInsideSchemaLists() {
         List<Object> values = new ArrayList<>();
         values.add("ACTIVE");

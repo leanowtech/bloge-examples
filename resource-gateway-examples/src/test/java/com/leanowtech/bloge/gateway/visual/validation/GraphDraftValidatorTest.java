@@ -654,6 +654,46 @@ class GraphDraftValidatorTest {
     }
 
     @Test
+    void acceptsGraphInputSchemaWithSafeScalarAllOf() {
+        GraphDraftValidator validator = new GraphDraftValidator(
+                VisualCatalogTestSupport.catalogWithLibrary(
+                        VisualCatalogTestSupport.eligibilityLibrary("integer")));
+        SchemaEnvelope inputSchema = new SchemaEnvelope(
+                SchemaEnvelope.JSON_SCHEMA,
+                "2020-12",
+                Map.of(
+                        "type", "object",
+                        "properties", Map.of(
+                                "score", Map.of(
+                                        "allOf", List.of(
+                                                Map.of("type", "integer"),
+                                                Map.of("minimum", 300),
+                                                Map.of("maximum", 850))),
+                                "amount", Map.of(
+                                        "allOf", List.of(
+                                                Map.of("type", "number"),
+                                                Map.of("minimum", 0))),
+                                "customerCode", Map.of(
+                                        "allOf", List.of(
+                                                Map.of("type", "string"),
+                                                Map.of("minLength", 3),
+                                                Map.of("pattern", "^[A-Z]+$")))
+                        ),
+                        "required", List.of("score", "amount"),
+                        "additionalProperties", false
+                ));
+        GraphDraft draft = contextEligibilityDraft(inputSchema, Map.of(
+                "score", GraphDraft.Binding.contextPath("score"),
+                "amount", GraphDraft.Binding.contextPath("amount")
+        ));
+
+        VisualValidationResult result = validator.validate(draft);
+
+        assertThat(result.valid()).isTrue();
+        assertThat(result.diagnostics()).isEmpty();
+    }
+
+    @Test
     void acceptsGraphInputSchemaWithJsonSchemaUnions() {
         GraphDraftValidator validator = new GraphDraftValidator(
                 VisualCatalogTestSupport.catalogWithLibrary(

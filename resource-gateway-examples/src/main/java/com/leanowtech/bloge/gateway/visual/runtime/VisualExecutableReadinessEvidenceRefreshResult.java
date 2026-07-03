@@ -114,6 +114,15 @@ public record VisualExecutableReadinessEvidenceRefreshResult(
             String operatorRef,
             String currentOperatorFingerprint,
             VisualRuntimeBindingImplementationBinding binding) {
+        return current(operatorRef, currentOperatorFingerprint, binding, null, null);
+    }
+
+    public static VisualExecutableReadinessEvidenceRefreshResult current(
+            String operatorRef,
+            String currentOperatorFingerprint,
+            VisualRuntimeBindingImplementationBinding binding,
+            VisualRuntimeAdapterActivation activation,
+            VisualExecutableLoweringIntegration integration) {
         return new VisualExecutableReadinessEvidenceRefreshResult(
                 SCHEMA_VERSION,
                 Instant.now(),
@@ -130,10 +139,10 @@ public record VisualExecutableReadinessEvidenceRefreshResult(
                 "",
                 binding,
                 binding,
-                null,
-                null,
-                null,
-                null,
+                activation,
+                activation,
+                integration,
+                integration,
                 List.of()
         );
     }

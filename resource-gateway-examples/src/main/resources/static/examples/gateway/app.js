@@ -17887,7 +17887,14 @@ function resolveLocalSchemaRefValue(value, root, stack) {
   for (const [key, item] of Object.entries(value)) {
     resolved[key] = resolveLocalSchemaRefValue(item, root, stack);
   }
-  return flattenObjectAllOf(resolved);
+  return flattenSafeAllOf(resolved);
+}
+
+function flattenSafeAllOf(schema) {
+  const objectFlattened = flattenObjectAllOf(schema);
+  return Object.prototype.hasOwnProperty.call(objectFlattened || {}, 'allOf')
+    ? flattenScalarAllOf(objectFlattened)
+    : objectFlattened;
 }
 
 function flattenObjectAllOf(schema) {
@@ -17978,6 +17985,135 @@ function flattenObjectAllOf(schema) {
     }
   }
   return merged;
+}
+
+function flattenScalarAllOf(schema) {
+  if (!Array.isArray(schema?.allOf) || !schema.allOf.length) {
+    return schema;
+  }
+  const fragments = [];
+  for (const fragment of schema.allOf) {
+    if (!isPlainObject(fragment)) {
+      return schema;
+    }
+    if (Object.keys(fragment).some((key) => SCHEMA_DECLARATION_KEYS.has(key))) {
+      return schema;
+    }
+    fragments.push(fragment);
+  }
+
+  const sibling = { ...schema };
+  delete sibling.allOf;
+  if (Object.keys(sibling).some((key) => !SCHEMA_ANNOTATION_KEYS.has(key) && !SCHEMA_DECLARATION_KEYS.has(key))) {
+    fragments.push(sibling);
+  }
+
+  let scalarType = '';
+  for (const fragment of fragments) {
+    const candidate = explicitScalarAllOfType(fragment);
+    if (candidate === null) {
+      return schema;
+    }
+    if (candidate) {
+      if (scalarType && scalarType !== candidate) {
+        return schema;
+      }
+      scalarType = candidate;
+    }
+  }
+  if (!scalarType) {
+    return schema;
+  }
+
+  const merged = { type: scalarType };
+  for (const fragment of fragments) {
+    if (!scalarAllOfFragmentSupported(fragment, scalarType)
+      || !mergeScalarAllOfFragment(merged, fragment, scalarType)) {
+      return schema;
+    }
+  }
+  for (const key of SCHEMA_ANNOTATION_KEYS) {
+    if (Object.prototype.hasOwnProperty.call(sibling, key)) {
+      merged[key] = deepCloneSchemaValue(sibling[key]);
+    }
+  }
+  for (const key of SCHEMA_DECLARATION_KEYS) {
+    if (Object.prototype.hasOwnProperty.call(sibling, key)) {
+      merged[key] = deepCloneSchemaValue(sibling[key]);
+    }
+  }
+  return merged;
+}
+
+function explicitScalarAllOfType(schema) {
+  const raw = schema?.kind ?? schema?.type;
+  if (raw === undefined || raw === null) {
+    return '';
+  }
+  if (typeof raw !== 'string' || !raw.trim()) {
+    return null;
+  }
+  return scalarAllOfAllowedKeys(raw) ? raw : null;
+}
+
+function scalarAllOfFragmentSupported(fragment, scalarType) {
+  const allowed = scalarAllOfAllowedKeys(scalarType);
+  if (!allowed) {
+    return false;
+  }
+  for (const [key, value] of Object.entries(fragment || {})) {
+    if (key === 'type' || key === 'kind' || SCHEMA_ANNOTATION_KEYS.has(key) || SCHEMA_DECLARATION_KEYS.has(key)) {
+      continue;
+    }
+    if (!allowed.includes(key) || !validScalarAllOfConstraint(key, value)) {
+      return false;
+    }
+  }
+  return true;
+}
+
+function mergeScalarAllOfFragment(target, fragment, scalarType) {
+  const allowed = scalarAllOfAllowedKeys(scalarType) || [];
+  for (const key of allowed) {
+    if (!Object.prototype.hasOwnProperty.call(fragment, key)) {
+      continue;
+    }
+    const value = deepCloneSchemaValue(fragment[key]);
+    if (Object.prototype.hasOwnProperty.call(target, key) && !schemaValuesEqual(target[key], value)) {
+      return false;
+    }
+    target[key] = value;
+  }
+  return true;
+}
+
+function scalarAllOfAllowedKeys(scalarType) {
+  if (['string', 'duration', 'datetime'].includes(scalarType)) {
+    return ['minLength', 'maxLength', 'pattern', 'format'];
+  }
+  if (['integer', 'number', 'decimal'].includes(scalarType)) {
+    return ['minimum', 'exclusiveMinimum', 'maximum', 'exclusiveMaximum', 'multipleOf'];
+  }
+  if (['boolean', 'null'].includes(scalarType)) {
+    return [];
+  }
+  return null;
+}
+
+function validScalarAllOfConstraint(key, value) {
+  if (['minLength', 'maxLength'].includes(key)) {
+    return Number.isInteger(value) && value >= 0;
+  }
+  if (['pattern', 'format'].includes(key)) {
+    return typeof value === 'string';
+  }
+  if (['minimum', 'exclusiveMinimum', 'maximum', 'exclusiveMaximum'].includes(key)) {
+    return typeof value === 'number' && Number.isFinite(value);
+  }
+  if (key === 'multipleOf') {
+    return typeof value === 'number' && Number.isFinite(value) && value > 0;
+  }
+  return false;
 }
 
 function objectCompositionSchema(schema) {
