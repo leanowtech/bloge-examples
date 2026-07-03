@@ -1414,7 +1414,7 @@ public class VisualAssetOverviewController {
                     sourceIntegration,
                     governanceDiagnostics);
         }
-        if (!operatorExecutable(currentOperator)) {
+        if (!operatorRuntimeEvidenceApplied(currentOperator)) {
             return evidenceRefreshFailure(
                     HttpStatus.CONFLICT,
                     normalizedOperatorRef,
@@ -1422,14 +1422,14 @@ public class VisualAssetOverviewController {
                     currentOperator.fingerprint(),
                     "blocked",
                     "error",
-                    "Operator '%s' is not runtime-executable; apply readiness recompute before refreshing evidence."
+                    "Operator '%s' has no trusted executable or external-runtime-bound apply yet; apply readiness recompute before refreshing evidence."
                             .formatted(normalizedOperatorRef),
                     sourceBinding,
                     sourceActivation,
                     sourceIntegration,
                     List.of(VisualDiagnostic.error(
                             "visual.executableReadinessEvidenceRefresh.operatorNotExecutable",
-                            "Operator '%s' is not runtime-executable; apply readiness recompute before refreshing evidence."
+                            "Operator '%s' has no trusted executable or external-runtime-bound apply yet; apply readiness recompute before refreshing evidence."
                                     .formatted(normalizedOperatorRef),
                             "/operatorRef",
                             Map.of("operatorRef", normalizedOperatorRef,
@@ -1697,8 +1697,12 @@ public class VisualAssetOverviewController {
                 diagnostics));
     }
 
-    private static boolean operatorExecutable(OperatorDefinition operator) {
-        return operator != null && operator.runtimeReadiness() != null && operator.runtimeReadiness().executable();
+    private static boolean operatorRuntimeEvidenceApplied(OperatorDefinition operator) {
+        if (operator == null || operator.runtimeReadiness() == null) {
+            return false;
+        }
+        return operator.runtimeReadiness().executable()
+                || "EXTERNAL_RUNTIME_BOUND".equals(operator.runtimeReadiness().state());
     }
 
     private static String runtimeReadinessState(OperatorDefinition operator) {
@@ -1874,10 +1878,10 @@ public class VisualAssetOverviewController {
         addEvidenceRefreshMismatch(diagnostics, "integrationRuntimeEnvironment",
                 sourceIntegration.runtimeEnvironment(), sourceActivation.runtimeEnvironment(),
                 "/sourceIntegration/runtimeEnvironment");
-        if (!"native".equals(sourceIntegration.loweringMode())) {
+        if (sourceIntegration.loweringMode().isBlank() || "design".equals(sourceIntegration.loweringMode())) {
             diagnostics.add(VisualDiagnostic.error(
                     "visual.executableReadinessEvidenceRefresh.loweringModeUnsupported",
-                    "Executable readiness evidence refresh currently supports source loweringMode=native; got '%s'."
+                    "Executable readiness evidence refresh requires a non-design source loweringMode; got '%s'."
                             .formatted(sourceIntegration.loweringMode()),
                     "/sourceIntegration/loweringMode",
                     Map.of("loweringMode", sourceIntegration.loweringMode())));

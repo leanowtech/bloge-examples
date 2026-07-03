@@ -1985,8 +1985,11 @@ operator 改成可执行。
 返回 `bloge.visualExecutableReadinessRecomputePreview.v1`，在不写 catalog / operator-library
 registry 的前提下，把当前 visible operator、active bound implementation、active adapter
 activation 和 active executable lowering integration 重新组合成 candidate `OperatorDefinition`、
-candidate fingerprint 与 candidate runtime readiness。当前自动 preview 只支持
-`loweringMode=native` 且有 `executorEntrypoint` 的 bridge；`transform`、`branch` 或其他需要额外
+candidate fingerprint 与 candidate runtime readiness。当前自动 preview 支持
+`loweringMode=native` 且有 `executorEntrypoint` 的 bridge，并把它派生成本地
+`RUNTIME_EXECUTABLE` candidate；也支持 remote-worker / ai-tool / event-source /
+message-handler / webhook 等非 `design` external bridge，并把它们派生成
+`EXTERNAL_RUNTIME_BOUND` candidate。`transform`、`branch` 或其他需要额外
 assignment/condition 语义的 lowering 会返回 blocking diagnostic，而不是伪造可写 revision。
 因此该合同是 trusted revision mutation 前的 preview gate：它能证明“如果写入，会得到什么 surface”，
 但不会自行改变 `OperatorDefinition.runtimeReadiness`。
@@ -1996,22 +1999,25 @@ assignment/condition 语义的 lowering 会返回 blocking diagnostic，而不�
 owning operator-library 的新 revision。该 mutation 不接受客户端提交的 candidate operator body，
 而是在服务端重新执行同一 preview gate，确认当前 operator fingerprint、active binding、adapter
 activation 和 executable lowering integration 仍然对齐；随后只替换所属用户算子库中的同一个
-operator，并把 actor/source/summary/reason 写入 revision metadata。当前自动 apply 只覆盖
-`loweringMode=native` 的 candidate；`transform`、`branch` 等需要额外 lowering 语义的候选仍以
-blocking diagnostic 拒绝。
+operator，并把 actor/source/summary/reason 写入 revision metadata。native candidate 会得到本地
+`RUNTIME_EXECUTABLE` surface；external candidate 会得到 `EXTERNAL_RUNTIME_BOUND` surface，
+表示可信外部执行器绑定已写入，但 BLOGE request-response runtime 仍不可直接执行。服务端会写入
+runtime binding apply kind、binding id、activation id、integration id 等受管 lowering 参数，用户导入
+operator library 时不能声明这些参数来伪造绑定状态；`transform`、`branch` 等需要额外 lowering
+语义的候选仍以 blocking diagnostic 拒绝。
 
 `POST /api/visual/assets/runtime-binding-requirements/executable-readiness-recomputations/evidence-refresh?operatorRef=...&ackWarnings=true&actor=...&reason=...`
 返回 `bloge.visualExecutableReadinessEvidenceRefreshResult.v1`，用于在 apply 已把 operator 变成
-runtime-executable 之后，把旧 binding / activation / integration evidence 重新对账到当前 executable
-operator fingerprint。该 mutation 同样要求 warning acknowledgement 与 actor/reason 治理证据，并只在当前
-operator 已是 runtime-executable、旧 active binding、active adapter activation 和 active native executable
-lowering integration 能形成一致 evidence chain 时执行；服务端会用当前 operator contract snapshot 创建新的
-bound implementation binding，再复制必要的 adapter activation 与 executable lowering integration
-事实，写入 `post-apply-refresh` evidence，并把旧 binding 标记为 superseded。旧 activation /
-integration 作为审计事实保留，不被静默改写。当前自动 refresh 只接受 runtime-binding / metadata 变化面和
-native lowering evidence；non-native lowering、breaking schema 或 policy/governance 变化仍必须走
-implementation validate 的 contract-diff gate、后续更严格的 SemVer / JSON Schema 兼容性检查和
-reimplementation 流程。
+runtime-executable 或 external-runtime-bound 之后，把旧 binding / activation / integration evidence
+重新对账到当前 trusted operator fingerprint。该 mutation 同样要求 warning acknowledgement 与
+actor/reason 治理证据，并只在当前 operator 已有可信 runtime readiness、旧 active binding、
+active adapter activation 和 active executable lowering integration 能形成一致 evidence chain 时执行；
+服务端会用当前 operator contract snapshot 创建新的 bound implementation binding，再复制必要的 adapter
+activation 与 executable lowering integration 事实，写入 `post-apply-refresh` evidence，并把旧 binding
+标记为 superseded。旧 activation / integration 作为审计事实保留，不被静默改写。当前自动 refresh 接受
+runtime-binding / metadata 变化面和非 `design` lowering evidence；breaking schema 或
+policy/governance 变化仍必须走 implementation validate 的 contract-diff gate、后续更严格的
+SemVer / JSON Schema 兼容性检查和 reimplementation 流程。
 `actionReadiness` 则把同一批 diagnostics/readiness 压成产品动作门禁：`compileNow`、
 `runNow`、`publishDesignNow`、`publishDesignAfterReview`、`publishExecutableNow`、
 `publishExecutableAfterReview`，以及 `requiresAckWarnings` /

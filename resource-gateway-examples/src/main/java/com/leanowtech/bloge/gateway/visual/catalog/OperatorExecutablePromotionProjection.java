@@ -24,7 +24,7 @@ import java.util.Map;
  * @param operatorFingerprint current catalog operator fingerprint
  * @param executableNow whether the current BLOGE request-response runtime can execute the operator
  * @param promotionReady true only when no remaining promotion work is required
- * @param promotionState already-executable, binding-required, binding-drifted, activation-required,
+ * @param promotionState already-executable, external-runtime-bound, binding-required, binding-drifted, activation-required,
  *                       activation-drifted, executor-integration-required, lowering-integration-drifted,
  *                       or readiness-recompute-required
  * @param level UI/control-plane severity
@@ -205,6 +205,7 @@ public record OperatorExecutablePromotionProjection(
         }
         return switch (runtimeBindingProjection.projectionState()) {
             case "not-required", "binding-bound-unneeded" -> alreadyExecutable(runtimeBindingProjection);
+            case "external-runtime-bound" -> externalRuntimeBound(runtimeBindingProjection, activeIntegration);
             case "binding-required" -> bindingRequired(runtimeBindingProjection);
             case "binding-drifted" -> bindingDrifted(runtimeBindingProjection);
             case "binding-bound" -> activationRequired(runtimeBindingProjection);
@@ -212,6 +213,29 @@ public record OperatorExecutablePromotionProjection(
             case "adapter-active" -> adapterActive(runtimeBindingProjection, activeIntegration);
             default -> unknown(runtimeBindingProjection);
         };
+    }
+
+    private static OperatorExecutablePromotionProjection externalRuntimeBound(
+            OperatorRuntimeBindingProjection projection,
+            VisualExecutableLoweringIntegration activeIntegration) {
+        if (activeIntegration == null) {
+            return executorIntegrationRequired(projection);
+        }
+        if (!integrationMatchesProjection(activeIntegration, projection)) {
+            return loweringIntegrationDrifted(projection, activeIntegration);
+        }
+        return base(
+                projection,
+                activeIntegration,
+                false,
+                true,
+                "external-runtime-bound",
+                "warning",
+                "External runtime bound",
+                "The operator has trusted external executor integration; the current request-response runtime remains blocked.",
+                "",
+                projection.diagnostics()
+        );
     }
 
     private static OperatorExecutablePromotionProjection alreadyExecutable(

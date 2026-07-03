@@ -216,6 +216,32 @@ public record VisualExecutableReadinessRecomputePreview(
                         List.of()
                 );
             }
+            if ("external-runtime-bound".equals(promotionProjection.promotionState())) {
+                return new VisualExecutableReadinessRecomputePreview(
+                        SCHEMA_VERSION,
+                        Instant.now(),
+                        false,
+                        "not-required",
+                        "warning",
+                        "Operator '%s' is already bound to an external runtime; no readiness recompute is required."
+                                .formatted(operatorRef),
+                        operatorRef,
+                        currentOperator.source().libraryId(),
+                        currentOperator.fingerprint(),
+                        currentReadinessState(currentOperator),
+                        currentOperator.lowering().mode(),
+                        currentOperator.lowering().operatorRef(),
+                        promotionProjection.activeBindingId(),
+                        promotionProjection.activeAdapterActivationId(),
+                        promotionProjection.activeExecutableLoweringIntegrationId(),
+                        "",
+                        "",
+                        "",
+                        "",
+                        null,
+                        List.of()
+                );
+            }
             diagnostics.add(VisualDiagnostic.error(
                     "visual.executableReadinessRecompute.promotionStateNotReady",
                     "Operator '%s' cannot recompute readiness from promotion state '%s'."
@@ -224,10 +250,11 @@ public record VisualExecutableReadinessRecomputePreview(
                     Map.of("promotionState", promotionProjection.promotionState())));
             return blocked(currentOperator, promotionProjection, diagnostics);
         }
-        if (!"native".equals(promotionProjection.executableLoweringMode())) {
+        if (promotionProjection.executableLoweringMode().isBlank()
+                || "design".equals(promotionProjection.executableLoweringMode())) {
             diagnostics.add(VisualDiagnostic.error(
                     "visual.executableReadinessRecompute.loweringModeUnsupported",
-                    "Executable readiness recompute preview currently supports loweringMode=native; got '%s'."
+                    "Executable readiness recompute preview requires a non-design executable lowering mode; got '%s'."
                             .formatted(promotionProjection.executableLoweringMode()),
                     "/operators/" + operatorRef + "/executableLoweringMode",
                     Map.of("loweringMode", promotionProjection.executableLoweringMode())));
@@ -241,10 +268,10 @@ public record VisualExecutableReadinessRecomputePreview(
             return blocked(currentOperator, promotionProjection, diagnostics);
         }
         OperatorDefinition candidate = candidateOperator(currentOperator, promotionProjection);
-        if (candidate.runtimeReadiness() == null || !candidate.runtimeReadiness().executable()) {
+        if (!trustedRuntimeSurface(candidate)) {
             diagnostics.add(VisualDiagnostic.error(
                     "visual.executableReadinessRecompute.candidateNotExecutable",
-                    "Candidate operator for '%s' still does not derive executable runtime readiness."
+                    "Candidate operator for '%s' still does not derive an executable or external-runtime-bound trusted surface."
                             .formatted(operatorRef),
                     "/operators/" + operatorRef + "/candidateOperator/runtimeReadiness",
                     Map.of("candidateRuntimeReadinessState", currentReadinessState(candidate))));
@@ -361,16 +388,21 @@ public record VisualExecutableReadinessRecomputePreview(
                 currentOperator.policy(),
                 new OperatorDefinition.Lowering(
                         projection.executableLoweringMode(),
-                        projection.executorEntrypoint(),
+                        candidateLoweringOperatorRef(projection),
                         candidateLoweringParameters(projection)
                 ),
                 currentOperator.diagnostics()
         );
     }
 
+    private static String candidateLoweringOperatorRef(OperatorExecutablePromotionProjection projection) {
+        return "native".equals(projection.executableLoweringMode()) ? projection.executorEntrypoint() : "";
+    }
+
     private static Map<String, Object> candidateLoweringParameters(
             OperatorExecutablePromotionProjection projection) {
         Map<String, Object> parameters = new LinkedHashMap<>();
+        parameters.put("runtimeBindingApplyKind", "server-recomputed-executable-readiness");
         parameters.put("runtimeBindingId", projection.activeBindingId());
         parameters.put("adapterActivationId", projection.activeAdapterActivationId());
         parameters.put("executableLoweringIntegrationId", projection.activeExecutableLoweringIntegrationId());
@@ -381,6 +413,14 @@ public record VisualExecutableReadinessRecomputePreview(
         parameters.put("executorEntrypoint", projection.executorEntrypoint());
         parameters.put("integrationRevision", projection.activeExecutableLoweringIntegrationRevision());
         return parameters;
+    }
+
+    private static boolean trustedRuntimeSurface(OperatorDefinition candidate) {
+        if (candidate == null || candidate.runtimeReadiness() == null) {
+            return false;
+        }
+        return candidate.runtimeReadiness().executable()
+                || "EXTERNAL_RUNTIME_BOUND".equals(candidate.runtimeReadiness().state());
     }
 
     private static String currentReadinessState(OperatorDefinition operator) {

@@ -59,6 +59,7 @@ public record VisualGraphReadiness(
     public static final String RUNTIME_EXECUTABLE = "runtime-executable";
     public static final String DESIGN_ONLY = "design-only";
     public static final String RUNTIME_BLOCKED = "runtime-blocked";
+    public static final String EXTERNAL_RUNTIME_BOUND = "external-runtime-bound";
     public static final String GOVERNANCE_REVIEW = "governance-review";
     public static final String DRAFT_REPAIR_REQUIRED = "draft-repair-required";
     public static final String NOT_ASSESSED = "not-assessed";
@@ -438,7 +439,7 @@ public record VisualGraphReadiness(
             switch (node.state()) {
                 case RUNTIME_EXECUTABLE -> runtimeExecutableNodeCount += 1;
                 case DESIGN_ONLY -> designOnlyNodeCount += 1;
-                case RUNTIME_BLOCKED -> runtimeBlockedNodeCount += 1;
+                case RUNTIME_BLOCKED, EXTERNAL_RUNTIME_BOUND -> runtimeBlockedNodeCount += 1;
                 case GOVERNANCE_REVIEW -> governanceReviewNodeCount += 1;
                 case DRAFT_REPAIR_REQUIRED -> draftRepairNodeCount += 1;
                 default -> {

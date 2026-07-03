@@ -1918,6 +1918,41 @@ class VisualAssetOverviewControllerTest {
     }
 
     @Test
+    void executableLoweringIntegrationRejectsDesignLoweringMode() {
+        RuntimeBindingImplementationFixture fixture = runtimeBindingImplementationFixture();
+        VisualRuntimeBindingImplementationBinding stored = submitImplementation(
+                fixture,
+                completeImplementation("risk-eligibility-native-v1")
+        );
+        VisualRuntimeBindingImplementationBinding binding = fixture.controller()
+                .bindRuntimeBindingImplementation(stored.bindingId(), transitionRequest("", true))
+                .getBody()
+                .binding();
+        VisualRuntimeAdapterActivation activation = (VisualRuntimeAdapterActivation) fixture.controller()
+                .submitRuntimeAdapterActivation(adapterActivationRequest(binding, "risk-eligibility-prod-active"))
+                .getBody();
+
+        var response = fixture.controller().submitExecutableLoweringIntegration(
+                executableLoweringIntegrationRequest(
+                        activation,
+                        "risk-eligibility-design-lowering",
+                        "design",
+                        "bloge-operator-registry",
+                        "operator:risk:eligibility")
+        );
+
+        assertThat(response.getStatusCode().value()).isEqualTo(400);
+        assertThat(response.getBody()).isInstanceOf(VisualExecutableLoweringIntegrationValidation.class);
+        VisualExecutableLoweringIntegrationValidation validation =
+                (VisualExecutableLoweringIntegrationValidation) response.getBody();
+        assertThat(validation.valid()).isFalse();
+        assertThat(validation.diagnostics())
+                .extracting(VisualDiagnostic::code)
+                .contains("visual.executableLoweringIntegration.designLoweringUnsupported");
+        assertThat(fixture.controller().executableLoweringIntegrations("", "", "")).isEmpty();
+    }
+
+    @Test
     void executableReadinessRecomputePreviewBuildsCandidateSurfaceWithoutMutatingCatalog() {
         RuntimeBindingImplementationFixture fixture = runtimeBindingImplementationFixture();
         VisualRuntimeBindingImplementationBinding stored = submitImplementation(
@@ -1974,11 +2009,11 @@ class VisualAssetOverviewControllerTest {
     }
 
     @Test
-    void executableReadinessRecomputePreviewBlocksUnsupportedLoweringMode() {
+    void executableReadinessRecomputePreviewBuildsExternalLoweringCandidate() {
         RuntimeBindingImplementationFixture fixture = runtimeBindingImplementationFixture();
         VisualRuntimeBindingImplementationBinding stored = submitImplementation(
                 fixture,
-                completeImplementation("risk-eligibility-native-v1")
+                remoteWorkerImplementation("risk-eligibility-worker-v1")
         );
         VisualRuntimeBindingImplementationBinding binding = fixture.controller()
                 .bindRuntimeBindingImplementation(stored.bindingId(), transitionRequest("", true))
@@ -1990,9 +2025,10 @@ class VisualAssetOverviewControllerTest {
         var integrationResponse = fixture.controller().submitExecutableLoweringIntegration(
                 executableLoweringIntegrationRequest(
                         activation,
-                        "risk-eligibility-transform-lowering",
-                        "transform",
-                        "operator:risk:eligibility-transform"
+                        "risk-eligibility-worker-lowering",
+                        "remote-worker",
+                        "worker-dispatcher",
+                        "worker:risk.eligibility"
                 ));
         assertThat(integrationResponse.getStatusCode().value()).isEqualTo(201);
 
@@ -2000,15 +2036,27 @@ class VisualAssetOverviewControllerTest {
 
         assertThat(response.getStatusCode().value()).isEqualTo(200);
         assertThat(response.getBody()).isNotNull();
-        assertThat(response.getBody().recomputable()).isFalse();
-        assertThat(response.getBody().state()).isEqualTo("blocked");
-        assertThat(response.getBody().candidateOperator()).isNull();
-        assertThat(response.getBody().currentRuntimeReadinessState()).isEqualTo("DESIGN_ONLY");
-        assertThat(response.getBody().activeExecutableLoweringIntegrationId())
-                .isEqualTo("risk-eligibility-transform-lowering");
-        assertThat(response.getBody().diagnostics())
-                .extracting(VisualDiagnostic::code)
-                .contains("visual.executableReadinessRecompute.loweringModeUnsupported");
+        VisualExecutableReadinessRecomputePreview preview = response.getBody();
+        assertThat(preview.recomputable()).isTrue();
+        assertThat(preview.state()).isEqualTo("ready-to-apply");
+        assertThat(preview.level()).isEqualTo("warning");
+        assertThat(preview.currentRuntimeReadinessState()).isEqualTo("DESIGN_ONLY");
+        assertThat(preview.activeExecutableLoweringIntegrationId())
+                .isEqualTo("risk-eligibility-worker-lowering");
+        assertThat(preview.candidateOperator()).isNotNull();
+        assertThat(preview.candidateRuntimeReadinessState()).isEqualTo("EXTERNAL_RUNTIME_BOUND");
+        assertThat(preview.candidateLoweringMode()).isEqualTo("remote-worker");
+        assertThat(preview.candidateLoweringOperatorRef()).isBlank();
+        assertThat(preview.candidateOperator().runtimeReadiness().executable()).isFalse();
+        assertThat(preview.candidateOperator().runtimeReadiness().artifactKinds()).containsExactly("DESIGN");
+        assertThat(preview.candidateOperator().lowering().parameters())
+                .containsEntry("runtimeBindingApplyKind", "server-recomputed-executable-readiness")
+                .containsEntry("runtimeBindingId", binding.bindingId())
+                .containsEntry("adapterActivationId", activation.activationId())
+                .containsEntry("executableLoweringIntegrationId", "risk-eligibility-worker-lowering")
+                .containsEntry("executorKind", "worker-dispatcher")
+                .containsEntry("executorEntrypoint", "worker:risk.eligibility");
+        assertThat(preview.diagnostics()).isEmpty();
     }
 
     @Test
@@ -2107,11 +2155,11 @@ class VisualAssetOverviewControllerTest {
     }
 
     @Test
-    void executableReadinessRecomputeApplyBlocksUnsupportedLoweringModeWithoutMutatingLibrary() {
+    void executableReadinessRecomputeApplyWritesExternalLoweringRevisionWithoutLocalExecution() {
         RuntimeBindingImplementationFixture fixture = runtimeBindingImplementationFixture();
         VisualRuntimeBindingImplementationBinding stored = submitImplementation(
                 fixture,
-                completeImplementation("risk-eligibility-native-v1")
+                remoteWorkerImplementation("risk-eligibility-worker-v1")
         );
         VisualRuntimeBindingImplementationBinding binding = fixture.controller()
                 .bindRuntimeBindingImplementation(stored.bindingId(), transitionRequest("", true))
@@ -2123,9 +2171,10 @@ class VisualAssetOverviewControllerTest {
         fixture.controller().submitExecutableLoweringIntegration(
                 executableLoweringIntegrationRequest(
                         activation,
-                        "risk-eligibility-transform-lowering",
-                        "transform",
-                        "operator:risk:eligibility-transform"
+                        "risk-eligibility-worker-lowering",
+                        "remote-worker",
+                        "worker-dispatcher",
+                        "worker:risk.eligibility"
                 ));
 
         var response = fixture.controller().applyExecutableReadinessRecompute(
@@ -2137,16 +2186,37 @@ class VisualAssetOverviewControllerTest {
                 "Executor bridge was reviewed."
         );
 
-        assertThat(response.getStatusCode().value()).isEqualTo(409);
+        assertThat(response.getStatusCode().value()).isEqualTo(200);
         assertThat(response.getBody()).isNotNull();
-        assertThat(response.getBody().applied()).isFalse();
-        assertThat(response.getBody().state()).isEqualTo("blocked");
-        assertThat(response.getBody().diagnostics())
-                .extracting(VisualDiagnostic::code)
-                .contains("visual.executableReadinessRecompute.loweringModeUnsupported");
-        assertThat(fixture.libraries().revisions("risk-policy-design")).hasSize(1);
-        assertThat(fixture.catalog().find("risk:eligibility").orElseThrow().runtimeReadiness().state())
-                .isEqualTo("DESIGN_ONLY");
+        VisualExecutableReadinessRecomputeResult result = response.getBody();
+        assertThat(result.applied()).isTrue();
+        assertThat(result.state()).isEqualTo("applied");
+        assertThat(result.libraryRevision()).isEqualTo(2);
+        assertThat(result.preview().candidateRuntimeReadinessState()).isEqualTo("EXTERNAL_RUNTIME_BOUND");
+        assertThat(result.preview().candidateLoweringMode()).isEqualTo("remote-worker");
+        assertThat(result.preview().candidateLoweringOperatorRef()).isBlank();
+        assertThat(fixture.libraries().revisions("risk-policy-design")).hasSize(2);
+        OperatorDefinition trustedOperator = fixture.catalog().find("risk:eligibility").orElseThrow();
+        assertThat(trustedOperator.fingerprint()).isEqualTo(result.candidateOperatorFingerprint());
+        assertThat(trustedOperator.runtimeReadiness().state()).isEqualTo("EXTERNAL_RUNTIME_BOUND");
+        assertThat(trustedOperator.runtimeReadiness().executable()).isFalse();
+        assertThat(trustedOperator.lowering().mode()).isEqualTo("remote-worker");
+        assertThat(trustedOperator.lowering().operatorRef()).isBlank();
+        assertThat(trustedOperator.lowering().parameters())
+                .containsEntry("runtimeBindingApplyKind", "server-recomputed-executable-readiness")
+                .containsEntry("executorKind", "worker-dispatcher")
+                .containsEntry("executorEntrypoint", "worker:risk.eligibility");
+
+        var runtimeProjection = fixture.catalog()
+                .runtimeBindingProjections(OperatorCatalogQuery.all(), List.of(trustedOperator))
+                .getFirst();
+        assertThat(runtimeProjection.projectionState()).isEqualTo("binding-drifted");
+        assertThat(runtimeProjection.executable()).isFalse();
+        var promotionProjection = fixture.catalog()
+                .executablePromotionProjections(OperatorCatalogQuery.all(), List.of(runtimeProjection))
+                .getFirst();
+        assertThat(promotionProjection.promotionState()).isEqualTo("binding-drifted");
+        assertThat(promotionProjection.executableNow()).isFalse();
     }
 
     @Test
@@ -2286,6 +2356,97 @@ class VisualAssetOverviewControllerTest {
                 .isEqualTo("risk-eligibility-native-v1-refresh");
         assertThat(afterRefreshPreview.getBody().activeAdapterActivationId())
                 .isEqualTo("risk-eligibility-prod-active-refresh");
+    }
+
+    @Test
+    void executableReadinessEvidenceRefreshRebindsExternalLoweringWithoutRecomputeLoop() {
+        RuntimeBindingImplementationFixture fixture = runtimeBindingImplementationFixture();
+        VisualRuntimeBindingImplementationBinding stored = submitImplementation(
+                fixture,
+                remoteWorkerImplementation("risk-eligibility-worker-v1")
+        );
+        VisualRuntimeBindingImplementationBinding binding = fixture.controller()
+                .bindRuntimeBindingImplementation(stored.bindingId(), transitionRequest("", true))
+                .getBody()
+                .binding();
+        VisualRuntimeAdapterActivation activation = (VisualRuntimeAdapterActivation) fixture.controller()
+                .submitRuntimeAdapterActivation(adapterActivationRequest(binding, "risk-eligibility-worker-active"))
+                .getBody();
+        VisualExecutableLoweringIntegration integration = (VisualExecutableLoweringIntegration) fixture.controller()
+                .submitExecutableLoweringIntegration(
+                        executableLoweringIntegrationRequest(
+                                activation,
+                                "risk-eligibility-worker-lowering",
+                                "remote-worker",
+                                "worker-dispatcher",
+                                "worker:risk.eligibility"))
+                .getBody();
+        VisualExecutableReadinessRecomputeResult applied = fixture.controller()
+                .applyExecutableReadinessRecompute(
+                        "risk:eligibility",
+                        true,
+                        "runtime-platform",
+                        "visual-canvas-test",
+                        "Promote risk eligibility external runtime binding.",
+                        "Remote worker implementation, activation, and executor bridge evidence were reviewed.")
+                .getBody();
+
+        var refreshedResponse = fixture.controller().refreshExecutableReadinessEvidence(
+                "risk:eligibility",
+                true,
+                "runtime-platform",
+                "visual-canvas-test",
+                "Refresh external runtime evidence.",
+                "External runtime-bound operator revision was applied; evidence should point at the current fingerprint.",
+                "risk-eligibility-worker-v1-refresh",
+                "risk-eligibility-worker-active-refresh",
+                "risk-eligibility-worker-lowering-refresh"
+        );
+
+        assertThat(refreshedResponse.getStatusCode().value()).isEqualTo(200);
+        assertThat(refreshedResponse.getBody()).isNotNull();
+        VisualExecutableReadinessEvidenceRefreshResult refreshed = refreshedResponse.getBody();
+        assertThat(refreshed.refreshed()).isTrue();
+        assertThat(refreshed.currentOperatorFingerprint()).isEqualTo(applied.candidateOperatorFingerprint());
+        assertThat(refreshed.sourceBinding().bindingId()).isEqualTo(binding.bindingId());
+        assertThat(refreshed.sourceActivation().activationId()).isEqualTo(activation.activationId());
+        assertThat(refreshed.sourceIntegration().integrationId()).isEqualTo(integration.integrationId());
+        assertThat(refreshed.refreshedBinding().operatorFingerprint())
+                .isEqualTo(applied.candidateOperatorFingerprint());
+        assertThat(refreshed.refreshedActivation().operatorFingerprint())
+                .isEqualTo(applied.candidateOperatorFingerprint());
+        assertThat(refreshed.refreshedIntegration().operatorFingerprint())
+                .isEqualTo(applied.candidateOperatorFingerprint());
+        assertThat(refreshed.refreshedIntegration().loweringMode()).isEqualTo("remote-worker");
+        assertThat(refreshed.refreshedIntegration().executorKind()).isEqualTo("worker-dispatcher");
+        assertThat(refreshed.refreshedIntegration().executorEntrypoint()).isEqualTo("worker:risk.eligibility");
+
+        OperatorDefinition trustedOperator = fixture.catalog().find("risk:eligibility").orElseThrow();
+        assertThat(trustedOperator.runtimeReadiness().state()).isEqualTo("EXTERNAL_RUNTIME_BOUND");
+        assertThat(trustedOperator.runtimeReadiness().executable()).isFalse();
+        var runtimeProjection = fixture.catalog()
+                .runtimeBindingProjections(OperatorCatalogQuery.all(), List.of(trustedOperator))
+                .getFirst();
+        assertThat(runtimeProjection.projectionState()).isEqualTo("external-runtime-bound");
+        assertThat(runtimeProjection.executable()).isFalse();
+        assertThat(runtimeProjection.activeBindingId()).isEqualTo("risk-eligibility-worker-v1-refresh");
+        assertThat(runtimeProjection.activeAdapterActivationId()).isEqualTo("risk-eligibility-worker-active-refresh");
+        var promotionProjection = fixture.catalog()
+                .executablePromotionProjections(OperatorCatalogQuery.all(), List.of(runtimeProjection))
+                .getFirst();
+        assertThat(promotionProjection.promotionState()).isEqualTo("external-runtime-bound");
+        assertThat(promotionProjection.promotionReady()).isTrue();
+        assertThat(promotionProjection.executableNow()).isFalse();
+        assertThat(promotionProjection.activeExecutableLoweringIntegrationId())
+                .isEqualTo("risk-eligibility-worker-lowering-refresh");
+
+        var afterRefreshPreview = fixture.controller().previewExecutableReadinessRecompute("risk:eligibility");
+        assertThat(afterRefreshPreview.getStatusCode().value()).isEqualTo(200);
+        assertThat(afterRefreshPreview.getBody()).isNotNull();
+        assertThat(afterRefreshPreview.getBody().state()).isEqualTo("not-required");
+        assertThat(afterRefreshPreview.getBody().currentRuntimeReadinessState()).isEqualTo("EXTERNAL_RUNTIME_BOUND");
+        assertThat(afterRefreshPreview.getBody().activeBindingId())
+                .isEqualTo("risk-eligibility-worker-v1-refresh");
     }
 
     @Test
@@ -2850,6 +3011,21 @@ class VisualAssetOverviewControllerTest {
             String integrationId,
             String loweringMode,
             String executorEntrypoint) {
+        return executableLoweringIntegrationRequest(
+                activation,
+                integrationId,
+                loweringMode,
+                "bloge-operator-registry",
+                executorEntrypoint
+        );
+    }
+
+    private static VisualExecutableLoweringIntegrationValidation.Request executableLoweringIntegrationRequest(
+            VisualRuntimeAdapterActivation activation,
+            String integrationId,
+            String loweringMode,
+            String executorKind,
+            String executorEntrypoint) {
         return new VisualExecutableLoweringIntegrationValidation.Request(
                 VisualExecutableLoweringIntegrationValidation.REQUEST_SCHEMA_VERSION,
                 integrationId,
@@ -2863,7 +3039,7 @@ class VisualAssetOverviewControllerTest {
                 activation.entrypoint(),
                 activation.runtimeEnvironment(),
                 loweringMode,
-                "bloge-operator-registry",
+                executorKind,
                 executorEntrypoint,
                 "operator-platform",
                 "runtime-platform",
@@ -2899,6 +3075,29 @@ class VisualAssetOverviewControllerTest {
                         "Runtime owner approved policy and deployment scope."
                 )),
                 "deployment:risk-eligibility-native-v0",
+                ""
+        );
+    }
+
+    private static VisualRuntimeBindingImplementationValidation.ImplementationMetadata remoteWorkerImplementation(
+            String bindingId) {
+        return new VisualRuntimeBindingImplementationValidation.ImplementationMetadata(
+                bindingId,
+                "remote-worker",
+                "workers.risk.eligibility",
+                "risk-worker-platform",
+                List.of("remote-worker"),
+                List.of(new VisualRuntimeBindingImplementationValidation.Evidence(
+                        "test",
+                        "worker-suite:risk-eligibility",
+                        "Worker contract suite passed against the exported operator contract."
+                )),
+                List.of(new VisualRuntimeBindingImplementationValidation.Evidence(
+                        "approval",
+                        "change-approval:RB-WORKER-42",
+                        "Runtime owner approved worker topic, policy, and deployment scope."
+                )),
+                "deployment:risk-eligibility-worker-v0",
                 ""
         );
     }

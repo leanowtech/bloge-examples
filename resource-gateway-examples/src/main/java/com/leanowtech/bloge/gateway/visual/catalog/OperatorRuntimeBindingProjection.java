@@ -29,7 +29,7 @@ import java.util.Map;
  * @param implementationBindingRequired true when an implementation binding is still missing or stale
  * @param runtimeActivationRequired true when a bound implementation still needs adapter runtime activation
  * @param projectionState not-required, binding-required, binding-bound, binding-drifted,
- *                        adapter-active, adapter-drifted, or binding-bound-unneeded
+ *                        adapter-active, adapter-drifted, binding-bound-unneeded, or external-runtime-bound
  * @param level UI/control-plane severity
  * @param title short display title
  * @param summary human-readable projection summary
@@ -268,6 +268,9 @@ public record OperatorRuntimeBindingProjection(
             return adapterDriftedProjection(operatorRef, fingerprint, readinessState, binding, activation,
                     activeBinding, activeActivation);
         }
+        if (activeActivation != null && externalRuntimeBound(readinessState)) {
+            return externalRuntimeBoundProjection(operatorRef, fingerprint, readinessState, binding, activation);
+        }
         if (activeActivation != null) {
             return new OperatorRuntimeBindingProjection(
                     SCHEMA_VERSION,
@@ -495,6 +498,41 @@ public record OperatorRuntimeBindingProjection(
         );
     }
 
+    private static OperatorRuntimeBindingProjection externalRuntimeBoundProjection(
+            String operatorRef,
+            String fingerprint,
+            String readinessState,
+            BindingFields binding,
+            ActivationFields activation) {
+        return new OperatorRuntimeBindingProjection(
+                SCHEMA_VERSION,
+                operatorRef,
+                fingerprint,
+                readinessState,
+                false,
+                false,
+                false,
+                "external-runtime-bound",
+                "warning",
+                "External runtime bound",
+                "The operator has trusted external runtime evidence; the current request-response runtime still cannot execute it directly.",
+                binding.bindingId(),
+                binding.revision(),
+                binding.state(),
+                binding.adapterKind(),
+                binding.entrypoint(),
+                binding.runtimeOwner(),
+                binding.boundAt(),
+                activation.activationId(),
+                activation.revision(),
+                activation.state(),
+                activation.healthState(),
+                activation.runtimeEnvironment(),
+                activation.activatedAt(),
+                List.of()
+        );
+    }
+
     private static boolean activationMatchesBinding(VisualRuntimeAdapterActivation activation,
                                                     VisualRuntimeBindingImplementationBinding binding,
                                                     BindingFields fields) {
@@ -507,6 +545,10 @@ public record OperatorRuntimeBindingProjection(
                 && activation.adapterKind().equals(fields.adapterKind())
                 && activation.entrypoint().equals(fields.entrypoint())
                 && activation.runtimeOwner().equals(fields.runtimeOwner());
+    }
+
+    private static boolean externalRuntimeBound(String readinessState) {
+        return "external-runtime-bound".equals(normalizeState(readinessState));
     }
 
     private static String normalizeState(String value) {

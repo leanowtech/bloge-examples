@@ -112,6 +112,13 @@ public class OperatorLibraryValidator {
             "webhook"
     );
     private static final Set<String> EXECUTION_CONFIG_KEYS = Set.of("timeout", "retryAttempts");
+    private static final Set<String> SERVER_MANAGED_LOWERING_PARAMETER_KEYS = Set.of(
+            "runtimeBindingApplyKind",
+            "runtimeBindingId",
+            "adapterActivationId",
+            "executableLoweringIntegrationId",
+            "integrationRevision"
+    );
     private static final Set<String> RESERVED_DSL_FIELD_NAMES = Set.of(
             "graph", "node", "branch", "decision_table", "on", "input", "depends_on",
             "timeout", "retry", "fallback", "execution_mode", "worker_topic", "compensate",
@@ -468,6 +475,7 @@ public class OperatorLibraryValidator {
                     path + "/mode"));
             return;
         }
+        validateServerManagedLoweringParameters(operator, path, diagnostics);
         if ("native".equals(mode)) {
             validateNativeLowering(operator, path, diagnostics);
             return;
@@ -501,6 +509,21 @@ public class OperatorLibraryValidator {
             return;
         }
         validateTransformLowering(operator, path, diagnostics);
+    }
+
+    private static void validateServerManagedLoweringParameters(OperatorDefinition operator,
+                                                                String path,
+                                                                List<VisualDiagnostic> diagnostics) {
+        for (String parameterKey : SERVER_MANAGED_LOWERING_PARAMETER_KEYS) {
+            if (!operator.lowering().parameters().containsKey(parameterKey)) {
+                continue;
+            }
+            diagnostics.add(VisualDiagnostic.error("visual.operator.lowering.parameter.managed",
+                    "Operator '%s' cannot declare server-managed lowering.parameters.%s in an imported operator library; runtime-binding apply writes this field after evidence review."
+                            .formatted(operator.operatorRef(), parameterKey),
+                    path + "/parameters/" + parameterKey,
+                    Map.of("parameter", parameterKey)));
+        }
     }
 
     private static void validateDesignLowering(OperatorDefinition operator,

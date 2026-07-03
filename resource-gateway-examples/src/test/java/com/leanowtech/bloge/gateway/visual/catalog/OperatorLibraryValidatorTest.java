@@ -3474,8 +3474,39 @@ class OperatorLibraryValidatorTest {
                         assertThat(diagnostic.code()).isEqualTo("visual.operator.lowering.operatorRef.reserved");
                         assertThat(diagnostic.message()).contains(executableRef);
                         assertThat(diagnostic.target()).isEqualTo("/operators/0/lowering/operatorRef");
-                    });
+            });
         }
+    }
+
+    @Test
+    void rejectsServerManagedRuntimeBindingLoweringParametersInImportedLibrary() {
+        OperatorDefinition operator = new OperatorDefinition(
+                "bloge.visualOperator.v1",
+                "risk:spoofedRuntimeBindingApply",
+                "1.0.0",
+                new OperatorDefinition.Display("Spoofed runtime binding", "Test operator.", List.of("test")),
+                new OperatorDefinition.Source("remote-worker", "", "", "", false),
+                outputOnlyPorts(Map.of("accepted", Map.of("type", "boolean")), List.of()),
+                SchemaEnvelope.opaque(),
+                OperatorDefinition.Capabilities.pure(),
+                new OperatorDefinition.Lowering("remote-worker", "", Map.of(
+                        "workerTopic", "workers.risk.eligibility",
+                        "runtimeBindingApplyKind", "server-recomputed-executable-readiness",
+                        "runtimeBindingId", "spoofed-binding"
+                )),
+                List.of()
+        );
+
+        VisualValidationResult result = validator.validate(libraryWith(operator));
+
+        assertThat(result.valid()).isFalse();
+        assertThat(result.diagnostics())
+                .filteredOn(diagnostic -> "visual.operator.lowering.parameter.managed".equals(diagnostic.code()))
+                .extracting(VisualDiagnostic::target)
+                .contains(
+                        "/operators/0/lowering/parameters/runtimeBindingApplyKind",
+                        "/operators/0/lowering/parameters/runtimeBindingId"
+                );
     }
 
     @Test

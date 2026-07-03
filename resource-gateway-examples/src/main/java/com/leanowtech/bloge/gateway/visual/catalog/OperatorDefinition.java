@@ -379,6 +379,15 @@ public record OperatorDefinition(
             String summary,
             List<ReadinessDetail> details
     ) {
+        private static final String SERVER_RECOMPUTED_APPLY_KIND = "server-recomputed-executable-readiness";
+        private static final List<String> EXTERNAL_BOUND_LOWERING_MODES = List.of(
+                "remote-worker",
+                "ai-tool",
+                "event-source",
+                "message-handler",
+                "webhook"
+        );
+
         public RuntimeReadiness {
             state = state == null || state.isBlank()
                     ? "UNKNOWN"
@@ -431,6 +440,20 @@ public record OperatorDefinition(
                         List.of("DESIGN"),
                         "Design-only operator",
                         "Authorable as a schema contract; executable lowering is not bound yet.",
+                        details
+                );
+            }
+            if (externalRuntimeBound(sourceKind, loweringMode, lowering)) {
+                details.add(new ReadinessDetail("Execution", "External executor binding is trusted"));
+                details.add(new ReadinessDetail("Local runtime",
+                        "Current request-response runtime still cannot execute this external boundary directly"));
+                return new RuntimeReadiness(
+                        "EXTERNAL_RUNTIME_BOUND",
+                        "warning",
+                        false,
+                        List.of("DESIGN"),
+                        "External runtime bound",
+                        "Runtime binding evidence has been applied as a trusted catalog surface, but execution remains delegated to an external runtime.",
                         details
                 );
             }
@@ -550,6 +573,25 @@ public record OperatorDefinition(
                     "Executable lowering is present for this request-response visual runtime.",
                     details
             );
+        }
+
+        private static boolean externalRuntimeBound(String sourceKind,
+                                                    String loweringMode,
+                                                    Lowering lowering) {
+            if (!EXTERNAL_BOUND_LOWERING_MODES.contains(sourceKind)
+                    && !EXTERNAL_BOUND_LOWERING_MODES.contains(loweringMode)) {
+                return false;
+            }
+            Map<String, Object> parameters = lowering == null ? Map.of() : lowering.parameters();
+            return SERVER_RECOMPUTED_APPLY_KIND.equals(parameters.get("runtimeBindingApplyKind"))
+                    && nonBlankString(parameters.get("runtimeBindingId"))
+                    && nonBlankString(parameters.get("adapterActivationId"))
+                    && nonBlankString(parameters.get("executableLoweringIntegrationId"))
+                    && nonBlankString(parameters.get("executorEntrypoint"));
+        }
+
+        private static boolean nonBlankString(Object value) {
+            return value instanceof String string && !string.isBlank();
         }
     }
 
