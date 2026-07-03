@@ -10,7 +10,7 @@ import java.util.List;
 import java.util.Locale;
 
 /**
- * Result returned after importing a portable immutable publication bundle.
+ * Result returned after validating or importing a portable immutable publication bundle.
  *
  * @param schemaVersion import result schema version
  * @param imported whether the target repository stored the publication
@@ -20,7 +20,7 @@ import java.util.Locale;
  * @param sourceDraftId source draft id from the bundle
  * @param sourceDraftRevision source draft revision from the bundle
  * @param sourceArtifactKind source artifact kind from the bundle
- * @param importedAt target-environment timestamp for this import attempt
+ * @param importedAt target-environment timestamp for this validation or import attempt
  * @param importedPublicationId target publication id when known
  * @param mutationAction target repository action or intended action
  * @param publication stored or rejected publication snapshot
@@ -104,6 +104,18 @@ public record VisualGraphPublicationImportResult(
                                                               VisualGraphPublication publication,
                                                               GraphDraftDependencyReport targetDependencyReport) {
         return from(bundle, true, publication, ACTION_CREATE, targetDependencyReport, List.of());
+    }
+
+    /**
+     * @param bundle source export bundle
+     * @param publication target-environment publication preview that was not stored
+     * @param targetDependencyReport target-environment dependency report
+     * @return non-stored target-environment preflight result with source lineage
+     */
+    public static VisualGraphPublicationImportResult previewed(VisualGraphPublicationExportBundle bundle,
+                                                               VisualGraphPublication publication,
+                                                               GraphDraftDependencyReport targetDependencyReport) {
+        return from(bundle, false, publication, ACTION_CREATE, targetDependencyReport, List.of());
     }
 
     /**

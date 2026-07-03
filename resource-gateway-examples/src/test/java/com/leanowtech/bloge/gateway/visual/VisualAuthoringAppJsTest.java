@@ -117,15 +117,20 @@ class VisualAuthoringAppJsTest {
         assertThat(source)
                 .contains("publicationBundleText: ''")
                 .contains("id=\"export-publication\"")
+                .contains("id=\"validate-publication-bundle\"")
                 .contains("id=\"import-publication\"")
                 .contains("id=\"publication-bundle-json\"")
                 .contains("exportButton.onclick = exportSelectedPublication;")
+                .contains("validateButton.onclick = validatePublicationBundle;")
                 .contains("importButton.onclick = importPublicationBundle;")
                 .contains("async function exportSelectedPublication()")
+                .contains("async function validatePublicationBundle()")
                 .contains("async function importPublicationBundle()")
                 .contains("/api/visual/publications/${encodeURIComponent(publication.publicationId)}/export")
+                .contains("fetch('/api/visual/publications/validate-bundle'")
                 .contains("fetch('/api/visual/publications/import-bundle'")
                 .contains("publicationExport: payload")
+                .contains("publicationBundleValidation: payload")
                 .contains("publicationImport: payload")
                 .contains("const targetReview = publicationImportTargetReviewText(payload?.targetDependencyReport);")
                 .contains("payload?.targetRuntimeBindingRequirements || importedPublication?.validation?.readiness?.runtimeBindingRequirements")
@@ -895,7 +900,7 @@ class VisualAuthoringAppJsTest {
                 const message = context.visualRuntimeBindingHandoffReviewMessage(review);
                 const rows = context.visualRuntimeBindingHandoffReviewRows(review);
                 const checks = [
-                  ['message', message, 'Handoff review Stale: 0 current, 1 drifted, 1 missing, 1 new in current window.'],
+                  ['message', message, 'Handoff review STALE: 0 current, 1 drifted, 1 missing, 1 new in current window.'],
                   ['row count', rows.length, 5],
                   ['fingerprint label', rows[0].label, 'Snapshot fingerprint'],
                   ['fingerprint value', rows[0].value, 'sha256:1234567890abcdef'],
@@ -956,11 +961,24 @@ class VisualAuthoringAppJsTest {
                   throw new Error(`unterminated function ${name}`);
                 }
 
-                const context = vm.createContext({ console });
+                const context = vm.createContext({ console, URLSearchParams });
                 context.SUPPORTED_SCHEMA_UNION_KEYWORDS = ['oneOf', 'anyOf'];
+                context.VISUAL_DIAGNOSTIC_NODE_PREVIEW_LIMIT = 6;
+                context.DEFAULT_COMPOSER_DECISION_TABLE = {
+                  rows: [{
+                    id: 'R1',
+                    conditions: { score: 'score >= 700', amount: 'amount <= 300000' },
+                    output: { decision: 'approved', rate: 4.5, maxTerm: 300, reviewLane: 'standard' }
+                  }, {
+                    id: 'R2',
+                    conditions: { score: 'otherwise', amount: 'otherwise' },
+                    output: { decision: 'declined', rate: 0, maxTerm: 0, reviewLane: 'decline' }
+                  }]
+                };
                 for (const name of [
                   'pretty',
                   'escapeHtml',
+                  'visualBundleFingerprintSuffix',
                   'arrayIndexSegment',
                   'dslReferenceSuffixForSchemaPath',
                   'contextExpressionForPath',
@@ -1063,7 +1081,12 @@ class VisualAuthoringAppJsTest {
                   'applyRequiredInputAutoBindPlan',
                   'sourceHandlesForNode',
                   'targetHandlesForNode',
+                  'canvasDataTargetHandlesForNode',
                   'canvasTargetHandlesForNode',
+                  'configTargetsForNode',
+                  'dependencyTargetsForNode',
+                  'routeTargetsForNode',
+                  'nodeSupportsDependencyTarget',
                   'nativeOperatorLowersConfigInput',
                   'usesNativeNodeBlock',
                   'nativeInputPathForTarget',
@@ -1104,6 +1127,7 @@ class VisualAuthoringAppJsTest {
                   'renderLibraryImpactPanel',
                   'libraryImpactSummaryFromPayload',
                   'libraryImpactDraftTargetsFromPayload',
+                  'libraryImpactPublicationTargetsFromPayload',
                   'libraryImpactSummary',
                   'libraryImpactRefsFromDiagnostic',
                   'libraryImpactHighestLevel',
@@ -1111,16 +1135,24 @@ class VisualAuthoringAppJsTest {
                   'libraryImpactRefGroup',
                   'changeRiskLabel',
                   'libraryImpactRiskSummaryText',
+                  'resourceContractWarningAcknowledgementMessage',
                   'operatorLibraryWarningAcknowledgementMessage',
                   'changeRiskRank',
                   'openLibraryImpactDraft',
                   'openLibraryImpactDraftTarget',
                   'uniqueStrings',
                   'uniqueLibraryImpactDraftTargets',
+                  'uniqueLibraryImpactPublicationTargets',
                   'libraryProfileLevel',
+                  'operatorLibraryYamlProfilePreview',
+                  'operatorLibraryLooksLikeYaml',
+                  'operatorLibraryYamlScalar',
                   'libraryProfileFromText',
                   'operatorLibraryProfile',
                   'operatorLibraryOperatorProfile',
+                  'operatorLibraryRuntimeReadiness',
+                  'operatorLibraryPolicyProfile',
+                  'operatorLibraryPolicyScope',
                   'emptyOperatorLibraryPortProfile',
                   'addOperatorLibraryPortProfile',
                   'operatorLibraryPortProfile',
@@ -1135,7 +1167,9 @@ class VisualAuthoringAppJsTest {
                   'schemaDynamicSurfaceCount',
                   'normalizeReadinessState',
                   'normalizeVisualGraphNodeReadiness',
+                  'normalizeRuntimeBindingRequirement',
                   'normalizeVisualGraphReadiness',
+                  'normalizeVisualGraphActionReadiness',
                   'visualGraphReadinessStatusText',
                   'visualGraphReadinessNodeSummary',
                   'draftSummaryFor',
@@ -1150,6 +1184,7 @@ class VisualAuthoringAppJsTest {
                   'renderVisualReadinessPanel',
                   'visualReadinessPanelSummary',
                   'visualReadinessPanelStats',
+                  'visualActionReadinessRows',
                   'visualReadinessActionRows',
                   'visualRuntimeBindingRequirementCodeRows',
                   'visualReadinessNodeRows',
@@ -1158,6 +1193,7 @@ class VisualAuthoringAppJsTest {
                   'publicationReadinessReviewRows',
                   'publicationReadinessNodeLabel',
                   'publicationReadinessNodeSummary',
+                  'normalizePublishArtifactKind',
                   'publicationOptionLabel',
                   'publicationListReadinessLabel',
                   'publicationAssetSummary',
@@ -1174,10 +1210,15 @@ class VisualAuthoringAppJsTest {
                   'operatorPaletteCapabilityBadges',
                   'operatorPaletteCapabilityLabels',
                   'operatorPaletteCapabilityFacetValues',
+                  'normalizeOperatorRuntimeReadiness',
                   'operatorPaletteReadinessState',
                   'operatorPaletteLoweringMode',
                   'operatorPaletteFacetLabel',
+                  'normalizeFacetCountMap',
+                  'incrementFacetCount',
+                  'operatorCatalogFallbackFacets',
                   'normalizeOperatorCatalogFacets',
+                  'facetSummaryPart',
                   'operatorCatalogFacetSummary',
                   'operatorRuntimeReadiness',
                   'renderOperatorReadinessPanel',
@@ -1198,6 +1239,8 @@ class VisualAuthoringAppJsTest {
                   'normalizeConnectionCheckSummary',
                   'normalizeStringArray',
                   'numericCount',
+                  'normalizeConnectionCandidateExplanation',
+                  'connectionReplacementSummary',
                   'normalizeConnectionCandidate',
                   'normalizeConnectionCandidatesResult',
                   'connectionCandidateTargetSurface',
@@ -1226,10 +1269,16 @@ class VisualAuthoringAppJsTest {
                   'ensureBuilderOutput',
                   'builderToVisualDraft',
                   'operatorFingerprintsForBuilder',
+                  'defaultDecisionRules',
                   'builderNodeToDraftNode',
                   'visualDraftEdgeFromBuilderEdge',
                   'builderScope',
+                  'parseGraphInputSchemaText',
+                  'normalizeGraphInputSchemaEnvelope',
+                  'graphInputSchemaStructuralDiagnostics',
                   'currentGraphInputSchema',
+                  'schemaEnvelopeFromContextText',
+                  'schemaFromValue',
                   'currentSavedDraftSnapshot',
                   'draftPatchOperations',
                   'draftLocalEditOperations',
@@ -1250,6 +1299,7 @@ class VisualAuthoringAppJsTest {
                   'renderNodeConnectabilityRow',
                   'nodeConnectabilityDisplayTargets',
                   'renderNodeConnectabilityTarget',
+                  'connectionAppliedMessage',
                   'connectNodeConnectabilityFromButton',
                   'nodeConnectabilitySourceFromButton',
                   'nodeConnectabilityTargetFromButton',
@@ -1422,7 +1472,16 @@ class VisualAuthoringAppJsTest {
                       }],
                       ports: [{
                         name: 'inputs',
-                        schema: { fields: [{ path: 'score' }] }
+                        schema: {
+                          schema: {
+                            type: 'object',
+                            properties: {
+                              score: { type: 'integer' },
+                              amount: { type: 'integer' }
+                            },
+                            required: ['score', 'amount']
+                          }
+                        }
                       }],
                       fingerprint: 'current-fingerprint-123456',
                       configSchema: {
@@ -1486,10 +1545,10 @@ class VisualAuthoringAppJsTest {
                   if (node.id === 'unsafeInputNode') {
                     return {
                       label: 'Unsafe input',
-                      inputPort: 'mode',
+                      inputPort: 'input',
                       outputPort: 'output',
                       ports: [{
-                        name: 'mode',
+                        name: 'input',
                         required: true,
                         schema: {
                           schema: {
@@ -1751,18 +1810,45 @@ class VisualAuthoringAppJsTest {
                 const configNestedObjectValue = context.configValueAtPath(config, 'matrix.0.score');
                 context.deleteConfigValueAtPath(config, 'thresholds.0');
                 const arrayInputSpec = {
-                  ports: [{
+                  inputPorts: [{
                     name: 'inputs',
-                    schema: { fields: [{ path: 'scores.0.value' }, { path: 'amount' }] }
+                    schema: {
+                      fields: [{ path: 'scores.0.value' }, { path: 'amount' }],
+                      schema: {
+                        type: 'object',
+                        properties: {
+                          scores: {
+                            type: 'array',
+                            items: {
+                              type: 'object',
+                              properties: {
+                                value: { type: 'integer' }
+                              },
+                              required: ['value']
+                            }
+                          },
+                          amount: { type: 'integer' }
+                        },
+                        required: ['scores', 'amount']
+                      }
+                    }
                   }]
                 };
                 const defaultInputs = context.defaultInputExpressionsForOperator(arrayInputSpec);
                 const customInputs = context.defaultCustomInputStateForOperator(arrayInputSpec);
                 const unsafeDefaultInputSpec = {
-                  inputPort: 'mode',
-                  ports: [{
-                    name: 'mode',
-                    schema: { fields: [{ path: 'score' }] }
+                  inputPort: 'input',
+                  inputPorts: [{
+                    name: 'input',
+                    schema: {
+                      schema: {
+                        type: 'object',
+                        properties: {
+                          score: { type: 'integer' }
+                        },
+                        required: ['score']
+                      }
+                    }
                   }]
                 };
                 const unsafeDefaultInputs = context.defaultInputExpressionsForOperator(unsafeDefaultInputSpec);
@@ -2324,7 +2410,7 @@ class VisualAuthoringAppJsTest {
                       },
                       ports: {
                         inputs: [{
-                          name: 'mode',
+                          name: 'input',
                           required: false,
                           schema: { schema: { type: 'string' } }
                         }],
@@ -2677,6 +2763,9 @@ operators:
                   operatorUsageLoadingRef: '',
                   operatorFingerprintRebaseNodeId: '',
                   lastPayload: { output: true },
+                  publications: [],
+                  publicationSummaries: [],
+                  publicationDetailsById: {},
                   selectedPublicationId: 'publication-1',
                   goldenAssertionMode: 'OUTPUT_MATCHES_SCHEMA',
                   goldenAssertionPath: '',
@@ -3074,6 +3163,8 @@ operators:
                 context.state.builder = originalBuilderBeforeDuplicateProbe;
                 context.state.selectedNodeId = originalSelectedBeforeDuplicateProbe;
                 context.state.activeRunTrace = originalTraceBeforeDuplicateProbe;
+                context.state.builderHistoryUndo = [];
+                context.state.builderHistoryRedo = [];
                 """, """
                 const auditTraceSummaryLabel = context.nodeTraceSummaryLabel(context.runTraceForCanvasNode('auditNode'));
                 const traceCoverage = context.runTraceCanvasCoverage(context.state.activeRunTrace, context.state.builder, context.state.layout);
@@ -3334,7 +3425,11 @@ operators:
                     { nodeId: 'riskNode', port: 'payload', path: 'eligible', type: 'boolean', schema: { type: 'boolean' }, dslPathSafe: true }
                   ];
                 };
+                const actualCanvasTargetHandlesForNode = context.canvasTargetHandlesForNode;
                 context.canvasTargetHandlesForNode = (node) => {
+                  if (node.id === 'unionInputNode') {
+                    return actualCanvasTargetHandlesForNode(node);
+                  }
                   if (node.id !== 'auditNode') {
                     return [];
                   }
@@ -3578,9 +3673,22 @@ operators:
                 let quickConnectMessageLevel = '';
                 let quickConnectEditorRenders = 0;
                 let quickConnectDiagramRenders = 0;
-                context.checkVisualConnectionOnServer = async (source, target) => {
+                context.checkVisualConnectionOnServer = (source, target) => {
                   quickConnectServerCall = `${context.endpointLabel(source)} -> ${context.endpointLabel(target)}`;
-                  return { accepted: true, bindingKey: 'inputs.score', diagnostics: [], message: '' };
+                  const serverCheck = { accepted: true, bindingKey: 'inputs.score', diagnostics: [], message: '' };
+                  return {
+                    then: (onFulfilled) => {
+                      const result = onFulfilled(serverCheck);
+                      return {
+                        catch: () => ({
+                          finally: (onFinally) => {
+                            onFinally();
+                            return Promise.resolve(result);
+                          }
+                        })
+                      };
+                    }
+                  };
                 };
                 context.applyConnection = (source, target) => {
                   quickConnectApplied = `${context.endpointLabel(source)} -> ${context.endpointLabel(target)}:${target.key || ''}`;
@@ -3839,8 +3947,8 @@ operators:
                   ['graph readiness panel heading', String(graphReadinessPanel.innerHTML.includes('Design Artifact Path')), 'true'],
                   ['graph readiness panel allowed action', String(graphReadinessPanel.innerHTML.includes('Save, export, and publish as DESIGN.')), 'true'],
                   ['graph readiness panel blocked action', String(graphReadinessPanel.innerHTML.includes('Compile, Run, and EXECUTABLE publish require executable runtime binding.')), 'true'],
-                  ['graph readiness panel binding row', String(graphReadinessPanel.innerHTML.includes('Executable lowering') && graphReadinessPanel.innerHTML.includes('risk:eligibility')), 'true'],
-                  ['graph readiness panel binding handoff', String(graphReadinessPanel.innerHTML.includes('Operator platform') && graphReadinessPanel.innerHTML.includes('Operator implementation')), 'true'],
+                  ['graph readiness panel binding row', String(graphReadinessPanel.innerHTML.includes('Executable Lowering') && graphReadinessPanel.innerHTML.includes('risk:eligibility')), 'true'],
+                  ['graph readiness panel binding handoff', String(graphReadinessPanel.innerHTML.includes('Operator Platform') && graphReadinessPanel.innerHTML.includes('Operator Implementation')), 'true'],
                   ['graph readiness panel node row', String(graphReadinessPanel.innerHTML.includes('eligibility') && graphReadinessPanel.innerHTML.includes('Design only')), 'true'],
                   ['publication readiness state', publicationReadiness.state, 'design-only'],
                   ['publication readiness status text', publicationReadinessStatusText, 'Design-only graph · 1 executable, 1 design-only · DESIGN artifact'],
@@ -3908,7 +4016,7 @@ operators:
                   ['library profile non-idempotent operators', libraryProfile.nonIdempotentOperatorCount, 1],
                   ['library profile secret operators', libraryProfile.secretOperatorCount, 1],
                   ['library profile policy-restricted operators', libraryProfile.policyRestrictedOperatorCount, 1],
-                  ['library profile runtime-blocked operators', libraryProfile.runtimeBlockedOperatorCount, 1],
+                  ['library profile runtime-blocked operators', libraryProfile.runtimeBlockedOperatorCount, 2],
                   ['library profile governance-review operators', governanceRiskProfile.governanceReviewOperatorCount, 1],
                   ['library profile operator input field count', libraryProfile.operators[0].inputFields.length, 3],
                   ['library profile operator output field count', libraryProfile.operators[0].outputFields.length, 2],
@@ -3937,13 +4045,13 @@ operators:
                   ['library profile html import binding heading', String(importReadinessProfileHtml.includes('Runtime binding requirements')), 'true'],
                   ['library profile html import binding label', String(importReadinessProfileHtml.includes('Native Binding')), 'true'],
                   ['library profile html import binding target', String(importReadinessProfileHtml.includes('missingRuntimeBinding')), 'true'],
-                  ['library profile html import binding handoff', String(importReadinessProfileHtml.includes('Runtime platform') && importReadinessProfileHtml.includes('Runtime adapter')), 'true'],
+                  ['library profile html import binding handoff', String(importReadinessProfileHtml.includes('Runtime Platform') && importReadinessProfileHtml.includes('Runtime Adapter')), 'true'],
                   ['library profile html import binding action', String(importReadinessProfileHtml.includes('Bind the missing runtime adapter.')), 'true'],
                   ['library profile html policy summary', String(libraryProfileHtml.includes('policy tenants demo-tenant; namespaces local; env browser')), 'true'],
                   ['library profile policy-only html summary', String(policyOnlyProfileHtml.includes('policy tenants gold, silver, bronze +1; namespaces lending; env prod')), 'true'],
                   ['library profile html includes required input field', String(libraryProfileHtml.includes('inputs.customer.id*')), 'true'],
                   ['library profile html includes unsafe input field', String(libraryProfileHtml.includes('inputs.customer.bad-field !')), 'true'],
-                  ['library profile html includes unsafe input port', String(libraryProfileHtml.includes('mode.(root) !')), 'true'],
+                  ['library profile html includes unsafe input port', String(libraryProfileHtml.includes('input.(root) !')), 'true'],
                   ['library profile html includes unsafe field chip', String(libraryProfileHtml.includes('3 DSL-unsafe fields/ports')), 'true'],
                   ['library profile html includes output field', String(libraryProfileHtml.includes('graph.score* !')), 'true'],
                   ['library profile html includes config field', String(libraryProfileHtml.includes('config threshold')), 'true'],
@@ -4300,6 +4408,18 @@ operators:
                     throw new Error(`${label}: expected ${expected}, got ${actual}`);
                   }
                 }
+                let rebaseFetchUrl = '';
+                let rebaseFetchBody = '';
+                let rebaseDraftMessage = '';
+                let rebaseDraftMessageLevel = '';
+                let rebaseDraftListCalls = 0;
+                let rebaseRevisionCalls = 0;
+                let rebaseDependencyCalls = 0;
+                let rebaseDependencyRenders = 0;
+                let rebaseUsageRef = '';
+                let rebaseDraftControlRenders = 0;
+                let rebaseEditorRenders = 0;
+                let rebaseDiagramRenders = 0;
                 """, """
                 quickConnectPromise.then(() => {
                   const asyncChecks = [
@@ -4352,18 +4472,25 @@ operators:
                       throw new Error(`${label}: expected ${expected}, got ${actual}`);
                     }
                   }
-                  let rebaseFetchUrl = '';
-                  let rebaseFetchBody = '';
-                  let rebaseDraftMessage = '';
-                  let rebaseDraftMessageLevel = '';
-                  let rebaseDraftListCalls = 0;
-                  let rebaseRevisionCalls = 0;
-                  let rebaseDependencyCalls = 0;
-                  let rebaseDependencyRenders = 0;
-                  let rebaseUsageRef = '';
-                  let rebaseDraftControlRenders = 0;
-                  let rebaseEditorRenders = 0;
-                  let rebaseDiagramRenders = 0;
+                  context.state.savedDraftSnapshot = {
+                    ...context.builderToVisualDraft(context.state.builder),
+                    draftId: 'draft-risk',
+                    revision: context.state.currentDraftRevision
+                  };
+                  context.state.builderHistoryUndo = [];
+                  context.state.builderHistoryRedo = [];
+                  rebaseFetchUrl = '';
+                  rebaseFetchBody = '';
+                  rebaseDraftMessage = '';
+                  rebaseDraftMessageLevel = '';
+                  rebaseDraftListCalls = 0;
+                  rebaseRevisionCalls = 0;
+                  rebaseDependencyCalls = 0;
+                  rebaseDependencyRenders = 0;
+                  rebaseUsageRef = '';
+                  rebaseDraftControlRenders = 0;
+                  rebaseEditorRenders = 0;
+                  rebaseDiagramRenders = 0;
                   context.fetch = async (url, options = {}) => {
                     rebaseFetchUrl = url;
                     rebaseFetchBody = options.body || '';
@@ -4472,6 +4599,7 @@ operators:
                   rebaseDraftControlRenders = 0;
                   rebaseEditorRenders = 0;
                   rebaseDiagramRenders = 0;
+                  context.state.builder.operatorFingerprints.riskNode = 'stale-fingerprint-before-conflict';
                   context.fetch = async (url, options = {}) => {
                     rebaseFetchUrl = url;
                     rebaseFetchBody = options.body || '';
@@ -4838,6 +4966,7 @@ operators:
                     transferRevisionLoads += 1;
                     return [];
                   };
+                  context.loadVisualAssetOverview = async () => {};
                   context.syncGraphInputSchemaTextFromBuilder = () => {};
                   context.syncComposerFromBuilder = () => {};
                   context.renderScenario = () => {
@@ -5141,6 +5270,8 @@ operators:
                 context.UNSUPPORTED_SCHEMA_REFERENCE_KEYWORDS = ['$ref', '$dynamicRef'];
                 context.UNSUPPORTED_SCHEMA_COMPOSITION_KEYWORDS = ['allOf', 'not', 'if', 'then', 'else'];
                 context.UNSUPPORTED_SCHEMA_CONSTRAINT_KEYWORDS = ['unevaluatedItems'];
+                context.isDslFieldName = (value) => /^[A-Za-z_][A-Za-z0-9_]*$/.test(String(value || ''))
+                  && !new Set(['graph', 'node', 'input', 'output', 'true', 'false']).has(String(value || ''));
 
                 for (const name of [
                   'escapeHtml',
@@ -5198,6 +5329,9 @@ operators:
                   'libraryProfileLevel',
                   'operatorLibraryProfile',
                   'operatorLibraryOperatorProfile',
+                  'operatorLibraryRuntimeReadiness',
+                  'operatorLibraryPolicyProfile',
+                  'operatorLibraryPolicyScope',
                   'emptyOperatorLibraryPortProfile',
                   'addOperatorLibraryPortProfile',
                   'operatorLibraryPortProfile',
@@ -5207,7 +5341,8 @@ operators:
                   'operatorLibraryInputPortDslPathSafe',
                   'operatorLibraryFieldProfile',
                   'operatorLibrarySchemaSummary',
-                  'operatorLibraryFieldLabel'
+                  'operatorLibraryFieldLabel',
+                  'normalizeOperatorRuntimeReadiness'
                 ]) {
                   vm.runInContext(functionSource(name), context);
                 }

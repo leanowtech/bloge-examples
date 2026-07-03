@@ -1594,6 +1594,7 @@ function renderInputForm() {
         </div>
         <div class="draft-transfer-controls">
           <button id="export-publication" class="secondary compact" type="button">Export</button>
+          <button id="validate-publication-bundle" class="secondary compact" type="button">Validate Bundle</button>
           <button id="import-publication" class="secondary compact" type="button">Import Bundle</button>
         </div>
         <textarea id="publication-bundle-json" class="library-editor draft-bundle-editor" spellcheck="false"></textarea>
@@ -8961,6 +8962,7 @@ function renderPublicationControls() {
   const runButton = $('run-publication');
   const reloadButton = $('reload-publications');
   const exportButton = $('export-publication');
+  const validateButton = $('validate-publication-bundle');
   const importButton = $('import-publication');
   const bundleEditor = $('publication-bundle-json');
   const executablePublicationSelected = selectedPublicationExecutable();
@@ -8984,6 +8986,10 @@ function renderPublicationControls() {
     exportButton.disabled = !state.selectedPublicationId;
     exportButton.onclick = exportSelectedPublication;
   }
+  if (validateButton) {
+    validateButton.disabled = !state.publicationBundleText.trim();
+    validateButton.onclick = validatePublicationBundle;
+  }
   if (importButton) {
     importButton.disabled = !state.publicationBundleText.trim();
     importButton.onclick = importPublicationBundle;
@@ -8992,9 +8998,11 @@ function renderPublicationControls() {
     bundleEditor.value = state.publicationBundleText;
     bundleEditor.oninput = () => {
       state.publicationBundleText = bundleEditor.value;
-      const button = $('import-publication');
-      if (button) {
-        button.disabled = !state.publicationBundleText.trim();
+      for (const buttonId of ['validate-publication-bundle', 'import-publication']) {
+        const button = $(buttonId);
+        if (button) {
+          button.disabled = !state.publicationBundleText.trim();
+        }
       }
     };
   }
@@ -10268,6 +10276,43 @@ async function exportSelectedPublication() {
     'success'
   );
   $('output').textContent = pretty({ status: response.status, publicationExport: payload });
+  renderPublicationControls();
+}
+
+async function validatePublicationBundle() {
+  let bundle;
+  try {
+    bundle = JSON.parse(state.publicationBundleText || '{}');
+  } catch (error) {
+    setPublicationMessage(`Invalid publication bundle JSON: ${error.message}`, 'error');
+    return;
+  }
+  const response = await fetch('/api/visual/publications/validate-bundle', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(bundle)
+  });
+  const payload = await response.json().catch(() => null);
+  const diagnostics = normalizeDiagnostics(payload?.diagnostics);
+  if (!response.ok) {
+    setPublicationMessage(diagnosticMessage(diagnostics, `Publication bundle validation failed with ${response.status}`), 'error');
+    $('output').textContent = pretty({ status: response.status, publicationBundleValidation: payload });
+    renderPublicationControls();
+    return;
+  }
+  const previewPublication = payload?.publication || null;
+  const sourceLineage = payload?.sourcePublicationId
+    ? ` from ${payload.sourcePublicationId}${visualBundleFingerprintSuffix(payload?.sourceBundleFingerprint)}`
+    : '';
+  const targetReview = publicationImportTargetReviewText(payload?.targetDependencyReport);
+  const bindingReview = runtimeBindingRequirementImportReviewText(
+    payload?.targetRuntimeBindingRequirements || previewPublication?.validation?.readiness?.runtimeBindingRequirements
+  );
+  setPublicationMessage(
+    `Validated publication bundle${sourceLineage}.${targetReview ? ` ${targetReview}` : ''}${bindingReview ? ` ${bindingReview}` : ''}`,
+    visualCheckLevel(diagnostics, true)
+  );
+  $('output').textContent = pretty({ status: response.status, publicationBundleValidation: payload });
   renderPublicationControls();
 }
 
@@ -16075,6 +16120,7 @@ function builderNodeToDraftNode(node, builder) {
     };
   }
   if (node.type === 'decisionTable') {
+    const rules = Array.isArray(node.rules) ? node.rules : defaultDecisionRules();
     return {
       id: node.id,
       operatorRef: 'bloge:decisionTable',
@@ -16087,7 +16133,7 @@ function builderNodeToDraftNode(node, builder) {
         },
         hitPolicy: node.hitPolicy || 'unique',
         outputType: '{ decision: String, rate: Decimal, maxTerm: Int, reviewLane: String, ruleId: String }',
-        rules: node.rules.map((rule) => ({
+        rules: rules.map((rule) => ({
           id: rule.id,
           otherwise: Boolean(rule.otherwise),
           conditions: rule.otherwise ? {} : { score: rule.score, amount: rule.amount },

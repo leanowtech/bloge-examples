@@ -195,6 +195,47 @@ class VisualGraphPublicationControllerTest {
     }
 
     @Test
+    void validateBundlePreviewsTargetEnvironmentWithoutStorage() {
+        InMemoryVisualGraphPublicationRepository sourceRepository = new InMemoryVisualGraphPublicationRepository();
+        VisualGraphPublication source = sourceRepository.create(publication("tenant-a", "risk", "prod"));
+        VisualGraphPublicationExportBundle bundle = VisualGraphPublicationExportBundle.from(source);
+        InMemoryVisualGraphPublicationRepository targetRepository = new InMemoryVisualGraphPublicationRepository();
+        VisualGraphPublicationController controller = new VisualGraphPublicationController(targetRepository, runner(),
+                new InMemoryVisualGraphRunRepository(), VisualCatalogTestSupport.catalogWithLibrary(
+                        VisualCatalogTestSupport.eligibilityLibrary("number")));
+
+        ResponseEntity<VisualGraphPublicationImportResult> response = controller.validateBundle(bundle);
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat(response.getBody()).isNotNull();
+        assertThat(response.getBody().schemaVersion())
+                .isEqualTo(VisualGraphPublicationImportResult.SCHEMA_VERSION);
+        assertThat(response.getBody().imported()).isFalse();
+        assertThat(response.getBody().mutationAction()).isEqualTo(VisualGraphPublicationImportResult.ACTION_CREATE);
+        assertThat(response.getBody().sourceBundleSchemaVersion())
+                .isEqualTo(VisualGraphPublicationExportBundle.SCHEMA_VERSION);
+        assertThat(response.getBody().sourceBundleFingerprint()).isEqualTo(bundle.bundleFingerprint());
+        assertThat(response.getBody().sourcePublicationId()).isEqualTo(source.publicationId());
+        assertThat(response.getBody().sourceDraftId()).isEqualTo(source.draftId());
+        assertThat(response.getBody().sourceDraftRevision()).isEqualTo(source.draftRevision());
+        assertThat(response.getBody().sourceArtifactKind()).isEqualTo(source.artifactKind());
+        assertThat(response.getBody().importedPublicationId()).isEqualTo(source.publicationId());
+        assertThat(response.getBody().publication()).isEqualTo(source);
+        assertThat(response.getBody().sourceDependencyReport()).isEqualTo(bundle.dependencyReport());
+        assertThat(response.getBody().targetDependencyReport().draftId()).isEqualTo(source.draftId());
+        assertThat(response.getBody().targetDependencyReport().driftedFingerprintCount()).isEqualTo(1);
+        assertThat(response.getBody().targetDependencyReport().missingOperatorCount()).isZero();
+        assertThat(response.getBody().targetDependencyReport().operators())
+                .singleElement()
+                .satisfies(operator -> {
+                    assertThat(operator.operatorRef()).isEqualTo("risk:eligibility");
+                    assertThat(operator.fingerprintState()).isEqualTo("drifted");
+                });
+        assertThat(response.getBody().diagnostics()).isEmpty();
+        assertThat(targetRepository.all()).isEmpty();
+    }
+
+    @Test
     void importBundleReturnsTargetDependencyReportForMissingCatalogOperator() {
         InMemoryVisualGraphPublicationRepository sourceRepository = new InMemoryVisualGraphPublicationRepository();
         VisualGraphPublication source = sourceRepository.create(publication("tenant-a", "risk", "prod"));

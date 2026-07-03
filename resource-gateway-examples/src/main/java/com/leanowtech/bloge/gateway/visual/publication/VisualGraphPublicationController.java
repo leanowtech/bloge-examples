@@ -160,6 +160,41 @@ public class VisualGraphPublicationController {
     }
 
     /**
+     * Validates a portable immutable publication bundle against the target environment without storing it.
+     *
+     * @param bundle portable publication bundle
+     * @return target-environment preflight result
+     */
+    @PostMapping("/validate-bundle")
+    public ResponseEntity<VisualGraphPublicationImportResult> validateBundle(
+            @RequestBody(required = false) VisualGraphPublicationExportBundle bundle) {
+        if (bundle != null && !VisualGraphPublicationExportBundle.SCHEMA_VERSION.equals(bundle.schemaVersion())) {
+            return ResponseEntity.badRequest().body(VisualGraphPublicationImportResult.rejected(
+                    bundle, bundle.publication(), publicationBundleSchemaVersionDiagnostics(bundle)));
+        }
+        if (bundle != null && !bundle.bundleFingerprintVerified()) {
+            return ResponseEntity.badRequest().body(VisualGraphPublicationImportResult.rejected(
+                    bundle, bundle.publication(), publicationBundleFingerprintDiagnostics(bundle)));
+        }
+        VisualGraphPublication publication = bundle == null ? null : bundle.publication();
+        if (publication == null) {
+            return ResponseEntity.badRequest().body(VisualGraphPublicationImportResult.rejected(
+                    bundle, publicationBundleSnapshotMissingDiagnostics()));
+        }
+        if (!VisualGraphPublication.SCHEMA_VERSION.equals(publication.schemaVersion())) {
+            return ResponseEntity.badRequest().body(VisualGraphPublicationImportResult.rejected(
+                    bundle, publication, publicationSchemaVersionDiagnostics(publication)));
+        }
+        GraphDraftDependencyReport targetDependencyReport = targetDependencyReport(publication);
+        if (!publication.publicationId().isBlank() && repository.find(publication.publicationId()).isPresent()) {
+            return ResponseEntity.status(HttpStatus.CONFLICT).body(VisualGraphPublicationImportResult.rejected(
+                    bundle, publication, targetDependencyReport, publicationAlreadyExistsDiagnostics(publication)));
+        }
+        return ResponseEntity.ok(VisualGraphPublicationImportResult.previewed(
+                bundle, publication, targetDependencyReport));
+    }
+
+    /**
      * Imports a portable immutable publication bundle into the target repository.
      *
      * @param bundle portable publication bundle

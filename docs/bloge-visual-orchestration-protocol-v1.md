@@ -2123,7 +2123,7 @@ artifact。发布成功后 artifact 必须不可变，
 - publish-time dependency report。
 - publication metadata：`actor`、`changeSource`、`changeSummary`、`reason`。
 
-resource-gateway 示例将 artifact 存入 `visual_graph_publications`，提供 list/get/run/export/import-bundle，
+resource-gateway 示例将 artifact 存入 `visual_graph_publications`，提供 list/get/run/export/validate-bundle/import-bundle，
 不提供 update/delete。
 当前实现的 publication result 会在成功和失败响应中暴露 `validation`；即使
 `artifactKind=EXECUTABLE` 因 schema-only/design-only operator 无法 codegen 而被拒，
@@ -2202,11 +2202,20 @@ GET /api/visual/publications/{publicationId}/export
 导入目标环境：
 
 ```http
+POST /api/visual/publications/validate-bundle
+Content-Type: application/json
+```
+
+```http
 POST /api/visual/publications/import-bundle
 Content-Type: application/json
 ```
 
-返回 `bloge.visualGraphPublicationImportResult.v1`。导入只做 portable artifact
+两条路径都返回 `bloge.visualGraphPublicationImportResult.v1`。`validate-bundle`
+只做目标环境非写入预检：先校验 schemaVersion、`bundleFingerprint`、publication snapshot 和 inner
+publication schema，再基于目标 catalog 派生 target dependency report、runtime-binding handoff
+requirements 与 stable keys；成功时 `imported=false`，`mutationAction=CREATE`，不创建
+repository 记录。`import-bundle` 才真正创建 immutable publication。两者都只做 portable artifact
 边界校验，不重新 lower draft，也不使用当前 catalog 改写 publication：
 
 - 成功和可审阅拒绝结果会回显 `sourceBundleSchemaVersion` 与
