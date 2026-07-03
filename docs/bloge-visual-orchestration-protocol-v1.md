@@ -1896,7 +1896,7 @@ review 会先校验提交的 `bundleFingerprint` 是否匹配 bundle material，
 不会继续对当前 read model 做错误对账。review 会回显 `sourceBundleFingerprint`，
 让外部工单、回放审阅和浏览器面板能引用同一份 portable snapshot。review 是快照新鲜度校验，不是状态写入；
 runtime binding 的完成情况仍应通过真正的 operator implementation / runtime binding
-控制面改变 catalog/readiness 后再被派生出来。浏览器 Workspace Overview 会消费
+控制面进入 active binding，再通过 catalog projection 和后续 runtime adapter/readiness 回流被派生出来。浏览器 Workspace Overview 会消费
 `sourceBundleFingerprint`、`fieldChangeCategoryCounts` 和 `items[].fieldChanges[]`，在 review 后展示
 snapshot fingerprint、drift 类别、字段级旧值/当前值、missing requirement 和当前窗口新增 requirement，避免作者只能从
 JSON output 或自然语言摘要里判断交接快照是否还能继续排期。
@@ -1930,8 +1930,13 @@ ready-to-bind 或 review-acknowledged proposal；成功后旧记录进入 `super
 diagnostics 表达 missing request、治理证据缺失、review ack 缺失、active binding 冲突、
 replacement 缺失和 operator mismatch。该 lifecycle fact 是后续 catalog/operator
 implementation projection 的审计输入；当前仍不直接改 graph artifact，也不伪造 executable
-readiness。真正的 runtime readiness 关闭还必须由 catalog/operator implementation 事实被投影后，
-再由 readiness 和 runtime-binding index 重新派生。
+readiness。`GET /api/visual/operators` 现在会把 active bound record 作为
+`bloge.operatorRuntimeBindingProjection.v1` 投影到响应的 `runtimeBindingProjections[]`
+和 `runtimeBindingProjectionStateCounts`，用 `binding-required`、`binding-bound`、
+`binding-drifted`、`not-required` 等状态表达 palette 层的实现绑定进度；projection 会校验
+active binding 的 operator fingerprint 是否仍匹配当前 catalog，drift 时不会关闭实现缺口。
+真正的 executable readiness 关闭还必须由 runtime adapter registry / executable lowering
+接入后，再由 readiness 和 runtime-binding index 重新派生。
 `actionReadiness` 则把同一批 diagnostics/readiness 压成产品动作门禁：`compileNow`、
 `runNow`、`publishDesignNow`、`publishDesignAfterReview`、`publishExecutableNow`、
 `publishExecutableAfterReview`，以及 `requiresAckWarnings` /

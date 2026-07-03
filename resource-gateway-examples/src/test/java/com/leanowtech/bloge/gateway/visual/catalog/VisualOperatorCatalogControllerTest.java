@@ -87,6 +87,23 @@ class VisualOperatorCatalogControllerTest {
     }
 
     @Test
+    void listIncludesRuntimeBindingProjections() throws Exception {
+        MockMvc mockMvc = MockMvcBuilders.standaloneSetup(new VisualOperatorCatalogController(
+                new ProjectedBindingCatalog()
+        )).build();
+
+        mockMvc.perform(get("/api/visual/operators"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.runtimeBindingProjections[0].operatorRef").value("risk:eligibility"))
+                .andExpect(jsonPath("$.runtimeBindingProjections[0].projectionState").value("binding-bound"))
+                .andExpect(jsonPath("$.runtimeBindingProjections[0].activeBindingId")
+                        .value("risk-eligibility-native-v1"))
+                .andExpect(jsonPath("$.runtimeBindingProjections[0].implementationBindingRequired").value(false))
+                .andExpect(jsonPath("$.runtimeBindingProjections[0].runtimeActivationRequired").value(true))
+                .andExpect(jsonPath("$.runtimeBindingProjectionStateCounts['binding-bound']").value(1));
+    }
+
+    @Test
     void getReturnsVisibleOperatorDefinitionAndPassesCatalogVisibilityFilters() throws Exception {
         OperatorDefinition operator = VisualCatalogTestSupport.catalogWithLoanApplicantResource()
                 .find("resource:" + VisualCatalogTestSupport.RESOURCE_ID)
@@ -224,6 +241,47 @@ class VisualOperatorCatalogControllerTest {
         @Override
         public Optional<OperatorDefinition> find(String operatorRef) {
             return Optional.empty();
+        }
+    }
+
+    private static final class ProjectedBindingCatalog implements VisualOperatorCatalog {
+        private final OperatorDefinition operator = VisualCatalogTestSupport.designOnlyEligibilityOperator("integer");
+
+        @Override
+        public List<OperatorDefinition> list(OperatorCatalogQuery query) {
+            return List.of(operator);
+        }
+
+        @Override
+        public List<OperatorRuntimeBindingProjection> runtimeBindingProjections(
+                OperatorCatalogQuery query,
+                List<OperatorDefinition> operators) {
+            return List.of(new OperatorRuntimeBindingProjection(
+                    OperatorRuntimeBindingProjection.SCHEMA_VERSION,
+                    operator.operatorRef(),
+                    operator.fingerprint(),
+                    operator.runtimeReadiness().state(),
+                    false,
+                    false,
+                    true,
+                    "binding-bound",
+                    "info",
+                    "Runtime binding bound",
+                    "An active implementation binding is present; EXECUTABLE promotion still waits for runtime adapter activation.",
+                    "risk-eligibility-native-v1",
+                    2,
+                    "bound",
+                    "native",
+                    "com.acme.risk.RiskEligibilityOperator",
+                    "risk-platform",
+                    java.time.Instant.EPOCH,
+                    List.of()
+            ));
+        }
+
+        @Override
+        public Optional<OperatorDefinition> find(String operatorRef) {
+            return Optional.of(operator);
         }
     }
 

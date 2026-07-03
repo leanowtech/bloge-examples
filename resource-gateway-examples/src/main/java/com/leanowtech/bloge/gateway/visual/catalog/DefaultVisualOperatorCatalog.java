@@ -2,6 +2,9 @@ package com.leanowtech.bloge.gateway.visual.catalog;
 
 import com.leanowtech.bloge.gateway.resource.ResourceDescriptor;
 import com.leanowtech.bloge.gateway.resource.ResourceRegistry;
+import com.leanowtech.bloge.gateway.visual.asset.InMemoryVisualRuntimeBindingImplementationRepository;
+import com.leanowtech.bloge.gateway.visual.asset.VisualRuntimeBindingImplementationBinding;
+import com.leanowtech.bloge.gateway.visual.asset.VisualRuntimeBindingImplementationRepository;
 import com.leanowtech.bloge.gateway.visual.diagnostic.VisualDiagnostic;
 import com.leanowtech.bloge.gateway.visual.model.SchemaEnvelope;
 import com.leanowtech.bloge.gateway.visual.publication.InMemoryVisualGraphPublicationRepository;
@@ -35,6 +38,7 @@ public class DefaultVisualOperatorCatalog implements VisualOperatorCatalog {
     private final JavaOperatorInventoryProjector javaOperatorProjector;
     private final VisualGraphPublicationRepository publicationRepository;
     private final VisualGraphPublicationOperatorProjector publicationProjector;
+    private final VisualRuntimeBindingImplementationRepository runtimeBindingRepository;
 
     /**
      * @param resourceRegistry resource descriptor registry
@@ -48,7 +52,8 @@ public class DefaultVisualOperatorCatalog implements VisualOperatorCatalog {
                                         OperatorLibraryRegistry libraryRegistry,
                                         JavaOperatorInventoryProjector javaOperatorProjector,
                                         VisualGraphPublicationRepository publicationRepository,
-                                        VisualGraphPublicationOperatorProjector publicationProjector) {
+                                        VisualGraphPublicationOperatorProjector publicationProjector,
+                                        VisualRuntimeBindingImplementationRepository runtimeBindingRepository) {
         this.resourceRegistry = resourceRegistry;
         this.contractRegistry = contractRegistry;
         this.projector = projector;
@@ -62,6 +67,20 @@ public class DefaultVisualOperatorCatalog implements VisualOperatorCatalog {
         this.publicationProjector = publicationProjector == null
                 ? new VisualGraphPublicationOperatorProjector()
                 : publicationProjector;
+        this.runtimeBindingRepository = runtimeBindingRepository == null
+                ? new InMemoryVisualRuntimeBindingImplementationRepository()
+                : runtimeBindingRepository;
+    }
+
+    public DefaultVisualOperatorCatalog(ResourceRegistry resourceRegistry,
+                                        ResourceDesignContractRegistry contractRegistry,
+                                        ResourceVirtualOperatorProjector projector,
+                                        OperatorLibraryRegistry libraryRegistry,
+                                        JavaOperatorInventoryProjector javaOperatorProjector,
+                                        VisualGraphPublicationRepository publicationRepository,
+                                        VisualGraphPublicationOperatorProjector publicationProjector) {
+        this(resourceRegistry, contractRegistry, projector, libraryRegistry, javaOperatorProjector,
+                publicationRepository, publicationProjector, new InMemoryVisualRuntimeBindingImplementationRepository());
     }
 
     DefaultVisualOperatorCatalog(ResourceRegistry resourceRegistry,
@@ -167,6 +186,13 @@ public class DefaultVisualOperatorCatalog implements VisualOperatorCatalog {
     }
 
     @Override
+    public List<OperatorRuntimeBindingProjection> runtimeBindingProjections(OperatorCatalogQuery query,
+                                                                            List<OperatorDefinition> operators) {
+        List<OperatorDefinition> safeOperators = operators == null ? list(query) : operators;
+        return OperatorRuntimeBindingProjection.from(safeOperators, activeBindingsByOperatorRef());
+    }
+
+    @Override
     public Optional<OperatorDefinition> find(String operatorRef) {
         if (operatorRef == null || operatorRef.isBlank()) {
             return Optional.empty();
@@ -183,6 +209,17 @@ public class DefaultVisualOperatorCatalog implements VisualOperatorCatalog {
                 && query.loweringModes().isEmpty()
                 && query.capabilities().isEmpty()
                 && query.runtimeReadinessStates().isEmpty();
+    }
+
+    private Map<String, VisualRuntimeBindingImplementationBinding> activeBindingsByOperatorRef() {
+        Map<String, VisualRuntimeBindingImplementationBinding> bindings = new LinkedHashMap<>();
+        for (VisualRuntimeBindingImplementationBinding binding : runtimeBindingRepository.all()) {
+            if (binding == null || !binding.bound() || binding.operatorRef().isBlank()) {
+                continue;
+            }
+            bindings.putIfAbsent(binding.operatorRef(), binding);
+        }
+        return Map.copyOf(bindings);
     }
 
     private List<OperatorDefinition> libraryOperators(boolean includeDeprecated) {

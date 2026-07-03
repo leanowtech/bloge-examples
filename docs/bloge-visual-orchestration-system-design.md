@@ -665,7 +665,7 @@ node fetchApplicant : httpResource {
 
 | Method | Path | 说明 |
 | --- | --- | --- |
-| `GET` | `/api/visual/operators` | 查询可用算子，支持 pattern、tag、tenant、namespace、environment、source/lowering/capability/runtime-readiness facets |
+| `GET` | `/api/visual/operators` | 当前已实现：查询可用算子，支持 pattern、tag、tenant、namespace、environment、source/lowering/capability/runtime-readiness facets，并返回 `runtimeBindingProjections[]` / `runtimeBindingProjectionStateCounts`，把 active bound implementation record 投影为 missing/bound/drifted/not-required 的 palette 可见状态，但不修改 trusted `OperatorDefinition.runtimeReadiness` |
 | `GET` | `/api/visual/operators/{operatorRef}` | 当前已实现：按 catalog 可见性门禁获取单个算子定义，支持 `tenantId`、`namespace`、`environment`、`includeDeprecated`、`resourceOnly` 和 source/lowering/capability/runtime-readiness filters，不可见或不存在返回 404 |
 | `GET` | `/api/visual/operators/{operatorRef}/usage` | 当前已实现：查询某个 operatorRef 被哪些 stored draft / immutable publication 节点使用，并返回 saved/frozen fingerprint 与当前 catalog fingerprint 的状态 |
 | `POST` | `/admin/visual-operator-libraries/import-text` | 当前实现：导入用户提供的 operator library JSON/YAML source text，服务端解析后复用 impact / warning / revision 治理 |
@@ -1284,14 +1284,16 @@ schema-only / runtime-blocked 的缺口通过 runtime-binding index 和 handoff 
 转换为可审阅、可验证、可回滚、可重新派生 readiness 的 catalog 事实。当前已先落地无状态
 implementation validate API 和 proposal persistence，能证明并保存实现材料是否对准
 handoff contract 与当前 catalog，并已支持 bind/supersede lifecycle fact；但 active bound fact
-还没有投影回 operator catalog / library revision / runtime adapter registry，readiness 回流仍未闭合。没有这层闭环，
-handoff bundle 只能把工作交出去，不能把实现结果可靠带回来。
+现在已先投影回 operator catalog response，形成 palette/外部控制面可见的
+`OperatorRuntimeBindingProjection` 读模型；但还没有投影进 library revision / runtime adapter registry，
+也没有 executable lowering/readiness 回填。没有后半层闭环，handoff bundle 已能把工作交出去并把
+实现结果作为绑定事实带回 catalog 响应，但还不能把它可靠提升为可执行运行时能力。
 
 因此下一阶段的生产级优先级应按下面排序，而不是继续堆前端控件：
 
 | 优先级 | 缺口 | 为什么卡住生产级 |
 | --- | --- | --- |
-| P0 | Runtime implementation binding 生命周期 | 当前已有 validate gate、proposal record 和 bind/supersede lifecycle fact；下一步需要把 active bound implementation metadata、适配器入口、能力声明、兼容性证据和测试结果投影回 operator contract / library revision / runtime adapter registry；否则 runtime-binding requirement 只能被导出、预检、保存提案和形成绑定事实，不能重新派生 executable readiness |
+| P0 | Runtime implementation binding 生命周期 | 当前已有 validate gate、proposal record、bind/supersede lifecycle fact，以及 catalog response 级 `OperatorRuntimeBindingProjection`；下一步需要把 active bound implementation metadata、适配器入口、能力声明、兼容性证据和测试结果投影进 operator contract / library revision / runtime adapter registry；否则 runtime-binding requirement 可以被导出、预检、保存提案、形成绑定事实并在 palette 可见，但仍不能重新派生 executable readiness |
 | P0 | Contract diff 与兼容性门禁 | 当前 handoff snapshot 可防篡改、可对账，但 implementation 提交时还需要证明它实现的是同一个 operator contract，且输入/输出/config/policy/lowering 变化按 SemVer 与治理规则被接受 |
 | P1 | Runtime-plane 状态回流 | 外部工单、worker dispatcher、AI tool runtime、event/message/webhook runtime 的状态需要以事件或回调进入控制面，但不能成为第二套 readiness 真相源；最终仍应回到 catalog/readiness 派生 |
 | P1 | IAM / RBAC / tenant isolation | 当前 tenant/namespace/environment policy 是可见性和使用门禁，不是完整权限后台；生产环境需要 actor 权限、secret scope、egress policy、审计查询和管理员分权 |
@@ -1299,7 +1301,7 @@ handoff bundle 只能把工作交出去，不能把实现结果可靠带回来�
 | P2 | 协作与运营 | 多人协作、告警、SLO、runbook、容量和成本控制会决定平台是否能长期运转，但必须建立在前面的 contract/binding 闭环之上 |
 
 这意味着后续代码切片应优先围绕“implementation binding 闭环”推进：在当前 validate / proposal persistence / bind-supersede API 之后，
-继续补 operator implementation projection 与 runtime adapter registry，再把 runtime-binding requirement review 与 operator-library revision、draft/publication readiness
+继续补 runtime adapter registry、operator implementation projection 的可执行提升路径，再把 runtime-binding requirement review 与 operator-library revision、draft/publication readiness
 重新串起来。画布 UI 可以展示这些状态，但不能成为状态源。
 
 ## 20. 路线图
@@ -1373,11 +1375,12 @@ Phase 1 的工程拆分、包结构、API、测试和 Definition of Done 见
 - 当前已落地 implementation validate API，返回 ready-to-bind / requires-review / rejected。
 - 当前已落地 implementation proposal submit/list API，持久化 valid proposal 为 `bloge.visualRuntimeBindingImplementationBindingRecord.v1`。
 - 当前已落地 implementation bind / supersede API，记录 active bound fact、replacement lineage 和 actor/reason lifecycle events。
-- 后续补 operator implementation projection / runtime adapter registry / unbind API。
+- 当前已落地 operator catalog response projection，返回 active binding 的 missing/bound/drifted/not-required 状态。
+- 后续补 runtime adapter registry / executable readiness 回流 / unbind API。
 - handoff bundle `operatorContracts[]` 到 implementation contract 的 fingerprint 校验；当前 validate 已覆盖第一层 operatorRef/fingerprint/catalog drift/evidence gate。
 - implementation metadata：adapter kind、entrypoint、capabilities、runtime owner、test evidence、policy evidence、rollback target。
 - contract diff：输入/输出/config/policy/lowering/runtime readiness 的 breaking / compatible / metadata 变化分类。
-- readiness 回流：implementation 绑定成功后只更新 catalog/operator implementation 事实，再由现有 draft/publication readiness 与 runtime-binding index 重新派生，不直接改 graph artifact。
+- readiness 回流：implementation 绑定成功后先更新 catalog projection；未来接入 runtime adapter registry 后，再由现有 draft/publication readiness 与 runtime-binding index 重新派生 executable 能力，不直接改 graph artifact。
 
 验收：
 

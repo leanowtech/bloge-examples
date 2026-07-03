@@ -63,10 +63,13 @@ public class VisualOperatorCatalogController {
         OperatorCatalogQuery query = new OperatorCatalogQuery(search, tags, resourceOnly, includeDeprecated,
                 tenantId, namespace, environment, sourceKinds, operatorLibraryIds, loweringModes, capabilities,
                 runtimeReadinessStates);
+        List<OperatorDefinition> operators = catalog.list(query);
         return new OperatorCatalogResponse(
                 "bloge.visualOperatorCatalog.v1",
-                catalog.list(query),
-                catalog.diagnostics(query)
+                operators,
+                catalog.diagnostics(query),
+                OperatorCatalogFacets.from(operators),
+                catalog.runtimeBindingProjections(query, operators)
         );
     }
 

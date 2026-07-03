@@ -2,6 +2,10 @@ package com.leanowtech.bloge.gateway.visual.catalog;
 
 import com.leanowtech.bloge.gateway.resource.ResourceDescriptor;
 import com.leanowtech.bloge.gateway.resource.ResourceRegistry;
+import com.leanowtech.bloge.gateway.visual.asset.InMemoryVisualRuntimeBindingImplementationRepository;
+import com.leanowtech.bloge.gateway.visual.asset.VisualRuntimeBindingHandoffBundle;
+import com.leanowtech.bloge.gateway.visual.asset.VisualRuntimeBindingImplementationBinding;
+import com.leanowtech.bloge.gateway.visual.asset.VisualRuntimeBindingImplementationValidation;
 import com.leanowtech.bloge.gateway.visual.codegen.DslGenerationResult;
 import com.leanowtech.bloge.gateway.visual.diagnostic.VisualDiagnostic;
 import com.leanowtech.bloge.gateway.visual.draft.GraphDraft;
@@ -19,6 +23,7 @@ import com.leanowtech.bloge.core.spi.DefaultOperatorRegistry;
 
 import org.junit.jupiter.api.Test;
 
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.List;
@@ -181,6 +186,84 @@ class DefaultVisualOperatorCatalogTest {
         assertThat(eventSource.runtimeReadiness().artifactKinds()).containsExactly("DESIGN");
         assertThat(forged.runtimeReadiness().state()).isEqualTo("DESIGN_ONLY");
         assertThat(forged.runtimeReadiness().title()).isEqualTo("Design-only operator");
+    }
+
+    @Test
+    void projectsActiveRuntimeBindingWithoutClaimingOperatorExecutable() {
+        OperatorDefinition operator = VisualCatalogTestSupport.designOnlyEligibilityOperator("integer");
+        InMemoryVisualRuntimeBindingImplementationRepository bindings =
+                new InMemoryVisualRuntimeBindingImplementationRepository();
+        bindings.create(boundImplementation(operator, operator.fingerprint(), "risk-eligibility-native-v1"));
+        InMemoryOperatorLibraryRegistry libraries = new InMemoryOperatorLibraryRegistry();
+        libraries.upsert(library("risk-policy-design", "ACTIVE", operator));
+        DefaultVisualOperatorCatalog catalog = new DefaultVisualOperatorCatalog(
+                VisualCatalogTestSupport.emptyResourceRegistry(),
+                new InMemoryResourceDesignContractRegistry(),
+                new ResourceVirtualOperatorProjector(),
+                libraries,
+                JavaOperatorInventoryProjector.empty(),
+                new InMemoryVisualGraphPublicationRepository(),
+                new VisualGraphPublicationOperatorProjector(),
+                bindings
+        );
+
+        List<OperatorDefinition> operators = catalog.list(OperatorCatalogQuery.all());
+        OperatorDefinition projectedOperator = operators.stream()
+                .filter(candidate -> candidate.operatorRef().equals("risk:eligibility"))
+                .findFirst()
+                .orElseThrow();
+        OperatorRuntimeBindingProjection projection = catalog.runtimeBindingProjections(
+                        OperatorCatalogQuery.all(), operators).stream()
+                .filter(candidate -> candidate.operatorRef().equals("risk:eligibility"))
+                .findFirst()
+                .orElseThrow();
+
+        assertThat(projectedOperator.runtimeReadiness().state()).isEqualTo("DESIGN_ONLY");
+        assertThat(projectedOperator.runtimeReadiness().executable()).isFalse();
+        assertThat(projection.operatorRef()).isEqualTo("risk:eligibility");
+        assertThat(projection.projectionState()).isEqualTo("binding-bound");
+        assertThat(projection.implementationBindingRequired()).isFalse();
+        assertThat(projection.runtimeActivationRequired()).isTrue();
+        assertThat(projection.executable()).isFalse();
+        assertThat(projection.activeBindingId()).isEqualTo("risk-eligibility-native-v1");
+        assertThat(OperatorRuntimeBindingProjection.stateCounts(List.of(projection)))
+                .containsExactly(Map.entry("binding-bound", 1));
+    }
+
+    @Test
+    void projectsActiveRuntimeBindingAsDriftedWhenOperatorFingerprintChanges() {
+        OperatorDefinition current = VisualCatalogTestSupport.designOnlyEligibilityOperator("integer");
+        InMemoryVisualRuntimeBindingImplementationRepository bindings =
+                new InMemoryVisualRuntimeBindingImplementationRepository();
+        bindings.create(boundImplementation(current, "sha256:old-contract", "risk-eligibility-native-v1"));
+        InMemoryOperatorLibraryRegistry libraries = new InMemoryOperatorLibraryRegistry();
+        libraries.upsert(library("risk-policy-design", "ACTIVE", current));
+        DefaultVisualOperatorCatalog catalog = new DefaultVisualOperatorCatalog(
+                VisualCatalogTestSupport.emptyResourceRegistry(),
+                new InMemoryResourceDesignContractRegistry(),
+                new ResourceVirtualOperatorProjector(),
+                libraries,
+                JavaOperatorInventoryProjector.empty(),
+                new InMemoryVisualGraphPublicationRepository(),
+                new VisualGraphPublicationOperatorProjector(),
+                bindings
+        );
+
+        OperatorRuntimeBindingProjection projection = catalog.runtimeBindingProjections(
+                        OperatorCatalogQuery.all(), catalog.list(OperatorCatalogQuery.all())).stream()
+                .filter(candidate -> candidate.operatorRef().equals("risk:eligibility"))
+                .findFirst()
+                .orElseThrow();
+
+        assertThat(projection.projectionState()).isEqualTo("binding-drifted");
+        assertThat(projection.implementationBindingRequired()).isTrue();
+        assertThat(projection.runtimeActivationRequired()).isTrue();
+        assertThat(projection.diagnostics()).singleElement().satisfies(diagnostic -> {
+            assertThat(diagnostic.code()).isEqualTo("visual.runtimeBindingProjection.fingerprintDrift");
+            assertThat(diagnostic.metadata())
+                    .containsEntry("bindingOperatorFingerprint", "sha256:old-contract")
+                    .containsEntry("currentOperatorFingerprint", current.fingerprint());
+        });
     }
 
     @Test
@@ -804,6 +887,45 @@ class DefaultVisualOperatorCatalogTest {
                 "risk-team",
                 status,
                 List.of(operator)
+        );
+    }
+
+    private static VisualRuntimeBindingImplementationBinding boundImplementation(OperatorDefinition operator,
+                                                                                 String operatorFingerprint,
+                                                                                 String bindingId) {
+        Instant now = Instant.parse("2026-07-03T00:00:00Z");
+        return new VisualRuntimeBindingImplementationBinding(
+                VisualRuntimeBindingImplementationBinding.SCHEMA_VERSION,
+                bindingId,
+                1,
+                VisualRuntimeBindingImplementationBinding.STATE_BOUND,
+                "success",
+                operator.operatorRef(),
+                operatorFingerprint,
+                "sha256:handoff",
+                List.of("draft:draft-1:node:eligibility:operator-platform:operator-implementation:risk:eligibility"),
+                VisualRuntimeBindingHandoffBundle.OperatorContractSnapshot.from(operator),
+                new VisualRuntimeBindingImplementationValidation.ImplementationMetadata(
+                        bindingId,
+                        "native",
+                        "com.acme.risk.RiskEligibilityOperator",
+                        "risk-platform",
+                        List.of("request-response"),
+                        List.of(new VisualRuntimeBindingImplementationValidation.Evidence(
+                                "test",
+                                "golden-suite:risk-eligibility",
+                                "Golden suite passed."
+                        )),
+                        List.of(),
+                        "deployment:risk-eligibility-native-v0",
+                        ""
+                ),
+                null,
+                "",
+                "",
+                List.of(),
+                now,
+                now
         );
     }
 

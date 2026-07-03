@@ -44,6 +44,22 @@ public interface VisualOperatorCatalog {
     }
 
     /**
+     * Returns server-derived runtime binding projections for a catalog window.
+     *
+     * <p>The projection is intentionally separate from {@link OperatorDefinition#runtimeReadiness()}:
+     * imported libraries cannot declare their own active implementation binding, and a bound
+     * implementation does not automatically mean request-response execution is available.</p>
+     *
+     * @param query query options used to shape the catalog window
+     * @param operators already-resolved operator window
+     * @return runtime binding projections aligned with the operator window
+     */
+    default List<OperatorRuntimeBindingProjection> runtimeBindingProjections(OperatorCatalogQuery query,
+                                                                             List<OperatorDefinition> operators) {
+        return List.of();
+    }
+
+    /**
      * Finds one operator by reference.
      *
      * @param operatorRef operator reference
