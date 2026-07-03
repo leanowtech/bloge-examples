@@ -27,6 +27,7 @@ import com.leanowtech.bloge.gateway.visual.runtime.InMemoryVisualExecutableLower
 import com.leanowtech.bloge.gateway.visual.runtime.InMemoryVisualRuntimeAdapterActivationRepository;
 import com.leanowtech.bloge.gateway.visual.runtime.VisualExecutableLoweringIntegration;
 import com.leanowtech.bloge.gateway.visual.runtime.VisualExecutableLoweringIntegrationValidation;
+import com.leanowtech.bloge.gateway.visual.runtime.VisualExecutableReadinessEvidenceRefreshResult;
 import com.leanowtech.bloge.gateway.visual.runtime.VisualExecutableReadinessRecomputePreview;
 import com.leanowtech.bloge.gateway.visual.runtime.VisualExecutableReadinessRecomputeResult;
 import com.leanowtech.bloge.gateway.visual.runtime.VisualRuntimeAdapterActivation;
@@ -1942,6 +1943,187 @@ class VisualAssetOverviewControllerTest {
         assertThat(fixture.libraries().revisions("risk-policy-design")).hasSize(1);
         assertThat(fixture.catalog().find("risk:eligibility").orElseThrow().runtimeReadiness().state())
                 .isEqualTo("DESIGN_ONLY");
+    }
+
+    @Test
+    void executableReadinessEvidenceRefreshGovernanceGatesAndRebindsPostApplyEvidenceChain() {
+        RuntimeBindingImplementationFixture fixture = runtimeBindingImplementationFixture();
+        VisualRuntimeBindingImplementationBinding stored = submitImplementation(
+                fixture,
+                completeImplementation("risk-eligibility-native-v1")
+        );
+        VisualRuntimeBindingImplementationBinding binding = fixture.controller()
+                .bindRuntimeBindingImplementation(stored.bindingId(), transitionRequest("", true))
+                .getBody()
+                .binding();
+        VisualRuntimeAdapterActivation activation = (VisualRuntimeAdapterActivation) fixture.controller()
+                .submitRuntimeAdapterActivation(adapterActivationRequest(binding, "risk-eligibility-prod-active"))
+                .getBody();
+        VisualExecutableLoweringIntegration integration = (VisualExecutableLoweringIntegration) fixture.controller()
+                .submitExecutableLoweringIntegration(
+                        executableLoweringIntegrationRequest(activation, "risk-eligibility-lowering-v1"))
+                .getBody();
+        VisualExecutableReadinessRecomputeResult applied = fixture.controller()
+                .applyExecutableReadinessRecompute(
+                        "risk:eligibility",
+                        true,
+                        "runtime-platform",
+                        "visual-canvas-test",
+                        "Promote risk eligibility executable readiness.",
+                        "Runtime implementation, activation, and executor bridge evidence were reviewed.")
+                .getBody();
+
+        var ackRequired = fixture.controller().refreshExecutableReadinessEvidence(
+                "risk:eligibility",
+                false,
+                "",
+                "",
+                "",
+                "",
+                "",
+                "",
+                ""
+        );
+        var missingGovernance = fixture.controller().refreshExecutableReadinessEvidence(
+                "risk:eligibility",
+                true,
+                "",
+                "visual-canvas-test",
+                "Refresh evidence.",
+                "",
+                "",
+                "",
+                ""
+        );
+        var refreshedResponse = fixture.controller().refreshExecutableReadinessEvidence(
+                "risk:eligibility",
+                true,
+                "runtime-platform",
+                "visual-canvas-test",
+                "Refresh post-apply runtime evidence.",
+                "Executable operator revision was applied; runtime evidence should point at the current fingerprint.",
+                "risk-eligibility-native-v1-refresh",
+                "risk-eligibility-prod-active-refresh",
+                "risk-eligibility-lowering-v1-refresh"
+        );
+
+        assertThat(ackRequired.getStatusCode().value()).isEqualTo(409);
+        assertThat(ackRequired.getBody()).isNotNull();
+        assertThat(ackRequired.getBody().state()).isEqualTo("ack-required");
+        assertThat(ackRequired.getBody().diagnostics())
+                .extracting(VisualDiagnostic::code)
+                .contains("visual.executableReadinessEvidenceRefresh.ackWarningsRequired");
+        assertThat(missingGovernance.getStatusCode().value()).isEqualTo(400);
+        assertThat(missingGovernance.getBody()).isNotNull();
+        assertThat(missingGovernance.getBody().diagnostics())
+                .extracting(VisualDiagnostic::code)
+                .contains("visual.executableReadinessEvidenceRefresh.governanceEvidenceMissing");
+        assertThat(refreshedResponse.getStatusCode().value()).isEqualTo(200);
+        assertThat(refreshedResponse.getBody()).isNotNull();
+        VisualExecutableReadinessEvidenceRefreshResult refreshed = refreshedResponse.getBody();
+        assertThat(refreshed.schemaVersion())
+                .isEqualTo(VisualExecutableReadinessEvidenceRefreshResult.SCHEMA_VERSION);
+        assertThat(refreshed.refreshed()).isTrue();
+        assertThat(refreshed.state()).isEqualTo("refreshed");
+        assertThat(refreshed.operatorRef()).isEqualTo("risk:eligibility");
+        assertThat(refreshed.previousOperatorFingerprint()).isEqualTo(binding.operatorFingerprint());
+        assertThat(refreshed.currentOperatorFingerprint()).isEqualTo(applied.candidateOperatorFingerprint());
+        assertThat(refreshed.changeCategories()).contains("RUNTIME_BINDING");
+        assertThat(refreshed.sourceBinding().bindingId()).isEqualTo(binding.bindingId());
+        assertThat(refreshed.sourceBinding().state()).isEqualTo("superseded");
+        assertThat(refreshed.sourceBinding().supersededByBindingId())
+                .isEqualTo("risk-eligibility-native-v1-refresh");
+        assertThat(refreshed.refreshedBinding().bindingId()).isEqualTo("risk-eligibility-native-v1-refresh");
+        assertThat(refreshed.refreshedBinding().state()).isEqualTo("bound");
+        assertThat(refreshed.refreshedBinding().supersedesBindingId()).isEqualTo(binding.bindingId());
+        assertThat(refreshed.refreshedBinding().operatorFingerprint())
+                .isEqualTo(applied.candidateOperatorFingerprint());
+        assertThat(refreshed.refreshedBinding().operatorContract().fingerprint())
+                .isEqualTo(applied.candidateOperatorFingerprint());
+        assertThat(refreshed.sourceActivation().activationId()).isEqualTo(activation.activationId());
+        assertThat(refreshed.refreshedActivation().activationId())
+                .isEqualTo("risk-eligibility-prod-active-refresh");
+        assertThat(refreshed.refreshedActivation().bindingId())
+                .isEqualTo(refreshed.refreshedBinding().bindingId());
+        assertThat(refreshed.refreshedActivation().bindingRevision())
+                .isEqualTo(refreshed.refreshedBinding().revision());
+        assertThat(refreshed.refreshedActivation().operatorFingerprint())
+                .isEqualTo(applied.candidateOperatorFingerprint());
+        assertThat(refreshed.refreshedActivation().evidence())
+                .extracting(VisualRuntimeAdapterActivation.Evidence::kind)
+                .contains("post-apply-refresh");
+        assertThat(refreshed.sourceIntegration().integrationId()).isEqualTo(integration.integrationId());
+        assertThat(refreshed.refreshedIntegration().integrationId())
+                .isEqualTo("risk-eligibility-lowering-v1-refresh");
+        assertThat(refreshed.refreshedIntegration().activationId())
+                .isEqualTo(refreshed.refreshedActivation().activationId());
+        assertThat(refreshed.refreshedIntegration().bindingId())
+                .isEqualTo(refreshed.refreshedBinding().bindingId());
+        assertThat(refreshed.refreshedIntegration().operatorFingerprint())
+                .isEqualTo(applied.candidateOperatorFingerprint());
+        assertThat(refreshed.refreshedIntegration().evidence())
+                .extracting(VisualExecutableLoweringIntegration.Evidence::kind)
+                .contains("post-apply-refresh");
+
+        assertThat(fixture.controller().runtimeBindingImplementationBindings("risk:eligibility", "bound"))
+                .singleElement()
+                .extracting(VisualRuntimeBindingImplementationBinding::bindingId)
+                .isEqualTo("risk-eligibility-native-v1-refresh");
+        assertThat(fixture.controller().runtimeBindingImplementationBindings("risk:eligibility", "superseded"))
+                .singleElement()
+                .extracting(VisualRuntimeBindingImplementationBinding::bindingId)
+                .isEqualTo(binding.bindingId());
+        var afterRefreshPreview = fixture.controller().previewExecutableReadinessRecompute("risk:eligibility");
+        assertThat(afterRefreshPreview.getStatusCode().value()).isEqualTo(200);
+        assertThat(afterRefreshPreview.getBody()).isNotNull();
+        assertThat(afterRefreshPreview.getBody().state()).isEqualTo("not-required");
+        assertThat(afterRefreshPreview.getBody().currentRuntimeReadinessState()).isEqualTo("RUNTIME_EXECUTABLE");
+        assertThat(afterRefreshPreview.getBody().activeBindingId())
+                .isEqualTo("risk-eligibility-native-v1-refresh");
+        assertThat(afterRefreshPreview.getBody().activeAdapterActivationId())
+                .isEqualTo("risk-eligibility-prod-active-refresh");
+    }
+
+    @Test
+    void executableReadinessEvidenceRefreshBlocksBeforeExecutableApply() {
+        RuntimeBindingImplementationFixture fixture = runtimeBindingImplementationFixture();
+        VisualRuntimeBindingImplementationBinding stored = submitImplementation(
+                fixture,
+                completeImplementation("risk-eligibility-native-v1")
+        );
+        VisualRuntimeBindingImplementationBinding binding = fixture.controller()
+                .bindRuntimeBindingImplementation(stored.bindingId(), transitionRequest("", true))
+                .getBody()
+                .binding();
+        VisualRuntimeAdapterActivation activation = (VisualRuntimeAdapterActivation) fixture.controller()
+                .submitRuntimeAdapterActivation(adapterActivationRequest(binding, "risk-eligibility-prod-active"))
+                .getBody();
+        fixture.controller().submitExecutableLoweringIntegration(
+                executableLoweringIntegrationRequest(activation, "risk-eligibility-lowering-v1"));
+
+        var response = fixture.controller().refreshExecutableReadinessEvidence(
+                "risk:eligibility",
+                true,
+                "runtime-platform",
+                "visual-canvas-test",
+                "Refresh evidence too early.",
+                "Operator readiness has not been applied yet.",
+                "risk-eligibility-native-v1-refresh",
+                "risk-eligibility-prod-active-refresh",
+                "risk-eligibility-lowering-v1-refresh"
+        );
+
+        assertThat(response.getStatusCode().value()).isEqualTo(409);
+        assertThat(response.getBody()).isNotNull();
+        assertThat(response.getBody().refreshed()).isFalse();
+        assertThat(response.getBody().state()).isEqualTo("blocked");
+        assertThat(response.getBody().diagnostics())
+                .extracting(VisualDiagnostic::code)
+                .contains("visual.executableReadinessEvidenceRefresh.operatorNotExecutable");
+        assertThat(fixture.controller().runtimeBindingImplementationBindings("risk:eligibility", "bound"))
+                .singleElement()
+                .extracting(VisualRuntimeBindingImplementationBinding::bindingId)
+                .isEqualTo(binding.bindingId());
     }
 
     @Test

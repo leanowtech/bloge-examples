@@ -1986,9 +1986,19 @@ owning operator-library 的新 revision。该 mutation 不接受客户端提交�
 activation 和 executable lowering integration 仍然对齐；随后只替换所属用户算子库中的同一个
 operator，并把 actor/source/summary/reason 写入 revision metadata。当前自动 apply 只覆盖
 `loweringMode=native` 的 candidate；`transform`、`branch` 等需要额外 lowering 语义的候选仍以
-blocking diagnostic 拒绝。apply 后旧 binding/activation/integration evidence 仍可能引用旧
-operator fingerprint，因此控制面必须通过后续 refresh/rebind/unbind 流程重新对账这些 runtime-plane
-事实，而不能把一次 library revision mutation 当成所有 evidence 的静默迁移。
+blocking diagnostic 拒绝。
+
+`POST /api/visual/assets/runtime-binding-requirements/executable-readiness-recomputations/evidence-refresh?operatorRef=...&ackWarnings=true&actor=...&reason=...`
+返回 `bloge.visualExecutableReadinessEvidenceRefreshResult.v1`，用于在 apply 已把 operator 变成
+runtime-executable 之后，把旧 binding / activation / integration evidence 重新对账到当前 executable
+operator fingerprint。该 mutation 同样要求 warning acknowledgement 与 actor/reason 治理证据，并只在当前
+operator 已是 runtime-executable、旧 active binding、active adapter activation 和 active native executable
+lowering integration 能形成一致 evidence chain 时执行；服务端会用当前 operator contract snapshot 创建新的
+bound implementation binding，再复制必要的 adapter activation 与 executable lowering integration
+事实，写入 `post-apply-refresh` evidence，并把旧 binding 标记为 superseded。旧 activation /
+integration 作为审计事实保留，不被静默改写。当前自动 refresh 只接受 runtime-binding / metadata 变化面和
+native lowering evidence；non-native lowering、breaking schema 或 policy/governance 变化仍必须走后续更严格的
+contract diff / reimplementation 流程。
 `actionReadiness` 则把同一批 diagnostics/readiness 压成产品动作门禁：`compileNow`、
 `runNow`、`publishDesignNow`、`publishDesignAfterReview`、`publishExecutableNow`、
 `publishExecutableAfterReview`，以及 `requiresAckWarnings` /

@@ -2,6 +2,7 @@ package com.leanowtech.bloge.gateway.visual.asset;
 
 import com.leanowtech.bloge.gateway.visual.catalog.OperatorCatalogQuery;
 import com.leanowtech.bloge.gateway.visual.catalog.OperatorDefinition;
+import com.leanowtech.bloge.gateway.visual.catalog.OperatorDefinitionChangeSummary;
 import com.leanowtech.bloge.gateway.visual.catalog.OperatorExecutablePromotionProjection;
 import com.leanowtech.bloge.gateway.visual.catalog.OperatorLibrary;
 import com.leanowtech.bloge.gateway.visual.catalog.OperatorLibraryRegistry;
@@ -21,6 +22,7 @@ import com.leanowtech.bloge.gateway.visual.runtime.InMemoryVisualRuntimeAdapterA
 import com.leanowtech.bloge.gateway.visual.runtime.VisualExecutableLoweringIntegration;
 import com.leanowtech.bloge.gateway.visual.runtime.VisualExecutableLoweringIntegrationRepository;
 import com.leanowtech.bloge.gateway.visual.runtime.VisualExecutableLoweringIntegrationValidation;
+import com.leanowtech.bloge.gateway.visual.runtime.VisualExecutableReadinessEvidenceRefreshResult;
 import com.leanowtech.bloge.gateway.visual.runtime.VisualExecutableReadinessRecomputePreview;
 import com.leanowtech.bloge.gateway.visual.runtime.VisualExecutableReadinessRecomputeResult;
 import com.leanowtech.bloge.gateway.visual.runtime.VisualRuntimeAdapterActivation;
@@ -1153,6 +1155,801 @@ public class VisualAssetOverviewController {
                 latestRevision,
                 preview
         ));
+    }
+
+    /**
+     * Rebinds runtime evidence after a governed executable readiness apply.
+     *
+     * <p>The operation creates a fresh binding/activation/integration evidence chain against the current
+     * executable operator fingerprint. Existing records are retained for audit; the old binding is superseded.</p>
+     *
+     * @param operatorRef operator whose evidence should be refreshed
+     * @param ackWarnings true when the caller reviewed the fingerprint/surface refresh
+     * @param actor actor approving the refresh
+     * @param changeSource source workflow
+     * @param changeSummary short audit summary
+     * @param reason required audit reason
+     * @param refreshedBindingId optional id for the refreshed binding
+     * @param refreshedActivationId optional id for the refreshed activation
+     * @param refreshedIntegrationId optional id for the refreshed lowering integration
+     * @return refresh result
+     */
+    @PostMapping("/runtime-binding-requirements/executable-readiness-recomputations/evidence-refresh")
+    public ResponseEntity<VisualExecutableReadinessEvidenceRefreshResult> refreshExecutableReadinessEvidence(
+            @RequestParam(defaultValue = "") String operatorRef,
+            @RequestParam(defaultValue = "false") boolean ackWarnings,
+            @RequestParam(defaultValue = "") String actor,
+            @RequestParam(defaultValue = "") String changeSource,
+            @RequestParam(defaultValue = "") String changeSummary,
+            @RequestParam(defaultValue = "") String reason,
+            @RequestParam(defaultValue = "") String refreshedBindingId,
+            @RequestParam(defaultValue = "") String refreshedActivationId,
+            @RequestParam(defaultValue = "") String refreshedIntegrationId) {
+        String normalizedOperatorRef = operatorRef == null ? "" : operatorRef.trim();
+        if (normalizedOperatorRef.isBlank()) {
+            return evidenceRefreshFailure(
+                    HttpStatus.BAD_REQUEST,
+                    "",
+                    "",
+                    "",
+                    "rejected",
+                    "error",
+                    "Executable readiness evidence refresh requires operatorRef.",
+                    null,
+                    null,
+                    null,
+                    List.of(VisualDiagnostic.error(
+                            "visual.executableReadinessEvidenceRefresh.operatorRefMissing",
+                            "Executable readiness evidence refresh requires operatorRef.",
+                            "/operatorRef")));
+        }
+        OperatorDefinition currentOperator = catalog.find(normalizedOperatorRef).orElse(null);
+        if (currentOperator == null) {
+            return evidenceRefreshFailure(
+                    HttpStatus.NOT_FOUND,
+                    normalizedOperatorRef,
+                    "",
+                    "",
+                    "missing",
+                    "error",
+                    "Operator '%s' is not visible in the current catalog.".formatted(normalizedOperatorRef),
+                    null,
+                    null,
+                    null,
+                    List.of(VisualDiagnostic.error(
+                            "visual.executableReadinessEvidenceRefresh.operatorMissing",
+                            "Operator '%s' is not visible in the current catalog."
+                                    .formatted(normalizedOperatorRef),
+                            "/operatorRef",
+                            Map.of("operatorRef", normalizedOperatorRef))));
+        }
+        VisualRuntimeBindingImplementationBinding sourceBinding =
+                implementationRepository.findActiveBound(normalizedOperatorRef).orElse(null);
+        if (sourceBinding == null) {
+            return evidenceRefreshFailure(
+                    HttpStatus.NOT_FOUND,
+                    normalizedOperatorRef,
+                    "",
+                    currentOperator.fingerprint(),
+                    "missing",
+                    "error",
+                    "Operator '%s' has no active runtime binding evidence to refresh."
+                            .formatted(normalizedOperatorRef),
+                    null,
+                    null,
+                    null,
+                    List.of(VisualDiagnostic.error(
+                            "visual.executableReadinessEvidenceRefresh.bindingMissing",
+                            "Operator '%s' has no active runtime binding evidence to refresh."
+                                    .formatted(normalizedOperatorRef),
+                            "/operatorRef",
+                            Map.of("operatorRef", normalizedOperatorRef))));
+        }
+        VisualRuntimeAdapterActivation sourceActivation =
+                adapterActivationRepository.findActiveByBindingId(sourceBinding.bindingId()).orElse(null);
+        VisualExecutableLoweringIntegration sourceIntegration = sourceActivation == null
+                ? null
+                : executableLoweringIntegrationRepository.findActiveByActivationId(
+                        sourceActivation.activationId()).orElse(null);
+        if (!ackWarnings) {
+            return evidenceRefreshFailure(
+                    HttpStatus.CONFLICT,
+                    normalizedOperatorRef,
+                    sourceBinding.operatorFingerprint(),
+                    currentOperator.fingerprint(),
+                    "ack-required",
+                    "warning",
+                    "Executable readiness evidence refresh for '%s' requires warning acknowledgement."
+                            .formatted(normalizedOperatorRef),
+                    sourceBinding,
+                    sourceActivation,
+                    sourceIntegration,
+                    List.of(executableReadinessEvidenceRefreshAckRequired(
+                            sourceBinding,
+                            sourceActivation,
+                            sourceIntegration,
+                            currentOperator)));
+        }
+        List<VisualDiagnostic> governanceDiagnostics = executableReadinessEvidenceRefreshGovernanceDiagnostics(
+                actor,
+                reason);
+        if (!governanceDiagnostics.isEmpty()) {
+            return evidenceRefreshFailure(
+                    HttpStatus.BAD_REQUEST,
+                    normalizedOperatorRef,
+                    sourceBinding.operatorFingerprint(),
+                    currentOperator.fingerprint(),
+                    "rejected",
+                    "error",
+                    "Executable readiness evidence refresh for '%s' is missing governance evidence."
+                            .formatted(normalizedOperatorRef),
+                    sourceBinding,
+                    sourceActivation,
+                    sourceIntegration,
+                    governanceDiagnostics);
+        }
+        if (!operatorExecutable(currentOperator)) {
+            return evidenceRefreshFailure(
+                    HttpStatus.CONFLICT,
+                    normalizedOperatorRef,
+                    sourceBinding.operatorFingerprint(),
+                    currentOperator.fingerprint(),
+                    "blocked",
+                    "error",
+                    "Operator '%s' is not runtime-executable; apply readiness recompute before refreshing evidence."
+                            .formatted(normalizedOperatorRef),
+                    sourceBinding,
+                    sourceActivation,
+                    sourceIntegration,
+                    List.of(VisualDiagnostic.error(
+                            "visual.executableReadinessEvidenceRefresh.operatorNotExecutable",
+                            "Operator '%s' is not runtime-executable; apply readiness recompute before refreshing evidence."
+                                    .formatted(normalizedOperatorRef),
+                            "/operatorRef",
+                            Map.of("operatorRef", normalizedOperatorRef,
+                                    "runtimeReadinessState", runtimeReadinessState(currentOperator)))));
+        }
+        if (sourceBinding.operatorFingerprint().equals(currentOperator.fingerprint())) {
+            return ResponseEntity.ok(VisualExecutableReadinessEvidenceRefreshResult.current(
+                    normalizedOperatorRef,
+                    currentOperator.fingerprint(),
+                    sourceBinding));
+        }
+        List<VisualDiagnostic> duplicateDiagnostics = executableReadinessEvidenceRefreshDuplicateDiagnostics(
+                refreshedBindingId,
+                refreshedActivationId,
+                refreshedIntegrationId);
+        if (!duplicateDiagnostics.isEmpty()) {
+            return evidenceRefreshFailure(
+                    HttpStatus.CONFLICT,
+                    normalizedOperatorRef,
+                    sourceBinding.operatorFingerprint(),
+                    currentOperator.fingerprint(),
+                    "conflict",
+                    "error",
+                    "Executable readiness evidence refresh for '%s' conflicts with existing ids."
+                            .formatted(normalizedOperatorRef),
+                    sourceBinding,
+                    sourceActivation,
+                    sourceIntegration,
+                    duplicateDiagnostics);
+        }
+        List<VisualDiagnostic> chainDiagnostics = executableReadinessEvidenceRefreshChainDiagnostics(
+                sourceBinding,
+                sourceActivation,
+                sourceIntegration);
+        if (!chainDiagnostics.isEmpty()) {
+            return evidenceRefreshFailure(
+                    HttpStatus.CONFLICT,
+                    normalizedOperatorRef,
+                    sourceBinding.operatorFingerprint(),
+                    currentOperator.fingerprint(),
+                    "blocked",
+                    "error",
+                    "Executable readiness evidence refresh for '%s' is blocked by stale source evidence."
+                            .formatted(normalizedOperatorRef),
+                    sourceBinding,
+                    sourceActivation,
+                    sourceIntegration,
+                    chainDiagnostics);
+        }
+        OperatorDefinitionChangeSummary.ChangeReport changeReport =
+                OperatorDefinitionChangeSummary.analyze(
+                        operatorDefinitionFromContract(sourceBinding.operatorContract()),
+                        currentOperator);
+        List<VisualDiagnostic> changeDiagnostics = executableReadinessEvidenceRefreshChangeDiagnostics(
+                sourceBinding,
+                currentOperator,
+                changeReport);
+        if (!changeDiagnostics.isEmpty()) {
+            return evidenceRefreshFailure(
+                    HttpStatus.CONFLICT,
+                    normalizedOperatorRef,
+                    sourceBinding.operatorFingerprint(),
+                    currentOperator.fingerprint(),
+                    "blocked",
+                    "error",
+                    "Executable readiness evidence refresh for '%s' is blocked by unsupported contract changes."
+                            .formatted(normalizedOperatorRef),
+                    sourceBinding,
+                    sourceActivation,
+                    sourceIntegration,
+                    changeDiagnostics);
+        }
+
+        String normalizedChangeSource = defaultIfBlank(changeSource, "visual-asset-overview");
+        String normalizedChangeSummary = defaultIfBlank(changeSummary,
+                "Refresh executable readiness evidence for '%s'.".formatted(normalizedOperatorRef));
+        VisualRuntimeBindingImplementationTransitionRequest transition =
+                new VisualRuntimeBindingImplementationTransitionRequest(
+                        VisualRuntimeBindingImplementationTransitionRequest.SCHEMA_VERSION,
+                        actor,
+                        reason,
+                        normalizedChangeSource,
+                        normalizedChangeSummary,
+                        true,
+                        "");
+        VisualRuntimeBindingImplementationValidation.Request bindingRefreshRequest =
+                new VisualRuntimeBindingImplementationValidation.Request(
+                        VisualRuntimeBindingImplementationValidation.REQUEST_SCHEMA_VERSION,
+                        currentOperator.operatorRef(),
+                        currentOperator.fingerprint(),
+                        sourceBinding.sourceHandoffBundleFingerprint(),
+                        sourceBinding.sourceRequirementKeys(),
+                        VisualRuntimeBindingHandoffBundle.OperatorContractSnapshot.from(currentOperator),
+                        refreshedImplementation(sourceBinding.implementation(), refreshedBindingId)
+                );
+        VisualRuntimeBindingImplementationValidation bindingValidation =
+                VisualRuntimeBindingImplementationValidation.from(bindingRefreshRequest, currentOperator);
+        if (!bindingValidation.valid()) {
+            return evidenceRefreshFailure(
+                    HttpStatus.CONFLICT,
+                    normalizedOperatorRef,
+                    sourceBinding.operatorFingerprint(),
+                    currentOperator.fingerprint(),
+                    "blocked",
+                    "error",
+                    "Executable readiness evidence refresh for '%s' could not create a current binding."
+                            .formatted(normalizedOperatorRef),
+                    sourceBinding,
+                    sourceActivation,
+                    sourceIntegration,
+                    bindingValidation.diagnostics());
+        }
+        VisualRuntimeBindingImplementationBinding refreshedProposal;
+        try {
+            refreshedProposal = implementationRepository.create(
+                    VisualRuntimeBindingImplementationBinding.from(bindingRefreshRequest, bindingValidation));
+        } catch (IllegalArgumentException e) {
+            return evidenceRefreshFailure(
+                    HttpStatus.CONFLICT,
+                    normalizedOperatorRef,
+                    sourceBinding.operatorFingerprint(),
+                    currentOperator.fingerprint(),
+                    "conflict",
+                    "error",
+                    e.getMessage(),
+                    sourceBinding,
+                    sourceActivation,
+                    sourceIntegration,
+                    List.of(VisualDiagnostic.error(
+                            "visual.executableReadinessEvidenceRefresh.bindingConflict",
+                            e.getMessage(),
+                            "/refreshedBindingId",
+                            Map.of("refreshedBindingId", refreshedBindingId))));
+        }
+        Instant now = Instant.now();
+        VisualRuntimeBindingImplementationBinding refreshedBinding = implementationRepository.update(
+                refreshedProposal.withLifecycleTransition(
+                        VisualRuntimeBindingImplementationBinding.STATE_BOUND,
+                        "success",
+                        sourceBinding.bindingId(),
+                        null,
+                        lifecycleEvent(
+                                "bound",
+                                refreshedProposal.state(),
+                                VisualRuntimeBindingImplementationBinding.STATE_BOUND,
+                                transition,
+                                sourceBinding.bindingId(),
+                                now),
+                        now));
+        VisualRuntimeBindingImplementationBinding supersededSourceBinding = implementationRepository.update(
+                sourceBinding.withLifecycleTransition(
+                        VisualRuntimeBindingImplementationBinding.STATE_SUPERSEDED,
+                        "info",
+                        null,
+                        refreshedBinding.bindingId(),
+                        lifecycleEvent(
+                                "superseded",
+                                sourceBinding.state(),
+                                VisualRuntimeBindingImplementationBinding.STATE_SUPERSEDED,
+                                transition,
+                                refreshedBinding.bindingId(),
+                                now),
+                        now));
+
+        VisualRuntimeAdapterActivationValidation.Request activationRefreshRequest =
+                refreshedActivationRequest(
+                        sourceActivation,
+                        refreshedBinding,
+                        refreshedActivationId,
+                        actor,
+                        normalizedChangeSource,
+                        reason);
+        VisualRuntimeAdapterActivationValidation activationValidation =
+                VisualRuntimeAdapterActivationValidation.from(
+                        activationRefreshRequest,
+                        refreshedBinding,
+                        currentOperator);
+        if (!activationValidation.valid()) {
+            return evidenceRefreshFailure(
+                    HttpStatus.CONFLICT,
+                    normalizedOperatorRef,
+                    supersededSourceBinding.operatorFingerprint(),
+                    currentOperator.fingerprint(),
+                    "blocked",
+                    "error",
+                    "Executable readiness evidence refresh for '%s' could not create a current activation."
+                            .formatted(normalizedOperatorRef),
+                    supersededSourceBinding,
+                    sourceActivation,
+                    sourceIntegration,
+                    activationValidation.diagnostics());
+        }
+        VisualRuntimeAdapterActivation refreshedActivation = adapterActivationRepository.create(
+                VisualRuntimeAdapterActivation.from(activationRefreshRequest, activationValidation));
+
+        VisualExecutableLoweringIntegrationValidation.Request integrationRefreshRequest =
+                refreshedIntegrationRequest(
+                        sourceIntegration,
+                        refreshedActivation,
+                        refreshedIntegrationId,
+                        actor,
+                        normalizedChangeSource,
+                        reason);
+        VisualExecutableLoweringIntegrationValidation integrationValidation =
+                VisualExecutableLoweringIntegrationValidation.from(
+                        integrationRefreshRequest,
+                        refreshedActivation,
+                        refreshedBinding,
+                        currentOperator);
+        if (!integrationValidation.valid()) {
+            return evidenceRefreshFailure(
+                    HttpStatus.CONFLICT,
+                    normalizedOperatorRef,
+                    supersededSourceBinding.operatorFingerprint(),
+                    currentOperator.fingerprint(),
+                    "blocked",
+                    "error",
+                    "Executable readiness evidence refresh for '%s' could not create a current lowering integration."
+                            .formatted(normalizedOperatorRef),
+                    supersededSourceBinding,
+                    sourceActivation,
+                    sourceIntegration,
+                    integrationValidation.diagnostics());
+        }
+        VisualExecutableLoweringIntegration refreshedIntegration = executableLoweringIntegrationRepository.create(
+                VisualExecutableLoweringIntegration.from(integrationRefreshRequest, integrationValidation));
+
+        return ResponseEntity.ok(VisualExecutableReadinessEvidenceRefreshResult.refreshed(
+                normalizedOperatorRef,
+                sourceBinding.operatorFingerprint(),
+                currentOperator.fingerprint(),
+                changeReport.risk(),
+                changeReport.categories(),
+                changeReport.summary(),
+                supersededSourceBinding,
+                refreshedBinding,
+                sourceActivation,
+                refreshedActivation,
+                sourceIntegration,
+                refreshedIntegration));
+    }
+
+    private ResponseEntity<VisualExecutableReadinessEvidenceRefreshResult> evidenceRefreshFailure(
+            HttpStatus status,
+            String operatorRef,
+            String previousOperatorFingerprint,
+            String currentOperatorFingerprint,
+            String state,
+            String level,
+            String message,
+            VisualRuntimeBindingImplementationBinding sourceBinding,
+            VisualRuntimeAdapterActivation sourceActivation,
+            VisualExecutableLoweringIntegration sourceIntegration,
+            List<VisualDiagnostic> diagnostics) {
+        return ResponseEntity.status(status).body(VisualExecutableReadinessEvidenceRefreshResult.rejected(
+                operatorRef,
+                previousOperatorFingerprint,
+                currentOperatorFingerprint,
+                state,
+                level,
+                message,
+                sourceBinding,
+                sourceActivation,
+                sourceIntegration,
+                diagnostics));
+    }
+
+    private static boolean operatorExecutable(OperatorDefinition operator) {
+        return operator != null && operator.runtimeReadiness() != null && operator.runtimeReadiness().executable();
+    }
+
+    private static String runtimeReadinessState(OperatorDefinition operator) {
+        return operator == null || operator.runtimeReadiness() == null ? "" : operator.runtimeReadiness().state();
+    }
+
+    private static VisualDiagnostic executableReadinessEvidenceRefreshAckRequired(
+            VisualRuntimeBindingImplementationBinding sourceBinding,
+            VisualRuntimeAdapterActivation sourceActivation,
+            VisualExecutableLoweringIntegration sourceIntegration,
+            OperatorDefinition currentOperator) {
+        return VisualDiagnostic.warning(
+                "visual.executableReadinessEvidenceRefresh.ackWarningsRequired",
+                "Executable readiness evidence refresh for '%s' will supersede runtime evidence from fingerprint '%s' to '%s'; review the current executable operator and retry with ackWarnings=true."
+                        .formatted(currentOperator.operatorRef(), sourceBinding.operatorFingerprint(),
+                                currentOperator.fingerprint()),
+                "/ackWarnings",
+                Map.of(
+                        "operatorRef", currentOperator.operatorRef(),
+                        "sourceBindingId", sourceBinding.bindingId(),
+                        "sourceActivationId", sourceActivation == null ? "" : sourceActivation.activationId(),
+                        "sourceIntegrationId", sourceIntegration == null ? "" : sourceIntegration.integrationId(),
+                        "previousOperatorFingerprint", sourceBinding.operatorFingerprint(),
+                        "currentOperatorFingerprint", currentOperator.fingerprint()
+                ));
+    }
+
+    private static List<VisualDiagnostic> executableReadinessEvidenceRefreshGovernanceDiagnostics(
+            String actor,
+            String reason) {
+        List<VisualDiagnostic> diagnostics = new ArrayList<>();
+        Map<String, Object> metadata = Map.of("requiredFor", List.of("ackWarnings"));
+        if (actor == null || actor.isBlank()) {
+            diagnostics.add(VisualDiagnostic.error(
+                    "visual.executableReadinessEvidenceRefresh.governanceEvidenceMissing",
+                    "Executable readiness evidence refresh requires actor when using ackWarnings=true.",
+                    "/actor",
+                    metadata));
+        }
+        if (reason == null || reason.isBlank()) {
+            diagnostics.add(VisualDiagnostic.error(
+                    "visual.executableReadinessEvidenceRefresh.governanceEvidenceMissing",
+                    "Executable readiness evidence refresh requires reason when using ackWarnings=true.",
+                    "/reason",
+                    metadata));
+        }
+        return diagnostics;
+    }
+
+    private List<VisualDiagnostic> executableReadinessEvidenceRefreshDuplicateDiagnostics(
+            String refreshedBindingId,
+            String refreshedActivationId,
+            String refreshedIntegrationId) {
+        List<VisualDiagnostic> diagnostics = new ArrayList<>();
+        String bindingId = refreshedBindingId == null ? "" : refreshedBindingId.trim();
+        if (!bindingId.isBlank() && implementationRepository.find(bindingId).isPresent()) {
+            diagnostics.add(VisualDiagnostic.error(
+                    "visual.executableReadinessEvidenceRefresh.bindingIdDuplicate",
+                    "Refreshed runtime binding id '%s' already exists.".formatted(bindingId),
+                    "/refreshedBindingId",
+                    Map.of("refreshedBindingId", bindingId)));
+        }
+        String activationId = refreshedActivationId == null ? "" : refreshedActivationId.trim();
+        if (!activationId.isBlank() && adapterActivationRepository.find(activationId).isPresent()) {
+            diagnostics.add(VisualDiagnostic.error(
+                    "visual.executableReadinessEvidenceRefresh.activationIdDuplicate",
+                    "Refreshed adapter activation id '%s' already exists.".formatted(activationId),
+                    "/refreshedActivationId",
+                    Map.of("refreshedActivationId", activationId)));
+        }
+        String integrationId = refreshedIntegrationId == null ? "" : refreshedIntegrationId.trim();
+        if (!integrationId.isBlank() && executableLoweringIntegrationRepository.find(integrationId).isPresent()) {
+            diagnostics.add(VisualDiagnostic.error(
+                    "visual.executableReadinessEvidenceRefresh.integrationIdDuplicate",
+                    "Refreshed executable lowering integration id '%s' already exists.".formatted(integrationId),
+                    "/refreshedIntegrationId",
+                    Map.of("refreshedIntegrationId", integrationId)));
+        }
+        return diagnostics;
+    }
+
+    private static List<VisualDiagnostic> executableReadinessEvidenceRefreshChainDiagnostics(
+            VisualRuntimeBindingImplementationBinding sourceBinding,
+            VisualRuntimeAdapterActivation sourceActivation,
+            VisualExecutableLoweringIntegration sourceIntegration) {
+        List<VisualDiagnostic> diagnostics = new ArrayList<>();
+        if (sourceBinding.implementation() == null) {
+            diagnostics.add(VisualDiagnostic.error(
+                    "visual.executableReadinessEvidenceRefresh.implementationMissing",
+                    "Source runtime binding has no implementation metadata to rebind.",
+                    "/sourceBinding/implementation",
+                    Map.of("sourceBindingId", sourceBinding.bindingId())));
+        }
+        if (sourceBinding.operatorContract() == null) {
+            diagnostics.add(VisualDiagnostic.error(
+                    "visual.executableReadinessEvidenceRefresh.operatorContractMissing",
+                    "Source runtime binding has no operator contract snapshot to compare.",
+                    "/sourceBinding/operatorContract",
+                    Map.of("sourceBindingId", sourceBinding.bindingId())));
+        }
+        if (sourceActivation == null) {
+            diagnostics.add(VisualDiagnostic.error(
+                    "visual.executableReadinessEvidenceRefresh.activationMissing",
+                    "Source runtime binding '%s' has no active adapter activation to refresh."
+                            .formatted(sourceBinding.bindingId()),
+                    "/sourceActivation",
+                    Map.of("sourceBindingId", sourceBinding.bindingId())));
+            return diagnostics;
+        }
+        if (!sourceActivation.active()) {
+            diagnostics.add(VisualDiagnostic.error(
+                    "visual.executableReadinessEvidenceRefresh.activationNotActive",
+                    "Source adapter activation '%s' is not active.".formatted(sourceActivation.activationId()),
+                    "/sourceActivation/state",
+                    Map.of("sourceActivationId", sourceActivation.activationId(),
+                            "state", sourceActivation.state())));
+        }
+        addEvidenceRefreshMismatch(diagnostics, "activationBindingId", sourceActivation.bindingId(),
+                sourceBinding.bindingId(), "/sourceActivation/bindingId");
+        addEvidenceRefreshMismatch(diagnostics, "activationBindingRevision", sourceActivation.bindingRevision(),
+                sourceBinding.revision(), "/sourceActivation/bindingRevision");
+        addEvidenceRefreshMismatch(diagnostics, "activationOperatorRef", sourceActivation.operatorRef(),
+                sourceBinding.operatorRef(), "/sourceActivation/operatorRef");
+        addEvidenceRefreshMismatch(diagnostics, "activationOperatorFingerprint",
+                sourceActivation.operatorFingerprint(), sourceBinding.operatorFingerprint(),
+                "/sourceActivation/operatorFingerprint");
+        addEvidenceRefreshMismatch(diagnostics, "activationAdapterKind", sourceActivation.adapterKind(),
+                sourceBinding.implementation() == null ? "" : sourceBinding.implementation().adapterKind(),
+                "/sourceActivation/adapterKind");
+        addEvidenceRefreshMismatch(diagnostics, "activationEntrypoint", sourceActivation.entrypoint(),
+                sourceBinding.implementation() == null ? "" : sourceBinding.implementation().entrypoint(),
+                "/sourceActivation/entrypoint");
+        addEvidenceRefreshMismatch(diagnostics, "activationRuntimeOwner", sourceActivation.runtimeOwner(),
+                sourceBinding.implementation() == null ? "" : sourceBinding.implementation().runtimeOwner(),
+                "/sourceActivation/runtimeOwner");
+
+        if (sourceIntegration == null) {
+            diagnostics.add(VisualDiagnostic.error(
+                    "visual.executableReadinessEvidenceRefresh.integrationMissing",
+                    "Source adapter activation '%s' has no active executable lowering integration to refresh."
+                            .formatted(sourceActivation.activationId()),
+                    "/sourceIntegration",
+                    Map.of("sourceActivationId", sourceActivation.activationId())));
+            return diagnostics;
+        }
+        if (!sourceIntegration.active()) {
+            diagnostics.add(VisualDiagnostic.error(
+                    "visual.executableReadinessEvidenceRefresh.integrationNotActive",
+                    "Source executable lowering integration '%s' is not active."
+                            .formatted(sourceIntegration.integrationId()),
+                    "/sourceIntegration/state",
+                    Map.of("sourceIntegrationId", sourceIntegration.integrationId(),
+                            "state", sourceIntegration.state())));
+        }
+        addEvidenceRefreshMismatch(diagnostics, "integrationActivationId", sourceIntegration.activationId(),
+                sourceActivation.activationId(), "/sourceIntegration/activationId");
+        addEvidenceRefreshMismatch(diagnostics, "integrationActivationRevision",
+                sourceIntegration.activationRevision(), sourceActivation.revision(),
+                "/sourceIntegration/activationRevision");
+        addEvidenceRefreshMismatch(diagnostics, "integrationBindingId", sourceIntegration.bindingId(),
+                sourceBinding.bindingId(), "/sourceIntegration/bindingId");
+        addEvidenceRefreshMismatch(diagnostics, "integrationBindingRevision", sourceIntegration.bindingRevision(),
+                sourceBinding.revision(), "/sourceIntegration/bindingRevision");
+        addEvidenceRefreshMismatch(diagnostics, "integrationOperatorRef", sourceIntegration.operatorRef(),
+                sourceBinding.operatorRef(), "/sourceIntegration/operatorRef");
+        addEvidenceRefreshMismatch(diagnostics, "integrationOperatorFingerprint",
+                sourceIntegration.operatorFingerprint(), sourceBinding.operatorFingerprint(),
+                "/sourceIntegration/operatorFingerprint");
+        addEvidenceRefreshMismatch(diagnostics, "integrationAdapterKind", sourceIntegration.adapterKind(),
+                sourceActivation.adapterKind(), "/sourceIntegration/adapterKind");
+        addEvidenceRefreshMismatch(diagnostics, "integrationEntrypoint", sourceIntegration.entrypoint(),
+                sourceActivation.entrypoint(), "/sourceIntegration/entrypoint");
+        addEvidenceRefreshMismatch(diagnostics, "integrationRuntimeEnvironment",
+                sourceIntegration.runtimeEnvironment(), sourceActivation.runtimeEnvironment(),
+                "/sourceIntegration/runtimeEnvironment");
+        if (!"native".equals(sourceIntegration.loweringMode())) {
+            diagnostics.add(VisualDiagnostic.error(
+                    "visual.executableReadinessEvidenceRefresh.loweringModeUnsupported",
+                    "Executable readiness evidence refresh currently supports source loweringMode=native; got '%s'."
+                            .formatted(sourceIntegration.loweringMode()),
+                    "/sourceIntegration/loweringMode",
+                    Map.of("loweringMode", sourceIntegration.loweringMode())));
+        }
+        if (sourceIntegration.executorEntrypoint().isBlank()) {
+            diagnostics.add(VisualDiagnostic.error(
+                    "visual.executableReadinessEvidenceRefresh.executorEntrypointMissing",
+                    "Source executable lowering integration has no executorEntrypoint.",
+                    "/sourceIntegration/executorEntrypoint"));
+        }
+        return diagnostics;
+    }
+
+    private static void addEvidenceRefreshMismatch(List<VisualDiagnostic> diagnostics,
+                                                   String field,
+                                                   String actual,
+                                                   String expected,
+                                                   String target) {
+        String normalizedActual = actual == null ? "" : actual.trim();
+        String normalizedExpected = expected == null ? "" : expected.trim();
+        if (!normalizedActual.equals(normalizedExpected)) {
+            diagnostics.add(VisualDiagnostic.error(
+                    "visual.executableReadinessEvidenceRefresh.%sMismatch".formatted(field),
+                    "Source evidence %s '%s' does not match expected '%s'."
+                            .formatted(field, normalizedActual, normalizedExpected),
+                    target,
+                    Map.of("actual", normalizedActual, "expected", normalizedExpected)));
+        }
+    }
+
+    private static void addEvidenceRefreshMismatch(List<VisualDiagnostic> diagnostics,
+                                                   String field,
+                                                   long actual,
+                                                   long expected,
+                                                   String target) {
+        if (actual != expected) {
+            diagnostics.add(VisualDiagnostic.error(
+                    "visual.executableReadinessEvidenceRefresh.%sMismatch".formatted(field),
+                    "Source evidence %s '%d' does not match expected '%d'."
+                            .formatted(field, actual, expected),
+                    target,
+                    Map.of("actual", actual, "expected", expected)));
+        }
+    }
+
+    private static List<VisualDiagnostic> executableReadinessEvidenceRefreshChangeDiagnostics(
+            VisualRuntimeBindingImplementationBinding sourceBinding,
+            OperatorDefinition currentOperator,
+            OperatorDefinitionChangeSummary.ChangeReport changeReport) {
+        List<VisualDiagnostic> diagnostics = new ArrayList<>();
+        if (sourceBinding.operatorContract() == null) {
+            return diagnostics;
+        }
+        List<String> categories = changeReport == null ? List.of() : changeReport.categories();
+        boolean unsupported = categories.stream()
+                .anyMatch(category -> !OperatorDefinitionChangeSummary.RISK_RUNTIME_BINDING.equals(category)
+                        && !OperatorDefinitionChangeSummary.RISK_METADATA.equals(category));
+        if (unsupported) {
+            diagnostics.add(VisualDiagnostic.error(
+                    "visual.executableReadinessEvidenceRefresh.contractChangeUnsupported",
+                    "Executable readiness evidence refresh only supports runtime-binding/metadata surface changes; observed '%s'."
+                            .formatted(categories),
+                    "/operatorRef",
+                    Map.of(
+                            "operatorRef", currentOperator.operatorRef(),
+                            "previousOperatorFingerprint", sourceBinding.operatorFingerprint(),
+                            "currentOperatorFingerprint", currentOperator.fingerprint(),
+                            "changeRisk", changeReport.risk(),
+                            "changeCategories", categories,
+                            "changeSummary", changeReport.summary()
+                    )));
+        }
+        return diagnostics;
+    }
+
+    private static OperatorDefinition operatorDefinitionFromContract(
+            VisualRuntimeBindingHandoffBundle.OperatorContractSnapshot contract) {
+        if (contract == null) {
+            return null;
+        }
+        return new OperatorDefinition(
+                "bloge.visualOperator.v1",
+                contract.operatorRef(),
+                contract.operatorVersion(),
+                "",
+                contract.display(),
+                contract.source(),
+                contract.ports(),
+                contract.configSchema(),
+                contract.capabilities(),
+                contract.policy(),
+                contract.lowering(),
+                List.of());
+    }
+
+    private static VisualRuntimeBindingImplementationValidation.ImplementationMetadata refreshedImplementation(
+            VisualRuntimeBindingImplementationValidation.ImplementationMetadata source,
+            String refreshedBindingId) {
+        if (source == null) {
+            return new VisualRuntimeBindingImplementationValidation.ImplementationMetadata(
+                    refreshedBindingId,
+                    "",
+                    "",
+                    "",
+                    List.of(),
+                    List.of(),
+                    List.of(),
+                    "",
+                    "");
+        }
+        return new VisualRuntimeBindingImplementationValidation.ImplementationMetadata(
+                refreshedBindingId,
+                source.adapterKind(),
+                source.entrypoint(),
+                source.runtimeOwner(),
+                source.capabilities(),
+                source.testEvidence(),
+                source.policyEvidence(),
+                source.rollbackTarget(),
+                source.notes());
+    }
+
+    private static VisualRuntimeAdapterActivationValidation.Request refreshedActivationRequest(
+            VisualRuntimeAdapterActivation sourceActivation,
+            VisualRuntimeBindingImplementationBinding refreshedBinding,
+            String refreshedActivationId,
+            String actor,
+            String changeSource,
+            String reason) {
+        return new VisualRuntimeAdapterActivationValidation.Request(
+                VisualRuntimeAdapterActivationValidation.REQUEST_SCHEMA_VERSION,
+                refreshedActivationId,
+                refreshedBinding.bindingId(),
+                refreshedBinding.revision(),
+                refreshedBinding.operatorRef(),
+                refreshedBinding.operatorFingerprint(),
+                refreshedBinding.implementation().adapterKind(),
+                refreshedBinding.implementation().entrypoint(),
+                refreshedBinding.implementation().runtimeOwner(),
+                sourceActivation.runtimeEnvironment(),
+                sourceActivation.healthState(),
+                actor,
+                changeSource,
+                reason,
+                refreshedActivationEvidence(sourceActivation, refreshedBinding));
+    }
+
+    private static List<VisualRuntimeAdapterActivation.Evidence> refreshedActivationEvidence(
+            VisualRuntimeAdapterActivation sourceActivation,
+            VisualRuntimeBindingImplementationBinding refreshedBinding) {
+        List<VisualRuntimeAdapterActivation.Evidence> evidence = new ArrayList<>(sourceActivation.evidence());
+        evidence.add(new VisualRuntimeAdapterActivation.Evidence(
+                "post-apply-refresh",
+                sourceActivation.activationId(),
+                "Rebound adapter activation after executable readiness apply to binding '%s'."
+                        .formatted(refreshedBinding.bindingId())));
+        return List.copyOf(evidence);
+    }
+
+    private static VisualExecutableLoweringIntegrationValidation.Request refreshedIntegrationRequest(
+            VisualExecutableLoweringIntegration sourceIntegration,
+            VisualRuntimeAdapterActivation refreshedActivation,
+            String refreshedIntegrationId,
+            String actor,
+            String changeSource,
+            String reason) {
+        return new VisualExecutableLoweringIntegrationValidation.Request(
+                VisualExecutableLoweringIntegrationValidation.REQUEST_SCHEMA_VERSION,
+                refreshedIntegrationId,
+                refreshedActivation.activationId(),
+                refreshedActivation.revision(),
+                refreshedActivation.bindingId(),
+                refreshedActivation.bindingRevision(),
+                refreshedActivation.operatorRef(),
+                refreshedActivation.operatorFingerprint(),
+                refreshedActivation.adapterKind(),
+                refreshedActivation.entrypoint(),
+                refreshedActivation.runtimeEnvironment(),
+                sourceIntegration.loweringMode(),
+                sourceIntegration.executorKind(),
+                sourceIntegration.executorEntrypoint(),
+                sourceIntegration.executorOwner(),
+                actor,
+                changeSource,
+                reason,
+                refreshedIntegrationEvidence(sourceIntegration, refreshedActivation));
+    }
+
+    private static List<VisualExecutableLoweringIntegration.Evidence> refreshedIntegrationEvidence(
+            VisualExecutableLoweringIntegration sourceIntegration,
+            VisualRuntimeAdapterActivation refreshedActivation) {
+        List<VisualExecutableLoweringIntegration.Evidence> evidence = new ArrayList<>(sourceIntegration.evidence());
+        evidence.add(new VisualExecutableLoweringIntegration.Evidence(
+                "post-apply-refresh",
+                sourceIntegration.integrationId(),
+                "Rebound executable lowering integration after executable readiness apply to activation '%s'."
+                        .formatted(refreshedActivation.activationId())));
+        return List.copyOf(evidence);
     }
 
     private static VisualDiagnostic executableReadinessApplyAckRequired(

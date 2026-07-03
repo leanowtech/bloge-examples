@@ -905,6 +905,7 @@ fingerprint snapshot；普通保存和 PATCH 仍保留既有 snapshot，避免�
 | `GET/POST` | `/api/visual/assets/runtime-binding-requirements/executable-lowering-integrations` | 当前已实现：当前 executor bridge assertion 可持久化为 `bloge.visualExecutableLoweringIntegration.v1`，并按 activationId/operatorRef/state 查询；拒绝 missing/stale activation、unbound binding、catalog drift、`loweringMode=design`、重复 active integration；catalog promotion 可展示 `readiness-recompute-required`，但仍不伪造 executable readiness |
 | `GET` | `/api/visual/assets/runtime-binding-requirements/executable-readiness-recomputations/preview` | 当前已实现：按 `operatorRef` 返回 `bloge.visualExecutableReadinessRecomputePreview.v1`，只读预览 active binding + adapter activation + executable lowering integration 会生成的 candidate operator surface、fingerprint 和 runtime readiness；当前仅 `loweringMode=native` 可自动重算，不写 trusted catalog/library revision |
 | `POST` | `/api/visual/assets/runtime-binding-requirements/executable-readiness-recomputations/apply` | 当前已实现：服务端重新执行 readiness recompute preview，要求 `ackWarnings=true` 与 actor/reason 审计证据，拒绝 fingerprint drift、缺失 owner library、缺失 candidate 或非 native lowering，并把 candidate operator surface 作为 owning operator-library 的新 immutable revision 写入；不接受客户端提交的 operator surface |
+| `POST` | `/api/visual/assets/runtime-binding-requirements/executable-readiness-recomputations/evidence-refresh` | 当前已实现：apply 后要求 `ackWarnings=true` 与 actor/reason 审计证据，用当前 runtime-executable operator fingerprint 重建 bound implementation、adapter activation 和 native executable lowering integration evidence chain，旧 binding 标记为 superseded，旧 activation/integration 保留为审计事实；仅接受 runtime-binding/metadata 变化面 |
 
 ### 12.3 Runtime / Trace API
 
@@ -1300,18 +1301,20 @@ integration 漂移时暴露 `lowering-integration-drifted`。这让控制面知�
 implementation / activation / executor bridge 事实缺失，收窄到可信 library revision 与 readiness 重新派生；
 并且现在已能通过只读 executable readiness recompute preview 计算 native bridge 对应的 candidate
 operator surface、fingerprint 和 runtime readiness，也已能通过受治理 apply mutation 把 native
-candidate 写成 owning operator-library 的新 immutable revision。剩余缺口不再是“完全不能写回”，
-而是写回后旧 binding / activation / integration evidence 仍引用旧 fingerprint，需要后续
-refresh、rebind 或 unbind 流程重新对账；非 native lowering 的 apply 语义也还没有落地。没有这半层闭环，
+candidate 写成 owning operator-library 的新 immutable revision；同时已补 post-apply evidence
+refresh/rebind mutation，可把旧 binding / activation / integration evidence 重新对账到当前 executable
+fingerprint，并用 supersede lineage 保留旧证据。剩余缺口不再是“完全不能写回或无法续接”，
+而是还缺 unbind/deactivate、非 native lowering 的 apply 语义、跨 repository mutation 的事务/idempotency
+硬化，以及更完整的 contract diff 门禁。没有这些后续硬化，
 handoff bundle 已能把工作交出去并把实现结果、激活事实和 lowering integration 事实带回 catalog 响应，native
-路径也能形成可信 library revision，但还不能把所有 runtime-plane evidence 自动续接为长期稳定的
-可执行运行时能力。
+路径也能形成可信 library revision 并完成 native evidence 续接，但还不能覆盖所有 runtime-plane 变更的
+长期稳定治理。
 
 因此下一阶段的生产级优先级应按下面排序，而不是继续堆前端控件：
 
 | 优先级 | 缺口 | 为什么卡住生产级 |
 | --- | --- | --- |
-| P0 | Runtime implementation binding 与 readiness 派生闭环 | 当前已有 validate gate、proposal record、bind/supersede lifecycle fact、adapter activation registry、executable lowering integration registry、catalog response 级 `OperatorRuntimeBindingProjection` / `OperatorExecutablePromotionProjection`、native executable readiness recompute preview，以及受治理 native apply mutation 写入 trusted operator-library revision；下一步需要补 post-apply evidence refresh/rebind/unbind、非 native lowering apply 语义和更完整的 contract diff 门禁，否则 runtime-binding requirement 虽然能被导出、预检、保存提案、形成绑定、激活、lowering integration 事实并在 native 路径写回可信 library revision，但旧 runtime-plane evidence 仍可能因 fingerprint 更新而漂移 |
+| P0 | Runtime implementation binding 与 readiness 派生闭环 | 当前已有 validate gate、proposal record、bind/supersede lifecycle fact、adapter activation registry、executable lowering integration registry、catalog response 级 `OperatorRuntimeBindingProjection` / `OperatorExecutablePromotionProjection`、native executable readiness recompute preview、受治理 native apply mutation 写入 trusted operator-library revision，以及 post-apply evidence refresh/rebind mutation 续接当前 executable fingerprint；下一步需要补 unbind/deactivate、非 native lowering apply 语义、跨 repository mutation 的事务/idempotency 硬化和更完整的 contract diff 门禁，否则 runtime-binding requirement 虽然能被导出、预检、保存提案、形成绑定、激活、lowering integration 事实并在 native 路径写回可信 library revision和续接证据，但仍不能覆盖所有长期运行治理场景 |
 | P0 | Contract diff 与兼容性门禁 | 当前 handoff snapshot 可防篡改、可对账，但 implementation 提交时还需要证明它实现的是同一个 operator contract，且输入/输出/config/policy/lowering 变化按 SemVer 与治理规则被接受 |
 | P1 | Runtime-plane 状态回流 | 外部工单、worker dispatcher、AI tool runtime、event/message/webhook runtime 的状态需要以事件或回调进入控制面，但不能成为第二套 readiness 真相源；最终仍应回到 catalog/readiness 派生 |
 | P1 | IAM / RBAC / tenant isolation | 当前 tenant/namespace/environment policy 是可见性和使用门禁，不是完整权限后台；生产环境需要 actor 权限、secret scope、egress policy、审计查询和管理员分权 |
@@ -1397,7 +1400,7 @@ Phase 1 的工程拆分、包结构、API、测试和 Definition of Done 见
 - 当前已落地 executable lowering integration validate/submit/list API，持久化 current executor bridge assertion 为 `bloge.visualExecutableLoweringIntegration.v1`。
 - 当前已落地 operator catalog response projection，返回 active binding 与 adapter activation 的 missing/bound/drifted/adapter-active/adapter-drifted/not-required 状态。
 - 当前已落地 executable promotion projection，返回 already-executable/binding-required/activation-required/executor-integration-required/lowering-integration-drifted/readiness-recompute-required 等 promotion 状态。
-- 已补 native governed library revision mutation，把 readiness recompute preview 写成可信 operator-library 事实；后续补 unbind API、post-apply evidence refresh/rebind 和非 native lowering apply。
+- 已补 native governed library revision mutation 和 post-apply evidence refresh/rebind mutation，把 readiness recompute preview 写成可信 operator-library 事实后继续续接当前 executable fingerprint；后续补 unbind/deactivate、非 native lowering apply、事务/idempotency 硬化和更完整 contract diff。
 - handoff bundle `operatorContracts[]` 到 implementation contract 的 fingerprint 校验；当前 validate 已覆盖第一层 operatorRef/fingerprint/catalog drift/evidence gate。
 - implementation metadata：adapter kind、entrypoint、capabilities、runtime owner、test evidence、policy evidence、rollback target。
 - contract diff：输入/输出/config/policy/lowering/runtime readiness 的 breaking / compatible / metadata 变化分类。
