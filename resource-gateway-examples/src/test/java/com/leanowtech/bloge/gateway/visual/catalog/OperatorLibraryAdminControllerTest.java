@@ -25,6 +25,7 @@ import java.util.List;
 import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.hamcrest.Matchers.containsString;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
@@ -426,6 +427,81 @@ class OperatorLibraryAdminControllerTest {
                         .value("object"))
                 .andExpect(jsonPath("$.validation.valid").value(true))
                 .andExpect(jsonPath("$.validation.diagnostics").isEmpty());
+
+        assertThat(registry.all()).isEmpty();
+    }
+
+    @Test
+    void fromAsyncApiRejectsUnresolvedSchemaReferencesBeforeProjection() throws Exception {
+        String asyncApi = """
+                asyncapi: '2.6.0'
+                info:
+                  title: Risk Commands
+                  version: 1.2.3
+                channels:
+                  risk.commands:
+                    publish:
+                      operationId: sendRiskCommand
+                      message:
+                        name: RiskCommand
+                        headers:
+                          $ref: 'https://schemas.example.test/RiskHeaders.json'
+                        payload:
+                          $ref: '#/components/schemas/MissingCommand'
+                components:
+                  schemas:
+                    PresentButUnused:
+                      type: object
+                """;
+        AsyncApiOperatorLibraryImportRequest request = new AsyncApiOperatorLibraryImportRequest(
+                "",
+                "",
+                "",
+                "",
+                "",
+                Map.of(),
+                asyncApi
+        );
+
+        mockMvc.perform(post("/admin/visual-operator-libraries/from-asyncapi/operations")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(request)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.operations.length()").value(1))
+                .andExpect(jsonPath("$.operations[0].operationId").value("sendRiskCommand"))
+                .andExpect(jsonPath("$.operations[0].hasPayload").value(true))
+                .andExpect(jsonPath("$.operations[0].payloadType").value("opaque"))
+                .andExpect(jsonPath("$.operations[0].hasHeaders").value(true))
+                .andExpect(jsonPath("$.operations[0].headersType").value("opaque"))
+                .andExpect(jsonPath("$.operations[0].projectionLevel").value("BLOCKED"))
+                .andExpect(jsonPath("$.operations[0].projectionMessage")
+                        .value(containsString("MissingCommand")))
+                .andExpect(jsonPath("$.validation.valid").value(true));
+
+        mockMvc.perform(post("/admin/visual-operator-libraries/from-asyncapi")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(request)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.library").doesNotExist())
+                .andExpect(jsonPath("$.availableOperations.length()").value(1))
+                .andExpect(jsonPath("$.availableOperations[0].projectionLevel").value("BLOCKED"))
+                .andExpect(jsonPath("$.selectedOperations.length()").value(1))
+                .andExpect(jsonPath("$.projectionReview.availableProjectionLevelCounts.BLOCKED").value(1))
+                .andExpect(jsonPath("$.projectionReview.selectedProjectionLevelCounts.BLOCKED").value(1))
+                .andExpect(jsonPath("$.validation.valid").value(false))
+                .andExpect(jsonPath("$.validation.diagnostics.length()").value(2))
+                .andExpect(jsonPath("$.validation.diagnostics[0].code")
+                        .value("visual.library.asyncapi.schemaRefUnresolved"))
+                .andExpect(jsonPath("$.validation.diagnostics[0].message")
+                        .value(containsString("#/components/schemas/MissingCommand")))
+                .andExpect(jsonPath("$.validation.diagnostics[0].target")
+                        .value("/asyncApi/channels/risk.commands/publish/message/payload/$ref"))
+                .andExpect(jsonPath("$.validation.diagnostics[1].code")
+                        .value("visual.library.asyncapi.schemaRefUnresolved"))
+                .andExpect(jsonPath("$.validation.diagnostics[1].message")
+                        .value(containsString("https://schemas.example.test/RiskHeaders.json")))
+                .andExpect(jsonPath("$.validation.diagnostics[1].target")
+                        .value("/asyncApi/channels/risk.commands/publish/message/headers/$ref"));
 
         assertThat(registry.all()).isEmpty();
     }

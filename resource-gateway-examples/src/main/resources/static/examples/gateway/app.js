@@ -3296,12 +3296,15 @@ function renderAsyncApiOperationControls(select, summaryTarget, operations) {
 }
 
 function asyncApiOperationOptionLabel(operation) {
+  const level = operation.projectionLevel && operation.projectionLevel !== 'READY'
+    ? `${operation.projectionLevel} · `
+    : '';
   const action = operation.action || 'operation';
   const channel = operation.channelName || operation.address || 'channel';
   const identity = operation.operationId || operation.messageName || operation.title || 'message';
   const schema = asyncApiOperationSchemaLabel(operation);
   const source = operation.sourceKind ? ` · ${operation.sourceKind}` : '';
-  return `${action} ${channel} · ${identity}${schema ? ` · ${schema}` : ''}${source}`;
+  return `${level}${action} ${channel} · ${identity}${schema ? ` · ${schema}` : ''}${source}`;
 }
 
 function asyncApiOperationSchemaLabel(operation) {
@@ -3403,6 +3406,28 @@ function asyncApiSelectionSummaryLevel(operations) {
     return 'warning';
   }
   return 'ready';
+}
+
+function asyncApiOperationIsBlocked(operation) {
+  return String(operation?.projectionLevel || 'READY').toUpperCase() === 'BLOCKED';
+}
+
+function asyncApiSelectedOperations(operations) {
+  const normalized = normalizeAsyncApiOperations(operations);
+  const selected = normalized.filter((operation) => asyncApiOperationMatchesSelection(operation));
+  return selected.length ? selected : normalized;
+}
+
+function asyncApiBlockedProjectionMessage(operations) {
+  const selected = asyncApiSelectedOperations(operations);
+  const blocked = selected.filter(asyncApiOperationIsBlocked);
+  if (!blocked.length) {
+    return '';
+  }
+  const suffix = blocked.length === 1
+    ? `: ${asyncApiOperationOptionLabel(blocked[0])}`
+    : `; first blocked: ${asyncApiOperationOptionLabel(blocked[0])}`;
+  return `AsyncAPI projection is blocked: ${blocked.length} of ${selected.length} selected operation${selected.length === 1 ? '' : 's'} are not projection-ready${suffix}. Select only READY/WARNING operations or repair the AsyncAPI schema references before projection.`;
 }
 
 function normalizedUiSelector(value) {
@@ -6243,6 +6268,21 @@ async function projectAsyncApiOperatorLibrary() {
   const sourceText = state.libraryImportText || '';
   if (!sourceText.trim()) {
     setLibraryMessage('Paste AsyncAPI JSON or YAML before projection.', 'error');
+    return;
+  }
+  const blockedProjection = asyncApiBlockedProjectionMessage(state.asyncApiImport?.operations || []);
+  if (blockedProjection) {
+    const output = $('output');
+    if (output) {
+      output.textContent = pretty({
+        asyncApiProjectionBlocked: {
+          message: blockedProjection,
+          selectedOperations: asyncApiSelectedOperations(state.asyncApiImport?.operations || [])
+        }
+      });
+    }
+    state.libraryImportConfirmationKey = '';
+    setLibraryMessage(blockedProjection, 'error', [], null, null, sourceText);
     return;
   }
   const response = await fetch(`/admin/visual-operator-libraries/from-asyncapi${libraryForceQuery()}`, {

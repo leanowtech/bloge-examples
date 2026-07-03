@@ -293,6 +293,12 @@ public class AsyncApiOperatorLibraryImporter {
     }
 
     private static String projectionLevel(PayloadProjection payload, HeaderProjection headers) {
+        if ("BLOCKED".equals(payload.level())) {
+            return payload.level();
+        }
+        if ("BLOCKED".equals(headers.level())) {
+            return headers.level();
+        }
         if ("WARNING".equals(payload.level())) {
             return payload.level();
         }
@@ -303,6 +309,12 @@ public class AsyncApiOperatorLibraryImporter {
     }
 
     private static String projectionMessage(PayloadProjection payload, HeaderProjection headers) {
+        if ("BLOCKED".equals(payload.level())) {
+            return payload.message();
+        }
+        if ("BLOCKED".equals(headers.level())) {
+            return headers.message();
+        }
         if ("WARNING".equals(payload.level())) {
             return payload.message();
         }
@@ -824,6 +836,13 @@ public class AsyncApiOperatorLibraryImporter {
                     candidate.target() + "/message/payload"));
             return SchemaEnvelope.opaque();
         }
+        Optional<String> unresolvedRef = unresolvedSchemaReference(asyncApi, rawPayload);
+        if (unresolvedRef.isPresent()) {
+            diagnostics.add(VisualDiagnostic.error("visual.library.asyncapi.schemaRefUnresolved",
+                    schemaRefUnresolvedMessage(candidate, "payload", unresolvedRef.get()),
+                    candidate.target() + "/message/payload/$ref"));
+            return SchemaEnvelope.opaque();
+        }
         Object resolved = resolveMaybeRef(asyncApi, rawPayload, new ArrayList<>());
         if (!(resolved instanceof Map<?, ?> schema)) {
             diagnostics.add(VisualDiagnostic.warning("visual.library.asyncapi.payloadUnsupported",
@@ -842,6 +861,11 @@ public class AsyncApiOperatorLibraryImporter {
             return new PayloadProjection(false, "opaque", "WARNING",
                     "Message has no payload schema; projection will use an opaque object schema.");
         }
+        Optional<String> unresolvedRef = unresolvedSchemaReference(asyncApi, rawPayload);
+        if (unresolvedRef.isPresent()) {
+            return new PayloadProjection(true, "opaque", "BLOCKED",
+                    schemaRefUnresolvedMessage(candidate, "payload", unresolvedRef.get()));
+        }
         Object resolved = resolveMaybeRef(asyncApi, rawPayload, new ArrayList<>());
         if (!(resolved instanceof Map<?, ?> schema)) {
             return new PayloadProjection(true, "opaque", "WARNING",
@@ -856,6 +880,13 @@ public class AsyncApiOperatorLibraryImporter {
                                                           List<VisualDiagnostic> diagnostics) {
         Object rawHeaders = candidate.message().get("headers");
         if (rawHeaders == null) {
+            return Optional.empty();
+        }
+        Optional<String> unresolvedRef = unresolvedSchemaReference(asyncApi, rawHeaders);
+        if (unresolvedRef.isPresent()) {
+            diagnostics.add(VisualDiagnostic.error("visual.library.asyncapi.schemaRefUnresolved",
+                    schemaRefUnresolvedMessage(candidate, "headers", unresolvedRef.get()),
+                    candidate.target() + "/message/headers/$ref"));
             return Optional.empty();
         }
         Object resolved = resolveMaybeRef(asyncApi, rawHeaders, new ArrayList<>());
@@ -876,6 +907,11 @@ public class AsyncApiOperatorLibraryImporter {
         if (rawHeaders == null) {
             return new HeaderProjection(false, "opaque", "READY", "");
         }
+        Optional<String> unresolvedRef = unresolvedSchemaReference(asyncApi, rawHeaders);
+        if (unresolvedRef.isPresent()) {
+            return new HeaderProjection(true, "opaque", "BLOCKED",
+                    schemaRefUnresolvedMessage(candidate, "headers", unresolvedRef.get()));
+        }
         Object resolved = resolveMaybeRef(asyncApi, rawHeaders, new ArrayList<>());
         if (!(resolved instanceof Map<?, ?> schema)) {
             return new HeaderProjection(true, "opaque", "WARNING",
@@ -888,6 +924,22 @@ public class AsyncApiOperatorLibraryImporter {
     private static boolean headersRequired(SchemaEnvelope headers) {
         Object required = headers.schema().get("required");
         return required instanceof List<?> requiredList && !requiredList.isEmpty();
+    }
+
+    private static Optional<String> unresolvedSchemaReference(Map<String, Object> asyncApi, Object rawSchema) {
+        if (!(rawSchema instanceof Map<?, ?> rawMap)) {
+            return Optional.empty();
+        }
+        String ref = string(objectMap(rawMap).get("$ref"));
+        if (ref.isBlank() || resolveJsonPointer(asyncApi, ref).isPresent()) {
+            return Optional.empty();
+        }
+        return Optional.of(ref);
+    }
+
+    private static String schemaRefUnresolvedMessage(ProjectionCandidate candidate, String schemaName, String ref) {
+        return "AsyncAPI message '%s' %s schema reference '%s' cannot be resolved locally; inline the schema or use a local AsyncAPI #/... reference."
+                .formatted(displayName(candidate), schemaName, ref);
     }
 
     private static Map<String, Object> normalizeSchema(Map<String, Object> schema) {

@@ -515,7 +515,12 @@ projection/source-kind counts 表达 selector 覆盖率、未命中 selector、�
 headers schema 时，也会把 headers 投影成独立的 schema-aware `headers` 端口，并在
 operation summary 中暴露 `hasHeaders` / `headersType`，同时在 lowering parameters 的
 `asyncApi` 元信息里保留 operation/channel/message 身份，便于后续 runtime binding
-handoff。它继续复用
+handoff。payload/headers 顶层 `$ref` 必须能在当前 AsyncAPI 文档内本地解析；未命中的
+`#/...` ref 或远程 ref 会在 discovery 中标记为 `BLOCKED`，projection 阶段返回
+`visual.library.asyncapi.schemaRefUnresolved` blocking diagnostic，避免生成 schema 约束不可信的
+operator library。浏览器 `Custom Composer` 会在当前 selection 或默认 All 覆盖 `BLOCKED`
+候选时提前阻断 `From AsyncAPI` 请求，并提示用户只选择 READY/WARNING 候选或修复 AsyncAPI
+schema ref；服务端 projection endpoint 仍是最终权威 gate。它继续复用
 operator-library validator、profile 和 impact review；它不直接写入 registry。
 `POST /admin/visual-operator-libraries/from-asyncapi/operations` 在 projection 前返回
 operation/message 候选摘要，包括 channel、action、message、source kind、payload
