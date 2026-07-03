@@ -64,12 +64,16 @@ public class VisualOperatorCatalogController {
                 tenantId, namespace, environment, sourceKinds, operatorLibraryIds, loweringModes, capabilities,
                 runtimeReadinessStates);
         List<OperatorDefinition> operators = catalog.list(query);
+        List<OperatorRuntimeBindingProjection> runtimeBindingProjections =
+                catalog.runtimeBindingProjections(query, operators);
         return new OperatorCatalogResponse(
                 "bloge.visualOperatorCatalog.v1",
                 operators,
                 catalog.diagnostics(query),
                 OperatorCatalogFacets.from(operators),
-                catalog.runtimeBindingProjections(query, operators)
+                runtimeBindingProjections,
+                OperatorRuntimeBindingProjection.stateCounts(runtimeBindingProjections),
+                catalog.executablePromotionProjections(query, runtimeBindingProjections)
         );
     }
 

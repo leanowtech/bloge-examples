@@ -74,8 +74,9 @@
 7. **Phase 1 核心闭环已经在 resource-gateway 内落地。**
    Java operator inventory 基础投影也已进入 catalog；下一阶段的 P0 不是继续证明画布能画图，
    而是在已落地 pre-bind validate、proposal persistence、bind/supersede lifecycle、adapter activation
-   registry、catalog response projection 和 executable promotion projection 之后补 executable readiness 回流，
-   让 handoff contract snapshot 能被外部 runtime team 变成可绑定、可激活、可解释剩余 executor blocker、
+   registry、executable lowering integration registry、catalog response projection 和 executable promotion
+   projection 之后补 trusted library revision 与 readiness recompute，
+   让 handoff contract snapshot 能被外部 runtime team 变成可绑定、可激活、可对账 executor bridge、
    可回滚、可重新派生 executable readiness 的实现事实。
 
 ## 5. 当前待确认决策
@@ -113,7 +114,7 @@ Phase 1 不以 UI 好看为验收，而以真实闭环为验收：
 
 如果继续代码实现，优先按实现状态审计第 6 章推进：
 
-1. Runtime binding implementation 闭环：在当前 implementation validate、proposal persistence、bind/supersede API、adapter activation registry、catalog response projection 和 executable promotion projection 之后补 executable readiness 回流。
+1. Runtime binding implementation 与 readiness 派生闭环：在当前 implementation validate、proposal persistence、bind/supersede API、adapter activation registry、executable lowering integration registry、catalog response projection 和 executable promotion projection 之后补 trusted library revision / readiness recompute。
 2. 前端回归验证。
 3. Java operator inventory 深化。
 4. OpenAPI/resource contract/AsyncAPI 导入深化。

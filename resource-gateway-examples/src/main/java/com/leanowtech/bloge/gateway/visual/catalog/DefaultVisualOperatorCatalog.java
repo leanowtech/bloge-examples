@@ -12,7 +12,10 @@ import com.leanowtech.bloge.gateway.visual.publication.VisualGraphPublication;
 import com.leanowtech.bloge.gateway.visual.publication.VisualGraphPublicationRepository;
 import com.leanowtech.bloge.gateway.visual.resource.ResourceDesignContract;
 import com.leanowtech.bloge.gateway.visual.resource.ResourceDesignContractRegistry;
+import com.leanowtech.bloge.gateway.visual.runtime.InMemoryVisualExecutableLoweringIntegrationRepository;
 import com.leanowtech.bloge.gateway.visual.runtime.InMemoryVisualRuntimeAdapterActivationRepository;
+import com.leanowtech.bloge.gateway.visual.runtime.VisualExecutableLoweringIntegration;
+import com.leanowtech.bloge.gateway.visual.runtime.VisualExecutableLoweringIntegrationRepository;
 import com.leanowtech.bloge.gateway.visual.runtime.VisualRuntimeAdapterActivation;
 import com.leanowtech.bloge.gateway.visual.runtime.VisualRuntimeAdapterActivationRepository;
 
@@ -43,6 +46,7 @@ public class DefaultVisualOperatorCatalog implements VisualOperatorCatalog {
     private final VisualGraphPublicationOperatorProjector publicationProjector;
     private final VisualRuntimeBindingImplementationRepository runtimeBindingRepository;
     private final VisualRuntimeAdapterActivationRepository runtimeAdapterActivationRepository;
+    private final VisualExecutableLoweringIntegrationRepository executableLoweringIntegrationRepository;
 
     /**
      * @param resourceRegistry resource descriptor registry
@@ -58,7 +62,9 @@ public class DefaultVisualOperatorCatalog implements VisualOperatorCatalog {
                                         VisualGraphPublicationRepository publicationRepository,
                                         VisualGraphPublicationOperatorProjector publicationProjector,
                                         VisualRuntimeBindingImplementationRepository runtimeBindingRepository,
-                                        VisualRuntimeAdapterActivationRepository runtimeAdapterActivationRepository) {
+                                        VisualRuntimeAdapterActivationRepository runtimeAdapterActivationRepository,
+                                        VisualExecutableLoweringIntegrationRepository
+                                                executableLoweringIntegrationRepository) {
         this.resourceRegistry = resourceRegistry;
         this.contractRegistry = contractRegistry;
         this.projector = projector;
@@ -78,6 +84,23 @@ public class DefaultVisualOperatorCatalog implements VisualOperatorCatalog {
         this.runtimeAdapterActivationRepository = runtimeAdapterActivationRepository == null
                 ? new InMemoryVisualRuntimeAdapterActivationRepository()
                 : runtimeAdapterActivationRepository;
+        this.executableLoweringIntegrationRepository = executableLoweringIntegrationRepository == null
+                ? new InMemoryVisualExecutableLoweringIntegrationRepository()
+                : executableLoweringIntegrationRepository;
+    }
+
+    public DefaultVisualOperatorCatalog(ResourceRegistry resourceRegistry,
+                                        ResourceDesignContractRegistry contractRegistry,
+                                        ResourceVirtualOperatorProjector projector,
+                                        OperatorLibraryRegistry libraryRegistry,
+                                        JavaOperatorInventoryProjector javaOperatorProjector,
+                                        VisualGraphPublicationRepository publicationRepository,
+                                        VisualGraphPublicationOperatorProjector publicationProjector,
+                                        VisualRuntimeBindingImplementationRepository runtimeBindingRepository,
+                                        VisualRuntimeAdapterActivationRepository runtimeAdapterActivationRepository) {
+        this(resourceRegistry, contractRegistry, projector, libraryRegistry, javaOperatorProjector,
+                publicationRepository, publicationProjector, runtimeBindingRepository,
+                runtimeAdapterActivationRepository, new InMemoryVisualExecutableLoweringIntegrationRepository());
     }
 
     public DefaultVisualOperatorCatalog(ResourceRegistry resourceRegistry,
@@ -218,6 +241,16 @@ public class DefaultVisualOperatorCatalog implements VisualOperatorCatalog {
     }
 
     @Override
+    public List<OperatorExecutablePromotionProjection> executablePromotionProjections(
+            OperatorCatalogQuery query,
+            List<OperatorRuntimeBindingProjection> runtimeBindingProjections) {
+        return OperatorExecutablePromotionProjection.from(
+                runtimeBindingProjections,
+                activeExecutableLoweringIntegrationsByActivationId()
+        );
+    }
+
+    @Override
     public Optional<OperatorDefinition> find(String operatorRef) {
         if (operatorRef == null || operatorRef.isBlank()) {
             return Optional.empty();
@@ -256,6 +289,17 @@ public class DefaultVisualOperatorCatalog implements VisualOperatorCatalog {
             activations.putIfAbsent(activation.bindingId(), activation);
         }
         return Map.copyOf(activations);
+    }
+
+    private Map<String, VisualExecutableLoweringIntegration> activeExecutableLoweringIntegrationsByActivationId() {
+        Map<String, VisualExecutableLoweringIntegration> integrations = new LinkedHashMap<>();
+        for (VisualExecutableLoweringIntegration integration : executableLoweringIntegrationRepository.all()) {
+            if (integration == null || !integration.active() || integration.activationId().isBlank()) {
+                continue;
+            }
+            integrations.putIfAbsent(integration.activationId(), integration);
+        }
+        return Map.copyOf(integrations);
     }
 
     private List<OperatorDefinition> libraryOperators(boolean includeDeprecated) {

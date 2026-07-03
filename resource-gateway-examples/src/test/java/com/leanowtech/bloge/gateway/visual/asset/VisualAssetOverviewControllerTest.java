@@ -18,6 +18,8 @@ import com.leanowtech.bloge.gateway.visual.model.VisualBundleFingerprint;
 import com.leanowtech.bloge.gateway.visual.publication.InMemoryVisualGraphPublicationRepository;
 import com.leanowtech.bloge.gateway.visual.publication.VisualGraphPublication;
 import com.leanowtech.bloge.gateway.visual.publication.VisualGraphPublicationSummary;
+import com.leanowtech.bloge.gateway.visual.runtime.VisualExecutableLoweringIntegration;
+import com.leanowtech.bloge.gateway.visual.runtime.VisualExecutableLoweringIntegrationValidation;
 import com.leanowtech.bloge.gateway.visual.runtime.VisualRuntimeAdapterActivation;
 import com.leanowtech.bloge.gateway.visual.runtime.VisualRuntimeAdapterActivationValidation;
 import com.leanowtech.bloge.gateway.visual.validation.GraphDraftValidator;
@@ -1596,6 +1598,112 @@ class VisualAssetOverviewControllerTest {
     }
 
     @Test
+    void executableLoweringIntegrationSubmitPersistsBridgeEvidenceWithoutClosingReadiness() {
+        RuntimeBindingImplementationFixture fixture = runtimeBindingImplementationFixture();
+        VisualRuntimeBindingImplementationBinding stored = submitImplementation(
+                fixture,
+                completeImplementation("risk-eligibility-native-v1")
+        );
+        var boundResponse = fixture.controller().bindRuntimeBindingImplementation(
+                stored.bindingId(),
+                transitionRequest("", true)
+        );
+        assertThat(boundResponse.getStatusCode().value()).isEqualTo(200);
+        VisualRuntimeBindingImplementationBinding binding = boundResponse.getBody().binding();
+        VisualRuntimeAdapterActivationValidation.Request activationRequest =
+                adapterActivationRequest(binding, "risk-eligibility-prod-active");
+        var activationResponse = fixture.controller().submitRuntimeAdapterActivation(activationRequest);
+        assertThat(activationResponse.getStatusCode().value()).isEqualTo(201);
+        VisualRuntimeAdapterActivation activation = (VisualRuntimeAdapterActivation) activationResponse.getBody();
+        VisualExecutableLoweringIntegrationValidation.Request request =
+                executableLoweringIntegrationRequest(activation, "risk-eligibility-lowering-v1");
+
+        var validation = fixture.controller().validateExecutableLoweringIntegration(request);
+        var response = fixture.controller().submitExecutableLoweringIntegration(request);
+
+        assertThat(validation.getStatusCode().value()).isEqualTo(200);
+        assertThat(validation.getBody()).isNotNull();
+        assertThat(validation.getBody().valid()).isTrue();
+        assertThat(validation.getBody().integratable()).isTrue();
+        assertThat(validation.getBody().state()).isEqualTo("ready-to-integrate");
+        assertThat(validation.getBody().activationId()).isEqualTo(activation.activationId());
+        assertThat(validation.getBody().activationRevision()).isEqualTo(activation.revision());
+        assertThat(validation.getBody().currentCatalogState()).isEqualTo("current");
+        assertThat(response.getStatusCode().value()).isEqualTo(201);
+        assertThat(response.getBody()).isInstanceOf(VisualExecutableLoweringIntegration.class);
+        VisualExecutableLoweringIntegration integration =
+                (VisualExecutableLoweringIntegration) response.getBody();
+        assertThat(integration.schemaVersion()).isEqualTo(VisualExecutableLoweringIntegration.SCHEMA_VERSION);
+        assertThat(integration.integrationId()).isEqualTo("risk-eligibility-lowering-v1");
+        assertThat(integration.activationId()).isEqualTo(activation.activationId());
+        assertThat(integration.bindingId()).isEqualTo(binding.bindingId());
+        assertThat(integration.operatorRef()).isEqualTo("risk:eligibility");
+        assertThat(integration.loweringMode()).isEqualTo("native");
+        assertThat(integration.executorKind()).isEqualTo("bloge-operator-registry");
+        assertThat(integration.executorEntrypoint()).isEqualTo("operator:risk:eligibility");
+        assertThat(fixture.controller().executableLoweringIntegrations("", "", ""))
+                .singleElement()
+                .isEqualTo(integration);
+        assertThat(fixture.controller().executableLoweringIntegrations(
+                activation.activationId(), "risk:eligibility", "active"))
+                .singleElement()
+                .isEqualTo(integration);
+
+        var duplicate = fixture.controller().submitExecutableLoweringIntegration(request);
+        assertThat(duplicate.getStatusCode().value()).isEqualTo(409);
+        assertThat(duplicate.getBody()).isInstanceOf(VisualExecutableLoweringIntegrationValidation.class);
+        VisualExecutableLoweringIntegrationValidation duplicateValidation =
+                (VisualExecutableLoweringIntegrationValidation) duplicate.getBody();
+        assertThat(duplicateValidation.valid()).isFalse();
+        assertThat(duplicateValidation.diagnostics())
+                .extracting(VisualDiagnostic::code)
+                .contains("visual.executableLoweringIntegration.integrationIdDuplicate");
+    }
+
+    @Test
+    void executableLoweringIntegrationRejectsMissingActivation() {
+        RuntimeBindingImplementationFixture fixture = runtimeBindingImplementationFixture();
+
+        var response = fixture.controller().submitExecutableLoweringIntegration(
+                executableLoweringIntegrationRequest(
+                        new VisualRuntimeAdapterActivation(
+                                VisualRuntimeAdapterActivation.SCHEMA_VERSION,
+                                "missing-activation",
+                                1,
+                                VisualRuntimeAdapterActivation.STATE_ACTIVE,
+                                "success",
+                                "missing-binding",
+                                1,
+                                "risk:eligibility",
+                                fixture.contract().fingerprint(),
+                                "native",
+                                "com.acme.risk.RiskEligibilityOperator",
+                                "risk-platform",
+                                "prod",
+                                VisualRuntimeAdapterActivation.HEALTH_HEALTHY,
+                                "runtime-platform",
+                                "visual-canvas-test",
+                                "Missing activation.",
+                                List.of(),
+                                Instant.EPOCH,
+                                Instant.EPOCH
+                        ),
+                        "risk-eligibility-lowering-missing"
+                )
+        );
+
+        assertThat(response.getStatusCode().value()).isEqualTo(400);
+        assertThat(response.getBody()).isInstanceOf(VisualExecutableLoweringIntegrationValidation.class);
+        VisualExecutableLoweringIntegrationValidation validation =
+                (VisualExecutableLoweringIntegrationValidation) response.getBody();
+        assertThat(validation.valid()).isFalse();
+        assertThat(validation.diagnostics())
+                .extracting(VisualDiagnostic::code)
+                .contains("visual.executableLoweringIntegration.activationMissing");
+        assertThat(fixture.controller().executableLoweringIntegrations("", "", "")).isEmpty();
+    }
+
+    @Test
     void overviewQueuesWarningAcknowledgementFromGraphActionReadiness() {
         DefaultVisualOperatorCatalog catalog = VisualCatalogTestSupport.catalogWithLibrary(
                 VisualCatalogTestSupport.designOnlyEligibilityLibrary("integer"));
@@ -2018,6 +2126,35 @@ class VisualAssetOverviewControllerTest {
                         "health-check",
                         "deployment:risk-eligibility-native-v1",
                         "Readiness probe is healthy."))
+        );
+    }
+
+    private static VisualExecutableLoweringIntegrationValidation.Request executableLoweringIntegrationRequest(
+            VisualRuntimeAdapterActivation activation,
+            String integrationId) {
+        return new VisualExecutableLoweringIntegrationValidation.Request(
+                VisualExecutableLoweringIntegrationValidation.REQUEST_SCHEMA_VERSION,
+                integrationId,
+                activation.activationId(),
+                activation.revision(),
+                activation.bindingId(),
+                activation.bindingRevision(),
+                activation.operatorRef(),
+                activation.operatorFingerprint(),
+                activation.adapterKind(),
+                activation.entrypoint(),
+                activation.runtimeEnvironment(),
+                "native",
+                "bloge-operator-registry",
+                "operator:risk:eligibility",
+                "operator-platform",
+                "runtime-platform",
+                "visual-canvas-test",
+                "BLOGE executor bridge is available.",
+                List.of(new VisualExecutableLoweringIntegration.Evidence(
+                        "executor-test",
+                        "executor-suite:risk-eligibility-native-v1",
+                        "Executor bridge suite passed."))
         );
     }
 

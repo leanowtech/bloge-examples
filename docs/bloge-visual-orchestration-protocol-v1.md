@@ -1941,7 +1941,8 @@ state 是否仍匹配 bound implementation，drift 时不会关闭实现缺口�
 同一 catalog response 还会派生 `bloge.operatorExecutablePromotionProjection.v1` 到
 `executablePromotionProjections[]`，并返回 `executablePromotionStateCounts`。该读模型把
 `binding-required`、`binding-drifted`、`activation-required`、`activation-drifted`、
-`executor-integration-required` 和 `already-executable` 拆成显式 promotion 状态；
+`executor-integration-required`、`lowering-integration-drifted`、
+`readiness-recompute-required` 和 `already-executable` 拆成显式 promotion 状态；
 其中 `adapter-active` 会被进一步表达为 `executor-integration-required`，说明运行面已激活，
 但还缺 BLOGE lowering/executor 接入。它不修改 `OperatorDefinition.runtimeReadiness`，
 也不会把 design-only operator 伪装成 executable。
@@ -1954,9 +1955,20 @@ reason 和 evidence 做无状态校验，返回
 activation assertion 为 `bloge.visualRuntimeAdapterActivation.v1`，并拒绝 unbound binding、
 fingerprint/adapter drift、重复 activationId、同一 binding 的第二个 active activation
 以及缺失 actor/reason/evidence 的请求；`GET .../adapter-activations` 可按 `bindingId`、
-`operatorRef` 和 `state` 查询。真正的 executable readiness 关闭还必须由 executable
-lowering / executor integration 接入后，再由 readiness 和 runtime-binding index 重新派生；
-`adapter-active` 只是运行面事实，不会直接把 design-only operator 改成可执行。
+`operatorRef` 和 `state` 查询。`POST
+/api/visual/assets/runtime-binding-requirements/executable-lowering-integrations/validate`
+接收 `bloge.visualExecutableLoweringIntegrationRequest.v1`，对准 active activation、
+bound implementation、当前 catalog fingerprint、非 design 的 executable lowering mode、
+executor kind/entrypoint/owner、integratedBy、reason 和 evidence 做无状态校验，返回
+`bloge.visualExecutableLoweringIntegrationValidation.v1`。`POST
+.../executable-lowering-integrations` 会持久化当前 executor bridge assertion 为
+`bloge.visualExecutableLoweringIntegration.v1`，并拒绝 missing/stale activation、unbound
+binding、catalog drift、`loweringMode=design`、重复 integrationId、同一 activation 的第二个
+active integration 以及缺失 executor evidence 的请求；`GET .../executable-lowering-integrations`
+可按 `activationId`、`operatorRef` 和 `state` 查询。真正的 executable readiness 关闭还必须由
+library revision 或 readiness recomputation 消费该 integration fact 后重新派生；
+`adapter-active` 和 `readiness-recompute-required` 都只是控制面事实，不会直接把 design-only
+operator 改成可执行。
 `actionReadiness` 则把同一批 diagnostics/readiness 压成产品动作门禁：`compileNow`、
 `runNow`、`publishDesignNow`、`publishDesignAfterReview`、`publishExecutableNow`、
 `publishExecutableAfterReview`，以及 `requiresAckWarnings` /

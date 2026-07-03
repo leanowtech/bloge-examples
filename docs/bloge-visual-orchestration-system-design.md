@@ -665,7 +665,7 @@ node fetchApplicant : httpResource {
 
 | Method | Path | 说明 |
 | --- | --- | --- |
-| `GET` | `/api/visual/operators` | 当前已实现：查询可用算子，支持 pattern、tag、tenant、namespace、environment、source/lowering/capability/runtime-readiness facets，并返回 `runtimeBindingProjections[]` / `runtimeBindingProjectionStateCounts` 与 `executablePromotionProjections[]` / `executablePromotionStateCounts`，把 active bound implementation record、active adapter activation 和仍缺 executor/lowering 的 promotion blocker 投影为 palette 可见状态，但不修改 trusted `OperatorDefinition.runtimeReadiness` |
+| `GET` | `/api/visual/operators` | 当前已实现：查询可用算子，支持 pattern、tag、tenant、namespace、environment、source/lowering/capability/runtime-readiness facets，并返回 `runtimeBindingProjections[]` / `runtimeBindingProjectionStateCounts` 与 `executablePromotionProjections[]` / `executablePromotionStateCounts`，把 active bound implementation record、active adapter activation、executable lowering integration 和仍缺 readiness recompute 的 promotion blocker 投影为 palette 可见状态，但不修改 trusted `OperatorDefinition.runtimeReadiness` |
 | `GET` | `/api/visual/operators/{operatorRef}` | 当前已实现：按 catalog 可见性门禁获取单个算子定义，支持 `tenantId`、`namespace`、`environment`、`includeDeprecated`、`resourceOnly` 和 source/lowering/capability/runtime-readiness filters，不可见或不存在返回 404 |
 | `GET` | `/api/visual/operators/{operatorRef}/usage` | 当前已实现：查询某个 operatorRef 被哪些 stored draft / immutable publication 节点使用，并返回 saved/frozen fingerprint 与当前 catalog fingerprint 的状态 |
 | `POST` | `/admin/visual-operator-libraries/import-text` | 当前实现：导入用户提供的 operator library JSON/YAML source text，服务端解析后复用 impact / warning / revision 治理 |
@@ -901,6 +901,8 @@ fingerprint snapshot；普通保存和 PATCH 仍保留既有 snapshot，避免�
 | `POST` | `/api/visual/assets/runtime-binding-requirements/implementation-bindings/{bindingId}/supersede` | 当前已实现：用同 operatorRef 的 replacement proposal 替换 active bound binding，写入 supersede lineage 和 lifecycle events；仍不直接改 graph artifact 或伪造 executable readiness |
 | `POST` | `/api/visual/assets/runtime-binding-requirements/adapter-activations/validate` | 当前已实现：接收 `bloge.visualRuntimeAdapterActivationRequest.v1`，把 runtime-plane activation assertion 对准 bound implementation、当前 catalog fingerprint、adapter metadata、runtime environment、healthy state、actor/reason 和 evidence 做无状态校验 |
 | `GET/POST` | `/api/visual/assets/runtime-binding-requirements/adapter-activations` | 当前已实现：healthy/current activation assertion 可持久化为 `bloge.visualRuntimeAdapterActivation.v1`，并按 bindingId/operatorRef/state 查询；拒绝 unbound binding、fingerprint/adapter drift、重复 active activation；catalog projection 可展示 `adapter-active`，但仍不伪造 executable readiness |
+| `POST` | `/api/visual/assets/runtime-binding-requirements/executable-lowering-integrations/validate` | 当前已实现：接收 `bloge.visualExecutableLoweringIntegrationRequest.v1`，把 executor-plane lowering assertion 对准 active activation、bound implementation、当前 catalog fingerprint、非 design lowering mode、executor entrypoint、actor/reason 和 evidence 做无状态校验 |
+| `GET/POST` | `/api/visual/assets/runtime-binding-requirements/executable-lowering-integrations` | 当前已实现：当前 executor bridge assertion 可持久化为 `bloge.visualExecutableLoweringIntegration.v1`，并按 activationId/operatorRef/state 查询；拒绝 missing/stale activation、unbound binding、catalog drift、`loweringMode=design`、重复 active integration；catalog promotion 可展示 `readiness-recompute-required`，但仍不伪造 executable readiness |
 
 ### 12.3 Runtime / Trace API
 
@@ -1289,27 +1291,29 @@ handoff contract 与当前 catalog，并已支持 bind/supersede lifecycle fact�
 现在已先投影回 operator catalog response，形成 palette/外部控制面可见的
 `OperatorRuntimeBindingProjection` 读模型；runtime adapter activation registry 也已能保存
 健康、当前、可审计的运行面激活事实，并把 `adapter-active` / `adapter-drifted` 投回 catalog。
-catalog response 还会派生 `OperatorExecutablePromotionProjection`，把 `adapter-active` 进一步
-解释为 `executor-integration-required`，让控制面知道剩余 blocker 是 BLOGE executable
-lowering/executor 接入，而不是 implementation 或 activation 事实缺失。
-但它还没有投影进 library revision，也没有 executable lowering/readiness 回填。没有后半层闭环，
-handoff bundle 已能把工作交出去并把实现结果/激活事实带回 catalog 响应，但还不能把它可靠提升为
+executable lowering integration registry 继续保存 executor-plane bridge assertion，catalog response
+会派生 `OperatorExecutablePromotionProjection`：无 integration 时把 `adapter-active` 解释为
+`executor-integration-required`，current integration 对齐时推进到 `readiness-recompute-required`，
+integration 漂移时暴露 `lowering-integration-drifted`。这让控制面知道剩余 blocker 已从
+implementation / activation / executor bridge 事实缺失，收窄到可信 library revision 与 readiness 重新派生。
+但它还没有投影进 library revision，也没有 executable readiness 回填。没有后半层闭环，
+handoff bundle 已能把工作交出去并把实现结果、激活事实和 lowering integration 事实带回 catalog 响应，但还不能把它可靠提升为
 可执行运行时能力。
 
 因此下一阶段的生产级优先级应按下面排序，而不是继续堆前端控件：
 
 | 优先级 | 缺口 | 为什么卡住生产级 |
 | --- | --- | --- |
-| P0 | Runtime implementation binding 生命周期 | 当前已有 validate gate、proposal record、bind/supersede lifecycle fact、adapter activation registry，以及 catalog response 级 `OperatorRuntimeBindingProjection` / `OperatorExecutablePromotionProjection`；下一步需要把 active bound implementation metadata、activation fact、能力声明、兼容性证据和测试结果投影进 operator contract / library revision / executable lowering；否则 runtime-binding requirement 可以被导出、预检、保存提案、形成绑定与激活事实并在 palette 可见，也能明确显示 `executor-integration-required`，但仍不能重新派生 executable readiness |
+| P0 | Runtime implementation binding 与 readiness 派生闭环 | 当前已有 validate gate、proposal record、bind/supersede lifecycle fact、adapter activation registry、executable lowering integration registry，以及 catalog response 级 `OperatorRuntimeBindingProjection` / `OperatorExecutablePromotionProjection`；下一步需要把 active bound implementation metadata、activation fact、executor bridge、能力声明、兼容性证据和测试结果投影进 operator contract / library revision，并重新派生 executable readiness；否则 runtime-binding requirement 可以被导出、预检、保存提案、形成绑定、激活与 lowering integration 事实并在 palette 可见，也能明确显示 `executor-integration-required`、`lowering-integration-drifted` 或 `readiness-recompute-required`，但仍不能变成可信 executable readiness |
 | P0 | Contract diff 与兼容性门禁 | 当前 handoff snapshot 可防篡改、可对账，但 implementation 提交时还需要证明它实现的是同一个 operator contract，且输入/输出/config/policy/lowering 变化按 SemVer 与治理规则被接受 |
 | P1 | Runtime-plane 状态回流 | 外部工单、worker dispatcher、AI tool runtime、event/message/webhook runtime 的状态需要以事件或回调进入控制面，但不能成为第二套 readiness 真相源；最终仍应回到 catalog/readiness 派生 |
 | P1 | IAM / RBAC / tenant isolation | 当前 tenant/namespace/environment policy 是可见性和使用门禁，不是完整权限后台；生产环境需要 actor 权限、secret scope、egress policy、审计查询和管理员分权 |
 | P1 | 运行时适配器族 | remote-worker、AI-tool、event-source、message-handler、webhook、streaming、durable 的 authoring contract 已有，但真正 dispatcher、ingress runtime、实例状态和重放仍需补齐 |
 | P2 | 协作与运营 | 多人协作、告警、SLO、runbook、容量和成本控制会决定平台是否能长期运转，但必须建立在前面的 contract/binding 闭环之上 |
 
-这意味着后续代码切片应优先围绕“implementation binding 闭环”推进：在当前 validate / proposal persistence / bind-supersede / adapter activation API 之后，
-继续补 operator implementation projection 的可执行提升路径，再把 runtime-binding requirement review 与 operator-library revision、draft/publication readiness
-重新串起来。画布 UI 可以展示这些状态，但不能成为状态源。
+这意味着后续代码切片应优先围绕“implementation binding 与 readiness 派生闭环”推进：在当前 validate / proposal persistence / bind-supersede / adapter activation /
+executable lowering integration API 之后，继续补 operator implementation projection 的可信 catalog revision，再把 runtime-binding requirement review 与
+operator-library revision、draft/publication readiness 重新串起来。画布 UI 可以展示这些状态，但不能成为状态源。
 
 ## 20. 路线图
 
@@ -1383,13 +1387,14 @@ Phase 1 的工程拆分、包结构、API、测试和 Definition of Done 见
 - 当前已落地 implementation proposal submit/list API，持久化 valid proposal 为 `bloge.visualRuntimeBindingImplementationBindingRecord.v1`。
 - 当前已落地 implementation bind / supersede API，记录 active bound fact、replacement lineage 和 actor/reason lifecycle events。
 - 当前已落地 adapter activation validate/submit/list API，持久化 healthy/current activation assertion 为 `bloge.visualRuntimeAdapterActivation.v1`。
+- 当前已落地 executable lowering integration validate/submit/list API，持久化 current executor bridge assertion 为 `bloge.visualExecutableLoweringIntegration.v1`。
 - 当前已落地 operator catalog response projection，返回 active binding 与 adapter activation 的 missing/bound/drifted/adapter-active/adapter-drifted/not-required 状态。
-- 当前已落地 executable promotion projection，返回 already-executable/binding-required/activation-required/executor-integration-required 等 promotion 状态。
-- 后续补 executable readiness 回流 / unbind API。
+- 当前已落地 executable promotion projection，返回 already-executable/binding-required/activation-required/executor-integration-required/lowering-integration-drifted/readiness-recompute-required 等 promotion 状态。
+- 后续补 library revision / executable readiness recompute / unbind API。
 - handoff bundle `operatorContracts[]` 到 implementation contract 的 fingerprint 校验；当前 validate 已覆盖第一层 operatorRef/fingerprint/catalog drift/evidence gate。
 - implementation metadata：adapter kind、entrypoint、capabilities、runtime owner、test evidence、policy evidence、rollback target。
 - contract diff：输入/输出/config/policy/lowering/runtime readiness 的 breaking / compatible / metadata 变化分类。
-- readiness 回流：implementation 绑定和 adapter activation 成功后先更新 catalog projection 与 executable promotion projection；未来接入 executable lowering/executor 后，再由现有 draft/publication readiness 与 runtime-binding index 重新派生 executable 能力，不直接改 graph artifact。
+- readiness 回流：implementation 绑定、adapter activation 和 executable lowering integration 成功后先更新 catalog projection 与 executable promotion projection；未来由 trusted operator-library/catalog revision、现有 draft/publication readiness 与 runtime-binding index 重新派生 executable 能力，不直接改 graph artifact。
 
 验收：
 

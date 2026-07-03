@@ -1,6 +1,7 @@
 package com.leanowtech.bloge.gateway.visual.catalog;
 
 import com.leanowtech.bloge.gateway.visual.diagnostic.VisualDiagnostic;
+import com.leanowtech.bloge.gateway.visual.runtime.VisualExecutableLoweringIntegration;
 
 import java.time.Instant;
 import java.util.ArrayList;
@@ -23,8 +24,9 @@ import java.util.Map;
  * @param operatorFingerprint current catalog operator fingerprint
  * @param executableNow whether the current BLOGE request-response runtime can execute the operator
  * @param promotionReady true only when no remaining promotion work is required
- * @param promotionState already-executable, binding-required, binding-drifted,
- *                       activation-required, activation-drifted, or executor-integration-required
+ * @param promotionState already-executable, binding-required, binding-drifted, activation-required,
+ *                       activation-drifted, executor-integration-required, lowering-integration-drifted,
+ *                       or readiness-recompute-required
  * @param level UI/control-plane severity
  * @param title short display title
  * @param summary human-readable projection summary
@@ -34,6 +36,12 @@ import java.util.Map;
  * @param adapterKind runtime adapter kind when known
  * @param entrypoint runtime adapter entrypoint when known
  * @param runtimeEnvironment active adapter runtime environment when known
+ * @param activeExecutableLoweringIntegrationId active executable lowering integration id when present
+ * @param activeExecutableLoweringIntegrationRevision active executable lowering integration revision
+ * @param executableLoweringMode executable lowering mode when integrated
+ * @param executorKind executor integration kind when integrated
+ * @param executorEntrypoint executable BLOGE lowering/executor entrypoint when integrated
+ * @param integratedAt active executable lowering integration update timestamp
  * @param observedAt server projection timestamp
  * @param diagnostics projection diagnostics
  */
@@ -53,6 +61,12 @@ public record OperatorExecutablePromotionProjection(
         String adapterKind,
         String entrypoint,
         String runtimeEnvironment,
+        String activeExecutableLoweringIntegrationId,
+        long activeExecutableLoweringIntegrationRevision,
+        String executableLoweringMode,
+        String executorKind,
+        String executorEntrypoint,
+        Instant integratedAt,
         Instant observedAt,
         List<VisualDiagnostic> diagnostics
 ) {
@@ -77,6 +91,16 @@ public record OperatorExecutablePromotionProjection(
         adapterKind = adapterKind == null ? "" : adapterKind.trim().toLowerCase(Locale.ROOT);
         entrypoint = entrypoint == null ? "" : entrypoint.trim();
         runtimeEnvironment = runtimeEnvironment == null ? "" : runtimeEnvironment.trim();
+        activeExecutableLoweringIntegrationId = activeExecutableLoweringIntegrationId == null
+                ? ""
+                : activeExecutableLoweringIntegrationId.trim();
+        activeExecutableLoweringIntegrationRevision = Math.max(0, activeExecutableLoweringIntegrationRevision);
+        executableLoweringMode = executableLoweringMode == null
+                ? ""
+                : executableLoweringMode.trim().toLowerCase(Locale.ROOT);
+        executorKind = executorKind == null ? "" : executorKind.trim().toLowerCase(Locale.ROOT);
+        executorEntrypoint = executorEntrypoint == null ? "" : executorEntrypoint.trim();
+        integratedAt = integratedAt == null ? Instant.EPOCH : integratedAt;
         observedAt = observedAt == null ? Instant.EPOCH : observedAt;
         diagnostics = diagnostics == null ? List.of() : Collections.unmodifiableList(new ArrayList<>(diagnostics));
     }
@@ -89,11 +113,27 @@ public record OperatorExecutablePromotionProjection(
      */
     public static List<OperatorExecutablePromotionProjection> from(
             List<OperatorRuntimeBindingProjection> runtimeBindingProjections) {
+        return from(runtimeBindingProjections, Map.of());
+    }
+
+    /**
+     * Builds executable promotion projections from runtime binding projections and lowering integrations.
+     *
+     * @param runtimeBindingProjections runtime binding projections
+     * @param activeIntegrationsByActivationId active lowering integrations keyed by adapter activation id
+     * @return executable promotion projections aligned with the supplied projection order
+     */
+    public static List<OperatorExecutablePromotionProjection> from(
+            List<OperatorRuntimeBindingProjection> runtimeBindingProjections,
+            Map<String, VisualExecutableLoweringIntegration> activeIntegrationsByActivationId) {
+        Map<String, VisualExecutableLoweringIntegration> activeIntegrations =
+                activeIntegrationsByActivationId == null ? Map.of() : activeIntegrationsByActivationId;
         return (runtimeBindingProjections == null
                 ? List.<OperatorRuntimeBindingProjection>of()
                 : runtimeBindingProjections).stream()
                 .filter(projection -> projection != null)
-                .map(OperatorExecutablePromotionProjection::from)
+                .map(projection -> from(projection,
+                        activeIntegrations.get(projection.activeAdapterActivationId())))
                 .toList();
     }
 
@@ -123,6 +163,19 @@ public record OperatorExecutablePromotionProjection(
      */
     public static OperatorExecutablePromotionProjection from(
             OperatorRuntimeBindingProjection runtimeBindingProjection) {
+        return from(runtimeBindingProjection, null);
+    }
+
+    /**
+     * Builds one projection from runtime binding and optional executable lowering integration state.
+     *
+     * @param runtimeBindingProjection runtime binding projection
+     * @param activeIntegration active executable lowering integration for the projection activation
+     * @return executable promotion projection
+     */
+    public static OperatorExecutablePromotionProjection from(
+            OperatorRuntimeBindingProjection runtimeBindingProjection,
+            VisualExecutableLoweringIntegration activeIntegration) {
         if (runtimeBindingProjection == null) {
             return new OperatorExecutablePromotionProjection(
                     SCHEMA_VERSION,
@@ -140,6 +193,12 @@ public record OperatorExecutablePromotionProjection(
                     "",
                     "",
                     "",
+                    "",
+                    0,
+                    "",
+                    "",
+                    "",
+                    Instant.EPOCH,
                     Instant.now(),
                     List.of()
             );
@@ -150,7 +209,7 @@ public record OperatorExecutablePromotionProjection(
             case "binding-drifted" -> bindingDrifted(runtimeBindingProjection);
             case "binding-bound" -> activationRequired(runtimeBindingProjection);
             case "adapter-drifted" -> activationDrifted(runtimeBindingProjection);
-            case "adapter-active" -> executorIntegrationRequired(runtimeBindingProjection);
+            case "adapter-active" -> adapterActive(runtimeBindingProjection, activeIntegration);
             default -> unknown(runtimeBindingProjection);
         };
     }
@@ -230,6 +289,18 @@ public record OperatorExecutablePromotionProjection(
         );
     }
 
+    private static OperatorExecutablePromotionProjection adapterActive(
+            OperatorRuntimeBindingProjection projection,
+            VisualExecutableLoweringIntegration activeIntegration) {
+        if (activeIntegration == null) {
+            return executorIntegrationRequired(projection);
+        }
+        if (!integrationMatchesProjection(activeIntegration, projection)) {
+            return loweringIntegrationDrifted(projection, activeIntegration);
+        }
+        return readinessRecomputeRequired(projection, activeIntegration);
+    }
+
     private static OperatorExecutablePromotionProjection executorIntegrationRequired(
             OperatorRuntimeBindingProjection projection) {
         VisualDiagnostic diagnostic = new VisualDiagnostic(
@@ -261,6 +332,72 @@ public record OperatorExecutablePromotionProjection(
         );
     }
 
+    private static OperatorExecutablePromotionProjection loweringIntegrationDrifted(
+            OperatorRuntimeBindingProjection projection,
+            VisualExecutableLoweringIntegration integration) {
+        VisualDiagnostic diagnostic = new VisualDiagnostic(
+                "WARNING",
+                "visual.executablePromotion.loweringIntegrationDrift",
+                "Operator '%s' has an executable lowering integration that no longer matches the active adapter activation."
+                        .formatted(projection.operatorRef()),
+                "/operators/" + projection.operatorRef() + "/executablePromotionProjection",
+                -1,
+                -1,
+                Map.of(
+                        "operatorRef", projection.operatorRef(),
+                        "activationId", projection.activeAdapterActivationId(),
+                        "integrationId", integration.integrationId(),
+                        "integrationActivationId", integration.activationId(),
+                        "integrationActivationRevision", integration.activationRevision(),
+                        "activationRevision", projection.activeAdapterActivationRevision()
+                ));
+        return base(
+                projection,
+                integration,
+                false,
+                false,
+                "lowering-integration-drifted",
+                "warning",
+                "Executable lowering integration drifted",
+                "The recorded executable lowering integration no longer matches the active adapter activation.",
+                "REVALIDATE_EXECUTABLE_LOWERING",
+                merge(projection.diagnostics(), diagnostic)
+        );
+    }
+
+    private static OperatorExecutablePromotionProjection readinessRecomputeRequired(
+            OperatorRuntimeBindingProjection projection,
+            VisualExecutableLoweringIntegration integration) {
+        VisualDiagnostic diagnostic = new VisualDiagnostic(
+                "INFO",
+                "visual.executablePromotion.readinessRecomputeRequired",
+                "Operator '%s' has executable lowering integration evidence; runtime readiness still needs catalog/readiness recomputation."
+                        .formatted(projection.operatorRef()),
+                "/operators/" + projection.operatorRef() + "/executablePromotionProjection",
+                -1,
+                -1,
+                Map.of(
+                        "operatorRef", projection.operatorRef(),
+                        "bindingId", projection.activeBindingId(),
+                        "activationId", projection.activeAdapterActivationId(),
+                        "integrationId", integration.integrationId(),
+                        "loweringMode", integration.loweringMode(),
+                        "executorKind", integration.executorKind()
+                ));
+        return base(
+                projection,
+                integration,
+                false,
+                false,
+                "readiness-recompute-required",
+                "info",
+                "Runtime readiness recompute required",
+                "Executable lowering integration is recorded; operator readiness still waits for a catalog/library revision or readiness recomputation.",
+                "RECOMPUTE_OPERATOR_READINESS",
+                merge(projection.diagnostics(), diagnostic)
+        );
+    }
+
     private static OperatorExecutablePromotionProjection unknown(OperatorRuntimeBindingProjection projection) {
         return base(
                 projection,
@@ -286,6 +423,21 @@ public record OperatorExecutablePromotionProjection(
             String summary,
             String requiredNextAction,
             List<VisualDiagnostic> diagnostics) {
+        return base(projection, null, executableNow, promotionReady, promotionState, level, title,
+                summary, requiredNextAction, diagnostics);
+    }
+
+    private static OperatorExecutablePromotionProjection base(
+            OperatorRuntimeBindingProjection projection,
+            VisualExecutableLoweringIntegration integration,
+            boolean executableNow,
+            boolean promotionReady,
+            String promotionState,
+            String level,
+            String title,
+            String summary,
+            String requiredNextAction,
+            List<VisualDiagnostic> diagnostics) {
         return new OperatorExecutablePromotionProjection(
                 SCHEMA_VERSION,
                 projection.operatorRef(),
@@ -302,9 +454,28 @@ public record OperatorExecutablePromotionProjection(
                 projection.implementationAdapterKind(),
                 projection.implementationEntrypoint(),
                 projection.runtimeEnvironment(),
+                integration == null ? "" : integration.integrationId(),
+                integration == null ? 0 : integration.revision(),
+                integration == null ? "" : integration.loweringMode(),
+                integration == null ? "" : integration.executorKind(),
+                integration == null ? "" : integration.executorEntrypoint(),
+                integration == null ? Instant.EPOCH : integration.updatedAt(),
                 Instant.now(),
                 diagnostics
         );
+    }
+
+    private static boolean integrationMatchesProjection(VisualExecutableLoweringIntegration integration,
+                                                        OperatorRuntimeBindingProjection projection) {
+        return integration.activationId().equals(projection.activeAdapterActivationId())
+                && integration.activationRevision() == projection.activeAdapterActivationRevision()
+                && integration.bindingId().equals(projection.activeBindingId())
+                && integration.bindingRevision() == projection.activeBindingRevision()
+                && integration.operatorRef().equals(projection.operatorRef())
+                && integration.operatorFingerprint().equals(projection.operatorFingerprint())
+                && integration.adapterKind().equals(projection.implementationAdapterKind())
+                && integration.entrypoint().equals(projection.implementationEntrypoint())
+                && integration.runtimeEnvironment().equals(projection.runtimeEnvironment());
     }
 
     private static List<VisualDiagnostic> merge(List<VisualDiagnostic> diagnostics, VisualDiagnostic diagnostic) {

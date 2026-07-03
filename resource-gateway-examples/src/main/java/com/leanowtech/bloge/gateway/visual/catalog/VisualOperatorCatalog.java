@@ -60,6 +60,23 @@ public interface VisualOperatorCatalog {
     }
 
     /**
+     * Returns server-derived executable promotion projections for a catalog window.
+     *
+     * <p>The projection is intentionally separate from {@link OperatorDefinition#runtimeReadiness()}:
+     * executable promotion facts can explain what remains blocked without letting imported
+     * libraries or control-plane assertions forge request-response runtime executability.</p>
+     *
+     * @param query query options used to shape the catalog window
+     * @param runtimeBindingProjections already-derived runtime binding projections
+     * @return executable promotion projections aligned with the runtime binding projections
+     */
+    default List<OperatorExecutablePromotionProjection> executablePromotionProjections(
+            OperatorCatalogQuery query,
+            List<OperatorRuntimeBindingProjection> runtimeBindingProjections) {
+        return OperatorExecutablePromotionProjection.from(runtimeBindingProjections);
+    }
+
+    /**
      * Finds one operator by reference.
      *
      * @param operatorRef operator reference

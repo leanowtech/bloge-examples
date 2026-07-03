@@ -14,7 +14,9 @@ import com.leanowtech.bloge.gateway.visual.publication.InMemoryVisualGraphPublic
 import com.leanowtech.bloge.gateway.visual.publication.VisualGraphPublication;
 import com.leanowtech.bloge.gateway.visual.resource.InMemoryResourceDesignContractRegistry;
 import com.leanowtech.bloge.gateway.visual.resource.ResourceDesignContract;
+import com.leanowtech.bloge.gateway.visual.runtime.InMemoryVisualExecutableLoweringIntegrationRepository;
 import com.leanowtech.bloge.gateway.visual.runtime.InMemoryVisualRuntimeAdapterActivationRepository;
+import com.leanowtech.bloge.gateway.visual.runtime.VisualExecutableLoweringIntegration;
 import com.leanowtech.bloge.gateway.visual.runtime.VisualRuntimeAdapterActivation;
 import com.leanowtech.bloge.gateway.visual.runtime.VisualGraphPublicationOperator;
 import com.leanowtech.bloge.gateway.visual.validation.VisualSchemaValidator;
@@ -364,6 +366,75 @@ class DefaultVisualOperatorCatalogTest {
                     .containsEntry("activationBindingRevision", binding.revision() + 1)
                     .containsEntry("bindingRevision", binding.revision());
         });
+    }
+
+    @Test
+    void projectsExecutableLoweringIntegrationAsReadinessRecomputeWithoutClaimingExecutable() {
+        OperatorDefinition operator = VisualCatalogTestSupport.designOnlyEligibilityOperator("integer");
+        InMemoryVisualRuntimeBindingImplementationRepository bindings =
+                new InMemoryVisualRuntimeBindingImplementationRepository();
+        VisualRuntimeBindingImplementationBinding binding =
+                bindings.create(boundImplementation(operator, operator.fingerprint(), "risk-eligibility-native-v1"));
+        InMemoryVisualRuntimeAdapterActivationRepository activations =
+                new InMemoryVisualRuntimeAdapterActivationRepository();
+        VisualRuntimeAdapterActivation activation =
+                activations.create(activeActivation(binding, "risk-eligibility-prod-active"));
+        InMemoryVisualExecutableLoweringIntegrationRepository integrations =
+                new InMemoryVisualExecutableLoweringIntegrationRepository();
+        VisualExecutableLoweringIntegration integration =
+                integrations.create(activeExecutableLoweringIntegration(activation, "risk-eligibility-lowering-v1"));
+        InMemoryOperatorLibraryRegistry libraries = new InMemoryOperatorLibraryRegistry();
+        libraries.upsert(library("risk-policy-design", "ACTIVE", operator));
+        DefaultVisualOperatorCatalog catalog = new DefaultVisualOperatorCatalog(
+                VisualCatalogTestSupport.emptyResourceRegistry(),
+                new InMemoryResourceDesignContractRegistry(),
+                new ResourceVirtualOperatorProjector(),
+                libraries,
+                JavaOperatorInventoryProjector.empty(),
+                new InMemoryVisualGraphPublicationRepository(),
+                new VisualGraphPublicationOperatorProjector(),
+                bindings,
+                activations,
+                integrations
+        );
+
+        List<OperatorDefinition> operators = catalog.list(OperatorCatalogQuery.all());
+        OperatorDefinition projectedOperator = operators.stream()
+                .filter(candidate -> candidate.operatorRef().equals("risk:eligibility"))
+                .findFirst()
+                .orElseThrow();
+        OperatorRuntimeBindingProjection runtimeProjection = catalog.runtimeBindingProjections(
+                        OperatorCatalogQuery.all(), operators).stream()
+                .filter(candidate -> candidate.operatorRef().equals("risk:eligibility"))
+                .findFirst()
+                .orElseThrow();
+        OperatorExecutablePromotionProjection promotion = catalog.executablePromotionProjections(
+                OperatorCatalogQuery.all(),
+                List.of(runtimeProjection)
+        ).getFirst();
+
+        assertThat(projectedOperator.runtimeReadiness().state()).isEqualTo("DESIGN_ONLY");
+        assertThat(projectedOperator.runtimeReadiness().executable()).isFalse();
+        assertThat(runtimeProjection.projectionState()).isEqualTo("adapter-active");
+        assertThat(runtimeProjection.executable()).isFalse();
+        assertThat(promotion.promotionState()).isEqualTo("readiness-recompute-required");
+        assertThat(promotion.requiredNextAction()).isEqualTo("RECOMPUTE_OPERATOR_READINESS");
+        assertThat(promotion.promotionReady()).isFalse();
+        assertThat(promotion.executableNow()).isFalse();
+        assertThat(promotion.activeExecutableLoweringIntegrationId()).isEqualTo(integration.integrationId());
+        assertThat(promotion.activeExecutableLoweringIntegrationRevision()).isEqualTo(integration.revision());
+        assertThat(promotion.executableLoweringMode()).isEqualTo("native");
+        assertThat(promotion.executorKind()).isEqualTo("bloge-operator-registry");
+        assertThat(promotion.executorEntrypoint()).isEqualTo("operator:risk:eligibility");
+        assertThat(promotion.diagnostics()).singleElement().satisfies(diagnostic -> {
+            assertThat(diagnostic.level()).isEqualTo("INFO");
+            assertThat(diagnostic.code()).isEqualTo("visual.executablePromotion.readinessRecomputeRequired");
+            assertThat(diagnostic.metadata())
+                    .containsEntry("integrationId", integration.integrationId())
+                    .containsEntry("loweringMode", "native");
+        });
+        assertThat(OperatorExecutablePromotionProjection.stateCounts(List.of(promotion)))
+                .containsExactly(Map.entry("readiness-recompute-required", 1));
     }
 
     @Test
@@ -1090,6 +1161,40 @@ class DefaultVisualOperatorCatalogTest {
                         "health-check",
                         "deployment:risk-eligibility-native-v1",
                         "Readiness probe is healthy.")),
+                Instant.EPOCH,
+                Instant.EPOCH
+        );
+    }
+
+    private static VisualExecutableLoweringIntegration activeExecutableLoweringIntegration(
+            VisualRuntimeAdapterActivation activation,
+            String integrationId) {
+        return new VisualExecutableLoweringIntegration(
+                VisualExecutableLoweringIntegration.SCHEMA_VERSION,
+                integrationId,
+                0,
+                VisualExecutableLoweringIntegration.STATE_ACTIVE,
+                "success",
+                activation.activationId(),
+                activation.revision(),
+                activation.bindingId(),
+                activation.bindingRevision(),
+                activation.operatorRef(),
+                activation.operatorFingerprint(),
+                activation.adapterKind(),
+                activation.entrypoint(),
+                activation.runtimeEnvironment(),
+                "native",
+                "bloge-operator-registry",
+                "operator:risk:eligibility",
+                "operator-platform",
+                "runtime-platform",
+                "catalog-test",
+                "BLOGE executor bridge is available.",
+                List.of(new VisualExecutableLoweringIntegration.Evidence(
+                        "executor-test",
+                        "executor-suite:risk-eligibility-native-v1",
+                        "Executor bridge suite passed.")),
                 Instant.EPOCH,
                 Instant.EPOCH
         );

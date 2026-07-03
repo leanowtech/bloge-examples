@@ -11,7 +11,11 @@ import com.leanowtech.bloge.gateway.visual.draft.GraphDraftRepository;
 import com.leanowtech.bloge.gateway.visual.draft.GraphDraftSummary;
 import com.leanowtech.bloge.gateway.visual.publication.VisualGraphPublicationRepository;
 import com.leanowtech.bloge.gateway.visual.publication.VisualGraphPublicationSummary;
+import com.leanowtech.bloge.gateway.visual.runtime.InMemoryVisualExecutableLoweringIntegrationRepository;
 import com.leanowtech.bloge.gateway.visual.runtime.InMemoryVisualRuntimeAdapterActivationRepository;
+import com.leanowtech.bloge.gateway.visual.runtime.VisualExecutableLoweringIntegration;
+import com.leanowtech.bloge.gateway.visual.runtime.VisualExecutableLoweringIntegrationRepository;
+import com.leanowtech.bloge.gateway.visual.runtime.VisualExecutableLoweringIntegrationValidation;
 import com.leanowtech.bloge.gateway.visual.runtime.VisualRuntimeAdapterActivation;
 import com.leanowtech.bloge.gateway.visual.runtime.VisualRuntimeAdapterActivationRepository;
 import com.leanowtech.bloge.gateway.visual.runtime.VisualRuntimeAdapterActivationValidation;
@@ -49,6 +53,7 @@ public class VisualAssetOverviewController {
     private final VisualGraphPublicationRepository publicationRepository;
     private final VisualRuntimeBindingImplementationRepository implementationRepository;
     private final VisualRuntimeAdapterActivationRepository adapterActivationRepository;
+    private final VisualExecutableLoweringIntegrationRepository executableLoweringIntegrationRepository;
 
     /**
      * @param draftRepository draft repository
@@ -62,7 +67,8 @@ public class VisualAssetOverviewController {
                                          VisualGraphPublicationRepository publicationRepository) {
         this(draftRepository, validator, catalog, publicationRepository,
                 new InMemoryVisualRuntimeBindingImplementationRepository(),
-                new InMemoryVisualRuntimeAdapterActivationRepository());
+                new InMemoryVisualRuntimeAdapterActivationRepository(),
+                new InMemoryVisualExecutableLoweringIntegrationRepository());
     }
 
     /**
@@ -72,6 +78,7 @@ public class VisualAssetOverviewController {
      * @param publicationRepository publication repository
      * @param implementationRepository runtime implementation binding repository
      * @param adapterActivationRepository runtime adapter activation repository
+     * @param executableLoweringIntegrationRepository executable lowering integration repository
      */
     @Autowired
     public VisualAssetOverviewController(GraphDraftRepository draftRepository,
@@ -79,7 +86,9 @@ public class VisualAssetOverviewController {
                                          VisualOperatorCatalog catalog,
                                          VisualGraphPublicationRepository publicationRepository,
                                          VisualRuntimeBindingImplementationRepository implementationRepository,
-                                         VisualRuntimeAdapterActivationRepository adapterActivationRepository) {
+                                         VisualRuntimeAdapterActivationRepository adapterActivationRepository,
+                                         VisualExecutableLoweringIntegrationRepository
+                                                 executableLoweringIntegrationRepository) {
         this.draftRepository = draftRepository;
         this.validator = validator;
         this.catalog = catalog;
@@ -90,6 +99,9 @@ public class VisualAssetOverviewController {
         this.adapterActivationRepository = adapterActivationRepository == null
                 ? new InMemoryVisualRuntimeAdapterActivationRepository()
                 : adapterActivationRepository;
+        this.executableLoweringIntegrationRepository = executableLoweringIntegrationRepository == null
+                ? new InMemoryVisualExecutableLoweringIntegrationRepository()
+                : executableLoweringIntegrationRepository;
     }
 
     public VisualAssetOverviewController(GraphDraftRepository draftRepository,
@@ -98,7 +110,18 @@ public class VisualAssetOverviewController {
                                          VisualGraphPublicationRepository publicationRepository,
                                          VisualRuntimeBindingImplementationRepository implementationRepository) {
         this(draftRepository, validator, catalog, publicationRepository, implementationRepository,
-                new InMemoryVisualRuntimeAdapterActivationRepository());
+                new InMemoryVisualRuntimeAdapterActivationRepository(),
+                new InMemoryVisualExecutableLoweringIntegrationRepository());
+    }
+
+    public VisualAssetOverviewController(GraphDraftRepository draftRepository,
+                                         GraphDraftValidator validator,
+                                         VisualOperatorCatalog catalog,
+                                         VisualGraphPublicationRepository publicationRepository,
+                                         VisualRuntimeBindingImplementationRepository implementationRepository,
+                                         VisualRuntimeAdapterActivationRepository adapterActivationRepository) {
+        this(draftRepository, validator, catalog, publicationRepository, implementationRepository,
+                adapterActivationRepository, new InMemoryVisualExecutableLoweringIntegrationRepository());
     }
 
     /**
@@ -852,6 +875,141 @@ public class VisualAssetOverviewController {
         return ResponseEntity.status(HttpStatus.CREATED).body(stored);
     }
 
+    /**
+     * Validates a BLOGE executable lowering integration assertion against an active adapter activation.
+     *
+     * @param request submitted executable lowering integration request
+     * @return validation result with activation, binding, catalog, and executor diagnostics
+     */
+    @PostMapping("/runtime-binding-requirements/executable-lowering-integrations/validate")
+    public ResponseEntity<VisualExecutableLoweringIntegrationValidation> validateExecutableLoweringIntegration(
+            @RequestBody(required = false) VisualExecutableLoweringIntegrationValidation.Request request) {
+        if (request == null) {
+            return ResponseEntity.badRequest()
+                    .body(VisualExecutableLoweringIntegrationValidation.missingRequest());
+        }
+        VisualRuntimeAdapterActivation activation = request.activationId().isBlank()
+                ? null
+                : adapterActivationRepository.find(request.activationId()).orElse(null);
+        VisualRuntimeBindingImplementationBinding binding = request.bindingId().isBlank()
+                ? null
+                : implementationRepository.find(request.bindingId()).orElse(null);
+        OperatorDefinition currentOperator = request.operatorRef().isBlank()
+                ? null
+                : catalog.find(request.operatorRef()).orElse(null);
+        VisualExecutableLoweringIntegrationValidation result =
+                VisualExecutableLoweringIntegrationValidation.from(request, activation, binding, currentOperator);
+        boolean unsupportedVersion = result.diagnostics().stream()
+                .anyMatch(diagnostic ->
+                        "visual.executableLoweringIntegration.schemaVersionUnsupported"
+                                .equals(diagnostic.code()));
+        return unsupportedVersion
+                ? ResponseEntity.status(HttpStatus.BAD_REQUEST).body(result)
+                : ResponseEntity.ok(result);
+    }
+
+    /**
+     * Lists submitted executable lowering integration facts.
+     *
+     * @param activationId optional adapter activation id filter
+     * @param operatorRef optional operator reference filter
+     * @param state optional integration state filter
+     * @return matching executable lowering integrations
+     */
+    @GetMapping("/runtime-binding-requirements/executable-lowering-integrations")
+    public List<VisualExecutableLoweringIntegration> executableLoweringIntegrations(
+            @RequestParam(defaultValue = "") String activationId,
+            @RequestParam(defaultValue = "") String operatorRef,
+            @RequestParam(defaultValue = "") String state) {
+        String normalizedActivationId = activationId == null ? "" : activationId.trim();
+        String normalizedOperatorRef = operatorRef == null ? "" : operatorRef.trim();
+        String normalizedState = state == null ? "" : state.trim().toLowerCase(Locale.ROOT);
+        return executableLoweringIntegrationRepository.all().stream()
+                .filter(integration -> normalizedActivationId.isBlank()
+                        || integration.activationId().equals(normalizedActivationId))
+                .filter(integration -> normalizedOperatorRef.isBlank()
+                        || integration.operatorRef().equals(normalizedOperatorRef))
+                .filter(integration -> normalizedState.isBlank()
+                        || integration.state().equals(normalizedState))
+                .toList();
+    }
+
+    /**
+     * Stores an executable lowering integration fact for an active adapter activation.
+     *
+     * <p>Accepted integrations are auditable executor-plane facts. They can move
+     * the catalog promotion projection past executor-integration-required, but
+     * they still do not mutate operator definitions or close executable readiness.</p>
+     *
+     * @param request submitted executable lowering integration request
+     * @return stored integration when accepted, otherwise validation diagnostics
+     */
+    @PostMapping("/runtime-binding-requirements/executable-lowering-integrations")
+    public ResponseEntity<Object> submitExecutableLoweringIntegration(
+            @RequestBody(required = false) VisualExecutableLoweringIntegrationValidation.Request request) {
+        if (request == null) {
+            return ResponseEntity.badRequest()
+                    .body(VisualExecutableLoweringIntegrationValidation.missingRequest());
+        }
+        VisualRuntimeAdapterActivation activation = request.activationId().isBlank()
+                ? null
+                : adapterActivationRepository.find(request.activationId()).orElse(null);
+        VisualRuntimeBindingImplementationBinding binding = request.bindingId().isBlank()
+                ? null
+                : implementationRepository.find(request.bindingId()).orElse(null);
+        OperatorDefinition currentOperator = request.operatorRef().isBlank()
+                ? null
+                : catalog.find(request.operatorRef()).orElse(null);
+        VisualExecutableLoweringIntegrationValidation validation =
+                VisualExecutableLoweringIntegrationValidation.from(request, activation, binding, currentOperator);
+        if (!validation.valid()) {
+            return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(validation);
+        }
+        if (!request.integrationId().isBlank()
+                && executableLoweringIntegrationRepository.find(request.integrationId()).isPresent()) {
+            return ResponseEntity.status(HttpStatus.CONFLICT)
+                    .body(executableLoweringIntegrationValidationWithBlockingDiagnostic(
+                            validation,
+                            VisualDiagnostic.error(
+                                    "visual.executableLoweringIntegration.integrationIdDuplicate",
+                                    "Executable lowering integrationId '%s' already exists."
+                                            .formatted(request.integrationId()),
+                                    "/integrationId",
+                                    Map.of("integrationId", request.integrationId()))
+                    ));
+        }
+        if (executableLoweringIntegrationRepository.findActiveByActivationId(validation.activationId()).isPresent()) {
+            return ResponseEntity.status(HttpStatus.CONFLICT)
+                    .body(executableLoweringIntegrationValidationWithBlockingDiagnostic(
+                            validation,
+                            VisualDiagnostic.error(
+                                    "visual.executableLoweringIntegration.activeIntegrationExists",
+                                    "Executable lowering integration already exists for activation '%s'."
+                                            .formatted(validation.activationId()),
+                                    "/activationId",
+                                    Map.of("activationId", validation.activationId()))
+                    ));
+        }
+        VisualExecutableLoweringIntegration stored;
+        try {
+            stored = executableLoweringIntegrationRepository.create(
+                    VisualExecutableLoweringIntegration.from(request, validation));
+        } catch (IllegalArgumentException e) {
+            return ResponseEntity.status(HttpStatus.CONFLICT)
+                    .body(executableLoweringIntegrationValidationWithBlockingDiagnostic(
+                            validation,
+                            VisualDiagnostic.error(
+                                    "visual.executableLoweringIntegration.integrationConflict",
+                                    e.getMessage(),
+                                    "/integrationId",
+                                    Map.of(
+                                            "integrationId", request.integrationId(),
+                                            "activationId", validation.activationId()))
+                    ));
+        }
+        return ResponseEntity.status(HttpStatus.CREATED).body(stored);
+    }
+
     VisualAssetOverview overview(String tenantId, String namespace, String environment) {
         return overview(tenantId, namespace, environment, VisualAssetOverview.DEFAULT_ACTION_ITEM_LIMIT);
     }
@@ -1011,6 +1169,42 @@ public class VisualAssetOverviewController {
                 validation.runtimeEnvironment(),
                 validation.healthState(),
                 validation.activatedBy(),
+                validation.reason(),
+                diagnostics
+        );
+    }
+
+    private static VisualExecutableLoweringIntegrationValidation
+            executableLoweringIntegrationValidationWithBlockingDiagnostic(
+                    VisualExecutableLoweringIntegrationValidation validation,
+                    VisualDiagnostic diagnostic) {
+        List<VisualDiagnostic> diagnostics = new ArrayList<>(validation.diagnostics());
+        diagnostics.add(diagnostic);
+        return new VisualExecutableLoweringIntegrationValidation(
+                validation.schemaVersion(),
+                validation.validatedAt(),
+                false,
+                false,
+                "rejected",
+                "error",
+                diagnostic.message(),
+                validation.integrationId(),
+                validation.activationId(),
+                validation.activationRevision(),
+                validation.bindingId(),
+                validation.bindingRevision(),
+                validation.operatorRef(),
+                validation.operatorFingerprint(),
+                validation.currentCatalogFingerprint(),
+                validation.currentCatalogState(),
+                validation.adapterKind(),
+                validation.entrypoint(),
+                validation.runtimeEnvironment(),
+                validation.loweringMode(),
+                validation.executorKind(),
+                validation.executorEntrypoint(),
+                validation.executorOwner(),
+                validation.integratedBy(),
                 validation.reason(),
                 diagnostics
         );
