@@ -73,10 +73,15 @@ class VisualAuthoringAppJsTest {
                 .contains("connectionCandidatePreview: null")
                 .contains("startConnectionCandidatePreview(source);")
                 .contains("fetch('/api/visual/connections/candidates'")
-                .contains("targetNodeId: options.targetNodeId || ''")
-                .contains("targetSurface: options.targetSurface || ''")
+                .contains("targetNodeId: options.targetNodeId || target.nodeId || ''")
+                .contains("targetSurface: options.targetSurface || connectionCandidateTargetSurface(target)")
+                .contains("targetPort: options.targetPort || target.port || ''")
+                .contains("targetPath: options.targetPath || target.path || ''")
                 .contains("normalizeConnectionCandidateExplanation(candidate?.explanation")
-                .contains("normalizeConnectionCandidatesResult(payload, source)")
+                .contains("normalizeConnectionCandidatesResult(payload, source, requestBody)")
+                .contains("ensureConnectionCandidatePreviewForTarget(drag.source, target);")
+                .contains("const requestKey = connectionCandidatePreviewRequestKey(source, kind, target);")
+                .contains("connectionCandidatePreviewCoversTarget(preview.result, target)")
                 .contains("connectionDragTargetDecision(state.connectionDrag.source, handle)")
                 .contains("Asking server for final decision...")
                 .contains("Server validation is authoritative.");
@@ -1012,11 +1017,15 @@ class VisualAuthoringAppJsTest {
                   'numericCount',
                   'normalizeConnectionCandidate',
                   'normalizeConnectionCandidatesResult',
+                  'connectionCandidateTargetSurface',
                   'connectionCandidateKindForSource',
                   'connectionCandidateKindForTarget',
                   'connectionCandidatePreviewSourceKey',
+                  'connectionCandidatePreviewRequestKey',
                   'connectionCandidateTargetKey',
+                  'connectionTargetRequiresFocusedCandidatePreview',
                   'connectionCandidatePreviewForTarget',
+                  'connectionCandidatePreviewCoversTarget',
                   'connectionDragTargetDecision',
                   'connectionDragTargetMessage',
                   'connectionServerPreflightMessage',
@@ -1360,6 +1369,32 @@ class VisualAuthoringAppJsTest {
                         name: 'inputs',
                         schema: { fields: [{ path: 'risk' }] }
                       }]
+                    };
+                  }
+                  if (node.id === 'unionInputNode') {
+                    return {
+                      label: 'Union Input',
+                      inputPort: 'inputs',
+                      outputPort: 'payload',
+                      ports: [{
+                        name: 'inputs',
+                        required: true,
+                        schema: {
+                          schema: {
+                            type: 'object',
+                            properties: {
+                              value: {
+                                oneOf: [
+                                  { type: 'integer' },
+                                  { type: 'string' }
+                                ]
+                              }
+                            },
+                            required: ['value']
+                          }
+                        }
+                      }],
+                      outputPorts: [{ name: 'payload', schema: { schema: { type: 'object' } } }]
                     };
                   }
                   if (node.id === 'policy') {
@@ -3224,6 +3259,85 @@ operators:
                     diagnostics: [{ level: 'ERROR', message: 'Server schema rejects root risk.' }]
                   }]
                 }, scoreConnectability.source);
+                const unionCandidateResult = context.normalizeConnectionCandidatesResult({
+                  schemaVersion: 'bloge.visualConnectionCandidates.v1',
+                  kind: 'data',
+                  source: {
+                    nodeId: scoreConnectability.source.nodeId,
+                    port: scoreConnectability.source.port,
+                    path: scoreConnectability.source.path
+                  },
+                  totalCandidateCount: 1,
+                  acceptedCount: 1,
+                  rejectedCount: 0,
+                  displayedCount: 1,
+                  candidates: [{
+                    targetNodeId: 'unionInputNode',
+                    targetNodeLabel: 'Union Input',
+                    targetOperatorRef: 'risk:unionInput',
+                    targetSurface: 'input',
+                    target: { nodeId: 'unionInputNode', port: 'inputs', path: 'value' },
+                    accepted: true,
+                    bindingKey: 'inputs.value',
+                    summary: { message: 'Server schema accepts selected branch.' },
+                    explanation: {
+                      sourceLabel: 'riskNode.payload.score',
+                      targetLabel: 'unionInputNode.inputs.value',
+                      sourceSchemaType: 'integer',
+                      targetSchemaType: 'integer',
+                      sourceSchemaKnown: true,
+                      targetSchemaKnown: true,
+                      decisionSource: 'server-validator'
+                    },
+                    diagnostics: []
+                  }]
+                }, scoreConnectability.source, {
+                  targetNodeId: 'unionInputNode',
+                  targetSurface: 'input',
+                  targetPort: 'inputs',
+                  targetPath: 'value',
+                  targetUnionBranch: { keyword: 'oneOf', index: 0 }
+                });
+                const unionTarget = {
+                  nodeId: 'unionInputNode',
+                  port: 'inputs',
+                  path: 'value',
+                  targetUnionBranch: { keyword: 'oneOf', index: 0 }
+                };
+                const unionCanvasNode = {
+                  id: 'unionInputNode',
+                  type: 'customOperator',
+                  customInputPorts: { 'inputs.value': 'inputs' },
+                  customInputPaths: { 'inputs.value': 'value' },
+                  customInputUnionBranches: { 'inputs.value': { keyword: 'oneOf', index: 0 } }
+                };
+                const unionCanvasTarget = context.canvasTargetHandlesForNode(unionCanvasNode)
+                  .find((target) => target.port === 'inputs' && target.path === 'value');
+                const selectedUnionPreviewCovers = context.connectionCandidatePreviewCoversTarget(
+                  unionCandidateResult,
+                  unionTarget
+                );
+                const wrongUnionPreviewCovers = context.connectionCandidatePreviewCoversTarget(
+                  unionCandidateResult,
+                  { ...unionTarget, targetUnionBranch: { keyword: 'oneOf', index: 1 } }
+                );
+                const broadPreviewCoversSelectedUnion = context.connectionCandidatePreviewCoversTarget(
+                  serverCandidateResult,
+                  unionTarget
+                );
+                const broadPreviewRequestKey = context.connectionCandidatePreviewRequestKey(
+                  scoreConnectability.source,
+                  'data'
+                );
+                const unionPreviewRequestKey = context.connectionCandidatePreviewRequestKey(
+                  scoreConnectability.source,
+                  'data',
+                  unionTarget
+                );
+                const unionTargetRequiresFocusedPreview =
+                  context.connectionTargetRequiresFocusedCandidatePreview(unionTarget);
+                const plainTargetRequiresFocusedPreview =
+                  context.connectionTargetRequiresFocusedCandidatePreview(scoreReadyTarget.target);
                 context.state.nodeConnectabilityServer = {
                   nodeId: 'riskNode',
                   requestKey: context.nodeConnectabilityServerRequestKey('riskNode', context.state.builder),
@@ -3930,6 +4044,17 @@ operators:
                   ['connection candidates explanation target type', serverCandidateResult.candidates[0].explanation.targetSchemaType, 'integer'],
                   ['connection candidates explanation diagnostic code', serverCandidateResult.candidates[1].explanation.firstDiagnosticCode, 'visual.binding.typeMismatch'],
                   ['connection candidates explanation replacement', serverCandidateResult.candidates[1].explanation.replacementSummary, 'Replaces 1 binding.'],
+                  ['connection candidates target port filter', unionCandidateResult.targetPort, 'inputs'],
+                  ['connection candidates target path filter', unionCandidateResult.targetPath, 'value'],
+                  ['connection candidates union branch metadata', context.unionBranchSelectionValue(unionCandidateResult.targetUnionBranch), 'oneOf:0'],
+                  ['connection candidates selected union preview covers', selectedUnionPreviewCovers, true],
+                  ['connection candidates wrong union preview rejected', wrongUnionPreviewCovers, false],
+                  ['connection candidates broad preview rejects selected union', broadPreviewCoversSelectedUnion, false],
+                  ['connection candidates broad request key', broadPreviewRequestKey, 'data:riskNode:payload:score|*'],
+                  ['connection candidates union request key', unionPreviewRequestKey, 'data:riskNode:payload:score|data:unionInputNode:inputs:value|oneOf:0|{}'],
+                  ['connection candidates union target needs focused preview', unionTargetRequiresFocusedPreview, true],
+                  ['connection candidates plain target skips focused preview', plainTargetRequiresFocusedPreview, false],
+                  ['canvas target carries selected union branch', context.unionBranchSelectionValue(unionCanvasTarget.targetUnionBranch), 'oneOf:0'],
                   ['server candidate decision source', serverAcceptedDecision.source, 'server'],
                   ['server candidate accepted', serverAcceptedDecision.ok, true],
                   ['server candidate accepted message', serverAcceptedMessage, 'Server schema accepts score.'],

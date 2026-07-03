@@ -16660,7 +16660,7 @@ function canvasTargetHandlesForNode(node) {
 }
 
 function canvasDataTargetHandlesForNode(node) {
-  const targets = targetHandlesForNode(node);
+  const targets = targetHandlesForNode(node).map((target) => targetWithSelectedUnionBranch(node, target));
   if (!node || node.type !== 'customOperator') {
     return targets;
   }
@@ -20669,12 +20669,14 @@ function moveConnectionDrag(event) {
   const target = connectionTargetAtPoint(event);
   drag.hoverTarget = target ? { ...target } : null;
   if (target) {
+    ensureConnectionCandidatePreviewForTarget(drag.source, target);
     const decision = connectionDragTargetDecision(drag.source, target);
     setConnectionMessage(
       connectionDragTargetMessage(drag.source, target, decision),
       decision.ok ? 'info' : 'error'
     );
   } else {
+    startConnectionCandidatePreview(drag.source);
     renderConnectionStatus();
   }
   renderDiagram();
@@ -20731,11 +20733,17 @@ function finishConnectionDrag(event) {
   renderDiagram();
 }
 
-function startConnectionCandidatePreview(source) {
+function startConnectionCandidatePreview(source, target = null) {
   const kind = connectionCandidateKindForSource(source);
   const sourceKey = connectionCandidatePreviewSourceKey(source, kind);
+  const requestKey = connectionCandidatePreviewRequestKey(source, kind, target);
+  const current = state.connectionCandidatePreview;
+  if (current?.requestKey === requestKey && (current.status === 'loading' || current.status === 'ready')) {
+    return;
+  }
   state.connectionCandidatePreview = {
     sourceKey,
+    requestKey,
     kind,
     status: 'loading',
     result: null,
@@ -20745,15 +20753,17 @@ function startConnectionCandidatePreview(source) {
   discoverVisualConnectionCandidatesOnServer(source, {
     kind,
     includeRejected: true,
-    limit: 250
+    limit: target ? 25 : 250,
+    target: target || null
   })
     .then((result) => {
       const preview = state.connectionCandidatePreview;
-      if (!preview || preview.sourceKey !== sourceKey) {
+      if (!preview || preview.requestKey !== requestKey) {
         return;
       }
       state.connectionCandidatePreview = {
         sourceKey,
+        requestKey,
         kind: result.kind,
         status: 'ready',
         result,
@@ -20764,7 +20774,7 @@ function startConnectionCandidatePreview(source) {
     })
     .catch((error) => {
       const preview = state.connectionCandidatePreview;
-      if (!preview || preview.sourceKey !== sourceKey) {
+      if (!preview || preview.requestKey !== requestKey) {
         return;
       }
       state.connectionCandidatePreview = {
@@ -20791,34 +20801,60 @@ function refreshConnectionCandidatePreview() {
   renderDiagram();
 }
 
+function ensureConnectionCandidatePreviewForTarget(source, target) {
+  if (!connectionTargetRequiresFocusedCandidatePreview(target)) {
+    return;
+  }
+  if (connectionCandidatePreviewForTarget(source, target)) {
+    return;
+  }
+  startConnectionCandidatePreview(source, target);
+}
+
 async function discoverVisualConnectionCandidatesOnServer(source, options = {}) {
   const kind = canonicalEdgeKind(options.kind || connectionCandidateKindForSource(source));
+  const target = options.target || {};
+  const optionUnionBranches = normalizedUnionBranchSelections(options.targetUnionBranches);
+  const targetUnionBranch = normalizedUnionBranchSelection(options.targetUnionBranch)
+    || normalizedUnionBranchSelection(target.targetUnionBranch);
+  const targetUnionBranches = Object.keys(optionUnionBranches).length
+    ? optionUnionBranches
+    : normalizedUnionBranchSelections(target.targetUnionBranches);
+  const requestBody = {
+    draft: builderToVisualDraft(state.builder),
+    kind,
+    includeRejected: options.includeRejected !== false,
+    limit: Number.isFinite(Number(options.limit)) ? Number(options.limit) : 250,
+    offset: Number.isFinite(Number(options.offset)) ? Number(options.offset) : 0,
+    targetNodeId: options.targetNodeId || target.nodeId || '',
+    targetSurface: options.targetSurface || connectionCandidateTargetSurface(target),
+    targetPort: options.targetPort || target.port || '',
+    targetPath: options.targetPath || target.path || '',
+    source: {
+      nodeId: source.nodeId,
+      port: source.port || '',
+      path: source.path || ''
+    }
+  };
+  if (targetUnionBranch) {
+    requestBody.targetUnionBranch = targetUnionBranch;
+  }
+  if (Object.keys(targetUnionBranches).length) {
+    requestBody.targetUnionBranches = targetUnionBranches;
+  }
   const response = await fetch('/api/visual/connections/candidates', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      draft: builderToVisualDraft(state.builder),
-      kind,
-      includeRejected: options.includeRejected !== false,
-      limit: Number.isFinite(Number(options.limit)) ? Number(options.limit) : 250,
-      offset: Number.isFinite(Number(options.offset)) ? Number(options.offset) : 0,
-      targetNodeId: options.targetNodeId || '',
-      targetSurface: options.targetSurface || '',
-      source: {
-        nodeId: source.nodeId,
-        port: source.port || '',
-        path: source.path || ''
-      }
-    })
+    body: JSON.stringify(requestBody)
   });
   if (!response.ok) {
     throw new Error(`Connection candidates failed with ${response.status}`);
   }
   const payload = await response.json();
-  return normalizeConnectionCandidatesResult(payload, source);
+  return normalizeConnectionCandidatesResult(payload, source, requestBody);
 }
 
-function normalizeConnectionCandidatesResult(payload, source = null) {
+function normalizeConnectionCandidatesResult(payload, source = null, request = {}) {
   const kind = canonicalEdgeKind(payload?.kind || 'data');
   const candidates = Array.isArray(payload?.candidates)
     ? payload.candidates.map((candidate) => normalizeConnectionCandidate(candidate, kind))
@@ -20830,6 +20866,12 @@ function normalizeConnectionCandidatesResult(payload, source = null) {
     schemaVersion: payload?.schemaVersion || 'bloge.visualConnectionCandidates.v1',
     source: payload?.source || source || null,
     kind,
+    targetNodeId: request.targetNodeId || '',
+    targetSurface: request.targetSurface || '',
+    targetPort: request.targetPort || '',
+    targetPath: request.targetPath || '',
+    targetUnionBranch: normalizedUnionBranchSelection(request.targetUnionBranch),
+    targetUnionBranches: normalizedUnionBranchSelections(request.targetUnionBranches),
     totalCandidateCount: numericCount(payload?.totalCandidateCount, 0),
     offset: numericCount(payload?.offset, 0),
     acceptedCount: numericCount(
@@ -20929,6 +20971,19 @@ function connectionReplacementSummary(replacedBindingCount = 0, replacedEdgeCoun
   return `Replaces ${parts.join(' and ')}.`;
 }
 
+function connectionCandidateTargetSurface(target) {
+  if (!target?.nodeId) {
+    return '';
+  }
+  if (target.kind === 'dependency') {
+    return 'dependency';
+  }
+  if (target.kind === 'route') {
+    return 'route';
+  }
+  return target.port === 'config' ? 'config' : 'input';
+}
+
 function connectionCandidateKindForSource(source) {
   return source?.kind === 'route' ? 'route' : 'data';
 }
@@ -20952,6 +21007,19 @@ function connectionCandidatePreviewSourceKey(source, kind = 'data') {
   ].map((item) => String(item || '').trim()).join(':');
 }
 
+function connectionCandidatePreviewRequestKey(source, kind = 'data', target = null) {
+  const sourceKey = connectionCandidatePreviewSourceKey(source, kind);
+  if (!target?.nodeId) {
+    return `${sourceKey}|*`;
+  }
+  return [
+    sourceKey,
+    connectionCandidateTargetKey(kind, target),
+    unionBranchSelectionValue(target.targetUnionBranch),
+    JSON.stringify(normalizedUnionBranchSelections(target.targetUnionBranches))
+  ].join('|');
+}
+
 function connectionCandidateTargetKey(kind, target) {
   const edgeKind = canonicalEdgeKind(kind);
   if (!target?.nodeId) {
@@ -20971,6 +21039,14 @@ function connectionCandidateTargetKey(kind, target) {
   ].map((item) => String(item || '').trim()).join(':');
 }
 
+function connectionTargetRequiresFocusedCandidatePreview(target) {
+  if (!target?.nodeId || target.kind === 'dependency' || target.kind === 'route') {
+    return false;
+  }
+  return Boolean(unionBranchSelectionValue(target.targetUnionBranch))
+    || Object.keys(normalizedUnionBranchSelections(target.targetUnionBranches)).length > 0;
+}
+
 function connectionCandidatePreviewForTarget(source, target) {
   const preview = state.connectionCandidatePreview;
   const targetKind = connectionCandidateKindForTarget(target);
@@ -20980,7 +21056,32 @@ function connectionCandidatePreviewForTarget(source, target) {
   if (preview.sourceKey !== connectionCandidatePreviewSourceKey(source, preview.kind)) {
     return null;
   }
+  if (!connectionCandidatePreviewCoversTarget(preview.result, target)) {
+    return null;
+  }
   return preview.candidatesByTargetKey?.[connectionCandidateTargetKey(preview.kind, target)] || null;
+}
+
+function connectionCandidatePreviewCoversTarget(result, target) {
+  if (!result || !target?.nodeId) {
+    return true;
+  }
+  if (result.targetNodeId && result.targetNodeId !== target.nodeId) {
+    return false;
+  }
+  if (result.targetPort && result.targetPort !== (target.port || '')) {
+    return false;
+  }
+  if (result.targetPath && result.targetPath !== (target.path || '')) {
+    return false;
+  }
+  const resultBranch = unionBranchSelectionValue(result.targetUnionBranch);
+  const targetBranch = unionBranchSelectionValue(target.targetUnionBranch);
+  if (resultBranch || targetBranch) {
+    return resultBranch === targetBranch;
+  }
+  return JSON.stringify(normalizedUnionBranchSelections(result.targetUnionBranches))
+    === JSON.stringify(normalizedUnionBranchSelections(target.targetUnionBranches));
 }
 
 function connectionDragTargetDecision(source, target) {

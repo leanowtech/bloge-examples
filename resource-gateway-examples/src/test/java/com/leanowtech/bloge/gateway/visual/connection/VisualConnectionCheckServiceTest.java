@@ -231,6 +231,41 @@ class VisualConnectionCheckServiceTest {
     }
 
     @Test
+    void connectionCandidatesReuseExplicitTargetUnionBranchSelection() {
+        VisualConnectionCheckService service = connectionService(VisualCatalogTestSupport
+                .catalogWithLibrary(unionBranchSelectionLibrary()));
+        GraphDraft draft = unionBranchSelectionDraft();
+
+        VisualConnectionCandidatesResult result = service.candidates(new VisualConnectionCandidatesRequest(
+                draft,
+                new GraphDraft.Endpoint("integerProducer", "output", "value"),
+                "data",
+                true,
+                10,
+                0,
+                "unionConsumer",
+                "input",
+                "inputs",
+                "value",
+                new GraphDraft.UnionBranchSelection("oneOf", 0),
+                Map.of()
+        ));
+
+        assertThat(result.totalCandidateCount()).isEqualTo(1);
+        assertThat(result.acceptedCount()).isEqualTo(1);
+        assertThat(result.rejectedCount()).isZero();
+        assertThat(result.candidates()).singleElement().satisfies(candidate -> {
+            assertThat(candidate.target().nodeId()).isEqualTo("unionConsumer");
+            assertThat(candidate.target().port()).isEqualTo("inputs");
+            assertThat(candidate.target().path()).isEqualTo("value");
+            assertThat(candidate.accepted()).isTrue();
+            assertThat(candidate.bindingKey()).isEqualTo("value");
+            assertThat(candidate.explanation().targetSchemaType()).isEqualTo("integer");
+            assertThat(candidate.diagnostics()).isEmpty();
+        });
+    }
+
+    @Test
     void acceptsConnectionPreviewWithNestedTargetUnionBranchSelection() {
         VisualConnectionCheckService service = connectionService(VisualCatalogTestSupport
                 .catalogWithLibrary(nestedUnionBranchSelectionLibrary()));

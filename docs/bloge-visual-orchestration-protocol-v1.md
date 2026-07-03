@@ -1972,6 +1972,12 @@ draft，不产生新 edge，也不成为新的 schema 判断来源。
   "offset": 0,
   "targetNodeId": "loanPolicy",
   "targetSurface": "input",
+  "targetPort": "inputs",
+  "targetPath": "score",
+  "targetUnionBranch": { "keyword": "oneOf", "index": 0 },
+  "targetUnionBranches": {
+    "payload": { "keyword": "oneOf", "index": 1 }
+  },
   "draft": {
     "schemaVersion": "bloge.visualGraphDraft.v1",
     "graphName": "customLoanPolicy",
@@ -2038,8 +2044,13 @@ draft，不产生新 edge，也不成为新的 schema 判断来源。
 
 `includeRejected=false` 时默认只返回可接目标，但 `totalCandidateCount`、
 `acceptedCount` 和 `rejectedCount` 仍反映服务端评估过的完整候选集合。
-`targetNodeId`、`targetSurface`、`offset` 和 `limit` 用于大画布 focused discovery；
-外部控制面可以只请求某个目标节点或某类 target surface，而不必拉完整候选集合。
+`targetNodeId`、`targetSurface`、`targetPort`、`targetPath`、`offset` 和 `limit`
+用于大画布 focused discovery；外部控制面可以只请求某个目标节点、某类 target
+surface 或某个精确 target endpoint，而不必拉完整候选集合。`targetUnionBranch`
+和 `targetUnionBranches` 与 `/api/visual/connections/check` 使用同一选择合同，
+用于让候选发现按作者当前选择的 root/nested `oneOf` / `anyOf` target branch
+复用服务端 schema gate；没有 selection 的 broad candidate 快照不应被客户端拿来
+覆盖带 selection 的 hover/drop 判断。
 `includeRejected=true` 可用于 inspector、调试面板或可访问性提示，展示被阻断
 目标及其 `visual.binding.*` / `visual.edge.*` diagnostics。每个候选的
 `explanation` 是稳定的机器可读说明面：source/target label、schema type、

@@ -3,6 +3,7 @@ package com.leanowtech.bloge.gateway.visual.connection;
 import com.leanowtech.bloge.gateway.visual.draft.GraphDraft;
 
 import java.util.Locale;
+import java.util.Map;
 
 /**
  * Request to discover schema-aware target candidates for one canvas connection source.
@@ -15,6 +16,10 @@ import java.util.Locale;
  * @param offset zero-based offset after accepted/rejected filtering
  * @param targetNodeId optional target node filter for large-canvas focused discovery
  * @param targetSurface optional target surface filter, such as input, config, dependency, route, or control
+ * @param targetPort optional target port filter for exact-hover discovery
+ * @param targetPath optional target schema path filter for exact-hover discovery
+ * @param targetUnionBranch explicit target oneOf/anyOf branch selected by the author for focused discovery
+ * @param targetUnionBranches explicit nested target oneOf/anyOf branches keyed by target path
  */
 public record VisualConnectionCandidatesRequest(
         GraphDraft draft,
@@ -24,7 +29,11 @@ public record VisualConnectionCandidatesRequest(
         int limit,
         int offset,
         String targetNodeId,
-        String targetSurface
+        String targetSurface,
+        String targetPort,
+        String targetPath,
+        GraphDraft.UnionBranchSelection targetUnionBranch,
+        Map<String, GraphDraft.UnionBranchSelection> targetUnionBranches
 ) {
     private static final int DEFAULT_LIMIT = 100;
     private static final int MAX_LIMIT = 500;
@@ -39,6 +48,27 @@ public record VisualConnectionCandidatesRequest(
         offset = Math.max(0, offset);
         targetNodeId = targetNodeId == null ? "" : targetNodeId.trim();
         targetSurface = canonicalSurface(targetSurface);
+        targetPort = targetPort == null ? "" : targetPort.trim();
+        targetPath = targetPath == null ? "" : targetPath.trim();
+        targetUnionBranch = targetUnionBranch == null
+                ? GraphDraft.UnionBranchSelection.empty()
+                : targetUnionBranch;
+        targetUnionBranches = VisualConnectionCheckRequest.normalizeUnionBranchSelections(targetUnionBranches);
+    }
+
+    /**
+     * Backward-compatible constructor for focused discovery before exact endpoint filters existed.
+     */
+    public VisualConnectionCandidatesRequest(GraphDraft draft,
+                                             GraphDraft.Endpoint source,
+                                             String kind,
+                                             boolean includeRejected,
+                                             int limit,
+                                             int offset,
+                                             String targetNodeId,
+                                             String targetSurface) {
+        this(draft, source, kind, includeRejected, limit, offset, targetNodeId, targetSurface,
+                "", "", GraphDraft.UnionBranchSelection.empty(), Map.of());
     }
 
     /**

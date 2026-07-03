@@ -72,7 +72,7 @@ public record VisualConnectionCheckRequest(
         this(draft, source, target, kind, "");
     }
 
-    private static Map<String, GraphDraft.UnionBranchSelection> normalizeUnionBranchSelections(
+    static Map<String, GraphDraft.UnionBranchSelection> normalizeUnionBranchSelections(
             Map<String, GraphDraft.UnionBranchSelection> selections) {
         if (selections == null || selections.isEmpty()) {
             return Map.of();

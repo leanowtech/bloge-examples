@@ -558,11 +558,12 @@ gate，本地 hint 不能成为最终授权。
 运行时 value validation 中 `oneOf` 必须唯一命中，`anyOf` 至少命中一个；
 schema-to-schema 连接兼容采用保守策略，避免把无法证明唯一性的 union
 直接放入下游输入。浏览器 contract panel 和 operator library profile 会展示
-union 分支摘要，帮助用户在拖线前看见端口约束；input inspector 已支持对 root
-target union 选择 `targetUnionBranch`，draft 保存、connection preview、binding
-validation 和 data edge validation 会共同按选中 branch 消歧。分支内字段仍不能被
-混成稳定 handle；后续如果要支持嵌套 union branch map，需要把 branch path、
-字段枚举和 lowering 语义一起收敛，不能只做前端展开。
+union 分支摘要，帮助用户在拖线前看见端口约束；input inspector 和 canvas data
+target handle 已支持 root `targetUnionBranch` 与 nested `targetUnionBranches`
+选择，draft 保存、connection preview、connection candidates focused discovery、
+binding validation 和 data edge validation 会共同按选中 branch 消歧。分支内字段
+只有在 branch path、字段枚举、candidate preview 和 lowering 语义都能被服务端
+证明时才能成为稳定 handle，不能只做前端展开。
 同一节点内多个 binding 写入同一解析后输入目标，或 root/path 前缀重叠，
 会以 `visual.input.duplicateTarget` 阻断；不同 input port 上同名字段仍然合法，
 例如 `customer.id` 和 `order.id`。

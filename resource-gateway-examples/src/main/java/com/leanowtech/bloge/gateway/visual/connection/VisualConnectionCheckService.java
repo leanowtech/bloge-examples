@@ -298,7 +298,10 @@ public class VisualConnectionCheckService {
                     request.draft(),
                     request.source(),
                     target.endpoint(),
-                    request.kind()
+                    request.kind(),
+                    "",
+                    request.targetUnionBranch(),
+                    request.targetUnionBranches()
             ));
             candidates.add(new VisualConnectionCandidatesResult.ConnectionCandidate(
                     target.node().id(),
@@ -309,7 +312,7 @@ public class VisualConnectionCheckService {
                     check.accepted(),
                     check.bindingKey(),
                     check.summary(),
-                    candidateExplanation(request.draft(), request.source(), target, check),
+                    candidateExplanation(request, target, check),
                     check.diagnostics()
             ));
         }
@@ -373,6 +376,9 @@ public class VisualConnectionCheckService {
             if (candidateSurfaceMatches(request.targetSurface(), "input")) {
                 for (OperatorDefinition.Port port : operator.get().ports().inputs()) {
                     for (String path : connectableSchemaPaths(port.schema())) {
+                        if (!candidateEndpointMatches(request, port.name(), path)) {
+                            continue;
+                        }
                         targets.add(new ConnectionCandidateTarget(
                                 node,
                                 "input",
@@ -383,13 +389,14 @@ public class VisualConnectionCheckService {
             }
             if (candidateSurfaceMatches(request.targetSurface(), "config")) {
                 for (String path : connectableSchemaPaths(operator.get().configSchema())) {
-                    if (!path.isBlank()) {
-                        targets.add(new ConnectionCandidateTarget(
-                                node,
-                                "config",
-                                new GraphDraft.Endpoint(node.id(), CONFIG_TARGET_PORT, path)
-                        ));
+                    if (path.isBlank() || !candidateEndpointMatches(request, CONFIG_TARGET_PORT, path)) {
+                        continue;
                     }
+                    targets.add(new ConnectionCandidateTarget(
+                            node,
+                            "config",
+                            new GraphDraft.Endpoint(node.id(), CONFIG_TARGET_PORT, path)
+                    ));
                 }
             }
         }
@@ -405,6 +412,15 @@ public class VisualConnectionCheckService {
         return surface.isBlank() || candidateSurfaceMatches(request.targetSurface(), surface);
     }
 
+    private static boolean candidateEndpointMatches(VisualConnectionCandidatesRequest request,
+                                                    String port,
+                                                    String path) {
+        if (!request.targetPort().isBlank() && !request.targetPort().equals(port)) {
+            return false;
+        }
+        return request.targetPath().isBlank() || request.targetPath().equals(path == null ? "" : path);
+    }
+
     private static boolean candidateSurfaceMatches(String requested, String actual) {
         if (requested == null || requested.isBlank()) {
             return true;
@@ -416,12 +432,16 @@ public class VisualConnectionCheckService {
     }
 
     private VisualConnectionCandidatesResult.ConnectionCandidateExplanation candidateExplanation(
-            GraphDraft draft,
-            GraphDraft.Endpoint source,
+            VisualConnectionCandidatesRequest request,
             ConnectionCandidateTarget target,
             VisualConnectionCheckResult check) {
+        GraphDraft draft = request.draft();
+        GraphDraft.Endpoint source = request.source();
         Map<String, Object> sourceSchema = endpointSourceSchema(draft, source);
-        Map<String, Object> targetSchema = endpointTargetSchema(draft, target.endpoint(), target.surface());
+        Map<String, Object> targetSchema = selectedUnionBranchSchema(
+                endpointTargetSchema(draft, target.endpoint(), target.surface()),
+                request.targetUnionBranch()
+        );
         VisualDiagnostic firstDiagnostic = firstDiagnostic(check.diagnostics());
         VisualConnectionCheckResult.VisualConnectionCheckSummary summary = check.summary();
         int replacedBindings = summary == null ? 0 : summary.replacedBindingCount();
@@ -611,6 +631,19 @@ public class VisualConnectionCheckService {
                 .distinct()
                 .toList();
         return labels.isEmpty() ? keyword : keyword + "<" + String.join("|", labels) + ">";
+    }
+
+    private static Map<String, Object> selectedUnionBranchSchema(Map<String, Object> schema,
+                                                                 GraphDraft.UnionBranchSelection selection) {
+        if (schema == null || selection == null || !selection.selected()) {
+            return schema;
+        }
+        Object raw = schema.get(selection.keyword());
+        if (!(raw instanceof List<?> branches) || selection.index() >= branches.size()) {
+            return schema;
+        }
+        Map<String, Object> branch = objectSchema(branches.get(selection.index()));
+        return branch == null ? schema : branch;
     }
 
     private static List<String> connectableSchemaPaths(SchemaEnvelope schema) {
