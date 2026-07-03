@@ -2881,6 +2881,7 @@ public class VisualAssetOverviewController {
                 source.testEvidence(),
                 source.policyEvidence(),
                 source.rollbackTarget(),
+                source.rolloutPlan(),
                 source.notes());
     }
 

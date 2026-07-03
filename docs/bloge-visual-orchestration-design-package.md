@@ -78,10 +78,10 @@
    projection、只读 executable readiness recompute preview、native governed apply mutation、
    external-runtime-bound governed apply mutation、apply revision-write failed result、post-apply evidence refresh/rebind mutation、governed
    unbind/deactivate mutation、bind 写入失败诊断、字段级 implementation contract-diff gate、semantic JSON
-   Schema-compatible drift classification、runtime implementation SemVer/reimplementation submit gate
+   Schema-compatible drift classification、runtime implementation SemVer/reimplementation submit gate、implementation rolloutPlan validate gate
    和三类 runtime evidence submit stable-id 精确 replay
    幂等返回、submit 写入失败诊断、operator-library create/import-text/import-bundle/replace/restore/delete registry 写入失败诊断、ResourceDesignContract upsert/delete registry 写入失败诊断、draft create/full-save/import 写入失败诊断、publication publish/import 持久化失败诊断，以及 golden save/delete/run-history/certification 写入失败诊断之后，补其他尚未覆盖的跨 repository 事务/partial-failure 硬化、更广义 idempotency、
-   更深跨系统 rollout/canary/rollback 策略和更完整 JSON Schema 兼容性推理门禁，让
+   更深跨系统 rollout/canary/rollback 执行回流和更完整 JSON Schema 兼容性推理门禁，让
    handoff contract snapshot 能被外部 runtime team 变成可绑定、可激活、可对账 executor bridge、
    可回滚、可持续重新派生 executable readiness 的实现事实。
 
@@ -120,7 +120,7 @@ Phase 1 不以 UI 好看为验收，而以真实闭环为验收：
 
 如果继续代码实现，优先按实现状态审计第 6 章推进：
 
-1. Runtime binding implementation 与 readiness 派生闭环：在当前 implementation validate、字段级 contract-diff gate、semantic JSON Schema-compatible drift classification、runtime implementation SemVer/reimplementation submit gate、proposal persistence、bind/supersede/unbind API、bind 写入失败诊断、adapter activation registry、executable lowering integration registry、三类 runtime evidence submit stable-id 精确 replay 幂等返回、catalog response projection、executable promotion projection、readiness recompute preview、native governed apply mutation、external-runtime-bound governed apply mutation、apply revision-write failed result、post-apply evidence refresh/rebind mutation 和 governed unbind/deactivate mutation 之后，补跨 repository 事务/partial-failure 硬化、更广义 idempotency、更深跨系统 rollout/canary/rollback 策略和更完整 JSON Schema 兼容性推理门禁。
+1. Runtime binding implementation 与 readiness 派生闭环：在当前 implementation validate、字段级 contract-diff gate、semantic JSON Schema-compatible drift classification、runtime implementation SemVer/reimplementation submit gate、implementation rolloutPlan validate gate、proposal persistence、bind/supersede/unbind API、bind 写入失败诊断、adapter activation registry、executable lowering integration registry、三类 runtime evidence submit stable-id 精确 replay 幂等返回、catalog response projection、executable promotion projection、readiness recompute preview、native governed apply mutation、external-runtime-bound governed apply mutation、apply revision-write failed result、post-apply evidence refresh/rebind mutation 和 governed unbind/deactivate mutation 之后，补跨 repository 事务/partial-failure 硬化、更广义 idempotency、更深跨系统 rollout/canary/rollback 执行回流和更完整 JSON Schema 兼容性推理门禁。
 2. 前端回归验证。
 3. Java operator inventory 深化。
 4. OpenAPI/resource contract/AsyncAPI 导入深化。

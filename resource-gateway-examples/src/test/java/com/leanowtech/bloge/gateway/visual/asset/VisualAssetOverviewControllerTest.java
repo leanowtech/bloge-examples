@@ -1665,7 +1665,70 @@ class VisualAssetOverviewControllerTest {
                 .extracting(VisualDiagnostic::code)
                 .contains(
                         "visual.runtimeBindingImplementation.testEvidenceMissing",
-                        "visual.runtimeBindingImplementation.rollbackTargetMissing"
+                        "visual.runtimeBindingImplementation.rollbackTargetMissing",
+                        "visual.runtimeBindingImplementation.rolloutPlanMissing"
+                );
+    }
+
+    @Test
+    void runtimeBindingImplementationValidationRejectsInvalidRolloutPlan() {
+        RuntimeBindingImplementationFixture fixture = runtimeBindingImplementationFixture();
+
+        var response = fixture.controller().validateRuntimeBindingImplementation(
+                implementationRequest(fixture,
+                        completeImplementationWithRollout(
+                                "risk-eligibility-native-invalid-rollout",
+                                new VisualRuntimeBindingImplementationValidation.RolloutPlan(
+                                        "spray-and-pray",
+                                        75,
+                                        50,
+                                        "",
+                                        "",
+                                        List.of(),
+                                        ""))));
+
+        assertThat(response.getStatusCode().value()).isEqualTo(200);
+        assertThat(response.getBody()).isNotNull();
+        assertThat(response.getBody().valid()).isFalse();
+        assertThat(response.getBody().bindable()).isFalse();
+        assertThat(response.getBody().state()).isEqualTo("rejected");
+        assertThat(response.getBody().diagnostics())
+                .extracting(VisualDiagnostic::code)
+                .contains(
+                        "visual.runtimeBindingImplementation.rolloutStrategyUnsupported",
+                        "visual.runtimeBindingImplementation.rolloutTrafficWindowInvalid",
+                        "visual.runtimeBindingImplementation.rolloutRollbackSignalMissing",
+                        "visual.runtimeBindingImplementation.rolloutRollbackWindowMissing"
+                );
+    }
+
+    @Test
+    void runtimeBindingImplementationValidationRequiresReviewForHighRiskImmediateRollout() {
+        RuntimeBindingImplementationFixture fixture = runtimeBindingImplementationFixture();
+
+        var response = fixture.controller().validateRuntimeBindingImplementation(
+                implementationRequest(fixture,
+                        remoteWorkerImplementationWithRollout(
+                                "risk-eligibility-worker-immediate",
+                                new VisualRuntimeBindingImplementationValidation.RolloutPlan(
+                                        "immediate",
+                                        100,
+                                        100,
+                                        "error-rate > 2%",
+                                        "PT30M",
+                                        List.of(),
+                                        ""))));
+
+        assertThat(response.getStatusCode().value()).isEqualTo(200);
+        assertThat(response.getBody()).isNotNull();
+        assertThat(response.getBody().valid()).isTrue();
+        assertThat(response.getBody().bindable()).isFalse();
+        assertThat(response.getBody().state()).isEqualTo("requires-review");
+        assertThat(response.getBody().diagnostics())
+                .extracting(VisualDiagnostic::code)
+                .contains(
+                        "visual.runtimeBindingImplementation.rolloutImmediateHighRisk",
+                        "visual.runtimeBindingImplementation.rolloutEvidenceMissing"
                 );
     }
 
@@ -1730,6 +1793,8 @@ class VisualAssetOverviewControllerTest {
         assertThat(binding.sourceRequirementKeys()).containsExactlyElementsOf(handoffBundle.requirementKeys());
         assertThat(binding.validation().valid()).isTrue();
         assertThat(binding.validation().bindable()).isTrue();
+        assertThat(binding.implementation().rolloutPlan().strategy()).isEqualTo("canary");
+        assertThat(binding.implementation().rolloutPlan().initialTrafficPercent()).isEqualTo(5);
         assertThat(controller.runtimeBindingImplementationBindings("", "")).singleElement().isEqualTo(binding);
         assertThat(controller.runtimeBindingImplementationBindings("risk:eligibility", "ready-to-bind"))
                 .singleElement()
@@ -4841,6 +4906,35 @@ class VisualAssetOverviewControllerTest {
                         "Runtime owner approved policy and deployment scope."
                 )),
                 "deployment:risk-eligibility-native-v0",
+                canaryRolloutPlan(),
+                ""
+        );
+    }
+
+    private static VisualRuntimeBindingImplementationValidation.ImplementationMetadata completeImplementationWithRollout(
+            String bindingId,
+            VisualRuntimeBindingImplementationValidation.RolloutPlan rolloutPlan) {
+        return new VisualRuntimeBindingImplementationValidation.ImplementationMetadata(
+                bindingId,
+                "native",
+                "com.acme.risk.RiskEligibilityOperator",
+                "risk-platform",
+                "",
+                "",
+                "",
+                List.of("request-response"),
+                List.of(new VisualRuntimeBindingImplementationValidation.Evidence(
+                        "test",
+                        "golden-suite:risk-eligibility",
+                        "Golden suite passed against the exported operator contract."
+                )),
+                List.of(new VisualRuntimeBindingImplementationValidation.Evidence(
+                        "approval",
+                        "change-approval:RB-42",
+                        "Runtime owner approved policy and deployment scope."
+                )),
+                "deployment:risk-eligibility-native-v0",
+                rolloutPlan,
                 ""
         );
     }
@@ -4870,6 +4964,7 @@ class VisualAssetOverviewControllerTest {
                         "Runtime owner approved policy and deployment scope."
                 )),
                 "deployment:risk-eligibility-native-v0",
+                canaryRolloutPlan(),
                 ""
         );
     }
@@ -4893,6 +4988,35 @@ class VisualAssetOverviewControllerTest {
                         "Runtime owner approved worker topic, policy, and deployment scope."
                 )),
                 "deployment:risk-eligibility-worker-v0",
+                canaryRolloutPlan(),
+                ""
+        );
+    }
+
+    private static VisualRuntimeBindingImplementationValidation.ImplementationMetadata remoteWorkerImplementationWithRollout(
+            String bindingId,
+            VisualRuntimeBindingImplementationValidation.RolloutPlan rolloutPlan) {
+        return new VisualRuntimeBindingImplementationValidation.ImplementationMetadata(
+                bindingId,
+                "remote-worker",
+                "workers.risk.eligibility",
+                "risk-worker-platform",
+                "",
+                "",
+                "",
+                List.of("remote-worker"),
+                List.of(new VisualRuntimeBindingImplementationValidation.Evidence(
+                        "test",
+                        "worker-suite:risk-eligibility",
+                        "Worker contract suite passed against the exported operator contract."
+                )),
+                List.of(new VisualRuntimeBindingImplementationValidation.Evidence(
+                        "approval",
+                        "change-approval:RB-WORKER-42",
+                        "Runtime owner approved worker topic, policy, and deployment scope."
+                )),
+                "deployment:risk-eligibility-worker-v0",
+                rolloutPlan,
                 ""
         );
     }
@@ -4910,6 +5034,21 @@ class VisualAssetOverviewControllerTest {
                 "",
                 ""
         );
+    }
+
+    private static VisualRuntimeBindingImplementationValidation.RolloutPlan canaryRolloutPlan() {
+        return new VisualRuntimeBindingImplementationValidation.RolloutPlan(
+                "canary",
+                5,
+                100,
+                "error-rate > 2% or golden regression failure",
+                "PT30M",
+                List.of(new VisualRuntimeBindingImplementationValidation.Evidence(
+                        "rollout-plan",
+                        "change-window:RB-42",
+                        "Start at 5% traffic and ramp to 100% after SLO and golden checks pass."
+                )),
+                "");
     }
 
     private static Map<String, Object> legacyFilterMaterial(

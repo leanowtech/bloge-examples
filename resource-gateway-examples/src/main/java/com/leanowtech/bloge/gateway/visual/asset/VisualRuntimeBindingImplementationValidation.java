@@ -165,6 +165,7 @@ public record VisualRuntimeBindingImplementationValidation(
      * @param testEvidence test or certification evidence
      * @param policyEvidence governance, secret, egress, or approval evidence
      * @param rollbackTarget previous adapter or deployment target for rollback
+     * @param rolloutPlan rollout, canary, and rollback trigger plan for production activation
      * @param notes optional implementation notes
      */
     public record ImplementationMetadata(
@@ -179,6 +180,7 @@ public record VisualRuntimeBindingImplementationValidation(
             List<Evidence> testEvidence,
             List<Evidence> policyEvidence,
             String rollbackTarget,
+            RolloutPlan rolloutPlan,
             String notes
     ) {
         public ImplementationMetadata(String bindingId,
@@ -191,7 +193,38 @@ public record VisualRuntimeBindingImplementationValidation(
                                       String rollbackTarget,
                                       String notes) {
             this(bindingId, adapterKind, entrypoint, runtimeOwner, "", "", "", capabilities, testEvidence,
-                    policyEvidence, rollbackTarget, notes);
+                    policyEvidence, rollbackTarget, null, notes);
+        }
+
+        public ImplementationMetadata(String bindingId,
+                                      String adapterKind,
+                                      String entrypoint,
+                                      String runtimeOwner,
+                                      List<String> capabilities,
+                                      List<Evidence> testEvidence,
+                                      List<Evidence> policyEvidence,
+                                      String rollbackTarget,
+                                      RolloutPlan rolloutPlan,
+                                      String notes) {
+            this(bindingId, adapterKind, entrypoint, runtimeOwner, "", "", "", capabilities, testEvidence,
+                    policyEvidence, rollbackTarget, rolloutPlan, notes);
+        }
+
+        public ImplementationMetadata(String bindingId,
+                                      String adapterKind,
+                                      String entrypoint,
+                                      String runtimeOwner,
+                                      String implementationVersion,
+                                      String reimplementationOfBindingId,
+                                      String reimplementationStrategy,
+                                      List<String> capabilities,
+                                      List<Evidence> testEvidence,
+                                      List<Evidence> policyEvidence,
+                                      String rollbackTarget,
+                                      String notes) {
+            this(bindingId, adapterKind, entrypoint, runtimeOwner, implementationVersion,
+                    reimplementationOfBindingId, reimplementationStrategy, capabilities, testEvidence,
+                    policyEvidence, rollbackTarget, null, notes);
         }
 
         public ImplementationMetadata {
@@ -210,6 +243,37 @@ public record VisualRuntimeBindingImplementationValidation(
             testEvidence = testEvidence == null ? List.of() : List.copyOf(testEvidence);
             policyEvidence = policyEvidence == null ? List.of() : List.copyOf(policyEvidence);
             rollbackTarget = rollbackTarget == null ? "" : rollbackTarget.trim();
+            notes = notes == null ? "" : notes;
+        }
+    }
+
+    /**
+     * Rollout controls submitted with implementation evidence.
+     *
+     * @param strategy immediate, canary, phased, blue-green, shadow, or rollback
+     * @param initialTrafficPercent first production traffic percentage when activated
+     * @param maxTrafficPercent maximum traffic percentage allowed by this plan
+     * @param rollbackSignal concrete metric, alert, SLO, or manual gate that triggers rollback
+     * @param rollbackWindow rollback decision window such as PT30M or first-24h
+     * @param rolloutEvidence deployment, canary, or change-management evidence for this rollout plan
+     * @param notes optional rollout notes
+     */
+    public record RolloutPlan(
+            String strategy,
+            Integer initialTrafficPercent,
+            Integer maxTrafficPercent,
+            String rollbackSignal,
+            String rollbackWindow,
+            List<Evidence> rolloutEvidence,
+            String notes
+    ) {
+        public RolloutPlan {
+            strategy = strategy == null ? "" : strategy.trim().toLowerCase(Locale.ROOT);
+            initialTrafficPercent = initialTrafficPercent == null ? 0 : initialTrafficPercent;
+            maxTrafficPercent = maxTrafficPercent == null ? 0 : maxTrafficPercent;
+            rollbackSignal = rollbackSignal == null ? "" : rollbackSignal.trim();
+            rollbackWindow = rollbackWindow == null ? "" : rollbackWindow.trim();
+            rolloutEvidence = rolloutEvidence == null ? List.of() : List.copyOf(rolloutEvidence);
             notes = notes == null ? "" : notes;
         }
     }
@@ -769,11 +833,101 @@ public record VisualRuntimeBindingImplementationValidation(
                     "Runtime binding implementation has no rollbackTarget; production binding should require review.",
                     "/implementation/rollbackTarget"));
         }
+        addRolloutPlanDiagnostics(implementation, contract, diagnostics);
         if (policyEvidenceRequired(contract) && implementation.policyEvidence().isEmpty()) {
             diagnostics.add(VisualDiagnostic.warning(
                     "visual.runtimeBindingImplementation.policyEvidenceMissing",
                     "Runtime binding implementation affects policy, secrets, or side effects but has no policy evidence.",
                     "/implementation/policyEvidence"));
+        }
+    }
+
+    private static void addRolloutPlanDiagnostics(ImplementationMetadata implementation,
+                                                  VisualRuntimeBindingHandoffBundle.OperatorContractSnapshot contract,
+                                                  List<VisualDiagnostic> diagnostics) {
+        RolloutPlan plan = implementation.rolloutPlan();
+        if (plan == null || plan.strategy().isBlank()) {
+            diagnostics.add(VisualDiagnostic.warning(
+                    "visual.runtimeBindingImplementation.rolloutPlanMissing",
+                    "Runtime binding implementation has no rolloutPlan; production activation should require review.",
+                    "/implementation/rolloutPlan"));
+            return;
+        }
+        if (!rolloutStrategies().contains(plan.strategy())) {
+            diagnostics.add(VisualDiagnostic.error(
+                    "visual.runtimeBindingImplementation.rolloutStrategyUnsupported",
+                    "Runtime binding implementation rollout strategy '%s' is not supported."
+                            .formatted(plan.strategy()),
+                    "/implementation/rolloutPlan/strategy",
+                    Map.of("actual", plan.strategy(), "supported", rolloutStrategies())));
+        }
+        if (plan.initialTrafficPercent() < 0 || plan.initialTrafficPercent() > 100) {
+            diagnostics.add(VisualDiagnostic.error(
+                    "visual.runtimeBindingImplementation.rolloutInitialTrafficInvalid",
+                    "Runtime binding implementation rollout initialTrafficPercent must be between 0 and 100.",
+                    "/implementation/rolloutPlan/initialTrafficPercent",
+                    Map.of("actual", plan.initialTrafficPercent())));
+        }
+        if (plan.maxTrafficPercent() < 1 || plan.maxTrafficPercent() > 100) {
+            diagnostics.add(VisualDiagnostic.error(
+                    "visual.runtimeBindingImplementation.rolloutMaxTrafficInvalid",
+                    "Runtime binding implementation rollout maxTrafficPercent must be between 1 and 100.",
+                    "/implementation/rolloutPlan/maxTrafficPercent",
+                    Map.of("actual", plan.maxTrafficPercent())));
+        }
+        if (plan.initialTrafficPercent() > plan.maxTrafficPercent()) {
+            diagnostics.add(VisualDiagnostic.error(
+                    "visual.runtimeBindingImplementation.rolloutTrafficWindowInvalid",
+                    "Runtime binding implementation rollout initialTrafficPercent cannot exceed maxTrafficPercent.",
+                    "/implementation/rolloutPlan/initialTrafficPercent",
+                    Map.of(
+                            "initialTrafficPercent", plan.initialTrafficPercent(),
+                            "maxTrafficPercent", plan.maxTrafficPercent())));
+        }
+        if (Set.of("canary", "phased").contains(plan.strategy())
+                && (plan.initialTrafficPercent() <= 0
+                || plan.initialTrafficPercent() >= plan.maxTrafficPercent())) {
+            diagnostics.add(VisualDiagnostic.error(
+                    "visual.runtimeBindingImplementation.rolloutCanaryWindowInvalid",
+                    "Canary or phased rollout must start above 0% and below the maximum traffic percentage.",
+                    "/implementation/rolloutPlan/initialTrafficPercent",
+                    Map.of(
+                            "strategy", plan.strategy(),
+                            "initialTrafficPercent", plan.initialTrafficPercent(),
+                            "maxTrafficPercent", plan.maxTrafficPercent())));
+        }
+        if (plan.rollbackSignal().isBlank()) {
+            diagnostics.add(VisualDiagnostic.warning(
+                    "visual.runtimeBindingImplementation.rolloutRollbackSignalMissing",
+                    "Runtime binding rolloutPlan has no rollbackSignal; production activation should require review.",
+                    "/implementation/rolloutPlan/rollbackSignal"));
+        }
+        if (plan.rollbackWindow().isBlank()) {
+            diagnostics.add(VisualDiagnostic.warning(
+                    "visual.runtimeBindingImplementation.rolloutRollbackWindowMissing",
+                    "Runtime binding rolloutPlan has no rollbackWindow; production activation should require review.",
+                    "/implementation/rolloutPlan/rollbackWindow"));
+        }
+        if (controlledRolloutRequired(implementation, contract)
+                && "immediate".equals(plan.strategy())) {
+            diagnostics.add(VisualDiagnostic.warning(
+                    "visual.runtimeBindingImplementation.rolloutImmediateHighRisk",
+                    "High-risk runtime implementation declares immediate rollout; canary, phased, blue-green, or shadow rollout should be reviewed before binding.",
+                    "/implementation/rolloutPlan/strategy",
+                    Map.of(
+                            "strategy", plan.strategy(),
+                            "adapterKind", implementation.adapterKind(),
+                            "reimplementationStrategy", implementation.reimplementationStrategy())));
+        }
+        if (controlledRolloutRequired(implementation, contract) && plan.rolloutEvidence().isEmpty()) {
+            diagnostics.add(VisualDiagnostic.warning(
+                    "visual.runtimeBindingImplementation.rolloutEvidenceMissing",
+                    "High-risk runtime implementation rolloutPlan has no rollout evidence.",
+                    "/implementation/rolloutPlan/rolloutEvidence",
+                    Map.of(
+                            "strategy", plan.strategy(),
+                            "adapterKind", implementation.adapterKind(),
+                            "reimplementationStrategy", implementation.reimplementationStrategy())));
         }
     }
 
@@ -836,6 +990,27 @@ public record VisualRuntimeBindingImplementationValidation(
 
     private static Set<String> reimplementationStrategies() {
         return Set.of("compatible", "breaking", "adapter-migration", "rollback");
+    }
+
+    private static Set<String> rolloutStrategies() {
+        return Set.of("immediate", "canary", "phased", "blue-green", "shadow", "rollback");
+    }
+
+    private static boolean controlledRolloutRequired(
+            ImplementationMetadata implementation,
+            VisualRuntimeBindingHandoffBundle.OperatorContractSnapshot contract) {
+        if (implementation == null) {
+            return false;
+        }
+        if (policyEvidenceRequired(contract)) {
+            return true;
+        }
+        if (Set.of("breaking", "adapter-migration", "rollback")
+                .contains(implementation.reimplementationStrategy())) {
+            return true;
+        }
+        return Set.of("remote-worker", "ai-tool", "event-source", "message-handler", "webhook")
+                .contains(implementation.adapterKind());
     }
 
     private static boolean policyEvidenceRequired(

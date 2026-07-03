@@ -1960,7 +1960,8 @@ JSON output 或自然语言摘要里判断交接快照是否还能继续排期�
 handoff `operatorContract` snapshot，以及 implementation metadata：
 `bindingId`、`adapterKind`、`entrypoint`、`runtimeOwner`、可选
 `implementationVersion`、`reimplementationOfBindingId`、`reimplementationStrategy`、
-`capabilities[]`、`testEvidence[]`、`policyEvidence[]`、`rollbackTarget` 和 `notes`。
+`capabilities[]`、`testEvidence[]`、`policyEvidence[]`、`rollbackTarget`、可选
+`rolloutPlan` 和 `notes`。
 返回 `bloge.visualRuntimeBindingImplementationValidation.v1`，用 `ready-to-bind`、
 `requires-review` 或 `rejected` 表达 pre-bind 裁决，并回显 `contractFingerprint`、
 `currentCatalogFingerprint`、`currentCatalogState` 与结构化 diagnostics。该端点只验证
@@ -1975,6 +1976,14 @@ fingerprint 或 requirement key 也只进入 requires-review，保留人工迁�
 `reimplementationOfBindingId` 时应同时声明 `reimplementationStrategy`，支持
 `compatible`、`breaking`、`adapter-migration` 和 `rollback`。缺少版本或策略不会伪装成
 ready-to-bind，而是进入 requires-review；非法版本或未知策略会进入 rejected。
+`rolloutPlan` 用来描述 production activation 计划，包含 `strategy`、`initialTrafficPercent`、
+`maxTrafficPercent`、`rollbackSignal`、`rollbackWindow`、`rolloutEvidence[]` 和 `notes`。
+当前支持 `immediate`、`canary`、`phased`、`blue-green`、`shadow`、`rollback`。
+缺少计划、rollback signal/window、或高风险实现缺少 rollout evidence 会进入
+requires-review；高风险实现包括外部副作用、secret、非幂等、remote/AI/event/message/webhook
+adapter，以及 `breaking` / `adapter-migration` / `rollback` reimplementation。高风险实现声明
+`immediate` 全量上线也会进入 requires-review。未知 rollout strategy、非法 traffic percent
+或 canary/phased 初始流量窗口无效会进入 rejected。
 当 handoff contract fingerprint 与当前 catalog fingerprint drift 时，diagnostics 会进一步携带
 字段级 contract diff 分类：`visual.runtimeBindingImplementation.contractDiffBreaking`
 以 error 阻断 input/output/config port 或保守 JSON Schema compatibility 判定为不兼容的 schema drift，
