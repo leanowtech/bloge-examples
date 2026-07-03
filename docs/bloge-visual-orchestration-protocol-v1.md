@@ -1978,6 +1978,17 @@ candidate fingerprint 与 candidate runtime readiness。当前自动 preview 只
 assignment/condition 语义的 lowering 会返回 blocking diagnostic，而不是伪造可写 revision。
 因此该合同是 trusted revision mutation 前的 preview gate：它能证明“如果写入，会得到什么 surface”，
 但不会自行改变 `OperatorDefinition.runtimeReadiness`。
+
+`POST /api/visual/assets/runtime-binding-requirements/executable-readiness-recomputations/apply?operatorRef=...&ackWarnings=true&actor=...&reason=...`
+返回 `bloge.visualExecutableReadinessRecomputeResult.v1`，用于把上面的 preview 受治理地写成
+owning operator-library 的新 revision。该 mutation 不接受客户端提交的 candidate operator body，
+而是在服务端重新执行同一 preview gate，确认当前 operator fingerprint、active binding、adapter
+activation 和 executable lowering integration 仍然对齐；随后只替换所属用户算子库中的同一个
+operator，并把 actor/source/summary/reason 写入 revision metadata。当前自动 apply 只覆盖
+`loweringMode=native` 的 candidate；`transform`、`branch` 等需要额外 lowering 语义的候选仍以
+blocking diagnostic 拒绝。apply 后旧 binding/activation/integration evidence 仍可能引用旧
+operator fingerprint，因此控制面必须通过后续 refresh/rebind/unbind 流程重新对账这些 runtime-plane
+事实，而不能把一次 library revision mutation 当成所有 evidence 的静默迁移。
 `actionReadiness` 则把同一批 diagnostics/readiness 压成产品动作门禁：`compileNow`、
 `runNow`、`publishDesignNow`、`publishDesignAfterReview`、`publishExecutableNow`、
 `publishExecutableAfterReview`，以及 `requiresAckWarnings` /

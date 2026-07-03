@@ -28,6 +28,7 @@ import com.leanowtech.bloge.gateway.visual.runtime.InMemoryVisualRuntimeAdapterA
 import com.leanowtech.bloge.gateway.visual.runtime.VisualExecutableLoweringIntegration;
 import com.leanowtech.bloge.gateway.visual.runtime.VisualExecutableLoweringIntegrationValidation;
 import com.leanowtech.bloge.gateway.visual.runtime.VisualExecutableReadinessRecomputePreview;
+import com.leanowtech.bloge.gateway.visual.runtime.VisualExecutableReadinessRecomputeResult;
 import com.leanowtech.bloge.gateway.visual.runtime.VisualRuntimeAdapterActivation;
 import com.leanowtech.bloge.gateway.visual.runtime.VisualRuntimeAdapterActivationValidation;
 import com.leanowtech.bloge.gateway.visual.validation.GraphDraftValidator;
@@ -1806,6 +1807,144 @@ class VisualAssetOverviewControllerTest {
     }
 
     @Test
+    void executableReadinessRecomputeApplyGovernanceGatesAndWritesLibraryRevision() {
+        RuntimeBindingImplementationFixture fixture = runtimeBindingImplementationFixture();
+        VisualRuntimeBindingImplementationBinding stored = submitImplementation(
+                fixture,
+                completeImplementation("risk-eligibility-native-v1")
+        );
+        VisualRuntimeBindingImplementationBinding binding = fixture.controller()
+                .bindRuntimeBindingImplementation(stored.bindingId(), transitionRequest("", true))
+                .getBody()
+                .binding();
+        VisualRuntimeAdapterActivation activation = (VisualRuntimeAdapterActivation) fixture.controller()
+                .submitRuntimeAdapterActivation(adapterActivationRequest(binding, "risk-eligibility-prod-active"))
+                .getBody();
+        VisualExecutableLoweringIntegration integration = (VisualExecutableLoweringIntegration) fixture.controller()
+                .submitExecutableLoweringIntegration(
+                        executableLoweringIntegrationRequest(activation, "risk-eligibility-lowering-v1"))
+                .getBody();
+
+        var ackRequired = fixture.controller().applyExecutableReadinessRecompute(
+                "risk:eligibility",
+                false,
+                "",
+                "",
+                "",
+                ""
+        );
+        var missingGovernance = fixture.controller().applyExecutableReadinessRecompute(
+                "risk:eligibility",
+                true,
+                "",
+                "visual-canvas-test",
+                "Promote risk eligibility executable readiness.",
+                ""
+        );
+        var appliedResponse = fixture.controller().applyExecutableReadinessRecompute(
+                "risk:eligibility",
+                true,
+                "runtime-platform",
+                "visual-canvas-test",
+                "Promote risk eligibility executable readiness.",
+                "Runtime implementation, activation, and executor bridge evidence were reviewed."
+        );
+
+        assertThat(ackRequired.getStatusCode().value()).isEqualTo(409);
+        assertThat(ackRequired.getBody()).isNotNull();
+        assertThat(ackRequired.getBody().applied()).isFalse();
+        assertThat(ackRequired.getBody().state()).isEqualTo("ack-required");
+        assertThat(ackRequired.getBody().diagnostics())
+                .extracting(VisualDiagnostic::code)
+                .contains("visual.executableReadinessRecompute.ackWarningsRequired");
+        assertThat(missingGovernance.getStatusCode().value()).isEqualTo(400);
+        assertThat(missingGovernance.getBody()).isNotNull();
+        assertThat(missingGovernance.getBody().diagnostics())
+                .extracting(VisualDiagnostic::code)
+                .contains("visual.executableReadinessRecompute.governanceEvidenceMissing");
+        assertThat(appliedResponse.getStatusCode().value()).isEqualTo(200);
+        assertThat(appliedResponse.getBody()).isNotNull();
+        VisualExecutableReadinessRecomputeResult result = appliedResponse.getBody();
+        assertThat(result.schemaVersion()).isEqualTo(VisualExecutableReadinessRecomputeResult.SCHEMA_VERSION);
+        assertThat(result.applied()).isTrue();
+        assertThat(result.state()).isEqualTo("applied");
+        assertThat(result.operatorRef()).isEqualTo("risk:eligibility");
+        assertThat(result.operatorLibraryId()).isEqualTo("risk-policy-design");
+        assertThat(result.currentOperatorFingerprint()).isEqualTo(fixture.contract().fingerprint());
+        assertThat(result.candidateOperatorFingerprint()).isNotEqualTo(result.currentOperatorFingerprint());
+        assertThat(result.preview().activeBindingId()).isEqualTo(binding.bindingId());
+        assertThat(result.preview().activeAdapterActivationId()).isEqualTo(activation.activationId());
+        assertThat(result.preview().activeExecutableLoweringIntegrationId()).isEqualTo(integration.integrationId());
+        assertThat(result.storedLibrary()).isNotNull();
+        assertThat(result.storedRevision()).isNotNull();
+        assertThat(result.libraryRevision()).isEqualTo(2);
+        assertThat(result.storedRevision().action()).isEqualTo("REPLACE");
+        assertThat(result.storedRevision().revisionMetadata().actor()).isEqualTo("runtime-platform");
+        assertThat(result.storedRevision().revisionMetadata().changeSource()).isEqualTo("visual-canvas-test");
+        assertThat(result.storedRevision().revisionMetadata().reason())
+                .contains("Runtime implementation, activation, and executor bridge evidence were reviewed.");
+        assertThat(fixture.libraries().revisions("risk-policy-design")).hasSize(2);
+        OperatorDefinition trustedOperator = fixture.catalog().find("risk:eligibility").orElseThrow();
+        assertThat(trustedOperator.fingerprint()).isEqualTo(result.candidateOperatorFingerprint());
+        assertThat(trustedOperator.runtimeReadiness().state()).isEqualTo("RUNTIME_EXECUTABLE");
+        assertThat(trustedOperator.lowering().mode()).isEqualTo("native");
+        assertThat(trustedOperator.lowering().operatorRef()).isEqualTo("operator:risk:eligibility");
+
+        var afterApplyPreview = fixture.controller().previewExecutableReadinessRecompute("risk:eligibility");
+        assertThat(afterApplyPreview.getStatusCode().value()).isEqualTo(200);
+        assertThat(afterApplyPreview.getBody()).isNotNull();
+        assertThat(afterApplyPreview.getBody().recomputable()).isFalse();
+        assertThat(afterApplyPreview.getBody().state()).isEqualTo("blocked");
+        assertThat(afterApplyPreview.getBody().currentRuntimeReadinessState()).isEqualTo("RUNTIME_EXECUTABLE");
+        assertThat(afterApplyPreview.getBody().diagnostics())
+                .extracting(VisualDiagnostic::code)
+                .contains("visual.executableReadinessRecompute.promotionStateNotReady");
+    }
+
+    @Test
+    void executableReadinessRecomputeApplyBlocksUnsupportedLoweringModeWithoutMutatingLibrary() {
+        RuntimeBindingImplementationFixture fixture = runtimeBindingImplementationFixture();
+        VisualRuntimeBindingImplementationBinding stored = submitImplementation(
+                fixture,
+                completeImplementation("risk-eligibility-native-v1")
+        );
+        VisualRuntimeBindingImplementationBinding binding = fixture.controller()
+                .bindRuntimeBindingImplementation(stored.bindingId(), transitionRequest("", true))
+                .getBody()
+                .binding();
+        VisualRuntimeAdapterActivation activation = (VisualRuntimeAdapterActivation) fixture.controller()
+                .submitRuntimeAdapterActivation(adapterActivationRequest(binding, "risk-eligibility-prod-active"))
+                .getBody();
+        fixture.controller().submitExecutableLoweringIntegration(
+                executableLoweringIntegrationRequest(
+                        activation,
+                        "risk-eligibility-transform-lowering",
+                        "transform",
+                        "operator:risk:eligibility-transform"
+                ));
+
+        var response = fixture.controller().applyExecutableReadinessRecompute(
+                "risk:eligibility",
+                true,
+                "runtime-platform",
+                "visual-canvas-test",
+                "Try executable readiness recompute.",
+                "Executor bridge was reviewed."
+        );
+
+        assertThat(response.getStatusCode().value()).isEqualTo(409);
+        assertThat(response.getBody()).isNotNull();
+        assertThat(response.getBody().applied()).isFalse();
+        assertThat(response.getBody().state()).isEqualTo("blocked");
+        assertThat(response.getBody().diagnostics())
+                .extracting(VisualDiagnostic::code)
+                .contains("visual.executableReadinessRecompute.loweringModeUnsupported");
+        assertThat(fixture.libraries().revisions("risk-policy-design")).hasSize(1);
+        assertThat(fixture.catalog().find("risk:eligibility").orElseThrow().runtimeReadiness().state())
+                .isEqualTo("DESIGN_ONLY");
+    }
+
+    @Test
     void overviewQueuesWarningAcknowledgementFromGraphActionReadiness() {
         DefaultVisualOperatorCatalog catalog = VisualCatalogTestSupport.catalogWithLibrary(
                 VisualCatalogTestSupport.designOnlyEligibilityLibrary("integer"));
@@ -2135,6 +2274,7 @@ class VisualAssetOverviewControllerTest {
     private record RuntimeBindingImplementationFixture(
             VisualAssetOverviewController controller,
             DefaultVisualOperatorCatalog catalog,
+            InMemoryOperatorLibraryRegistry libraries,
             VisualRuntimeBindingHandoffBundle handoffBundle,
             VisualRuntimeBindingHandoffBundle.OperatorContractSnapshot contract
     ) {
@@ -2174,7 +2314,8 @@ class VisualAssetOverviewControllerTest {
                 publications,
                 implementationRepository,
                 adapterActivationRepository,
-                executableLoweringIntegrationRepository
+                executableLoweringIntegrationRepository,
+                libraries
         );
         VisualRuntimeBindingHandoffBundle handoffBundle = controller.runtimeBindingHandoffBundle(
                 "",
@@ -2195,6 +2336,7 @@ class VisualAssetOverviewControllerTest {
         return new RuntimeBindingImplementationFixture(
                 controller,
                 catalog,
+                libraries,
                 handoffBundle,
                 handoffBundle.operatorContracts().getFirst()
         );

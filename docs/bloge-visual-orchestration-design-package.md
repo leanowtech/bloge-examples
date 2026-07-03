@@ -75,9 +75,10 @@
    Java operator inventory 基础投影也已进入 catalog；下一阶段的 P0 不是继续证明画布能画图，
    而是在已落地 pre-bind validate、proposal persistence、bind/supersede lifecycle、adapter activation
    registry、executable lowering integration registry、catalog response projection 和 executable promotion
-   projection，以及只读 executable readiness recompute preview 之后补 governed trusted library revision mutation，
-   让 handoff contract snapshot 能被外部 runtime team 变成可绑定、可激活、可对账 executor bridge、
-   可回滚、可重新派生 executable readiness 的实现事实。
+   projection、只读 executable readiness recompute preview 和 native governed apply mutation 之后，补
+   post-apply evidence refresh/rebind/unbind、非 native lowering apply 和更完整 contract diff 门禁，让
+   handoff contract snapshot 能被外部 runtime team 变成可绑定、可激活、可对账 executor bridge、
+   可回滚、可持续重新派生 executable readiness 的实现事实。
 
 ## 5. 当前待确认决策
 
@@ -114,7 +115,7 @@ Phase 1 不以 UI 好看为验收，而以真实闭环为验收：
 
 如果继续代码实现，优先按实现状态审计第 6 章推进：
 
-1. Runtime binding implementation 与 readiness 派生闭环：在当前 implementation validate、proposal persistence、bind/supersede API、adapter activation registry、executable lowering integration registry、catalog response projection、executable promotion projection 和 readiness recompute preview 之后补 governed trusted library revision mutation。
+1. Runtime binding implementation 与 readiness 派生闭环：在当前 implementation validate、proposal persistence、bind/supersede API、adapter activation registry、executable lowering integration registry、catalog response projection、executable promotion projection、readiness recompute preview 和 native governed apply mutation 之后补 post-apply evidence refresh/rebind/unbind、非 native lowering apply 和更完整 contract diff 门禁。
 2. 前端回归验证。
 3. Java operator inventory 深化。
 4. OpenAPI/resource contract/AsyncAPI 导入深化。

@@ -3,6 +3,9 @@ package com.leanowtech.bloge.gateway.visual.asset;
 import com.leanowtech.bloge.gateway.visual.catalog.OperatorCatalogQuery;
 import com.leanowtech.bloge.gateway.visual.catalog.OperatorDefinition;
 import com.leanowtech.bloge.gateway.visual.catalog.OperatorExecutablePromotionProjection;
+import com.leanowtech.bloge.gateway.visual.catalog.OperatorLibrary;
+import com.leanowtech.bloge.gateway.visual.catalog.OperatorLibraryRegistry;
+import com.leanowtech.bloge.gateway.visual.catalog.OperatorLibraryRevision;
 import com.leanowtech.bloge.gateway.visual.catalog.OperatorRuntimeBindingProjection;
 import com.leanowtech.bloge.gateway.visual.catalog.VisualOperatorCatalog;
 import com.leanowtech.bloge.gateway.visual.diagnostic.VisualDiagnostic;
@@ -19,6 +22,7 @@ import com.leanowtech.bloge.gateway.visual.runtime.VisualExecutableLoweringInteg
 import com.leanowtech.bloge.gateway.visual.runtime.VisualExecutableLoweringIntegrationRepository;
 import com.leanowtech.bloge.gateway.visual.runtime.VisualExecutableLoweringIntegrationValidation;
 import com.leanowtech.bloge.gateway.visual.runtime.VisualExecutableReadinessRecomputePreview;
+import com.leanowtech.bloge.gateway.visual.runtime.VisualExecutableReadinessRecomputeResult;
 import com.leanowtech.bloge.gateway.visual.runtime.VisualRuntimeAdapterActivation;
 import com.leanowtech.bloge.gateway.visual.runtime.VisualRuntimeAdapterActivationRepository;
 import com.leanowtech.bloge.gateway.visual.runtime.VisualRuntimeAdapterActivationValidation;
@@ -57,6 +61,7 @@ public class VisualAssetOverviewController {
     private final VisualRuntimeBindingImplementationRepository implementationRepository;
     private final VisualRuntimeAdapterActivationRepository adapterActivationRepository;
     private final VisualExecutableLoweringIntegrationRepository executableLoweringIntegrationRepository;
+    private final OperatorLibraryRegistry operatorLibraryRegistry;
 
     /**
      * @param draftRepository draft repository
@@ -71,7 +76,8 @@ public class VisualAssetOverviewController {
         this(draftRepository, validator, catalog, publicationRepository,
                 new InMemoryVisualRuntimeBindingImplementationRepository(),
                 new InMemoryVisualRuntimeAdapterActivationRepository(),
-                new InMemoryVisualExecutableLoweringIntegrationRepository());
+                new InMemoryVisualExecutableLoweringIntegrationRepository(),
+                OperatorLibraryRegistry.empty());
     }
 
     /**
@@ -91,7 +97,8 @@ public class VisualAssetOverviewController {
                                          VisualRuntimeBindingImplementationRepository implementationRepository,
                                          VisualRuntimeAdapterActivationRepository adapterActivationRepository,
                                          VisualExecutableLoweringIntegrationRepository
-                                                 executableLoweringIntegrationRepository) {
+                                                 executableLoweringIntegrationRepository,
+                                         OperatorLibraryRegistry operatorLibraryRegistry) {
         this.draftRepository = draftRepository;
         this.validator = validator;
         this.catalog = catalog;
@@ -105,6 +112,21 @@ public class VisualAssetOverviewController {
         this.executableLoweringIntegrationRepository = executableLoweringIntegrationRepository == null
                 ? new InMemoryVisualExecutableLoweringIntegrationRepository()
                 : executableLoweringIntegrationRepository;
+        this.operatorLibraryRegistry = operatorLibraryRegistry == null
+                ? OperatorLibraryRegistry.empty()
+                : operatorLibraryRegistry;
+    }
+
+    public VisualAssetOverviewController(GraphDraftRepository draftRepository,
+                                         GraphDraftValidator validator,
+                                         VisualOperatorCatalog catalog,
+                                         VisualGraphPublicationRepository publicationRepository,
+                                         VisualRuntimeBindingImplementationRepository implementationRepository,
+                                         VisualRuntimeAdapterActivationRepository adapterActivationRepository,
+                                         VisualExecutableLoweringIntegrationRepository
+                                                 executableLoweringIntegrationRepository) {
+        this(draftRepository, validator, catalog, publicationRepository, implementationRepository,
+                adapterActivationRepository, executableLoweringIntegrationRepository, OperatorLibraryRegistry.empty());
     }
 
     public VisualAssetOverviewController(GraphDraftRepository draftRepository,
@@ -114,7 +136,8 @@ public class VisualAssetOverviewController {
                                          VisualRuntimeBindingImplementationRepository implementationRepository) {
         this(draftRepository, validator, catalog, publicationRepository, implementationRepository,
                 new InMemoryVisualRuntimeAdapterActivationRepository(),
-                new InMemoryVisualExecutableLoweringIntegrationRepository());
+                new InMemoryVisualExecutableLoweringIntegrationRepository(),
+                OperatorLibraryRegistry.empty());
     }
 
     public VisualAssetOverviewController(GraphDraftRepository draftRepository,
@@ -124,7 +147,8 @@ public class VisualAssetOverviewController {
                                          VisualRuntimeBindingImplementationRepository implementationRepository,
                                          VisualRuntimeAdapterActivationRepository adapterActivationRepository) {
         this(draftRepository, validator, catalog, publicationRepository, implementationRepository,
-                adapterActivationRepository, new InMemoryVisualExecutableLoweringIntegrationRepository());
+                adapterActivationRepository, new InMemoryVisualExecutableLoweringIntegrationRepository(),
+                OperatorLibraryRegistry.empty());
     }
 
     /**
@@ -1049,6 +1073,197 @@ public class VisualAssetOverviewController {
                 currentOperator,
                 promotionProjection
         ));
+    }
+
+    /**
+     * Applies a recomputable preview as a governed operator-library revision.
+     *
+     * <p>The caller cannot submit a candidate operator body. The server recomputes the preview from
+     * current control-plane evidence and writes only that candidate into the owning user library.</p>
+     *
+     * @param operatorRef operator reference to apply
+     * @param ackWarnings true when the caller reviewed the runtime-binding surface change
+     * @param actor user or system actor producing the operator-library revision
+     * @param changeSource UI or integration source producing the operator-library revision
+     * @param changeSummary human-readable revision summary
+     * @param reason reason for the governed mutation
+     * @return apply result
+     */
+    @PostMapping("/runtime-binding-requirements/executable-readiness-recomputations/apply")
+    public ResponseEntity<VisualExecutableReadinessRecomputeResult> applyExecutableReadinessRecompute(
+            @RequestParam(defaultValue = "") String operatorRef,
+            @RequestParam(defaultValue = "false") boolean ackWarnings,
+            @RequestParam(defaultValue = "") String actor,
+            @RequestParam(defaultValue = "") String changeSource,
+            @RequestParam(defaultValue = "") String changeSummary,
+            @RequestParam(defaultValue = "") String reason) {
+        ResponseEntity<VisualExecutableReadinessRecomputePreview> previewResponse =
+                previewExecutableReadinessRecompute(operatorRef);
+        VisualExecutableReadinessRecomputePreview preview = previewResponse.getBody();
+        if (!previewResponse.getStatusCode().is2xxSuccessful()) {
+            return ResponseEntity.status(previewResponse.getStatusCode())
+                    .body(VisualExecutableReadinessRecomputeResult.fromPreview(preview));
+        }
+        if (preview == null || !preview.recomputable()) {
+            return ResponseEntity.status(HttpStatus.CONFLICT)
+                    .body(VisualExecutableReadinessRecomputeResult.fromPreview(preview));
+        }
+        if (!ackWarnings) {
+            VisualDiagnostic diagnostic = executableReadinessApplyAckRequired(preview);
+            return ResponseEntity.status(HttpStatus.CONFLICT)
+                    .body(VisualExecutableReadinessRecomputeResult.ackRequired(preview, diagnostic));
+        }
+        List<VisualDiagnostic> governanceDiagnostics = executableReadinessApplyGovernanceDiagnostics(
+                actor,
+                reason);
+        if (!governanceDiagnostics.isEmpty()) {
+            return ResponseEntity.status(HttpStatus.BAD_REQUEST)
+                    .body(VisualExecutableReadinessRecomputeResult.rejected(preview, governanceDiagnostics));
+        }
+        OperatorLibrary currentLibrary = operatorLibraryRegistry.find(preview.operatorLibraryId()).orElse(null);
+        if (currentLibrary == null) {
+            return ResponseEntity.status(HttpStatus.NOT_FOUND)
+                    .body(VisualExecutableReadinessRecomputeResult.rejected(
+                            preview,
+                            List.of(VisualDiagnostic.error(
+                                    "visual.executableReadinessRecompute.operatorLibraryMissing",
+                                    "Operator library '%s' is not available for executable readiness recompute apply."
+                                            .formatted(preview.operatorLibraryId()),
+                                    "/operatorLibraryId",
+                                    Map.of("operatorLibraryId", preview.operatorLibraryId())))));
+        }
+        ReplacementLibrary replacement = replacementLibraryForExecutableReadinessApply(currentLibrary, preview);
+        if (!replacement.valid()) {
+            return ResponseEntity.status(HttpStatus.CONFLICT)
+                    .body(VisualExecutableReadinessRecomputeResult.rejected(preview, replacement.diagnostics()));
+        }
+        OperatorLibraryRevision.RevisionMetadata metadata = OperatorLibraryRevision.RevisionMetadata.of(
+                actor,
+                defaultIfBlank(changeSource, "visual-asset-overview"),
+                defaultIfBlank(changeSummary,
+                        "Apply executable readiness recompute for '%s'.".formatted(preview.operatorRef())),
+                reason
+        );
+        OperatorLibrary stored = operatorLibraryRegistry.upsert(replacement.library(), metadata);
+        OperatorLibraryRevision latestRevision = operatorLibraryRegistry.revisions(stored.libraryId()).stream()
+                .findFirst()
+                .orElse(null);
+        return ResponseEntity.ok(VisualExecutableReadinessRecomputeResult.applied(
+                stored,
+                latestRevision,
+                preview
+        ));
+    }
+
+    private static VisualDiagnostic executableReadinessApplyAckRequired(
+            VisualExecutableReadinessRecomputePreview preview) {
+        return VisualDiagnostic.warning(
+                "visual.executableReadinessRecompute.ackWarningsRequired",
+                "Executable readiness recompute for '%s' changes the trusted runtime-binding surface; review the candidate operator and retry with ackWarnings=true."
+                        .formatted(preview.operatorRef()),
+                "/ackWarnings",
+                Map.of(
+                        "operatorRef", preview.operatorRef(),
+                        "operatorLibraryId", preview.operatorLibraryId(),
+                        "currentOperatorFingerprint", preview.currentOperatorFingerprint(),
+                        "candidateOperatorFingerprint", preview.candidateOperatorFingerprint(),
+                        "activeBindingId", preview.activeBindingId(),
+                        "activeAdapterActivationId", preview.activeAdapterActivationId(),
+                        "activeExecutableLoweringIntegrationId", preview.activeExecutableLoweringIntegrationId()
+                )
+        );
+    }
+
+    private static List<VisualDiagnostic> executableReadinessApplyGovernanceDiagnostics(
+            String actor,
+            String reason) {
+        List<VisualDiagnostic> diagnostics = new ArrayList<>();
+        Map<String, Object> metadata = Map.of("requiredFor", List.of("ackWarnings"));
+        if (actor == null || actor.isBlank()) {
+            diagnostics.add(VisualDiagnostic.error(
+                    "visual.executableReadinessRecompute.governanceEvidenceMissing",
+                    "Executable readiness recompute apply requires actor when using ackWarnings=true.",
+                    "/actor",
+                    metadata));
+        }
+        if (reason == null || reason.isBlank()) {
+            diagnostics.add(VisualDiagnostic.error(
+                    "visual.executableReadinessRecompute.governanceEvidenceMissing",
+                    "Executable readiness recompute apply requires reason when using ackWarnings=true.",
+                    "/reason",
+                    metadata));
+        }
+        return diagnostics;
+    }
+
+    private static ReplacementLibrary replacementLibraryForExecutableReadinessApply(
+            OperatorLibrary currentLibrary,
+            VisualExecutableReadinessRecomputePreview preview) {
+        if (preview.candidateOperator() == null) {
+            return ReplacementLibrary.rejected(VisualDiagnostic.error(
+                    "visual.executableReadinessRecompute.candidateOperatorMissing",
+                    "Executable readiness recompute apply requires a candidate operator from the preview.",
+                    "/candidateOperator"));
+        }
+        List<OperatorDefinition> operators = new ArrayList<>();
+        boolean replaced = false;
+        for (int i = 0; i < currentLibrary.operators().size(); i++) {
+            OperatorDefinition operator = currentLibrary.operators().get(i);
+            if (operator == null || !operator.operatorRef().equals(preview.operatorRef())) {
+                operators.add(operator);
+                continue;
+            }
+            if (!operator.fingerprint().equals(preview.currentOperatorFingerprint())) {
+                return ReplacementLibrary.rejected(VisualDiagnostic.error(
+                        "visual.executableReadinessRecompute.libraryOperatorFingerprintDrift",
+                        "Operator library '%s' operator '%s' fingerprint '%s' no longer matches preview fingerprint '%s'. Re-preview before applying."
+                                .formatted(currentLibrary.libraryId(), preview.operatorRef(),
+                                        operator.fingerprint(), preview.currentOperatorFingerprint()),
+                        "/operators/%d/fingerprint".formatted(i),
+                        Map.of(
+                                "operatorRef", preview.operatorRef(),
+                                "libraryOperatorFingerprint", operator.fingerprint(),
+                                "previewCurrentOperatorFingerprint", preview.currentOperatorFingerprint()
+                        )));
+            }
+            operators.add(preview.candidateOperator());
+            replaced = true;
+        }
+        if (!replaced) {
+            return ReplacementLibrary.rejected(VisualDiagnostic.error(
+                    "visual.executableReadinessRecompute.libraryOperatorMissing",
+                    "Operator library '%s' no longer contains operator '%s'. Re-preview before applying."
+                            .formatted(currentLibrary.libraryId(), preview.operatorRef()),
+                    "/operators",
+                    Map.of("operatorRef", preview.operatorRef())));
+        }
+        return new ReplacementLibrary(new OperatorLibrary(
+                currentLibrary.schemaVersion(),
+                currentLibrary.libraryId(),
+                currentLibrary.displayName(),
+                currentLibrary.version(),
+                currentLibrary.owner(),
+                currentLibrary.status(),
+                operators
+        ), List.of());
+    }
+
+    private static String defaultIfBlank(String value, String fallback) {
+        return value == null || value.isBlank() ? fallback : value.trim();
+    }
+
+    private record ReplacementLibrary(OperatorLibrary library, List<VisualDiagnostic> diagnostics) {
+        private ReplacementLibrary {
+            diagnostics = diagnostics == null ? List.of() : List.copyOf(diagnostics);
+        }
+
+        private static ReplacementLibrary rejected(VisualDiagnostic diagnostic) {
+            return new ReplacementLibrary(null, List.of(diagnostic));
+        }
+
+        private boolean valid() {
+            return library != null && diagnostics.isEmpty();
+        }
     }
 
     VisualAssetOverview overview(String tenantId, String namespace, String environment) {
