@@ -158,6 +158,43 @@ public class OperatorLibraryAdminController {
     }
 
     /**
+     * Validates a portable operator-library export bundle against the target environment without storing it.
+     *
+     * @param bundle portable export bundle
+     * @param force bypass stored-draft replacement impact diagnostics in preview
+     * @return target-environment import preview result
+     */
+    @PostMapping("/validate-bundle")
+    public ResponseEntity<OperatorLibraryImportResult> validateBundle(
+            @RequestBody(required = false) OperatorLibraryExportBundle bundle,
+            @RequestParam(defaultValue = "false") boolean force) {
+        if (bundle != null && !OperatorLibraryExportBundle.SCHEMA_VERSION.equals(bundle.schemaVersion())) {
+            OperatorLibraryValidationResult validation = operatorLibraryBundleSchemaVersionValidation(bundle);
+            return ResponseEntity.badRequest().body(OperatorLibraryImportResult.rejected(bundle,
+                    bundle.library(), OperatorLibraryImportResult.ACTION_REJECTED, validation));
+        }
+        if (bundle != null && !bundle.bundleFingerprintVerified()) {
+            OperatorLibraryValidationResult validation = operatorLibraryBundleFingerprintValidation(bundle);
+            return ResponseEntity.badRequest().body(OperatorLibraryImportResult.rejected(bundle,
+                    bundle.library(), OperatorLibraryImportResult.ACTION_REJECTED, validation));
+        }
+        OperatorLibrary library = bundle == null ? null : bundle.library();
+        if (library == null) {
+            OperatorLibraryValidationResult validation = operatorLibraryBundleMissingSnapshotValidation();
+            return ResponseEntity.badRequest().body(OperatorLibraryImportResult.rejected(bundle, validation));
+        }
+
+        boolean replacing = registry.find(library.libraryId()).isPresent();
+        String mutationAction = replacing
+                ? OperatorLibraryRevision.ACTION_REPLACE
+                : OperatorLibraryRevision.ACTION_CREATE;
+        OperatorLibraryValidationResult validation = validateAgainstRegistry(library, force);
+        OperatorLibraryDiff targetDiff = targetBundleDiff(bundle, library);
+        return ResponseEntity.ok(OperatorLibraryImportResult.previewed(bundle, library, mutationAction, validation,
+                targetDiff));
+    }
+
+    /**
      * Imports raw operator-library source text.
      *
      * @param sourceText raw JSON or YAML operator-library source text
@@ -252,6 +289,11 @@ public class OperatorLibraryAdminController {
             return ResponseEntity.badRequest().body(OperatorLibraryImportResult.rejected(bundle,
                     bundle.library(), OperatorLibraryImportResult.ACTION_REJECTED, validation));
         }
+        if (bundle != null && !bundle.bundleFingerprintVerified()) {
+            OperatorLibraryValidationResult validation = operatorLibraryBundleFingerprintValidation(bundle);
+            return ResponseEntity.badRequest().body(OperatorLibraryImportResult.rejected(bundle,
+                    bundle.library(), OperatorLibraryImportResult.ACTION_REJECTED, validation));
+        }
         OperatorLibrary library = bundle == null ? null : bundle.library();
         if (library == null) {
             OperatorLibraryValidationResult validation = operatorLibraryBundleMissingSnapshotValidation();
@@ -262,26 +304,30 @@ public class OperatorLibraryAdminController {
         String mutationAction = replacing
                 ? OperatorLibraryRevision.ACTION_REPLACE
                 : OperatorLibraryRevision.ACTION_CREATE;
+        OperatorLibraryDiff targetDiff = targetBundleDiff(bundle, library);
         OperatorLibraryValidationResult validation = validateAgainstRegistry(library, force);
         if (!validation.valid()) {
             return ResponseEntity.status(validationFailureStatus(validation))
-                    .body(OperatorLibraryImportResult.rejected(bundle, library, mutationAction, validation));
+                    .body(OperatorLibraryImportResult.rejected(bundle, library, mutationAction, validation,
+                            targetDiff));
         }
         OperatorLibraryValidationResult governanceEvidence = governanceEvidenceResult(library,
                 revisionMetadata(actor, changeSource, changeSummary, reason), force, ackWarnings);
         if (governanceEvidence != null) {
             return ResponseEntity.badRequest()
                     .body(OperatorLibraryImportResult.rejected(bundle, library, mutationAction,
-                            governanceEvidence));
+                            governanceEvidence, targetDiff));
         }
         if (hasWarningDiagnostic(validation) && !ackWarnings) {
             return ResponseEntity.status(HttpStatus.CONFLICT)
-                    .body(OperatorLibraryImportResult.rejected(bundle, library, mutationAction, validation));
+                    .body(OperatorLibraryImportResult.rejected(bundle, library, mutationAction, validation,
+                            targetDiff));
         }
         ResponseEntity<OperatorLibraryValidationResult> impact = replacementImpactResponse(library, force);
         if (impact != null) {
             return ResponseEntity.status(impact.getStatusCode())
-                    .body(OperatorLibraryImportResult.rejected(bundle, library, mutationAction, impact.getBody()));
+                    .body(OperatorLibraryImportResult.rejected(bundle, library, mutationAction, impact.getBody(),
+                            targetDiff));
         }
 
         OperatorLibrary stored = registry.upsert(library, revisionMetadata(actor, changeSource, changeSummary,
@@ -290,7 +336,7 @@ public class OperatorLibraryAdminController {
                 .findFirst()
                 .orElse(null);
         return ResponseEntity.status(replacing ? HttpStatus.OK : HttpStatus.CREATED)
-                .body(OperatorLibraryImportResult.imported(bundle, stored, latestRevision, validation));
+                .body(OperatorLibraryImportResult.imported(bundle, stored, latestRevision, validation, targetDiff));
     }
 
     /**
@@ -782,6 +828,38 @@ public class OperatorLibraryAdminController {
                 "/schemaVersion",
                 Map.of("actual", actual, "expected", OperatorLibraryExportBundle.SCHEMA_VERSION)
         )), OperatorLibraryImpactReview.empty(), OperatorLibraryProfile.empty());
+    }
+
+    private static OperatorLibraryValidationResult operatorLibraryBundleFingerprintValidation(
+            OperatorLibraryExportBundle bundle) {
+        String actual = bundle == null ? "" : bundle.bundleFingerprint();
+        String expected = bundle == null ? "" : bundle.computedBundleFingerprint();
+        return new OperatorLibraryValidationResult(false, List.of(VisualDiagnostic.error(
+                "visual.library.bundle.fingerprintMismatch",
+                "Operator library import bundle fingerprint '%s' does not match the submitted bundle material; expected '%s'."
+                        .formatted(actual, expected),
+                "/bundleFingerprint",
+                Map.of("actual", actual, "expected", expected)
+        )), OperatorLibraryImpactReview.empty(), OperatorLibraryProfile.empty());
+    }
+
+    private OperatorLibraryDiff targetBundleDiff(OperatorLibraryExportBundle bundle, OperatorLibrary incoming) {
+        if (incoming == null) {
+            return null;
+        }
+        Optional<OperatorLibrary> current = registry.find(incoming.libraryId());
+        long baseRevision = current.isEmpty()
+                ? 0L
+                : registry.revisions(incoming.libraryId()).stream()
+                        .findFirst()
+                        .map(OperatorLibraryRevision::revision)
+                        .orElse(0L);
+        long targetRevision = bundle == null ? 0L : bundle.sourceRevision();
+        return OperatorLibraryDiff.betweenSnapshots(incoming.libraryId(),
+                baseRevision,
+                current.orElse(null),
+                targetRevision,
+                incoming);
     }
 
     private ResponseEntity<OperatorLibraryValidationResult> replacementImpactResponse(OperatorLibrary replacement,

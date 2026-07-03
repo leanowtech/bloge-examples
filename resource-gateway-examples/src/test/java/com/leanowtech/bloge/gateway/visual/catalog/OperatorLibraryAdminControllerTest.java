@@ -16,9 +16,11 @@ import com.leanowtech.bloge.gateway.visual.publication.VisualGraphPublication;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.MediaType;
+import org.springframework.test.web.servlet.MvcResult;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 
+import java.time.Instant;
 import java.util.List;
 import java.util.Map;
 
@@ -588,7 +590,7 @@ class OperatorLibraryAdminControllerTest {
                         .content(objectMapper.writeValueAsString(library)))
                 .andExpect(status().isCreated());
 
-        mockMvc.perform(get("/admin/visual-operator-libraries/risk-policy-design/export"))
+        MvcResult result = mockMvc.perform(get("/admin/visual-operator-libraries/risk-policy-design/export"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.schemaVersion").value(OperatorLibraryExportBundle.SCHEMA_VERSION))
                 .andExpect(jsonPath("$.sourceLibraryId").value("risk-policy-design"))
@@ -596,6 +598,7 @@ class OperatorLibraryAdminControllerTest {
                 .andExpect(jsonPath("$.sourceStatus").value("ACTIVE"))
                 .andExpect(jsonPath("$.sourceRevision").value(1))
                 .andExpect(jsonPath("$.exportedAt").exists())
+                .andExpect(jsonPath("$.bundleFingerprint").exists())
                 .andExpect(jsonPath("$.library.libraryId").value("risk-policy-design"))
                 .andExpect(jsonPath("$.latestRevision.action").value(OperatorLibraryRevision.ACTION_CREATE))
                 .andExpect(jsonPath("$.latestRevision.revisionMetadata.actor").value("alice"))
@@ -608,13 +611,120 @@ class OperatorLibraryAdminControllerTest {
                 .andExpect(jsonPath("$.validation.profile.libraryId").value("risk-policy-design"))
                 .andExpect(jsonPath("$.validation.profile.designOnlyOperatorCount").value(1))
                 .andExpect(jsonPath("$.validation.profile.facets.runtimeReadinessStates['design-only']")
-                        .value(1));
+                        .value(1))
+                .andReturn();
+
+        OperatorLibraryExportBundle bundle = objectMapper.readValue(
+                result.getResponse().getContentAsString(),
+                OperatorLibraryExportBundle.class);
+        assertThat(bundle.bundleFingerprint()).startsWith("sha256:");
+        assertThat(bundle.bundleFingerprint()).hasSize(71);
+        assertThat(bundle.bundleFingerprintVerified()).isTrue();
+        OperatorLibraryExportBundle sameMaterialDifferentExportTime = new OperatorLibraryExportBundle(
+                bundle.schemaVersion(),
+                bundle.sourceLibraryId(),
+                bundle.sourceVersion(),
+                bundle.sourceStatus(),
+                bundle.sourceRevision(),
+                Instant.EPOCH,
+                "",
+                bundle.library(),
+                bundle.latestRevision(),
+                bundle.validation());
+        assertThat(sameMaterialDifferentExportTime.bundleFingerprint()).isEqualTo(bundle.bundleFingerprint());
     }
 
     @Test
     void exportLibraryReturnsNotFoundForMissingCurrentLibrary() throws Exception {
         mockMvc.perform(get("/admin/visual-operator-libraries/missing/export"))
                 .andExpect(status().isNotFound());
+    }
+
+    @Test
+    void validateBundlePreviewsTargetCreateWithoutStoring() throws Exception {
+        OperatorLibrary library = VisualCatalogTestSupport.designOnlyEligibilityLibrary("integer");
+        OperatorLibraryExportBundle bundle = new OperatorLibraryExportBundle(
+                "",
+                "",
+                "",
+                "",
+                7,
+                null,
+                library,
+                null,
+                null
+        );
+
+        mockMvc.perform(post("/admin/visual-operator-libraries/validate-bundle")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(bundle)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.schemaVersion").value(OperatorLibraryImportResult.SCHEMA_VERSION))
+                .andExpect(jsonPath("$.imported").value(false))
+                .andExpect(jsonPath("$.sourceBundleSchemaVersion")
+                        .value(OperatorLibraryExportBundle.SCHEMA_VERSION))
+                .andExpect(jsonPath("$.sourceBundleFingerprint").value(bundle.bundleFingerprint()))
+                .andExpect(jsonPath("$.sourceLibraryId").value("risk-policy-design"))
+                .andExpect(jsonPath("$.sourceRevision").value(7))
+                .andExpect(jsonPath("$.importedLibraryId").value("risk-policy-design"))
+                .andExpect(jsonPath("$.mutationAction").value(OperatorLibraryRevision.ACTION_CREATE))
+                .andExpect(jsonPath("$.library.libraryId").value("risk-policy-design"))
+                .andExpect(jsonPath("$.targetDiff.schemaVersion").value(OperatorLibraryDiff.SCHEMA_VERSION))
+                .andExpect(jsonPath("$.targetDiff.baseRevision").value(0))
+                .andExpect(jsonPath("$.targetDiff.targetRevision").value(7))
+                .andExpect(jsonPath("$.targetDiff.baseAction").value("SNAPSHOT"))
+                .andExpect(jsonPath("$.targetDiff.targetAction").value("SNAPSHOT"))
+                .andExpect(jsonPath("$.targetDiff.changed").value(true))
+                .andExpect(jsonPath("$.targetDiff.addedOperatorCount").value(1))
+                .andExpect(jsonPath("$.targetDiff.operatorChanges[0].changeKind").value("ADDED"))
+                .andExpect(jsonPath("$.validation.valid").value(true))
+                .andExpect(jsonPath("$.validation.profile.schemaVersion")
+                        .value(OperatorLibraryProfile.SCHEMA_VERSION))
+                .andExpect(jsonPath("$.validation.profile.designOnlyOperatorCount").value(1));
+
+        assertThat(registry.all()).isEmpty();
+    }
+
+    @Test
+    void validateBundlePreviewsTargetReplacementWithoutAddingRevision() throws Exception {
+        OperatorLibrary library = VisualCatalogTestSupport.designOnlyEligibilityLibrary("integer");
+        registry.upsert(library, OperatorLibraryRevision.RevisionMetadata.of(
+                "seed", "test", "Seed existing library.", ""));
+        OperatorLibraryExportBundle bundle = new OperatorLibraryExportBundle(
+                "",
+                "",
+                "",
+                "",
+                8,
+                null,
+                library,
+                null,
+                null
+        );
+
+        mockMvc.perform(post("/admin/visual-operator-libraries/validate-bundle")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(bundle)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.schemaVersion").value(OperatorLibraryImportResult.SCHEMA_VERSION))
+                .andExpect(jsonPath("$.imported").value(false))
+                .andExpect(jsonPath("$.sourceBundleFingerprint").value(bundle.bundleFingerprint()))
+                .andExpect(jsonPath("$.sourceLibraryId").value("risk-policy-design"))
+                .andExpect(jsonPath("$.sourceRevision").value(8))
+                .andExpect(jsonPath("$.mutationAction").value(OperatorLibraryRevision.ACTION_REPLACE))
+                .andExpect(jsonPath("$.targetDiff.schemaVersion").value(OperatorLibraryDiff.SCHEMA_VERSION))
+                .andExpect(jsonPath("$.targetDiff.baseRevision").value(1))
+                .andExpect(jsonPath("$.targetDiff.targetRevision").value(8))
+                .andExpect(jsonPath("$.targetDiff.baseAction").value("SNAPSHOT"))
+                .andExpect(jsonPath("$.targetDiff.targetAction").value("SNAPSHOT"))
+                .andExpect(jsonPath("$.targetDiff.changed").value(false))
+                .andExpect(jsonPath("$.targetDiff.addedOperatorCount").value(0))
+                .andExpect(jsonPath("$.targetDiff.removedOperatorCount").value(0))
+                .andExpect(jsonPath("$.targetDiff.changedOperatorCount").value(0))
+                .andExpect(jsonPath("$.validation.valid").value(true));
+
+        assertThat(registry.find("risk-policy-design")).contains(library);
+        assertThat(registry.revisions("risk-policy-design")).hasSize(1);
     }
 
     @Test
@@ -643,6 +753,7 @@ class OperatorLibraryAdminControllerTest {
                 .andExpect(jsonPath("$.imported").value(true))
                 .andExpect(jsonPath("$.sourceBundleSchemaVersion")
                         .value(OperatorLibraryExportBundle.SCHEMA_VERSION))
+                .andExpect(jsonPath("$.sourceBundleFingerprint").value(bundle.bundleFingerprint()))
                 .andExpect(jsonPath("$.sourceLibraryId").value("risk-policy-design"))
                 .andExpect(jsonPath("$.sourceVersion").value("1.0.0"))
                 .andExpect(jsonPath("$.sourceStatus").value("ACTIVE"))
@@ -652,6 +763,11 @@ class OperatorLibraryAdminControllerTest {
                 .andExpect(jsonPath("$.mutationAction").value(OperatorLibraryRevision.ACTION_CREATE))
                 .andExpect(jsonPath("$.library.libraryId").value("risk-policy-design"))
                 .andExpect(jsonPath("$.latestRevision.action").value(OperatorLibraryRevision.ACTION_CREATE))
+                .andExpect(jsonPath("$.targetDiff.schemaVersion").value(OperatorLibraryDiff.SCHEMA_VERSION))
+                .andExpect(jsonPath("$.targetDiff.baseRevision").value(0))
+                .andExpect(jsonPath("$.targetDiff.targetRevision").value(7))
+                .andExpect(jsonPath("$.targetDiff.changed").value(true))
+                .andExpect(jsonPath("$.targetDiff.addedOperatorCount").value(1))
                 .andExpect(jsonPath("$.latestRevision.revisionMetadata.actor").value("stage-sync"))
                 .andExpect(jsonPath("$.latestRevision.revisionMetadata.changeSource")
                         .value("catalog-bundle"))
@@ -728,6 +844,7 @@ class OperatorLibraryAdminControllerTest {
                 .andExpect(jsonPath("$.imported").value(false))
                 .andExpect(jsonPath("$.sourceBundleSchemaVersion")
                         .value("bloge.visualOperatorLibraryExport.v2"))
+                .andExpect(jsonPath("$.sourceBundleFingerprint").value(bundle.bundleFingerprint()))
                 .andExpect(jsonPath("$.sourceLibraryId").value("risk-policy-design"))
                 .andExpect(jsonPath("$.sourceRevision").value(9))
                 .andExpect(jsonPath("$.mutationAction").value(OperatorLibraryImportResult.ACTION_REJECTED))
@@ -739,6 +856,103 @@ class OperatorLibraryAdminControllerTest {
                         .value("bloge.visualOperatorLibraryExport.v2"))
                 .andExpect(jsonPath("$.validation.diagnostics[0].metadata.expected")
                         .value(OperatorLibraryExportBundle.SCHEMA_VERSION));
+
+        assertThat(registry.all()).isEmpty();
+    }
+
+    @Test
+    void importBundleRejectsMismatchedBundleFingerprintBeforeStorage() throws Exception {
+        OperatorLibrary library = VisualCatalogTestSupport.designOnlyEligibilityLibrary("integer");
+        OperatorLibraryExportBundle base = new OperatorLibraryExportBundle(
+                "",
+                "",
+                "",
+                "",
+                7,
+                null,
+                library,
+                null,
+                null
+        );
+        OperatorLibraryExportBundle forged = new OperatorLibraryExportBundle(
+                base.schemaVersion(),
+                base.sourceLibraryId(),
+                base.sourceVersion(),
+                base.sourceStatus(),
+                base.sourceRevision(),
+                base.exportedAt(),
+                "sha256:forged",
+                base.library(),
+                base.latestRevision(),
+                base.validation()
+        );
+
+        assertThat(forged.bundleFingerprintVerified()).isFalse();
+        assertThat(forged.computedBundleFingerprint()).isEqualTo(base.bundleFingerprint());
+
+        mockMvc.perform(post("/admin/visual-operator-libraries/import-bundle")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(forged)))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.schemaVersion").value(OperatorLibraryImportResult.SCHEMA_VERSION))
+                .andExpect(jsonPath("$.imported").value(false))
+                .andExpect(jsonPath("$.sourceBundleFingerprint").value("sha256:forged"))
+                .andExpect(jsonPath("$.sourceLibraryId").value("risk-policy-design"))
+                .andExpect(jsonPath("$.mutationAction").value(OperatorLibraryImportResult.ACTION_REJECTED))
+                .andExpect(jsonPath("$.validation.valid").value(false))
+                .andExpect(jsonPath("$.validation.diagnostics[0].code")
+                        .value("visual.library.bundle.fingerprintMismatch"))
+                .andExpect(jsonPath("$.validation.diagnostics[0].target").value("/bundleFingerprint"))
+                .andExpect(jsonPath("$.validation.diagnostics[0].metadata.actual").value("sha256:forged"))
+                .andExpect(jsonPath("$.validation.diagnostics[0].metadata.expected")
+                        .value(base.bundleFingerprint()));
+
+        assertThat(registry.all()).isEmpty();
+    }
+
+    @Test
+    void validateBundleRejectsMismatchedBundleFingerprintBeforeTargetValidation() throws Exception {
+        OperatorLibrary library = VisualCatalogTestSupport.designOnlyEligibilityLibrary("integer");
+        OperatorLibraryExportBundle base = new OperatorLibraryExportBundle(
+                "",
+                "",
+                "",
+                "",
+                7,
+                null,
+                library,
+                null,
+                null
+        );
+        OperatorLibraryExportBundle forged = new OperatorLibraryExportBundle(
+                base.schemaVersion(),
+                base.sourceLibraryId(),
+                base.sourceVersion(),
+                base.sourceStatus(),
+                base.sourceRevision(),
+                base.exportedAt(),
+                "sha256:forged",
+                base.library(),
+                base.latestRevision(),
+                base.validation()
+        );
+
+        mockMvc.perform(post("/admin/visual-operator-libraries/validate-bundle")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(forged)))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.schemaVersion").value(OperatorLibraryImportResult.SCHEMA_VERSION))
+                .andExpect(jsonPath("$.imported").value(false))
+                .andExpect(jsonPath("$.sourceBundleFingerprint").value("sha256:forged"))
+                .andExpect(jsonPath("$.sourceLibraryId").value("risk-policy-design"))
+                .andExpect(jsonPath("$.mutationAction").value(OperatorLibraryImportResult.ACTION_REJECTED))
+                .andExpect(jsonPath("$.validation.valid").value(false))
+                .andExpect(jsonPath("$.validation.diagnostics[0].code")
+                        .value("visual.library.bundle.fingerprintMismatch"))
+                .andExpect(jsonPath("$.validation.diagnostics[0].target").value("/bundleFingerprint"))
+                .andExpect(jsonPath("$.validation.diagnostics[0].metadata.actual").value("sha256:forged"))
+                .andExpect(jsonPath("$.validation.diagnostics[0].metadata.expected")
+                        .value(base.bundleFingerprint()));
 
         assertThat(registry.all()).isEmpty();
     }
@@ -763,6 +977,7 @@ class OperatorLibraryAdminControllerTest {
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.schemaVersion").value(OperatorLibraryImportResult.SCHEMA_VERSION))
                 .andExpect(jsonPath("$.imported").value(false))
+                .andExpect(jsonPath("$.sourceBundleFingerprint").value(bundle.bundleFingerprint()))
                 .andExpect(jsonPath("$.sourceLibraryId").value("risk-policy-design"))
                 .andExpect(jsonPath("$.sourceRevision").value(3))
                 .andExpect(jsonPath("$.mutationAction").value(OperatorLibraryImportResult.ACTION_REJECTED))

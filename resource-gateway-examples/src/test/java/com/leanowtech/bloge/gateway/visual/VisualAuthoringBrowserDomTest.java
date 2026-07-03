@@ -479,6 +479,39 @@ class VisualAuthoringBrowserDomTest {
     }
 
     @Test
+    void composerValidatesExportedOperatorLibraryBundleInRealBrowser() {
+        driver = newChromeDriverOrSkip();
+        WebDriverWait wait = new WebDriverWait(driver, WAIT_TIMEOUT);
+        driver.get("http://localhost:" + port + "/examples/gateway");
+
+        waitForComposer(wait);
+        wait.until(ExpectedConditions.visibilityOfElementLocated(By.id("operator-palette")));
+
+        importSampleOperatorLibrary(wait);
+        click(wait, By.id("export-library"));
+        waitForText(wait, By.id("library-status"), "Exported risk-policy@");
+        waitForText(wait, By.id("library-status"), "sha256:");
+        assertThat(valueOf(By.id("operator-library-json")))
+                .contains("\"schemaVersion\": \"bloge.visualOperatorLibraryExport.v1\"")
+                .contains("\"bundleFingerprint\": \"sha256:")
+                .contains("\"libraryId\": \"risk-policy\"");
+        int revisionCountBeforeValidate = operatorLibraryRegistry.revisions("risk-policy").size();
+
+        click(wait, By.id("validate-library-bundle"));
+        waitForText(wait, By.id("library-status"), "Bundle would replace risk-policy");
+        waitForText(wait, By.id("library-status"), "sha256:");
+        waitForText(wait, By.id("output"), "\"operatorLibraryBundleValidation\"");
+        waitForText(wait, By.id("output"), "\"imported\": false");
+        waitForText(wait, By.id("output"), "\"mutationAction\": \"REPLACE\"");
+        waitForText(wait, By.id("output"), "\"targetDiff\"");
+        waitForText(wait, By.id("library-bundle-diff"), "Bundle Target Diff");
+        waitForText(wait, By.id("library-bundle-diff"), "No library or operator surface changes.");
+        assertThat(operatorLibraryRegistry.find("risk-policy")).isPresent();
+        assertThat(operatorLibraryRegistry.revisions("risk-policy"))
+                .hasSize(revisionCountBeforeValidate);
+    }
+
+    @Test
     void composerProjectsAsyncApiIntoOperatorLibraryInRealBrowser() {
         driver = newChromeDriverOrSkip();
         WebDriverWait wait = new WebDriverWait(driver, WAIT_TIMEOUT);

@@ -107,6 +107,57 @@ public record OperatorLibraryDiff(
         );
     }
 
+    /**
+     * Compares two operator-library snapshots without treating registry mutation actions as domain changes.
+     *
+     * @param libraryId library id
+     * @param baseRevision base target-environment revision, or 0 when absent
+     * @param baseLibrary current target-environment library snapshot, or null when absent
+     * @param targetRevision source bundle revision, or 0 when absent
+     * @param targetLibrary incoming library snapshot
+     * @return classified surface diff
+     */
+    public static OperatorLibraryDiff betweenSnapshots(String libraryId,
+                                                       long baseRevision,
+                                                       OperatorLibrary baseLibrary,
+                                                       long targetRevision,
+                                                       OperatorLibrary targetLibrary) {
+        List<LibraryChange> libraryChanges = libraryChanges(null, null, baseLibrary, targetLibrary);
+        List<OperatorChange> operatorChanges = operatorChanges(baseLibrary, targetLibrary);
+        ChangeClassification classification = classify(libraryChanges, operatorChanges);
+        return new OperatorLibraryDiff(
+                SCHEMA_VERSION,
+                snapshotLibraryId(libraryId, baseLibrary, targetLibrary),
+                Math.max(0L, baseRevision),
+                Math.max(0L, targetRevision),
+                "SNAPSHOT",
+                "SNAPSHOT",
+                baseLibrary == null ? "" : baseLibrary.version(),
+                targetLibrary == null ? "" : targetLibrary.version(),
+                !libraryChanges.isEmpty() || !operatorChanges.isEmpty(),
+                classification.risk(),
+                classification.categories(),
+                classification.summary(),
+                (int) operatorChanges.stream().filter(change -> "ADDED".equals(change.changeKind())).count(),
+                (int) operatorChanges.stream().filter(change -> "REMOVED".equals(change.changeKind())).count(),
+                (int) operatorChanges.stream().filter(change -> "CHANGED".equals(change.changeKind())).count(),
+                libraryChanges,
+                operatorChanges
+        );
+    }
+
+    private static String snapshotLibraryId(String libraryId,
+                                            OperatorLibrary baseLibrary,
+                                            OperatorLibrary targetLibrary) {
+        if (libraryId != null && !libraryId.isBlank()) {
+            return libraryId.trim();
+        }
+        if (targetLibrary != null && !targetLibrary.libraryId().isBlank()) {
+            return targetLibrary.libraryId();
+        }
+        return baseLibrary == null ? "" : baseLibrary.libraryId();
+    }
+
     private static String libraryId(OperatorLibraryRevision base,
                                     OperatorLibraryRevision target,
                                     OperatorLibrary baseLibrary,

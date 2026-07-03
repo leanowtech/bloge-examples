@@ -1152,6 +1152,7 @@ resource-gateway 示例同时把用户算子库 registry 历史固化为
 
 ```http
 GET /admin/visual-operator-libraries/{libraryId}/export
+POST /admin/visual-operator-libraries/validate-bundle
 POST /admin/visual-operator-libraries/import-bundle
 GET /admin/visual-operator-libraries/{libraryId}/revisions
 GET /admin/visual-operator-libraries/{libraryId}/revisions/{revision}
@@ -1161,20 +1162,34 @@ POST /admin/visual-operator-libraries/{libraryId}/revisions/{revision}/restore
 
 `export` 端点只面向当前存在的 library；删除后的历史证据继续通过 revision API
 读取。导出包包含 source library identity、version、status、latest revision number、
-server export timestamp、当前 `OperatorLibrary` snapshot、latest immutable
+server export timestamp、`bundleFingerprint`、当前 `OperatorLibrary` snapshot、latest immutable
 `OperatorLibraryRevision` evidence，以及 export-time `OperatorLibraryValidationResult`
 （其中包含 `bloge.visualOperatorLibraryProfile.v1` 与
 `bloge.visualOperatorLibraryImpact.v1`，并派生
 `bloge.visualOperatorLibraryImportReadiness.v1`）。这个包用于跨环境迁移、PR 审阅、catalog
-归档和外部控制面同步；它是只读 artifact，不触发 replacement impact mutation。
-`import-bundle` 是目标环境 mutation：请求体必须是当前支持的
+归档和外部控制面同步；它是只读 artifact，不触发 replacement impact mutation。`bundleFingerprint`
+由服务端按 source identity、library snapshot、latest revision evidence 和 export-time validation
+派生，不包含 `exportedAt`，便于迁移工具稳定引用同一份算子库 material。
+`validate-bundle` 是目标环境非写入预检：请求体必须是当前支持的
 `bloge.visualOperatorLibraryExport.v1`；future/unknown bundle schemaVersion 会在读取
-library snapshot 前以 `visual.library.bundle.schemaVersionUnsupported` 拒绝。版本通过后，
+library snapshot 前以 `visual.library.bundle.schemaVersionUnsupported` 拒绝。版本通过后，服务端会先
+校验 `bundleFingerprint` 是否匹配 bundle material；不匹配时以
+`visual.library.bundle.fingerprintMismatch` 拒绝，target 为 `/bundleFingerprint`，
+metadata 携带 `actual/expected`，不会继续执行目标 registry 预检。版本与指纹都通过后，
+服务端返回 `bloge.visualOperatorLibraryImportResult.v1`，其中 `imported=false`、
+`mutationAction=CREATE|REPLACE` 表达如果继续导入会产生的目标动作，`validation` 携带目标环境
+structural/schema/ownership/runtime/impact/SemVer/readiness 结论，并在 bundle snapshot 可信且可读时返回
+`targetDiff=bloge.visualOperatorLibraryDiff.v1`。`targetDiff` 比较的是目标环境当前 library snapshot
+与 source bundle 中的 library snapshot；它不把 CREATE/REPLACE mutation action 当成 surface 变化，
+只表达 library/operator schema、capability、policy、lowering 和 metadata 风险。这个端点不要求
+`ackWarnings`、`actor` 或 `reason`，也不会创建 registry revision；它用于 PR、迁移流水线和浏览器
+作者在真正写入前审阅目标环境兼容性。`import-bundle` 是目标环境 mutation：版本与指纹都通过后，
 服务端才把其中的 `library` snapshot 送入目标 registry 的同一套结构校验、operatorRef
 ownership、runtime collision、impact preflight、SemVer governance 和 `ackWarnings` gate。
-响应返回 `bloge.visualOperatorLibraryImportResult.v1`，包含 source bundle schema/id/version/status/revision、
+响应返回 `bloge.visualOperatorLibraryImportResult.v1`，包含 source bundle schema/fingerprint/id/version/status/revision、
 target `imported` decision、`mutationAction=CREATE|REPLACE|REJECTED`、目标
-`latestRevision`，以及写入前目标环境 `OperatorLibraryValidationResult`。这点必须保留：
+`latestRevision`、写入前目标环境 `OperatorLibraryValidationResult`，以及同一个写入前 `targetDiff`。
+这点必须保留：
 成功写入后的世界会改变 replacement warning 的可见性，import result 记录的是当次被确认的
 目标环境 preflight 证据。
 

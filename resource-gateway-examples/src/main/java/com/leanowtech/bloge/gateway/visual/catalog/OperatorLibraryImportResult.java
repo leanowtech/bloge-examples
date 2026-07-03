@@ -8,6 +8,7 @@ import java.time.Instant;
  * @param schemaVersion import result schema version
  * @param imported whether the target registry stored the library
  * @param sourceBundleSchemaVersion source export bundle schema version
+ * @param sourceBundleFingerprint source export bundle fingerprint
  * @param sourceLibraryId source library id from the bundle
  * @param sourceVersion source library version from the bundle
  * @param sourceStatus source library lifecycle status from the bundle
@@ -17,12 +18,14 @@ import java.time.Instant;
  * @param mutationAction target registry action or intended action
  * @param library stored or rejected library snapshot
  * @param latestRevision latest target registry revision after successful import
+ * @param targetDiff target-environment current library to source bundle snapshot diff
  * @param validation target-environment preflight validation used for the decision
  */
 public record OperatorLibraryImportResult(
         String schemaVersion,
         boolean imported,
         String sourceBundleSchemaVersion,
+        String sourceBundleFingerprint,
         String sourceLibraryId,
         String sourceVersion,
         String sourceStatus,
@@ -32,6 +35,7 @@ public record OperatorLibraryImportResult(
         String mutationAction,
         OperatorLibrary library,
         OperatorLibraryRevision latestRevision,
+        OperatorLibraryDiff targetDiff,
         OperatorLibraryValidationResult validation
 ) {
     public static final String SCHEMA_VERSION = "bloge.visualOperatorLibraryImportResult.v1";
@@ -43,6 +47,7 @@ public record OperatorLibraryImportResult(
     public OperatorLibraryImportResult {
         schemaVersion = schemaVersion == null || schemaVersion.isBlank() ? SCHEMA_VERSION : schemaVersion;
         sourceBundleSchemaVersion = sourceBundleSchemaVersion == null ? "" : sourceBundleSchemaVersion.trim();
+        sourceBundleFingerprint = sourceBundleFingerprint == null ? "" : sourceBundleFingerprint.trim();
         sourceLibraryId = sourceLibraryId == null || sourceLibraryId.isBlank()
                 ? library == null ? "" : library.libraryId()
                 : sourceLibraryId.trim();
@@ -78,9 +83,55 @@ public record OperatorLibraryImportResult(
                                                        OperatorLibrary library,
                                                        OperatorLibraryRevision latestRevision,
                                                        OperatorLibraryValidationResult validation) {
+        return imported(bundle, library, latestRevision, validation, null);
+    }
+
+    /**
+     * @param bundle source export bundle
+     * @param library stored target library
+     * @param latestRevision latest target registry revision
+     * @param validation target-environment preflight validation
+     * @param targetDiff target-environment current-to-bundle diff
+     * @return successful import result
+     */
+    public static OperatorLibraryImportResult imported(OperatorLibraryExportBundle bundle,
+                                                       OperatorLibrary library,
+                                                       OperatorLibraryRevision latestRevision,
+                                                       OperatorLibraryValidationResult validation,
+                                                       OperatorLibraryDiff targetDiff) {
         return from(bundle, true, library, latestRevision,
                 latestRevision == null ? OperatorLibraryRevision.ACTION_REPLACE : latestRevision.action(),
-                validation);
+                validation, targetDiff);
+    }
+
+    /**
+     * @param bundle source export bundle
+     * @param library library snapshot under target-environment review
+     * @param mutationAction intended target registry action
+     * @param validation target-environment diagnostics
+     * @return non-stored preview result
+     */
+    public static OperatorLibraryImportResult previewed(OperatorLibraryExportBundle bundle,
+                                                        OperatorLibrary library,
+                                                        String mutationAction,
+                                                        OperatorLibraryValidationResult validation) {
+        return previewed(bundle, library, mutationAction, validation, null);
+    }
+
+    /**
+     * @param bundle source export bundle
+     * @param library library snapshot under target-environment review
+     * @param mutationAction intended target registry action
+     * @param validation target-environment diagnostics
+     * @param targetDiff target-environment current-to-bundle diff
+     * @return non-stored preview result
+     */
+    public static OperatorLibraryImportResult previewed(OperatorLibraryExportBundle bundle,
+                                                        OperatorLibrary library,
+                                                        String mutationAction,
+                                                        OperatorLibraryValidationResult validation,
+                                                        OperatorLibraryDiff targetDiff) {
+        return from(bundle, false, library, null, mutationAction, validation, targetDiff);
     }
 
     /**
@@ -94,7 +145,23 @@ public record OperatorLibraryImportResult(
                                                        OperatorLibrary library,
                                                        String mutationAction,
                                                        OperatorLibraryValidationResult validation) {
-        return from(bundle, false, library, null, mutationAction, validation);
+        return rejected(bundle, library, mutationAction, validation, null);
+    }
+
+    /**
+     * @param bundle source export bundle
+     * @param library library snapshot under review
+     * @param mutationAction intended target registry action
+     * @param validation target-environment diagnostics
+     * @param targetDiff target-environment current-to-bundle diff
+     * @return non-stored import result
+     */
+    public static OperatorLibraryImportResult rejected(OperatorLibraryExportBundle bundle,
+                                                       OperatorLibrary library,
+                                                       String mutationAction,
+                                                       OperatorLibraryValidationResult validation,
+                                                       OperatorLibraryDiff targetDiff) {
+        return from(bundle, false, library, null, mutationAction, validation, targetDiff);
     }
 
     /**
@@ -104,7 +171,7 @@ public record OperatorLibraryImportResult(
      */
     public static OperatorLibraryImportResult rejected(OperatorLibraryExportBundle bundle,
                                                        OperatorLibraryValidationResult validation) {
-        return from(bundle, false, null, null, ACTION_REJECTED, validation);
+        return from(bundle, false, null, null, ACTION_REJECTED, validation, null);
     }
 
     private static OperatorLibraryImportResult from(OperatorLibraryExportBundle bundle,
@@ -112,14 +179,16 @@ public record OperatorLibraryImportResult(
                                                     OperatorLibrary library,
                                                     OperatorLibraryRevision latestRevision,
                                                     String mutationAction,
-                                                    OperatorLibraryValidationResult validation) {
+                                                    OperatorLibraryValidationResult validation,
+                                                    OperatorLibraryDiff targetDiff) {
         OperatorLibraryExportBundle safeBundle = bundle == null
-                ? new OperatorLibraryExportBundle("", "", "", "", 0, null, library, null, null)
+                ? new OperatorLibraryExportBundle("", "", "", "", 0, null, "", library, null, null)
                 : bundle;
         return new OperatorLibraryImportResult(
                 SCHEMA_VERSION,
                 imported,
                 safeBundle.schemaVersion(),
+                safeBundle.bundleFingerprint(),
                 safeBundle.sourceLibraryId(),
                 safeBundle.sourceVersion(),
                 safeBundle.sourceStatus(),
@@ -129,6 +198,7 @@ public record OperatorLibraryImportResult(
                 mutationAction,
                 library,
                 latestRevision,
+                targetDiff,
                 validation
         );
     }

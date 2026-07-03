@@ -1481,6 +1481,7 @@ function renderInputForm() {
           <button id="discover-asyncapi-library" class="secondary compact" type="button">Discover AsyncAPI</button>
           <select id="asyncapi-operation-select" multiple size="4" aria-label="Discovered AsyncAPI operations"></select>
           <button id="project-asyncapi-library" class="secondary compact" type="button">From AsyncAPI</button>
+          <button id="validate-library-bundle" class="secondary compact" type="button">Validate Bundle</button>
           <button id="import-library-bundle" class="secondary compact" type="button">Import Bundle</button>
           <button id="delete-library" class="secondary compact danger" type="button">Delete</button>
           <label class="config-checkbox compact">
@@ -1504,6 +1505,7 @@ function renderInputForm() {
         <div id="library-profile" class="library-profile"></div>
         <div id="library-status" class="library-status" hidden></div>
         <div id="asyncapi-projection-review" class="library-impact-panel" hidden></div>
+        <div id="library-bundle-diff" class="library-impact-panel" hidden></div>
         <div id="library-revision-diff" class="library-impact-panel" hidden></div>
         <div id="library-impact" class="library-impact-panel" hidden></div>
         <div id="library-diagnostics" class="visual-diagnostics"></div>
@@ -3446,6 +3448,7 @@ function renderOperatorLibraryControls() {
   const exportButton = $('export-library');
   const discoverAsyncApiButton = $('discover-asyncapi-library');
   const projectAsyncApiButton = $('project-asyncapi-library');
+  const validateBundleButton = $('validate-library-bundle');
   const importBundleButton = $('import-library-bundle');
   const deleteButton = $('delete-library');
   const forceToggle = $('library-force');
@@ -3487,6 +3490,9 @@ function renderOperatorLibraryControls() {
   }
   if (projectAsyncApiButton) {
     projectAsyncApiButton.onclick = projectAsyncApiOperatorLibrary;
+  }
+  if (validateBundleButton) {
+    validateBundleButton.onclick = validateOperatorLibraryBundle;
   }
   if (importBundleButton) {
     importBundleButton.onclick = importOperatorLibraryBundle;
@@ -3617,6 +3623,16 @@ function renderLibraryRevisionDiff() {
     target.innerHTML = '';
     return;
   }
+  renderOperatorLibraryDiffPanel(target, diff, 'Revision Diff');
+}
+
+function renderOperatorLibraryDiffPanel(target, diff, title = 'Library Diff') {
+  if (!target) return;
+  if (!diff) {
+    target.hidden = true;
+    target.innerHTML = '';
+    return;
+  }
   const level = operatorLibraryDiffLevel(diff);
   target.hidden = false;
   target.className = `library-impact-panel ${level}`;
@@ -3645,7 +3661,7 @@ function renderLibraryRevisionDiff() {
     : '';
   target.innerHTML = `
     <div class="library-impact-head">
-      <strong>Revision Diff</strong>
+      <strong>${escapeHtml(title)}</strong>
       <span>@${escapeHtml(diff.baseRevision || 0)} -> @${escapeHtml(diff.targetRevision || 0)} · ${escapeHtml(changeRiskLabel(diff.changeRisk))}</span>
     </div>
     <div class="library-impact-risk-summary">${escapeHtml(diff.changeSummary || 'No library or operator surface changes.')}</div>
@@ -3679,6 +3695,7 @@ function renderLibraryStatus() {
   target.textContent = message;
   target.className = `library-status ${state.libraryMessage?.level || 'info'}`;
   renderAsyncApiProjectionReviewPanel($('asyncapi-projection-review'), state.libraryMessage?.projectionReview);
+  renderOperatorLibraryDiffPanel($('library-bundle-diff'), state.libraryMessage?.targetDiff, 'Bundle Target Diff');
   renderLibraryImpactPanel($('library-impact'), diagnostics, state.libraryMessage?.impact);
   renderDiagnosticList($('library-diagnostics'), diagnostics);
 }
@@ -4939,7 +4956,8 @@ function schemaDynamicSurfaceCount(schema) {
 }
 
 function setLibraryMessage(text, level = 'info', diagnostics = [], impact = null, profile = null,
-    profileSourceText = state.libraryImportText || '', projectionReview = null, importReadiness = null) {
+    profileSourceText = state.libraryImportText || '', projectionReview = null, importReadiness = null,
+    targetDiff = null) {
   state.libraryMessage = text
     ? {
         text,
@@ -4949,7 +4967,8 @@ function setLibraryMessage(text, level = 'info', diagnostics = [], impact = null
         profile: profile || null,
         profileSourceText,
         projectionReview: projectionReview || null,
-        importReadiness: importReadiness || null
+        importReadiness: importReadiness || null,
+        targetDiff: targetDiff || null
       }
     : null;
   renderLibraryStatus();
@@ -5974,8 +5993,11 @@ async function exportSelectedOperatorLibrary() {
     const validation = payload?.validation || null;
     const diagnostics = normalizeDiagnostics(validation?.diagnostics);
     $('output').textContent = pretty({ status: response.status, operatorLibraryExport: payload });
+    state.libraryImportText = pretty(payload);
+    state.libraryImportConfirmationKey = '';
+    renderOperatorLibraryControls();
     setLibraryMessage(
-      `Exported ${payload?.sourceLibraryId || libraryId}@${payload?.sourceRevision || 0}.`,
+      `Exported ${payload?.sourceLibraryId || libraryId}@${payload?.sourceRevision || 0}${visualBundleFingerprintSuffix(payload?.bundleFingerprint)}.`,
       visualCheckLevel(diagnostics, validation?.valid !== false),
       diagnostics,
       validation?.impact,
@@ -6372,6 +6394,67 @@ async function importOperatorLibrary() {
   setLibraryMessage(`${action} ${stored.libraryId}.`, 'success');
 }
 
+async function validateOperatorLibraryBundle() {
+  const sourceText = state.libraryImportText || '';
+  let bundle = null;
+  try {
+    bundle = JSON.parse(sourceText || '{}');
+  } catch {
+    state.libraryImportConfirmationKey = '';
+    setLibraryMessage('Operator library export bundle must be pasted as JSON before validation.', 'error');
+    return;
+  }
+  const response = await fetch(`/admin/visual-operator-libraries/validate-bundle${libraryForceQuery()}`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(bundle)
+  });
+  const text = await response.text();
+  let payload = null;
+  try {
+    payload = text ? JSON.parse(text) : null;
+  } catch {
+  }
+  const validation = payload?.validation || payload || {};
+  const diagnostics = normalizeDiagnostics(validation?.diagnostics || payload?.diagnostics);
+  state.libraryImportConfirmationKey = '';
+  $('output').textContent = pretty({ status: response.status, operatorLibraryBundleValidation: payload });
+  if (!response.ok) {
+    setLibraryMessage(
+      validationResultMessage(validation?.valid, diagnostics, text || `Validate bundle failed with ${response.status}`),
+      visualCheckLevel(diagnostics, validation?.valid !== false && response.status < 500),
+      diagnostics,
+      validation?.impact,
+      validation?.profile,
+      sourceText,
+      null,
+      validation?.importReadiness,
+      payload?.targetDiff
+    );
+    return;
+  }
+  const library = payload?.library || bundle?.library || {};
+  const libraryId = String(library?.libraryId || payload?.sourceLibraryId || 'operator library').trim();
+  const action = payload?.mutationAction === 'REPLACE'
+    ? 'Bundle would replace'
+    : 'Bundle would import';
+  setLibraryMessage(
+    validationResultMessage(
+      validation?.valid,
+      diagnostics,
+      `${action} ${libraryId}${visualBundleFingerprintSuffix(payload?.sourceBundleFingerprint)}.`
+    ),
+    visualCheckLevel(diagnostics, validation?.valid !== false),
+    diagnostics,
+    validation?.impact,
+    validation?.profile,
+    sourceText,
+    null,
+    validation?.importReadiness,
+    payload?.targetDiff
+  );
+}
+
 async function importOperatorLibraryBundle() {
   const sourceText = state.libraryImportText || '';
   let bundle = null;
@@ -6423,7 +6506,8 @@ async function importOperatorLibraryBundle() {
         validation?.profile,
         sourceText,
         null,
-        validation?.importReadiness
+        validation?.importReadiness,
+        payload?.targetDiff
       );
       return;
     }
@@ -6436,7 +6520,8 @@ async function importOperatorLibraryBundle() {
       validation?.profile,
       sourceText,
       null,
-      validation?.importReadiness
+      validation?.importReadiness,
+      payload?.targetDiff
     );
     return;
   }
@@ -6444,7 +6529,8 @@ async function importOperatorLibraryBundle() {
   if (!stored?.libraryId) {
     state.libraryImportConfirmationKey = '';
     setLibraryMessage('Import bundle response did not include a stored operator library.', 'error',
-      diagnostics, validation?.impact, validation?.profile, sourceText, null, validation?.importReadiness);
+      diagnostics, validation?.impact, validation?.profile, sourceText, null, validation?.importReadiness,
+      payload?.targetDiff);
     return;
   }
   state.libraryImportConfirmationKey = '';
@@ -6465,14 +6551,15 @@ async function importOperatorLibraryBundle() {
     ? 'Replaced from bundle'
     : 'Imported bundle';
   setLibraryMessage(
-    `${action} ${stored.libraryId}@${payload?.latestRevision?.revision || 0}.`,
+    `${action} ${stored.libraryId}@${payload?.latestRevision?.revision || 0}${visualBundleFingerprintSuffix(payload?.sourceBundleFingerprint)}.`,
     visualCheckLevel(diagnostics, true),
     diagnostics,
     validation?.impact,
     validation?.profile,
     sourceText,
     null,
-    validation?.importReadiness
+    validation?.importReadiness,
+    payload?.targetDiff
   );
 }
 
