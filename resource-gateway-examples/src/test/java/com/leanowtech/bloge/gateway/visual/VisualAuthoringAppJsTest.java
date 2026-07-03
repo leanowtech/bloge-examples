@@ -361,24 +361,40 @@ class VisualAuthoringAppJsTest {
                 .contains("visualRuntimeBindingImplementationMessage: null")
                 .contains("visualRuntimeBindingImplementationQuery: {")
                 .contains("activeVisualRuntimeBindingImplementation: null")
+                .contains("visualRuntimeAdapterActivations: []")
+                .contains("visualRuntimeRolloutObservations: []")
+                .contains("visualExecutableLoweringIntegrations: []")
+                .contains("visualRuntimeEvidenceMessage: null")
+                .contains("visualRuntimeEvidenceQuery: {")
+                .contains("activeVisualRuntimeEvidence: null")
                 .contains("visualRuntimeBindingRequirementQuery: {")
                 .contains("activeVisualRuntimeBindingRequirement: null")
                 .contains("await loadVisualRuntimeBindingRequirements({ render: false })")
                 .contains("await loadVisualRuntimeBindingImplementations({ render: false })")
+                .contains("await loadVisualRuntimeEvidenceChains({ render: false })")
                 .contains("async function loadVisualRuntimeBindingRequirements(options = {})")
                 .contains("async function loadVisualRuntimeBindingImplementations(options = {})")
+                .contains("async function loadVisualRuntimeEvidenceChains(options = {})")
                 .contains("fetch(visualRuntimeBindingRequirementsUrl())")
                 .contains("fetch(visualRuntimeBindingImplementationsUrl())")
+                .contains("fetch(url)")
                 .contains("function visualRuntimeBindingRequirementsUrl(builder = state.builder)")
                 .contains("function visualRuntimeBindingHandoffBundleUrl(builder = state.builder)")
                 .contains("function visualRuntimeBindingHandoffReviewUrl()")
                 .contains("function visualRuntimeBindingImplementationsUrl()")
                 .contains("function visualRuntimeBindingImplementationTransitionUrl(bindingId, action)")
+                .contains("function visualRuntimeAdapterActivationsUrl()")
+                .contains("function visualRuntimeRolloutObservationsUrl()")
+                .contains("function visualExecutableLoweringIntegrationsUrl()")
+                .contains("function visualRuntimeEvidenceParams(kind = '')")
                 .contains("function visualRuntimeBindingRequirementParams(builder = state.builder)")
                 .contains("/api/visual/assets/runtime-binding-requirements")
                 .contains("/api/visual/assets/runtime-binding-requirements/handoff-bundle")
                 .contains("/api/visual/assets/runtime-binding-requirements/handoff-review")
                 .contains("/api/visual/assets/runtime-binding-requirements/implementation-bindings")
+                .contains("/api/visual/assets/runtime-binding-requirements/adapter-activations")
+                .contains("/api/visual/assets/runtime-binding-requirements/rollout-observations")
+                .contains("/api/visual/assets/runtime-binding-requirements/executable-lowering-integrations")
                 .contains("params.set('limit', String(query.limit))")
                 .contains("params.set('targetKind', query.targetKind)")
                 .contains("params.set('artifactKind', query.artifactKind)")
@@ -400,6 +416,8 @@ class VisualAuthoringAppJsTest {
                 .contains("async function updateVisualRuntimeBindingRequirementQuery(patch = {})")
                 .contains("function normalizeVisualRuntimeBindingImplementationQuery(query = {})")
                 .contains("async function updateVisualRuntimeBindingImplementationQuery(patch = {})")
+                .contains("function normalizeVisualRuntimeEvidenceQuery(query = {})")
+                .contains("async function updateVisualRuntimeEvidenceQuery(patch = {})")
                 .contains("async function transitionVisualRuntimeBindingImplementation(bindingId, action)")
                 .contains("function visualRuntimeBindingImplementationTransitionRequest(binding, action, replacement = null)")
                 .contains("expectedRevision: Number(binding?.revision || 0) || 0")
@@ -425,10 +443,13 @@ class VisualAuthoringAppJsTest {
                 .contains("function visualRuntimeBindingFieldLabel(value)")
                 .contains("Runtime Binding Requirements")
                 .contains("Runtime Implementation Bindings")
+                .contains("Runtime Evidence Chain")
                 .contains("Current runtime binding")
                 .contains("Current implementation binding")
+                .contains("Current runtime evidence")
                 .contains("Runtime binding handoff")
                 .contains("Runtime implementation lifecycle")
+                .contains("Runtime evidence chain incomplete")
                 .contains("Handoff Review Drift Details")
                 .contains("sourceBundleFingerprint")
                 .contains("Snapshot fingerprint")
@@ -461,8 +482,21 @@ class VisualAuthoringAppJsTest {
                 .contains("runtime-binding-implementation-state")
                 .contains("runtime-binding-implementation-refresh")
                 .contains("runtime-binding-implementation-reset")
+                .contains("runtime-evidence-operator-ref")
+                .contains("runtime-evidence-binding-id")
+                .contains("runtime-evidence-activation-id")
+                .contains("runtime-evidence-lifecycle-state")
+                .contains("runtime-evidence-rollout-state")
+                .contains("runtime-evidence-refresh")
+                .contains("runtime-evidence-reset")
                 .contains("function visualRuntimeBindingRequirementRows(bindingIndex)")
                 .contains("function visualRuntimeBindingImplementationRows(bindings)")
+                .contains("function visualRuntimeEvidenceRows(adapterActivations = [], rolloutObservations = [], loweringIntegrations = [])")
+                .contains("function visualRuntimeAdapterActivationRow(activation, index)")
+                .contains("function visualRuntimeRolloutObservationRow(observation, index)")
+                .contains("function visualExecutableLoweringIntegrationRow(integration, index)")
+                .contains("function visualRuntimeEvidenceControls(rows)")
+                .contains("function visualRuntimeEvidenceContext(row)")
                 .contains("function visualRuntimeBindingImplementationControls(bindings)")
                 .contains("function visualRuntimeBindingImplementationActions(binding)")
                 .contains("function visualRuntimeBindingImplementationContext(binding)")
@@ -471,11 +505,15 @@ class VisualAuthoringAppJsTest {
                 .contains("function visualRuntimeBindingRequirementContext(item)")
                 .contains("function attachVisualRuntimeBindingImplementationHandlers()")
                 .contains("function attachVisualRuntimeBindingImplementationQueryHandlers(bindings)")
+                .contains("function attachVisualRuntimeEvidenceHandlers(rows)")
+                .contains("function attachVisualRuntimeEvidenceQueryHandlers()")
                 .contains("function openVisualRuntimeBindingRequirement(index, requirementKey = '')")
                 .contains("data-runtime-binding-requirement")
                 .contains("data-runtime-binding-requirement-key")
                 .contains("data-runtime-binding-implementation")
                 .contains("data-runtime-binding-implementation-action")
+                .contains("data-runtime-evidence")
+                .contains("data-runtime-evidence-id")
                 .contains("Opened runtime binding requirement:")
                 .contains("Exported ${displayed} of ${total} runtime binding requirement(s).")
                 .contains("Handoff review ${stateLabel}: ${matched} current, ${drifted} drifted, ${missing} missing, ${fresh} new in current window.")
@@ -484,9 +522,11 @@ class VisualAuthoringAppJsTest {
                 .contains("server-derived row")
                 .contains("No matching runtime binding requirements")
                 .contains("No matching runtime implementation bindings")
+                .contains("No matching runtime evidence records")
                 .contains("more runtime binding requirements");
         assertThat(countOccurrences(source, "function visualRuntimeBindingRequirementRows(")).isEqualTo(1);
         assertThat(countOccurrences(source, "function visualRuntimeBindingImplementationRows(")).isEqualTo(1);
+        assertThat(countOccurrences(source, "function visualRuntimeEvidenceRows(")).isEqualTo(1);
     }
 
     @Test
@@ -528,6 +568,29 @@ class VisualAuthoringAppJsTest {
             assertThat(result.finished()).as(result.output()).isTrue();
             assertThat(result.exitCode()).as(result.output()).isZero();
             assertThat(result.output()).contains("runtime binding implementation lifecycle probe passed");
+        } finally {
+            Files.deleteIfExists(probe);
+            Files.deleteIfExists(appJs);
+            Files.deleteIfExists(tempDir);
+        }
+    }
+
+    @Test
+    void rendersRuntimeEvidenceChainRows() throws Exception {
+        assumeNodeAvailable();
+
+        Path tempDir = Files.createTempDirectory("bloge-runtime-evidence-app-js-test");
+        Path appJs = tempDir.resolve("app.js");
+        Path probe = tempDir.resolve("probe.js");
+        try {
+            Files.writeString(appJs, appJsSource(), StandardCharsets.UTF_8);
+            Files.writeString(probe, runtimeEvidenceChainProbe(), StandardCharsets.UTF_8);
+
+            ProcessResult result = runProcess(List.of("node", probe.toString(), appJs.toString()), tempDir, 10);
+
+            assertThat(result.finished()).as(result.output()).isTrue();
+            assertThat(result.exitCode()).as(result.output()).isZero();
+            assertThat(result.output()).contains("runtime evidence chain probe passed");
         } finally {
             Files.deleteIfExists(probe);
             Files.deleteIfExists(appJs);
@@ -1628,6 +1691,154 @@ class VisualAuthoringAppJsTest {
                   }
                 }
                 console.log('runtime binding implementation lifecycle probe passed');
+                """);
+    }
+
+    private static String runtimeEvidenceChainProbe() {
+        return String.join("", """
+                const fs = require('fs');
+                const vm = require('vm');
+                const source = fs.readFileSync(process.argv[2], 'utf8');
+                new vm.Script(source, { filename: 'app.js' });
+
+                function functionSource(name) {
+                  const start = source.indexOf(`function ${name}(`);
+                  if (start < 0) throw new Error(`missing function ${name}`);
+                  const openParen = source.indexOf('(', start);
+                  let parenDepth = 0;
+                  let brace = -1;
+                  for (let i = openParen; i < source.length; i += 1) {
+                    const ch = source[i];
+                    if (ch === '(') parenDepth += 1;
+                    if (ch === ')') {
+                      parenDepth -= 1;
+                      if (parenDepth === 0) {
+                        brace = source.indexOf('{', i + 1);
+                        break;
+                      }
+                    }
+                  }
+                  if (brace < 0) throw new Error(`missing body for function ${name}`);
+                  let depth = 0;
+                  for (let i = brace; i < source.length; i += 1) {
+                    const ch = source[i];
+                    if (ch === '{') depth += 1;
+                    if (ch === '}') {
+                      depth -= 1;
+                      if (depth === 0) return source.slice(start, i + 1);
+                    }
+                  }
+                  throw new Error(`unterminated function ${name}`);
+                }
+
+                const context = vm.createContext({
+                  console,
+                  URLSearchParams,
+                  state: {
+                    visualRuntimeEvidenceQuery: {
+                      operatorRef: 'risk:eligibility',
+                      bindingId: 'risk-eligibility-native-v1',
+                      activationId: 'risk-eligibility-native-v1-prod',
+                      lifecycleState: 'active',
+                      rolloutState: 'healthy'
+                    }
+                  }
+                });
+                for (const name of [
+                  'operatorPaletteFacetLabel',
+                  'normalizeVisualRuntimeEvidenceQuery',
+                  'visualRuntimeEvidenceParams',
+                  'visualRuntimeAdapterActivationsUrl',
+                  'visualRuntimeRolloutObservationsUrl',
+                  'visualExecutableLoweringIntegrationsUrl',
+                  'visualRuntimeEvidenceRows',
+                  'visualRuntimeAdapterActivationRow',
+                  'visualRuntimeRolloutObservationRow',
+                  'visualExecutableLoweringIntegrationRow',
+                  'visualRuntimeEvidenceKindOrder',
+                  'visualRuntimeEvidenceLevel',
+                  'visualRuntimeEvidenceCounts',
+                  'visualRuntimeEvidenceWindowSummary',
+                  'visualRuntimeEvidenceContext'
+                ]) {
+                  vm.runInContext(functionSource(name), context);
+                }
+                const activation = {
+                  activationId: 'risk-eligibility-native-v1-prod',
+                  revision: 2,
+                  state: 'active',
+                  level: 'success',
+                  bindingId: 'risk-eligibility-native-v1',
+                  bindingRevision: 4,
+                  operatorRef: 'risk:eligibility',
+                  adapterKind: 'http',
+                  runtimeEnvironment: 'prod',
+                  healthState: 'healthy',
+                  activatedBy: 'runtime-team',
+                  evidence: [{ kind: 'health-check' }]
+                };
+                const rollout = {
+                  observationId: 'risk-eligibility-rollout-healthy',
+                  revision: 1,
+                  state: 'healthy',
+                  level: 'success',
+                  activationId: 'risk-eligibility-native-v1-prod',
+                  activationRevision: 2,
+                  bindingId: 'risk-eligibility-native-v1',
+                  bindingRevision: 4,
+                  operatorRef: 'risk:eligibility',
+                  rolloutStrategy: 'canary',
+                  trafficPercent: 25,
+                  rolloutPhase: 'canary',
+                  rollbackTriggered: false,
+                  observedBy: 'rollout-controller',
+                  evidence: [{ kind: 'metric' }]
+                };
+                const integration = {
+                  integrationId: 'risk-eligibility-lowering-prod',
+                  revision: 5,
+                  state: 'active',
+                  level: 'success',
+                  activationId: 'risk-eligibility-native-v1-prod',
+                  activationRevision: 2,
+                  bindingId: 'risk-eligibility-native-v1',
+                  bindingRevision: 4,
+                  operatorRef: 'risk:eligibility',
+                  loweringMode: 'native',
+                  executorKind: 'bloge-worker',
+                  executorEntrypoint: 'riskEligibility',
+                  executorOwner: 'executor-platform',
+                  evidence: [{ kind: 'executor-test' }]
+                };
+                const rows = context.visualRuntimeEvidenceRows([activation], [rollout], [integration]);
+                const activationUrl = context.visualRuntimeAdapterActivationsUrl();
+                const rolloutUrl = context.visualRuntimeRolloutObservationsUrl();
+                const integrationUrl = context.visualExecutableLoweringIntegrationsUrl();
+                const counts = context.visualRuntimeEvidenceCounts(rows, 'operatorRef');
+                const summary = context.visualRuntimeEvidenceWindowSummary(rows);
+                const activeContext = context.visualRuntimeEvidenceContext(rows[0]);
+                const checks = [
+                  ['activation url', activationUrl, '/api/visual/assets/runtime-binding-requirements/adapter-activations?operatorRef=risk%3Aeligibility&bindingId=risk-eligibility-native-v1&state=active'],
+                  ['rollout url', rolloutUrl, '/api/visual/assets/runtime-binding-requirements/rollout-observations?operatorRef=risk%3Aeligibility&bindingId=risk-eligibility-native-v1&activationId=risk-eligibility-native-v1-prod&state=healthy'],
+                  ['integration url', integrationUrl, '/api/visual/assets/runtime-binding-requirements/executable-lowering-integrations?operatorRef=risk%3Aeligibility&activationId=risk-eligibility-native-v1-prod&state=active'],
+                  ['row count', rows.length, 3],
+                  ['first kind', rows[0].kind, 'adapter-activation'],
+                  ['second kind', rows[1].kind, 'rollout-observation'],
+                  ['third kind', rows[2].kind, 'executable-lowering-integration'],
+                  ['activation label', rows[0].label, 'risk-eligibility-native-v1-prod · Adapter activation · Active · rev 2'],
+                  ['rollout value includes traffic', String(rows[1].value.includes('25% traffic')), 'true'],
+                  ['integration value includes executor', String(rows[2].value.includes('executor bloge-worker')), 'true'],
+                  ['operator count', counts['risk:eligibility'], 3],
+                  ['summary', summary, '3 runtime evidence records · 1 activations / 1 rollout / 1 lowering'],
+                  ['context level', activeContext.level, 'success'],
+                  ['context message', activeContext.message, 'Adapter Activation · risk-eligibility-native-v1-prod · risk:eligibility · binding risk-eligibility-native-v1 · activation risk-eligibility-native-v1-prod']
+                ];
+                for (const [label, actual, expected] of checks) {
+                  if (actual !== expected) {
+                    throw new Error(`${label}: expected ${expected}, got ${actual}`);
+                  }
+                }
+                console.log('runtime evidence chain probe passed');
                 """);
     }
 

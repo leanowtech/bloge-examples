@@ -1322,7 +1322,12 @@ revision, current operator fingerprint, and the bound implementation's
 missing rollout evidence is rejected, while a `degraded` or `rolled-back`
 observation with correct identity is stored as an auditable `level=warning` or
 `level=error` fact. Exact stable observation id replay is idempotent, and the
-fact remains runtime feedback rather than executable readiness.
+fact remains runtime feedback rather than executable readiness. The browser
+Workspace Overview now renders these downstream facts as a Runtime Evidence
+Chain: adapter activations, rollout observations, and executable lowering
+integrations can be filtered by operator, binding, activation, lifecycle state,
+and rollout state, making the post-binding promotion chain visible without
+mistaking it for graph artifact state.
 Executable lowering integration
 assertions then validate activation revision, binding revision, current catalog
 fingerprint, non-design lowering mode, executor entrypoint, actor/reason, and

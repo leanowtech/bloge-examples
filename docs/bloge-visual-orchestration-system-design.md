@@ -810,6 +810,7 @@ bundle 的 handoff review，并在 stale review 中展示 requirement/contract d
 “可设计但不可执行”的具体 runtime-plane 交接项。
 同一 Workspace Overview 也会加载 runtime implementation binding records，展示 Runtime
 Implementation Bindings 小节，按 operator/state 过滤已提交、待审、已绑定、已解绑或已替换的实现记录，并在 Bind/Unbind/Supersede 操作中携带当前 `expectedRevision` 以及 replacement 的 `expectedReplacementRevision`，把 stale acknowledgement 明确返回为控制面冲突，而不是让画布把旧可见状态写回为新的 runtime 事实。
+它还会把 adapter activation、rollout observation 和 executable lowering integration 三段 runtime evidence 串成 Runtime Evidence Chain，只读展示 operator/binding/activation/lifecycle/rollout 过滤后的证据链状态，让作者看到 post-binding promotion 卡在激活、rollout、executor bridge 还是 readiness recompute，而不把 runtime-plane fact 混入 graph artifact 语义。
 connection preflight 会返回候选连接相关的局部 diagnostics，同时携带应用 preview
 edge/binding/config expression 后的完整 candidate draft validation/readiness/actionReadiness；compile 和 run 响应同样携带本次服务端门禁使用的 validation/readiness/actionReadiness；
 publication run 则回传 artifact 冻结时的 validation/readiness/actionReadiness，不能按当前 catalog

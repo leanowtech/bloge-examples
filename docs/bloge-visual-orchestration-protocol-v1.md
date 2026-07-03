@@ -2032,6 +2032,10 @@ transition request 可携带 `expectedRevision`；supersede 还可携带
 `bloge.visualRuntimeBindingImplementationTransition.v1`，默认携带当前 record revision 作为
 `expectedRevision`；supersede 还会从可见 replacement proposal 携带
 `expectedReplacementRevision`，让 UI acknowledgement 与 runtime-plane repository fact 对齐。
+同一面板还会只读消费 adapter activation、rollout observation 和 executable lowering integration
+list endpoint，按 `operatorRef`、`bindingId`、`activationId`、lifecycle state 和 rollout state 展示 Runtime
+Evidence Chain；这些行只表达 runtime-plane 事实链和 promotion blocker 位置，不改写 graph artifact、
+operator definition 或 readiness。
 bind、supersede 和 unbind 都支持 lifecycle exact replay：当请求的
 `actor/reason/changeSource/changeSummary/replacementBindingId` 与最后一次已持久化 lifecycle event 完全匹配，
 且目标状态和关联 binding lineage 仍一致时，服务端返回 idempotent `200 OK`，不会追加第二条 event 或再次
