@@ -1216,6 +1216,11 @@ public final class VisualCatalogTestSupport {
         );
     }
 
+    public static OperatorLibrary listSchemaCompatibilityLibrary(Map<String, Object> sourceArraySchema,
+                                                                 Map<String, Object> targetArraySchema) {
+        return listCompatibilityLibrary(sourceArraySchema, targetArraySchema);
+    }
+
     private static Map<String, Object> listPrefixItemsSchema(Object prefixItems) {
         Map<String, Object> schema = new LinkedHashMap<>();
         schema.put("type", "array");

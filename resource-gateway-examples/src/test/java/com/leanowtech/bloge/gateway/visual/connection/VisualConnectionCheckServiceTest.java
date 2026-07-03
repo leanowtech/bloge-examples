@@ -363,6 +363,83 @@ class VisualConnectionCheckServiceTest {
     }
 
     @Test
+    void acceptsArrayConnectionWhenSourceItemsAvoidTargetNotContains() {
+        VisualConnectionCheckService service = connectionService(VisualCatalogTestSupport
+                .catalogWithLibrary(VisualCatalogTestSupport.listSchemaCompatibilityLibrary(
+                        Map.of(
+                                "type", "array",
+                                "items", Map.of("type", "string", "enum", List.of("GOOD", "OK"))
+                        ),
+                        Map.of(
+                                "type", "array",
+                                "not", Map.of("contains", Map.of("const", "BAD"))
+                        ))));
+        GraphDraft draft = listCompatibilityDraft();
+
+        VisualConnectionCheckResult check = service.check(new VisualConnectionCheckRequest(
+                draft,
+                new GraphDraft.Endpoint("listFacts", "output", "items"),
+                new GraphDraft.Endpoint("listConsumer", "inputs", "items"),
+                "data"
+        ));
+        VisualConnectionCandidatesResult candidates = service.candidates(new VisualConnectionCandidatesRequest(
+                draft,
+                new GraphDraft.Endpoint("listFacts", "output", "items"),
+                "data",
+                true,
+                10,
+                0,
+                "listConsumer",
+                "input",
+                "inputs",
+                "items",
+                GraphDraft.UnionBranchSelection.empty(),
+                Map.of()
+        ));
+
+        assertThat(check.accepted()).as("diagnostics: %s", check.diagnostics()).isTrue();
+        assertThat(check.diagnostics()).isEmpty();
+        assertThat(check.bindingKey()).isEqualTo("items");
+        assertThat(candidates.candidates()).singleElement().satisfies(candidate -> {
+            assertThat(candidate.target().path()).isEqualTo("items");
+            assertThat(candidate.accepted()).isTrue();
+            assertThat(candidate.diagnostics()).isEmpty();
+            assertThat(candidate.explanation().decisionSource()).isEqualTo("server-validator");
+        });
+    }
+
+    @Test
+    void rejectsArrayConnectionWhenSourceItemsCouldMatchTargetNotContains() {
+        VisualConnectionCheckService service = connectionService(VisualCatalogTestSupport
+                .catalogWithLibrary(VisualCatalogTestSupport.listSchemaCompatibilityLibrary(
+                        Map.of(
+                                "type", "array",
+                                "items", Map.of("type", "string")
+                        ),
+                        Map.of(
+                                "type", "array",
+                                "not", Map.of("contains", Map.of("const", "BAD"))
+                        ))));
+        GraphDraft draft = listCompatibilityDraft();
+
+        VisualConnectionCheckResult result = service.check(new VisualConnectionCheckRequest(
+                draft,
+                new GraphDraft.Endpoint("listFacts", "output", "items"),
+                new GraphDraft.Endpoint("listConsumer", "inputs", "items"),
+                "data"
+        ));
+
+        assertThat(result.accepted()).isFalse();
+        assertThat(result.diagnostics())
+                .extracting("code")
+                .contains("visual.binding.typeMismatch", "visual.edge.typeMismatch");
+        assertThat(result.diagnostics())
+                .anySatisfy(diagnostic -> assertThat(diagnostic.message())
+                        .contains("target excludes schema array contains [BAD] minContains 1")
+                        .contains("cannot prove it avoids the excluded domain"));
+    }
+
+    @Test
     void acceptsConnectionPreviewWithExplicitTargetUnionBranchSelection() {
         VisualConnectionCheckService service = connectionService(VisualCatalogTestSupport
                 .catalogWithLibrary(unionBranchSelectionLibrary()));
