@@ -549,10 +549,13 @@ class VisualAuthoringAppJsTest {
                 .contains("requiresAckWarnings: Boolean(importReadiness.requiresAckWarnings)")
                 .contains("bindingKindCounts: normalizeCountMap(importReadiness.bindingKindCounts)")
                 .contains("handoffLaneCounts: normalizeCountMap(importReadiness.handoffLaneCounts)")
+                .contains("operatorLibraryIdCounts: normalizeCountMap(importReadiness.operatorLibraryIdCounts)")
                 .contains("readinessStateCounts: normalizeCountMap(importReadiness.readinessStateCounts)")
                 .contains("runtimeBindingRequirementKeys: normalizeStringArray(importReadiness.runtimeBindingRequirementKeys)")
                 .contains("runtimeBindingRequirements: Array.isArray(importReadiness.runtimeBindingRequirements)")
                 .contains("requirementKey: String(requirement?.requirementKey || '')")
+                .contains("operatorLibraryId: String(requirement?.operatorLibraryId || '')")
+                .contains("libraryImportReadinessCountRows('Library', readiness.operatorLibraryIdCounts")
                 .contains("Runtime binding routing")
                 .contains("Runtime binding requirements")
                 .contains("request.operationId = current.operationId")
@@ -2690,10 +2693,12 @@ operators:
                     handoffKindCounts: { 'runtime-adapter': 1 },
                     handoffTargetCounts: { missingRuntimeBinding: 1 },
                     sourceKindCounts: { 'user-library': 1 },
+                    operatorLibraryIdCounts: { 'server-reviewed': 1 },
                     loweringModeCounts: { native: 1 },
                     readinessStateCounts: { 'runtime-blocked': 1 },
                     runtimeBindingRequirements: [{
                       operatorRef: 'risk:nativeBinding',
+                      operatorLibraryId: 'server-reviewed',
                       label: 'Native Binding',
                       state: 'runtime-blocked',
                       level: 'warning',
@@ -4226,9 +4231,11 @@ operators:
                   ['library profile html import routing binding', String(importReadinessProfileHtml.includes('Runtime Adapter: 1')), 'true'],
                   ['library profile html import routing lane', String(importReadinessProfileHtml.includes('Runtime Platform: 1')), 'true'],
                   ['library profile html import routing route', String(importReadinessProfileHtml.includes('missingRuntimeBinding: 1')), 'true'],
+                  ['library profile html import routing library', String(importReadinessProfileHtml.includes('server-reviewed: 1')), 'true'],
                   ['library profile html import binding heading', String(importReadinessProfileHtml.includes('Runtime binding requirements')), 'true'],
                   ['library profile html import binding label', String(importReadinessProfileHtml.includes('Native Binding')), 'true'],
                   ['library profile html import binding target', String(importReadinessProfileHtml.includes('missingRuntimeBinding')), 'true'],
+                  ['library profile html import binding library owner', String(importReadinessProfileHtml.includes('library server-reviewed')), 'true'],
                   ['library profile html import binding handoff', String(importReadinessProfileHtml.includes('Runtime Platform') && importReadinessProfileHtml.includes('Runtime Adapter')), 'true'],
                   ['library profile html import binding action', String(importReadinessProfileHtml.includes('Bind the missing runtime adapter.')), 'true'],
                   ['library profile html policy summary', String(libraryProfileHtml.includes('policy tenants demo-tenant; namespaces local; env browser')), 'true'],

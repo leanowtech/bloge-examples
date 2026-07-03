@@ -3999,6 +3999,7 @@ function renderLibraryImportReadinessCountRows(readiness) {
     ...libraryImportReadinessCountRows('Work', readiness.handoffKindCounts),
     ...libraryImportReadinessCountRows('Route', readiness.handoffTargetCounts, (value) => value),
     ...libraryImportReadinessCountRows('Source', readiness.sourceKindCounts),
+    ...libraryImportReadinessCountRows('Library', readiness.operatorLibraryIdCounts, (value) => value),
     ...libraryImportReadinessCountRows('Lowering', readiness.loweringModeCounts),
     ...libraryImportReadinessCountRows('Readiness', readiness.readinessStateCounts)
   ];
@@ -4794,6 +4795,7 @@ function normalizeOperatorLibraryImportReadiness(importReadiness) {
     handoffKindCounts: normalizeCountMap(importReadiness.handoffKindCounts),
     handoffTargetCounts: normalizeCountMap(importReadiness.handoffTargetCounts),
     sourceKindCounts: normalizeCountMap(importReadiness.sourceKindCounts),
+    operatorLibraryIdCounts: normalizeCountMap(importReadiness.operatorLibraryIdCounts),
     loweringModeCounts: normalizeCountMap(importReadiness.loweringModeCounts),
     readinessStateCounts: normalizeCountMap(importReadiness.readinessStateCounts),
     runtimeBindingRequirements: Array.isArray(importReadiness.runtimeBindingRequirements)
@@ -5347,6 +5349,7 @@ function visualRuntimeBindingRequirementCodeRows(requirements) {
       const details = [
         operatorPaletteFacetLabel(requirement.bindingKind || 'runtime-binding'),
         requirement.bindingTarget,
+        requirement.operatorLibraryId ? `library ${requirement.operatorLibraryId}` : '',
         requirement.handoffLane ? operatorPaletteFacetLabel(requirement.handoffLane) : '',
         requirement.handoffKind ? operatorPaletteFacetLabel(requirement.handoffKind) : '',
         requirement.handoffTarget,
@@ -5709,6 +5712,7 @@ function normalizeRuntimeBindingRequirement(requirement) {
     requirementKey: String(requirement?.requirementKey || ''),
     nodeId: String(requirement?.nodeId || ''),
     operatorRef: String(requirement?.operatorRef || ''),
+    operatorLibraryId: String(requirement?.operatorLibraryId || ''),
     label: String(requirement?.label || ''),
     state: normalizeReadinessState(requirement?.state),
     level: String(requirement?.level || 'warning').trim().toLowerCase(),

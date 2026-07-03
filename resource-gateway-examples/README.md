@@ -157,7 +157,7 @@ per-operator import-time `runtimeBindingRequirements` show which schema-only,
 remote-worker, AI-tool, event/message/webhook, streaming, durable, or unresolved
 native operators need runtime-plane binding before executable graph use; those
 operator-level requirement kinds, targets, and handoff lane/kind/target routing
-metadata plus stable `requirementKey` / `runtimeBindingRequirementKeys` and
+metadata, owner `operatorLibraryId`, stable `requirementKey` / `runtimeBindingRequirementKeys`, and
 binding/handoff/owner/source/lowering/readiness count maps are derived by the same
 server planner later used by graph readiness and workspace runtime-binding
 indexes, so large operator-library imports can be routed before authors create

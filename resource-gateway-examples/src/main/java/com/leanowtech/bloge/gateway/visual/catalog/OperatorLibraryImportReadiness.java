@@ -54,6 +54,7 @@ import java.util.function.Function;
  * @param handoffKindCounts runtime binding requirement counts by runtime-plane work kind
  * @param handoffTargetCounts runtime binding requirement counts by runtime-plane routing target
  * @param sourceKindCounts runtime binding requirement counts by operator source kind
+ * @param operatorLibraryIdCounts runtime binding requirement counts by owner operator library id
  * @param loweringModeCounts runtime binding requirement counts by lowering mode
  * @param readinessStateCounts runtime binding requirement counts by operator readiness state
  * @param runtimeBindingRequirementKeys stable keys aligned with runtimeBindingRequirements
@@ -92,6 +93,7 @@ public record OperatorLibraryImportReadiness(
         Map<String, Integer> handoffKindCounts,
         Map<String, Integer> handoffTargetCounts,
         Map<String, Integer> sourceKindCounts,
+        Map<String, Integer> operatorLibraryIdCounts,
         Map<String, Integer> loweringModeCounts,
         Map<String, Integer> readinessStateCounts,
         List<String> runtimeBindingRequirementKeys,
@@ -162,6 +164,9 @@ public record OperatorLibraryImportReadiness(
         sourceKindCounts = sourceKindCounts == null
                 ? countBy(runtimeBindingRequirements, RuntimeBindingRequirement::sourceKind)
                 : immutableCounts(sourceKindCounts);
+        operatorLibraryIdCounts = operatorLibraryIdCounts == null
+                ? countBy(runtimeBindingRequirements, RuntimeBindingRequirement::operatorLibraryId)
+                : immutableCounts(operatorLibraryIdCounts);
         loweringModeCounts = loweringModeCounts == null
                 ? countBy(runtimeBindingRequirements, RuntimeBindingRequirement::loweringMode)
                 : immutableCounts(loweringModeCounts);
@@ -285,6 +290,7 @@ public record OperatorLibraryImportReadiness(
                 message,
                 recommendedAction,
                 runtimeBindingRequirements.size(),
+                null,
                 null,
                 null,
                 null,
@@ -484,6 +490,7 @@ public record OperatorLibraryImportReadiness(
      *
      * @param requirementKey stable import-time binding requirement key
      * @param operatorRef operator reference that needs runtime binding
+     * @param operatorLibraryId owner operator-library id for this requirement
      * @param label display label
      * @param state readiness state that produced the requirement
      * @param level UI/control-plane severity
@@ -501,6 +508,7 @@ public record OperatorLibraryImportReadiness(
     public record RuntimeBindingRequirement(
             String requirementKey,
             String operatorRef,
+            String operatorLibraryId,
             String label,
             String state,
             String level,
@@ -517,6 +525,7 @@ public record OperatorLibraryImportReadiness(
     ) {
         public RuntimeBindingRequirement {
             operatorRef = operatorRef == null ? "" : operatorRef;
+            operatorLibraryId = operatorLibraryId == null ? "" : operatorLibraryId;
             label = label == null ? "" : label;
             state = normalizeFacetValue(state);
             level = level == null || level.isBlank() ? "warning" : level.trim().toLowerCase(Locale.ROOT);
@@ -527,7 +536,7 @@ public record OperatorLibraryImportReadiness(
             requirementKey = requirementKey == null || requirementKey.isBlank()
                     ? VisualRuntimeBindingRequirementKey.stable(
                     "operator-library",
-                    "",
+                    operatorLibraryId,
                     operatorRef,
                     bindingKind,
                     bindingTarget,
@@ -570,6 +579,7 @@ public record OperatorLibraryImportReadiness(
                             requirement.bindingTarget(),
                             ""),
                     requirement.operatorRef(),
+                    libraryId,
                     requirement.label(),
                     requirement.state(),
                     requirement.level(),
