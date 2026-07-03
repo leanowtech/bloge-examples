@@ -103,12 +103,19 @@ public final class VisualSchemaCompatibility {
 	                return itemBoundsIssue;
 	            }
 	            Optional<String> uniqueItemsIssue = arrayUniqueItemsCompatibilityIssue(sourceSchema, targetSchema, path);
-	            return uniqueItemsIssue.isPresent()
-	                    ? uniqueItemsIssue
-	                    : arrayContainsCompatibilityIssue(sourceSchema, targetSchema, path);
+	            if (uniqueItemsIssue.isPresent()) {
+	                return uniqueItemsIssue;
+	            }
+	            Optional<String> containsIssue = arrayContainsCompatibilityIssue(sourceSchema, targetSchema, path);
+	            return containsIssue.isPresent()
+	                    ? containsIssue
+	                    : targetNotCompatibilityIssue(sourceSchema, targetSchema, path);
 	        }
         if ("object".equals(sourceType) && "object".equals(targetType)) {
-            return objectSchemaCompatibilityIssue(sourceSchema, targetSchema, path);
+            Optional<String> objectIssue = objectSchemaCompatibilityIssue(sourceSchema, targetSchema, path);
+            return objectIssue.isPresent()
+                    ? objectIssue
+                    : targetNotCompatibilityIssue(sourceSchema, targetSchema, path);
         }
         Optional<String> targetFiniteDomainIssue =
                 targetFiniteDomainCompatibilityIssue(sourceSchema, targetSchema, path);
@@ -348,10 +355,10 @@ public final class VisualSchemaCompatibility {
                 stringMinLength(excludedSchema), stringMaxLength(excludedSchema))) {
             return true;
         }
-        if ("array".equals(sourceType) && "array".equals(excludedType)
-                && longRangesDisjoint(arrayMinItems(sourceSchema), arrayMaxItems(sourceSchema),
-                arrayMinItems(excludedSchema), arrayMaxItems(excludedSchema))) {
-            return true;
+        if ("array".equals(sourceType) && "array".equals(excludedType)) {
+            return longRangesDisjoint(arrayMinItems(sourceSchema), arrayMaxItems(sourceSchema),
+                    arrayMinItems(excludedSchema), arrayMaxItems(excludedSchema))
+                    || arraySchemasDefinitelyDisjoint(sourceSchema, excludedSchema);
         }
         if ("object".equals(sourceType) && "object".equals(excludedType)) {
             return longRangesDisjoint(objectMinProperties(sourceSchema), objectMaxProperties(sourceSchema),
@@ -359,6 +366,40 @@ public final class VisualSchemaCompatibility {
                     || objectSchemasDefinitelyDisjoint(sourceSchema, excludedSchema);
         }
         return false;
+    }
+
+    private static boolean arraySchemasDefinitelyDisjoint(Map<String, Object> sourceSchema,
+                                                          Map<String, Object> excludedSchema) {
+        Map<String, Object> excludedContains = objectProperty(excludedSchema.get("contains"));
+        Long excludedMinContains = arrayMinContains(excludedSchema);
+        if (excludedContains == null || excludedMinContains == null || excludedMinContains <= 0) {
+            return false;
+        }
+        Long sourceMaximum = arrayMaxItems(sourceSchema);
+        if (sourceMaximum != null && sourceMaximum == 0) {
+            return true;
+        }
+        return sourceItemsCannotMatchContains(sourceSchema, excludedContains);
+    }
+
+    private static boolean sourceItemsCannotMatchContains(Map<String, Object> sourceSchema,
+                                                          Map<String, Object> excludedContains) {
+        Long sourceMaximum = arrayMaxItems(sourceSchema);
+        List<Map<String, Object>> sourcePrefixItems = prefixItemsOf(sourceSchema);
+        long relevantPrefixItems = sourceMaximum == null
+                ? sourcePrefixItems.size()
+                : Math.min(sourceMaximum, sourcePrefixItems.size());
+        for (int i = 0; i < relevantPrefixItems; i++) {
+            if (!schemasDefinitelyDisjoint(sourcePrefixItems.get(i), excludedContains)) {
+                return false;
+            }
+        }
+        boolean mayHaveUniformItems = sourceMaximum == null || sourceMaximum > sourcePrefixItems.size();
+        if (!mayHaveUniformItems) {
+            return true;
+        }
+        Map<String, Object> sourceItems = objectProperty(sourceSchema.get("items"));
+        return sourceItems != null && schemasDefinitelyDisjoint(sourceItems, excludedContains);
     }
 
     private static boolean objectSchemasDefinitelyDisjoint(Map<String, Object> sourceSchema,
@@ -522,6 +563,18 @@ public final class VisualSchemaCompatibility {
         Long maxLength = stringMaxLength(schema);
         if (maxLength != null) {
             label = label + " maxLength " + maxLength;
+        }
+        Map<String, Object> contains = objectProperty(schema.get("contains"));
+        if (contains != null) {
+            label = label + " contains " + excludedSchemaLabel(contains);
+            Long minContains = arrayMinContains(schema);
+            if (minContains != null) {
+                label = label + " minContains " + minContains;
+            }
+            Long maxContains = arrayMaxContains(schema);
+            if (maxContains != null) {
+                label = label + " maxContains " + maxContains;
+            }
         }
         return label;
     }

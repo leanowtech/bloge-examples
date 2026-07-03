@@ -20095,10 +20095,12 @@ function schemaCompatibilityIssue(sourceSchema, targetSchema, path = '') {
       || arrayItemsCompatibilityIssue(sourceSchema, targetSchema, path)
       || arrayItemBoundsCompatibilityIssue(sourceSchema, targetSchema, path)
       || arrayUniqueItemsCompatibilityIssue(sourceSchema, targetSchema, path)
-      || arrayContainsCompatibilityIssue(sourceSchema, targetSchema, path);
+      || arrayContainsCompatibilityIssue(sourceSchema, targetSchema, path)
+      || targetNotCompatibilityIssue(sourceSchema, targetSchema, path);
   }
   if (sourceType === 'object' && targetType === 'object') {
-    return objectSchemaCompatibilityIssue(sourceSchema, targetSchema, path);
+    return objectSchemaCompatibilityIssue(sourceSchema, targetSchema, path)
+      || targetNotCompatibilityIssue(sourceSchema, targetSchema, path);
   }
   const targetFiniteDomainIssue = targetFiniteDomainCompatibilityIssue(sourceSchema, targetSchema, path);
   if (targetFiniteDomainIssue) {
@@ -20278,10 +20280,10 @@ function schemasDefinitelyDisjoint(sourceSchema, excludedSchema) {
         schemaMinLength(excludedSchema), schemaMaxLength(excludedSchema))) {
     return true;
   }
-  if (arrayType(sourceType) && arrayType(excludedType)
-      && longRangesDisjoint(schemaMinItems(sourceSchema), schemaMaxItems(sourceSchema),
-        schemaMinItems(excludedSchema), schemaMaxItems(excludedSchema))) {
-    return true;
+  if (arrayType(sourceType) && arrayType(excludedType)) {
+    return longRangesDisjoint(schemaMinItems(sourceSchema), schemaMaxItems(sourceSchema),
+      schemaMinItems(excludedSchema), schemaMaxItems(excludedSchema))
+      || arraySchemasDefinitelyDisjoint(sourceSchema, excludedSchema);
   }
   if (sourceType === 'object' && excludedType === 'object') {
     return longRangesDisjoint(schemaMinProperties(sourceSchema), schemaMaxProperties(sourceSchema),
@@ -20354,6 +20356,18 @@ function excludedSchemaLabel(schema) {
   if (maxLength !== null) {
     label = `${label} maxLength ${maxLength}`;
   }
+  const contains = schemaContainsSchema(schema);
+  if (contains) {
+    label = `${label} contains ${excludedSchemaLabel(contains)}`;
+    const minContains = schemaMinContains(schema);
+    if (minContains !== null) {
+      label = `${label} minContains ${minContains}`;
+    }
+    const maxContains = schemaMaxContains(schema);
+    if (maxContains !== null) {
+      label = `${label} maxContains ${maxContains}`;
+    }
+  }
   return label;
 }
 
@@ -20383,6 +20397,38 @@ function longRangesDisjoint(sourceMinimum, sourceMaximum, excludedMinimum, exclu
     return true;
   }
   return sourceMinimum !== null && excludedMaximum !== null && sourceMinimum > excludedMaximum;
+}
+
+function arraySchemasDefinitelyDisjoint(sourceSchema, excludedSchema) {
+  const excludedContains = schemaContainsSchema(excludedSchema);
+  const excludedMinContains = schemaMinContains(excludedSchema);
+  if (!excludedContains || excludedMinContains === null || excludedMinContains <= 0) {
+    return false;
+  }
+  const sourceMaximum = schemaMaxItems(sourceSchema);
+  if (sourceMaximum === 0) {
+    return true;
+  }
+  return sourceItemsCannotMatchContains(sourceSchema, excludedContains);
+}
+
+function sourceItemsCannotMatchContains(sourceSchema, excludedContains) {
+  const sourceMaximum = schemaMaxItems(sourceSchema);
+  const sourcePrefixItems = schemaPrefixItems(sourceSchema);
+  const relevantPrefixItemCount = sourceMaximum === null
+    ? sourcePrefixItems.length
+    : Math.min(sourceMaximum, sourcePrefixItems.length);
+  for (let index = 0; index < relevantPrefixItemCount; index += 1) {
+    if (!schemasDefinitelyDisjoint(sourcePrefixItems[index], excludedContains)) {
+      return false;
+    }
+  }
+  const mayHaveUniformItems = sourceMaximum === null || sourceMaximum > sourcePrefixItems.length;
+  if (!mayHaveUniformItems) {
+    return true;
+  }
+  const sourceItems = schemaItemsSchema(sourceSchema);
+  return Boolean(sourceItems && schemasDefinitelyDisjoint(sourceItems, excludedContains));
 }
 
 function objectSchemasDefinitelyDisjoint(sourceSchema, excludedSchema) {

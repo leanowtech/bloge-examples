@@ -363,6 +363,56 @@ class VisualSchemaCompatibilityTest {
     }
 
     @Test
+    void acceptsArrayItemsThatAvoidTargetNotContains() {
+        Map<String, Object> source = Map.of(
+                "type", "array",
+                "items", Map.of("type", "string", "enum", List.of("GOOD", "OK"))
+        );
+        Map<String, Object> target = Map.of(
+                "type", "array",
+                "not", Map.of("contains", Map.of("const", "BAD"))
+        );
+
+        assertThat(VisualSchemaCompatibility.valueMatchesSchema(List.of("GOOD"), target)).isTrue();
+        assertThat(VisualSchemaCompatibility.valueMatchesSchema(List.of("BAD"), target)).isFalse();
+        assertThat(VisualSchemaCompatibility.schemaCompatibilityIssue(source, target)).isEmpty();
+    }
+
+    @Test
+    void acceptsBoundedPrefixItemsThatAvoidTargetNotContains() {
+        Map<String, Object> source = Map.of(
+                "type", "array",
+                "prefixItems", List.of(Map.of("type", "integer", "maximum", 0)),
+                "maxItems", 1
+        );
+        Map<String, Object> target = Map.of(
+                "type", "array",
+                "not", Map.of("contains", Map.of("minimum", 1))
+        );
+
+        assertThat(VisualSchemaCompatibility.valueMatchesSchema(List.of(0), target)).isTrue();
+        assertThat(VisualSchemaCompatibility.valueMatchesSchema(List.of(1), target)).isFalse();
+        assertThat(VisualSchemaCompatibility.schemaCompatibilityIssue(source, target)).isEmpty();
+    }
+
+    @Test
+    void rejectsArrayPrefixItemsWhenAdditionalItemsCouldMatchTargetNotContains() {
+        Map<String, Object> source = Map.of(
+                "type", "array",
+                "prefixItems", List.of(Map.of("type", "string", "enum", List.of("GOOD")))
+        );
+        Map<String, Object> target = Map.of(
+                "type", "array",
+                "not", Map.of("contains", Map.of("const", "BAD"))
+        );
+
+        assertThat(VisualSchemaCompatibility.schemaCompatibilityIssue(source, target))
+                .hasValueSatisfying(reason -> assertThat(reason)
+                        .contains("target excludes schema array contains [BAD] minContains 1")
+                        .contains("source array cannot prove it avoids the excluded domain"));
+    }
+
+    @Test
     void acceptsSourceObjectSizeThatAvoidsTargetNotMinProperties() {
         Map<String, Object> source = Map.of("type", "object", "maxProperties", 1);
         Map<String, Object> target = Map.of(

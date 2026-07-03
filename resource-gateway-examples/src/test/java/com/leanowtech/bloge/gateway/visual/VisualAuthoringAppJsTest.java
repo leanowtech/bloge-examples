@@ -6054,6 +6054,8 @@ operators:
                   'upperBoundIsBelowLower',
                   'lowerBoundIsAboveUpper',
                   'longRangesDisjoint',
+                  'arraySchemasDefinitelyDisjoint',
+                  'sourceItemsCannotMatchContains',
                   'objectSchemasDefinitelyDisjoint',
                   'sourcePropertyConstraintsDisjointFrom',
                   'sourcePropertyConstraintsFor',
@@ -6115,6 +6117,11 @@ operators:
                   'schemaMaxItems',
                   'explicitSchemaMinItems',
                   'explicitSchemaMaxItems',
+                  'schemaPrefixItems',
+                  'schemaItemsSchema',
+                  'schemaContainsSchema',
+                  'schemaMinContains',
+                  'schemaMaxContains',
                   'arrayItemBoundaryValue',
                   'schemaMinProperties',
                   'schemaMaxProperties',
@@ -6295,6 +6302,28 @@ operators:
                   type: 'array',
                   not: { minItems: 2 }
                 });
+                const targetNotArrayContainsDisjointIssue = context.schemaCompatibilityIssue({
+                  type: 'array',
+                  items: { type: 'string', enum: ['GOOD', 'OK'] }
+                }, {
+                  type: 'array',
+                  not: { contains: { const: 'BAD' } }
+                });
+                const targetNotArrayPrefixContainsDisjointIssue = context.schemaCompatibilityIssue({
+                  type: 'array',
+                  prefixItems: [{ type: 'integer', maximum: 0 }],
+                  maxItems: 1
+                }, {
+                  type: 'array',
+                  not: { contains: { minimum: 1 } }
+                });
+                const targetNotArrayContainsAdditionalItemIssue = context.schemaCompatibilityIssue({
+                  type: 'array',
+                  prefixItems: [{ type: 'string', enum: ['GOOD'] }]
+                }, {
+                  type: 'array',
+                  not: { contains: { const: 'BAD' } }
+                });
                 const targetNotObjectCountDisjointIssue = context.schemaCompatibilityIssue({
                   type: 'object',
                   maxProperties: 1
@@ -6367,6 +6396,9 @@ operators:
                   ['target not numeric overlap blocked', targetNotNumericOverlapIssue, 'target excludes schema number value >= 0 but source number cannot prove it avoids the excluded domain'],
                   ['target not string length disjoint safe', targetNotStringLengthDisjointIssue, ''],
                   ['target not array count disjoint safe', targetNotArrayCountDisjointIssue, ''],
+                  ['target not array contains disjoint safe', targetNotArrayContainsDisjointIssue, ''],
+                  ['target not array prefix contains disjoint safe', targetNotArrayPrefixContainsDisjointIssue, ''],
+                  ['target not array contains additional item blocked', targetNotArrayContainsAdditionalItemIssue, 'target excludes schema array contains [BAD] minContains 1 but source array cannot prove it avoids the excluded domain'],
                   ['target not object count disjoint safe', targetNotObjectCountDisjointIssue, ''],
                   ['target not object required property disjoint safe', targetNotObjectRequiredDisjointIssue, ''],
                   ['target not object required const disjoint safe', targetNotObjectRequiredConstDisjointIssue, ''],
