@@ -122,4 +122,43 @@ class VisualSchemaCompatibilityTest {
 
         assertThat(VisualSchemaCompatibility.schemaCompatibilityIssue(source, target)).isEmpty();
     }
+
+    @Test
+    void rejectsUnboundedSourceWhenTargetExcludesFiniteValueWithNot() {
+        Map<String, Object> source = Map.of("type", "string");
+        Map<String, Object> target = Map.of(
+                "type", "string",
+                "not", Map.of("const", "ARCHIVED")
+        );
+
+        assertThat(VisualSchemaCompatibility.schemaCompatibilityIssue(source, target))
+                .hasValueSatisfying(reason -> assertThat(reason)
+                        .contains("target excludes value(s) [ARCHIVED]")
+                        .contains("source schema could produce them"));
+    }
+
+    @Test
+    void acceptsFiniteSourceEnumThatAvoidsTargetNotExclusion() {
+        Map<String, Object> source = Map.of("type", "string", "enum", List.of("ACTIVE", "PENDING"));
+        Map<String, Object> target = Map.of(
+                "type", "string",
+                "not", Map.of("const", "ARCHIVED")
+        );
+
+        assertThat(VisualSchemaCompatibility.schemaCompatibilityIssue(source, target)).isEmpty();
+    }
+
+    @Test
+    void rejectsFiniteSourceEnumThatContainsTargetNotExclusion() {
+        Map<String, Object> source = Map.of("type", "string", "enum", List.of("ACTIVE", "ARCHIVED"));
+        Map<String, Object> target = Map.of(
+                "type", "string",
+                "not", Map.of("const", "ARCHIVED")
+        );
+
+        assertThat(VisualSchemaCompatibility.schemaCompatibilityIssue(source, target))
+                .hasValueSatisfying(reason -> assertThat(reason)
+                        .contains("source enum value(s) [ARCHIVED]")
+                        .contains("do not match target schema string"));
+    }
 }

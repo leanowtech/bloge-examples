@@ -132,6 +132,36 @@ class VisualSchemaValidatorTest {
     }
 
     @Test
+    void rejectsRuntimeValueThatMatchesFiniteNotExclusion() {
+        SchemaEnvelope schema = new SchemaEnvelope(SchemaEnvelope.JSON_SCHEMA, "2020-12", Map.of(
+                "type", "object",
+                "properties", Map.of(
+                        "decision", Map.of(
+                                "type", "string",
+                                "not", Map.of("const", "ARCHIVED")
+                        )
+                ),
+                "required", List.of("decision"),
+                "additionalProperties", false
+        ));
+
+        assertThat(VisualSchemaValidator.validateValue(schema, Map.of(
+                "decision", "ACTIVE"
+        ), "/context")).isEmpty();
+
+        var diagnostics = VisualSchemaValidator.validateValue(schema, Map.of(
+                "decision", "ARCHIVED"
+        ), "/context");
+
+        assertThat(diagnostics)
+                .anySatisfy(diagnostic -> {
+                    assertThat(diagnostic.code()).isEqualTo("visual.context.notMismatch");
+                    assertThat(diagnostic.target()).isEqualTo("/context/decision");
+                    assertThat(diagnostic.message()).contains("ARCHIVED");
+                });
+    }
+
+    @Test
     void rejectsInvalidUnionSchemaShapes() {
         var diagnostics = VisualSchemaValidator.validateSchema(Map.of(
                 "type", "object",

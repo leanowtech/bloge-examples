@@ -426,9 +426,11 @@ their referenced schema before validation and type matching, and safe object
 `allOf` compositions whose fragments normalize to object schemas are flattened
 into ordinary object schemas. Safe scalar `allOf` compositions with one supported
 scalar type and non-conflicting basic numeric or string constraints are also
-flattened into ordinary scalar schemas; remote refs, unresolved refs, `$dynamicRef`, `$ref`
+flattened into ordinary scalar schemas; finite `not` exclusions over `const`,
+standard `enum`, or visual custom enum values are enforced by structural,
+runtime-value, static-literal, and connection compatibility checks; remote refs, unresolved refs, `$dynamicRef`, `$ref`
 nodes with validation-affecting siblings, unsupported composition and conditional
-keywords such as non-object or unsafe `allOf`, `not`, `if`, `then`, and `else`,
+keywords such as non-object or unsafe `allOf`, non-finite `not`, `if`, `then`, and `else`,
 and unenforced constraint keywords such as unevaluated-item constraints are
 rejected instead of being silently ignored. The shared gate supports `oneOf` and
 `anyOf` as explicit visual union schemas: runtime value validation requires

@@ -136,6 +136,10 @@ public final class VisualSchemaCompatibility {
                     "source enum value(s) %s do not match target schema %s"
 	                            .formatted(valueDomainLabel(incompatible), schemaTypeLabel(targetSchema))));
 	        }
+        Optional<String> targetNotIssue = targetNotCompatibilityIssue(sourceSchema, targetSchema, path);
+        if (targetNotIssue.isPresent()) {
+            return targetNotIssue;
+        }
 	        if (numeric(sourceType) && numeric(targetType)) {
 	            Optional<String> boundsIssue = numericBoundsCompatibilityIssue(sourceSchema, targetSchema, path);
 	            return boundsIssue.isPresent()
@@ -242,6 +246,23 @@ public final class VisualSchemaCompatibility {
         Optional<String> baseIssue = schemaCompatibilityIssue(sourceSchema, base, path);
         return baseIssue.map(reason -> reasonAt(path,
                 "target union base constraints are not compatible: " + reason));
+    }
+
+    private static Optional<String> targetNotCompatibilityIssue(Map<String, Object> sourceSchema,
+                                                                 Map<String, Object> targetSchema,
+                                                                 String path) {
+        List<Object> excludedValues = finiteSchemaValues(objectProperty(targetSchema.get("not")));
+        if (excludedValues.isEmpty()) {
+            return Optional.empty();
+        }
+        List<Object> possiblyProduced = excludedValues.stream()
+                .filter(value -> valueMatchesSchema(value, sourceSchema))
+                .toList();
+        return possiblyProduced.isEmpty()
+                ? Optional.empty()
+                : Optional.of(reasonAt(path,
+                "target excludes value(s) %s but source schema could produce them"
+                        .formatted(valueDomainLabel(possiblyProduced))));
     }
 
 	    private static Optional<String> numericBoundsCompatibilityIssue(Map<String, Object> sourceSchema,
@@ -1037,6 +1058,10 @@ public final class VisualSchemaCompatibility {
         return List.of();
     }
 
+    private static List<Object> finiteSchemaValues(Map<String, Object> schema) {
+        return schema == null ? List.of() : enumValues(schema);
+    }
+
     private static String appendCompatibilityPath(String path, String segment) {
         if (path == null || path.isBlank()) {
             return segment;
@@ -1086,6 +1111,9 @@ public final class VisualSchemaCompatibility {
         if (!values.isEmpty() && !values.contains(value)) {
             return false;
         }
+        if (valueMatchesNotConstraint(value, schema)) {
+            return false;
+        }
 		        return numericValueMatchesBounds(value, schema)
 		                && numericValueMatchesMultipleOf(value, schema)
 		                && stringValueMatchesLengthBounds(value, schema)
@@ -1095,6 +1123,11 @@ public final class VisualSchemaCompatibility {
 		                && objectValueMatchesSchema(value, schema)
                         && valueMatchesUnions(value, schema);
 		    }
+
+    private static boolean valueMatchesNotConstraint(Object value, Map<String, Object> schema) {
+        return finiteSchemaValues(objectProperty(schema.get("not"))).stream()
+                .anyMatch(excluded -> Objects.equals(excluded, value));
+    }
 
     private static boolean valueMatchesUnions(Object value, Map<String, Object> schema) {
         List<Map<String, Object>> oneOfBranches = unionBranches(schema, "oneOf");

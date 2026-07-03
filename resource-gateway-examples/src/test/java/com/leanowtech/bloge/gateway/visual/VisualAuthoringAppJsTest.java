@@ -1165,6 +1165,8 @@ class VisualAuthoringAppJsTest {
                   'schemaUnionLabel',
                   'schemaType',
                   'schemaEnumValues',
+                  'finiteSchemaValues',
+                  'schemaValueMatchesNot',
                   'schemaAllowsNull',
                   'unionBranchSelectionValue',
                   'unionBranchSelectionFromValue',
@@ -1199,6 +1201,8 @@ class VisualAuthoringAppJsTest {
                   'schemaPatternProperties',
                   'patternMatches',
                   'validateSchemaStructure',
+                  'validateSchemaNot',
+                  'validateSchemaEnumValues',
                   'validateSchemaAdditionalProperties',
                   'validateSchemaUnevaluatedProperties',
                   'validateSchemaObjectPatternProperties',
@@ -5602,7 +5606,7 @@ operators:
                 ]);
                 context.SUPPORTED_SCHEMA_UNION_KEYWORDS = ['oneOf', 'anyOf'];
                 context.UNSUPPORTED_SCHEMA_REFERENCE_KEYWORDS = ['$ref', '$dynamicRef'];
-                context.UNSUPPORTED_SCHEMA_COMPOSITION_KEYWORDS = ['allOf', 'not', 'if', 'then', 'else'];
+                context.UNSUPPORTED_SCHEMA_COMPOSITION_KEYWORDS = ['allOf', 'if', 'then', 'else'];
                 context.UNSUPPORTED_SCHEMA_CONSTRAINT_KEYWORDS = ['unevaluatedItems'];
                 context.LOCAL_SCHEMA_DEFS_REF_PREFIX = '#/$defs/';
                 context.SCHEMA_REF_ANNOTATION_KEYS = new Set([
@@ -5651,6 +5655,8 @@ operators:
                   'validateUnsupportedSchemaKeywords',
                   'schemaReferenceDiagnostic',
                   'validateSupportedSchemaUnions',
+                  'validateSchemaNot',
+                  'validateSchemaEnumValues',
                   'graphInputSchemaDiagnostic',
                   'schemaType',
                   'schemaUnionLabel',
@@ -5673,7 +5679,9 @@ operators:
                   'sourceUnionCompatibilityIssue',
                   'targetUnionCompatibilityIssue',
                   'unionBaseCompatibilityIssue',
+                  'targetNotCompatibilityIssue',
                   'schemaValueMatchesSchema',
+                  'schemaValueMatchesNot',
                   'schemaValueMatchesUnions',
                   'schemaValueMatchesType',
                   'rawSchemaType',
@@ -5682,6 +5690,7 @@ operators:
                   'schemaAllowsNull',
                   'schemaTypeForValue',
                   'schemaEnumValues',
+                  'finiteSchemaValues',
                   'uniqueSchemaValues',
                   'schemaValuesEqual',
                   'schemaValueKey',
@@ -5794,6 +5803,16 @@ operators:
                 context.validateSchemaStructure({
                   allOf: [{ type: 'string' }]
                 }, 'schema', unsupportedCompositionDiagnostics);
+                const finiteNotDiagnostics = [];
+                context.validateSchemaStructure({
+                  type: 'string',
+                  not: { const: 'ARCHIVED' }
+                }, 'schema', finiteNotDiagnostics);
+                const nonFiniteNotDiagnostics = [];
+                context.validateSchemaStructure({
+                  type: 'string',
+                  not: { type: 'string' }
+                }, 'schema', nonFiniteNotDiagnostics);
                 const safeAllOfSchema = context.resolveLocalSchemaRefs({
                   type: 'object',
                   properties: {
@@ -5916,6 +5935,8 @@ operators:
                   ['invalid union code', invalidUnionDiagnostics.map((diagnostic) => diagnostic.code).join('|'), 'visual.schema.unionInvalid'],
                   ['ambiguous union code', ambiguousUnionDiagnostics.some((diagnostic) => diagnostic.code === 'visual.schema.unionAmbiguous'), true],
                   ['allOf remains unsupported', unsupportedCompositionDiagnostics.map((diagnostic) => diagnostic.code).join('|'), 'visual.schema.compositionUnsupported'],
+                  ['finite not diagnostics', finiteNotDiagnostics.length, 0],
+                  ['non-finite not code', nonFiniteNotDiagnostics.map((diagnostic) => diagnostic.code).join('|'), 'visual.schema.notUnsupported'],
                   ['safe scalar allOf diagnostics', safeAllOfDiagnostics.length, 0],
                   ['safe scalar allOf string type', safeAllOfSchema.properties.code.type, 'string'],
                   ['safe scalar allOf string pattern', safeAllOfSchema.properties.code.pattern, '^[A-Z]+$'],
@@ -5929,6 +5950,8 @@ operators:
                   ['oneOf ambiguous numeric value', context.schemaValueMatchesSchema(3, { oneOf: [{ type: 'integer' }, { type: 'number' }] }), false],
                   ['anyOf matching value', context.schemaValueMatchesSchema(3, { anyOf: [{ type: 'integer' }, { type: 'string' }] }), true],
                   ['anyOf missing value', context.schemaValueMatchesSchema(false, { anyOf: [{ type: 'integer' }, { type: 'string' }] }), false],
+                  ['not excluded value', context.schemaValueMatchesSchema('ARCHIVED', { type: 'string', not: { const: 'ARCHIVED' } }), false],
+                  ['not accepted value', context.schemaValueMatchesSchema('ACTIVE', { type: 'string', not: { const: 'ARCHIVED' } }), true],
                   ['nested union summary', nestedUnionSummary, 'decision oneOf<integer|string>, events[] anyOf<boolean|null>'],
                   ['union contract row html', String(unionContractHtml.includes('decision oneOf&lt;integer|string&gt;, events[] anyOf&lt;boolean|null&gt;')), 'true'],
                   ['union contract row annotation', String(unionContractHtml.includes('Decision value')), 'true'],
@@ -6001,6 +6024,7 @@ operators:
                   'sourceUnionCompatibilityIssue',
                   'targetUnionCompatibilityIssue',
                   'unionBaseCompatibilityIssue',
+                  'targetNotCompatibilityIssue',
                   'objectSchemaCompatibilityIssue',
                   'objectOptionalTargetPropertiesCompatibilityIssue',
                   'objectPatternPropertiesCompatibilityIssue',
@@ -6027,11 +6051,13 @@ operators:
                   'reasonAt',
                   'valueDomainLabel',
                   'schemaEnumValues',
+                  'finiteSchemaValues',
                   'uniqueSchemaValues',
                   'schemaValuesEqual',
                   'schemaValueKey',
                   'canonicalSchemaValueKey',
                   'schemaValueMatchesSchema',
+                  'schemaValueMatchesNot',
                   'schemaValueMatchesUnions',
                   'schemaValueMatchesType',
                   'rawSchemaType',
@@ -6091,13 +6117,36 @@ operators:
                   propertyNames: { pattern: '^meta\\\\.' },
                   additionalProperties: { type: 'string' }
                 }, target);
+                const targetNotIssue = context.schemaCompatibilityIssue({
+                  type: 'string'
+                }, {
+                  type: 'string',
+                  not: { const: 'ARCHIVED' }
+                });
+                const finiteNotSafeIssue = context.schemaCompatibilityIssue({
+                  type: 'string',
+                  enum: ['ACTIVE']
+                }, {
+                  type: 'string',
+                  not: { const: 'ARCHIVED' }
+                });
+                const finiteNotExcludedIssue = context.schemaCompatibilityIssue({
+                  type: 'string',
+                  enum: ['ARCHIVED']
+                }, {
+                  type: 'string',
+                  not: { const: 'ARCHIVED' }
+                });
 
                 const checks = [
                   ['residual optional collision path', String(residualIssue.includes("at 'score'")), 'true'],
                   ['residual optional collision type', String(residualIssue.includes('source type string cannot feed target type integer')), 'true'],
                   ['pattern optional collision path', String(patternIssue.includes("at 'score'")), 'true'],
                   ['pattern optional collision type', String(patternIssue.includes('source type string cannot feed target type integer')), 'true'],
-                  ['propertyNames excluded optional collision', excludedByPropertyNamesIssue, '']
+                  ['propertyNames excluded optional collision', excludedByPropertyNamesIssue, ''],
+                  ['target finite not possible issue', targetNotIssue, 'target excludes value(s) [ARCHIVED] but source schema could produce them'],
+                  ['target finite not safe enum', finiteNotSafeIssue, ''],
+                  ['target finite not excluded enum', finiteNotExcludedIssue, 'source enum value(s) [ARCHIVED] do not match target schema string']
                 ];
 
                 for (const [label, actual, expected] of checks) {

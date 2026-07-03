@@ -749,7 +749,7 @@ class ResourceDesignContractValidatorTest {
                 ), List.of()),
                 SchemaEnvelope.object(Map.of(
                         "customerCode", Map.of("type", "string", "pattern", "^[A-Z]+$"),
-                        "decision", Map.of("not", Map.of("type", "string"))
+                        "decision", Map.of("if", Map.of("type", "string"))
                 ), List.of()),
                 Map.of(),
                 "ACTIVE"
@@ -768,7 +768,7 @@ class ResourceDesignContractValidatorTest {
                 .extracting("target")
                 .contains(
                         "/requestSchema/schema/properties/userId/$ref",
-                        "/responseSchema/schema/properties/decision/not"
+                        "/responseSchema/schema/properties/decision/if"
                 );
     }
 

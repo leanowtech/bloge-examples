@@ -291,7 +291,7 @@ const SUPPORTED_SCHEMA_KINDS = new Set([
 ]);
 const UNSUPPORTED_SCHEMA_REFERENCE_KEYWORDS = ['$ref', '$dynamicRef'];
 const SUPPORTED_SCHEMA_UNION_KEYWORDS = ['oneOf', 'anyOf'];
-const UNSUPPORTED_SCHEMA_COMPOSITION_KEYWORDS = ['allOf', 'not', 'if', 'then', 'else'];
+const UNSUPPORTED_SCHEMA_COMPOSITION_KEYWORDS = ['allOf', 'if', 'then', 'else'];
 const UNSUPPORTED_SCHEMA_CONSTRAINT_KEYWORDS = [
   'unevaluatedItems'
 ];
@@ -18469,6 +18469,7 @@ function validateSchemaStructure(schema, path, diagnostics) {
   }
   validateSchemaEnum(schema, kind, path, diagnostics);
   validateSchemaConst(schema, kind, path, diagnostics);
+  validateSchemaNot(schema, path, diagnostics);
   validateSchemaNumericBounds(schema, kind, path, diagnostics);
   validateSchemaNumericMultipleOf(schema, kind, path, diagnostics);
   validateSchemaStringLengthBounds(schema, kind, path, diagnostics);
@@ -19007,6 +19008,59 @@ function validateSchemaConst(schema, kind, path, diagnostics) {
       'Const value must satisfy object schema constraints.',
       `${path}/const`
     ));
+  }
+  if (schemaValueMatchesNot(constValue, schema)) {
+    diagnostics.push(graphInputSchemaDiagnostic(
+      'visual.schema.constConstraintMismatch',
+      'Const value must not match schema not exclusion.',
+      `${path}/const`
+    ));
+  }
+}
+
+function validateSchemaNot(schema, path, diagnostics) {
+  if (!Object.prototype.hasOwnProperty.call(schema || {}, 'not')) {
+    return;
+  }
+  const notSchema = schema.not;
+  if (!notSchema || typeof notSchema !== 'object' || Array.isArray(notSchema)) {
+    diagnostics.push(graphInputSchemaDiagnostic(
+      'visual.schema.notInvalid',
+      'Schema not constraint must be a schema object.',
+      `${path}/not`
+    ));
+    return;
+  }
+  const excludedValues = finiteSchemaValues(notSchema);
+  if (!excludedValues.length) {
+    diagnostics.push(graphInputSchemaDiagnostic(
+      'visual.schema.notUnsupported',
+      'Schema not is supported only for finite const/enum exclusion domains.',
+      `${path}/not`
+    ));
+    return;
+  }
+  if (Object.prototype.hasOwnProperty.call(notSchema, 'enum')) {
+    if (!Array.isArray(notSchema.enum) || !notSchema.enum.length) {
+      diagnostics.push(graphInputSchemaDiagnostic(
+        'visual.schema.enumInvalid',
+        'Schema enum must be a non-empty array.',
+        `${path}/not/enum`
+      ));
+    } else {
+      validateSchemaEnumValues(notSchema.enum, `${path}/not/enum`, diagnostics);
+    }
+  }
+  if (rawSchemaType(notSchema) === 'enum') {
+    if (!Array.isArray(notSchema.values) || !notSchema.values.length) {
+      diagnostics.push(graphInputSchemaDiagnostic(
+        'visual.schema.enumValuesMissing',
+        'Enum schema must declare non-empty values.',
+        `${path}/not/values`
+      ));
+    } else {
+      validateSchemaEnumValues(notSchema.values, `${path}/not/values`, diagnostics);
+    }
   }
 }
 
@@ -20025,6 +20079,10 @@ function schemaCompatibilityIssue(sourceSchema, targetSchema, path = '') {
       ? reasonAt(path, `source enum value(s) ${valueDomainLabel(incompatible)} do not match target schema ${schemaType(targetSchema)}`)
       : '';
   }
+  const targetNotIssue = targetNotCompatibilityIssue(sourceSchema, targetSchema, path);
+  if (targetNotIssue) {
+    return targetNotIssue;
+  }
   if (numericType(sourceType) && numericType(targetType)) {
     return numericBoundsCompatibilityIssue(sourceSchema, targetSchema, path)
       || numericMultipleOfCompatibilityIssue(sourceSchema, targetSchema, path);
@@ -20105,6 +20163,17 @@ function unionBaseCompatibilityIssue(sourceSchema, targetSchema, path = '') {
   }
   const baseIssue = schemaCompatibilityIssue(sourceSchema, base, path);
   return baseIssue ? reasonAt(path, `target union base constraints are not compatible: ${baseIssue}`) : '';
+}
+
+function targetNotCompatibilityIssue(sourceSchema, targetSchema, path = '') {
+  const excludedValues = finiteSchemaValues(targetSchema?.not);
+  if (!excludedValues.length) {
+    return '';
+  }
+  const possiblyProduced = excludedValues.filter((value) => schemaValueMatchesSchema(value, sourceSchema));
+  return possiblyProduced.length
+    ? reasonAt(path, `target excludes value(s) ${valueDomainLabel(possiblyProduced)} but source schema could produce them`)
+    : '';
 }
 
 function numericBoundsCompatibilityIssue(sourceSchema, targetSchema, path = '') {
@@ -20634,6 +20703,10 @@ function schemaEnumValues(schema) {
   return [];
 }
 
+function finiteSchemaValues(schema) {
+  return schema ? schemaEnumValues(schema) : [];
+}
+
 function uniqueSchemaValues(values) {
   const seen = new Set();
   const unique = [];
@@ -20681,6 +20754,9 @@ function schemaValueMatchesSchema(value, schema) {
   if (values.length && !values.some((allowed) => schemaValuesEqual(allowed, value))) {
     return false;
   }
+  if (schemaValueMatchesNot(value, schema)) {
+    return false;
+  }
   return numericValueMatchesBounds(value, schema)
     && numericValueMatchesMultipleOf(value, schema)
     && stringValueMatchesLengthBounds(value, schema)
@@ -20689,6 +20765,11 @@ function schemaValueMatchesSchema(value, schema) {
     && arrayValueMatchesSchema(value, schema)
     && objectValueMatchesSchema(value, schema)
     && schemaValueMatchesUnions(value, schema);
+}
+
+function schemaValueMatchesNot(value, schema) {
+  return finiteSchemaValues(schema?.not)
+    .some((excluded) => schemaValuesEqual(excluded, value));
 }
 
 function schemaValueMatchesUnions(value, schema) {

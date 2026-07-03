@@ -3180,7 +3180,7 @@ class OperatorLibraryValidatorTest {
                 new OperatorDefinition.Ports(
                         List.of(new OperatorDefinition.Port("input",
                                 SchemaEnvelope.object(Map.of(
-                                        "choice", Map.of("not", Map.of("type", "string"))
+                                        "choice", Map.of("if", Map.of("type", "string"))
                                 ), List.of()),
                                 true,
                                 "Input.")),
@@ -3211,10 +3211,46 @@ class OperatorLibraryValidatorTest {
         assertThat(result.diagnostics())
                 .extracting("target")
 		                .contains(
-		                        "/operators/0/ports/inputs/0/schema/schema/properties/choice/not",
+		                        "/operators/0/ports/inputs/0/schema/schema/properties/choice/if",
 		                        "/operators/0/ports/outputs/0/schema/schema/properties/customer/$ref"
 		                );
 		    }
+
+    @Test
+    void acceptsFiniteNotExclusionsAcrossOperatorSchemas() {
+        OperatorDefinition operator = new OperatorDefinition(
+                "bloge.visualOperator.v1",
+                "risk:finiteNotSchema",
+                "1.0.0",
+                new OperatorDefinition.Display("Finite not schema", "Test operator.", List.of("test")),
+                new OperatorDefinition.Source("user-library", "", "", "", true),
+                new OperatorDefinition.Ports(
+                        List.of(new OperatorDefinition.Port("input",
+                                SchemaEnvelope.object(Map.of(
+                                        "choice", Map.of(
+                                                "type", "string",
+                                                "enum", List.of("APPROVE", "REJECT", "ARCHIVED"),
+                                                "not", Map.of("const", "ARCHIVED"))
+                                ), List.of("choice")),
+                                true,
+                                "Input.")),
+                        List.of(new OperatorDefinition.Port("output",
+                                SchemaEnvelope.object(Map.of(
+                                        "accepted", Map.of("type", "boolean")
+                                ), List.of("accepted")),
+                                true,
+                                "Output."))
+                ),
+                SchemaEnvelope.opaque(),
+                OperatorDefinition.Capabilities.pure(),
+                new OperatorDefinition.Lowering("design", "", Map.of()),
+                List.of()
+        );
+
+        VisualValidationResult result = validator.validate(libraryWith(operator));
+
+        assertThat(result.valid()).isTrue();
+    }
 
     @Test
     void acceptsJsonSchemaUnionsAcrossOperatorSchemas() {

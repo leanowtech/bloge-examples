@@ -48,7 +48,6 @@ public final class VisualSchemaValidator {
     );
     private static final Set<String> UNSUPPORTED_COMPOSITION_KEYWORDS = Set.of(
             "allOf",
-            "not",
             "if",
             "then",
             "else"
@@ -169,6 +168,13 @@ public final class VisualSchemaValidator {
         if (rawEnum instanceof List<?> values && !values.contains(value)) {
             diagnostics.add(VisualDiagnostic.error("visual.context.enumMismatch",
                     "Runtime value at '%s' must be one of %s.".formatted(path, values),
+                    path));
+            return;
+        }
+        if (valueMatchesNotConstraint(value, schema)) {
+            diagnostics.add(VisualDiagnostic.error("visual.context.notMismatch",
+                    "Runtime value at '%s' must not match excluded schema value(s) %s."
+                            .formatted(path, finiteSchemaValues(objectProperty(schema.get("not")))),
                     path));
             return;
         }
@@ -369,6 +375,7 @@ public final class VisualSchemaValidator {
         }
 	        validateStandardEnum(schema, kind, path, diagnostics);
 	        validateConstValue(schema, kind, path, diagnostics);
+	        validateNotConstraint(schema, path, diagnostics);
 	        validateNumericBounds(schema, kind, path, diagnostics);
 	        validateNumericMultipleOf(schema, kind, path, diagnostics);
 	        validateStringLengthBounds(schema, kind, path, diagnostics);
@@ -627,6 +634,11 @@ public final class VisualSchemaValidator {
                                              Object value) {
         if (kind.isBlank() || "any".equals(kind) || "opaque".equals(kind)) {
             return;
+        }
+        if (valueMatchesNotConstraint(value, schema)) {
+            diagnostics.add(VisualDiagnostic.error("visual.schema.defaultNotMismatch",
+                    "Schema default must not match schema not exclusion.",
+                    path));
         }
         if (schema.containsKey("const") && !Objects.equals(schema.get("const"), value)) {
             diagnostics.add(VisualDiagnostic.error("visual.schema.defaultConstMismatch",
@@ -1232,7 +1244,54 @@ public final class VisualSchemaValidator {
 	                    "Const value must satisfy object schema constraints.",
 	                    path + "/const"));
 	        }
+        if (valueMatchesNotConstraint(constValue, schema)) {
+            diagnostics.add(VisualDiagnostic.error("visual.schema.constConstraintMismatch",
+                    "Const value must not match schema not exclusion.",
+                    path + "/const"));
+        }
 	    }
+
+    private static void validateNotConstraint(Map<String, Object> schema,
+                                              String path,
+                                              List<VisualDiagnostic> diagnostics) {
+        if (!schema.containsKey("not")) {
+            return;
+        }
+        Map<String, Object> notSchema = objectProperty(schema.get("not"));
+        if (notSchema == null) {
+            diagnostics.add(VisualDiagnostic.error("visual.schema.notInvalid",
+                    "Schema not constraint must be a schema object.",
+                    path + "/not"));
+            return;
+        }
+        List<Object> excludedValues = finiteSchemaValues(notSchema);
+        if (excludedValues.isEmpty()) {
+            diagnostics.add(VisualDiagnostic.error("visual.schema.notUnsupported",
+                    "Schema not is supported only for finite const/enum exclusion domains.",
+                    path + "/not"));
+            return;
+        }
+        if (notSchema.containsKey("enum")) {
+            Object rawEnum = notSchema.get("enum");
+            if (!(rawEnum instanceof List<?> values) || values.isEmpty()) {
+                diagnostics.add(VisualDiagnostic.error("visual.schema.enumInvalid",
+                        "Schema enum must be a non-empty array.",
+                        path + "/not/enum"));
+            } else {
+                validateEnumValues(values, path + "/not/enum", diagnostics);
+            }
+        }
+        if ("enum".equals(schemaKind(notSchema))) {
+            Object rawValues = notSchema.get("values");
+            if (!(rawValues instanceof List<?> values) || values.isEmpty()) {
+                diagnostics.add(VisualDiagnostic.error("visual.schema.enumValuesMissing",
+                        "Enum schema must declare non-empty values.",
+                        path + "/not/values"));
+            } else {
+                validateEnumValues(values, path + "/not/values", diagnostics);
+            }
+        }
+    }
 
 	    private static void validateNumericBounds(Map<String, Object> schema,
 	                                              String kind,
@@ -2108,6 +2167,9 @@ public final class VisualSchemaValidator {
 	                return false;
 	            }
 	        }
+        if (valueMatchesNotConstraint(value, schema)) {
+            return false;
+        }
 	        return numericValueMatchesBounds(value, schema)
 	                && numericValueMatchesMultipleOf(value, schema)
 	                && stringValueMatchesLengthBounds(value, schema)
@@ -2117,6 +2179,28 @@ public final class VisualSchemaValidator {
 	                && objectValueMatchesSchema(value, schema)
                     && unionMismatch(value, schema).isEmpty();
 	    }
+
+    private static boolean valueMatchesNotConstraint(Object value, Map<String, Object> schema) {
+        return finiteSchemaValues(objectProperty(schema.get("not"))).stream()
+                .anyMatch(excluded -> Objects.equals(excluded, value));
+    }
+
+    private static List<Object> finiteSchemaValues(Map<String, Object> schema) {
+        if (schema == null) {
+            return List.of();
+        }
+        if (schema.containsKey("const")) {
+            return List.of(schema.get("const"));
+        }
+        Object rawEnum = schema.get("enum");
+        if (rawEnum instanceof List<?> values) {
+            return values.stream().map(Object.class::cast).distinct().toList();
+        }
+        if ("enum".equals(schemaKind(schema)) && schema.get("values") instanceof List<?> values) {
+            return values.stream().map(Object.class::cast).distinct().toList();
+        }
+        return List.of();
+    }
 
     private static Optional<String> unionMismatch(Object value, Map<String, Object> schema) {
         if (schema.containsKey("oneOf")) {

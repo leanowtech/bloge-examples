@@ -820,7 +820,7 @@ class VisualConnectionCheckServiceTest {
         assertThat(result.diagnostics())
                 .anySatisfy(diagnostic -> {
                     assertThat(diagnostic.code()).isEqualTo("visual.schema.compositionUnsupported");
-                    assertThat(diagnostic.target()).isEqualTo("/inputSchema/schema/not");
+                    assertThat(diagnostic.target()).isEqualTo("/inputSchema/schema/if");
                 });
     }
 
@@ -1731,7 +1731,7 @@ class VisualConnectionCheckServiceTest {
         return new SchemaEnvelope(SchemaEnvelope.JSON_SCHEMA, "2020-12", Map.of(
                 "type", "object",
                 "properties", Map.of("score", Map.of("type", "integer")),
-                "not", Map.of("required", List.of("score"))
+                "if", Map.of("required", List.of("score"))
         ));
     }
 
