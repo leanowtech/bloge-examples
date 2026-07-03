@@ -10931,6 +10931,14 @@ async function runSelectedPublication() {
     setPublicationMessage('Select a publication first.', 'error');
     return;
   }
+  const readinessBeforeRun = publicationReadiness(publication) || state.visualCheck?.readiness || null;
+  const actionReadinessBeforeRun = publication?.validation?.actionReadiness || state.visualCheck?.actionReadiness || null;
+  if (!selectedPublicationExecutable()) {
+    setPublicationMessage(`Publication ${publication.publicationId} is a DESIGN artifact and cannot be run.`, 'warning');
+    setVisualCheck('Design publication cannot be run.', 'warning', [], readinessBeforeRun,
+      actionReadinessBeforeRun);
+    return;
+  }
   let context;
   try {
     context = JSON.parse(state.customContextText || '{}');
@@ -10945,8 +10953,6 @@ async function runSelectedPublication() {
     return;
   }
 
-  const readinessBeforeRun = publicationReadiness(publication) || state.visualCheck?.readiness || null;
-  const actionReadinessBeforeRun = publication?.validation?.actionReadiness || state.visualCheck?.actionReadiness || null;
   setPublicationMessage(`Running ${publication.publicationId}...`, 'info');
   setVisualCheck(`Running published ${publication.publicationId}...`, 'info', [], readinessBeforeRun,
     actionReadinessBeforeRun);

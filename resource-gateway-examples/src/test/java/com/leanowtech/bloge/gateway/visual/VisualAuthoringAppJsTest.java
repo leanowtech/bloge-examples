@@ -88,6 +88,29 @@ class VisualAuthoringAppJsTest {
     }
 
     @Test
+    void browserRunActionBlocksDesignPublicationsBeforeFetch() throws Exception {
+        assumeNodeAvailable();
+
+        Path tempDir = Files.createTempDirectory("bloge-publication-run-app-js-test");
+        Path appJs = tempDir.resolve("app.js");
+        Path probe = tempDir.resolve("probe.js");
+        try {
+            Files.writeString(appJs, appJsSource(), StandardCharsets.UTF_8);
+            Files.writeString(probe, designPublicationRunGuardProbe(), StandardCharsets.UTF_8);
+
+            ProcessResult result = runProcess(List.of("node", probe.toString(), appJs.toString()), tempDir, 10);
+
+            assertThat(result.finished()).as(result.output()).isTrue();
+            assertThat(result.exitCode()).as(result.output()).isZero();
+            assertThat(result.output()).contains("browser design publication run guard probe passed");
+        } finally {
+            Files.deleteIfExists(probe);
+            Files.deleteIfExists(appJs);
+            Files.deleteIfExists(tempDir);
+        }
+    }
+
+    @Test
     void keepsServerPreflightAuthoritativeForLocallyRejectedConnections() throws Exception {
         String source = appJsSource();
 
@@ -883,6 +906,141 @@ class VisualAuthoringAppJsTest {
         String output = new String(process.getInputStream().readAllBytes(), StandardCharsets.UTF_8);
         int exitCode = finished ? process.exitValue() : -1;
         return new ProcessResult(finished, exitCode, output);
+    }
+
+    private static String designPublicationRunGuardProbe() {
+        return String.join("", """
+                const fs = require('fs');
+                const vm = require('vm');
+                const source = fs.readFileSync(process.argv[2], 'utf8');
+
+                function functionSource(name) {
+                  const asyncNeedle = `async function ${name}(`;
+                  const functionNeedle = `function ${name}(`;
+                  let start = source.indexOf(asyncNeedle);
+                  if (start < 0) start = source.indexOf(functionNeedle);
+                  if (start < 0) throw new Error(`missing function ${name}`);
+                  const openParen = source.indexOf('(', start);
+                  let parenDepth = 0;
+                  let brace = -1;
+                  for (let i = openParen; i < source.length; i += 1) {
+                    const ch = source[i];
+                    if (ch === '(') parenDepth += 1;
+                    if (ch === ')') {
+                      parenDepth -= 1;
+                      if (parenDepth === 0) {
+                        brace = source.indexOf('{', i + 1);
+                        break;
+                      }
+                    }
+                  }
+                  if (brace < 0) throw new Error(`missing body for function ${name}`);
+                  let depth = 0;
+                  for (let i = brace; i < source.length; i += 1) {
+                    const ch = source[i];
+                    if (ch === '{') depth += 1;
+                    if (ch === '}') {
+                      depth -= 1;
+                      if (depth === 0) return source.slice(start, i + 1);
+                    }
+                  }
+                  throw new Error(`unterminated function ${name}`);
+                }
+
+                let fetchCalls = 0;
+                const context = vm.createContext({
+                  console,
+                  fetch: async () => {
+                    fetchCalls += 1;
+                    throw new Error('fetch should not be called for design publication run guard');
+                  }
+                });
+                for (const name of [
+                  'normalizeReadinessState',
+                  'normalizeRuntimeBindingRequirement',
+                  'normalizeVisualGraphNodeReadiness',
+                  'normalizeVisualGraphReadiness',
+                  'normalizeStringArray',
+                  'normalizeVisualGraphActionReadiness',
+                  'normalizeDiagnostics',
+                  'normalizePublishArtifactKind',
+                  'publicationReadiness',
+                  'selectedPublication',
+                  'selectedPublicationExecutable',
+                  'setPublicationMessage',
+                  'setVisualCheck',
+                  'runSelectedPublication'
+                ]) {
+                  vm.runInContext(functionSource(name), context);
+                }
+                context.renderPublicationStatus = () => {
+                  context.renderPublicationStatusCalls = (context.renderPublicationStatusCalls || 0) + 1;
+                };
+                context.renderPublicationReadinessReview = () => {
+                  context.renderPublicationReadinessReviewCalls = (context.renderPublicationReadinessReviewCalls || 0) + 1;
+                };
+                context.renderVisualCheck = () => {
+                  context.renderVisualCheckCalls = (context.renderVisualCheckCalls || 0) + 1;
+                };
+                context.renderCanvasNavigator = () => {
+                  context.renderCanvasNavigatorCalls = (context.renderCanvasNavigatorCalls || 0) + 1;
+                };
+                context.state = {
+                  selectedPublicationId: 'pub-design',
+                  publications: [{
+                    publicationId: 'pub-design',
+                    artifactKind: 'DESIGN',
+                    validation: {
+                      readiness: {
+                        schemaVersion: 'bloge.visualGraphReadiness.v1',
+                        state: 'DESIGN_ONLY',
+                        level: 'INFO',
+                        executable: false,
+                        artifactKinds: ['DESIGN'],
+                        title: 'Design-only graph'
+                      },
+                      actionReadiness: {
+                        schemaVersion: 'bloge.visualGraphActionReadiness.v1',
+                        state: 'DESIGN_ARTIFACT_READY',
+                        level: 'INFO',
+                        publishDesignNow: true,
+                        publishExecutableNow: false,
+                        artifactKinds: ['DESIGN']
+                      }
+                    }
+                  }],
+                  publicationDetailsById: {},
+                  customContextText: '{ invalid json',
+                  visualCheck: { message: '', level: 'info', diagnostics: [], readiness: null, actionReadiness: null }
+                };
+                context.elements = { output: { textContent: 'unchanged-output' } };
+                context.$ = (id) => context.elements[id] || null;
+                context.runSelectedPublication().then(() => {
+                  const checks = [
+                    ['fetch calls', fetchCalls, 0],
+                    ['publication message text', context.state.publicationMessage.text, 'Publication pub-design is a DESIGN artifact and cannot be run.'],
+                    ['publication message level', context.state.publicationMessage.level, 'warning'],
+                    ['visual message', context.state.visualCheck.message, 'Design publication cannot be run.'],
+                    ['visual level', context.state.visualCheck.level, 'warning'],
+                    ['visual readiness state', context.state.visualCheck.readiness.state, 'design-only'],
+                    ['visual action readiness state', context.state.visualCheck.actionReadiness.state, 'design-artifact-ready'],
+                    ['output unchanged', context.elements.output.textContent, 'unchanged-output'],
+                    ['publication status rendered', context.renderPublicationStatusCalls, 1],
+                    ['publication readiness review rendered', context.renderPublicationReadinessReviewCalls, 1],
+                    ['visual check rendered', context.renderVisualCheckCalls, 1],
+                    ['canvas navigator rendered', context.renderCanvasNavigatorCalls, 1]
+                  ];
+                  for (const [label, actual, expected] of checks) {
+                    if (actual !== expected) {
+                      throw new Error(`${label}: expected ${expected}, got ${actual}`);
+                    }
+                  }
+                  console.log('browser design publication run guard probe passed');
+                }).catch((error) => {
+                  console.error(error);
+                  process.exitCode = 1;
+                });
+                """);
     }
 
     private static String runtimeBindingHandoffReviewProbe() {
