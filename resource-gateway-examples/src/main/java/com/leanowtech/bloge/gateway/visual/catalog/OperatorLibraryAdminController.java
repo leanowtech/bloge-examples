@@ -331,8 +331,23 @@ public class OperatorLibraryAdminController {
                             targetDiff));
         }
 
-        OperatorLibrary stored = registry.upsert(library, revisionMetadata(actor, changeSource, changeSummary,
-                reason));
+        OperatorLibrary stored;
+        try {
+            stored = registry.upsert(library, revisionMetadata(actor, changeSource, changeSummary, reason));
+        } catch (IllegalArgumentException ex) {
+            throw ex;
+        } catch (RuntimeException ex) {
+            OperatorLibraryValidationResult failure = persistenceFailureResult(library,
+                    "visual.library.importBundlePersistenceFailed",
+                    "Operator library bundle import for '%s' could not be stored."
+                            .formatted(library.libraryId()),
+                    "/library",
+                    mutationAction,
+                    ex);
+            return ResponseEntity.status(HttpStatus.CONFLICT)
+                    .body(OperatorLibraryImportResult.rejected(bundle, library, mutationAction, failure,
+                            targetDiff));
+        }
         OperatorLibraryRevision latestRevision = registry.revisions(stored.libraryId()).stream()
                 .findFirst()
                 .orElse(null);
@@ -482,7 +497,20 @@ public class OperatorLibraryAdminController {
         if (impact != null) {
             return impact;
         }
-        return ResponseEntity.ok(registry.restore(sourceRevision.get(), revisionMetadata));
+        try {
+            return ResponseEntity.ok(registry.restore(sourceRevision.get(), revisionMetadata));
+        } catch (IllegalArgumentException ex) {
+            throw ex;
+        } catch (RuntimeException ex) {
+            return ResponseEntity.status(HttpStatus.CONFLICT)
+                    .body(persistenceFailureResult(library,
+                            "visual.library.restorePersistenceFailed",
+                            "Operator library '%s' could not be restored from revision %d."
+                                    .formatted(library.libraryId(), revision),
+                            "/library",
+                            OperatorLibraryRevision.ACTION_RESTORE,
+                            ex));
+        }
     }
 
     /**
@@ -538,7 +566,23 @@ public class OperatorLibraryAdminController {
         if (impact != null) {
             return impact;
         }
-        return ResponseEntity.status(successStatus).body(registry.upsert(library, revisionMetadata));
+        String mutationAction = registry.find(library.libraryId()).isPresent()
+                ? OperatorLibraryRevision.ACTION_REPLACE
+                : OperatorLibraryRevision.ACTION_CREATE;
+        try {
+            return ResponseEntity.status(successStatus).body(registry.upsert(library, revisionMetadata));
+        } catch (IllegalArgumentException ex) {
+            throw ex;
+        } catch (RuntimeException ex) {
+            return ResponseEntity.status(HttpStatus.CONFLICT)
+                    .body(persistenceFailureResult(library,
+                            "visual.library.importPersistenceFailed",
+                            "Operator library '%s' could not be stored."
+                                    .formatted(library.libraryId()),
+                            "/library",
+                            mutationAction,
+                            ex));
+        }
     }
 
     /**
@@ -578,7 +622,21 @@ public class OperatorLibraryAdminController {
         if (governanceEvidence != null) {
             return ResponseEntity.badRequest().body(governanceEvidence);
         }
-        registry.delete(libraryId, revisionMetadata(actor, changeSource, changeSummary, reason));
+        try {
+            registry.delete(libraryId, revisionMetadata(actor, changeSource, changeSummary, reason));
+        } catch (IllegalArgumentException ex) {
+            throw ex;
+        } catch (RuntimeException ex) {
+            return ResponseEntity.status(HttpStatus.CONFLICT)
+                    .body(persistenceFailureResult(library.orElse(null),
+                            "visual.library.deletePersistenceFailed",
+                            "Operator library '%s' could not be deleted."
+                                    .formatted(libraryId),
+                            "/libraryId",
+                            OperatorLibraryRevision.ACTION_DELETE,
+                            ex,
+                            libraryId));
+        }
         return ResponseEntity.noContent().build();
     }
 
@@ -1279,6 +1337,33 @@ public class OperatorLibraryAdminController {
         return new OperatorLibraryValidationResult(false, diagnostics,
                 OperatorLibraryImpactReview.fromDiagnostics(diagnostics, impactOperatorRefs(library, diagnostics)),
                 profile, library);
+    }
+
+    private OperatorLibraryValidationResult persistenceFailureResult(OperatorLibrary library,
+                                                                     String code,
+                                                                     String message,
+                                                                     String target,
+                                                                     String mutationAction,
+                                                                     RuntimeException ex) {
+        return persistenceFailureResult(library, code, message, target, mutationAction, ex,
+                library == null ? "" : library.libraryId());
+    }
+
+    private OperatorLibraryValidationResult persistenceFailureResult(OperatorLibrary library,
+                                                                     String code,
+                                                                     String message,
+                                                                     String target,
+                                                                     String mutationAction,
+                                                                     RuntimeException ex,
+                                                                     String libraryId) {
+        Map<String, Object> metadata = new LinkedHashMap<>();
+        metadata.put("libraryId", libraryId == null ? "" : libraryId);
+        metadata.put("mutationAction", mutationAction == null ? "" : mutationAction);
+        metadata.put("exception", ex == null ? "" : ex.getClass().getSimpleName());
+        if (ex != null && ex.getMessage() != null && !ex.getMessage().isBlank()) {
+            metadata.put("exceptionMessage", ex.getMessage());
+        }
+        return validationResult(library, List.of(VisualDiagnostic.error(code, message, target, metadata)));
     }
 
     private OperatorLibraryValidationResult governanceEvidenceResult(

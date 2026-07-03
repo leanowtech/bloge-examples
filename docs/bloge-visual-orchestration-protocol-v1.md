@@ -1226,6 +1226,16 @@ target `imported` decision、`mutationAction=CREATE|REPLACE|REJECTED`、目标
 成功写入后的世界会改变 replacement warning 的可见性，import result 记录的是当次被确认的
 目标环境 preflight 证据。
 
+如果 operator-library registry 在写入阶段失败，端点必须返回结构化 `409`
+而不是通用 500：普通 create/import-text/replace 路径返回
+`visual.library.importPersistenceFailed`，bundle import 返回
+`visual.library.importBundlePersistenceFailed`，revision restore 返回
+`visual.library.restorePersistenceFailed`，delete 返回
+`visual.library.deletePersistenceFailed`。diagnostic target 分别指向 `/library`
+或 `/libraryId`，metadata 至少携带 `libraryId`、`mutationAction` 和异常类别；可读错误信息
+只作为辅助字段。失败响应仍保留对应的 validation/import result 形状，调用方不得把这类失败
+解释成 schema/readiness/impact gate 拒绝。
+
 每个 revision snapshot 包含 `libraryId`、单库递增 `revision`、
 `action=CREATE|REPLACE|DELETE|RESTORE`、`storedAt`、`revisionMetadata`
 和当时的 `OperatorLibrary` 快照；`RESTORE` snapshot 还包含

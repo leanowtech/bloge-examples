@@ -957,6 +957,45 @@ class OperatorLibraryAdminControllerTest {
     }
 
     @Test
+    void importBundleReturnsStructuredPersistenceFailureWithoutStoring() throws Exception {
+        useFailingRegistry(FailingMutation.UPSERT);
+        OperatorLibrary library = VisualCatalogTestSupport.designOnlyEligibilityLibrary("integer");
+        OperatorLibraryExportBundle bundle = new OperatorLibraryExportBundle(
+                "",
+                "",
+                "",
+                "",
+                7,
+                null,
+                library,
+                null,
+                null
+        );
+
+        mockMvc.perform(post("/admin/visual-operator-libraries/import-bundle")
+                        .param("actor", "stage-sync")
+                        .param("changeSource", "catalog-bundle")
+                        .param("changeSummary", "Imported portable risk policy bundle.")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(bundle)))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.schemaVersion").value(OperatorLibraryImportResult.SCHEMA_VERSION))
+                .andExpect(jsonPath("$.imported").value(false))
+                .andExpect(jsonPath("$.sourceBundleFingerprint").value(bundle.bundleFingerprint()))
+                .andExpect(jsonPath("$.mutationAction").value(OperatorLibraryRevision.ACTION_CREATE))
+                .andExpect(jsonPath("$.validation.valid").value(false))
+                .andExpect(jsonPath("$.validation.diagnostics[0].code")
+                        .value("visual.library.importBundlePersistenceFailed"))
+                .andExpect(jsonPath("$.validation.diagnostics[0].target").value("/library"))
+                .andExpect(jsonPath("$.validation.diagnostics[0].metadata.libraryId")
+                        .value("risk-policy-design"))
+                .andExpect(jsonPath("$.validation.diagnostics[0].metadata.exception")
+                        .value("IllegalStateException"));
+
+        assertThat(registry.find("risk-policy-design")).isEmpty();
+    }
+
+    @Test
     void importBundleRequiresGovernanceEvidenceWhenWarningsAreAcknowledged() throws Exception {
         OperatorLibrary library = libraryWithCapabilities("bundle-risk",
                 new OperatorDefinition.Capabilities("WRITE_EXTERNAL", "NON_IDEMPOTENT", false, false, true));
@@ -1781,6 +1820,46 @@ class OperatorLibraryAdminControllerTest {
     }
 
     @Test
+    void createReturnsStructuredPersistenceFailureWithoutStoring() throws Exception {
+        useFailingRegistry(FailingMutation.UPSERT);
+        OperatorLibrary library = VisualCatalogTestSupport.eligibilityLibrary("integer");
+
+        mockMvc.perform(post("/admin/visual-operator-libraries")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(library)))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.valid").value(false))
+                .andExpect(jsonPath("$.diagnostics[0].code").value("visual.library.importPersistenceFailed"))
+                .andExpect(jsonPath("$.diagnostics[0].target").value("/library"))
+                .andExpect(jsonPath("$.diagnostics[0].metadata.libraryId").value("risk-policy"))
+                .andExpect(jsonPath("$.diagnostics[0].metadata.mutationAction")
+                        .value(OperatorLibraryRevision.ACTION_CREATE))
+                .andExpect(jsonPath("$.diagnostics[0].metadata.exception").value("IllegalStateException"));
+
+        assertThat(registry.find("risk-policy")).isEmpty();
+    }
+
+    @Test
+    void updateReturnsStructuredPersistenceFailureAndKeepsCurrentLibrary() throws Exception {
+        useFailingRegistry(FailingMutation.UPSERT);
+        OperatorLibrary original = VisualCatalogTestSupport.eligibilityLibrary("integer");
+        ((FailingOperatorLibraryRegistry) registry).seed(original);
+        OperatorLibrary replacement = libraryWithVersion(original, "1.1.0");
+
+        mockMvc.perform(put("/admin/visual-operator-libraries/risk-policy")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(replacement)))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.valid").value(false))
+                .andExpect(jsonPath("$.diagnostics[0].code").value("visual.library.importPersistenceFailed"))
+                .andExpect(jsonPath("$.diagnostics[0].metadata.libraryId").value("risk-policy"))
+                .andExpect(jsonPath("$.diagnostics[0].metadata.mutationAction")
+                        .value(OperatorLibraryRevision.ACTION_REPLACE));
+
+        assertThat(registry.find("risk-policy")).contains(original);
+    }
+
+    @Test
     void revisionEndpointsReturnLibraryRegistryHistoryAfterDelete() throws Exception {
         OperatorLibrary created = VisualCatalogTestSupport.eligibilityLibrary("integer");
         OperatorLibrary replaced = libraryWithVersion(created, "1.1.0");
@@ -1888,6 +1967,26 @@ class OperatorLibraryAdminControllerTest {
                 .andExpect(jsonPath("$[1].action").value(OperatorLibraryRevision.ACTION_DELETE))
                 .andExpect(jsonPath("$[2].action").value(OperatorLibraryRevision.ACTION_REPLACE))
                 .andExpect(jsonPath("$[3].action").value(OperatorLibraryRevision.ACTION_CREATE));
+    }
+
+    @Test
+    void restoreRevisionReturnsStructuredPersistenceFailure() throws Exception {
+        useFailingRegistry(FailingMutation.RESTORE);
+        OperatorLibrary library = VisualCatalogTestSupport.eligibilityLibrary("integer");
+        ((FailingOperatorLibraryRegistry) registry).seed(library);
+
+        mockMvc.perform(post("/admin/visual-operator-libraries/risk-policy/revisions/1/restore"))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.valid").value(false))
+                .andExpect(jsonPath("$.diagnostics[0].code").value("visual.library.restorePersistenceFailed"))
+                .andExpect(jsonPath("$.diagnostics[0].target").value("/library"))
+                .andExpect(jsonPath("$.diagnostics[0].metadata.libraryId").value("risk-policy"))
+                .andExpect(jsonPath("$.diagnostics[0].metadata.mutationAction")
+                        .value(OperatorLibraryRevision.ACTION_RESTORE))
+                .andExpect(jsonPath("$.diagnostics[0].metadata.exception").value("IllegalStateException"));
+
+        assertThat(registry.find("risk-policy")).contains(library);
+        assertThat(registry.revisions("risk-policy")).hasSize(1);
     }
 
     @Test
@@ -2341,6 +2440,25 @@ class OperatorLibraryAdminControllerTest {
                 .andExpect(status().isNoContent());
 
         assertThat(registry.find("risk-policy")).isEmpty();
+    }
+
+    @Test
+    void deleteReturnsStructuredPersistenceFailureAndKeepsCurrentLibrary() throws Exception {
+        useFailingRegistry(FailingMutation.DELETE);
+        OperatorLibrary library = VisualCatalogTestSupport.eligibilityLibrary("integer");
+        ((FailingOperatorLibraryRegistry) registry).seed(library);
+
+        mockMvc.perform(delete("/admin/visual-operator-libraries/risk-policy"))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.valid").value(false))
+                .andExpect(jsonPath("$.diagnostics[0].code").value("visual.library.deletePersistenceFailed"))
+                .andExpect(jsonPath("$.diagnostics[0].target").value("/libraryId"))
+                .andExpect(jsonPath("$.diagnostics[0].metadata.libraryId").value("risk-policy"))
+                .andExpect(jsonPath("$.diagnostics[0].metadata.mutationAction")
+                        .value(OperatorLibraryRevision.ACTION_DELETE))
+                .andExpect(jsonPath("$.diagnostics[0].metadata.exception").value("IllegalStateException"));
+
+        assertThat(registry.find("risk-policy")).contains(library);
     }
 
     @Test
@@ -3143,6 +3261,17 @@ class OperatorLibraryAdminControllerTest {
         mockMvc = MockMvcBuilders.standaloneSetup(controller).build();
     }
 
+    private void useFailingRegistry(FailingMutation mutation) {
+        registry = new FailingOperatorLibraryRegistry(mutation);
+        OperatorLibraryAdminController controller = new OperatorLibraryAdminController(
+                registry,
+                new OperatorLibraryValidator(),
+                drafts,
+                publications
+        );
+        mockMvc = MockMvcBuilders.standaloneSetup(controller).build();
+    }
+
     private static OperatorLibrary libraryWithOperatorRef(String libraryId, String operatorRef) {
         OperatorDefinition base = VisualCatalogTestSupport.eligibilityOperator("integer");
         OperatorDefinition operator = new OperatorDefinition(
@@ -3317,6 +3446,50 @@ class OperatorLibraryAdminControllerTest {
                             auditId:
                               type: string
                 """;
+    }
+
+    private enum FailingMutation {
+        UPSERT,
+        RESTORE,
+        DELETE
+    }
+
+    private static final class FailingOperatorLibraryRegistry extends InMemoryOperatorLibraryRegistry {
+        private final FailingMutation mutation;
+
+        private FailingOperatorLibraryRegistry(FailingMutation mutation) {
+            this.mutation = mutation;
+        }
+
+        private void seed(OperatorLibrary library) {
+            super.upsert(library, OperatorLibraryRevision.RevisionMetadata.empty());
+        }
+
+        @Override
+        public synchronized OperatorLibrary upsert(OperatorLibrary library,
+                                                   OperatorLibraryRevision.RevisionMetadata metadata) {
+            if (mutation == FailingMutation.UPSERT) {
+                throw new IllegalStateException("Injected operator library upsert failure");
+            }
+            return super.upsert(library, metadata);
+        }
+
+        @Override
+        public synchronized OperatorLibrary restore(OperatorLibraryRevision revision,
+                                                    OperatorLibraryRevision.RevisionMetadata metadata) {
+            if (mutation == FailingMutation.RESTORE) {
+                throw new IllegalStateException("Injected operator library restore failure");
+            }
+            return super.restore(revision, metadata);
+        }
+
+        @Override
+        public synchronized void delete(String libraryId, OperatorLibraryRevision.RevisionMetadata metadata) {
+            if (mutation == FailingMutation.DELETE) {
+                throw new IllegalStateException("Injected operator library delete failure");
+            }
+            super.delete(libraryId, metadata);
+        }
     }
 
     private static final class EchoRuntimeOperator implements Operator<Object, Object> {
