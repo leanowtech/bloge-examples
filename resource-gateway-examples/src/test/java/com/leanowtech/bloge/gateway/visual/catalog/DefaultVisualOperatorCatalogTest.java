@@ -187,7 +187,14 @@ class DefaultVisualOperatorCatalogTest {
                 base.display(),
                 base.source(),
                 base.ports(),
-                SchemaEnvelope.object(Map.of("threshold", Map.of("type", "number")), List.of()),
+                SchemaEnvelope.object(Map.of("threshold", Map.of(
+                        "type", "number",
+                        "title", "Risk threshold",
+                        "description", "Minimum accepted score",
+                        "examples", List.of(0.72),
+                        "default", 0.5,
+                        "$comment", "Authoring-time policy control"
+                )), List.of()),
                 base.capabilities(),
                 base.policy(),
                 base.lowering(),
@@ -210,6 +217,15 @@ class DefaultVisualOperatorCatalogTest {
                 .extracting(OperatorDefinition::operatorRef)
                 .contains("risk:eligibility");
         assertThat(catalog.list(search("config.threshold")))
+                .extracting(OperatorDefinition::operatorRef)
+                .contains("risk:eligibility");
+        assertThat(catalog.list(search("Risk threshold")))
+                .extracting(OperatorDefinition::operatorRef)
+                .contains("risk:eligibility");
+        assertThat(catalog.list(search("Minimum accepted score")))
+                .extracting(OperatorDefinition::operatorRef)
+                .contains("risk:eligibility");
+        assertThat(catalog.list(search("0.72 0.5 Authoring-time")))
                 .extracting(OperatorDefinition::operatorRef)
                 .contains("risk:eligibility");
         assertThat(catalog.list(search("integer")))

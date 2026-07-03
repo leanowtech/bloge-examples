@@ -102,7 +102,7 @@ Operator Library / Resource Design Contract
 | --- | --- | --- |
 | 新增带 schema 的 resource 不改前端即可进入 palette | 已满足 | catalog API + browser `loadVisualOperatorCatalog()` 动态注册 `OPERATOR_TYPES` |
 | 用户可上传算子库定义 | 已满足 | `/admin/visual-operator-libraries` + JSON/YAML text validate/import + operator-library revision history/restore |
-| 算子 input/output/config schema 进入画布 | 已满足 | `OperatorDefinition.Ports`、`configSchema`、browser schema field rendering |
+| 算子 input/output/config schema 进入画布 | 已满足 | `OperatorDefinition.Ports`、`configSchema`、browser schema field rendering；字段级 `title` / `description` / `examples` / `default` / `$comment` annotation 已进入 catalog search、operator-library profile 和画布字段提示 |
 | 无 runtime 实现的算子可先做图编排 | 已满足设计制品层 | `lowering.mode=design`，validate/save/export/design publication 允许，compile/run/default executable publish 明确阻断 |
 | 连线受 schema 约束 | 已满足 | `GraphDraftValidator` + `/api/visual/connections/check` + `/api/visual/connections/candidates` |
 | 草稿可保存、修订、恢复 | 已满足 | draft repository revisions + browser Drafts panel |

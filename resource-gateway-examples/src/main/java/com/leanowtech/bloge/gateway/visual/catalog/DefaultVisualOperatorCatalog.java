@@ -429,7 +429,15 @@ public class DefaultVisualOperatorCatalog implements VisualOperatorCatalog {
         }
         addTypeSearchValues(values, map.get("type"));
         addSearchValue(values, map.get("format"));
+        addSearchValue(values, map.get("title"));
+        addSearchValue(values, map.get("description"));
+        addSearchValue(values, map.get("$comment"));
+        addSearchValue(values, map.get("default"));
         addSearchValue(values, map.get("const"));
+        Object examples = map.get("examples");
+        if (examples instanceof List<?> examplesList) {
+            examplesList.forEach(value -> addSearchValue(values, value));
+        }
         Object enumValues = map.get("enum");
         if (enumValues instanceof List<?> valuesList) {
             valuesList.forEach(value -> addSearchValue(values, value));

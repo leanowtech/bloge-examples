@@ -989,7 +989,7 @@ GET /api/visual/operators?search=score&tenantId=demo-tenant&namespace=local&envi
 
 | 参数 | 说明 |
 | --- | --- |
-| `search` | 多词搜索，匹配 operatorRef、展示名、描述、source kind、resourceId、input/output/config schema 字段路径和类型 |
+| `search` | 多词搜索，匹配 operatorRef、展示名、描述、source kind、resourceId、input/output/config schema 字段路径、类型、format、enum/const 值，以及字段级 JSON Schema `title` / `description` / `examples` / `default` / `$comment` annotation |
 | `tags` | 要求 operator display tags 包含这些标签 |
 | `resourceOnly` | 只返回 resource-backed virtual operators |
 | `includeDeprecated` | 包含 deprecated library/resource contract；disabled 仍不进入公开 catalog |
@@ -1289,7 +1289,17 @@ libraryId 拉取 history、在 JSON editor 中预览历史 snapshot、并通过 
         "label": "Eligibility",
         "runtimeReadinessState": "design-only",
         "runtimeReadinessTitle": "Design-only operator",
-        "inputFields": [{ "port": "inputs", "path": "score", "required": true, "dslPathSafe": true }],
+        "inputFields": [{
+          "port": "inputs",
+          "path": "score",
+          "required": true,
+          "dslPathSafe": true,
+          "title": "Bureau score",
+          "description": "Normalized external bureau score.",
+          "examplesSummary": "720, 760",
+          "defaultSummary": "700",
+          "commentSummary": "Reviewed by the bureau data steward."
+        }],
         "outputFields": [{ "port": "output", "path": "eligible", "required": false, "dslPathSafe": true }],
         "configFields": []
       }

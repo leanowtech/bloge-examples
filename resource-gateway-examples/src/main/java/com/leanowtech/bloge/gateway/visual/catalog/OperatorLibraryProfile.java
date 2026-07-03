@@ -355,11 +355,31 @@ public record OperatorLibraryProfile(
      * @param path schema path, empty for root
      * @param required whether field is required
      * @param dslPathSafe whether path can be emitted safely into BLOGE DSL
+     * @param title schema title annotation
+     * @param description schema description annotation
+     * @param examplesSummary compact schema examples annotation
+     * @param defaultSummary compact schema default annotation
+     * @param commentSummary compact schema $comment annotation
      */
-    public record FieldProfile(String port, String path, boolean required, boolean dslPathSafe) {
+    public record FieldProfile(
+            String port,
+            String path,
+            boolean required,
+            boolean dslPathSafe,
+            String title,
+            String description,
+            String examplesSummary,
+            String defaultSummary,
+            String commentSummary
+    ) {
         public FieldProfile {
             port = port == null ? "" : port;
             path = path == null ? "" : path;
+            title = title == null ? "" : title;
+            description = description == null ? "" : description;
+            examplesSummary = examplesSummary == null ? "" : examplesSummary;
+            defaultSummary = defaultSummary == null ? "" : defaultSummary;
+            commentSummary = commentSummary == null ? "" : commentSummary;
         }
     }
 
@@ -560,11 +580,11 @@ public record OperatorLibraryProfile(
             List<FieldScan> preferred = leaves.isEmpty() ? scanned : leaves;
             boolean portSafe = output ? outputPortDslPathSafe(port) : inputPortDslPathSafe(port);
             if (preferred.isEmpty()) {
-                fields.add(new FieldProfile(port.name(), "", port.required(), portSafe));
+                fields.add(fieldProfile(port.name(), "", port.schema().schema(), port.required(), portSafe));
                 continue;
             }
             for (FieldScan field : preferred) {
-                fields.add(new FieldProfile(port.name(), field.path(), field.required(),
+                fields.add(fieldProfile(port.name(), field.path(), field.schema(), field.required(),
                         field.dslPathSafe() && portSafe));
             }
         }
@@ -584,15 +604,34 @@ public record OperatorLibraryProfile(
         Set<String> seen = new LinkedHashSet<>();
         for (FieldScan field : unionFields) {
             if (seen.add(field.path())) {
-                fields.add(new FieldProfile("", field.path(), field.required(), field.dslPathSafe()));
+                fields.add(fieldProfile("", field.path(), field.schema(), field.required(), field.dslPathSafe()));
             }
         }
         for (FieldScan field : preferred) {
             if (seen.add(field.path())) {
-                fields.add(new FieldProfile("", field.path(), field.required(), field.dslPathSafe()));
+                fields.add(fieldProfile("", field.path(), field.schema(), field.required(), field.dslPathSafe()));
             }
         }
         return fields;
+    }
+
+    private static FieldProfile fieldProfile(String port,
+                                             String path,
+                                             Map<String, Object> schema,
+                                             boolean required,
+                                             boolean dslPathSafe) {
+        Map<String, Object> safeSchema = schema == null ? Map.of() : schema;
+        return new FieldProfile(
+                port,
+                path,
+                required,
+                dslPathSafe,
+                stringAnnotation(safeSchema.get("title")),
+                stringAnnotation(safeSchema.get("description")),
+                examplesSummary(safeSchema.get("examples")),
+                valueSummary(safeSchema.get("default")),
+                stringAnnotation(safeSchema.get("$comment"))
+        );
     }
 
     private static List<FieldScan> schemaFields(SchemaEnvelope schemaEnvelope) {
@@ -773,6 +812,39 @@ public record OperatorLibraryProfile(
         return (int) list.stream()
                 .filter(item -> item instanceof Map<?, ?>)
                 .count();
+    }
+
+    private static String stringAnnotation(Object value) {
+        return compactText(value instanceof String text ? text : "");
+    }
+
+    private static String examplesSummary(Object value) {
+        if (value instanceof List<?> list) {
+            List<String> examples = list.stream()
+                    .map(OperatorLibraryProfile::valueSummary)
+                    .filter(item -> !item.isBlank())
+                    .toList();
+            return visibleSummary(examples, 2);
+        }
+        return valueSummary(value);
+    }
+
+    private static String valueSummary(Object value) {
+        if (value == null) {
+            return "";
+        }
+        if (value instanceof String text) {
+            return compactText(text);
+        }
+        return compactText(String.valueOf(value));
+    }
+
+    private static String compactText(String value) {
+        String text = value == null ? "" : value.trim().replaceAll("\\s+", " ");
+        if (text.length() <= 120) {
+            return text;
+        }
+        return text.substring(0, 117) + "...";
     }
 
     private static String visibleSummary(List<String> values, int limit) {

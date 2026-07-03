@@ -127,7 +127,8 @@ downstream input/config/dependency/route relations from that impact view, or
 detach all current node references including graph-output selection before
 repairing or deleting a node, search the operator palette with multi-term
 queries across label, operator ref, description, source kind/resource id, tag,
-input/output/config schema fields, port-qualified field names, or field types, filter it by operator type,
+input/output/config schema fields, port-qualified field names, field types, and
+JSON Schema field annotations such as `title`, `description`, `examples`, `default`, and `$comment`, filter it by operator type,
 tag, source, capability, runtime readiness, or lowering mode for larger imported catalogs, and see the server-provided catalog mix counts for runtime-executable, design-only, runtime-blocked, governance-review, catalog-repair, streaming/durable, secret-bound, and external-effect operators, inspect each palette card's input/output port and
 schema-field summary plus streaming/durable/suspendable/secret/effect capability badges before dragging, inspect the selected node's contract
 coverage summary for input/output ports, required binding coverage, and config
@@ -138,7 +139,8 @@ status, blocked previews, and blocked-reason hover labels before dragging an edg
 the same server-side preflight, inspect the selected graph output's source port/path, schema type,
 field count, and required-field count before running or publishing, preview a
 user-provided operator library's operator count, port inventory, required
-bindings, per-operator input/output/config schema field summaries, config/output
+bindings, per-operator input/output/config schema field summaries with compact
+schema annotation hints, config/output
 field counts, dynamic schema surfaces, DSL-unsafe input/output fields and port names,
 streaming/durable runtime requirements, external effects, non-idempotent side effects,
 secret-bound operators, and scope-restricted policy summaries before importing it into the catalog, validate
@@ -787,7 +789,7 @@ Showcase metadata APIs:
 | `GET` | `/api/gateway/examples/scenarios/{graphName}` | Load scenario metadata and run recipe |
 | `GET` | `/api/gateway/examples/scenarios/{graphName}/diagram` | Load the `bloge.visualLayout.v1` diagram for a scenario |
 | `POST` | `/api/gateway/examples/compose/run` | Compile and run submitted DSL with JSON context, returning diagnostics, output, layout, and decision-table metadata |
-| `GET` | `/api/visual/operators` | List native, Java registry, imported, executable publication-backed subgraph, and resource-backed visual operator definitions; supports `tenantId`, `namespace`, and `environment` policy filtering, `sourceKind` / `loweringMode` / `capability` / `runtimeReadiness` catalog facets, plus multi-term schema-aware search across input/output/config fields, field types, and readiness summaries; response includes `facets.total/sourceKinds/loweringModes/capabilities/runtimeReadinessStates` counts |
+| `GET` | `/api/visual/operators` | List native, Java registry, imported, executable publication-backed subgraph, and resource-backed visual operator definitions; supports `tenantId`, `namespace`, and `environment` policy filtering, `sourceKind` / `loweringMode` / `capability` / `runtimeReadiness` catalog facets, plus multi-term schema-aware search across input/output/config fields, field types, JSON Schema field annotations, and readiness summaries; response includes `facets.total/sourceKinds/loweringModes/capabilities/runtimeReadinessStates` counts |
 | `GET` | `/api/visual/operators/{operatorRef}` | Return one visible `bloge.visualOperator.v1` definition under the same `tenantId` / `namespace` / `environment`, `includeDeprecated`, `resourceOnly`, and catalog facet visibility gates used by the operator catalog; returns `404` when the operator is hidden or missing |
 | `GET` | `/api/visual/operators/{operatorRef}/usage` | Return stored draft and immutable-publication usage of one operatorRef, including saved/frozen fingerprint status, changed-surface drift summaries, and `changeRisk/changeCategories/changeSummary` when snapshots allow risk classification |
 | `GET` | `/api/visual/assets/overview` | Return `bloge.visualAssetOverview.v1`, an environment-level visual authoring overview that echoes the requested authoring scope while aggregating draft summaries, publication summaries, current operator catalog facets, and an action-readiness/runtime-binding-requirement-aware server-derived action queue with optional `tenantId` / `namespace` / `environment` scope filters plus `actionLimit` / `actionOffset` / `actionSeverity` / `actionType` / `actionTargetKind` queue query controls |
@@ -1100,7 +1102,8 @@ The browser Operator Libraries panel calls
 the validate endpoint directly, so authors can inspect an inline structured
 diagnostic list, server-derived library profile, and machine-readable import
 readiness summary before storing a library.
-That profile reports operator/schema field counts, runtime readiness facets,
+That profile reports operator/schema field counts, field-level JSON Schema
+`title` / `description` / `examples` / `default` / `$comment` annotations for authoring review, runtime readiness facets,
 catalog-repair, runtime-blocked, governance-review, and design-only summaries;
 the readiness summary collapses diagnostics, profile, and impact into states
 such as `design-only-importable`, `runtime-binding-required`,

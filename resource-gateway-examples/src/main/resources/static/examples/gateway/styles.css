@@ -1194,9 +1194,19 @@ body.dragging-operator * {
 }
 
 .contract-port-row .schema-union-summary,
+.contract-port-row .schema-field-hint,
 .library-profile-row .schema-union-summary {
   grid-column: 1 / -1;
   color: #0f766e;
+  font-weight: 800;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
+.binding-row-head .schema-field-hint {
+  display: block;
+  color: #0f766e;
+  font-size: 11px;
   font-weight: 800;
   white-space: normal;
   overflow-wrap: anywhere;

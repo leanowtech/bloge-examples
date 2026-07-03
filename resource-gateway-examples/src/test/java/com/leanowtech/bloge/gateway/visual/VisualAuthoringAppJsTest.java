@@ -1186,6 +1186,14 @@ class VisualAuthoringAppJsTest {
                   'operatorLibraryFieldProfile',
                   'operatorLibrarySchemaSummary',
                   'operatorLibraryFieldLabel',
+                  'operatorLibraryFieldAnnotationSummary',
+                  'schemaAnnotationDescriptor',
+                  'schemaFieldDisplayHint',
+                  'schemaAnnotationText',
+                  'schemaExamplesSummary',
+                  'schemaValueSummary',
+                  'visibleSchemaAnnotationSummary',
+                  'compactSchemaAnnotation',
                   'schemaDynamicSurfaceCount',
                   'normalizeReadinessState',
                   'normalizeVisualGraphNodeReadiness',
@@ -1249,6 +1257,7 @@ class VisualAuthoringAppJsTest {
                   'paletteSearchTokens',
                   'operatorPaletteSearchValues',
                   'operatorPaletteSchemaSearchValues',
+                  'operatorPaletteFieldSearchValues',
                   'renderOperatorDiagnosticsPanel',
                   'bindingCandidateSummary',
                   'bindingCandidateSummaryLevel',
@@ -2037,7 +2046,12 @@ class VisualAuthoringAppJsTest {
                           customer: {
                             type: 'object',
                             properties: {
-                              id: { type: 'string' }
+                              id: {
+                                type: 'string',
+                                title: 'Customer identifier',
+                                description: 'External customer id used by the risk policy.',
+                                examples: ['C-1001']
+                              }
                             }
                           }
                         }
@@ -2050,7 +2064,12 @@ class VisualAuthoringAppJsTest {
                       schema: {
                         type: 'object',
                         properties: {
-                          score: { type: 'integer' }
+                          score: {
+                            type: 'integer',
+                            title: 'Eligibility score',
+                            description: 'Normalized risk score.',
+                            examples: [720]
+                          }
                         }
                       }
                     }
@@ -2059,12 +2078,28 @@ class VisualAuthoringAppJsTest {
                     schema: {
                       type: 'object',
                       properties: {
-                        threshold: { type: 'number' }
+                        threshold: {
+                          type: 'number',
+                          title: 'Risk threshold',
+                          description: 'Minimum accepted score.',
+                          examples: [0.72],
+                          default: 0.5,
+                          $comment: 'Authoring-time policy control.'
+                        }
                       }
                     }
                   }
                 };
                 const paletteSchemaSearchValues = context.operatorPaletteSearchValues(paletteSearchSpec);
+                const paletteInputField = context.schemaFieldDescriptors(paletteSearchSpec.inputPorts[0].schema)
+                  .find((field) => field.path === 'customer.id') || {};
+                const paletteConfigField = context.configFieldDescriptors(paletteSearchSpec.configSchema)
+                  .find((field) => field.path === 'threshold') || {};
+                const paletteInputFieldHint = context.schemaFieldDisplayHint(paletteInputField);
+                const paletteConfigFieldHint = context.schemaFieldDisplayHint(paletteConfigField);
+                const paletteCommentOnlyHint = context.schemaFieldDisplayHint({
+                  commentSummary: 'Internal authoring note.'
+                });
                 const suspendablePaletteSpec = {
                   kind: 'custom',
                   label: 'Await Approval',
@@ -2379,7 +2414,13 @@ class VisualAuthoringAppJsTest {
                                 customer: {
                                   type: 'object',
                                   properties: {
-                                    id: { type: 'string' },
+                                    id: {
+                                      type: 'string',
+                                      title: 'Customer identifier',
+                                      description: 'External customer id used by the risk policy.',
+                                      examples: ['C-1001'],
+                                      default: 'UNKNOWN'
+                                    },
                                     'bad-field': { type: 'string' }
                                   },
                                   required: ['id']
@@ -2410,7 +2451,16 @@ class VisualAuthoringAppJsTest {
                       configSchema: {
                         schema: {
                           type: 'object',
-                          properties: { threshold: { type: 'integer' } },
+                          properties: {
+                            threshold: {
+                              type: 'integer',
+                              title: 'Risk threshold',
+                              description: 'Minimum accepted score.',
+                              examples: [720, 760, 790],
+                              default: 700,
+                              $comment: 'Tune only during risk policy review.'
+                            }
+                          },
                           patternProperties: { '^flag_[A-Za-z]+$': { type: 'boolean' } }
                         }
                       },
@@ -2444,6 +2494,10 @@ class VisualAuthoringAppJsTest {
                   ]
                 });
                 const libraryProfileHtml = context.renderLibraryProfilePanel(libraryProfile);
+                const libraryCustomerField = libraryProfile.operators[0].inputFields
+                  .find((field) => field.path === 'customer.id') || {};
+                const libraryThresholdField = libraryProfile.operators[0].configFields
+                  .find((field) => field.path === 'threshold') || {};
                 const invalidLibraryProfile = context.libraryProfileFromText('{broken');
                 """, """
                 const yamlLibraryProfile = context.libraryProfileFromText(`
@@ -3951,6 +4005,16 @@ operators:
                   ['palette schema search output type', String(paletteSchemaSearchValues.includes('integer')), 'true'],
                   ['palette schema search config field', String(paletteSchemaSearchValues.includes('config.threshold')), 'true'],
                   ['palette schema search config type', String(paletteSchemaSearchValues.includes('number')), 'true'],
+                  ['palette schema search title annotation', String(paletteSchemaSearchValues.includes('Risk threshold')), 'true'],
+                  ['palette schema search description annotation', String(paletteSchemaSearchValues.includes('Minimum accepted score.')), 'true'],
+                  ['palette schema search example annotation', String(paletteSchemaSearchValues.includes('0.72')), 'true'],
+                  ['palette schema search default annotation', String(paletteSchemaSearchValues.includes('0.5')), 'true'],
+                  ['palette schema search comment annotation', String(paletteSchemaSearchValues.includes('Authoring-time policy control.')), 'true'],
+                  ['palette field title annotation', paletteInputField.title, 'Customer identifier'],
+                  ['palette field example annotation', paletteInputField.examplesSummary, 'C-1001'],
+                  ['palette input field hint', paletteInputFieldHint, 'Customer identifier · ex C-1001'],
+                  ['palette config field hint', paletteConfigFieldHint, 'Risk threshold · ex 0.72 · default 0.5'],
+                  ['palette comment-only field hint', paletteCommentOnlyHint, 'note Internal authoring note.'],
                   ['palette search tokens', normalizedPaletteTokens, 'risk|score'],
                   ['palette multi-token match', String(paletteMultiTokenMatch), 'true'],
                   ['palette multi-token miss', String(paletteMultiTokenMiss), 'false'],
@@ -4055,6 +4119,13 @@ operators:
                   ['library profile operator input field count', libraryProfile.operators[0].inputFields.length, 3],
                   ['library profile operator output field count', libraryProfile.operators[0].outputFields.length, 2],
                   ['library profile operator config field count', libraryProfile.operators[0].configFields.length, 1],
+                  ['library profile input field title', libraryCustomerField.title, 'Customer identifier'],
+                  ['library profile input field examples', libraryCustomerField.examplesSummary, 'C-1001'],
+                  ['library profile input field default', libraryCustomerField.defaultSummary, 'UNKNOWN'],
+                  ['library profile config field title', libraryThresholdField.title, 'Risk threshold'],
+                  ['library profile config field examples', libraryThresholdField.examplesSummary, '720, 760 +1 more'],
+                  ['library profile config field default', libraryThresholdField.defaultSummary, '700'],
+                  ['library profile config field comment', libraryThresholdField.commentSummary, 'Tune only during risk policy review.'],
                   ['library profile level', context.libraryProfileLevel(libraryProfile), 'warning'],
                   ['library profile runtime risk level', context.libraryProfileLevel(runtimeRiskProfile), 'warning'],
                   ['library profile governance risk level', context.libraryProfileLevel(governanceRiskProfile), 'warning'],
@@ -4084,11 +4155,13 @@ operators:
                   ['library profile html policy summary', String(libraryProfileHtml.includes('policy tenants demo-tenant; namespaces local; env browser')), 'true'],
                   ['library profile policy-only html summary', String(policyOnlyProfileHtml.includes('policy tenants gold, silver, bronze +1; namespaces lending; env prod')), 'true'],
                   ['library profile html includes required input field', String(libraryProfileHtml.includes('inputs.customer.id*')), 'true'],
+                  ['library profile html includes input annotation', String(libraryProfileHtml.includes('inputs.customer.id* (Customer identifier)')), 'true'],
                   ['library profile html includes unsafe input field', String(libraryProfileHtml.includes('inputs.customer.bad-field !')), 'true'],
                   ['library profile html includes unsafe input port', String(libraryProfileHtml.includes('input.(root) !')), 'true'],
                   ['library profile html includes unsafe field chip', String(libraryProfileHtml.includes('3 DSL-unsafe fields/ports')), 'true'],
                   ['library profile html includes output field', String(libraryProfileHtml.includes('graph.score* !')), 'true'],
                   ['library profile html includes config field', String(libraryProfileHtml.includes('config threshold')), 'true'],
+                  ['library profile html includes config annotation', String(libraryProfileHtml.includes('config threshold (Risk threshold)')), 'true'],
                   ['library profile html includes dynamic flag', String(libraryProfileHtml.includes('2 dynamic schema surfaces')), 'true'],
                   ['library profile invalid json', String(Boolean(invalidLibraryProfile.parseError)), 'true'],
                   ['library profile yaml pending', String(Boolean(yamlLibraryProfile.awaitingServerValidation)), 'true'],
@@ -5382,6 +5455,14 @@ operators:
                   'operatorLibraryFieldProfile',
                   'operatorLibrarySchemaSummary',
                   'operatorLibraryFieldLabel',
+                  'operatorLibraryFieldAnnotationSummary',
+                  'schemaAnnotationDescriptor',
+                  'schemaFieldDisplayHint',
+                  'schemaAnnotationText',
+                  'schemaExamplesSummary',
+                  'schemaValueSummary',
+                  'visibleSchemaAnnotationSummary',
+                  'compactSchemaAnnotation',
                   'normalizeOperatorRuntimeReadiness'
                 ]) {
                   vm.runInContext(functionSource(name), context);
@@ -5435,6 +5516,7 @@ operators:
                 context.objectValueMatchesSchema = () => true;
                 context.schemaFieldDescriptors = () => [];
                 context.configFieldDescriptors = () => [];
+                context.hasSchemaProperties = () => false;
                 context.schemaDynamicSurfaceCount = () => 0;
                 context.operatorLibraryOutputPortDslPathSafe = () => true;
 
@@ -5493,7 +5575,11 @@ operators:
                   schema: {
                     type: 'object',
                     properties: {
-                      decision: { oneOf: [{ type: 'integer' }, { type: 'string' }] },
+                      decision: {
+                        oneOf: [{ type: 'integer' }, { type: 'string' }],
+                        title: 'Decision value',
+                        examples: ['APPROVE']
+                      },
                       events: {
                         type: 'array',
                         items: { anyOf: [{ type: 'boolean' }, { type: 'null' }] }
@@ -5513,6 +5599,14 @@ operators:
                     }
                   }
                 };
+                context.schemaFieldDescriptors = () => [{
+                  path: 'decision',
+                  schema: unionSchemaEnvelope.schema.properties.decision,
+                  required: false,
+                  dslPathSafe: true,
+                  title: 'Decision value',
+                  examplesSummary: 'APPROVE'
+                }];
                 const unionContractHtml = context.renderContractPortGroup('Inputs', [{
                   name: 'inputs',
                   schema: unionSchemaEnvelope,
@@ -5553,6 +5647,7 @@ operators:
                   ['anyOf missing value', context.schemaValueMatchesSchema(false, { anyOf: [{ type: 'integer' }, { type: 'string' }] }), false],
                   ['nested union summary', nestedUnionSummary, 'decision oneOf<integer|string>, events[] anyOf<boolean|null>'],
                   ['union contract row html', String(unionContractHtml.includes('decision oneOf&lt;integer|string&gt;, events[] anyOf&lt;boolean|null&gt;')), 'true'],
+                  ['union contract row annotation', String(unionContractHtml.includes('Decision value')), 'true'],
                   ['union library input summary', unionLibraryProfile.operators[0].inputUnionSummary, 'inputs.decision oneOf<integer|string>, inputs.events[] anyOf<boolean|null>'],
                   ['union library config summary', unionLibraryProfile.operators[0].configUnionSummary, '(root) oneOf<object|null>'],
                   ['union library html input branch', String(unionLibraryProfileHtml.includes('in union inputs.decision oneOf&lt;integer|string&gt;')), 'true'],

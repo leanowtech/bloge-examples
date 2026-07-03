@@ -3191,11 +3191,8 @@ function operatorPaletteSearchValues(spec) {
   return [
     ...inputPortsForSpec(spec).flatMap(operatorPaletteSchemaSearchValues),
     ...outputPortsForSpec(spec).flatMap(operatorPaletteSchemaSearchValues),
-    ...configFieldDescriptors(spec.configSchema).flatMap((field) => [
-      field.path,
-      field.path ? `config.${field.path}` : 'config',
-      schemaType(field.schema)
-    ]),
+    ...configFieldDescriptors(spec.configSchema).flatMap((field) =>
+      operatorPaletteFieldSearchValues(field, 'config')),
     ...operatorDiagnosticsForSpec(spec).flatMap((diagnostic) => [
       diagnostic.code,
       diagnostic.message,
@@ -3213,11 +3210,21 @@ function operatorPaletteSchemaSearchValues(port) {
   return [
     port?.name,
     rootType,
-    ...fields.flatMap((field) => [
-      field.path,
-      port?.name && field.path ? `${port.name}.${field.path}` : field.path,
-      schemaType(field.schema)
-    ])
+    ...fields.flatMap((field) => operatorPaletteFieldSearchValues(field, port?.name || ''))
+  ];
+}
+
+function operatorPaletteFieldSearchValues(field, qualifier = '') {
+  const path = field?.path || '';
+  return [
+    path,
+    qualifier && path ? `${qualifier}.${path}` : qualifier,
+    schemaType(field?.schema),
+    field?.title,
+    field?.description,
+    field?.examplesSummary,
+    field?.defaultSummary,
+    field?.commentSummary
   ];
 }
 
@@ -4946,7 +4953,12 @@ function operatorLibraryFieldProfile(port, field, portDslPathSafe = true) {
     port: String(port || ''),
     path: String(field?.path || ''),
     required: Boolean(field?.required),
-    dslPathSafe: field?.dslPathSafe !== false && portDslPathSafe !== false
+    dslPathSafe: field?.dslPathSafe !== false && portDslPathSafe !== false,
+    title: String(field?.title || ''),
+    description: String(field?.description || ''),
+    examplesSummary: String(field?.examplesSummary || ''),
+    defaultSummary: String(field?.defaultSummary || ''),
+    commentSummary: String(field?.commentSummary || '')
   };
 }
 
@@ -4965,7 +4977,18 @@ function operatorLibraryFieldLabel(field) {
   const prefix = field?.port ? `${field.port}.` : '';
   const required = field?.required ? '*' : '';
   const unsafe = field?.dslPathSafe === false ? ' !' : '';
-  return `${prefix}${path}${required}${unsafe}`;
+  const annotation = operatorLibraryFieldAnnotationSummary(field);
+  return `${prefix}${path}${required}${unsafe}${annotation ? ` (${annotation})` : ''}`;
+}
+
+function operatorLibraryFieldAnnotationSummary(field) {
+  return [
+    field?.title,
+    field?.description,
+    field?.examplesSummary ? `ex ${field.examplesSummary}` : '',
+    field?.defaultSummary ? `default ${field.defaultSummary}` : '',
+    field?.commentSummary ? `note ${field.commentSummary}` : ''
+  ].map((item) => String(item || '').trim()).filter(Boolean)[0] || '';
 }
 
 function schemaDynamicSurfaceCount(schema) {
@@ -13591,11 +13614,13 @@ function renderContractPortGroup(label, ports) {
     const required = fields.filter((field) => field.required).length;
     const rootType = schemaType(port.schema?.schema) || 'any';
     const unionSummary = schemaUnionSummary(port.schema);
+    const fieldHints = fields.map(schemaFieldDisplayHint).filter(Boolean).slice(0, 2).join('; ');
     return `
       <div class="contract-port-row">
         <strong>${escapeHtml(port.name)}</strong>
         <span>${escapeHtml(rootType)} · ${fields.length} fields · ${required} required</span>
         ${unionSummary ? `<small class="schema-union-summary">${escapeHtml(unionSummary)}</small>` : ''}
+        ${fieldHints ? `<small class="schema-field-hint">${escapeHtml(fieldHints)}</small>` : ''}
       </div>
     `;
   }).join('');
@@ -13686,12 +13711,14 @@ function renderConfigRow(node, field) {
   const effectiveField = effectiveConfigField(node, field);
   const status = configStatusForField(node, effectiveField);
   const required = field.required ? 'Required' : 'Optional';
+  const fieldHint = schemaFieldDisplayHint(effectiveField);
   return `
     <div class="binding-row ${escapeHtml(status.level)}" data-config-row="${escapeHtml(field.path)}">
       <div class="binding-row-head">
         <div>
           <strong>${escapeHtml(readableName(field.path))}</strong>
           <span>${escapeHtml(schemaType(effectiveField.schema) || 'any')} · ${escapeHtml(required)}</span>
+          ${fieldHint ? `<small class="schema-field-hint">${escapeHtml(fieldHint)}</small>` : ''}
         </div>
       </div>
       ${renderConfigUnionBranchSelect(node, field)}
@@ -15038,7 +15065,8 @@ function schemaFieldsFromSchema(schema, prefix, parentRequired, prefixDslPathSaf
         path,
         schema: rawChildSchema,
         required: fieldRequired && !hasNestedRequired,
-        dslPathSafe: fieldDslPathSafe
+        dslPathSafe: fieldDslPathSafe,
+        ...schemaAnnotationDescriptor(rawChildSchema, normalizedChildSchema)
       },
       ...schemaFieldsFromSchema(normalizedChildSchema, path, fieldRequired, fieldDslPathSafe, branchSelections)
     ];
@@ -15076,11 +15104,79 @@ function arraySchemaFieldDescriptors(schema, prefix, prefixDslPathSafe, branchSe
         path,
         schema: item.schema,
         required: false,
-        dslPathSafe: prefixDslPathSafe
+        dslPathSafe: prefixDslPathSafe,
+        ...schemaAnnotationDescriptor(item.schema)
       },
       ...schemaFieldsFromSchema(item.schema, path, false, prefixDslPathSafe, branchSelections)
     ];
   });
+}
+
+function schemaAnnotationDescriptor(schema, fallbackSchema = null) {
+  const primary = schema && typeof schema === 'object' && !Array.isArray(schema) ? schema : {};
+  const fallback = fallbackSchema && typeof fallbackSchema === 'object' && !Array.isArray(fallbackSchema)
+    ? fallbackSchema
+    : {};
+  return {
+    title: schemaAnnotationText(primary.title) || schemaAnnotationText(fallback.title),
+    description: schemaAnnotationText(primary.description) || schemaAnnotationText(fallback.description),
+    examplesSummary: schemaExamplesSummary(primary.examples) || schemaExamplesSummary(fallback.examples),
+    defaultSummary: schemaValueSummary(primary.default) || schemaValueSummary(fallback.default),
+    commentSummary: schemaAnnotationText(primary.$comment) || schemaAnnotationText(fallback.$comment)
+  };
+}
+
+function schemaFieldDisplayHint(field) {
+  const main = [
+    field?.title,
+    field?.description
+  ].map((item) => String(item || '').trim()).filter(Boolean)[0] || '';
+  const extras = [
+    field?.examplesSummary ? `ex ${field.examplesSummary}` : '',
+    field?.defaultSummary ? `default ${field.defaultSummary}` : ''
+  ].map((item) => item.trim()).filter(Boolean);
+  const fallback = field?.commentSummary ? `note ${field.commentSummary}` : '';
+  return [main || fallback, ...extras].filter(Boolean).join(' · ');
+}
+
+function schemaAnnotationText(value) {
+  return typeof value === 'string' ? compactSchemaAnnotation(value) : '';
+}
+
+function schemaExamplesSummary(value) {
+  if (Array.isArray(value)) {
+    const examples = value.map(schemaValueSummary).filter(Boolean);
+    return visibleSchemaAnnotationSummary(examples, 2);
+  }
+  return schemaValueSummary(value);
+}
+
+function schemaValueSummary(value) {
+  if (value === undefined || value === null) {
+    return '';
+  }
+  if (typeof value === 'string') {
+    return compactSchemaAnnotation(value);
+  }
+  try {
+    return compactSchemaAnnotation(JSON.stringify(value));
+  } catch (error) {
+    return compactSchemaAnnotation(String(value));
+  }
+}
+
+function visibleSchemaAnnotationSummary(values, limit) {
+  if (!Array.isArray(values) || !values.length) {
+    return '';
+  }
+  const visible = values.slice(0, limit);
+  const remaining = values.length - visible.length;
+  return `${visible.join(', ')}${remaining > 0 ? ` +${remaining} more` : ''}`;
+}
+
+function compactSchemaAnnotation(value) {
+  const text = String(value || '').trim().replace(/\s+/g, ' ');
+  return text.length > 120 ? `${text.slice(0, 117)}...` : text;
 }
 
 function isDslPathSafe(path) {
