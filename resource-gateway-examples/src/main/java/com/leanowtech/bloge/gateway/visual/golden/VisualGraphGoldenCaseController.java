@@ -16,6 +16,7 @@ import com.leanowtech.bloge.gateway.visual.runtime.VisualGraphRunService;
 import com.leanowtech.bloge.gateway.visual.validation.VisualSchemaValidator;
 import com.leanowtech.bloge.gateway.visual.validation.VisualValidationResult;
 
+import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -105,10 +106,25 @@ public class VisualGraphGoldenCaseController {
      * @return no content when removed
      */
     @DeleteMapping("/{caseId}")
-    public ResponseEntity<Void> delete(@PathVariable String caseId) {
-        return repository.delete(caseId)
-                ? ResponseEntity.noContent().build()
-                : ResponseEntity.notFound().build();
+    public ResponseEntity<?> delete(@PathVariable String caseId) {
+        Optional<VisualGraphGoldenCase> current = repository.find(caseId);
+        if (current.isEmpty()) {
+            return ResponseEntity.notFound().build();
+        }
+        try {
+            return repository.delete(caseId)
+                    ? ResponseEntity.noContent().build()
+                    : ResponseEntity.notFound().build();
+        } catch (RuntimeException ex) {
+            return ResponseEntity.status(HttpStatus.CONFLICT)
+                    .body(new VisualValidationResult(false, List.of(goldenCasePersistenceFailureDiagnostic(
+                            "visual.golden.deletePersistenceFailed",
+                            "Golden case '%s' could not be deleted.".formatted(caseId),
+                            "/caseId",
+                            "DELETE",
+                            current.get(),
+                            ex))));
+        }
     }
 
     /**
@@ -130,7 +146,19 @@ public class VisualGraphGoldenCaseController {
         if (!validation.valid()) {
             return ResponseEntity.badRequest().body(validation);
         }
-        return ResponseEntity.ok(repository.save(testCase));
+        try {
+            return ResponseEntity.ok(repository.save(testCase));
+        } catch (RuntimeException ex) {
+            return ResponseEntity.status(HttpStatus.CONFLICT)
+                    .body(new VisualValidationResult(false, List.of(goldenCasePersistenceFailureDiagnostic(
+                            "visual.golden.savePersistenceFailed",
+                            "Golden case for publication '%s' could not be stored."
+                                    .formatted(testCase.publicationId()),
+                            "/case",
+                            "SAVE",
+                            testCase,
+                            ex))));
+        }
     }
 
     /**
@@ -155,7 +183,7 @@ public class VisualGraphGoldenCaseController {
     @PostMapping("/publications/{publicationId}/run")
     public ResponseEntity<VisualGraphGoldenSuiteRunResult> runPublication(@PathVariable String publicationId) {
         return publicationRepository.find(publicationId)
-                .map(publication -> ResponseEntity.ok(runSuite(publication)))
+                .map(publication -> responseForSuite(runSuite(publication)))
                 .orElseGet(() -> ResponseEntity.notFound().build());
     }
 
@@ -207,16 +235,37 @@ public class VisualGraphGoldenCaseController {
                 .map(publication -> {
                     List<VisualGraphGoldenCase> testCases = goldenCasesFor(publication.publicationId());
                     VisualGraphGoldenSuiteRunResult suite = runSuite(publication, testCases);
-                    return ResponseEntity.ok(certificationRepository.save(
-                            VisualGraphGoldenCertification.from(suite, caseSetFingerprint(testCases))));
+                    VisualGraphGoldenCertification certification =
+                            VisualGraphGoldenCertification.from(suite, caseSetFingerprint(testCases));
+                    if (hasDiagnostic(suite.diagnostics(), "visual.golden.runHistoryPersistenceFailed")) {
+                        return ResponseEntity.status(HttpStatus.CONFLICT).body(certification);
+                    }
+                    try {
+                        return ResponseEntity.ok(certificationRepository.save(certification));
+                    } catch (RuntimeException ex) {
+                        return ResponseEntity.status(HttpStatus.CONFLICT).body(withDiagnostic(certification,
+                                goldenCertificationPersistenceFailureDiagnostic(certification, ex)));
+                    }
                 })
                 .orElseGet(() -> ResponseEntity.notFound().build());
     }
 
     private ResponseEntity<VisualGraphGoldenCaseRunResult> runCase(VisualGraphGoldenCase testCase) {
         return publicationRepository.find(testCase.publicationId())
-                .map(publication -> ResponseEntity.ok(runSingleCase(testCase, publication)))
+                .map(publication -> responseForSingleRun(runSingleCase(testCase, publication)))
                 .orElseGet(() -> ResponseEntity.notFound().build());
+    }
+
+    private static ResponseEntity<VisualGraphGoldenCaseRunResult> responseForSingleRun(
+            VisualGraphGoldenCaseRunResult result) {
+        return ResponseEntity.status(hasDiagnostic(result.diagnostics(),
+                "visual.golden.runHistoryPersistenceFailed") ? HttpStatus.CONFLICT : HttpStatus.OK).body(result);
+    }
+
+    private static ResponseEntity<VisualGraphGoldenSuiteRunResult> responseForSuite(
+            VisualGraphGoldenSuiteRunResult result) {
+        return ResponseEntity.status(hasDiagnostic(result.diagnostics(),
+                "visual.golden.runHistoryPersistenceFailed") ? HttpStatus.CONFLICT : HttpStatus.OK).body(result);
     }
 
     private VisualGraphGoldenSuiteRunResult runSuite(VisualGraphPublication publication) {
@@ -240,6 +289,21 @@ public class VisualGraphGoldenCaseController {
                 .filter(result -> !result.passed())
                 .count();
         List<VisualDiagnostic> diagnostics = new ArrayList<>();
+        long runHistoryFailures = results.stream()
+                .filter(result -> hasDiagnostic(result.diagnostics(), "visual.golden.runHistoryPersistenceFailed"))
+                .count();
+        if (runHistoryFailures > 0) {
+            Map<String, Object> metadata = new LinkedHashMap<>();
+            metadata.put("publicationId", publication.publicationId());
+            metadata.put("mutationAction", "RUN_HISTORY");
+            metadata.put("failedRunHistoryRecords", runHistoryFailures);
+            metadata.put("totalCases", results.size());
+            diagnostics.add(VisualDiagnostic.error("visual.golden.runHistoryPersistenceFailed",
+                    "Golden suite for publication '%s' could not store %d run history record(s)."
+                            .formatted(publication.publicationId(), runHistoryFailures),
+                    "/results",
+                    metadata));
+        }
         if (failedCases > 0) {
             diagnostics.add(VisualDiagnostic.error("visual.golden.suiteFailed",
                     "Golden suite for publication '%s' failed %d of %d case(s)."
@@ -317,9 +381,15 @@ public class VisualGraphGoldenCaseController {
     private VisualGraphGoldenCaseRunResult runSingleCase(VisualGraphGoldenCase testCase,
                                                          VisualGraphPublication publication) {
         VisualGraphRunResponse response = runner.run(publication, testCase.context(), testCase.outputNode());
-        VisualGraphRunRecord record = runRepository.create(VisualGraphRunRecord.publication(
-                publication, testCase.context(), response));
-        VisualGraphRunResponse recorded = response.withRunId(record.runId());
+        VisualGraphRunResponse recorded = response;
+        try {
+            VisualGraphRunRecord record = runRepository.create(VisualGraphRunRecord.publication(
+                    publication, testCase.context(), response));
+            recorded = response.withRunId(record.runId());
+        } catch (RuntimeException ex) {
+            return new VisualGraphGoldenCaseRunResult(false, testCase, recorded,
+                    List.of(goldenRunHistoryPersistenceFailureDiagnostic(testCase, publication, ex)));
+        }
         List<VisualDiagnostic> diagnostics = new ArrayList<>();
         if (!recorded.success()) {
             diagnostics.add(VisualDiagnostic.error("visual.golden.runFailed",
@@ -336,6 +406,82 @@ public class VisualGraphGoldenCaseController {
         }
         boolean passed = recorded.success() && diagnostics.stream().noneMatch(VisualDiagnostic::error);
         return new VisualGraphGoldenCaseRunResult(passed, testCase, recorded, diagnostics);
+    }
+
+    private static VisualDiagnostic goldenCasePersistenceFailureDiagnostic(String code,
+                                                                          String message,
+                                                                          String target,
+                                                                          String mutationAction,
+                                                                          VisualGraphGoldenCase testCase,
+                                                                          RuntimeException ex) {
+        Map<String, Object> metadata = goldenFailureMetadata(mutationAction, ex);
+        metadata.put("publicationId", testCase == null ? "" : testCase.publicationId());
+        metadata.put("caseId", testCase == null ? "" : testCase.caseId());
+        return VisualDiagnostic.error(code, message, target, metadata);
+    }
+
+    private static VisualDiagnostic goldenRunHistoryPersistenceFailureDiagnostic(VisualGraphGoldenCase testCase,
+                                                                                VisualGraphPublication publication,
+                                                                                RuntimeException ex) {
+        Map<String, Object> metadata = goldenFailureMetadata("RUN_HISTORY", ex);
+        metadata.put("publicationId", publication == null ? "" : publication.publicationId());
+        metadata.put("caseId", testCase == null ? "" : testCase.caseId());
+        metadata.put("graphName", publication == null ? "" : publication.graphName());
+        metadata.put("outputNode", testCase == null ? "" : testCase.outputNode());
+        return VisualDiagnostic.error(
+                "visual.golden.runHistoryPersistenceFailed",
+                "Golden case '%s' run could not be stored in run history."
+                        .formatted(testCase == null ? "" : testCase.caseId()),
+                "/run",
+                metadata);
+    }
+
+    private static VisualDiagnostic goldenCertificationPersistenceFailureDiagnostic(
+            VisualGraphGoldenCertification certification,
+            RuntimeException ex) {
+        Map<String, Object> metadata = goldenFailureMetadata("CERTIFY", ex);
+        metadata.put("publicationId", certification == null ? "" : certification.publicationId());
+        metadata.put("caseSetFingerprint", certification == null ? "" : certification.caseSetFingerprint());
+        metadata.put("runIds", certification == null ? List.of() : certification.runIds());
+        return VisualDiagnostic.error(
+                "visual.golden.certificationPersistenceFailed",
+                "Golden certification for publication '%s' could not be stored."
+                        .formatted(certification == null ? "" : certification.publicationId()),
+                "/certification",
+                metadata);
+    }
+
+    private static Map<String, Object> goldenFailureMetadata(String mutationAction, RuntimeException ex) {
+        Map<String, Object> metadata = new LinkedHashMap<>();
+        metadata.put("mutationAction", mutationAction == null ? "" : mutationAction);
+        metadata.put("exceptionType", ex == null ? "" : ex.getClass().getSimpleName());
+        if (ex != null && ex.getMessage() != null && !ex.getMessage().isBlank()) {
+            metadata.put("exceptionMessage", ex.getMessage());
+        }
+        return metadata;
+    }
+
+    private static VisualGraphGoldenCertification withDiagnostic(VisualGraphGoldenCertification certification,
+                                                                 VisualDiagnostic diagnostic) {
+        List<VisualDiagnostic> diagnostics = new ArrayList<>(certification.diagnostics());
+        diagnostics.add(diagnostic);
+        return new VisualGraphGoldenCertification(
+                certification.schemaVersion(),
+                certification.publicationId(),
+                false,
+                certification.totalCases(),
+                certification.passedCases(),
+                certification.failedCases(),
+                certification.runIds(),
+                certification.caseSetFingerprint(),
+                diagnostics,
+                certification.certifiedAt()
+        );
+    }
+
+    private static boolean hasDiagnostic(List<VisualDiagnostic> diagnostics, String code) {
+        return diagnostics != null
+                && diagnostics.stream().anyMatch(diagnostic -> diagnostic != null && diagnostic.code().equals(code));
     }
 
     private List<VisualDiagnostic> assertionDiagnostics(VisualGraphGoldenCase testCase, Object actualOutput) {

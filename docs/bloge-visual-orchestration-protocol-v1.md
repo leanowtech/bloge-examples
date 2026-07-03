@@ -2660,6 +2660,35 @@ frozen DSL，`validation` 必须等于 publication 冻结的 validation/readines
 按当前 catalog 重新计算。若 artifact 不存在返回 `404 NOT FOUND`；artifact 本身不可被修改或
 删除。
 
+#### 10.10.1 Golden regression case 与 certification
+
+publication 可以绑定 golden regression cases，用 frozen DSL 回归不可变 artifact。
+`POST /api/visual/golden-cases` 保存 case 前必须校验 case schemaVersion、context
+是否满足 frozen graph input schema、outputNode 是否存在、assertion path 是否为 JSON
+Pointer，以及 output-schema / numeric-tolerance assertion 是否可解析。保存失败返回
+`409` 与 `VisualValidationResult`，诊断码为
+`visual.golden.savePersistenceFailed`。`DELETE /api/visual/golden-cases/{caseId}`
+删除失败返回 `visual.golden.deletePersistenceFailed`，且不得移除当前 case。
+
+`POST /api/visual/golden-cases/{caseId}/run` 会执行单个 case、写入 run history，并返回
+`VisualGraphGoldenCaseRunResult`。如果 frozen DSL 已执行但 run-history repository
+写入失败，接口返回 `409`，`passed=false`，`run.runId` 为空，并在 case result
+diagnostics 中返回 `visual.golden.runHistoryPersistenceFailed`。publication 级
+`/run` suite 会把每个 case 的同类失败汇总为 suite-level
+`visual.golden.runHistoryPersistenceFailed`，metadata 携带 `publicationId`、
+`failedRunHistoryRecords`、`totalCases` 和 `mutationAction=RUN_HISTORY`，同时 per-case
+result 仍保留具体 caseId/outputNode/exceptionType。
+
+`POST /api/visual/golden-cases/publications/{publicationId}/certify` 只有在 suite
+run-history 写入没有失败时才尝试保存 latest certification。run-history 写入失败时返回
+`409` 与未持久化 certification snapshot，其 diagnostics 继承 suite-level
+`visual.golden.runHistoryPersistenceFailed`。certification repository 写入失败时返回
+`409` 与未持久化 certification snapshot，并追加
+`visual.golden.certificationPersistenceFailed`。golden 持久化失败 diagnostics 的 metadata
+必须至少携带 publication/case/certification 上下文、`mutationAction`、`exceptionType`，并在可用时携带
+`exceptionMessage`；调用方必须将其路由为平台存储故障，而不是 assertion mismatch、suite
+failed 或 stale certification。
+
 ### 10.11 试运行
 
 ```http
