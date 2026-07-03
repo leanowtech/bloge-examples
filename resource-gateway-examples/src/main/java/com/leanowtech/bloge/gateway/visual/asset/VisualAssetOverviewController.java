@@ -744,6 +744,11 @@ public class VisualAssetOverviewController {
                     null
             ));
         }
+        ResponseEntity<VisualRuntimeBindingImplementationLifecycleResult> revisionError =
+                lifecycleRevisionConflict(binding, null, binding, request.expectedRevision(), "/expectedRevision");
+        if (revisionError != null) {
+            return revisionError;
+        }
         ResponseEntity<VisualRuntimeBindingImplementationLifecycleResult> stateError =
                 bindableStateError(binding, request, null);
         if (stateError != null) {
@@ -871,6 +876,11 @@ public class VisualAssetOverviewController {
                     inactiveActivation,
                     inactiveIntegration
             ));
+        }
+        ResponseEntity<VisualRuntimeBindingDeactivationResult> revisionError =
+                runtimeBindingDeactivationRevisionConflict(binding, request.expectedRevision(), "/expectedRevision");
+        if (revisionError != null) {
+            return revisionError;
         }
         if (!binding.bound()) {
             return runtimeBindingDeactivationFailure(
@@ -1167,6 +1177,17 @@ public class VisualAssetOverviewController {
                     current,
                     replacement
             ));
+        }
+        ResponseEntity<VisualRuntimeBindingImplementationLifecycleResult> currentRevisionError =
+                lifecycleRevisionConflict(current, replacement, current, request.expectedRevision(), "/expectedRevision");
+        if (currentRevisionError != null) {
+            return currentRevisionError;
+        }
+        ResponseEntity<VisualRuntimeBindingImplementationLifecycleResult> replacementRevisionError =
+                lifecycleRevisionConflict(current, replacement, replacement,
+                        request.expectedReplacementRevision(), "/expectedReplacementRevision");
+        if (replacementRevisionError != null) {
+            return replacementRevisionError;
         }
         if (!current.bound()) {
             return lifecycleFailure(
@@ -3963,6 +3984,57 @@ public class VisualAssetOverviewController {
             );
         }
         return null;
+    }
+
+    private static ResponseEntity<VisualRuntimeBindingImplementationLifecycleResult> lifecycleRevisionConflict(
+            VisualRuntimeBindingImplementationBinding binding,
+            VisualRuntimeBindingImplementationBinding replacementBinding,
+            VisualRuntimeBindingImplementationBinding checkedBinding,
+            long expectedRevision,
+            String target) {
+        if (checkedBinding == null || expectedRevision <= 0 || checkedBinding.revision() == expectedRevision) {
+            return null;
+        }
+        String message = "Runtime binding implementation '%s' revision %d does not match expected revision %d."
+                .formatted(checkedBinding.bindingId(), checkedBinding.revision(), expectedRevision);
+        return lifecycleFailure(
+                HttpStatus.CONFLICT,
+                "conflict",
+                "visual.runtimeBindingImplementation.revisionConflict",
+                message,
+                target,
+                binding,
+                replacementBinding,
+                Map.of(
+                        "bindingId", checkedBinding.bindingId(),
+                        "expectedRevision", expectedRevision,
+                        "actualRevision", checkedBinding.revision())
+        );
+    }
+
+    private static ResponseEntity<VisualRuntimeBindingDeactivationResult> runtimeBindingDeactivationRevisionConflict(
+            VisualRuntimeBindingImplementationBinding binding,
+            long expectedRevision,
+            String target) {
+        if (binding == null || expectedRevision <= 0 || binding.revision() == expectedRevision) {
+            return null;
+        }
+        String message = "Runtime binding implementation '%s' revision %d does not match expected revision %d."
+                .formatted(binding.bindingId(), binding.revision(), expectedRevision);
+        return runtimeBindingDeactivationFailure(
+                HttpStatus.CONFLICT,
+                "conflict",
+                "visual.runtimeBindingImplementation.revisionConflict",
+                message,
+                target,
+                binding,
+                null,
+                null,
+                Map.of(
+                        "bindingId", binding.bindingId(),
+                        "expectedRevision", expectedRevision,
+                        "actualRevision", binding.revision())
+        );
     }
 
     private static boolean transitionMatchesLastLifecycleEvent(

@@ -2023,10 +2023,20 @@ binding。`POST /api/visual/assets/runtime-binding-requirements/implementation-b
 要求当前 binding 已是 `bound`，且 `replacementBindingId` 指向同一 operatorRef 的
 ready-to-bind 或 review-acknowledged proposal；成功后旧记录进入 `superseded`，新记录进入
 `bound`，并写入 `supersedesBindingId` / `supersededByBindingId` 和 lifecycle events。
+transition request 可携带 `expectedRevision`；supersede 还可携带
+`expectedReplacementRevision`。非零 expected revision 与当前记录 revision 不一致时返回
+`409` 和 `visual.runtimeBindingImplementation.revisionConflict`，避免 runtime-plane 或浏览器
+拿旧 binding 记录执行绑定、解绑或替换确认。
+浏览器 Workspace Overview 会直接消费 implementation binding record list，按 `operatorRef`
+和 lifecycle `state` 过滤 Runtime Implementation Bindings，并在 Bind/Unbind/Supersede 操作中发送
+`bloge.visualRuntimeBindingImplementationTransition.v1`，默认携带当前 record revision 作为
+`expectedRevision`；supersede 还会从可见 replacement proposal 携带
+`expectedReplacementRevision`，让 UI acknowledgement 与 runtime-plane repository fact 对齐。
 bind、supersede 和 unbind 都支持 lifecycle exact replay：当请求的
 `actor/reason/changeSource/changeSummary/replacementBindingId` 与最后一次已持久化 lifecycle event 完全匹配，
 且目标状态和关联 binding lineage 仍一致时，服务端返回 idempotent `200 OK`，不会追加第二条 event 或再次
-deactivate runtime evidence；如果状态相同但治理请求不同，则继续返回 conflict，避免把不同人工审批意图误合并。
+deactivate runtime evidence；该 exact replay 优先于 expected revision 检查，所以一次成功 mutation 的网络重试
+不会因为记录 revision 增长而误报 stale；如果状态相同但治理请求不同，则继续返回 conflict，避免把不同人工审批意图误合并。
 如果 bind lifecycle 的 repository update 失败，服务端返回 `409`、`state=failed`、
 `visual.runtimeBindingImplementation.bindPersistenceFailed` diagnostic，并在 metadata 中携带
 `bindingId`、`operatorRef`、`fromState`、`toState`、`exceptionType` 和

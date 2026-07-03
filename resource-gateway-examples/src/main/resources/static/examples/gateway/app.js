@@ -359,6 +359,15 @@ const VISUAL_RUNTIME_BINDING_TARGET_KINDS = [
   ['publication', 'Publication']
 ];
 const VISUAL_RUNTIME_BINDING_LIMITS = [10, 25, 50];
+const VISUAL_RUNTIME_BINDING_IMPLEMENTATION_STATES = [
+  ['', 'All states'],
+  ['ready-to-bind', 'Ready to bind'],
+  ['requires-review', 'Requires review'],
+  ['bound', 'Bound'],
+  ['unbound', 'Unbound'],
+  ['superseded', 'Superseded'],
+  ['failed', 'Failed']
+];
 
 const state = {
   scenarios: [],
@@ -431,6 +440,14 @@ const state = {
     limit: 10
   },
   activeVisualRuntimeBindingRequirement: null,
+  visualRuntimeBindingImplementations: [],
+  visualRuntimeBindingImplementationsMessage: null,
+  visualRuntimeBindingImplementationMessage: null,
+  visualRuntimeBindingImplementationQuery: {
+    operatorRef: '',
+    state: ''
+  },
+  activeVisualRuntimeBindingImplementation: null,
   goldenAssertionMode: 'EXACT_OUTPUT',
   goldenAssertionPath: '',
   goldenAssertionValueText: '',
@@ -631,6 +648,7 @@ async function loadVisualAssetOverview(options = {}) {
   }
   if (options.loadRuntimeBindings !== false) {
     await loadVisualRuntimeBindingRequirements({ render: false });
+    await loadVisualRuntimeBindingImplementations({ render: false });
   }
   if (options.render !== false) {
     renderVisualAssetOverview();
@@ -654,6 +672,24 @@ async function loadVisualRuntimeBindingRequirements(options = {}) {
     renderVisualAssetOverview();
   }
   return state.visualRuntimeBindingRequirements;
+}
+
+async function loadVisualRuntimeBindingImplementations(options = {}) {
+  try {
+    const response = await fetch(visualRuntimeBindingImplementationsUrl());
+    if (!response.ok) {
+      throw new Error(`Runtime binding implementations failed with ${response.status}`);
+    }
+    state.visualRuntimeBindingImplementations = await response.json();
+    state.visualRuntimeBindingImplementationsMessage = null;
+  } catch (error) {
+    state.visualRuntimeBindingImplementations = [];
+    state.visualRuntimeBindingImplementationsMessage = { text: error.message, level: 'error' };
+  }
+  if (options.render !== false) {
+    renderVisualAssetOverview();
+  }
+  return state.visualRuntimeBindingImplementations;
 }
 
 function rememberCatalogOperator(operator, options = {}) {
@@ -822,6 +858,24 @@ function visualRuntimeBindingHandoffReviewUrl() {
   return '/api/visual/assets/runtime-binding-requirements/handoff-review';
 }
 
+function visualRuntimeBindingImplementationsUrl() {
+  const params = new URLSearchParams();
+  const query = normalizeVisualRuntimeBindingImplementationQuery(state.visualRuntimeBindingImplementationQuery);
+  if (query.operatorRef) {
+    params.set('operatorRef', query.operatorRef);
+  }
+  if (query.state) {
+    params.set('state', query.state);
+  }
+  const queryString = params.toString();
+  return `/api/visual/assets/runtime-binding-requirements/implementation-bindings${queryString ? `?${queryString}` : ''}`;
+}
+
+function visualRuntimeBindingImplementationTransitionUrl(bindingId, action) {
+  const normalizedAction = String(action || '').trim().toLowerCase();
+  return `/api/visual/assets/runtime-binding-requirements/implementation-bindings/${encodeURIComponent(bindingId)}/${encodeURIComponent(normalizedAction)}`;
+}
+
 function visualRuntimeBindingRequirementParams(builder = state.builder) {
   const scope = builderScope(builder);
   const params = new URLSearchParams();
@@ -926,6 +980,22 @@ async function updateVisualRuntimeBindingRequirementQuery(patch = {}) {
   await loadVisualRuntimeBindingRequirements();
 }
 
+function normalizeVisualRuntimeBindingImplementationQuery(query = {}) {
+  return {
+    operatorRef: String(query.operatorRef || '').trim(),
+    state: String(query.state || '').trim().toLowerCase()
+  };
+}
+
+async function updateVisualRuntimeBindingImplementationQuery(patch = {}) {
+  state.visualRuntimeBindingImplementationQuery = normalizeVisualRuntimeBindingImplementationQuery({
+    ...state.visualRuntimeBindingImplementationQuery,
+    ...patch
+  });
+  state.activeVisualRuntimeBindingImplementation = null;
+  await loadVisualRuntimeBindingImplementations();
+}
+
 async function exportVisualRuntimeBindingHandoffBundle() {
   state.visualRuntimeBindingHandoffBundle = null;
   state.visualRuntimeBindingHandoffReview = null;
@@ -992,6 +1062,154 @@ async function reviewVisualRuntimeBindingHandoffBundle() {
     };
   }
   renderVisualAssetOverview();
+}
+
+async function transitionVisualRuntimeBindingImplementation(bindingId, action) {
+  const binding = visualRuntimeBindingImplementationById(bindingId);
+  if (!binding) {
+    state.visualRuntimeBindingImplementationMessage = {
+      text: `Runtime binding implementation '${bindingId}' is not in the current list.`,
+      level: 'warning'
+    };
+    renderVisualAssetOverview();
+    return null;
+  }
+  const normalizedAction = String(action || '').trim().toLowerCase();
+  const replacement = normalizedAction === 'supersede'
+    ? visualRuntimeBindingImplementationSupersedeReplacement(binding)
+    : null;
+  if (normalizedAction === 'supersede' && !replacement) {
+    renderVisualAssetOverview();
+    return null;
+  }
+  const request = visualRuntimeBindingImplementationTransitionRequest(binding, normalizedAction, replacement);
+  try {
+    const response = await fetch(visualRuntimeBindingImplementationTransitionUrl(binding.bindingId, normalizedAction), {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(request)
+    });
+    const payload = await response.json().catch(() => null);
+    const diagnostics = normalizeDiagnostics(payload?.diagnostics);
+    const accepted = response.ok && payload?.accepted !== false;
+    state.visualRuntimeBindingImplementationMessage = {
+      text: visualRuntimeBindingImplementationTransitionMessage(
+        normalizedAction,
+        binding,
+        replacement,
+        payload,
+        diagnostics,
+        response.status
+      ),
+      level: accepted ? 'success' : visualCheckLevel(diagnostics, false)
+    };
+    $('output').textContent = pretty({ status: response.status, runtimeBindingImplementationTransition: payload });
+  } catch (error) {
+    state.visualRuntimeBindingImplementationMessage = {
+      text: error.message,
+      level: 'error'
+    };
+  }
+  await loadVisualAssetOverview({ render: false });
+  renderVisualAssetOverview();
+  return state.visualRuntimeBindingImplementationMessage;
+}
+
+function visualRuntimeBindingImplementationById(bindingId) {
+  const normalized = String(bindingId || '').trim();
+  return (Array.isArray(state.visualRuntimeBindingImplementations) ? state.visualRuntimeBindingImplementations : [])
+    .find((binding) => binding?.bindingId === normalized) || null;
+}
+
+function visualRuntimeBindingImplementationSupersedeReplacement(binding) {
+  const candidates = (Array.isArray(state.visualRuntimeBindingImplementations) ? state.visualRuntimeBindingImplementations : [])
+    .filter((candidate) => candidate
+      && candidate.bindingId !== binding.bindingId
+      && candidate.operatorRef === binding.operatorRef
+      && ['ready-to-bind', 'requires-review'].includes(String(candidate.state || '').toLowerCase()));
+  if (!candidates.length) {
+    state.visualRuntimeBindingImplementationMessage = {
+      text: `No ready replacement binding is visible for '${binding.bindingId}'.`,
+      level: 'warning'
+    };
+    return null;
+  }
+  if (candidates.length === 1) {
+    return candidates[0];
+  }
+  const suggested = candidates.map((candidate) => candidate.bindingId).join(', ');
+  const selected = window.prompt(`Replacement binding id (${suggested})`, candidates[0].bindingId);
+  const normalized = String(selected || '').trim();
+  const replacement = candidates.find((candidate) => candidate.bindingId === normalized) || null;
+  if (!replacement) {
+    state.visualRuntimeBindingImplementationMessage = {
+      text: normalized
+        ? `Replacement binding '${normalized}' is not a visible ready proposal for '${binding.operatorRef}'.`
+        : 'Supersede cancelled.',
+      level: normalized ? 'warning' : 'info'
+    };
+  }
+  return replacement;
+}
+
+function visualRuntimeBindingImplementationTransitionRequest(binding, action, replacement = null) {
+  return {
+    schemaVersion: 'bloge.visualRuntimeBindingImplementationTransition.v1',
+    actor: 'visual-canvas',
+    reason: visualRuntimeBindingImplementationTransitionReason(action, binding, replacement),
+    changeSource: 'gateway-browser',
+    changeSummary: visualRuntimeBindingImplementationTransitionSummary(action, binding, replacement),
+    ackReview: true,
+    replacementBindingId: replacement?.bindingId || '',
+    expectedRevision: Number(binding?.revision || 0) || 0,
+    expectedReplacementRevision: replacement ? (Number(replacement.revision || 0) || 0) : 0
+  };
+}
+
+function visualRuntimeBindingImplementationTransitionReason(action, binding, replacement = null) {
+  const operator = binding?.operatorRef || 'operator';
+  if (action === 'unbind') {
+    return `User reviewed active runtime implementation '${binding?.bindingId || ''}' for ${operator} before unbinding it in the browser.`;
+  }
+  if (action === 'supersede') {
+    return `User reviewed replacement runtime implementation '${replacement?.bindingId || ''}' for ${operator} before superseding '${binding?.bindingId || ''}' in the browser.`;
+  }
+  return `User reviewed runtime implementation '${binding?.bindingId || ''}' for ${operator} before binding it in the browser.`;
+}
+
+function visualRuntimeBindingImplementationTransitionSummary(action, binding, replacement = null) {
+  const revision = Number(binding?.revision || 0) || 0;
+  if (action === 'unbind') {
+    return `Unbound runtime implementation ${binding?.bindingId || ''}@${revision}.`;
+  }
+  if (action === 'supersede') {
+    return `Superseded runtime implementation ${binding?.bindingId || ''}@${revision} with ${replacement?.bindingId || ''}@${Number(replacement?.revision || 0) || 0}.`;
+  }
+  return `Bound runtime implementation ${binding?.bindingId || ''}@${revision}.`;
+}
+
+function visualRuntimeBindingImplementationTransitionMessage(
+  action,
+  binding,
+  replacement,
+  payload,
+  diagnostics = [],
+  status = 0
+) {
+  const accepted = payload?.accepted !== false && status >= 200 && status < 300;
+  if (!accepted) {
+    return diagnosticMessage(
+      diagnostics,
+      `Runtime binding implementation ${action} rejected with ${status || 'unknown status'}.`
+    );
+  }
+  if (action === 'unbind') {
+    return `Runtime binding implementation '${binding.bindingId}' is unbound.`;
+  }
+  if (action === 'supersede') {
+    return `Runtime binding implementation '${replacement?.bindingId || ''}' superseded '${binding.bindingId}'.`;
+  }
+  return `Runtime binding implementation '${binding.bindingId}' is bound.`;
 }
 
 function visualRuntimeBindingHandoffReviewMessage(review) {
@@ -7961,6 +8179,10 @@ function renderVisualAssetOverview() {
   const actionQueue = overview.actionQueue || {};
   const bindingIndex = state.visualRuntimeBindingRequirements || null;
   const bindingRows = visualRuntimeBindingRequirementRows(bindingIndex);
+  const implementationBindings = Array.isArray(state.visualRuntimeBindingImplementations)
+    ? state.visualRuntimeBindingImplementations
+    : [];
+  const implementationRows = visualRuntimeBindingImplementationRows(implementationBindings);
   const rows = visualAssetOverviewRows(overview);
   const actionRows = visualAssetOverviewActionRows(actionQueue);
   const actionOverflow = Math.max(
@@ -7973,12 +8195,18 @@ function renderVisualAssetOverview() {
   );
   const activeAction = visualAssetActionContext(state.activeVisualAssetAction);
   const activeBinding = visualRuntimeBindingRequirementContext(state.activeVisualRuntimeBindingRequirement);
+  const activeImplementation = visualRuntimeBindingImplementationContext(
+    state.activeVisualRuntimeBindingImplementation
+  );
   const handoffBundleMessage = state.visualRuntimeBindingHandoffBundleMessage || null;
   const handoffReviewRows = visualRuntimeBindingHandoffReviewRows(state.visualRuntimeBindingHandoffReview);
   const scopeLabel = visualAssetOverviewScopeLabel(overview);
   const actionQueueVisible = visualAssetOverviewShouldShowActionQueue(actionQueue);
   const bindingRequirementsVisible = visualRuntimeBindingRequirementsShouldShow(bindingIndex)
     || Boolean(state.visualRuntimeBindingRequirementsMessage?.text);
+  const implementationBindingsVisible = visualRuntimeBindingImplementationsShouldShow(implementationBindings)
+    || Boolean(state.visualRuntimeBindingImplementationsMessage?.text)
+    || Boolean(state.visualRuntimeBindingImplementationMessage?.text);
   const stats = [
     ['Drafts', drafts.total],
     ['Active', drafts.activeCount],
@@ -7988,6 +8216,7 @@ function renderVisualAssetOverview() {
     ['Operators', catalog.totalOperators],
     ['Actions', actionQueue.unfilteredTotal ?? actionQueue.total],
     ['Runtime bindings', bindingIndex?.unfilteredTotal ?? bindingIndex?.total],
+    ['Binding records', implementationBindings.length],
     ['Design-only operators', visualAssetOverviewCatalogReadiness(catalog, 'design-only')],
     ['Runtime-blocked operators', visualAssetOverviewCatalogReadiness(catalog, 'runtime-blocked')]
   ].filter(([, value], index) => index < 7 || Number(value || 0) > 0)
@@ -8012,6 +8241,14 @@ function renderVisualAssetOverview() {
     ${activeBinding ? `<div class="library-impact-risk ${escapeHtml(activeBinding.level)}">
       <strong>${escapeHtml('Current runtime binding')}</strong>
       <span>${escapeHtml(activeBinding.message)}</span>
+    </div>` : ''}
+    ${activeImplementation ? `<div class="library-impact-risk ${escapeHtml(activeImplementation.level)}">
+      <strong>${escapeHtml('Current implementation binding')}</strong>
+      <span>${escapeHtml(activeImplementation.message)}</span>
+    </div>` : ''}
+    ${state.visualRuntimeBindingImplementationMessage?.text ? `<div class="library-impact-risk ${escapeHtml(state.visualRuntimeBindingImplementationMessage.level || 'info')}">
+      <strong>${escapeHtml('Runtime implementation lifecycle')}</strong>
+      <span>${escapeHtml(state.visualRuntimeBindingImplementationMessage.text)}</span>
     </div>` : ''}
     ${handoffBundleMessage?.text ? `<div class="library-impact-risk ${escapeHtml(handoffBundleMessage.level || 'info')}">
       <strong>${escapeHtml('Runtime binding handoff')}</strong>
@@ -8078,11 +8315,34 @@ function renderVisualAssetOverview() {
       ${bindingRows.length ? '' : `<div class="library-impact-more">${escapeHtml('No matching runtime binding requirements')}</div>`}
       ${bindingOverflow ? `<div class="library-impact-more">+${bindingOverflow} more runtime binding requirements</div>` : ''}
     </div>` : ''}
+    ${implementationBindingsVisible ? `<div class="library-impact-risks">
+      <div class="library-impact-head">
+        <strong>Runtime Implementation Bindings</strong>
+        <span>${escapeHtml(visualRuntimeBindingImplementationWindowSummary(implementationRows))}</span>
+      </div>
+      ${state.visualRuntimeBindingImplementationsMessage?.text ? `<div class="library-impact-risk ${escapeHtml(state.visualRuntimeBindingImplementationsMessage.level || 'error')}">
+        <strong>${escapeHtml('Runtime implementation bindings unavailable')}</strong>
+        <span>${escapeHtml(state.visualRuntimeBindingImplementationsMessage.text)}</span>
+      </div>` : ''}
+      ${visualRuntimeBindingImplementationControls(implementationBindings)}
+      ${implementationRows.map((row) => `
+        <div class="library-impact-risk ${escapeHtml(row.level)}">
+          <strong>${escapeHtml(row.label)}</strong>
+          <span>${escapeHtml(row.value)}</span>
+          ${row.actions.map((action) => `<button type="button" class="secondary compact"
+            data-runtime-binding-implementation="${escapeHtml(row.bindingId)}"
+            data-runtime-binding-implementation-action="${escapeHtml(action.action)}">${escapeHtml(action.label)}</button>`).join('')}
+        </div>
+      `).join('')}
+      ${implementationRows.length ? '' : `<div class="library-impact-more">${escapeHtml('No matching runtime implementation bindings')}</div>`}
+    </div>` : ''}
   `;
   attachVisualAssetOverviewActionHandlers();
   attachVisualAssetOverviewActionQueryHandlers(actionQueue);
   attachVisualRuntimeBindingRequirementHandlers();
   attachVisualRuntimeBindingRequirementQueryHandlers(bindingIndex);
+  attachVisualRuntimeBindingImplementationHandlers();
+  attachVisualRuntimeBindingImplementationQueryHandlers(implementationBindings);
 }
 
 function visualAssetOverviewScopeLabel(overview) {
@@ -8124,6 +8384,12 @@ function visualRuntimeBindingRequirementsShouldShow(bindingIndex) {
       || query.offset);
 }
 
+function visualRuntimeBindingImplementationsShouldShow(bindings) {
+  const query = normalizeVisualRuntimeBindingImplementationQuery(state.visualRuntimeBindingImplementationQuery);
+  return (Array.isArray(bindings) && bindings.length > 0)
+    || Boolean(query.operatorRef || query.state);
+}
+
 function visualAssetOverviewActionWindowSummary(actionQueue, actionRows) {
   const total = Number(actionQueue?.total ?? actionRows.length ?? 0) || 0;
   const unfilteredTotal = Number(actionQueue?.unfilteredTotal ?? total) || 0;
@@ -8144,6 +8410,11 @@ function visualRuntimeBindingRequirementWindowSummary(bindingIndex, rows) {
   return unfilteredTotal !== total
     ? `${range} / ${unfilteredTotal} total`
     : `${range} runtime binding gaps`;
+}
+
+function visualRuntimeBindingImplementationWindowSummary(rows) {
+  const count = Array.isArray(rows) ? rows.length : 0;
+  return `${count} runtime implementation binding record${count === 1 ? '' : 's'}`;
 }
 
 function visualAssetOverviewActionControls(actionQueue) {
@@ -8310,6 +8581,41 @@ function visualRuntimeBindingRequirementControls(bindingIndex) {
       <button type="button" class="secondary compact" id="runtime-binding-reset" ${hasFilter ? '' : 'disabled'}>Reset</button>
     </div>
   `;
+}
+
+function visualRuntimeBindingImplementationControls(bindings) {
+  const query = normalizeVisualRuntimeBindingImplementationQuery(state.visualRuntimeBindingImplementationQuery);
+  const hasFilter = Boolean(query.operatorRef || query.state);
+  const operatorCounts = visualRuntimeBindingImplementationOperatorCounts(bindings);
+  return `
+    <div class="library-impact-controls">
+      <label>
+        <span>${escapeHtml('Operator')}</span>
+        <select id="runtime-binding-implementation-operator-ref" aria-label="Filter runtime implementation bindings by operator reference">
+          ${visualRuntimeBindingRawOptionMarkup('All operators', operatorCounts, query.operatorRef)}
+        </select>
+      </label>
+      <label>
+        <span>${escapeHtml('State')}</span>
+        <select id="runtime-binding-implementation-state" aria-label="Filter runtime implementation bindings by state">
+          ${visualAssetActionOptionMarkup(VISUAL_RUNTIME_BINDING_IMPLEMENTATION_STATES, query.state)}
+        </select>
+      </label>
+      <button type="button" class="secondary compact" id="runtime-binding-implementation-refresh">Refresh</button>
+      <button type="button" class="secondary compact" id="runtime-binding-implementation-reset" ${hasFilter ? '' : 'disabled'}>Reset</button>
+    </div>
+  `;
+}
+
+function visualRuntimeBindingImplementationOperatorCounts(bindings) {
+  const counts = {};
+  for (const binding of Array.isArray(bindings) ? bindings : []) {
+    const operatorRef = String(binding?.operatorRef || '').trim();
+    if (operatorRef) {
+      counts[operatorRef] = (counts[operatorRef] || 0) + 1;
+    }
+  }
+  return counts;
 }
 
 function visualRuntimeBindingOptionMarkup(staticOptions, selectedValue, counts = {}) {
@@ -8488,6 +8794,95 @@ function visualRuntimeBindingRequirementRows(bindingIndex) {
     }));
 }
 
+function visualRuntimeBindingImplementationRows(bindings) {
+  return (Array.isArray(bindings) ? bindings : [])
+    .map((binding) => ({
+      bindingId: binding?.bindingId || '',
+      level: visualRuntimeBindingImplementationLevel(binding),
+      label: visualRuntimeBindingImplementationLabel(binding),
+      value: visualRuntimeBindingImplementationValue(binding),
+      actions: visualRuntimeBindingImplementationActions(binding)
+    }));
+}
+
+function visualRuntimeBindingImplementationLevel(binding) {
+  const state = String(binding?.state || '').toLowerCase();
+  if (state === 'failed') {
+    return 'error';
+  }
+  if (state === 'requires-review') {
+    return 'warning';
+  }
+  if (state === 'bound') {
+    return 'success';
+  }
+  return 'info';
+}
+
+function visualRuntimeBindingImplementationLabel(binding) {
+  const state = operatorPaletteFacetLabel(binding?.state || 'proposal');
+  const revision = Number(binding?.revision || 0) || 0;
+  return [binding?.bindingId || 'implementation binding', state, `rev ${revision}`]
+    .filter(Boolean)
+    .join(' · ');
+}
+
+function visualRuntimeBindingImplementationValue(binding) {
+  const implementation = binding?.implementation || {};
+  const adapter = implementation.adapterKind || '';
+  const owner = implementation.runtimeOwner || '';
+  const entrypoint = implementation.entrypoint || '';
+  const version = implementation.implementationVersion || '';
+  const requirements = Array.isArray(binding?.sourceRequirementKeys)
+    ? `${binding.sourceRequirementKeys.length} requirement key${binding.sourceRequirementKeys.length === 1 ? '' : 's'}`
+    : '';
+  return [
+    binding?.operatorRef ? `operator ${binding.operatorRef}` : '',
+    adapter ? `adapter ${adapter}` : '',
+    owner ? `owner ${owner}` : '',
+    entrypoint ? `entrypoint ${entrypoint}` : '',
+    version ? `version ${version}` : '',
+    requirements
+  ].filter(Boolean).join(' · ');
+}
+
+function visualRuntimeBindingImplementationActions(binding) {
+  const bindingState = String(binding?.state || '').toLowerCase();
+  const actions = [];
+  if (['ready-to-bind', 'requires-review'].includes(bindingState)) {
+    actions.push({ action: 'bind', label: 'Bind' });
+  }
+  if (bindingState === 'bound') {
+    actions.push({ action: 'unbind', label: 'Unbind' });
+    const replacements = (Array.isArray(state.visualRuntimeBindingImplementations)
+      ? state.visualRuntimeBindingImplementations
+      : [])
+      .filter((candidate) => candidate
+        && candidate.bindingId !== binding.bindingId
+        && candidate.operatorRef === binding.operatorRef
+        && ['ready-to-bind', 'requires-review'].includes(String(candidate.state || '').toLowerCase()));
+    if (replacements.length) {
+      actions.push({ action: 'supersede', label: 'Supersede' });
+    }
+  }
+  return actions;
+}
+
+function visualRuntimeBindingImplementationContext(binding) {
+  if (!binding) {
+    return null;
+  }
+  return {
+    level: visualRuntimeBindingImplementationLevel(binding),
+    message: [
+      binding.bindingId,
+      operatorPaletteFacetLabel(binding.state || ''),
+      binding.operatorRef,
+      `rev ${Number(binding.revision || 0) || 0}`
+    ].filter(Boolean).join(' · ')
+  };
+}
+
 function visualRuntimeBindingRequirementContext(item) {
   if (!item) {
     return null;
@@ -8641,6 +9036,15 @@ function attachVisualRuntimeBindingRequirementHandlers() {
   });
 }
 
+function attachVisualRuntimeBindingImplementationHandlers() {
+  document.querySelectorAll('[data-runtime-binding-implementation]').forEach((button) => {
+    button.onclick = () => transitionVisualRuntimeBindingImplementation(
+      button.dataset.runtimeBindingImplementation,
+      button.dataset.runtimeBindingImplementationAction
+    );
+  });
+}
+
 function attachVisualRuntimeBindingRequirementQueryHandlers(bindingIndex) {
   const targetKind = $('runtime-binding-target-kind');
   if (targetKind) {
@@ -8761,6 +9165,32 @@ function attachVisualRuntimeBindingRequirementQueryHandlers(bindingIndex) {
       requirementKey: '',
       offset: 0,
       limit: 10
+    });
+  }
+}
+
+function attachVisualRuntimeBindingImplementationQueryHandlers(bindings) {
+  const operatorRef = $('runtime-binding-implementation-operator-ref');
+  if (operatorRef) {
+    operatorRef.onchange = () => updateVisualRuntimeBindingImplementationQuery({
+      operatorRef: operatorRef.value
+    });
+  }
+  const bindingState = $('runtime-binding-implementation-state');
+  if (bindingState) {
+    bindingState.onchange = () => updateVisualRuntimeBindingImplementationQuery({
+      state: bindingState.value
+    });
+  }
+  const refresh = $('runtime-binding-implementation-refresh');
+  if (refresh) {
+    refresh.onclick = () => loadVisualRuntimeBindingImplementations();
+  }
+  const reset = $('runtime-binding-implementation-reset');
+  if (reset) {
+    reset.onclick = () => updateVisualRuntimeBindingImplementationQuery({
+      operatorRef: '',
+      state: ''
     });
   }
 }

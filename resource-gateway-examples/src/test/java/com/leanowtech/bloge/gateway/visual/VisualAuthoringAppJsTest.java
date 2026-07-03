@@ -356,18 +356,29 @@ class VisualAuthoringAppJsTest {
                 .contains("visualRuntimeBindingHandoffBundle: null")
                 .contains("visualRuntimeBindingHandoffReview: null")
                 .contains("visualRuntimeBindingHandoffBundleMessage: null")
+                .contains("visualRuntimeBindingImplementations: []")
+                .contains("visualRuntimeBindingImplementationsMessage: null")
+                .contains("visualRuntimeBindingImplementationMessage: null")
+                .contains("visualRuntimeBindingImplementationQuery: {")
+                .contains("activeVisualRuntimeBindingImplementation: null")
                 .contains("visualRuntimeBindingRequirementQuery: {")
                 .contains("activeVisualRuntimeBindingRequirement: null")
                 .contains("await loadVisualRuntimeBindingRequirements({ render: false })")
+                .contains("await loadVisualRuntimeBindingImplementations({ render: false })")
                 .contains("async function loadVisualRuntimeBindingRequirements(options = {})")
+                .contains("async function loadVisualRuntimeBindingImplementations(options = {})")
                 .contains("fetch(visualRuntimeBindingRequirementsUrl())")
+                .contains("fetch(visualRuntimeBindingImplementationsUrl())")
                 .contains("function visualRuntimeBindingRequirementsUrl(builder = state.builder)")
                 .contains("function visualRuntimeBindingHandoffBundleUrl(builder = state.builder)")
                 .contains("function visualRuntimeBindingHandoffReviewUrl()")
+                .contains("function visualRuntimeBindingImplementationsUrl()")
+                .contains("function visualRuntimeBindingImplementationTransitionUrl(bindingId, action)")
                 .contains("function visualRuntimeBindingRequirementParams(builder = state.builder)")
                 .contains("/api/visual/assets/runtime-binding-requirements")
                 .contains("/api/visual/assets/runtime-binding-requirements/handoff-bundle")
                 .contains("/api/visual/assets/runtime-binding-requirements/handoff-review")
+                .contains("/api/visual/assets/runtime-binding-requirements/implementation-bindings")
                 .contains("params.set('limit', String(query.limit))")
                 .contains("params.set('targetKind', query.targetKind)")
                 .contains("params.set('artifactKind', query.artifactKind)")
@@ -387,6 +398,12 @@ class VisualAuthoringAppJsTest {
                 .contains("requirementKey: String(query.requirementKey || '').trim()")
                 .contains("function normalizeVisualRuntimeBindingRequirementQuery(query = {})")
                 .contains("async function updateVisualRuntimeBindingRequirementQuery(patch = {})")
+                .contains("function normalizeVisualRuntimeBindingImplementationQuery(query = {})")
+                .contains("async function updateVisualRuntimeBindingImplementationQuery(patch = {})")
+                .contains("async function transitionVisualRuntimeBindingImplementation(bindingId, action)")
+                .contains("function visualRuntimeBindingImplementationTransitionRequest(binding, action, replacement = null)")
+                .contains("expectedRevision: Number(binding?.revision || 0) || 0")
+                .contains("expectedReplacementRevision: replacement ? (Number(replacement.revision || 0) || 0) : 0")
                 .contains("async function exportVisualRuntimeBindingHandoffBundle()")
                 .contains("fetch(visualRuntimeBindingHandoffBundleUrl())")
                 .contains("payload?.operatorContracts?.length")
@@ -407,8 +424,11 @@ class VisualAuthoringAppJsTest {
                 .contains("function visualRuntimeBindingFieldChangeText(change)")
                 .contains("function visualRuntimeBindingFieldLabel(value)")
                 .contains("Runtime Binding Requirements")
+                .contains("Runtime Implementation Bindings")
                 .contains("Current runtime binding")
+                .contains("Current implementation binding")
                 .contains("Runtime binding handoff")
+                .contains("Runtime implementation lifecycle")
                 .contains("Handoff Review Drift Details")
                 .contains("sourceBundleFingerprint")
                 .contains("Snapshot fingerprint")
@@ -437,13 +457,25 @@ class VisualAuthoringAppJsTest {
                 .contains("runtime-binding-export")
                 .contains("runtime-binding-review")
                 .contains("runtime-binding-reset")
+                .contains("runtime-binding-implementation-operator-ref")
+                .contains("runtime-binding-implementation-state")
+                .contains("runtime-binding-implementation-refresh")
+                .contains("runtime-binding-implementation-reset")
                 .contains("function visualRuntimeBindingRequirementRows(bindingIndex)")
+                .contains("function visualRuntimeBindingImplementationRows(bindings)")
+                .contains("function visualRuntimeBindingImplementationControls(bindings)")
+                .contains("function visualRuntimeBindingImplementationActions(binding)")
+                .contains("function visualRuntimeBindingImplementationContext(binding)")
                 .contains("function visualRuntimeBindingRequirementCodeRows(requirements)")
                 .contains("function visualRuntimeBindingRawOptionMarkup(emptyLabel, counts = {}, selectedValue = '')")
                 .contains("function visualRuntimeBindingRequirementContext(item)")
+                .contains("function attachVisualRuntimeBindingImplementationHandlers()")
+                .contains("function attachVisualRuntimeBindingImplementationQueryHandlers(bindings)")
                 .contains("function openVisualRuntimeBindingRequirement(index, requirementKey = '')")
                 .contains("data-runtime-binding-requirement")
                 .contains("data-runtime-binding-requirement-key")
+                .contains("data-runtime-binding-implementation")
+                .contains("data-runtime-binding-implementation-action")
                 .contains("Opened runtime binding requirement:")
                 .contains("Exported ${displayed} of ${total} runtime binding requirement(s).")
                 .contains("Handoff review ${stateLabel}: ${matched} current, ${drifted} drifted, ${missing} missing, ${fresh} new in current window.")
@@ -451,8 +483,10 @@ class VisualAuthoringAppJsTest {
                 .contains("Drift categories")
                 .contains("server-derived row")
                 .contains("No matching runtime binding requirements")
+                .contains("No matching runtime implementation bindings")
                 .contains("more runtime binding requirements");
         assertThat(countOccurrences(source, "function visualRuntimeBindingRequirementRows(")).isEqualTo(1);
+        assertThat(countOccurrences(source, "function visualRuntimeBindingImplementationRows(")).isEqualTo(1);
     }
 
     @Test
@@ -471,6 +505,29 @@ class VisualAuthoringAppJsTest {
             assertThat(result.finished()).as(result.output()).isTrue();
             assertThat(result.exitCode()).as(result.output()).isZero();
             assertThat(result.output()).contains("runtime binding handoff review probe passed");
+        } finally {
+            Files.deleteIfExists(probe);
+            Files.deleteIfExists(appJs);
+            Files.deleteIfExists(tempDir);
+        }
+    }
+
+    @Test
+    void buildsRuntimeBindingImplementationLifecycleRequestsWithRevisionGuards() throws Exception {
+        assumeNodeAvailable();
+
+        Path tempDir = Files.createTempDirectory("bloge-implementation-binding-app-js-test");
+        Path appJs = tempDir.resolve("app.js");
+        Path probe = tempDir.resolve("probe.js");
+        try {
+            Files.writeString(appJs, appJsSource(), StandardCharsets.UTF_8);
+            Files.writeString(probe, runtimeBindingImplementationLifecycleProbe(), StandardCharsets.UTF_8);
+
+            ProcessResult result = runProcess(List.of("node", probe.toString(), appJs.toString()), tempDir, 10);
+
+            assertThat(result.finished()).as(result.output()).isTrue();
+            assertThat(result.exitCode()).as(result.output()).isZero();
+            assertThat(result.output()).contains("runtime binding implementation lifecycle probe passed");
         } finally {
             Files.deleteIfExists(probe);
             Files.deleteIfExists(appJs);
@@ -1421,6 +1478,156 @@ class VisualAuthoringAppJsTest {
                   }
                 }
                 console.log('runtime binding handoff review probe passed');
+                """);
+    }
+
+    private static String runtimeBindingImplementationLifecycleProbe() {
+        return String.join("", """
+                const fs = require('fs');
+                const vm = require('vm');
+                const source = fs.readFileSync(process.argv[2], 'utf8');
+                new vm.Script(source, { filename: 'app.js' });
+
+                function functionSource(name) {
+                  const start = source.indexOf(`function ${name}(`);
+                  if (start < 0) throw new Error(`missing function ${name}`);
+                  const openParen = source.indexOf('(', start);
+                  let parenDepth = 0;
+                  let brace = -1;
+                  for (let i = openParen; i < source.length; i += 1) {
+                    const ch = source[i];
+                    if (ch === '(') parenDepth += 1;
+                    if (ch === ')') {
+                      parenDepth -= 1;
+                      if (parenDepth === 0) {
+                        brace = source.indexOf('{', i + 1);
+                        break;
+                      }
+                    }
+                  }
+                  if (brace < 0) throw new Error(`missing body for function ${name}`);
+                  let depth = 0;
+                  for (let i = brace; i < source.length; i += 1) {
+                    const ch = source[i];
+                    if (ch === '{') depth += 1;
+                    if (ch === '}') {
+                      depth -= 1;
+                      if (depth === 0) return source.slice(start, i + 1);
+                    }
+                  }
+                  throw new Error(`unterminated function ${name}`);
+                }
+
+                const context = vm.createContext({
+                  console,
+                  URLSearchParams,
+                  encodeURIComponent,
+                  state: {
+                    visualRuntimeBindingImplementationQuery: {
+                      operatorRef: 'risk:eligibility',
+                      state: 'bound'
+                    },
+                    visualRuntimeBindingImplementations: []
+                  }
+                });
+                for (const name of [
+                  'operatorPaletteFacetLabel',
+                  'diagnosticMessage',
+                  'normalizeVisualRuntimeBindingImplementationQuery',
+                  'visualRuntimeBindingImplementationsUrl',
+                  'visualRuntimeBindingImplementationTransitionUrl',
+                  'visualRuntimeBindingImplementationTransitionRequest',
+                  'visualRuntimeBindingImplementationTransitionReason',
+                  'visualRuntimeBindingImplementationTransitionSummary',
+                  'visualRuntimeBindingImplementationTransitionMessage',
+                  'visualRuntimeBindingImplementationRows',
+                  'visualRuntimeBindingImplementationLevel',
+                  'visualRuntimeBindingImplementationLabel',
+                  'visualRuntimeBindingImplementationValue',
+                  'visualRuntimeBindingImplementationActions',
+                  'visualRuntimeBindingImplementationContext'
+                ]) {
+                  vm.runInContext(functionSource(name), context);
+                }
+                const current = {
+                  bindingId: 'risk-eligibility-native-v1',
+                  revision: 3,
+                  state: 'bound',
+                  operatorRef: 'risk:eligibility',
+                  implementation: {
+                    adapterKind: 'http',
+                    runtimeOwner: 'risk-platform',
+                    entrypoint: 'risk-worker',
+                    implementationVersion: '1.2.0'
+                  },
+                  sourceRequirementKeys: ['RUNTIME_BINDING|draft|risk']
+                };
+                const replacement = {
+                  bindingId: 'risk-eligibility-native-v2',
+                  revision: 1,
+                  state: 'requires-review',
+                  operatorRef: 'risk:eligibility',
+                  implementation: {
+                    adapterKind: 'http',
+                    runtimeOwner: 'risk-platform',
+                    entrypoint: 'risk-worker-v2',
+                    implementationVersion: '2.0.0'
+                  },
+                  sourceRequirementKeys: ['RUNTIME_BINDING|draft|risk']
+                };
+                context.state.visualRuntimeBindingImplementations = [current, replacement];
+                const rows = context.visualRuntimeBindingImplementationRows(context.state.visualRuntimeBindingImplementations);
+                const request = context.visualRuntimeBindingImplementationTransitionRequest(current, 'supersede', replacement);
+                const url = context.visualRuntimeBindingImplementationsUrl();
+                const transitionUrl = context.visualRuntimeBindingImplementationTransitionUrl(current.bindingId, 'supersede');
+                const acceptedMessage = context.visualRuntimeBindingImplementationTransitionMessage(
+                  'supersede',
+                  current,
+                  replacement,
+                  { accepted: true },
+                  [],
+                  200
+                );
+                const rejectedMessage = context.visualRuntimeBindingImplementationTransitionMessage(
+                  'bind',
+                  replacement,
+                  null,
+                  { accepted: false },
+                  [{
+                    level: 'ERROR',
+                    code: 'visual.runtimeBindingImplementation.revisionConflict',
+                    message: 'Runtime binding implementation revision is stale.'
+                  }],
+                  409
+                );
+                const currentContext = context.visualRuntimeBindingImplementationContext(current);
+                const checks = [
+                  ['list url', url, '/api/visual/assets/runtime-binding-requirements/implementation-bindings?operatorRef=risk%3Aeligibility&state=bound'],
+                  ['transition url', transitionUrl, '/api/visual/assets/runtime-binding-requirements/implementation-bindings/risk-eligibility-native-v1/supersede'],
+                  ['row count', rows.length, 2],
+                  ['bound row actions', rows[0].actions.map((action) => action.action).join(','), 'unbind,supersede'],
+                  ['replacement row action', rows[1].actions.map((action) => action.action).join(','), 'bind'],
+                  ['row label', rows[0].label, 'risk-eligibility-native-v1 · Bound · rev 3'],
+                  ['row value includes owner', String(rows[0].value.includes('owner risk-platform')), 'true'],
+                  ['request schema', request.schemaVersion, 'bloge.visualRuntimeBindingImplementationTransition.v1'],
+                  ['request actor', request.actor, 'visual-canvas'],
+                  ['request source', request.changeSource, 'gateway-browser'],
+                  ['request ack', request.ackReview, true],
+                  ['request replacement', request.replacementBindingId, 'risk-eligibility-native-v2'],
+                  ['request expected revision', request.expectedRevision, 3],
+                  ['request expected replacement revision', request.expectedReplacementRevision, 1],
+                  ['request summary', request.changeSummary, 'Superseded runtime implementation risk-eligibility-native-v1@3 with risk-eligibility-native-v2@1.'],
+                  ['accepted message', acceptedMessage, "Runtime binding implementation 'risk-eligibility-native-v2' superseded 'risk-eligibility-native-v1'."],
+                  ['rejected message', rejectedMessage, 'Runtime binding implementation revision is stale.'],
+                  ['context level', currentContext.level, 'success'],
+                  ['context message', currentContext.message, 'risk-eligibility-native-v1 · Bound · risk:eligibility · rev 3']
+                ];
+                for (const [label, actual, expected] of checks) {
+                  if (actual !== expected) {
+                    throw new Error(`${label}: expected ${expected}, got ${actual}`);
+                  }
+                }
+                console.log('runtime binding implementation lifecycle probe passed');
                 """);
     }
 
