@@ -377,6 +377,9 @@ class VisualAuthoringAppJsTest {
                 .contains("/api/visual/drafts/${encodeURIComponent(state.currentDraftId)}/dependencies")
                 .contains("function renderDraftDependencyReport()")
                 .contains("Draft Dependencies")
+                .contains("id=\"validate-draft-bundle\"")
+                .contains("async function validateDraftBundle()")
+                .contains("fetch('/api/visual/drafts/validate-bundle'")
                 .contains("bindingTargetNodes")
                 .contains("edgeTargetNodes")
                 .contains("binding from:")
@@ -4601,6 +4604,7 @@ operators:
                     operatorFingerprints: {},
                     operatorSnapshots: {}
                   };
+                  const transferPreviewDraft = { ...transferDraft, draftId: 'draft-risk', revision: 4 };
                   const transferFetches = [];
                   const transferDraftMessages = [];
                   const transferVisualChecks = [];
@@ -4635,6 +4639,70 @@ operators:
                             schemaVersion: 'bloge.visualGraphDraftDependencies.v1',
                             draftId: 'draft-imported',
                             revision: 1,
+                            graphName: 'importedGraph',
+                            tenantId: 'demo-tenant',
+                            namespace: 'local',
+                            environment: 'browser',
+                            nodeCount: 0,
+                            edgeCount: 0,
+                            operatorDependencyCount: 0,
+                            missingOperatorCount: 0,
+                            scopeMismatchOperatorCount: 0,
+                            driftedFingerprintCount: 0,
+                            missingFingerprintCount: 0,
+                            sourceKindCounts: {},
+                            loweringModeCounts: {},
+                            runtimeReadinessStateCounts: {},
+                            operators: [],
+                            nodes: []
+                          }
+                        })
+                      };
+                    }
+                    if (url === '/api/visual/drafts/validate-bundle') {
+                      return {
+                        ok: true,
+                        status: 200,
+                        json: async () => ({
+                          schemaVersion: 'bloge.visualGraphDraftImportResult.v1',
+                          imported: false,
+                          sourceBundleSchemaVersion: 'bloge.visualGraphDraftExport.v1',
+                          sourceBundleFingerprint: 'sha256:draft-transfer',
+                          sourceDraftId: 'draft-risk',
+                          sourceRevision: 4,
+                          draft: transferPreviewDraft,
+                          diagnostics: [],
+                          validation: {
+                            valid: true,
+                            diagnostics: [],
+                            readiness: transferReadiness
+                          },
+                          targetRuntimeBindingRequirements: transferReadiness.runtimeBindingRequirements,
+                          targetDependencyReport: {
+                            schemaVersion: 'bloge.visualGraphDraftDependencies.v1',
+                            draftId: 'draft-risk',
+                            revision: 4,
+                            graphName: 'importedGraph',
+                            tenantId: 'demo-tenant',
+                            namespace: 'local',
+                            environment: 'browser',
+                            nodeCount: 0,
+                            edgeCount: 0,
+                            operatorDependencyCount: 0,
+                            missingOperatorCount: 0,
+                            scopeMismatchOperatorCount: 0,
+                            driftedFingerprintCount: 0,
+                            missingFingerprintCount: 0,
+                            sourceKindCounts: {},
+                            loweringModeCounts: {},
+                            runtimeReadinessStateCounts: {},
+                            operators: [],
+                            nodes: []
+                          },
+                          dependencyReport: {
+                            schemaVersion: 'bloge.visualGraphDraftDependencies.v1',
+                            draftId: 'draft-risk',
+                            revision: 4,
                             graphName: 'importedGraph',
                             tenantId: 'demo-tenant',
                             namespace: 'local',
@@ -4776,8 +4844,17 @@ operators:
                     transferScenarioRenders += 1;
                   };
                   return context.exportSelectedDraft()
-                    .then(() => context.importDraftBundle())
-                    .then(() => ({
+                    .then(() => context.validateDraftBundle())
+                    .then(() => {
+                      const afterValidate = {
+                        currentDraftId: context.state.currentDraftId,
+                        currentDraftRevision: context.state.currentDraftRevision,
+                        dependencyReportDraftId: context.state.draftDependencyReport?.draftId || ''
+                      };
+                      return context.importDraftBundle().then(() => afterValidate);
+                    })
+                    .then((afterValidate) => ({
+                      afterValidate,
                       transferFetches,
                       transferDraftMessages,
                       transferVisualChecks,
@@ -4793,24 +4870,33 @@ operators:
                       draftBundleHasDependencyReport: context.state.draftBundleText.includes('"dependencyReport"')
                     }));
                 }).then((transferResult) => {
-                  const importBody = JSON.parse(transferResult.transferFetches[1].body || '{}');
-                  const importUrl = transferResult.transferFetches[1].url;
+                  const validateBody = JSON.parse(transferResult.transferFetches[1].body || '{}');
+                  const importBody = JSON.parse(transferResult.transferFetches[2].body || '{}');
+                  const importUrl = transferResult.transferFetches[2].url;
                   const importQuery = new URLSearchParams(importUrl.split('?')[1] || '');
                   const exportVisualCheck = transferResult.transferVisualChecks[0] || {};
-                  const importVisualCheck = transferResult.transferVisualChecks[1] || {};
+                  const validateVisualCheck = transferResult.transferVisualChecks[1] || {};
+                  const importVisualCheck = transferResult.transferVisualChecks[2] || {};
                   const transferChecks = [
                     ['draft export endpoint', transferResult.transferFetches[0].url, '/api/visual/drafts/draft-risk/export'],
+                    ['draft validate endpoint', transferResult.transferFetches[1].url, '/api/visual/drafts/validate-bundle'],
                     ['draft import endpoint', String(importUrl.startsWith('/api/visual/drafts/import?')), 'true'],
                     ['draft import actor', importQuery.get('actor'), 'visual-canvas'],
                     ['draft import source', importQuery.get('changeSource'), 'gateway-browser'],
                     ['draft import summary', importQuery.get('changeSummary'), 'Imported visual draft package from Drafts panel.'],
                     ['draft import reason', importQuery.get('reason'), 'User imported a portable visual graph draft bundle in the browser.'],
+                    ['draft validate body schema', validateBody.schemaVersion, 'bloge.visualGraphDraftExport.v1'],
                     ['draft import body schema', importBody.schemaVersion, 'bloge.visualGraphDraftExport.v1'],
                     ['draft bundle carries validation', String(transferResult.draftBundleHasValidation), 'true'],
                     ['draft bundle carries dependency report', String(transferResult.draftBundleHasDependencyReport), 'true'],
                     ['draft export message', transferResult.transferDraftMessages[0].text, 'Exported draft-risk@4 (sha256:draft-transfer).'],
                     ['draft export visual readiness', exportVisualCheck.readiness?.state, 'design-only'],
-                    ['draft import message', transferResult.transferDraftMessages[1].text, 'Imported draft-imported@1 from draft-risk@4 (sha256:draft-transfer). Target review: all imported draft operator dependencies are available. Runtime binding handoff: 1 requirement across operator-platform (executable-lowering).'],
+                    ['draft validate message', transferResult.transferDraftMessages[1].text, 'Validated draft bundle from draft-risk@4 (sha256:draft-transfer). Target review: all imported draft operator dependencies are available. Runtime binding handoff: 1 requirement across operator-platform (executable-lowering).'],
+                    ['draft validate visual readiness', validateVisualCheck.readiness?.state, 'design-only'],
+                    ['draft validate current id unchanged', transferResult.afterValidate.currentDraftId, 'draft-risk'],
+                    ['draft validate current revision unchanged', transferResult.afterValidate.currentDraftRevision, 4],
+                    ['draft validate dependency report', transferResult.afterValidate.dependencyReportDraftId, 'draft-risk'],
+                    ['draft import message', transferResult.transferDraftMessages[2].text, 'Imported draft-imported@1 from draft-risk@4 (sha256:draft-transfer). Target review: all imported draft operator dependencies are available. Runtime binding handoff: 1 requirement across operator-platform (executable-lowering).'],
                     ['draft import visual readiness', importVisualCheck.readiness?.state, 'design-only'],
                     ['draft import current id', transferResult.currentDraftId, 'draft-imported'],
                     ['draft import current revision', transferResult.currentDraftRevision, 1],
@@ -4818,7 +4904,7 @@ operators:
                     ['draft transfer catalog loads', transferResult.transferCatalogLoads, 1],
                     ['draft transfer draft list loads', transferResult.transferDraftListLoads, 1],
                     ['draft transfer revision loads', transferResult.transferRevisionLoads, 1],
-                    ['draft transfer controls render', transferResult.transferDraftControlRenders, 1],
+                    ['draft transfer controls render', transferResult.transferDraftControlRenders, 2],
                     ['draft transfer scenario render', transferResult.transferScenarioRenders, 1]
                   ];
                   for (const [label, actual, expected] of transferChecks) {

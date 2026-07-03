@@ -1612,8 +1612,19 @@ resource-gateway 示例还提供 portable draft export/import：
 
 ```http
 GET /api/visual/drafts/{draftId}/export
+POST /api/visual/drafts/validate-bundle
 POST /api/visual/drafts/import
 ```
+
+`POST /api/visual/drafts/validate-bundle` 是目标环境非写入预检：请求体必须是当前支持的
+`bloge.visualGraphDraftExport.v1`，且 `bundleFingerprint` 必须与 bundle material 一致。
+服务端会把 bundle 内 draft snapshot 与 operator snapshots 放入目标环境当前 catalog 视角，
+刷新可用 operator fingerprints/snapshots，返回 `bloge.visualGraphDraftImportResult.v1`，
+但 `imported=false` 且不创建 repository revision。响应中的 `draft` 是归一化后的
+target preview snapshot，`validation`、`targetDependencyReport`、
+`targetRuntimeBindingRequirements[]` 和 `targetRuntimeBindingRequirementKeys[]` 用于让浏览器、
+迁移流水线或 runtime-plane 团队在真正写入前审阅 missing operator、scope mismatch、
+schema-only/design-only readiness 和 runtime binding handoff。
 
 `POST /api/visual/drafts/import` 可带 `actor`、`changeSource`、`changeSummary`
 和 `reason` query metadata；这些字段会进入新 draft revision 的

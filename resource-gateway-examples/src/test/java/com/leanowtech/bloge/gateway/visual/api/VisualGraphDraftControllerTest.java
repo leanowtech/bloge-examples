@@ -639,6 +639,50 @@ class VisualGraphDraftControllerTest {
     }
 
     @Test
+    void validateDraftBundlePreviewsTargetEnvironmentWithoutStorage() {
+        DefaultVisualOperatorCatalog initialCatalog = VisualCatalogTestSupport.catalogWithLibrary(
+                VisualCatalogTestSupport.eligibilityLibrary("integer"));
+        DefaultVisualOperatorCatalog evolvedCatalog = VisualCatalogTestSupport.catalogWithLibrary(
+                VisualCatalogTestSupport.eligibilityLibrary("number"));
+        VisualGraphDraftController sourceController =
+                controllerWithCatalog(initialCatalog, new InMemoryGraphDraftRepository());
+        InMemoryGraphDraftRepository targetRepository = new InMemoryGraphDraftRepository();
+        VisualGraphDraftController targetController = controllerWithCatalog(evolvedCatalog, targetRepository);
+        GraphDraft stored = sourceController.create(eligibilityDraft(graphInputSchema(
+                Map.of(
+                        "score", Map.of("type", "integer"),
+                        "amount", Map.of("type", "number")
+                )
+        )));
+        GraphDraftExportBundle bundle = sourceController.exportDraft(stored.draftId()).getBody();
+        String evolvedFingerprint = evolvedCatalog.find("risk:eligibility").orElseThrow().fingerprint();
+
+        ResponseEntity<GraphDraftImportResult> response = targetController.validateDraftBundle(bundle);
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat(response.getBody()).isNotNull();
+        GraphDraftImportResult result = response.getBody();
+        assertThat(result.schemaVersion()).isEqualTo(GraphDraftImportResult.SCHEMA_VERSION);
+        assertThat(result.imported()).isFalse();
+        assertThat(result.sourceBundleSchemaVersion()).isEqualTo(GraphDraftExportBundle.SCHEMA_VERSION);
+        assertThat(result.sourceBundleFingerprint()).isEqualTo(bundle.bundleFingerprint());
+        assertThat(result.sourceDraftId()).isEqualTo(stored.draftId());
+        assertThat(result.sourceRevision()).isEqualTo(stored.revision());
+        assertThat(result.sourceDependencyReport()).isEqualTo(bundle.dependencyReport());
+        assertThat(result.draft().draftId()).isEqualTo(stored.draftId());
+        assertThat(result.draft().revision()).isEqualTo(stored.revision());
+        assertThat(result.draft().operatorFingerprints()).containsEntry("eligibility", evolvedFingerprint);
+        assertThat(result.validation().valid()).isTrue();
+        assertThat(result.validation().readiness().state()).isEqualTo("runtime-executable");
+        assertThat(result.targetDependencyReport()).isEqualTo(result.dependencyReport());
+        assertThat(result.targetDependencyReport().draftId()).isEqualTo(stored.draftId());
+        assertThat(result.targetDependencyReport().operatorDependencyCount()).isEqualTo(1);
+        assertThat(result.targetDependencyReport().runtimeReadinessStateCounts())
+                .containsEntry("RUNTIME_EXECUTABLE", 1);
+        assertThat(targetRepository.all()).isEmpty();
+    }
+
+    @Test
     void importDraftBundleStoresCallerProvidedRevisionMetadata() {
         DefaultVisualOperatorCatalog catalog = VisualCatalogTestSupport.catalogWithLibrary(
                 VisualCatalogTestSupport.eligibilityLibrary("integer"));

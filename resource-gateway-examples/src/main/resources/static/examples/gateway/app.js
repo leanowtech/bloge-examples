@@ -1579,6 +1579,7 @@ function renderInputForm() {
         <div id="draft-dependencies" class="library-impact-panel" hidden></div>
         <div class="draft-transfer-controls">
           <button id="export-draft" class="secondary compact" type="button">Export</button>
+          <button id="validate-draft-bundle" class="secondary compact" type="button">Validate Bundle</button>
           <button id="import-draft" class="secondary compact" type="button">Import Bundle</button>
         </div>
         <textarea id="draft-bundle-json" class="library-editor draft-bundle-editor" spellcheck="false"></textarea>
@@ -7423,6 +7424,7 @@ function renderDraftControls() {
   const loadButton = $('load-draft');
   const deleteButton = $('delete-draft');
   const exportButton = $('export-draft');
+  const validateBundleButton = $('validate-draft-bundle');
   const importButton = $('import-draft');
   const bundleEditor = $('draft-bundle-json');
   if (saveButton) {
@@ -7441,6 +7443,10 @@ function renderDraftControls() {
     exportButton.disabled = !state.currentDraftId || !currentDraftIsActive();
     exportButton.onclick = exportSelectedDraft;
   }
+  if (validateBundleButton) {
+    validateBundleButton.disabled = !state.draftBundleText.trim();
+    validateBundleButton.onclick = validateDraftBundle;
+  }
   if (importButton) {
     importButton.disabled = !state.draftBundleText.trim();
     importButton.onclick = importDraftBundle;
@@ -7452,6 +7458,10 @@ function renderDraftControls() {
       const button = $('import-draft');
       if (button) {
         button.disabled = !state.draftBundleText.trim();
+      }
+      const validateButton = $('validate-draft-bundle');
+      if (validateButton) {
+        validateButton.disabled = !state.draftBundleText.trim();
       }
     };
   }
@@ -10885,6 +10895,66 @@ async function exportSelectedDraft() {
     validation?.actionReadiness
   );
   $('output').textContent = pretty({ status: response.status, draftExport: payload });
+  renderDraftControls();
+}
+
+async function validateDraftBundle() {
+  let bundle;
+  try {
+    bundle = JSON.parse(state.draftBundleText || '{}');
+  } catch (error) {
+    setDraftMessage(`Invalid draft bundle JSON: ${error.message}`, 'error');
+    return;
+  }
+  const response = await fetch('/api/visual/drafts/validate-bundle', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(bundle)
+  });
+  const payload = await response.json().catch(() => null);
+  const validation = payload?.validation || null;
+  const diagnostics = normalizeDiagnostics(validation?.diagnostics || payload?.diagnostics);
+  const targetDependencyReport = payload?.targetDependencyReport || payload?.dependencyReport;
+  if (targetDependencyReport) {
+    state.draftDependencyReport = targetDependencyReport;
+    state.draftDependencyMessage = null;
+  }
+  if (!response.ok) {
+    setDraftMessage(diagnosticMessage(diagnostics, `Validate bundle failed with ${response.status}`), 'error');
+    setVisualCheck(
+      'Visual draft package target preflight failed.',
+      'error',
+      diagnostics,
+      validation?.readiness,
+      validation?.actionReadiness
+    );
+    $('output').textContent = pretty({ status: response.status, draftBundleValidation: payload });
+    renderDraftControls();
+    return;
+  }
+  const hasErrors = diagnostics.some((diagnostic) => String(diagnostic.level || '').toUpperCase() === 'ERROR');
+  const sourceLineage = payload?.sourceDraftId
+    ? ` from ${payload.sourceDraftId}@${payload.sourceRevision || 0}${visualBundleFingerprintSuffix(payload?.sourceBundleFingerprint)}`
+    : '';
+  const targetReview = draftImportTargetReviewText(targetDependencyReport);
+  const bindingReview = runtimeBindingRequirementImportReviewText(
+    payload?.targetRuntimeBindingRequirements || validation?.readiness?.runtimeBindingRequirements
+  );
+  const diagnosticText = diagnostics.length
+    ? ` with ${hasErrors ? 'errors' : 'warnings'}: ${diagnosticMessage(diagnostics, 'review diagnostics')}`
+    : '';
+  setDraftMessage(
+    `Validated draft bundle${sourceLineage}${diagnosticText}.${targetReview ? ` ${targetReview}` : ''}${bindingReview ? ` ${bindingReview}` : ''}`,
+    hasErrors ? 'error' : 'success'
+  );
+  setVisualCheck(
+    'Validated visual draft package target preflight.',
+    visualCheckLevel(diagnostics, validation?.valid !== false && !hasErrors),
+    diagnostics,
+    validation?.readiness,
+    validation?.actionReadiness
+  );
+  $('output').textContent = pretty({ status: response.status, draftBundleValidation: payload });
   renderDraftControls();
 }
 

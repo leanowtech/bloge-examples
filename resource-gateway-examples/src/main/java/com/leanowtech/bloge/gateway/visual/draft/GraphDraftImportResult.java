@@ -8,7 +8,7 @@ import com.leanowtech.bloge.gateway.visual.validation.VisualValidationResult;
 import java.util.List;
 
 /**
- * Result returned after importing a portable visual graph draft bundle.
+ * Result returned after validating or importing a portable visual graph draft bundle.
  *
  * @param schemaVersion import result schema version
  * @param imported whether a new draft was stored
@@ -16,7 +16,7 @@ import java.util.List;
  * @param sourceBundleFingerprint source export bundle stable fingerprint
  * @param sourceDraftId source draft id from the bundle
  * @param sourceRevision source draft revision from the bundle
- * @param draft stored draft when import succeeded
+ * @param draft stored draft when import succeeded, or normalized target-environment preview draft
  * @param diagnostics import contract or target-environment compatibility diagnostics
  * @param validation target-environment validation and readiness when available
  * @param dependencyReport target-environment dependency report for the stored draft, retained as a legacy alias
@@ -143,6 +143,24 @@ public record GraphDraftImportResult(
                 ? new VisualValidationResult(false, List.of())
                 : validation;
         return from(bundle, true, draft, safeValidation.diagnostics(), safeValidation,
+                sourceDependencyReport(bundle), dependencyReport);
+    }
+
+    /**
+     * @param bundle source export bundle
+     * @param draft normalized target-environment draft preview that was not stored
+     * @param validation target-environment validation and readiness for the preview draft
+     * @param dependencyReport target-environment dependency report for the preview draft
+     * @return non-stored target-environment preflight result with source lineage
+     */
+    public static GraphDraftImportResult previewed(GraphDraftExportBundle bundle,
+                                                   GraphDraft draft,
+                                                   VisualValidationResult validation,
+                                                   GraphDraftDependencyReport dependencyReport) {
+        VisualValidationResult safeValidation = validation == null
+                ? new VisualValidationResult(false, List.of())
+                : validation;
+        return from(bundle, false, draft, safeValidation.diagnostics(), safeValidation,
                 sourceDependencyReport(bundle), dependencyReport);
     }
 

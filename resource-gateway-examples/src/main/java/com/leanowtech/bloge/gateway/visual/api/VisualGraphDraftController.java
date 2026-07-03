@@ -286,6 +286,25 @@ public class VisualGraphDraftController {
     }
 
     /**
+     * Validates a portable draft package against the target environment without storing a draft.
+     *
+     * @param bundle exported draft package
+     * @return target-environment validation, dependency, and runtime-binding preflight result
+     */
+    @PostMapping("/validate-bundle")
+    public ResponseEntity<GraphDraftImportResult> validateDraftBundle(@RequestBody GraphDraftExportBundle bundle) {
+        List<VisualDiagnostic> diagnostics = exportBundleContractDiagnostics(bundle);
+        if (!diagnostics.isEmpty()) {
+            return ResponseEntity.badRequest()
+                    .body(GraphDraftImportResult.rejected(bundle, diagnostics));
+        }
+        GraphDraft preview = draftBundlePreview(bundle);
+        VisualValidationResult validation = validator.validate(preview);
+        GraphDraftDependencyReport dependencyReport = GraphDraftDependencyReport.from(preview, catalog);
+        return ResponseEntity.ok(GraphDraftImportResult.previewed(bundle, preview, validation, dependencyReport));
+    }
+
+    /**
      * Imports a portable draft package as a new stored draft.
      *
      * @param bundle exported draft package
@@ -306,8 +325,7 @@ public class VisualGraphDraftController {
             return ResponseEntity.badRequest()
                     .body(GraphDraftImportResult.rejected(bundle, diagnostics));
         }
-        GraphDraft imported = withBundleOperatorSnapshots(bundle.draft(), bundle.operatorSnapshots())
-                .withIdentity("", 0)
+        GraphDraft imported = draftBundleImportCandidate(bundle)
                 .withRevisionMetadata(GraphDraft.RevisionMetadata.patch(
                         actor,
                         changeSource.isBlank() ? "import" : changeSource,
@@ -315,7 +333,7 @@ public class VisualGraphDraftController {
                         List.of("/"),
                         reason
                 ));
-        GraphDraft stored = repository.save(withCurrentOrProvidedOperatorSnapshotState(imported));
+        GraphDraft stored = repository.save(imported);
         VisualValidationResult validation = validator.validate(stored);
         GraphDraftDependencyReport dependencyReport = GraphDraftDependencyReport.from(stored, catalog);
         return ResponseEntity.status(HttpStatus.CREATED)
@@ -327,6 +345,19 @@ public class VisualGraphDraftController {
      */
     public ResponseEntity<GraphDraftImportResult> importDraft(GraphDraftExportBundle bundle) {
         return importDraft(bundle, "", "", "", "");
+    }
+
+    private GraphDraft draftBundlePreview(GraphDraftExportBundle bundle) {
+        String previewDraftId = bundle.sourceDraftId().isBlank()
+                ? bundle.draft().draftId()
+                : bundle.sourceDraftId();
+        return withCurrentOrProvidedOperatorSnapshotState(withBundleOperatorSnapshots(bundle.draft(), bundle.operatorSnapshots())
+                .withIdentity(previewDraftId, bundle.sourceRevision()));
+    }
+
+    private GraphDraft draftBundleImportCandidate(GraphDraftExportBundle bundle) {
+        return withCurrentOrProvidedOperatorSnapshotState(withBundleOperatorSnapshots(bundle.draft(), bundle.operatorSnapshots())
+                .withIdentity("", 0));
     }
 
     /**
