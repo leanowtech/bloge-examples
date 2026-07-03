@@ -2058,10 +2058,12 @@ activation 与 executable lowering integration 事实，写入 `post-apply-refre
 runtime-binding / metadata 变化面和非 `design` lowering evidence；breaking schema 或
 policy/governance 变化仍必须走 implementation validate 的 contract-diff gate、后续更严格的
 SemVer / JSON Schema 兼容性检查和 reimplementation 流程。
-如果 refreshed binding 已写入后 activation 或 executable lowering integration 创建失败，服务端返回
-`409`、`state=failed`，把 partial refreshed binding / activation 标记为 `failed`，并把 source
+如果 refreshed binding 创建失败，服务端返回结构化 `409`、`state=failed` 和
+`visual.executableReadinessEvidenceRefresh.bindingCreateFailed`，不会留下 partial evidence。若
+refreshed binding transition、activation 或 executable lowering integration 创建失败，服务端返回
+`409`、`state=failed`，把 partial refreshed binding / activation / integration 标记为 `failed`，并把 source
 binding 从 `superseded` 恢复为 `bound`；失败响应会同时携带恢复后的 source evidence、失败的
-refreshed evidence 和 `visual.executableReadinessEvidenceRefresh.*CreateFailed` diagnostic。补偿本身若失败，
+refreshed evidence 和 `visual.executableReadinessEvidenceRefresh.*Failed` diagnostic。补偿本身若失败，
 响应会追加 `visual.executableReadinessEvidenceRefresh.compensationFailed`，避免半成功 evidence chain 被误投影成
 current runtime binding。
 如果 active binding 已经指向当前 trusted operator fingerprint，服务端只有在同一 binding 下仍能找到

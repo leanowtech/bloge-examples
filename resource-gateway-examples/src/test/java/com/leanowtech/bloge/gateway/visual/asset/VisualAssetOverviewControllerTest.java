@@ -2864,6 +2864,244 @@ class VisualAssetOverviewControllerTest {
     }
 
     @Test
+    void executableReadinessEvidenceRefreshReturnsFailedWhenRefreshedBindingCreateFails() {
+        RuntimeBindingImplementationFixture fixture = runtimeBindingImplementationFixture(
+                new FailingRefreshBindingCreateRepository("risk-eligibility-native-v1-refresh"),
+                new InMemoryVisualExecutableLoweringIntegrationRepository());
+        VisualRuntimeBindingImplementationBinding stored = submitImplementation(
+                fixture,
+                completeImplementation("risk-eligibility-native-v1")
+        );
+        VisualRuntimeBindingImplementationBinding binding = fixture.controller()
+                .bindRuntimeBindingImplementation(stored.bindingId(), transitionRequest("", true))
+                .getBody()
+                .binding();
+        VisualRuntimeAdapterActivation activation = (VisualRuntimeAdapterActivation) fixture.controller()
+                .submitRuntimeAdapterActivation(adapterActivationRequest(binding, "risk-eligibility-prod-active"))
+                .getBody();
+        VisualExecutableLoweringIntegration integration = (VisualExecutableLoweringIntegration) fixture.controller()
+                .submitExecutableLoweringIntegration(
+                        executableLoweringIntegrationRequest(activation, "risk-eligibility-lowering-v1"))
+                .getBody();
+        VisualExecutableReadinessRecomputeResult applied = fixture.controller()
+                .applyExecutableReadinessRecompute(
+                        "risk:eligibility",
+                        true,
+                        "runtime-platform",
+                        "visual-canvas-test",
+                        "Promote risk eligibility executable readiness.",
+                        "Runtime implementation, activation, and executor bridge evidence were reviewed.")
+                .getBody();
+
+        var failedRefresh = fixture.controller().refreshExecutableReadinessEvidence(
+                "risk:eligibility",
+                true,
+                "runtime-platform",
+                "visual-canvas-test",
+                "Refresh post-apply runtime evidence.",
+                "Executable operator revision was applied; runtime evidence should point at the current fingerprint.",
+                "risk-eligibility-native-v1-refresh",
+                "risk-eligibility-prod-active-refresh",
+                "risk-eligibility-lowering-v1-refresh"
+        );
+
+        assertThat(failedRefresh.getStatusCode().value()).isEqualTo(409);
+        assertThat(failedRefresh.getBody()).isNotNull();
+        VisualExecutableReadinessEvidenceRefreshResult result = failedRefresh.getBody();
+        assertThat(result.refreshed()).isFalse();
+        assertThat(result.state()).isEqualTo("failed");
+        assertThat(result.previousOperatorFingerprint()).isEqualTo(binding.operatorFingerprint());
+        assertThat(result.currentOperatorFingerprint()).isEqualTo(applied.candidateOperatorFingerprint());
+        assertThat(result.diagnostics())
+                .extracting(VisualDiagnostic::code)
+                .contains("visual.executableReadinessEvidenceRefresh.bindingCreateFailed")
+                .doesNotContain("visual.executableReadinessEvidenceRefresh.compensationFailed");
+        assertThat(result.sourceBinding().bindingId()).isEqualTo(binding.bindingId());
+        assertThat(result.sourceBinding().state()).isEqualTo("bound");
+        assertThat(result.refreshedBinding()).isNull();
+        assertThat(result.sourceActivation().activationId()).isEqualTo(activation.activationId());
+        assertThat(result.refreshedActivation()).isNull();
+        assertThat(result.sourceIntegration().integrationId()).isEqualTo(integration.integrationId());
+        assertThat(result.refreshedIntegration()).isNull();
+        assertThat(fixture.implementationRepository().find("risk-eligibility-native-v1-refresh")).isEmpty();
+        assertThat(fixture.controller().runtimeBindingImplementationBindings("risk:eligibility", "bound"))
+                .singleElement()
+                .extracting(VisualRuntimeBindingImplementationBinding::bindingId)
+                .isEqualTo(binding.bindingId());
+        assertThat(fixture.controller().runtimeBindingImplementationBindings("risk:eligibility", "superseded"))
+                .isEmpty();
+    }
+
+    @Test
+    void executableReadinessEvidenceRefreshCompensatesFailedBindingTransition() {
+        RuntimeBindingImplementationFixture fixture = runtimeBindingImplementationFixture(
+                new FailingSupersedeImplementationRepository("risk-eligibility-native-v1"),
+                new InMemoryVisualExecutableLoweringIntegrationRepository());
+        VisualRuntimeBindingImplementationBinding stored = submitImplementation(
+                fixture,
+                completeImplementation("risk-eligibility-native-v1")
+        );
+        VisualRuntimeBindingImplementationBinding binding = fixture.controller()
+                .bindRuntimeBindingImplementation(stored.bindingId(), transitionRequest("", true))
+                .getBody()
+                .binding();
+        VisualRuntimeAdapterActivation activation = (VisualRuntimeAdapterActivation) fixture.controller()
+                .submitRuntimeAdapterActivation(adapterActivationRequest(binding, "risk-eligibility-prod-active"))
+                .getBody();
+        VisualExecutableLoweringIntegration integration = (VisualExecutableLoweringIntegration) fixture.controller()
+                .submitExecutableLoweringIntegration(
+                        executableLoweringIntegrationRequest(activation, "risk-eligibility-lowering-v1"))
+                .getBody();
+        VisualExecutableReadinessRecomputeResult applied = fixture.controller()
+                .applyExecutableReadinessRecompute(
+                        "risk:eligibility",
+                        true,
+                        "runtime-platform",
+                        "visual-canvas-test",
+                        "Promote risk eligibility executable readiness.",
+                        "Runtime implementation, activation, and executor bridge evidence were reviewed.")
+                .getBody();
+
+        var failedRefresh = fixture.controller().refreshExecutableReadinessEvidence(
+                "risk:eligibility",
+                true,
+                "runtime-platform",
+                "visual-canvas-test",
+                "Refresh post-apply runtime evidence.",
+                "Executable operator revision was applied; runtime evidence should point at the current fingerprint.",
+                "risk-eligibility-native-v1-refresh",
+                "risk-eligibility-prod-active-refresh",
+                "risk-eligibility-lowering-v1-refresh"
+        );
+
+        assertThat(failedRefresh.getStatusCode().value()).isEqualTo(409);
+        assertThat(failedRefresh.getBody()).isNotNull();
+        VisualExecutableReadinessEvidenceRefreshResult result = failedRefresh.getBody();
+        assertThat(result.refreshed()).isFalse();
+        assertThat(result.state()).isEqualTo("failed");
+        assertThat(result.previousOperatorFingerprint()).isEqualTo(binding.operatorFingerprint());
+        assertThat(result.currentOperatorFingerprint()).isEqualTo(applied.candidateOperatorFingerprint());
+        assertThat(result.diagnostics())
+                .extracting(VisualDiagnostic::code)
+                .contains("visual.executableReadinessEvidenceRefresh.bindingTransitionFailed")
+                .doesNotContain("visual.executableReadinessEvidenceRefresh.compensationFailed");
+        assertThat(result.sourceBinding().bindingId()).isEqualTo(binding.bindingId());
+        assertThat(result.sourceBinding().state()).isEqualTo("bound");
+        assertThat(result.sourceBinding().supersededByBindingId()).isBlank();
+        assertThat(result.refreshedBinding().bindingId()).isEqualTo("risk-eligibility-native-v1-refresh");
+        assertThat(result.refreshedBinding().state()).isEqualTo("failed");
+        assertThat(result.refreshedBinding().supersedesBindingId()).isEqualTo(binding.bindingId());
+        assertThat(result.sourceActivation().activationId()).isEqualTo(activation.activationId());
+        assertThat(result.refreshedActivation()).isNull();
+        assertThat(result.sourceIntegration().integrationId()).isEqualTo(integration.integrationId());
+        assertThat(result.refreshedIntegration()).isNull();
+        assertThat(fixture.adapterActivationRepository().find("risk-eligibility-prod-active-refresh"))
+                .isEmpty();
+        assertThat(fixture.executableLoweringIntegrationRepository()
+                .find("risk-eligibility-lowering-v1-refresh"))
+                .isEmpty();
+        assertThat(fixture.controller().runtimeBindingImplementationBindings("risk:eligibility", "bound"))
+                .singleElement()
+                .extracting(VisualRuntimeBindingImplementationBinding::bindingId)
+                .isEqualTo(binding.bindingId());
+        assertThat(fixture.controller().runtimeBindingImplementationBindings("risk:eligibility", "failed"))
+                .singleElement()
+                .extracting(VisualRuntimeBindingImplementationBinding::bindingId)
+                .isEqualTo("risk-eligibility-native-v1-refresh");
+        assertThat(fixture.controller().runtimeBindingImplementationBindings("risk:eligibility", "superseded"))
+                .isEmpty();
+    }
+
+    @Test
+    void executableReadinessEvidenceRefreshCompensatesFailedActivationCreate() {
+        RuntimeBindingImplementationFixture fixture = runtimeBindingImplementationFixture(
+                new InMemoryVisualRuntimeBindingImplementationRepository(),
+                new FailingRefreshAdapterActivationRepository("risk-eligibility-prod-active-refresh"),
+                new InMemoryVisualExecutableLoweringIntegrationRepository());
+        VisualRuntimeBindingImplementationBinding stored = submitImplementation(
+                fixture,
+                completeImplementation("risk-eligibility-native-v1")
+        );
+        VisualRuntimeBindingImplementationBinding binding = fixture.controller()
+                .bindRuntimeBindingImplementation(stored.bindingId(), transitionRequest("", true))
+                .getBody()
+                .binding();
+        VisualRuntimeAdapterActivation activation = (VisualRuntimeAdapterActivation) fixture.controller()
+                .submitRuntimeAdapterActivation(adapterActivationRequest(binding, "risk-eligibility-prod-active"))
+                .getBody();
+        VisualExecutableLoweringIntegration integration = (VisualExecutableLoweringIntegration) fixture.controller()
+                .submitExecutableLoweringIntegration(
+                        executableLoweringIntegrationRequest(activation, "risk-eligibility-lowering-v1"))
+                .getBody();
+        VisualExecutableReadinessRecomputeResult applied = fixture.controller()
+                .applyExecutableReadinessRecompute(
+                        "risk:eligibility",
+                        true,
+                        "runtime-platform",
+                        "visual-canvas-test",
+                        "Promote risk eligibility executable readiness.",
+                        "Runtime implementation, activation, and executor bridge evidence were reviewed.")
+                .getBody();
+
+        var failedRefresh = fixture.controller().refreshExecutableReadinessEvidence(
+                "risk:eligibility",
+                true,
+                "runtime-platform",
+                "visual-canvas-test",
+                "Refresh post-apply runtime evidence.",
+                "Executable operator revision was applied; runtime evidence should point at the current fingerprint.",
+                "risk-eligibility-native-v1-refresh",
+                "risk-eligibility-prod-active-refresh",
+                "risk-eligibility-lowering-v1-refresh"
+        );
+
+        assertThat(failedRefresh.getStatusCode().value()).isEqualTo(409);
+        assertThat(failedRefresh.getBody()).isNotNull();
+        VisualExecutableReadinessEvidenceRefreshResult result = failedRefresh.getBody();
+        assertThat(result.refreshed()).isFalse();
+        assertThat(result.state()).isEqualTo("failed");
+        assertThat(result.previousOperatorFingerprint()).isEqualTo(binding.operatorFingerprint());
+        assertThat(result.currentOperatorFingerprint()).isEqualTo(applied.candidateOperatorFingerprint());
+        assertThat(result.diagnostics())
+                .extracting(VisualDiagnostic::code)
+                .contains("visual.executableReadinessEvidenceRefresh.activationCreateFailed")
+                .doesNotContain("visual.executableReadinessEvidenceRefresh.compensationFailed");
+        assertThat(result.sourceBinding().bindingId()).isEqualTo(binding.bindingId());
+        assertThat(result.sourceBinding().state()).isEqualTo("bound");
+        assertThat(result.sourceBinding().supersededByBindingId()).isBlank();
+        assertThat(result.refreshedBinding().bindingId()).isEqualTo("risk-eligibility-native-v1-refresh");
+        assertThat(result.refreshedBinding().state()).isEqualTo("failed");
+        assertThat(result.sourceActivation().activationId()).isEqualTo(activation.activationId());
+        assertThat(result.refreshedActivation()).isNull();
+        assertThat(result.sourceIntegration().integrationId()).isEqualTo(integration.integrationId());
+        assertThat(result.refreshedIntegration()).isNull();
+        assertThat(fixture.adapterActivationRepository().find("risk-eligibility-prod-active-refresh"))
+                .isEmpty();
+        assertThat(fixture.executableLoweringIntegrationRepository()
+                .find("risk-eligibility-lowering-v1-refresh"))
+                .isEmpty();
+        assertThat(fixture.adapterActivationRepository().findActiveByBindingId(binding.bindingId()))
+                .get()
+                .extracting(VisualRuntimeAdapterActivation::activationId)
+                .isEqualTo(activation.activationId());
+        assertThat(fixture.executableLoweringIntegrationRepository()
+                .findActiveByActivationId(activation.activationId()))
+                .get()
+                .extracting(VisualExecutableLoweringIntegration::integrationId)
+                .isEqualTo(integration.integrationId());
+        assertThat(fixture.controller().runtimeBindingImplementationBindings("risk:eligibility", "bound"))
+                .singleElement()
+                .extracting(VisualRuntimeBindingImplementationBinding::bindingId)
+                .isEqualTo(binding.bindingId());
+        assertThat(fixture.controller().runtimeBindingImplementationBindings("risk:eligibility", "failed"))
+                .singleElement()
+                .extracting(VisualRuntimeBindingImplementationBinding::bindingId)
+                .isEqualTo("risk-eligibility-native-v1-refresh");
+        assertThat(fixture.controller().runtimeBindingImplementationBindings("risk:eligibility", "superseded"))
+                .isEmpty();
+    }
+
+    @Test
     void executableReadinessEvidenceRefreshRejectsStaleExpectedFingerprints() {
         RuntimeBindingImplementationFixture fixture = runtimeBindingImplementationFixture();
         VisualRuntimeBindingImplementationBinding stored = submitImplementation(
@@ -3502,6 +3740,41 @@ class VisualAssetOverviewControllerTest {
         }
     }
 
+    private static final class FailingRefreshAdapterActivationRepository
+            extends InMemoryVisualRuntimeAdapterActivationRepository {
+        private final String failingActivationId;
+
+        private FailingRefreshAdapterActivationRepository(String failingActivationId) {
+            this.failingActivationId = failingActivationId;
+        }
+
+        @Override
+        public VisualRuntimeAdapterActivation create(VisualRuntimeAdapterActivation activation) {
+            if (activation != null && failingActivationId.equals(activation.activationId())) {
+                throw new IllegalStateException("Injected runtime adapter activation persistence failure.");
+            }
+            return super.create(activation);
+        }
+    }
+
+    private static final class FailingRefreshBindingCreateRepository
+            extends InMemoryVisualRuntimeBindingImplementationRepository {
+        private final String failingBindingId;
+
+        private FailingRefreshBindingCreateRepository(String failingBindingId) {
+            this.failingBindingId = failingBindingId;
+        }
+
+        @Override
+        public VisualRuntimeBindingImplementationBinding create(
+                VisualRuntimeBindingImplementationBinding binding) {
+            if (binding != null && failingBindingId.equals(binding.bindingId())) {
+                throw new IllegalStateException("Injected runtime binding implementation persistence failure.");
+            }
+            return super.create(binding);
+        }
+    }
+
     private static final class FailingSupersedeImplementationRepository
             extends InMemoryVisualRuntimeBindingImplementationRepository {
         private final String failingBindingId;
@@ -3558,12 +3831,20 @@ class VisualAssetOverviewControllerTest {
     private static RuntimeBindingImplementationFixture runtimeBindingImplementationFixture(
             InMemoryVisualRuntimeBindingImplementationRepository implementationRepository,
             InMemoryVisualExecutableLoweringIntegrationRepository executableLoweringIntegrationRepository) {
+        return runtimeBindingImplementationFixture(
+                implementationRepository,
+                new InMemoryVisualRuntimeAdapterActivationRepository(),
+                executableLoweringIntegrationRepository);
+    }
+
+    private static RuntimeBindingImplementationFixture runtimeBindingImplementationFixture(
+            InMemoryVisualRuntimeBindingImplementationRepository implementationRepository,
+            InMemoryVisualRuntimeAdapterActivationRepository adapterActivationRepository,
+            InMemoryVisualExecutableLoweringIntegrationRepository executableLoweringIntegrationRepository) {
         OperatorLibrary library = VisualCatalogTestSupport.designOnlyEligibilityLibrary("integer");
         InMemoryOperatorLibraryRegistry libraries = new InMemoryOperatorLibraryRegistry();
         libraries.upsert(library);
         InMemoryVisualGraphPublicationRepository publications = new InMemoryVisualGraphPublicationRepository();
-        InMemoryVisualRuntimeAdapterActivationRepository adapterActivationRepository =
-                new InMemoryVisualRuntimeAdapterActivationRepository();
         DefaultVisualOperatorCatalog catalog = new DefaultVisualOperatorCatalog(
                 VisualCatalogTestSupport.emptyResourceRegistry(),
                 new InMemoryResourceDesignContractRegistry(),

@@ -1963,6 +1963,25 @@ public class VisualAssetOverviewController {
                             e.getMessage(),
                             "/refreshedBindingId",
                             Map.of("refreshedBindingId", refreshedBindingId))));
+        } catch (IllegalStateException e) {
+            return evidenceRefreshFailure(
+                    HttpStatus.CONFLICT,
+                    normalizedOperatorRef,
+                    sourceBinding.operatorFingerprint(),
+                    currentOperator.fingerprint(),
+                    "failed",
+                    "error",
+                    "Executable readiness evidence refresh for '%s' failed while creating a current binding."
+                            .formatted(normalizedOperatorRef),
+                    sourceBinding,
+                    sourceActivation,
+                    sourceIntegration,
+                    List.of(evidenceRefreshMutationExceptionDiagnostic(
+                            "visual.executableReadinessEvidenceRefresh.bindingCreateFailed",
+                            e.getMessage(),
+                            "/refreshedBindingId",
+                            e,
+                            Map.of("refreshedBindingId", defaultIfBlank(refreshedBindingId, "")))));
         }
         Instant now = Instant.now();
         VisualRuntimeBindingImplementationBinding refreshedBinding = null;
