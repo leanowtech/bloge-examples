@@ -23,6 +23,7 @@ import java.util.TreeSet;
  * @param draftId source draft id
  * @param draftRevision source draft revision
  * @param publicationId source publication id
+ * @param sourceArtifactKind publication artifact kind, such as EXECUTABLE or DESIGN
  * @param graphName graph name
  * @param tenantId tenant id
  * @param namespace namespace
@@ -50,6 +51,7 @@ public record VisualGraphRunRecord(
         String draftId,
         long draftRevision,
         String publicationId,
+        String sourceArtifactKind,
         String graphName,
         String tenantId,
         String namespace,
@@ -89,6 +91,7 @@ public record VisualGraphRunRecord(
         draftId = draftId == null ? "" : draftId;
         draftRevision = Math.max(0, draftRevision);
         publicationId = publicationId == null ? "" : publicationId;
+        sourceArtifactKind = sourceArtifactKind == null ? "" : sourceArtifactKind.trim().toUpperCase();
         graphName = graphName == null ? "" : graphName;
         tenantId = tenantId == null ? "" : tenantId;
         namespace = namespace == null ? "" : namespace;
@@ -108,7 +111,8 @@ public record VisualGraphRunRecord(
     }
 
     /**
-     * Backward-compatible constructor for run records created before node timings and snapshots existed.
+     * Backward-compatible constructor for run records created before publication artifact kind, node timings,
+     * and snapshots existed.
      */
     public VisualGraphRunRecord(String schemaVersion,
                                 String runId,
@@ -140,7 +144,108 @@ public record VisualGraphRunRecord(
     }
 
     /**
-     * Backward-compatible constructor for records created before node snapshots existed.
+     * Convenience constructor for records that include publication artifact kind but omit node timings and snapshots.
+     */
+    public VisualGraphRunRecord(String schemaVersion,
+                                String runId,
+                                String sourceKind,
+                                String draftId,
+                                long draftRevision,
+                                String publicationId,
+                                String sourceArtifactKind,
+                                String graphName,
+                                String tenantId,
+                                String namespace,
+                                String environment,
+                                String outputNode,
+                                Instant createdAt,
+                                boolean validated,
+                                boolean compiled,
+                                boolean success,
+                                long elapsedMs,
+                                Map<String, String> statusMap,
+                                List<VisualDiagnostic> diagnostics,
+                                List<String> errors,
+                                Map<String, Object> contextSummary,
+                                Map<String, Object> outputSummary,
+                                Map<String, Object> resultsSummary,
+                                String generatedDsl) {
+        this(schemaVersion, runId, sourceKind, draftId, draftRevision, publicationId, sourceArtifactKind, graphName,
+                tenantId, namespace, environment, outputNode, createdAt, validated, compiled, success, elapsedMs,
+                Map.of(), statusMap, diagnostics, errors, contextSummary, outputSummary, resultsSummary, Map.of(),
+                generatedDsl);
+    }
+
+    /**
+     * Backward-compatible constructor for run records created before publication artifact kind was tracked.
+     */
+    public VisualGraphRunRecord(String schemaVersion,
+                                String runId,
+                                String sourceKind,
+                                String draftId,
+                                long draftRevision,
+                                String publicationId,
+                                String graphName,
+                                String tenantId,
+                                String namespace,
+                                String environment,
+                                String outputNode,
+                                Instant createdAt,
+                                boolean validated,
+                                boolean compiled,
+                                boolean success,
+                                long elapsedMs,
+                                Map<String, Long> nodeElapsedMs,
+                                Map<String, String> statusMap,
+                                List<VisualDiagnostic> diagnostics,
+                                List<String> errors,
+                                Map<String, Object> contextSummary,
+                                Map<String, Object> outputSummary,
+                                Map<String, Object> resultsSummary,
+                                Map<String, NodeSnapshot> nodeSnapshots,
+                                String generatedDsl) {
+        this(schemaVersion, runId, sourceKind, draftId, draftRevision, publicationId, "", graphName, tenantId,
+                namespace, environment, outputNode, createdAt, validated, compiled, success, elapsedMs,
+                nodeElapsedMs, statusMap, diagnostics, errors, contextSummary, outputSummary, resultsSummary,
+                nodeSnapshots, generatedDsl);
+    }
+
+    /**
+     * Convenience constructor for records that include publication artifact kind and node timings but omit node snapshots.
+     */
+    public VisualGraphRunRecord(String schemaVersion,
+                                String runId,
+                                String sourceKind,
+                                String draftId,
+                                long draftRevision,
+                                String publicationId,
+                                String sourceArtifactKind,
+                                String graphName,
+                                String tenantId,
+                                String namespace,
+                                String environment,
+                                String outputNode,
+                                Instant createdAt,
+                                boolean validated,
+                                boolean compiled,
+                                boolean success,
+                                long elapsedMs,
+                                Map<String, Long> nodeElapsedMs,
+                                Map<String, String> statusMap,
+                                List<VisualDiagnostic> diagnostics,
+                                List<String> errors,
+                                Map<String, Object> contextSummary,
+                                Map<String, Object> outputSummary,
+                                Map<String, Object> resultsSummary,
+                                String generatedDsl) {
+        this(schemaVersion, runId, sourceKind, draftId, draftRevision, publicationId, sourceArtifactKind, graphName,
+                tenantId, namespace, environment, outputNode, createdAt, validated, compiled, success, elapsedMs,
+                nodeElapsedMs, statusMap, diagnostics, errors, contextSummary, outputSummary, resultsSummary,
+                Map.of(), generatedDsl);
+    }
+
+    /**
+     * Backward-compatible constructor for records created before publication artifact kind and node snapshots existed.
      */
     public VisualGraphRunRecord(String schemaVersion,
                                 String runId,
@@ -198,7 +303,7 @@ public record VisualGraphRunRecord(
                                                    VisualGraphRunResponse response) {
         GraphDraft draft = publication == null ? null : publication.draft();
         return fromDraft(SOURCE_PUBLICATION, draft, publication == null ? "" : publication.publicationId(),
-                context, response);
+                publication == null ? "" : publication.artifactKind(), context, response);
     }
 
     /**
@@ -206,7 +311,7 @@ public record VisualGraphRunRecord(
      */
     public VisualGraphRunRecord withIdentity(String newRunId, Instant newCreatedAt) {
         return new VisualGraphRunRecord(schemaVersion, newRunId, sourceKind, draftId, draftRevision,
-                publicationId, graphName, tenantId, namespace, environment, outputNode, newCreatedAt,
+                publicationId, sourceArtifactKind, graphName, tenantId, namespace, environment, outputNode, newCreatedAt,
                 validated, compiled, success, elapsedMs, nodeElapsedMs, statusMap, diagnostics, errors, contextSummary,
                 outputSummary, resultsSummary, nodeSnapshots, generatedDsl);
     }
@@ -214,6 +319,15 @@ public record VisualGraphRunRecord(
     private static VisualGraphRunRecord fromDraft(String sourceKind,
                                                   GraphDraft draft,
                                                   String publicationId,
+                                                  Map<String, Object> context,
+                                                  VisualGraphRunResponse response) {
+        return fromDraft(sourceKind, draft, publicationId, "", context, response);
+    }
+
+    private static VisualGraphRunRecord fromDraft(String sourceKind,
+                                                  GraphDraft draft,
+                                                  String publicationId,
+                                                  String sourceArtifactKind,
                                                   Map<String, Object> context,
                                                   VisualGraphRunResponse response) {
         VisualGraphRunResponse safeResponse = response == null
@@ -227,6 +341,7 @@ public record VisualGraphRunRecord(
                 draft == null ? "" : draft.draftId(),
                 draft == null ? 0 : draft.revision(),
                 publicationId,
+                sourceArtifactKind,
                 safeResponse.graphName().isBlank() && draft != null ? draft.graphName() : safeResponse.graphName(),
                 draft == null ? "" : draft.tenantId(),
                 draft == null ? "" : draft.namespace(),

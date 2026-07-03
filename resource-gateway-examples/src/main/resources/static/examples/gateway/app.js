@@ -436,6 +436,7 @@ const state = {
   runHistory: [],
   runHistoryFilters: {
     sourceKind: '',
+    sourceArtifactKind: '',
     outcome: '',
     limit: '8'
   },
@@ -1761,6 +1762,7 @@ function renderInputForm() {
         <div class="panel-title">Run History</div>
         <div class="run-history-controls">
           <select id="run-history-source" aria-label="Filter run history by source"></select>
+          <select id="run-history-artifact" aria-label="Filter publication runs by artifact kind"></select>
           <select id="run-history-outcome" aria-label="Filter run history by outcome"></select>
           <input id="run-history-limit" type="number" min="1" max="50" value="${escapeHtml(state.runHistoryFilters.limit)}" aria-label="Run history limit">
           <button id="reload-run-history" class="secondary compact" type="button">Reload</button>
@@ -10020,10 +10022,11 @@ function setPublicationMessage(text, level = 'info') {
 
 function renderRunHistoryControls() {
   const source = $('run-history-source');
+  const artifact = $('run-history-artifact');
   const outcome = $('run-history-outcome');
   const limit = $('run-history-limit');
   const reload = $('reload-run-history');
-  if (!source || !outcome || !limit || !reload) {
+  if (!source || !artifact || !outcome || !limit || !reload) {
     return;
   }
 
@@ -10036,6 +10039,23 @@ function renderRunHistoryControls() {
   source.value = state.runHistoryFilters.sourceKind || '';
   source.onchange = () => {
     state.runHistoryFilters.sourceKind = source.value;
+    if (source.value !== 'PUBLICATION') {
+      state.runHistoryFilters.sourceArtifactKind = '';
+    }
+    loadRunHistory();
+  };
+
+  artifact.innerHTML = [
+    ['', 'All artifacts'],
+    ['EXECUTABLE', 'Executable'],
+    ['DESIGN', 'Design']
+  ].map(([value, label]) => `<option value="${escapeHtml(value)}">${escapeHtml(label)}</option>`).join('');
+  artifact.value = state.runHistoryFilters.sourceArtifactKind || '';
+  artifact.onchange = () => {
+    state.runHistoryFilters.sourceArtifactKind = artifact.value;
+    if (artifact.value && state.runHistoryFilters.sourceKind !== 'PUBLICATION') {
+      state.runHistoryFilters.sourceKind = 'PUBLICATION';
+    }
     loadRunHistory();
   };
 
@@ -10084,7 +10104,8 @@ function renderRunHistoryStats() {
     runHistoryStatHtml('Runs', stats.totalRuns),
     runHistoryStatHtml('Success', `${successRate}%`),
     runHistoryStatHtml('p95', `${stats.p95ElapsedMs || 0}ms`),
-    runHistoryStatHtml('Blocked', stats.blockedRuns || 0)
+    runHistoryStatHtml('Blocked', stats.blockedRuns || 0),
+    runHistoryStatHtml('Design', stats.bySourceArtifactKind?.DESIGN || 0)
   ].join('');
 }
 
@@ -10156,6 +10177,7 @@ function renderRunHistoryList() {
 
 function runHistoryRowHtml(record) {
   const source = record.sourceKind || 'RUN';
+  const artifact = record.sourceArtifactKind ? ` · ${record.sourceArtifactKind}` : '';
   const outcome = record.success ? 'success' : record.compiled ? 'error' : 'blocked';
   const reference = record.publicationId
     ? record.publicationId
@@ -10172,7 +10194,7 @@ function runHistoryRowHtml(record) {
     <button class="run-history-row ${escapeHtml(outcome)}" type="button" data-run-history-id="${escapeHtml(record.runId || '')}">
       <span class="run-history-main">
         <strong>${escapeHtml(record.graphName || 'unnamedGraph')}</strong>
-        <small>${escapeHtml(source)} · ${escapeHtml(reference)}</small>
+        <small>${escapeHtml(source)}${escapeHtml(artifact)} · ${escapeHtml(reference)}</small>
       </span>
       <span class="run-history-meta">
         <span>${escapeHtml(outcome)}</span>
@@ -10287,6 +10309,9 @@ function runHistoryUrlFor(path) {
   const filters = state.runHistoryFilters || {};
   if (filters.sourceKind) {
     params.set('sourceKind', filters.sourceKind);
+  }
+  if (filters.sourceArtifactKind) {
+    params.set('sourceArtifactKind', filters.sourceArtifactKind);
   }
   if (filters.outcome) {
     params.set('success', filters.outcome);

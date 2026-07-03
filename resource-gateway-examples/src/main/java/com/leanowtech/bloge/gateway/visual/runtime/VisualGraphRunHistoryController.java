@@ -32,11 +32,24 @@ public class VisualGraphRunHistoryController {
     public Collection<VisualGraphRunRecord> list(@RequestParam(required = false) String sourceKind,
                                                  @RequestParam(required = false) String draftId,
                                                  @RequestParam(required = false) String publicationId,
+                                                 @RequestParam(required = false) String sourceArtifactKind,
                                                  @RequestParam(required = false) String graphName,
                                                  @RequestParam(required = false) Boolean success,
                                                  @RequestParam(required = false) Integer limit) {
-        return repository.query(new VisualGraphRunQuery(sourceKind, draftId, publicationId, graphName, success,
-                limit == null ? 0 : limit));
+        return repository.query(new VisualGraphRunQuery(sourceKind, draftId, publicationId, sourceArtifactKind,
+                graphName, success, limit == null ? 0 : limit));
+    }
+
+    /**
+     * Backward-compatible direct-call helper for tests and non-Spring callers.
+     */
+    public Collection<VisualGraphRunRecord> list(String sourceKind,
+                                                 String draftId,
+                                                 String publicationId,
+                                                 String graphName,
+                                                 Boolean success,
+                                                 Integer limit) {
+        return list(sourceKind, draftId, publicationId, "", graphName, success, limit);
     }
 
     /**
@@ -46,11 +59,24 @@ public class VisualGraphRunHistoryController {
     public VisualGraphRunStats stats(@RequestParam(required = false) String sourceKind,
                                      @RequestParam(required = false) String draftId,
                                      @RequestParam(required = false) String publicationId,
+                                     @RequestParam(required = false) String sourceArtifactKind,
                                      @RequestParam(required = false) String graphName,
                                      @RequestParam(required = false) Boolean success,
                                      @RequestParam(required = false) Integer limit) {
         return VisualGraphRunStats.from(repository.query(new VisualGraphRunQuery(sourceKind, draftId, publicationId,
-                graphName, success, limit == null ? 0 : limit)));
+                sourceArtifactKind, graphName, success, limit == null ? 0 : limit)));
+    }
+
+    /**
+     * Backward-compatible direct-call helper for tests and non-Spring callers.
+     */
+    public VisualGraphRunStats stats(String sourceKind,
+                                     String draftId,
+                                     String publicationId,
+                                     String graphName,
+                                     Boolean success,
+                                     Integer limit) {
+        return stats(sourceKind, draftId, publicationId, "", graphName, success, limit);
     }
 
     /**
@@ -60,11 +86,24 @@ public class VisualGraphRunHistoryController {
     public VisualGraphRunNodeStats nodeStats(@RequestParam(required = false) String sourceKind,
                                              @RequestParam(required = false) String draftId,
                                              @RequestParam(required = false) String publicationId,
+                                             @RequestParam(required = false) String sourceArtifactKind,
                                              @RequestParam(required = false) String graphName,
                                              @RequestParam(required = false) Boolean success,
                                              @RequestParam(required = false) Integer limit) {
         return VisualGraphRunNodeStats.from(repository.query(new VisualGraphRunQuery(sourceKind, draftId,
-                publicationId, graphName, success, limit == null ? 0 : limit)));
+                publicationId, sourceArtifactKind, graphName, success, limit == null ? 0 : limit)));
+    }
+
+    /**
+     * Backward-compatible direct-call helper for tests and non-Spring callers.
+     */
+    public VisualGraphRunNodeStats nodeStats(String sourceKind,
+                                             String draftId,
+                                             String publicationId,
+                                             String graphName,
+                                             Boolean success,
+                                             Integer limit) {
+        return nodeStats(sourceKind, draftId, publicationId, "", graphName, success, limit);
     }
 
     /**

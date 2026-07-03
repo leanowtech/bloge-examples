@@ -669,13 +669,13 @@ successful publish, and runs the selected artifact with the current Context JSON
 without rewriting the draft currently being edited on the canvas.
 Transient draft runs, stored draft runs, and publication runs also create
 H2-backed visual run history records. Run responses include a `runId`; the
-record captures the source kind, draft/publication identity, selected output,
+record captures the source kind, publication artifact kind, draft/publication identity, selected output,
 node status map, diagnostics, errors, elapsed time, generated/frozen DSL, and
 per-node runtime timings when available, shape-only context/output/result
 summaries plus draft node snapshots so the
 audit trail does not persist raw runtime payload values by default. The browser
 Run History panel refreshes after visual draft and publication runs, supports
-source/outcome/limit filters, shows a compact SLO summary for the same filter
+source/artifact/outcome/limit filters, shows a compact SLO summary for the same filter
 window plus node health hot spots, and opens an individual record and shape-only run trace into the output
 inspector while overlaying replay badges on matching canvas nodes; when an old
 run contains nodes no longer present on the current canvas, the replay coverage
@@ -886,8 +886,8 @@ Showcase metadata APIs:
 | `POST` | `/api/visual/golden-cases/publications/{publicationId}/certify` | Execute the publication golden suite and store the latest certification status, returning structured run-history or certification persistence diagnostics on conflict |
 | `GET` | `/api/visual/golden-cases/publications/{publicationId}/certification` | Load the latest golden certification for a publication |
 | `GET` | `/api/visual/golden-cases/publications/{publicationId}/certification/status` | Load promotion-readiness status, including stale certification diagnostics |
-| `GET` | `/api/visual/runs` | List visual graph run history records, newest first; supports `sourceKind`, `draftId`, `publicationId`, `graphName`, `success`, and `limit` filters |
-| `GET` | `/api/visual/runs/stats` | Aggregate run-history health for the same filters, including success rate, blocked/error counts, and p50/p95/max latency |
+| `GET` | `/api/visual/runs` | List visual graph run history records, newest first; supports `sourceKind`, `draftId`, `publicationId`, `sourceArtifactKind`, `graphName`, `success`, and `limit` filters |
+| `GET` | `/api/visual/runs/stats` | Aggregate run-history health for the same filters, including success rate, blocked/error counts, publication artifact-kind counts, and p50/p95/max latency |
 | `GET` | `/api/visual/runs/node-stats` | Aggregate node-level run-history health for the same filters, including status counts, diagnostic/error attribution, selected-output counts, runtime per-node latency, and observed whole-run latency for legacy/correlation |
 | `GET` | `/api/visual/runs/{runId}` | Load one visual graph run history record |
 | `GET` | `/api/visual/runs/{runId}/trace` | Load one shape-only replay trace with node statuses, operator metadata, per-node elapsed time when known, selected output marker, per-node diagnostics, result summaries, errors, and generated/frozen DSL |

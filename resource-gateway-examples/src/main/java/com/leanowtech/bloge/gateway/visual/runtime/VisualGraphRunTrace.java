@@ -15,6 +15,7 @@ import java.util.Set;
  * @param schemaVersion trace schema version
  * @param runId run id
  * @param sourceKind run source kind
+ * @param sourceArtifactKind publication artifact kind, when the run source is a publication
  * @param graphName graph name
  * @param outputNode selected output node
  * @param createdAt run creation timestamp
@@ -31,6 +32,7 @@ public record VisualGraphRunTrace(
         String schemaVersion,
         String runId,
         String sourceKind,
+        String sourceArtifactKind,
         String graphName,
         String outputNode,
         Instant createdAt,
@@ -52,6 +54,7 @@ public record VisualGraphRunTrace(
         schemaVersion = schemaVersion == null || schemaVersion.isBlank() ? SCHEMA_VERSION : schemaVersion;
         runId = runId == null ? "" : runId;
         sourceKind = sourceKind == null ? "" : sourceKind;
+        sourceArtifactKind = sourceArtifactKind == null ? "" : sourceArtifactKind.trim().toUpperCase();
         graphName = graphName == null ? "" : graphName;
         outputNode = outputNode == null ? "" : outputNode;
         createdAt = createdAt == null ? Instant.now() : createdAt;
@@ -72,13 +75,14 @@ public record VisualGraphRunTrace(
      */
     public static VisualGraphRunTrace from(VisualGraphRunRecord record) {
         if (record == null) {
-            return new VisualGraphRunTrace("", "", "", "", "", null, false, 0,
+            return new VisualGraphRunTrace("", "", "", "", "", "", null, false, 0,
                     Map.of(), Map.of(), List.of(), List.of(), List.of(), "");
         }
         return new VisualGraphRunTrace(
                 "",
                 record.runId(),
                 record.sourceKind(),
+                record.sourceArtifactKind(),
                 record.graphName(),
                 record.outputNode(),
                 record.createdAt(),

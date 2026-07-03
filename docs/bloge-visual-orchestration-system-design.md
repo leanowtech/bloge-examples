@@ -931,8 +931,8 @@ fingerprint snapshot；普通保存和 PATCH 仍保留既有 snapshot，避免�
 
 | Method | Path | 说明 |
 | --- | --- | --- |
-| `GET` | `/api/visual/runs` | 当前已实现：按 source/draft/publication/graph/outcome/limit 查询运行历史 |
-| `GET` | `/api/visual/runs/stats` | 当前已实现：按同一过滤窗口聚合成功率、blocked/error 和 p50/p95/max latency |
+| `GET` | `/api/visual/runs` | 当前已实现：按 source/draft/publication/sourceArtifactKind/graph/outcome/limit 查询运行历史，能区分 `EXECUTABLE` 与 `DESIGN` publication run |
+| `GET` | `/api/visual/runs/stats` | 当前已实现：按同一过滤窗口聚合成功率、blocked/error、publication artifact-kind counts 和 p50/p95/max latency |
 | `GET` | `/api/visual/runs/{runId}` | 当前已实现：获取 shape-only 运行记录 |
 | `GET` | `/api/visual/runs/{runId}/nodes` | 后续方向：获取节点状态 |
 | `GET` | `/api/visual/runs/{runId}/events` | 后续方向：SSE 运行事件 |

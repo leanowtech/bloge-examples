@@ -36,6 +36,8 @@ class VisualGraphRunHistoryControllerTest {
                 VisualGraphRunRecord.SOURCE_STORED_DRAFT, "", true, true, 1));
         repository.create(record("draft-2", VisualGraphRunRecord.SOURCE_STORED_DRAFT, "", true, false, 1));
         repository.create(record("draft-1", VisualGraphRunRecord.SOURCE_PUBLICATION, "publication-1", true, true, 1));
+        VisualGraphRunRecord designRun = repository.create(record("draft-1",
+                VisualGraphRunRecord.SOURCE_PUBLICATION, "publication-design", "DESIGN", true, false, 1));
         VisualGraphRunHistoryController controller = new VisualGraphRunHistoryController(repository);
 
         assertThat(controller.list("stored_draft", "draft-1", null, "visualPolicy", true, 1))
@@ -43,6 +45,8 @@ class VisualGraphRunHistoryControllerTest {
         assertThat(controller.list("PUBLICATION", null, "publication-1", null, true, null))
                 .extracting(VisualGraphRunRecord::publicationId)
                 .containsExactly("publication-1");
+        assertThat(controller.list("PUBLICATION", null, null, "DESIGN", null, null, null))
+                .containsExactly(designRun);
     }
 
     @Test
@@ -53,10 +57,14 @@ class VisualGraphRunHistoryControllerTest {
         repository.create(record("draft-1", VisualGraphRunRecord.SOURCE_STORED_DRAFT, "", false, false, 0));
         repository.create(record("draft-2", VisualGraphRunRecord.SOURCE_PUBLICATION, "publication-1",
                 true, true, 80));
+        repository.create(record("draft-2", VisualGraphRunRecord.SOURCE_PUBLICATION, "publication-design",
+                "DESIGN", false, false, 0));
         VisualGraphRunHistoryController controller = new VisualGraphRunHistoryController(repository);
 
         VisualGraphRunStats stats = controller.stats("stored_draft", "draft-1", null, "visualPolicy",
                 null, null);
+        VisualGraphRunStats designStats = controller.stats("PUBLICATION", null, null, "DESIGN",
+                null, null, null);
 
         assertThat(stats.totalRuns()).isEqualTo(3);
         assertThat(stats.successfulRuns()).isEqualTo(1);
@@ -71,6 +79,9 @@ class VisualGraphRunHistoryControllerTest {
         assertThat(stats.byGraphName()).containsEntry("visualPolicy", 3);
         assertThat(stats.firstRunAt()).isNotNull();
         assertThat(stats.latestRunAt()).isNotNull();
+        assertThat(designStats.totalRuns()).isEqualTo(1);
+        assertThat(designStats.blockedRuns()).isEqualTo(1);
+        assertThat(designStats.bySourceArtifactKind()).containsEntry("DESIGN", 1);
     }
 
     @Test
@@ -156,6 +167,7 @@ class VisualGraphRunHistoryControllerTest {
         assertThat(trace).isNotNull();
         assertThat(trace.schemaVersion()).isEqualTo(VisualGraphRunTrace.SCHEMA_VERSION);
         assertThat(trace.runId()).isEqualTo(stored.runId());
+        assertThat(trace.sourceArtifactKind()).isBlank();
         assertThat(trace.graphName()).isEqualTo("visualPolicy");
         assertThat(trace.outputNode()).isEqualTo("response");
         assertThat(trace.contextSummary()).containsKey("score");
@@ -216,6 +228,16 @@ class VisualGraphRunHistoryControllerTest {
                                                boolean compiled,
                                                boolean success,
                                                long elapsedMs) {
+        return record(draftId, sourceKind, publicationId, "EXECUTABLE", compiled, success, elapsedMs);
+    }
+
+    private static VisualGraphRunRecord record(String draftId,
+                                               String sourceKind,
+                                               String publicationId,
+                                               String sourceArtifactKind,
+                                               boolean compiled,
+                                               boolean success,
+                                               long elapsedMs) {
         GraphDraft draft = new GraphDraft(
                 "",
                 draftId,
@@ -249,7 +271,7 @@ class VisualGraphRunHistoryControllerTest {
         );
         if (VisualGraphRunRecord.SOURCE_PUBLICATION.equals(sourceKind)) {
             return new VisualGraphRunRecord("", "", sourceKind, draftId, 1, publicationId,
-                    response.graphName(), "", "", "", response.outputNode(), null, response.validated(),
+                    sourceArtifactKind, response.graphName(), "", "", "", response.outputNode(), null, response.validated(),
                     response.compiled(), response.success(), response.elapsedMs(), response.statusMap(),
                     response.diagnostics(), response.errors(), Map.of("score", Map.of("type", "integer")),
                     Map.of("type", "object"), Map.of(), response.generatedDsl());

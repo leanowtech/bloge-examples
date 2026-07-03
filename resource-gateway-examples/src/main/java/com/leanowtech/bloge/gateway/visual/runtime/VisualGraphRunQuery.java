@@ -9,6 +9,7 @@ import java.util.List;
  * @param sourceKind optional run source kind
  * @param draftId optional draft id
  * @param publicationId optional publication id
+ * @param sourceArtifactKind optional publication artifact kind, such as EXECUTABLE or DESIGN
  * @param graphName optional graph name
  * @param success optional execution outcome
  * @param limit maximum number of records to return, or {@code 0} for unbounded
@@ -17,6 +18,7 @@ public record VisualGraphRunQuery(
         String sourceKind,
         String draftId,
         String publicationId,
+        String sourceArtifactKind,
         String graphName,
         Boolean success,
         int limit
@@ -30,8 +32,21 @@ public record VisualGraphRunQuery(
         sourceKind = normalizeUpper(sourceKind);
         draftId = normalize(draftId);
         publicationId = normalize(publicationId);
+        sourceArtifactKind = normalizeUpper(sourceArtifactKind);
         graphName = normalize(graphName);
         limit = limit <= 0 ? 0 : Math.min(limit, MAX_LIMIT);
+    }
+
+    /**
+     * Backward-compatible constructor for callers that do not filter by source artifact kind.
+     */
+    public VisualGraphRunQuery(String sourceKind,
+                               String draftId,
+                               String publicationId,
+                               String graphName,
+                               Boolean success,
+                               int limit) {
+        this(sourceKind, draftId, publicationId, "", graphName, success, limit);
     }
 
     /**
@@ -44,7 +59,7 @@ public record VisualGraphRunQuery(
     public static List<VisualGraphRunRecord> apply(Collection<VisualGraphRunRecord> records,
                                                    VisualGraphRunQuery query) {
         VisualGraphRunQuery actual = query == null
-                ? new VisualGraphRunQuery("", "", "", "", null, 0)
+                ? new VisualGraphRunQuery("", "", "", "", "", null, 0)
                 : query;
         return records.stream()
                 .filter(actual::matches)
@@ -63,6 +78,7 @@ public record VisualGraphRunQuery(
         return matches(sourceKind, normalizeUpper(record.sourceKind()))
                 && matches(draftId, normalize(record.draftId()))
                 && matches(publicationId, normalize(record.publicationId()))
+                && matches(sourceArtifactKind, normalizeUpper(record.sourceArtifactKind()))
                 && matches(graphName, normalize(record.graphName()))
                 && (success == null || success == record.success());
     }

@@ -23,6 +23,7 @@ import java.util.Map;
  * @param firstRunAt oldest matching run timestamp
  * @param latestRunAt newest matching run timestamp
  * @param bySourceKind run count by source kind
+ * @param bySourceArtifactKind publication run count by artifact kind
  * @param byGraphName run count by graph name
  */
 public record VisualGraphRunStats(
@@ -39,6 +40,7 @@ public record VisualGraphRunStats(
         Instant firstRunAt,
         Instant latestRunAt,
         Map<String, Integer> bySourceKind,
+        Map<String, Integer> bySourceArtifactKind,
         Map<String, Integer> byGraphName
 ) {
     public static final String SCHEMA_VERSION = "bloge.visualGraphRunStats.v1";
@@ -58,7 +60,30 @@ public record VisualGraphRunStats(
         p95ElapsedMs = Math.max(0, p95ElapsedMs);
         maxElapsedMs = Math.max(0, maxElapsedMs);
         bySourceKind = bySourceKind == null ? Map.of() : new LinkedHashMap<>(bySourceKind);
+        bySourceArtifactKind = bySourceArtifactKind == null ? Map.of() : new LinkedHashMap<>(bySourceArtifactKind);
         byGraphName = byGraphName == null ? Map.of() : new LinkedHashMap<>(byGraphName);
+    }
+
+    /**
+     * Backward-compatible constructor for stats created before source artifact kind counts existed.
+     */
+    public VisualGraphRunStats(String schemaVersion,
+                               int totalRuns,
+                               int successfulRuns,
+                               int failedRuns,
+                               int blockedRuns,
+                               int executionFailedRuns,
+                               double successRate,
+                               long p50ElapsedMs,
+                               long p95ElapsedMs,
+                               long maxElapsedMs,
+                               Instant firstRunAt,
+                               Instant latestRunAt,
+                               Map<String, Integer> bySourceKind,
+                               Map<String, Integer> byGraphName) {
+        this(schemaVersion, totalRuns, successfulRuns, failedRuns, blockedRuns, executionFailedRuns,
+                successRate, p50ElapsedMs, p95ElapsedMs, maxElapsedMs, firstRunAt, latestRunAt,
+                bySourceKind, Map.of(), byGraphName);
     }
 
     /**
@@ -71,7 +96,7 @@ public record VisualGraphRunStats(
         List<VisualGraphRunRecord> runs = records == null ? List.of() : records.stream().toList();
         if (runs.isEmpty()) {
             return new VisualGraphRunStats("", 0, 0, 0, 0, 0, 0.0D, 0, 0, 0,
-                    null, null, Map.of(), Map.of());
+                    null, null, Map.of(), Map.of(), Map.of());
         }
 
         int successful = 0;
@@ -81,6 +106,7 @@ public record VisualGraphRunStats(
         Instant first = null;
         Instant latest = null;
         Map<String, Integer> bySource = new LinkedHashMap<>();
+        Map<String, Integer> byArtifactKind = new LinkedHashMap<>();
         Map<String, Integer> byGraph = new LinkedHashMap<>();
         List<Long> elapsed = new ArrayList<>();
 
@@ -97,6 +123,9 @@ public record VisualGraphRunStats(
             first = earliest(first, run.createdAt());
             latest = latest(latest, run.createdAt());
             increment(bySource, run.sourceKind().isBlank() ? "UNKNOWN" : run.sourceKind());
+            if (!run.sourceArtifactKind().isBlank()) {
+                increment(byArtifactKind, run.sourceArtifactKind());
+            }
             increment(byGraph, run.graphName().isBlank() ? "unnamedGraph" : run.graphName());
         }
 
@@ -115,6 +144,7 @@ public record VisualGraphRunStats(
                 first,
                 latest,
                 bySource,
+                byArtifactKind,
                 byGraph
         );
     }

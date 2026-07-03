@@ -2673,6 +2673,11 @@ lower draft。这样 operator library 后续变更不会影响已经发布的业
 frozen DSL，`validation` 必须等于 publication 冻结的 validation/readiness，而不是
 按当前 catalog 重新计算。若 artifact 不存在返回 `404 NOT FOUND`；artifact 本身不可被修改或
 删除。
+publication run 写入 `bloge.visualGraphRunRecord.v1` 时必须同时固化
+`sourceArtifactKind`，trace 也回显该字段；`/api/visual/runs`、`/stats` 和
+`/node-stats` 支持 `sourceArtifactKind=EXECUTABLE|DESIGN` 过滤，`stats` 通过
+`bySourceArtifactKind` 聚合 publication run 数量。这样 DESIGN publication 的误运行会作为
+明确的 blocked design-artifact run 进入审计，而不会和普通 executable publication 执行失败混在一起。
 
 #### 10.10.1 Golden regression case 与 certification
 

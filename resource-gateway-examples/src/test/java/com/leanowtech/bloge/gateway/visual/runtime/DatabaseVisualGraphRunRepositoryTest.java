@@ -106,6 +106,8 @@ class DatabaseVisualGraphRunRepositoryTest {
                 false));
         VisualGraphRunRecord publication = repository.create(record("run-publication", "draft-1",
                 VisualGraphRunRecord.SOURCE_PUBLICATION, "publication-1", true));
+        VisualGraphRunRecord designPublication = repository.create(record("run-design-publication", "draft-1",
+                VisualGraphRunRecord.SOURCE_PUBLICATION, "publication-design", "DESIGN", false));
 
         assertThat(repository.query(new VisualGraphRunQuery("stored_draft", "draft-1", "", "visualPolicy",
                 true, 10)))
@@ -113,6 +115,9 @@ class DatabaseVisualGraphRunRepositoryTest {
         assertThat(repository.query(new VisualGraphRunQuery("PUBLICATION", "", "publication-1", "",
                 true, 1)))
                 .containsExactly(publication);
+        assertThat(repository.query(new VisualGraphRunQuery("PUBLICATION", "", "", "DESIGN", "",
+                false, 10)))
+                .containsExactly(designPublication);
     }
 
     @Test
@@ -131,6 +136,15 @@ class DatabaseVisualGraphRunRepositoryTest {
                                                String draftId,
                                                String sourceKind,
                                                String publicationId,
+                                               boolean success) {
+        return record(runId, draftId, sourceKind, publicationId, "EXECUTABLE", success);
+    }
+
+    private static VisualGraphRunRecord record(String runId,
+                                               String draftId,
+                                               String sourceKind,
+                                               String publicationId,
+                                               String sourceArtifactKind,
                                                boolean success) {
         GraphDraft draft = new GraphDraft(
                 "",
@@ -166,7 +180,7 @@ class DatabaseVisualGraphRunRepositoryTest {
         );
         if (VisualGraphRunRecord.SOURCE_PUBLICATION.equals(sourceKind)) {
             return new VisualGraphRunRecord("", runId, sourceKind, draft.draftId(), draft.revision(),
-                    publicationId, response.graphName(), draft.tenantId(), draft.namespace(), draft.environment(),
+                    publicationId, sourceArtifactKind, response.graphName(), draft.tenantId(), draft.namespace(), draft.environment(),
                     response.outputNode(), null, response.validated(), response.compiled(), response.success(),
                     response.elapsedMs(), response.nodeElapsedMs(), response.statusMap(), response.diagnostics(),
                     response.errors(), Map.of("score", Map.of("type", "integer")), Map.of("type", "object"),
