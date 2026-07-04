@@ -484,7 +484,9 @@ const state = {
     bindingId: '',
     activationId: '',
     lifecycleState: '',
-    rolloutState: ''
+    rolloutState: '',
+    rolloutSignal: '',
+    breachedOnly: false
   },
   activeVisualRuntimeEvidence: null,
   goldenAssertionMode: 'EXACT_OUTPUT',
@@ -984,6 +986,12 @@ function visualRuntimeEvidenceParams(kind = '') {
   if (query.rolloutState && kind === 'rollout-observation') {
     params.set('state', query.rolloutState);
   }
+  if (query.rolloutSignal && kind === 'rollout-observation') {
+    params.set('rolloutSignal', query.rolloutSignal);
+  }
+  if (query.breachedOnly && kind === 'rollout-observation') {
+    params.set('breachedOnly', 'true');
+  }
   return params;
 }
 
@@ -1113,7 +1121,9 @@ function normalizeVisualRuntimeEvidenceQuery(query = {}) {
     bindingId: String(query.bindingId || '').trim(),
     activationId: String(query.activationId || '').trim(),
     lifecycleState: String(query.lifecycleState || '').trim().toLowerCase(),
-    rolloutState: String(query.rolloutState || '').trim().toLowerCase()
+    rolloutState: String(query.rolloutState || '').trim().toLowerCase(),
+    rolloutSignal: normalizeReadinessState(query.rolloutSignal),
+    breachedOnly: query.breachedOnly === true || String(query.breachedOnly || '').trim().toLowerCase() === 'true'
   };
 }
 
@@ -8803,7 +8813,9 @@ function visualRuntimeEvidenceControls(rows) {
     || query.bindingId
     || query.activationId
     || query.lifecycleState
-    || query.rolloutState);
+    || query.rolloutState
+    || query.rolloutSignal
+    || query.breachedOnly);
   return `
     <div class="library-impact-controls">
       <label>
@@ -8836,6 +8848,16 @@ function visualRuntimeEvidenceControls(rows) {
           ${visualAssetActionOptionMarkup(VISUAL_RUNTIME_ROLLOUT_STATES, query.rolloutState)}
         </select>
       </label>
+      <label>
+        <span>${escapeHtml('Signal')}</span>
+        <select id="runtime-evidence-rollout-signal" aria-label="Filter runtime rollout evidence by guardrail signal">
+          ${visualRuntimeBindingRawOptionMarkup('All signals', visualRuntimeEvidenceSignalCounts(rows, query.breachedOnly), query.rolloutSignal)}
+        </select>
+      </label>
+      <label class="config-checkbox compact">
+        <input id="runtime-evidence-breached-only" type="checkbox" ${query.breachedOnly ? 'checked' : ''}>
+        <span>${escapeHtml('Breached only')}</span>
+      </label>
       <button type="button" class="secondary compact" id="runtime-evidence-refresh">Refresh</button>
       <button type="button" class="secondary compact" id="runtime-evidence-reset" ${hasFilter ? '' : 'disabled'}>Reset</button>
     </div>
@@ -8848,6 +8870,20 @@ function visualRuntimeEvidenceCounts(rows, field) {
     const value = String(row?.[field] || '').trim();
     if (value) {
       counts[value] = (counts[value] || 0) + 1;
+    }
+  }
+  return counts;
+}
+
+function visualRuntimeEvidenceSignalCounts(rows, breachedOnly = false) {
+  const counts = {};
+  for (const row of Array.isArray(rows) ? rows : []) {
+    const signals = breachedOnly ? row?.breachedRolloutSignals : row?.rolloutSignals;
+    for (const signal of Array.isArray(signals) ? signals : []) {
+      const value = normalizeReadinessState(signal);
+      if (value) {
+        counts[value] = (counts[value] || 0) + 1;
+      }
     }
   }
   return counts;
@@ -9179,6 +9215,13 @@ function visualRuntimeRolloutObservationRow(observation, index) {
   const evidenceCount = Array.isArray(observation?.evidence) ? observation.evidence.length : 0;
   const signals = Array.isArray(observation?.rolloutSignals) ? observation.rolloutSignals : [];
   const breachedSignalCount = signals.filter((signal) => signal?.breached).length;
+  const rolloutSignals = signals
+    .map((signal) => normalizeReadinessState(signal?.name))
+    .filter(Boolean);
+  const breachedRolloutSignals = signals
+    .filter((signal) => signal?.breached)
+    .map((signal) => normalizeReadinessState(signal?.name))
+    .filter(Boolean);
   return {
     index,
     kind: 'rollout-observation',
@@ -9188,6 +9231,8 @@ function visualRuntimeRolloutObservationRow(observation, index) {
     operatorRef: observation?.operatorRef || '',
     bindingId: observation?.bindingId || '',
     activationId: observation?.activationId || '',
+    rolloutSignals,
+    breachedRolloutSignals,
     label: [
       observation?.observationId || 'rollout observation',
       'Rollout observation',
@@ -9720,6 +9765,18 @@ function attachVisualRuntimeEvidenceQueryHandlers() {
       rolloutState: rolloutState.value
     });
   }
+  const rolloutSignal = $('runtime-evidence-rollout-signal');
+  if (rolloutSignal) {
+    rolloutSignal.onchange = () => updateVisualRuntimeEvidenceQuery({
+      rolloutSignal: rolloutSignal.value
+    });
+  }
+  const breachedOnly = $('runtime-evidence-breached-only');
+  if (breachedOnly) {
+    breachedOnly.onchange = () => updateVisualRuntimeEvidenceQuery({
+      breachedOnly: breachedOnly.checked
+    });
+  }
   const refresh = $('runtime-evidence-refresh');
   if (refresh) {
     refresh.onclick = () => loadVisualRuntimeEvidenceChains();
@@ -9731,7 +9788,9 @@ function attachVisualRuntimeEvidenceQueryHandlers() {
       bindingId: '',
       activationId: '',
       lifecycleState: '',
-      rolloutState: ''
+      rolloutState: '',
+      rolloutSignal: '',
+      breachedOnly: false
     });
   }
 }
@@ -9793,7 +9852,9 @@ async function openVisualRuntimeEvidenceAction(item, context = null) {
       bindingId: target.id,
       activationId: '',
       lifecycleState: '',
-      rolloutState: ''
+      rolloutState: '',
+      rolloutSignal: '',
+      breachedOnly: false
     });
     await loadVisualRuntimeEvidenceChains({ render: false });
     state.activeVisualRuntimeEvidence = null;
@@ -9812,17 +9873,27 @@ async function openVisualRuntimeEvidenceAction(item, context = null) {
     bindingId: '',
     activationId: target.kind === 'activation' ? target.id : '',
     lifecycleState: '',
-    rolloutState: ''
+    rolloutState: '',
+    rolloutSignal: '',
+    breachedOnly: false
   });
   await loadVisualRuntimeEvidenceChains({ render: false });
   let row = findVisualRuntimeEvidenceRow(target);
   if (row) {
+    const breachedSignals = Array.isArray(row.breachedRolloutSignals)
+      ? row.breachedRolloutSignals.filter(Boolean)
+      : [];
+    const focusedRolloutSignal = row.kind === 'rollout-observation' && breachedSignals.length
+      ? breachedSignals[0]
+      : '';
     state.visualRuntimeEvidenceQuery = normalizeVisualRuntimeEvidenceQuery({
       operatorRef: row.operatorRef || operatorRef,
       bindingId: row.bindingId || '',
       activationId: row.activationId || '',
       lifecycleState: row.kind === 'rollout-observation' ? '' : row.state,
-      rolloutState: row.kind === 'rollout-observation' ? row.state : ''
+      rolloutState: row.kind === 'rollout-observation' ? row.state : '',
+      rolloutSignal: focusedRolloutSignal,
+      breachedOnly: Boolean(focusedRolloutSignal)
     });
     await loadVisualRuntimeEvidenceChains({ render: false });
     row = findVisualRuntimeEvidenceRow(target) || row;

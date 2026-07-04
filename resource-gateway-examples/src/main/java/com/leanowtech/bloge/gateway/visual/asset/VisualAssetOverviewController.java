@@ -1588,16 +1588,38 @@ public class VisualAssetOverviewController {
      * @param state optional observation state filter
      * @return matching runtime rollout observations
      */
+    public List<VisualRuntimeRolloutObservation> runtimeRolloutObservations(
+            String activationId,
+            String bindingId,
+            String operatorRef,
+            String state) {
+        return runtimeRolloutObservations(activationId, bindingId, operatorRef, state, "", false);
+    }
+
+    /**
+     * Lists submitted runtime rollout observations.
+     *
+     * @param activationId optional adapter activation id filter
+     * @param bindingId optional implementation binding id filter
+     * @param operatorRef optional operator reference filter
+     * @param state optional observation state filter
+     * @param rolloutSignal optional structured rollout guardrail signal name filter
+     * @param breachedOnly whether to require a breached rollout guardrail signal
+     * @return matching runtime rollout observations
+     */
     @GetMapping("/runtime-binding-requirements/rollout-observations")
     public List<VisualRuntimeRolloutObservation> runtimeRolloutObservations(
             @RequestParam(defaultValue = "") String activationId,
             @RequestParam(defaultValue = "") String bindingId,
             @RequestParam(defaultValue = "") String operatorRef,
-            @RequestParam(defaultValue = "") String state) {
+            @RequestParam(defaultValue = "") String state,
+            @RequestParam(defaultValue = "") String rolloutSignal,
+            @RequestParam(defaultValue = "false") boolean breachedOnly) {
         String normalizedActivationId = activationId == null ? "" : activationId.trim();
         String normalizedBindingId = bindingId == null ? "" : bindingId.trim();
         String normalizedOperatorRef = operatorRef == null ? "" : operatorRef.trim();
         String normalizedState = state == null ? "" : state.trim().toLowerCase(Locale.ROOT);
+        String normalizedRolloutSignal = normalizeRolloutSignalName(rolloutSignal);
         return rolloutObservationRepository.all().stream()
                 .filter(observation -> normalizedActivationId.isBlank()
                         || observation.activationId().equals(normalizedActivationId))
@@ -1607,7 +1629,30 @@ public class VisualAssetOverviewController {
                         || observation.operatorRef().equals(normalizedOperatorRef))
                 .filter(observation -> normalizedState.isBlank()
                         || observation.state().equals(normalizedState))
+                .filter(observation ->
+                        matchesRolloutSignalFilter(observation, normalizedRolloutSignal, breachedOnly))
                 .toList();
+    }
+
+    private static boolean matchesRolloutSignalFilter(VisualRuntimeRolloutObservation observation,
+                                                      String rolloutSignal,
+                                                      boolean breachedOnly) {
+        String normalizedSignal = normalizeRolloutSignalName(rolloutSignal);
+        if (normalizedSignal.isBlank() && !breachedOnly) {
+            return true;
+        }
+        return observation.rolloutSignals().stream()
+                .filter(signal -> !normalizeRolloutSignalName(signal.name()).isBlank())
+                .anyMatch(signal -> {
+                    boolean signalNameMatches = normalizedSignal.isBlank()
+                            || normalizeRolloutSignalName(signal.name()).equals(normalizedSignal);
+                    boolean breachMatches = !breachedOnly || signal.breached();
+                    return signalNameMatches && breachMatches;
+                });
+    }
+
+    private static String normalizeRolloutSignalName(String value) {
+        return value == null ? "" : value.trim().toLowerCase(Locale.ROOT).replace('_', '-');
     }
 
     /**

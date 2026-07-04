@@ -2133,7 +2133,9 @@ observedBy、reason 和 evidence 做无状态校验，返回
 rollout strategy 与计划不一致、traffic 超出计划、rollback 已触发但缺少 signal、或缺少审计/证据。
 `POST .../rollout-observations` 会持久化当前 canary/ramp/rollback execution fact 为
 `bloge.visualRuntimeRolloutObservation.v1`；`GET .../rollout-observations` 可按
-`activationId`、`bindingId`、`operatorRef` 和 `state` 查询。同一 stable `observationId`
+`activationId`、`bindingId`、`operatorRef`、`state`、`rolloutSignal` 和
+`breachedOnly=true` 查询，让控制面能从 overview 的 breached guardrail aggregate 直接定位
+对应 runtime evidence fact。同一 stable `observationId`
 且 submitted evidence 与既有 fact 完全一致时返回已有 fact 和 `200`；同 id 但 observation
 metadata、validation 或 evidence 不一致时返回 `409`。这些 observation 是 runtime feedback
 和后续治理输入，不会直接修改 graph artifact、operator definition 或 executable readiness。

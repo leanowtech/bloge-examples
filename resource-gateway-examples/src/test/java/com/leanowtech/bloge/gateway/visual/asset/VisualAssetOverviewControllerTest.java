@@ -3234,6 +3234,13 @@ class VisualAssetOverviewControllerTest {
                 activation.activationId(), binding.bindingId(), "risk:eligibility", "healthy"))
                 .singleElement()
                 .isEqualTo(observation);
+        assertThat(fixture.controller().runtimeRolloutObservations(
+                "", "", "", "", "p95_latency", false))
+                .singleElement()
+                .isEqualTo(observation);
+        assertThat(fixture.controller().runtimeRolloutObservations(
+                "", "", "", "", "p95-latency", true))
+                .isEmpty();
 
         var replay = fixture.controller().submitRuntimeRolloutObservation(request);
         assertThat(replay.getStatusCode().value()).isEqualTo(200);
@@ -3295,6 +3302,17 @@ class VisualAssetOverviewControllerTest {
                 activation.activationId(), binding.bindingId(), "risk:eligibility", "rolled-back"))
                 .singleElement()
                 .isEqualTo(observation);
+        assertThat(fixture.controller().runtimeRolloutObservations(
+                "", "", "", "", "", true))
+                .singleElement()
+                .isEqualTo(observation);
+        assertThat(fixture.controller().runtimeRolloutObservations(
+                "", "", "", "", "error_rate", true))
+                .singleElement()
+                .isEqualTo(observation);
+        assertThat(fixture.controller().runtimeRolloutObservations(
+                "", "", "", "", "p95-latency", false))
+                .isEmpty();
     }
 
     @Test
