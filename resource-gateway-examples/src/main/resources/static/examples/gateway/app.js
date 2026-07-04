@@ -11725,6 +11725,8 @@ function renderDraftDependencyReport() {
   const sourceRows = draftDependencyCountRows(report.sourceKindCounts || {}, 'source');
   const libraryRows = draftDependencyCountRows(report.operatorLibraryIdCounts || {}, 'library');
   const schemaRows = draftDependencyCountRows(report.schemaCompatibilityStateCounts || {}, 'schema');
+  const rebaseDecisionRows = draftDependencyCountRows(report.schemaRebaseDecisionStateCounts || {}, 'decision');
+  const schemaRebaseQueue = renderSchemaRebaseDecisionQueue(report);
   const operatorRows = draftDependencyOperatorRows(report);
   const nodeRows = draftDependencyNodeRows(report);
   target.innerHTML = `
@@ -11734,9 +11736,10 @@ function renderDraftDependencyReport() {
     </div>
     <div class="library-impact-risk-summary">${escapeHtml(draftDependencySummary(report))}</div>
     <div class="library-impact-stats">${stats}</div>
-    ${readinessRows || sourceRows || libraryRows || schemaRows
-      ? `<div class="library-impact-codes">${readinessRows}${sourceRows}${libraryRows}${schemaRows}</div>`
+    ${readinessRows || sourceRows || libraryRows || schemaRows || rebaseDecisionRows
+      ? `<div class="library-impact-codes">${readinessRows}${sourceRows}${libraryRows}${schemaRows}${rebaseDecisionRows}</div>`
       : ''}
+    ${schemaRebaseQueue}
     ${operatorRows ? `<div class="library-impact-risks">${operatorRows}</div>` : ''}
     ${nodeRows ? `<div class="library-impact-risks">${nodeRows}</div>` : ''}
   `;
@@ -11748,6 +11751,21 @@ function renderDraftDependencyReport() {
   for (const button of target.querySelectorAll('[data-draft-dependency-rebase]')) {
     button.addEventListener('click', () => {
       rebaseOperatorFingerprint(button.dataset.draftDependencyRebase);
+    });
+  }
+  for (const button of target.querySelectorAll('[data-schema-rebase-decision-node]')) {
+    button.addEventListener('click', () => {
+      focusCanvasNode(button.dataset.schemaRebaseDecisionNode);
+    });
+  }
+  for (const button of target.querySelectorAll('[data-schema-rebase-decision-rebase]')) {
+    button.addEventListener('click', () => {
+      rebaseOperatorFingerprint(button.dataset.schemaRebaseDecisionRebase);
+    });
+  }
+  for (const button of target.querySelectorAll('[data-schema-rebase-bulk]')) {
+    button.addEventListener('click', () => {
+      rebaseOperatorFingerprints(schemaRebaseEligibleNodeIds(report));
     });
   }
 }
@@ -11826,11 +11844,17 @@ function draftDependencyCountLabel(label, key) {
   if (label === 'schema') {
     return draftDependencySchemaCompatibilityLabel(key);
   }
+  if (label === 'decision') {
+    return schemaRebaseDecisionStateLabel(key);
+  }
   return operatorPaletteFacetLabel(key);
 }
 
 function draftDependencyCountLevel(label, key) {
   const normalized = String(key || '').trim().toUpperCase().replaceAll('-', '_');
+  if (label === 'decision') {
+    return schemaRebaseDecisionLevel({ queueState: key });
+  }
   if (label === 'schema') {
     if (normalized === 'BREAKING') {
       return 'error';
@@ -11881,6 +11905,260 @@ function draftDependencyNodeRows(report) {
   return rows + (hidden ? `<div class="library-impact-more">+${hidden} more node dependencies</div>` : '');
 }
 
+function normalizeSchemaRebaseDecisions(reportOrDecisions) {
+  const source = Array.isArray(reportOrDecisions)
+    ? reportOrDecisions
+    : Array.isArray(reportOrDecisions?.schemaRebaseDecisions)
+      ? reportOrDecisions.schemaRebaseDecisions
+      : deriveSchemaRebaseDecisionsFromNodes(reportOrDecisions?.nodes);
+  const seen = new Set();
+  const decisions = [];
+  for (const item of Array.isArray(source) ? source : []) {
+    const nodeId = String(item?.nodeId || '').trim();
+    const queueState = String(item?.queueState || '').trim().toLowerCase();
+    const decision = {
+      decisionId: String(item?.decisionId || [nodeId, queueState].filter(Boolean).join(':')).trim(),
+      nodeId,
+      nodeLabel: String(item?.nodeLabel || item?.label || nodeId).trim(),
+      operatorRef: String(item?.operatorRef || '').trim(),
+      operatorLibraryId: String(item?.operatorLibraryId || '').trim(),
+      queueState,
+      recommendedAction: String(item?.recommendedAction || '').trim(),
+      rebaseEligible: Boolean(item?.rebaseEligible),
+      blockingReason: String(item?.blockingReason || '').trim(),
+      issueCount: Number(item?.issueCount) || 0,
+      breakingIssueCount: Number(item?.breakingIssueCount) || 0,
+      compatibleIssueCount: Number(item?.compatibleIssueCount) || 0,
+      affectedSurfaces: uniqueStrings(item?.affectedSurfaces),
+      affectedPaths: uniqueStrings(item?.affectedPaths),
+      downstreamNodes: uniqueStrings(item?.downstreamNodes),
+      reviewSummary: String(item?.reviewSummary || '').trim()
+    };
+    if (!decision.nodeId && !decision.operatorRef && !decision.queueState) {
+      continue;
+    }
+    const key = [
+      decision.decisionId,
+      decision.nodeId,
+      decision.operatorRef,
+      decision.queueState,
+      decision.affectedPaths.join(',')
+    ].join('|');
+    if (seen.has(key)) {
+      continue;
+    }
+    seen.add(key);
+    decisions.push(decision);
+  }
+  return decisions.sort((left, right) =>
+    schemaRebaseDecisionRank(right) - schemaRebaseDecisionRank(left)
+      || String(left.nodeId || '').localeCompare(String(right.nodeId || '')));
+}
+
+function deriveSchemaRebaseDecisionsFromNodes(nodes) {
+  return (Array.isArray(nodes) ? nodes : [])
+    .filter((node) => {
+      const schemaState = String(node?.schemaCompatibilityState || '').toLowerCase();
+      const fingerprintState = String(node?.fingerprintState || '').toLowerCase();
+      return ['breaking', 'compatible'].includes(schemaState)
+        || ['drifted', 'missing-snapshot', 'catalog-missing', 'scope-mismatch'].includes(fingerprintState);
+    })
+    .map((node) => {
+      const issues = normalizeSchemaDriftIssues(node?.schemaCompatibilityIssues);
+      const schemaState = String(node?.schemaCompatibilityState || '').toLowerCase();
+      const fingerprintState = String(node?.fingerprintState || '').toLowerCase();
+      const queueState = schemaState === 'breaking'
+        ? 'repair-review'
+        : fingerprintState === 'missing-snapshot'
+          ? 'ready-capture'
+          : ['catalog-missing', 'scope-mismatch'].includes(fingerprintState)
+            ? 'blocked'
+            : 'ready-rebase';
+      return {
+        decisionId: `schema-rebase:${node?.nodeId || ''}:${schemaState}:${fingerprintState}`,
+        nodeId: node?.nodeId || '',
+        nodeLabel: node?.label || node?.nodeId || '',
+        operatorRef: node?.operatorRef || '',
+        operatorLibraryId: node?.operatorLibraryId || '',
+        queueState,
+        recommendedAction: schemaRebaseDecisionActionLabel(queueState),
+        rebaseEligible: draftDependencyCanRebase(node),
+        blockingReason: draftDependencyCanRebase(node) ? '' : draftDependencyRebaseBlockReason(node),
+        issueCount: issues.length,
+        breakingIssueCount: issues.filter((issue) => issue.compatibility === 'breaking').length,
+        compatibleIssueCount: issues.filter((issue) => issue.compatibility === 'compatible').length,
+        affectedSurfaces: uniqueStrings(issues.map((issue) => [issue.surface, issue.portName].filter(Boolean).join('.'))),
+        affectedPaths: uniqueStrings(issues.map((issue) => [issue.surface, issue.portName, issue.path].filter(Boolean).join('.'))),
+        downstreamNodes: uniqueStrings(node?.downstreamNodes),
+        reviewSummary: issues.length
+          ? schemaDriftIssueDetailLabel(issues[0])
+          : draftDependencyNodeSummary(node)
+      };
+    });
+}
+
+function renderSchemaRebaseDecisionQueue(report, options = {}) {
+  const decisions = normalizeSchemaRebaseDecisions(report);
+  if (!decisions.length) {
+    return '';
+  }
+  const selectedNodeId = String(options.selectedNodeId || '').trim();
+  const visible = selectedNodeId
+    ? decisions.filter((decision) => decision.nodeId === selectedNodeId)
+    : decisions;
+  if (!visible.length) {
+    return '';
+  }
+  const eligibleNodeIds = schemaRebaseEligibleNodeIds(visible);
+  const blockReason = operatorFingerprintRebaseBlockReason();
+  const loadingBatch = state.operatorFingerprintRebaseNodeId === '__batch';
+  const rows = visible.slice(0, selectedNodeId ? 2 : 6).map((decision, index) =>
+    renderSchemaRebaseDecisionRow(decision, index, visible.length)
+  ).join('');
+  const hidden = Math.max(0, visible.length - (selectedNodeId ? 2 : 6));
+  const bulkDisabled = loadingBatch || Boolean(blockReason) || !eligibleNodeIds.length;
+  const bulkLabel = loadingBatch
+    ? 'Rebasing'
+    : eligibleNodeIds.length
+      ? `Rebase ${eligibleNodeIds.length}`
+      : 'No rebase';
+  const reason = blockReason || (!eligibleNodeIds.length ? 'no eligible queue items' : '');
+  return `
+    <div
+      class="schema-rebase-queue ${escapeHtml(schemaRebaseDecisionLevel(visible[0]))}"
+      data-schema-rebase-queue
+      role="list"
+      aria-label="Schema rebase decision queue"
+      aria-live="polite">
+      <div class="schema-rebase-queue-title">
+        <span>Schema Rebase Queue</span>
+        <small>${escapeHtml(schemaRebaseDecisionQueueSummary(visible))}</small>
+        ${selectedNodeId ? '' : `<button class="secondary compact" type="button" data-schema-rebase-bulk ${bulkDisabled ? 'disabled' : ''} title="${escapeHtml(reason || 'Rebase every eligible reviewed queue item')}">${escapeHtml(bulkLabel)}</button>`}
+      </div>
+      ${rows}
+      ${hidden ? `<div class="schema-rebase-queue-overflow">+${escapeHtml(hidden)} more schema rebase decisions</div>` : ''}
+    </div>
+  `;
+}
+
+function renderSchemaRebaseDecisionRow(decision, index = 0, total = 1) {
+  const nodeId = String(decision?.nodeId || '').trim();
+  const loading = state.operatorFingerprintRebaseNodeId === nodeId
+    || state.operatorFingerprintRebaseNodeId === '__batch';
+  const blockReason = operatorFingerprintRebaseBlockReason();
+  const disabled = loading || !decision.rebaseEligible || Boolean(blockReason);
+  const actionReason = blockReason || decision.blockingReason || '';
+  const affected = [
+    decision.affectedPaths.length ? `paths ${decision.affectedPaths.slice(0, 3).join(', ')}` : '',
+    decision.downstreamNodes.length ? `downstream ${decision.downstreamNodes.slice(0, 3).join(', ')}` : ''
+  ].filter(Boolean).join(' · ');
+  return `
+    <div
+      class="schema-rebase-decision ${escapeHtml(schemaRebaseDecisionLevel(decision))}"
+      data-schema-rebase-decision
+      data-schema-rebase-decision-state="${escapeHtml(decision.queueState)}"
+      data-schema-rebase-decision-node-id="${escapeHtml(nodeId)}"
+      role="listitem"
+      aria-posinset="${escapeHtml(index + 1)}"
+      aria-setsize="${escapeHtml(total)}">
+      <div class="schema-rebase-decision-main">
+        <strong>${escapeHtml(schemaRebaseDecisionStateLabel(decision.queueState))}</strong>
+        <span>${escapeHtml([decision.nodeLabel || nodeId, decision.operatorRef].filter(Boolean).join(' · '))}</span>
+        <small>${escapeHtml(decision.reviewSummary || schemaRebaseDecisionActionLabel(decision.queueState))}</small>
+        ${affected ? `<small>${escapeHtml(affected)}</small>` : ''}
+        ${actionReason ? `<small>${escapeHtml(actionReason)}</small>` : ''}
+      </div>
+      <div class="schema-rebase-decision-actions">
+        ${nodeId ? `<button class="diagnostic-focus" type="button" data-schema-rebase-decision-node="${escapeHtml(nodeId)}">Focus</button>` : ''}
+        ${nodeId ? `<button class="secondary compact" type="button" data-schema-rebase-decision-rebase="${escapeHtml(nodeId)}" ${disabled ? 'disabled' : ''}>${escapeHtml(loading ? 'Rebasing' : 'Rebase')}</button>` : ''}
+      </div>
+    </div>
+  `;
+}
+
+function schemaRebaseEligibleNodeIds(reportOrDecisions) {
+  return normalizeSchemaRebaseDecisions(reportOrDecisions)
+    .filter((decision) => decision.rebaseEligible)
+    .map((decision) => decision.nodeId)
+    .filter(Boolean);
+}
+
+function selectedNodeSchemaRebaseDecision(node) {
+  const nodeId = String(node?.id || '').trim();
+  if (!nodeId) {
+    return null;
+  }
+  return normalizeSchemaRebaseDecisions(state.draftDependencyReport)
+    .find((decision) => decision.nodeId === nodeId) || null;
+}
+
+function renderSelectedNodeSchemaRebaseDecision(node) {
+  const decision = selectedNodeSchemaRebaseDecision(node);
+  if (!decision) {
+    return '';
+  }
+  return renderSchemaRebaseDecisionQueue([decision], { selectedNodeId: decision.nodeId });
+}
+
+function schemaRebaseDecisionQueueSummary(decisions) {
+  const normalized = normalizeSchemaRebaseDecisions(decisions);
+  const ready = normalized.filter((decision) => decision.rebaseEligible).length;
+  const repair = normalized.filter((decision) => decision.queueState === 'repair-review').length;
+  const blocked = normalized.filter((decision) => decision.queueState === 'blocked').length;
+  return [
+    `${normalized.length} decision${normalized.length === 1 ? '' : 's'}`,
+    ready ? `${ready} rebaseable` : '',
+    repair ? `${repair} repair review` : '',
+    blocked ? `${blocked} blocked` : ''
+  ].filter(Boolean).join(' · ');
+}
+
+function schemaRebaseDecisionRank(decision) {
+  const state = String(decision?.queueState || '').toLowerCase();
+  if (state === 'blocked') return 4;
+  if (state === 'repair-review') return 3;
+  if (state === 'ready-rebase') return 2;
+  if (state === 'ready-capture') return 1;
+  return 0;
+}
+
+function schemaRebaseDecisionLevel(decision) {
+  const state = String(decision?.queueState || decision || '').toLowerCase();
+  if (state === 'blocked' || state === 'repair-review') {
+    return 'error';
+  }
+  return ['ready-rebase', 'ready-capture'].includes(state) ? 'warning' : 'success';
+}
+
+function schemaRebaseDecisionStateLabel(state) {
+  return {
+    blocked: 'Blocked',
+    'repair-review': 'Repair review',
+    'ready-capture': 'Ready capture',
+    'ready-rebase': 'Ready rebase'
+  }[String(state || '').toLowerCase()] || String(state || 'Review');
+}
+
+function schemaRebaseDecisionActionLabel(state) {
+  return {
+    blocked: 'repair catalog or authoring scope first',
+    'repair-review': 'repair bindings or explicitly approve rebase',
+    'ready-capture': 'capture current operator snapshot',
+    'ready-rebase': 'review drift evidence and rebase'
+  }[String(state || '').toLowerCase()] || 'review dependency state';
+}
+
+function draftDependencyRebaseBlockReason(node) {
+  const fingerprintState = String(node?.fingerprintState || '').toLowerCase();
+  if (fingerprintState === 'catalog-missing' || !String(node?.currentFingerprint || '').trim()) {
+    return 'current operator is unavailable in the catalog';
+  }
+  if (fingerprintState === 'scope-mismatch' || node?.scopeAllowed === false) {
+    return 'operator is outside the draft authoring scope';
+  }
+  return operatorFingerprintRebaseBlockReason() || 'operator snapshot is already current';
+}
+
 function draftDependencyNodeButtons(nodeIds) {
   const ids = uniqueStrings(nodeIds);
   if (!ids.length) {
@@ -11904,7 +12182,8 @@ function draftDependencyRebaseButton(node) {
   if (!nodeId || !draftDependencyHasRebaseState(node)) {
     return '';
   }
-  const loading = state.operatorFingerprintRebaseNodeId === nodeId;
+  const loading = state.operatorFingerprintRebaseNodeId === nodeId
+    || state.operatorFingerprintRebaseNodeId === '__batch';
   const reason = operatorFingerprintRebaseBlockReason();
   const disabled = loading || Boolean(reason);
   return ` <button class="secondary compact" type="button" data-draft-dependency-rebase="${escapeHtml(nodeId)}" ${disabled ? 'disabled' : ''} title="${escapeHtml(reason || `Rebase ${nodeId} to the current operator fingerprint`)}">${loading ? 'Rebasing' : 'Rebase'}</button>${reason ? ` <em>${escapeHtml(reason)}</em>` : ''}`;
@@ -14661,6 +14940,18 @@ function renderSelectedOperatorEditor() {
     });
   }
 
+  for (const button of target.querySelectorAll('[data-schema-rebase-decision-node]')) {
+    button.addEventListener('click', () => {
+      focusCanvasNode(button.dataset.schemaRebaseDecisionNode);
+    });
+  }
+
+  for (const button of target.querySelectorAll('[data-schema-rebase-decision-rebase]')) {
+    button.addEventListener('click', () => {
+      rebaseOperatorFingerprint(button.dataset.schemaRebaseDecisionRebase);
+    });
+  }
+
   for (const input of target.querySelectorAll('[data-node-field]')) {
     input.addEventListener('input', () => {
       const field = input.dataset.nodeField;
@@ -15247,6 +15538,7 @@ function renderOperatorContractPanel(node) {
       ${renderOperatorDiagnosticsPanel(spec)}
       ${renderSchemaOutlineSearchControl(node, spec, schemaOutlineQuery, schemaDriftIssues)}
       ${renderSchemaDriftReviewPanel(schemaDriftIssues)}
+      ${renderSelectedNodeSchemaRebaseDecision(node)}
       <div class="contract-port-groups">
         ${renderContractPortGroup('Inputs', inputPortsForSpec(spec), schemaOutlineQuery, schemaDriftIssues, 'input', node)}
         ${renderContractPortGroup('Outputs', outputPortsForSpec(spec), schemaOutlineQuery, schemaDriftIssues, 'output', node)}
@@ -17203,10 +17495,25 @@ async function loadVisualOperatorDefinition(operatorRef, options = {}) {
 }
 
 async function rebaseOperatorFingerprint(nodeId) {
-  const node = state.builder.nodes.find((item) => item.id === nodeId);
-  if (!node) {
-    setDraftMessage(`Node ${nodeId || '(unknown)'} is no longer on the canvas.`, 'error');
+  return rebaseOperatorFingerprints([nodeId]);
+}
+
+async function rebaseOperatorFingerprints(nodeIds = []) {
+  const requestedNodeIds = uniqueStrings(nodeIds);
+  const nodes = requestedNodeIds
+    .map((nodeId) => state.builder.nodes.find((item) => item.id === nodeId))
+    .filter(Boolean);
+  if (!nodes.length) {
+    setDraftMessage('No queued operator fingerprint snapshots are available to rebase.', 'error');
     renderSelectedOperatorEditor();
+    renderDraftDependencyReport();
+    return null;
+  }
+  if (nodes.length !== requestedNodeIds.length) {
+    const missing = requestedNodeIds.find((nodeId) => !nodes.some((node) => node.id === nodeId));
+    setDraftMessage(`Node ${missing || '(unknown)'} is no longer on the canvas.`, 'error');
+    renderSelectedOperatorEditor();
+    renderDraftDependencyReport();
     return null;
   }
   const blockReason = operatorFingerprintRebaseBlockReason();
@@ -17221,11 +17528,14 @@ async function rebaseOperatorFingerprint(nodeId) {
     return null;
   }
 
-  const operatorRef = operatorUsageRefForNode(node);
-  state.operatorFingerprintRebaseNodeId = node.id;
-  setDraftMessage(`Rebasing ${node.id} operator fingerprint snapshot...`, 'info');
+  const nodeLabel = nodes.length === 1 ? nodes[0].id : `${nodes.length} queued nodes`;
+  const loadingKey = nodes.length === 1 ? nodes[0].id : '__batch';
+  const usageRefs = uniqueStrings(nodes.map((node) => operatorUsageRefForNode(node)));
+  state.operatorFingerprintRebaseNodeId = loadingKey;
+  setDraftMessage(`Rebasing ${nodeLabel} operator fingerprint snapshot${nodes.length === 1 ? '' : 's'}...`, 'info');
   renderDraftControls();
   renderSelectedOperatorEditor();
+  renderDraftDependencyReport();
   try {
     const response = await fetch(
       `/api/visual/drafts/${encodeURIComponent(state.currentDraftId)}/operator-fingerprints/rebase`,
@@ -17234,11 +17544,15 @@ async function rebaseOperatorFingerprint(nodeId) {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           expectedRevision: state.currentDraftRevision || 0,
-          nodeIds: [node.id],
+          nodeIds: nodes.map((node) => node.id),
           actor: 'visual-canvas',
           changeSource: 'gateway-browser',
-          changeSummary: `Rebased operator fingerprint snapshot for ${node.id}.`,
-          reason: 'User reviewed operator drift before rebasing the saved fingerprint snapshot in the browser.'
+          changeSummary: nodes.length === 1
+            ? `Rebased operator fingerprint snapshot for ${nodes[0].id}.`
+            : `Rebased operator fingerprint snapshots for ${nodes.length} queued nodes.`,
+          reason: nodes.length === 1
+            ? 'User reviewed operator drift before rebasing the saved fingerprint snapshot in the browser.'
+            : 'User reviewed the schema rebase decision queue before rebasing saved fingerprint snapshots in the browser.'
         })
       }
     );
@@ -17260,11 +17574,11 @@ async function rebaseOperatorFingerprint(nodeId) {
     state.savedDraftSnapshot = stored;
     state.builder.operatorFingerprints = { ...(stored.operatorFingerprints || {}) };
     state.builder.operatorSnapshots = { ...(stored.operatorSnapshots || {}) };
-    setDraftMessage(`Rebased ${node.id} operator fingerprint at ${state.currentDraftId}@${state.currentDraftRevision}.`, 'success');
+    setDraftMessage(`Rebased ${nodeLabel} operator fingerprint${nodes.length === 1 ? '' : 's'} at ${state.currentDraftId}@${state.currentDraftRevision}.`, 'success');
     await loadDraftList({ render: false });
     await loadDraftRevisions({ render: false });
     await loadDraftDependencies({ render: false });
-    if (operatorRef) {
+    for (const operatorRef of usageRefs) {
       await loadOperatorUsage(operatorRef);
     }
     return stored;
@@ -17272,12 +17586,13 @@ async function rebaseOperatorFingerprint(nodeId) {
     setDraftMessage(error.message, 'error');
     return null;
   } finally {
-    if (state.operatorFingerprintRebaseNodeId === node.id) {
+    if (state.operatorFingerprintRebaseNodeId === loadingKey) {
       state.operatorFingerprintRebaseNodeId = '';
     }
     renderDraftControls();
     renderSelectedOperatorEditor();
     renderDiagram();
+    renderDraftDependencyReport();
   }
 }
 

@@ -717,6 +717,16 @@ For schema drift review, the dependency contract also returns a bounded
 renders `Frozen schema` and `Current schema` side by side, limits the preview
 size for large imported schemas, and indexes the preview text so searches such
 as `frozen integer`, `minimum`, or `current schema` can locate the drift row.
+The dependency report now also returns `schemaRebaseDecisions` plus
+`schemaRebaseDecisionStateCounts`, classifying drifted, missing-snapshot,
+catalog-missing, scope-mismatched, and schema-drift nodes as `ready-rebase`,
+`ready-capture`, `repair-review`, or `blocked`. The Draft Dependencies panel
+renders those rows as a `Schema Rebase Queue`, lets authors focus the affected
+node, disables both row and bulk rebase while local draft edits are unsaved, and
+uses the existing revision-guarded operator-fingerprint rebase mutation for
+eligible batch decisions. The selected-operator contract panel shows the same
+node-local queue next to the frozen/current schema review, so reviewing evidence
+and applying a governed rebase stay in one authoring context.
 The same contract area now exposes a stable accessibility state contract:
 schema search inputs control their rendered outline regions, result counters are
 announced through live metadata, outline containers and rows use list/status

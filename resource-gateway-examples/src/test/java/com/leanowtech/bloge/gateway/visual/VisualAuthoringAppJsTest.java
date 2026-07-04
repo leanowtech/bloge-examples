@@ -3110,6 +3110,7 @@ class VisualAuthoringAppJsTest {
                   'operatorFingerprintRebaseBlockReason',
                   'refreshDraftConflictState',
                   'rebaseOperatorFingerprint',
+                  'rebaseOperatorFingerprints',
                   'renderOperatorUsagePanel',
                   'renderOperatorFingerprintSnapshotPanel',
                   'refreshSelectedOperatorFingerprintPanel',
@@ -7307,7 +7308,7 @@ operators:
                     ['rebase draft list calls', rebaseResult.rebaseDraftListCalls, 1],
                     ['rebase revision calls', rebaseResult.rebaseRevisionCalls, 1],
                     ['rebase dependency calls', rebaseResult.rebaseDependencyCalls, 1],
-                    ['rebase dependency renders', rebaseResult.rebaseDependencyRenders, 0],
+                    ['rebase dependency renders', rebaseResult.rebaseDependencyRenders, 2],
                     ['rebase usage ref', rebaseResult.rebaseUsageRef, 'risk:eligibility'],
                     ['rebase draft controls rendered', rebaseResult.rebaseDraftControlRenders, 2],
                     ['rebase editor renders', rebaseResult.rebaseEditorRenders, 2],
@@ -7390,7 +7391,7 @@ operators:
                     ['rebase conflict draft list calls', rebaseConflict.rebaseDraftListCalls, 1],
                     ['rebase conflict revision calls', rebaseConflict.rebaseRevisionCalls, 1],
                     ['rebase conflict dependency calls', rebaseConflict.rebaseDependencyCalls, 1],
-                    ['rebase conflict dependency renders', rebaseConflict.rebaseDependencyRenders, 1],
+                    ['rebase conflict dependency renders', rebaseConflict.rebaseDependencyRenders, 3],
                     ['rebase conflict usage ref', rebaseConflict.rebaseUsageRef, ''],
                     ['rebase conflict draft controls rendered', rebaseConflict.rebaseDraftControlRenders, 3],
                     ['rebase conflict editor renders', rebaseConflict.rebaseEditorRenders, 2],
@@ -8014,6 +8015,11 @@ operators:
                 context.SCHEMA_DECLARATION_KEYS = new Set(['$defs']);
                 context.state = {
                   selectedNodeId: 'schemaProbe',
+                  currentDraftId: 'draft-schema-probe',
+                  currentDraftRevision: 3,
+                  savedDraftSnapshot: { draftId: 'draft-schema-probe', revision: 3 },
+                  builderHistoryUndo: [],
+                  operatorFingerprintRebaseNodeId: '',
                   builder: { selectedId: 'schemaProbe' }
                 };
                 context.isDslFieldName = (value) => /^[A-Za-z_][A-Za-z0-9_]*$/.test(String(value || ''))
@@ -8023,6 +8029,7 @@ operators:
                   'escapeHtml',
                   'compactStringHash',
                   'isPlainObject',
+                  'uniqueStrings',
                   'resolveLocalSchemaRefs',
                   'resolveLocalSchemaRefValue',
                   'flattenSafeAllOf',
@@ -8145,6 +8152,23 @@ operators:
                   'appendCompatibilityPath',
                   'valueDomainLabel',
                   'changeRiskLabel',
+                  'currentDraftHasUnsavedGraphChanges',
+                  'operatorFingerprintRebaseBlockReason',
+                  'draftDependencyCanRebase',
+                  'draftDependencyHasRebaseState',
+                  'normalizeSchemaRebaseDecisions',
+                  'deriveSchemaRebaseDecisionsFromNodes',
+                  'renderSchemaRebaseDecisionQueue',
+                  'renderSchemaRebaseDecisionRow',
+                  'schemaRebaseEligibleNodeIds',
+                  'selectedNodeSchemaRebaseDecision',
+                  'renderSelectedNodeSchemaRebaseDecision',
+                  'schemaRebaseDecisionQueueSummary',
+                  'schemaRebaseDecisionRank',
+                  'schemaRebaseDecisionLevel',
+                  'schemaRebaseDecisionStateLabel',
+                  'schemaRebaseDecisionActionLabel',
+                  'draftDependencyRebaseBlockReason',
                   'normalizeSchemaDriftIssues',
                   'normalizeSchemaDriftSchemaPreview',
                   'plainSchemaPreviewObject',
@@ -8531,6 +8555,70 @@ operators:
                 );
                 const driftSummaryHtml = context.renderSchemaDriftSummary(driftIssues);
                 const driftReviewHtml = context.renderSchemaDriftReviewPanel(driftIssues);
+                const schemaRebaseReport = {
+                  schemaRebaseDecisionStateCounts: {
+                    'repair-review': 1,
+                    'ready-rebase': 1,
+                    blocked: 1
+                  },
+                  schemaRebaseDecisions: [{
+                    decisionId: 'schema-rebase:riskEligibility:breaking:drifted',
+                    nodeId: 'riskEligibility',
+                    nodeLabel: 'Eligibility',
+                    operatorRef: 'risk:eligibility',
+                    operatorLibraryId: 'risk-policy',
+                    queueState: 'repair-review',
+                    recommendedAction: 'repair bindings or explicitly approve rebase',
+                    rebaseEligible: true,
+                    issueCount: 1,
+                    breakingIssueCount: 1,
+                    compatibleIssueCount: 0,
+                    affectedSurfaces: ['input.inputs'],
+                    affectedPaths: ['input.inputs.score'],
+                    downstreamNodes: ['riskAudit'],
+                    reviewSummary: '1 schema issue; input.inputs.score: score type narrowed'
+                  }, {
+                    decisionId: 'schema-rebase:riskAudit:compatible:drifted',
+                    nodeId: 'riskAudit',
+                    nodeLabel: 'Audit',
+                    operatorRef: 'risk:audit',
+                    operatorLibraryId: 'risk-policy',
+                    queueState: 'ready-rebase',
+                    recommendedAction: 'review drift evidence and rebase',
+                    rebaseEligible: true,
+                    issueCount: 1,
+                    breakingIssueCount: 0,
+                    compatibleIssueCount: 1,
+                    affectedSurfaces: ['output.output'],
+                    affectedPaths: ['output.output.auditId'],
+                    downstreamNodes: [],
+                    reviewSummary: '1 schema issue; output.output.auditId widened'
+                  }, {
+                    decisionId: 'schema-rebase:missingRisk:catalog-missing:catalog-missing',
+                    nodeId: 'missingRisk',
+                    nodeLabel: 'Missing Risk',
+                    operatorRef: 'risk:missing',
+                    operatorLibraryId: 'risk-policy',
+                    queueState: 'blocked',
+                    recommendedAction: 'repair catalog or authoring scope first',
+                    rebaseEligible: false,
+                    blockingReason: 'current operator is unavailable in the catalog',
+                    issueCount: 0,
+                    breakingIssueCount: 0,
+                    compatibleIssueCount: 0,
+                    affectedSurfaces: [],
+                    affectedPaths: [],
+                    downstreamNodes: [],
+                    reviewSummary: 'current operator is unavailable in the catalog'
+                  }]
+                };
+                context.state.draftDependencyReport = schemaRebaseReport;
+                const schemaRebaseDecisions = context.normalizeSchemaRebaseDecisions(schemaRebaseReport);
+                const schemaRebaseQueueHtml = context.renderSchemaRebaseDecisionQueue(schemaRebaseReport);
+                const selectedSchemaRebaseDecision = context.selectedNodeSchemaRebaseDecision({ id: 'riskEligibility' });
+                const selectedSchemaRebaseHtml = context.renderSelectedNodeSchemaRebaseDecision({ id: 'riskEligibility' });
+                const schemaRebaseEligibleNodes = context.schemaRebaseEligibleNodeIds(schemaRebaseReport).join('|');
+                const schemaRebaseSummary = context.schemaRebaseDecisionQueueSummary(schemaRebaseDecisions);
                 const driftIssueForPort = context.schemaDriftIssuesForPort(driftIssues, 'input', 'request')[0];
                 const driftTransitionLabel = context.schemaDriftTypeTransitionLabel(driftIssueForPort);
                 const driftReviewHint = context.schemaDriftReviewHint(driftIssueForPort);
@@ -8652,6 +8740,16 @@ operators:
                   ['complex drift review html path', String(driftReviewHtml.includes('data-schema-drift-review-path="customer.profile.id"')), 'true'],
                   ['complex drift review html frozen', String(driftReviewHtml.includes('Frozen schema') && driftReviewHtml.includes('&quot;type&quot;: &quot;string&quot;')), 'true'],
                   ['complex drift review html current', String(driftReviewHtml.includes('Current schema') && driftReviewHtml.includes('&quot;minimum&quot;: 1')), 'true'],
+                  ['schema rebase queue sorted blocked first', schemaRebaseDecisions[0].queueState, 'blocked'],
+                  ['schema rebase eligible nodes', schemaRebaseEligibleNodes, 'riskEligibility|riskAudit'],
+                  ['schema rebase queue summary', schemaRebaseSummary, '3 decisions · 2 rebaseable · 1 repair review · 1 blocked'],
+                  ['schema rebase queue html title', String(schemaRebaseQueueHtml.includes('Schema Rebase Queue')), 'true'],
+                  ['schema rebase queue bulk action', String(schemaRebaseQueueHtml.includes('data-schema-rebase-bulk') && schemaRebaseQueueHtml.includes('Rebase 2')), 'true'],
+                  ['schema rebase queue repair state', String(schemaRebaseQueueHtml.includes('data-schema-rebase-decision-state="repair-review"')), 'true'],
+                  ['schema rebase queue path', String(schemaRebaseQueueHtml.includes('input.inputs.score')), 'true'],
+                  ['schema rebase queue blocked reason', String(schemaRebaseQueueHtml.includes('current operator is unavailable in the catalog')), 'true'],
+                  ['selected schema rebase decision node', selectedSchemaRebaseDecision.nodeId, 'riskEligibility'],
+                  ['selected schema rebase queue no bulk', String(selectedSchemaRebaseHtml.includes('Schema Rebase Queue') && !selectedSchemaRebaseHtml.includes('data-schema-rebase-bulk')), 'true'],
                   ['union library input summary', unionLibraryProfile.operators[0].inputUnionSummary, 'inputs.decision oneOf<integer|string>, inputs.events[] anyOf<boolean|null>'],
                   ['union library config summary', unionLibraryProfile.operators[0].configUnionSummary, '(root) oneOf<object|null>'],
                   ['union library html input branch', String(unionLibraryProfileHtml.includes('in union inputs.decision oneOf&lt;integer|string&gt;')), 'true'],

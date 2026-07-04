@@ -336,13 +336,24 @@ class VisualAuthoringBrowserDomTest {
         importOperatorLibrary(wait, eligibilityLibraryWithAdditionalOutput());
         waitForText(wait, By.id("library-status"), "Replaced risk-policy");
         waitForText(wait, By.id("draft-dependencies"), "fingerprint drifted");
+        waitForText(wait, By.id("draft-dependencies"), "Schema Rebase Queue");
+        waitForText(wait, By.id("draft-dependencies"), "Repair review");
+        waitForText(wait, By.id("draft-dependencies"), "Rebase 1");
         waitForText(wait, By.id("draft-dependencies"), "Rebase");
+        assertThat(driver.findElements(By.cssSelector(
+                "#draft-dependencies [data-schema-rebase-decision]"
+                        + "[data-schema-rebase-decision-node-id='riskEligibility']"
+        ))).isNotEmpty();
 
         click(wait, By.cssSelector("#diagram [data-node-id='riskEligibility']"));
         setControlValue(wait, By.cssSelector("[data-binding-expression][data-binding-path='score']"),
                 "ctx.changedScore");
         waitForValue(wait, By.id("composer-dsl"), "ctx.changedScore");
         waitForText(wait, By.id("draft-dependencies"), "save or reload local changes before rebasing");
+        WebElement dirtyBulkRebaseButton = wait.until(ExpectedConditions.presenceOfElementLocated(
+                By.cssSelector("#draft-dependencies [data-schema-rebase-bulk]")
+        ));
+        assertThat(dirtyBulkRebaseButton.isEnabled()).isFalse();
         WebElement dirtyDependencyRebaseButton = wait.until(ExpectedConditions.presenceOfElementLocated(
                 By.cssSelector("#draft-dependencies [data-draft-dependency-rebase='riskEligibility']")
         ));
@@ -359,12 +370,18 @@ class VisualAuthoringBrowserDomTest {
         wait.until(ExpectedConditions.elementToBeClickable(
                 By.cssSelector("#draft-dependencies [data-draft-dependency-rebase='riskEligibility']")
         ));
+        wait.until(ExpectedConditions.elementToBeClickable(
+                By.cssSelector("#draft-dependencies [data-schema-rebase-bulk]")
+        ));
 
-        click(wait, By.cssSelector("#draft-dependencies [data-draft-dependency-rebase='riskEligibility']"));
+        click(wait, By.cssSelector("#draft-dependencies [data-schema-rebase-bulk]"));
         waitForText(wait, By.id("draft-status"), "Rebased riskEligibility operator fingerprint");
         waitForText(wait, By.id("draft-dependencies"), "fingerprint current");
         wait.until(ignored -> driver.findElements(By.cssSelector(
                 "#draft-dependencies [data-draft-dependency-rebase='riskEligibility']"
+        )).isEmpty());
+        wait.until(ignored -> driver.findElements(By.cssSelector(
+                "#draft-dependencies [data-schema-rebase-decision]"
         )).isEmpty());
 
         click(wait, By.cssSelector("#draft-dependencies [data-draft-dependency-node='riskEligibility']"));
@@ -391,9 +408,21 @@ class VisualAuthoringBrowserDomTest {
         waitForText(wait, By.id("draft-dependencies"), "fingerprint drifted");
         waitForText(wait, By.id("draft-dependencies"), "schema breaking");
         waitForText(wait, By.id("draft-dependencies"), "score");
+        waitForText(wait, By.id("draft-dependencies"), "Schema Rebase Queue");
+        waitForText(wait, By.id("draft-dependencies"), "Repair review");
+        waitForText(wait, By.id("draft-dependencies"), "Rebase 1");
+        waitForText(wait, By.id("draft-dependencies"), "input.inputs.score");
+        assertThat(driver.findElements(By.cssSelector(
+                "#draft-dependencies [data-schema-rebase-decision]"
+                        + "[data-schema-rebase-decision-state='repair-review']"
+                        + "[data-schema-rebase-decision-node-id='riskEligibility']"
+        ))).isNotEmpty();
 
         click(wait, By.cssSelector("#diagram [data-node-id='riskEligibility']"));
         waitForText(wait, By.id("selected-operator-editor"), "Schema Drift");
+        waitForText(wait, By.id("selected-operator-editor"), "Schema Rebase Queue");
+        waitForText(wait, By.id("selected-operator-editor"), "Repair review");
+        waitForText(wait, By.id("selected-operator-editor"), "input.inputs.score");
         waitForText(wait, By.id("selected-operator-editor"), "1 breaking drift");
         waitForText(wait, By.id("selected-operator-editor"), "score:");
         waitForText(wait, By.id("selected-operator-editor"), "target type integer requires integer-valued source");
@@ -408,6 +437,10 @@ class VisualAuthoringBrowserDomTest {
         assertThat(driver.findElements(By.cssSelector(
                 "#selected-operator-editor [data-schema-drift-review-row]"
                         + "[data-schema-drift-review-path='score']"
+        ))).isNotEmpty();
+        assertThat(driver.findElements(By.cssSelector(
+                "#selected-operator-editor [data-schema-rebase-decision]"
+                        + "[data-schema-rebase-decision-node-id='riskEligibility']"
         ))).isNotEmpty();
         assertThat(driver.findElements(By.cssSelector(
                 "#selected-operator-editor [data-schema-outline-row]"
@@ -447,6 +480,10 @@ class VisualAuthoringBrowserDomTest {
         assertVisibleElementsNoHorizontalOverflow(wait,
                 By.cssSelector("#selected-operator-editor [data-schema-drift-preview-side]"));
         assertVisibleElementsNoHorizontalOverflow(wait,
+                By.cssSelector("#selected-operator-editor [data-schema-rebase-queue]"));
+        assertVisibleElementsNoHorizontalOverflow(wait,
+                By.cssSelector("#selected-operator-editor [data-schema-rebase-decision]"));
+        assertVisibleElementsNoHorizontalOverflow(wait,
                 By.cssSelector("#selected-operator-editor [data-schema-outline-row][data-schema-drift]"));
 
         setViewport(wait, 390, 980);
@@ -459,6 +496,10 @@ class VisualAuthoringBrowserDomTest {
                 By.cssSelector("#selected-operator-editor [data-schema-drift-review]"));
         assertVisibleElementsNoHorizontalOverflow(wait,
                 By.cssSelector("#selected-operator-editor [data-schema-drift-preview-side]"));
+        assertVisibleElementsNoHorizontalOverflow(wait,
+                By.cssSelector("#selected-operator-editor [data-schema-rebase-queue]"));
+        assertVisibleElementsNoHorizontalOverflow(wait,
+                By.cssSelector("#selected-operator-editor [data-schema-rebase-decision]"));
         assertNoHorizontalOverflow(wait, By.id("selected-operator-editor"));
         assertPageNoHorizontalOverflow();
     }

@@ -1567,6 +1567,101 @@ body.dragging-operator * {
   overflow-wrap: anywhere;
 }
 
+.schema-rebase-queue {
+  display: grid;
+  min-width: 0;
+  gap: 7px;
+  padding: 8px;
+  border: 1px solid rgba(59, 130, 246, 0.22);
+  border-radius: 6px;
+  background: rgba(239, 246, 255, 0.58);
+}
+
+.schema-rebase-queue.error {
+  border-color: rgba(220, 38, 38, 0.22);
+  background: rgba(254, 242, 242, 0.68);
+}
+
+.schema-rebase-queue.warning {
+  border-color: rgba(245, 158, 11, 0.26);
+  background: rgba(255, 251, 235, 0.74);
+}
+
+.schema-rebase-queue-title,
+.schema-rebase-decision {
+  display: grid;
+  min-width: 0;
+  gap: 6px;
+}
+
+.schema-rebase-queue-title {
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+}
+
+.schema-rebase-queue-title span {
+  color: var(--text);
+  font-size: 11px;
+  font-weight: 900;
+}
+
+.schema-rebase-queue-title small,
+.schema-rebase-decision small,
+.schema-rebase-queue-overflow {
+  color: var(--muted);
+  font-size: 10.5px;
+  font-weight: 800;
+  overflow-wrap: anywhere;
+}
+
+.schema-rebase-queue-title small {
+  grid-column: 1 / 2;
+}
+
+.schema-rebase-decision {
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  padding: 7px;
+  border-radius: 6px;
+  border: 1px solid rgba(59, 130, 246, 0.2);
+  background: rgba(255, 255, 255, 0.76);
+}
+
+.schema-rebase-decision.error {
+  border-color: rgba(220, 38, 38, 0.24);
+  background: rgba(254, 242, 242, 0.74);
+}
+
+.schema-rebase-decision.warning {
+  border-color: rgba(245, 158, 11, 0.24);
+  background: rgba(255, 251, 235, 0.78);
+}
+
+.schema-rebase-decision-main,
+.schema-rebase-decision-actions {
+  display: grid;
+  min-width: 0;
+  gap: 3px;
+}
+
+.schema-rebase-decision-main strong {
+  color: var(--text);
+  font-size: 11px;
+  font-weight: 900;
+}
+
+.schema-rebase-decision-main span {
+  min-width: 0;
+  color: #1d4ed8;
+  font-size: 10.5px;
+  font-weight: 900;
+  overflow-wrap: anywhere;
+}
+
+.schema-rebase-decision-actions {
+  justify-items: end;
+}
+
 .binding-row-head .schema-field-hint {
   display: block;
   color: #0f766e;
@@ -3715,6 +3810,8 @@ body.dragging-operator * {
   .schema-outline-search,
   .schema-drift-summary,
   .schema-drift-review,
+  .schema-rebase-queue-title,
+  .schema-rebase-decision,
   .contract-port-row,
   .contract-config-summary,
   .schema-outline-row,
@@ -3724,6 +3821,10 @@ body.dragging-operator * {
   .node-impact-delete,
   .graph-output-contract-row {
     grid-template-columns: 1fr;
+  }
+
+  .schema-rebase-decision-actions {
+    justify-items: start;
   }
 
   .chips {

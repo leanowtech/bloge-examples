@@ -40,10 +40,12 @@ import java.util.Set;
  * @param schemaBreakingDriftCount number of nodes whose frozen operator schema snapshot is incompatible with current catalog schema
  * @param schemaCompatibleDriftCount number of nodes whose frozen operator schema snapshot changed but remains compatible
  * @param schemaCompatibilityStateCounts node counts by frozen-vs-current operator schema compatibility state
+ * @param schemaRebaseDecisionStateCounts queued schema/fingerprint rebase decisions by state
  * @param sourceKindCounts node counts by operator source kind
  * @param operatorLibraryIdCounts node counts by owner operator library id
  * @param loweringModeCounts node counts by operator lowering mode
  * @param runtimeReadinessStateCounts node counts by operator runtime readiness state
+ * @param schemaRebaseDecisions review queue for explicit schema/fingerprint rebase decisions
  * @param operators distinct operator dependencies used by the draft
  * @param nodes per-node dependency rows
  */
@@ -65,10 +67,12 @@ public record GraphDraftDependencyReport(
         int schemaBreakingDriftCount,
         int schemaCompatibleDriftCount,
         Map<String, Integer> schemaCompatibilityStateCounts,
+        Map<String, Integer> schemaRebaseDecisionStateCounts,
         Map<String, Integer> sourceKindCounts,
         Map<String, Integer> operatorLibraryIdCounts,
         Map<String, Integer> loweringModeCounts,
         Map<String, Integer> runtimeReadinessStateCounts,
+        List<SchemaRebaseDecision> schemaRebaseDecisions,
         List<OperatorDependency> operators,
         List<NodeDependency> nodes
 ) {
@@ -88,6 +92,9 @@ public record GraphDraftDependencyReport(
         schemaCompatibilityStateCounts = schemaCompatibilityStateCounts == null
                 ? Map.of()
                 : new LinkedHashMap<>(schemaCompatibilityStateCounts);
+        schemaRebaseDecisionStateCounts = schemaRebaseDecisionStateCounts == null
+                ? Map.of()
+                : new LinkedHashMap<>(schemaRebaseDecisionStateCounts);
         operatorLibraryIdCounts = operatorLibraryIdCounts == null
                 ? Map.of()
                 : new LinkedHashMap<>(operatorLibraryIdCounts);
@@ -95,6 +102,7 @@ public record GraphDraftDependencyReport(
         runtimeReadinessStateCounts = runtimeReadinessStateCounts == null
                 ? Map.of()
                 : new LinkedHashMap<>(runtimeReadinessStateCounts);
+        schemaRebaseDecisions = schemaRebaseDecisions == null ? List.of() : List.copyOf(schemaRebaseDecisions);
         operators = operators == null ? List.of() : List.copyOf(operators);
         nodes = nodes == null ? List.of() : List.copyOf(nodes);
     }
@@ -138,8 +146,10 @@ public record GraphDraftDependencyReport(
         Map<String, Integer> loweringModeCounts = new LinkedHashMap<>();
         Map<String, Integer> runtimeReadinessStateCounts = new LinkedHashMap<>();
         Map<String, Integer> schemaCompatibilityStateCounts = new LinkedHashMap<>();
+        Map<String, Integer> schemaRebaseDecisionStateCounts = new LinkedHashMap<>();
         Map<String, OperatorAggregate> operatorAggregates = new LinkedHashMap<>();
         List<NodeDependency> nodeRows = new ArrayList<>();
+        List<SchemaRebaseDecision> schemaRebaseDecisions = new ArrayList<>();
         int missingOperators = 0;
         int scopeMismatchOperators = 0;
         int driftedFingerprints = 0;
@@ -244,6 +254,10 @@ public record GraphDraftDependencyReport(
                     policyViolations
             );
             nodeRows.add(nodeRow);
+            SchemaRebaseDecision.from(nodeRow).ifPresent(decision -> {
+                schemaRebaseDecisions.add(decision);
+                increment(schemaRebaseDecisionStateCounts, decision.queueState());
+            });
 
             operatorAggregates
                     .computeIfAbsent(node.operatorRef(), ignored -> new OperatorAggregate(
@@ -282,10 +296,12 @@ public record GraphDraftDependencyReport(
                 schemaBreakingDrifts,
                 schemaCompatibleDrifts,
                 schemaCompatibilityStateCounts,
+                schemaRebaseDecisionStateCounts,
                 sourceKindCounts,
                 operatorLibraryIdCounts,
                 loweringModeCounts,
                 runtimeReadinessStateCounts,
+                schemaRebaseDecisions,
                 operators,
                 nodeRows
         );
@@ -317,6 +333,8 @@ public record GraphDraftDependencyReport(
                 Map.of(),
                 Map.of(),
                 Map.of(),
+                Map.of(),
+                List.of(),
                 List.of(),
                 List.of()
         );
@@ -541,6 +559,200 @@ public record GraphDraftDependencyReport(
             edgeTargetNodes = edgeTargetNodes == null ? List.of() : List.copyOf(edgeTargetNodes);
             downstreamNodes = downstreamNodes == null ? List.of() : List.copyOf(downstreamNodes);
             policyViolations = policyViolations == null ? List.of() : List.copyOf(policyViolations);
+        }
+    }
+
+    /**
+     * One queued schema/fingerprint rebase decision for a draft node.
+     *
+     * @param decisionId stable decision id for UI and external control-plane review
+     * @param nodeId draft node id
+     * @param nodeLabel draft node label
+     * @param operatorRef operator reference
+     * @param operatorLibraryId owner operator-library id
+     * @param queueState decision state: ready-rebase, ready-capture, repair-review, or blocked
+     * @param recommendedAction recommended author action before applying or retrying a rebase
+     * @param rebaseEligible whether the guarded fingerprint rebase endpoint can be called for this node
+     * @param blockingReason reason a rebase cannot currently be applied
+     * @param issueCount total schema compatibility issues attached to this node
+     * @param breakingIssueCount breaking schema issues attached to this node
+     * @param compatibleIssueCount compatible schema issues attached to this node
+     * @param affectedSurfaces compact list of affected schema surfaces
+     * @param affectedPaths compact list of affected schema paths
+     * @param downstreamNodes nodes that may need downstream expectation review
+     * @param reviewSummary human-readable bounded review summary
+     */
+    public record SchemaRebaseDecision(
+            String decisionId,
+            String nodeId,
+            String nodeLabel,
+            String operatorRef,
+            String operatorLibraryId,
+            String queueState,
+            String recommendedAction,
+            boolean rebaseEligible,
+            String blockingReason,
+            int issueCount,
+            int breakingIssueCount,
+            int compatibleIssueCount,
+            List<String> affectedSurfaces,
+            List<String> affectedPaths,
+            List<String> downstreamNodes,
+            String reviewSummary
+    ) {
+        public SchemaRebaseDecision {
+            decisionId = decisionId == null ? "" : decisionId;
+            nodeId = nodeId == null ? "" : nodeId;
+            nodeLabel = nodeLabel == null ? "" : nodeLabel;
+            operatorRef = operatorRef == null ? "" : operatorRef;
+            operatorLibraryId = operatorLibraryId == null ? "" : operatorLibraryId;
+            queueState = queueState == null ? "" : queueState;
+            recommendedAction = recommendedAction == null ? "" : recommendedAction;
+            blockingReason = blockingReason == null ? "" : blockingReason;
+            affectedSurfaces = affectedSurfaces == null ? List.of() : List.copyOf(affectedSurfaces);
+            affectedPaths = affectedPaths == null ? List.of() : List.copyOf(affectedPaths);
+            downstreamNodes = downstreamNodes == null ? List.of() : List.copyOf(downstreamNodes);
+            reviewSummary = reviewSummary == null ? "" : reviewSummary;
+        }
+
+        private static Optional<SchemaRebaseDecision> from(NodeDependency node) {
+            if (node == null) {
+                return Optional.empty();
+            }
+            String fingerprintState = node.fingerprintState().toLowerCase(Locale.ROOT);
+            String schemaState = node.schemaCompatibilityState().toLowerCase(Locale.ROOT);
+            boolean schemaDrift = "breaking".equals(schemaState) || "compatible".equals(schemaState);
+            boolean fingerprintWork = Set.of("drifted", "missing-snapshot", "catalog-missing", "scope-mismatch")
+                    .contains(fingerprintState);
+            if (!schemaDrift && !fingerprintWork) {
+                return Optional.empty();
+            }
+
+            List<SchemaCompatibilityIssue> issues = node.schemaCompatibilityIssues();
+            int breaking = (int) issues.stream()
+                    .filter(issue -> "breaking".equals(issue.compatibility()))
+                    .count();
+            int compatible = (int) issues.stream()
+                    .filter(issue -> "compatible".equals(issue.compatibility()))
+                    .count();
+            String queueState = decisionQueueState(node, schemaState, fingerprintState);
+            boolean rebaseEligible = Set.of("drifted", "missing-snapshot").contains(fingerprintState)
+                    && !node.currentFingerprint().isBlank()
+                    && node.scopeAllowed()
+                    && !Set.of("CATALOG_MISSING", "SCOPE_MISMATCH").contains(node.runtimeReadinessState());
+            String blockingReason = rebaseEligible ? "" : decisionBlockingReason(node, fingerprintState);
+            List<String> affectedSurfaces = issues.stream()
+                    .map(SchemaRebaseDecision::issueSurface)
+                    .filter(value -> !value.isBlank())
+                    .distinct()
+                    .limit(6)
+                    .toList();
+            List<String> affectedPaths = issues.stream()
+                    .map(SchemaRebaseDecision::issuePath)
+                    .filter(value -> !value.isBlank())
+                    .distinct()
+                    .limit(6)
+                    .toList();
+            return Optional.of(new SchemaRebaseDecision(
+                    "schema-rebase:%s:%s:%s".formatted(node.nodeId(), schemaState, fingerprintState),
+                    node.nodeId(),
+                    node.label(),
+                    node.operatorRef(),
+                    node.operatorLibraryId(),
+                    queueState,
+                    recommendedAction(queueState),
+                    rebaseEligible,
+                    blockingReason,
+                    issues.size(),
+                    breaking,
+                    compatible,
+                    affectedSurfaces,
+                    affectedPaths,
+                    node.downstreamNodes().stream().limit(6).toList(),
+                    reviewSummary(node, issues, queueState)
+            ));
+        }
+
+        private static String decisionQueueState(NodeDependency node,
+                                                 String schemaState,
+                                                 String fingerprintState) {
+            if ("catalog-missing".equals(fingerprintState)
+                    || "scope-mismatch".equals(fingerprintState)
+                    || !node.scopeAllowed()
+                    || node.currentFingerprint().isBlank()) {
+                return "blocked";
+            }
+            if ("breaking".equals(schemaState)) {
+                return "repair-review";
+            }
+            if ("missing-snapshot".equals(fingerprintState)) {
+                return "ready-capture";
+            }
+            return "ready-rebase";
+        }
+
+        private static String decisionBlockingReason(NodeDependency node, String fingerprintState) {
+            if ("catalog-missing".equals(fingerprintState) || node.currentFingerprint().isBlank()) {
+                return "current operator is unavailable in the catalog";
+            }
+            if ("scope-mismatch".equals(fingerprintState) || !node.scopeAllowed()) {
+                return "operator is outside the draft authoring scope";
+            }
+            return "operator snapshot is already current";
+        }
+
+        private static String recommendedAction(String queueState) {
+            return switch (queueState) {
+                case "repair-review" -> "repair bindings or explicitly approve rebase";
+                case "ready-capture" -> "capture current operator snapshot";
+                case "ready-rebase" -> "review drift evidence and rebase";
+                case "blocked" -> "repair catalog or authoring scope first";
+                default -> "review dependency state";
+            };
+        }
+
+        private static String issueSurface(SchemaCompatibilityIssue issue) {
+            if (issue == null) {
+                return "";
+            }
+            return List.of(issue.surface(), issue.portName()).stream()
+                    .filter(value -> value != null && !value.isBlank())
+                    .reduce((left, right) -> left + "." + right)
+                    .orElse("");
+        }
+
+        private static String issuePath(SchemaCompatibilityIssue issue) {
+            if (issue == null) {
+                return "";
+            }
+            String surface = issueSurface(issue);
+            String path = issue.path();
+            if (surface.isBlank()) {
+                return path == null ? "" : path;
+            }
+            return path == null || path.isBlank() ? surface : surface + "." + path;
+        }
+
+        private static String reviewSummary(NodeDependency node,
+                                            List<SchemaCompatibilityIssue> issues,
+                                            String queueState) {
+            if (!issues.isEmpty()) {
+                SchemaCompatibilityIssue first = issues.getFirst();
+                String path = issuePath(first);
+                String prefix = "%d schema issue%s".formatted(issues.size(), issues.size() == 1 ? "" : "s");
+                String issueLine = List.of(path, first.message()).stream()
+                        .filter(value -> value != null && !value.isBlank())
+                        .reduce((left, right) -> left + ": " + right)
+                        .orElse(first.message());
+                return "%s; %s".formatted(prefix, issueLine);
+            }
+            if ("ready-capture".equals(queueState)) {
+                return "Operator snapshot is missing; capture the current catalog snapshot before execution gates.";
+            }
+            if ("blocked".equals(queueState)) {
+                return decisionBlockingReason(node, node.fingerprintState().toLowerCase(Locale.ROOT));
+            }
+            return "Operator fingerprint drifted; review catalog impact before rebasing.";
         }
     }
 

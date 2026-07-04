@@ -1783,6 +1783,13 @@ draft、draft bundle、import result 和 publication dependency report 能直接
 `schemaPreview` 只截取 drift path 对应的 frozen/current JSON Schema snippet，并通过
 `truncated` 标记说明是否因为深度、对象 key 数、数组项或字符串长度限制而裁剪；浏览器
 selected contract 可直接把它渲染成并排 `Frozen schema` / `Current schema` 审阅块。
+报告顶层还会输出 `schemaRebaseDecisionStateCounts` 和 `schemaRebaseDecisions[]`，
+把需要作者处理的节点归类为 `ready-rebase`、`ready-capture`、`repair-review` 或
+`blocked`。每条 decision 至少包含稳定 `decisionId`、`nodeId`、`operatorRef`、
+`operatorLibraryId`、`recommendedAction`、`rebaseEligible`、`blockingReason`、
+schema issue counts、`affectedSurfaces[]`、`affectedPaths[]`、`downstreamNodes[]`
+和 bounded `reviewSummary`，供浏览器 Draft Dependencies、selected operator inspector
+以及外部控制面共享同一个 rebase 工作队列。
 `bloge.visualGraphDraftSummary.v1` 和 `bloge.visualGraphPublicationSummary.v1`
 会从 dependency report 继续派生 `schemaBreakingDriftCount`、
 `schemaCompatibleDriftCount`、`schemaCompatibilityStateCounts`，以及
@@ -1800,10 +1807,11 @@ draft 的 tenant/namespace/environment policy 排除时，报告会标记
 `scope-mismatch` / `SCOPE_MISMATCH`；这表示需要修复草稿 scope 或算子库 policy，
 不是 fingerprint drift，不能通过 rebase 解决。
 
-浏览器 Drafts 依赖面板消费该报告时可以把 `drifted` 和 `missing-snapshot`
-节点行映射为受控 rebase 动作，但必须继续使用 draft revision guard，并且不得为
-`catalog-missing` 或 `scope-mismatch` 节点提供 rebase 假动作；catalog 缺失需要先修复目标
-环境算子库，scope mismatch 需要先修复草稿 scope 或算子 policy。
+浏览器 Drafts 依赖面板消费该报告时应把 `schemaRebaseDecisions[]` 渲染成
+`Schema Rebase Queue`，并只允许 `rebaseEligible=true` 的 queue item 进入受控 rebase
+动作；批量 rebase 仍必须继续使用 draft revision guard，并且不得为 `catalog-missing`
+或 `scope-mismatch` 节点提供 rebase 假动作；catalog 缺失需要先修复目标环境算子库，
+scope mismatch 需要先修复草稿 scope 或算子 policy。
 `POST /api/visual/drafts/{draftId}/operator-fingerprints/rebase` 请求体支持
 `expectedRevision`、`nodeIds` 以及 `actor`、`changeSource`、`changeSummary`、`reason`
 审计元数据；成功产生新 revision 时，这些字段会固化进

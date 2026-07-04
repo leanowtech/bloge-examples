@@ -355,6 +355,19 @@ class VisualGraphDraftControllerTest {
         assertThat(report.schemaBreakingDriftCount()).isZero();
         assertThat(report.schemaCompatibleDriftCount()).isEqualTo(1);
         assertThat(report.schemaCompatibilityStateCounts()).containsEntry("compatible", 1);
+        assertThat(report.schemaRebaseDecisionStateCounts()).containsEntry("ready-rebase", 1);
+        assertThat(report.schemaRebaseDecisions())
+                .singleElement()
+                .satisfies(decision -> {
+                    assertThat(decision.nodeId()).isEqualTo("eligibility");
+                    assertThat(decision.queueState()).isEqualTo("ready-rebase");
+                    assertThat(decision.rebaseEligible()).isTrue();
+                    assertThat(decision.recommendedAction()).contains("review drift evidence");
+                    assertThat(decision.issueCount()).isEqualTo(1);
+                    assertThat(decision.compatibleIssueCount()).isEqualTo(1);
+                    assertThat(decision.affectedPaths()).containsExactly("input.inputs.score");
+                    assertThat(decision.reviewSummary()).contains("1 schema issue").contains("score");
+                });
         assertThat(report.operators())
                 .singleElement()
                 .satisfies(operator -> {
@@ -441,6 +454,20 @@ class VisualGraphDraftControllerTest {
         assertThat(report.schemaBreakingDriftCount()).isEqualTo(1);
         assertThat(report.schemaCompatibleDriftCount()).isZero();
         assertThat(report.schemaCompatibilityStateCounts()).containsEntry("breaking", 1);
+        assertThat(report.schemaRebaseDecisionStateCounts()).containsEntry("repair-review", 1);
+        assertThat(report.schemaRebaseDecisions())
+                .singleElement()
+                .satisfies(decision -> {
+                    assertThat(decision.nodeId()).isEqualTo("eligibility");
+                    assertThat(decision.queueState()).isEqualTo("repair-review");
+                    assertThat(decision.rebaseEligible()).isTrue();
+                    assertThat(decision.recommendedAction()).contains("repair bindings");
+                    assertThat(decision.issueCount()).isEqualTo(1);
+                    assertThat(decision.breakingIssueCount()).isEqualTo(1);
+                    assertThat(decision.affectedSurfaces()).containsExactly("input.inputs");
+                    assertThat(decision.affectedPaths()).containsExactly("input.inputs.score");
+                    assertThat(decision.reviewSummary()).contains("target type integer requires integer-valued source");
+                });
         assertThat(report.operators())
                 .singleElement()
                 .satisfies(operator -> {
