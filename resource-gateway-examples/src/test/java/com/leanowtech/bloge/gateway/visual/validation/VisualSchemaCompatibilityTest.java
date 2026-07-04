@@ -189,6 +189,38 @@ class VisualSchemaCompatibilityTest {
     }
 
     @Test
+    void treatsTypelessRequiredSchemaAsObjectForValuesAndCompatibility() {
+        Map<String, Object> source = Map.of(
+                "required", List.of("customerId")
+        );
+        Map<String, Object> target = Map.of(
+                "required", List.of("customerId")
+        );
+
+        assertThat(VisualSchemaCompatibility.valueMatchesSchema(Map.of("customerId", "u1"), target)).isTrue();
+        assertThat(VisualSchemaCompatibility.valueMatchesSchema(Map.of("tenantId", "t1"), target)).isFalse();
+        assertThat(VisualSchemaCompatibility.valueMatchesSchema("u1", target)).isFalse();
+        assertThat(VisualSchemaCompatibility.schemaCompatibilityIssue(source, target)).isEmpty();
+    }
+
+    @Test
+    void treatsTypelessContainsSchemaAsArrayForValuesAndCompatibility() {
+        Map<String, Object> source = Map.of(
+                "items", Map.of("type", "integer"),
+                "minItems", 1
+        );
+        Map<String, Object> target = Map.of(
+                "contains", Map.of("type", "integer"),
+                "minContains", 1
+        );
+
+        assertThat(VisualSchemaCompatibility.valueMatchesSchema(List.of("risk", 7), target)).isTrue();
+        assertThat(VisualSchemaCompatibility.valueMatchesSchema(List.of("risk"), target)).isFalse();
+        assertThat(VisualSchemaCompatibility.valueMatchesSchema("risk", target)).isFalse();
+        assertThat(VisualSchemaCompatibility.schemaCompatibilityIssue(source, target)).isEmpty();
+    }
+
+    @Test
     void rejectsSourceResidualItemsWhenTargetForbidsItems() {
         Map<String, Object> source = Map.of(
                 "type", "array",

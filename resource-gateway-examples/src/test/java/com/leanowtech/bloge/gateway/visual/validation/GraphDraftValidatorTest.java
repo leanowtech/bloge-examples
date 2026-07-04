@@ -424,7 +424,7 @@ class GraphDraftValidatorTest {
     }
 
     @Test
-    void rejectsGraphInputSchemaWithRequiredPathMissingFromProperties() {
+    void acceptsGraphInputSchemaWithRequiredPathMissingFromProperties() {
         GraphDraftValidator validator = new GraphDraftValidator(
                 VisualCatalogTestSupport.catalogWithLibrary(
                         VisualCatalogTestSupport.eligibilityLibrary("integer")));
@@ -447,13 +447,8 @@ class GraphDraftValidatorTest {
 
         VisualValidationResult result = validator.validate(draft);
 
-        assertThat(result.valid()).isFalse();
-        assertThat(result.diagnostics())
-                .anySatisfy(diagnostic -> {
-                    assertThat(diagnostic.code()).isEqualTo("visual.schema.requiredUnknown");
-                    assertThat(diagnostic.target()).isEqualTo("/inputSchema/schema/required");
-                    assertThat(diagnostic.message()).contains("riskTier");
-                });
+        assertThat(result.valid()).isTrue();
+        assertThat(result.diagnostics()).isEmpty();
     }
 
     @Test

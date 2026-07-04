@@ -43,7 +43,7 @@
 | 维度 | 当前分 | 证据 | 主要缺口 | 下一步 |
 | --- | ---: | --- | --- | --- |
 | 算子库合同与导入 | 8.0 | `OperatorLibrary`、JSON/YAML validate/import、revision、impact、bundle fingerprint、design-only lowering | 复杂第三方协议包 diff、跨环境治理策略还需继续深化 | OpenAPI/AsyncAPI diff 与 runtime binding handoff 对齐 |
-| Schema 约束与拖线裁决 | 8.0 | `VisualSchemaCompatibility`、`GraphDraftValidator`、connection check/candidates、fit candidates、`VisualSchemaIntrospection` | JSON Schema 语义仍是受限子集，compatibility/validator 的值匹配与深层校验逻辑仍未完全迁移到共享 helper | 持续收敛 shared schema helper，补更多 schema 子集回归 |
+| Schema 约束与拖线裁决 | 8.3 | `VisualSchemaCompatibility`、`VisualSchemaValidator`、`GraphDraftValidator`、connection check/candidates、fit candidates、`VisualSchemaIntrospection` | JSON Schema 语义仍是受限子集，深层 compatibility diff 与 value matching 还没有完全抽成可复用策略 | 持续收敛 shared schema/value helper，补更多 schema 子集回归 |
 | 画布产品化体验 | 7.0 | Browser Composer palette、schema-aware picker、hover preflight、readiness panel、diagnostic queue、impact inspector | 单文件前端复杂度高，交互矩阵仍未完全自动化 | 抽更小 UI 模块或增加更强 browser regression matrix |
 | Design-only artifact 生命周期 | 8.0 | `DESIGN` publication、action-readiness gate、run/golden 禁用、runtime-binding requirements | DESIGN 到 external runtime bound 的组织流程仍依赖外部协作 | handoff bundle 与外部工单/事件系统对接 |
 | Runtime binding 闭环 | 6.5 | requirement index、handoff bundle、implementation proposal、bind/supersede/unbind、activation、rollout observation、lowering integration、readiness recompute | 跨 repository partial-failure、异步 workflow idempotency、指标消费闭环仍未全覆盖 | 继续硬化 runtime evidence lifecycle 和 replay/compensation |
@@ -51,9 +51,9 @@
 | 观测、回归和认证 | 6.8 | run history、SLO stats、golden case、suite run、certification status | 事件流回放、趋势分析、长运行实例观测不足 | run trace/golden trend 与 durable runtime 对齐 |
 | 安全与治理 | 5.0 | tenant/namespace/environment policy、secret capability、actor/reason evidence gate | 不是完整 IAM/RBAC/secret/egress/admin audit 后台 | 平台化阶段引入权限模型和安全边界 |
 | Runtime 扩展族 | 5.8 | remote-worker、AI-tool、event-source、message-handler、webhook、streaming/durable contract 已可设计态编排 | 真正 dispatcher、ingress runtime、AI tool invocation、durable instance 尚未落地 | 从 runtime-binding handoff 开始逐类接 executor |
-| 工程可维护性 | 6.9 | 服务端测试丰富，完整 `clean verify` 可跑通，Java 侧读模型与 GraphDraftValidator 的结构类型推断已开始共享 schema helper | `VisualSchemaCompatibility`、`VisualSchemaValidator` 仍保留部分私有 effective schema kind 逻辑，前端 `app.js` 过大 | 继续迁移 compatibility/validator 深层校验 helpers，逐步拆分前端 authoring helpers |
+| 工程可维护性 | 7.1 | 服务端测试丰富，完整 `clean verify` 可跑通，Java 侧读模型、GraphDraftValidator、VisualSchemaCompatibility 与 VisualSchemaValidator 的结构类型推断已开始共享 schema helper | 深层 compatibility/value matching 仍分散，前端 `app.js` 过大 | 继续迁移 compatibility/validator 深层校验 helpers，逐步拆分前端 authoring helpers |
 
-综合分：**70/100**。
+综合分：**71/100**。
 
 这个分数不是贬低当前成果。相反，它说明项目已经跨过“画布玩具”阶段，但离完整工业平台还差治理、runtime、观测和维护性闭环。
 
@@ -77,6 +77,33 @@
 5. 前端仍是示例项目形态，复杂度已经接近需要模块化拆分的边界。
 
 ## 4. 本轮迭代复盘
+
+### 2026-07-04：Compatibility / Validator effective kind 收敛
+
+触发问题：
+
+上一轮已经让读模型、publication projector 和 GraphDraftValidator 使用 `VisualSchemaIntrospection`，但 `VisualSchemaCompatibility` 与 `VisualSchemaValidator` 仍保留自己的 `schemaType/schemaKind/hasSchemaKeyword/nullableTypePrimary`。这会在用户导入外部 operator schema 时制造产品级裂缝：画布候选可能认为一个 typeless schema 是 object/array，保存或 value validation 却可能把它当 opaque 或按更窄的内部风格拒绝。
+
+本轮完成：
+
+1. `VisualSchemaCompatibility.schemaType` 改为委托 `VisualSchemaIntrospection.schemaType`，`effectiveSchemaType` 只保留 string/number 这类 compatibility 专属推断。
+2. `VisualSchemaValidator.schemaKind` 改为委托 `VisualSchemaIntrospection.schemaType`，`effectiveNotSchemaKind` 继续保留 `not` 约束下的 string/number/enum 专属判断。
+3. `objectProperty`、`propertiesOf`、`prefixItemsOf` 等基础结构读取改为委托共享 helper，删除重复 nullable type primary、const-value type inference 和局部 hasSchemaKeyword。
+4. 放宽 `required`、`dependentRequired`、`dependentSchemas` 必须提前出现在 `properties` 的内部风格限制；这符合 JSON Schema 合法表达，更适合用户导入外部 operator schema。非法 shape、重复 dependent item、default/const/enum 违反约束仍然被阻断。
+5. `contains/minContains/maxContains` 现在可以作为 typeless array schema 的有效数组合同，不再被 `arrayItemsMissing` 误拒。
+6. 增加 value validation 与 compatibility 回归，覆盖 required-only object schema、contains-only array schema，以及 GraphDraft/OperatorLibrary 旧拒绝路径的新语义。
+
+验证：
+
+```bash
+mvn -q -f resource-gateway-examples/pom.xml -Dtest=VisualSchemaCompatibilityTest,VisualSchemaValidatorTest,VisualSchemaIntrospectionTest test
+mvn -q -f resource-gateway-examples/pom.xml -Dtest=GraphDraftValidatorTest,OperatorLibraryValidatorTest,ResourceDesignContractValidatorTest,OperatorLibraryAdminControllerTest,ResourceDesignContractAdminControllerTest test
+mvn -q -f resource-gateway-examples/pom.xml -Dtest=VisualSchemaCompatibilityTest,VisualSchemaValidatorTest,VisualSchemaIntrospectionTest,VisualConnectionCheckServiceTest,OperatorFitCandidateServiceTest,DefaultVisualOperatorCatalogTest test
+```
+
+剩余风险：
+
+这不是完整 JSON Schema 引擎。它只是把结构类型识别的权威入口收敛了。`VisualSchemaCompatibility` 里深层 diff、finite domain、not/conditional、patternProperties、dependent schema 的兼容性推理，和 `VisualSchemaValidator` 里的 value diagnostics 仍是领域判断层；下一轮如果继续迁移，必须区分“共享结构读取”和“业务语义裁决”，不能为了去重把保守门禁削弱掉。
 
 ### 2026-07-04：GraphDraftValidator 结构类型推断接入共享 helper
 
@@ -174,9 +201,9 @@ schema type/path 逻辑仍分散在多个类中。短期可接受；中期应抽
 
 | 优先级 | 方向 | 理由 | 最小可交付 |
 | --- | --- | --- | --- |
-| P0 | Compatibility / schema validator effective kind 收敛 | Java 侧读模型和 GraphDraftValidator 结构类型推断已收敛一层，但 compatibility/value validation 仍保留私有 effective kind 判断 | 抽出 shared effective type policy，迁移可等价部分，保留 compatibility diff 和 value matching 的业务判断 |
+| P0 | 深层 compatibility / value diagnostics 策略收敛 | effective kind 已统一，但 not/conditional/patternProperties/dependent schema 等深层判断仍在类内分散 | 选一个高风险 schema 子集，抽共享 value/schema policy 或补明确不可迁移边界 |
 | P0 | Runtime binding partial-failure 硬化 | 这是 DESIGN artifact 走向可执行 runtime 的主干 | 选一个尚未补偿的跨 repository mutation，补 replay/compensation/诊断 |
-| P1 | Browser regression matrix | 当前 UI 能力多，单测/DOM smoke 需要继续扩大 | 覆盖 fit candidates typeless array 的 browser-facing 行为 |
+| P1 | Browser regression matrix | 当前 UI 能力多，单测/DOM smoke 需要继续扩大 | 覆盖 required-only / contains-only typeless schema 的 browser-facing 行为 |
 | P1 | 协议文档收敛 | 设计草案与当前 wire contract 名称仍有历史漂移 | 把 candidate/fit/readiness 当前字段写入 protocol v1 |
 | P2 | 前端模块化 | `app.js` 已承载太多 authoring 逻辑 | 先抽 schema helper 或 readiness helper，保持测试覆盖 |
 

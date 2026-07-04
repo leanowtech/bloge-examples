@@ -22,6 +22,8 @@ Operator Library / Resource Design Contract
 
 现在最重要的判断不是“有没有画布雏形”，而是：这个示例已经具备通用画布的控制面骨架，但仍不是完整低代码平台。它可以严肃演示用户算子库、Java OperatorRegistry 投影、资源虚拟算子、OpenAPI 辅助生成 resource design contract、AsyncAPI preview 生成 event/message/webhook operator-library 草案、remote-worker / AI-tool / event-source / message-handler / webhook binding 合同、schema 约束连线、草稿、发布和运行；并且已经能在 catalog/validator 层识别当前 request-response runtime 不能执行的 streaming/durable/remote-worker/AI-tool/event/message/webhook operator，其中 streaming/durable 草稿在 schema 有效时进入 runtime-blocked 设计态，允许 warning-acknowledged `DESIGN` publication，但仍阻断 compile/run/默认 executable promotion；还没有覆盖 durable 实例、真正的 worker/subgraph marketplace、AI tool invocation runtime、事件/消息/webhook ingress runtime、生产 IAM 后台和多人协作。
 
+本轮新增的关键实现事实：Java 侧 schema 结构类型识别已经进一步收敛。`VisualSchemaCompatibility`、`VisualSchemaValidator`、`GraphDraftValidator`、connection candidates、operator fit candidates 和 publication projector 的 object/array/nullable/const 结构类型入口开始共享 `VisualSchemaIntrospection`；`required`、`dependentRequired`、`dependentSchemas` 不再被内部风格要求强制出现在 `properties` 中，`contains/minContains/maxContains` 也可以作为 typeless array schema 的有效数组合同。这个调整让用户导入外部 operator schema 的容错面更接近 JSON Schema 语义，同时仍保留非法 shape、重复 dependent item、default/const/enum 约束违背、array items 形态错误和 unsupported type 的 blocking diagnostics。
+
 ## 2. 已落地能力
 
 | 能力域 | 当前状态 | 代码证据 |
@@ -166,11 +168,12 @@ Operator Library / Resource Design Contract
 ## 6. 下一步优先级
 
 1. **Runtime binding implementation 与 readiness 派生闭环**：在已落地的 pre-bind validate、source requirement key current/stale/cross-operator gate、字段级 implementation contract-diff gate、semantic JSON Schema-compatible drift classification、proposal persistence、bind/supersede/unbind lifecycle exact replay、supersede partial-failure compensation、unbind/deactivation partial-failure compensation、adapter activation registry、runtime rollout observation registry、executable lowering integration registry、四类 runtime evidence submit stable-id 精确 replay 幂等返回、catalog response projection、executable promotion projection、readiness recompute preview、native governed apply mutation、external-runtime-bound governed apply mutation、apply revision-write failed result、apply/evidence-refresh expected fingerprint stale guard、post-apply evidence refresh/rebind mutation、覆盖 binding create/transition/activation/integration 的 refresh partial-failure compensation、governed unbind/deactivate mutation 与 implementation rolloutPlan 门禁之后，继续补其他跨 repository mutation 的事务/partial-failure 硬化、跨系统/异步 runtime workflow 的更广义 idempotency、更深跨系统 rollout/canary/rollback 编排与指标消费闭环，以及更完整 JSON Schema 兼容性推理门禁，让 active bound record、activation fact、rollout observation 与 executor bridge assertion 能按 fingerprint、contract diff、policy evidence、rollout evidence 和测试结果持续重新派生 executable readiness。
-2. **真实浏览器交互回归**：在现有 browser-facing HTTP + Selenium DOM smoke 和 stored draft dependency report 面板基础上，继续补更多 drift 冲突/失败路径和更多浏览器矩阵验证。
-3. **Java operator inventory 深化**：补 streaming/suspendable 画布交互、复杂泛型展示、注解扩展和 Java operator drift/兼容性策略。
-4. **OpenAPI / AsyncAPI 导入深化**：继续补 binary/streaming 等非 JSON media type 的可运行编码策略，OAuth2/OpenID/mTLS 的可配置运行时接入策略、更完整的 descriptor 自动化，以及 AsyncAPI preview importer 的更多协议语义、更细粒度的协议 diff/impact preview 和 webhook/message runtime 接入；仍必须走现有 schema/contract validator，不能让未验证 schema 进入 catalog。
-5. **Run history / Golden 深化**：当前已经保存 shape-only run record，并补了查询过滤、浏览器最近运行列表、基础 SLO stats、节点级 runtime per-node latency/health 聚合、observed whole-run latency legacy/correlation 字段、带节点诊断归属和 per-node timing 的 shape-only run trace、画布 badge 和覆盖率提示、publication 级 golden case、suite run、latest certification、stale-aware promotion-readiness status、基础 golden assertions、output-schema assertions 和 numeric tolerance assertions；下一步可补事件流回放和更完整的 regression trend。
-6. **文档协议收敛**：把早期草案字段名逐步改成当前实现的 wire contract，并保留平台化抽象命名作为未来 ADR，而不是混在当前协议里。
+2. **Schema 深层语义与浏览器回归矩阵**：effective kind 已共享，但 not/conditional/patternProperties/dependent schema 等深层 compatibility/value diagnostics 仍应继续审计；同时补 required-only object、contains-only array 等 typeless schema 的 browser-facing 行为矩阵，避免服务端接受但前端不可见或不可拖。
+3. **真实浏览器交互回归**：在现有 browser-facing HTTP + Selenium DOM smoke 和 stored draft dependency report 面板基础上，继续补更多 drift 冲突/失败路径和更多浏览器矩阵验证。
+4. **Java operator inventory 深化**：补 streaming/suspendable 画布交互、复杂泛型展示、注解扩展和 Java operator drift/兼容性策略。
+5. **OpenAPI / AsyncAPI 导入深化**：继续补 binary/streaming 等非 JSON media type 的可运行编码策略，OAuth2/OpenID/mTLS 的可配置运行时接入策略、更完整的 descriptor 自动化，以及 AsyncAPI preview importer 的更多协议语义、更细粒度的协议 diff/impact preview 和 webhook/message runtime 接入；仍必须走现有 schema/contract validator，不能让未验证 schema 进入 catalog。
+6. **Run history / Golden 深化**：当前已经保存 shape-only run record，并补了查询过滤、浏览器最近运行列表、基础 SLO stats、节点级 runtime per-node latency/health 聚合、observed whole-run latency legacy/correlation 字段、带节点诊断归属和 per-node timing 的 shape-only run trace、画布 badge 和覆盖率提示、publication 级 golden case、suite run、latest certification、stale-aware promotion-readiness status、基础 golden assertions、output-schema assertions 和 numeric tolerance assertions；下一步可补事件流回放和更完整的 regression trend。
+7. **文档协议收敛**：把早期草案字段名逐步改成当前实现的 wire contract，并保留平台化抽象命名作为未来 ADR，而不是混在当前协议里。
 
 ## 7. 反熵控制
 

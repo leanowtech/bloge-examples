@@ -702,17 +702,20 @@ public final class VisualSchemaCompatibility {
         if (!type.isBlank() && !type.startsWith("[")) {
             return type;
         }
-        if (hasSchemaKeyword(schema, "pattern", "format", "minLength", "maxLength")) {
+        if (VisualSchemaIntrospection.hasSchemaKeyword(schema, "pattern", "format", "minLength", "maxLength")) {
             return "string";
         }
-        if (hasSchemaKeyword(schema, "minimum", "maximum", "exclusiveMinimum", "exclusiveMaximum", "multipleOf")) {
+        if (VisualSchemaIntrospection.hasSchemaKeyword(schema,
+                "minimum", "maximum", "exclusiveMinimum", "exclusiveMaximum", "multipleOf")) {
             return "number";
         }
-        if (hasSchemaKeyword(schema, "items", "prefixItems", "contains", "minItems", "maxItems", "uniqueItems",
+        if (VisualSchemaIntrospection.hasSchemaKeyword(schema,
+                "items", "prefixItems", "contains", "minItems", "maxItems", "uniqueItems",
                 "minContains", "maxContains")) {
             return "array";
         }
-        if (hasSchemaKeyword(schema, "properties", "required", "additionalProperties", "unevaluatedProperties",
+        if (VisualSchemaIntrospection.hasSchemaKeyword(schema,
+                "properties", "required", "additionalProperties", "unevaluatedProperties",
                 "patternProperties", "propertyNames", "dependentRequired", "dependentSchemas", "minProperties",
                 "maxProperties")) {
             return "object";
@@ -723,18 +726,6 @@ public final class VisualSchemaCompatibility {
     private static String compatibilitySchemaType(Map<String, Object> schema) {
         String type = schemaType(schema);
         return type.isBlank() ? effectiveSchemaType(schema) : type;
-    }
-
-    private static boolean hasSchemaKeyword(Map<String, Object> schema, String... keywords) {
-        if (schema == null) {
-            return false;
-        }
-        for (String keyword : keywords) {
-            if (schema.containsKey(keyword)) {
-                return true;
-            }
-        }
-        return false;
     }
 
     private static String excludedSchemaLabel(Map<String, Object> schema) {
@@ -2299,18 +2290,7 @@ public final class VisualSchemaCompatibility {
     }
 
 	    private static List<Map<String, Object>> prefixItemsOf(Map<String, Object> schema) {
-	        Object raw = schema.get("prefixItems");
-	        if (!(raw instanceof List<?> values)) {
-	            return List.of();
-	        }
-	        List<Map<String, Object>> prefixItems = new ArrayList<>();
-	        for (Object value : values) {
-	            Map<String, Object> itemSchema = objectProperty(value);
-	            if (itemSchema != null) {
-	                prefixItems.add(itemSchema);
-	            }
-	        }
-	        return prefixItems;
+	        return VisualSchemaIntrospection.prefixItemsOf(schema);
 	    }
 
 	    @SuppressWarnings("unchecked")
@@ -2393,63 +2373,15 @@ public final class VisualSchemaCompatibility {
     }
 
     private static Map<String, Object> propertiesOf(Map<String, Object> schema) {
-        Object nested = schema.get("properties");
-        if (!(nested instanceof Map<?, ?> rawNested)) {
-            return Map.of();
-        }
-        Map<String, Object> properties = new LinkedHashMap<>();
-        rawNested.forEach((key, item) -> properties.put(String.valueOf(key), item));
-        return properties;
+        return VisualSchemaIntrospection.propertiesOf(schema);
     }
 
     private static Map<String, Object> objectProperty(Object value) {
-        if (!(value instanceof Map<?, ?> map)) {
-            return null;
-        }
-        Map<String, Object> copy = new LinkedHashMap<>();
-        map.forEach((key, item) -> copy.put(String.valueOf(key), item));
-        return copy;
+        return VisualSchemaIntrospection.objectSchema(value);
     }
 
     private static String schemaType(Map<String, Object> property) {
-        if (property == null) {
-            return "";
-        }
-        Object type = property.get("kind");
-        if (type == null) {
-            type = property.get("type");
-        }
-        if (type instanceof List<?> types) {
-            return nullableTypePrimary(types);
-        }
-        if (type == null && property.containsKey("properties")) {
-            return "object";
-        }
-        if (type == null && hasSchemaKeyword(property, "items", "prefixItems", "unevaluatedItems")) {
-            return "array";
-        }
-        if (type == null && property.containsKey("const")) {
-            return schemaTypeForValue(property.get("const"));
-        }
-        return type == null ? "" : String.valueOf(type);
-    }
-
-    private static String nullableTypePrimary(List<?> types) {
-        String primary = "";
-        int concreteTypes = 0;
-        for (Object item : types) {
-            if (!(item instanceof String type) || type.isBlank()) {
-                return String.valueOf(types);
-            }
-            if (!"null".equals(type)) {
-                primary = type;
-                concreteTypes++;
-            }
-        }
-        if (concreteTypes > 1) {
-            return String.valueOf(types);
-        }
-        return primary.isBlank() ? "null" : primary;
+        return VisualSchemaIntrospection.schemaType(property);
     }
 
     private static boolean schemaMayProduceNull(Map<String, Object> schema) {
@@ -2473,31 +2405,6 @@ public final class VisualSchemaCompatibility {
         }
         return raw == null && schema.containsKey("const") && schema.get("const") == null;
     }
-
-	    private static String schemaTypeForValue(Object value) {
-	        if (value == null) {
-	            return "null";
-        }
-        if (value instanceof String) {
-            return "string";
-        }
-        if (value instanceof Boolean) {
-            return "boolean";
-        }
-        if (isIntegerValue(value)) {
-            return "integer";
-        }
-        if (value instanceof Number) {
-            return "number";
-        }
-        if (value instanceof Map<?, ?>) {
-            return "object";
-        }
-        if (value instanceof List<?>) {
-            return "array";
-        }
-	        return "";
-	    }
 
 	    private static Long stringMinLength(Map<String, Object> schema) {
 	        return stringLengthBoundary(schema.get("minLength"));

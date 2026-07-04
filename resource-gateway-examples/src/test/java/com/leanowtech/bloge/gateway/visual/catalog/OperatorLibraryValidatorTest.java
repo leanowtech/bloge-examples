@@ -1252,7 +1252,6 @@ class OperatorLibraryValidatorTest {
         assertThat(result.diagnostics())
                 .extracting("code")
                 .contains(
-                        "visual.schema.requiredUnknown",
                         "visual.schema.arrayItemsMissing",
                         "visual.schema.unsupportedType"
                 );
@@ -3184,7 +3183,6 @@ class OperatorLibraryValidatorTest {
         assertThat(result.diagnostics())
                 .extracting("code")
                 .contains(
-                        "visual.schema.dependentRequiredUnknown",
                         "visual.schema.dependentRequiredDuplicate",
                         "visual.schema.defaultConstraintMismatch",
                         "visual.schema.constConstraintMismatch",
@@ -3193,9 +3191,7 @@ class OperatorLibraryValidatorTest {
         assertThat(result.diagnostics())
                 .extracting("target")
                 .contains(
-                        "/operators/0/ports/inputs/0/schema/schema/properties/payment/dependentRequired/cardNumber/0",
                         "/operators/0/ports/inputs/0/schema/schema/properties/payment/dependentRequired/cardNumber/1",
-                        "/operators/0/ports/outputs/0/schema/schema/properties/quote/dependentRequired/missingTrigger",
                         "/operators/0/configSchema/schema/properties/defaults/default",
                         "/operators/0/configSchema/schema/properties/fixed/const",
                         "/operators/0/configSchema/schema/properties/choices/enum/0"
@@ -3253,7 +3249,6 @@ class OperatorLibraryValidatorTest {
                 .extracting("code")
                 .contains(
                         "visual.schema.dependentSchemasInvalid",
-                        "visual.schema.dependentSchemasUnknown",
                         "visual.schema.defaultConstraintMismatch",
                         "visual.schema.constConstraintMismatch",
                         "visual.schema.enumConstraintMismatch"
@@ -3262,7 +3257,6 @@ class OperatorLibraryValidatorTest {
                 .extracting("target")
                 .contains(
                         "/operators/0/ports/inputs/0/schema/schema/properties/payment/dependentSchemas/cardNumber",
-                        "/operators/0/ports/outputs/0/schema/schema/properties/quote/dependentSchemas/missingTrigger",
                         "/operators/0/configSchema/schema/properties/defaults/default",
                         "/operators/0/configSchema/schema/properties/fixed/const",
                         "/operators/0/configSchema/schema/properties/choices/enum/0"

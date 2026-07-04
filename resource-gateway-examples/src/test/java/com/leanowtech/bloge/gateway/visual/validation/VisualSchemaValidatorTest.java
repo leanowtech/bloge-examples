@@ -106,6 +106,67 @@ class VisualSchemaValidatorTest {
     }
 
     @Test
+    void validatesTypelessRequiredSchemaAsObject() {
+        Map<String, Object> schema = Map.of(
+                "required", List.of("customerId")
+        );
+
+        assertThat(VisualSchemaValidator.validateSchema(schema, "/schema")).isEmpty();
+        assertThat(VisualSchemaValidator.validateValue(
+                new SchemaEnvelope(SchemaEnvelope.JSON_SCHEMA, "2020-12", schema),
+                Map.of("customerId", "u1"),
+                "/context"
+        )).isEmpty();
+
+        var missingRequired = VisualSchemaValidator.validateValue(
+                new SchemaEnvelope(SchemaEnvelope.JSON_SCHEMA, "2020-12", schema),
+                Map.of("tenantId", "t1"),
+                "/context"
+        );
+        assertThat(missingRequired)
+                .singleElement()
+                .satisfies(diagnostic -> {
+                    assertThat(diagnostic.code()).isEqualTo("visual.context.requiredMissing");
+                    assertThat(diagnostic.target()).isEqualTo("/context/customerId");
+                });
+
+        var wrongType = VisualSchemaValidator.validateValue(
+                new SchemaEnvelope(SchemaEnvelope.JSON_SCHEMA, "2020-12", schema),
+                "u1",
+                "/context"
+        );
+        assertThat(wrongType)
+                .singleElement()
+                .satisfies(diagnostic -> assertThat(diagnostic.code())
+                        .isEqualTo("visual.context.typeMismatch"));
+    }
+
+    @Test
+    void validatesTypelessContainsSchemaAsArray() {
+        Map<String, Object> schema = Map.of(
+                "contains", Map.of("type", "integer"),
+                "minContains", 1
+        );
+
+        assertThat(VisualSchemaValidator.validateSchema(schema, "/schema")).isEmpty();
+        assertThat(VisualSchemaValidator.validateValue(
+                new SchemaEnvelope(SchemaEnvelope.JSON_SCHEMA, "2020-12", schema),
+                List.of("risk", 7),
+                "/context"
+        )).isEmpty();
+
+        var diagnostics = VisualSchemaValidator.validateValue(
+                new SchemaEnvelope(SchemaEnvelope.JSON_SCHEMA, "2020-12", schema),
+                List.of("risk"),
+                "/context"
+        );
+        assertThat(diagnostics)
+                .singleElement()
+                .satisfies(diagnostic -> assertThat(diagnostic.code())
+                        .isEqualTo("visual.context.arrayConstraintMismatch"));
+    }
+
+    @Test
     void acceptsConditionalSchemasWithRequiredOnlyBranches() {
         Map<String, Object> schema = conditionalPaymentSchema();
 

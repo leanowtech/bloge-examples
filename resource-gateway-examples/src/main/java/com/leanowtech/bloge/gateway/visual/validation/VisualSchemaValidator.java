@@ -428,14 +428,7 @@ public final class VisualSchemaValidator {
         if ("object".equals(kind)) {
             Map<String, Object> properties = objectProperties(schema, path, diagnostics);
             validateAdditionalProperties(schema, path, diagnostics);
-            List<String> requiredNames = requiredNames(schema, path, diagnostics);
-            for (String required : requiredNames) {
-                if (!properties.containsKey(required)) {
-                    diagnostics.add(VisualDiagnostic.error("visual.schema.requiredUnknown",
-                            "Required property '%s' is not declared in properties.".formatted(required),
-                            path + "/required"));
-                }
-            }
+            requiredNames(schema, path, diagnostics);
             for (Map.Entry<String, Object> property : properties.entrySet()) {
                 if (!(property.getValue() instanceof Map<?, ?> nested)) {
                     diagnostics.add(VisualDiagnostic.error("visual.schema.propertyInvalid",
@@ -901,12 +894,7 @@ public final class VisualSchemaValidator {
     }
 
     private static Map<String, Object> objectProperty(Object value) {
-        if (!(value instanceof Map<?, ?> map)) {
-            return null;
-        }
-        Map<String, Object> copy = new LinkedHashMap<>();
-        map.forEach((key, item) -> copy.put(String.valueOf(key), item));
-        return copy;
+        return VisualSchemaIntrospection.objectSchema(value);
     }
 
     private static List<String> requiredNamesWithoutDiagnostics(Map<String, Object> schema) {
@@ -924,41 +912,7 @@ public final class VisualSchemaValidator {
     }
 
     private static String schemaKind(Map<String, Object> schema) {
-        Object raw = schema.get("kind");
-        if (raw == null) {
-            raw = schema.get("type");
-        }
-        if (raw instanceof List<?> types) {
-            return nullableTypePrimary(types);
-        }
-        if (raw == null && schema.containsKey("properties")) {
-            return "object";
-        }
-        if (raw == null && hasSchemaKeyword(schema, "items", "prefixItems", "unevaluatedItems")) {
-            return "array";
-        }
-        if (raw == null && schema.containsKey("const")) {
-            return schemaKindForValue(schema.get("const"));
-        }
-        return raw == null ? "" : String.valueOf(raw);
-    }
-
-    private static String nullableTypePrimary(List<?> types) {
-        String primary = "";
-        int concreteTypes = 0;
-        for (Object item : types) {
-            if (!(item instanceof String type) || type.isBlank()) {
-                return String.valueOf(types);
-            }
-            if (!"null".equals(type)) {
-                primary = type;
-                concreteTypes++;
-            }
-        }
-        if (concreteTypes > 1) {
-            return String.valueOf(types);
-        }
-        return primary.isBlank() ? "null" : primary;
+        return VisualSchemaIntrospection.schemaType(schema);
     }
 
     private static Map<String, Object> objectProperties(Map<String, Object> schema,
@@ -1108,18 +1062,12 @@ public final class VisualSchemaValidator {
                     path + "/dependentRequired"));
             return;
         }
-        Map<String, Object> properties = propertiesWithoutDiagnostics(schema);
         for (Map.Entry<?, ?> entry : rawMap.entrySet()) {
             String trigger = String.valueOf(entry.getKey());
             String triggerPath = path + "/dependentRequired/" + trigger;
             if (trigger.isBlank()) {
                 diagnostics.add(VisualDiagnostic.error("visual.schema.dependentRequiredInvalid",
                         "Object schema dependentRequired keys must be non-blank property names.",
-                        triggerPath));
-            } else if (!properties.containsKey(trigger)) {
-                diagnostics.add(VisualDiagnostic.error("visual.schema.dependentRequiredUnknown",
-                        "Dependent-required trigger property '%s' is not declared in properties."
-                                .formatted(trigger),
                         triggerPath));
             }
             if (!(entry.getValue() instanceof List<?> dependencies)) {
@@ -1142,12 +1090,6 @@ public final class VisualSchemaValidator {
                 if (!seen.add(name)) {
                     diagnostics.add(VisualDiagnostic.error("visual.schema.dependentRequiredDuplicate",
                             "Dependent-required property '%s' is duplicated.".formatted(name),
-                            dependencyPath));
-                }
-                if (!properties.containsKey(name)) {
-                    diagnostics.add(VisualDiagnostic.error("visual.schema.dependentRequiredUnknown",
-                            "Dependent-required property '%s' is not declared in properties."
-                                    .formatted(name),
                             dependencyPath));
                 }
             }
@@ -1173,18 +1115,12 @@ public final class VisualSchemaValidator {
                     path + "/dependentSchemas"));
             return;
         }
-        Map<String, Object> properties = propertiesWithoutDiagnostics(schema);
         for (Map.Entry<?, ?> entry : rawMap.entrySet()) {
             String trigger = String.valueOf(entry.getKey());
             String triggerPath = path + "/dependentSchemas/" + trigger;
             if (trigger.isBlank()) {
                 diagnostics.add(VisualDiagnostic.error("visual.schema.dependentSchemasInvalid",
                         "Object schema dependentSchemas keys must be non-blank property names.",
-                        triggerPath));
-            } else if (!properties.containsKey(trigger)) {
-                diagnostics.add(VisualDiagnostic.error("visual.schema.dependentSchemasUnknown",
-                        "Dependent-schema trigger property '%s' is not declared in properties."
-                                .formatted(trigger),
                         triggerPath));
             }
             if (!(entry.getValue() instanceof Map<?, ?> dependentSchema)) {
@@ -1409,37 +1345,28 @@ public final class VisualSchemaValidator {
         if (!kind.isBlank()) {
             return kind;
         }
-        if (hasSchemaKeyword(schema, "pattern", "format", "minLength", "maxLength")) {
+        if (VisualSchemaIntrospection.hasSchemaKeyword(schema, "pattern", "format", "minLength", "maxLength")) {
             return "string";
         }
-        if (hasSchemaKeyword(schema, "minimum", "maximum", "exclusiveMinimum", "exclusiveMaximum", "multipleOf")) {
+        if (VisualSchemaIntrospection.hasSchemaKeyword(schema,
+                "minimum", "maximum", "exclusiveMinimum", "exclusiveMaximum", "multipleOf")) {
             return "number";
         }
         if (schema.containsKey("values")) {
             return "enum";
         }
-        if (hasSchemaKeyword(schema, "items", "prefixItems", "contains", "minItems", "maxItems", "uniqueItems",
+        if (VisualSchemaIntrospection.hasSchemaKeyword(schema,
+                "items", "prefixItems", "contains", "minItems", "maxItems", "uniqueItems",
                 "minContains", "maxContains", "unevaluatedItems")) {
             return "array";
         }
-        if (hasSchemaKeyword(schema, "properties", "required", "additionalProperties", "unevaluatedProperties",
+        if (VisualSchemaIntrospection.hasSchemaKeyword(schema,
+                "properties", "required", "additionalProperties", "unevaluatedProperties",
                 "patternProperties", "propertyNames", "dependentRequired", "dependentSchemas", "minProperties",
                 "maxProperties")) {
             return "object";
         }
         return "";
-    }
-
-    private static boolean hasSchemaKeyword(Map<String, Object> schema, String... keywords) {
-        if (schema == null) {
-            return false;
-        }
-        for (String keyword : keywords) {
-            if (schema.containsKey(keyword)) {
-                return true;
-            }
-        }
-        return false;
     }
 
 	    private static void validateNumericBounds(Map<String, Object> schema,
@@ -1807,6 +1734,9 @@ public final class VisualSchemaValidator {
         if (!prefixItemsOf(schema).isEmpty()) {
             return true;
         }
+        if (hasArrayContains(schema)) {
+            return true;
+        }
         return schema.containsKey("unevaluatedItems")
                 && (schema.get("unevaluatedItems") instanceof Boolean
                 || schema.get("unevaluatedItems") instanceof Map<?, ?>);
@@ -2117,19 +2047,8 @@ public final class VisualSchemaValidator {
         return residual instanceof Map<?, ?> residualSchema ? objectProperty(residualSchema) : null;
     }
 
-	    @SuppressWarnings("unchecked")
 	    private static List<Map<String, Object>> prefixItemsOf(Map<String, Object> schema) {
-	        Object raw = schema.get("prefixItems");
-	        if (!(raw instanceof List<?> values)) {
-	            return List.of();
-	        }
-	        List<Map<String, Object>> prefixItems = new ArrayList<>();
-	        for (Object value : values) {
-	            if (value instanceof Map<?, ?> itemSchema) {
-	                prefixItems.add((Map<String, Object>) itemSchema);
-	            }
-	        }
-	        return prefixItems;
+	        return VisualSchemaIntrospection.prefixItemsOf(schema);
 	    }
 
 	    private static void validateObjectPropertyBoundary(Map<String, Object> schema,
