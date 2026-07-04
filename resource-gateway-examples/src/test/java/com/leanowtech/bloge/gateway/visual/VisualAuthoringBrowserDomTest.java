@@ -479,6 +479,38 @@ class VisualAuthoringBrowserDomTest {
     }
 
     @Test
+    void composerShowsServerCandidateSchemaAndRuntimeDebtInConnectabilityPanelInRealBrowser()
+            throws JsonProcessingException {
+        driver = newChromeDriverOrSkip();
+        WebDriverWait wait = new WebDriverWait(driver, WAIT_TIMEOUT);
+        driver.get("http://localhost:" + port + "/examples/gateway");
+
+        waitForComposer(wait);
+        wait.until(ExpectedConditions.visibilityOfElementLocated(By.id("operator-palette")));
+
+        importOperatorLibrary(wait, scoreReviewDesignOnlyLibrary());
+        dragOperatorToCanvas(wait, "Score review", "risk:scoreReview", "riskScoreReview", 140, 120);
+
+        click(wait, By.cssSelector("#diagram [data-node-id='loanPolicy']"));
+        waitForText(wait, By.id("selected-operator-editor"), "CONNECTABILITY");
+        waitForText(wait, By.id("selected-operator-editor"), "Server candidates synced");
+        waitForText(wait, By.id("selected-operator-editor"), "Score review (riskScoreReview)");
+        waitForText(wait, By.id("selected-operator-editor"), "any -> integer");
+        waitForText(wait, By.id("selected-operator-editor"), "target runtime binding requirement");
+        waitForText(wait, By.id("selected-operator-editor"), "Executable Lowering: 1");
+        waitForText(wait, By.id("selected-operator-editor"), "risk-score-design library: 1");
+        assertThat(driver.findElements(By.cssSelector(
+                "#selected-operator-editor .node-connectability-chip-detail"
+        ))).isNotEmpty();
+        assertThat(driver.findElements(By.cssSelector(
+                "#selected-operator-editor [data-connectability-action='connect']"
+                        + "[data-connect-target-node='riskScoreReview']"
+                        + "[data-connect-target-port='inputs']"
+                        + "[data-connect-target-path='score']"
+        ))).isNotEmpty();
+    }
+
+    @Test
     void composerValidatesExportedOperatorLibraryBundleInRealBrowser() {
         driver = newChromeDriverOrSkip();
         WebDriverWait wait = new WebDriverWait(driver, WAIT_TIMEOUT);
@@ -1689,6 +1721,45 @@ class VisualAuthoringBrowserDomTest {
                 "risk-policy",
                 "Risk policy operators",
                 "1.1.0",
+                "risk-team",
+                "ACTIVE",
+                List.of(operator)
+        );
+    }
+
+    private static OperatorLibrary scoreReviewDesignOnlyLibrary() {
+        OperatorDefinition operator = new OperatorDefinition(
+                "bloge.visualOperator.v1",
+                "risk:scoreReview",
+                "1.0.0",
+                new OperatorDefinition.Display("Score review",
+                        "Reviews a risk score through an externally implemented policy.",
+                        List.of("risk", "design")),
+                new OperatorDefinition.Source("user-library", "", "", "", true),
+                new OperatorDefinition.Ports(
+                        List.of(new OperatorDefinition.Port("inputs",
+                                SchemaEnvelope.object(
+                                        Map.of("score", Map.of("type", "integer")),
+                                        List.of("score")),
+                                true,
+                                "Score review input.")),
+                        List.of(new OperatorDefinition.Port("output",
+                                SchemaEnvelope.object(
+                                        Map.of("approved", Map.of("type", "boolean")),
+                                        List.of()),
+                                true,
+                                "Score review result."))
+                ),
+                SchemaEnvelope.opaque(),
+                OperatorDefinition.Capabilities.pure(),
+                new OperatorDefinition.Lowering("design", "", Map.of()),
+                List.of()
+        );
+        return new OperatorLibrary(
+                "bloge.visualOperatorLibrary.v1",
+                "risk-score-design",
+                "Risk score design operators",
+                "1.0.0",
                 "risk-team",
                 "ACTIVE",
                 List.of(operator)

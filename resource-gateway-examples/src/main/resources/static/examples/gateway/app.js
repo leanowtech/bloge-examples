@@ -15107,7 +15107,12 @@ function nodeConnectabilityDisplayTargets(sourceSummary) {
 function renderNodeConnectabilityTarget(source, entry) {
   const label = nodeConnectabilityTargetLabel(entry);
   const title = nodeConnectabilityTargetTitle(entry);
+  const detail = nodeConnectabilityTargetDetail(entry);
   const level = nodeConnectabilityTargetLevel(entry);
+  const body = `
+    <span class="node-connectability-chip-label">${escapeHtml(label)}</span>
+    ${detail ? `<span class="node-connectability-chip-detail">${escapeHtml(detail)}</span>` : ''}
+  `;
   if (entry.compatibility.ok && !entry.alreadyConnected) {
     return `
       <button
@@ -15124,10 +15129,24 @@ function renderNodeConnectabilityTarget(source, entry) {
         data-connect-target-path="${escapeHtml(entry.target.path || '')}"
         data-connect-target-kind="${escapeHtml(entry.kind || '')}"
         data-connect-target-condition="${escapeHtml(entry.target.condition || '')}"
-      >${escapeHtml(label)}</button>
+      >${body}</button>
     `;
   }
-  return `<span class="node-connectability-chip ${escapeHtml(level)}" title="${escapeHtml(title)}" aria-label="${escapeHtml(title)}">${escapeHtml(label)}</span>`;
+  return `<span class="node-connectability-chip ${escapeHtml(level)}" title="${escapeHtml(title)}" aria-label="${escapeHtml(title)}">${body}</span>`;
+}
+
+function nodeConnectabilityTargetDetail(entry) {
+  const explanation = entry.serverCandidate?.explanation || null;
+  const schemaHint = explanation && (explanation.sourceSchemaType || explanation.targetSchemaType)
+    ? `${explanation.sourceSchemaType || 'unknown'} -> ${explanation.targetSchemaType || 'unknown'}`
+    : '';
+  const runtimeBinding = connectionCandidateTargetRuntimeBindingSummary(explanation?.targetRuntimeBinding)
+    || connectionRuntimeBindingSummary(entry.serverCandidate?.summary);
+  const replacement = explanation?.replacementSummary || '';
+  const message = !entry.compatibility?.ok ? String(entry.compatibility?.message || '').trim() : '';
+  return uniqueStrings([schemaHint, runtimeBinding, replacement, message])
+    .filter(Boolean)
+    .join(' · ');
 }
 
 function connectNodeConnectabilityFromButton(button) {

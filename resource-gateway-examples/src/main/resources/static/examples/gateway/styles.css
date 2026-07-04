@@ -1516,6 +1516,8 @@ body.dragging-operator * {
 
 .node-connectability-chip {
   max-width: 100%;
+  display: inline-grid;
+  gap: 2px;
   padding: 3px 7px;
   border: 1px solid var(--line);
   border-radius: 6px;
@@ -1524,6 +1526,19 @@ body.dragging-operator * {
   font-size: 10px;
   font-weight: 800;
   overflow-wrap: anywhere;
+}
+
+.node-connectability-chip-label,
+.node-connectability-chip-detail {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.node-connectability-chip-detail {
+  color: var(--muted);
+  font-size: 9px;
+  font-weight: 700;
+  line-height: 1.25;
 }
 
 .node-connectability-chip.actionable {
@@ -1548,10 +1563,18 @@ body.dragging-operator * {
   color: var(--green);
 }
 
+.node-connectability-chip.success .node-connectability-chip-detail {
+  color: #15803d;
+}
+
 .node-connectability-chip.error {
   border-color: rgba(220, 38, 38, 0.28);
   background: rgba(220, 38, 38, 0.08);
   color: var(--red);
+}
+
+.node-connectability-chip.error .node-connectability-chip-detail {
+  color: #b91c1c;
 }
 
 .node-impact-panel {

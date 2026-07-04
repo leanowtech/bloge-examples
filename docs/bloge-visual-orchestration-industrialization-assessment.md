@@ -44,7 +44,7 @@
 | --- | ---: | --- | --- | --- |
 | 算子库合同与导入 | 8.0 | `OperatorLibrary`、JSON/YAML validate/import、revision、impact、bundle fingerprint、design-only lowering | 复杂第三方协议包 diff、跨环境治理策略还需继续深化 | OpenAPI/AsyncAPI diff 与 runtime binding handoff 对齐 |
 | Schema 约束与拖线裁决 | 8.4 | `VisualSchemaCompatibility`、`VisualSchemaValidator`、`GraphDraftValidator`、connection check/candidates、fit candidates、`VisualSchemaIntrospection`，以及浏览器 schema mirror 对 required-only / contains-only typeless schema 的回归 | JSON Schema 语义仍是受限子集，深层 compatibility diff 与 value matching 还没有完全抽成可复用策略 | 持续收敛 shared schema/value helper，补更多 schema 子集回归 |
-| 画布产品化体验 | 7.1 | Browser Composer palette、schema-aware picker、hover preflight、readiness panel、diagnostic queue、impact inspector，前端本地 schema type/validator mirror 已覆盖 required-only object 与 contains-only array | 单文件前端复杂度高，交互矩阵仍未完全自动化 | 抽更小 UI 模块或增加更强 browser regression matrix |
+| 画布产品化体验 | 7.2 | Browser Composer palette、schema-aware picker、hover preflight、readiness panel、diagnostic queue、impact inspector，前端本地 schema type/validator mirror 已覆盖 required-only object 与 contains-only array；selected-node Connectability 直接展示服务端候选 schema 类型、替换影响和 target runtime-binding debt | 单文件前端复杂度高，交互矩阵仍未完全自动化 | 抽更小 UI 模块或增加更强 browser regression matrix |
 | Design-only artifact 生命周期 | 8.0 | `DESIGN` publication、action-readiness gate、run/golden 禁用、runtime-binding requirements | DESIGN 到 external runtime bound 的组织流程仍依赖外部协作 | handoff bundle 与外部工单/事件系统对接 |
 | Runtime binding 闭环 | 6.5 | requirement index、handoff bundle、implementation proposal、bind/supersede/unbind、activation、rollout observation、lowering integration、readiness recompute | 跨 repository partial-failure、异步 workflow idempotency、指标消费闭环仍未全覆盖 | 继续硬化 runtime evidence lifecycle 和 replay/compensation |
 | 发布、可迁移性与版本治理 | 7.5 | draft/publication bundles、fingerprint gate、immutable publication、revision guard、operator/resource impact | 还有协议命名与当前 wire contract 的历史漂移 | 协议草案按现状收敛，保留平台化 ADR |
@@ -68,6 +68,7 @@
 5. compile/run/default EXECUTABLE publish 会被 action-readiness 明确阻断，而不是伪运行。
 6. runtime-binding gap 可以被导出为 handoff material，给外部 runtime-plane 团队处理。
 7. 浏览器本地 schema mirror 已与服务端对齐 required-only object、dependent* 和 contains-only array 的 typeless schema 基础语义，避免合法外部 schema 在前端被旧风格规则误拒。
+8. selected-node Connectability 面板现在不只在 tooltip 中藏服务端候选解释，而是可见展示 schema type hint、replacement summary 和 target runtime-binding requirement，让 schema-only/design-only 算子拖线前就暴露 executable promotion debt。
 
 ### 尚未成立
 
@@ -78,6 +79,31 @@
 5. 前端仍是示例项目形态，复杂度已经接近需要模块化拆分的边界。
 
 ## 4. 本轮迭代复盘
+
+### 2026-07-04：Connectability 候选解释进入可扫描 UI
+
+触发问题：
+
+服务端 `/api/visual/connections/candidates` 已经能返回候选级 schema 类型、阻断原因、替换影响和 target runtime-binding debt，但 selected-node Connectability 面板主要把这些信息放在 `title/aria-label` 中。对真实画布用户来说，这不够工业化：用户能看到“ready/blocked”，却必须 hover 才知道这条连接会不会留下 external runtime implementation debt，或者为什么被服务端拒绝。
+
+本轮完成：
+
+1. `renderNodeConnectabilityTarget` 改为 label + detail 两行结构，保留原按钮/标签语义和 `data-connectability-action` 行为。
+2. 新增 `nodeConnectabilityTargetDetail`，统一从 server candidate explanation 中提取 schema hint、runtime-binding summary、replacement summary 和 rejected message。
+3. `.node-connectability-chip` 改为受约束的 `inline-grid`，新增 detail 样式，避免长 runtime debt 文案撑破 Connectability 面板。
+4. `VisualAuthoringAppJsTest` 增加 Node probe，证明 server candidate detail 不再只存在于 title，渲染 HTML 中可见包含 schema hint 和 runtime-binding requirement。
+5. `VisualAuthoringBrowserDomTest` 增加真实浏览器用例：导入单输入 design-only 算子，拖入画布，选择上游节点后等待服务端候选同步，并断言 Connectability 面板可见展示 `any -> integer`、`target runtime binding requirement`、`Executable Lowering: 1` 和 `risk-score-design library: 1`。
+
+验证：
+
+```bash
+mvn -q -f resource-gateway-examples/pom.xml -Dtest=VisualAuthoringAppJsTest test
+mvn -q -f resource-gateway-examples/pom.xml -Dtest=VisualAuthoringBrowserDomTest#composerShowsServerCandidateSchemaAndRuntimeDebtInConnectabilityPanelInRealBrowser test
+```
+
+剩余风险：
+
+这轮只是把服务端候选解释在 selected-node Connectability 面板显性化。更大的浏览器矩阵仍未完全覆盖：导入面板 negative path、candidate discovery 在大型画布下的分页/过滤、DOM schema field rendering 的 drift 失败路径、以及 mobile/窄屏下长候选解释的视觉稳定性仍需要继续补。
 
 ### 2026-07-04：Browser schema mirror effective kind 收敛
 
@@ -228,7 +254,7 @@ schema type/path 逻辑仍分散在多个类中。短期可接受；中期应抽
 | --- | --- | --- | --- |
 | P0 | 深层 compatibility / value diagnostics 策略收敛 | effective kind 已统一，但 not/conditional/patternProperties/dependent schema 等深层判断仍在类内分散 | 选一个高风险 schema 子集，抽共享 value/schema policy 或补明确不可迁移边界 |
 | P0 | Runtime binding partial-failure 硬化 | 这是 DESIGN artifact 走向可执行 runtime 的主干 | 选一个尚未补偿的跨 repository mutation，补 replay/compensation/诊断 |
-| P1 | Browser regression matrix | required-only / contains-only typeless schema 已覆盖，但 UI 能力多，单测/DOM smoke 仍需继续扩大 | 覆盖导入面板、候选发现、DOM schema field rendering 的更多负路径和漂移路径 |
+| P1 | Browser regression matrix | required-only / contains-only typeless schema、Connectability 可见候选解释和 design-only target runtime debt 已覆盖，但 UI 能力多，单测/DOM smoke 仍需继续扩大 | 覆盖导入面板、候选发现分页/过滤、DOM schema field rendering 的更多负路径和漂移路径 |
 | P1 | 协议文档收敛 | 设计草案与当前 wire contract 名称仍有历史漂移 | 把 candidate/fit/readiness 当前字段写入 protocol v1 |
 | P2 | 前端模块化 | `app.js` 已承载太多 authoring 逻辑 | 先抽 schema helper 或 readiness helper，保持测试覆盖 |
 
