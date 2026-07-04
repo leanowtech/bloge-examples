@@ -123,6 +123,16 @@ class VisualAssetOverviewControllerTest {
                 .containsEntry("risk:eligibility", 3);
         assertThat(overview.actionQueue().operatorLibraryIdCounts())
                 .containsEntry(library.libraryId(), 3);
+        assertThat(overview.actionQueue().handoffLaneCounts())
+                .containsEntry("operator-platform", 2);
+        assertThat(overview.actionQueue().handoffKindCounts())
+                .containsEntry("operator-implementation", 2);
+        assertThat(overview.actionQueue().handoffTargetCounts())
+                .containsEntry("risk:eligibility", 2);
+        assertThat(overview.actionQueue().readinessStateCounts())
+                .containsEntry("design-only", 4);
+        assertThat(overview.actionQueue().artifactKindCounts())
+                .containsEntry("DESIGN", 1);
         assertThat(overview.actionQueue().items())
                 .extracting(VisualAssetOverview.ActionItem::actionType)
                 .contains("PLAN_DRAFT_RUNTIME_BINDING",
@@ -5251,6 +5261,57 @@ class VisualAssetOverviewControllerTest {
                 "",
                 library.libraryId()
         );
+        VisualAssetOverview byHandoffRoute = controller.overview(
+                "",
+                "",
+                "",
+                10,
+                0,
+                "",
+                "",
+                "",
+                "",
+                "",
+                "operator-platform",
+                "operator-implementation",
+                "risk:eligibility",
+                "",
+                ""
+        );
+        VisualAssetOverview byReadinessState = controller.overview(
+                "",
+                "",
+                "",
+                10,
+                0,
+                "",
+                "",
+                "",
+                "",
+                "",
+                "",
+                "",
+                "",
+                "design-only",
+                ""
+        );
+        VisualAssetOverview byArtifactKind = controller.overview(
+                "",
+                "",
+                "",
+                10,
+                0,
+                "",
+                "",
+                "",
+                "",
+                "",
+                "",
+                "",
+                "",
+                "",
+                "DESIGN"
+        );
 
         assertThat(operatorOnly.actionQueue().unfilteredTotal()).isEqualTo(unfilteredTotal);
         assertThat(operatorOnly.actionQueue().total()).isEqualTo(1);
@@ -5293,6 +5354,31 @@ class VisualAssetOverviewControllerTest {
                 .containsEntry("PLAN_DRAFT_RUNTIME_BINDING", 1)
                 .containsEntry("PLAN_PUBLICATION_RUNTIME_BINDING", 1)
                 .containsEntry("TRACK_SCHEMA_ONLY_OPERATOR", 1);
+        assertThat(byHandoffRoute.actionQueue().unfilteredTotal()).isEqualTo(unfilteredTotal);
+        assertThat(byHandoffRoute.actionQueue().total()).isEqualTo(2);
+        assertThat(byHandoffRoute.actionQueue().filter().handoffLane()).isEqualTo("operator-platform");
+        assertThat(byHandoffRoute.actionQueue().filter().handoffKind()).isEqualTo("operator-implementation");
+        assertThat(byHandoffRoute.actionQueue().filter().handoffTarget()).isEqualTo("risk:eligibility");
+        assertThat(byHandoffRoute.actionQueue().handoffLaneCounts()).containsEntry("operator-platform", 2);
+        assertThat(byHandoffRoute.actionQueue().handoffKindCounts()).containsEntry("operator-implementation", 2);
+        assertThat(byHandoffRoute.actionQueue().handoffTargetCounts()).containsEntry("risk:eligibility", 2);
+        assertThat(byHandoffRoute.actionQueue().items())
+                .extracting(VisualAssetOverview.ActionItem::actionType)
+                .containsExactly("PLAN_DRAFT_RUNTIME_BINDING", "PLAN_PUBLICATION_RUNTIME_BINDING");
+        assertThat(byReadinessState.actionQueue().unfilteredTotal()).isEqualTo(unfilteredTotal);
+        assertThat(byReadinessState.actionQueue().total()).isEqualTo(4);
+        assertThat(byReadinessState.actionQueue().filter().readinessState()).isEqualTo("design-only");
+        assertThat(byReadinessState.actionQueue().readinessStateCounts()).containsEntry("design-only", 4);
+        assertThat(byReadinessState.actionQueue().items())
+                .extracting(VisualAssetOverview.ActionItem::readinessState)
+                .containsOnly("design-only");
+        assertThat(byArtifactKind.actionQueue().unfilteredTotal()).isEqualTo(unfilteredTotal);
+        assertThat(byArtifactKind.actionQueue().total()).isEqualTo(1);
+        assertThat(byArtifactKind.actionQueue().filter().artifactKind()).isEqualTo("DESIGN");
+        assertThat(byArtifactKind.actionQueue().artifactKindCounts()).containsEntry("DESIGN", 1);
+        assertThat(byArtifactKind.actionQueue().items())
+                .extracting(VisualAssetOverview.ActionItem::actionType)
+                .containsExactly("PLAN_PUBLICATION_RUNTIME_BINDING");
         assertThat(secondAction.actionQueue().unfilteredTotal()).isEqualTo(unfilteredTotal);
         assertThat(secondAction.actionQueue().total()).isEqualTo(unfilteredTotal);
         assertThat(secondAction.actionQueue().offset()).isEqualTo(1);

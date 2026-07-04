@@ -275,6 +275,11 @@ public record VisualAssetOverview(
      * @param actionTargetKind optional action target kind filter
      * @param actionOperatorRef optional operator reference filter
      * @param actionOperatorLibraryId optional owner operator library id filter
+     * @param actionHandoffLane optional runtime-plane responsibility lane filter
+     * @param actionHandoffKind optional runtime-plane work kind filter
+     * @param actionHandoffTarget optional runtime-plane routing target filter
+     * @param actionReadinessState optional graph/operator readiness state filter
+     * @param actionArtifactKind optional publication artifact kind filter
      * @param implementationBindings submitted runtime implementation binding records in scope
      * @param adapterActivations runtime adapter activation records in scope
      * @param rolloutObservations rollout observation records in scope
@@ -296,6 +301,11 @@ public record VisualAssetOverview(
                                            String actionTargetKind,
                                            String actionOperatorRef,
                                            String actionOperatorLibraryId,
+                                           String actionHandoffLane,
+                                           String actionHandoffKind,
+                                           String actionHandoffTarget,
+                                           String actionReadinessState,
+                                           String actionArtifactKind,
                                            List<VisualRuntimeBindingImplementationBinding> implementationBindings,
                                            List<VisualRuntimeAdapterActivation> adapterActivations,
                                            List<VisualRuntimeRolloutObservation> rolloutObservations,
@@ -324,11 +334,63 @@ public record VisualAssetOverview(
                         actionTargetKind,
                         actionOperatorRef,
                         actionOperatorLibraryId,
+                        actionHandoffLane,
+                        actionHandoffKind,
+                        actionHandoffTarget,
+                        actionReadinessState,
+                        actionArtifactKind,
                         implementationBindings,
                         adapterActivations,
                         rolloutObservations,
                         executableLoweringIntegrations
                 )
+        );
+    }
+
+    public static VisualAssetOverview from(List<GraphDraftSummary> drafts,
+                                           List<VisualGraphPublicationSummary> publications,
+                                           List<OperatorDefinition> operators,
+                                           List<VisualDiagnostic> catalogDiagnostics,
+                                           Map<String, String> operatorLibraryIdsByOperatorRef,
+                                           String tenantId,
+                                           String namespace,
+                                           String environment,
+                                           int actionItemLimit,
+                                           int actionOffset,
+                                           String actionSeverity,
+                                           String actionType,
+                                           String actionTargetKind,
+                                           String actionOperatorRef,
+                                           String actionOperatorLibraryId,
+                                           List<VisualRuntimeBindingImplementationBinding> implementationBindings,
+                                           List<VisualRuntimeAdapterActivation> adapterActivations,
+                                           List<VisualRuntimeRolloutObservation> rolloutObservations,
+                                           List<VisualExecutableLoweringIntegration> executableLoweringIntegrations) {
+        return from(
+                drafts,
+                publications,
+                operators,
+                catalogDiagnostics,
+                operatorLibraryIdsByOperatorRef,
+                tenantId,
+                namespace,
+                environment,
+                actionItemLimit,
+                actionOffset,
+                actionSeverity,
+                actionType,
+                actionTargetKind,
+                actionOperatorRef,
+                actionOperatorLibraryId,
+                "",
+                "",
+                "",
+                "",
+                "",
+                implementationBindings,
+                adapterActivations,
+                rolloutObservations,
+                executableLoweringIntegrations
         );
     }
 
@@ -1110,6 +1172,11 @@ public record VisualAssetOverview(
      * @param actionTypeCounts action counts by machine-readable action type
      * @param operatorRefCounts action counts by related operator reference
      * @param operatorLibraryIdCounts action counts by owner operator library id
+     * @param handoffLaneCounts action counts by runtime-plane handoff lane
+     * @param handoffKindCounts action counts by runtime-plane handoff kind
+     * @param handoffTargetCounts action counts by runtime-plane handoff target
+     * @param readinessStateCounts action counts by graph/operator readiness state
+     * @param artifactKindCounts action counts by publication artifact kind
      * @param items first high-priority action items
      */
     public record ActionQueue(
@@ -1126,6 +1193,11 @@ public record VisualAssetOverview(
             Map<String, Integer> actionTypeCounts,
             Map<String, Integer> operatorRefCounts,
             Map<String, Integer> operatorLibraryIdCounts,
+            Map<String, Integer> handoffLaneCounts,
+            Map<String, Integer> handoffKindCounts,
+            Map<String, Integer> handoffTargetCounts,
+            Map<String, Integer> readinessStateCounts,
+            Map<String, Integer> artifactKindCounts,
             List<ActionItem> items
     ) {
         public ActionQueue(int total,
@@ -1150,6 +1222,11 @@ public record VisualAssetOverview(
                     actionTypeCounts,
                     Map.of(),
                     Map.of(),
+                    Map.of(),
+                    Map.of(),
+                    Map.of(),
+                    Map.of(),
+                    Map.of(),
                     items
             );
         }
@@ -1163,6 +1240,11 @@ public record VisualAssetOverview(
             actionTypeCounts = immutableCounts(actionTypeCounts);
             operatorRefCounts = immutableCounts(operatorRefCounts);
             operatorLibraryIdCounts = immutableCounts(operatorLibraryIdCounts);
+            handoffLaneCounts = immutableCounts(handoffLaneCounts);
+            handoffKindCounts = immutableCounts(handoffKindCounts);
+            handoffTargetCounts = immutableCounts(handoffTargetCounts);
+            readinessStateCounts = immutableCounts(readinessStateCounts);
+            artifactKindCounts = immutableCounts(artifactKindCounts);
             items = items == null ? List.of() : List.copyOf(items);
             displayedCount = items.size();
             hasMore = offset + displayedCount < total;
@@ -1233,6 +1315,11 @@ public record VisualAssetOverview(
                                 String actionTargetKind,
                                 String actionOperatorRef,
                                 String actionOperatorLibraryId,
+                                String actionHandoffLane,
+                                String actionHandoffKind,
+                                String actionHandoffTarget,
+                                String actionReadinessState,
+                                String actionArtifactKind,
                                 List<VisualRuntimeBindingImplementationBinding> implementationBindings,
                                 List<VisualRuntimeAdapterActivation> adapterActivations,
                                 List<VisualRuntimeRolloutObservation> rolloutObservations,
@@ -1279,13 +1366,19 @@ public record VisualAssetOverview(
                 return left.targetId().compareTo(right.targetId());
             });
             ActionFilter filter = new ActionFilter(actionSeverity, actionType, actionTargetKind, actionOperatorRef,
-                    actionOperatorLibraryId);
+                    actionOperatorLibraryId, actionHandoffLane, actionHandoffKind, actionHandoffTarget,
+                    actionReadinessState, actionArtifactKind);
             List<ActionItem> filtered = generated.stream()
                     .filter(filter::matches)
                     .toList();
             Map<String, Integer> actionTypes = new LinkedHashMap<>();
             Map<String, Integer> operatorRefs = countBy(filtered, ActionItem::operatorRef);
             Map<String, Integer> operatorLibraries = countBy(filtered, ActionItem::operatorLibraryId);
+            Map<String, Integer> handoffLanes = countBy(filtered, ActionItem::handoffLane);
+            Map<String, Integer> handoffKinds = countBy(filtered, ActionItem::handoffKind);
+            Map<String, Integer> handoffTargets = countBy(filtered, ActionItem::handoffTarget);
+            Map<String, Integer> readinessStates = countBy(filtered, ActionItem::readinessState);
+            Map<String, Integer> artifactKinds = countBy(filtered, ActionItem::artifactKind);
             int errorCount = 0;
             int warningCount = 0;
             int infoCount = 0;
@@ -1313,7 +1406,51 @@ public record VisualAssetOverview(
                     actionTypes,
                     operatorRefs,
                     operatorLibraries,
+                    handoffLanes,
+                    handoffKinds,
+                    handoffTargets,
+                    readinessStates,
+                    artifactKinds,
                     filtered.stream().skip(normalizedOffset).limit(normalizedLimit).toList()
+            );
+        }
+
+        static ActionQueue from(List<GraphDraftSummary> drafts,
+                                List<VisualGraphPublicationSummary> publications,
+                                List<OperatorDefinition> operators,
+                                Map<String, String> operatorLibraryIdsByOperatorRef,
+                                int actionItemLimit,
+                                int actionOffset,
+                                String actionSeverity,
+                                String actionType,
+                                String actionTargetKind,
+                                String actionOperatorRef,
+                                String actionOperatorLibraryId,
+                                List<VisualRuntimeBindingImplementationBinding> implementationBindings,
+                                List<VisualRuntimeAdapterActivation> adapterActivations,
+                                List<VisualRuntimeRolloutObservation> rolloutObservations,
+                                List<VisualExecutableLoweringIntegration> executableLoweringIntegrations) {
+            return from(
+                    drafts,
+                    publications,
+                    operators,
+                    operatorLibraryIdsByOperatorRef,
+                    actionItemLimit,
+                    actionOffset,
+                    actionSeverity,
+                    actionType,
+                    actionTargetKind,
+                    actionOperatorRef,
+                    actionOperatorLibraryId,
+                    "",
+                    "",
+                    "",
+                    "",
+                    "",
+                    implementationBindings,
+                    adapterActivations,
+                    rolloutObservations,
+                    executableLoweringIntegrations
             );
         }
 
@@ -1330,6 +1467,11 @@ public record VisualAssetOverview(
      * @param targetKind target kind filter, empty when not filtered
      * @param operatorRef operator reference filter, empty when not filtered
      * @param operatorLibraryId owner operator library id filter, empty when not filtered
+     * @param handoffLane runtime-plane handoff lane filter, empty when not filtered
+     * @param handoffKind runtime-plane handoff kind filter, empty when not filtered
+     * @param handoffTarget runtime-plane handoff target filter, empty when not filtered
+     * @param readinessState readiness state filter, empty when not filtered
+     * @param artifactKind artifact kind filter, empty when not filtered
      * @param filtered true when at least one action filter is active
      */
     public record ActionFilter(
@@ -1338,6 +1480,11 @@ public record VisualAssetOverview(
             String targetKind,
             String operatorRef,
             String operatorLibraryId,
+            String handoffLane,
+            String handoffKind,
+            String handoffTarget,
+            String readinessState,
+            String artifactKind,
             boolean filtered
     ) {
         public ActionFilter(String severity, String actionType, String targetKind) {
@@ -1353,17 +1500,40 @@ public record VisualAssetOverview(
                             String targetKind,
                             String operatorRef,
                             String operatorLibraryId) {
+            this(severity, actionType, targetKind, operatorRef, operatorLibraryId, "", "", "", "", "");
+        }
+
+        public ActionFilter(String severity,
+                            String actionType,
+                            String targetKind,
+                            String operatorRef,
+                            String operatorLibraryId,
+                            String handoffLane,
+                            String handoffKind,
+                            String handoffTarget,
+                            String readinessState,
+                            String artifactKind) {
             this(
                     normalizeSeverityFilter(severity),
                     normalizeActionTypeFilter(actionType),
                     normalizeTargetKindFilter(targetKind),
                     normalizeTextValue(operatorRef),
                     normalizeTextValue(operatorLibraryId),
+                    normalizeFacetValue(handoffLane),
+                    normalizeFacetValue(handoffKind),
+                    normalizeTextValue(handoffTarget),
+                    normalizeFacetValue(readinessState),
+                    normalizeArtifactKindFilter(artifactKind),
                     !normalizeSeverityFilter(severity).isBlank()
                             || !normalizeActionTypeFilter(actionType).isBlank()
                             || !normalizeTargetKindFilter(targetKind).isBlank()
                             || !normalizeTextValue(operatorRef).isBlank()
                             || !normalizeTextValue(operatorLibraryId).isBlank()
+                            || !normalizeFacetValue(handoffLane).isBlank()
+                            || !normalizeFacetValue(handoffKind).isBlank()
+                            || !normalizeTextValue(handoffTarget).isBlank()
+                            || !normalizeFacetValue(readinessState).isBlank()
+                            || !normalizeArtifactKindFilter(artifactKind).isBlank()
             );
         }
 
@@ -1373,13 +1543,23 @@ public record VisualAssetOverview(
             targetKind = normalizeTargetKindFilter(targetKind);
             operatorRef = normalizeTextValue(operatorRef);
             operatorLibraryId = normalizeTextValue(operatorLibraryId);
+            handoffLane = normalizeFacetValue(handoffLane);
+            handoffKind = normalizeFacetValue(handoffKind);
+            handoffTarget = normalizeTextValue(handoffTarget);
+            readinessState = normalizeFacetValue(readinessState);
+            artifactKind = normalizeArtifactKindFilter(artifactKind);
             filtered = !severity.isBlank() || !actionType.isBlank() || !targetKind.isBlank()
                     || !operatorRef.isBlank()
-                    || !operatorLibraryId.isBlank();
+                    || !operatorLibraryId.isBlank()
+                    || !handoffLane.isBlank()
+                    || !handoffKind.isBlank()
+                    || !handoffTarget.isBlank()
+                    || !readinessState.isBlank()
+                    || !artifactKind.isBlank();
         }
 
         static ActionFilter all() {
-            return new ActionFilter("", "", "", "", "");
+            return new ActionFilter("", "", "", "", "", "", "", "", "", "");
         }
 
         boolean matches(ActionItem item) {
@@ -1388,7 +1568,12 @@ public record VisualAssetOverview(
                     && (actionType.isBlank() || actionType.equals(item.actionType()))
                     && (targetKind.isBlank() || targetKind.equals(item.targetKind()))
                     && (operatorRef.isBlank() || operatorRef.equals(item.operatorRef()))
-                    && (operatorLibraryId.isBlank() || operatorLibraryId.equals(item.operatorLibraryId()));
+                    && (operatorLibraryId.isBlank() || operatorLibraryId.equals(item.operatorLibraryId()))
+                    && (handoffLane.isBlank() || handoffLane.equals(item.handoffLane()))
+                    && (handoffKind.isBlank() || handoffKind.equals(item.handoffKind()))
+                    && (handoffTarget.isBlank() || handoffTarget.equals(item.handoffTarget()))
+                    && (readinessState.isBlank() || readinessState.equals(item.readinessState()))
+                    && (artifactKind.isBlank() || artifactKind.equals(item.artifactKind()));
         }
     }
 
@@ -2657,6 +2842,10 @@ public record VisualAssetOverview(
             return VisualGraphPublication.ARTIFACT_EXECUTABLE;
         }
         return normalized;
+    }
+
+    private static String normalizeArtifactKindFilter(String value) {
+        return String.valueOf(value == null ? "" : value).trim().toUpperCase(Locale.ROOT);
     }
 
     private static String normalizeFacetValue(String value) {

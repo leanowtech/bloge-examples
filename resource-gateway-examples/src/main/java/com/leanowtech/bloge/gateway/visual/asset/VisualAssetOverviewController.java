@@ -195,6 +195,11 @@ public class VisualAssetOverviewController {
      * @param actionTargetKind optional action target kind filter
      * @param actionOperatorRef optional related operator reference filter
      * @param actionOperatorLibraryId optional related owner operator library id filter
+     * @param actionHandoffLane optional runtime-plane handoff lane filter
+     * @param actionHandoffKind optional runtime-plane handoff kind filter
+     * @param actionHandoffTarget optional runtime-plane handoff target filter
+     * @param actionReadinessState optional graph/operator readiness state filter
+     * @param actionArtifactKind optional publication artifact kind filter
      * @return visual asset overview
      */
     @GetMapping("/overview")
@@ -207,7 +212,12 @@ public class VisualAssetOverviewController {
                                         @RequestParam(defaultValue = "") String actionType,
                                         @RequestParam(defaultValue = "") String actionTargetKind,
                                         @RequestParam(defaultValue = "") String actionOperatorRef,
-                                        @RequestParam(defaultValue = "") String actionOperatorLibraryId) {
+                                        @RequestParam(defaultValue = "") String actionOperatorLibraryId,
+                                        @RequestParam(defaultValue = "") String actionHandoffLane,
+                                        @RequestParam(defaultValue = "") String actionHandoffKind,
+                                        @RequestParam(defaultValue = "") String actionHandoffTarget,
+                                        @RequestParam(defaultValue = "") String actionReadinessState,
+                                        @RequestParam(defaultValue = "") String actionArtifactKind) {
         List<GraphDraftSummary> draftSummaries = draftSummaries(tenantId, namespace, environment);
         List<VisualGraphPublicationSummary> publicationSummaries =
                 publicationSummaries(tenantId, namespace, environment);
@@ -266,6 +276,11 @@ public class VisualAssetOverviewController {
                 actionTargetKind,
                 actionOperatorRef,
                 actionOperatorLibraryId,
+                actionHandoffLane,
+                actionHandoffKind,
+                actionHandoffTarget,
+                actionReadinessState,
+                actionArtifactKind,
                 implementationBindings,
                 adapterActivations,
                 rolloutObservations,
@@ -3827,6 +3842,20 @@ public class VisualAssetOverviewController {
                                  String actionOperatorRef) {
         return overview(tenantId, namespace, environment, actionLimit, actionOffset, actionSeverity, actionType,
                 actionTargetKind, actionOperatorRef, "");
+    }
+
+    VisualAssetOverview overview(String tenantId,
+                                 String namespace,
+                                 String environment,
+                                 int actionLimit,
+                                 int actionOffset,
+                                 String actionSeverity,
+                                 String actionType,
+                                 String actionTargetKind,
+                                 String actionOperatorRef,
+                                 String actionOperatorLibraryId) {
+        return overview(tenantId, namespace, environment, actionLimit, actionOffset, actionSeverity, actionType,
+                actionTargetKind, actionOperatorRef, actionOperatorLibraryId, "", "", "", "", "");
     }
 
     VisualRuntimeBindingRequirements runtimeBindingRequirements(String tenantId,

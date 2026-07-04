@@ -450,6 +450,11 @@ const state = {
     targetKind: '',
     operatorRef: '',
     operatorLibraryId: '',
+    handoffLane: '',
+    handoffKind: '',
+    handoffTarget: '',
+    readinessState: '',
+    artifactKind: '',
     offset: 0,
     limit: 12
   },
@@ -1247,6 +1252,21 @@ function visualAssetOverviewUrl(builder = state.builder) {
   if (actionQuery.operatorLibraryId) {
     params.set('actionOperatorLibraryId', actionQuery.operatorLibraryId);
   }
+  if (actionQuery.handoffLane) {
+    params.set('actionHandoffLane', actionQuery.handoffLane);
+  }
+  if (actionQuery.handoffKind) {
+    params.set('actionHandoffKind', actionQuery.handoffKind);
+  }
+  if (actionQuery.handoffTarget) {
+    params.set('actionHandoffTarget', actionQuery.handoffTarget);
+  }
+  if (actionQuery.readinessState) {
+    params.set('actionReadinessState', actionQuery.readinessState);
+  }
+  if (actionQuery.artifactKind) {
+    params.set('actionArtifactKind', actionQuery.artifactKind);
+  }
   return `/api/visual/assets/overview?${params.toString()}`;
 }
 
@@ -1404,6 +1424,11 @@ function normalizeVisualAssetActionQuery(query = {}) {
     targetKind: String(query.targetKind || '').trim().toLowerCase(),
     operatorRef: String(query.operatorRef || '').trim(),
     operatorLibraryId: String(query.operatorLibraryId || '').trim(),
+    handoffLane: String(query.handoffLane || '').trim().toLowerCase(),
+    handoffKind: String(query.handoffKind || '').trim().toLowerCase(),
+    handoffTarget: String(query.handoffTarget || '').trim(),
+    readinessState: String(query.readinessState || '').trim().toLowerCase(),
+    artifactKind: normalizePublicationArtifactKindFilter(query.artifactKind),
     offset: Math.max(0, Number(query.offset || 0) || 0),
     limit
   };
@@ -9411,6 +9436,11 @@ function visualAssetOverviewShouldShowActionQueue(actionQueue) {
       || query.targetKind
       || query.operatorRef
       || query.operatorLibraryId
+      || query.handoffLane
+      || query.handoffKind
+      || query.handoffTarget
+      || query.readinessState
+      || query.artifactKind
       || query.offset);
 }
 
@@ -9517,7 +9547,8 @@ function visualAssetOverviewActionControls(actionQueue) {
   const offset = Number(actionQueue?.offset ?? query.offset) || 0;
   const pageSize = Number(actionQueue?.itemLimit || query.limit || 12) || 12;
   const hasFilter = Boolean(query.severity || query.actionType || query.targetKind || query.operatorRef
-    || query.operatorLibraryId || offset || pageSize !== 12);
+    || query.operatorLibraryId || query.handoffLane || query.handoffKind || query.handoffTarget
+    || query.readinessState || query.artifactKind || offset || pageSize !== 12);
   const canPrevious = offset > 0;
   const canNext = Boolean(actionQueue?.hasMore);
   return `
@@ -9550,6 +9581,36 @@ function visualAssetOverviewActionControls(actionQueue) {
         <span>${escapeHtml('Operator')}</span>
         <select id="visual-asset-action-operator-ref" aria-label="Filter asset actions by operator reference">
           ${visualRuntimeBindingRawOptionMarkup('All operators', actionQueue?.operatorRefCounts, query.operatorRef)}
+        </select>
+      </label>
+      <label>
+        <span>${escapeHtml('Lane')}</span>
+        <select id="visual-asset-action-handoff-lane" aria-label="Filter asset actions by handoff lane">
+          ${visualRuntimeBindingDynamicOptionMarkup('All lanes', actionQueue?.handoffLaneCounts, query.handoffLane)}
+        </select>
+      </label>
+      <label>
+        <span>${escapeHtml('Work')}</span>
+        <select id="visual-asset-action-handoff-kind" aria-label="Filter asset actions by handoff kind">
+          ${visualRuntimeBindingDynamicOptionMarkup('All work', actionQueue?.handoffKindCounts, query.handoffKind)}
+        </select>
+      </label>
+      <label>
+        <span>${escapeHtml('Route')}</span>
+        <select id="visual-asset-action-handoff-target" aria-label="Filter asset actions by handoff target">
+          ${visualRuntimeBindingRawOptionMarkup('All routes', actionQueue?.handoffTargetCounts, query.handoffTarget)}
+        </select>
+      </label>
+      <label>
+        <span>${escapeHtml('State')}</span>
+        <select id="visual-asset-action-readiness-state" aria-label="Filter asset actions by readiness state">
+          ${visualRuntimeBindingDynamicOptionMarkup('All states', actionQueue?.readinessStateCounts, query.readinessState)}
+        </select>
+      </label>
+      <label>
+        <span>${escapeHtml('Artifact')}</span>
+        <select id="visual-asset-action-artifact-kind" aria-label="Filter asset actions by artifact kind">
+          ${visualRuntimeBindingRawOptionMarkup('All artifacts', actionQueue?.artifactKindCounts, query.artifactKind)}
         </select>
       </label>
       <label>
@@ -10539,6 +10600,32 @@ function attachVisualAssetOverviewActionQueryHandlers(actionQueue) {
       offset: 0
     });
   }
+  const handoffLane = $('visual-asset-action-handoff-lane');
+  if (handoffLane) {
+    handoffLane.onchange = () => updateVisualAssetActionQuery({ handoffLane: handoffLane.value, offset: 0 });
+  }
+  const handoffKind = $('visual-asset-action-handoff-kind');
+  if (handoffKind) {
+    handoffKind.onchange = () => updateVisualAssetActionQuery({ handoffKind: handoffKind.value, offset: 0 });
+  }
+  const handoffTarget = $('visual-asset-action-handoff-target');
+  if (handoffTarget) {
+    handoffTarget.onchange = () => updateVisualAssetActionQuery({
+      handoffTarget: handoffTarget.value,
+      offset: 0
+    });
+  }
+  const readinessState = $('visual-asset-action-readiness-state');
+  if (readinessState) {
+    readinessState.onchange = () => updateVisualAssetActionQuery({
+      readinessState: readinessState.value,
+      offset: 0
+    });
+  }
+  const artifactKind = $('visual-asset-action-artifact-kind');
+  if (artifactKind) {
+    artifactKind.onchange = () => updateVisualAssetActionQuery({ artifactKind: artifactKind.value, offset: 0 });
+  }
   const limit = $('visual-asset-action-limit');
   if (limit) {
     limit.onchange = () => updateVisualAssetActionQuery({ limit: Number(limit.value || 12), offset: 0 });
@@ -10561,6 +10648,11 @@ function attachVisualAssetOverviewActionQueryHandlers(actionQueue) {
       targetKind: '',
       operatorRef: '',
       operatorLibraryId: '',
+      handoffLane: '',
+      handoffKind: '',
+      handoffTarget: '',
+      readinessState: '',
+      artifactKind: '',
       offset: 0,
       limit: 12
     });
