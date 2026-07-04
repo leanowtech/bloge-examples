@@ -138,6 +138,24 @@ class OperatorLibraryAdminControllerTest {
                 .andExpect(jsonPath("$.importReadiness.readinessStateCounts['design-only']").value(1))
                 .andExpect(jsonPath("$.importReadiness.runtimeBindingRequirementKeys[0]")
                         .value("RUNTIME_BINDING|operator-library|risk-policy-design|risk:eligibility|executable-lowering|risk:eligibility|"))
+                .andExpect(jsonPath("$.importReadiness.runtimeBindingHandoffGroups[0].groupKey")
+                        .value("RUNTIME_BINDING_GROUP|operator-library|risk-policy-design|operator-platform|operator-implementation|risk:eligibility|executable-lowering"))
+                .andExpect(jsonPath("$.importReadiness.runtimeBindingHandoffGroups[0].operatorLibraryId")
+                        .value("risk-policy-design"))
+                .andExpect(jsonPath("$.importReadiness.runtimeBindingHandoffGroups[0].handoffLane")
+                        .value("operator-platform"))
+                .andExpect(jsonPath("$.importReadiness.runtimeBindingHandoffGroups[0].handoffKind")
+                        .value("operator-implementation"))
+                .andExpect(jsonPath("$.importReadiness.runtimeBindingHandoffGroups[0].handoffTarget")
+                        .value("risk:eligibility"))
+                .andExpect(jsonPath("$.importReadiness.runtimeBindingHandoffGroups[0].bindingKind")
+                        .value("executable-lowering"))
+                .andExpect(jsonPath("$.importReadiness.runtimeBindingHandoffGroups[0].requirementCount")
+                        .value(1))
+                .andExpect(jsonPath("$.importReadiness.runtimeBindingHandoffGroups[0].operatorRefs[0]")
+                        .value("risk:eligibility"))
+                .andExpect(jsonPath("$.importReadiness.runtimeBindingHandoffGroups[0].requirementKeys[0]")
+                        .value("RUNTIME_BINDING|operator-library|risk-policy-design|risk:eligibility|executable-lowering|risk:eligibility|"))
                 .andExpect(jsonPath("$.importReadiness.runtimeBindingRequirements[0].requirementKey")
                         .value("RUNTIME_BINDING|operator-library|risk-policy-design|risk:eligibility|executable-lowering|risk:eligibility|"))
                 .andExpect(jsonPath("$.importReadiness.runtimeBindingRequirements[0].operatorRef")
@@ -160,6 +178,36 @@ class OperatorLibraryAdminControllerTest {
                         .value("Bind a native/resource/subgraph lowering before using this operator in EXECUTABLE graphs."));
 
         assertThat(registry.all()).isEmpty();
+    }
+
+    @Test
+    void importReadinessGroupsRuntimeBindingHandoffBatches() {
+        OperatorLibrary library = VisualCatalogTestSupport.externalBoundaryLibrary();
+        OperatorLibraryProfile profile = OperatorLibraryProfile.from(library);
+
+        OperatorLibraryImportReadiness readiness = OperatorLibraryImportReadiness.from(
+                true,
+                List.of(),
+                OperatorLibraryImpactReview.empty(),
+                profile,
+                library);
+
+        assertThat(readiness.runtimeBindingRequirementCount()).isEqualTo(3);
+        assertThat(readiness.runtimeBindingHandoffGroups()).hasSize(3);
+        assertThat(readiness.runtimeBindingHandoffGroups())
+                .extracting(OperatorLibraryImportReadiness.RuntimeBindingHandoffGroup::groupKey)
+                .containsExactly(
+                        "RUNTIME_BINDING_GROUP|operator-library|external-boundaries|event-runtime|event-subscription|order.submitted|event-source-runtime",
+                        "RUNTIME_BINDING_GROUP|operator-library|external-boundaries|messaging-runtime|message-consumer|risk.commands|message-runtime",
+                        "RUNTIME_BINDING_GROUP|operator-library|external-boundaries|ingress-runtime|webhook-ingress|POST /webhooks/credit-decision|webhook-ingress-runtime");
+        OperatorLibraryImportReadiness.RuntimeBindingHandoffGroup eventGroup =
+                readiness.runtimeBindingHandoffGroups().getFirst();
+        assertThat(eventGroup.requirementCount()).isEqualTo(1);
+        assertThat(eventGroup.operatorRefs()).containsExactly("event:orderSubmitted");
+        assertThat(eventGroup.requirementKeys()).containsExactly(
+                "RUNTIME_BINDING|operator-library|external-boundaries|event:orderSubmitted|event-source-runtime|order.submitted|");
+        assertThat(eventGroup.recommendedAction())
+                .isEqualTo("Bind event subscription for this event type before EXECUTABLE graph publication.");
     }
 
     @Test
@@ -2188,6 +2236,18 @@ class OperatorLibraryAdminControllerTest {
                 .andExpect(jsonPath("$.importReadiness.readinessStateCounts['runtime-blocked']").value(1))
                 .andExpect(jsonPath("$.importReadiness.runtimeBindingRequirementKeys[0]")
                         .value("RUNTIME_BINDING|operator-library|native-missing|risk:visualScorePolicy|runtime-adapter|missingScorePolicy|"))
+                .andExpect(jsonPath("$.importReadiness.runtimeBindingHandoffGroups[0].groupKey")
+                        .value("RUNTIME_BINDING_GROUP|operator-library|native-missing|runtime-platform|runtime-adapter|missingScorePolicy|runtime-adapter"))
+                .andExpect(jsonPath("$.importReadiness.runtimeBindingHandoffGroups[0].handoffLane")
+                        .value("runtime-platform"))
+                .andExpect(jsonPath("$.importReadiness.runtimeBindingHandoffGroups[0].handoffKind")
+                        .value("runtime-adapter"))
+                .andExpect(jsonPath("$.importReadiness.runtimeBindingHandoffGroups[0].handoffTarget")
+                        .value("missingScorePolicy"))
+                .andExpect(jsonPath("$.importReadiness.runtimeBindingHandoffGroups[0].bindingKind")
+                        .value("runtime-adapter"))
+                .andExpect(jsonPath("$.importReadiness.runtimeBindingHandoffGroups[0].operatorRefs[0]")
+                        .value("risk:visualScorePolicy"))
                 .andExpect(jsonPath("$.importReadiness.runtimeBindingRequirements[0].requirementKey")
                         .value("RUNTIME_BINDING|operator-library|native-missing|risk:visualScorePolicy|runtime-adapter|missingScorePolicy|"))
                 .andExpect(jsonPath("$.importReadiness.runtimeBindingRequirements[0].operatorRef")

@@ -5025,6 +5025,7 @@ function renderLibraryImportReadiness(readiness) {
     ? `<span>${escapeHtml(affected.join(' · '))}</span>`
     : '';
   const bindingRequirements = visualRuntimeBindingRequirementCodeRows(readiness.runtimeBindingRequirements);
+  const handoffGroups = renderLibraryImportReadinessHandoffGroups(readiness.runtimeBindingHandoffGroups);
   const bindingCountRows = renderLibraryImportReadinessCountRows(readiness);
   const bindingOverflow = Math.max(
     0,
@@ -5042,6 +5043,8 @@ function renderLibraryImportReadiness(readiness) {
       ${readiness.recommendedAction ? `<small>${escapeHtml(readiness.recommendedAction)}</small>` : ''}
       ${bindingCountRows ? `<small>${escapeHtml('Runtime binding routing')}</small>
         <div class="library-impact-codes">${bindingCountRows}</div>` : ''}
+      ${handoffGroups ? `<small>${escapeHtml('Runtime binding handoff groups')}</small>
+        <div class="library-impact-codes">${handoffGroups}</div>` : ''}
       ${bindingRequirements ? `<small>${escapeHtml('Runtime binding requirements')}</small>
         <div class="library-impact-codes">${bindingRequirements}</div>` : ''}
       ${bindingOverflow ? `<small>+${escapeHtml(bindingOverflow)} more runtime binding requirements</small>` : ''}
@@ -5082,6 +5085,28 @@ function libraryImportReadinessCountRows(label, counts, valueLabel = operatorPal
         <span>${escapeHtml(valueLabel(name))}: ${escapeHtml(count)}</span>
       </div>
     `);
+}
+
+function renderLibraryImportReadinessHandoffGroups(groups) {
+  return (Array.isArray(groups) ? groups : [])
+    .slice(0, 5)
+    .map((group) => {
+      const details = [
+        group.operatorLibraryId ? `library ${group.operatorLibraryId}` : '',
+        group.handoffLane ? operatorPaletteFacetLabel(group.handoffLane) : '',
+        group.handoffKind ? operatorPaletteFacetLabel(group.handoffKind) : '',
+        group.handoffTarget,
+        group.bindingKind ? operatorPaletteFacetLabel(group.bindingKind) : '',
+        `${Number(group.requirementCount || 0)} requirement(s)`,
+        group.recommendedAction
+      ].filter(Boolean).join(' · ');
+      return `
+        <div class="library-impact-code">
+          <strong>${escapeHtml(group.handoffTarget || group.handoffKind || 'handoff group')}</strong>
+          <span>${escapeHtml(details)}</span>
+        </div>
+      `;
+    }).join('');
 }
 
 function renderLibraryImpactPanel(target, diagnostics, impact = null) {
@@ -5858,6 +5883,9 @@ function normalizeOperatorLibraryImportReadiness(importReadiness) {
     operatorLibraryIdCounts: normalizeCountMap(importReadiness.operatorLibraryIdCounts),
     loweringModeCounts: normalizeCountMap(importReadiness.loweringModeCounts),
     readinessStateCounts: normalizeCountMap(importReadiness.readinessStateCounts),
+    runtimeBindingHandoffGroups: Array.isArray(importReadiness.runtimeBindingHandoffGroups)
+      ? importReadiness.runtimeBindingHandoffGroups.map(normalizeOperatorLibraryImportHandoffGroup)
+      : [],
     runtimeBindingRequirements: Array.isArray(importReadiness.runtimeBindingRequirements)
       ? importReadiness.runtimeBindingRequirements.map(normalizeRuntimeBindingRequirement)
       : [],
@@ -5865,6 +5893,23 @@ function normalizeOperatorLibraryImportReadiness(importReadiness) {
       || (Array.isArray(importReadiness.runtimeBindingRequirements)
         ? importReadiness.runtimeBindingRequirements.length
         : 0))
+  };
+}
+
+function normalizeOperatorLibraryImportHandoffGroup(group) {
+  const safe = group && typeof group === 'object' && !Array.isArray(group) ? group : {};
+  return {
+    ...safe,
+    groupKey: String(safe.groupKey || ''),
+    operatorLibraryId: String(safe.operatorLibraryId || ''),
+    handoffLane: String(safe.handoffLane || '').trim().toLowerCase().replaceAll('_', '-'),
+    handoffKind: String(safe.handoffKind || '').trim().toLowerCase().replaceAll('_', '-'),
+    handoffTarget: String(safe.handoffTarget || ''),
+    bindingKind: String(safe.bindingKind || '').trim().toLowerCase().replaceAll('_', '-'),
+    requirementCount: Number(safe.requirementCount || 0),
+    operatorRefs: normalizeStringArray(safe.operatorRefs),
+    requirementKeys: normalizeStringArray(safe.requirementKeys),
+    recommendedAction: String(safe.recommendedAction || '')
   };
 }
 

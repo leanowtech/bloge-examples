@@ -888,9 +888,11 @@ class VisualAuthoringAppJsTest {
                 .contains("importReadiness: importReadiness || null")
                 .contains("renderAsyncApiProjectionReviewPanel($('asyncapi-projection-review'), state.libraryMessage?.projectionReview)")
                 .contains("function renderLibraryImportReadiness(readiness)")
+                .contains("function renderLibraryImportReadinessHandoffGroups(groups)")
                 .contains("function renderLibraryImportReadinessCountRows(readiness)")
                 .contains("function libraryImportReadinessCountRows(label, counts, valueLabel = operatorPaletteFacetLabel)")
                 .contains("function normalizeOperatorLibraryImportReadiness(importReadiness)")
+                .contains("function normalizeOperatorLibraryImportHandoffGroup(group)")
                 .contains("function normalizeCountMap(value)")
                 .contains("bloge.visualOperatorLibraryImportReadiness.v1")
                 .contains("requiresAckWarnings: Boolean(importReadiness.requiresAckWarnings)")
@@ -904,6 +906,7 @@ class VisualAuthoringAppJsTest {
                 .contains("operatorLibraryId: String(requirement?.operatorLibraryId || '')")
                 .contains("libraryImportReadinessCountRows('Library', readiness.operatorLibraryIdCounts")
                 .contains("Runtime binding routing")
+                .contains("Runtime binding handoff groups")
                 .contains("Runtime binding requirements")
                 .contains("request.operationId = current.operationId")
                 .contains("request.channel = current.channel")
@@ -2482,6 +2485,7 @@ class VisualAuthoringAppJsTest {
                   'applyOpenApiOperationSelection',
                   'renderLibraryProfilePanel',
                   'renderLibraryImportReadiness',
+                  'renderLibraryImportReadinessHandoffGroups',
                   'renderLibraryImportReadinessCountRows',
                   'libraryImportReadinessCountRows',
                   'renderLibraryImpactPanel',
@@ -4009,6 +4013,18 @@ operators:
                     operatorLibraryIdCounts: { 'server-reviewed': 1 },
                     loweringModeCounts: { native: 1 },
                     readinessStateCounts: { 'runtime-blocked': 1 },
+                    runtimeBindingHandoffGroups: [{
+                      groupKey: 'RUNTIME_BINDING_GROUP|operator-library|server-reviewed|runtime-platform|runtime-adapter|missingRuntimeBinding|runtime-adapter',
+                      operatorLibraryId: 'server-reviewed',
+                      handoffLane: 'runtime-platform',
+                      handoffKind: 'runtime-adapter',
+                      handoffTarget: 'missingRuntimeBinding',
+                      bindingKind: 'runtime-adapter',
+                      requirementCount: 1,
+                      operatorRefs: ['risk:nativeBinding'],
+                      requirementKeys: ['RUNTIME_BINDING|operator-library|server-reviewed|risk:nativeBinding|native|runtime-adapter|missingRuntimeBinding'],
+                      recommendedAction: 'Bind the missing runtime adapter.'
+                    }],
                     runtimeBindingRequirements: [{
                       operatorRef: 'risk:nativeBinding',
                       operatorLibraryId: 'server-reviewed',
@@ -5559,6 +5575,9 @@ operators:
                   ['library profile html import routing lane', String(importReadinessProfileHtml.includes('Runtime Platform: 1')), 'true'],
                   ['library profile html import routing route', String(importReadinessProfileHtml.includes('missingRuntimeBinding: 1')), 'true'],
                   ['library profile html import routing library', String(importReadinessProfileHtml.includes('server-reviewed: 1')), 'true'],
+                  ['library profile html import handoff groups heading', String(importReadinessProfileHtml.includes('Runtime binding handoff groups')), 'true'],
+                  ['library profile html import handoff groups count', String(importReadinessProfileHtml.includes('1 requirement')), 'true'],
+                  ['library profile html import handoff groups action', String(importReadinessProfileHtml.includes('Bind the missing runtime adapter.')), 'true'],
                   ['library profile html import binding heading', String(importReadinessProfileHtml.includes('Runtime binding requirements')), 'true'],
                   ['library profile html import binding label', String(importReadinessProfileHtml.includes('Native Binding')), 'true'],
                   ['library profile html import binding target', String(importReadinessProfileHtml.includes('missingRuntimeBinding')), 'true'],
@@ -6928,6 +6947,7 @@ operators:
                   'renderContractPortGroup',
                   'renderLibraryProfilePanel',
                   'renderLibraryImportReadiness',
+                  'renderLibraryImportReadinessHandoffGroups',
                   'renderLibraryImportReadinessCountRows',
                   'libraryImportReadinessCountRows',
                   'libraryProfileLevel',

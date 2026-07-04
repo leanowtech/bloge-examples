@@ -1231,6 +1231,10 @@ such as `design-only-importable`, `runtime-binding-required`,
 and renders import-time Runtime Binding Requirements so missing executable
 lowering, runtime adapter, worker, tool, event, message, webhook, streaming, or
 durable bindings can be routed before the library is broadly used in drafts.
+The same readiness response now also groups those requirements into stable
+`runtimeBindingHandoffGroups[]` by owner library, handoff lane/kind/target, and
+binding kind, so external runtime-plane teams can claim a batch of missing
+bindings without reimplementing multi-field grouping client-side.
 if authors keep editing the JSON after validation, the panel falls back to a local
 instant preview until the next server validation refreshes the authoritative profile.
 That validation is registry-aware:
@@ -1802,7 +1806,7 @@ Seven `.bloge` graphs live in `src/main/resources/bloge/gateway/`:
 | `ResourceDesignContractValidator` | Blocks invalid resource authoring schemas and raw secret examples before resource contracts enter the virtual operator catalog |
 | `OperatorLibrary` | User-provided operator catalog bundle with schema-aware `OperatorDefinition` entries |
 | `OperatorLibraryExportBundle` | Portable operator-library package with source identity, current library snapshot, latest registry revision evidence, and export-time validation/profile/impact/readiness result |
-| `OperatorLibraryImportReadiness` | Server-derived operator-library import decision summary, separating importable/design-only/runtime-binding/governance/force/catalog-repair states from raw diagnostics and listing per-operator import-time runtime binding requirements with stable keys plus binding/handoff/owner/source/lowering/readiness distribution counts |
+| `OperatorLibraryImportReadiness` | Server-derived operator-library import decision summary, separating importable/design-only/runtime-binding/governance/force/catalog-repair states from raw diagnostics and listing per-operator import-time runtime binding requirements with stable keys, grouped runtime-plane handoff batches, plus binding/handoff/owner/source/lowering/readiness distribution counts |
 | `OperatorLibraryImportResult` | Target-environment result for importing an operator-library export bundle, including source identity, import decision, target latest revision, and target preflight validation/profile/impact/readiness evidence |
 | `OperatorLibraryRevision` | Immutable create/replace/delete/restore audit snapshot for user-provided operator-library registry changes |
 | `DatabaseOperatorLibraryRegistry` | H2-backed user operator-library registry with current catalog storage plus immutable revision snapshots, so imported operator catalogs and their governance history survive restart |

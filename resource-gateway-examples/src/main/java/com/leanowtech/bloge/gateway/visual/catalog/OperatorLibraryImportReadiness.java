@@ -58,6 +58,7 @@ import java.util.function.Function;
  * @param loweringModeCounts runtime binding requirement counts by lowering mode
  * @param readinessStateCounts runtime binding requirement counts by operator readiness state
  * @param runtimeBindingRequirementKeys stable keys aligned with runtimeBindingRequirements
+ * @param runtimeBindingHandoffGroups grouped runtime-plane handoff batches for imported operators
  * @param runtimeBindingRequirements per-operator runtime binding requirements before executable use
  */
 public record OperatorLibraryImportReadiness(
@@ -97,6 +98,7 @@ public record OperatorLibraryImportReadiness(
         Map<String, Integer> loweringModeCounts,
         Map<String, Integer> readinessStateCounts,
         List<String> runtimeBindingRequirementKeys,
+        List<RuntimeBindingHandoffGroup> runtimeBindingHandoffGroups,
         List<RuntimeBindingRequirement> runtimeBindingRequirements
 ) {
     public static final String SCHEMA_VERSION = "bloge.visualOperatorLibraryImportReadiness.v1";
@@ -178,6 +180,9 @@ public record OperatorLibraryImportReadiness(
                 .map(RuntimeBindingRequirement::requirementKey)
                 .toList()
                 : immutableStringList(runtimeBindingRequirementKeys);
+        runtimeBindingHandoffGroups = runtimeBindingHandoffGroups == null
+                ? runtimeBindingHandoffGroups(runtimeBindingRequirements)
+                : immutableRuntimeBindingHandoffGroups(runtimeBindingHandoffGroups);
     }
 
     /**
@@ -301,6 +306,7 @@ public record OperatorLibraryImportReadiness(
                 runtimeBindingRequirements.stream()
                         .map(RuntimeBindingRequirement::requirementKey)
                         .toList(),
+                null,
                 runtimeBindingRequirements
         );
     }
@@ -483,6 +489,155 @@ public record OperatorLibraryImportReadiness(
             normalized.put(key, count);
         }
         return normalized.isEmpty() ? Map.of() : Collections.unmodifiableMap(normalized);
+    }
+
+    private static List<RuntimeBindingHandoffGroup> runtimeBindingHandoffGroups(
+            List<RuntimeBindingRequirement> requirements) {
+        if (requirements == null || requirements.isEmpty()) {
+            return List.of();
+        }
+        Map<String, MutableRuntimeBindingHandoffGroup> groups = new LinkedHashMap<>();
+        for (RuntimeBindingRequirement requirement : requirements) {
+            if (requirement == null) {
+                continue;
+            }
+            String groupKey = RuntimeBindingHandoffGroup.stableKey(
+                    requirement.operatorLibraryId(),
+                    requirement.handoffLane(),
+                    requirement.handoffKind(),
+                    requirement.handoffTarget(),
+                    requirement.bindingKind());
+            groups.computeIfAbsent(groupKey,
+                            ignored -> new MutableRuntimeBindingHandoffGroup(
+                                    groupKey,
+                                    requirement.operatorLibraryId(),
+                                    requirement.handoffLane(),
+                                    requirement.handoffKind(),
+                                    requirement.handoffTarget(),
+                                    requirement.bindingKind(),
+                                    requirement.recommendedAction()))
+                    .add(requirement);
+        }
+        return Collections.unmodifiableList(groups.values().stream()
+                .map(MutableRuntimeBindingHandoffGroup::toGroup)
+                .toList());
+    }
+
+    private static List<RuntimeBindingHandoffGroup> immutableRuntimeBindingHandoffGroups(
+            List<RuntimeBindingHandoffGroup> groups) {
+        if (groups == null || groups.isEmpty()) {
+            return List.of();
+        }
+        return Collections.unmodifiableList(groups.stream()
+                .filter(group -> group != null)
+                .toList());
+    }
+
+    private static final class MutableRuntimeBindingHandoffGroup {
+        private final String groupKey;
+        private final String operatorLibraryId;
+        private final String handoffLane;
+        private final String handoffKind;
+        private final String handoffTarget;
+        private final String bindingKind;
+        private final String recommendedAction;
+        private final Set<String> operatorRefs = new LinkedHashSet<>();
+        private final List<String> requirementKeys = new ArrayList<>();
+
+        private MutableRuntimeBindingHandoffGroup(String groupKey,
+                                                  String operatorLibraryId,
+                                                  String handoffLane,
+                                                  String handoffKind,
+                                                  String handoffTarget,
+                                                  String bindingKind,
+                                                  String recommendedAction) {
+            this.groupKey = groupKey;
+            this.operatorLibraryId = operatorLibraryId;
+            this.handoffLane = handoffLane;
+            this.handoffKind = handoffKind;
+            this.handoffTarget = handoffTarget;
+            this.bindingKind = bindingKind;
+            this.recommendedAction = recommendedAction;
+        }
+
+        private void add(RuntimeBindingRequirement requirement) {
+            if (requirement.operatorRef() != null && !requirement.operatorRef().isBlank()) {
+                operatorRefs.add(requirement.operatorRef());
+            }
+            if (requirement.requirementKey() != null && !requirement.requirementKey().isBlank()) {
+                requirementKeys.add(requirement.requirementKey());
+            }
+        }
+
+        private RuntimeBindingHandoffGroup toGroup() {
+            return new RuntimeBindingHandoffGroup(
+                    groupKey,
+                    operatorLibraryId,
+                    handoffLane,
+                    handoffKind,
+                    handoffTarget,
+                    bindingKind,
+                    requirementKeys.size(),
+                    List.copyOf(operatorRefs),
+                    List.copyOf(requirementKeys),
+                    recommendedAction);
+        }
+    }
+
+    /**
+     * Runtime-plane handoff batch for imported operator runtime gaps.
+     *
+     * @param groupKey stable group key
+     * @param operatorLibraryId owner operator-library id
+     * @param handoffLane runtime-plane responsibility lane
+     * @param handoffKind runtime-plane work kind
+     * @param handoffTarget runtime-plane routing target
+     * @param bindingKind missing runtime binding kind
+     * @param requirementCount number of requirements in this batch
+     * @param operatorRefs affected operator refs
+     * @param requirementKeys stable requirement keys in this batch
+     * @param recommendedAction human-readable next action for the batch
+     */
+    public record RuntimeBindingHandoffGroup(
+            String groupKey,
+            String operatorLibraryId,
+            String handoffLane,
+            String handoffKind,
+            String handoffTarget,
+            String bindingKind,
+            int requirementCount,
+            List<String> operatorRefs,
+            List<String> requirementKeys,
+            String recommendedAction
+    ) {
+        public RuntimeBindingHandoffGroup {
+            operatorLibraryId = operatorLibraryId == null ? "" : operatorLibraryId;
+            handoffLane = normalizeFacetValue(handoffLane);
+            handoffKind = normalizeFacetValue(handoffKind);
+            handoffTarget = handoffTarget == null ? "" : handoffTarget;
+            bindingKind = normalizeFacetValue(bindingKind);
+            groupKey = groupKey == null || groupKey.isBlank()
+                    ? stableKey(operatorLibraryId, handoffLane, handoffKind, handoffTarget, bindingKind)
+                    : groupKey;
+            requirementCount = Math.max(0, requirementCount);
+            operatorRefs = immutableStringList(operatorRefs);
+            requirementKeys = immutableStringList(requirementKeys);
+            recommendedAction = recommendedAction == null ? "" : recommendedAction;
+        }
+
+        private static String stableKey(String operatorLibraryId,
+                                        String handoffLane,
+                                        String handoffKind,
+                                        String handoffTarget,
+                                        String bindingKind) {
+            return "RUNTIME_BINDING_GROUP|operator-library|%s|%s|%s|%s|%s"
+                    .formatted(
+                            operatorLibraryId == null ? "" : operatorLibraryId,
+                            normalizeFacetValue(handoffLane),
+                            normalizeFacetValue(handoffKind),
+                            handoffTarget == null ? "" : handoffTarget,
+                            normalizeFacetValue(bindingKind));
+        }
     }
 
     /**
