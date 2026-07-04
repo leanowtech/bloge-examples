@@ -3003,6 +3003,9 @@ class VisualAuthoringAppJsTest {
                   'renderNodeConnectabilityServerStatus',
                   'renderNodeConnectabilityServerControls',
                   'nodeConnectabilityServerWindowSummary',
+                  'nodeConnectabilityServerFacetSummary',
+                  'connectionCandidateFacetLabel',
+                  'topConnectionCandidateFacet',
                   'nodeConnectabilityServerWindowStats',
                   'nodeConnectabilityServerWindowLabel',
                   'nodeConnectabilityServerWindowFor',
@@ -3015,6 +3018,7 @@ class VisualAuthoringAppJsTest {
                   'nodeConnectabilityServerStatusKey',
                   'normalizeConnectionCandidateStatus',
                   'normalizeConnectionCandidateStatusCounts',
+                  'normalizeConnectionCandidateFacetCounts',
                   'compactStringHash',
                   'nodeConnectabilityTargetAppliesToSource',
                   'nodeConnectabilityTargetKind',
@@ -5457,6 +5461,15 @@ operators:
 	                  },
 	                  totalCandidateCount: 3,
 	                  statusCounts: { ready: 1, blocked: 2, wired: 0 },
+	                  facetCounts: {
+	                    surface: { input: 2 },
+	                    schemaType: { integer: 1, object: 1 },
+	                    operatorRef: { 'risk:audit': 2 },
+	                    operatorLibraryId: { 'risk-policy': 2 },
+	                    runtimeReadiness: { 'design-only': 2 },
+	                    loweringMode: { design: 2 },
+	                    sourceKind: { 'user-library': 2 }
+	                  },
 	                  offset: 1,
                   acceptedCount: 1,
                   rejectedCount: 2,
@@ -5635,6 +5648,8 @@ operators:
                 const serverReadyTarget = serverScoreConnectability.availableTargets
                   .find((entry) => entry.target.nodeId === 'auditNode' && entry.target.path === 'score');
                 const serverConnectabilityPanel = context.renderNodeConnectabilityPanel(context.state.builder.nodes[1]);
+                const serverFacetSummary =
+                  context.nodeConnectabilityServerFacetSummary(context.state.nodeConnectabilityServer);
                 const truncatedServerStatus = context.renderNodeConnectabilityServerStatus({
                   nodeId: 'riskNode',
                   draftKey: context.nodeConnectabilityServerDraftKey('riskNode', context.state.builder),
@@ -5653,6 +5668,11 @@ operators:
                           path: scoreConnectability.source.path
                         },
                         totalCandidateCount: 300,
+                        facetCounts: {
+                          schemaType: { integer: 300 },
+                          operatorLibraryId: { 'risk-policy': 300 },
+                          runtimeReadiness: { 'design-only': 300 }
+                        },
                         offset: 0,
                         acceptedCount: 250,
                         rejectedCount: 50,
@@ -6563,6 +6583,10 @@ operators:
                   ['connection candidates status ready count', serverCandidateResult.statusCounts.ready, 1],
                   ['connection candidates status blocked count', serverCandidateResult.statusCounts.blocked, 2],
                   ['connection candidates status wired count', serverCandidateResult.statusCounts.wired, 0],
+                  ['connection candidates facet schema integer', serverCandidateResult.facetCounts.schemaType.integer, 1],
+                  ['connection candidates facet schema object', serverCandidateResult.facetCounts.schemaType.object, 1],
+                  ['connection candidates facet library', serverCandidateResult.facetCounts.operatorLibraryId['risk-policy'], 2],
+                  ['connection candidates facet runtime', serverCandidateResult.facetCounts.runtimeReadiness['design-only'], 2],
                   ['connection candidates target status', serverCandidateResult.candidates[0].targetStatus, 'ready'],
                   ['connection candidates explanation source type', serverCandidateResult.candidates[0].explanation.sourceSchemaType, 'integer'],
                   ['connection candidates explanation target type', serverCandidateResult.candidates[0].explanation.targetSchemaType, 'integer'],
@@ -6610,8 +6634,11 @@ operators:
                   ['server connectability panel includes visible detail class', String(serverConnectabilityPanel.includes('node-connectability-chip-detail')), 'true'],
                   ['server connectability panel includes visible schema detail', String(serverConnectabilityPanel.includes('integer -&gt; integer')), 'true'],
                   ['server connectability panel includes visible runtime debt', String(serverConnectabilityPanel.includes('1 target runtime binding requirement')), 'true'],
+                  ['server connectability facet summary', serverFacetSummary, 'Facets · schema integer 1 +1 · runtime design-only 2 · library risk-policy 2'],
+                  ['server connectability panel includes facet summary', String(serverConnectabilityPanel.includes('Facets')), 'true'],
                   ['server connectability truncated status includes partial window', String(truncatedServerStatus.includes('partial server window 1-250 of 300')), 'true'],
                   ['server connectability truncated status warns local fallback', String(truncatedServerStatus.includes('local fallback beyond server window')), 'true'],
+                  ['server connectability truncated status includes facet summary', String(truncatedServerStatus.includes('schema integer 300')), 'true'],
                   ['server connectability page request keys differ', String(pageOneRequestKey !== pageTwoRequestKey), 'true'],
                   ['server connectability page one has next', pageOneStats.hasNext, true],
                   ['server connectability page one has no previous', pageOneStats.hasPrevious, false],

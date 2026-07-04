@@ -15733,7 +15733,11 @@ function renderNodeConnectabilityServerStatus(serverState) {
   }
   const resultCount = Object.keys(serverState.resultsBySourceKey || {}).length;
   const windowSummary = nodeConnectabilityServerWindowSummary(serverState);
-  return `<span class="node-connectability-chip success">Server candidates synced · ${escapeHtml(resultCount)} source${resultCount === 1 ? '' : 's'}${escapeHtml(windowSummary)}</span>`;
+  const facetSummary = nodeConnectabilityServerFacetSummary(serverState);
+  return [
+    `<span class="node-connectability-chip success">Server candidates synced · ${escapeHtml(resultCount)} source${resultCount === 1 ? '' : 's'}${escapeHtml(windowSummary)}</span>`,
+    facetSummary ? `<span class="node-connectability-chip info">${escapeHtml(facetSummary)}</span>` : ''
+  ].join('');
 }
 
 function renderNodeConnectabilityServerControls(serverState) {
@@ -15789,6 +15793,54 @@ function nodeConnectabilityServerWindowSummary(serverState) {
   const moreWindows = windows.length > visibleWindows.length ? ` + ${windows.length - visibleWindows.length} more` : '';
   const filteredSummary = filtered ? `; filter ${total}/${unfilteredTotal} matches` : '';
   return ` · partial server window ${visibleWindows.join(', ')}${moreWindows}${filteredSummary}; local fallback beyond server window`;
+}
+
+function nodeConnectabilityServerFacetSummary(serverState) {
+  const results = Object.values(serverState?.resultsBySourceKey || {}).filter(Boolean);
+  if (!results.length) {
+    return '';
+  }
+  const aggregate = {};
+  for (const result of results) {
+    const facets = normalizeConnectionCandidateFacetCounts(result.facetCounts);
+    for (const [facet, counts] of Object.entries(facets)) {
+      if (!aggregate[facet]) {
+        aggregate[facet] = {};
+      }
+      for (const [key, count] of Object.entries(counts)) {
+        aggregate[facet][key] = numericCount(aggregate[facet][key], 0) + numericCount(count, 0);
+      }
+    }
+  }
+  const labels = [
+    connectionCandidateFacetLabel('schema', aggregate.schemaType),
+    connectionCandidateFacetLabel('runtime', aggregate.runtimeReadiness),
+    connectionCandidateFacetLabel('library', aggregate.operatorLibraryId)
+  ].filter(Boolean);
+  return labels.length ? `Facets · ${labels.join(' · ')}` : '';
+}
+
+function connectionCandidateFacetLabel(label, counts = {}) {
+  const top = topConnectionCandidateFacet(counts);
+  if (!top) {
+    return '';
+  }
+  const extra = top.extraCount ? ` +${top.extraCount}` : '';
+  return `${label} ${top.key} ${top.count}${extra}`;
+}
+
+function topConnectionCandidateFacet(counts = {}) {
+  const entries = Object.entries(normalizeCountMap(counts))
+    .sort((left, right) => right[1] - left[1] || left[0].localeCompare(right[0]));
+  if (!entries.length) {
+    return null;
+  }
+  const [key, count] = entries[0];
+  return {
+    key,
+    count,
+    extraCount: entries.length - 1
+  };
 }
 
 function nodeConnectabilityServerWindowStats(serverState) {
@@ -26498,6 +26550,7 @@ function normalizeConnectionCandidatesResult(payload, source = null, request = {
     totalCandidateCount: numericCount(payload?.totalCandidateCount, 0),
     unfilteredCandidateCount: numericCount(payload?.unfilteredCandidateCount, payload?.totalCandidateCount),
     statusCounts: normalizeConnectionCandidateStatusCounts(payload?.statusCounts),
+    facetCounts: normalizeConnectionCandidateFacetCounts(payload?.facetCounts),
     offset: numericCount(payload?.offset, 0),
     acceptedCount: numericCount(
       payload?.acceptedCount,
@@ -26535,6 +26588,15 @@ function normalizeConnectionCandidateStatusCounts(source = {}) {
     blocked: numericCount(counts.blocked, 0),
     wired: numericCount(counts.wired, 0)
   };
+}
+
+function normalizeConnectionCandidateFacetCounts(source = {}) {
+  if (!source || typeof source !== 'object' || Array.isArray(source)) {
+    return {};
+  }
+  return Object.fromEntries(Object.entries(source)
+    .map(([facet, counts]) => [String(facet || '').trim(), normalizeCountMap(counts)])
+    .filter(([facet, counts]) => facet && Object.keys(counts).length));
 }
 
 function normalizeConnectionCandidate(candidate, kind = 'data') {

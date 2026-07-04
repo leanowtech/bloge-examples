@@ -18,6 +18,7 @@ import java.util.Map;
  * @param totalCandidateCount enumerated targets after request query/status filtering and before accepted/rejected filtering
  * @param unfilteredCandidateCount enumerated targets before request query/status filtering
  * @param statusCounts ready/blocked/wired target counts after query filtering and before status filtering
+ * @param facetCounts candidate facet counts after query/status filtering and before paging
  * @param acceptedCount accepted target count after request query/status filtering and before display limiting
  * @param rejectedCount rejected target count after request query/status filtering and before display limiting
  * @param displayedCount returned candidate row count
@@ -33,6 +34,7 @@ public record VisualConnectionCandidatesResult(
         int totalCandidateCount,
         int unfilteredCandidateCount,
         Map<String, Integer> statusCounts,
+        Map<String, Map<String, Integer>> facetCounts,
         int acceptedCount,
         int rejectedCount,
         int displayedCount,
@@ -53,6 +55,7 @@ public record VisualConnectionCandidatesResult(
         totalCandidateCount = Math.max(0, totalCandidateCount);
         unfilteredCandidateCount = Math.max(totalCandidateCount, unfilteredCandidateCount);
         statusCounts = normalizeStatusCounts(statusCounts);
+        facetCounts = normalizeFacetCounts(facetCounts);
         acceptedCount = Math.max(0, acceptedCount);
         rejectedCount = Math.max(0, rejectedCount);
         candidates = candidates == null ? List.of() : List.copyOf(candidates);
@@ -74,7 +77,7 @@ public record VisualConnectionCandidatesResult(
                                             List<ConnectionCandidate> candidates,
                                             List<VisualDiagnostic> diagnostics) {
         this(schemaVersion, source, kind, 0, totalCandidateCount, totalCandidateCount,
-                Map.of(), acceptedCount, rejectedCount, displayedCount,
+                Map.of(), Map.of(), acceptedCount, rejectedCount, displayedCount,
                 truncated, candidates, diagnostics);
     }
 
@@ -93,7 +96,27 @@ public record VisualConnectionCandidatesResult(
                                             List<ConnectionCandidate> candidates,
                                             List<VisualDiagnostic> diagnostics) {
         this(schemaVersion, source, kind, offset, totalCandidateCount, totalCandidateCount,
-                Map.of(), acceptedCount, rejectedCount, displayedCount, truncated, candidates, diagnostics);
+                Map.of(), Map.of(), acceptedCount, rejectedCount, displayedCount, truncated, candidates, diagnostics);
+    }
+
+    /**
+     * Backward-compatible constructor for callers created before facet counts existed.
+     */
+    public VisualConnectionCandidatesResult(String schemaVersion,
+                                            GraphDraft.Endpoint source,
+                                            String kind,
+                                            int offset,
+                                            int totalCandidateCount,
+                                            int unfilteredCandidateCount,
+                                            Map<String, Integer> statusCounts,
+                                            int acceptedCount,
+                                            int rejectedCount,
+                                            int displayedCount,
+                                            boolean truncated,
+                                            List<ConnectionCandidate> candidates,
+                                            List<VisualDiagnostic> diagnostics) {
+        this(schemaVersion, source, kind, offset, totalCandidateCount, unfilteredCandidateCount,
+                statusCounts, Map.of(), acceptedCount, rejectedCount, displayedCount, truncated, candidates, diagnostics);
     }
 
     /**
@@ -112,7 +135,7 @@ public record VisualConnectionCandidatesResult(
                                             List<ConnectionCandidate> candidates,
                                             List<VisualDiagnostic> diagnostics) {
         this(schemaVersion, source, kind, offset, totalCandidateCount, unfilteredCandidateCount,
-                Map.of(), acceptedCount, rejectedCount, displayedCount, truncated, candidates, diagnostics);
+                Map.of(), Map.of(), acceptedCount, rejectedCount, displayedCount, truncated, candidates, diagnostics);
     }
 
     private static Map<String, Integer> normalizeStatusCounts(Map<String, Integer> source) {
@@ -128,6 +151,37 @@ public record VisualConnectionCandidatesResult(
 
     private static void addStatusCount(Map<String, Integer> counts, Map<String, Integer> source, String key) {
         counts.put(key, Math.max(0, source.getOrDefault(key, 0)));
+    }
+
+    private static Map<String, Map<String, Integer>> normalizeFacetCounts(
+            Map<String, Map<String, Integer>> source) {
+        if (source == null || source.isEmpty()) {
+            return Map.of();
+        }
+        Map<String, Map<String, Integer>> counts = new LinkedHashMap<>();
+        source.forEach((facet, bucket) -> {
+            String facetKey = facet == null ? "" : facet.trim();
+            Map<String, Integer> normalizedBucket = normalizeCountBucket(bucket);
+            if (!facetKey.isBlank() && !normalizedBucket.isEmpty()) {
+                counts.put(facetKey, normalizedBucket);
+            }
+        });
+        return counts.isEmpty() ? Map.of() : Collections.unmodifiableMap(counts);
+    }
+
+    private static Map<String, Integer> normalizeCountBucket(Map<String, Integer> source) {
+        if (source == null || source.isEmpty()) {
+            return Map.of();
+        }
+        Map<String, Integer> counts = new LinkedHashMap<>();
+        source.forEach((key, count) -> {
+            String normalizedKey = key == null ? "" : key.trim();
+            int normalizedCount = Math.max(0, count == null ? 0 : count);
+            if (!normalizedKey.isBlank() && normalizedCount > 0) {
+                counts.put(normalizedKey, normalizedCount);
+            }
+        });
+        return counts.isEmpty() ? Map.of() : Collections.unmodifiableMap(counts);
     }
 
     /**

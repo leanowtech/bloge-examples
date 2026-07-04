@@ -310,7 +310,8 @@ public class VisualConnectionCheckService {
         List<ConnectionCandidateTarget> targets = filtered.targets();
         int unfilteredCandidateCount = allTargets.size();
         if (request.includeRejected() && targets.size() > FULL_CANDIDATE_CHECK_LIMIT) {
-            return pagedCandidates(request, targets, unfilteredCandidateCount, filtered.statusCounts());
+            return pagedCandidates(request, targets, unfilteredCandidateCount,
+                    filtered.statusCounts(), filtered.facetCounts());
         }
         List<VisualConnectionCandidatesResult.ConnectionCandidate> candidates = new ArrayList<>();
         for (ConnectionCandidateTarget target : targets) {
@@ -340,6 +341,7 @@ public class VisualConnectionCheckService {
                 candidates.size(),
                 unfilteredCandidateCount,
                 filtered.statusCounts(),
+                filtered.facetCounts(),
                 acceptedCount,
                 rejectedCount,
                 window.size(),
@@ -352,7 +354,8 @@ public class VisualConnectionCheckService {
     private VisualConnectionCandidatesResult pagedCandidates(VisualConnectionCandidatesRequest request,
                                                              List<ConnectionCandidateTarget> targets,
                                                              int unfilteredCandidateCount,
-                                                             Map<String, Integer> statusCounts) {
+                                                             Map<String, Integer> statusCounts,
+                                                             Map<String, Map<String, Integer>> facetCounts) {
         int acceptedCount = 0;
         for (ConnectionCandidateTarget target : targets) {
             if (fastCandidateAccepted(request, target)) {
@@ -374,6 +377,7 @@ public class VisualConnectionCheckService {
                 targets.size(),
                 unfilteredCandidateCount,
                 statusCounts,
+                facetCounts,
                 acceptedCount,
                 rejectedCount,
                 window.size(),
@@ -538,12 +542,14 @@ public class VisualConnectionCheckService {
         }
         Map<String, Integer> statusCounts = candidateStatusCounts(request, queryFiltered);
         if (request.targetStatus().isBlank() || queryFiltered.isEmpty()) {
-            return new CandidateTargetFilterResult(queryFiltered, statusCounts);
+            return new CandidateTargetFilterResult(queryFiltered, statusCounts,
+                    candidateFacetCounts(request, queryFiltered));
         }
         List<ConnectionCandidateTarget> statusFiltered = queryFiltered.stream()
                 .filter(target -> request.targetStatus().equals(fastCandidateStatus(request, target)))
                 .toList();
-        return new CandidateTargetFilterResult(statusFiltered, statusCounts);
+        return new CandidateTargetFilterResult(statusFiltered, statusCounts,
+                candidateFacetCounts(request, statusFiltered));
     }
 
     private Map<String, Integer> candidateStatusCounts(VisualConnectionCandidatesRequest request,
@@ -556,6 +562,51 @@ public class VisualConnectionCheckService {
             counts.merge(fastCandidateStatus(request, target), 1, Integer::sum);
         }
         return counts;
+    }
+
+    private Map<String, Map<String, Integer>> candidateFacetCounts(VisualConnectionCandidatesRequest request,
+                                                                   List<ConnectionCandidateTarget> targets) {
+        Map<String, Map<String, Integer>> counts = new LinkedHashMap<>();
+        if (targets == null || targets.isEmpty()) {
+            return counts;
+        }
+        Map<String, String> libraryIds = operatorLibraryIdsByOperatorRef();
+        for (ConnectionCandidateTarget target : targets) {
+            incrementFacet(counts, "surface", target.surface());
+            Map<String, Object> targetSchema = selectedUnionBranchSchema(
+                    endpointTargetSchema(request.draft(), target.endpoint(), target.surface()),
+                    request.targetUnionBranch()
+            );
+            incrementFacet(counts, "schemaType",
+                    schemaTypeLabel(targetSchema, controlSurface(target.surface()) ? target.surface() : ""));
+            Optional<OperatorDefinition> operator = catalog.find(target.node().operatorRef());
+            if (operator.isEmpty()) {
+                incrementFacet(counts, "operatorRef", target.node().operatorRef());
+                continue;
+            }
+            OperatorDefinition definition = operator.get();
+            incrementFacet(counts, "operatorRef", definition.operatorRef());
+            incrementFacet(counts, "operatorLibraryId", libraryIds.get(definition.operatorRef()));
+            incrementFacet(counts, "sourceKind", definition.source() == null ? "" : definition.source().kind());
+            incrementFacet(counts, "loweringMode", definition.lowering() == null ? "" : definition.lowering().mode());
+            incrementFacet(counts, "runtimeReadiness",
+                    runtimeReadinessFacetValue(definition.runtimeReadiness()));
+        }
+        return counts;
+    }
+
+    private static String runtimeReadinessFacetValue(OperatorDefinition.RuntimeReadiness readiness) {
+        return readiness == null
+                ? ""
+                : readiness.state().trim().toLowerCase(Locale.ROOT).replace('_', '-');
+    }
+
+    private static void incrementFacet(Map<String, Map<String, Integer>> counts, String facet, String value) {
+        if (facet == null || facet.isBlank() || value == null || value.isBlank()) {
+            return;
+        }
+        counts.computeIfAbsent(facet, ignored -> new LinkedHashMap<>())
+                .merge(value, 1, Integer::sum);
     }
 
     private boolean candidateTargetMatchesQuery(VisualConnectionCandidatesRequest request,
@@ -976,7 +1027,8 @@ public class VisualConnectionCheckService {
 
     private record CandidateTargetFilterResult(
             List<ConnectionCandidateTarget> targets,
-            Map<String, Integer> statusCounts
+            Map<String, Integer> statusCounts,
+            Map<String, Map<String, Integer>> facetCounts
     ) {
     }
 

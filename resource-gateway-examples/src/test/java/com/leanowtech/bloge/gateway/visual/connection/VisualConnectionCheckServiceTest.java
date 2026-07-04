@@ -335,6 +335,14 @@ class VisualConnectionCheckServiceTest {
         assertThat(result.statusCounts()).containsEntry("ready", 1);
         assertThat(result.statusCounts()).containsEntry("blocked", 0);
         assertThat(result.statusCounts()).containsEntry("wired", 0);
+        assertThat(result.facetCounts().get("surface")).containsEntry("input", 1);
+        assertThat(result.facetCounts().get("schemaType")).containsEntry("integer", 1);
+        assertThat(result.facetCounts().get("operatorRef")).containsEntry("risk:scoreReview", 1);
+        assertThat(result.facetCounts().get("operatorLibraryId"))
+                .containsEntry("risk-score-large-connectability", 1);
+        assertThat(result.facetCounts().get("runtimeReadiness")).containsEntry("design-only", 1);
+        assertThat(result.facetCounts().get("sourceKind")).containsEntry("user-library", 1);
+        assertThat(result.facetCounts().get("loweringMode")).containsEntry("design", 1);
         assertThat(result.offset()).isZero();
         assertThat(result.displayedCount()).isEqualTo(1);
         assertThat(result.truncated()).isFalse();
@@ -351,6 +359,12 @@ class VisualConnectionCheckServiceTest {
         assertThat(runtimeDebt.statusCounts()).containsEntry("ready", 260);
         assertThat(runtimeDebt.statusCounts()).containsEntry("blocked", 0);
         assertThat(runtimeDebt.statusCounts()).containsEntry("wired", 0);
+        assertThat(runtimeDebt.facetCounts().get("surface")).containsEntry("input", 260);
+        assertThat(runtimeDebt.facetCounts().get("schemaType")).containsEntry("integer", 260);
+        assertThat(runtimeDebt.facetCounts().get("operatorRef")).containsEntry("risk:scoreReview", 260);
+        assertThat(runtimeDebt.facetCounts().get("operatorLibraryId"))
+                .containsEntry("risk-score-large-connectability", 260);
+        assertThat(runtimeDebt.facetCounts().get("runtimeReadiness")).containsEntry("design-only", 260);
         assertThat(runtimeDebt.displayedCount()).isEqualTo(5);
         assertThat(runtimeDebt.truncated()).isTrue();
         assertThat(runtimeDebt.candidates()).allSatisfy(candidate ->
@@ -406,6 +420,8 @@ class VisualConnectionCheckServiceTest {
         assertThat(wired.statusCounts()).containsEntry("ready", 259);
         assertThat(wired.statusCounts()).containsEntry("blocked", 0);
         assertThat(wired.statusCounts()).containsEntry("wired", 1);
+        assertThat(wired.facetCounts().get("operatorRef")).containsEntry("risk:scoreReview", 1);
+        assertThat(wired.facetCounts().get("runtimeReadiness")).containsEntry("design-only", 1);
         assertThat(wired.candidates()).singleElement().satisfies(candidate -> {
             assertThat(candidate.targetNodeId()).isEqualTo("riskScoreReview260");
             assertThat(candidate.targetStatus()).isEqualTo("wired");
@@ -419,6 +435,8 @@ class VisualConnectionCheckServiceTest {
         assertThat(ready.statusCounts()).containsEntry("ready", 259);
         assertThat(ready.statusCounts()).containsEntry("blocked", 0);
         assertThat(ready.statusCounts()).containsEntry("wired", 1);
+        assertThat(ready.facetCounts().get("operatorRef")).containsEntry("risk:scoreReview", 259);
+        assertThat(ready.facetCounts().get("runtimeReadiness")).containsEntry("design-only", 259);
         assertThat(ready.candidates()).hasSize(5);
         assertThat(ready.candidates()).allSatisfy(candidate -> {
             assertThat(candidate.targetStatus()).isEqualTo("ready");
