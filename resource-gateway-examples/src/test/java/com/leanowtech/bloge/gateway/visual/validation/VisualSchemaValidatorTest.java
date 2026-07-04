@@ -439,6 +439,55 @@ class VisualSchemaValidatorTest {
     }
 
     @Test
+    void acceptsTupleSchemasThatForbidAdditionalItemsWithBooleanItems() {
+        Map<String, Object> schema = Map.of(
+                "type", "array",
+                "prefixItems", List.of(
+                        Map.of("type", "string"),
+                        Map.of("type", "integer")
+                ),
+                "items", false,
+                "default", List.of("customerId", 7)
+        );
+
+        assertThat(VisualSchemaValidator.validateSchema(schema, "/schema")).isEmpty();
+        assertThat(VisualSchemaValidator.validateValue(
+                new SchemaEnvelope(SchemaEnvelope.JSON_SCHEMA, "2020-12", schema),
+                List.of("customerId", 7),
+                "/context"
+        )).isEmpty();
+
+        var diagnostics = VisualSchemaValidator.validateValue(
+                new SchemaEnvelope(SchemaEnvelope.JSON_SCHEMA, "2020-12", schema),
+                List.of("customerId", 7, "extra"),
+                "/context"
+        );
+
+        assertThat(diagnostics)
+                .anySatisfy(diagnostic -> {
+                    assertThat(diagnostic.code()).isEqualTo("visual.context.arrayConstraintMismatch");
+                    assertThat(diagnostic.message()).contains("items");
+                });
+    }
+
+    @Test
+    void validatesBooleanItemsPolicyForDefaults() {
+        Map<String, Object> schema = Map.of(
+                "type", "array",
+                "prefixItems", List.of(Map.of("type", "string")),
+                "items", false,
+                "default", List.of("risk", "extra")
+        );
+
+        assertThat(VisualSchemaValidator.validateSchema(schema, "/schema"))
+                .anySatisfy(diagnostic -> {
+                    assertThat(diagnostic.code()).isEqualTo("visual.schema.defaultConstraintMismatch");
+                    assertThat(diagnostic.target()).isEqualTo("/schema/default");
+                    assertThat(diagnostic.message()).contains("items");
+                });
+    }
+
+    @Test
     void validatesUnevaluatedItemsSchemaForDefaults() {
         Map<String, Object> schema = Map.of(
                 "type", "array",

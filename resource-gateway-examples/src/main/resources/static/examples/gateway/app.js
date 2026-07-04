@@ -5843,7 +5843,8 @@ function schemaDynamicSurfaceCount(schema) {
   if (schema.items && typeof schema.items === 'object' && !Array.isArray(schema.items)) {
     count += schemaDynamicSurfaceCount(schema.items);
   }
-  if (schema.unevaluatedItems && typeof schema.unevaluatedItems === 'object'
+  if (!Object.prototype.hasOwnProperty.call(schema || {}, 'items')
+      && schema.unevaluatedItems && typeof schema.unevaluatedItems === 'object'
       && !Array.isArray(schema.unevaluatedItems)) {
     count += 1 + schemaDynamicSurfaceCount(schema.unevaluatedItems);
   }
@@ -17010,11 +17011,7 @@ function arraySchemaFieldDescriptors(schema, prefix, prefixDslPathSafe, branchSe
   const itemsSchema = schema?.items && typeof schema.items === 'object' && !Array.isArray(schema.items)
     ? schema.items
     : null;
-  const residualItemsSchema = itemsSchema || (
-    schema?.unevaluatedItems && typeof schema.unevaluatedItems === 'object' && !Array.isArray(schema.unevaluatedItems)
-      ? schema.unevaluatedItems
-      : null
-  );
+  const residualItemsSchema = itemsSchema || residualArrayItemSchema(schema);
   if (residualItemsSchema) {
     const nextUniformIndex = prefixItems.length;
     if (!itemDescriptors.some((item) => item.index === nextUniformIndex)) {
@@ -20024,10 +20021,12 @@ function validateSchemaStructure(schema, path, diagnostics) {
     const items = schema?.items;
     if (items && typeof items === 'object' && !Array.isArray(items)) {
       validateSchemaStructure(items, `${path}/items`, diagnostics);
+    } else if (typeof items === 'boolean') {
+      // Boolean schemas are supported only for array residual item policy.
     } else if (Object.prototype.hasOwnProperty.call(schema || {}, 'items')) {
       diagnostics.push(graphInputSchemaDiagnostic(
         'visual.schema.arrayItemsMissing',
-        'Array schema items must be a schema object.',
+        'Array schema items must be a schema object or boolean.',
         `${path}/items`
       ));
     } else if (!hasSupportedArrayItemContract(schema)) {
@@ -23322,6 +23321,9 @@ function hasSupportedArrayItemContract(schema) {
   if (schemaItemsSchema(schema)) {
     return true;
   }
+  if (typeof schema?.items === 'boolean') {
+    return true;
+  }
   if (schemaPrefixItems(schema).length) {
     return true;
   }
@@ -23359,6 +23361,9 @@ function arrayValueMatchesSchema(value, schema) {
     return false;
   }
   if (!arrayValueMatchesContains(value, schema)) {
+    return false;
+  }
+  if (!arrayValueMatchesItemsPolicy(value, schema)) {
     return false;
   }
   if (!arrayValueMatchesUnevaluatedItems(value, schema)) {
@@ -23417,6 +23422,9 @@ function residualArrayItemSchema(schema) {
   if (items) {
     return items;
   }
+  if (Object.prototype.hasOwnProperty.call(schema || {}, 'items')) {
+    return null;
+  }
   const residual = unevaluatedArrayItemsPolicy(schema);
   return residual && typeof residual === 'object' && !Array.isArray(residual)
     ? residual
@@ -23425,11 +23433,18 @@ function residualArrayItemSchema(schema) {
 
 function unevaluatedArrayItemsPolicy(schema) {
   if (!schema
-      || schemaItemsSchema(schema)
+      || Object.prototype.hasOwnProperty.call(schema, 'items')
       || !Object.prototype.hasOwnProperty.call(schema, 'unevaluatedItems')) {
     return null;
   }
   return schema.unevaluatedItems;
+}
+
+function arrayValueMatchesItemsPolicy(value, schema) {
+  if (!Array.isArray(value) || schema?.items !== false) {
+    return true;
+  }
+  return value.length <= schemaPrefixItems(schema).length;
 }
 
 function arrayValueMatchesUnevaluatedItems(value, schema) {
@@ -23686,11 +23701,14 @@ function schemaMinItems(schema) {
 
 function schemaMaxItems(schema) {
   const explicit = explicitSchemaMaxItems(schema);
-  if (explicit !== null) {
-    return explicit;
+  const residualMaximum = schema?.items === false || unevaluatedArrayItemsPolicy(schema) === false
+    ? schemaPrefixItems(schema).length
+    : null;
+  if (explicit !== null && residualMaximum !== null) {
+    return Math.min(explicit, residualMaximum);
   }
-  if (unevaluatedArrayItemsPolicy(schema) === false) {
-    return schemaPrefixItems(schema).length;
+  if (explicit !== null || residualMaximum !== null) {
+    return explicit === null ? residualMaximum : explicit;
   }
   const values = schemaEnumValues(schema);
   if (values.length && values.every(Array.isArray)) {

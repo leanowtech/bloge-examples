@@ -276,11 +276,19 @@ public final class VisualSchemaValidator {
                     path));
             return;
         }
+        if (!arrayValueMatchesItemsPolicy(value, schema)) {
+            diagnostics.add(VisualDiagnostic.error("visual.context.arrayConstraintMismatch",
+                    "Runtime array at '%s' does not satisfy graph inputSchema items constraint."
+                            .formatted(path),
+                    path));
+            return;
+        }
         if (!arrayValueMatchesUnevaluatedItems(value, schema)) {
             diagnostics.add(VisualDiagnostic.error("visual.context.arrayConstraintMismatch",
                     "Runtime array at '%s' does not satisfy graph inputSchema unevaluatedItems constraint."
                             .formatted(path),
                     path));
+            return;
         }
         for (int i = 0; i < value.size(); i++) {
             Map<String, Object> itemSchemaForIndex = arrayItemSchemaForIndex(schema, i);
@@ -442,9 +450,11 @@ public final class VisualSchemaValidator {
             Object items = schema.get("items");
             if (items instanceof Map<?, ?> nestedItems) {
                 validateSchema((Map<String, Object>) nestedItems, path + "/items", diagnostics);
+            } else if (items instanceof Boolean) {
+                // Boolean schemas are supported only for array residual item policy.
             } else if (schema.containsKey("items")) {
                 diagnostics.add(VisualDiagnostic.error("visual.schema.arrayItemsMissing",
-                        "Array schema items must be a schema object.",
+                        "Array schema items must be a schema object or boolean.",
                         path + "/items"));
             } else if (!hasSupportedArrayItemContract(schema)) {
                 diagnostics.add(VisualDiagnostic.error("visual.schema.arrayItemsMissing",
@@ -812,6 +822,11 @@ public final class VisualSchemaValidator {
 	            if (!arrayValueMatchesContains(list, schema)) {
 	                diagnostics.add(VisualDiagnostic.error("visual.schema.defaultConstraintMismatch",
 	                        "Schema default must satisfy array contains constraints.",
+	                        path));
+	            }
+	            if (!arrayValueMatchesItemsPolicy(list, schema)) {
+	                diagnostics.add(VisualDiagnostic.error("visual.schema.defaultConstraintMismatch",
+	                        "Schema default must satisfy array items constraints.",
 	                        path));
 	            }
 	            if (!arrayValueMatchesUnevaluatedItems(list, schema)) {
@@ -1786,6 +1801,9 @@ public final class VisualSchemaValidator {
         if (schema.get("items") instanceof Map<?, ?>) {
             return true;
         }
+        if (schema.get("items") instanceof Boolean) {
+            return true;
+        }
         if (!prefixItemsOf(schema).isEmpty()) {
             return true;
         }
@@ -2030,6 +2048,9 @@ public final class VisualSchemaValidator {
 	        if (!arrayValueMatchesContains(list, schema)) {
 	            return false;
 	        }
+	        if (!arrayValueMatchesItemsPolicy(list, schema)) {
+	            return false;
+	        }
 	        if (!arrayValueMatchesUnevaluatedItems(list, schema)) {
 	            return false;
 	        }
@@ -2041,6 +2062,14 @@ public final class VisualSchemaValidator {
 	        }
 	        return true;
 	    }
+
+    private static boolean arrayValueMatchesItemsPolicy(List<?> value, Map<String, Object> schema) {
+        Object items = schema.get("items");
+        if (!Boolean.FALSE.equals(items)) {
+            return true;
+        }
+        return value.size() <= prefixItemsOf(schema).size();
+    }
 
     private static boolean arrayValueMatchesUnevaluatedItems(List<?> value, Map<String, Object> schema) {
         Object residual = unevaluatedArrayItemsPolicy(schema);
@@ -2069,7 +2098,7 @@ public final class VisualSchemaValidator {
     }
 
     private static Object unevaluatedArrayItemsPolicy(Map<String, Object> schema) {
-        if (schema.get("items") instanceof Map<?, ?> || !schema.containsKey("unevaluatedItems")) {
+        if (schema.containsKey("items") || !schema.containsKey("unevaluatedItems")) {
             return null;
         }
         return schema.get("unevaluatedItems");

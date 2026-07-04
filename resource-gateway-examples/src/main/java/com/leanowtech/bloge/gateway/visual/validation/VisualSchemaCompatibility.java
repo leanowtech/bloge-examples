@@ -1964,6 +1964,9 @@ public final class VisualSchemaCompatibility {
 	        if (!arrayValueMatchesContains(list, schema)) {
 	            return false;
 	        }
+	        if (!arrayValueMatchesItemsPolicy(list, schema)) {
+	            return false;
+	        }
 	        if (!arrayValueMatchesUnevaluatedItems(list, schema)) {
 	            return false;
 	        }
@@ -1984,6 +1987,13 @@ public final class VisualSchemaCompatibility {
 	        return residualArrayItemSchema(schema);
 	    }
 
+    private static boolean arrayValueMatchesItemsPolicy(List<?> value, Map<String, Object> schema) {
+        if (!Boolean.FALSE.equals(schema.get("items"))) {
+            return true;
+        }
+        return value.size() <= prefixItemsOf(schema).size();
+    }
+
     private static Map<String, Object> residualArrayItemSchema(Map<String, Object> schema) {
         if (schema == null) {
             return null;
@@ -1997,7 +2007,7 @@ public final class VisualSchemaCompatibility {
     }
 
     private static Object unevaluatedArrayItemsPolicy(Map<String, Object> schema) {
-        if (schema == null || schema.get("items") instanceof Map<?, ?> || !schema.containsKey("unevaluatedItems")) {
+        if (schema == null || schema.containsKey("items") || !schema.containsKey("unevaluatedItems")) {
             return null;
         }
         return schema.get("unevaluatedItems");
@@ -2298,11 +2308,17 @@ public final class VisualSchemaCompatibility {
 
 	    private static Long arrayMaxItems(Map<String, Object> schema) {
 	        Long explicit = arrayItemBoundary(schema.get("maxItems"));
-	        if (explicit != null) {
-	            return explicit;
+	        Long residualMaximum = null;
+	        if (Boolean.FALSE.equals(schema.get("items"))) {
+	            residualMaximum = (long) prefixItemsOf(schema).size();
+	        } else if (Boolean.FALSE.equals(unevaluatedArrayItemsPolicy(schema))) {
+	            residualMaximum = (long) prefixItemsOf(schema).size();
 	        }
-	        if (Boolean.FALSE.equals(unevaluatedArrayItemsPolicy(schema))) {
-	            return (long) prefixItemsOf(schema).size();
+	        if (explicit != null && residualMaximum != null) {
+	            return Math.min(explicit, residualMaximum);
+	        }
+	        if (explicit != null || residualMaximum != null) {
+	            return explicit == null ? residualMaximum : explicit;
 	        }
 	        List<Object> values = enumValues(schema);
 	        if (!values.isEmpty() && values.stream().allMatch(List.class::isInstance)) {

@@ -6575,6 +6575,7 @@ operators:
                   'schemaValueMatchesAllOf',
                   'schemaValueMatchesConditional',
                   'schemaValueMatchesType',
+                  'arrayValueMatchesItemsPolicy',
                   'arrayValueMatchesUnevaluatedItems',
                   'rawSchemaType',
                   'nullableTypePrimary',
@@ -7047,10 +7048,12 @@ operators:
                   'schemaMaxItems',
                   'explicitSchemaMinItems',
                   'explicitSchemaMaxItems',
+                  'arrayItemBoundsCompatibilityIssue',
                   'schemaPrefixItems',
                   'schemaItemsSchema',
                   'residualArrayItemSchema',
                   'unevaluatedArrayItemsPolicy',
+                  'arrayValueMatchesItemsPolicy',
                   'arrayValueMatchesUnevaluatedItems',
                   'schemaContainsSchema',
                   'schemaMinContains',
@@ -7081,7 +7084,6 @@ operators:
                 context.stringLengthCompatibilityIssue = () => '';
                 context.arrayPrefixItemsCompatibilityIssue = () => '';
                 context.arrayItemsCompatibilityIssue = () => '';
-                context.arrayItemBoundsCompatibilityIssue = () => '';
                 context.arrayUniqueItemsCompatibilityIssue = () => '';
                 context.arrayContainsCompatibilityIssue = () => '';
                 context.numericValueMatchesBounds = () => true;
@@ -7368,6 +7370,24 @@ operators:
                   prefixItems: [{ type: 'string' }],
                   unevaluatedItems: false
                 });
+                const targetItemsFalseIssue = context.schemaCompatibilityIssue({
+                  type: 'array',
+                  prefixItems: [{ type: 'string' }],
+                  items: { type: 'string' }
+                }, {
+                  type: 'array',
+                  prefixItems: [{ type: 'string' }],
+                  items: false
+                });
+                const targetItemsFalseSafe = context.schemaCompatibilityIssue({
+                  type: 'array',
+                  prefixItems: [{ type: 'string' }],
+                  items: false
+                }, {
+                  type: 'array',
+                  prefixItems: [{ type: 'string' }],
+                  items: false
+                });
 
                 const checks = [
                   ['residual optional collision path', String(residualIssue.includes("at 'score'")), 'true'],
@@ -7408,7 +7428,9 @@ operators:
                   ['allOf accepted value', String(allOfValueAccepted), 'true'],
                   ['allOf rejected value', String(allOfValueRejected), 'false'],
                   ['target unevaluatedItems blocks residual source', targetUnevaluatedItemsIssue, 'target unevaluatedItems=false allows no residual array items but source may produce items beyond prefixItems[1]'],
-                  ['target unevaluatedItems bounded source safe', targetUnevaluatedItemsSafe, '']
+                  ['target unevaluatedItems bounded source safe', targetUnevaluatedItemsSafe, ''],
+                  ['target items=false blocks residual source', targetItemsFalseIssue, 'target requires item count <= 1 but source has no maxItems'],
+                  ['target items=false bounded source safe', targetItemsFalseSafe, '']
                 ];
 
                 for (const [label, actual, expected] of checks) {

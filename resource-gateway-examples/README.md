@@ -424,8 +424,9 @@ such as `["string", "null"]`, pure local `$defs` references such as
 `{"$ref":"#/$defs/Customer"}`, strict object `properties`,
 `additionalProperties`, `required`, enum value-domain, `const` shape checks,
 numeric bound/`multipleOf` validation, string length validation, string
-pattern/format validation, array item-count validation, `uniqueItems` validation, array `prefixItems` validation, bounded
-array `unevaluatedItems` validation, object
+pattern/format validation, array item-count validation, `uniqueItems` validation,
+array `prefixItems` validation, boolean array `items` residual policy validation,
+bounded array `unevaluatedItems` validation, object
 property-count validation, object `propertyNames` validation, and object
 `patternProperties`, `dependentRequired`, `dependentSchemas`, and
 `unevaluatedProperties` validation, array `contains`
@@ -490,7 +491,7 @@ nodes such as branch routers cannot be selected as graph outputs.
 Runtime output extraction uses the same dotted path semantics, including array
 index segments such as `items.0.id`, so a schema-valid selection resolves to the
 same payload fragment authors saw on the canvas.
-The browser composer also enumerates schema-safe array item paths from `items`,
+The browser composer also enumerates schema-safe array item paths from schema-object `items`,
 `prefixItems`, and schema-object `unevaluatedItems` residual item contracts as
 draggable handles and graph-output path options.
 Structured `contextPath` and `nodePath` bindings that target schema array item
@@ -1154,8 +1155,10 @@ dependencies with `dependentRequired` or whole-object dependent subschemas with
 `unevaluatedProperties`; `if`/`then`/`else` conditionals may express cross-field
 requirements when each branch remains inside the same enforced schema subset.
 Supported array schemas may constrain tuple-like leading
-items with `prefixItems`, forbid or constrain residual items with boolean or
-schema-object `unevaluatedItems`, and may require matching elements with `contains` plus `minContains`/`maxContains`. Built-in bootstrap
+items with `prefixItems`, constrain residual items with schema-object `items`,
+forbid residual items with `items=false`, allow unconstrained residual items with
+`items=true`, forbid or constrain residual items with boolean or schema-object
+`unevaluatedItems` when `items` is absent, and may require matching elements with `contains` plus `minContains`/`maxContains`. Built-in bootstrap
 contracts pass the same gate, so resource-backed virtual operators do not enter
 the visual catalog with weaker schema guarantees than imported user operators.
 Built-in and descriptor-projected operator schemas are covered by the same
@@ -1577,8 +1580,8 @@ also match their declared type/kind, enum/`const` domain, numeric bounds and
 array item-count constraints, `uniqueItems` constraints, object property-count
 constraints, object `propertyNames`, `patternProperties`, and
 `dependentRequired`/`dependentSchemas` constraints, `if`/`then`/`else`
-conditional branches, array `prefixItems`, `contains`, and `unevaluatedItems`
-constraints, required object properties, array item schema, and `additionalProperties`/`unevaluatedProperties` policy so
+conditional branches, array `prefixItems`, `items`, `contains`, and
+`unevaluatedItems` constraints, required object properties, array item schema, and `additionalProperties`/`unevaluatedProperties` policy so
 canvas-generated default node config cannot start invalid. The browser consumes both root object defaults
 and nested field-level defaults from `configSchema` when a node is dragged from
 the palette. Schema `enum` and `const` values are held to the same array item
@@ -1804,7 +1807,7 @@ Seven `.bloge` graphs live in `src/main/resources/bloge/gateway/`:
 | `GraphDraftImportResult` | Import response contract with source bundle/draft identity, stored or non-stored target preview draft identity, target-environment compatibility/persistence diagnostics, validation/readiness/action-readiness, source dependency report, target dependency report, target runtime-binding handoff requirements and stable keys, and legacy target `dependencyReport` |
 | `DatabaseGraphDraftRepository` | H2-backed graph draft repository with revision assignment, immutable revision history, expected-revision guarded updates, deletion audit snapshots, and retained history for deleted-draft recovery |
 | `GraphDraftValidator` | Validates the `bloge.visualGraphDraft.v1` draft contract, `bloge.visualLayout.v1` presentation contract including node/edge coverage, operator references, operator fingerprint drift, operator scope policy, request-response runtime capability gates for streaming/durable/remote-worker/AI-tool/event-source/message-handler/webhook operators, warning-gated runtime-blocked DESIGN authoring for schema-valid streaming/durable drafts, schema-only design operator authoring, non-idempotent side-effect and secret-backed execution governance warnings, graph input `contextPath` bindings, binding kind and edge kind allow-lists, literal constants, expression references, required schema inputs, node config against `configSchema`, port-aware node bindings, DSL-safe source/target/output port segments, typed data edges, explicit dependency edges, branch route edges, edge identity/connection uniqueness, data edge/semantic dependency consistency, DAG shape, output schema selection, and output-reachability warnings for dangling nodes |
-| `VisualConnectionCheckService` | Reuses draft validation to accept or reject one proposed canvas edge before the browser writes a binding, including schema, source/target port-segment, path diagnostics, a stable decision/replacement/runtime-binding summary, and candidate draft validation/readiness/action-readiness; also exposes source-endpoint target candidate discovery, including array item and tuple `prefixItems` target paths, so a canvas can ask the server for accepted/blocked/non-executable drop targets before authoring the edge |
+| `VisualConnectionCheckService` | Reuses draft validation to accept or reject one proposed canvas edge before the browser writes a binding, including schema, source/target port-segment, path diagnostics, a stable decision/replacement/runtime-binding summary, and candidate draft validation/readiness/action-readiness; also exposes source-endpoint target candidate discovery, including schema-object array `items`, tuple `prefixItems`, and schema-object `unevaluatedItems` residual target paths, so a canvas can ask the server for accepted/blocked/non-executable drop targets before authoring the edge |
 | `GraphDraftDslGenerator` | Lowers visual drafts into executable BLOGE DSL, and deterministically blocks schema-only design operators until runtime lowering is bound |
 | `VisualGraphRunService` | Reuses the dynamic BLOGE runner to validate draft input context, compile, and execute visual drafts or frozen publications while returning draft or frozen-publication validation/readiness/action-readiness |
 | `InputCoercingOperatorRegistry` | Runtime adapter used by the dynamic runner to coerce visual DSL map inputs into Java DTO/record operator inputs before execution |

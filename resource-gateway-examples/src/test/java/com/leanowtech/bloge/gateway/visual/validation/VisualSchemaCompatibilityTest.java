@@ -180,6 +180,33 @@ class VisualSchemaCompatibilityTest {
     }
 
     @Test
+    void matchesArrayValuesAgainstBooleanItemsPolicy() {
+        Map<String, Object> schema = tupleSchemaWithItems(false);
+
+        assertThat(VisualSchemaCompatibility.valueMatchesSchema(List.of("risk", 7), schema)).isTrue();
+        assertThat(VisualSchemaCompatibility.valueMatchesSchema(List.of("risk", 7, "extra"), schema)).isFalse();
+        assertThat(VisualSchemaCompatibility.schemaCompatibilityIssue(schema, schema)).isEmpty();
+    }
+
+    @Test
+    void rejectsSourceResidualItemsWhenTargetForbidsItems() {
+        Map<String, Object> source = Map.of(
+                "type", "array",
+                "prefixItems", List.of(Map.of("type", "string")),
+                "items", Map.of("type", "string")
+        );
+        Map<String, Object> target = Map.of(
+                "type", "array",
+                "prefixItems", List.of(Map.of("type", "string")),
+                "items", false
+        );
+
+        assertThat(VisualSchemaCompatibility.schemaCompatibilityIssue(source, target))
+                .hasValueSatisfying(reason -> assertThat(reason)
+                        .contains("target requires item count <= 1"));
+    }
+
+    @Test
     void rejectsSourceResidualItemsWhenTargetForbidsUnevaluatedItems() {
         Map<String, Object> source = Map.of(
                 "type", "array",
@@ -743,6 +770,17 @@ class VisualSchemaCompatibilityTest {
                 Map.of("type", "integer")
         ));
         schema.put("unevaluatedItems", unevaluatedItems);
+        return schema;
+    }
+
+    private static Map<String, Object> tupleSchemaWithItems(Object items) {
+        Map<String, Object> schema = new LinkedHashMap<>();
+        schema.put("type", "array");
+        schema.put("prefixItems", List.of(
+                Map.of("type", "string"),
+                Map.of("type", "integer")
+        ));
+        schema.put("items", items);
         return schema;
     }
 

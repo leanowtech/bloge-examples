@@ -1214,6 +1214,9 @@ visual conditional schema 支持：三个关键字的值必须是 schema object�
 `visual.schema.conditionalInvalid`；运行值、默认值和静态 literal 按条件语义应用
 `then` 或 `else`；schema-to-schema 兼容只在 source 能证明命中或避开 `if` 时按单分支放行，
 无法证明时要求所有可能分支都兼容。
+array `items` 支持 schema object 或 boolean residual policy：schema object 约束
+`prefixItems` 之后的剩余项，`items=false` 禁止剩余项，`items=true` 表示剩余项无约束；
+非 schema object / boolean 的 `items` 会返回 `visual.schema.arrayItemsMissing`。
 受限 array `unevaluatedItems` 也在同一 visual subset 中：只接受 boolean 或 schema object，
 否则返回 `visual.schema.unevaluatedItemsInvalid`；当 `items` 不存在时，
 `unevaluatedItems=false` 禁止 `prefixItems` 后的 residual items，schema object 则约束这些 residual items，
@@ -2466,7 +2469,7 @@ Content-Type: application/json
 后再报错；它需要服务端返回当前 draft 中哪些目标端点可接、哪些目标端点被
 schema/DAG/policy 阻断以及阻断原因。该接口是只读候选发现：服务端从当前
 catalog 中的 target operator input/config schema 派生候选 target endpoint，
-包括对象字段、数组 item 代表下标、tuple `prefixItems` 下标路径和 schema-object
+包括对象字段、schema-object array `items` 代表下标、tuple `prefixItems` 下标路径和 schema-object
 `unevaluatedItems` residual item 代表路径（例如
 `items.0`、`items.1.score`），
 再对每个候选复用 `/api/visual/connections/check` 的权威预检路径。它不保存
@@ -2936,7 +2939,7 @@ flowchart TD
 - 类型不兼容且没有 adapter。
 - 纯引用 expression 的 source schema 与 target schema 不兼容。
 - 纯引用 config expression 的 source schema 与目标 `configSchema` 不兼容。
-- `array<T>` 到 `array<U>` 时 `items` / `prefixItems` / 受限 `unevaluatedItems` residual item schema 不兼容。
+- `array<T>` 到 `array<U>` 时 schema-object/boolean `items` / `prefixItems` / 受限 `unevaluatedItems` residual item schema 不兼容。
 - node config 不满足 operator `configSchema`。
 - graph output selection 不满足 output port schema。
 - draft operator fingerprint 与当前 catalog fingerprint 不一致。

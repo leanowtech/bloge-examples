@@ -532,7 +532,7 @@ schema 证明 `applicant.score` 存在，但 `objectTemplate` 不能只绑定
 | `decimal` | `integer` | 警告/需 transform | 可能丢精度 |
 | `string` | `enum` | 禁止/需 transform | 没有来源值域证明，不能隐式接入枚举输入 |
 | `object` | `object` | 结构化检查 | required 字段必须满足 |
-| `array<T>` | `array<U>` | 检查 `items` / `prefixItems` / 受限 `unevaluatedItems` residual item 兼容 | foreach 场景重要 |
+| `array<T>` | `array<U>` | 检查 schema-object/boolean `items` / `prefixItems` / 受限 `unevaluatedItems` residual item 兼容 | foreach 场景重要 |
 | `allOf` | 任意 / 任意 | 保守交集检查 | target `allOf` 必须逐 branch 满足；source `allOf` 只有在 base 或显式 typed / finite-domain constituent 可证明安全时放行 |
 | `oneOf`/`anyOf` | 任意 | 保守检查，可显式消歧 | source union 必须所有分支可赋值；target `anyOf` 至少一个分支可接；target `oneOf` 默认必须唯一分支可接；binding 可用 `targetUnionBranch` 指定 root target branch |
 | `if`/`then`/`else` | 任意 | 保守条件检查 | `if` 命中时应用 `then`，否则应用 `else`；source 能证明命中或不命中时只检查对应分支，无法证明时所有可能分支都必须兼容 |
@@ -540,7 +540,7 @@ schema 证明 `applicant.score` 存在，但 `objectTemplate` 不能只绑定
 | `unknown` | 任意 | 警告 | 可继续草稿，不可无条件发布 |
 
 resource-gateway 示例当前已在 binding 和 edge 校验中递归检查 object required
-字段、array `items` / `prefixItems` / residual `unevaluatedItems` 兼容性和 enum 值域集合：target object 的 required 字段必须
+字段、array schema-object/boolean `items` / `prefixItems` / residual `unevaluatedItems` 兼容性和 enum 值域集合：target object 的 required 字段必须
 能从 source schema 中证明为 required 且类型兼容，source enum values 必须是
 target enum values 的子集，普通 `string` 不能直接接入 enum input。正式 draft
 还会校验 data edge 与语义依赖一致，包含 `nodePath` binding 和 config expression
@@ -552,7 +552,7 @@ name 是否能作为 BLOGE DSL path segment，
 未知 binding kind 会在 `GraphDraftValidator` 被阻断，不能落到 codegen 的 literal fallback
 绕过 target schema gate。
 浏览器侧的 connection hint 和 source picker 也要复用这些关键规则，至少覆盖
-object required 字段证明、array item / tuple prefix / residual `unevaluatedItems` 递归兼容、enum 值域子集、`allOf` 分支结构校验、runtime value matching 与保守交集、`oneOf`/`anyOf`
+object required 字段证明、array item / boolean residual item policy / tuple prefix / residual `unevaluatedItems` 递归兼容、enum 值域子集、`allOf` 分支结构校验、runtime value matching 与保守交集、`oneOf`/`anyOf`
 union 的保守兼容提示、`if`/`then`/`else` 条件分支的保守 value/compatibility hint，以及普通 `string` 不能隐式接入 enum，减少画布交互与服务端裁决之间的断层。拖线落点和
 inspector source picker 写入 binding 前都必须调用服务端 connection preview
 gate，本地 hint 不能成为最终授权。
@@ -918,7 +918,7 @@ fingerprint snapshot；普通保存和 PATCH 仍保留既有 snapshot，避免�
 | `POST` | `/api/visual/drafts/{draftId}/operator-fingerprints/rebase` | 当前已实现：显式刷新选中节点或全部节点的 service-managed operator fingerprint snapshot，使用 `expectedRevision` 防并发覆盖，并对未知节点/当前 catalog 缺失算子返回结构化 diagnostics |
 | `DELETE` | `/api/visual/drafts/{draftId}` | 当前已实现：删除 current draft 指针但保留 immutable revision history，写入 deletion audit snapshot，并允许后续从 retained revision 恢复 |
 | `POST` | `/api/visual/connections/check` | 当前已实现：服务端权威预检候选 data/dependency/route/config/context 连接；响应的 `diagnostics` 只保留候选连接相关问题，`summary` 以 `bloge.visualConnectionCheckSummary.v1` 暴露 accepted、binding key、diagnostic counts、replacement effects 和 candidate readiness 摘要，`validation/readiness/actionReadiness` 表达加上候选连接后的完整 candidate draft 状态 |
-| `POST` | `/api/visual/connections/candidates` | 当前已实现：给定 draft 和 source endpoint，从当前 catalog 的 target input/config schema 派生可拖拽目标候选，覆盖对象字段、数组 item、tuple `prefixItems` 下标路径和 schema-object `unevaluatedItems` residual item 代表路径，并对每个候选复用 `/check` 权威预检，返回 `bloge.visualConnectionCandidates.v1` 的 accepted/rejected counts、target filter/window、候选 target、bindingKey、summary、schema explanation 和阻断 diagnostics；默认只返回 accepted rows，`includeRejected=true` 时可用于 inspector 展示 blocked reasons |
+| `POST` | `/api/visual/connections/candidates` | 当前已实现：给定 draft 和 source endpoint，从当前 catalog 的 target input/config schema 派生可拖拽目标候选，覆盖对象字段、schema-object array `items`、tuple `prefixItems` 下标路径和 schema-object `unevaluatedItems` residual item 代表路径，并对每个候选复用 `/check` 权威预检，返回 `bloge.visualConnectionCandidates.v1` 的 accepted/rejected counts、target filter/window、候选 target、bindingKey、summary、schema explanation 和阻断 diagnostics；默认只返回 accepted rows，`includeRejected=true` 时可用于 inspector 展示 blocked reasons |
 | `POST` | `/api/visual/drafts/{draftId}/validate` | 增量或全量校验；当前实现的 transient `/api/visual/drafts/validate` 返回 `valid`、`diagnostics`、`bloge.visualGraphReadiness.v1` 图级 runtime/design readiness、节点级 runtime binding requirements 和 `bloge.visualGraphActionReadiness.v1` 动作准入 |
 | `POST` | `/api/visual/drafts/{draftId}/compile` | 生成 DSL 并编译；响应携带本次 draft validation/readiness/actionReadiness，供客户端在 compiler 或 design-only blocking 后继续约束发布路径 |
 | `POST` | `/api/visual/drafts/{draftId}/run` | 使用测试 context 运行；响应携带本次 draft validation/readiness/actionReadiness、diagnostics 和 run history id |
