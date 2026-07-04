@@ -260,28 +260,30 @@ public record VisualRuntimeEvidenceWindow(
                                         List<VisualExecutableLoweringIntegration> executableLoweringIntegrations,
                                         Map<String, String> operatorLibraryIdsByOperatorRef) {
         ArrayList<Entry> entries = new ArrayList<>();
+        Map<String, String> snapshotOwnerIdsByBindingId = bindingSnapshotOwnerIdsByBindingId(implementationBindings);
+        Map<String, String> snapshotOwnerIdsByOperatorRef = bindingSnapshotOwnerIdsByOperatorRef(implementationBindings);
         for (VisualRuntimeBindingImplementationBinding binding : safeList(implementationBindings)) {
             if (binding != null) {
-                entries.add(Entry.from(binding, operatorLibraryId(binding.operatorRef(),
-                        operatorLibraryIdsByOperatorRef)));
+                entries.add(Entry.from(binding, operatorLibraryId(binding.operatorRef(), binding.bindingId(),
+                        operatorLibraryIdsByOperatorRef, snapshotOwnerIdsByBindingId, snapshotOwnerIdsByOperatorRef)));
             }
         }
         for (VisualRuntimeAdapterActivation activation : safeList(adapterActivations)) {
             if (activation != null) {
-                entries.add(Entry.from(activation, operatorLibraryId(activation.operatorRef(),
-                        operatorLibraryIdsByOperatorRef)));
+                entries.add(Entry.from(activation, operatorLibraryId(activation.operatorRef(), activation.bindingId(),
+                        operatorLibraryIdsByOperatorRef, snapshotOwnerIdsByBindingId, snapshotOwnerIdsByOperatorRef)));
             }
         }
         for (VisualRuntimeRolloutObservation observation : safeList(rolloutObservations)) {
             if (observation != null) {
-                entries.add(Entry.from(observation, operatorLibraryId(observation.operatorRef(),
-                        operatorLibraryIdsByOperatorRef)));
+                entries.add(Entry.from(observation, operatorLibraryId(observation.operatorRef(), observation.bindingId(),
+                        operatorLibraryIdsByOperatorRef, snapshotOwnerIdsByBindingId, snapshotOwnerIdsByOperatorRef)));
             }
         }
         for (VisualExecutableLoweringIntegration integration : safeList(executableLoweringIntegrations)) {
             if (integration != null) {
-                entries.add(Entry.from(integration, operatorLibraryId(integration.operatorRef(),
-                        operatorLibraryIdsByOperatorRef)));
+                entries.add(Entry.from(integration, operatorLibraryId(integration.operatorRef(), integration.bindingId(),
+                        operatorLibraryIdsByOperatorRef, snapshotOwnerIdsByBindingId, snapshotOwnerIdsByOperatorRef)));
             }
         }
         return entries;
@@ -362,11 +364,60 @@ public record VisualRuntimeEvidenceWindow(
         };
     }
 
-    private static String operatorLibraryId(String operatorRef, Map<String, String> operatorLibraryIdsByOperatorRef) {
-        if (operatorRef == null || operatorLibraryIdsByOperatorRef == null) {
+    private static String operatorLibraryId(String operatorRef,
+                                            String bindingId,
+                                            Map<String, String> operatorLibraryIdsByOperatorRef,
+                                            Map<String, String> snapshotOwnerIdsByBindingId,
+                                            Map<String, String> snapshotOwnerIdsByOperatorRef) {
+        String currentOwnerId = operatorRef == null || operatorLibraryIdsByOperatorRef == null
+                ? ""
+                : safe(operatorLibraryIdsByOperatorRef.get(operatorRef));
+        if (!currentOwnerId.isBlank()) {
+            return currentOwnerId;
+        }
+        String bindingOwnerId = bindingId == null || snapshotOwnerIdsByBindingId == null
+                ? ""
+                : safe(snapshotOwnerIdsByBindingId.get(bindingId));
+        if (!bindingOwnerId.isBlank()) {
+            return bindingOwnerId;
+        }
+        if (operatorRef == null || snapshotOwnerIdsByOperatorRef == null) {
             return "";
         }
-        return safe(operatorLibraryIdsByOperatorRef.get(operatorRef));
+        return safe(snapshotOwnerIdsByOperatorRef.get(operatorRef));
+    }
+
+    private static Map<String, String> bindingSnapshotOwnerIdsByBindingId(
+            List<VisualRuntimeBindingImplementationBinding> implementationBindings) {
+        LinkedHashMap<String, String> ownerIds = new LinkedHashMap<>();
+        for (VisualRuntimeBindingImplementationBinding binding : safeList(implementationBindings)) {
+            String bindingId = binding == null ? "" : safe(binding.bindingId());
+            String ownerId = bindingSnapshotOwnerId(binding);
+            if (!bindingId.isBlank() && !ownerId.isBlank()) {
+                ownerIds.putIfAbsent(bindingId, ownerId);
+            }
+        }
+        return ownerIds;
+    }
+
+    private static Map<String, String> bindingSnapshotOwnerIdsByOperatorRef(
+            List<VisualRuntimeBindingImplementationBinding> implementationBindings) {
+        LinkedHashMap<String, String> ownerIds = new LinkedHashMap<>();
+        for (VisualRuntimeBindingImplementationBinding binding : safeList(implementationBindings)) {
+            String operatorRef = binding == null ? "" : safe(binding.operatorRef());
+            String ownerId = bindingSnapshotOwnerId(binding);
+            if (!operatorRef.isBlank() && !ownerId.isBlank()) {
+                ownerIds.putIfAbsent(operatorRef, ownerId);
+            }
+        }
+        return ownerIds;
+    }
+
+    private static String bindingSnapshotOwnerId(VisualRuntimeBindingImplementationBinding binding) {
+        if (binding == null || binding.operatorContract() == null) {
+            return "";
+        }
+        return safe(binding.operatorContract().operatorLibraryId());
     }
 
     private static Map<String, Integer> rolloutSignalCounts(List<Entry> entries, boolean breachedOnly) {

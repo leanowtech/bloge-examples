@@ -3405,6 +3405,23 @@ class VisualAssetOverviewControllerTest {
                 10, 0, "", "", "risk-policy-design", "", "", "", "", "", false);
         VisualRuntimeEvidenceWindow byMissingOperatorLibrary = fixture.controller().runtimeEvidenceWindow(
                 10, 0, "", "", "missing-library", "", "", "", "", "", false);
+        VisualRuntimeEvidenceWindow bySnapshotOperatorLibraryWithoutCatalog = VisualRuntimeEvidenceWindow.from(
+                List.of(binding),
+                List.of(activation),
+                List.of(observation),
+                List.of(integration),
+                Map.of(),
+                10,
+                0,
+                "",
+                "",
+                "risk-policy-design",
+                "",
+                "",
+                "",
+                "",
+                "",
+                false);
         VisualRuntimeEvidenceWindow bySignalAdapterKind = fixture.controller().runtimeEvidenceWindow(
                 10, 0, "adapter_activation", "", "", "", "", "", "p95_latency", false);
         VisualRuntimeEvidenceWindow breachedOnly = fixture.controller().runtimeEvidenceWindow(
@@ -3467,6 +3484,12 @@ class VisualAssetOverviewControllerTest {
         assertThat(byMissingOperatorLibrary.filter().operatorLibraryId()).isEqualTo("missing-library");
         assertThat(byMissingOperatorLibrary.total()).isZero();
         assertThat(byMissingOperatorLibrary.items()).isEmpty();
+        assertThat(bySnapshotOperatorLibraryWithoutCatalog.total()).isEqualTo(4);
+        assertThat(bySnapshotOperatorLibraryWithoutCatalog.operatorLibraryIdCounts())
+                .containsEntry("risk-policy-design", 4);
+        assertThat(bySnapshotOperatorLibraryWithoutCatalog.items())
+                .extracting(VisualRuntimeEvidenceWindow.Item::operatorLibraryId)
+                .containsOnly("risk-policy-design");
         assertThat(bySignalAdapterKind.filter().evidenceKind()).isEqualTo("adapter-activation");
         assertThat(bySignalAdapterKind.filter().rolloutSignal()).isEqualTo("p95-latency");
         assertThat(bySignalAdapterKind.total()).isEqualTo(1);

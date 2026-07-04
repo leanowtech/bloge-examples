@@ -2183,6 +2183,10 @@ evidence windows and context labels, so the Workspace Overview can route mixed
 implementation binding, activation, rollout, and lowering evidence by imported
 operator library ownership as well as by operator, binding, activation, and
 rollout signal.
+Server-side runtime evidence tests also cover owner recovery from the binding
+operator contract snapshot when the current catalog owner map is unavailable,
+so historic runtime facts remain filterable after library deletion, replacement,
+or scope changes.
 
 The Selenium DOM smoke prefers `-Dwebdriver.chrome.driver` or a cached Selenium
 ChromeDriver under `~/.cache/selenium/chromedriver`, so local browser tests do
