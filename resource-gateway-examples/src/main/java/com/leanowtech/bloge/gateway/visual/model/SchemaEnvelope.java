@@ -18,7 +18,7 @@ public record SchemaEnvelope(
         Map<String, Object> schema
 ) {
     public static final String JSON_SCHEMA = "json-schema";
-    private static final String DEFS_POINTER_PREFIX = "#/$defs/";
+    private static final String LOCAL_JSON_POINTER_PREFIX = "#/";
     private static final List<String> REF_ANNOTATION_KEYS = List.of(
             "$ref",
             "$comment",
@@ -610,7 +610,7 @@ public record SchemaEnvelope(
 
     private static String expandableLocalRef(Map<String, Object> schema) {
         Object raw = schema.get("$ref");
-        if (!(raw instanceof String ref) || !ref.startsWith(DEFS_POINTER_PREFIX)) {
+        if (!(raw instanceof String ref) || !ref.startsWith(LOCAL_JSON_POINTER_PREFIX)) {
             return null;
         }
         for (String key : schema.keySet()) {

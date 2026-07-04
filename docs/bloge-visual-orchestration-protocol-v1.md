@@ -146,6 +146,12 @@ catalog 暴露的同一算子 fingerprint 不同，validate/compile/run 会以 d
 | `openapi-schema` | OpenAPI components schema | 建议 |
 | `opaque` | 无法知道结构，只能弱校验 | 必须 |
 
+当前 `resource-gateway-examples` 的 `json-schema` envelope 使用 2020-12
+子集，并在校验前安全展开本地 JSON Pointer `$ref`，包括常见的
+`#/$defs/*`、`#/definitions/*` 和 `#/components/schemas/*`。远程引用、未解析
+本地引用、循环引用，以及带 validation-affecting sibling 的 `$ref` 必须保留为
+blocking diagnostic，不能被降级成 opaque。
+
 ### 4.2 基础 kind
 
 MVP schema kind：

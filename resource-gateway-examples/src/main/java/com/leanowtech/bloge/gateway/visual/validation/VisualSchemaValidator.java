@@ -58,7 +58,7 @@ public final class VisualSchemaValidator {
             "uri",
             "uuid"
     );
-    private static final String LOCAL_DEFS_REF_PREFIX = "#/$defs/";
+    private static final String LOCAL_JSON_POINTER_PREFIX = "#/";
     private static final Pattern EMAIL_PATTERN = Pattern.compile("^[^@\\s]+@[^@\\s]+\\.[^@\\s]+$");
 
     private VisualSchemaValidator() {
@@ -529,20 +529,20 @@ public final class VisualSchemaValidator {
                     "Schema $ref must be a non-blank string and must be expanded before validation.",
                     target);
         }
-        if (ref.startsWith(LOCAL_DEFS_REF_PREFIX)) {
+        if (ref.startsWith(LOCAL_JSON_POINTER_PREFIX)) {
             return VisualDiagnostic.error("visual.schema.refUnresolved",
-                    "Schema local reference '%s' could not be resolved or safely expanded from $defs."
+                    "Schema local reference '%s' could not be resolved or safely expanded from the current schema document."
                             .formatted(ref),
                     target);
         }
         if (ref.contains("://") || ref.startsWith("urn:") || ref.startsWith("file:")) {
             return VisualDiagnostic.error("visual.schema.refRemoteUnsupported",
-                    "Schema remote reference '%s' is not supported by visual authoring schemas; inline it under $defs before import."
+                    "Schema remote reference '%s' is not supported by visual authoring schemas; inline it into the imported schema before validation."
                             .formatted(ref),
                     target);
         }
         return VisualDiagnostic.error("visual.schema.refUnsupported",
-                "Schema reference '%s' is not supported by visual authoring schemas; supported local $defs references must be expanded before validation."
+                "Schema reference '%s' is not supported by visual authoring schemas; supported local JSON Pointer references must be expanded before validation."
                         .formatted(ref),
                 target);
     }

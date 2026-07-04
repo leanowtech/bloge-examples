@@ -568,7 +568,8 @@ class VisualSchemaValidatorTest {
                 "properties", Map.of(
                         "missingLocal", Map.of("$ref", "#/$defs/Missing"),
                         "remote", Map.of("$ref", "https://schemas.example.test/Risk.json"),
-                        "components", Map.of("$ref", "#/components/schemas/Risk")
+                        "components", Map.of("$ref", "#/components/schemas/Risk"),
+                        "plainFragment", Map.of("$ref", "#Risk")
                 )
         ), "/schema");
 
@@ -584,9 +585,14 @@ class VisualSchemaValidatorTest {
                     assertThat(diagnostic.target()).isEqualTo("/schema/properties/remote/$ref");
                 })
                 .anySatisfy(diagnostic -> {
-                    assertThat(diagnostic.code()).isEqualTo("visual.schema.refUnsupported");
+                    assertThat(diagnostic.code()).isEqualTo("visual.schema.refUnresolved");
                     assertThat(diagnostic.message()).contains("#/components/schemas/Risk");
                     assertThat(diagnostic.target()).isEqualTo("/schema/properties/components/$ref");
+                })
+                .anySatisfy(diagnostic -> {
+                    assertThat(diagnostic.code()).isEqualTo("visual.schema.refUnsupported");
+                    assertThat(diagnostic.message()).contains("#Risk");
+                    assertThat(diagnostic.target()).isEqualTo("/schema/properties/plainFragment/$ref");
                 });
     }
 

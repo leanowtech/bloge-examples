@@ -47,6 +47,99 @@ class SchemaEnvelopeTest {
     }
 
     @Test
+    void expandsLegacyDefinitionsReferences() {
+        SchemaEnvelope envelope = new SchemaEnvelope(SchemaEnvelope.JSON_SCHEMA, "2020-12", Map.of(
+                "type", "object",
+                "properties", Map.of(
+                        "customer", Map.of("$ref", "#/definitions/Customer")
+                ),
+                "definitions", Map.of(
+                        "Customer", Map.of(
+                                "type", "object",
+                                "properties", Map.of(
+                                        "customerId", Map.of("type", "string")
+                                ),
+                                "required", List.of("customerId")
+                        )
+                )
+        ));
+
+        Map<String, Object> customer = property(envelope.schema(), "customer");
+        assertThat(customer)
+                .doesNotContainKey("$ref")
+                .containsEntry("type", "object");
+        assertThat(property(customer, "customerId")).containsEntry("type", "string");
+    }
+
+    @Test
+    void expandsOpenApiComponentsSchemaReferences() {
+        SchemaEnvelope envelope = new SchemaEnvelope(SchemaEnvelope.JSON_SCHEMA, "2020-12", Map.of(
+                "type", "array",
+                "items", Map.of("$ref", "#/components/schemas/RiskEvent"),
+                "components", Map.of(
+                        "schemas", Map.of(
+                                "RiskEvent", Map.of(
+                                        "type", "object",
+                                        "properties", Map.of(
+                                                "eventType", Map.of("type", "string"),
+                                                "score", Map.of("type", "integer")
+                                        ),
+                                        "required", List.of("eventType")
+                                )
+                        )
+                )
+        ));
+
+        @SuppressWarnings("unchecked")
+        Map<String, Object> items = (Map<String, Object>) envelope.schema().get("items");
+        assertThat(items)
+                .doesNotContainKey("$ref")
+                .containsEntry("type", "object");
+        assertThat(property(items, "eventType")).containsEntry("type", "string");
+        assertThat(property(items, "score")).containsEntry("type", "integer");
+    }
+
+    @Test
+    void keepsCyclicLocalReferencesUnsupported() {
+        SchemaEnvelope envelope = new SchemaEnvelope(SchemaEnvelope.JSON_SCHEMA, "2020-12", Map.of(
+                "type", "object",
+                "properties", Map.of(
+                        "node", Map.of("$ref", "#/$defs/Node")
+                ),
+                "$defs", Map.of(
+                        "Node", Map.of(
+                                "type", "object",
+                                "properties", Map.of(
+                                        "next", Map.of("$ref", "#/$defs/Node")
+                                )
+                        )
+                )
+        ));
+
+        Map<String, Object> node = property(envelope.schema(), "node");
+        assertThat(property(node, "next")).containsEntry("$ref", "#/$defs/Node");
+    }
+
+    @Test
+    void keepsConstrainedReferenceSiblingsUnsupported() {
+        SchemaEnvelope envelope = new SchemaEnvelope(SchemaEnvelope.JSON_SCHEMA, "2020-12", Map.of(
+                "type", "object",
+                "properties", Map.of(
+                        "customerCode", Map.of(
+                                "$ref", "#/$defs/CustomerCode",
+                                "minLength", 3)
+                ),
+                "$defs", Map.of(
+                        "CustomerCode", Map.of("type", "string")
+                )
+        ));
+
+        assertThat(property(envelope.schema(), "customerCode"))
+                .containsEntry("$ref", "#/$defs/CustomerCode")
+                .containsEntry("minLength", 3);
+    }
+
+    @Test
     void flattensLocalReferenceObjectAllOfSchemas() {
         SchemaEnvelope envelope = new SchemaEnvelope(SchemaEnvelope.JSON_SCHEMA, "2020-12", Map.of(
                 "allOf", List.of(

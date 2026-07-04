@@ -100,6 +100,109 @@ class OperatorLibraryValidatorTest {
     }
 
     @Test
+    void acceptsImportedOperatorSchemaWithOpenApiComponentsReference() {
+        OperatorDefinition operator = new OperatorDefinition(
+                "bloge.visualOperator.v1",
+                "risk:componentSchema",
+                "1.0.0",
+                new OperatorDefinition.Display("Component schema", "Schema-only component reference test.",
+                        List.of("test")),
+                new OperatorDefinition.Source("user-library", "", "", "", true),
+                new OperatorDefinition.Ports(
+                        List.of(new OperatorDefinition.Port("inputs",
+                                new SchemaEnvelope(SchemaEnvelope.JSON_SCHEMA, "2020-12", Map.of(
+                                        "type", "object",
+                                        "properties", Map.of(
+                                                "payload", Map.of("$ref", "#/components/schemas/RiskEvent")
+                                        ),
+                                        "required", List.of("payload"),
+                                        "components", Map.of(
+                                                "schemas", Map.of(
+                                                        "RiskEvent", Map.of(
+                                                                "type", "object",
+                                                                "properties", Map.of(
+                                                                        "eventId", Map.of("type", "string"),
+                                                                        "score", Map.of("type", "integer")
+                                                                ),
+                                                                "required", List.of("eventId")
+                                                        )
+                                                )
+                                        )
+                                )),
+                                true,
+                                "Inputs.")),
+                        List.of(new OperatorDefinition.Port("output",
+                                SchemaEnvelope.object(Map.of("accepted", Map.of("type", "boolean")), List.of()),
+                                true,
+                                "Output."))
+                ),
+                SchemaEnvelope.opaque(),
+                OperatorDefinition.Capabilities.pure(),
+                OperatorDefinition.Policy.unrestricted(),
+                new OperatorDefinition.Lowering("design", "", Map.of()),
+                List.of()
+        );
+
+        VisualValidationResult result = validator.validate(libraryWith(operator));
+
+        assertThat(result.valid()).as(result.diagnostics().toString()).isTrue();
+        assertThat(result.diagnostics()).isEmpty();
+        assertThat(operator.ports().inputs().getFirst().schema().properties().get("payload"))
+                .isInstanceOf(Map.class);
+        @SuppressWarnings("unchecked")
+        Map<String, Object> eventSchema =
+                (Map<String, Object>) operator.ports().inputs().getFirst().schema().properties().get("payload");
+        assertThat(eventSchema)
+                .doesNotContainKey("$ref")
+                .containsEntry("type", "object");
+    }
+
+    @Test
+    void rejectsImportedOperatorSchemaWhenReferenceSiblingCannotBeSafelyExpanded() {
+        OperatorDefinition base = VisualCatalogTestSupport.eligibilityOperator("integer");
+        OperatorDefinition operator = new OperatorDefinition(
+                base.schemaVersion(),
+                base.operatorRef(),
+                base.operatorVersion(),
+                base.display(),
+                base.source(),
+                new OperatorDefinition.Ports(
+                        List.of(new OperatorDefinition.Port("inputs",
+                                new SchemaEnvelope(SchemaEnvelope.JSON_SCHEMA, "2020-12", Map.of(
+                                        "type", "object",
+                                        "properties", Map.of(
+                                                "customerCode", Map.of(
+                                                        "$ref", "#/$defs/CustomerCode",
+                                                        "minLength", 3)
+                                        ),
+                                        "$defs", Map.of(
+                                                "CustomerCode", Map.of("type", "string")
+                                        )
+                                )),
+                                true,
+                                "Inputs.")),
+                        base.ports().outputs()
+                ),
+                base.configSchema(),
+                base.capabilities(),
+                base.policy(),
+                base.lowering(),
+                base.diagnostics()
+        );
+
+        VisualValidationResult result = validator.validate(libraryWith(operator));
+
+        assertThat(result.valid()).isFalse();
+        assertThat(result.diagnostics())
+                .anySatisfy(diagnostic -> {
+                    assertThat(diagnostic.code()).isEqualTo("visual.schema.refUnresolved");
+                    assertThat(diagnostic.target())
+                            .isEqualTo("/operators/0/ports/inputs/0/schema/schema/properties/customerCode/$ref");
+                    assertThat(diagnostic.message()).contains("current schema document");
+                });
+    }
+
+    @Test
     void rejectsUnsupportedLibrarySchemaVersion() {
         OperatorLibrary library = new OperatorLibrary(
                 "bloge.visualOperatorLibrary.v2",
@@ -3399,7 +3502,7 @@ class OperatorLibraryValidatorTest {
                 .filteredOn(diagnostic -> "visual.schema.refRemoteUnsupported".equals(diagnostic.code()))
                 .singleElement()
                 .satisfies(diagnostic -> {
-                    assertThat(diagnostic.message()).contains("inline it under $defs");
+                    assertThat(diagnostic.message()).contains("inline it into the imported schema");
                     assertThat(diagnostic.target())
                             .isEqualTo("/operators/0/ports/inputs/0/schema/schema/properties/customer/$ref");
                 });
